@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use reprise_core::library_doctor::{
     DoctorCandidate, DoctorField, DoctorReviewRow, DoctorReviewRowState, DoctorReviewSession,
-    DoctorScan, DoctorValue, ProposalSource, RemoteEvidenceSource,
+    DoctorScan, DoctorValue, DoctorWriteRowState, ProposalSource, RemoteEvidenceSource,
 };
 
 use crate::ui::strings;
@@ -77,6 +77,12 @@ pub(super) fn confidence_presentation(
 }
 
 #[derive(Debug, Clone)]
+pub(super) struct ReviewOutcome {
+    pub(super) state: DoctorWriteRowState,
+    pub(super) error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 pub(super) struct ReviewRowModel {
     pub(super) row: DoctorReviewRow,
     pub(super) track: String,
@@ -84,21 +90,32 @@ pub(super) struct ReviewRowModel {
     pub(super) current: String,
     pub(super) proposed: String,
     pub(super) confidence: ConfidencePresentation,
+    pub(super) outcome: Option<ReviewOutcome>,
 }
 
 impl ReviewRowModel {
     pub(super) fn accessible_description(&self) -> String {
-        strings::doctor_review_row_description(
+        let description = strings::doctor_review_row_description(
             &self.track,
             &self.field,
             &self.current,
             &self.proposed,
             &self.confidence.label,
-        )
+        );
+        self.outcome
+            .as_ref()
+            .and_then(|outcome| outcome.error.as_deref())
+            .map_or(description.clone(), |error| {
+                format!("{description} {error}")
+            })
     }
 }
 
-pub(super) fn rows_for(scan: &DoctorScan, review: &DoctorReviewSession) -> Vec<ReviewRowModel> {
+pub(super) fn rows_for(
+    scan: &DoctorScan,
+    review: &DoctorReviewSession,
+    outcomes: &HashMap<reprise_core::library_doctor::DoctorReviewRowId, ReviewOutcome>,
+) -> Vec<ReviewRowModel> {
     let titles = scan
         .tracks
         .iter()
@@ -128,6 +145,7 @@ pub(super) fn rows_for(scan: &DoctorScan, review: &DoctorReviewSession) -> Vec<R
             current: value_text(&row.current),
             proposed: value_text(&row.proposed),
             confidence: confidence_presentation(row.source, row.confidence),
+            outcome: outcomes.get(&row.id).cloned(),
             row,
         })
         .collect()
@@ -180,8 +198,23 @@ pub(super) fn candidate_description(candidate: &DoctorCandidate) -> String {
     parts.join(" · ")
 }
 
-pub(super) const fn row_selectable(row: &DoctorReviewRow) -> bool {
-    matches!(row.state, DoctorReviewRowState::Ready)
+pub(super) fn row_selectable(model: &ReviewRowModel) -> bool {
+    matches!(model.row.state, DoctorReviewRowState::Ready)
+        && !matches!(
+            model.outcome.as_ref().map(|outcome| outcome.state),
+            Some(DoctorWriteRowState::Applied)
+        )
+}
+
+pub(super) const fn outcome_label(outcome: DoctorWriteRowState) -> &'static str {
+    match outcome {
+        DoctorWriteRowState::Applied => strings::DOCTOR_STATUS_APPLIED,
+        DoctorWriteRowState::Reverted => strings::DOCTOR_STATUS_REVERTED,
+        DoctorWriteRowState::Cancelled => strings::DOCTOR_STATUS_REMAINING,
+        DoctorWriteRowState::Conflict => strings::DOCTOR_STATUS_CONFLICT,
+        DoctorWriteRowState::Unavailable => strings::DOCTOR_STATUS_STALE,
+        DoctorWriteRowState::Failed => strings::DOCTOR_STATUS_FAILED,
+    }
 }
 
 const fn field_label(field: DoctorField) -> &'static str {

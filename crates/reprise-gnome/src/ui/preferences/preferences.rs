@@ -126,6 +126,8 @@ pub(in crate::ui) struct PreferencesContext {
     preferences_navigation: RefCell<glib::WeakRef<adw::NavigationView>>,
     preferences_stack: RefCell<glib::WeakRef<adw::ViewStack>>,
     pub(in crate::ui) plugin_rows: RefCell<HashMap<&'static str, glib::WeakRef<adw::SwitchRow>>>,
+    pub(in crate::ui) doctor_remote_rows: RefCell<Vec<glib::WeakRef<adw::SwitchRow>>>,
+    pub(in crate::ui) library_doctor_job_running: Cell<bool>,
     pub(in crate::ui) pending_plugin_targets: RefCell<Vec<&'static str>>,
 }
 
@@ -187,6 +189,8 @@ impl PreferencesContext {
             preferences_navigation: RefCell::new(glib::WeakRef::new()),
             preferences_stack: RefCell::new(glib::WeakRef::new()),
             plugin_rows: RefCell::new(HashMap::new()),
+            doctor_remote_rows: RefCell::new(Vec::new()),
+            library_doctor_job_running: Cell::new(false),
             pending_plugin_targets: RefCell::new(Vec::new()),
         });
         let weak = Rc::downgrade(&context);
@@ -244,6 +248,7 @@ impl PreferencesContext {
         self.equalizer_surfaces.borrow_mut().clear();
         self.replaygain_mode.borrow_mut().take();
         self.plugin_rows.borrow_mut().clear();
+        self.doctor_remote_rows.borrow_mut().clear();
         use super::preferences_window::{PageId, PAGE_ORDER};
         let pages = PAGE_ORDER.map(|id| {
             let page = match id {

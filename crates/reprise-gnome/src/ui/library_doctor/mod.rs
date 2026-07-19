@@ -1,3 +1,5 @@
+mod jobs;
+mod progress_card;
 mod review_model;
 mod review_page;
 mod review_row;
@@ -14,15 +16,18 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::fingerprint::{FingerprintBackend, FingerprintCapability};
 use reprise_core::library_doctor::{
-    DoctorScanOutcome, DoctorScanProgress, DoctorScanRequest, DoctorScopeRequest,
-    DoctorViewSnapshot, LibraryDoctor, ScanControl,
+    DoctorApplyPlan, DoctorScanOutcome, DoctorScanRequest, DoctorScopeRequest, DoctorViewSnapshot,
+    DoctorWriteProgress, DoctorWriteReport, LibraryDoctor,
 };
 use reprise_core::view_source::ViewSource;
 use rusqlite::Connection;
 
 use super::preferences::PreferencesContext;
 use super::scan_flow::ScanControls;
+use super::sidebar::Sidebar;
 use super::track_list::TrackList;
+use jobs::{run_apply, run_revert, run_scan};
+use progress_card::{DoctorJobKind, DoctorProgressCard};
 use review_page::LibraryDoctorReviewPage;
 use summary_page::LibraryDoctorPage;
 
@@ -41,6 +46,11 @@ pub(in crate::ui) struct LibraryDoctorCoordinator {
     cancellation: RefCell<Option<Arc<AtomicBool>>>,
     running: Cell<bool>,
     review: RefCell<Option<Rc<LibraryDoctorReviewPage>>>,
+    job_kind: Cell<Option<DoctorJobKind>>,
+    progress: DoctorProgressCard,
+    toast_overlay: adw::ToastOverlay,
+    tag_write_gate: crate::ui::tag_write_gate::TagWriteGate,
+    refresh_views: Rc<dyn Fn()>,
 }
 
 pub(in crate::ui) struct LibraryDoctorContext<'a> {
@@ -52,6 +62,9 @@ pub(in crate::ui) struct LibraryDoctorContext<'a> {
     pub(in crate::ui) scan_controls: &'a ScanControls,
     pub(in crate::ui) fingerprint: Arc<dyn FingerprintBackend>,
     pub(in crate::ui) preferences: &'a Rc<PreferencesContext>,
+    pub(in crate::ui) sidebar: &'a Rc<Sidebar>,
+    pub(in crate::ui) toast_overlay: &'a adw::ToastOverlay,
+    pub(in crate::ui) refresh_views: Rc<dyn Fn()>,
 }
 
 impl LibraryDoctorCoordinator {
@@ -65,6 +78,9 @@ impl LibraryDoctorCoordinator {
             scan_controls,
             fingerprint,
             preferences,
+            sidebar,
+            toast_overlay,
+            refresh_views,
         } = context;
         let coordinator = Rc::new_cyclic(|weak: &std::rc::Weak<Self>| {
             let refresh = {
@@ -83,6 +99,7 @@ impl LibraryDoctorCoordinator {
                 FingerprintCapability::Available { .. }
             );
             let page = LibraryDoctorPage::new(conn, window, fingerprint_available, refresh);
+            let progress = DoctorProgressCard::new();
             Self {
                 conn: conn.clone(),
                 db_path: db_path.to_path_buf(),
@@ -96,8 +113,14 @@ impl LibraryDoctorCoordinator {
                 cancellation: RefCell::new(None),
                 running: Cell::new(false),
                 review: RefCell::new(None),
+                job_kind: Cell::new(None),
+                progress,
+                toast_overlay: toast_overlay.clone(),
+                tag_write_gate: track_list.tag_write_gate(),
+                refresh_views,
             }
         });
+        sidebar.append_doctor_card(coordinator.progress.widget());
         coordinator.load_last_scan();
         {
             let weak = Rc::downgrade(&coordinator);
@@ -109,9 +132,17 @@ impl LibraryDoctorCoordinator {
         }
         {
             let weak = Rc::downgrade(&coordinator);
-            coordinator.page.connect_cancel(move || {
+            coordinator.progress.set_on_cancel(move || {
                 if let Some(coordinator) = weak.upgrade() {
                     coordinator.request_cancel();
+                }
+            });
+        }
+        {
+            let weak = Rc::downgrade(&coordinator);
+            coordinator.progress.set_on_activate(move || {
+                if let Some(coordinator) = weak.upgrade() {
+                    coordinator.open_running_job();
                 }
             });
         }
@@ -139,6 +170,10 @@ impl LibraryDoctorCoordinator {
     }
 
     pub(in crate::ui) fn open(&self) {
+        if self.running.get() {
+            self.open_running_job();
+            return;
+        }
         let enabled = {
             let conn = self.conn.borrow();
             reprise_core::modules::is_enabled(&conn, &reprise_core::modules::LIBRARY_DOCTOR_MODULE)
@@ -154,6 +189,10 @@ impl LibraryDoctorCoordinator {
             let conn = self.conn.borrow();
             self.page.sync_remote_preference(&conn);
         }
+        self.open_root_page();
+    }
+
+    fn open_root_page(&self) {
         if let Some(page) = self.navigation.find_page("library-doctor") {
             self.navigation.pop_to_page(&page);
         } else {
@@ -191,7 +230,12 @@ impl LibraryDoctorCoordinator {
         let cancellation = Arc::new(AtomicBool::new(false));
         self.cancellation.borrow_mut().replace(cancellation.clone());
         self.running.set(true);
+        if let Some(preferences) = self.preferences.upgrade() {
+            preferences.set_library_doctor_job_running(true);
+        }
+        self.job_kind.set(Some(DoctorJobKind::Scan));
         self.page.set_running(true);
+        self.progress.show(DoctorJobKind::Scan, 0, 0);
         self.scan_controls.button.set_sensitive(false);
         let db_path = self.db_path.clone();
         let fingerprint = self.fingerprint.clone();
@@ -220,9 +264,11 @@ impl LibraryDoctorCoordinator {
         glib::spawn_future_local(async move {
             while let Ok(progress) = progress.recv().await {
                 if let Some(coordinator) = weak.upgrade() {
-                    coordinator
-                        .page
-                        .set_progress(progress.completed_tracks, progress.total_tracks);
+                    coordinator.progress.show(
+                        DoctorJobKind::Scan,
+                        progress.completed_tracks,
+                        progress.total_tracks,
+                    );
                 }
             }
         });
@@ -267,7 +313,12 @@ impl LibraryDoctorCoordinator {
     fn finish_scan(&self) {
         self.cancellation.borrow_mut().take();
         self.running.set(false);
+        if let Some(preferences) = self.preferences.upgrade() {
+            preferences.set_library_doctor_job_running(false);
+        }
+        self.job_kind.set(None);
         self.page.set_running(false);
+        self.progress.hide();
         self.scan_controls.button.set_sensitive(true);
     }
 
@@ -276,9 +327,7 @@ impl LibraryDoctorCoordinator {
             return;
         };
         let existing = self.review.borrow().clone();
-        let page = if let Some(existing) = existing.filter(|page| page.filter() == filter) {
-            existing
-        } else {
+        if existing.filter(|page| page.filter() == filter).is_none() {
             let weak = Rc::downgrade(self);
             let track_list = self.track_list.clone();
             let on_edit = Rc::new(move |track_id| track_list.edit_tags_for_ids(&[track_id]))
@@ -296,14 +345,17 @@ impl LibraryDoctorCoordinator {
                 }),
                 &on_edit,
             );
+            {
+                let weak = Rc::downgrade(self);
+                page.connect_apply(move |plan| {
+                    if let Some(coordinator) = weak.upgrade() {
+                        coordinator.start_apply(plan);
+                    }
+                });
+            }
             self.review.borrow_mut().replace(page.clone());
-            page
-        };
-        if let Some(visible) = self.navigation.find_page("library-doctor-review") {
-            self.navigation.pop_to_page(&visible);
-        } else {
-            self.navigation.push(page.navigation_page());
         }
+        self.open_review_page();
     }
 
     fn install_tag_edit_observer(self: &Rc<Self>) {
@@ -320,27 +372,254 @@ impl LibraryDoctorCoordinator {
             }
         });
     }
-}
 
-fn run_scan(
-    db_path: &Path,
-    request: &DoctorScanRequest,
-    fingerprint: &dyn FingerprintBackend,
-    cancellation: &AtomicBool,
-    publish: &mut dyn FnMut(DoctorScanProgress),
-) -> Result<DoctorScanOutcome, String> {
-    let mut conn =
-        reprise_core::db::open_migrated(Some(db_path)).map_err(|error| error.to_string())?;
-    LibraryDoctor::new(&mut conn)
-        .scan(request, Some(fingerprint), |progress| {
-            publish(progress);
-            if cancellation.load(Ordering::Relaxed) {
-                ScanControl::Cancel
-            } else {
-                ScanControl::Continue
+    fn open_running_job(&self) {
+        match self.job_kind.get() {
+            Some(DoctorJobKind::Apply) => self.open_review_page(),
+            Some(DoctorJobKind::Scan | DoctorJobKind::Revert) | None => self.open_root_page(),
+        }
+    }
+
+    fn open_review_page(&self) {
+        let Some(review) = self.review.borrow().as_ref().cloned() else {
+            self.open_root_page();
+            return;
+        };
+        if self.navigation.find_page("library-doctor-review").is_some() {
+            self.navigation.pop_to_tag("library-doctor-review");
+        } else {
+            self.navigation.push(review.navigation_page());
+        }
+    }
+
+    fn start_apply(self: &Rc<Self>, plan: DoctorApplyPlan) {
+        if plan.track_count() == 0 || self.running.get() || self.scan_controls.is_scanning() {
+            return;
+        }
+        let Some(tag_write_lease) = self.tag_write_gate.try_acquire() else {
+            crate::ui::toasts::show(
+                &self.toast_overlay,
+                &crate::ui::strings::text(crate::ui::strings::TAG_WRITE_BUSY),
+            );
+            return;
+        };
+        let total = plan.track_count();
+        let cancellation = Arc::new(AtomicBool::new(false));
+        self.cancellation.borrow_mut().replace(cancellation.clone());
+        self.running.set(true);
+        if let Some(preferences) = self.preferences.upgrade() {
+            preferences.set_library_doctor_job_running(true);
+        }
+        self.job_kind.set(Some(DoctorJobKind::Apply));
+        self.page.set_running(true);
+        if let Some(review) = self.review.borrow().as_ref() {
+            review.set_running(true);
+        }
+        self.scan_controls.button.set_sensitive(false);
+        self.progress.show(DoctorJobKind::Apply, 0, total);
+        let db_path = self.db_path.clone();
+        let spawned = super::one_shot_task::spawn_with_progress(
+            "reprise-library-doctor-apply",
+            move |publish| {
+                let _tag_write_lease = tag_write_lease;
+                run_apply(&db_path, &plan, &cancellation, publish)
+            },
+        );
+        let (progress, result) = match spawned {
+            Ok(channels) => channels,
+            Err(error) => {
+                self.finish_write_job();
+                tracing::error!(%error, "could not start Library Doctor apply worker");
+                return;
             }
-        })
-        .map_err(|error| error.to_string())
+        };
+        self.watch_write_job(DoctorJobKind::Apply, progress, result);
+    }
+
+    fn start_revert(self: &Rc<Self>) {
+        if self.running.get() || self.scan_controls.is_scanning() {
+            return;
+        }
+        let total = {
+            let mut conn = self.conn.borrow_mut();
+            LibraryDoctor::new(&mut conn)
+                .last_cleanup()
+                .ok()
+                .flatten()
+                .map(|cleanup| cleanup.track_count)
+        };
+        let Some(total) = total else {
+            return;
+        };
+        let Some(tag_write_lease) = self.tag_write_gate.try_acquire() else {
+            crate::ui::toasts::show(
+                &self.toast_overlay,
+                &crate::ui::strings::text(crate::ui::strings::TAG_WRITE_BUSY),
+            );
+            return;
+        };
+        let cancellation = Arc::new(AtomicBool::new(false));
+        self.cancellation.borrow_mut().replace(cancellation.clone());
+        self.running.set(true);
+        if let Some(preferences) = self.preferences.upgrade() {
+            preferences.set_library_doctor_job_running(true);
+        }
+        self.job_kind.set(Some(DoctorJobKind::Revert));
+        self.page.set_running(true);
+        if let Some(review) = self.review.borrow().as_ref() {
+            review.set_running(true);
+        }
+        self.scan_controls.button.set_sensitive(false);
+        self.progress.show(DoctorJobKind::Revert, 0, total);
+        let db_path = self.db_path.clone();
+        let spawned = super::one_shot_task::spawn_with_progress(
+            "reprise-library-doctor-revert",
+            move |publish| {
+                let _tag_write_lease = tag_write_lease;
+                run_revert(&db_path, &cancellation, publish)
+            },
+        );
+        let (progress, result) = match spawned {
+            Ok(channels) => channels,
+            Err(error) => {
+                self.finish_write_job();
+                tracing::error!(%error, "could not start Library Doctor revert worker");
+                return;
+            }
+        };
+        self.watch_write_job(DoctorJobKind::Revert, progress, result);
+    }
+
+    fn watch_write_job(
+        self: &Rc<Self>,
+        kind: DoctorJobKind,
+        progress: async_channel::Receiver<DoctorWriteProgress>,
+        result: async_channel::Receiver<Result<Option<DoctorWriteReport>, String>>,
+    ) {
+        let weak = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            while let Ok(progress) = progress.recv().await {
+                if let Some(coordinator) = weak.upgrade() {
+                    coordinator.progress.show(
+                        kind,
+                        progress.completed_tracks,
+                        progress.total_tracks,
+                    );
+                }
+            }
+        });
+        let weak = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let received = result.recv().await;
+            let Some(coordinator) = weak.upgrade() else {
+                return;
+            };
+            coordinator.finish_write_job();
+            match received {
+                Ok(Ok(Some(report))) => coordinator.handle_write_report(kind, &report),
+                Ok(Ok(None)) => {}
+                Ok(Err(error)) => {
+                    tracing::error!(%error, "Library Doctor write failed");
+                    crate::ui::toasts::show(&coordinator.toast_overlay, &error);
+                }
+                Err(error) => {
+                    tracing::error!(%error, "Library Doctor write worker disappeared");
+                    crate::ui::toasts::show(&coordinator.toast_overlay, &error.to_string());
+                }
+            }
+        });
+    }
+
+    fn finish_write_job(&self) {
+        self.cancellation.borrow_mut().take();
+        self.running.set(false);
+        if let Some(preferences) = self.preferences.upgrade() {
+            preferences.set_library_doctor_job_running(false);
+        }
+        self.job_kind.set(None);
+        self.page.set_running(false);
+        if let Some(review) = self.review.borrow().as_ref() {
+            review.set_running(false);
+        }
+        self.scan_controls.button.set_sensitive(true);
+        self.progress.hide();
+    }
+
+    fn handle_write_report(self: &Rc<Self>, kind: DoctorJobKind, report: &DoctorWriteReport) {
+        let paths = report
+            .rows
+            .iter()
+            .filter(|row| row.file_written)
+            .map(|row| row.path.clone())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let ids = report
+            .rows
+            .iter()
+            .filter(|row| row.file_written)
+            .map(|row| row.track_id)
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        if !paths.is_empty() {
+            self.track_list.refresh_after_tag_mutation(&ids, &paths);
+            (self.refresh_views)();
+        }
+        if let Some(review) = self.review.borrow().as_ref() {
+            review.set_write_report(report);
+        }
+        self.page
+            .set_write_report(report, kind == DoctorJobKind::Revert);
+        self.show_write_toasts(kind, report);
+    }
+
+    fn show_write_toasts(self: &Rc<Self>, kind: DoctorJobKind, report: &DoctorWriteReport) {
+        if report.updated_tracks > 0 {
+            let title = if report.cancelled_tracks > 0 {
+                crate::ui::strings::doctor_write_cancelled(
+                    report.updated_tracks,
+                    report.cancelled_tracks,
+                )
+            } else if kind == DoctorJobKind::Revert {
+                crate::ui::strings::doctor_tags_reverted(report.updated_tracks)
+            } else {
+                crate::ui::strings::doctor_tags_updated(report.updated_tracks)
+            };
+            let toast = adw::Toast::new(&title);
+            toast.set_priority(adw::ToastPriority::High);
+            if kind == DoctorJobKind::Apply {
+                toast.set_button_label(Some(&crate::ui::strings::text(
+                    crate::ui::strings::DOCTOR_REVERT,
+                )));
+                let weak = Rc::downgrade(self);
+                toast.connect_button_clicked(move |_| {
+                    if let Some(coordinator) = weak.upgrade() {
+                        coordinator.start_revert();
+                    }
+                });
+            }
+            self.toast_overlay.add_toast(toast);
+        }
+        let failed = report.failed_tracks + report.conflict_tracks + report.unavailable_tracks;
+        if failed > 0 {
+            let toast = adw::Toast::new(&crate::ui::strings::doctor_write_failures(
+                report.updated_tracks,
+                failed,
+            ));
+            toast.set_priority(adw::ToastPriority::High);
+            toast.set_button_label(Some(&crate::ui::strings::text(
+                crate::ui::strings::DOCTOR_DETAILS,
+            )));
+            let weak = Rc::downgrade(self);
+            toast.connect_button_clicked(move |_| {
+                if let Some(coordinator) = weak.upgrade() {
+                    coordinator.open_review_page();
+                }
+            });
+            self.toast_overlay.add_toast(toast);
+        }
+    }
 }
 
 fn current_view_snapshot(track_list: &TrackList) -> DoctorViewSnapshot {

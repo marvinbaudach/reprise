@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -8,11 +9,12 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::library_doctor::{
-    DoctorReviewFilter, DoctorReviewRowId, DoctorReviewRowState, DoctorReviewSession, DoctorScan,
+    DoctorApplyPlan, DoctorReviewFilter, DoctorReviewRowId, DoctorReviewRowState,
+    DoctorReviewSession, DoctorScan, DoctorWriteReport, DoctorWriteRowState,
 };
 use rusqlite::Connection;
 
-use super::review_model::{rows_for, ReviewRowModel};
+use super::review_model::{rows_for, ReviewOutcome, ReviewRowModel};
 use crate::ui::preferences::preference_library_doctor;
 use crate::ui::strings;
 
@@ -23,8 +25,9 @@ struct ReviewState {
     selection: gtk4::SingleSelection,
     content: gtk4::Stack,
     groups: gtk4::Box,
-    apply_summary: gtk4::Label,
+    apply: gtk4::Button,
     change_summary: gtk4::Label,
+    outcomes: RefCell<HashMap<DoctorReviewRowId, ReviewOutcome>>,
 }
 
 impl ReviewState {
@@ -32,7 +35,7 @@ impl ReviewState {
         let selected = self.selection.selected();
         self.store.remove_all();
         let session = self.session.borrow();
-        for row in rows_for(&self.scan, &session) {
+        for row in rows_for(&self.scan, &session, &self.outcomes.borrow()) {
             self.store.append(&glib::BoxedAnyObject::new(row));
         }
         let count = self.store.n_items();
@@ -42,8 +45,9 @@ impl ReviewState {
             self.selection.set_selected(selected.min(count - 1));
         }
         let summary = session.summary();
-        self.apply_summary
+        self.apply
             .set_label(&strings::doctor_apply_tracks(summary.track_count));
+        self.apply.set_sensitive(summary.track_count > 0);
         self.change_summary
             .set_label(&strings::doctor_apply_summary(
                 summary.tag_change_count,
@@ -156,6 +160,58 @@ impl ReviewState {
             self.groups.append(&row);
         }
     }
+
+    fn apply_report(self: &Rc<Self>, report: &DoctorWriteReport) {
+        let mut outcomes = self.outcomes.borrow_mut();
+        for row in &report.rows {
+            let Some(row_id) = row.row_id else {
+                continue;
+            };
+            outcomes.insert(
+                row_id,
+                ReviewOutcome {
+                    state: row.state,
+                    error: row.error.clone(),
+                },
+            );
+            let transition = outcome_transition(row.state);
+            if let Some(selected) = transition.selected {
+                let _ = self.session.borrow_mut().set_selected(row_id, selected);
+            }
+            if let Some(state) = transition.review_state {
+                let _ = self.session.borrow_mut().mark_state(row_id, state);
+            }
+        }
+        drop(outcomes);
+        self.refresh();
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct OutcomeTransition {
+    selected: Option<bool>,
+    review_state: Option<DoctorReviewRowState>,
+}
+
+const fn outcome_transition(state: DoctorWriteRowState) -> OutcomeTransition {
+    match state {
+        DoctorWriteRowState::Applied | DoctorWriteRowState::Reverted => OutcomeTransition {
+            selected: Some(false),
+            review_state: None,
+        },
+        DoctorWriteRowState::Conflict => OutcomeTransition {
+            selected: None,
+            review_state: Some(DoctorReviewRowState::Conflict),
+        },
+        DoctorWriteRowState::Unavailable => OutcomeTransition {
+            selected: None,
+            review_state: Some(DoctorReviewRowState::Stale),
+        },
+        DoctorWriteRowState::Cancelled | DoctorWriteRowState::Failed => OutcomeTransition {
+            selected: None,
+            review_state: None,
+        },
+    }
 }
 
 pub(super) struct LibraryDoctorReviewPage {
@@ -163,6 +219,9 @@ pub(super) struct LibraryDoctorReviewPage {
     filter: DoctorReviewFilter,
     state: Rc<ReviewState>,
     remote: adw::SwitchRow,
+    rows: gtk4::ListView,
+    all_safe: gtk4::Button,
+    none: gtk4::Button,
 }
 
 impl LibraryDoctorReviewPage {
@@ -202,16 +261,15 @@ impl LibraryDoctorReviewPage {
         groups.set_margin_start(18);
         groups.set_margin_end(18);
 
-        let apply_summary = gtk4::Label::builder()
-            .xalign(0.0)
-            .css_classes(["heading"])
+        let apply = gtk4::Button::builder()
+            .css_classes(["suggested-action", "pill"])
             .build();
         let change_summary = gtk4::Label::builder()
             .xalign(0.0)
             .css_classes(["caption", "dim-label"])
             .build();
         let footer_copy = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-        footer_copy.append(&apply_summary);
+        footer_copy.set_hexpand(true);
         footer_copy.append(&change_summary);
         let footer = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
         footer.set_margin_top(12);
@@ -219,6 +277,7 @@ impl LibraryDoctorReviewPage {
         footer.set_margin_start(18);
         footer.set_margin_end(18);
         footer.append(&footer_copy);
+        footer.append(&apply);
 
         let state = Rc::new(ReviewState {
             scan: scan.clone(),
@@ -227,8 +286,9 @@ impl LibraryDoctorReviewPage {
             selection,
             content,
             groups,
-            apply_summary,
+            apply,
             change_summary,
+            outcomes: RefCell::new(HashMap::new()),
         });
         let on_select = {
             let state = state.clone();
@@ -299,6 +359,9 @@ impl LibraryDoctorReviewPage {
             filter,
             state,
             remote,
+            rows,
+            all_safe,
+            none,
         });
         page.state.refresh();
         page
@@ -322,6 +385,32 @@ impl LibraryDoctorReviewPage {
         } else {
             self.state.set_remote_visible(active);
         }
+    }
+
+    pub(super) fn connect_apply(&self, callback: impl Fn(DoctorApplyPlan) + 'static) {
+        let state = self.state.clone();
+        self.state.apply.connect_clicked(move |_| {
+            let plan = state.session.borrow().freeze_plan();
+            if plan.track_count() > 0 {
+                callback(plan);
+            }
+        });
+    }
+
+    pub(super) fn set_running(&self, running: bool) {
+        self.remote.set_sensitive(!running);
+        self.rows.set_sensitive(!running);
+        self.all_safe.set_sensitive(!running);
+        self.none.set_sensitive(!running);
+        if running {
+            self.state.apply.set_sensitive(false);
+        } else {
+            self.state.refresh();
+        }
+    }
+
+    pub(super) fn set_write_report(&self, report: &DoctorWriteReport) {
+        self.state.apply_report(report);
     }
 }
 
@@ -418,5 +507,32 @@ mod tests {
         let session = page.state.session.borrow();
         assert_eq!(session.rows()[0].state, DoctorReviewRowState::Stale);
         assert!(!session.rows()[0].selected);
+    }
+
+    #[test]
+    fn doc_5d_write_outcomes_preserve_honest_review_state() {
+        assert_eq!(
+            outcome_transition(DoctorWriteRowState::Applied).selected,
+            Some(false)
+        );
+        assert_eq!(
+            outcome_transition(DoctorWriteRowState::Reverted).selected,
+            Some(false)
+        );
+        assert_eq!(
+            outcome_transition(DoctorWriteRowState::Conflict).review_state,
+            Some(DoctorReviewRowState::Conflict)
+        );
+        assert_eq!(
+            outcome_transition(DoctorWriteRowState::Unavailable).review_state,
+            Some(DoctorReviewRowState::Stale)
+        );
+        assert_eq!(
+            outcome_transition(DoctorWriteRowState::Failed),
+            OutcomeTransition {
+                selected: None,
+                review_state: None,
+            }
+        );
     }
 }

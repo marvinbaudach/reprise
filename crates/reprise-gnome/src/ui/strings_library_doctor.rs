@@ -64,6 +64,21 @@ pub const DOCTOR_ALL_SAFE: &str = N_!("All Safe");
 pub const DOCTOR_NONE: &str = N_!("None");
 pub const DOCTOR_REVIEW_TITLE: &str = N_!("Review Tag Changes");
 pub const DOCTOR_PICK_ONE: &str = N_!("Pick one spelling to materialize its track changes.");
+pub const DOCTOR_UPDATING_TAGS: &str = N_!("Updating tags…");
+pub const DOCTOR_REVERTING_TAGS: &str = N_!("Reverting tags…");
+pub const DOCTOR_PROGRESS: &str = N_!("Library Doctor progress");
+pub const DOCTOR_CONTROLS_LOCKED: &str = N_!("Locked while a Library Doctor job is running");
+pub const TAG_WRITE_BUSY: &str = N_!("Another tag-writing job is already running");
+pub const DOCTOR_REVERT: &str = N_!("Revert");
+pub const DOCTOR_DETAILS: &str = N_!("Details");
+pub const DOCTOR_STATUS_APPLIED: &str = N_!("Applied");
+pub const DOCTOR_STATUS_REVERTED: &str = N_!("Reverted");
+pub const DOCTOR_STATUS_REMAINING: &str = N_!("Remaining");
+pub const DOCTOR_STATUS_CONFLICT: &str = N_!("Conflict");
+pub const DOCTOR_STATUS_STALE: &str = N_!("Stale");
+pub const DOCTOR_STATUS_FAILED: &str = N_!("Failed");
+pub const DOCTOR_CLEANUP_STATUS: &str = N_!("Cleanup Status");
+pub const DOCTOR_REVERT_STATUS: &str = N_!("Revert Status");
 
 pub fn doctor_remote_confidence(source: &str, confidence: u8) -> String {
     formatted(
@@ -153,6 +168,60 @@ pub fn doctor_duration_delta_ms(delta_ms: u64) -> String {
     formatted(
         N_!("Duration difference: {delta} ms"),
         &[("delta", &delta_ms.to_string())],
+    )
+}
+
+pub fn doctor_track_progress(completed: usize, total: usize) -> String {
+    formatted(
+        N_!("{completed}/{total} tracks"),
+        &[
+            ("completed", &completed.to_string()),
+            ("total", &total.to_string()),
+        ],
+    )
+}
+
+pub fn doctor_tags_updated(count: usize) -> String {
+    formatted(
+        N_!("Tags updated · {count} tracks"),
+        &[("count", &count.to_string())],
+    )
+}
+
+pub fn doctor_tags_reverted(count: usize) -> String {
+    formatted(
+        N_!("Tags reverted · {count} tracks"),
+        &[("count", &count.to_string())],
+    )
+}
+
+pub fn doctor_write_cancelled(updated: usize, cancelled: usize) -> String {
+    formatted(
+        N_!("{updated} tracks updated · {cancelled} cancelled"),
+        &[
+            ("updated", &updated.to_string()),
+            ("cancelled", &cancelled.to_string()),
+        ],
+    )
+}
+
+pub fn doctor_write_failures(updated: usize, failed: usize) -> String {
+    formatted(
+        N_!("{updated} updated, {failed} failed"),
+        &[
+            ("updated", &updated.to_string()),
+            ("failed", &failed.to_string()),
+        ],
+    )
+}
+
+pub fn doctor_cleanup_summary(applied: usize, remaining: usize) -> String {
+    formatted(
+        N_!("{applied} applied · {remaining} remaining"),
+        &[
+            ("applied", &applied.to_string()),
+            ("remaining", &remaining.to_string()),
+        ],
     )
 }
 

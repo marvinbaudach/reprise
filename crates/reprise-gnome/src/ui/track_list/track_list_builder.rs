@@ -131,6 +131,7 @@ pub(in crate::ui) fn build(
         on_library_mutated: RefCell::new(None),
         on_scan_queue_purge_ids: RefCell::new(None),
         on_tags_mutated: RefCell::new(None),
+        tag_write_gate: crate::ui::tag_write_gate::TagWriteGate::default(),
         on_import_errors_mutated: RefCell::new(None),
         player: RefCell::new(std::rc::Weak::new()),
     });

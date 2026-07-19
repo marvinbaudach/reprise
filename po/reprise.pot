@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-19 14:36+0200\n"
+"POT-Creation-Date: 2026-07-19 15:40+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1645,6 +1645,7 @@ msgid "{count} failed"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_issues.rs:201
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:73
 msgid "Details"
 msgstr ""
 
@@ -1860,93 +1861,179 @@ msgstr ""
 msgid "Pick one spelling to materialize its track changes."
 msgstr ""
 
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:67
+msgid "Updating tags…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:68
+msgid "Reverting tags…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:69
+msgid "Library Doctor progress"
+msgstr ""
+
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:70
+msgid "Locked while a Library Doctor job is running"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:71
+msgid "Another tag-writing job is already running"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:72
+msgid "Revert"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:74
+msgid "Applied"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:75
+msgid "Reverted"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:76
+msgid "Remaining"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:77
+msgid "Conflict"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:78
+msgid "Stale"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:79
+msgid "Failed"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:80
+msgid "Cleanup Status"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:81
+msgid "Revert Status"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:85
 #, rust-format
 msgid "{source} · {confidence}%"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:77
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:92
 #, rust-format
 msgid "{source} · {confidence}% · low confidence"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:90
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:105
 #, rust-format
 msgid ""
 "{track}, {field}. Current: {current}. Proposed: {proposed}. Source: {source}."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:104
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:119
 #, rust-format
 msgid "Apply {count} track"
 msgid_plural "Apply {count} tracks"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:113
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:128
 #, rust-format
 msgid "{changes} tag changes · {files} files · undo available after"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:123
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:138
 #, rust-format
 msgid "{value} ({count})"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:131
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:146
 #, rust-format
 msgid "{count} spelling, no clear winner"
 msgid_plural "{count} spellings, no clear winner"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:140
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:155
 #, rust-format
 msgid "{label}: {value}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:147
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:162
 #, rust-format
 msgid "Duration: {duration} ms"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:154
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:169
 #, rust-format
 msgid "Duration difference: {delta} ms"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:162
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:176
+#, rust-format
+msgid "{completed}/{total} tracks"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:186
+#, rust-format
+msgid "Tags updated · {count} tracks"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:193
+#, rust-format
+msgid "Tags reverted · {count} tracks"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:200
+#, rust-format
+msgid "{updated} tracks updated · {cancelled} cancelled"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:210
+#, rust-format
+msgid "{updated} updated, {failed} failed"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:220
+#, rust-format
+msgid "{applied} applied · {remaining} remaining"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:231
 #, rust-format
 msgid "{count} change"
 msgid_plural "{count} changes"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:172
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:241
 #, rust-format
 msgid "{count} group"
 msgid_plural "{count} groups"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:181
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:250
 #, rust-format
 msgid "{safe} safe · {review} review"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:188
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:257
 #, rust-format
 msgid "{checked} checked · {skipped} skipped"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:199
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:268
 #, rust-format
 msgid "Review {count} change"
 msgid_plural "Review {count} changes"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:209
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:278
 #, rust-format
 msgid "Review {count} safe fix"
 msgid_plural "Review {count} safe fixes"

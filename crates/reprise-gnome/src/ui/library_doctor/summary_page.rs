@@ -4,7 +4,9 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use reprise_core::library_doctor::{scan_summary, DoctorProblemCount, DoctorScan, ProblemClass};
+use reprise_core::library_doctor::{
+    scan_summary, DoctorProblemCount, DoctorScan, DoctorWriteReport, ProblemClass,
+};
 use rusqlite::Connection;
 
 use crate::ui::preferences::preference_library_doctor;
@@ -66,10 +68,6 @@ pub(in crate::ui) struct LibraryDoctorPage {
     acoustid_unavailable: adw::ActionRow,
     fingerprint_available: bool,
     run: gtk4::Button,
-    progress: gtk4::Box,
-    progress_bar: gtk4::ProgressBar,
-    progress_label: gtk4::Label,
-    cancel: gtk4::Button,
     review_all: gtk4::Button,
     review_safe: gtk4::Button,
     review_actions: gtk4::Box,
@@ -79,6 +77,7 @@ pub(in crate::ui) struct LibraryDoctorPage {
     review_row: adw::ActionRow,
     unresolved_row: adw::ActionRow,
     checked_row: adw::ActionRow,
+    write_row: adw::ActionRow,
     problem_rows: Vec<(ProblemClass, adw::ActionRow)>,
     current_scan: RefCell<Option<DoctorScan>>,
 }
@@ -131,27 +130,12 @@ impl LibraryDoctorPage {
             .css_classes(["suggested-action", "pill"])
             .halign(gtk4::Align::Start)
             .build();
-        let progress_bar = gtk4::ProgressBar::builder().hexpand(true).build();
-        let progress_label = gtk4::Label::builder()
-            .label(strings::text(strings::DOCTOR_SCANNING))
-            .xalign(0.0)
-            .hexpand(true)
-            .build();
-        let cancel = gtk4::Button::builder()
-            .label(strings::text(strings::CANCEL))
-            .build();
-        let progress_header = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
-        progress_header.append(&progress_label);
-        progress_header.append(&cancel);
-        let progress = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
-        progress.append(&progress_header);
-        progress.append(&progress_bar);
-        progress.set_visible(false);
-
         let safe_row = summary_row(strings::DOCTOR_SAFE_FIXES);
         let review_row = summary_row(strings::DOCTOR_SUGGESTIONS);
         let unresolved_row = summary_row(strings::DOCTOR_UNRESOLVED_GROUPS);
         let checked_row = summary_row(strings::DOCTOR_TRACKS_CHECKED);
+        let write_row = summary_row(strings::DOCTOR_CLEANUP_STATUS);
+        write_row.set_visible(false);
         let problem_rows = PROBLEM_CLASSES
             .into_iter()
             .map(|class| (class, summary_row(problem_title(class))))
@@ -163,6 +147,7 @@ impl LibraryDoctorPage {
         summary.add(&review_row);
         summary.add(&unresolved_row);
         summary.add(&checked_row);
+        summary.add(&write_row);
         for (_, row) in &problem_rows {
             summary.add(row);
         }
@@ -200,7 +185,6 @@ impl LibraryDoctorPage {
         content.set_margin_end(24);
         content.append(&options);
         content.append(&run);
-        content.append(&progress);
         content.append(&empty);
         content.append(&results);
         let clamp = adw::Clamp::builder()
@@ -228,10 +212,6 @@ impl LibraryDoctorPage {
             acoustid_unavailable,
             fingerprint_available,
             run,
-            progress,
-            progress_bar,
-            progress_label,
-            cancel,
             review_all,
             review_safe,
             review_actions,
@@ -241,6 +221,7 @@ impl LibraryDoctorPage {
             review_row,
             unresolved_row,
             checked_row,
+            write_row,
             problem_rows,
             current_scan: RefCell::new(None),
         })
@@ -254,10 +235,6 @@ impl LibraryDoctorPage {
         self.run.connect_clicked(move |_| callback());
     }
 
-    pub(in crate::ui) fn connect_cancel(&self, callback: impl Fn() + 'static) {
-        self.cancel.connect_clicked(move |_| callback());
-    }
-
     pub(in crate::ui) fn connect_review_all(&self, callback: impl Fn() + 'static) {
         self.review_all.connect_clicked(move |_| callback());
     }
@@ -268,6 +245,24 @@ impl LibraryDoctorPage {
 
     pub(in crate::ui) fn scan(&self) -> Option<DoctorScan> {
         self.current_scan.borrow().clone()
+    }
+
+    pub(in crate::ui) fn set_write_report(&self, report: &DoctorWriteReport, reverted: bool) {
+        let remaining = report.cancelled_tracks
+            + report.failed_tracks
+            + report.conflict_tracks
+            + report.unavailable_tracks;
+        self.write_row.set_title(&strings::text(if reverted {
+            strings::DOCTOR_REVERT_STATUS
+        } else {
+            strings::DOCTOR_CLEANUP_STATUS
+        }));
+        self.write_row
+            .set_subtitle(&strings::doctor_cleanup_summary(
+                report.updated_tracks,
+                remaining,
+            ));
+        self.write_row.set_visible(true);
     }
 
     pub(in crate::ui) fn selected_scope(&self) -> u32 {
@@ -293,28 +288,10 @@ impl LibraryDoctorPage {
         self.scope.set_sensitive(!running);
         self.remote.set_sensitive(!running);
         self.run.set_sensitive(!running);
-        self.progress.set_visible(running);
-        if running {
-            self.progress_bar.set_fraction(0.0);
-            self.progress_label
-                .set_text(&strings::text(strings::DOCTOR_SCANNING));
-        }
-    }
-
-    pub(in crate::ui) fn set_progress(&self, completed: usize, total: usize) {
-        let fraction = if total == 0 {
-            0.0
-        } else {
-            completed as f64 / total as f64
-        };
-        self.progress_bar.set_fraction(fraction.clamp(0.0, 1.0));
-        self.progress_label.set_text(&format!(
-            "{} {completed}/{total}",
-            strings::text(strings::DOCTOR_SCANNING)
-        ));
     }
 
     pub(in crate::ui) fn set_scan(&self, scan: Option<DoctorScan>) {
+        self.write_row.set_visible(false);
         *self.current_scan.borrow_mut() = scan;
         self.refresh();
     }

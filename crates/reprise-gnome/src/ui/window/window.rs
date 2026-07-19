@@ -572,6 +572,7 @@ pub fn build(
         library_title: &library_title,
         window_title: &window_title,
         album_view: &album_view,
+        artist_view: &artist_view,
         scan_controls: &scan_controls,
         toast_overlay: &toast_overlay,
         watcher_state: &watcher_state,
