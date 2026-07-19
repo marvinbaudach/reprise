@@ -1,4 +1,5 @@
 pub(in crate::ui) mod artist_portrait_worker;
+pub(in crate::ui) mod audio_character_view;
 pub(in crate::ui) mod now_playing_column;
 mod panel_state;
 #[path = "now_playing.rs"]

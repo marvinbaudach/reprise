@@ -704,6 +704,15 @@ fn remaining_after_current_is_empty_at_end_or_unseeded() {
     assert_eq!(q.remaining_len(), 0);
 }
 
+#[test]
+fn remaining_window_reads_only_the_requested_context_slice() {
+    let mut queue = Queue::new();
+    queue.set_tracks(vec![10, 20, 30, 40, 50], 1);
+
+    assert_eq!(queue.remaining_window(1, 2), vec![40, 50]);
+    assert!(queue.remaining_window(3, 2).is_empty());
+}
+
 // QUE-3: single-occurrence removal by order position + playhead jumps.
 
 #[test]

@@ -108,6 +108,7 @@ use std::hash::{Hash, Hasher};
 /// cache file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThumbnailSize {
+    Glow,
     List,
     Bar,
     Portrait,
@@ -118,6 +119,7 @@ pub enum ThumbnailSize {
 impl ThumbnailSize {
     pub fn pixels(self) -> u32 {
         match self {
+            ThumbnailSize::Glow => 32,
             ThumbnailSize::List => 48,
             ThumbnailSize::Bar => 96,
             ThumbnailSize::Portrait => 192,
@@ -196,6 +198,61 @@ pub fn thumbnail(source: &CoverSource, size: ThumbnailSize) -> Result<PathBuf, C
             return Ok(out);
         }
         return Err(CoverError::Io(e.to_string()));
+    }
+    Ok(out)
+}
+
+/// Returns a cached, already-blurred thumbnail. The source is first reduced
+/// to `size`, then blurred exactly once and atomically published as a PNG.
+/// Consumers can scale the tiny texture without scheduling a live blur node
+/// on every rendered frame.
+pub fn blurred_thumbnail(
+    source: &CoverSource,
+    size: ThumbnailSize,
+    sigma: f32,
+) -> Result<PathBuf, CoverError> {
+    let thumbnail_path = thumbnail(source, size)?;
+    blur_reduced_thumbnail(&thumbnail_path, sigma)
+}
+
+/// Blurs an already-reduced thumbnail exactly once and caches the result.
+/// This is the companion for resolvers that must first materialize a specific
+/// thumbnail size before reporting the resolved cover path.
+pub fn blur_reduced_thumbnail(
+    thumbnail_path: &std::path::Path,
+    sigma: f32,
+) -> Result<PathBuf, CoverError> {
+    if !sigma.is_finite() || sigma <= 0.0 {
+        return Err(CoverError::Decode(
+            "blur sigma must be finite and positive".into(),
+        ));
+    }
+    let stem = thumbnail_path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .ok_or_else(|| CoverError::Io("thumbnail cache path has no file stem".into()))?;
+    let out = thumbnail_path.with_file_name(format!("{stem}-blur-{:08x}.png", sigma.to_bits()));
+    if out.exists() {
+        return Ok(out);
+    }
+
+    let decoded =
+        image::open(thumbnail_path).map_err(|error| CoverError::Decode(error.to_string()))?;
+    let blurred = decoded.blur(sigma);
+    let dir = out
+        .parent()
+        .ok_or_else(|| CoverError::Io("blur cache path has no parent".into()))?;
+    let tmp = dir.join(format!(".{stem}-blur-{}.png.tmp", fastrand::u64(..)));
+    if let Err(error) = blurred.save_with_format(&tmp, image::ImageFormat::Png) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(CoverError::Io(error.to_string()));
+    }
+    if let Err(error) = std::fs::rename(&tmp, &out) {
+        let _ = std::fs::remove_file(&tmp);
+        if out.exists() {
+            return Ok(out);
+        }
+        return Err(CoverError::Io(error.to_string()));
     }
     Ok(out)
 }
@@ -354,6 +411,41 @@ mod tests {
         assert_ne!(list, full);
         std::fs::remove_file(&list).ok();
         std::fs::remove_file(&full).ok();
+    }
+
+    #[test]
+    fn preblurred_thumbnail_downscales_once_and_reuses_the_cached_texture() {
+        let source = CoverSource::Embedded(red_png_1200());
+        let first = blurred_thumbnail(&source, ThumbnailSize::Glow, 6.0).unwrap();
+        let second = blurred_thumbnail(&source, ThumbnailSize::Glow, 6.0).unwrap();
+
+        assert_eq!(first, second);
+        assert!(first.starts_with(cache_dir()));
+        assert!(first
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .contains("blur"));
+        let decoded = image::open(&first).unwrap();
+        assert_eq!(decoded.width().max(decoded.height()), 32);
+
+        std::fs::remove_file(first).ok();
+    }
+
+    #[test]
+    fn preblurred_reduced_thumbnail_does_not_rescale_the_input() {
+        let source = CoverSource::Embedded(red_png_1200());
+        let reduced = thumbnail(&source, ThumbnailSize::Glow).unwrap();
+        let blurred = blur_reduced_thumbnail(&reduced, 6.0).unwrap();
+
+        let reduced_image = image::open(&reduced).unwrap();
+        let blurred_image = image::open(&blurred).unwrap();
+        assert_eq!((reduced_image.width(), reduced_image.height()), (32, 32));
+        assert_eq!((blurred_image.width(), blurred_image.height()), (32, 32));
+        assert_eq!(blur_reduced_thumbnail(&reduced, 6.0).unwrap(), blurred);
+
+        std::fs::remove_file(blurred).ok();
+        std::fs::remove_file(reduced).ok();
     }
 
     #[test]

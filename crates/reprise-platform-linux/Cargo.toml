@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 reprise-core = { path = "../reprise-core" }
 gstreamer = "0.25"
+gstreamer-app = "0.25"
 # Default features ("async-io" + "blocking-api") are kept: "async-io" is
 # zbus's own lightweight internal reactor for the blocking API, not a
 # competing app-wide async runtime — the `tokio` feature (the thing Stage 2

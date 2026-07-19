@@ -13,11 +13,11 @@ pub(in crate::ui) type SharedQueueModel = Rc<RefCell<QueueViewModel>>;
 /// updates this snapshot; later surface callbacks only decide whether they
 /// need to render it.
 pub(in crate::ui) fn build(player: &Option<Rc<PlayerController>>) -> SharedQueueModel {
-    let model = Rc::new(RefCell::new(
-        player
-            .as_ref()
-            .map_or_else(QueueViewModel::default, |player| player.queue_view_model()),
-    ));
+    let initial = match player {
+        Some(player) => player.queue_view_model(),
+        None => QueueViewModel::default(),
+    };
+    let model = Rc::new(RefCell::new(initial));
     if let Some(player) = player {
         let player_weak = Rc::downgrade(player);
         let model_weak = Rc::downgrade(&model);

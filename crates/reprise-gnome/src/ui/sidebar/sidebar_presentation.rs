@@ -162,7 +162,8 @@ pub(in crate::ui) fn append_header(listbox: &gtk4::ListBox, text: &str) -> gtk4:
     let label = gtk4::Label::new(Some(text));
     label.set_xalign(0.0);
     label.add_css_class("caption-heading");
-    label.add_css_class("dim-label");
+    label.add_css_class("reprise-text-secondary");
+    label.set_accessible_role(gtk4::AccessibleRole::Heading);
     label.set_margin_start(ROW_HORIZONTAL_MARGIN);
     label.set_margin_end(ROW_HORIZONTAL_MARGIN);
     label.set_margin_top(14);
@@ -174,6 +175,7 @@ pub(in crate::ui) fn append_header(listbox: &gtk4::ListBox, text: &str) -> gtk4:
         .activatable(false)
         .focusable(false)
         .build();
+    row.set_accessible_role(gtk4::AccessibleRole::Presentation);
     listbox.append(&row);
     row
 }
@@ -212,7 +214,9 @@ fn append_playlist_action_row(
         .child(&hbox)
         .selectable(false)
         .activatable(true)
+        .focusable(true)
         .build();
+    row.set_accessible_role(gtk4::AccessibleRole::ListItem);
     row.update_property(&[gtk4::accessible::Property::Label(&label_text)]);
     listbox.append(&row);
     row
@@ -247,7 +251,13 @@ fn row_box() -> gtk4::Box {
 }
 
 fn navigation_row(child: &gtk4::Box, label: &str) -> gtk4::ListBoxRow {
-    let row = gtk4::ListBoxRow::builder().child(child).build();
+    let row = gtk4::ListBoxRow::builder()
+        .child(child)
+        .selectable(true)
+        .activatable(true)
+        .focusable(true)
+        .build();
+    row.set_accessible_role(gtk4::AccessibleRole::ListItem);
     row.update_property(&[gtk4::accessible::Property::Label(label)]);
     row
 }
@@ -364,23 +374,51 @@ mod tests {
         let label = row.child().unwrap().downcast::<gtk4::Label>().unwrap();
         assert_eq!(label.text(), "ISSUES");
         assert!(label.has_css_class("caption-heading"));
-        assert!(label.has_css_class("dim-label"));
+        assert!(label.has_css_class("reprise-text-secondary"));
     }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn acc_2_sidebar_navigation_rows_expose_their_own_accessible_name() {
+    fn nav_11_sidebar_entries_are_named_actions_and_sections_are_headings() {
         gtk4::init().unwrap();
-        let row = build_nav_row("Music", Some(12), NavIcon::Library);
+        let listbox = gtk4::ListBox::new();
+        let header = append_header(&listbox, "SMART");
+        let nav_row = build_nav_row("My Stats", None, NavIcon::MyStats);
+        listbox.append(&nav_row);
+        let action_rows = append_playlist_action_rows(&listbox);
 
+        for row in [&nav_row, &action_rows.new_playlist] {
+            assert!(gtk4::test_accessible_has_role(
+                row,
+                gtk4::AccessibleRole::ListItem
+            ));
+            assert!(gtk4::test_accessible_has_property(
+                row,
+                gtk4::AccessibleProperty::Label
+            ));
+            assert!(row.is_activatable());
+        }
+
+        let activated = std::rc::Rc::new(std::cell::Cell::new(false));
+        listbox.connect_row_activated({
+            let activated = activated.clone();
+            let expected_row = nav_row.clone();
+            move |_, row| {
+                if row == &expected_row {
+                    activated.set(true);
+                }
+            }
+        });
+        assert!(gtk4::prelude::WidgetExt::activate(&nav_row));
+        assert!(activated.get());
+
+        let heading = header.child().unwrap().downcast::<gtk4::Label>().unwrap();
         assert!(gtk4::test_accessible_has_role(
-            &row,
-            gtk4::AccessibleRole::ListItem
+            &heading,
+            gtk4::AccessibleRole::Heading
         ));
-        assert!(gtk4::test_accessible_has_property(
-            &row,
-            gtk4::AccessibleProperty::Label
-        ));
+        assert!(!header.is_activatable());
+        assert!(!header.is_focusable());
     }
 
     #[test]

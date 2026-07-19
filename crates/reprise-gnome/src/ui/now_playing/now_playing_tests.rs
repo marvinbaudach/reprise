@@ -59,6 +59,15 @@ fn no_loaded_track_uses_the_idle_presentation() {
 }
 
 #[test]
+fn ac_4_audio_character_is_the_third_persistent_panel_tab() {
+    assert_eq!(PanelTab::AudioCharacter.page_name(), AUDIO_CHARACTER_PAGE);
+    assert_eq!(
+        PANEL_TABS,
+        [PanelTab::UpNext, PanelTab::Lyrics, PanelTab::AudioCharacter]
+    );
+}
+
+#[test]
 fn now_playing_panel_visibility_round_trips_through_settings() {
     let conn = reprise_core::db::open(None).unwrap();
     reprise_core::db::migrate(&conn).unwrap();
@@ -88,8 +97,8 @@ fn now_playing_css_defines_the_21a_stage_head_and_glow() {
     let css = css();
 
     assert!(css.contains(".reprise-now-playing-stage"));
-    assert!(css.contains("background-color: #17191c"));
-    assert!(!css.contains("@sidebar_bg_color"));
+    assert!(css.contains("background-color: @sidebar_bg_color"));
+    assert!(!css.contains("background-color: #17191c"));
     assert!(css.contains(".reprise-now-playing-glow"));
     assert!(css.contains("radial-gradient"));
     assert!(css.contains("alpha(@reprise_player_accent, 0.4)"));
@@ -108,7 +117,7 @@ fn now_playing_css_parses_without_gtk_errors() {
 }
 
 #[test]
-fn now_playing_css_defines_the_two_segment_pill_and_footer() {
+fn now_playing_css_defines_the_adaptive_view_switcher_and_footer() {
     let css = css();
 
     assert!(css.contains(".reprise-now-playing-tabs"));
@@ -166,29 +175,47 @@ fn head_and_pill_match_the_21a_structure() {
     assert!(widgets
         .subtitle
         .has_css_class("reprise-now-playing-subtitle"));
-    assert_eq!(widgets.tab_buttons.len(), 2);
-    assert_eq!(widgets.tab_buttons[0].label().as_deref(), Some("Up Next"));
-    assert_eq!(widgets.tab_buttons[1].label().as_deref(), Some("Lyrics"));
+    assert_eq!(PANEL_TABS.len(), 3);
     assert!(widgets
-        .tab_buttons
-        .iter()
-        .all(|button| button.has_css_class("reprise-now-playing-tab")));
+        .tab_switcher
+        .has_css_class("reprise-now-playing-tabs"));
+    assert_eq!(
+        widgets.tab_switcher.stack().as_ref(),
+        Some(&widgets.tab_stack)
+    );
+    assert!(widgets
+        .tab_stack
+        .child_by_name(AUDIO_CHARACTER_PAGE)
+        .is_some());
+    let audio_character = widgets
+        .tab_stack
+        .child_by_name(AUDIO_CHARACTER_PAGE)
+        .unwrap();
+    let page = widgets.tab_stack.page(&audio_character);
+    assert_eq!(page.title().as_deref(), Some("Audio Character"));
+    assert_eq!(page.icon_name().as_deref(), Some("audio-speakers-symbolic"));
     assert!(widgets.footer.has_css_class("reprise-now-playing-footer"));
-    assert_eq!(
-        widgets.tab_buttons[0].accessible_role(),
-        gtk4::AccessibleRole::Tab
-    );
-    assert_eq!(
-        widgets.tab_buttons[1].accessible_role(),
-        gtk4::AccessibleRole::Tab
-    );
-    assert_eq!(
-        widgets.tab_buttons[0]
-            .parent()
-            .expect("tab list")
-            .accessible_role(),
-        gtk4::AccessibleRole::TabList
-    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn ac_4_icons_only_switcher_keeps_three_labeled_keyboard_targets() {
+    gtk4::init().unwrap();
+    let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let widgets = test_widgets(&content, true);
+    widgets
+        .tab_switcher
+        .set_display_mode(adw::InlineViewSwitcherDisplayMode::Icons);
+
+    let buttons = widget_tree(widgets.tab_switcher.upcast_ref())
+        .into_iter()
+        .filter_map(|widget| widget.downcast::<gtk4::Button>().ok())
+        .collect::<Vec<_>>();
+    assert_eq!(buttons.len(), 3);
+    assert!(buttons.iter().all(gtk4::prelude::WidgetExt::is_focusable));
+    assert!(buttons
+        .iter()
+        .all(|button| gtk4::test_accessible_has_property(button, gtk4::AccessibleProperty::Label)));
 }
 
 #[test]
@@ -226,11 +253,10 @@ fn npp_4_tab_persists_in_session() {
     let session = Rc::new(TabSession::default());
 
     let first = test_widgets_for_session(&content, true, &session);
-    first.tab_buttons[1].set_active(true);
+    first.tab_stack.set_visible_child_name(LYRICS_PAGE);
     assert_eq!(session.selected.get(), PanelTab::Lyrics);
 
     let rebuilt = test_widgets_for_session(&content, true, &session);
-    assert!(rebuilt.tab_buttons[1].is_active());
     assert_eq!(
         rebuilt.tab_stack.visible_child_name().as_deref(),
         Some(LYRICS_PAGE)
@@ -238,38 +264,8 @@ fn npp_4_tab_persists_in_session() {
 
     let restarted_session = Rc::new(TabSession::default());
     let restarted = test_widgets_for_session(&content, true, &restarted_session);
-    assert!(restarted.tab_buttons[0].is_active());
     assert_eq!(
         restarted.tab_stack.visible_child_name().as_deref(),
-        Some(UP_NEXT_PAGE)
-    );
-}
-
-#[test]
-fn queue_icon_route_targets_the_existing_up_next_page() {
-    let (visible, selected) = up_next_route_state();
-
-    assert!(visible);
-    assert_eq!(selected, PanelTab::UpNext);
-    assert_eq!(selected.page_name(), UP_NEXT_PAGE);
-}
-
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn que_1_bar_icon_opens_same_list() {
-    gtk4::init().unwrap();
-    let (window, panel) = test_panel("org.reprise.Reprise.QueuePanelRouteTest");
-    panel.retain_for_window(&window);
-    panel.widgets.tab_buttons[1].set_active(true);
-    panel.widgets.column.set_visible(false);
-
-    panel.show_up_next();
-
-    assert!(panel.widgets.column.is_visible());
-    assert!(panel.widgets.tab_buttons[0].is_active());
-    assert_eq!(panel.widgets.session.selected.get(), PanelTab::UpNext);
-    assert_eq!(
-        panel.widgets.tab_stack.visible_child_name().as_deref(),
         Some(UP_NEXT_PAGE)
     );
 }
@@ -393,7 +389,15 @@ fn test_panel(application_id: &str) -> (adw::ApplicationWindow, Rc<NowPlayingPan
     app.register(None::<&gtk4::gio::Cancellable>).unwrap();
     let window = adw::ApplicationWindow::new(&app);
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    let panel = NowPlayingPanel::new(&content, &window, conn, runtime, &portraits, cover_loader);
+    let panel = NowPlayingPanel::new(
+        &content,
+        &window,
+        conn,
+        runtime,
+        &portraits,
+        cover_loader,
+        None,
+    );
     window.set_content(Some(panel.widget()));
     (window, panel)
 }

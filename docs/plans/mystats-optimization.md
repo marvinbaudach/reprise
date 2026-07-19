@@ -320,21 +320,22 @@ snapshot type, the view, or the tests changes. That is why `compute` must stay a
 **pure function of `(conn, period, now_unix, tz)`** with no hidden state and no
 side effects: keeping it pure is what keeps the cache a one-file addition later.
 
-**D5 — Schema v16 (additive, index only).**
+**D5 — Schema v17 (additive, index only).**
 
 ```sql
--- Schema v16: index the listen_events → tracks join direction. Every My Stats
+-- Schema v17: index the listen_events → tracks join direction. Every My Stats
 -- aggregate joins listen_events to tracks and filters on played_at; the v7
 -- index covers played_at alone.
 CREATE INDEX IF NOT EXISTS idx_listen_events_track_played
   ON listen_events(track_id, played_at);
 ```
 
-Add `SCHEMA_V16` next to the existing consts and the `if version < 16 { … }`
+Add `SCHEMA_V17` next to the existing consts and the `if version < 17 { … }`
 block at the end of the migration chain, matching the existing shape exactly
-(`tx.execute_batch(SCHEMA_V16)?;` then `tx.pragma_update(None, "user_version", 16)?;`).
+(`tx.execute_batch(SCHEMA_V17)?;` then `tx.pragma_update(None, "user_version", 17)?;`).
 No column changes, no data rewrite → old DBs migrate instantly and a downgrade
-is harmless. Extend `db_recent_migration_tests.rs` with a v15→v16 case.
+is harmless. Extend `db_stats_migration_tests.rs` with a v16→v17 case. Main's
+v16 network-opt-in grandfathering remains the immediately preceding step.
 
 **D6 — Remote stats / Last.fm.** STATS-0 says local only. `remote_stats.rs` and
 the `listenbrainz.rs` *stats fetch* are already not wired into the screen; they
@@ -618,7 +619,7 @@ them. Two files are shared and need a discipline instead:
 
 * `stats/mod.rs` and `library/mod.rs` are **append-only registries** — each task
   adds only its own `mod` line and rebases rather than reformats.
-* `docs/ux-rules.md` is **line-scoped**: T1 lands the whole section T with every
+* `docs/ux-rules.md` is **line-scoped**: T1 lands the whole section V with every
   rule `[geplant]`; afterwards a task may only change the status token of the
   rules assigned to it below. No two tasks that can run in parallel own the same
   rule line.
@@ -645,17 +646,17 @@ error, no coverage). `STATS-9` parses and is enforced. Every other ID in
 `docs/ux-rules.md` is numeric; the "dedup" mnemonic is kept in the rule text.
 
 ### T1 — Rulebook section + release checklist
-Owns: `docs/ux-rules.md` (creates section T, all rules `[geplant]`),
+Owns: `docs/ux-rules.md` (creates section V, all rules `[geplant]`),
 `RELEASING.md`.
 First commit of the branch. Lands the verbatim block from section 6 after
-`## S. Flächen & Geometrie` and the "Manual GNOME QA" bullet. Must come first:
+the existing section U and the "Manual GNOME QA" bullet. Must come first:
 `check-ux-traceability.sh` errors on a `RELEASING.md` reference to a rule the
 document does not contain.
 
-### T2 — Schema v16 index
+### T2 — Schema v17 index
 Owns: `crates/reprise-core/src/db.rs`,
-`crates/reprise-core/src/db_recent_migration_tests.rs`.
-Adds `SCHEMA_V16` + migration block per D5. Nothing else.
+`crates/reprise-core/src/db_stats_migration_tests.rs`.
+Adds `SCHEMA_V17` + migration block per D5. Nothing else.
 
 ### T3 — Grouping key (STATS-9 core)
 Owns: `library/group_key.rs` (new), `library/group_key_tests.rs` (new),
@@ -783,7 +784,7 @@ fn, or the traceability gate does not see it.
 **Traceability gate — checked, no script change needed.**
 `scripts/check-ux-traceability.sh` derives its ID prefixes from
 `docs/ux-rules.md` itself (`prefixes=$(printf '%s\n' "${!status_of[@]}" | sed …)`),
-so section T is gated automatically once T1 lands — no edit to the script.
+so section V is gated automatically once T1 lands — no edit to the script.
 Two properties matter for this plan and both hold:
 1. the exact marker `#[ignore = "requires a display; run via xvfb-run"]` counts
    as coverage on **every** rule status, so `stats_7_customize_toggles_sections`
@@ -808,9 +809,9 @@ No Rust test. Verification is `scripts/check-ux-traceability.sh` passing with
 ten new `[geplant]` rules and the RELEASING bullet in place.
 
 **T2**
-1. `migrating_a_v15_database_adds_the_listen_events_track_index` — open a DB at
-   `user_version = 15`, migrate, assert `PRAGMA index_list(listen_events)`
-   contains `idx_listen_events_track_played` and `user_version = 16`.
+1. `migrating_a_v16_database_adds_the_listen_events_track_index` — open a DB at
+   `user_version = 16`, migrate, assert `PRAGMA index_list(listen_events)`
+   contains `idx_listen_events_track_played` and `user_version = 17`.
 
 **T3** (pure functions over plain input — no DB, no display, no time zone)
 1. **`dedup_casing_whitespace_merges_one_artist`** `[core]` — `"Lorna Shore"`,
@@ -974,11 +975,11 @@ Gates before every commit: `cargo fmt --check`,
 
 ## 5. Migration / schema summary
 
-* `user_version` 15 → **16**; content: one `CREATE INDEX` (D5). Additive only.
+* `user_version` 16 → **17**; content: one `CREATE INDEX` (D5). Additive only.
 * No column added to `listen_events`; the ≥ 50 % criterion is a write-time
   predicate that already holds for every existing row (D1).
 * No rollup table, no triggers, no backfill (D4, D7).
-* Backward compatibility: a v16 DB opened by older code is unaffected (an index
+* Backward compatibility: a v17 DB opened by older code is unaffected (an index
   is invisible to those queries). Nothing is dropped or renamed.
 * Behavioural (not schema) change: totals shown for "All time" now cover only
   recorded `listen_events`, so pre-v7 plays stop being counted and the number
@@ -989,14 +990,14 @@ Gates before every commit: `cargo fmt --check`,
 
 ## 6. `docs/ux-rules.md` — rule texts verbatim
 
-Append a new section **after `## S. Flächen & Geometrie`** and before the
+Append a new section **after the existing section U** and before the
 closing `---` / "Wenn beim Testen ein Fall auftaucht …" paragraph, keeping the
 exact bullet shape the traceability gate parses
 (`- **ID** [status] [ebene] — …`). Land this block in T1 with every rule
 `[geplant]`; the tasks named in section 3 flip their own rules to `[aktiv]`.
 
 ```markdown
-## T. My Stats
+## V. My Stats
 
 - **STATS-0** [geplant] [core] — Ein „play" ist überall dieselbe Sache:
   mindestens 50 % des Tracks oder mindestens vier Minuten gehört. Genau diese
@@ -1198,7 +1199,7 @@ not used there — match the file's English):
 * `stats_view.rs` and `stats_screen.rs` both approach the 800-line limit —
   extract siblings as planned, do not trim doc comments to fit.
 * T1 must land before anything else: `RELEASING.md` referencing STATS-1..4 while
-  section T is absent makes `check-ux-traceability.sh` exit 1.
+  section V is absent makes `check-ux-traceability.sh` exit 1.
 
 ---
 

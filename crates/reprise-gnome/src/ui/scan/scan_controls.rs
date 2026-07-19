@@ -8,8 +8,8 @@ use std::sync::Arc;
 use gtk4::glib;
 use gtk4::prelude::*;
 use reprise_core::library::scanner::ScanProgress;
-use reprise_core::waveform::WaveformBackend;
 
+use super::audio_analysis_runtime::AudioAnalysisRuntime;
 use super::scan_progress::{
     EmptyScanIndicator, ScanProgressView, WeakEmptyScanIndicator, WeakScanProgressView,
 };
@@ -67,15 +67,11 @@ pub(in crate::ui) struct ScanControls {
     empty_indicator: Rc<RefCell<Option<WeakEmptyScanIndicator>>>,
     sidebar_toggle: Rc<RefCell<Option<glib::WeakRef<gtk4::ToggleButton>>>>,
     library_root_unavailable: Rc<Cell<bool>>,
-    waveform_backend: Arc<dyn WaveformBackend>,
+    audio_analysis: Rc<RefCell<Option<AudioAnalysisRuntime>>>,
 }
 
 impl ScanControls {
-    pub(in crate::ui) fn new(
-        button: &gtk4::Button,
-        progress: &ScanProgressView,
-        waveform_backend: Arc<dyn WaveformBackend>,
-    ) -> Self {
+    pub(in crate::ui) fn new(button: &gtk4::Button, progress: &ScanProgressView) -> Self {
         Self {
             button: button.clone(),
             primary_progress: progress.clone(),
@@ -87,7 +83,7 @@ impl ScanControls {
             empty_indicator: Rc::new(RefCell::new(None)),
             sidebar_toggle: Rc::new(RefCell::new(None)),
             library_root_unavailable: Rc::new(Cell::new(false)),
-            waveform_backend,
+            audio_analysis: Rc::new(RefCell::new(None)),
         }
     }
 
@@ -125,8 +121,15 @@ impl ScanControls {
         self.cancellation.is_requested()
     }
 
-    pub(in crate::ui) fn waveform_backend(&self) -> Arc<dyn WaveformBackend> {
-        self.waveform_backend.clone()
+    pub(in crate::ui) fn set_audio_analysis(&self, runtime: &AudioAnalysisRuntime) {
+        self.audio_analysis.borrow_mut().replace(runtime.clone());
+    }
+
+    pub(in crate::ui) fn wake_audio_analysis(&self) {
+        let runtime = self.audio_analysis.borrow().clone();
+        if let Some(runtime) = runtime {
+            runtime.wake();
+        }
     }
 
     pub(in crate::ui) fn set_on_scan_state_changed(&self, callback: impl Fn(bool) + 'static) {

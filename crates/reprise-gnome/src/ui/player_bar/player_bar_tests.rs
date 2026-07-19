@@ -240,3 +240,75 @@ fn grid_5_player_bar_cover_and_title_are_native_album_reveal_buttons() {
         "Reveal playing album"
     );
 }
+
+/// BTN-2: Shuffle and Repeat are toggles, so "on" must be a state the widget
+/// keeps — not a flash at click time. The state has to survive the pointer
+/// arriving and leaving, and it must not rest on colour alone.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn btn_2_toggle_state_persists_and_non_color_cue() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+
+    let bar = PlayerBar::new();
+    let window = gtk4::Window::new();
+    window.set_child(Some(bar.widget()));
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    // Both transport toggles speak the one `:checked` vocabulary.
+    for toggle in [
+        bar.shuffle_button.clone(),
+        bar.repeat_button.clone().upcast::<gtk4::ToggleButton>(),
+    ] {
+        assert!(toggle.has_css_class(crate::ui::style::buttons::TOGGLE_CLASS));
+        assert!(!toggle.is_active(), "toggles start off");
+    }
+
+    bar.set_shuffle_indicator(true);
+    bar.set_repeat_indicator(Repeat::All);
+    assert!(bar.shuffle_button.is_active());
+    assert!(bar.repeat_button.is_active());
+
+    // Hover arrives and leaves again: the on-state outlives both.
+    for toggle in [
+        bar.shuffle_button.clone().upcast::<gtk4::Widget>(),
+        bar.repeat_button.clone().upcast::<gtk4::Widget>(),
+    ] {
+        toggle.set_state_flags(gtk4::StateFlags::PRELIGHT, false);
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        assert!(
+            toggle.state_flags().contains(gtk4::StateFlags::CHECKED),
+            "hover dropped the checked state"
+        );
+        toggle.unset_state_flags(gtk4::StateFlags::PRELIGHT);
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        assert!(
+            toggle.state_flags().contains(gtk4::StateFlags::CHECKED),
+            "unhover dropped the checked state"
+        );
+    }
+
+    // Repeat-one keeps the toggle on and swaps to the icon carrying the "1".
+    bar.set_repeat_indicator(Repeat::One);
+    assert!(bar.repeat_button.is_active());
+    assert_eq!(
+        bar.repeat_button.icon_name().as_deref(),
+        Some(ICON_REPEAT_ONE)
+    );
+    // Off is the only mode that clears the state display.
+    bar.set_repeat_indicator(Repeat::Off);
+    assert!(!bar.repeat_button.is_active());
+    assert_eq!(
+        bar.repeat_button.icon_name().as_deref(),
+        Some(ICON_REPEAT_ALL)
+    );
+
+    // The second cue is not a colour: a dot is painted under the icon, so the
+    // on-state stays readable with colour vision deficiency.
+    let css = crate::ui::style::buttons::css();
+    assert!(css.contains("radial-gradient(circle"));
+    assert!(css.contains("background-repeat: no-repeat"));
+
+    window.close();
+}

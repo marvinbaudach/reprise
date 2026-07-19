@@ -1,6 +1,7 @@
 //! Platform-neutral waveform extraction contract.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub const STORED_PEAK_COUNT: usize = 1000;
 
@@ -12,10 +13,29 @@ pub enum WaveformError {
     DecodeFailed(String),
     #[error("empty audio stream")]
     EmptyStream,
+    #[error("waveform extraction cancelled")]
+    Cancelled,
 }
 
 pub trait WaveformBackend: Send + Sync {
     fn extract_peaks(&self, path: &Path, buckets: usize) -> Result<Vec<u8>, WaveformError>;
+
+    fn extract_peaks_cancellable(
+        &self,
+        path: &Path,
+        buckets: usize,
+        cancelled: &AtomicBool,
+    ) -> Result<Vec<u8>, WaveformError> {
+        if cancelled.load(Ordering::Acquire) {
+            return Err(WaveformError::Cancelled);
+        }
+        let peaks = self.extract_peaks(path, buckets)?;
+        if cancelled.load(Ordering::Acquire) {
+            Err(WaveformError::Cancelled)
+        } else {
+            Ok(peaks)
+        }
+    }
 }
 
 #[cfg(test)]

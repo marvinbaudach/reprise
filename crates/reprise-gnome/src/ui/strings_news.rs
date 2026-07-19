@@ -54,6 +54,8 @@ pub const TOP_ARTISTS_ONLY: &str = N_!("Top artists only");
 pub const ALL_ARTISTS: &str = N_!("All artists");
 pub const FETCH_NOW: &str = N_!("Fetch now");
 pub const FETCH_FAILED_INLINE: &str = N_!("Refresh failed · showing saved releases");
+pub const NEW_RELEASES_CHECKING: &str = N_!("Checking for new releases…");
+pub const NEW_RELEASES_NONE: &str = N_!("No upcoming releases from your artists");
 pub const UPDATED_JUST_NOW: &str = N_!("Updated just now");
 pub const SEE_ALL_RELEASES: &str = N_!("See all");
 pub const HIDE_RELEASE: &str = N_!("Hide");
@@ -79,8 +81,15 @@ pub fn up_next_footer(count: usize, duration: &str) -> String {
     )
 }
 
-pub fn queue_continuing_from(source: &str) -> String {
-    formatted(N_!("Continuing from “{source}”"), &[("source", source)])
+pub fn queue_context_tail(source: &str, count: usize) -> String {
+    let count_text =
+        reprise_core::format::format_thousands(i64::try_from(count).unwrap_or(i64::MAX));
+    plural(
+        "Playing from {source} · {count} track",
+        "Playing from {source} · {count} tracks",
+        count,
+        &[("source", source), ("count", &count_text)],
+    )
 }
 
 pub fn news_release_meta(primary_type: &str, date: &str) -> String {

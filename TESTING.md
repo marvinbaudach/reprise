@@ -21,6 +21,23 @@ Headless success proves behavior and widget state;
 it does not prove native Wayland rendering, pointer feel, audible output,
 desktop media integration, portals, or real hardware.
 
+### Local audio-analysis evidence
+
+Audio-character tests use only generated signals and small redistributable
+fixtures committed with their origin and license. Automated runs must never
+open the maintainer's music library. Synthetic silence, tones, click tracks,
+dynamics, and noise provide independent expected orderings; real codec
+fixtures prove decoding compatibility without serving as subjective mood
+ground truth.
+
+Before shipping local audio analysis, retain a release-profile report for peak
+RSS or a directly proven PCM-buffer bound, decode time per audio minute,
+database bytes per 10,000 tracks, the pending query at 100,000 tracks, and
+deterministic profile output across chunk boundaries. Elapsed values are
+same-host evidence rather than portable promises. The hard contracts are
+bounded streaming memory, one default analysis worker, versioned results, and
+no network or write access to source audio.
+
 ### Generated-metadata scalability baseline
 
 Run the release-profile scalability baseline with an explicit new output

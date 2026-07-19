@@ -38,14 +38,12 @@ impl TransientFocusGuard {
     /// Applies initial focus after libadwaita has mapped the dialog and
     /// restores the captured invoker after its close animation completes.
     pub(super) fn bind_dialog<W: IsA<gtk4::Widget>>(&self, dialog: &adw::Dialog, initial: &W) {
+        dialog.set_focus(Some(initial));
         let initial = initial.clone().upcast::<gtk4::Widget>().downgrade();
-        dialog.connect_map(move |_| {
-            let initial = initial.clone();
-            glib::idle_add_local_once(move || {
-                if let Some(initial) = initial.upgrade() {
-                    initial.grab_focus();
-                }
-            });
+        dialog.connect_map(move |dialog| {
+            if let Some(initial) = initial.upgrade() {
+                dialog.set_focus(Some(&initial));
+            }
         });
         let guard = self.clone();
         dialog.connect_closed(move |_| guard.restore());
@@ -106,10 +104,17 @@ impl TransientFocusGuard {
 
 fn try_focus(target: &glib::WeakRef<gtk4::Widget>) -> bool {
     target.upgrade().is_some_and(|target| {
-        target.is_visible()
-            && target.is_sensitive()
-            && target.root().is_some()
-            && target.grab_focus()
+        if !target.is_visible() || !target.is_sensitive() {
+            return false;
+        }
+        let Some(root) = target.root() else {
+            return false;
+        };
+        let Ok(window) = root.downcast::<gtk4::Window>() else {
+            return false;
+        };
+        gtk4::prelude::GtkWindowExt::set_focus(&window, Some(&target));
+        gtk4::prelude::GtkWindowExt::focus(&window).is_some_and(|focus| focus == target)
     })
 }
 
@@ -167,11 +172,17 @@ mod tests {
         guard.bind_dialog(&dialog, &initial);
         dialog.present(Some(&window));
         while gtk4::glib::MainContext::default().iteration(false) {}
-        assert!(initial.has_focus());
+        assert_eq!(
+            libadwaita::prelude::AdwDialogExt::focus(&dialog),
+            Some(initial.clone().upcast())
+        );
 
         dialog.close();
         while gtk4::glib::MainContext::default().iteration(false) {}
-        assert!(invoker.has_focus());
+        assert_eq!(
+            gtk4::prelude::GtkWindowExt::focus(&window),
+            Some(invoker.clone().upcast())
+        );
         window.close();
     }
 }

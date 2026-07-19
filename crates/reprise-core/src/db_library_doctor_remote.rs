@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 
-const SCHEMA_V20: &str = r#"
+const SCHEMA_V21: &str = r#"
 ALTER TABLE library_doctor_proposals
 ADD COLUMN evidence_json TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE library_doctor_group_candidates
@@ -11,21 +11,21 @@ ALTER TABLE library_doctor_groups
 ADD COLUMN local_fallback_json TEXT NOT NULL DEFAULT 'null';
 "#;
 
-pub(crate) fn migrate_v20(conn: &Connection) -> Result<(), rusqlite::Error> {
+pub(crate) fn migrate_v21(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version >= 20 {
+    if version >= 21 {
         return Ok(());
     }
     let transaction = conn.unchecked_transaction()?;
-    transaction.execute_batch(SCHEMA_V20)?;
-    transaction.pragma_update(None, "user_version", 20)?;
+    transaction.execute_batch(SCHEMA_V21)?;
+    transaction.pragma_update(None, "user_version", 21)?;
     transaction.commit()
 }
 
 #[cfg(test)]
 mod tests {
     #[test]
-    fn migration_v19_to_v20_preserves_existing_scans_and_is_idempotent() {
+    fn migration_v20_to_v21_preserves_existing_scans_and_is_idempotent() {
         let conn = crate::db::open(None).unwrap();
         crate::db::migrate(&conn).unwrap();
         conn.execute(
@@ -40,12 +40,12 @@ mod tests {
              ALTER TABLE library_doctor_group_candidates DROP COLUMN evidence_json;
              ALTER TABLE library_doctor_proposals DROP COLUMN local_fallback_json;
              ALTER TABLE library_doctor_groups DROP COLUMN local_fallback_json;
-             PRAGMA user_version = 19;",
+             PRAGMA user_version = 20;",
         )
         .unwrap();
 
-        super::migrate_v20(&conn).unwrap();
-        super::migrate_v20(&conn).unwrap();
+        super::migrate_v21(&conn).unwrap();
+        super::migrate_v21(&conn).unwrap();
 
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
@@ -55,7 +55,7 @@ mod tests {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!((version, scans), (20, 1));
+        assert_eq!((version, scans), (21, 1));
         let defaults = conn
             .prepare("PRAGMA table_info(library_doctor_proposals)")
             .unwrap()

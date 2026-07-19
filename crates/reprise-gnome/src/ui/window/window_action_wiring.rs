@@ -42,7 +42,7 @@ pub(in crate::ui) struct ActionWiring<'a> {
     pub(in crate::ui) stats_view: &'a StatsView,
     pub(in crate::ui) nav_history: &'a Rc<NavHistory>,
     pub(in crate::ui) content_stack: &'a gtk4::Stack,
-    pub(in crate::ui) library_stack: &'a gtk4::Stack,
+    pub(in crate::ui) library_stack: &'a adw::ViewStack,
     pub(in crate::ui) scan_controls: &'a ScanControls,
     pub(in crate::ui) watcher_state: &'a Rc<RefCell<Option<WatcherHandle>>>,
 }
@@ -92,6 +92,17 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
             match sidebar_weak.upgrade() {
                 Some(sidebar) => sidebar.refresh("track marked missing"),
                 None => tracing::warn!("sidebar refresh skipped: sidebar is gone"),
+            }
+        });
+        let stats_view = stats_view.clone();
+        let stats_conn = conn.clone();
+        let content_stack = content_stack.downgrade();
+        player.set_on_listen_event_recorded(move || {
+            let Some(content_stack) = content_stack.upgrade() else {
+                return;
+            };
+            if content_stack.visible_child_name().as_deref() == Some("stats") {
+                stats_view.refresh(&stats_conn);
             }
         });
     }

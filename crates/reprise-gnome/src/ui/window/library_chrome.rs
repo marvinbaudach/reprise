@@ -1,4 +1,6 @@
 //! Full-width library chrome from design mockup 7a.
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use libadwaita as adw;
 use libadwaita::prelude::*;
@@ -7,9 +9,10 @@ use super::strings;
 
 const LIBRARY_TITLE_SOURCE: &str = "source";
 const LIBRARY_TITLE_SWITCHER: &str = "library-switcher";
+const VIEW_SWITCHER_BREAKPOINT_WIDTH: i32 = 600;
 
 pub(in crate::ui) struct LibraryChrome {
-    pub(in crate::ui) root: adw::ToolbarView,
+    pub(in crate::ui) root: gtk4::Box,
     pub(in crate::ui) search_bar: gtk4::SearchBar,
     #[cfg(test)]
     pub(in crate::ui) search_toggle: gtk4::ToggleButton,
@@ -22,7 +25,7 @@ pub(in crate::ui) struct LibraryMaintenanceActions {
 pub(in crate::ui) struct LibraryTitle {
     pub(in crate::ui) root: gtk4::Stack,
     #[cfg(test)]
-    pub(in crate::ui) switcher: gtk4::StackSwitcher,
+    pub(in crate::ui) switcher: adw::InlineViewSwitcher,
 }
 
 impl LibraryTitle {
@@ -38,7 +41,6 @@ impl LibraryTitle {
 
 pub(in crate::ui) fn build(
     header: &adw::HeaderBar,
-    content: &impl IsA<gtk4::Widget>,
     search_entry: &gtk4::SearchEntry,
     key_capture_widget: &impl IsA<gtk4::Widget>,
 ) -> LibraryChrome {
@@ -65,11 +67,10 @@ pub(in crate::ui) fn build(
     search_bar.set_key_capture_widget(Some(key_capture_widget));
     wire_search_toggle(&search_toggle, &search_bar, search_entry);
 
-    let root = adw::ToolbarView::new();
-    root.set_top_bar_style(adw::ToolbarStyle::Flat);
-    root.add_top_bar(header);
-    root.add_top_bar(&search_bar);
-    root.set_content(Some(content));
+    let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    root.set_hexpand(true);
+    root.append(header);
+    root.append(&search_bar);
     LibraryChrome {
         root,
         search_bar,
@@ -93,26 +94,47 @@ fn wire_search_toggle(
         let (Some(bar), Some(entry)) = (bar.upgrade(), entry.upgrade()) else {
             return;
         };
-        bar.set_search_mode(!bar.is_search_mode());
+        bar.set_search_mode(crate::ui::shortcuts::next_search_mode(bar.is_search_mode()));
         toggle.set_active(search_toggle_active(bar.is_search_mode(), &entry.text()));
     });
 
     let toggle_weak = toggle.downgrade();
     let entry = search_entry.downgrade();
+    // GtkSearchBar clears its connected entry when search mode ends. SEARCH-6
+    // forbids that: hiding the bar must never drop the query — it lives on as
+    // a chip and the lens stays checked. Restore the text the bar just wiped.
+    let preserved_query = Rc::new(RefCell::new(String::new()));
+    let stash = preserved_query.clone();
     search_bar.connect_search_mode_enabled_notify(move |bar| {
         let (Some(toggle), Some(entry)) = (toggle_weak.upgrade(), entry.upgrade()) else {
             return;
         };
+        if bar.is_search_mode() {
+            stash.borrow_mut().clear();
+        } else {
+            let restored = stash.borrow().clone();
+            if !restored.is_empty() && entry.text().is_empty() {
+                entry.set_text(&restored);
+            }
+        }
         toggle.set_active(search_toggle_active(bar.is_search_mode(), &entry.text()));
     });
 
     let toggle_weak = toggle.downgrade();
     let bar = search_bar.downgrade();
-    search_entry.connect_search_changed(move |entry| {
+    // `connect_changed`, not `connect_search_changed`: the latter is debounced
+    // so the query can settle before re-running it, but the lens only reflects
+    // "a query exists" (SEARCH-3) and must not lag behind typing by ~150 ms.
+    let stash = preserved_query.clone();
+    search_entry.connect_changed(move |entry| {
         let (Some(toggle), Some(bar)) = (toggle_weak.upgrade(), bar.upgrade()) else {
             return;
         };
-        toggle.set_active(search_toggle_active(bar.is_search_mode(), &entry.text()));
+        let query = entry.text();
+        if bar.is_search_mode() && !query.is_empty() {
+            *stash.borrow_mut() = query.to_string();
+        }
+        toggle.set_active(search_toggle_active(bar.is_search_mode(), &query));
     });
 }
 
@@ -131,24 +153,48 @@ pub(in crate::ui) fn build_maintenance_actions() -> LibraryMaintenanceActions {
 }
 
 pub(in crate::ui) fn build_library_title(
+    window: &adw::ApplicationWindow,
     header: &adw::HeaderBar,
     source_title: &adw::WindowTitle,
-    views: &gtk4::Stack,
+    views: &adw::ViewStack,
 ) -> LibraryTitle {
-    // Clearing the title widget is NOT enough: an `AdwHeaderBar` without one
-    // falls back to rendering the window's own title, so "Reprise" kept
-    // sitting in the centre next to the left-packed switcher (measured on a
-    // headless run — `title_widget().is_none()` was already green). The
-    // switcher carries the place identity now, so the centre stays empty.
-    header.set_title_widget(gtk4::Widget::NONE);
-    header.set_show_title(false);
-    let switcher = gtk4::StackSwitcher::builder().stack(views).build();
+    // `source_title` is the header's initial title before the library switcher
+    // exists. Detach it before moving it into the two-state title stack;
+    // GTK widgets cannot have two parents, and a failed reparent silently
+    // leaves non-library pages without their source title.
+    if header
+        .title_widget()
+        .as_ref()
+        .is_some_and(|widget| widget == source_title.upcast_ref::<gtk4::Widget>())
+    {
+        header.set_title_widget(gtk4::Widget::NONE);
+    }
+    let switcher = adw::InlineViewSwitcher::builder()
+        .stack(views)
+        .display_mode(adw::InlineViewSwitcherDisplayMode::Labels)
+        .can_shrink(true)
+        .homogeneous(true)
+        .build();
     switcher.add_css_class("reprise-view-switcher");
     let root = gtk4::Stack::new();
     root.add_named(source_title, Some(LIBRARY_TITLE_SOURCE));
     root.add_named(&switcher, Some(LIBRARY_TITLE_SWITCHER));
     root.set_visible_child_name(LIBRARY_TITLE_SWITCHER);
-    header.pack_start(&root);
+    header.set_show_title(true);
+    header.set_title_widget(Some(&root));
+
+    let condition = adw::BreakpointCondition::new_length(
+        adw::BreakpointConditionLengthType::MaxWidth,
+        f64::from(VIEW_SWITCHER_BREAKPOINT_WIDTH),
+        adw::LengthUnit::Px,
+    );
+    let breakpoint = adw::Breakpoint::new(condition);
+    breakpoint.add_setter(
+        &switcher,
+        "display-mode",
+        Some(&adw::InlineViewSwitcherDisplayMode::Icons.to_value()),
+    );
+    window.add_breakpoint(breakpoint);
     LibraryTitle {
         root,
         #[cfg(test)]
@@ -156,7 +202,7 @@ pub(in crate::ui) fn build_library_title(
     }
 }
 
-/// The Tracks/Albums/Artists `GtkStackSwitcher` styled as a rounded pill
+/// The Tracks/Albums/Artists `AdwInlineViewSwitcher` styled as a rounded pill
 /// group (design mockup 14a): a subtle white-tint container with a soft
 /// radius, and segment buttons that shed the default `.linked` hard edges —
 /// the active segment tinted + bold, inactive quiet, hover a hair brighter.
@@ -164,25 +210,28 @@ pub(in crate::ui) fn build_library_title(
 /// Installed app-wide by [`super::style`].
 pub(in crate::ui) fn css() -> String {
     ".reprise-library-split .reprise-library-sidebar { \
+       background-color: @sidebar_bg_color; \
        border-right: 1px solid rgba(255, 255, 255, 0.06); }\n\
      .reprise-library-header { \
-       background-color: @headerbar_bg_color; \
-       border-bottom: 1px solid rgba(255, 255, 255, 0.06); }\n\
+       background-color: transparent; border: none; box-shadow: none; }\n\
      .reprise-search-strip { \
-       background-color: @headerbar_bg_color; \
-       border-bottom: 1px solid rgba(255, 255, 255, 0.06); }\n\
+       background-color: transparent; border: none; box-shadow: none; }\n\
+     .reprise-search-strip > revealer > box { \
+       background-color: transparent; border: none; box-shadow: none; }\n\
+     .reprise-library-sidebar .caption-heading { \
+       color: @reprise_secondary_fg_color; }\n\
      .reprise-view-switcher { \
        background-color: alpha(@window_fg_color, 0.06); \
        border: none; border-radius: 8px; padding: 2px; box-shadow: none; }\n\
+     /* Resting look only. Hover, press and the focus ring come from \
+        `style::buttons`, which reaches these Adwaita-internal buttons by \
+        selector (BTN-4). No `outline: none` here — that deleted the keyboard \
+        focus ring along with the frame. */\n\
      .reprise-view-switcher > button { \
-       border: none; border-radius: 6px; box-shadow: none; outline: none; \
+       border: none; border-radius: 6px; box-shadow: none; \
        min-height: 0; margin: 0; padding: 2px 14px; \
        background-color: transparent; background-image: none; \
        color: alpha(@window_fg_color, 0.60); font-weight: 400; }\n\
-     .reprise-view-switcher > button:hover:not(:checked) { \
-       background-color: alpha(@window_fg_color, 0.08); }\n\
-     .reprise-view-switcher > button:focus-visible { \
-       outline: 2px solid @accent_color; outline-offset: 1px; }\n\
      .reprise-view-switcher > button:checked { \
        background-color: alpha(@window_fg_color, 0.14); \
        color: @window_fg_color; font-weight: 700; }"
@@ -190,10 +239,25 @@ pub(in crate::ui) fn css() -> String {
 }
 
 #[cfg(test)]
+#[path = "library_chrome_npp_tests.rs"]
+mod npp_tests;
+
+#[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use libadwaita::prelude::*;
 
     use super::*;
+
+    fn wait_for_layout(milliseconds: u64) {
+        let main_loop = gtk4::glib::MainLoop::new(None, false);
+        let quit = main_loop.clone();
+        gtk4::glib::timeout_add_local_once(Duration::from_millis(milliseconds), move || {
+            quit.quit();
+        });
+        main_loop.run();
+    }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
@@ -201,10 +265,9 @@ mod tests {
         gtk4::init().unwrap();
         let window = adw::ApplicationWindow::builder().build();
         let header = adw::HeaderBar::new();
-        let content = gtk4::Label::new(Some("Library"));
         let entry = gtk4::SearchEntry::new();
 
-        let chrome = build(&header, &content, &entry, &window);
+        let chrome = build(&header, &entry, &window);
 
         assert!(!entry.is_ancestor(&header));
         assert!(chrome.search_toggle.is_ancestor(&header));
@@ -223,14 +286,13 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn search_2_bar_reveals_flush_under_headerbar() {
+    fn search_2a_search_reveal_extends_the_shared_top_glass_zone() {
         gtk4::init().unwrap();
         let window = adw::ApplicationWindow::builder().build();
         let header = adw::HeaderBar::new();
-        let content = gtk4::Label::new(Some("Library"));
         let entry = gtk4::SearchEntry::new();
 
-        let chrome = build(&header, &content, &entry, &window);
+        let chrome = build(&header, &entry, &window);
         let clamp = chrome
             .search_bar
             .child()
@@ -239,22 +301,45 @@ mod tests {
 
         assert!(header.is_ancestor(&chrome.root));
         assert!(chrome.search_bar.is_ancestor(&chrome.root));
-        assert_eq!(chrome.root.content().as_ref(), Some(content.upcast_ref()));
+        assert_eq!(
+            chrome.root.first_child().as_ref(),
+            Some(header.upcast_ref())
+        );
+        assert_eq!(
+            chrome.root.last_child().as_ref(),
+            Some(chrome.search_bar.upcast_ref())
+        );
         assert!(entry.is_ancestor(&clamp));
         assert_eq!(clamp.maximum_size(), 450);
         assert!(chrome.search_bar.hexpands());
         assert!(chrome.search_bar.has_css_class("reprise-search-strip"));
-        chrome.search_bar.set_search_mode(true);
-        assert!(chrome.search_bar.is_search_mode());
 
-        let css = css();
-        let strip_css = css
-            .split(".reprise-search-strip")
-            .nth(1)
-            .and_then(|rule| rule.split('}').next())
-            .expect("search strip CSS rule");
-        assert!(strip_css.contains("background-color: @headerbar_bg_color"));
-        assert!(strip_css.contains("border-bottom: 1px solid"));
+        let rows = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        rows.append(&gtk4::Label::new(Some("First")));
+        rows.append(&gtk4::Label::new(Some("Last")));
+        let content = gtk4::ScrolledWindow::builder().child(&rows).build();
+        let player = gtk4::ActionBar::new();
+        player.set_center_widget(Some(&gtk4::Label::new(Some("Player"))));
+        let shell = super::super::library_player_bar::LibraryPlayerBarShell::new(
+            &content,
+            &chrome.root,
+            Some(player.upcast_ref()),
+            reprise_core::library::settings::PlayerBarPosition::Bottom,
+        );
+        window.set_content(Some(shell.widget()));
+        window.present();
+        wait_for_layout(100);
+        let collapsed_inset = rows.margin_top();
+        assert_eq!(collapsed_inset, chrome.root.height());
+
+        chrome.search_bar.set_search_mode(true);
+        wait_for_layout(350);
+        assert!(chrome.search_bar.is_search_mode());
+        assert!(chrome.search_bar.height() > 0);
+        assert!(rows.margin_top() > collapsed_inset);
+        assert_eq!(rows.margin_top(), chrome.root.height());
+        assert_eq!(rows.margin_bottom(), player.height());
+        window.close();
     }
 
     #[test]
@@ -263,9 +348,8 @@ mod tests {
         gtk4::init().unwrap();
         let window = adw::ApplicationWindow::builder().build();
         let header = adw::HeaderBar::new();
-        let content = gtk4::Label::new(Some("Library"));
         let entry = gtk4::SearchEntry::new();
-        let chrome = build(&header, &content, &entry, &window);
+        let chrome = build(&header, &entry, &window);
 
         assert!(!chrome.search_toggle.is_active());
         chrome.search_bar.set_search_mode(true);
@@ -288,6 +372,31 @@ mod tests {
             ),
             vec!["⌕ “falling” in any field"]
         );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn search_6_hidden_query_survives_as_chip() {
+        gtk4::init().unwrap();
+        let window = adw::ApplicationWindow::builder().build();
+        let header = adw::HeaderBar::new();
+        let entry = gtk4::SearchEntry::new();
+        let chrome = build(&header, &entry, &window);
+        chrome.search_bar.set_search_mode(true);
+        entry.set_text("falling");
+
+        chrome.search_toggle.emit_clicked();
+
+        let chips = crate::ui::browse::browse_bar::chip_labels(
+            &entry.text(),
+            &reprise_core::queries::BrowseFilter::default(),
+            true,
+        );
+
+        assert!(!chrome.search_bar.is_search_mode());
+        assert_eq!(entry.text(), "falling");
+        assert!(chrome.search_toggle.is_active());
+        assert_eq!(chips, vec!["⌕ “falling” in any field"]);
     }
 
     #[test]
@@ -318,17 +427,13 @@ mod tests {
         assert!(css.contains(".reprise-library-split .reprise-library-sidebar"));
         assert!(css.contains("border-right: 1px solid rgba(255, 255, 255, 0.06)"));
         assert!(css.contains(".reprise-library-header"));
-        assert!(css.contains("border-bottom: 1px solid rgba(255, 255, 255, 0.06)"));
-        // The headerbar sits in an `AdwToolbarView` with `ToolbarStyle::Flat`,
-        // which deliberately drops the bar's own background — so inheriting
-        // `@headerbar_bg_color` renders the WINDOW color instead and the 14a
-        // surface step silently disappears (measured on a headless run: the
-        // bar painted `#16181b`, not the palette's `#262b31`). Setting the
-        // background explicitly is what puts the step on screen; a palette
-        // value alone never reaches it.
-        assert!(css.contains("background-color: @headerbar_bg_color"));
-        assert!(css.contains(".reprise-view-switcher > button:focus-visible"));
-        assert!(css.contains("outline: 2px solid @accent_color"));
+        assert!(css.contains("background-color: transparent"));
+        assert!(!css.contains("border-bottom: 1px solid"));
+        assert!(!css.contains(".reprise-view-switcher > button:focus-visible"));
+
+        let button_css = crate::ui::style::buttons::css();
+        assert!(button_css.contains(".reprise-view-switcher > button:focus-visible"));
+        assert!(button_css.contains("outline: 2px solid @accent_color"));
     }
 
     #[test]
@@ -350,17 +455,12 @@ mod tests {
         let title = adw::WindowTitle::new("Music", "");
         let search = gtk4::SearchEntry::new();
         header.set_title_widget(Some(&title));
-        let navigation = test_navigation();
         let window = adw::ApplicationWindow::builder().build();
-        let chrome = build(&header, &navigation, &search, &window);
+        let chrome = build(&header, &search, &window);
 
-        assert_eq!(chrome.root.top_bar_style(), adw::ToolbarStyle::Flat);
         assert!(header.has_css_class("reprise-library-header"));
-        assert_eq!(
-            chrome.root.content().as_ref(),
-            Some(navigation.upcast_ref())
-        );
         assert!(header.is_ancestor(&chrome.root));
+        assert!(chrome.search_bar.is_ancestor(&chrome.root));
     }
 
     #[test]
@@ -408,22 +508,28 @@ mod tests {
         if gtk4::init().is_err() {
             return;
         }
+        let window = adw::ApplicationWindow::builder().build();
         let title = adw::WindowTitle::new("Music", "");
-        let views = gtk4::Stack::new();
-        views.add_titled(&gtk4::Label::new(Some("Tracks")), Some("tracks"), "Tracks");
+        let views = adw::ViewStack::new();
+        views.add_titled_with_icon(
+            &gtk4::Label::new(Some("Tracks")),
+            Some("tracks"),
+            "Tracks",
+            "view-list-symbolic",
+        );
 
         let header = adw::HeaderBar::new();
         header.set_title_widget(Some(&title));
-        let library_title = build_library_title(&header, &title, &views);
+        let library_title = build_library_title(&window, &header, &title, &views);
 
         assert_eq!(library_title.switcher.stack(), Some(views.clone()));
         assert_eq!(title.parent(), Some(library_title.root.clone().upcast()));
         assert!(library_title.root.is_ancestor(&header));
-        assert!(header.title_widget().is_none());
-        // Not redundant: with no title widget Adwaita falls back to the
-        // window title, which put "Reprise" in the centre beside the
-        // left-packed switcher. Only `show-title = false` empties the centre.
-        assert!(!header.shows_title());
+        assert_eq!(
+            header.title_widget(),
+            Some(library_title.root.clone().upcast())
+        );
+        assert!(header.shows_title());
         assert_eq!(
             library_title.root.visible_child_name().as_deref(),
             Some(LIBRARY_TITLE_SWITCHER)
@@ -444,27 +550,21 @@ mod tests {
         let header = adw::HeaderBar::new();
         let navigation = test_navigation();
         let player = gtk4::ActionBar::new();
+        let window = adw::ApplicationWindow::builder().build();
+        let search = gtk4::SearchEntry::new();
+        let chrome = build(&header, &search, &window);
         let shell = super::super::library_player_bar::LibraryPlayerBarShell::new(
             &navigation,
+            &chrome.root,
             Some(player.upcast_ref()),
             reprise_core::library::settings::PlayerBarPosition::Top,
         );
 
-        let window = adw::ApplicationWindow::builder().build();
-        let search = gtk4::SearchEntry::new();
-        let chrome = build(&header, shell.widget(), &search, &window);
-
-        assert!(header.is_ancestor(&chrome.root));
         assert_eq!(
-            chrome.root.content().as_ref(),
-            Some(shell.widget().upcast_ref())
+            shell.widget().child().as_ref(),
+            Some(navigation.upcast_ref())
         );
-        // Bar and navigation are structural siblings: with the Top position
-        // the bar precedes the navigation instead of floating above it.
-        assert_eq!(
-            shell.widget().last_child().as_ref(),
-            Some(navigation.upcast_ref::<gtk4::Widget>())
-        );
+        assert!(chrome.root.is_ancestor(shell.widget()));
         assert!(player.is_ancestor(shell.widget()));
     }
 
@@ -486,15 +586,9 @@ mod tests {
 
 #[cfg(test)]
 mod style_guard {
-    /// UX STYLE-1: every chrome surface that should read as its own plane
-    /// declares a background AND a bottom edge — explicitly.
-    ///
-    /// This is the cheap half of the rule (the CSS half). It exists because
-    /// `ToolbarStyle::Flat` suppresses top-bar backgrounds, so a bar that
-    /// merely *sits* in the chrome renders on the window colour and looks
-    /// like it floats over the content. Both surfaces below were shipped
-    /// that way once. A new bar that forgets its background fails here
-    /// instead of in a screenshot three weeks later.
+    /// UX STYLE-1: chrome still owns an explicit surface and edge. Header and
+    /// search are transparent controls inside one glass material rather than
+    /// two independent opaque planes.
     #[test]
     fn style_1_chrome_surfaces_declare_background_and_edge() {
         let css = super::css();
@@ -506,13 +600,12 @@ mod style_guard {
                 .unwrap_or_else(|| panic!("{class} has no rule in the chrome CSS"));
             let block = block.split('}').next().unwrap_or_default();
             assert!(
-                block.contains("background-color:"),
-                "{class} inherits its background — Flat will swallow it (STYLE-1)"
-            );
-            assert!(
-                block.contains("border-bottom:"),
-                "{class} has no bottom edge against the content (STYLE-1)"
+                block.contains("background-color: transparent") && block.contains("border: none"),
+                "{class} must remain a transparent control layer inside the shared glass"
             );
         }
+        let glass = crate::ui::glass::css();
+        assert!(glass.contains(".reprise-glass-surface { background-color:"));
+        assert!(glass.contains(".reprise-glass-hairline"));
     }
 }

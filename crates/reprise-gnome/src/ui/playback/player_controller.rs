@@ -258,7 +258,7 @@ pub struct PlayerController {
     pub(in crate::ui) up_next: RefCell<UpNextQueue>,
     pub(in crate::ui) current_up_next: Cell<Option<i64>>,
     /// Where the `queue` snapshot was seeded from (`play_from_view`) — the
-    /// Queue view's `Up Next · from <label>` title and NAV-9a's jump target.
+    /// Queue view's named virtual context tail and NAV-9a's jump target.
     /// `None` before the first play and after a stop cleared the context.
     pub(in crate::ui) play_origin: RefCell<Option<super::play_origin::PlayOrigin>>,
     /// See the module's `## Toast + track-list-reload seam` doc section.
@@ -267,6 +267,10 @@ pub struct PlayerController {
     /// See the module's `## Toast + track-list-reload seam` doc section.
     /// `None` until `set_track_list_reload` is called.
     reload_track_list: RefCell<Option<Rc<dyn Fn()>>>,
+    /// Refreshes an already-open My Stats page after a real listen event is
+    /// committed. Kept separate from the track-list reload seam because a
+    /// listen changes statistics, not library membership.
+    pub(in crate::ui) listen_event_recorded: RefCell<Option<Rc<dyn Fn()>>>,
     /// Queue-change fan-out for the sidebar/Queue view and the Now Playing
     /// panel. Callbacks are cloned out before invocation for reentrancy.
     pub(in crate::ui) queue_changed: RefCell<Vec<Rc<dyn Fn()>>>,
@@ -279,9 +283,9 @@ pub struct PlayerController {
     pub(in crate::ui) playback_state_changed:
         RefCell<Option<super::current_track_selection::OnPlaybackStateChanged>>,
     /// Fans now-playing album identity changes to the album grid's EQ markers.
-    /// Fired with `Some((album, artist))` when a new track starts and `None`
-    /// when playback stops. `pub(in crate::ui)` field so sibling modules can fire it;
-    /// public setter so `window.rs` can register the album-view callback.
+    /// Fired with a `NowPlayingAlbum` when a new track starts and `None` when
+    /// playback stops. `pub(in crate::ui)` field so sibling modules can fire
+    /// it; public setter so `window.rs` can register the album-view callback.
     pub(in crate::ui) now_playing_album_changed:
         RefCell<Option<super::current_track_selection::OnNowPlayingAlbumChanged>>,
     /// Same seam as `playback_state_changed`, but for the album grid's
@@ -451,6 +455,7 @@ impl PlayerController {
             play_origin: RefCell::new(None),
             toast_overlay: glib::WeakRef::new(),
             reload_track_list: RefCell::new(None),
+            listen_event_recorded: RefCell::new(None),
             queue_changed: RefCell::new(Vec::new()),
             current_track_changed: RefCell::new(None),
             playback_state_changed: RefCell::new(None),
@@ -552,19 +557,26 @@ impl PlayerController {
         *self.reload_track_list.borrow_mut() = Some(Rc::new(reload));
     }
 
-    /// Registers a callback that receives the now-playing album identity
-    /// whenever it changes. Called with `Some((album, artist))` when a new
+    pub(in crate::ui) fn set_on_listen_event_recorded(&self, callback: impl Fn() + 'static) {
+        *self.listen_event_recorded.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    /// Registers a callback that receives the now-playing album identity and
+    /// source track path whenever it changes. Called with `Some` when a new
     /// track starts and `None` when playback stops. Used by `window.rs` to
-    /// forward now-playing state to the album-grid EQ markers.
-    pub fn set_on_now_playing_album_changed(
+    /// forward now-playing state to the album-grid EQ marker and static glow.
+    pub(in crate::ui) fn set_on_now_playing_album_changed(
         &self,
-        callback: impl Fn(Option<(String, String)>) + 'static,
+        callback: impl Fn(Option<super::current_track_selection::NowPlayingAlbum>) + 'static,
     ) {
         *self.now_playing_album_changed.borrow_mut() = Some(Rc::new(callback));
     }
 
     /// Fires the now-playing-album-changed callback.
-    pub(in crate::ui) fn notify_now_playing_album_changed(&self, album: Option<(String, String)>) {
+    pub(in crate::ui) fn notify_now_playing_album_changed(
+        &self,
+        album: Option<super::current_track_selection::NowPlayingAlbum>,
+    ) {
         let callback = self.now_playing_album_changed.borrow().clone();
         if let Some(callback) = callback {
             callback(album);
@@ -631,10 +643,13 @@ impl PlayerController {
                 // (album_artist when non-empty, artist otherwise) to match the
                 // key `AlbumSummary::album_artist` uses — they must agree so
                 // `rebind_in_store`'s `eq_ignore_ascii_case` comparison hits.
-                self.notify_now_playing_album_changed(Some((
-                    summary.album.clone(),
-                    summary.effective_album_artist().to_owned(),
-                )));
+                self.notify_now_playing_album_changed(Some(
+                    super::current_track_selection::NowPlayingAlbum {
+                        album: summary.album.clone(),
+                        artist: summary.effective_album_artist().to_owned(),
+                        track_path: summary.path.clone(),
+                    },
+                ));
 
                 // Feeds the bar AND the Now-Playing page from this one call
                 // — see `now_playing_wiring.rs`'s `sync_track`/`sync_cover`

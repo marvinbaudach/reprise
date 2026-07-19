@@ -82,14 +82,14 @@ CREATE TABLE library_doctor_group_members (
 );
 "#;
 
-pub(crate) fn migrate_v18(conn: &Connection) -> Result<(), rusqlite::Error> {
+pub(crate) fn migrate_v19(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version >= 18 {
+    if version >= 19 {
         return Ok(());
     }
     let transaction = conn.unchecked_transaction()?;
     transaction.execute_batch(SCHEMA_V18)?;
-    transaction.pragma_update(None, "user_version", 18)?;
+    transaction.pragma_update(None, "user_version", 19)?;
     transaction.commit()
 }
 
@@ -98,7 +98,7 @@ mod tests {
     use rusqlite::Connection;
 
     #[test]
-    fn migration_v18_creates_library_doctor_snapshot_tables() {
+    fn migration_v19_creates_library_doctor_snapshot_tables() {
         let conn = crate::db::open(None).unwrap();
         crate::db::migrate(&conn).unwrap();
 
@@ -112,12 +112,12 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 20);
+        assert_eq!(version, 21);
         assert_eq!(table_count, 7);
     }
 
     #[test]
-    fn migration_v17_to_v18_preserves_tracks_and_enforces_doctor_invariants() {
+    fn migration_v18_to_v19_preserves_tracks_and_enforces_doctor_invariants() {
         let conn = Connection::open_in_memory().unwrap();
         crate::db::migrate(&conn).unwrap();
         conn.execute(
@@ -133,12 +133,12 @@ mod tests {
              DROP TABLE library_doctor_proposals;
              DROP TABLE library_doctor_scan_tracks;
              DROP TABLE library_doctor_scans;
-             PRAGMA user_version=17;",
+             PRAGMA user_version=18;",
         )
         .unwrap();
 
-        super::migrate_v18(&conn).unwrap();
-        super::migrate_v18(&conn).unwrap();
+        super::migrate_v19(&conn).unwrap();
+        super::migrate_v19(&conn).unwrap();
 
         let title: String = conn
             .query_row(
