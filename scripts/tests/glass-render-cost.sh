@@ -22,6 +22,7 @@ for required in "120 frames" "baseline" "glass" "p95" "album glow"; do
 done
 
 for required_pattern in \
+  'XDG_RUNTIME_DIR=' \
   'dbus-run-session -- xvfb-run -a env' \
   'XDG_DATA_HOME=' \
   'XDG_CACHE_HOME=' \
