@@ -38,7 +38,7 @@ for pattern in \
   'run_tag_1_no_jump_after_save_scenario' \
   'run_tag_3_multi_dialog_structure_scenario' \
   'run_library_doctor_scenario' \
-  'cua_open_main_menu' \
+  'cua_activate_main_menu_item' \
   'Enable Library Doctor' \
   'Review Safe Fixes' \
   'Revert Last Cleanup'
@@ -50,6 +50,22 @@ do
 done
 if rg --quiet 'cua_click_label .*"Main menu"' "$runner"; then
   echo "$runner must open the main menu through its F10 keyboard contract" >&2
+  exit 1
+fi
+if ! rg --quiet 'cua_hotkey "\$pid" "\$window_id" "\$stem-f10" f10' "$runner"; then
+  echo "$runner must deliver F10 through the proven hotkey transport" >&2
+  exit 1
+fi
+if ! rg --quiet 'cua_focus_label_via_key .*"\$label" down "\$stem-focus"' "$runner"; then
+  echo "$runner must discover detached main-menu popups through GTK focus evidence" >&2
+  exit 1
+fi
+if ! rg --quiet 'CUA_E2E_FOCUS_STATE="\$focus_state"' "$runner"; then
+  echo "$runner must expose each scenario focus probe to CUA snapshots" >&2
+  exit 1
+fi
+if rg --quiet 'wait_for_label .*"Library Doctor" .*menu' "$runner"; then
+  echo "$runner must not expect detached popup labels in the main-window snapshot" >&2
   exit 1
 fi
 for scenario_case in \
