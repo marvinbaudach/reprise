@@ -558,6 +558,7 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
         tx.pragma_update(None, "user_version", 17)?;
         tx.commit()?;
     }
+    crate::db_library_doctor::migrate_v18(conn)?;
     Ok(())
 }
 

@@ -1147,7 +1147,7 @@ liest und sammelt Vorschläge, die Review-Tabelle entscheidet feldgenau, und
 nur ihr Apply startet einen journalisierten Schreibjob. „Safe" bedeutet
 deterministisch und hoch-konfident, nie „ohne Review".
 
-- **DOC-1a** [geplant] [core] — **Local ist lesend und erfindet nichts.**
+- **DOC-1a** [aktiv] [core] — **Local ist lesend und erfindet nichts.**
   Der Scan liest die tatsächlichen Tags der eingefrorenen Dateien; die DB
   liefert dafür nur Scope, Track-ID, Pfad und Dateiidentität. Er schreibt
   weder Tags noch bestehende Track-Metadaten und startet weder Scanner noch
@@ -1207,7 +1207,7 @@ deterministisch und hoch-konfident, nie „ohne Review".
   sichtbar als „AcoustID unavailable" erklärt, während Local und reine
   MusicBrainz-Auflösung weiter funktionieren.
 
-- **DOC-2a** [geplant] [core] — **Scope und Scan-Ergebnis sind Snapshots.**
+- **DOC-2a** [aktiv] [core] — **Scope und Scan-Ergebnis sind Snapshots.**
   Whole Library enthält ausschließlich aktuell `PRESENT` vorhandene lokale
   Tracks; Current View enthält alle Treffer der aktuellen Quelle, Suche,
   Filterung und Sortierung, nicht nur geladene Rows; Selection enthält exakt
