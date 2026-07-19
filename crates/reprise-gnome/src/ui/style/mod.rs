@@ -47,6 +47,7 @@ fn app_css() -> String {
         super::column_header_dnd::css(),
         super::column_layout_editor::css(),
         super::eq_bars::css(),
+        super::glass::css(),
         super::playing_marker::css(),
         super::sidebar_device_card::css(),
         super::device_view::css(),
@@ -54,6 +55,7 @@ fn app_css() -> String {
         super::library_chrome::css(),
         super::library_view_css::css(),
         super::album_card_css::css(),
+        super::album_glow::css(),
         super::artist_view_css::css(),
         super::now_playing::css(),
         super::lyrics_view::css(),
@@ -216,6 +218,7 @@ mod tests {
 
         for marker in [
             ".reprise-equalizer scale > trough > highlight",
+            ".reprise-glass-surface",
             "popover.menu > contents",
             ".toast button.text-button",
             ".player-bar-play",
@@ -231,6 +234,7 @@ mod tests {
             ".reprise-column-row:hover",
             ".reprise-track-cell.reprise-density-comfortable",
             ".album-card",
+            ".album-now-playing-glow",
             ".library-album-card",
             ".artist-list-row",
             ".reprise-now-playing-stage",

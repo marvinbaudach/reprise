@@ -251,8 +251,10 @@ fn discard_confirmation(
         alert.set_default_response(Some(DISCARD_RESPONSE_KEEP_EDITING));
         alert.set_close_response(DISCARD_RESPONSE_KEEP_EDITING);
 
+        let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(&dialog);
         let dialog_for_response = dialog.clone();
         alert.connect_response(None, move |_, response| {
+            focus_guard.restore();
             if response == DISCARD_RESPONSE_DISCARD {
                 dialog_for_response.close();
             }
@@ -283,8 +285,9 @@ fn wire_escape(
     let confirm_discard = confirm_discard.clone();
     let controller = gtk4::EventControllerKey::new();
     controller.set_propagation_phase(gtk4::PropagationPhase::Bubble);
-    controller.connect_key_pressed(move |_, key, _, _| {
-        if key != gdk::Key::Escape {
+    controller.connect_key_pressed(move |_, key, _, modifiers| {
+        let close_shortcut = crate::ui::transient_focus::is_close_shortcut(key, modifiers);
+        if key != gdk::Key::Escape && !close_shortcut {
             return glib::Propagation::Proceed;
         }
         let save_in_flight = !cancel_button.is_sensitive();

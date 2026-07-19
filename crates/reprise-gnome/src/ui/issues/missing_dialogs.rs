@@ -98,8 +98,11 @@ pub(super) fn locate_file(context: LocateContext, target: RelinkTarget) {
     if let Some(parent) = target.old_path.parent() {
         dialog.set_initial_folder(Some(&gio::File::for_path(parent)));
     }
+    let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(&window);
     glib::spawn_future_local(async move {
-        let file = match dialog.open_future(Some(&window)).await {
+        let result = dialog.open_future(Some(&window)).await;
+        focus_guard.restore();
+        let file = match result {
             Ok(file) => file,
             Err(error)
                 if error.matches(gtk4::DialogError::Dismissed)
@@ -161,7 +164,9 @@ fn continue_file_relink(context: LocateContext, target: RelinkTarget, new_path: 
         &strings::issue_text(strings::MISSING_RELINK_ANYWAY),
     );
     dialog.set_default_response(Some(RESPONSE_RELINK));
+    let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(&window);
     dialog.choose(Some(&window), gio::Cancellable::NONE, move |response| {
+        focus_guard.restore();
         if response.as_str() == RESPONSE_RELINK {
             apply_file_relink(&context, &target, &new_path);
         }
@@ -197,8 +202,11 @@ pub(super) fn search_folder(context: LocateContext, targets: Vec<RelinkTarget>) 
     if let Some(parent) = targets.first().and_then(|target| target.old_path.parent()) {
         dialog.set_initial_folder(Some(&gio::File::for_path(parent)));
     }
+    let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(&window);
     glib::spawn_future_local(async move {
-        let folder = match dialog.select_folder_future(Some(&window)).await {
+        let result = dialog.select_folder_future(Some(&window)).await;
+        focus_guard.restore();
+        let folder = match result {
             Ok(folder) => folder,
             Err(error)
                 if error.matches(gtk4::DialogError::Dismissed)
@@ -246,7 +254,9 @@ fn continue_folder_search(context: LocateContext, folder: PathBuf, targets: Vec<
         RESPONSE_RELINK,
         &strings::issue_text(strings::MISSING_RELINK_ANYWAY),
     );
+    let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(&window);
     dialog.choose(Some(&window), gio::Cancellable::NONE, move |response| {
+        focus_guard.restore();
         if response.as_str() == RESPONSE_RELINK {
             spawn_folder_relink(context, folder, targets);
         }

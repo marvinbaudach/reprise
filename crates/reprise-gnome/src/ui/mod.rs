@@ -21,6 +21,8 @@
 //!   through `reprise_core::playback` / `reprise_core::media_integration`.
 
 mod about;
+#[cfg(test)]
+mod accessibility_semantics;
 mod artist_news;
 mod browse;
 mod compact;
@@ -33,6 +35,7 @@ pub(crate) mod ellipsis_tooltip;
 pub(crate) mod eq_bars;
 pub(crate) mod file_open;
 pub mod first_run;
+pub(crate) mod glass;
 mod help;
 pub mod import_errors_view;
 pub(crate) mod info_panel;
@@ -74,6 +77,7 @@ pub mod toasts;
 #[cfg(test)]
 pub(crate) mod tooltip_discipline;
 pub(crate) mod track_list;
+mod transient_focus;
 pub mod view_session;
 pub(crate) mod window;
 mod window_audio_analysis;
@@ -105,7 +109,7 @@ use device_sync::{
 #[allow(unused_imports)]
 use library_views::{
     album_card, album_card_actions, album_card_css, album_card_state, album_context_menu,
-    album_header, album_view, album_view_actions, album_view_memory, album_view_state,
+    album_glow, album_header, album_view, album_view_actions, album_view_memory, album_view_state,
     artist_avatar, artist_detail_hero, artist_detail_pane, artist_detail_row, artist_master,
     artist_master_row, artist_view, artist_view_css, discovery_hint, library_view_css,
 };

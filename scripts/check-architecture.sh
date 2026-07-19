@@ -171,6 +171,9 @@ for file in \
   fi
 done
 
+scripts/check-accessibility-semantics.sh
+scripts/check-input-parity.sh
+
 git diff --check
 
 echo "Architecture lint passed"

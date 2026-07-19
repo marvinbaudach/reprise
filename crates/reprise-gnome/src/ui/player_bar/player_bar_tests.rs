@@ -20,6 +20,27 @@ fn run_until_idle() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn player_metadata_uses_native_keyboard_activation() {
+    gtk4::init().unwrap();
+    let bar = PlayerBar::new();
+    for button in [&bar.cover_button, &bar.title_button, &bar.artist_button] {
+        assert!(button.is_focusable());
+    }
+    let activations = Rc::new(Cell::new(0));
+    let title_activations = activations.clone();
+    bar.set_on_title_click(move || title_activations.set(title_activations.get() + 1));
+    let cover_activations = activations.clone();
+    bar.connect_cover_clicked(move || cover_activations.set(cover_activations.get() + 1));
+    let artist_activations = activations.clone();
+    bar.connect_artist_clicked(move || artist_activations.set(artist_activations.get() + 1));
+    bar.title_button.emit_clicked();
+    bar.cover_button.emit_clicked();
+    bar.artist_button.emit_clicked();
+    assert_eq!(activations.get(), 3);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn mot_5_play_pause_pulses_on_state_change() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
@@ -191,24 +212,27 @@ fn mot_7_player_bar_hard_switches_when_system_animations_are_disabled() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn grid_5_player_bar_cover_and_title_are_album_reveal_links() {
+fn grid_5_player_bar_cover_and_title_are_native_album_reveal_buttons() {
     gtk4::init().unwrap();
     let bar = PlayerBar::new();
 
     for surface in [
-        bar.cover.clone().upcast::<gtk4::Widget>(),
-        bar.title_label.clone().upcast::<gtk4::Widget>(),
+        bar.cover_button.clone().upcast::<gtk4::Widget>(),
+        bar.title_button.clone().upcast::<gtk4::Widget>(),
     ] {
         assert!(surface.is_focusable());
         assert!(gtk4::test_accessible_has_role(
             &surface,
-            gtk4::AccessibleRole::Link
+            gtk4::AccessibleRole::Button
         ));
         assert!(gtk4::test_accessible_has_property(
             &surface,
             gtk4::AccessibleProperty::Label
         ));
-        assert!(surface.has_css_class(crate::ui::link_activation::LINK_CLASS));
+        assert_eq!(
+            surface.tooltip_text().as_deref(),
+            Some("Reveal playing album")
+        );
     }
 
     assert_eq!(

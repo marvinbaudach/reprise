@@ -55,6 +55,7 @@ pub(in crate::ui) fn wire_issue_context_menu(
     source: ViewSource,
 ) {
     debug_assert!(issue_menu_spec(&source).is_some());
+    // input-parity: ACC-8 keyboard=menu-shift-f10
     let gesture = gtk4::GestureClick::new();
     gesture.set_button(gtk4::gdk::BUTTON_SECONDARY);
 
@@ -101,6 +102,8 @@ fn show_context_menu(
     popover.set_has_arrow(false);
     popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
     popover_lifecycle::unparent_after_actions(popover.upcast_ref());
+    let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(row);
+    focus_guard.restore_on_popover_close(popover.upcast_ref());
     popover.popup();
 }
 
@@ -313,8 +316,9 @@ mod tests {
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO tracks (id,path,title,artist,added_at,missing_since) \
-             VALUES (7,'/x/gone.flac','Gone','',0,1)",
+            "INSERT INTO tracks \
+             (id,path,title,artist,added_at,missing_since,missing_reason) \
+             VALUES (7,'/x/gone.flac','Gone','',0,1,'deleted')",
             [],
         )
         .unwrap();

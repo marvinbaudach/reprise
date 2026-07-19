@@ -195,6 +195,8 @@ pub(in crate::ui) fn present(
         move |direction| on_navigate(direction),
     );
 
+    let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(parent);
+    focus_guard.bind_dialog(&form.dialog, &form.title_row);
     form.dialog.present(Some(parent));
     tracing::debug!(
         track_count,

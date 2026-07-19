@@ -40,6 +40,7 @@ pub(super) fn prompt_name<W: IsA<gtk4::Widget>>(
     confirm_label: &str,
     on_confirm: impl Fn(String) + 'static,
 ) {
+    let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(parent);
     let entry = gtk4::Entry::builder()
         .placeholder_text(placeholder)
         .activates_default(true)
@@ -65,6 +66,7 @@ pub(super) fn prompt_name<W: IsA<gtk4::Widget>>(
     });
 
     dialog.choose(Some(parent), gio::Cancellable::NONE, move |response| {
+        focus_guard.restore();
         if response.as_str() != RESPONSE_CREATE {
             return;
         }

@@ -271,4 +271,5 @@ fn rebuilding_chips_reparents_the_persistent_filter_button() {
         .and_downcast::<gtk4::FlowBoxChild>()
         .expect("add-filter button must have a FlowBoxChild wrapper");
     assert_eq!(wrapper.parent(), Some(bar.chips.clone().upcast()));
+    assert!(!wrapper.is_focusable());
 }

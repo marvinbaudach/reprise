@@ -1,4 +1,5 @@
 use super::*;
+use libadwaita::prelude::AdwApplicationWindowExt;
 
 fn loaded_track() -> NowPlaying {
     NowPlaying {
@@ -355,6 +356,9 @@ fn npp_10_track_change_uses_one_shared_crossfade() {
 
     let (window, panel) = test_panel("org.reprise.Reprise.NowPlayingCrossfadeTest");
     panel.retain_for_window(&window);
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(panel.widgets.track_content.is_mapped());
     let settings = gtk4::Settings::default().unwrap();
     let animations_were_enabled = settings.is_gtk_enable_animations();
     settings.set_gtk_enable_animations(true);
@@ -394,6 +398,7 @@ fn test_panel(application_id: &str) -> (adw::ApplicationWindow, Rc<NowPlayingPan
         cover_loader,
         None,
     );
+    window.set_content(Some(panel.widget()));
     (window, panel)
 }
 

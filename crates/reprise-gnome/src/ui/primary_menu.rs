@@ -17,10 +17,12 @@ pub(super) const ACTION_EDIT_COLUMN_LAYOUT: &str = "edit-column-layout";
 pub(super) const ACTION_TOGGLE_MINIMAL_VIEW: &str = "toggle-minimal-view";
 pub(super) const ACTION_RESCAN_LIBRARY: &str = "rescan-library";
 pub(super) const ACTION_SYNC_DEVICE: &str = "sync-device";
+pub(super) const ACTION_STOP_PLAYBACK: &str = "stop-playback";
 pub(super) const ACTION_PREFERENCES: &str = "preferences";
 pub(super) const ACTION_KEYBOARD_SHORTCUTS: &str = "keyboard-shortcuts";
 pub(super) const ACTION_HELP: &str = "help";
 pub(super) const ACTION_ABOUT: &str = "about";
+pub(super) const ACTION_OPEN_PRIMARY_MENU: &str = "open-primary-menu";
 pub(super) const SMOKE_RHYTHMBOX_COLUMNS_ENV_VAR: &str = "REPRISE_SMOKE_RHYTHMBOX_COLUMNS";
 const SMOKE_MINIMAL_VIEW_ENV_VAR: &str = "REPRISE_SMOKE_MINIMAL_VIEW";
 
@@ -29,6 +31,7 @@ pub(super) struct Callbacks {
     pub(super) on_rescan_library: Rc<dyn Fn()>,
     pub(super) on_cancel_scan: Rc<dyn Fn()>,
     pub(super) on_sync_device: Rc<dyn Fn()>,
+    pub(super) on_stop_playback: Option<Rc<dyn Fn()>>,
     pub(super) on_preferences: Rc<dyn Fn()>,
 }
 
@@ -38,6 +41,10 @@ fn view_section_entries() -> Vec<(String, &'static str)> {
         strings::text(strings::COMPACT_MODE),
         "win.toggle-minimal-view",
     )]
+}
+
+fn playback_section_entries() -> [(String, &'static str); 1] {
+    [(strings::text(strings::STOP_PLAYBACK), "win.stop-playback")]
 }
 
 /// Rebuilds the library section of the primary menu with the correct label
@@ -83,6 +90,10 @@ pub(super) fn install(
     for (label, action) in view_section_entries() {
         view.append(Some(&label), Some(action));
     }
+    let playback = gio::Menu::new();
+    for (label, action) in playback_section_entries() {
+        playback.append(Some(&label), Some(action));
+    }
     let library = gio::Menu::new();
     update_library_section(&library, scan_controls.is_scanning());
     let settings = gio::Menu::new();
@@ -91,6 +102,7 @@ pub(super) fn install(
     }
     let menu = gio::Menu::new();
     menu.append_section(None, &view);
+    menu.append_section(None, &playback);
     menu.append_section(None, &library);
     menu.append_section(None, &settings);
 
@@ -100,6 +112,17 @@ pub(super) fn install(
         .tooltip_text(strings::text(strings::MAIN_MENU))
         .build();
     header.pack_end(&menu_button);
+
+    let open_primary_menu = gio::SimpleAction::new(ACTION_OPEN_PRIMARY_MENU, None);
+    {
+        let menu_button = menu_button.downgrade();
+        open_primary_menu.connect_activate(move |_, _| {
+            if let Some(menu_button) = menu_button.upgrade() {
+                menu_button.popup();
+            }
+        });
+    }
+    window.add_action(&open_primary_menu);
 
     let import = gio::SimpleAction::new(ACTION_IMPORT_RHYTHMBOX_COLUMNS, None);
     {
@@ -157,6 +180,13 @@ pub(super) fn install(
         sync_device.connect_activate(move |_, _| cb());
     }
     window.add_action(&sync_device);
+
+    let stop_playback = gio::SimpleAction::new(ACTION_STOP_PLAYBACK, None);
+    stop_playback.set_enabled(callbacks.on_stop_playback.is_some());
+    if let Some(cb) = callbacks.on_stop_playback {
+        stop_playback.connect_activate(move |_, _| cb());
+    }
+    window.add_action(&stop_playback);
 
     let preferences = gio::SimpleAction::new(ACTION_PREFERENCES, None);
     {
@@ -284,6 +314,14 @@ mod tests {
     }
 
     #[test]
+    fn playback_section_exposes_stop_without_a_pointer() {
+        assert_eq!(
+            playback_section_entries(),
+            [(strings::text(strings::STOP_PLAYBACK), "win.stop-playback")]
+        );
+    }
+
+    #[test]
     fn library_section_has_rescan_and_sync_when_idle() {
         let menu = gio::Menu::new();
         update_library_section(&menu, false);
@@ -318,6 +356,11 @@ mod tests {
         let help = actions.iter().position(|a| *a == "win.help");
         let about = actions.iter().position(|a| *a == "win.about");
         assert_eq!(help.map(|i| i + 1), about);
+    }
+
+    #[test]
+    fn primary_menu_exposes_a_window_action_for_f10() {
+        assert_eq!(ACTION_OPEN_PRIMARY_MENU, "open-primary-menu");
     }
 
     #[test]

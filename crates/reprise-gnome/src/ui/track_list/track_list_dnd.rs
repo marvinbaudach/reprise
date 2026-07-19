@@ -255,6 +255,7 @@ pub(in crate::ui) fn wire_row_dnd(
 /// Attaches the `gtk::DragSource` half of [`wire_row_dnd`] — see that
 /// function's doc comment.
 fn wire_drag_source(widget: &impl IsA<gtk4::Widget>, item: &gtk4::ListItem, shared: &Rc<Shared>) {
+    // input-parity: ACC-8 keyboard=context-menu-reorder
     let drag_source = gtk4::DragSource::new();
     drag_source.set_actions(gdk::DragAction::COPY | gdk::DragAction::MOVE);
 
@@ -361,6 +362,7 @@ fn wire_drag_source(widget: &impl IsA<gtk4::Widget>, item: &gtk4::ListItem, shar
 /// playlist" drop target is separate (different widget, different action);
 /// this one only ever reorders within whatever list is currently showing.
 fn wire_drop_target(widget: &impl IsA<gtk4::Widget>, item: &gtk4::ListItem, shared: &Rc<Shared>) {
+    // input-parity: ACC-8 keyboard=context-menu-reorder
     let drop_target = gtk4::DropTarget::new(glib::Type::STRING, gdk::DragAction::MOVE);
 
     {

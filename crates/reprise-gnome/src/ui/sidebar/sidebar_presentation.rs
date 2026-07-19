@@ -370,6 +370,7 @@ mod tests {
 
         assert!(!row.is_selectable());
         assert!(!row.is_activatable());
+        assert!(!row.is_focusable());
         let label = row.child().unwrap().downcast::<gtk4::Label>().unwrap();
         assert_eq!(label.text(), "ISSUES");
         assert!(label.has_css_class("caption-heading"));

@@ -518,6 +518,9 @@ pub fn tracks_added_to_queue_toast(count: usize) -> String {
     )
 }
 
+pub const CONTEXT_MENU_MOVE_UP: &str = N_!("Move up");
+pub const CONTEXT_MENU_MOVE_DOWN: &str = N_!("Move down");
+
 /// Toast for the "Add to playlist" context-menu action — used for both an
 /// existing playlist and one just created via "New playlist…", since the
 /// outcome reads identically either way. Plural-correct, same convention as
