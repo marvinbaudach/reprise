@@ -1,5 +1,8 @@
 //! Full-width library chrome from design mockup 7a.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
@@ -100,20 +103,40 @@ fn wire_search_toggle(
 
     let toggle_weak = toggle.downgrade();
     let entry = search_entry.downgrade();
+    // GtkSearchBar clears its connected entry when search mode ends. SEARCH-6
+    // keeps that query visible as a chip, so remember it while the bar is open
+    // and restore it after any close path wipes the entry.
+    let preserved_query = Rc::new(RefCell::new(String::new()));
+    let stash = preserved_query.clone();
     search_bar.connect_search_mode_enabled_notify(move |bar| {
         let (Some(toggle), Some(entry)) = (toggle_weak.upgrade(), entry.upgrade()) else {
             return;
         };
+        if bar.is_search_mode() {
+            stash.borrow_mut().clear();
+        } else {
+            let restored = stash.borrow().clone();
+            if !restored.is_empty() && entry.text().is_empty() {
+                entry.set_text(&restored);
+            }
+        }
         toggle.set_active(search_toggle_active(bar.is_search_mode(), &entry.text()));
     });
 
     let toggle_weak = toggle.downgrade();
     let bar = search_bar.downgrade();
-    search_entry.connect_search_changed(move |entry| {
+    // Stash on every immediate text change. `connect_search_changed` is
+    // debounced, so closing right after typing could otherwise beat the stash.
+    let stash = preserved_query.clone();
+    search_entry.connect_changed(move |entry| {
         let (Some(toggle), Some(bar)) = (toggle_weak.upgrade(), bar.upgrade()) else {
             return;
         };
-        toggle.set_active(search_toggle_active(bar.is_search_mode(), &entry.text()));
+        let query = entry.text();
+        if bar.is_search_mode() && !query.is_empty() {
+            *stash.borrow_mut() = query.to_string();
+        }
+        toggle.set_active(search_toggle_active(bar.is_search_mode(), &query));
     });
 }
 
