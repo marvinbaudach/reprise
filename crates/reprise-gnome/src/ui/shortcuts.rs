@@ -243,24 +243,36 @@ fn widget_contains_focus(window: &adw::ApplicationWindow, widget: &gtk4::Widget)
         .is_some_and(|focus| focus == *widget || widget.is_ancestor(&focus))
 }
 
-fn apply_search_escape(
-    search_bar: &gtk4::SearchBar,
-    search_entry: &gtk4::SearchEntry,
-    focus_active_content: &dyn Fn() -> bool,
-) {
+fn apply_search_escape(search_bar: &gtk4::SearchBar, search_entry: &gtk4::SearchEntry) -> bool {
     match escape_action_for(!search_entry.text().is_empty()) {
         EscapeAction::ClearSearchText => {
             search_entry.set_text("");
             search_bar.set_search_mode(true);
             search_entry.grab_focus();
+            false
         }
         EscapeAction::CollapseSearchBarAndFocusActiveContent => {
             search_bar.set_search_mode(false);
-            if !focus_active_content() {
-                tracing::warn!("escape: could not move focus to the active content view");
-            }
+            true
         }
     }
+}
+
+fn schedule_active_content_focus(
+    focus_active_content: Rc<dyn Fn() -> bool>,
+    schedule: impl FnOnce(Box<dyn FnOnce()>),
+) {
+    schedule(Box::new(move || {
+        if !focus_active_content() {
+            tracing::warn!("escape: could not move focus to the active content view");
+        }
+    }));
+}
+
+fn focus_active_content_later(focus_active_content: Rc<dyn Fn() -> bool>) {
+    schedule_active_content_focus(focus_active_content, |focus| {
+        gtk4::glib::idle_add_local_once(focus);
+    });
 }
 
 fn wire_escape(
@@ -279,7 +291,9 @@ fn wire_escape(
         if key != gtk4::gdk::Key::Escape || !bar.is_search_mode() {
             return gtk4::glib::Propagation::Proceed;
         }
-        apply_search_escape(&bar, &entry, focus_active_content.as_ref());
+        if apply_search_escape(&bar, &entry) {
+            focus_active_content_later(focus_active_content.clone());
+        }
         gtk4::glib::Propagation::Stop
     });
     search_bar.add_controller(controller);
@@ -366,19 +380,36 @@ mod tests {
         search_bar.set_search_mode(true);
         entry.set_text("falling");
 
-        let focus_calls = std::cell::Cell::new(0);
-        let focus_active_content = || {
-            focus_calls.set(focus_calls.get() + 1);
-            true
-        };
-
-        apply_search_escape(&search_bar, &entry, &focus_active_content);
+        assert!(!apply_search_escape(&search_bar, &entry));
         assert_eq!(entry.text(), "");
         assert!(search_bar.is_search_mode());
-        assert_eq!(focus_calls.get(), 0);
 
-        apply_search_escape(&search_bar, &entry, &focus_active_content);
+        assert!(apply_search_escape(&search_bar, &entry));
         assert!(!search_bar.is_search_mode());
+    }
+
+    #[test]
+    fn search_4_content_focus_waits_until_after_key_dispatch() {
+        let focus_calls = Rc::new(std::cell::Cell::new(0));
+        let calls = focus_calls.clone();
+        let scheduled = Rc::new(std::cell::RefCell::new(None));
+        let pending = scheduled.clone();
+
+        schedule_active_content_focus(
+            Rc::new(move || {
+                calls.set(calls.get() + 1);
+                true
+            }),
+            move |focus| {
+                pending.replace(Some(focus));
+            },
+        );
+
+        assert_eq!(focus_calls.get(), 0);
+        scheduled
+            .borrow_mut()
+            .take()
+            .expect("content focus should be deferred")();
         assert_eq!(focus_calls.get(), 1);
     }
 
