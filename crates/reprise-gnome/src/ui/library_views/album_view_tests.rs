@@ -87,6 +87,14 @@ fn album_grid_fills_the_library_page_after_glass_wrap_and_reveal() {
         .parent()
         .and_downcast::<gtk4::Stack>()
         .expect("the album scroller must remain on the grid page");
+    let content = page_stack
+        .parent()
+        .and_downcast::<gtk4::Box>()
+        .expect("the Album grid page must remain in its content column");
+    let ambient = content
+        .parent()
+        .and_downcast::<gtk4::Overlay>()
+        .expect("the Album content column must remain above the ambient glow");
 
     let window = gtk4::Window::builder()
         .default_width(800)
@@ -99,9 +107,11 @@ fn album_grid_fills_the_library_page_after_glass_wrap_and_reveal() {
     wait_for_layout(u64::from(crate::ui::motion::STANDARD_MS + 50));
 
     let geometry = format!(
-        "library={} album={} page_stack={} scroller={} inset={} grid={}",
+        "library={} album={} ambient={} content={} page_stack={} scroller={} inset={} grid={}",
         library.height(),
         view.widget().height(),
+        ambient.height(),
+        content.height(),
         page_stack.height(),
         scrolled.height(),
         inset.height(),
@@ -115,6 +125,16 @@ fn album_grid_fills_the_library_page_after_glass_wrap_and_reveal() {
         view.widget().height(),
         library.height(),
         "the revealed Album root collapsed below the Library viewport: {geometry}"
+    );
+    assert_eq!(
+        ambient.height(),
+        view.widget().height(),
+        "the ambient Album layer collapsed inside its page root: {geometry}"
+    );
+    assert_eq!(
+        content.height(),
+        ambient.height(),
+        "the Album content did not fill its ambient layer: {geometry}"
     );
     assert!(
         page_stack.height() * 2 > library.height(),
