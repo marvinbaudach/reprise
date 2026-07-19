@@ -42,12 +42,6 @@ const ICON_VOLUME_LOW: &str = "audio-volume-low-symbolic";
 const ICON_VOLUME_MEDIUM: &str = "audio-volume-medium-symbolic";
 const ICON_VOLUME_HIGH: &str = "audio-volume-high-symbolic";
 
-/// Applied to the repeat button while `Repeat::Off`, so it reads as inactive
-/// without a third icon asset — the same generic "de-emphasize" style class
-/// which GTK's Adwaita theme renders as reduced-opacity text/icon content on
-/// any widget.
-pub(in crate::ui) const REPEAT_OFF_CSS_CLASS: &str = "dim-label";
-
 /// Mini-EQ CSS class applied while `PlaybackState::Playing`.
 const PLAY_PULSE_CSS_CLASS: &str = "pulsing";
 /// Keeps a retriggered keyframe class absent across at least one compositor
@@ -84,7 +78,7 @@ pub struct PlayerBar {
     prev_button: gtk4::Button,
     play_pause_button: gtk4::Button,
     next_button: gtk4::Button,
-    repeat_button: gtk4::Button,
+    repeat_button: gtk4::ToggleButton,
     position_label: gtk4::Label,
     duration_label: gtk4::Label,
     waveform: WaveformSeek,
@@ -686,22 +680,22 @@ impl PlayerBar {
             .set_sensitive(state != PlaybackState::Stopped);
     }
 
-    /// Reflects the queue's repeat mode on the repeat button: `All`/`One`
-    /// each get a distinct icon, `Off` reuses the `All` icon dimmed via
-    /// `REPEAT_OFF_CSS_CLASS` (see its doc comment) rather than a third icon
-    /// asset.
+    /// Reflects the queue's repeat mode on the repeat button. Repeat is a
+    /// toggle like Shuffle (BTN-2), so "on" is the widget's own `:checked`
+    /// state — a permanent accent fill plus the state dot, not a dimmed icon
+    /// that only differs from "on" by opacity. `One` additionally swaps to the
+    /// repeat-song icon, which carries the "1" badge in its artwork.
+    ///
+    /// Needs no re-entrancy guard of the `updating_shuffle` kind: nothing is
+    /// connected to the repeat button's `toggled` signal, and the click cycle
+    /// runs off `clicked`, which `set_active` does not emit.
     pub fn set_repeat_indicator(&self, repeat: Repeat) {
-        let (icon, is_off) = match repeat {
-            Repeat::Off => (ICON_REPEAT_ALL, true),
-            Repeat::All => (ICON_REPEAT_ALL, false),
-            Repeat::One => (ICON_REPEAT_ONE, false),
+        let icon = match repeat {
+            Repeat::Off | Repeat::All => ICON_REPEAT_ALL,
+            Repeat::One => ICON_REPEAT_ONE,
         };
         self.repeat_button.set_icon_name(icon);
-        if is_off {
-            self.repeat_button.add_css_class(REPEAT_OFF_CSS_CLASS);
-        } else {
-            self.repeat_button.remove_css_class(REPEAT_OFF_CSS_CLASS);
-        }
+        self.repeat_button.set_active(repeat != Repeat::Off);
     }
 }
 
