@@ -34,6 +34,10 @@ pub(super) fn plural(
 mod artist;
 pub use artist::*;
 
+#[path = "strings_audio_analysis.rs"]
+mod audio_analysis;
+pub use audio_analysis::*;
+
 #[path = "strings_issues.rs"]
 mod issues;
 pub use issues::*;

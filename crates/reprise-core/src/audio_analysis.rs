@@ -19,7 +19,8 @@ pub use backend::{AudioAnalysisBackend, AudioAnalysisError};
 #[path = "audio_analysis_storage.rs"]
 mod storage;
 pub use storage::{
-    pending_waveform_work, reset_failed_analyses, save_waveform_if_current, PendingWaveform,
+    pending_waveform_work, reset_all_analyses, reset_failed_analyses, save_waveform_if_current,
+    PendingWaveform,
 };
 
 /// Bump only when decoding or evidence extraction changes and cached audio

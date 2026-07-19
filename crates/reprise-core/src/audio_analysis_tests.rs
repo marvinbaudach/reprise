@@ -298,3 +298,57 @@ fn waveform_and_retry_storage_updates_are_identity_safe_and_scoped() {
         Some(crate::sound_profile::TrackAnalysis::Ready(_))
     ));
 }
+
+#[test]
+fn reanalyze_clears_ready_and_failed_analysis_without_touching_tracks() {
+    use crate::sound_profile::{
+        AnalysisVersions, FailedAnalysis, FailureKind, ReadyAnalysis, SourceFingerprint,
+    };
+
+    let conn = crate::db::open_migrated(None).unwrap();
+    for id in 1_i64..=2 {
+        conn.execute(
+            "INSERT INTO tracks
+               (id, path, title, artist, added_at, file_mtime, file_size)
+             VALUES (?1, ?2, 'Fixture', 'Artist', 1, 20, 30)",
+            rusqlite::params![id, format!("/fixture-{id}.flac")],
+        )
+        .unwrap();
+    }
+    let analyzed = analyze(&sine(440.0, 0.1, 0.5));
+    let versions = AnalysisVersions::new(1, 1).unwrap();
+    let ready = ReadyAnalysis::new(
+        SourceFingerprint::new(20, 30).unwrap(),
+        versions,
+        10,
+        analyzed.evidence,
+        analyzed.profile,
+    )
+    .unwrap();
+    crate::sound_profile::save_ready_analysis(&conn, 1, &ready).unwrap();
+    let failed = FailedAnalysis::new(
+        SourceFingerprint::new(20, 30).unwrap(),
+        versions,
+        10,
+        FailureKind::Decode,
+        "fixture",
+        0,
+        None,
+    )
+    .unwrap();
+    crate::sound_profile::save_failed_analysis(&conn, 2, &failed).unwrap();
+
+    assert_eq!(reset_all_analyses(&conn).unwrap(), 2);
+    assert!(crate::sound_profile::load_analysis(&conn, 1)
+        .unwrap()
+        .is_none());
+    assert!(crate::sound_profile::load_analysis(&conn, 2)
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        conn.query_row("SELECT COUNT(*) FROM tracks", [], |row| row
+            .get::<_, i64>(0))
+            .unwrap(),
+        2
+    );
+}

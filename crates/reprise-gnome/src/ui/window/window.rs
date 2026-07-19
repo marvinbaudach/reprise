@@ -104,7 +104,12 @@ pub fn build(
         .width_request(MIN_WIDTH)
         .height_request(MIN_HEIGHT)
         .build();
-    let (waveform_backend, audio_analysis) = super::window_audio_analysis::setup(db_path, &window);
+    let audio_analysis_enabled = {
+        let conn = conn.borrow();
+        reprise_core::library::settings::get_audio_analysis_enabled(&conn)
+    };
+    let (waveform_backend, audio_analysis) =
+        super::window_audio_analysis::setup(db_path, &window, audio_analysis_enabled);
     super::session_restore::apply_initial_geometry(&window, &session_state);
     // Headerbar title follows the currently selected `ViewSource` (Stage 3
     // Task 4); `Library` (`ViewSource::default()`) is both `TrackList`'s and
@@ -506,6 +511,7 @@ pub fn build(
         &info_panel,
         &scan_button,
         &scan_controls,
+        audio_analysis.as_ref(),
         player.as_ref(),
         &listenbrainz,
         &lastfm,

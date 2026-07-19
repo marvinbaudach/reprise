@@ -1166,7 +1166,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
 
 ## W. Lokales Klangprofil
 
-- **AC-1** [geplant] [gtk] — Die lokale Audioanalyse ist bei einer neuen
+- **AC-1** [aktiv] [gtk] — Die lokale Audioanalyse ist bei einer neuen
   Installation ausgeschaltet. Erst „Analyze audio locally" startet Arbeit;
   die Erklärung nennt ausdrücklich, dass Reprise Musikdateien nur lokal liest,
   nichts hochlädt und vorhandene Profile beim Ausschalten behält. Die Funktion
@@ -1176,7 +1176,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Brightness, Dynamicity und Rhythmicity im Bereich 0–1; Tempo bleibt optional
   und trägt eine eigene Konfidenz. Veraltete oder nicht endliche Werte gelten
   nie als aktuelles Profil.
-- **AC-3** [geplant] [gtk] — Aktivierte Analyse läuft mit genau einem
+- **AC-3** [aktiv] [gtk] — Aktivierte Analyse läuft mit genau einem
   Hintergrund-Worker und zeigt fertig/gesamt/fehlgeschlagen. Pause, Fortsetzen,
   Abbrechen und „Retry failed" sind erreichbar; ein Neustart setzt offene
   Arbeit fort. Ausschalten startet keine neue Profil-Arbeit, verhindert aber
@@ -1189,7 +1189,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   optional BPM samt Unsicherheit. Farbe ist nie der einzige Informationsträger;
   Screenreader erhalten Dimension und Wert. Dateipfade, interne Versionen und
   objektive Mood-Aussagen erscheinen nicht.
-- **AC-6** [geplant] [gtk] — Analyseabdeckung nennt immer Zähler und Nenner
+- **AC-6** [aktiv] [gtk] — Analyseabdeckung nennt immer Zähler und Nenner
   aktueller, geeigneter Bibliothekstitel. Leere, laufende, pausierte,
   fehlgeschlagene und vollständige Zustände bleiben unterscheidbar; „Reanalyze
   library" verlangt wegen der Rechenlast eine Bestätigung.
