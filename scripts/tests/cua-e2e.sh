@@ -77,6 +77,18 @@ if rg --quiet --fixed-strings '"Review Safe Fixes"' "$runner"; then
   exit 1
 fi
 if rg --quiet --fixed-strings \
+  'assert_snapshot_contains "$reverted_path" "Library Doctor"' \
+  "$runner"; then
+  echo "$runner must verify the completed Library Doctor revert result, not a structural page title" >&2
+  exit 1
+fi
+if ! rg --quiet --fixed-strings \
+  '"$APP_PID" "$WINDOW_ID" "Tags reverted · $fixture_count tracks" doctor-reverted' \
+  "$runner"; then
+  echo "$runner must wait for the completed Library Doctor revert result" >&2
+  exit 1
+fi
+if rg --quiet --fixed-strings \
   'cua_click_label "$APP_PID" "$WINDOW_ID" "Plugins" doctor-plugins-page' \
   "$runner"; then
   echo "$runner must not pixel-click the geometry-less Preferences Plugins label" >&2
