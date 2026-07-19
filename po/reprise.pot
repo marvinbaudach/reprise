@@ -1781,18 +1781,35 @@ msgid "Mix from {genre} · Create"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_stats.rs:20
-msgid "Mix from your top genre · Create"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_stats.rs:21
-msgid "Start listening to see your stats"
+msgid ""
+"1 play was imported. Detailed stats start now, with what you listen to in "
+"Reprise."
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_stats.rs:22
+#, rust-format
+msgid ""
+"{count} plays were imported. Detailed stats start now, with what you listen "
+"to in Reprise."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:26
+msgid "Mix from your top genre · Create"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:27
+msgid "Start listening to see your stats"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:28
+msgid "Your Rhythmbox history was imported"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:29
 msgid "Your stats could not be read"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:24
+#: crates/reprise-gnome/src/ui/strings_stats.rs:31
 msgid ""
 "Reading the listening history failed. Nothing is missing from it — this view "
 "just could not load it."

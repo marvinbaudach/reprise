@@ -2199,18 +2199,39 @@ msgid "Mix from {genre} · Create"
 msgstr "Mix aus {genre} · Erstellen"
 
 #: crates/reprise-gnome/src/ui/strings_stats.rs:20
+msgid ""
+"1 play was imported. Detailed stats start now, with what you listen to in "
+"Reprise."
+msgstr ""
+"1 Wiedergabe wurde importiert. Detaillierte Statistiken beginnen jetzt mit "
+"dem, was Sie in Reprise hören."
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:22
+#, rust-format
+msgid ""
+"{count} plays were imported. Detailed stats start now, with what you listen "
+"to in Reprise."
+msgstr ""
+"{count} Wiedergaben wurden importiert. Detaillierte Statistiken beginnen "
+"jetzt mit dem, was Sie in Reprise hören."
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:26
 msgid "Mix from your top genre · Create"
 msgstr "Mix aus Ihrem Top-Genre · Erstellen"
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:21
+#: crates/reprise-gnome/src/ui/strings_stats.rs:27
 msgid "Start listening to see your stats"
 msgstr "Hören Sie Musik, um Ihre Statistiken zu sehen"
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:22
+#: crates/reprise-gnome/src/ui/strings_stats.rs:28
+msgid "Your Rhythmbox history was imported"
+msgstr "Ihr Rhythmbox-Hörverlauf wurde importiert"
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:29
 msgid "Your stats could not be read"
 msgstr "Ihre Statistiken konnten nicht gelesen werden"
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:24
+#: crates/reprise-gnome/src/ui/strings_stats.rs:31
 msgid ""
 "Reading the listening history failed. Nothing is missing from it — this view "
 "just could not load it."

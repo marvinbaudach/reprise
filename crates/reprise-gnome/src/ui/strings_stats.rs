@@ -1,6 +1,6 @@
 //! My Stats copy: hero figures, the tag-spelling hint, the mix CTA and the
-//! failure state. The rest of the page's text is English-only chrome built in
-//! `ui::stats`; everything a user reads as a sentence lives here.
+//! imported/failure states. The rest of the page's text is English-only chrome
+//! built in `ui::stats`; everything a user reads as a sentence lives here.
 
 use super::{formatted, plural, text};
 
@@ -16,9 +16,15 @@ const SPELLINGS_MERGED_ONE: &str = N_!("1 spelling merged \u{2014} unify it in t
 const SPELLINGS_MERGED: &str =
     N_!("{count} spellings merged \u{2014} unify them in the tag editor?");
 const MIX_FROM_GENRE: &str = N_!("Mix from {genre} \u{00b7} Create");
+const STATS_IMPORTED_PLAYS_ONE: &str =
+    N_!("1 play was imported. Detailed stats start now, with what you listen to in Reprise.");
+const STATS_IMPORTED_PLAYS: &str = N_!(
+    "{count} plays were imported. Detailed stats start now, with what you listen to in Reprise."
+);
 
 pub const MIX_FROM_TOP_GENRE: &str = N_!("Mix from your top genre \u{00b7} Create");
 pub const STATS_EMPTY: &str = N_!("Start listening to see your stats");
+pub const STATS_IMPORTED: &str = N_!("Your Rhythmbox history was imported");
 pub const STATS_UNAVAILABLE: &str = N_!("Your stats could not be read");
 pub const STATS_UNAVAILABLE_DESCRIPTION: &str =
     N_!("Reading the listening history failed. Nothing is missing from it — this view just could not load it.");
@@ -92,6 +98,20 @@ pub fn stats_empty_title() -> String {
     text(STATS_EMPTY)
 }
 
+pub fn stats_imported_title() -> String {
+    text(STATS_IMPORTED)
+}
+
+pub fn stats_imported_description(plays: i64) -> String {
+    let plays = plays.max(0);
+    let count = reprise_core::format::format_thousands(plays);
+    if plays == 1 {
+        text(STATS_IMPORTED_PLAYS_ONE)
+    } else {
+        formatted(STATS_IMPORTED_PLAYS, &[("count", &count)])
+    }
+}
+
 pub fn stats_unavailable_title() -> String {
     text(STATS_UNAVAILABLE)
 }
@@ -129,6 +149,14 @@ mod tests {
         assert_eq!(
             spellings_merged_hint(3),
             "3 spellings merged \u{2014} unify them in the tag editor?"
+        );
+    }
+
+    #[test]
+    fn imported_history_names_the_stored_play_total() {
+        assert_eq!(
+            stats_imported_description(1_530),
+            "1,530 plays were imported. Detailed stats start now, with what you listen to in Reprise."
         );
     }
 }
