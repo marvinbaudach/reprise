@@ -89,6 +89,10 @@ if ! rg --quiet --fixed-strings 'library-doctor)' "$runner"; then
   echo "$runner must support isolated scenario: library-doctor)" >&2
   exit 1
 fi
+if ! rg --quiet --fixed-strings 'cargo build --locked -p reprise-gnome' "$runner"; then
+  echo "$runner must rebuild Reprise from the commit recorded in its manifest" >&2
+  exit 1
+fi
 
 keyboard_runner="$repo_root/scripts/cua-e2e/keyboard.sh"
 keyboard_manifest="$repo_root/scripts/cua-e2e/keyboard-surfaces.tsv"
