@@ -49,11 +49,12 @@ cargo build --quiet --release -p reprise-core --example scalability_baseline
 run_mode() {
   local mode=$1
   local profile="$scratch_root/$mode"
-  mkdir -p "$profile/data/reprise" "$profile/cache"
+  mkdir -p "$profile/data/reprise" "$profile/cache" "$profile/runtime"
+  chmod 700 "$profile/runtime"
   target/release/examples/scalability_baseline \
     --db "$profile/data/reprise/reprise.db" --tracks 10000 --iterations 1 \
     >"$output_dir/$mode-seed.json"
-  dbus-run-session -- xvfb-run -a env \
+  XDG_RUNTIME_DIR="$profile/runtime" dbus-run-session -- xvfb-run -a env \
     XDG_DATA_HOME="$profile/data" XDG_CACHE_HOME="$profile/cache" \
     GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink \
     GSK_RENDERER=gl REPRISE_GLASS_PERF_MODE="$mode" \
