@@ -112,12 +112,22 @@ element_center_for_index() {
   ' "$snapshot_path"
 }
 
+snapshot_exposes_label() {
+  local snapshot_path=$1 label=$2
+
+  jq -e --arg label "$label" '
+    any((.structuredContent.elements // .elements // [])[]; .label == $label)
+    or (
+      (.structuredContent.tree_markdown // .tree_markdown // "")
+      | contains("\"" + $label + "\"")
+    )
+  ' "$snapshot_path" >/dev/null
+}
+
 assert_snapshot_contains() {
   local snapshot_path=$1 label=$2
 
-  if ! jq -e --arg label "$label" '
-    any((.structuredContent.elements // .elements // [])[]; .label == $label)
-  ' "$snapshot_path" >/dev/null; then
+  if ! snapshot_exposes_label "$snapshot_path" "$label"; then
     echo "snapshot does not expose expected label '$label': $snapshot_path" >&2
     return 1
   fi
@@ -126,9 +136,7 @@ assert_snapshot_contains() {
 assert_snapshot_absent() {
   local snapshot_path=$1 label=$2
 
-  if jq -e --arg label "$label" '
-    any((.structuredContent.elements // .elements // [])[]; .label == $label)
-  ' "$snapshot_path" >/dev/null; then
+  if snapshot_exposes_label "$snapshot_path" "$label"; then
     echo "snapshot unexpectedly still exposes label '$label': $snapshot_path" >&2
     return 1
   fi
