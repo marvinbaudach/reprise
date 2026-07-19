@@ -94,6 +94,17 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
                 None => tracing::warn!("sidebar refresh skipped: sidebar is gone"),
             }
         });
+        let stats_view = stats_view.clone();
+        let stats_conn = conn.clone();
+        let content_stack = content_stack.downgrade();
+        player.set_on_listen_event_recorded(move || {
+            let Some(content_stack) = content_stack.upgrade() else {
+                return;
+            };
+            if content_stack.visible_child_name().as_deref() == Some("stats") {
+                stats_view.refresh(&stats_conn);
+            }
+        });
     }
     // Stage 3 Task 1 backlog item (a): same post-construction injection
     // reason as the player's toast overlay above — `track_list` is built

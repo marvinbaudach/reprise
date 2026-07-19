@@ -94,8 +94,16 @@ impl PlayerController {
             let conn = self.conn.borrow();
             stats_screen::record_listen_event(&conn, track_id, now_unix(), max_position_ms)
         };
-        if let Err(error) = result {
-            tracing::error!(%error, track_id, "failed to record listen event");
+        match result {
+            Ok(()) => {
+                let callback = self.listen_event_recorded.borrow().clone();
+                if let Some(callback) = callback {
+                    callback();
+                }
+            }
+            Err(error) => {
+                tracing::error!(%error, track_id, "failed to record listen event");
+            }
         }
     }
 

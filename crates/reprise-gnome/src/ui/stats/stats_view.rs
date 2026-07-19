@@ -14,7 +14,7 @@ use reprise_core::format::format_thousands;
 use reprise_core::library::group_key::GroupKind;
 use reprise_core::library::settings::{self, StatsLayout};
 use reprise_core::library::stats_period::{StatsPeriod, ROLLING_WINDOW_DAYS};
-use reprise_core::library::stats_screen::{group_track_ids, TopTrack};
+use reprise_core::library::stats_screen::{group_track_ids, stored_play_count_total, TopTrack};
 use reprise_core::library::stats_snapshot::{self, SortBy, StatsSnapshot};
 use rusqlite::Connection;
 
@@ -57,6 +57,7 @@ type PairCallback = Rc<RefCell<Option<Rc<dyn Fn(String, String)>>>>;
 type GenreCallback = Rc<RefCell<Option<Rc<dyn Fn(TopGenre)>>>>;
 type IdsCallback = Rc<RefCell<Option<Rc<dyn Fn(Vec<i64>)>>>>;
 
+#[derive(Clone)]
 pub(in crate::ui) struct StatsView {
     root: gtk4::ScrolledWindow,
     page_stack: gtk4::Stack,
@@ -180,6 +181,10 @@ impl StatsView {
             .title(strings::stats_empty_title())
             .icon_name("audio-x-generic-symbolic")
             .build();
+        let imported = adw::StatusPage::builder()
+            .title(strings::stats_imported_title())
+            .icon_name("document-open-recent-symbolic")
+            .build();
         // A failed query is not an empty history: telling the user to start
         // listening when the numbers exist but could not be read is a lie.
         let failed = adw::StatusPage::builder()
@@ -190,6 +195,7 @@ impl StatsView {
         let page_stack = gtk4::Stack::new();
         page_stack.add_named(&clamp, Some("sections"));
         page_stack.add_named(&empty, Some("empty"));
+        page_stack.add_named(&imported, Some("imported"));
         page_stack.add_named(&failed, Some("failed"));
         page_stack.set_visible_child_name("empty");
         let root = gtk4::ScrolledWindow::builder()
@@ -276,6 +282,7 @@ impl StatsView {
             clock_section: clock_section.clone(),
             genres_section: genres_section.clone(),
             highlights_section: highlights_section.clone(),
+            imported_page: imported,
         });
 
         Self {
@@ -429,6 +436,7 @@ struct RenderParts {
     clock_section: gtk4::Box,
     genres_section: gtk4::Box,
     highlights_section: gtk4::Box,
+    imported_page: adw::StatusPage,
 }
 
 fn refresh_parts(
@@ -442,11 +450,17 @@ fn refresh_parts(
     let result = {
         let conn = conn.borrow();
         let layout = settings::get_stats_layout(&conn);
-        stats_snapshot::compute(&conn, period, now_unix, &chrono::Local)
-            .map(|snapshot| (snapshot, layout))
+        stats_snapshot::compute(&conn, period, now_unix, &chrono::Local).and_then(|snapshot| {
+            let stored_plays = if snapshot.is_empty() {
+                stored_play_count_total(&conn)?
+            } else {
+                0
+            };
+            Ok((snapshot, layout, stored_plays))
+        })
     };
     match result {
-        Ok((snapshot, layout)) => {
+        Ok((snapshot, layout, stored_plays)) => {
             apply_layout_widgets(
                 layout,
                 &render.clock_section,
@@ -457,7 +471,14 @@ fn refresh_parts(
             // The stack decides what is on screen; hiding sections inside the
             // page it just switched away from changes nothing.
             if snapshot.is_empty() {
-                page_stack.set_visible_child_name("empty");
+                if stored_plays > 0 {
+                    render
+                        .imported_page
+                        .set_description(Some(&strings::stats_imported_description(stored_plays)));
+                    page_stack.set_visible_child_name("imported");
+                } else {
+                    page_stack.set_visible_child_name("empty");
+                }
             } else {
                 render_snapshot(render, &snapshot, period);
                 page_stack.set_visible_child_name("sections");
