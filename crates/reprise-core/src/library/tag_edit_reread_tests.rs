@@ -15,6 +15,7 @@ fn readable_fixture(dir: &Path) -> PathBuf {
         .primary_tag_mut()
         .unwrap()
         .set_title("Old title".into());
+    tagged.primary_tag_mut().unwrap().set_disk(2);
     tagged
         .primary_tag()
         .unwrap()
@@ -56,14 +57,15 @@ fn tag_editor_save_rereads_tags_and_clears_the_untagged_import_hint_immediately(
 
     assert_eq!(report.updated_ids, vec![id]);
     assert!(report.failures.is_empty());
-    let (title, untagged): (String, i64) = conn
+    let (title, disc_no, untagged): (String, Option<i64>, i64) = conn
         .query_row(
-            "SELECT title,untagged FROM tracks WHERE id=?1",
+            "SELECT title,disc_no,untagged FROM tracks WHERE id=?1",
             [id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .unwrap();
     assert_eq!(title, "Readable again");
+    assert_eq!(disc_no, Some(2));
     assert_eq!(untagged, 0);
     let hints: i64 = conn
         .query_row(

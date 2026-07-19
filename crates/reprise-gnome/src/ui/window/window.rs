@@ -336,10 +336,18 @@ pub fn build(
     // NAV-2: shared navigation history — created before the view wiring so
     // album/artist cross-navigation can record the places it leaves.
     let nav_history = Rc::new(crate::ui::nav_history::NavHistory::default());
-    super::library_shell::wire_album_view(&library_views, &album_view, &track_list, &nav_history);
+    super::library_shell::wire_album_view(
+        &library_views,
+        &album_view,
+        &artist_view,
+        &track_list,
+        &nav_history,
+    );
     if let Some(player) = &player {
         let grid = album_view.grid_widget().downgrade();
+        let update_album_state = album_view.playback_state_callback();
         player.set_on_playback_state_changed_album(move |state| {
+            update_album_state(state);
             let Some(grid) = grid.upgrade() else { return };
             match state {
                 reprise_core::playback::PlaybackState::Paused => {
@@ -572,5 +580,6 @@ pub fn build(
 
     tracing::info!("main window built");
     window.present();
+    super::runtime_performance::arm(&window, &track_list);
     FileOpenHandler::new(&window, conn.clone(), player, &toast_overlay, sidebar)
 }

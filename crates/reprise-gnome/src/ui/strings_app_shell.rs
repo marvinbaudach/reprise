@@ -13,12 +13,11 @@ pub const ALBUM_COUNT_FMT: &str = N_!("{} albums");
 pub const ALBUM_SEARCH_EMPTY: &str = N_!("No albums match \"{}\"");
 
 pub const ALBUM_MENU_PLAY: &str = N_!("Play");
-pub const ALBUM_MENU_SHUFFLE: &str = N_!("Shuffle Album");
-pub const ALBUM_MENU_ADD_QUEUE: &str = N_!("Add to Queue");
-pub const ALBUM_MENU_ADD_PLAYLIST: &str = N_!("Add to Playlist");
-pub const ALBUM_MENU_NEW_PLAYLIST: &str = N_!("New Playlist…");
-pub const ALBUM_MENU_EDIT_TAGS: &str = N_!("Edit Tags");
-pub const ALBUM_MENU_GO_TO_FOLDER: &str = N_!("Go to Folder");
+pub const ALBUM_MENU_PLAY_NEXT: &str = N_!("Play next");
+pub const ALBUM_MENU_ADD_QUEUE: &str = N_!("Add to queue");
+pub const ALBUM_MENU_GO_TO_ARTIST: &str = N_!("Go to artist");
+pub const ALBUM_MENU_EDIT_TAGS: &str = N_!("Edit tags...");
+pub const REVEAL_PLAYING_ALBUM: &str = N_!("Reveal playing album");
 
 /// Formats album duration: "1h 4min" or "42 min".
 pub fn album_duration(total_ms: i64) -> String {
@@ -29,6 +28,22 @@ pub fn album_duration(total_ms: i64) -> String {
         format!("{hours}h {mins}min")
     } else {
         format!("{mins} min")
+    }
+}
+
+pub fn album_meta(track_count: i64, total_duration_ms: i64) -> String {
+    let count = usize::try_from(track_count.max(0)).unwrap_or(usize::MAX);
+    let count_text = count.to_string();
+    let tracks = super::plural(
+        N_!("{count} track"),
+        N_!("{count} tracks"),
+        count,
+        &[("count", &count_text)],
+    );
+    if total_duration_ms <= 0 {
+        tracks
+    } else {
+        format!("{tracks} · {}", album_duration(total_duration_ms))
     }
 }
 

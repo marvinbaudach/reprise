@@ -401,6 +401,15 @@ impl TrackListModel {
     fn cached_windows(&self) -> Vec<u32> {
         self.imp().state.borrow().cache.keys().copied().collect()
     }
+
+    /// Performance diagnostics for the generated-metadata benchmark: number
+    /// of cached SQL windows and total `Track` rows retained by them. Kept
+    /// crate-private so normal UI behavior cannot couple to cache internals.
+    pub(in crate::ui) fn cache_usage(&self) -> (usize, usize) {
+        let state = self.imp().state.borrow();
+        let rows = state.cache.values().map(Vec::len).sum();
+        (state.cache.len(), rows)
+    }
 }
 
 #[cfg(test)]
@@ -659,3 +668,7 @@ mod tests {
         assert_eq!(model.track_at(2).unwrap().title, "Alpha");
     }
 }
+
+#[cfg(test)]
+#[path = "track_list_model_scalability_tests.rs"]
+mod scalability_tests;

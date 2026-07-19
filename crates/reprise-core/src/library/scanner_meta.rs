@@ -74,6 +74,7 @@ pub(crate) struct TrackMeta {
     pub(crate) artist_mbid: Option<String>,
     pub(crate) year: Option<i32>,
     pub(crate) track_no: Option<i32>,
+    pub(crate) disc_no: Option<i32>,
     pub(crate) genre: String,
     pub(crate) duration_ms: i64,
     pub(crate) bitrate_kbps: Option<i32>,
@@ -121,6 +122,7 @@ pub(crate) fn read_meta(path: &Path) -> Result<TrackMeta, ScanError> {
             .or_else(|| tagged.tags().iter().find_map(Accessor::date))
             .map(|date| i32::from(date.year)),
         track_no: tag.and_then(Accessor::track).map(|n| n as i32),
+        disc_no: tag.and_then(Accessor::disk).map(|n| n as i32),
         genre: get(&|t| t.genre().map(|s| s.to_string())),
         duration_ms: props.duration().as_millis() as i64,
         bitrate_kbps: props.audio_bitrate().map(|b| b as i32),
