@@ -198,9 +198,31 @@ mod tests {
         assert!(cell.has_css_class("reprise-density-comfortable"));
         let (_, comfortable, _, _) = view.measure(gtk4::Orientation::Vertical, -1);
 
+        assert!(
+            compact < standard && standard < comfortable,
+            "measured compact={compact}, standard={standard}, comfortable={comfortable}"
+        );
         assert_eq!(
-            (standard - compact, comfortable - standard),
-            (10, 8),
+            comfortable - standard,
+            crate::ui::style::tokens::ROW_MIN_HEIGHT_COMFORTABLE
+                - crate::ui::style::tokens::ROW_MIN_HEIGHT_STANDARD,
+            "measured compact={compact}, standard={standard}, comfortable={comfortable}"
+        );
+        // Compact needs its own bound, or a regression that collapses it to
+        // within a pixel of Standard would still satisfy the ordering above.
+        // Its step is smaller than the tokens suggest: the cell content (rating
+        // stars, cover) cannot shrink past INTRINSIC_ROW_CONTENT_FLOOR, so
+        // ROW_MIN_HEIGHT_COMPACT is never the binding constraint and the token
+        // overstates how tight Compact gets. Asserting the reachable step keeps
+        // that discrepancy visible instead of silently absorbing it.
+        const INTRINSIC_ROW_CONTENT_FLOOR: i32 = 20;
+        // Fails the build, not the run, once the token becomes reachable again:
+        // the delta below would then have to come from the token instead.
+        const _: () =
+            assert!(crate::ui::style::tokens::ROW_MIN_HEIGHT_COMPACT < INTRINSIC_ROW_CONTENT_FLOOR);
+        assert_eq!(
+            standard - compact,
+            crate::ui::style::tokens::ROW_MIN_HEIGHT_STANDARD - INTRINSIC_ROW_CONTENT_FLOOR,
             "measured compact={compact}, standard={standard}, comfortable={comfortable}"
         );
         window.close();
