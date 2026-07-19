@@ -2,12 +2,15 @@ mod backdrop;
 mod insets;
 pub(crate) mod material;
 mod performance;
+mod scroll_inset;
 mod surface;
 
+pub(crate) use insets::{mark_top_inset_anchor, SafeInsetApplier, SafeInsets};
 #[cfg(test)]
 pub(crate) use insets::{InsetMeasurements, PlayerBarEdge};
-pub(crate) use insets::{SafeInsetApplier, SafeInsets};
 pub(in crate::ui) use performance::arm as arm_performance_measurement;
+#[cfg(test)]
+pub(crate) use scroll_inset::ScrollInset;
 pub(crate) use surface::{GlassEdge, GlassSurface};
 
 pub(in crate::ui) fn css() -> String {
@@ -22,12 +25,21 @@ pub(in crate::ui) fn css() -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use gtk4::prelude::*;
 
     use super::material::{GlassEnvironment, GlassMode, GlassTheme, RendererClass};
     use super::performance::{evaluate_pair, FrameSeries, PerfFailure};
     use super::{GlassEdge, GlassSurface};
     use super::{InsetMeasurements, PlayerBarEdge, SafeInsetApplier, SafeInsets};
+
+    fn wait_for_layout() {
+        let main_loop = gtk4::glib::MainLoop::new(None, false);
+        let quit = main_loop.clone();
+        gtk4::glib::timeout_add_local_once(Duration::from_millis(50), move || quit.quit());
+        main_loop.run();
+    }
 
     #[test]
     fn style_4_glass_material_is_neutral_and_falls_back_safely() {
@@ -152,6 +164,32 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
+    fn top_anchor_keeps_a_fixed_sibling_visible_without_double_padding_the_scroller() {
+        gtk4::init().unwrap();
+        let fixed_controls = gtk4::Label::new(Some("Filters"));
+        let rows = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        rows.append(&gtk4::Label::new(Some("First")));
+        rows.append(&gtk4::Label::new(Some("Last")));
+        let scrolled = gtk4::ScrolledWindow::builder().child(&rows).build();
+        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        root.add_css_class("reprise-glass-top-inset-anchor");
+        root.append(&fixed_controls);
+        root.append(&scrolled);
+
+        let applier = SafeInsetApplier::discover(&root);
+        applier.apply(SafeInsets {
+            top: 90,
+            bottom: 96,
+        });
+
+        assert_eq!(root.margin_top(), 90);
+        assert_eq!(rows.margin_top(), 0);
+        assert_eq!(rows.margin_bottom(), 96);
+        assert_eq!(scrolled.margin_bottom(), 0);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
     fn inset_applier_follows_a_swapped_scrolled_child() {
         gtk4::init().unwrap();
         let original = gtk4::Label::new(Some("original"));
@@ -167,25 +205,100 @@ mod tests {
         applier.apply(insets);
         assert_eq!(original.margin_top(), 90);
 
-        // Swapping the child keeps the auto-viewport but replaces what is
-        // inside it. Targeting the content directly means the applier must
-        // re-resolve it, or the new child silently never gets padded.
         let replacement = gtk4::Label::new(Some("replacement"));
         replacement.set_margin_top(3);
         replacement.set_margin_bottom(4);
         scrolled.set_child(Some(&replacement));
 
-        // Same insets as before: the early-return hot path must not swallow a
-        // content swap, which is exactly how this used to fail permanently.
+        // Re-applying equal insets must discover the replacement and must not
+        // compound its own margins.
         applier.apply(insets);
         assert_eq!(replacement.margin_top(), 93);
         assert_eq!(replacement.margin_bottom(), 100);
+        applier.apply(insets);
+        assert_eq!(replacement.margin_top(), 93);
+        assert_eq!(replacement.margin_bottom(), 100);
+    }
 
-        // The replacement's own margins were taken as the base exactly once —
-        // re-applying must not compound them.
-        applier.apply(insets);
-        assert_eq!(replacement.margin_top(), 93);
-        assert_eq!(replacement.margin_bottom(), 100);
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn native_grid_content_traverses_both_glass_zones_without_losing_virtualization() {
+        gtk4::init().unwrap();
+        let strings = gtk4::StringList::new(
+            &(0..100)
+                .map(|index| format!("Album {index}"))
+                .collect::<Vec<_>>()
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+        );
+        let selection = gtk4::NoSelection::new(Some(strings));
+        let factory = gtk4::SignalListItemFactory::new();
+        factory.connect_setup(|_, item| {
+            let item = item.downcast_ref::<gtk4::ListItem>().unwrap();
+            item.set_child(Some(&gtk4::Label::new(None)));
+        });
+        factory.connect_bind(|_, item| {
+            let item = item.downcast_ref::<gtk4::ListItem>().unwrap();
+            let label = item.child().and_downcast::<gtk4::Label>().unwrap();
+            let value = item.item().and_downcast::<gtk4::StringObject>().unwrap();
+            label.set_label(&value.string());
+        });
+        let grid = gtk4::GridView::new(Some(selection), Some(factory));
+        grid.set_min_columns(2);
+        grid.set_max_columns(2);
+        let scrolled = gtk4::ScrolledWindow::builder()
+            .child(&grid)
+            .min_content_height(240)
+            .build();
+        let applier = SafeInsetApplier::discover(&scrolled);
+        let inset = scrolled
+            .child()
+            .and_downcast::<super::scroll_inset::ScrollInset>()
+            .expect("native scrollables must keep a direct GtkScrollable adapter");
+        assert_eq!(inset.child().as_ref(), Some(grid.upcast_ref()));
+
+        let window = gtk4::Window::builder()
+            .default_width(400)
+            .default_height(240)
+            .child(&scrolled)
+            .build();
+        window.present();
+        wait_for_layout();
+        applier.apply(SafeInsets {
+            top: 90,
+            bottom: 96,
+        });
+        wait_for_layout();
+
+        assert_eq!(grid.margin_top(), 0);
+        assert_eq!(grid.margin_bottom(), 0);
+        let outer = scrolled.vadjustment();
+        let inner = grid.vadjustment().unwrap();
+        let inner_max = (inner.upper() - inner.page_size()).max(inner.lower());
+        assert_eq!(outer.lower(), inner.lower() - 90.0);
+        assert_eq!(outer.upper() - outer.page_size(), inner_max + 96.0);
+
+        outer.set_value(outer.lower());
+        wait_for_layout();
+        let start = grid
+            .compute_point(&inset, &gtk4::graphene::Point::new(0.0, 0.0))
+            .unwrap();
+        assert!((start.y() - 90.0).abs() <= 1.0);
+
+        outer.set_value(inner.lower());
+        wait_for_layout();
+        let normal = grid
+            .compute_point(&inset, &gtk4::graphene::Point::new(0.0, 0.0))
+            .unwrap();
+        assert!(normal.y().abs() <= 1.0);
+
+        outer.set_value(outer.upper() - outer.page_size());
+        wait_for_layout();
+        let end = grid
+            .compute_point(&inset, &gtk4::graphene::Point::new(0.0, 0.0))
+            .unwrap();
+        assert!((end.y() + 96.0).abs() <= 1.0);
     }
 
     #[test]
