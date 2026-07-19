@@ -344,7 +344,8 @@ impl AlbumView {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::cell::Cell;
+    use std::time::{Duration, Instant};
 
     use super::*;
 
@@ -355,6 +356,28 @@ mod tests {
             quit.quit();
         });
         main_loop.run();
+    }
+
+    fn wait_until(milliseconds: u64, mut predicate: impl FnMut() -> bool + 'static) -> bool {
+        let main_loop = gtk4::glib::MainLoop::new(None, false);
+        let quit = main_loop.clone();
+        let matched = Rc::new(Cell::new(false));
+        let matched_for_tick = matched.clone();
+        let deadline = Instant::now() + Duration::from_millis(milliseconds);
+        gtk4::glib::timeout_add_local(Duration::from_millis(5), move || {
+            if predicate() {
+                matched_for_tick.set(true);
+                quit.quit();
+                gtk4::glib::ControlFlow::Break
+            } else if Instant::now() >= deadline {
+                quit.quit();
+                gtk4::glib::ControlFlow::Break
+            } else {
+                gtk4::glib::ControlFlow::Continue
+            }
+        });
+        main_loop.run();
+        matched.get()
     }
 
     fn descendants_with_class(root: &gtk4::Widget, class: &str) -> Vec<gtk4::Widget> {
@@ -443,35 +466,68 @@ mod tests {
 
         let conn = reprise_core::db::open(None).unwrap();
         reprise_core::db::migrate(&conn).unwrap();
-        conn.execute_batch(
-            "INSERT INTO tracks (path,title,artist,album,added_at) VALUES
-             ('/one.flac','One','Artist A','First',0),
-             ('/two.flac','Two','Artist B','Playing',0),
-             ('/three.flac','Three','Artist C','Last',0);",
+        for index in 0..30 {
+            conn.execute(
+                "INSERT INTO tracks (path,title,artist,album,added_at) \
+                 VALUES (?1,?2,'Artist',?3,0)",
+                rusqlite::params![
+                    format!("/album-{index}.flac"),
+                    format!("Track {index}"),
+                    format!("Album {index:02}"),
+                ],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO tracks (path,title,artist,album,added_at) \
+             VALUES ('/playing.flac','Playing track','Artist B','ZZ Playing',0)",
+            [],
         )
         .unwrap();
         let conn = Rc::new(RefCell::new(conn));
         let loader =
             crate::ui::cover_loader::CoverLoader::new(crate::ui::cover_download_worker::setup());
         let view = AlbumView::new(&conn, loader);
+        let player_surface = gtk4::Button::with_label("Player title");
+        let shell = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        shell.append(&player_surface);
+        view.widget().set_vexpand(true);
+        shell.append(view.widget());
         let window = gtk4::Window::builder()
             .default_width(500)
             .default_height(600)
-            .child(view.widget())
+            .child(&shell)
             .build();
         window.present();
         wait_for_layout(50);
+        assert!(
+            player_surface.grab_focus(),
+            "fixture starts from a focused player surface"
+        );
 
-        view.now_playing_callback()(Some(("Playing".into(), "Artist B".into())));
+        view.now_playing_callback()(Some(("ZZ Playing".into(), "Artist B".into())));
         view.filter_callback()("no visible album");
         assert_eq!(view.state.filtered_count(), 0);
 
-        assert!(view.reveal_callback()("Playing", "Artist B"));
-        wait_for_layout(50);
+        let adjustment = view.grid_widget().vadjustment().unwrap();
+        assert_eq!(adjustment.value(), 0.0);
+        assert!(view.reveal_callback()("ZZ Playing", "Artist B"));
+        let grid_for_wait = view.grid_widget().clone();
+        let adjustment_for_wait = adjustment.clone();
+        assert!(
+            wait_until(500, move || {
+                adjustment_for_wait.value() > 0.0 && grid_for_wait.focus_child().is_some()
+            }),
+            "reveal scrolls and focuses after GTK processes the queued request"
+        );
         assert_eq!(
             view.state.filtered_count(),
-            3,
+            31,
             "reveal clears the album filter"
+        );
+        assert!(
+            adjustment.value() > 0.0,
+            "GtkGridView scrolled through its vertical adjustment"
         );
 
         let focused = view
@@ -483,7 +539,7 @@ mod tests {
             .next()
             .and_downcast::<gtk4::Label>()
             .expect("revealed title");
-        assert_eq!(title.text(), "Playing");
+        assert_eq!(title.text(), "ZZ Playing");
 
         let reveal_frame =
             descendants_with_class(&focused, crate::ui::album_card_css::REVEAL_FRAME_CLASS)
