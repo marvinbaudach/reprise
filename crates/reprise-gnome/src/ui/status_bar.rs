@@ -29,22 +29,28 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use gtk4::prelude::*;
+use gtk4::{glib, prelude::*};
 use rusqlite::Connection;
 
 use crate::ui::strings;
 use reprise_core::format::{format_thousands, format_total_duration};
 use reprise_core::queries::{self, BrowseFilter};
 
-/// Handle to the status label. Cheap to clone (clones the underlying
-/// `gtk::Label`, a reference-counted GObject handle, not its contents) so
-/// both `window.rs`'s scan-completion path and the `TrackList` `on_reload`
-/// callback can each hold their own copy.
+/// Shared handle to the complete status surface. Cloning only increments the
+/// Rust `Rc`; the GTK parent and child remain one ownership unit while both
+/// `window.rs` and the `TrackList` reload callback retain a handle.
 #[derive(Clone)]
 pub struct StatusBar {
+    inner: Rc<StatusBarInner>,
+}
+
+struct StatusBarInner {
     surface: gtk4::Box,
-    label: gtk4::Label,
-    visibility: Rc<VisibilityState>,
+    // The Box is the label's sole strong owner. StatusBar clones share this
+    // Rust owner instead of independently ref'ing both sides of a GTK
+    // parent-child relation during startup and shutdown.
+    label: glib::WeakRef<gtk4::Label>,
+    visibility: VisibilityState,
 }
 
 struct VisibilityState {
@@ -68,29 +74,32 @@ impl StatusBar {
         label.add_css_class("reprise-text-secondary");
         label.add_css_class("caption");
         surface.append(&label);
+        let label_weak = label.downgrade();
         Self {
-            surface,
-            label,
-            visibility: Rc::new(VisibilityState {
-                enabled: Cell::new(true),
-                library_source: Cell::new(false),
-                has_content: Cell::new(false),
+            inner: Rc::new(StatusBarInner {
+                surface,
+                label: label_weak,
+                visibility: VisibilityState {
+                    enabled: Cell::new(true),
+                    library_source: Cell::new(false),
+                    has_content: Cell::new(false),
+                },
             }),
         }
     }
 
     /// The complete bottom status surface placed below the track list.
     pub fn widget(&self) -> &gtk4::Box {
-        &self.surface
+        &self.inner.surface
     }
 
     #[cfg(test)]
-    pub(in crate::ui) fn label(&self) -> &gtk4::Label {
-        &self.label
+    pub(in crate::ui) fn label(&self) -> gtk4::Label {
+        self.live_label()
     }
 
     pub fn set_enabled(&self, enabled: bool) {
-        self.visibility.enabled.set(enabled);
+        self.inner.visibility.enabled.set(enabled);
         self.sync_visibility();
     }
 
@@ -103,22 +112,23 @@ impl StatusBar {
             let conn = conn.borrow();
             queries::query_library_stats_browsed(&conn, "", &BrowseFilter::default())
         };
-        self.visibility.library_source.set(true);
+        self.inner.visibility.library_source.set(true);
+        let label = self.live_label();
         match stats {
             Ok(stats) if stats.track_count > 0 => {
                 let text = format_status_text(stats.track_count, stats.total_duration_ms);
                 tracing::debug!(text = %text, "status line updated");
-                self.label.set_text(&text);
-                self.visibility.has_content.set(true);
+                label.set_text(&text);
+                self.inner.visibility.has_content.set(true);
             }
             Ok(_) => {
-                self.label.set_text("");
-                self.visibility.has_content.set(false);
+                label.set_text("");
+                self.inner.visibility.has_content.set(false);
             }
             Err(error) => {
                 tracing::error!(%error, "failed to load library stats for status line");
-                self.label.set_text("");
-                self.visibility.has_content.set(false);
+                label.set_text("");
+                self.inner.visibility.has_content.set(false);
             }
         }
         self.sync_visibility();
@@ -129,16 +139,23 @@ impl StatusBar {
     /// second "{n} tracks" overlay there was pure duplication — the library
     /// stats this widget exists for have no meaning outside the Library.
     pub fn hide(&self) {
-        self.visibility.library_source.set(false);
+        self.inner.visibility.library_source.set(false);
         self.sync_visibility();
     }
 
     fn sync_visibility(&self) {
-        self.surface.set_visible(status_visibility(
-            self.visibility.enabled.get(),
-            self.visibility.library_source.get(),
-            self.visibility.has_content.get(),
+        self.inner.surface.set_visible(status_visibility(
+            self.inner.visibility.enabled.get(),
+            self.inner.visibility.library_source.get(),
+            self.inner.visibility.has_content.get(),
         ));
+    }
+
+    fn live_label(&self) -> gtk4::Label {
+        self.inner
+            .label
+            .upgrade()
+            .expect("status surface owns its label")
     }
 }
 
@@ -173,6 +190,8 @@ fn status_visibility(enabled: bool, library_source: bool, has_content: bool) -> 
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex};
+
     use super::*;
 
     #[test]
@@ -202,5 +221,64 @@ mod tests {
     fn formats_singular_track_count() {
         let text = format_status_text(1, 90 * 60 * 1000);
         assert_eq!(text, "1 track · 1 hour and 30 minutes");
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn status_bar_refresh_clone_and_teardown_emit_no_criticals() {
+        gtk4::init().unwrap();
+        let criticals = Arc::new(Mutex::new(Vec::new()));
+        let handlers = ["Gtk", "GLib-GObject"].map(|domain| {
+            let criticals = criticals.clone();
+            glib::log_set_handler(
+                Some(domain),
+                glib::LogLevels::LEVEL_CRITICAL,
+                false,
+                false,
+                move |domain, _, message| {
+                    criticals
+                        .lock()
+                        .unwrap()
+                        .push(format!("{}: {message}", domain.unwrap_or("unknown")));
+                },
+            )
+        });
+
+        {
+            let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
+            conn.borrow()
+                .execute(
+                    "INSERT INTO tracks (path, title, artist, duration_ms, added_at) \
+                     VALUES ('/tmp/status-lifecycle.ogg', 'Status', 'Artist', 90000, 0)",
+                    [],
+                )
+                .unwrap();
+            let status = StatusBar::new();
+            let callback_copy = status.clone();
+            let tracks = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+            let content = crate::ui::track_content::build(&tracks, status.widget());
+            let window = gtk4::Window::builder()
+                .default_width(600)
+                .default_height(400)
+                .child(&content)
+                .build();
+            window.present();
+            for _ in 0..5 {
+                callback_copy.refresh(&conn);
+            }
+            while glib::MainContext::default().iteration(false) {}
+            window.close();
+            drop(window);
+            drop(content);
+            drop(callback_copy);
+            drop(status);
+            while glib::MainContext::default().iteration(false) {}
+        }
+
+        for (domain, handler) in ["Gtk", "GLib-GObject"].into_iter().zip(handlers) {
+            glib::log_remove_handler(Some(domain), handler);
+        }
+        let criticals = criticals.lock().unwrap();
+        assert!(criticals.is_empty(), "GTK criticals: {criticals:?}");
     }
 }

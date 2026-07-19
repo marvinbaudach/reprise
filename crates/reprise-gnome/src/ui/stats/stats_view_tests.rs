@@ -295,6 +295,53 @@ fn stats_view_narrow_width_stacks_the_asymmetric_row() {
     window.close();
 }
 
+/// STATS-1: a realistic Stats-pane allocation (the center column of a
+/// 1200-pixel app window with both side columns present) must reflow controls
+/// before either the hours anchor or the named comparison period ellipsizes.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_1_realistic_width_keeps_the_hero_copy_unellipsized() {
+    gtk4::init().unwrap();
+    crate::ui::style::install();
+    let (view, conn) = view_and_conn();
+    seed_one_play(&conn.borrow());
+    view.wire_year_selector(&conn);
+    view.render.hero_time.set_label("34 hours");
+    view.render
+        .comparison_pill
+        .set_label("\u{25b2} 955% vs same period 2025");
+    view.render.comparison_pill.set_visible(true);
+
+    let window = adw::Window::builder()
+        .default_width(600)
+        .default_height(700)
+        .content(view.widget())
+        .build();
+    window.set_size_request(600, -1);
+    window.present();
+    wait_for_layout();
+
+    assert_eq!(view.hero_row.orientation(), gtk4::Orientation::Vertical);
+    assert_eq!(
+        view.hero_time_row.orientation(),
+        gtk4::Orientation::Horizontal
+    );
+    assert!(view.render.hero_time.is_mapped());
+    assert!(view.render.comparison_pill.is_mapped());
+    assert!(
+        !view.render.hero_time.layout().is_ellipsized(),
+        "hours anchor was ellipsized at {} px",
+        view.render.hero_time.width()
+    );
+    assert!(
+        !view.render.comparison_pill.layout().is_ellipsized(),
+        "comparison reference was ellipsized at {} px",
+        view.render.comparison_pill.width()
+    );
+
+    window.close();
+}
+
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn stats_view_wide_width_keeps_the_asymmetric_row_side_by_side() {
