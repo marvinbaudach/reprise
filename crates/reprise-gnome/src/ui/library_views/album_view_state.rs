@@ -13,6 +13,7 @@ use rusqlite::Connection;
 use crate::ui::album_card::AlbumCardShared;
 use crate::ui::album_card_state::{album_index, PendingAlbumReveal};
 use crate::ui::album_header;
+use crate::ui::album_view_memory;
 use crate::ui::strings;
 
 pub(in crate::ui) type NowPlayingAlbumCallback = Rc<dyn Fn(Option<(String, String)>)>;
@@ -180,7 +181,7 @@ impl AlbumViewState {
         });
         rebind_in_store(&self.store, title, artist);
 
-        focus_album_at(grid, index);
+        album_view_memory::reveal_and_focus_position(grid, &self.filter_model, index);
         true
     }
 
@@ -195,7 +196,7 @@ impl AlbumViewState {
         let Some(index) = self.filtered_album_index(title, artist) else {
             return false;
         };
-        focus_album_at(grid, index);
+        album_view_memory::reveal_and_focus_position(grid, &self.filter_model, index);
         true
     }
 
@@ -255,12 +256,6 @@ impl AlbumViewState {
             album_header::update_count(&label, count);
         }
     }
-}
-
-fn focus_album_at(grid: &gtk4::GridView, index: u32) {
-    let scroll = gtk4::ScrollInfo::new();
-    scroll.set_enable_vertical(true);
-    grid.scroll_to(index, gtk4::ListScrollFlags::FOCUS, Some(scroll));
 }
 
 pub(in crate::ui) fn matches_filter(album: &AlbumSummary, raw_filter: &str) -> bool {
