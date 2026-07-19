@@ -355,6 +355,7 @@ pub fn build(
         });
     }
     super::library_shell::wire_artist_view(&library_views, &artist_view, &track_list, &nav_history);
+    super::library_view_memory_wiring::wire(&library_views, &album_view, &artist_view, &track_list);
     // Wire playback → track-table selection and Artists-view now-playing. Done
     // here (not right after `track_list` is built) because the closure captures
     // a strong `Rc<ArtistView>`, which must exist first.

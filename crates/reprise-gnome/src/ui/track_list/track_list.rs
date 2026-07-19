@@ -442,6 +442,21 @@ impl TrackList {
         self.shared.view_state_memory.borrow_mut().remove(source);
     }
 
+    pub(in crate::ui) fn remember_current_view_state(&self) {
+        let source = self.current_source();
+        let state = super::view_state_memory::capture(&self.shared);
+        self.shared
+            .view_state_memory
+            .borrow_mut()
+            .insert(source, state);
+    }
+
+    pub(in crate::ui) fn restore_current_view_state(&self) {
+        let source = self.current_source();
+        let ids = self.shared.current_view_ids();
+        super::view_state_memory::restore_on_attach(&self.shared, &source, &ids);
+    }
+
     pub fn set_on_play_next_selected(&self, callback: impl Fn(Vec<i64>) + 'static) {
         *self.shared.on_play_next_selected.borrow_mut() = Some(Rc::new(callback));
     }
