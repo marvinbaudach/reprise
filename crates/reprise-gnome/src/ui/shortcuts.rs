@@ -198,8 +198,15 @@ fn wire_focus_search(
         let search_mode = next_search_mode(search_bar.is_search_mode());
         search_bar.set_search_mode(search_mode);
         if search_mode {
-            search_entry.grab_focus();
-            search_entry.select_region(0, -1);
+            // The bar reveals through a revealer, so the entry is not mapped in
+            // this turn and grab_focus() would be dropped silently — Ctrl+F
+            // would open the bar without placing the cursor (SEARCH-2). Focus
+            // on the next main-loop turn, once the child exists.
+            let entry = search_entry.clone();
+            gtk4::glib::idle_add_local_once(move || {
+                entry.grab_focus();
+                entry.select_region(0, -1);
+            });
         }
     });
     window.add_action(&action);
