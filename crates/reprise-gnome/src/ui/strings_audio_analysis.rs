@@ -31,3 +31,29 @@ pub const AUDIO_ANALYSIS_REANALYZE_BODY: &str = N_!(
     "Existing Audio Character profiles will be replaced. This can take time. Music files and track metadata are not changed."
 );
 pub const AUDIO_ANALYSIS_REANALYZE_CONFIRM: &str = N_!("Reanalyze");
+pub const AUDIO_CHARACTER_EMPTY: &str = N_!("Play a track to see its Audio Character");
+pub const AUDIO_CHARACTER_EMPTY_DESCRIPTION: &str =
+    N_!("The loaded track's local audio profile will appear here.");
+pub const AUDIO_CHARACTER_DISABLED: &str = N_!("Local audio analysis is disabled");
+pub const AUDIO_CHARACTER_DISABLED_DESCRIPTION: &str =
+    N_!("Enable Analyze audio locally in Library Settings.");
+pub const AUDIO_CHARACTER_PENDING: &str = N_!("Audio Character is pending");
+pub const AUDIO_CHARACTER_PENDING_DESCRIPTION: &str =
+    N_!("This track is waiting for local analysis.");
+pub const AUDIO_CHARACTER_FAILED: &str = N_!("Audio Character analysis failed");
+pub const AUDIO_CHARACTER_FAILED_DESCRIPTION: &str =
+    N_!("Retry failed tracks from Library Settings.");
+pub const AUDIO_CHARACTER_STALE: &str = N_!("Audio Character is stale");
+pub const AUDIO_CHARACTER_STALE_DESCRIPTION: &str =
+    N_!("The local profile will be updated in the background.");
+pub const AUDIO_CHARACTER_INTENSITY: &str = N_!("Intensity");
+pub const AUDIO_CHARACTER_BRIGHTNESS: &str = N_!("Brightness");
+pub const AUDIO_CHARACTER_DYNAMICITY: &str = N_!("Dynamicity");
+pub const AUDIO_CHARACTER_RHYTHMICITY: &str = N_!("Rhythmicity");
+pub const AUDIO_CHARACTER_CONFIDENCE: &str = N_!("Confidence {confidence}%");
+pub const AUDIO_CHARACTER_DIMENSION_ACCESSIBLE: &str =
+    N_!("{dimension}, {value}%, confidence {confidence}%");
+pub const AUDIO_CHARACTER_TEMPO: &str = N_!("Tempo");
+pub const AUDIO_CHARACTER_BPM: &str = N_!("{bpm} BPM");
+pub const AUDIO_CHARACTER_TEMPO_ACCESSIBLE: &str =
+    N_!("Tempo, {bpm} BPM, confidence {confidence}%");

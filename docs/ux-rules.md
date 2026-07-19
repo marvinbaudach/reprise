@@ -1171,7 +1171,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   die Erklärung nennt ausdrücklich, dass Reprise Musikdateien nur lokal liest,
   nichts hochlädt und vorhandene Profile beim Ausschalten behält. Die Funktion
   steht unter Library, nicht auf der Plugins-Seite.
-- **AC-2** [geplant] [core] — Ein Klangprofil behauptet keine Emotion. Es
+- **AC-2** [aktiv] [core] — Ein Klangprofil behauptet keine Emotion. Es
   projiziert versionierte Audio-Evidenz ausschließlich auf Intensity,
   Brightness, Dynamicity und Rhythmicity im Bereich 0–1; Tempo bleibt optional
   und trägt eine eigene Konfidenz. Veraltete oder nicht endliche Werte gelten
@@ -1181,11 +1181,11 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Abbrechen und „Retry failed" sind erreichbar; ein Neustart setzt offene
   Arbeit fort. Ausschalten startet keine neue Profil-Arbeit, verhindert aber
   niemals den bestehenden Waveform-Backfill.
-- **AC-4** [geplant] [gtk] — Das rechte Now-Playing-Panel besitzt neben „Up
+- **AC-4** [aktiv] [gtk] — Das rechte Now-Playing-Panel besitzt neben „Up
   Next" und „Lyrics" den adaptiven Tab „Audio Character" für den geladenen
   Track. Er unterscheidet Disabled, Pending, Failed, Stale und Ready; ein
   Trackwechsel darf nie Werte des vorherigen Tracks zeigen.
-- **AC-5** [geplant] [gtk] — Ready zeigt die vier benannten Dimensionen und
+- **AC-5** [aktiv] [gtk] — Ready zeigt die vier benannten Dimensionen und
   optional BPM samt Unsicherheit. Farbe ist nie der einzige Informationsträger;
   Screenreader erhalten Dimension und Wert. Dateipfade, interne Versionen und
   objektive Mood-Aussagen erscheinen nicht.

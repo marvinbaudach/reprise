@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-19 09:50+0200\n"
+"POT-Creation-Date: 2026-07-19 10:08+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -921,6 +921,86 @@ msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:33
 msgid "Reanalyze"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:34
+msgid "Play a track to see its Audio Character"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:36
+msgid "The loaded track's local audio profile will appear here."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:37
+msgid "Local audio analysis is disabled"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:39
+msgid "Enable Analyze audio locally in Library Settings."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:40
+msgid "Audio Character is pending"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:42
+msgid "This track is waiting for local analysis."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:43
+msgid "Audio Character analysis failed"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:45
+msgid "Retry failed tracks from Library Settings."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:46
+msgid "Audio Character is stale"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:48
+msgid "The local profile will be updated in the background."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:49
+msgid "Intensity"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:50
+msgid "Brightness"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:51
+msgid "Dynamicity"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:52
+msgid "Rhythmicity"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:53
+#, rust-format
+msgid "Confidence {confidence}%"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:55
+#, rust-format
+msgid "{dimension}, {value}%, confidence {confidence}%"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:56
+msgid "Tempo"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:57
+#, rust-format
+msgid "{bpm} BPM"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:59
+#, rust-format
+msgid "Tempo, {bpm} BPM, confidence {confidence}%"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:7

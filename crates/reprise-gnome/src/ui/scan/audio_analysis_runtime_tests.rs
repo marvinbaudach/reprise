@@ -376,6 +376,34 @@ fn progress_channel_coalesces_to_the_latest_state() {
 }
 
 #[test]
+fn progress_is_broadcast_to_each_ui_surface() {
+    let (_directory, db_path) = database(0);
+    let runtime = AudioAnalysisRuntime::new(
+        db_path,
+        Arc::new(FakeAnalysisBackend::ready()),
+        Arc::new(FakeWaveformBackend::default()),
+        false,
+    )
+    .unwrap();
+    let first = runtime.progress_receiver();
+    let second = runtime.progress_receiver();
+    let _ = first.try_recv();
+    let _ = second.try_recv();
+
+    runtime.cancel();
+
+    assert_eq!(
+        first.try_recv().unwrap().activity,
+        AnalysisActivity::Cancelled
+    );
+    assert_eq!(
+        second.try_recv().unwrap().activity,
+        AnalysisActivity::Cancelled
+    );
+    runtime.shutdown();
+}
+
+#[test]
 fn profile_version_changes_reproject_stored_evidence_without_pcm() {
     let (_directory, db_path) = database(1);
     let conn = reprise_core::db::open_migrated(Some(&db_path)).unwrap();

@@ -91,8 +91,12 @@ struct SharedState {
     state: Mutex<WorkerState>,
     changed: Condvar,
     decode_cancelled: AtomicBool,
-    progress_sender: async_channel::Sender<AnalysisProgress>,
-    stale_progress: async_channel::Receiver<AnalysisProgress>,
+    progress_subscribers: Mutex<Vec<ProgressSubscription>>,
+}
+
+struct ProgressSubscription {
+    sender: async_channel::Sender<AnalysisProgress>,
+    stale: async_channel::Receiver<AnalysisProgress>,
 }
 
 struct RuntimeInner {
@@ -115,7 +119,6 @@ impl AudioAnalysisRuntime {
         waveform_backend: Arc<dyn WaveformBackend>,
         enabled: bool,
     ) -> Result<Self, std::io::Error> {
-        let (progress_sender, progress_receiver) = async_channel::bounded(1);
         let inner = Arc::new(RuntimeInner {
             db_path,
             analysis_backend,
@@ -124,8 +127,7 @@ impl AudioAnalysisRuntime {
                 state: Mutex::new(WorkerState::new(enabled)),
                 changed: Condvar::new(),
                 decode_cancelled: AtomicBool::new(false),
-                progress_sender,
-                stale_progress: progress_receiver.clone(),
+                progress_subscribers: Mutex::new(Vec::new()),
             }),
             worker: Mutex::new(None),
         });
@@ -249,7 +251,13 @@ impl AudioAnalysisRuntime {
     }
 
     pub(in crate::ui) fn progress_receiver(&self) -> async_channel::Receiver<AnalysisProgress> {
-        self.inner.shared.stale_progress.clone()
+        let (sender, receiver) = async_channel::bounded(1);
+        let _ = sender.try_send(self.progress());
+        lock(&self.inner.shared.progress_subscribers).push(ProgressSubscription {
+            sender,
+            stale: receiver.clone(),
+        });
+        receiver
     }
 
     pub(in crate::ui) fn shutdown(&self) {
@@ -539,14 +547,18 @@ fn publish_running(shared: &SharedState, track_id: i64) {
 }
 
 fn publish_progress(shared: &SharedState, progress: AnalysisProgress) {
-    match shared.progress_sender.try_send(progress) {
-        Ok(()) => {}
-        Err(async_channel::TrySendError::Full(progress)) => {
-            let _ = shared.stale_progress.try_recv();
-            let _ = shared.progress_sender.try_send(progress);
+    lock(&shared.progress_subscribers).retain(|subscriber| {
+        if subscriber.sender.is_closed() {
+            return false;
         }
-        Err(async_channel::TrySendError::Closed(_)) => {}
-    }
+        if let Err(async_channel::TrySendError::Full(progress)) =
+            subscriber.sender.try_send(progress)
+        {
+            let _ = subscriber.stale.try_recv();
+            let _ = subscriber.sender.try_send(progress);
+        }
+        true
+    });
 }
 
 fn set_processing(shared: &SharedState, processing: bool) {
