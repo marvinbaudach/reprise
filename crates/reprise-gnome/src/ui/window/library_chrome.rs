@@ -327,18 +327,36 @@ mod tests {
             reprise_core::library::settings::PlayerBarPosition::Bottom,
         );
         window.set_content(Some(shell.widget()));
+        // The glass zone is an overlay sized to its natural height, so the
+        // toplevel needs real room; without an explicit size the window falls
+        // back to the 360x200 HIG minimum and the assertions below measure a
+        // window that only happens to be tall enough. Sibling shell tests
+        // (`play_7a_...`) size their window for the same reason.
+        window.set_default_size(1_000, 600);
+        // GtkSearchBar reveals through a GtkRevealer. With animations on, the
+        // revealed height is reached by advancing a transition on the frame
+        // clock, so this test would be asserting on frame-clock tick delivery
+        // rather than on the chrome wiring. Headless X servers do not
+        // guarantee those ticks: the bar then stays at position 0 forever and
+        // `search_bar.height()` reads 0 no matter how long the test waits.
+        // Disabling animations makes GtkRevealer jump straight to the revealed
+        // position, which is the state this test is actually about.
+        let settings = gtk4::Settings::default().expect("GTK settings after gtk4::init");
+        let animations_before = settings.is_gtk_enable_animations();
+        settings.set_gtk_enable_animations(false);
         window.present();
         wait_for_layout(100);
         let collapsed_inset = rows.margin_top();
         assert_eq!(collapsed_inset, chrome.root.height());
 
         chrome.search_bar.set_search_mode(true);
-        wait_for_layout(350);
+        wait_for_layout(100);
         assert!(chrome.search_bar.is_search_mode());
         assert!(chrome.search_bar.height() > 0);
         assert!(rows.margin_top() > collapsed_inset);
         assert_eq!(rows.margin_top(), chrome.root.height());
         assert_eq!(rows.margin_bottom(), player.height());
+        settings.set_gtk_enable_animations(animations_before);
         window.close();
     }
 
