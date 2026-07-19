@@ -132,10 +132,11 @@ fn wire_search_toggle(
         let (Some(toggle), Some(bar)) = (toggle_weak.upgrade(), bar.upgrade()) else {
             return;
         };
-        if bar.is_search_mode() && !entry.text().is_empty() {
-            *stash.borrow_mut() = entry.text().to_string();
+        let query = entry.text();
+        if bar.is_search_mode() && !query.is_empty() {
+            *stash.borrow_mut() = query.to_string();
         }
-        toggle.set_active(search_toggle_active(bar.is_search_mode(), &entry.text()));
+        toggle.set_active(search_toggle_active(bar.is_search_mode(), &query));
     });
 }
 
