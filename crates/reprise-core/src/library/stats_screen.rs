@@ -8,7 +8,9 @@ use std::collections::HashMap;
 
 use rusqlite::{params, Connection};
 
-use super::group_key::{fold_groups, normalize_group_key, Group, GroupInput, GroupKind};
+use super::group_key::{
+    fold_groups, normalize_group_key, Group, GroupInput, GroupKind, KeyResolver,
+};
 use crate::queries::library_views::EFFECTIVE_ALBUM_ARTIST;
 
 const CLAMPED_MS: &str =
@@ -62,13 +64,6 @@ pub struct TopTrack {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TopGenre {
-    pub genre: String,
-    pub plays: i64,
-    pub total_ms: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HourlyListens {
     pub hour: i32,
     pub listens: i64,
@@ -107,7 +102,22 @@ pub(crate) struct AlbumRow {
 pub(crate) struct TrackAggregate {
     pub track: TopTrack,
     pub effective_artist: String,
-    pub artist_mbid: Option<String>,
+}
+
+/// `tracks.artist_mbid` is keyed to the raw `artist` column, but the stats
+/// screen groups by the effective *album* artist. On a compilation row those
+/// two name different acts, and using the MBID there would fold a guest into
+/// the host's numbers (and into the host's "Play"). Only an album artist that
+/// is absent, or the same act under another spelling, keeps the MBID.
+fn eligible_artist_mbid<'a>(
+    artist: &str,
+    album_artist: &str,
+    mbid: Option<&'a str>,
+) -> Option<&'a str> {
+    let mbid = mbid.map(str::trim).filter(|value| !value.is_empty())?;
+    let is_same_act = album_artist.trim().is_empty()
+        || normalize_group_key(album_artist) == normalize_group_key(artist);
+    is_same_act.then_some(mbid)
 }
 
 /// One named home for the play threshold shared by playback and local stats.
@@ -176,16 +186,36 @@ pub(crate) fn artist_rows(
     start_unix: i64,
     end_unix: i64,
 ) -> Result<Vec<NamedRow>, rusqlite::Error> {
+    // Grouped one level finer than the fold needs, because MBID eligibility is
+    // a per-row question (see `eligible_artist_mbid`) and SQLite cannot answer
+    // it: its `lower()` folds no diacritics. Rust decides, then folds.
     let sql = format!(
-        "SELECT {RAW_EFFECTIVE_ALBUM_ARTIST} AS raw, \
-                MAX(NULLIF(TRIM(t.artist_mbid), '')), COUNT(le.id), \
+        "SELECT {RAW_EFFECTIVE_ALBUM_ARTIST} AS raw, t.artist, t.album_artist, \
+                NULLIF(TRIM(t.artist_mbid), ''), COUNT(le.id), \
                 COALESCE(SUM({CLAMPED_MS}), 0), MAX(le.played_at), MIN(t.path) \
          FROM listen_events le JOIN tracks t ON t.id = le.track_id \
          WHERE le.played_at >= ?1 AND le.played_at < ?2 \
            AND TRIM({EFFECTIVE_ALBUM_ARTIST}) <> '' \
-         GROUP BY raw"
+         GROUP BY raw, t.artist, t.album_artist, t.artist_mbid"
     );
-    query_named_rows(conn, &sql, start_unix, end_unix)
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement
+        .query_map(params![start_unix, end_unix], |row| {
+            let artist: String = row.get(1)?;
+            let album_artist: String = row.get(2)?;
+            let mbid: Option<String> = row.get(3)?;
+            Ok(NamedRow {
+                raw: row.get(0)?,
+                mbid: eligible_artist_mbid(&artist, &album_artist, mbid.as_deref())
+                    .map(str::to_string),
+                plays: row.get(4)?,
+                ms: row.get(5)?,
+                last_played_at: row.get(6)?,
+                path: row.get(7)?,
+            })
+        })?
+        .collect();
+    rows
 }
 
 pub(crate) fn genre_rows(
@@ -243,7 +273,7 @@ pub(crate) fn track_rows(
     let sql = format!(
         "SELECT t.id, t.title, t.artist, t.album, COUNT(le.id), \
                 COALESCE(SUM({CLAMPED_MS}), 0), t.path, \
-                {RAW_EFFECTIVE_ALBUM_ARTIST}, t.artist_mbid \
+                {RAW_EFFECTIVE_ALBUM_ARTIST} \
          FROM listen_events le JOIN tracks t ON t.id = le.track_id \
          WHERE le.played_at >= ?1 AND le.played_at < ?2 \
          GROUP BY t.id"
@@ -262,7 +292,6 @@ pub(crate) fn track_rows(
                     track_path: row.get(6)?,
                 },
                 effective_artist: row.get(7)?,
-                artist_mbid: row.get(8)?,
             })
         })?
         .collect();
@@ -286,6 +315,11 @@ pub(crate) fn discovered_count(
 }
 
 /// Track ids belonging to an exact runtime metadata group.
+///
+/// Deliberately spans the whole catalog, not the selected period: pressing
+/// "Play" on a stats row plays the artist, not the slice of them that happened
+/// to be heard this year. Missing and removed tracks are excluded because they
+/// cannot be played, even though their listen events still feed the numbers.
 pub fn group_track_ids(
     conn: &Connection,
     kind: GroupKind,
@@ -295,53 +329,87 @@ pub fn group_track_ids(
         GroupKind::Artist | GroupKind::AlbumArtist => RAW_EFFECTIVE_ALBUM_ARTIST,
         GroupKind::Genre => "t.genre",
     };
-    let mbid_expression = if kind == GroupKind::Artist {
-        "t.artist_mbid"
-    } else {
-        "NULL"
-    };
     let sql = format!(
-        "SELECT t.id, {raw_expression}, {mbid_expression} FROM tracks t \
+        "SELECT t.id, {raw_expression}, t.artist, t.album_artist, t.artist_mbid FROM tracks t \
          WHERE t.missing_since IS NULL AND t.removed_at IS NULL \
            AND TRIM({raw_expression}) <> '' ORDER BY t.id"
     );
     let mut statement = conn.prepare(&sql)?;
     let rows = statement
         .query_map([], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, Option<String>>(2)?,
-            ))
+            Ok(CatalogRow {
+                id: row.get(0)?,
+                raw: row.get(1)?,
+                artist: row.get(2)?,
+                album_artist: row.get(3)?,
+                mbid: row.get(4)?,
+            })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    let mut mbid_by_raw = HashMap::<String, String>::new();
-    if kind == GroupKind::Artist {
-        for (_, raw, mbid) in &rows {
-            let Some(mbid) = mbid
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-            else {
-                continue;
-            };
-            let stored = mbid_by_raw.entry(raw.clone()).or_default();
-            if mbid > stored.as_str() {
-                *stored = mbid.to_string();
-            }
+
+    // Same resolution as the snapshot, over a different population. Each track
+    // weighs one play, because the catalog carries no listen counts here.
+    let uses_mbid = kind == GroupKind::Artist;
+    let resolver = KeyResolver::build(rows.iter().map(|row| {
+        GroupInput {
+            raw: &row.raw,
+            mbid: uses_mbid
+                .then(|| eligible_artist_mbid(&row.artist, &row.album_artist, row.mbid.as_deref()))
+                .flatten(),
+            plays: 1,
+            ms: 0,
+            last_played_at: 0,
         }
+    }));
+
+    let ids = rows
+        .iter()
+        .filter(|row| resolver.key_for(&row.raw) == key)
+        .map(|row| row.id)
+        .collect::<Vec<_>>();
+    if !ids.is_empty() {
+        return Ok(ids);
     }
-    let mut ids = Vec::new();
-    for (id, raw, mbid) in rows {
-        let effective_mbid = mbid_by_raw
-            .get(&raw)
-            .map(String::as_str)
-            .or(mbid.as_deref());
-        if key_for(&raw, effective_mbid) == key {
-            ids.push(id);
-        }
+
+    // The key came from a period-scoped fold; the catalog may have resolved the
+    // same act to another MBID, or to none. Recover it by name before giving up.
+    let names = resolver.names_for_key(key);
+    let ids = rows
+        .iter()
+        .filter(|row| names.contains(&normalize_group_key(&row.raw)))
+        .map(|row| row.id)
+        .collect::<Vec<_>>();
+    if ids.is_empty() {
+        tracing::warn!(
+            ?kind,
+            key,
+            "stats group key resolved to no playable track; the group is empty or entirely missing"
+        );
+    } else {
+        tracing::debug!(?kind, key, "stats group key recovered by name fallback");
     }
     Ok(ids)
+}
+
+struct CatalogRow {
+    id: i64,
+    raw: String,
+    artist: String,
+    album_artist: String,
+    mbid: Option<String>,
+}
+
+/// The key resolution behind one set of aggregate rows. Callers that need to
+/// key something else against the same aggregates (the spotlight keying tracks,
+/// say) must reuse this rather than resolve a key of their own.
+pub(crate) fn key_resolver(rows: &[NamedRow]) -> KeyResolver {
+    KeyResolver::build(rows.iter().map(|row| GroupInput {
+        raw: &row.raw,
+        mbid: row.mbid.as_deref(),
+        plays: row.plays,
+        ms: row.ms,
+        last_played_at: row.last_played_at,
+    }))
 }
 
 pub(crate) fn ranked_groups(rows: &[NamedRow]) -> Vec<RankedGroup> {
@@ -356,10 +424,12 @@ pub(crate) fn ranked_groups(rows: &[NamedRow]) -> Vec<RankedGroup> {
             last_played_at: row.last_played_at,
         })
         .collect::<Vec<_>>();
+    let resolver = key_resolver(rows);
     let mut paths = HashMap::<String, String>::new();
     for row in rows {
-        let key = key_for(&row.raw, row.mbid.as_deref());
-        let path = paths.entry(key).or_insert_with(|| row.path.clone());
+        let path = paths
+            .entry(resolver.key_for(&row.raw))
+            .or_insert_with(|| row.path.clone());
         if row.path < *path {
             *path = row.path.clone();
         }
@@ -371,20 +441,6 @@ pub(crate) fn ranked_groups(rows: &[NamedRow]) -> Vec<RankedGroup> {
             group,
         })
         .collect()
-}
-
-pub(crate) fn key_for(raw: &str, mbid: Option<&str>) -> String {
-    fold_groups(&[GroupInput {
-        raw,
-        mbid,
-        plays: 0,
-        ms: 0,
-        last_played_at: 0,
-    }])
-    .into_iter()
-    .next()
-    .map(|group| group.key)
-    .unwrap_or_default()
 }
 
 fn query_named_rows(
@@ -410,16 +466,23 @@ fn query_named_rows(
 }
 
 pub(crate) fn fold_album_rows(rows: &[AlbumRow]) -> Vec<TopAlbum> {
-    let mut by_album = HashMap::<String, Vec<&NamedRow>>::new();
+    // The title folds by the same rule as the artist half of the row, or
+    // "Immortal" and "immortal " would stay two rows of one artist.
+    let mut by_album = HashMap::<String, Vec<&AlbumRow>>::new();
     for row in rows {
-        by_album
-            .entry(row.album.clone())
-            .or_default()
-            .push(&row.artist);
+        let key = normalize_group_key(&row.album);
+        if key.is_empty() {
+            continue;
+        }
+        by_album.entry(key).or_default().push(row);
     }
     let mut albums = Vec::new();
-    for (album, artists) in by_album {
-        let owned = artists.into_iter().cloned().collect::<Vec<_>>();
+    for variants in by_album.into_values() {
+        let album = album_label(&variants);
+        let owned = variants
+            .iter()
+            .map(|row| row.artist.clone())
+            .collect::<Vec<_>>();
         for artist in ranked_groups(&owned) {
             albums.push(TopAlbum {
                 album: album.clone(),
@@ -439,6 +502,26 @@ pub(crate) fn fold_album_rows(rows: &[AlbumRow]) -> Vec<TopAlbum> {
             .then_with(|| left.album_artist.cmp(&right.album_artist))
     });
     albums
+}
+
+/// The displayed spelling of one folded album title, chosen by the same rule
+/// STATS-9 gives artist labels: most played, then last played, then alphabetic.
+fn album_label(variants: &[&AlbumRow]) -> String {
+    let inputs = variants
+        .iter()
+        .map(|row| GroupInput {
+            raw: &row.album,
+            mbid: None,
+            plays: row.artist.plays,
+            ms: row.artist.ms,
+            last_played_at: row.artist.last_played_at,
+        })
+        .collect::<Vec<_>>();
+    fold_groups(&inputs)
+        .into_iter()
+        .next()
+        .map(|group| group.label)
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

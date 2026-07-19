@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use unicode_normalization::{char::is_combining_mark, UnicodeNormalization};
 
@@ -95,14 +95,103 @@ impl GroupAccumulator {
     }
 }
 
+/// The one place a raw metadata spelling becomes a group key.
+///
+/// Names fold first (STATS-9 stage 2), and an MBID is only consulted *inside*
+/// the resulting name group, where it becomes that group's stable identity and
+/// merges any other name group carrying the same identity. Resolving MBIDs per
+/// raw spelling — as an earlier revision did — splits exactly what the name
+/// fold just merged, because sparse MBIDs typically hang off a single spelling.
+///
+/// Build it once per domain and use it everywhere that domain is keyed:
+/// aggregates, spotlight and the track lookup must never disagree.
+#[derive(Clone, Debug, Default)]
+pub struct KeyResolver {
+    keys_by_name: HashMap<String, String>,
+    names_by_mbid: HashMap<String, BTreeSet<String>>,
+}
+
+impl KeyResolver {
+    pub fn build<'a>(rows: impl IntoIterator<Item = GroupInput<'a>>) -> Self {
+        let mut plays_by_name_and_mbid = HashMap::<String, BTreeMap<String, i64>>::new();
+        let mut names_by_mbid = HashMap::<String, BTreeSet<String>>::new();
+        for row in rows {
+            let name = normalize_group_key(row.raw);
+            let by_mbid = plays_by_name_and_mbid.entry(name.clone()).or_default();
+            let Some(mbid) = row.mbid.map(str::trim).filter(|mbid| !mbid.is_empty()) else {
+                continue;
+            };
+            *by_mbid.entry(mbid.to_string()).or_default() += row.plays;
+            names_by_mbid
+                .entry(mbid.to_string())
+                .or_default()
+                .insert(name);
+        }
+        let keys_by_name = plays_by_name_and_mbid
+            .into_iter()
+            .map(|(name, by_mbid)| {
+                let key = dominant_mbid(by_mbid)
+                    .map_or_else(|| format!("name:{name}"), |mbid| format!("mbid:{mbid}"));
+                (name, key)
+            })
+            .collect();
+        Self {
+            keys_by_name,
+            names_by_mbid,
+        }
+    }
+
+    /// The group key of a raw spelling. Spellings the resolver never saw fall
+    /// back to their own name key, so a lookup can never return an empty key.
+    pub fn key_for(&self, raw: &str) -> String {
+        let name = normalize_group_key(raw);
+        match self.keys_by_name.get(&name) {
+            Some(key) => key.clone(),
+            None => format!("name:{name}"),
+        }
+    }
+
+    /// Normalized names covered by `key`, for callers that must recover a group
+    /// from a key another domain resolved (a period-scoped snapshot key looked
+    /// up against the whole catalog, say). Deliberately conservative: it widens
+    /// an MBID key to every name that carries that MBID, but never chases the
+    /// merge further, so a fallback can only ever return the asked-for act.
+    pub fn names_for_key(&self, key: &str) -> BTreeSet<String> {
+        let mut names = self
+            .keys_by_name
+            .iter()
+            .filter(|(_, resolved)| resolved.as_str() == key)
+            .map(|(name, _)| name.clone())
+            .collect::<BTreeSet<_>>();
+        if let Some(mbid) = key.strip_prefix("mbid:") {
+            names.extend(self.names_by_mbid.get(mbid).into_iter().flatten().cloned());
+        }
+        if let Some(name) = key.strip_prefix("name:") {
+            names.insert(name.to_string());
+        }
+        names
+    }
+}
+
+/// Most-played MBID of one name group, tiebroken alphabetically so the key is
+/// independent of row order.
+fn dominant_mbid(by_mbid: BTreeMap<String, i64>) -> Option<String> {
+    by_mbid
+        .into_iter()
+        .max_by(|(left_mbid, left_plays), (right_mbid, right_plays)| {
+            left_plays
+                .cmp(right_plays)
+                .then_with(|| right_mbid.cmp(left_mbid))
+        })
+        .map(|(mbid, _)| mbid)
+}
+
 /// Folds raw rows into exact runtime groups and returns a total display order.
 pub fn fold_groups(rows: &[GroupInput<'_>]) -> Vec<Group> {
+    let resolver = KeyResolver::build(rows.iter().copied());
     let mut accumulators = HashMap::<String, GroupAccumulator>::new();
     for row in rows {
-        let key = match row.mbid.map(str::trim).filter(|mbid| !mbid.is_empty()) {
-            Some(mbid) => format!("mbid:{mbid}"),
-            None => format!("name:{}", normalize_group_key(row.raw)),
-        };
+        let key = resolver.key_for(row.raw);
         accumulators
             .entry(key.clone())
             .or_insert_with(|| GroupAccumulator::new(key))
