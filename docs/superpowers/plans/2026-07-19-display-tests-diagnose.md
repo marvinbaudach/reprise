@@ -1,3 +1,11 @@
+---
+slug: display-tests-fix
+worktree: /home/marvin/Projects/reprise/.worktrees/album-view-improvements-display-tests-fix
+branch: feature/display-tests-fix
+phase: coded
+codex_session:
+created: 2026-07-19
+---
 # Display-Tests — Diagnose und Handoff (2026-07-19, 12:34)
 
 Gemessen auf `main` = `0577121d`. Ersetzt die P0-Liste in
