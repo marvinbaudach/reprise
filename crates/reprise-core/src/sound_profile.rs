@@ -110,6 +110,9 @@ pub struct AudioEvidence {
     tempo: Option<TempoEstimate>,
 }
 
+#[path = "sound_profile_accessors.rs"]
+mod accessors;
+
 impl AudioEvidence {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
