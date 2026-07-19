@@ -302,6 +302,82 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn width_dependent_grid_keeps_full_allocation_after_view_stack_reveal() {
+        gtk4::init().unwrap();
+        let strings = gtk4::StringList::new(
+            &(0..120)
+                .map(|index| format!("Album {index:05}"))
+                .collect::<Vec<_>>()
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+        );
+        let selection = gtk4::NoSelection::new(Some(strings));
+        let factory = gtk4::SignalListItemFactory::new();
+        factory.connect_setup(|_, item| {
+            let item = item.downcast_ref::<gtk4::ListItem>().unwrap();
+            let label = gtk4::Label::new(None);
+            label.set_size_request(180, 180);
+            item.set_child(Some(&label));
+        });
+        factory.connect_bind(|_, item| {
+            let item = item.downcast_ref::<gtk4::ListItem>().unwrap();
+            let label = item.child().and_downcast::<gtk4::Label>().unwrap();
+            let value = item.item().and_downcast::<gtk4::StringObject>().unwrap();
+            label.set_label(&value.string());
+        });
+        let grid = gtk4::GridView::new(Some(selection), Some(factory));
+        grid.set_min_columns(1);
+        grid.set_max_columns(200);
+        let albums = gtk4::ScrolledWindow::builder()
+            .child(&grid)
+            .vexpand(true)
+            .hexpand(true)
+            .build();
+        let tracks = gtk4::Label::new(Some("Tracks"));
+        tracks.set_vexpand(true);
+        let stack = libadwaita::ViewStack::builder().hhomogeneous(false).build();
+        stack.add_named(&tracks, Some("tracks"));
+        stack.add_named(&albums, Some("albums"));
+        stack.set_visible_child_name("tracks");
+
+        let applier = SafeInsetApplier::discover(&stack);
+        applier.apply(SafeInsets {
+            top: 90,
+            bottom: 96,
+        });
+        let inset = albums
+            .child()
+            .and_downcast::<super::scroll_inset::ScrollInset>()
+            .unwrap();
+        assert_eq!(inset.request_mode(), grid.request_mode());
+
+        let window = gtk4::Window::builder()
+            .default_width(800)
+            .default_height(600)
+            .child(&stack)
+            .build();
+        window.present();
+        wait_for_layout();
+        stack.set_visible_child_name("albums");
+        wait_for_layout();
+
+        assert!(
+            albums.height() >= 500,
+            "album scroller lost viewport height"
+        );
+        assert!(
+            inset.height() >= 500,
+            "scroll adapter collapsed after hidden-page reveal"
+        );
+        assert!(
+            grid.height() >= 500,
+            "width-dependent grid collapsed after hidden-page reveal"
+        );
+    }
+
+    #[test]
     fn glass_performance_gate_is_fail_closed() {
         let baseline = FrameSeries::new(vec![12_000; 120]);
         let passing = FrameSeries::new(vec![14_500; 120]);

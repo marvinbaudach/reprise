@@ -113,6 +113,8 @@ scroll_grid() {
 
 run_position() {
   local position=$1
+  local first_album="Album 00119"
+  local last_album="Album 00000"
   local profile_root="$scratch_root/profile-$position"
   local app_log="$CUA_E2E_OUT_DIR/$position-app.log"
   local album_path app_pid end_path start_path window_id
@@ -153,15 +155,15 @@ run_position() {
   assert_snapshot_contains "$start_path" "Albums"
   cua_click_label "$app_pid" "$window_id" "Albums" "$position-open-albums"
   album_path=$(cua_wait_for_label \
-    "$app_pid" "$window_id" "Album 00000" "$position-albums-ready")
-  assert_snapshot_contains "$album_path" "Album 00000"
+    "$app_pid" "$window_id" "$first_album" "$position-albums-ready")
+  assert_snapshot_contains "$album_path" "$first_album"
   capture_state "$app_pid" "$window_id" "$position-albums-start" >/dev/null
 
   scroll_grid \
     "$app_pid" "$window_id" down 1 "$position-albums-under-header" >/dev/null
   end_path=$(scroll_grid \
     "$app_pid" "$window_id" down 80 "$position-albums-at-end")
-  assert_snapshot_contains "$end_path" "Album 00119"
+  assert_snapshot_contains "$end_path" "$last_album"
   scroll_grid \
     "$app_pid" "$window_id" up 1 "$position-albums-above-end" >/dev/null
 
