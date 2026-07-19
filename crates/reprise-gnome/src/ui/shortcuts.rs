@@ -33,8 +33,9 @@
 //!   entry connected via `connect_entry`, the entry consumes Escape, and the
 //!   bar reads that as typing and re-opens itself after our handler returns.
 //!   `Propagation::Stop` cannot prevent it, because that controller sits at a
-//!   different dispatch step. Stage two therefore collapses on idle; see
-//!   `apply_search_escape`.
+//!   different dispatch step. Escape therefore records a pending collapse on
+//!   key press and commits it on key release, after the window-level capture
+//!   has finished.
 //!
 //! ## What's verified headlessly vs. manually
 //!
@@ -250,44 +251,39 @@ fn widget_contains_focus(window: &adw::ApplicationWindow, widget: &gtk4::Widget)
         .is_some_and(|focus| focus == *widget || focus.is_ancestor(widget))
 }
 
-fn apply_search_escape(
+fn apply_search_escape_pressed(
     search_bar: &gtk4::SearchBar,
     search_entry: &gtk4::SearchEntry,
-    focus_active_content: &Rc<dyn Fn() -> bool>,
+    collapse_on_release: &std::cell::Cell<bool>,
 ) {
     match escape_action_for(!search_entry.text().is_empty()) {
         EscapeAction::ClearSearchText => {
+            collapse_on_release.set(false);
             search_entry.set_text("");
             search_bar.set_search_mode(true);
             search_entry.grab_focus();
         }
         EscapeAction::CollapseSearchBarAndFocusActiveContent => {
-            // Collapsing synchronously here does not stick. `GtkSearchBar` has
-            // its own key-capture controller on the window (installed by
-            // `set_key_capture_widget`), which forwards the key to the entry
-            // connected via `connect_entry`. The entry consumes Escape, the
-            // search bar reads that as typing and re-asserts search mode —
-            // after our handler has returned. Returning `Propagation::Stop`
-            // does not help: that controller sits on the window, a different
-            // dispatch step from ours on the bar.
-            //
-            // Deferring to idle puts the collapse after that re-assertion.
-            // Moving our controller to the window would also work but would
-            // steal Escape from a dialog opened while search mode is on, which
-            // is the scoping this module deliberately keeps (see the module
-            // doc) so ACC-5's "Esc closes exactly this layer" holds.
-            let bar = search_bar.downgrade();
-            let focus_active_content = Rc::clone(focus_active_content);
-            gtk4::glib::idle_add_local_once(move || {
-                let Some(bar) = bar.upgrade() else {
-                    return;
-                };
-                bar.set_search_mode(false);
-                if !focus_active_content() {
-                    tracing::warn!("escape: could not move focus to the active content view");
-                }
-            });
+            // GtkSearchBar's separate window-level capture can reassert search
+            // mode after this bar-local key-press handler. Keep the bar mapped
+            // until release, then close after every key-press participant has
+            // finished. This also keeps the release routed to this controller.
+            collapse_on_release.set(true);
         }
+    }
+}
+
+fn apply_search_escape_released(
+    search_bar: &gtk4::SearchBar,
+    collapse_on_release: &std::cell::Cell<bool>,
+    focus_active_content: &Rc<dyn Fn() -> bool>,
+) {
+    if !collapse_on_release.replace(false) {
+        return;
+    }
+    search_bar.set_search_mode(false);
+    if !focus_active_content() {
+        tracing::warn!("escape: could not move focus to the active content view");
     }
 }
 
@@ -298,8 +294,10 @@ fn wire_escape(
 ) {
     let controller = gtk4::EventControllerKey::new();
     controller.set_propagation_phase(gtk4::PropagationPhase::Capture);
+    let collapse_on_release = Rc::new(std::cell::Cell::new(false));
     let bar = search_bar.downgrade();
     let entry = search_entry.downgrade();
+    let pending_on_press = collapse_on_release.clone();
     controller.connect_key_pressed(move |_, key, _, _| {
         let (Some(bar), Some(entry)) = (bar.upgrade(), entry.upgrade()) else {
             return gtk4::glib::Propagation::Proceed;
@@ -307,8 +305,17 @@ fn wire_escape(
         if key != gtk4::gdk::Key::Escape || !bar.is_search_mode() {
             return gtk4::glib::Propagation::Proceed;
         }
-        apply_search_escape(&bar, &entry, &focus_active_content);
+        apply_search_escape_pressed(&bar, &entry, &pending_on_press);
         gtk4::glib::Propagation::Stop
+    });
+    let bar = search_bar.downgrade();
+    controller.connect_key_released(move |_, key, _, _| {
+        let Some(bar) = bar.upgrade() else {
+            return;
+        };
+        if key == gtk4::gdk::Key::Escape {
+            apply_search_escape_released(&bar, &collapse_on_release, &focus_active_content);
+        }
     });
     search_bar.add_controller(controller);
 }
@@ -401,16 +408,72 @@ mod tests {
             true
         });
 
-        apply_search_escape(&search_bar, &entry, &focus_active_content);
+        let collapse_on_release = std::cell::Cell::new(false);
+        apply_search_escape_pressed(&search_bar, &entry, &collapse_on_release);
+        apply_search_escape_released(&search_bar, &collapse_on_release, &focus_active_content);
         assert_eq!(entry.text(), "");
         assert!(search_bar.is_search_mode());
 
-        apply_search_escape(&search_bar, &entry, &focus_active_content);
-        // Stage two is deferred to idle so `GtkSearchBar` cannot re-assert
-        // search mode behind it, so the effect lands only once the loop runs.
+        apply_search_escape_pressed(&search_bar, &entry, &collapse_on_release);
         assert!(search_bar.is_search_mode());
-        while gtk4::glib::MainContext::default().iteration(false) {}
+        apply_search_escape_released(&search_bar, &collapse_on_release, &focus_active_content);
         assert!(!search_bar.is_search_mode());
+        assert_eq!(focus_calls.get(), 1);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn search_4_escape_release_wins_over_late_search_bar_reopen() {
+        gtk4::init().unwrap();
+        let search_bar = gtk4::SearchBar::new();
+        let entry = gtk4::SearchEntry::new();
+        search_bar.set_child(Some(&entry));
+        search_bar.set_search_mode(true);
+
+        let focus_calls = Rc::new(std::cell::Cell::new(0));
+        let counted = Rc::clone(&focus_calls);
+        let focus_active_content: Rc<dyn Fn() -> bool> = Rc::new(move || {
+            counted.set(counted.get() + 1);
+            true
+        });
+        let controller_count = search_bar.observe_controllers().n_items();
+        wire_escape(&search_bar, &entry, focus_active_content);
+        let controller = search_bar
+            .observe_controllers()
+            .item(controller_count)
+            .and_downcast::<gtk4::EventControllerKey>()
+            .expect("wire_escape must append one key controller");
+
+        let stopped = controller.emit_by_name::<bool>(
+            "key-pressed",
+            &[
+                &gtk4::gdk::Key::Escape,
+                &0_u32,
+                &gtk4::gdk::ModifierType::empty(),
+            ],
+        );
+        assert!(stopped);
+
+        // Keep the bar mapped until release so the controller remains in the
+        // event route. GtkSearchBar may reassert this same open state from its
+        // separate window-level key capture before release arrives.
+        assert!(search_bar.is_search_mode());
+        search_bar.set_search_mode(true);
+
+        controller.emit_by_name::<()>(
+            "key-released",
+            &[
+                &gtk4::gdk::Key::Escape,
+                &0_u32,
+                &gtk4::gdk::ModifierType::empty(),
+            ],
+        );
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        assert!(
+            !search_bar.is_search_mode(),
+            "the late GtkSearchBar reopen survived the Escape release"
+        );
         assert_eq!(focus_calls.get(), 1);
     }
 

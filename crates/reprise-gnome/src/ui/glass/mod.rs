@@ -5,7 +5,9 @@ mod performance;
 mod scroll_inset;
 mod surface;
 
-pub(crate) use insets::{mark_top_inset_anchor, SafeInsetApplier, SafeInsets};
+pub(crate) use insets::{
+    mark_safe_inset_anchor, mark_top_inset_anchor, SafeInsetApplier, SafeInsets,
+};
 #[cfg(test)]
 pub(crate) use insets::{InsetMeasurements, PlayerBarEdge};
 pub(in crate::ui) use performance::arm as arm_performance_measurement;
@@ -227,6 +229,110 @@ mod tests {
         assert_eq!(first_child.margin_bottom(), 100);
         assert_eq!(second_child.margin_top(), 90);
         assert_eq!(second_child.margin_bottom(), 96);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn fixed_side_columns_reserve_both_glass_edges_without_double_insetting_children() {
+        gtk4::init().unwrap();
+
+        let left_rows = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        left_rows.append(&gtk4::Label::new(Some("Music")));
+        let left_scrolled = gtk4::ScrolledWindow::builder()
+            .child(&left_rows)
+            .vexpand(true)
+            .build();
+        let left_issues = gtk4::Label::new(Some("Issues"));
+        let left = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        left.add_css_class("reprise-glass-safe-inset-anchor");
+        left.append(&left_scrolled);
+        left.append(&left_issues);
+
+        let center_rows = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        center_rows.append(&gtk4::Label::new(Some("First album")));
+        center_rows.append(&gtk4::Label::new(Some("Last album")));
+        let center = gtk4::ScrolledWindow::builder()
+            .child(&center_rows)
+            .hexpand(true)
+            .vexpand(true)
+            .build();
+
+        let right = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        right.add_css_class("reprise-glass-safe-inset-anchor");
+        right.append(&gtk4::Label::new(Some("Now playing cover")));
+        right.append(&gtk4::Label::new(Some("Up next")));
+
+        let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        root.append(&left);
+        root.append(&center);
+        root.append(&right);
+
+        let applier = SafeInsetApplier::discover(&root);
+        applier.apply(SafeInsets {
+            top: 64,
+            bottom: 112,
+        });
+
+        assert_eq!(left.margin_top(), 64);
+        assert_eq!(left.margin_bottom(), 112);
+        assert_eq!(right.margin_top(), 64);
+        assert_eq!(right.margin_bottom(), 112);
+        assert_eq!(left_rows.margin_top(), 0);
+        assert_eq!(left_rows.margin_bottom(), 0);
+        assert_eq!(center_rows.margin_top(), 64);
+        assert_eq!(center_rows.margin_bottom(), 112);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn fixed_side_anchors_are_discovered_through_both_adwaita_split_layers() {
+        gtk4::init().unwrap();
+
+        let left = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        left.add_css_class("reprise-glass-safe-inset-anchor");
+        left.append(&gtk4::Label::new(Some("Issues")));
+        let left_page = libadwaita::NavigationPage::builder()
+            .title("Library")
+            .child(&left)
+            .build();
+
+        let center_rows = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        center_rows.append(&gtk4::Label::new(Some("First")));
+        center_rows.append(&gtk4::Label::new(Some("Last")));
+        let center = gtk4::ScrolledWindow::builder().child(&center_rows).build();
+
+        let right = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        right.add_css_class("reprise-glass-safe-inset-anchor");
+        right.append(&gtk4::Label::new(Some("Cover")));
+        let right_toolbar = libadwaita::ToolbarView::new();
+        right_toolbar.set_content(Some(&right));
+        let inner = libadwaita::OverlaySplitView::builder()
+            .content(&center)
+            .sidebar(&right_toolbar)
+            .sidebar_position(gtk4::PackType::End)
+            .show_sidebar(true)
+            .collapsed(false)
+            .build();
+        let outer = libadwaita::OverlaySplitView::builder()
+            .content(&inner)
+            .sidebar(&left_page)
+            .sidebar_position(gtk4::PackType::Start)
+            .show_sidebar(true)
+            .collapsed(false)
+            .build();
+
+        let applier = SafeInsetApplier::discover(&outer);
+        applier.apply(SafeInsets {
+            top: 64,
+            bottom: 112,
+        });
+
+        assert_eq!(left.margin_top(), 64);
+        assert_eq!(left.margin_bottom(), 112);
+        assert_eq!(right.margin_top(), 64);
+        assert_eq!(right.margin_bottom(), 112);
+        assert_eq!(center_rows.margin_top(), 64);
+        assert_eq!(center_rows.margin_bottom(), 112);
     }
 
     #[test]

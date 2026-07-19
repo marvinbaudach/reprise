@@ -8,9 +8,21 @@ use gtk4::prelude::*;
 use super::scroll_inset::ScrollInset;
 
 const TOP_INSET_ANCHOR_CLASS: &str = "reprise-glass-top-inset-anchor";
+const SAFE_INSET_ANCHOR_CLASS: &str = "reprise-glass-safe-inset-anchor";
 
 pub(crate) fn mark_top_inset_anchor(widget: &impl IsA<gtk4::Widget>) {
     widget.add_css_class(TOP_INSET_ANCHOR_CLASS);
+}
+
+/// Keeps a fixed, non-scrolling surface between both global Glass edges.
+///
+/// Sidebar and contextual-panel chrome contains fixed children outside its
+/// nested scrollers. Applying the reserve to those scrollers alone leaves the
+/// fixed header/footer children behind the global overlays. Anchoring the
+/// surface root moves all of its content once and suppresses descendant
+/// padding on both edges.
+pub(crate) fn mark_safe_inset_anchor(widget: &impl IsA<gtk4::Widget>) {
+    widget.add_css_class(SAFE_INSET_ANCHOR_CLASS);
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -79,7 +91,7 @@ pub(crate) struct SafeInsetApplier {
 impl SafeInsetApplier {
     pub(crate) fn discover(root: &impl IsA<gtk4::Widget>) -> Self {
         let mut targets = Vec::new();
-        collect_targets(root.as_ref(), false, &mut targets);
+        collect_targets(root.as_ref(), false, false, &mut targets);
         Self {
             targets,
             current: Cell::new(SafeInsets::default()),
@@ -197,10 +209,20 @@ fn resolve_scrolled_content(scrolled: &gtk4::ScrolledWindow) -> Option<gtk4::Wid
 fn collect_targets(
     widget: &gtk4::Widget,
     ancestor_has_top_anchor: bool,
+    ancestor_has_bottom_anchor: bool,
     targets: &mut Vec<InsetTarget>,
 ) {
     let has_top_anchor = widget.has_css_class(TOP_INSET_ANCHOR_CLASS);
-    if has_top_anchor {
+    let has_safe_anchor = widget.has_css_class(SAFE_INSET_ANCHOR_CLASS);
+    if has_safe_anchor {
+        targets.push(InsetTarget::Margin {
+            base_top: widget.margin_top(),
+            base_bottom: widget.margin_bottom(),
+            widget: widget.downgrade(),
+            apply_top: true,
+            apply_bottom: true,
+        });
+    } else if has_top_anchor {
         targets.push(InsetTarget::Margin {
             base_top: widget.margin_top(),
             base_bottom: widget.margin_bottom(),
@@ -209,23 +231,29 @@ fn collect_targets(
             apply_bottom: false,
         });
     }
-    let top_is_anchored = ancestor_has_top_anchor || has_top_anchor;
+    let top_is_anchored = ancestor_has_top_anchor || has_top_anchor || has_safe_anchor;
+    let bottom_is_anchored = ancestor_has_bottom_anchor || has_safe_anchor;
 
-    if let Some(scrolled) = widget.downcast_ref::<gtk4::ScrolledWindow>() {
-        if let Some(content) = resolve_scrolled_content(scrolled) {
-            targets.push(InsetTarget::Scrolled {
-                base: Cell::new(base_margins(&content)),
-                content: RefCell::new(content.downgrade()),
-                scrolled: scrolled.downgrade(),
-                apply_top: !top_is_anchored,
-                apply_bottom: true,
-            });
+    // A full fixed-surface anchor owns both reserves. Do not even resolve its
+    // nested scrollers: resolving a native list would wrap it in ScrollInset
+    // despite there being no remaining edge to apply.
+    if !top_is_anchored || !bottom_is_anchored {
+        if let Some(scrolled) = widget.downcast_ref::<gtk4::ScrolledWindow>() {
+            if let Some(content) = resolve_scrolled_content(scrolled) {
+                targets.push(InsetTarget::Scrolled {
+                    base: Cell::new(base_margins(&content)),
+                    content: RefCell::new(content.downgrade()),
+                    scrolled: scrolled.downgrade(),
+                    apply_top: !top_is_anchored,
+                    apply_bottom: !bottom_is_anchored,
+                });
+            }
         }
     }
 
     let mut child = widget.first_child();
     while let Some(current) = child {
-        collect_targets(&current, top_is_anchored, targets);
+        collect_targets(&current, top_is_anchored, bottom_is_anchored, targets);
         child = current.next_sibling();
     }
 }
