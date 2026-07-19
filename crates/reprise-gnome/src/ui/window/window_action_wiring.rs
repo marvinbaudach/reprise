@@ -10,6 +10,7 @@ use libadwaita as adw;
 use rusqlite::Connection;
 
 use reprise_core::library::watcher::WatcherHandle;
+use reprise_core::library::{group_key::GroupKind, playlists, stats_screen::group_track_ids};
 use reprise_core::view_source::ViewSource;
 
 use super::album_view::AlbumView;
@@ -17,9 +18,14 @@ use super::artist_view::ArtistView;
 use super::player_controller::PlayerController;
 use super::scan_flow::ScanControls;
 use super::sidebar::Sidebar;
+use super::stats_view::StatsView;
 use super::track_list::TrackList;
 use crate::ui::album_card_state::{primary_album_action, PrimaryAlbumAction};
 use crate::ui::playback::play_origin;
+use crate::ui::{
+    nav_history::{NavHistory, NavPlace},
+    window::library_shell::LIBRARY_VIEW_TRACKS,
+};
 
 #[derive(Clone, Copy)]
 pub(in crate::ui) struct ActionWiring<'a> {
@@ -32,6 +38,8 @@ pub(in crate::ui) struct ActionWiring<'a> {
     pub(in crate::ui) album_view: &'a AlbumView,
     pub(in crate::ui) artist_view: &'a Rc<ArtistView>,
     pub(in crate::ui) player: &'a Option<Rc<PlayerController>>,
+    pub(in crate::ui) stats_view: &'a StatsView,
+    pub(in crate::ui) nav_history: &'a Rc<NavHistory>,
     pub(in crate::ui) content_stack: &'a gtk4::Stack,
     pub(in crate::ui) library_stack: &'a gtk4::Stack,
     pub(in crate::ui) scan_controls: &'a ScanControls,
@@ -49,6 +57,8 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
         album_view,
         artist_view,
         player,
+        stats_view,
+        nav_history,
         content_stack,
         library_stack,
         scan_controls,
@@ -124,6 +134,71 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
         });
     }
     super::tag_edit_flow::wire_refresh(track_list, sidebar, player);
+
+    {
+        let player = player.as_ref().map(Rc::downgrade);
+        let conn = conn.clone();
+        stats_view.set_on_spotlight_play(move |artist, key| {
+            let Some(player) = player.as_ref().and_then(Weak::upgrade) else {
+                return;
+            };
+            match stats_spotlight_track_ids(&conn, &key) {
+                Ok(ids) if !ids.is_empty() => {
+                    player.play_from_view(ids, 0, play_origin::from_artist(&artist));
+                }
+                Ok(_) => {}
+                Err(error) => tracing::warn!(%error, "stats spotlight track query failed"),
+            }
+        });
+    }
+    {
+        let track_list = Rc::downgrade(track_list);
+        let content_stack = content_stack.clone();
+        let library_stack = library_stack.clone();
+        let nav_history = nav_history.clone();
+        stats_view.set_on_go_to_artist(move |artist| {
+            let Some(track_list) = track_list.upgrade() else {
+                return;
+            };
+            let source = ViewSource::Artist(artist);
+            nav_history.record_route(&NavPlace::source(
+                source.clone(),
+                Some(LIBRARY_VIEW_TRACKS.to_owned()),
+            ));
+            track_list.set_source(source);
+            content_stack.set_visible_child_name("library");
+            library_stack.set_visible_child_name(LIBRARY_VIEW_TRACKS);
+        });
+    }
+    {
+        let conn = conn.clone();
+        let sidebar = Rc::downgrade(sidebar);
+        stats_view.set_on_create_smart_mix(move |genres| {
+            let created = {
+                let conn = conn.borrow();
+                create_stats_smart_mix(&conn, &genres)
+            };
+            match created {
+                Ok(Some(id)) => {
+                    if let Some(sidebar) = sidebar.upgrade() {
+                        sidebar
+                            .refresh_and_select(ViewSource::Smart(id), "stats smart mix created");
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => tracing::warn!(%error, "stats smart mix creation failed"),
+            }
+        });
+    }
+    {
+        let track_list = Rc::downgrade(track_list);
+        stats_view.set_on_unify_spellings(move |ids| {
+            let Some(track_list) = track_list.upgrade() else {
+                return;
+            };
+            forward_unify_spellings(&ids, |ids| track_list.edit_tags_for_ids(ids));
+        });
+    }
 
     // Stage 3 Task 5: context menu action wiring. `track_list` stays
     // decoupled from `PlayerController`/`Sidebar` themselves (same
@@ -542,6 +617,43 @@ fn artist_track_ids(
     )
 }
 
+fn stats_spotlight_track_ids(
+    conn: &Rc<RefCell<Connection>>,
+    key: &str,
+) -> Result<Vec<i64>, rusqlite::Error> {
+    group_track_ids(&conn.borrow(), GroupKind::Artist, key)
+}
+
+fn create_stats_smart_mix(
+    conn: &Connection,
+    genres: &[String],
+) -> Result<Option<i64>, rusqlite::Error> {
+    let Some(genre) = genres.first().filter(|genre| !genre.trim().is_empty()) else {
+        return Ok(None);
+    };
+    let rules = serde_json::json!([{
+        "field": "genre",
+        "op": "=",
+        "value": genre,
+    }])
+    .to_string();
+    playlists::create_smart(
+        conn,
+        &format!("My Stats \u{2014} {genre} Mix"),
+        &rules,
+        "play_count",
+        "desc",
+        Some(50),
+    )
+    .map(Some)
+}
+
+fn forward_unify_spellings(ids: &[i64], open: impl FnOnce(&[i64])) {
+    if !ids.is_empty() {
+        open(ids);
+    }
+}
+
 /// Fisher–Yates shuffle for the Artists hero "Shuffle" action. `reprise-gnome`
 /// carries no direct `rand`/`fastrand` dependency (the crate split kept its dep
 /// set minimal), so this seeds a tiny xorshift64 from the wall clock rather
@@ -559,6 +671,10 @@ fn shuffle_ids(mut ids: Vec<i64>) -> Vec<i64> {
     }
     ids
 }
+
+#[cfg(test)]
+#[path = "window_action_wiring_tests.rs"]
+mod stats_tests;
 
 /// Opens the containing folder of the artist's first (album-ordered) track in
 /// the desktop file manager, via `gio::AppInfo::launch_default_for_uri` on the

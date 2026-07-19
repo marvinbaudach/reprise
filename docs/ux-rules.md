@@ -929,7 +929,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   zeigt Jan–Jul, nie ein rollendes 12-Monats-Fenster. Der laufende Bucket ist
   offen markiert (gestrichelt, hohler Punkt), der Peak gesetzt; Hover nennt den
   exakten Wert. Fehlt eine Vorperiode mit Hörzeit, entfällt die Pill.
-- **STATS-2** [geplant] [core] — Das Artist-Spotlight ist das Herzstück:
+- **STATS-2** [aktiv] [core] — Das Artist-Spotlight ist das Herzstück:
   #1-Artist mit großem Cover und Rang-Badge, Eyebrow „YOUR #1 ARTIST", Name,
   Zeile „N plays · N h · N % of your listening", drei Top-Track-Chips sowie die
   Aktionen Play (Container-Play über die Trackliste des Artists) und
@@ -942,7 +942,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Segmente, der Rest wird zu „Other" gebündelt; Tracks ohne Genre zählen weder
   als Segment noch als „Other". Die Leiste ist reine Anzeige und keine
   Navigation: Segmente und Legende sind nicht klickbar.
-- **STATS-4** [geplant] [core] — Unter dem Spektrum steht eine asymmetrische
+- **STATS-4** [aktiv] [core] — Unter dem Spektrum steht eine asymmetrische
   Reihe (1.35fr / 1fr): links die Listening Clock als 24-Stunden-Histogramm aus
   den Timestamps mit teal hervorgehobenen Peak-Stunden und Caption
   („Peak 11 PM–1 AM · night owl"), rechts vier Highlight-Kacheln — Streak
@@ -968,7 +968,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   fest das Artist-Spotlight. Die Reihenfolge der Sektionen ist fix, Größen sind
   nicht manuell veränderbar — Anpassung an die Fensterbreite geschieht
   ausschließlich per AdwBreakpoint.
-- **STATS-8** [geplant] [gtk] — In My Stats gibt es keine Filter-Zeile und
+- **STATS-8** [aktiv] [gtk] — In My Stats gibt es keine Filter-Zeile und
   keine Suche der Trackliste — das ist eine andere Ansicht. Die rechte
   Now-Playing-Spalte verhält sich wie überall. Das Zeitraum-Dropdown ist der
   einzige Ansichts-Regler dieser Ansicht.
