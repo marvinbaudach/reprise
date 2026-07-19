@@ -21,6 +21,7 @@ use rusqlite::Connection;
 use super::hourly_chart::HourlyChart;
 use super::stats_customize::StatsCustomize;
 use super::stats_genre_bar::StatsGenreBar;
+use super::stats_hero::StatsHero;
 use super::stats_highlights::{StatsHighlights, TopGenre};
 use super::stats_ribbon::StatsRibbon;
 use super::stats_spotlight::StatsSpotlight;
@@ -72,6 +73,10 @@ pub(in crate::ui) struct StatsView {
     asymmetric_row: gtk4::Box,
     #[cfg_attr(not(test), allow(dead_code))]
     asymmetric_bin: adw::BreakpointBin,
+    #[cfg_attr(not(test), allow(dead_code))]
+    hero_row: gtk4::Box,
+    #[cfg_attr(not(test), allow(dead_code))]
+    hero_time_row: gtk4::Box,
     current_snapshot: Rc<RefCell<Option<StatsSnapshot>>>,
     /// Built once and shared: the period dropdown's handler holds it weakly,
     /// which is what keeps the handler from owning the page it lives in.
@@ -84,33 +89,13 @@ pub(in crate::ui) struct StatsView {
 
 impl StatsView {
     pub(in crate::ui) fn new(cover_loader: Rc<CoverLoader>) -> Self {
-        let hero_time = label("0 h", "stats-headline-hours");
-        let comparison_pill = label("", "stats-pill");
-        comparison_pill.set_visible(false);
-        let hero_subline = label(
-            "0 plays \u{00b7} \u{00d8} 0 min/day \u{00b7} 0 artists",
-            "stats-headline-subtitle",
-        );
-        let hero_text = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
-        let time_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-        time_row.append(&hero_time);
-        time_row.append(&comparison_pill);
-        hero_text.append(&time_row);
-        hero_text.append(&hero_subline);
-        hero_text.set_hexpand(true);
-
-        let period_model = gtk4::StringList::new(&[]);
-        let period_dropdown = gtk4::DropDown::builder().model(&period_model).build();
-        period_dropdown.add_css_class("stats-period-dropdown");
         let customize = StatsCustomize::new();
-        let controls = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-        controls.set_valign(gtk4::Align::Center);
-        controls.append(&period_dropdown);
-        controls.append(customize.widget());
-        let hero = gtk4::Box::new(gtk4::Orientation::Horizontal, 18);
-        hero.set_valign(gtk4::Align::Center);
-        hero.append(&hero_text);
-        hero.append(&controls);
+        let hero = StatsHero::new(&customize);
+        let hero_time = hero.time.clone();
+        let comparison_pill = hero.comparison.clone();
+        let hero_subline = hero.subline.clone();
+        let period_dropdown = hero.period_dropdown.clone();
+        let period_model = hero.period_model.clone();
 
         let ribbon = StatsRibbon::new();
         let spotlight = StatsSpotlight::new();
@@ -166,7 +151,7 @@ impl StatsView {
         page.set_margin_bottom(32);
         page.set_margin_start(24);
         page.set_margin_end(24);
-        page.append(&hero);
+        page.append(&hero.root);
         page.append(&card(ribbon.widget()));
         page.append(&card(spotlight.widget()));
         page.append(&genres_section);
@@ -296,6 +281,8 @@ impl StatsView {
             page,
             asymmetric_row,
             asymmetric_bin,
+            hero_row: hero.row,
+            hero_time_row: hero.time_row,
             current_snapshot,
             render,
             on_spotlight_play,
