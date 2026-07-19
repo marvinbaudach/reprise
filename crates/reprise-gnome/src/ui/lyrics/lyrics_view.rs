@@ -626,20 +626,8 @@ impl LyricsView {
     }
 
     #[cfg(test)]
-    pub(in crate::ui) fn line_viewport_top_offset(&self, index: usize) -> f64 {
-        let Some(label) = self
-            .lines
-            .borrow()
-            .get(index)
-            .map(|line| line.label.clone())
-        else {
-            return f64::INFINITY;
-        };
-        let Some(point) = label.compute_point(&self.content, &gtk4::graphene::Point::new(0.0, 0.0))
-        else {
-            return f64::INFINITY;
-        };
-        f64::from(point.y()) - self.scrolled.vadjustment().value()
+    pub(in crate::ui) fn content_margin_top(&self) -> i32 {
+        self.content.margin_top()
     }
 
     #[cfg(test)]

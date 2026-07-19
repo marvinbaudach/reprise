@@ -194,9 +194,22 @@ fn wire_focus_search(
     search_bar: &gtk4::SearchBar,
     search_entry: &gtk4::SearchEntry,
 ) {
+    let pending_focus = Rc::new(std::cell::Cell::new(false));
+    let pending_focus_on_map = pending_focus.clone();
+    let window_on_map = window.downgrade();
+    search_entry.connect_map(move |entry| {
+        if pending_focus_on_map.replace(false) {
+            if let Some(window) = window_on_map.upgrade() {
+                focus_search_entry(&window, entry);
+            }
+        }
+    });
+
     let action = gio::SimpleAction::new(ACTION_FOCUS_SEARCH, None);
     let search_bar_weak = search_bar.downgrade();
     let search_entry_weak = search_entry.downgrade();
+    let window_weak = window.downgrade();
+    let pending_focus_on_activate = pending_focus.clone();
     action.connect_activate(move |_, _| {
         let Some(search_bar) = search_bar_weak.upgrade() else {
             tracing::warn!("focus-search: search bar is gone; ignoring");
@@ -207,21 +220,27 @@ fn wire_focus_search(
             return;
         };
         let search_mode = next_search_mode(search_bar.is_search_mode());
+        pending_focus_on_activate.set(search_mode);
         search_bar.set_search_mode(search_mode);
-        if search_mode {
-            // The bar reveals through a revealer, so the entry is not mapped in
-            // this turn and grab_focus() would be dropped silently — Ctrl+F
-            // would open the bar without placing the cursor (SEARCH-2). Focus
-            // on the next main-loop turn, once the child exists.
-            let entry = search_entry.clone();
-            gtk4::glib::idle_add_local_once(move || {
-                entry.grab_focus();
-                entry.select_region(0, -1);
-            });
+        if search_mode && search_entry.is_mapped() && pending_focus_on_activate.replace(false) {
+            if let Some(window) = window_weak.upgrade() {
+                focus_search_entry(&window, &search_entry);
+            }
         }
     });
     window.add_action(&action);
     app.set_accels_for_action(&format!("win.{ACTION_FOCUS_SEARCH}"), &["<Control>f"]);
+}
+
+fn focus_search_entry(window: &adw::ApplicationWindow, entry: &gtk4::SearchEntry) {
+    gtk4::prelude::GtkWindowExt::set_focus(window, Some(entry));
+    entry.select_region(0, -1);
+}
+
+#[cfg(test)]
+fn widget_contains_focus(window: &adw::ApplicationWindow, widget: &gtk4::Widget) -> bool {
+    gtk4::prelude::GtkWindowExt::focus(window)
+        .is_some_and(|focus| focus == *widget || widget.is_ancestor(&focus))
 }
 
 fn apply_search_escape(
@@ -304,19 +323,37 @@ mod tests {
             .build();
         app.register(None::<&gio::Cancellable>).unwrap();
         let window = adw::ApplicationWindow::new(&app);
+        let invoker = gtk4::Button::with_label("Open search");
         let entry = gtk4::SearchEntry::new();
         let search_bar = gtk4::SearchBar::new();
         search_bar.set_child(Some(&entry));
-        window.set_content(Some(&search_bar));
+        search_bar.connect_entry(&entry);
+        search_bar.set_key_capture_widget(Some(&window));
+        let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        content.append(&invoker);
+        content.append(&search_bar);
+        window.set_content(Some(&content));
         wire_focus_search(&app, &window, &search_bar, &entry);
         window.present();
         while gtk4::glib::MainContext::default().iteration(false) {}
+        gtk4::prelude::GtkWindowExt::set_focus(&window, Some(&invoker));
+        assert_eq!(
+            gtk4::prelude::GtkWindowExt::focus(&window),
+            Some(invoker.upcast())
+        );
 
         ActionGroupExt::activate_action(&window, "focus-search", None);
-        while gtk4::glib::MainContext::default().iteration(false) {}
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while !widget_contains_focus(&window, entry.upcast_ref()) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "search entry did not receive focus after reveal"
+            );
+            gtk4::glib::MainContext::default().iteration(true);
+        }
 
         assert!(search_bar.is_search_mode());
-        assert!(entry.has_focus());
+        assert!(widget_contains_focus(&window, entry.upcast_ref()));
     }
 
     #[test]

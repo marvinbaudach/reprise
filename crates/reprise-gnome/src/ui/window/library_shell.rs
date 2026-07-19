@@ -126,10 +126,10 @@ impl ActiveContentFocus {
             Some(ActiveContentTarget::Albums) => (self.focus_albums)(),
             Some(ActiveContentTarget::Artists) => library_stack
                 .visible_child()
-                .is_some_and(|child| child.child_focus(gtk4::DirectionType::TabForward)),
+                .is_some_and(|child| focus_widget_or_descendant(&child)),
             Some(ActiveContentTarget::Stats | ActiveContentTarget::Device) => content_stack
                 .visible_child()
-                .is_some_and(|child| child.child_focus(gtk4::DirectionType::TabForward)),
+                .is_some_and(|child| focus_widget_or_descendant(&child)),
             None => false,
         }
     }
@@ -158,6 +158,10 @@ impl ActiveContentFocus {
             }
         });
     }
+}
+
+fn focus_widget_or_descendant(widget: &gtk4::Widget) -> bool {
+    widget.grab_focus() || widget.child_focus(gtk4::DirectionType::TabForward)
 }
 
 pub(in crate::ui) fn build_views(

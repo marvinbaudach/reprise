@@ -71,6 +71,9 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         .has_frame(false)
         .tooltip_text(strings::text(strings::REVEAL_PLAYING_ALBUM))
         .build();
+    cover_button.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+        strings::REVEAL_PLAYING_ALBUM,
+    ))]);
 
     // — Track labels —
     let title_label = build_track_label();
@@ -93,6 +96,9 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         .has_frame(false)
         .tooltip_text(strings::text(strings::REVEAL_PLAYING_ALBUM))
         .build();
+    title_button.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+        strings::REVEAL_PLAYING_ALBUM,
+    ))]);
     let artist_button = gtk4::Button::builder()
         .child(&artist_label)
         .has_frame(false)
