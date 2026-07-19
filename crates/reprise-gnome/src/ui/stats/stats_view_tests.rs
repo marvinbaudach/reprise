@@ -66,7 +66,7 @@ fn stats_7_customize_toggles_sections() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_view_empty_history_shows_the_status_page_instead_of_the_sections() {
+fn stats_6b_fresh_library_without_counters_keeps_plain_empty_state() {
     gtk4::init().unwrap();
     let (view, conn) = view_and_conn();
     view.wire_year_selector(&conn);
@@ -75,11 +75,90 @@ fn stats_view_empty_history_shows_the_status_page_instead_of_the_sections() {
         view.page_stack.visible_child_name().as_deref(),
         Some("empty")
     );
+    let empty = view
+        .page_stack
+        .child_by_name("empty")
+        .unwrap()
+        .downcast::<adw::StatusPage>()
+        .unwrap();
+    assert_eq!(empty.title(), "Start listening to see your stats");
     // The ribbon is not hidden, it is simply on the page the stack is not
     // showing — which is what actually keeps it off screen.
     let sections = view.page_stack.child_by_name("sections").unwrap();
     assert!(view.render.ribbon.widget().is_ancestor(&sections));
     assert_ne!(view.page_stack.visible_child(), Some(sections));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_6b_imported_history_gets_its_own_empty_state() {
+    gtk4::init().unwrap();
+    let (view, conn) = view_and_conn();
+    seed_imported_plays(&conn.borrow(), 194);
+
+    view.wire_year_selector(&conn);
+
+    assert_eq!(
+        view.page_stack.visible_child_name().as_deref(),
+        Some("imported")
+    );
+    let imported = view
+        .page_stack
+        .child_by_name("imported")
+        .unwrap()
+        .downcast::<adw::StatusPage>()
+        .unwrap();
+    assert_eq!(imported.title(), "Your Rhythmbox history was imported");
+    assert_eq!(
+        imported.description().as_deref(),
+        Some("194 plays were imported. Detailed stats start now, with what you listen to in Reprise.")
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_6b_imported_state_disappears_when_real_events_exist() {
+    gtk4::init().unwrap();
+    let (view, conn) = view_and_conn();
+    seed_imported_plays(&conn.borrow(), 194);
+    view.wire_year_selector(&conn);
+    assert_eq!(
+        view.page_stack.visible_child_name().as_deref(),
+        Some("imported")
+    );
+
+    for seconds_ago in 0..5 {
+        conn.borrow()
+            .execute(
+                "INSERT INTO listen_events (track_id, played_at, ms_played) \
+                 VALUES (1, ?1, 60000)",
+                rusqlite::params![now_unix() - seconds_ago],
+            )
+            .unwrap();
+    }
+    view.refresh(&conn);
+
+    assert_eq!(
+        view.page_stack.visible_child_name().as_deref(),
+        Some("sections")
+    );
+    assert!(view
+        .render
+        .hero_subline
+        .label()
+        .starts_with("5 plays \u{00b7}"));
+    let snapshot = view.current_snapshot.borrow();
+    let snapshot = snapshot.as_ref().unwrap();
+    assert_eq!(snapshot.hero.plays, 5);
+    assert_eq!(snapshot.top_tracks[0].play_count, 5);
+    assert_eq!(
+        conn.borrow()
+            .query_row("SELECT play_count FROM tracks WHERE id = 1", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .unwrap(),
+        194
+    );
 }
 
 /// A broken query is not an empty history: the user must not be told to
@@ -133,6 +212,18 @@ fn seed_one_play(conn: &Connection) {
     conn.execute(
         "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, 200000)",
         rusqlite::params![now_unix()],
+    )
+    .unwrap();
+}
+
+fn seed_imported_plays(conn: &Connection, play_count: i64) {
+    conn.execute(
+        "INSERT INTO tracks \
+         (id, path, title, artist, album, album_artist, genre, duration_ms, \
+          play_count, added_at) \
+         VALUES (1, '/music/imported.flac', 'Imported', 'Artist', 'Album', '', \
+                 'Rock', 300000, ?1, 0)",
+        rusqlite::params![play_count],
     )
     .unwrap();
 }
