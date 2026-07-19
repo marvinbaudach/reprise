@@ -416,7 +416,6 @@ pub const QUEUE_CLEAR_PLAY_NEXT: &str = N_!("Clear");
 pub const QUEUE_SECTION_PLAY_NEXT: &str = N_!("Play Next");
 /// `{}` is the playback origin's display label (playlist/album/artist name
 /// or the localized "Music").
-pub const QUEUE_SECTION_UP_NEXT_FROM: &str = N_!("Up Next · from {}");
 pub const EMPTY_QUEUE_TITLE: &str = N_!("Nothing queued");
 pub const EMPTY_QUEUE_DESCRIPTION: &str = N_!("Play something");
 pub const SIDEBAR_NEW_PLAYLIST: &str = N_!("New playlist");

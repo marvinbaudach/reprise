@@ -740,11 +740,6 @@ msgstr ""
 msgid "Play Next"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:480
-#, rust-format
-msgid "Up Next · from {}"
-msgstr ""
-
 #: crates/reprise-gnome/src/ui/strings.rs:481
 msgid "Nothing queued"
 msgstr ""
@@ -1332,6 +1327,13 @@ msgid_plural "{count} tracks selected"
 msgstr[0] ""
 msgstr[1] ""
 
+#: crates/reprise-gnome/src/ui/strings_news.rs:72
+#, rust-format
+msgid "Playing from {source} · {count} track"
+msgid_plural "Playing from {source} · {count} tracks"
+msgstr[0] ""
+msgstr[1] ""
+
 #: crates/reprise-gnome/src/ui/strings_news.rs:43
 #, rust-format
 msgid "{type} · {date}"
@@ -1388,10 +1390,6 @@ msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tooltips.rs:17
 msgid "Play next track"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:18
-msgid "Show queue"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tooltips.rs:21
@@ -1729,6 +1727,76 @@ msgid "{n} queued"
 msgid_plural "{n} queued"
 msgstr[0] ""
 msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:7
+msgid "1 hour"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:8
+#, rust-format
+msgid "{count} hours"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:9
+msgid "1 minute"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:10
+#, rust-format
+msgid "{count} minutes"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:11
+#, rust-format
+msgid "▲ {percent}% vs {period}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:12
+#, rust-format
+msgid "▼ {percent}% vs {period}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:13
+#, rust-format
+msgid "previous {count} days"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:14
+#, rust-format
+msgid "same period {year}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:15
+msgid "1 spelling merged — unify it in the tag editor?"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:17
+#, rust-format
+msgid "{count} spellings merged — unify them in the tag editor?"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:18
+#, rust-format
+msgid "Mix from {genre} · Create"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:20
+msgid "Mix from your top genre · Create"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:21
+msgid "Start listening to see your stats"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:22
+msgid "Your stats could not be read"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:24
+msgid ""
+"Reading the listening history failed. Nothing is missing from it — this view "
+"just could not load it."
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:13
 msgid "Eject device"

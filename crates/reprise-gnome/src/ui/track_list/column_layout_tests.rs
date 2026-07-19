@@ -42,7 +42,15 @@ fn every_non_cover_column_can_persist_its_width() {
     }
 }
 
+// `gtk4::init()` acquires the default GLib main context and *leaks* the guard
+// (gtk-rs-core#186), permanently pinning ownership to the libtest thread that
+// happened to run this test — a thread that then exits. Every later test in the
+// same process that touches a `*_local` GLib source therefore panics with
+// "default main context already acquired by another thread". Marking this as a
+// display test keeps the leak out of the default `cargo test` run and puts the
+// assertion where it actually executes instead of early-returning.
 #[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn title_width_is_stored_only_after_its_fill_expand_is_turned_off() {
     if gtk4::init().is_err() {
         return;

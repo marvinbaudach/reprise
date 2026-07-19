@@ -75,6 +75,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn bar_is_a_structural_edge_at_bottom_and_top() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         if gtk4::init().is_err() {
             return;
         }

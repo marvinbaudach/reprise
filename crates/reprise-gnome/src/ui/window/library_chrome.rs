@@ -7,6 +7,7 @@ use super::strings;
 
 const LIBRARY_TITLE_SOURCE: &str = "source";
 const LIBRARY_TITLE_SWITCHER: &str = "library-switcher";
+const VIEW_SWITCHER_BREAKPOINT_WIDTH: i32 = 600;
 
 pub(in crate::ui) struct LibraryChrome {
     pub(in crate::ui) root: adw::ToolbarView,
@@ -22,7 +23,7 @@ pub(in crate::ui) struct LibraryMaintenanceActions {
 pub(in crate::ui) struct LibraryTitle {
     pub(in crate::ui) root: gtk4::Stack,
     #[cfg(test)]
-    pub(in crate::ui) switcher: gtk4::StackSwitcher,
+    pub(in crate::ui) switcher: adw::InlineViewSwitcher,
 }
 
 impl LibraryTitle {
@@ -93,7 +94,7 @@ fn wire_search_toggle(
         let (Some(bar), Some(entry)) = (bar.upgrade(), entry.upgrade()) else {
             return;
         };
-        bar.set_search_mode(!bar.is_search_mode());
+        bar.set_search_mode(crate::ui::shortcuts::next_search_mode(bar.is_search_mode()));
         toggle.set_active(search_toggle_active(bar.is_search_mode(), &entry.text()));
     });
 
@@ -131,24 +132,37 @@ pub(in crate::ui) fn build_maintenance_actions() -> LibraryMaintenanceActions {
 }
 
 pub(in crate::ui) fn build_library_title(
+    window: &adw::ApplicationWindow,
     header: &adw::HeaderBar,
     source_title: &adw::WindowTitle,
-    views: &gtk4::Stack,
+    views: &adw::ViewStack,
 ) -> LibraryTitle {
-    // Clearing the title widget is NOT enough: an `AdwHeaderBar` without one
-    // falls back to rendering the window's own title, so "Reprise" kept
-    // sitting in the centre next to the left-packed switcher (measured on a
-    // headless run — `title_widget().is_none()` was already green). The
-    // switcher carries the place identity now, so the centre stays empty.
-    header.set_title_widget(gtk4::Widget::NONE);
-    header.set_show_title(false);
-    let switcher = gtk4::StackSwitcher::builder().stack(views).build();
+    let switcher = adw::InlineViewSwitcher::builder()
+        .stack(views)
+        .display_mode(adw::InlineViewSwitcherDisplayMode::Labels)
+        .can_shrink(true)
+        .homogeneous(true)
+        .build();
     switcher.add_css_class("reprise-view-switcher");
     let root = gtk4::Stack::new();
     root.add_named(source_title, Some(LIBRARY_TITLE_SOURCE));
     root.add_named(&switcher, Some(LIBRARY_TITLE_SWITCHER));
     root.set_visible_child_name(LIBRARY_TITLE_SWITCHER);
-    header.pack_start(&root);
+    header.set_show_title(true);
+    header.set_title_widget(Some(&root));
+
+    let condition = adw::BreakpointCondition::new_length(
+        adw::BreakpointConditionLengthType::MaxWidth,
+        f64::from(VIEW_SWITCHER_BREAKPOINT_WIDTH),
+        adw::LengthUnit::Px,
+    );
+    let breakpoint = adw::Breakpoint::new(condition);
+    breakpoint.add_setter(
+        &switcher,
+        "display-mode",
+        Some(&adw::InlineViewSwitcherDisplayMode::Icons.to_value()),
+    );
+    window.add_breakpoint(breakpoint);
     LibraryTitle {
         root,
         #[cfg(test)]
@@ -156,7 +170,7 @@ pub(in crate::ui) fn build_library_title(
     }
 }
 
-/// The Tracks/Albums/Artists `GtkStackSwitcher` styled as a rounded pill
+/// The Tracks/Albums/Artists `AdwInlineViewSwitcher` styled as a rounded pill
 /// group (design mockup 14a): a subtle white-tint container with a soft
 /// radius, and segment buttons that shed the default `.linked` hard edges —
 /// the active segment tinted + bold, inactive quiet, hover a hair brighter.
@@ -164,6 +178,7 @@ pub(in crate::ui) fn build_library_title(
 /// Installed app-wide by [`super::style`].
 pub(in crate::ui) fn css() -> String {
     ".reprise-library-split .reprise-library-sidebar { \
+       background-color: @sidebar_bg_color; \
        border-right: 1px solid rgba(255, 255, 255, 0.06); }\n\
      .reprise-library-header { \
        background-color: @headerbar_bg_color; \
@@ -171,6 +186,8 @@ pub(in crate::ui) fn css() -> String {
      .reprise-search-strip { \
        background-color: @headerbar_bg_color; \
        border-bottom: 1px solid rgba(255, 255, 255, 0.06); }\n\
+     .reprise-library-sidebar .caption-heading { \
+       color: @reprise_secondary_fg_color; }\n\
      .reprise-view-switcher { \
        background-color: alpha(@window_fg_color, 0.06); \
        border: none; border-radius: 8px; padding: 2px; box-shadow: none; }\n\
@@ -186,6 +203,10 @@ pub(in crate::ui) fn css() -> String {
        color: @window_fg_color; font-weight: 700; }"
         .to_string()
 }
+
+#[cfg(test)]
+#[path = "library_chrome_npp_tests.rs"]
+mod npp_tests;
 
 #[cfg(test)]
 mod tests {
@@ -286,6 +307,32 @@ mod tests {
             ),
             vec!["⌕ “falling” in any field"]
         );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn search_6_hidden_query_survives_as_chip() {
+        gtk4::init().unwrap();
+        let window = adw::ApplicationWindow::builder().build();
+        let header = adw::HeaderBar::new();
+        let content = gtk4::Label::new(Some("Library"));
+        let entry = gtk4::SearchEntry::new();
+        let chrome = build(&header, &content, &entry, &window);
+        chrome.search_bar.set_search_mode(true);
+        entry.set_text("falling");
+
+        chrome.search_toggle.emit_clicked();
+
+        let chips = crate::ui::browse::browse_bar::chip_labels(
+            &entry.text(),
+            &reprise_core::queries::BrowseFilter::default(),
+            true,
+        );
+
+        assert!(!chrome.search_bar.is_search_mode());
+        assert_eq!(entry.text(), "falling");
+        assert!(chrome.search_toggle.is_active());
+        assert_eq!(chips, vec!["⌕ “falling” in any field"]);
     }
 
     #[test]
@@ -404,22 +451,28 @@ mod tests {
         if gtk4::init().is_err() {
             return;
         }
+        let window = adw::ApplicationWindow::builder().build();
         let title = adw::WindowTitle::new("Music", "");
-        let views = gtk4::Stack::new();
-        views.add_titled(&gtk4::Label::new(Some("Tracks")), Some("tracks"), "Tracks");
+        let views = adw::ViewStack::new();
+        views.add_titled_with_icon(
+            &gtk4::Label::new(Some("Tracks")),
+            Some("tracks"),
+            "Tracks",
+            "view-list-symbolic",
+        );
 
         let header = adw::HeaderBar::new();
         header.set_title_widget(Some(&title));
-        let library_title = build_library_title(&header, &title, &views);
+        let library_title = build_library_title(&window, &header, &title, &views);
 
         assert_eq!(library_title.switcher.stack(), Some(views.clone()));
         assert_eq!(title.parent(), Some(library_title.root.clone().upcast()));
         assert!(library_title.root.is_ancestor(&header));
-        assert!(header.title_widget().is_none());
-        // Not redundant: with no title widget Adwaita falls back to the
-        // window title, which put "Reprise" in the centre beside the
-        // left-packed switcher. Only `show-title = false` empties the centre.
-        assert!(!header.shows_title());
+        assert_eq!(
+            header.title_widget(),
+            Some(library_title.root.clone().upcast())
+        );
+        assert!(header.shows_title());
         assert_eq!(
             library_title.root.visible_child_name().as_deref(),
             Some(LIBRARY_TITLE_SWITCHER)

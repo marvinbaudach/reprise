@@ -25,7 +25,7 @@ pub(in crate::ui) struct JumpContext {
     pub track_list: Rc<TrackList>,
     pub nav_history: Rc<NavHistory>,
     pub content_stack: gtk4::Stack,
-    pub library_stack: gtk4::Stack,
+    pub library_stack: libadwaita::ViewStack,
     pub album_grid: gtk4::GridView,
 }
 
@@ -103,7 +103,9 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
     fn nav_9a_ctrl_l_reveals_current_track_origin() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         let events = Rc::new(RefCell::new(Vec::new()));
         let history = Rc::new(NavHistory::default());
         let queue = NavPlace::source(
@@ -133,7 +135,7 @@ mod tests {
                 Rc::new(move || {
                     events
                         .borrow_mut()
-                        .push(("select-and-center", ViewSource::Playlist(7)));
+                        .push(("reveal-without-selection", ViewSource::Playlist(7)));
                 })
             },
         });
@@ -146,7 +148,7 @@ mod tests {
             &[
                 ("prepare", ViewSource::Playlist(7)),
                 ("route", ViewSource::Playlist(7)),
-                ("select-and-center", ViewSource::Playlist(7)),
+                ("reveal-without-selection", ViewSource::Playlist(7)),
             ]
         );
         assert_eq!(history.go_back(), Some(queue));
