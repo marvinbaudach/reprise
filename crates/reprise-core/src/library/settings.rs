@@ -15,6 +15,7 @@ use rusqlite::{Connection, OptionalExtension};
 /// risking a typo'd duplicate string.
 pub const LIBRARY_ROOT_KEY: &str = "library_root";
 pub const ONBOARDING_COMPLETED_KEY: &str = "onboarding.completed";
+pub const NEW_RELEASES_FETCH_COMPLETED_KEY: &str = "new_releases.fetch_completed";
 pub const LAST_SCAN_RELINKED_KEY: &str = "last_scan_relinked";
 
 /// Reads `key`'s current value, if any has ever been set. `Ok(None)` — not
@@ -134,6 +135,17 @@ pub fn get_onboarding_completed(conn: &Connection) -> Result<bool, rusqlite::Err
 
 pub fn set_onboarding_completed(conn: &Connection, completed: bool) -> Result<(), rusqlite::Error> {
     set_bool(conn, ONBOARDING_COMPLETED_KEY, completed)
+}
+
+pub fn get_new_releases_fetch_completed(conn: &Connection) -> Result<bool, rusqlite::Error> {
+    get_bool(conn, NEW_RELEASES_FETCH_COMPLETED_KEY, false)
+}
+
+pub fn set_new_releases_fetch_completed(
+    conn: &Connection,
+    completed: bool,
+) -> Result<(), rusqlite::Error> {
+    set_bool(conn, NEW_RELEASES_FETCH_COMPLETED_KEY, completed)
 }
 
 pub const PLAYER_BAR_POSITION_KEY: &str = "player_bar_position";
