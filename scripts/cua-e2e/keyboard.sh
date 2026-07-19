@@ -12,6 +12,34 @@ assert_after_has_focus() {
   assert_unique_focus "$CUA_E2E_OUT_DIR/$stem-after.json"
 }
 
+focus_active_library_tab() {
+  local pid=$1 window_id=$2 stem=$3
+  local snapshot_path focus_path label attempt
+
+  snapshot_path=$(cua_snapshot "$pid" "$window_id" "$stem-initial") || return 1
+  for attempt in $(seq 0 48); do
+    focus_path="${snapshot_path%.json}-focus.txt"
+    label=""
+    if [[ -s "$focus_path" ]]; then
+      label=$(sed -n 's/^label=//p' "$focus_path" | head -n 1)
+    fi
+    case "$label" in
+      Tracks | Albums | Artists)
+        printf '%s\n' "$label"
+        return 0
+        ;;
+    esac
+    if ((attempt == 48)); then
+      break
+    fi
+    cua_press_key_window \
+      "$pid" "$window_id" tab "$stem-tab-$((attempt + 1))" || return 1
+    snapshot_path="$CUA_E2E_OUT_DIR/$stem-tab-$((attempt + 1))-after.json"
+  done
+  echo "Tab traversal never reached the active Library view tab" >&2
+  return 1
+}
+
 # Returns the app to the state every scenario assumes: Tracks visible, no
 # search filter, nothing popped up.
 #
@@ -27,7 +55,7 @@ assert_after_has_focus() {
 # next surface fail for a reason that has nothing to do with what it tests —
 # exactly the confusion it exists to prevent.
 reset_surface_baseline() {
-  local pid=$1 window_id=$2 stem=$3 state_path
+  local pid=$1 window_id=$2 stem=$3 state_path active_tab left_steps step
 
   # Escape closes a popover or dialog; a second one collapses a revealed search
   # bar. Both are no-ops when nothing is open.
@@ -55,9 +83,21 @@ reset_surface_baseline() {
 
   # Back restores navigation within a top-level Library mode; it deliberately
   # does not undo Tracks/Albums/Artists mode switches (NAV-2). Target the
-  # switcher's semantic Tracks tab with Enter so the next scenario always
-  # starts from the table without introducing a pointer dependency.
-  cua_press_key_label "$pid" "$window_id" Tracks enter "$stem-reset-tracks" || return 1
+  # active member of the roving switcher, move left to Tracks, then activate it
+  # so the next scenario starts from the table without a pointer dependency.
+  active_tab=$(focus_active_library_tab "$pid" "$window_id" "$stem-reset-tab") \
+    || return 1
+  case "$active_tab" in
+    Tracks) left_steps=0 ;;
+    Albums) left_steps=1 ;;
+    Artists) left_steps=2 ;;
+    *) return 1 ;;
+  esac
+  for ((step = 1; step <= left_steps; step++)); do
+    cua_press_key_window "$pid" "$window_id" left "$stem-reset-tab-left-$step" \
+      || return 1
+  done
+  cua_press_key_window "$pid" "$window_id" enter "$stem-reset-tracks" || return 1
 
   # Verify against something only the Tracks view has. "Tracks" is the switcher
   # button and is present in every view, and `sine_01` shows up in the album

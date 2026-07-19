@@ -203,7 +203,10 @@ for pattern in \
   fi
 done
 for pattern in \
-  'cua_press_key_label "$pid" "$window_id" Tracks enter "$stem-reset-tracks"'; do
+  'focus_active_library_tab() {' \
+  'active_tab=$(focus_active_library_tab "$pid" "$window_id" "$stem-reset-tab")' \
+  'cua_press_key_window "$pid" "$window_id" left "$stem-reset-tab-left-$step"' \
+  'cua_press_key_window "$pid" "$window_id" enter "$stem-reset-tracks"'; do
   if ! rg --quiet --fixed-strings "$pattern" "$keyboard_runner"; then
     echo "the keyboard reset must restore the Tracks top-level view: $pattern" >&2
     exit 1
