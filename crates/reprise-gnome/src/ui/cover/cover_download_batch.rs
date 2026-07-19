@@ -191,6 +191,10 @@ impl CoverDownloadBatch {
     }
 
     pub(in crate::ui) fn start(self: &Rc<Self>) {
+        if !self.runtime.enabled.get() {
+            self.set_progress(BatchProgress::idle());
+            return;
+        }
         let paths = {
             let conn = self.conn.borrow();
             reprise_core::queries::query_live_track_paths(&conn)
@@ -217,18 +221,21 @@ impl CoverDownloadBatch {
                     return;
                 }
                 let (response, result) = async_channel::bounded(1);
-                if this
+                if !this
                     .runtime
-                    .worker
-                    .send(DownloadRequest {
+                    .request(DownloadRequest {
                         track_path: path.clone(),
                         skip_if_covered: true,
                         response,
                     })
                     .await
-                    .is_err()
                 {
-                    this.set_progress(BatchProgress::failed());
+                    let progress = if this.runtime.enabled.get() {
+                        BatchProgress::failed()
+                    } else {
+                        BatchProgress::idle()
+                    };
+                    this.set_progress(progress);
                     return;
                 }
                 let outcome = result.recv().await.unwrap_or(DownloadOutcome::Unavailable);

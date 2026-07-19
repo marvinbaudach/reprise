@@ -161,4 +161,15 @@ mod tests {
         // `.playback-paused`, never the static sidebar icon.
         assert!(css.contains(".playback-paused .reprise-eq-animated .reprise-eq-bar"));
     }
+
+    #[test]
+    fn marker_1_single_implementation_serves_grid_and_bar() {
+        let album_card = include_str!("library_views/album_card.rs");
+        let player_bar = include_str!("player_bar/player_bar_layout.rs");
+
+        assert!(album_card.contains("playing_marker::build"));
+        assert!(player_bar.contains("playing_marker::build"));
+        assert!(!album_card.contains("eq_bars::build"));
+        assert!(!player_bar.contains("mini_eq.append(&bar)"));
+    }
 }

@@ -96,6 +96,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn list_density_changes_a_representative_track_table_row() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         fn find_track_cell(widget: &gtk4::Widget) -> Option<gtk4::Widget> {
             if widget.has_css_class("reprise-track-cell") {
                 return Some(widget.clone());

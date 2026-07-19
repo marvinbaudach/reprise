@@ -56,11 +56,11 @@ pub(in crate::ui) fn css() -> String {
            color: {AVATAR_INITIALS_COLOR}; font-weight: 700; font-size: 13px; }}\n\
          .artist-list-name {{ font-size: 13.5px; }}\n\
          .artist-list-meta {{ \
-           font-size: 11.5px; color: alpha(@window_fg_color, {MUTED_TEXT_ALPHA}); }}\n\
+           font-size: 11.5px; color: @reprise_secondary_fg_color; }}\n\
          .artist-list-section {{ \
            font-size: 11px; font-weight: 700; letter-spacing: 1px; \
            text-transform: uppercase; padding: 12px 12px 4px 12px; \
-           color: alpha(@window_fg_color, {MUTED_TEXT_ALPHA}); }}\n\
+           color: @reprise_secondary_fg_color; }}\n\
          .artist-detail {{ padding: 24px 28px 32px 28px; }}\n\
          .artist-hero {{ padding: 24px 8px 8px 8px; }}\n\
          .artist-hero-glow {{ \
@@ -106,7 +106,7 @@ pub(in crate::ui) fn css() -> String {
            box-shadow: inset 0 0 0 1px alpha(@window_fg_color, {SURFACE_BORDER_ALPHA}); }}\n\
          .artist-album-title {{ font-weight: 700; font-size: 12.5px; }}\n\
          .artist-album-meta {{ \
-           font-size: 11.5px; color: alpha(@window_fg_color, {MUTED_TEXT_ALPHA}); }}\n\
+           font-size: 11.5px; color: @reprise_secondary_fg_color; }}\n\
          .artist-albums-hint {{ \
            padding: 8px 2px; color: alpha(@window_fg_color, {MUTED_TEXT_ALPHA}); }}\n\
          .artist-albums-show-all, .artist-top-show-all {{ color: @accent_color; }}\n\
@@ -125,12 +125,12 @@ pub(in crate::ui) fn css() -> String {
            box-shadow: inset 0 0 0 1px alpha(@window_fg_color, {SURFACE_BORDER_ALPHA}); }}\n\
          .artist-top-track-title {{ font-size: 13px; }}\n\
          .artist-top-track-album {{ \
-           font-size: 11.5px; color: alpha(@window_fg_color, {MUTED_TEXT_ALPHA}); }}\n\
+           font-size: 11.5px; color: @reprise_secondary_fg_color; }}\n\
          .artist-top-track-plays {{ \
-           font-size: 12px; color: alpha(@window_fg_color, {MUTED_TEXT_ALPHA}); }}\n\
+           font-size: 12px; color: @reprise_secondary_fg_color; }}\n\
          .artist-top-track-duration {{ \
            font-feature-settings: \"tnum\"; font-size: 12px; \
-           color: alpha(@window_fg_color, {MUTED_TEXT_ALPHA}); }}"
+           color: @reprise_secondary_fg_color; }}"
     );
     for index in 0..crate::ui::artist_avatar::GRADIENT_COUNT {
         let gradient = crate::ui::artist_avatar::gradient_css_for_index(index);

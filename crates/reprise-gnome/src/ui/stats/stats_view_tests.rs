@@ -5,7 +5,7 @@ use super::*;
 fn view_and_conn() -> (StatsView, Rc<RefCell<Connection>>) {
     let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
     reprise_core::db::migrate(&conn.borrow()).unwrap();
-    let loader = CoverLoader::new(crate::ui::cover_download_worker::setup());
+    let loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
     (StatsView::new(loader), conn)
 }
 

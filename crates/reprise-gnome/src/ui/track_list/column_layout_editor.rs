@@ -600,7 +600,7 @@ mod tests {
         gtk4::init().unwrap();
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         reprise_core::db::migrate(&conn).unwrap();
-        let runtime = crate::ui::cover_download_worker::setup();
+        let runtime = crate::ui::cover_download_worker::setup_for_test();
         let track_list = Rc::new(TrackList::new(
             Rc::new(RefCell::new(conn)),
             Box::new(|_, _, _, _| {}),
@@ -627,7 +627,7 @@ mod tests {
         gtk4::init().unwrap();
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         reprise_core::db::migrate(&conn).unwrap();
-        let runtime = crate::ui::cover_download_worker::setup();
+        let runtime = crate::ui::cover_download_worker::setup_for_test();
         let track_list = Rc::new(TrackList::new(
             Rc::new(RefCell::new(conn)),
             Box::new(|_, _, _, _| {}),
