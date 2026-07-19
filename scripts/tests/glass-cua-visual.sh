@@ -26,6 +26,8 @@ for required_pattern in \
   'delivery_mode: "foreground"' \
   'assert_scroll_delivered' \
   'assert_glass_region_changed' \
+  '--arg by "$by"' \
+  'by: $by' \
   'glass pixels stayed unchanged' \
   'glass-rmse.tsv' \
   'cmp -s' \
@@ -35,11 +37,21 @@ for required_pattern in \
   'Album 00119' \
   '"Albums" "$position-tracks-ready"' \
   'albums-under-header' \
-  'down 50 "$position-albums-at-end"' \
+  'down 50 page "$position-albums-at-end"' \
   'verify_glass_regions "$position"' \
   'albums-at-end'; do
-  if ! rg --quiet --fixed-strings "$required_pattern" "$runner"; then
+  if ! rg --quiet --fixed-strings -- "$required_pattern" "$runner"; then
     echo "$runner is missing visual-CUA contract: $required_pattern" >&2
+    exit 1
+  fi
+done
+
+for calibrated_scroll in \
+  'down 1 line "$position-albums-under-header"' \
+  'down 50 page "$position-albums-at-end"' \
+  'up 1 line "$position-albums-above-end"'; do
+  if ! rg --quiet --fixed-strings "$calibrated_scroll" "$runner"; then
+    echo "$runner is missing calibrated Glass scroll: $calibrated_scroll" >&2
     exit 1
   fi
 done
