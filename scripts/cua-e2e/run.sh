@@ -231,7 +231,6 @@ run_populated_library_scenario() {
 
   CUA_E2E_FOCUS_STATE="$CUA_E2E_OUT_DIR/populated-library-focus-state.txt" \
   CUA_E2E_APP_PID="$APP_PID" \
-  CUA_E2E_WM_PID="$OPENBOX_PID" \
     "$repo_root/scripts/cua-e2e/keyboard.sh" --run "$APP_PID" "$WINDOW_ID"
   restart_private_cua_daemon
 
@@ -311,7 +310,11 @@ run_tag_3_multi_dialog_structure_scenario() {
 
 run_library_doctor_scenario() {
   local fixture_dir="$CUA_E2E_SCRATCH_ROOT/library-doctor-fixture-music"
-  local fixture_count=24 root_path review_path narrow_path applied_path reverted_path
+  local fixture_count=24 safe_change_count root_path review_path narrow_path applied_path
+  local reverted_path
+
+  # Each fixture produces one whitespace, missing-album-artist, and genre fix.
+  safe_change_count=$((fixture_count * 3))
 
   echo "[cua-e2e] library-doctor: opt in -> review -> apply -> disabled revert"
   mkdir -p "$fixture_dir"
@@ -339,10 +342,11 @@ run_library_doctor_scenario() {
   cua_click_label "$APP_PID" "$WINDOW_ID" "Run Scan Now" doctor-run
 
   root_path=$(wait_for_label \
-    "$APP_PID" "$WINDOW_ID" "Review Safe Fixes" doctor-results)
+    "$APP_PID" "$WINDOW_ID" "Review $safe_change_count safe fixes" doctor-results)
   assert_snapshot_contains "$root_path" "Casing / Whitespace"
   assert_snapshot_contains "$root_path" "Missing Album Artist"
-  cua_click_label "$APP_PID" "$WINDOW_ID" "Review Safe Fixes" doctor-review
+  cua_click_label \
+    "$APP_PID" "$WINDOW_ID" "Review $safe_change_count safe fixes" doctor-review
 
   review_path=$(wait_for_label \
     "$APP_PID" "$WINDOW_ID" "Apply $fixture_count tracks" doctor-review-wide)
