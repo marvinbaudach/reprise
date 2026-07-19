@@ -79,6 +79,44 @@ impl std::fmt::Display for Transition {
 
 pub(in crate::ui) const TRANSITION: Transition = Transition;
 
+// --- Button interaction states (see `super::buttons`, UX rules BTN-1..4) ---
+
+/// Hover background alpha for flat/icon buttons, applied over `currentColor`
+/// rather than over the accent or a literal white: an accent wash sinks into
+/// the tinted glass of the player bar, and a fixed white would be invisible on
+/// the light palettes. BTN-4: measured on the tint, not on a null background.
+pub(in crate::ui) const BTN_HOVER_ALPHA: &str = "0.08";
+
+/// Pressed background alpha — the surface deepens as the button sinks.
+pub(in crate::ui) const BTN_PRESS_ALPHA: &str = "0.14";
+
+/// Press scale. The button sinks under the cursor so the click visibly lands.
+pub(in crate::ui) const BTN_PRESS_SCALE: &str = "0.94";
+
+/// Resting fill alpha of a checked toggle (over `@accent_bg_color`). Higher
+/// than [`HOVER_BG_ALPHA`] so the on-state stays louder than any hover.
+pub(in crate::ui) const BTN_CHECKED_FILL_ALPHA: &str = "0.22";
+
+/// Checked + hover: brighter fill, same state display.
+pub(in crate::ui) const BTN_CHECKED_FILL_HOVER_ALPHA: &str = "0.30";
+
+/// Checked + pressed.
+pub(in crate::ui) const BTN_CHECKED_FILL_PRESS_ALPHA: &str = "0.38";
+
+/// Diameter of the on-state dot under a checked toggle — the second,
+/// non-colour cue that keeps the state readable with colour vision deficiency.
+pub(in crate::ui) const BTN_DOT_SIZE: &str = "4px";
+
+/// Vertical placement of that dot, as a background-position percentage: just
+/// inside the bottom edge, clear of a circular button's rounding.
+pub(in crate::ui) const BTN_DOT_VERTICAL_POSITION: &str = "88%";
+
+/// Keyboard focus ring width — focus is its own signal, never the hover fill.
+pub(in crate::ui) const FOCUS_RING_WIDTH: &str = "2px";
+
+/// Gap between the focus ring and the button edge.
+pub(in crate::ui) const FOCUS_RING_OFFSET: &str = "1px";
+
 /// Soft elevation shadow giving layered surfaces depth.
 pub(in crate::ui) const SURFACE_SHADOW: &str = "0 2px 12px rgba(0, 0, 0, 0.28)";
 

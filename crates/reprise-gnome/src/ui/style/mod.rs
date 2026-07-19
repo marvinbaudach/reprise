@@ -12,9 +12,11 @@
 //! reloading just that one provider — the mechanism behind the live theme
 //! picker.
 
+pub(super) mod buttons;
 pub(super) mod cover_accent;
 pub(super) mod interactions;
 pub(super) mod menus;
+pub(super) mod reduced_motion;
 mod text_levels;
 pub(super) mod theme;
 pub(super) mod tokens;
@@ -36,6 +38,7 @@ thread_local! {
 /// Palette colors are NOT here — they live in the separate theme provider.
 fn app_css() -> String {
     [
+        buttons::css(),
         interactions::css(),
         text_levels::css(),
         super::link_activation::css(),
@@ -138,6 +141,7 @@ pub(super) fn install() {
         THEME_PROVIDER.with(|slot| *slot.borrow_mut() = Some(theme_provider));
 
         cover_accent::install(&display);
+        reduced_motion::install(&display);
 
         adw::StyleManager::default().connect_dark_notify(|_| {
             reload_theme_for_appearance();
@@ -217,6 +221,8 @@ mod tests {
             ".player-bar-play",
             ".reprise-surface",
             ".reprise-hover:hover",
+            ".reprise-btn-icon:hover",
+            ".reprise-btn-toggle:checked",
             ".reprise-text-primary",
             ".reprise-text-secondary",
             ".reprise-text-hint",
