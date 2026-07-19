@@ -1,75 +1,56 @@
-//! Pure data/logic layer behind the local "My Stats" screen (frontend UI
-//! lands separately). Two data sources feed the screen:
+//! Local, read-only primitives for the My Stats snapshot.
 //!
-//! * `listen_events` (schema v7) — one row per completed play, used to build
-//!   a month-by-month timeseries. Written via [`record_listen_event`] from the
-//!   playback path once a play crosses the listen threshold (see
-//!   `scrobbling::should_scrobble`, reused ungated so local stats count every
-//!   qualifying play, not only scrobbled ones).
-//! * `tracks.play_count` / `tracks.duration_ms` — the all-time running
-//!   counters, used for the headline totals and the top-N lists.
-//!
-//! Every query is a pure SQL read with no `now()` baked in: the timeseries
-//! takes its reference "now" as a parameter so it is deterministic under test.
-//! Calendar months are bucketed in **UTC** (`played_at` is stored as unix
-//! seconds), which keeps both the storage unit and the tests timezone-free.
+//! Every local aggregate is projected from `listen_events` joined to tracks.
+//! The running library counter remains available elsewhere, but never feeds
+//! this module's stats-screen queries.
 
+use std::collections::HashMap;
+
+use chrono::{Datelike, TimeZone, Utc};
 use rusqlite::{params, Connection};
 
-/// Number of trailing calendar months the stats timeseries covers, including
-/// the reference month itself.
-const TIMESERIES_MONTHS: i64 = 12;
+use super::group_key::{fold_groups, normalize_group_key, Group, GroupInput, GroupKind};
+use crate::queries::library_views::EFFECTIVE_ALBUM_ARTIST;
 
-/// One calendar-month bucket of the [`monthly_listen_timeseries`] result.
+const CLAMPED_MS: &str =
+    "CASE WHEN t.duration_ms > 0 THEN MIN(le.ms_played, t.duration_ms) ELSE le.ms_played END";
+// Same fallback rule as `EFFECTIVE_ALBUM_ARTIST`, but deliberately preserves
+// the raw spelling so the runtime fold can count and display tag variants.
+const RAW_EFFECTIVE_ALBUM_ARTIST: &str =
+    "CASE WHEN TRIM(album_artist) <> '' THEN album_artist ELSE artist END";
+
+/// Compatibility payload retained for the unwired remote stats clients.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MonthlyListens {
-    /// `YYYY-MM` label of the bucket (UTC), e.g. `"2026-07"`.
     pub year_month: String,
-    /// Sum of `ms_played` across the month's listen events (0 for empty
-    /// months).
     pub total_ms: i64,
-    /// Number of listen events recorded in the month (0 for empty months).
     pub listens: i64,
 }
 
-/// All-time headline aggregates derived from `tracks`, not from
-/// `listen_events`: they reflect the running `play_count` counter so they stay
-/// consistent with pre-v7 history that predates per-play event recording.
+/// Compatibility payload retained for remote stats and the old composer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HeadlineTotals {
-    /// `Σ(play_count × duration_ms)` — total listening time in milliseconds.
     pub total_ms: i64,
-    /// `Σ play_count` — total number of plays across the library.
     pub total_plays: i64,
 }
 
-/// A top-artists row: an artist and their summed play count.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TopArtist {
     pub artist: String,
     pub plays: i64,
-    /// `SUM(play_count * duration_ms)` for all tracks by this artist.
     pub total_ms: i64,
-    /// Path to any one track by this artist (for cover art loading).
     pub representative_track_path: String,
 }
 
-/// A top-albums row. `album_artist` is the effective album artist (the
-/// `album_artist` tag when present, otherwise the track `artist`), so albums
-/// are grouped the way a listener expects rather than split across a blank
-/// tag.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TopAlbum {
     pub album: String,
     pub album_artist: String,
     pub plays: i64,
-    /// `SUM(play_count * duration_ms)` for all tracks on this album.
     pub total_ms: i64,
-    /// Path to any one track on this album (for cover art loading).
     pub track_path: String,
 }
 
-/// A top-tracks row: a single track and its all-time play count.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TopTrack {
     pub track_id: i64,
@@ -77,13 +58,10 @@ pub struct TopTrack {
     pub artist: String,
     pub album: String,
     pub play_count: i64,
-    /// `play_count * duration_ms` for this track.
     pub total_ms: i64,
-    /// Path to this track's file (for cover art loading).
     pub track_path: String,
 }
 
-/// A top-genres row: a genre and its summed play count.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TopGenre {
     pub genre: String,
@@ -91,7 +69,6 @@ pub struct TopGenre {
     pub total_ms: i64,
 }
 
-/// A single hour bucket (0..23) with listening activity counts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HourlyListens {
     pub hour: i32,
@@ -99,10 +76,47 @@ pub struct HourlyListens {
     pub total_ms: i64,
 }
 
-/// Records one completed play into `listen_events`. `played_at` is unix
-/// seconds; `ms_played` is how much of the track was actually heard (the
-/// furthest position reached). The caller decides whether a play qualifies
-/// (threshold predicate) — this function only writes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RankedGroup {
+    pub group: Group,
+    pub representative_track_path: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ListenRow {
+    pub played_at: i64,
+    pub ms: i64,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct NamedRow {
+    pub raw: String,
+    pub mbid: Option<String>,
+    pub plays: i64,
+    pub ms: i64,
+    pub last_played_at: i64,
+    pub path: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct AlbumRow {
+    pub album: String,
+    pub artist: NamedRow,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct TrackAggregate {
+    pub track: TopTrack,
+    pub effective_artist: String,
+    pub artist_mbid: Option<String>,
+}
+
+/// One named home for the play threshold shared by playback and local stats.
+pub fn counts_as_play(position_ms: i64, duration_ms: i64) -> bool {
+    crate::scrobbling::should_scrobble(position_ms, duration_ms)
+}
+
+/// Records one qualifying local play. The caller applies [`counts_as_play`].
 pub fn record_listen_event(
     conn: &Connection,
     track_id: i64,
@@ -116,465 +130,448 @@ pub fn record_listen_event(
     Ok(())
 }
 
-/// Builds a 12-bucket timeseries of listening activity for the calendar
-/// months ending at `now_unix`'s month (inclusive), oldest bucket first.
-/// Months with no events are returned as explicit zero buckets so the caller
-/// always gets exactly `TIMESERIES_MONTHS` contiguous entries. Events
-/// outside the window are ignored.
-pub fn monthly_listen_timeseries(
-    conn: &Connection,
-    now_unix: i64,
-) -> Result<Vec<MonthlyListens>, rusqlite::Error> {
-    // A recursive sequence 0..=11 generates the twelve month buckets relative
-    // to `now_unix`; each bucket's `YYYY-MM` label is computed in SQLite so
-    // calendar arithmetic (month lengths, year rollover) is handled by the
-    // engine. A LEFT JOIN keeps empty months as zero rows.
-    let mut statement = conn.prepare(
-        "WITH RECURSIVE seq(idx) AS ( \
-             SELECT 0 UNION ALL SELECT idx + 1 FROM seq WHERE idx < ?2 - 1 \
-         ) \
-         SELECT \
-             strftime('%Y-%m', ?1, 'unixepoch', 'start of month', \
-                      '-' || (?2 - 1 - idx) || ' months') AS ym, \
-             COALESCE(SUM(le.ms_played), 0) AS total_ms, \
-             COUNT(le.id) AS listens \
-         FROM seq \
-         LEFT JOIN listen_events le \
-             ON strftime('%Y-%m', le.played_at, 'unixepoch') = \
-                strftime('%Y-%m', ?1, 'unixepoch', 'start of month', \
-                         '-' || (?2 - 1 - idx) || ' months') \
-         GROUP BY idx \
-         ORDER BY idx",
-    )?;
-    let rows = statement.query_map(params![now_unix, TIMESERIES_MONTHS], |row| {
-        Ok(MonthlyListens {
-            year_month: row.get(0)?,
-            total_ms: row.get(1)?,
-            listens: row.get(2)?,
-        })
-    })?;
-    rows.collect()
+pub(crate) fn first_event_unix(conn: &Connection) -> Result<Option<i64>, rusqlite::Error> {
+    conn.query_row("SELECT MIN(played_at) FROM listen_events", [], |row| {
+        row.get(0)
+    })
 }
 
-/// Computes the headline totals. When `year` is `None`, sums all-time from
-/// `tracks`. When `year` is `Some`, restricts play_count sums to tracks whose
-/// `last_played_at` falls in that year, and listening-time totals to
-/// listen_events in that year.
+pub(crate) fn listen_rows(
+    conn: &Connection,
+    start_unix: i64,
+    end_unix: i64,
+) -> Result<Vec<ListenRow>, rusqlite::Error> {
+    let sql = format!(
+        "SELECT le.played_at, {CLAMPED_MS} \
+         FROM listen_events le JOIN tracks t ON t.id = le.track_id \
+         WHERE le.played_at >= ?1 AND le.played_at < ?2 \
+         ORDER BY le.played_at, le.id"
+    );
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement
+        .query_map(params![start_unix, end_unix], |row| {
+            Ok(ListenRow {
+                played_at: row.get(0)?,
+                ms: row.get(1)?,
+            })
+        })?
+        .collect();
+    rows
+}
+
+pub(crate) fn total_ms_in_range(
+    conn: &Connection,
+    start_unix: i64,
+    end_unix: i64,
+) -> Result<i64, rusqlite::Error> {
+    let sql = format!(
+        "SELECT COALESCE(SUM({CLAMPED_MS}), 0) \
+         FROM listen_events le JOIN tracks t ON t.id = le.track_id \
+         WHERE le.played_at >= ?1 AND le.played_at < ?2"
+    );
+    conn.query_row(&sql, params![start_unix, end_unix], |row| row.get(0))
+}
+
+pub(crate) fn artist_rows(
+    conn: &Connection,
+    start_unix: i64,
+    end_unix: i64,
+) -> Result<Vec<NamedRow>, rusqlite::Error> {
+    let sql = format!(
+        "SELECT {RAW_EFFECTIVE_ALBUM_ARTIST} AS raw, \
+                MAX(NULLIF(TRIM(t.artist_mbid), '')), COUNT(le.id), \
+                COALESCE(SUM({CLAMPED_MS}), 0), MAX(le.played_at), MIN(t.path) \
+         FROM listen_events le JOIN tracks t ON t.id = le.track_id \
+         WHERE le.played_at >= ?1 AND le.played_at < ?2 \
+           AND TRIM({EFFECTIVE_ALBUM_ARTIST}) <> '' \
+         GROUP BY raw"
+    );
+    query_named_rows(conn, &sql, start_unix, end_unix)
+}
+
+pub(crate) fn genre_rows(
+    conn: &Connection,
+    start_unix: i64,
+    end_unix: i64,
+) -> Result<Vec<NamedRow>, rusqlite::Error> {
+    let sql = format!(
+        "SELECT t.genre, NULL, COUNT(le.id), COALESCE(SUM({CLAMPED_MS}), 0), \
+                MAX(le.played_at), MIN(t.path) \
+         FROM listen_events le JOIN tracks t ON t.id = le.track_id \
+         WHERE le.played_at >= ?1 AND le.played_at < ?2 AND TRIM(t.genre) <> '' \
+         GROUP BY t.genre"
+    );
+    query_named_rows(conn, &sql, start_unix, end_unix)
+}
+
+pub(crate) fn album_rows(
+    conn: &Connection,
+    start_unix: i64,
+    end_unix: i64,
+) -> Result<Vec<AlbumRow>, rusqlite::Error> {
+    let sql = format!(
+        "SELECT t.album, {RAW_EFFECTIVE_ALBUM_ARTIST} AS raw, NULL, COUNT(le.id), \
+                COALESCE(SUM({CLAMPED_MS}), 0), MAX(le.played_at), MIN(t.path) \
+         FROM listen_events le JOIN tracks t ON t.id = le.track_id \
+         WHERE le.played_at >= ?1 AND le.played_at < ?2 \
+           AND TRIM(t.album) <> '' AND TRIM({EFFECTIVE_ALBUM_ARTIST}) <> '' \
+         GROUP BY t.album, raw"
+    );
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement
+        .query_map(params![start_unix, end_unix], |row| {
+            Ok(AlbumRow {
+                album: row.get(0)?,
+                artist: NamedRow {
+                    raw: row.get(1)?,
+                    mbid: row.get(2)?,
+                    plays: row.get(3)?,
+                    ms: row.get(4)?,
+                    last_played_at: row.get(5)?,
+                    path: row.get(6)?,
+                },
+            })
+        })?
+        .collect();
+    rows
+}
+
+pub(crate) fn track_rows(
+    conn: &Connection,
+    start_unix: i64,
+    end_unix: i64,
+) -> Result<Vec<TrackAggregate>, rusqlite::Error> {
+    let sql = format!(
+        "SELECT t.id, t.title, t.artist, t.album, COUNT(le.id), \
+                COALESCE(SUM({CLAMPED_MS}), 0), t.path, \
+                {RAW_EFFECTIVE_ALBUM_ARTIST}, t.artist_mbid \
+         FROM listen_events le JOIN tracks t ON t.id = le.track_id \
+         WHERE le.played_at >= ?1 AND le.played_at < ?2 \
+         GROUP BY t.id"
+    );
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement
+        .query_map(params![start_unix, end_unix], |row| {
+            Ok(TrackAggregate {
+                track: TopTrack {
+                    track_id: row.get(0)?,
+                    title: row.get(1)?,
+                    artist: row.get(2)?,
+                    album: row.get(3)?,
+                    play_count: row.get(4)?,
+                    total_ms: row.get(5)?,
+                    track_path: row.get(6)?,
+                },
+                effective_artist: row.get(7)?,
+                artist_mbid: row.get(8)?,
+            })
+        })?
+        .collect();
+    rows
+}
+
+pub(crate) fn discovered_count(
+    conn: &Connection,
+    start_unix: i64,
+    end_unix: i64,
+) -> Result<i64, rusqlite::Error> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM ( \
+           SELECT track_id, MIN(played_at) AS first_played_at \
+           FROM listen_events GROUP BY track_id \
+           HAVING first_played_at >= ?1 AND first_played_at < ?2 \
+         )",
+        params![start_unix, end_unix],
+        |row| row.get(0),
+    )
+}
+
+/// Track ids belonging to an exact runtime metadata group.
+pub fn group_track_ids(
+    conn: &Connection,
+    kind: GroupKind,
+    key: &str,
+) -> Result<Vec<i64>, rusqlite::Error> {
+    let raw_expression = match kind {
+        GroupKind::Artist | GroupKind::AlbumArtist => RAW_EFFECTIVE_ALBUM_ARTIST,
+        GroupKind::Genre => "t.genre",
+    };
+    let mbid_expression = if kind == GroupKind::Artist {
+        "t.artist_mbid"
+    } else {
+        "NULL"
+    };
+    let sql = format!(
+        "SELECT t.id, {raw_expression}, {mbid_expression} FROM tracks t \
+         WHERE t.missing_since IS NULL AND t.removed_at IS NULL \
+           AND TRIM({raw_expression}) <> '' ORDER BY t.id"
+    );
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut mbid_by_raw = HashMap::<String, String>::new();
+    if kind == GroupKind::Artist {
+        for (_, raw, mbid) in &rows {
+            let Some(mbid) = mbid
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            else {
+                continue;
+            };
+            let stored = mbid_by_raw.entry(raw.clone()).or_default();
+            if mbid > stored.as_str() {
+                *stored = mbid.to_string();
+            }
+        }
+    }
+    let mut ids = Vec::new();
+    for (id, raw, mbid) in rows {
+        let effective_mbid = mbid_by_raw
+            .get(&raw)
+            .map(String::as_str)
+            .or(mbid.as_deref());
+        if key_for(&raw, effective_mbid) == key {
+            ids.push(id);
+        }
+    }
+    Ok(ids)
+}
+
+pub(crate) fn ranked_groups(rows: &[NamedRow]) -> Vec<RankedGroup> {
+    let inputs = rows
+        .iter()
+        .filter(|row| !normalize_group_key(&row.raw).is_empty())
+        .map(|row| GroupInput {
+            raw: &row.raw,
+            mbid: row.mbid.as_deref(),
+            plays: row.plays,
+            ms: row.ms,
+            last_played_at: row.last_played_at,
+        })
+        .collect::<Vec<_>>();
+    let mut paths = HashMap::<String, String>::new();
+    for row in rows {
+        let key = key_for(&row.raw, row.mbid.as_deref());
+        let path = paths.entry(key).or_insert_with(|| row.path.clone());
+        if row.path < *path {
+            *path = row.path.clone();
+        }
+    }
+    fold_groups(&inputs)
+        .into_iter()
+        .map(|group| RankedGroup {
+            representative_track_path: paths.get(&group.key).cloned().unwrap_or_default(),
+            group,
+        })
+        .collect()
+}
+
+pub(crate) fn key_for(raw: &str, mbid: Option<&str>) -> String {
+    fold_groups(&[GroupInput {
+        raw,
+        mbid,
+        plays: 0,
+        ms: 0,
+        last_played_at: 0,
+    }])
+    .into_iter()
+    .next()
+    .map(|group| group.key)
+    .unwrap_or_default()
+}
+
+fn query_named_rows(
+    conn: &Connection,
+    sql: &str,
+    start_unix: i64,
+    end_unix: i64,
+) -> Result<Vec<NamedRow>, rusqlite::Error> {
+    let mut statement = conn.prepare(sql)?;
+    let rows = statement
+        .query_map(params![start_unix, end_unix], |row| {
+            Ok(NamedRow {
+                raw: row.get(0)?,
+                mbid: row.get(1)?,
+                plays: row.get(2)?,
+                ms: row.get(3)?,
+                last_played_at: row.get(4)?,
+                path: row.get(5)?,
+            })
+        })?
+        .collect();
+    rows
+}
+
+fn utc_range(year: Option<i32>) -> (i64, i64) {
+    match year {
+        Some(year) => {
+            let start = Utc.with_ymd_and_hms(year, 1, 1, 0, 0, 0).single().unwrap();
+            let end = Utc
+                .with_ymd_and_hms(year + 1, 1, 1, 0, 0, 0)
+                .single()
+                .unwrap();
+            (start.timestamp(), end.timestamp())
+        }
+        None => (i64::MIN, i64::MAX),
+    }
+}
+
+// Temporary compatibility for the pre-editorial GTK composer. T8 removes
+// these wrappers together with that composer; all are event-backed already.
 pub fn headline_totals(
     conn: &Connection,
     year: Option<i32>,
 ) -> Result<HeadlineTotals, rusqlite::Error> {
-    match year {
-        None => conn.query_row(
-            "SELECT \
-                 COALESCE(SUM(play_count * duration_ms), 0), \
-                 COALESCE(SUM(play_count), 0) \
-             FROM tracks",
-            [],
-            |row| {
-                Ok(HeadlineTotals {
-                    total_ms: row.get(0)?,
-                    total_plays: row.get(1)?,
-                })
-            },
-        ),
-        Some(y) => {
-            let year_str = y.to_string();
-            // For year-filtered totals: total_ms from listen_events (accurate
-            // per-play data), total_plays from tracks with last_played_at in
-            // that year (best approximation without per-event play counts).
-            let total_ms: i64 = conn.query_row(
-                "SELECT COALESCE(SUM(le.ms_played), 0) \
-                 FROM listen_events le \
-                 WHERE strftime('%Y', le.played_at, 'unixepoch') = ?1",
-                params![year_str],
-                |row| row.get(0),
-            )?;
-            let total_plays: i64 = conn.query_row(
-                "SELECT COALESCE(SUM(play_count), 0) \
-                 FROM tracks \
-                 WHERE strftime('%Y', last_played_at, 'unixepoch') = ?1",
-                params![year_str],
-                |row| row.get(0),
-            )?;
-            Ok(HeadlineTotals {
-                total_ms,
-                total_plays,
-            })
-        }
-    }
+    let (start, end) = utc_range(year);
+    let rows = listen_rows(conn, start, end)?;
+    Ok(HeadlineTotals {
+        total_ms: rows.iter().map(|row| row.ms).sum(),
+        total_plays: rows.len() as i64,
+    })
 }
 
-/// Top artists by summed play count, most-played first. Artists with zero
-/// plays or a blank name are excluded. Ties break alphabetically for a stable
-/// order. When `year` is `Some`, only tracks whose `last_played_at` falls in
-/// that year are counted.
 pub fn top_artists(
     conn: &Connection,
     limit: usize,
     year: Option<i32>,
 ) -> Result<Vec<TopArtist>, rusqlite::Error> {
-    let (sql, year_str) = match year {
-        None => (
-            "SELECT artist, SUM(play_count) AS plays, \
-                    SUM(play_count * duration_ms) AS total_ms, \
-                    MIN(path) AS track_path \
-             FROM tracks \
-             WHERE play_count > 0 AND artist <> '' \
-             GROUP BY artist \
-             ORDER BY plays DESC, artist ASC \
-             LIMIT ?1"
-                .to_string(),
-            String::new(),
-        ),
-        Some(y) => (
-            "SELECT artist, SUM(play_count) AS plays, \
-                    SUM(play_count * duration_ms) AS total_ms, \
-                    MIN(path) AS track_path \
-             FROM tracks \
-             WHERE play_count > 0 AND artist <> '' \
-               AND strftime('%Y', last_played_at, 'unixepoch') = ?2 \
-             GROUP BY artist \
-             ORDER BY plays DESC, artist ASC \
-             LIMIT ?1"
-                .to_string(),
-            y.to_string(),
-        ),
-    };
-    let mut statement = conn.prepare(&sql)?;
-    let map_row = |row: &rusqlite::Row| {
-        Ok(TopArtist {
-            artist: row.get(0)?,
-            plays: row.get(1)?,
-            total_ms: row.get(2)?,
-            representative_track_path: row.get(3)?,
+    let (start, end) = utc_range(year);
+    Ok(ranked_groups(&artist_rows(conn, start, end)?)
+        .into_iter()
+        .take(limit)
+        .map(|row| TopArtist {
+            artist: row.group.label,
+            plays: row.group.plays,
+            total_ms: row.group.ms,
+            representative_track_path: row.representative_track_path,
         })
-    };
-    if year.is_some() {
-        statement
-            .query_map(params![limit as i64, year_str], map_row)?
-            .collect()
-    } else {
-        statement
-            .query_map(params![limit as i64], map_row)?
-            .collect()
-    }
+        .collect())
 }
 
-/// Top albums by summed play count, most-played first. Rows are grouped by
-/// album title and effective album artist (see [`TopAlbum`]). Albums with zero
-/// plays or a blank title are excluded; ties break alphabetically. When `year`
-/// is `Some`, only tracks whose `last_played_at` falls in that year are
-/// counted.
 pub fn top_albums(
     conn: &Connection,
     limit: usize,
     year: Option<i32>,
 ) -> Result<Vec<TopAlbum>, rusqlite::Error> {
-    let (sql, year_str) = match year {
-        None => (
-            "SELECT album, \
-                    CASE WHEN album_artist <> '' THEN album_artist ELSE artist END AS eff_artist, \
-                    SUM(play_count) AS plays, \
-                    SUM(play_count * duration_ms) AS total_ms, \
-                    MIN(path) AS track_path \
-             FROM tracks \
-             WHERE play_count > 0 AND album <> '' \
-             GROUP BY album, eff_artist \
-             ORDER BY plays DESC, album ASC \
-             LIMIT ?1"
-                .to_string(),
-            String::new(),
-        ),
-        Some(y) => (
-            "SELECT album, \
-                    CASE WHEN album_artist <> '' THEN album_artist ELSE artist END AS eff_artist, \
-                    SUM(play_count) AS plays, \
-                    SUM(play_count * duration_ms) AS total_ms, \
-                    MIN(path) AS track_path \
-             FROM tracks \
-             WHERE play_count > 0 AND album <> '' \
-               AND strftime('%Y', last_played_at, 'unixepoch') = ?2 \
-             GROUP BY album, eff_artist \
-             ORDER BY plays DESC, album ASC \
-             LIMIT ?1"
-                .to_string(),
-            y.to_string(),
-        ),
-    };
-    let mut statement = conn.prepare(&sql)?;
-    let map_row = |row: &rusqlite::Row| {
-        Ok(TopAlbum {
-            album: row.get(0)?,
-            album_artist: row.get(1)?,
-            plays: row.get(2)?,
-            total_ms: row.get(3)?,
-            track_path: row.get(4)?,
-        })
-    };
-    if year.is_some() {
-        statement
-            .query_map(params![limit as i64, year_str], map_row)?
-            .collect()
-    } else {
-        statement
-            .query_map(params![limit as i64], map_row)?
-            .collect()
-    }
+    let (start, end) = utc_range(year);
+    Ok(fold_album_rows(&album_rows(conn, start, end)?)
+        .into_iter()
+        .take(limit)
+        .collect())
 }
 
-/// Top individual tracks by play count, most-played first. Never-played
-/// tracks are excluded; ties break by title for a stable order. When `year`
-/// is `Some`, only tracks whose `last_played_at` falls in that year are
-/// counted.
 pub fn top_tracks(
     conn: &Connection,
     limit: usize,
     year: Option<i32>,
 ) -> Result<Vec<TopTrack>, rusqlite::Error> {
-    let (sql, year_str) = match year {
-        None => (
-            "SELECT id, title, artist, album, play_count, \
-                    play_count * duration_ms AS total_ms, \
-                    path \
-             FROM tracks \
-             WHERE play_count > 0 \
-             ORDER BY play_count DESC, title ASC \
-             LIMIT ?1"
-                .to_string(),
-            String::new(),
-        ),
-        Some(y) => (
-            "SELECT id, title, artist, album, play_count, \
-                    play_count * duration_ms AS total_ms, \
-                    path \
-             FROM tracks \
-             WHERE play_count > 0 \
-               AND strftime('%Y', last_played_at, 'unixepoch') = ?2 \
-             ORDER BY play_count DESC, title ASC \
-             LIMIT ?1"
-                .to_string(),
-            y.to_string(),
-        ),
-    };
-    let mut statement = conn.prepare(&sql)?;
-    let map_row = |row: &rusqlite::Row| {
-        Ok(TopTrack {
-            track_id: row.get(0)?,
-            title: row.get(1)?,
-            artist: row.get(2)?,
-            album: row.get(3)?,
-            play_count: row.get(4)?,
-            total_ms: row.get(5)?,
-            track_path: row.get(6)?,
-        })
-    };
-    if year.is_some() {
-        statement
-            .query_map(params![limit as i64, year_str], map_row)?
-            .collect()
-    } else {
-        statement
-            .query_map(params![limit as i64], map_row)?
-            .collect()
-    }
+    let (start, end) = utc_range(year);
+    let mut tracks = track_rows(conn, start, end)?
+        .into_iter()
+        .map(|row| row.track)
+        .collect::<Vec<_>>();
+    tracks.sort_by(|left, right| {
+        right
+            .play_count
+            .cmp(&left.play_count)
+            .then_with(|| right.total_ms.cmp(&left.total_ms))
+            .then_with(|| left.title.cmp(&right.title))
+            .then_with(|| left.track_id.cmp(&right.track_id))
+    });
+    tracks.truncate(limit);
+    Ok(tracks)
 }
 
-/// Top genres by summed play count, most-played first. Tracks with an empty
-/// genre are excluded. When `year` is `Some`, only tracks whose
-/// `last_played_at` falls in that year are counted.
-pub fn top_genres(
+pub fn monthly_listen_timeseries(
     conn: &Connection,
-    limit: usize,
-    year: Option<i32>,
-) -> Result<Vec<TopGenre>, rusqlite::Error> {
-    let (sql, year_str) = match year {
-        None => (
-            "SELECT genre, SUM(play_count) AS plays, \
-                    SUM(play_count * duration_ms) AS total_ms \
-             FROM tracks \
-             WHERE play_count > 0 AND genre <> '' \
-             GROUP BY genre \
-             ORDER BY plays DESC, genre ASC \
-             LIMIT ?1"
-                .to_string(),
-            String::new(),
-        ),
-        Some(y) => (
-            "SELECT genre, SUM(play_count) AS plays, \
-                    SUM(play_count * duration_ms) AS total_ms \
-             FROM tracks \
-             WHERE play_count > 0 AND genre <> '' \
-               AND strftime('%Y', last_played_at, 'unixepoch') = ?2 \
-             GROUP BY genre \
-             ORDER BY plays DESC, genre ASC \
-             LIMIT ?1"
-                .to_string(),
-            y.to_string(),
-        ),
+    now_unix: i64,
+) -> Result<Vec<MonthlyListens>, rusqlite::Error> {
+    let now = Utc.timestamp_opt(now_unix, 0).earliest();
+    let Some(now) = now else {
+        return Ok(Vec::new());
     };
-    let mut statement = conn.prepare(&sql)?;
-    let map_row = |row: &rusqlite::Row| {
-        Ok(TopGenre {
-            genre: row.get(0)?,
-            plays: row.get(1)?,
-            total_ms: row.get(2)?,
-        })
-    };
-    if year.is_some() {
-        statement
-            .query_map(params![limit as i64, year_str], map_row)?
-            .collect()
-    } else {
-        statement
-            .query_map(params![limit as i64], map_row)?
-            .collect()
+    let mut months = Vec::new();
+    for offset in (0..12).rev() {
+        let zero_based = i64::from(now.year()) * 12 + i64::from(now.month0()) - offset;
+        let year = i32::try_from(zero_based.div_euclid(12)).unwrap_or_default();
+        let month = u32::try_from(zero_based.rem_euclid(12) + 1).unwrap_or(1);
+        let start = Utc
+            .with_ymd_and_hms(year, month, 1, 0, 0, 0)
+            .single()
+            .unwrap();
+        let (next_year, next_month) = if month == 12 {
+            (year + 1, 1)
+        } else {
+            (year, month + 1)
+        };
+        let end = Utc
+            .with_ymd_and_hms(next_year, next_month, 1, 0, 0, 0)
+            .single()
+            .unwrap();
+        let rows = listen_rows(conn, start.timestamp(), end.timestamp())?;
+        months.push(MonthlyListens {
+            year_month: format!("{year:04}-{month:02}"),
+            total_ms: rows.iter().map(|row| row.ms).sum(),
+            listens: rows.len() as i64,
+        });
     }
+    Ok(months)
 }
 
-/// Listening activity by hour of day (0..23), based on `listen_events`.
-/// Returns only hours that have at least one event, ordered by hour. When
-/// `year` is `Some`, only events in that year are counted.
-pub fn listening_by_hour(
-    conn: &Connection,
-    year: Option<i32>,
-) -> Result<Vec<HourlyListens>, rusqlite::Error> {
-    let (sql, year_str) = match year {
-        None => (
-            "SELECT CAST(strftime('%H', played_at, 'unixepoch') AS INTEGER) AS hour, \
-                    COUNT(*) AS listens, \
-                    COALESCE(SUM(ms_played), 0) AS total_ms \
-             FROM listen_events \
-             GROUP BY hour \
-             ORDER BY hour"
-                .to_string(),
-            String::new(),
-        ),
-        Some(y) => (
-            "SELECT CAST(strftime('%H', played_at, 'unixepoch') AS INTEGER) AS hour, \
-                    COUNT(*) AS listens, \
-                    COALESCE(SUM(ms_played), 0) AS total_ms \
-             FROM listen_events \
-             WHERE strftime('%Y', played_at, 'unixepoch') = ?1 \
-             GROUP BY hour \
-             ORDER BY hour"
-                .to_string(),
-            y.to_string(),
-        ),
-    };
-    let mut statement = conn.prepare(&sql)?;
-    let map_row = |row: &rusqlite::Row| {
-        Ok(HourlyListens {
-            hour: row.get(0)?,
-            listens: row.get(1)?,
-            total_ms: row.get(2)?,
-        })
-    };
-    if year.is_some() {
-        statement.query_map(params![year_str], map_row)?.collect()
-    } else {
-        statement.query_map([], map_row)?.collect()
-    }
-}
-
-/// Count of distinct artists with at least one play. When `year` is `Some`,
-/// only tracks whose `last_played_at` falls in that year are counted.
-pub fn distinct_artists_played(
-    conn: &Connection,
-    year: Option<i32>,
-) -> Result<i64, rusqlite::Error> {
-    match year {
-        None => conn.query_row(
-            "SELECT COUNT(DISTINCT artist) FROM tracks \
-             WHERE play_count > 0 AND artist <> ''",
-            [],
-            |row| row.get(0),
-        ),
-        Some(y) => {
-            let year_str = y.to_string();
-            conn.query_row(
-                "SELECT COUNT(DISTINCT artist) FROM tracks \
-                 WHERE play_count > 0 AND artist <> '' \
-                   AND strftime('%Y', last_played_at, 'unixepoch') = ?1",
-                params![year_str],
-                |row| row.get(0),
-            )
-        }
-    }
-}
-
-/// The most active weekday by listen event count. Returns the weekday name
-/// (e.g. `"Monday"`) and its event count, or `None` if there are no events.
-/// When `year` is `Some`, only events in that year are counted.
-pub fn most_active_weekday(
-    conn: &Connection,
-    year: Option<i32>,
-) -> Result<Option<(String, i64)>, rusqlite::Error> {
-    // SQLite strftime('%w') returns 0=Sunday .. 6=Saturday.
-    let weekday_names = [
-        "Sunday",
-        "Monday",
-        "Tuesday",
-        "Wednesday",
-        "Thursday",
-        "Friday",
-        "Saturday",
-    ];
-
-    let (sql, year_str) = match year {
-        None => (
-            "SELECT CAST(strftime('%w', played_at, 'unixepoch') AS INTEGER) AS dow, \
-                    COUNT(*) AS listens \
-             FROM listen_events \
-             GROUP BY dow \
-             ORDER BY listens DESC \
-             LIMIT 1"
-                .to_string(),
-            String::new(),
-        ),
-        Some(y) => (
-            "SELECT CAST(strftime('%w', played_at, 'unixepoch') AS INTEGER) AS dow, \
-                    COUNT(*) AS listens \
-             FROM listen_events \
-             WHERE strftime('%Y', played_at, 'unixepoch') = ?1 \
-             GROUP BY dow \
-             ORDER BY listens DESC \
-             LIMIT 1"
-                .to_string(),
-            y.to_string(),
-        ),
-    };
-    let mut statement = conn.prepare(&sql)?;
-    let map_row = |row: &rusqlite::Row| {
-        let dow: i64 = row.get(0)?;
-        let listens: i64 = row.get(1)?;
-        Ok((usize::try_from(dow).unwrap_or_default(), listens))
-    };
-    let mut result_rows = if year.is_some() {
-        statement.query_map(params![year_str], map_row)?
-    } else {
-        statement.query_map([], map_row)?
-    };
-    match result_rows.next() {
-        Some(Ok((dow, listens))) => {
-            let name = weekday_names.get(dow).unwrap_or(&"Unknown");
-            Ok(Some((name.to_string(), listens)))
-        }
-        Some(Err(e)) => Err(e),
-        None => Ok(None),
-    }
-}
-
-/// Returns distinct years from `listen_events`, sorted descending. The UI
-/// uses this to populate the year selector dropdown.
 pub fn available_years(conn: &Connection) -> Result<Vec<i32>, rusqlite::Error> {
-    let mut statement = conn.prepare(
-        "SELECT DISTINCT CAST(strftime('%Y', played_at, 'unixepoch') AS INTEGER) AS y \
-         FROM listen_events \
-         ORDER BY y DESC",
-    )?;
-    let rows = statement.query_map([], |row| row.get(0))?;
-    rows.collect()
+    let mut statement =
+        conn.prepare("SELECT played_at FROM listen_events ORDER BY played_at DESC")?;
+    let rows = statement.query_map([], |row| row.get::<_, i64>(0))?;
+    let mut years = Vec::new();
+    for row in rows {
+        let Some(value) = Utc.timestamp_opt(row?, 0).earliest() else {
+            continue;
+        };
+        if !years.contains(&value.year()) {
+            years.push(value.year());
+        }
+    }
+    Ok(years)
+}
+
+pub(crate) fn fold_album_rows(rows: &[AlbumRow]) -> Vec<TopAlbum> {
+    let mut by_album = HashMap::<String, Vec<&NamedRow>>::new();
+    for row in rows {
+        by_album
+            .entry(row.album.clone())
+            .or_default()
+            .push(&row.artist);
+    }
+    let mut albums = Vec::new();
+    for (album, artists) in by_album {
+        let owned = artists.into_iter().cloned().collect::<Vec<_>>();
+        for artist in ranked_groups(&owned) {
+            albums.push(TopAlbum {
+                album: album.clone(),
+                album_artist: artist.group.label,
+                plays: artist.group.plays,
+                total_ms: artist.group.ms,
+                track_path: artist.representative_track_path,
+            });
+        }
+    }
+    albums.sort_by(|left, right| {
+        right
+            .total_ms
+            .cmp(&left.total_ms)
+            .then_with(|| right.plays.cmp(&left.plays))
+            .then_with(|| left.album.cmp(&right.album))
+            .then_with(|| left.album_artist.cmp(&right.album_artist))
+    });
+    albums
 }
 
 #[cfg(test)]
