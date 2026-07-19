@@ -127,8 +127,9 @@ fn build_row() -> RowWidgets {
         strings::DOCTOR_LOW_CONFIDENCE,
     ))]);
     let source_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+    source_box.set_hexpand(true);
     source_box.append(&warning);
-    source_box.append(&source.value);
+    source_box.append(&source.section);
 
     let details = gtk4::Box::new(gtk4::Orientation::Horizontal, 18);
     details.set_hexpand(true);
@@ -265,3 +266,7 @@ fn set_full_text(label: &gtk4::Label, value: &str) {
 fn list_item_key(item: &gtk4::ListItem) -> usize {
     item.as_ptr() as usize
 }
+
+#[cfg(test)]
+#[path = "review_row_contract_tests.rs"]
+mod contract_tests;
