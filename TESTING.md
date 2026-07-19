@@ -226,10 +226,11 @@ The focused Glass layout pass runs from a normal host checkout with:
 scripts/glass-cua-visual.sh /tmp/reprise-glass-cua-evidence
 ```
 
-It seeds 120 synthetic albums in disposable profiles, captures the Album view
-before and after CUA page scrolling, reaches the final row, and repeats the
-flow with the player bar at the bottom and top. The retained PNGs are Xvfb/X11
-evidence for clipping and traversal; they do not replace the manual GNOME
+It seeds 120 synthetic albums in disposable profiles, uses calibrated line
+scrolls to place coloured covers directly beneath each Glass edge, uses page
+scrolling to reach the final row, and repeats the flow with the player bar at
+the bottom and top. The retained PNGs are Xvfb/X11 evidence for clipping,
+traversal, and live backdrop refresh; they do not replace the manual GNOME
 Wayland review of native blur quality, scale factors, or compositor behavior.
 
 Useful additions to the display suite are recycled Artist/Album rows after
