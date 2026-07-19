@@ -343,22 +343,18 @@ impl StatsView {
         );
     }
 
-    #[allow(dead_code)]
     pub(in crate::ui) fn set_on_spotlight_play(&self, callback: impl Fn(String, String) + 'static) {
         *self.on_spotlight_play.borrow_mut() = Some(Rc::new(callback));
     }
 
-    #[allow(dead_code)]
     pub(in crate::ui) fn set_on_go_to_artist(&self, callback: impl Fn(String) + 'static) {
         *self.on_go_to_artist.borrow_mut() = Some(Rc::new(callback));
     }
 
-    #[allow(dead_code)]
     pub(in crate::ui) fn set_on_create_smart_mix(&self, callback: impl Fn(Vec<String>) + 'static) {
         *self.on_create_smart_mix.borrow_mut() = Some(Rc::new(callback));
     }
 
-    #[allow(dead_code)]
     pub(in crate::ui) fn set_on_unify_spellings(&self, callback: impl Fn(Vec<i64>) + 'static) {
         *self.on_unify_spellings.borrow_mut() = Some(Rc::new(callback));
     }
