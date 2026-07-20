@@ -13,7 +13,7 @@ use reprise_core::format::format_thousands;
 use reprise_core::library::group_key::GroupKind;
 use reprise_core::library::settings::{self, StatsLayout};
 use reprise_core::library::stats_period::StatsPeriod;
-use reprise_core::library::stats_screen::{group_track_ids, stored_play_count_total, TopTrack};
+use reprise_core::library::stats_screen::{group_track_ids, TopTrack};
 use reprise_core::library::stats_snapshot::{self, ComparisonPresentation, SortBy, StatsSnapshot};
 use rusqlite::Connection;
 
@@ -135,29 +135,16 @@ impl StatsView {
         top_tracks_content.append(&sort_controls);
         top_tracks_content.append(&top_tracks_box);
 
-        let page = gtk4::Box::new(gtk4::Orientation::Vertical, SECTION_SPACING);
-        page.set_margin_top(32);
-        page.set_margin_bottom(32);
-        page.set_margin_start(24);
-        page.set_margin_end(24);
-        page.append(&hero.root);
-        page.append(&card(ribbon.widget()));
-        page.append(&card(spotlight.widget()));
-        page.append(&genres_section);
-        page.append(&asymmetric_row);
-        page.append(&section("TOP TRACKS", &top_tracks_content));
-        let clamp = adw::Clamp::builder()
-            .maximum_size(CONTENT_MAX_WIDTH)
-            .child(&page)
-            .build();
+        let sections = gtk4::Box::new(gtk4::Orientation::Vertical, SECTION_SPACING);
+        sections.append(&card(ribbon.widget()));
+        sections.append(&card(spotlight.widget()));
+        sections.append(&genres_section);
+        sections.append(&asymmetric_row);
+        sections.append(&section("TOP TRACKS", &top_tracks_content));
 
         let empty = adw::StatusPage::builder()
             .title(strings::stats_empty_title())
             .icon_name("audio-x-generic-symbolic")
-            .build();
-        let imported = adw::StatusPage::builder()
-            .title(strings::stats_imported_title())
-            .icon_name("document-open-recent-symbolic")
             .build();
         // A failed query is not an empty history: telling the user to start
         // listening when the numbers exist but could not be read is a lie.
@@ -167,13 +154,28 @@ impl StatsView {
             .icon_name("dialog-warning-symbolic")
             .build();
         let page_stack = gtk4::Stack::new();
-        page_stack.add_named(&clamp, Some("sections"));
+        page_stack.set_vexpand(true);
+        page_stack.add_named(&sections, Some("sections"));
         page_stack.add_named(&empty, Some("empty"));
-        page_stack.add_named(&imported, Some("imported"));
         page_stack.add_named(&failed, Some("failed"));
         page_stack.set_visible_child_name("empty");
+
+        // The selected period is navigation, not data. Keep its hero outside
+        // the conditional content stack so an empty rolling window or calendar
+        // year never hides the only control that can leave that state.
+        let page = gtk4::Box::new(gtk4::Orientation::Vertical, SECTION_SPACING);
+        page.set_margin_top(32);
+        page.set_margin_bottom(32);
+        page.set_margin_start(24);
+        page.set_margin_end(24);
+        page.append(&hero.root);
+        page.append(&page_stack);
+        let clamp = adw::Clamp::builder()
+            .maximum_size(CONTENT_MAX_WIDTH)
+            .child(&page)
+            .build();
         let root = gtk4::ScrolledWindow::builder()
-            .child(&page_stack)
+            .child(&clamp)
             .hscrollbar_policy(gtk4::PolicyType::Never)
             .hexpand(true)
             .vexpand(true)
@@ -256,7 +258,6 @@ impl StatsView {
             clock_section: clock_section.clone(),
             genres_section: genres_section.clone(),
             highlights_section: highlights_section.clone(),
-            imported_page: imported,
         });
 
         Self {
@@ -287,7 +288,17 @@ impl StatsView {
     pub(in crate::ui) fn wire_year_selector(&self, conn: &Rc<RefCell<Connection>>) {
         *self.connection.borrow_mut() = Some(conn.clone());
         let now_year = chrono::Local::now().year();
-        let periods = StatsPeriod::available_periods(now_year);
+        let periods = {
+            let conn = conn.borrow();
+            StatsPeriod::available(&conn, now_year, &chrono::Local).unwrap_or_else(|error| {
+                tracing::error!(%error, "failed to read available My Stats periods");
+                vec![
+                    StatsPeriod::YearToDate(now_year),
+                    StatsPeriod::AllTime,
+                    StatsPeriod::Last30Days,
+                ]
+            })
+        };
         let labels = periods
             .iter()
             .map(|period| period.label())
@@ -361,9 +372,17 @@ impl StatsView {
     /// live widget tree — not off a constant that nothing binds to it.
     #[cfg(test)]
     fn section_order(&self) -> Vec<&'static str> {
-        let mut order = Vec::new();
+        let mut order = vec!["hero"];
         let page = self.page.upgrade().expect("stats page must be alive");
-        let mut child = page.first_child();
+        let stack = page
+            .last_child()
+            .expect("stats page must own its content stack")
+            .downcast::<gtk4::Stack>()
+            .expect("last stats page child must be its content stack");
+        let sections = stack
+            .child_by_name("sections")
+            .expect("stats content stack must own its sections page");
+        let mut child = sections.first_child();
         while let Some(widget) = child {
             order.push(self.section_name(&widget));
             child = widget.next_sibling();
@@ -374,9 +393,7 @@ impl StatsView {
     #[cfg(test)]
     fn section_name(&self, widget: &gtk4::Widget) -> &'static str {
         let render = &self.render;
-        if self.period_dropdown.is_ancestor(widget) {
-            "hero"
-        } else if render.ribbon.widget().is_ancestor(widget) {
+        if render.ribbon.widget().is_ancestor(widget) {
             "ribbon"
         } else if render.spotlight_section.widget().is_ancestor(widget) {
             "spotlight"
@@ -412,7 +429,6 @@ struct RenderParts {
     clock_section: gtk4::Box,
     genres_section: gtk4::Box,
     highlights_section: gtk4::Box,
-    imported_page: adw::StatusPage,
 }
 
 fn refresh_parts(
@@ -426,17 +442,11 @@ fn refresh_parts(
     let result = {
         let conn = conn.borrow();
         let layout = settings::get_stats_layout(&conn);
-        stats_snapshot::compute(&conn, period, now_unix, &chrono::Local).and_then(|snapshot| {
-            let stored_plays = if snapshot.is_empty() {
-                stored_play_count_total(&conn)?
-            } else {
-                0
-            };
-            Ok((snapshot, layout, stored_plays))
-        })
+        stats_snapshot::compute(&conn, period, now_unix, &chrono::Local)
+            .map(|snapshot| (snapshot, layout))
     };
     match result {
-        Ok((snapshot, layout, stored_plays)) => {
+        Ok((snapshot, layout)) => {
             apply_layout_widgets(
                 layout,
                 &render.clock_section,
@@ -444,19 +454,13 @@ fn refresh_parts(
                 &render.highlights_section,
             );
             render.customize.set_layout(layout);
+            render_hero(render, &snapshot, period);
             // The stack decides what is on screen; hiding sections inside the
             // page it just switched away from changes nothing.
             if snapshot.is_empty() {
-                if stored_plays > 0 {
-                    render
-                        .imported_page
-                        .set_description(Some(&strings::stats_imported_description(stored_plays)));
-                    page_stack.set_visible_child_name("imported");
-                } else {
-                    page_stack.set_visible_child_name("empty");
-                }
+                page_stack.set_visible_child_name("empty");
             } else {
-                render_snapshot(render, &snapshot, period);
+                render_snapshot(render, &snapshot);
                 page_stack.set_visible_child_name("sections");
             }
             *current_snapshot.borrow_mut() = Some(snapshot);
@@ -469,17 +473,7 @@ fn refresh_parts(
     }
 }
 
-fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot, period: StatsPeriod) {
-    render
-        .hero_time
-        .set_label(&strings::hero_listening_time(snapshot.hero.total_ms));
-    render_comparison(render, snapshot.hero.comparison_presentation, period);
-    render.hero_subline.set_label(&format!(
-        "{} plays \u{00b7} \u{00d8} {} min/day \u{00b7} {} artists",
-        format_thousands(snapshot.hero.plays),
-        snapshot.hero.average_ms_per_day / 60_000,
-        format_thousands(snapshot.hero.artists)
-    ));
+fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot) {
     let ribbon_values = snapshot
         .ribbon
         .iter()
@@ -507,6 +501,19 @@ fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot, period: Stats
         &render.cover_loader,
         &render.top_track_generation,
     );
+}
+
+fn render_hero(render: &RenderParts, snapshot: &StatsSnapshot, period: StatsPeriod) {
+    render
+        .hero_time
+        .set_label(&strings::hero_listening_time(snapshot.hero.total_ms));
+    render_comparison(render, snapshot.hero.comparison_presentation, period);
+    render.hero_subline.set_label(&format!(
+        "{} plays \u{00b7} \u{00d8} {} min/day \u{00b7} {} artists",
+        format_thousands(snapshot.hero.plays),
+        snapshot.hero.average_ms_per_day / 60_000,
+        format_thousands(snapshot.hero.artists)
+    ));
 }
 
 fn render_comparison(
