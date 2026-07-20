@@ -24,7 +24,12 @@ fn player_metadata_uses_native_keyboard_activation() {
     gtk4::init().unwrap();
     let bar = PlayerBar::new();
     bar.set_track("Track title", "Artist name");
-    for button in [&bar.cover_button, &bar.title_button, &bar.artist_button] {
+    for button in [
+        &bar.cover_button,
+        &bar.title_button,
+        &bar.artist_button,
+        &bar.analysis_info_button,
+    ] {
         assert!(button.is_focusable());
     }
     let activations = Rc::new(Cell::new(0));
@@ -34,10 +39,13 @@ fn player_metadata_uses_native_keyboard_activation() {
     bar.connect_cover_clicked(move || cover_activations.set(cover_activations.get() + 1));
     let artist_activations = activations.clone();
     bar.connect_artist_clicked(move || artist_activations.set(artist_activations.get() + 1));
+    let analysis_activations = activations.clone();
+    bar.connect_analysis_clicked(move || analysis_activations.set(analysis_activations.get() + 1));
     bar.title_button.emit_clicked();
     bar.cover_button.emit_clicked();
     bar.artist_button.emit_clicked();
-    assert_eq!(activations.get(), 3);
+    bar.analysis_info_button.emit_clicked();
+    assert_eq!(activations.get(), 4);
 }
 
 #[test]
@@ -231,6 +239,10 @@ fn browse_4_player_bar_metadata_has_distinct_track_album_and_artist_targets() {
         (
             bar.artist_button.clone().upcast::<gtk4::Widget>(),
             "Go to playing artist",
+        ),
+        (
+            bar.analysis_info_button.clone().upcast::<gtk4::Widget>(),
+            "Song analysis",
         ),
     ] {
         assert!(surface.is_focusable());

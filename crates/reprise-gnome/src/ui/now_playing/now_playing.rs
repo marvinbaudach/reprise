@@ -8,13 +8,14 @@ use reprise_core::cover::ThumbnailSize;
 use reprise_core::playback::{PlaybackState, SpectrumFrame};
 use rusqlite::Connection;
 
-use super::audio_character_view::{self, AudioCharacterView};
+use super::audio_character_view::{self, AudioCharacterDialog};
 use super::cover_loader::CoverLoader;
 use super::lyrics_strings;
 use super::now_playing_column::NowPlayingColumn;
 #[cfg(test)]
 use super::now_playing_column::PANEL_WIDTH;
 use super::panel_state::*;
+use super::song_visualizer::SongVisualizer;
 use super::strings;
 use super::up_next_panel::UpNextPanel;
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
@@ -31,10 +32,7 @@ fn should_toggle_visual_fullscreen(
     selected_tab: PanelTab,
     key: gtk4::gdk::Key,
 ) -> bool {
-    enabled
-        && panel_visible
-        && selected_tab == PanelTab::AudioCharacter
-        && key == gtk4::gdk::Key::F11
+    enabled && panel_visible && selected_tab == PanelTab::Visual && key == gtk4::gdk::Key::F11
 }
 
 struct PanelWidgets {
@@ -43,7 +41,9 @@ struct PanelWidgets {
     track_content: gtk4::Box,
     lyrics: Rc<LyricsView>,
     up_next: Rc<UpNextPanel>,
-    audio_character: AudioCharacterView,
+    audio_character: AudioCharacterDialog,
+    visualizer: SongVisualizer,
+    visual_page: adw::ViewStackPage,
     cover: gtk4::Image,
     title: gtk4::Label,
     artist: gtk4::Label,
@@ -126,7 +126,8 @@ fn build_widgets_for_session(
 
     let lyrics = LyricsView::new();
     let up_next = UpNextPanel::new(conn, cover_loader);
-    let audio_character = AudioCharacterView::new();
+    let audio_character = AudioCharacterDialog::new();
+    let visualizer = SongVisualizer::new();
     let tab_stack = adw::ViewStack::builder().vexpand(true).build();
     tab_stack.add_titled_with_icon(
         up_next.widget(),
@@ -140,10 +141,10 @@ fn build_widgets_for_session(
         &lyrics_strings::text(lyrics_strings::LYRICS),
         "document-edit-symbolic",
     );
-    tab_stack.add_titled_with_icon(
-        audio_character.widget(),
-        Some(AUDIO_CHARACTER_PAGE),
-        &strings::text(strings::AUDIO_CHARACTER),
+    let visual_page = tab_stack.add_titled_with_icon(
+        visualizer.widget(),
+        Some(VISUAL_PAGE),
+        &strings::text(strings::VISUAL),
         "audio-speakers-symbolic",
     );
     tab_stack.set_visible_child_name(session.selected.get().page_name());
@@ -175,12 +176,12 @@ fn build_widgets_for_session(
     let footers = Rc::new(RefCell::new(TabFooters {
         up_next: super::up_next_panel::format_up_next_footer(&[]),
         lyrics: String::new(),
-        audio_character: String::new(),
+        visual: String::new(),
     }));
     let initial_footer = match session.selected.get() {
         PanelTab::UpNext => footers.borrow().up_next.clone(),
         PanelTab::Lyrics => footers.borrow().lyrics.clone(),
-        PanelTab::AudioCharacter => footers.borrow().audio_character.clone(),
+        PanelTab::Visual => footers.borrow().visual.clone(),
     };
     footer.set_label(&initial_footer);
 
@@ -219,7 +220,7 @@ fn build_widgets_for_session(
             let text = match tab {
                 PanelTab::UpNext => &footers.up_next,
                 PanelTab::Lyrics => &footers.lyrics,
-                PanelTab::AudioCharacter => &footers.audio_character,
+                PanelTab::Visual => &footers.visual,
             };
             footer.set_label(text);
         });
@@ -248,6 +249,8 @@ fn build_widgets_for_session(
         lyrics,
         up_next,
         audio_character,
+        visualizer,
+        visual_page,
         cover,
         title,
         artist,
@@ -403,28 +406,45 @@ impl NowPlayingPanel {
 
     pub(in crate::ui) fn set_playback_state(&self, state: PlaybackState) {
         self.playback_state.set(state);
-        self.widgets.audio_character.set_playback_state(state);
+        self.widgets.visualizer.set_playback_state(state);
     }
 
     pub(in crate::ui) fn set_spectrum(&self, frame: SpectrumFrame) {
         if self.song_visuals_enabled.get() {
-            self.widgets.audio_character.set_spectrum(frame);
+            self.widgets.visualizer.set_spectrum(frame);
         }
     }
 
     pub(in crate::ui) fn set_song_visuals_enabled(&self, enabled: bool) {
         self.song_visuals_enabled.set(enabled);
-        self.widgets.audio_character.set_visuals_enabled(enabled);
+        self.widgets.visual_page.set_visible(enabled);
+        if !enabled {
+            self.widgets.visualizer.set_active(false);
+            self.widgets.visualizer.close_fullscreen();
+            if self.widgets.session.selected.get() == PanelTab::Visual {
+                self.widgets.tab_stack.set_visible_child_name(UP_NEXT_PAGE);
+            }
+        }
         let footer = if enabled {
             strings::text(strings::SONG_VISUALS_FULLSCREEN_HINT)
         } else {
             String::new()
         };
-        self.widgets.footers.borrow_mut().audio_character = footer.clone();
-        if self.widgets.session.selected.get() == PanelTab::AudioCharacter {
+        self.widgets.footers.borrow_mut().visual = footer.clone();
+        if self.widgets.session.selected.get() == PanelTab::Visual {
             self.widgets.footer.set_label(&footer);
         }
         self.sync_visual_activity();
+    }
+
+    pub(in crate::ui) fn present_audio_character(&self, parent: &adw::ApplicationWindow) {
+        let current_track = self.loaded_track.borrow().as_ref().map(|track| track.id);
+        let presentation = {
+            let conn = self.conn.borrow();
+            audio_character_view::load_presentation(&conn, current_track)
+        };
+        self.render_audio_character(&presentation);
+        self.widgets.audio_character.present(parent);
     }
 
     pub(in crate::ui) fn set_up_next_model(
@@ -542,10 +562,10 @@ impl NowPlayingPanel {
     }
 
     fn sync_visual_activity(&self) {
-        self.widgets.audio_character.set_visual_active(
+        self.widgets.visualizer.set_active(
             self.song_visuals_enabled.get()
                 && self.widgets.column.is_visible()
-                && self.widgets.session.selected.get() == PanelTab::AudioCharacter,
+                && self.widgets.session.selected.get() == PanelTab::Visual,
         );
     }
 
@@ -569,10 +589,7 @@ impl NowPlayingPanel {
             let Some(parent) = parent.upgrade() else {
                 return gtk4::glib::Propagation::Proceed;
             };
-            panel
-                .widgets
-                .audio_character
-                .toggle_visual_fullscreen(&parent);
+            panel.widgets.visualizer.toggle_fullscreen(&parent);
             gtk4::glib::Propagation::Stop
         });
         window.add_controller(key);
@@ -626,8 +643,20 @@ impl NowPlayingPanel {
                 let conn = panel.conn.borrow();
                 audio_character_view::load_presentation(&conn, current_track)
             };
-            panel.widgets.audio_character.render(&presentation);
+            panel.render_audio_character(&presentation);
         });
+    }
+
+    fn render_audio_character(
+        &self,
+        presentation: &audio_character_view::AudioCharacterPresentation,
+    ) {
+        if let Some(profile) = audio_character_view::visual_profile(presentation) {
+            self.widgets.visualizer.set_profile(&profile);
+        } else {
+            self.widgets.visualizer.clear_profile();
+        }
+        self.widgets.audio_character.render(presentation);
     }
 
     fn render_track(&self) {
@@ -731,51 +760,7 @@ impl NowPlayingPanel {
 }
 
 pub(in crate::ui) fn css() -> String {
-    use tokens::{
-        NOW_PLAYING_FOOTER_ALPHA, NOW_PLAYING_FOOTER_SIZE, NOW_PLAYING_GLOW_ALPHA,
-        NOW_PLAYING_PILL_ACTIVE_ALPHA, NOW_PLAYING_PILL_BG_ALPHA, NOW_PLAYING_PILL_RADIUS,
-        NOW_PLAYING_SUBTITLE_ALPHA, NOW_PLAYING_SUBTITLE_SIZE, NOW_PLAYING_TITLE_SIZE,
-        RADIUS_SURFACE,
-    };
-
-    format!(
-        ".reprise-now-playing-stage {{ \
-       background-color: @sidebar_bg_color; color: #ffffff; min-width: 300px; \
-       border-left: 1px solid rgba(255, 255, 255, 0.06); }}\n\
-     .reprise-now-playing-glow {{ \
-       min-height: 300px; \
-       background-image: radial-gradient(ellipse at center, \
-         alpha(@reprise_player_accent, {NOW_PLAYING_GLOW_ALPHA}) 0%, \
-         alpha(@sidebar_bg_color, 0) 70%); }}\n\
-     .reprise-now-playing-idle .reprise-now-playing-glow {{ \
-       background-image: none; }}\n\
-     .reprise-now-playing-head {{ padding: 22px 18px 16px; }}\n\
-     .reprise-now-playing-cover {{ \
-       border-radius: {RADIUS_SURFACE}; \
-       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), \
-                   inset 0 0 0 1px alpha(#ffffff, 0.12); }}\n\
-     .reprise-now-playing-title {{ \
-       color: #ffffff; font-size: {NOW_PLAYING_TITLE_SIZE}; font-weight: 700; }}\n\
-     .reprise-now-playing-subtitle {{ \
-       color: alpha(#ffffff, {NOW_PLAYING_SUBTITLE_ALPHA}); \
-       font-size: {NOW_PLAYING_SUBTITLE_SIZE}; }}\n\
-     .reprise-now-playing-tabs {{ \
-       background-color: alpha(#ffffff, {NOW_PLAYING_PILL_BG_ALPHA}); \
-       border-radius: {NOW_PLAYING_PILL_RADIUS}; \
-       padding: 2px; margin: 0 18px 12px; }}\n\
-     .reprise-now-playing-tabs button {{ \
-       background-color: transparent; background-image: none; \
-       border: none; border-radius: {NOW_PLAYING_PILL_RADIUS}; box-shadow: none; \
-       color: alpha(#ffffff, {NOW_PLAYING_SUBTITLE_ALPHA}); min-height: 0; \
-       padding: 5px 18px; }}\n\
-     .reprise-now-playing-tabs button:checked {{ \
-       background-color: alpha(#ffffff, {NOW_PLAYING_PILL_ACTIVE_ALPHA}); \
-       color: #ffffff; font-weight: 700; }}\n\
-     .reprise-now-playing-footer {{ \
-       color: alpha(#ffffff, {NOW_PLAYING_FOOTER_ALPHA}); \
-       font-size: {NOW_PLAYING_FOOTER_SIZE}; \
-       min-height: 14px; margin: 8px 12px 12px; }}"
-    )
+    super::surface_css::css()
 }
 
 #[cfg(test)]

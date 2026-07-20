@@ -1451,10 +1451,7 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
   Abbrechen und „Retry failed" sind erreichbar; ein Neustart setzt offene
   Arbeit fort. Ausschalten startet keine neue Profil-Arbeit, verhindert aber
   niemals den bestehenden Waveform-Backfill.
-- **AC-4** [aktiv] [gtk] — Das rechte Now-Playing-Panel besitzt neben „Up
-  Next" und „Lyrics" den adaptiven Tab „Audio Character" für den geladenen
-  Track. Er unterscheidet Disabled, Pending, Failed, Stale und Ready; ein
-  Trackwechsel darf nie Werte des vorherigen Tracks zeigen.
+- **AC-4** [ersetzt durch AC-9]
 - **AC-5** [aktiv] [gtk] — Ready zeigt die vier benannten Dimensionen und
   optional BPM samt Unsicherheit. Farbe ist nie der einzige Informationsträger;
   Screenreader erhalten Dimension und Wert. Dateipfade, interne Versionen und
@@ -1463,17 +1460,29 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
   aktueller, geeigneter Bibliothekstitel. Leere, laufende, pausierte,
   fehlgeschlagene und vollständige Zustände bleiben unterscheidbar; „Reanalyze
   library" verlangt wegen der Rechenlast eine Bestätigung.
-- **AC-7** [aktiv] [core] [gtk] — „Song Visuals" ist ein standardmäßig
+- **AC-7** [ersetzt durch AC-10]
+- **AC-8** [ersetzt durch AC-11]
+- **AC-9** [aktiv] [gtk] — Das rechte Now-Playing-Panel enthält keine
+  Audioanalyse, sondern genau „Up Next", „Lyrics" und — bei aktiviertem
+  Plugin — „Visual". Der permanente Info-Button in der Playerleiste öffnet
+  „Audio Character" für den geladenen Track als schließbaren Dialog. Er
+  unterscheidet Disabled, Pending, Failed, Stale und Ready; Trackwechsel zeigen
+  nie Werte oder ein statisches Klangprofil des vorherigen Tracks. Beim
+  Schließen per Escape, Strg+W oder Dialogsteuerung kehrt der Tastaturfokus zum
+  auslösenden Button zurück.
+- **AC-10** [aktiv] [core] [gtk] — „Song Visuals" ist ein standardmäßig
   ausgeschaltetes, live anwendbares Plugin. Eingeschaltet visualisiert der
-  Audio-Character-Tab ausschließlich lokal berechnete, auf 16 Bänder und den
-  Bereich 0–1 begrenzte Spektraldaten als die drei tastaturbedienbaren Modi
-  Rings, Flow und Pulse. Die Darstellung übernimmt die Cover-Akzentfarbe;
-  Farbe bleibt durch benannte Modi und eine Screenreader-Beschriftung redundant.
-- **AC-8** [aktiv] [gtk] — Dauerbewegung existiert ausschließlich während
-  laufender Wiedergabe und nur bei sichtbarer Visual-Fläche oder deren
+  dritte Panel-Tab „Visual" ausschließlich lokal berechnete, auf 16 Bänder und
+  den Bereich 0–1 begrenzte Spektraldaten als die drei tastaturbedienbaren Modi
+  Rings, Flow und Pulse. Canvas, Auswahlzustand und Vollbild übernehmen den
+  aktuellen Cover-Akzent über denselben globalen Ambient-Crossfade wie die
+  Playerleiste; nur ohne brauchbare Coverfarbe gilt der Theme-Akzent. Farbe
+  bleibt durch benannte Modi und eine Screenreader-Beschriftung redundant.
+- **AC-11** [aktiv] [gtk] — Dauerbewegung existiert ausschließlich während
+  laufender Wiedergabe und nur bei sichtbarem Visual-Tab oder dessen
   Vollbildansicht. Pause und Stop klingen auf das statische Klangprofil aus;
   `gtk-enable-animations=false` zeigt dieses Profil ohne Tick-Callback. Bei
-  aktiviertem Plugin öffnet F11 aus dem sichtbaren Audio-Character-Tab die
+  aktiviertem Plugin öffnet F11 aus dem sichtbaren Visual-Tab die
   Vollbildansicht; F11 und Escape schließen sie. Das ist die in MOT-2 erlaubte,
   audiofunktionale Ausnahme für Dauerbewegung.
 

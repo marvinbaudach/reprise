@@ -1,6 +1,8 @@
 //! User-facing copy for local Audio Character analysis.
 
 pub const AUDIO_CHARACTER: &str = N_!("Audio Character");
+pub const SONG_ANALYSIS: &str = N_!("Song analysis");
+pub const VISUAL: &str = N_!("Visual");
 pub const SONG_VISUALS: &str = N_!("Song Visuals");
 pub const SONG_VISUALS_DESCRIPTION: &str = N_!("Show local audio-reactive visuals in Now Playing");
 pub const SONG_VISUALS_RINGS: &str = N_!("Rings");
