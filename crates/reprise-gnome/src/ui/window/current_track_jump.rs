@@ -1,4 +1,5 @@
-//! NAV-9a coordinator for Ctrl+L: reveal the loaded track's play origin.
+//! NAV-9b coordinator for Ctrl+L and the player artist: reveal and select the
+//! loaded track in its play origin.
 
 use std::rc::{Rc, Weak};
 
@@ -76,7 +77,7 @@ pub(in crate::ui) fn runtime_coordinator(context: &JumpContext) -> JumpCallback 
         }),
         notify_current_track: Rc::new(move || {
             if let Some(player) = player_for_notify.upgrade() {
-                player.notify_restored_current_track();
+                player.notify_revealed_current_track();
             }
         }),
     })
@@ -104,7 +105,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn nav_9a_ctrl_l_reveals_current_track_origin() {
+    fn nav_9b_ctrl_l_and_player_artist_reveal_current_track_origin() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         let events = Rc::new(RefCell::new(Vec::new()));
         let history = Rc::new(NavHistory::default());
@@ -135,7 +136,7 @@ mod tests {
                 Rc::new(move || {
                     events
                         .borrow_mut()
-                        .push(("reveal-without-selection", ViewSource::Playlist(7)));
+                        .push(("reveal-with-selection", ViewSource::Playlist(7)));
                 })
             },
         });
@@ -148,9 +149,41 @@ mod tests {
             &[
                 ("prepare", ViewSource::Playlist(7)),
                 ("route", ViewSource::Playlist(7)),
-                ("reveal-without-selection", ViewSource::Playlist(7)),
+                ("reveal-with-selection", ViewSource::Playlist(7)),
             ]
         );
         assert_eq!(history.go_back(), Some(queue));
+    }
+
+    #[test]
+    fn nav_9b_player_artist_uses_the_ctrl_l_jump_and_selects_the_track() {
+        let runtime = include_str!("window_runtime_wiring.rs")
+            .split_whitespace()
+            .collect::<String>();
+        assert_eq!(
+            runtime
+                .matches("letjump_from_artist=jump_to_current_track.clone();player.connect_artist_clicked(move||jump_from_artist());")
+                .count(),
+            1,
+            "the player artist must activate the same current-track jump as Ctrl+L"
+        );
+        assert!(
+            runtime.contains("jump_action.connect_activate(move|_,_|jump_to_current_track());"),
+            "Ctrl+L must retain the shared current-track jump"
+        );
+
+        let selection = include_str!("../track_list/current_track_selection.rs")
+            .split_whitespace()
+            .collect::<String>();
+        assert!(
+            selection.contains("CurrentTrackChange::ExplicitReveal=>{self.shared.selection.select_item(position,true);"),
+            "an explicit jump must replace selection with the playing row"
+        );
+
+        let old_wiring = include_str!("window_action_wiring.rs");
+        assert!(
+            !old_wiring.contains("player.connect_artist_clicked"),
+            "the obsolete artist-master deep link must be removed"
+        );
     }
 }

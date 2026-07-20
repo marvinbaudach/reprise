@@ -2398,48 +2398,64 @@ msgstr ""
 "{checked} von {total} geprüft · {downloaded} heruntergeladen · {unavailable} "
 "nicht verfügbar"
 
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:9
+msgid "Ctrl+F"
+msgstr "Strg+F"
+
 #: crates/reprise-gnome/src/ui/strings_tooltips.rs:10
+msgid "F10"
+msgstr "F10"
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:11
+msgid "Ctrl+M"
+msgstr "Strg+M"
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:12
+msgid "Ctrl+L"
+msgstr "Strg+L"
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:23
 msgid "Play album (Ctrl+Enter)"
 msgstr "Album abspielen (Strg+Eingabe)"
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:11
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:24
 msgid "Pause album"
 msgstr "Album pausieren"
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:12
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:25
 msgid "Resume album"
 msgstr "Album fortsetzen"
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:16
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:29
 msgid "Play (Space)"
 msgstr "Wiedergeben (Leertaste)"
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:17
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:30
 msgid "Pause (Space)"
 msgstr "Pausieren (Leertaste)"
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:18
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:31
 msgid "Play previous track"
 msgstr "Vorherigen Titel wiedergeben"
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:19
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:32
 msgid "Play next track"
 msgstr "Nächsten Titel wiedergeben"
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:22
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:35
 msgid "Restore full window (Ctrl+M)"
 msgstr "Vollständiges Fenster wiederherstellen (Strg+M)"
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:23
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:36
 msgid "Close mini-player"
 msgstr "Mini-Player schließen"
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:30
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:43
 #, rust-format
 msgid "Covers & lyrics: {remaining} queued"
 msgstr "Cover & Songtexte: {remaining} in der Warteschlange"
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:41
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:54
 #, rust-format
 msgid "Scanning · {pct}%"
 msgstr "Scanne · {pct} %"

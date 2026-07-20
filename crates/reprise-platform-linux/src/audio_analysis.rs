@@ -19,6 +19,7 @@ const PIPELINE_DESCRIPTION: &str = "uridecodebin name=decoder ! audioconvert ! a
 const STATE_TIMEOUT: gst::ClockTime = gst::ClockTime::from_seconds(5);
 const PULL_TIMEOUT: gst::ClockTime = gst::ClockTime::from_mseconds(50);
 const MAX_QUEUED_BUFFERS: u32 = 2;
+const NANOSECONDS_PER_SECOND: u64 = 1_000_000_000;
 
 #[derive(Clone, Copy, Default)]
 pub struct GstreamerAudioAnalysisBackend;
@@ -100,8 +101,11 @@ fn run_pipeline(
     let expected_samples = duration
         .nseconds()
         .saturating_mul(u64::from(SAMPLE_RATE))
-        .saturating_add(500_000_000)
-        / 1_000_000_000;
+        // Container duration is commonly fractional after resampling. It is
+        // an upper-bound capacity here, not a nearest-sample measurement: a
+        // one-sample underestimate would reject an otherwise valid stream.
+        .saturating_add(NANOSECONDS_PER_SECOND - 1)
+        / NANOSECONDS_PER_SECOND;
     if expected_samples == 0 {
         return Err(AudioAnalysisError::EmptyStream);
     }
@@ -192,6 +196,10 @@ mod tests {
 
     fn flac_fixture() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac")
+    }
+
+    fn mp3_fixture() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.mp3")
     }
 
     fn write_wav(path: &Path, samples: &[i16]) {
@@ -330,6 +338,16 @@ mod tests {
         let result = GstreamerAudioAnalysisBackend.analyze(&invalid, &AtomicBool::new(false));
 
         assert!(matches!(result, Err(AudioAnalysisError::DecodeFailed(_))));
+    }
+
+    #[test]
+    fn estimated_mp3_duration_does_not_reject_valid_decoded_samples() {
+        let result = GstreamerAudioAnalysisBackend
+            .analyze(&mp3_fixture(), &AtomicBool::new(false))
+            .unwrap();
+
+        assert_eq!(result.waveform_peaks.len(), 1_000);
+        assert!(result.evidence.loudness_rms() > 0.0);
     }
 
     #[test]

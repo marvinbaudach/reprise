@@ -23,8 +23,8 @@ successor. Three-crate Cargo workspace:
    and incidents. **Tasks marked `complete` are DONE — do not redo them.** The last lines
    tell you which stage/task is in flight.
 2. **`git log --oneline -20`** — cross-check the ledger against reality. Commits are the
-   ground truth; only committed work exists. Nothing is ever pushed — work lives on `main`
-   locally.
+   ground truth; only committed work exists. Active work lives on a dedicated branch and is
+   published through the GitHub flow below.
 
 Throwaway per-stage implementation plans are not kept in the repo — the
 `.superpowers/sdd/progress.md` ledger plus `git log` are the authoritative record of what is
@@ -79,6 +79,17 @@ The project is built **plan-by-plan, task-by-task, test-first**. To continue:
    `Task N: complete (commit <hash>, base <hash>, <one-line note>)`.
 5. Recommended: after each task, do (or dispatch) an adversarial review of the diff before
    moving on — this pipeline has caught several real bugs that way.
+
+## GitHub contribution flow — mandatory for every agent
+
+- Never commit or push directly to `dev` or `main`. Create a dedicated branch for every
+  change and open a pull request whose base branch is `dev`.
+- Agents may prepare, update, verify, and merge pull requests into `dev` after all required
+  checks are green, but must not merge `dev` into `main` or approve a production release.
+- Only the repository owner promotes `dev` to `main`, after reviewing the accumulated
+  changes and confirming that all required checks are green.
+- Emergency production fixes still start on a `hotfix/*` branch and require an explicit
+  pull request and owner approval before reaching `main`.
 
 ## Gates — ALL must pass before every commit
 

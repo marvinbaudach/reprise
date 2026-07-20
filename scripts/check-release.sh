@@ -9,6 +9,7 @@ trap 'rm -rf "$tmp_root"' EXIT
 
 echo "== Rust gates =="
 scripts/tests/qa-linters.sh
+scripts/tests/msrv.sh
 cargo fmt --check
 cargo clippy --all-targets --workspace -- -D warnings
 env RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps

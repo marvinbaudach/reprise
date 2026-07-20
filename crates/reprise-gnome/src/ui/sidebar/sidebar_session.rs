@@ -31,7 +31,7 @@ pub(in crate::ui) fn restore_source(
 /// Re-baselines the row-selected dedup against the view's ACTUAL source.
 /// Paths that change the track list without going through the sidebar
 /// (album/artist cross-navigation, smoke hooks) leave `current_source`
-/// stale; NAV-9a's jump and NAV-2's back call this first so their
+/// stale; NAV-9b's jump and NAV-2's back call this first so their
 /// `refresh_and_select` isn't swallowed as a same-source no-op.
 pub(in crate::ui) fn sync_current_source(
     shared: &super::sidebar::Shared,

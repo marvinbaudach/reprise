@@ -4,6 +4,7 @@ description = "Cross-platform, GUI-free engine for the Reprise music player: lib
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
