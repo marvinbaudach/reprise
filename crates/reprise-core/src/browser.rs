@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use crate::queries::BrowseFilter;
 use crate::view_source::ViewSource;
 
+pub mod navigation;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AlbumKey {
     pub album: String,
