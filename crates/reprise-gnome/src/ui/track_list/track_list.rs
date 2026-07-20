@@ -370,15 +370,7 @@ impl TrackList {
     }
 
     pub(in crate::ui) fn browser_place(&self) -> reprise_core::browser::BrowserPlace {
-        let source = self.current_source();
-        let state = super::view_state_memory::capture(&self.shared).to_core();
-        let collection = reprise_core::browser::BrowserPlace::from(source)
-            .collection()
-            .cloned()
-            .unwrap_or(reprise_core::browser::TrackCollection::Library(
-                reprise_core::browser::LibraryScope::All,
-            ));
-        reprise_core::browser::BrowserPlace::tracks(collection, state)
+        super::view_state_memory::capture_place(&self.shared)
     }
 
     pub(in crate::ui) fn restore_browser_place(

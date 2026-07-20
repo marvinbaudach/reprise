@@ -17,6 +17,10 @@ pub(in crate::ui) struct NavPlace {
 }
 
 impl NavPlace {
+    pub(in crate::ui) fn browser(browser: BrowserPlace) -> Self {
+        Self { browser }
+    }
+
     pub(in crate::ui) fn source(source: ViewSource) -> Self {
         Self {
             browser: BrowserPlace::from(source),

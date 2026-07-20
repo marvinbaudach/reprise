@@ -3,7 +3,7 @@
 
 use std::rc::{Rc, Weak};
 
-use reprise_core::view_source::ViewSource;
+use reprise_core::browser::BrowserPlace;
 
 use super::library_shell;
 use crate::ui::nav_history::{NavHistory, NavPlace};
@@ -14,9 +14,9 @@ use crate::ui::track_list::TrackList;
 pub(in crate::ui) type JumpCallback = Rc<dyn Fn()>;
 
 pub(in crate::ui) struct JumpSteps {
-    pub current_origin: Rc<dyn Fn() -> Option<ViewSource>>,
-    pub prepare_origin: Rc<dyn Fn(&ViewSource)>,
-    pub route_origin: Rc<dyn Fn(&ViewSource)>,
+    pub current_origin: Rc<dyn Fn() -> Option<BrowserPlace>>,
+    pub prepare_origin: Rc<dyn Fn(&BrowserPlace)>,
+    pub route_origin: Rc<dyn Fn(&BrowserPlace)>,
     pub notify_current_track: Rc<dyn Fn()>,
 }
 
@@ -43,11 +43,10 @@ pub(in crate::ui) fn runtime_coordinator(context: &JumpContext) -> JumpCallback 
     coordinator(JumpSteps {
         current_origin: Rc::new(move || {
             let player = player_for_origin.upgrade()?;
-            Some(
-                player
-                    .current_play_origin()
-                    .map_or(ViewSource::Library, |origin| origin.source),
-            )
+            Some(player.current_play_origin().map_or_else(
+                || BrowserPlace::from(reprise_core::view_source::ViewSource::Library),
+                |origin| origin.place,
+            ))
         }),
         prepare_origin: Rc::new(move |_origin| {
             crate::ui::sidebar_session::sync_current_source(
@@ -56,7 +55,7 @@ pub(in crate::ui) fn runtime_coordinator(context: &JumpContext) -> JumpCallback 
             );
         }),
         route_origin: Rc::new(move |origin| {
-            let place = NavPlace::source(origin.clone());
+            let place = NavPlace::browser(origin.clone());
             nav_history_for_route.record_route_from(&place, track_list_for_route.browser_place());
             library_shell::route_to_place(
                 &place,
@@ -94,6 +93,7 @@ mod tests {
     use std::cell::RefCell;
 
     use super::*;
+    use reprise_core::view_source::ViewSource;
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
@@ -104,7 +104,7 @@ mod tests {
         let queue = NavPlace::source(ViewSource::Queue);
         history.record_route(&queue);
         let jump = coordinator(JumpSteps {
-            current_origin: Rc::new(|| Some(ViewSource::Playlist(7))),
+            current_origin: Rc::new(|| Some(BrowserPlace::from(ViewSource::Playlist(7)))),
             prepare_origin: {
                 let events = events.clone();
                 Rc::new(move |source| events.borrow_mut().push(("prepare", source.clone())))
@@ -113,16 +113,17 @@ mod tests {
                 let events = events.clone();
                 let history = history.clone();
                 Rc::new(move |source| {
-                    history.record_route(&NavPlace::source(source.clone()));
+                    history.record_route(&NavPlace::browser(source.clone()));
                     events.borrow_mut().push(("route", source.clone()));
                 })
             },
             notify_current_track: {
                 let events = events.clone();
                 Rc::new(move || {
-                    events
-                        .borrow_mut()
-                        .push(("reveal-with-selection", ViewSource::Playlist(7)));
+                    events.borrow_mut().push((
+                        "reveal-with-selection",
+                        BrowserPlace::from(ViewSource::Playlist(7)),
+                    ));
                 })
             },
         });
@@ -133,9 +134,12 @@ mod tests {
         assert_eq!(
             &*events.borrow(),
             &[
-                ("prepare", ViewSource::Playlist(7)),
-                ("route", ViewSource::Playlist(7)),
-                ("reveal-with-selection", ViewSource::Playlist(7)),
+                ("prepare", BrowserPlace::from(ViewSource::Playlist(7))),
+                ("route", BrowserPlace::from(ViewSource::Playlist(7))),
+                (
+                    "reveal-with-selection",
+                    BrowserPlace::from(ViewSource::Playlist(7)),
+                ),
             ]
         );
         assert_eq!(history.go_back(), Some(queue));

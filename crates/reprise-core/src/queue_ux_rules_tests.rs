@@ -37,6 +37,21 @@ fn play_3a_shuffle_stays_inside_filtered_snapshot() {
     );
 }
 
+// UX PLAY-3b/PLAY-8: later refinements, including a zero-result query, do
+// not rewrite or stop the already-owned playback snapshot.
+#[test]
+fn play_3b_later_filter_changes_leave_the_playback_snapshot_untouched() {
+    let mut visible_ids = vec![11, 22, 33];
+    let mut queue = Queue::new();
+    queue.set_tracks(visible_ids.clone(), 1);
+
+    visible_ids.clear();
+
+    assert_eq!(queue.current(), Some(22));
+    assert_eq!(queue.ids_in_order(), vec![11, 22, 33]);
+    assert_eq!(queue.advance_auto(), Some(33));
+}
+
 // UX PLAY-4a: list playback never seeds missing rows, and a track that goes
 // missing after it was queued is skipped silently in either pending layer.
 #[test]

@@ -274,11 +274,12 @@ pub fn query_track_window_browsed(
             sort_field,
             sort_dir,
             filter,
+            browse,
             offset,
             limit,
         ),
         ViewSource::Artist(artist) => library_views::query_artist_track_window(
-            conn, artist, sort_field, sort_dir, filter, offset, limit,
+            conn, artist, sort_field, sort_dir, filter, browse, offset, limit,
         ),
         ViewSource::ImportErrors | ViewSource::MyStats | ViewSource::Device { .. } => {
             Ok(Vec::new())
@@ -325,8 +326,10 @@ pub fn query_track_count_browsed(
         ViewSource::Album {
             album,
             album_artist,
-        } => library_views::query_album_track_count(conn, album, album_artist, filter),
-        ViewSource::Artist(artist) => library_views::query_artist_track_count(conn, artist, filter),
+        } => library_views::query_album_track_count(conn, album, album_artist, filter, browse),
+        ViewSource::Artist(artist) => {
+            library_views::query_artist_track_count(conn, artist, filter, browse)
+        }
         ViewSource::ImportErrors | ViewSource::MyStats | ViewSource::Device { .. } => Ok(0),
     }
 }
@@ -401,17 +404,18 @@ pub fn query_track_ids_browsed(
         ViewSource::Album {
             album,
             album_artist,
-        } => library_views::query_album_track_ids(
+        } => library_views::query_album_track_ids_browsed(
             conn,
             album,
             album_artist,
             sort_field,
             sort_dir,
             filter,
+            browse,
         ),
-        ViewSource::Artist(artist) => {
-            library_views::query_artist_track_ids(conn, artist, sort_field, sort_dir, filter)
-        }
+        ViewSource::Artist(artist) => library_views::query_artist_track_ids(
+            conn, artist, sort_field, sort_dir, filter, browse,
+        ),
         ViewSource::ImportErrors | ViewSource::MyStats | ViewSource::Device { .. } => {
             Ok(Vec::new())
         }

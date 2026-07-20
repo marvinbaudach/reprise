@@ -541,8 +541,8 @@ fn handle_play(shared: &Rc<Shared>, first_position: u32, ids: &[i64]) {
     };
     let count = ids.len();
     tracing::info!(count, "context menu: play action starting playback");
-    let source = shared.source.borrow().clone();
-    (shared.on_activate)(&track, ids.to_vec(), 0, source);
+    let place = crate::ui::track_list::view_state_memory::capture_place(shared);
+    (shared.on_activate)(&track, ids.to_vec(), 0, place);
 }
 
 /// Looks up `playlist_id`'s display name for a toast, falling back to a

@@ -6,6 +6,7 @@
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use reprise_core::browser::BrowserPlace;
 use reprise_core::models::Track;
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
@@ -18,8 +19,10 @@ use reprise_core::view_source::ViewSource;
 /// full queue this activation should start: `ids` is every track id in the
 /// activated row's current sort/filter view (via `queue_ids_for_activation`)
 /// and `start_index` is the activated row's position within that list —
-/// together, exactly `PlayerController::play_from_view`'s parameters.
-pub type OnActivate = Box<dyn Fn(&Track, Vec<i64>, usize, ViewSource)>;
+/// together, exactly `PlayerController::play_from_view`'s parameters. The
+/// final argument is the complete browser place captured at activation time,
+/// not a live source lookup.
+pub type OnActivate = Box<dyn Fn(&Track, Vec<i64>, usize, BrowserPlace)>;
 
 /// Callback invoked at the end of every `reload()` — see the `Shared::
 /// on_reload` doc comment for what each parameter carries and why
