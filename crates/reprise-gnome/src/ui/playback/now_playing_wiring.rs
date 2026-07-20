@@ -25,7 +25,7 @@ use crate::ui::player_controller::PlayerController;
 use crate::ui::style::cover_accent::Rgb;
 use reprise_core::cover::ThumbnailSize;
 use reprise_core::media_integration::MprisState;
-use reprise_core::playback::PlaybackState;
+use reprise_core::playback::{PlaybackError, PlaybackState, SpectrumFrame};
 use reprise_core::queue::Repeat;
 use reprise_core::waveform::STORED_PEAK_COUNT;
 
@@ -80,6 +80,12 @@ fn set_art_url_for_current_track(mirror: &mut MprisState, track_id: i64, art_url
 }
 
 impl PlayerController {
+    /// Wires the persistent player-bar info button to the current track's
+    /// local Audio Character presentation.
+    pub fn connect_analysis_clicked(&self, f: impl Fn() + 'static) {
+        self.bar.connect_analysis_clicked(f);
+    }
+
     /// Invalidates and reloads the displayed cover when a successful tag
     /// edit touched the currently playing path. Playback itself is left
     /// untouched.
@@ -188,6 +194,20 @@ impl PlayerController {
         callback: impl Fn(PlaybackState) + 'static,
     ) {
         *self.now_playing_panel_state_changed.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(in crate::ui) fn set_on_song_visual_spectrum_changed(
+        &self,
+        callback: impl Fn(SpectrumFrame) + 'static,
+    ) {
+        *self.song_visual_spectrum_changed.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(in crate::ui) fn set_song_visuals_enabled(
+        &self,
+        enabled: bool,
+    ) -> Result<(), PlaybackError> {
+        self.player.set_spectrum_enabled(enabled)
     }
 
     /// Reverts the cover-derived accent to the theme fallback AND bumps the

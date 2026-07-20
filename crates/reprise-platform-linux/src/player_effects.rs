@@ -3,6 +3,10 @@ use gstreamer::prelude::*;
 
 use reprise_core::playback::{AudioEffects, PlaybackError};
 
+const SPECTRUM_ELEMENT_NAME: &str = "reprise-spectrum";
+const SPECTRUM_INTERVAL_NS: u64 = 50_000_000;
+const SPECTRUM_THRESHOLD_DB: i32 = -80;
+
 pub(super) fn build_audio_filter(
     effects: &AudioEffects,
 ) -> Result<Option<gst::Element>, PlaybackError> {
@@ -25,6 +29,24 @@ pub(super) fn build_audio_filter(
             .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
         replaygain.set_property("album-mode", effects.replay_gain == ReplayGainMode::Album);
         elements.push(replaygain);
+    }
+    let spectrum = gst::ElementFactory::make("spectrum")
+        .name(SPECTRUM_ELEMENT_NAME)
+        .property(
+            "bands",
+            u32::try_from(reprise_core::playback::SPECTRUM_BAND_COUNT)
+                .expect("the fixed visual spectrum band count fits u32"),
+        )
+        .property("threshold", SPECTRUM_THRESHOLD_DB)
+        .property("interval", SPECTRUM_INTERVAL_NS)
+        .property("message-phase", false)
+        .property("post-messages", false)
+        .build();
+    match spectrum {
+        Ok(spectrum) => elements.push(spectrum),
+        Err(error) => {
+            tracing::warn!(%error, "GStreamer spectrum analyzer unavailable; song visuals disabled");
+        }
     }
     elements.push(
         gst::ElementFactory::make("audioconvert")
@@ -53,6 +75,37 @@ pub(super) fn build_audio_filter(
     )
     .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
     Ok(Some(bin.upcast()))
+}
+
+pub(super) fn set_spectrum_messages(
+    filter: &gst::Element,
+    enabled: bool,
+) -> Result<(), PlaybackError> {
+    let bin = filter
+        .clone()
+        .downcast::<gst::Bin>()
+        .map_err(|_| PlaybackError::Backend("GStreamer: audio filter is not a bin".into()))?;
+    let Some(spectrum) = bin.by_name(SPECTRUM_ELEMENT_NAME) else {
+        return if enabled {
+            Err(PlaybackError::Backend(
+                "GStreamer: audio filter has no spectrum analyzer".into(),
+            ))
+        } else {
+            Ok(())
+        };
+    };
+    spectrum.set_property("post-messages", enabled);
+    Ok(())
+}
+
+pub(super) fn set_playbin_spectrum_messages(
+    playbin: &gst::Element,
+    enabled: bool,
+) -> Result<(), PlaybackError> {
+    let filter = playbin
+        .property::<Option<gst::Element>>("audio-filter")
+        .ok_or_else(|| PlaybackError::Backend("GStreamer: playbin has no audio filter".into()))?;
+    set_spectrum_messages(&filter, enabled)
 }
 
 fn set_equalizer_bands(equalizer: &gst::Element, effects: &AudioEffects) {
