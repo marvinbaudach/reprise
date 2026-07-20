@@ -95,3 +95,20 @@ fn doctor_worker_uses_only_its_isolated_database_connection() {
     assert_eq!(scan.checked_tracks, 0);
     assert!(progress.is_empty());
 }
+
+#[test]
+fn late_scan_progress_is_rejected_after_finish_or_new_generation() {
+    assert!(super::accepts_scan_progress(
+        4,
+        4,
+        true,
+        Some(super::DoctorJobKind::Scan)
+    ));
+    assert!(!super::accepts_scan_progress(
+        5,
+        4,
+        true,
+        Some(super::DoctorJobKind::Scan)
+    ));
+    assert!(!super::accepts_scan_progress(4, 4, false, None));
+}

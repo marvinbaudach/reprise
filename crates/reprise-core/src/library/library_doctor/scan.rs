@@ -90,10 +90,12 @@ impl<'connection> LibraryDoctor<'connection> {
         let mut snapshot_tracks = Vec::with_capacity(tracks.len());
         let mut remote_resolutions = Vec::with_capacity(tracks.len());
         let mut skipped_tracks = 0;
+        let mut preview_summary = super::DoctorScanSummary::default();
         for (position, track) in tracks.iter().enumerate() {
             if progress(DoctorScanProgress {
                 completed_tracks: position,
                 total_tracks: tracks.len(),
+                summary: preview_summary,
             }) == ScanControl::Cancel
             {
                 return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
@@ -105,15 +107,18 @@ impl<'connection> LibraryDoctor<'connection> {
                         tags: Some(tags.clone()),
                         stale: false,
                     });
-                    read_tracks.push(ReadTrack {
+                    let read_track = ReadTrack {
                         reference: track.clone(),
                         tags,
-                    });
+                    };
+                    let mut remote_resolution = None;
                     if request.options.remote_enabled {
+                        let published_summary = preview_summary;
                         let mut control = || {
                             progress(DoctorScanProgress {
                                 completed_tracks: position,
                                 total_tracks: tracks.len(),
+                                summary: published_summary,
                             })
                         };
                         match resolver.resolve_track(
@@ -123,7 +128,8 @@ impl<'connection> LibraryDoctor<'connection> {
                             &mut control,
                         ) {
                             Ok(resolution) => {
-                                remote_resolutions.push((track.track_id, resolution));
+                                remote_resolutions.push((track.track_id, resolution.clone()));
+                                remote_resolution = Some(resolution);
                             }
                             Err(RemoteProviderError::Cancelled) => {
                                 return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
@@ -131,9 +137,27 @@ impl<'connection> LibraryDoctor<'connection> {
                             Err(_) => {}
                         }
                     }
+                    let (mut track_proposals, mut track_groups) =
+                        local_rules::proposals_for(std::slice::from_ref(&read_track));
+                    if let Some(resolution) = remote_resolution {
+                        merge_remote_resolution(
+                            track.track_id,
+                            resolution,
+                            &mut track_proposals,
+                            &mut track_groups,
+                        );
+                    }
+                    preview_summary.merge(super::presentation::partial_scan_summary(
+                        &track_proposals,
+                        track_groups.len(),
+                        1,
+                        0,
+                    ));
+                    read_tracks.push(read_track);
                 }
                 Err(_) => {
                     skipped_tracks += 1;
+                    preview_summary.merge(super::presentation::partial_scan_summary(&[], 0, 0, 1));
                     snapshot_tracks.push(DoctorTrackSnapshot {
                         reference: track.clone(),
                         tags: None,
@@ -144,36 +168,15 @@ impl<'connection> LibraryDoctor<'connection> {
             if progress(DoctorScanProgress {
                 completed_tracks: position + 1,
                 total_tracks: tracks.len(),
+                summary: preview_summary,
             }) == ScanControl::Cancel
             {
                 return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
             }
         }
         let (mut proposals, mut unresolved_groups) = local_rules::proposals_for(&read_tracks);
-        for (track_id, mut resolution) in remote_resolutions {
-            for proposal in &mut resolution.proposals {
-                proposal.track_id = track_id;
-                proposal.local_fallback = take_local_fallback(
-                    &mut proposals,
-                    &mut unresolved_groups,
-                    track_id,
-                    proposal.field,
-                );
-            }
-            for group in &mut resolution.groups {
-                group.group_key = format!("{}:{track_id}", group.group_key);
-                for member in &mut group.members {
-                    member.track_id = track_id;
-                }
-                group.local_fallback = take_local_fallback(
-                    &mut proposals,
-                    &mut unresolved_groups,
-                    track_id,
-                    group.field,
-                );
-            }
-            proposals.extend(resolution.proposals);
-            unresolved_groups.extend(resolution.groups);
+        for (track_id, resolution) in remote_resolutions {
+            merge_remote_resolution(track_id, resolution, &mut proposals, &mut unresolved_groups);
         }
         let created_at = unix_timestamp();
         let scan = super::store::persist_complete_scan(&super::store::CompleteScanData {
@@ -193,6 +196,29 @@ impl<'connection> LibraryDoctor<'connection> {
     pub fn last_complete_scan(&self) -> Result<Option<super::DoctorScan>, DoctorError> {
         super::store::last_complete_scan(self.conn)
     }
+}
+
+fn merge_remote_resolution(
+    track_id: i64,
+    mut resolution: remote::RemoteResolution,
+    proposals: &mut Vec<super::DoctorProposal>,
+    unresolved_groups: &mut Vec<super::DoctorUnresolvedGroup>,
+) {
+    for proposal in &mut resolution.proposals {
+        proposal.track_id = track_id;
+        proposal.local_fallback =
+            take_local_fallback(proposals, unresolved_groups, track_id, proposal.field);
+    }
+    for group in &mut resolution.groups {
+        group.group_key = format!("{}:{track_id}", group.group_key);
+        for member in &mut group.members {
+            member.track_id = track_id;
+        }
+        group.local_fallback =
+            take_local_fallback(proposals, unresolved_groups, track_id, group.field);
+    }
+    proposals.extend(resolution.proposals);
+    unresolved_groups.extend(resolution.groups);
 }
 
 fn unix_timestamp() -> i64 {

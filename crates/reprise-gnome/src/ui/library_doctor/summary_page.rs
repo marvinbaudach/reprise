@@ -5,7 +5,8 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::library_doctor::{
-    scan_summary, DoctorProblemCount, DoctorScan, DoctorWriteReport, ProblemClass,
+    scan_summary, DoctorProblemCount, DoctorScan, DoctorScanSummary, DoctorWriteReport,
+    ProblemClass,
 };
 use rusqlite::Connection;
 
@@ -59,6 +60,58 @@ impl SummaryModel {
                 .collect(),
         }
     }
+
+    fn from_summary(summary: DoctorScanSummary) -> Self {
+        Self {
+            safe_changes: summary.safe_changes,
+            review_changes: summary.review_changes,
+            unresolved_groups: summary.unresolved_groups,
+            checked_tracks: summary.checked_tracks,
+            skipped_tracks: summary.skipped_tracks,
+            problem_rows: PROBLEM_CLASSES
+                .into_iter()
+                .map(|class| {
+                    let DoctorProblemCount { safe, review } = summary.counts_for(class);
+                    ProblemRowModel {
+                        class,
+                        safe,
+                        review,
+                    }
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SummaryDisplay {
+    model: SummaryModel,
+    partial: bool,
+}
+
+impl SummaryDisplay {
+    fn review_available(&self) -> bool {
+        !self.partial
+            && self.model.safe_changes + self.model.review_changes + self.model.unresolved_groups
+                > 0
+    }
+}
+
+fn summary_display(
+    partial: Option<DoctorScanSummary>,
+    complete: Option<&DoctorScan>,
+    remote_visible: bool,
+) -> Option<SummaryDisplay> {
+    if let Some(summary) = partial {
+        return Some(SummaryDisplay {
+            model: SummaryModel::from_summary(summary),
+            partial: true,
+        });
+    }
+    complete.map(|scan| SummaryDisplay {
+        model: SummaryModel::from_scan(scan, remote_visible),
+        partial: false,
+    })
 }
 
 pub(in crate::ui) struct LibraryDoctorPage {
@@ -71,6 +124,7 @@ pub(in crate::ui) struct LibraryDoctorPage {
     review_all: gtk4::Button,
     review_safe: gtk4::Button,
     review_actions: gtk4::Box,
+    summary: adw::PreferencesGroup,
     empty: adw::StatusPage,
     results: gtk4::Box,
     safe_row: adw::ActionRow,
@@ -80,6 +134,7 @@ pub(in crate::ui) struct LibraryDoctorPage {
     write_row: adw::ActionRow,
     problem_rows: Vec<(ProblemClass, adw::ActionRow)>,
     current_scan: RefCell<Option<DoctorScan>>,
+    partial_summary: RefCell<Option<DoctorScanSummary>>,
 }
 
 impl LibraryDoctorPage {
@@ -215,6 +270,7 @@ impl LibraryDoctorPage {
             review_all,
             review_safe,
             review_actions,
+            summary,
             empty,
             results,
             safe_row,
@@ -224,6 +280,7 @@ impl LibraryDoctorPage {
             write_row,
             problem_rows,
             current_scan: RefCell::new(None),
+            partial_summary: RefCell::new(None),
         })
     }
 
@@ -292,7 +349,28 @@ impl LibraryDoctorPage {
 
     pub(in crate::ui) fn set_scan(&self, scan: Option<DoctorScan>) {
         self.write_row.set_visible(false);
+        self.partial_summary.borrow_mut().take();
         *self.current_scan.borrow_mut() = scan;
+        self.refresh();
+    }
+
+    pub(in crate::ui) fn begin_partial_scan(&self) {
+        self.partial_summary
+            .borrow_mut()
+            .replace(DoctorScanSummary::default());
+        self.refresh();
+    }
+
+    pub(in crate::ui) fn set_partial_summary(&self, summary: DoctorScanSummary) {
+        if self.partial_summary.borrow().as_ref() == Some(&summary) {
+            return;
+        }
+        self.partial_summary.borrow_mut().replace(summary);
+        self.refresh();
+    }
+
+    pub(in crate::ui) fn clear_partial_scan(&self) {
+        self.partial_summary.borrow_mut().take();
         self.refresh();
     }
 
@@ -302,13 +380,21 @@ impl LibraryDoctorPage {
                 self.remote.is_active(),
                 self.fingerprint_available,
             ));
-        let scan = self.current_scan.borrow().clone();
-        let Some(scan) = scan else {
+        let partial = *self.partial_summary.borrow();
+        let complete = self.current_scan.borrow().clone();
+        let display = summary_display(partial, complete.as_ref(), self.remote.is_active());
+        let Some(display) = display else {
             self.empty.set_visible(true);
             self.results.set_visible(false);
             return;
         };
-        let model = SummaryModel::from_scan(&scan, self.remote.is_active());
+        let review_available = display.review_available();
+        let SummaryDisplay { model, partial } = display;
+        self.summary.set_title(&strings::text(if partial {
+            strings::DOCTOR_RESULTS_SO_FAR
+        } else {
+            strings::DOCTOR_RESULTS
+        }));
         self.safe_row
             .set_subtitle(&strings::doctor_change_count(model.safe_changes));
         self.review_row
@@ -337,8 +423,7 @@ impl LibraryDoctorPage {
         self.review_all
             .set_sensitive(model.safe_changes + model.review_changes + model.unresolved_groups > 0);
         self.review_safe.set_sensitive(model.safe_changes > 0);
-        self.review_actions
-            .set_visible(model.safe_changes + model.review_changes + model.unresolved_groups > 0);
+        self.review_actions.set_visible(review_available);
         self.empty.set_visible(false);
         self.results.set_visible(true);
     }
@@ -375,7 +460,7 @@ const fn problem_class_visible(class: ProblemClass, remote_visible: bool) -> boo
 
 #[cfg(test)]
 mod tests {
-    use super::SummaryModel;
+    use super::{summary_display, SummaryModel};
     use reprise_core::library_doctor::*;
 
     fn proposal(source: ProposalSource, class: ProblemClass) -> DoctorProposal {
@@ -425,6 +510,23 @@ mod tests {
         assert_eq!(model.problem_rows.len(), 5);
         assert_eq!(model.problem_rows[0].safe, 1);
         assert_eq!(model.problem_rows[4].review, 1);
+    }
+
+    #[test]
+    fn doc_2c_running_scan_prefers_partial_results_without_enabling_review() {
+        let mut partial = DoctorScanSummary::default();
+        partial.safe_changes = 3;
+        partial.review_changes = 2;
+        partial.checked_tracks = 4;
+
+        let display = summary_display(Some(partial), None, true)
+            .expect("a running scan must expose its partial result");
+
+        assert!(display.partial);
+        assert!(!display.review_available());
+        assert_eq!(display.model.safe_changes, 3);
+        assert_eq!(display.model.review_changes, 2);
+        assert_eq!(display.model.checked_tracks, 4);
     }
 
     #[test]
