@@ -295,7 +295,7 @@ fn grid_4_hover_uses_bottom_gradient_not_tooltip_box() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn tip_1a_album_card_play_overlay_has_tooltip() {
+fn tip_1c_album_card_play_overlay_has_tooltip() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     if gtk4::init().is_err() {
         return;
