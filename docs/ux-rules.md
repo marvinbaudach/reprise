@@ -665,6 +665,11 @@ ist ihre eigene Aussage).
 - **TIP-5** [aktiv] [manuell] — GTK-Standardverhalten: keine
   Custom-Delays, keine interaktiven/Rich-Tooltips; dynamische Werte
   (Prozent, Zeit, ellipsierter Volltext) sind erlaubt.
+- **TIP-6** [aktiv] [gtk] — Shortcut-Hinweise bleiben aktionsgleich:
+  besitzt die im Tooltip benannte Control-Aktion bereits einen dokumentierten
+  Tastatur-Shortcut, steht er in Klammern hinter der Beschriftung. Shortcuts
+  anderer Aktionen werden nicht an benachbarte Controls angehängt; Controls
+  ohne passenden Shortcut bleiben unverändert.
 
 ## N. Track-Kontextmenü
 
