@@ -329,6 +329,10 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   was Frist UND Stichtag reißt. Beide Lösch-Dialoge der App (dieser und
   „Remove all N") benennen die Kaskade explizit: Ratings + Hörhistorie gehen
   mit (P-5).
+- **SET-5** [aktiv] [gtk] — Der Inhalt jeder Preferences-Hauptseite beginnt
+  mit dem kompakten Standardabstand direkt unter dem Inhalts-Header. Kurze
+  Seiten werden nicht vertikal zentriert; ungenutzter Raum bleibt unter der
+  letzten Gruppe.
 
 ## G. Feedback-Vokabular
 
