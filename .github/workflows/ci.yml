@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - dev
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    container:
+      image: archlinux:latest
+    env:
+      CARGO_TERM_COLOR: always
+      GDK_BACKEND: x11
+      WAYLAND_DISPLAY: ""
+      REPRISE_AUDIO_SINK: fakesink
+    steps:
+      - name: Install system dependencies
+        run: >-
+          pacman -Syu --noconfirm --needed
+          base-devel cargo-audit dbus gettext git gstreamer gst-plugins-base
+          gst-plugins-good gtk4 libadwaita libsecret mesa openssh pkgconf
+          ripgrep rust sqlite xorg-server-xvfb xorg-xauth
+
+      - name: Check out the tested revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Cache Cargo downloads and build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
+
+      - name: Run the required project gate
+        run: scripts/ci-quality.sh
