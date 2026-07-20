@@ -130,7 +130,10 @@ pub(in crate::ui) fn build_mini() -> MiniWidgets {
     close_button.add_css_class("circular");
     close_button.add_css_class(CSS_ICON_BTN);
     buttons::arm(&close_button, buttons::ICON_CLASS);
-    close_button.set_tooltip_text(Some(&strings::text(strings::TOOLTIP_CLOSE_MINI_PLAYER)));
+    close_button.set_tooltip_text(Some(&strings::shortcut_tooltip(
+        strings::TOOLTIP_CLOSE_MINI_PLAYER,
+        strings::SHORTCUT_COMPACT_MODE,
+    )));
     close_button.set_width_request(26);
     close_button.set_height_request(26);
 
@@ -232,7 +235,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn tip_1a_mini_player_buttons_follow_tooltip_discipline() {
+    fn tip_1d_mini_player_buttons_follow_tooltip_discipline() {
         if gtk4::init().is_err() {
             return;
         }

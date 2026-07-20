@@ -54,6 +54,7 @@ require_executable scripts/tests/performance-runtime-baseline.sh
 require_executable scripts/tests/readme-showcase.sh
 require_executable scripts/tests/accessibility-semantics.sh
 require_executable scripts/tests/input-parity.sh
+require_executable scripts/tests/msrv.sh
 require_executable scripts/tests/github-flow.sh
 require_executable scripts/tests/weekly-portfolio-sync.sh
 require_executable scripts/weekly-portfolio-sync.sh
@@ -68,6 +69,7 @@ require_pattern 'cargo audit' scripts/check-merge-readiness.sh
 require_pattern 'check-architecture.sh' scripts/check-merge-readiness.sh
 require_pattern 'check-accessibility-semantics.sh' scripts/check-merge-readiness.sh
 require_pattern 'check-input-parity.sh' scripts/check-merge-readiness.sh
+require_pattern 'scripts/tests/msrv.sh' scripts/check-release.sh
 require_pattern 'check-motion-tokens.sh' scripts/check-merge-readiness.sh
 require_pattern 'check-display-tests.sh --css' scripts/check-merge-readiness.sh
 require_pattern 'mode=css' scripts/check-display-tests.sh
@@ -77,6 +79,10 @@ require_pattern 'wait -n' scripts/check-display-tests.sh
 require_pattern 'results_dir' scripts/check-display-tests.sh
 require_pattern 'XDG_RUNTIME_DIR' scripts/check-display-tests.sh
 require_pattern 'XDG_CONFIG_HOME' scripts/check-display-tests.sh
+require_pattern 'GIO_USE_VFS=local' scripts/check-display-tests.sh
+require_pattern 'GTK_USE_PORTAL=0' scripts/check-display-tests.sh
+require_pattern 'cleanup_worker_roots' scripts/check-display-tests.sh
+require_pattern 'if \[\[ -f \$display_test_passed \]\]' scripts/check-display-tests.sh
 require_pattern 'server-num' scripts/check-display-tests.sh
 require_pattern_order 'if env' 'dbus-run-session -- xvfb-run' scripts/check-display-tests.sh
 require_pattern 'DISPLAY_TEST_JOBS: 4' .github/workflows/ci.yml
