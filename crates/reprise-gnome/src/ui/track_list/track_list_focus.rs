@@ -26,8 +26,11 @@ fn focus_visible_page(page: &gtk4::Widget) -> bool {
         let focused_content = scrolled
             .child()
             .is_some_and(|content| focus_widget_or_descendant(&content));
+        if focused_content {
+            return true;
+        }
         scrolled.set_focusable(scroller_was_focusable);
-        return focused_content || scrolled.grab_focus();
+        return scrolled.grab_focus();
     }
     page.child_focus(gtk4::DirectionType::TabForward) || page.grab_focus()
 }
@@ -107,10 +110,7 @@ mod tests {
             gtk4::prelude::GtkWindowExt::focus(&window).as_ref(),
             Some(auto_clean.upcast_ref())
         );
-        assert!(
-            missing_page.is_focusable(),
-            "scroller fallback must be restored"
-        );
+        assert!(!missing_page.is_focusable());
 
         window.close();
     }
