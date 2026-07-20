@@ -82,6 +82,23 @@ impl BrowserNavigation {
         }
     }
 
+    /// Restores only the current place and remembered Music root. History is
+    /// intentionally empty after process startup.
+    #[must_use]
+    pub fn restore(current: BrowserPlace, library_root: BrowserPlace) -> Self {
+        let library_root = if is_library_root(&library_root) {
+            library_root
+        } else {
+            default_library_root()
+        };
+        Self {
+            current,
+            library_root,
+            back: Vec::new(),
+            forward: Vec::new(),
+        }
+    }
+
     #[must_use]
     pub fn current(&self) -> &BrowserPlace {
         &self.current

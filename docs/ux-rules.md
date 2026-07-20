@@ -1729,7 +1729,7 @@ deterministisch und hoch-konfident, nie „ohne Review".
   Intents RevealTrack, OpenAlbum und OpenArtist aus. Das Ziel selektiert,
   fokussiert und zentriert den Ankertrack; Back restauriert den Ausgangsort.
 
-- **BROWSE-5** [geplant] [core] — **Session-Restore ist begrenzt.** Der
+- **BROWSE-5** [aktiv] [core] — **Session-Restore ist begrenzt.** Der
   aktuelle Browser-Ort, die gemerkte Library-Wurzel und der strukturierte
   Wiedergabe-Ursprung werden restauriert. History, offene Suchoberflaechen,
   Utilities und rohe Widget-Fokusse überleben den Neustart nicht. Nicht mehr

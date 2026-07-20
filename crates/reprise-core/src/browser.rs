@@ -198,6 +198,11 @@ impl BrowserPlace {
     }
 
     #[must_use]
+    pub fn is_library_root(&self) -> bool {
+        self.collection() == Some(&TrackCollection::Library(LibraryScope::All))
+    }
+
+    #[must_use]
     pub fn track_state(&self) -> Option<&TrackViewState> {
         match self {
             Self::Tracks(place) => Some(&place.state),

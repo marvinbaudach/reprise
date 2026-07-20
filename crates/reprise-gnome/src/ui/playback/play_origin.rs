@@ -82,12 +82,12 @@ pub(crate) fn from_artist(artist: &str) -> PlayOrigin {
     }
 }
 
-/// Legacy session-persistence projection used until BROWSE-5 stores complete
-/// browser places. `SessionSource` cannot carry Album/Artist origins — those
-/// collapse to `Library` for the jump target while the frozen label remains.
-pub(crate) fn to_session(origin: Option<&PlayOrigin>) -> (Option<SessionSource>, Option<String>) {
+/// Persists both the legacy source projection and the complete frozen place.
+pub(crate) fn to_session(
+    origin: Option<&PlayOrigin>,
+) -> (Option<SessionSource>, Option<String>, Option<BrowserPlace>) {
     let Some(origin) = origin else {
-        return (None, None);
+        return (None, None, None);
     };
     let source = match origin.place.view_source() {
         ViewSource::Playlist(id) => SessionSource::Playlist(id),
@@ -96,7 +96,11 @@ pub(crate) fn to_session(origin: Option<&PlayOrigin>) -> (Option<SessionSource>,
         ViewSource::ImportErrors => SessionSource::ImportErrors,
         _ => SessionSource::Library,
     };
-    (Some(source), Some(origin.label.clone()))
+    (
+        Some(source),
+        Some(origin.label.clone()),
+        Some(origin.place.clone()),
+    )
 }
 
 /// Inverse of `to_session` for app startup. A stored origin without a label
@@ -104,7 +108,14 @@ pub(crate) fn to_session(origin: Option<&PlayOrigin>) -> (Option<SessionSource>,
 pub(crate) fn from_session(
     source: Option<SessionSource>,
     label: Option<String>,
+    place: Option<BrowserPlace>,
 ) -> Option<PlayOrigin> {
+    if let Some(place) = place {
+        return Some(PlayOrigin {
+            place,
+            label: label.unwrap_or_else(|| strings::text(strings::SIDEBAR_MUSIC)),
+        });
+    }
     let source = match source? {
         SessionSource::Library | SessionSource::Queue => ViewSource::Library,
         SessionSource::Playlist(id) => ViewSource::Playlist(id),
@@ -138,9 +149,9 @@ mod tests {
         assert_eq!(origin.label, "Late Night");
         assert_eq!(origin.place, place);
 
-        let (kind, label) = to_session(Some(&origin));
-        let restored = from_session(kind, label).unwrap();
-        assert_eq!(restored.place.view_source(), ViewSource::Playlist(id));
+        let (kind, label, place) = to_session(Some(&origin));
+        let restored = from_session(kind, label, place).unwrap();
+        assert_eq!(restored.place, origin.place);
         assert_eq!(restored.label, origin.label);
     }
 
@@ -162,13 +173,10 @@ mod tests {
         let origin = resolve(&conn, &place);
         assert_eq!(origin.label, "Neverbloom");
 
-        let (kind, label) = to_session(Some(&origin));
+        let (kind, label, place) = to_session(Some(&origin));
         assert_eq!(kind, Some(SessionSource::Library));
-        let restored = from_session(kind, label).unwrap();
-        assert_eq!(
-            restored.place,
-            reprise_core::browser::BrowserPlace::from(ViewSource::Library)
-        );
+        let restored = from_session(kind, label, place).unwrap();
+        assert_eq!(restored.place, origin.place);
         assert_eq!(restored.label, "Neverbloom");
     }
 
@@ -205,7 +213,7 @@ mod tests {
 
     #[test]
     fn absent_session_origin_stays_absent() {
-        assert_eq!(from_session(None, Some("orphan".into())), None);
-        assert_eq!(to_session(None), (None, None));
+        assert_eq!(from_session(None, Some("orphan".into()), None), None);
+        assert_eq!(to_session(None), (None, None, None));
     }
 }
