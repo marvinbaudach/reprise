@@ -29,24 +29,35 @@ pub(in crate::ui) fn css() -> String {
            color: @accent_color; \
            font-size: 12px; }}\n\
          \
-         /* --- Autocomplete popover. Use the elevated popover surface color, \
-            not @window_bg_color — the latter is the darkest base (near-black \
-            in dark themes) and rendered the dropdown as a black slab. Both \
-            the popover node and its contents node are colored so whichever \
-            one paints the visible surface is right. --- */
+         /* --- Autocomplete popover. Keep the outer node transparent so only \
+            the compact contents surface is painted below the active field. --- */
          .reprise-autocomplete-popover {{ \
-           background: @popover_bg_color; \
-           border: 1px solid alpha(@window_fg_color, {SURFACE_BORDER_ALPHA}); \
-           border-radius: 8px; \
-           box-shadow: {SURFACE_SHADOW}; \
-           padding: 4px 0; }}\n\
+           background: transparent; \
+           border: none; \
+           box-shadow: none; \
+           padding: 0; }}\n\
          .reprise-autocomplete-popover > contents {{ \
            background: @popover_bg_color; \
-           border-radius: 8px; }}\n\
+           border: 1px solid alpha(@window_fg_color, {SURFACE_BORDER_ALPHA}); \
+           border-radius: 10px; \
+           box-shadow: {SURFACE_SHADOW}; \
+           padding: 0; }}\n\
          .reprise-autocomplete-list row {{ \
+           min-height: 34px; \
            padding: 6px 12px; }}\n\
          .reprise-autocomplete-list row:selected {{ \
            background: alpha(@accent_bg_color, 0.15); }}\n\
+         .reprise-autocomplete-value {{ \
+           color: @window_fg_color; }}\n\
+         .reprise-autocomplete-match, \
+         .reprise-autocomplete-list row:selected .reprise-autocomplete-value {{ \
+           color: @accent_color; \
+           font-weight: 650; }}\n\
+         .reprise-autocomplete-enter-hint {{ \
+           color: @accent_color; \
+           opacity: 0; }}\n\
+         .reprise-autocomplete-list row:selected .reprise-autocomplete-enter-hint {{ \
+           opacity: 1; }}\n\
          /* Design 4a: section label — small, dimmed, letter-spaced caps. */
          .reprise-autocomplete-section-header {{ \
            font-size: 10px; \
@@ -57,7 +68,8 @@ pub(in crate::ui) fn css() -> String {
          /* Design 4a: the always-present use-as-new row reads as a create \
             action, dimmed and set off by a hairline from the matches above. */
          .reprise-autocomplete-use-as-new {{ \
-           color: alpha(@window_fg_color, 0.55); \
+           color: alpha(@window_fg_color, 0.55); }}\n\
+         .reprise-autocomplete-use-as-new-row {{ \
            border-top: 1px solid alpha(@window_fg_color, 0.08); }}\n\
          \
          /* --- Cover art --- */
@@ -238,7 +250,20 @@ mod tests {
         assert!(css.contains(".reprise-tag-field-revert"));
         assert!(css.contains(".reprise-tag-stars"));
         assert!(css.contains(".reprise-tag-nav"));
+        assert!(css.contains(".reprise-autocomplete-popover > contents"));
+        assert!(css.contains(".reprise-autocomplete-match"));
+        assert!(css.contains(".reprise-autocomplete-enter-hint"));
+        assert!(css.contains(".reprise-autocomplete-use-as-new-row"));
         assert!(css.contains("@accent_color"));
         assert!(css.contains("@reprise_dim_fg_color"));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn tag_6_autocomplete_css_parses() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let errors = crate::ui::style::css_parse_errors(&super::css());
+        assert!(errors.is_empty(), "CSS parse errors: {errors:?}");
     }
 }
