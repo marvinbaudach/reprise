@@ -7,10 +7,6 @@ use libadwaita::prelude::*;
 
 use super::strings;
 
-const LIBRARY_TITLE_SOURCE: &str = "source";
-const LIBRARY_TITLE_SWITCHER: &str = "library-switcher";
-const VIEW_SWITCHER_BREAKPOINT_WIDTH: i32 = 600;
-
 pub(in crate::ui) struct LibraryChrome {
     pub(in crate::ui) root: adw::ToolbarView,
     pub(in crate::ui) search_bar: gtk4::SearchBar,
@@ -20,23 +16,6 @@ pub(in crate::ui) struct LibraryChrome {
 
 pub(in crate::ui) struct LibraryMaintenanceActions {
     pub(in crate::ui) scan: gtk4::Button,
-}
-
-pub(in crate::ui) struct LibraryTitle {
-    pub(in crate::ui) root: gtk4::Stack,
-    #[cfg(test)]
-    pub(in crate::ui) switcher: adw::InlineViewSwitcher,
-}
-
-impl LibraryTitle {
-    pub(in crate::ui) fn set_library_navigation_visible(&self, visible: bool) {
-        let name = if visible {
-            LIBRARY_TITLE_SWITCHER
-        } else {
-            LIBRARY_TITLE_SOURCE
-        };
-        self.root.set_visible_child_name(name);
-    }
 }
 
 pub(in crate::ui) fn build(
@@ -210,62 +189,6 @@ pub(in crate::ui) fn build_maintenance_actions() -> LibraryMaintenanceActions {
     LibraryMaintenanceActions { scan }
 }
 
-pub(in crate::ui) fn build_library_title(
-    window: &adw::ApplicationWindow,
-    header: &adw::HeaderBar,
-    source_title: &adw::WindowTitle,
-    views: &adw::ViewStack,
-) -> LibraryTitle {
-    // `source_title` is the header's initial title before the library switcher
-    // exists. Detach it before moving it into the two-state title stack;
-    // GTK widgets cannot have two parents, and a failed reparent silently
-    // leaves non-library pages without their source title.
-    if header
-        .title_widget()
-        .as_ref()
-        .is_some_and(|widget| widget == source_title.upcast_ref::<gtk4::Widget>())
-    {
-        header.set_title_widget(gtk4::Widget::NONE);
-    }
-    let switcher = adw::InlineViewSwitcher::builder()
-        .stack(views)
-        .display_mode(adw::InlineViewSwitcherDisplayMode::Labels)
-        .can_shrink(true)
-        .homogeneous(true)
-        .build();
-    switcher.add_css_class("reprise-view-switcher");
-    let root = gtk4::Stack::new();
-    root.add_named(source_title, Some(LIBRARY_TITLE_SOURCE));
-    root.add_named(&switcher, Some(LIBRARY_TITLE_SWITCHER));
-    root.set_visible_child_name(LIBRARY_TITLE_SWITCHER);
-    header.set_show_title(true);
-    header.set_title_widget(Some(&root));
-
-    let condition = adw::BreakpointCondition::new_length(
-        adw::BreakpointConditionLengthType::MaxWidth,
-        f64::from(VIEW_SWITCHER_BREAKPOINT_WIDTH),
-        adw::LengthUnit::Px,
-    );
-    let breakpoint = adw::Breakpoint::new(condition);
-    breakpoint.add_setter(
-        &switcher,
-        "display-mode",
-        Some(&adw::InlineViewSwitcherDisplayMode::Icons.to_value()),
-    );
-    window.add_breakpoint(breakpoint);
-    LibraryTitle {
-        root,
-        #[cfg(test)]
-        switcher,
-    }
-}
-
-/// The Tracks/Albums/Artists `AdwInlineViewSwitcher` styled as a rounded pill
-/// group (design mockup 14a): a subtle white-tint container with a soft
-/// radius, and segment buttons that shed the default `.linked` hard edges —
-/// the active segment tinted + bold, inactive quiet, hover a hair brighter.
-/// `@window_fg_color` (near-white on the dark theme) keeps it theme-aware.
-/// Installed app-wide by [`super::style`].
 pub(in crate::ui) fn css() -> String {
     ".reprise-library-split .reprise-library-sidebar { \
        background-color: @sidebar_bg_color; \
@@ -277,28 +200,9 @@ pub(in crate::ui) fn css() -> String {
        background-color: @headerbar_bg_color; \
        border-bottom: 1px solid rgba(255, 255, 255, 0.06); }\n\
      .reprise-library-sidebar .caption-heading { \
-       color: @reprise_secondary_fg_color; }\n\
-     .reprise-view-switcher { \
-       background-color: alpha(@window_fg_color, 0.06); \
-       border: none; border-radius: 8px; padding: 2px; box-shadow: none; }\n\
-     /* Resting look only. Hover, press and the focus ring come from \
-        `style::buttons`, which reaches these Adwaita-internal buttons by \
-        selector (BTN-4). No `outline: none` here — that deleted the keyboard \
-        focus ring along with the frame. */\n\
-     .reprise-view-switcher > button { \
-       border: none; border-radius: 6px; box-shadow: none; \
-       min-height: 0; margin: 0; padding: 2px 14px; \
-       background-color: transparent; background-image: none; \
-       color: alpha(@window_fg_color, 0.60); font-weight: 400; }\n\
-     .reprise-view-switcher > button:checked { \
-       background-color: alpha(@window_fg_color, 0.14); \
-       color: @window_fg_color; font-weight: 700; }"
+       color: @reprise_secondary_fg_color; }"
         .to_string()
 }
-
-#[cfg(test)]
-#[path = "library_chrome_npp_tests.rs"]
-mod npp_tests;
 
 #[cfg(test)]
 mod tests {
@@ -587,11 +491,6 @@ mod tests {
         assert!(css.contains(".reprise-library-header"));
         assert!(css.contains("background-color: @headerbar_bg_color"));
         assert!(css.contains("border-bottom: 1px solid"));
-        assert!(!css.contains(".reprise-view-switcher > button:focus-visible"));
-
-        let button_css = crate::ui::style::buttons::css();
-        assert!(button_css.contains(".reprise-view-switcher > button:focus-visible"));
-        assert!(button_css.contains("outline: 2px solid @accent_color"));
     }
 
     #[test]
@@ -663,45 +562,6 @@ mod tests {
         let actions = build_maintenance_actions();
 
         assert!(!actions.scan.is_ancestor(&header));
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn library_view_title_switches_between_source_title_and_view_switcher() {
-        if gtk4::init().is_err() {
-            return;
-        }
-        let window = adw::ApplicationWindow::builder().build();
-        let title = adw::WindowTitle::new("Music", "");
-        let views = adw::ViewStack::new();
-        views.add_titled_with_icon(
-            &gtk4::Label::new(Some("Tracks")),
-            Some("tracks"),
-            "Tracks",
-            "view-list-symbolic",
-        );
-
-        let header = adw::HeaderBar::new();
-        header.set_title_widget(Some(&title));
-        let library_title = build_library_title(&window, &header, &title, &views);
-
-        assert_eq!(library_title.switcher.stack(), Some(views.clone()));
-        assert_eq!(title.parent(), Some(library_title.root.clone().upcast()));
-        assert!(library_title.root.is_ancestor(&header));
-        assert_eq!(
-            header.title_widget(),
-            Some(library_title.root.clone().upcast())
-        );
-        assert!(header.shows_title());
-        assert_eq!(
-            library_title.root.visible_child_name().as_deref(),
-            Some(LIBRARY_TITLE_SWITCHER)
-        );
-        library_title.set_library_navigation_visible(false);
-        assert_eq!(
-            library_title.root.visible_child_name().as_deref(),
-            Some(LIBRARY_TITLE_SOURCE)
-        );
     }
 
     #[test]

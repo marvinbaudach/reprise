@@ -129,7 +129,6 @@ impl PlayerController {
         // just always bring it in sync with "stopped, nothing loaded" right
         // here regardless of how `player.stop()` turns out.
         *self.now_playing.borrow_mut() = None;
-        self.notify_now_playing_album_changed(None);
         self.update_mpris_mirror(MprisPlaybackStatus::Stopped);
         match self.player.stop() {
             Ok(()) => {}

@@ -100,7 +100,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 
 ## B. Navigationsmodell
 
-- **NAV-1** [geplant] [gtk] — Sidebar = Orte, Content = Modus. Sidebar wählt
+- **NAV-1** [ersetzt durch BROWSE-1] — Sidebar = Orte, Content = Modus. Sidebar wählt
   den Ort (Music, Queue, Playlists, My Stats, Devices, Issues). Innerhalb von
   „Music" schaltet der Switcher den Modus: Tracks | Albums | Artists.
 - **NAV-2** [geplant] [core] — Ein globaler History-Stack über den gesamten
@@ -122,7 +122,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   sichtbaren Liste (siehe PLAY-2). Einfachklick = selektieren. Enter = wie
   Doppelklick. Ausnahme Queue-View: Doppelklick springt gemäß QUE-3 zum Track
   (Playhead), statt die Queue neu zu bauen.
-- **NAV-5** [aktiv] [gtk] — Modus-Gedächtnis (Scroll + Selektion je
+- **NAV-5** [ersetzt durch BROWSE-2] — Modus-Gedächtnis (Scroll + Selektion je
   Tracks/Albums/Artists) gilt nur innerhalb der Session; auch Sidebar-/
   Ortswechsel erhalten Scroll + Selektion des verlassenen Modus. Der
   Scroll-Anker besteht aus Track-/Album-ID plus Offset, nie aus einem rohen
@@ -224,32 +224,32 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Farbfläche (Akzent-Pipeline), Play all/Shuffle-Pills (PLAY-1a), Trackliste
   nach Disc/Tracknummer. Spielender Track: Akzent-Row + EQ-Icon + bold —
   identisch in jeder Liste der App (eine Markierungssprache).
-- **GRID-1** [aktiv] [gtk] — Persistenter Playing-Zustand: Das geladene
+- **GRID-1** [ersetzt durch BROWSE-1] — Persistenter Playing-Zustand: Das geladene
   Album zeigt unabhängig von Hover und Fokus oben links auf dem Cover das
   gemeinsame EQ-Badge und einen 1.5-px-Innenring um das Cover. Beides nutzt
   `@reprise_player_accent`. Bei Pause bleibt der Ring und die EQ-Bewegung
   friert ein; bei `gtk-enable-animations=false` ist die Glyphe statisch.
-- **GRID-2** [aktiv] [gtk] — Bedienung und Aktionen: Das native
+- **GRID-2** [ersetzt durch BROWSE-1] — Bedienung und Aktionen: Das native
   GtkGridView bewegt den Fokus mit Pfeiltasten zweidimensional. Enter öffnet
   die Album-Detailquelle als History-Push, Ctrl+Enter ersetzt die Queue durch
   das Album in kanonischer Disc-/Track-Reihenfolge und startet bei Track 1.
   Space bleibt global Play/Pause. Menütaste und Shift+F10 öffnen an der
   fokussierten Kachel dasselbe Menü wie Rechtsklick, exakt mit Play, Play
   next, Add to queue, Go to artist und Edit tags….
-- **GRID-3** [aktiv] [gtk] — Sichtbarer Fokus und Zustandskomposition:
+- **GRID-3** [ersetzt durch BROWSE-1] — Sichtbarer Fokus und Zustandskomposition:
   Tastaturfokus zeichnet einen 2-px-Außenring in `@accent_color` nur um das
   Cover und zeigt dieselbe Play-Affordance wie Hover. Playing, Fokus und
   Hover bleiben getrennte Zustandslayer: Playing innen, Fokus außen,
   Interaktions-Overlay darüber; kombinierte Zustände verdecken einander
   nicht.
-- **GRID-4** [aktiv] [gtk] — Bottom-Gradient-Overlay: Hover oder Fokus
+- **GRID-4** [ersetzt durch BROWSE-1] — Bottom-Gradient-Overlay: Hover oder Fokus
   blendet statt einer schwebenden Tooltip-Box einen unten verankerten
   Abdunkel-Gradienten ein. Darin stehen eine dünne Metazeile („13 tracks ·
   47 min") und unten rechts ein Play/Pause-Button in
   `@reprise_player_accent`; Album und Artist bleiben unter dem Cover. Die
   Covermitte bleibt frei. Der Kartencontainer hat keinen Metadaten-Tooltip;
   nur tatsächlich ellipsierte Titel-/Artist-Labels zeigen ihren Volltext.
-- **GRID-5** [aktiv] [gtk] — Spielendes Album aufdecken: Aktivierung von
+- **GRID-5** [ersetzt durch BROWSE-4] — Spielendes Album aufdecken: Aktivierung von
   Cover oder Titel in Playerleiste oder Now-Playing-Panel wechselt bei Bedarf
   in die Album-Ansicht, leert ein sichtbares Suchfeld samt Albumfilter,
   scrollt per GtkGridView/Adjustment zur geladenen Albumkachel, fokussiert sie
@@ -257,22 +257,22 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   im Album-Grid entsteht kein Duplikat. Fehlt die Albumkachel, greift NAV-9b
   ohne Fehlerdialog. `gtk-enable-animations=false` zeigt für dieselbe Dauer
   ein statisches Highlight.
-- **GRID-6** [aktiv] [gtk] — Rückkehrfokus: Back aus einem Album-Detail in
+- **GRID-6** [ersetzt durch BROWSE-2/BROWSE-4] — Rückkehrfokus: Back aus einem Album-Detail in
   die Album-Übersicht stellt den Tastaturfokus auf genau der zuvor
   aktivierten Albumkachel wieder her und scrollt sie bei Bedarf sichtbar.
-- **GRID-7** [aktiv] [gtk] — Die Album-Übersicht trägt hinter ihren Karten
+- **GRID-7** [ersetzt durch BROWSE-1] — Die Album-Übersicht trägt hinter ihren Karten
   eine dezente Textur des aktuell spielenden Covers. Das Cover wird pro
   Trackwechsel genau einmal auf 32 px verkleinert und vorgerendert
   weichgezeichnet; beim Zeichnen wird nur diese gecachte Textur skaliert,
   niemals ein Live-Blur über der Liste ausgeführt. Ohne Cover, nach Stop und
   in High Contrast bleibt die Textur unsichtbar. Sie ist nicht interaktiv und
   verwendet den Coverinhalt, färbt aber keine Chrome-Fläche ein.
-- **GRID-8** [aktiv] [gtk] — Die Album-Übersicht füllt unabhängig von der
+- **GRID-8** [ersetzt durch BROWSE-1] — Die Album-Übersicht füllt unabhängig von der
   Anzahl sichtbarer Karten die gesamte verfügbare Höhe des Library-Bereichs.
   Ambient-Layer, Inhalt, Grid-Seite und Scroller bleiben nach dem Wechsel aus
   Tracks oder Artists vertikal expandiert; Kartenzeilen werden weder
   abgeschnitten noch auf ihre natürliche Gesamthöhe begrenzt.
-- **ART-1** [aktiv] [gtk] — Artist-Liste: Klick selektiert und zeigt Detail
+- **ART-1** [ersetzt durch BROWSE-1/BROWSE-4] — Artist-Liste: Klick selektiert und zeigt Detail
   rechts; Selection folgt NIE der Wiedergabe, spielender Artist zeigt nur
   Mini-EQ.
 - **ART-2** [geplant] [gtk] — Artist-Detail: Hero-Glow (vorberechnete
@@ -777,8 +777,7 @@ Ort und Stelle (MOT-2, die Motion-Lesart von P-4).
   + gleiches Token. Konkret: die linke Bibliotheks-Sidebar nutzt exakt das
   Widget und damit exakt die Transition der rechten Info-Spalte
   (`adw::OverlaySplitView`, Position Start — Auslöser dieser Sektion); der
-  innere Tracks/Albums/Artists-Wechsel und die StatusPage⇄Liste-Stacks
-  crossfaden mit dem Standard-Token wie der äußere
+  StatusPage⇄Liste-Stacks crossfaden mit dem Standard-Token wie der äußere
   Library/Stats/Device-Stack.
 - **MOT-4** [aktiv] [manuell] — Listen bewegen sich nicht: kein
   Stagger/Fade-in pro Row (windowed Model, 200er-Fenster, Bibliotheken
@@ -1103,14 +1102,14 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   hervorgehobenen Plugins-Zeile. Solange LYR-1 geplant ist, verspricht dieser
   Zustand keine lokalen eingebetteten Songtexte. Ein eingeschaltetes Modul
   ohne Treffer zeigt stattdessen „No lyrics found".
-- **DISCOVER-1** [aktiv] [gtk] — Netz-Features ohne dauerhaft sichtbare
+- **DISCOVER-1** [ersetzt durch BROWSE-1] — Netz-Features ohne dauerhaft sichtbare
   eigene Fläche erhalten genau einen dezenten, schließbaren Inline-Hinweis am
   Ort der sichtbaren Lücke: Cover ab drei gleichzeitig sichtbaren Fallback-
   Kacheln, Portraits ab drei gleichzeitig sichtbaren Initialen-Avataren und
   New Releases am Kopf der Artists-Ansicht. Sichtbare Evidenz rastet den
   Hinweis ein; einmal gezeigt oder geschlossen kehrt er dauerhaft nicht
   zurück. Der Hinweis ist kein Badge und kein Toast.
-- **DISCOVER-2** [aktiv] [gtk] — Pro Ansicht ist höchstens eine
+- **DISCOVER-2** [ersetzt durch BROWSE-1] — Pro Ansicht ist höchstens eine
   Aktivierungszeile sichtbar. Treffen Portrait- und New-Releases-Hinweis in
   der Artists-Ansicht zusammen, werden sie zu einer Zeile „Enable network
   features for artists (images & new releases) →" mit Deep-Link auf die
@@ -1693,7 +1692,7 @@ deterministisch und hoch-konfident, nie „ohne Review".
 
 ## Z. Einteiliger Track-Browser
 
-- **BROWSE-1** [geplant] [e2e] — **Music besitzt genau eine Trackliste.**
+- **BROWSE-1** [aktiv] [e2e] — **Music besitzt genau eine Trackliste.**
   Album und Interpret sind navigierbare, aus Track-Metadaten abgeleitete
   Library-Scopes derselben virtualisierten Trackliste, keine Tabs, Modi oder
   dauerhaften Datenbankentitäten. My Stats bleibt ein eigener Dashboard-Ort.

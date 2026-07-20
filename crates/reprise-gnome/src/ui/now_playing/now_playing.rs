@@ -8,7 +8,6 @@ use reprise_core::cover::ThumbnailSize;
 use reprise_core::playback::PlaybackState;
 use rusqlite::Connection;
 
-use super::artist_portrait_worker::ArtistPortraitRuntime;
 use super::audio_character_view::{self, AudioCharacterView};
 use super::cover_loader::CoverLoader;
 use super::lyrics_strings;
@@ -263,7 +262,6 @@ impl NowPlayingPanel {
         _window: &adw::ApplicationWindow,
         conn: Rc<RefCell<Connection>>,
         _runtime: Rc<ArtistNewsRuntime>,
-        _portraits: &Rc<ArtistPortraitRuntime>,
         cover_loader: Rc<CoverLoader>,
         audio_analysis: Option<&AudioAnalysisRuntime>,
     ) -> Rc<Self> {

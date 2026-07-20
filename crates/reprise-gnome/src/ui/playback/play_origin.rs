@@ -73,16 +73,6 @@ fn resolve_label(conn: &Connection, source: &ViewSource) -> String {
     }
 }
 
-/// Origin for a container-play from an album card/context menu — no DB
-/// lookup needed, the album title itself is the label.
-pub(crate) fn from_album_source(source: ViewSource) -> PlayOrigin {
-    let label = match &source {
-        ViewSource::Album { album, .. } => album.clone(),
-        _ => strings::text(strings::SIDEBAR_MUSIC),
-    };
-    PlayOrigin { source, label }
-}
-
 /// Origin for a container-play from an artist hero ("Play all"/"Shuffle").
 pub(crate) fn from_artist(artist: &str) -> PlayOrigin {
     PlayOrigin {

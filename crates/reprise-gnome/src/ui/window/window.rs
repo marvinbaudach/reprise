@@ -320,61 +320,9 @@ pub fn build(
     let toolbar_view = adw::ToolbarView::new();
     // No add_top_bar for scan progress — it lives in the sidebar now.
     let track_content = track_content::build(track_list.widget(), status_bar.widget());
-    let album_view = super::album_view::AlbumView::new(conn, track_list.shared_cover_loader());
-    // Retain the assembled `ArtistView` past `build()`: its `refresh_callback`
-    // and now-playing mini-EQ both hang off a pure-Rust `Rc<Inner>`, so the
-    // view must stay alive. The strong clone captured by the track-change
-    // wiring below (see `current_track_selection::wire`) is what keeps it so.
-    let artist_view = Rc::new(super::artist_view::ArtistView::new(
-        conn.clone(),
-        track_list.shared_cover_loader(),
-        artist_portrait.clone(),
-        artist_news.enabled.get(),
-    ));
-    let library_views = super::library_shell::build_views(
-        &track_content,
-        album_view.widget(),
-        artist_view.widget(),
-    );
-    // NAV-2: shared navigation history — created before the view wiring so
-    // album/artist cross-navigation can record the places it leaves.
+    // NAV-2: one history for every scoped route through the canonical list.
     let nav_history = Rc::new(crate::ui::nav_history::NavHistory::default());
-    super::library_shell::wire_album_view(
-        &library_views,
-        &album_view,
-        &artist_view,
-        &track_list,
-        &nav_history,
-    );
-    if let Some(player) = &player {
-        let grid = album_view.grid_widget().downgrade();
-        let update_album_state = album_view.playback_state_callback();
-        player.set_on_playback_state_changed_album(move |state| {
-            update_album_state(state);
-            let Some(grid) = grid.upgrade() else { return };
-            match state {
-                reprise_core::playback::PlaybackState::Paused => {
-                    grid.add_css_class("playback-paused");
-                }
-                _ => {
-                    grid.remove_css_class("playback-paused");
-                }
-            }
-        });
-    }
-    super::library_shell::wire_artist_view(&library_views, &artist_view, &track_list, &nav_history);
-    super::library_view_memory_wiring::wire(&library_views, &album_view, &artist_view, &track_list);
-    // Wire playback → track-table selection and Artists-view now-playing. Done
-    // here (not right after `track_list` is built) because the closure captures
-    // a strong `Rc<ArtistView>`, which must exist first.
-    super::current_track_selection::wire(player.as_ref(), &track_list, &artist_view);
-    super::library_shell::arm_smoke_library_view(&library_views);
-    let library_title = Rc::new(super::library_chrome::build_library_title(
-        &window,
-        &header,
-        &window_title,
-        &library_views.stack,
-    ));
+    super::current_track_selection::wire(player.as_ref(), &track_list);
     let stats_view = super::stats_view::StatsView::new(track_list.shared_cover_loader());
     stats_view.wire_year_selector(conn);
     let device_view = super::device_view::DeviceViewPage::new(&device_sync);
@@ -386,7 +334,7 @@ pub fn build(
     content_stack.set_hhomogeneous(false);
     content_stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
     content_stack.set_transition_duration(crate::ui::motion::STANDARD_MS);
-    content_stack.add_named(&library_views.stack, Some("library"));
+    content_stack.add_named(&track_content, Some("library"));
     content_stack.add_named(stats_view.widget(), Some("stats"));
     content_stack.add_named(device_view.widget(), Some("device"));
     content_stack.add_named(new_releases_digest.widget(), Some("new-releases"));
@@ -406,13 +354,10 @@ pub fn build(
         toast_overlay: &toast_overlay,
         track_list: &track_list,
         sidebar: &sidebar,
-        album_view: &album_view,
-        artist_view: &artist_view,
         player: &player,
         stats_view: &stats_view,
         nav_history: &nav_history,
         content_stack: &content_stack,
-        library_stack: &library_views.stack,
         scan_controls: &scan_controls,
         watcher_state: &watcher_state,
     });
@@ -425,7 +370,6 @@ pub fn build(
         &track_list,
         player.as_ref(),
         &artist_news,
-        &artist_portrait,
         audio_analysis.as_ref(),
     );
     let sidebar_page = library_shell.sidebar_page;
@@ -535,22 +479,6 @@ pub fn build(
             }
         });
     }
-    {
-        let preferences = Rc::downgrade(&preferences);
-        album_view.set_on_hint_settings(move |targets| {
-            if let Some(preferences) = preferences.upgrade() {
-                preferences.present_plugins(targets);
-            }
-        });
-    }
-    {
-        let preferences = Rc::downgrade(&preferences);
-        artist_view.set_on_hint_settings(move |targets| {
-            if let Some(preferences) = preferences.upgrade() {
-                preferences.present_plugins(targets);
-            }
-        });
-    }
     super::window_runtime_wiring::wire(super::window_runtime_wiring::RuntimeWiring {
         app,
         window: &window,
@@ -568,11 +496,7 @@ pub fn build(
         stats_view,
         content_stack: &content_stack,
         device_view: &device_view,
-        library_views: &library_views,
-        library_title: &library_title,
         window_title: &window_title,
-        album_view: &album_view,
-        artist_view: &artist_view,
         scan_controls: &scan_controls,
         toast_overlay: &toast_overlay,
         watcher_state: &watcher_state,

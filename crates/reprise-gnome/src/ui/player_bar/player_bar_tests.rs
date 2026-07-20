@@ -212,7 +212,7 @@ fn mot_7_player_bar_hard_switches_when_system_animations_are_disabled() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn grid_5_player_bar_cover_and_title_are_native_album_reveal_buttons() {
+fn browse_4_player_bar_cover_and_title_are_native_album_reveal_buttons() {
     gtk4::init().unwrap();
     let bar = PlayerBar::new();
 

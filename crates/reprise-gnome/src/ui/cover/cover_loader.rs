@@ -11,9 +11,7 @@ use std::rc::Rc;
 use gtk4::gdk;
 use gtk4::gio;
 use gtk4::glib;
-use gtk4::prelude::*;
-
-use reprise_core::cover::{resolve_source, thumbnail, CoverSource, ThumbnailSize};
+use reprise_core::cover::{resolve_source, thumbnail, ThumbnailSize};
 
 use crate::ui::cover_download_worker::{CoverDownloadRuntime, DownloadOutcome, DownloadRequest};
 use crate::ui::track_cover::TrackCover;
@@ -60,18 +58,6 @@ impl CoverTarget for TrackCover {
 
     fn show_texture(&self, texture: &gdk::Texture) {
         self.set_paintable(Some(texture));
-    }
-}
-
-impl CoverTarget for gtk4::Picture {
-    fn show_placeholder(&self) {
-        self.set_paintable(gdk::Paintable::NONE);
-        self.set_visible(false);
-    }
-
-    fn show_texture(&self, texture: &gdk::Texture) {
-        self.set_paintable(Some(texture));
-        self.set_visible(true);
     }
 }
 
@@ -159,68 +145,6 @@ impl CoverLoader {
             if let Some(path) = path {
                 on_loaded(path);
             }
-        });
-    }
-
-    pub(in crate::ui) fn load_into_with_resolution(
-        self: &Rc<Self>,
-        image: &gtk4::Image,
-        track_path: &str,
-        size: ThumbnailSize,
-        token: u64,
-        current: &Rc<Cell<u64>>,
-        on_resolved: impl Fn(Option<PathBuf>) + 'static,
-    ) {
-        self.load_target(image, track_path, size, token, current, on_resolved);
-    }
-
-    /// Loads an arbitrary image file into a `Picture` at a cached thumbnail
-    /// size. Both thumbnail generation and `gdk::Texture` decode run on a
-    /// worker thread; only the generation-guarded widget update runs on GTK's
-    /// main context.
-    pub fn load_file_into_picture(
-        self: &Rc<Self>,
-        picture: &gtk4::Picture,
-        image_path: &std::path::Path,
-        size: ThumbnailSize,
-        token: u64,
-        current: &Rc<Cell<u64>>,
-    ) {
-        let key = format!("file:{}|{}", image_path.to_string_lossy(), size.pixels());
-        if let Some(cached) = self.cache_get(&key) {
-            picture.show_texture(&cached.texture);
-            return;
-        }
-        picture.show_placeholder();
-
-        let this = self.clone();
-        let picture = picture.clone();
-        let current = current.clone();
-        let image_path = image_path.to_owned();
-        glib::spawn_future_local(async move {
-            let decoded = gio::spawn_blocking(move || {
-                let cache_path = thumbnail(&CoverSource::FolderImage(image_path), size).ok()?;
-                let texture = gdk::Texture::from_filename(&cache_path).ok()?;
-                Some((texture, cache_path))
-            })
-            .await
-            .ok()
-            .flatten();
-
-            if current.get() != token {
-                return;
-            }
-            let Some((texture, cache_path)) = decoded else {
-                return;
-            };
-            this.cache_put(
-                key,
-                CachedCover {
-                    texture: texture.clone(),
-                    path: cache_path,
-                },
-            );
-            picture.show_texture(&texture);
         });
     }
 

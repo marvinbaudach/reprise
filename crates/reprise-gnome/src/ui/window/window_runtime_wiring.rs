@@ -17,14 +17,10 @@ use reprise_core::library::watcher::WatcherHandle;
 use reprise_core::view_source::ViewSource;
 use rusqlite::Connection;
 
-use super::album_view::AlbumView;
-use super::artist_view::ArtistView;
 use super::cover_download_batch::CoverDownloadBatch;
 use super::device_view::DeviceViewPage;
 use super::first_run::FirstRunDecision;
-use super::library_chrome::LibraryTitle;
 use super::library_player_bar::LibraryPlayerBarShell;
-use super::library_shell::LibraryViews;
 use super::minimal_view::MinimalView;
 use super::now_playing::NowPlayingPanel;
 use super::player_controller::PlayerController;
@@ -55,11 +51,7 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) stats_view: StatsView,
     pub(in crate::ui) content_stack: &'a gtk4::Stack,
     pub(in crate::ui) device_view: &'a Rc<DeviceViewPage>,
-    pub(in crate::ui) library_views: &'a LibraryViews,
-    pub(in crate::ui) library_title: &'a Rc<LibraryTitle>,
     pub(in crate::ui) window_title: &'a adw::WindowTitle,
-    pub(in crate::ui) album_view: &'a AlbumView,
-    pub(in crate::ui) artist_view: &'a Rc<ArtistView>,
     pub(in crate::ui) scan_controls: &'a ScanControls,
     pub(in crate::ui) toast_overlay: &'a adw::ToastOverlay,
     pub(in crate::ui) watcher_state: &'a Rc<RefCell<Option<WatcherHandle>>>,
@@ -94,11 +86,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         stats_view,
         content_stack,
         device_view,
-        library_views,
-        library_title,
         window_title,
-        album_view,
-        artist_view,
         scan_controls,
         toast_overlay,
         watcher_state,
@@ -116,13 +104,9 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     } = args;
 
     let refresh_doctor_views = {
-        let album = album_view.refresh_callback();
-        let artist = artist_view.refresh_callback();
         let stats = stats_view.clone();
         let conn = conn.clone();
         Rc::new(move || {
-            album();
-            artist();
             stats.refresh(&conn);
         }) as Rc<dyn Fn()>
     };
@@ -150,12 +134,8 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         });
     }
 
-    let active_content_focus = super::library_shell::ActiveContentFocus::new(
-        content_stack,
-        &library_views.stack,
-        track_list,
-        album_view.grid_widget(),
-    );
+    let active_content_focus =
+        super::library_shell::ActiveContentFocus::new(content_stack, track_list);
 
     let minimal_toggle = minimal_view.clone();
     let compact_preferences = preferences.clone();
@@ -231,58 +211,41 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                 track_list: track_list.clone(),
                 nav_history: nav_history.clone(),
                 content_stack: content_stack.clone(),
-                library_stack: library_views.stack.clone(),
                 active_content_focus: active_content_focus.clone(),
             },
         );
         let jump_from_artist = jump_to_current_track.clone();
         player.connect_artist_clicked(move || jump_from_artist());
 
-        // GRID-5 is a separate player-surface action: route to Albums,
-        // visibly clear search/filter, focus/scroll/pulse the loaded album,
-        // and fall back to NAV-9b only if that album is absent.
-        let reveal_playing_album =
-            super::album_grid_reveal::coordinator(super::album_grid_reveal::RevealSteps {
-                current_album: {
-                    let player = Rc::downgrade(player);
-                    Rc::new(move || {
-                        player
-                            .upgrade()
-                            .and_then(|player| player.current_album_identity())
-                    })
-                },
-                route_to_albums: {
-                    let nav_history = nav_history.clone();
-                    let sidebar = sidebar.clone();
-                    let track_list = track_list.clone();
-                    let content_stack = content_stack.clone();
-                    let library_stack = library_views.stack.clone();
-                    let active_content_focus = active_content_focus.clone();
-                    Rc::new(move || {
-                        let place = crate::ui::nav_history::NavPlace::source(
-                            ViewSource::Library,
-                            Some(super::library_shell::LIBRARY_VIEW_ALBUMS.to_owned()),
-                        );
-                        super::album_grid_reveal::route_with_history(&nav_history, &place, || {
-                            super::library_shell::route_to_place(
-                                &place,
-                                &sidebar,
-                                &track_list,
-                                &content_stack,
-                                &library_stack,
-                                &active_content_focus,
-                                "reveal playing album",
-                            );
-                        });
-                    })
-                },
-                clear_search: {
-                    let search_entry = search_entry.clone();
-                    Rc::new(move || search_entry.set_text(""))
-                },
-                reveal_album: album_view.reveal_callback(),
-                fallback_to_track: jump_to_current_track.clone(),
-            });
+        let reveal_playing_album: Rc<dyn Fn()> = {
+            let player = Rc::downgrade(player);
+            let nav_history = nav_history.clone();
+            let sidebar = sidebar.clone();
+            let track_list = track_list.clone();
+            let content_stack = content_stack.clone();
+            let active_content_focus = active_content_focus.clone();
+            Rc::new(move || {
+                let Some((album, album_artist)) = player
+                    .upgrade()
+                    .and_then(|player| player.current_album_identity())
+                else {
+                    return;
+                };
+                let place = crate::ui::nav_history::NavPlace::source(ViewSource::Album {
+                    album,
+                    album_artist,
+                });
+                nav_history.record_route(&place);
+                super::library_shell::route_to_place(
+                    &place,
+                    &sidebar,
+                    &track_list,
+                    &content_stack,
+                    &active_content_focus,
+                    "open playing album",
+                );
+            })
+        };
         {
             let reveal = reveal_playing_album.clone();
             player.connect_cover_clicked(move || reveal());
@@ -308,41 +271,27 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             let sidebar = sidebar.clone();
             let track_list = track_list.clone();
             let content_stack = content_stack.clone();
-            let library_stack = library_views.stack.clone();
             let active_content_focus = active_content_focus.clone();
-            let restore_album_focus = album_view.restore_focus_callback();
             back_action.connect_activate(move |_, _| {
                 let Some(place) = nav_history.go_back() else {
                     tracing::debug!("nav back: history is empty");
                     return;
                 };
-                let current_source = track_list.current_source();
-                super::album_grid_reveal::route_back_restoring_album_focus(
-                    &current_source,
-                    &place,
-                    || {
-                        nav_history.begin_back();
-                        crate::ui::sidebar_session::sync_current_source(
-                            &sidebar.shared,
-                            &track_list.current_source(),
-                        );
-                        // Remember the restored place as current — row-less targets
-                        // (Album/Artist) never reach the sidebar choke point that
-                        // would otherwise do this. Suppressed by begin_back above.
-                        nav_history.record_route(&place);
-                        super::library_shell::route_to_place(
-                            &place,
-                            &sidebar,
-                            &track_list,
-                            &content_stack,
-                            &library_stack,
-                            &active_content_focus,
-                            "nav back",
-                        );
-                        nav_history.end_back();
-                    },
-                    &restore_album_focus,
+                nav_history.begin_back();
+                crate::ui::sidebar_session::sync_current_source(
+                    &sidebar.shared,
+                    &track_list.current_source(),
                 );
+                nav_history.record_route(&place);
+                super::library_shell::route_to_place(
+                    &place,
+                    &sidebar,
+                    &track_list,
+                    &content_stack,
+                    &active_content_focus,
+                    "nav back",
+                );
+                nav_history.end_back();
             });
         }
         window.add_action(&back_action);
@@ -356,7 +305,6 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             let sidebar = sidebar.clone();
             let track_list = track_list.clone();
             let content_stack = content_stack.clone();
-            let library_stack = library_views.stack.clone();
             let active_content_focus = active_content_focus.clone();
             forward_action.connect_activate(move |_, _| {
                 let Some(place) = nav_history.go_forward() else {
@@ -374,7 +322,6 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                     &sidebar,
                     &track_list,
                     &content_stack,
-                    &library_stack,
                     &active_content_focus,
                     "nav forward",
                 );
@@ -444,61 +391,6 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                 );
             });
         }
-
-        // Dev/verification hook (permanent, like `REPRISE_SMOKE_JUMP`):
-        // `REPRISE_SMOKE_FOCUS_ALBUMS=1` opens the Albums tab and hands
-        // keyboard focus to the album grid — the deterministic entry point
-        // for keyboard-flow E2E (focus ring, Enter, Menu key) without
-        // walking the window's whole Tab chain.
-        if std::env::var("REPRISE_SMOKE_FOCUS_ALBUMS").is_ok() {
-            let library_stack = library_views.stack.clone();
-            let grid = album_view.grid_widget().downgrade();
-            gtk4::glib::timeout_add_seconds_local_once(2, move || {
-                library_stack.set_visible_child_name(super::library_shell::LIBRARY_VIEW_ALBUMS);
-                let Some(grid) = grid.upgrade() else { return };
-                let granted = grid.grab_focus();
-                tracing::info!(granted, "smoke: focused album grid");
-            });
-        }
-
-        // Dev/verification hook (permanent, like `REPRISE_SMOKE_JUMP`):
-        // `REPRISE_SMOKE_ALBUM_BACK=1` drives the album cross-navigation
-        // round trip headless — opens the Albums tab, activates the first
-        // album card (the same `activate` signal the Enter key fires on a
-        // focused cell), fires NAV-2 back, then NAV-2 forward. Headless E2E
-        // asserts the "history nav: routing to place" lines restore the
-        // albums tab and then the album detail again.
-        if std::env::var("REPRISE_SMOKE_ALBUM_BACK").is_ok() {
-            let library_stack = library_views.stack.clone();
-            gtk4::glib::timeout_add_seconds_local_once(4, move || {
-                tracing::info!("smoke: opening albums tab");
-                library_stack.set_visible_child_name(super::library_shell::LIBRARY_VIEW_ALBUMS);
-            });
-            let grid = album_view.grid_widget().downgrade();
-            gtk4::glib::timeout_add_seconds_local_once(6, move || {
-                let Some(grid) = grid.upgrade() else { return };
-                tracing::info!("smoke: activating first album card");
-                gtk4::prelude::ObjectExt::emit_by_name::<()>(&grid, "activate", &[&0u32]);
-            });
-            let window_for_back = window.clone();
-            gtk4::glib::timeout_add_seconds_local_once(8, move || {
-                tracing::info!("smoke: firing nav-back after album");
-                gtk4::gio::prelude::ActionGroupExt::activate_action(
-                    &window_for_back,
-                    "nav-back",
-                    None,
-                );
-            });
-            let window_for_forward = window.clone();
-            gtk4::glib::timeout_add_seconds_local_once(10, move || {
-                tracing::info!("smoke: firing nav-forward after back");
-                gtk4::gio::prelude::ActionGroupExt::activate_action(
-                    &window_for_forward,
-                    "nav-forward",
-                    None,
-                );
-            });
-        }
     }
 
     let clear_all = gtk4::gio::SimpleAction::new("clear-all-filters", None);
@@ -543,8 +435,6 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         conn,
         content_stack,
         device_view,
-        library_views,
-        library_title,
         window_title,
         show_content_if_collapsed,
         &active_content_focus,
@@ -580,11 +470,6 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         track_list.clone(),
         search_restore_guard.clone(),
     );
-    {
-        use gtk4::prelude::EditableExt as _;
-        let album_filter = album_view.filter_callback();
-        search_entry.connect_search_changed(move |entry| album_filter(&entry.text()));
-    }
     super::view_session::arm_smoke(
         search_entry,
         track_list,
@@ -655,15 +540,11 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         session_state,
     );
     let restored_source = super::view_session::snapshot(track_list).source;
-    library_title.set_library_navigation_visible(matches!(restored_source, ViewSource::Library));
     // NAV-2: session restore selects the source silently (no `on_select`),
     // so seed the history's "current place" here — without it the FIRST
     // cross-navigation after startup (e.g. opening an album from the grid)
     // would have no previous place to push and Back would do nothing.
-    nav_history.record_route(&crate::ui::nav_history::NavPlace::source(
-        restored_source,
-        Some(super::library_shell::LIBRARY_VIEW_TRACKS.to_owned()),
-    ));
+    nav_history.record_route(&crate::ui::nav_history::NavPlace::source(restored_source));
     super::session_restore::wire_close(
         window,
         conn,

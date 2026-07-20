@@ -37,12 +37,10 @@ mod tests {
     }
 
     #[test]
-    fn nav_10_playing_marked_in_all_views() {
+    fn nav_10_playing_marked_in_canonical_list_and_player_bar() {
         for source in [
             include_str!("track_list/track_list_columns.rs"),
-            include_str!("library_views/album_card.rs"),
-            include_str!("library_views/artist_master_row.rs"),
-            include_str!("library_views/artist_detail_row.rs"),
+            include_str!("player_bar/player_bar_layout.rs"),
         ] {
             assert!(source.contains("playing_marker::build"));
             assert!(!source.contains("eq_bars::build(EqVariant::Animated)"));
