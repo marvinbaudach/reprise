@@ -150,6 +150,19 @@ pub use scrobbling::*;
 pub const LIBRARY_FOLDER: &str = N_!("Library Folder");
 pub const NO_LIBRARY_FOLDER: &str = N_!("No folder selected");
 pub const CHOOSE_FOLDER: &str = N_!("Choose Folder…");
+pub const EXCLUDED_FILES: &str = N_!("Excluded Files");
+pub const RESTORE_EXCLUDED_FILES: &str = N_!("Restore All");
+pub const RESTORE_EXCLUDED_FILES_FAILED: &str = N_!("Could not restore excluded files");
+
+pub fn excluded_files_subtitle(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} file ignored during library scans",
+        "{count} files ignored during library scans",
+        count,
+        &[("count", &count_text)],
+    )
+}
 pub const RESTART_REQUIRED: &str = N_!("Restart required");
 pub const EDIT_COLUMN_LAYOUT: &str = N_!("Edit column layout…");
 pub const RESET_TO_DEFAULT: &str = N_!("Reset to Default");
@@ -182,8 +195,8 @@ pub const DELETE_WORKER_FAILED: &str = N_!("Could not start the removal worker")
 pub fn remove_confirmation_body(count: usize) -> String {
     let count_text = count.to_string();
     plural(
-        "Remove {count} track from the library? The music file will remain on disk.",
-        "Remove {count} tracks from the library? The music files will remain on disk.",
+        "Remove {count} track from the library? Its rating, playlist entries, and device sync state are removed. The music file stays on disk and will be ignored during future scans. Listening history stays in My Stats.",
+        "Remove {count} tracks from the library? Their ratings, playlist entries, and device sync state are removed. The music files stay on disk and will be ignored during future scans. Listening history stays in My Stats.",
         count,
         &[("count", &count_text)],
     )
@@ -722,5 +735,21 @@ mod tests {
     #[test]
     fn que_4_footer_uses_the_shared_thousands_format() {
         assert_eq!(up_next_footer(1_652, "4 days"), "1,652 tracks · 4 days");
+    }
+
+    #[test]
+    fn browse_7_remove_copy_explains_scan_exclusion_and_history() {
+        let body = remove_confirmation_body(2);
+        assert!(body.contains("ratings, playlist entries, and device sync state are removed"));
+        assert!(body.contains("ignored during future scans"));
+        assert!(body.contains("Listening history stays in My Stats"));
+        assert_eq!(
+            excluded_files_subtitle(0),
+            "0 files ignored during library scans"
+        );
+        assert_eq!(
+            excluded_files_subtitle(1),
+            "1 file ignored during library scans"
+        );
     }
 }

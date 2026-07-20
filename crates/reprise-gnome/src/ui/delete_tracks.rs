@@ -203,7 +203,7 @@ fn run_delete(
 ) -> DeleteReport {
     match mode {
         DeleteMode::Remove => {
-            match reprise_core::queries::remove_tracks_matching_paths(conn, tracks) {
+            match reprise_core::queries::exclude_tracks_matching_paths(conn, tracks, now_unix()) {
                 Ok(removed_ids) => {
                     let failures = tracks.len().saturating_sub(removed_ids.len());
                     DeleteReport {
@@ -235,6 +235,12 @@ fn run_delete(
             }
         }
     }
+}
+
+fn now_unix() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_secs() as i64)
 }
 
 fn finish(shared: &Rc<Shared>, report: &DeleteReport, mode: DeleteMode) {
@@ -409,5 +415,28 @@ mod tests {
             remove_path_after.as_deref(),
             Some(replacement_remove_path.to_string_lossy().as_ref())
         );
+    }
+
+    #[test]
+    fn browse_7_remove_creates_an_exclusion_but_trash_does_not() {
+        let temp = tempfile::tempdir().unwrap();
+        let remove_path = temp.path().join("remove.flac");
+        let trash_path = temp.path().join("trash.flac");
+        std::fs::write(&remove_path, b"remove").unwrap();
+        std::fs::write(&trash_path, b"trash").unwrap();
+        let mut conn = reprise_core::db::open_migrated(None).unwrap();
+        insert_track(&conn, 1, &remove_path, "Remove");
+        insert_track(&conn, 2, &trash_path, "Trash");
+
+        let removed = run_delete(&mut conn, &[(1, remove_path.clone())], DeleteMode::Remove);
+        let trashed = reprise_core::library::trash_tracks::trash_tracks_with(
+            &mut conn,
+            &[(2, trash_path)],
+            |_| Ok(()),
+        );
+
+        assert_eq!(removed.removed_ids, vec![1]);
+        assert_eq!(trashed.removed_ids, vec![2]);
+        assert_eq!(reprise_core::library::exclusions::count(&conn).unwrap(), 1);
     }
 }

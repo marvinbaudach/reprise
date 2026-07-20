@@ -323,6 +323,24 @@ pub fn remove_tracks_matching_paths(
         conn,
         tracks.iter().map(|(id, path)| (*id, Some(path.as_path()))),
         RemoveGuard::Any,
+        None,
+    )
+}
+
+/// Removes catalog rows only after atomically recording their current file
+/// identities as persistent scan exclusions. This is the database half of
+/// deliberate Remove-from-Library; Move-to-Trash continues to call
+/// [`remove_tracks_matching_paths`] and therefore creates no exclusion.
+pub fn exclude_tracks_matching_paths(
+    conn: &mut Connection,
+    tracks: &[(i64, PathBuf)],
+    excluded_at: i64,
+) -> Result<Vec<i64>, rusqlite::Error> {
+    remove_track_requests_impl(
+        conn,
+        tracks.iter().map(|(id, path)| (*id, Some(path.as_path()))),
+        RemoveGuard::Any,
+        Some(excluded_at),
     )
 }
 
@@ -360,13 +378,14 @@ pub(crate) fn remove_tracks_impl(
     ids: &[i64],
     guard: RemoveGuard,
 ) -> Result<Vec<i64>, rusqlite::Error> {
-    remove_track_requests_impl(conn, ids.iter().map(|id| (*id, None)), guard)
+    remove_track_requests_impl(conn, ids.iter().map(|id| (*id, None)), guard, None)
 }
 
 fn remove_track_requests_impl<'a>(
     conn: &mut Connection,
     requests: impl IntoIterator<Item = (i64, Option<&'a Path>)>,
     guard: RemoveGuard,
+    exclusion_time: Option<i64>,
 ) -> Result<Vec<i64>, rusqlite::Error> {
     let requests = requests.into_iter().collect::<Vec<_>>();
     if requests.is_empty() {
@@ -375,6 +394,11 @@ fn remove_track_requests_impl<'a>(
     let tx = conn.transaction()?;
     let mut removed = Vec::with_capacity(requests.len());
     for (id, expected_path) in requests {
+        if let (Some(excluded_at), Some(expected_path)) = (exclusion_time, expected_path) {
+            if !crate::library::exclusions::record_track(&tx, id, expected_path, excluded_at)? {
+                continue;
+            }
+        }
         let mut stmt =
             tx.prepare("SELECT DISTINCT playlist_id FROM playlist_tracks WHERE track_id = ?1")?;
         let affected_playlists: Vec<i64> = stmt
@@ -429,8 +453,8 @@ fn remove_track_requests_impl<'a>(
 /// resurrect a selected id — the file reappeared, so the row is legitimately
 /// live again — in the window between `auto_clean_eligible`'s `SELECT` and
 /// this loop reaching that id's `DELETE`. Without this guard the row would
-/// be hard-deleted anyway, cascading away a live track's rating, playlist
-/// membership and listening history with no undo — auto-clean runs
+/// be hard-deleted anyway, cascading away a live track's rating and playlist
+/// membership with no undo — auto-clean runs
 /// completely unattended, so there is nobody watching to notice and nothing
 /// left to restore.
 ///
@@ -471,8 +495,9 @@ pub(crate) fn remove_auto_clean_eligible_tracks(
 // The tombstone avoids the race by never freeing the id in the first
 // place: `tombstone_tracks` only sets `removed_at`, so the row — and every
 // FK-cascaded child row that depends on it (`playlist_tracks` membership
-// AND position, `listen_events`, `device_files`) — stays exactly where it
-// is for the whole window. `undo_tombstone` is then just clearing that one
+// AND position and `device_files`) — stays exactly where it is for the whole
+// window. Durable `listen_events` are independent either way.
+// `undo_tombstone` is then just clearing that one
 // column back to `NULL`; there is nothing to restore because nothing was
 // ever lost. `purge_tombstones` is the one place a tombstone finally
 // becomes the real, `remove_tracks_impl`-powered delete, once the window has
@@ -575,7 +600,7 @@ pub fn undo_tombstone(conn: &Connection, ids: &[i64]) -> Result<usize, rusqlite:
 /// (both funnel through `remove_tracks_impl`) rather than re-implementing
 /// deletion: that path already gets the hard part right inside one
 /// transaction — every affected playlist's positions compacted, the FK
-/// cascades (`playlist_tracks`, `listen_events`, `device_files`) fired, and
+/// cascades (`playlist_tracks`, `device_files`) fired, and
 /// the exact ids the caller must purge from its own in-memory playback
 /// queue returned. Selecting the tombstoned ids and handing them to
 /// `remove_tracks_impl` keeps there being exactly one deletion path — no
