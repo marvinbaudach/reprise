@@ -118,6 +118,13 @@ pub(in crate::ui) struct Shared {
     /// moves without rebuilding the list. A `Cell` (not `RefCell`) because the
     /// payload is a `Copy` `Option<i64>` read on every bind.
     pub(in crate::ui) playing_track_id: Cell<Option<i64>>,
+    /// One-shot identity for playback initiated by this table's native row
+    /// activation signal. `activate_track` sets it immediately around the
+    /// synchronous player callback; the now-playing update consumes it to
+    /// restore only the row GTK just rebuilt. Selection alone is not enough
+    /// because `GtkMultiSelection` may contain several rows while only one
+    /// owns the keyboard cursor.
+    pub(in crate::ui) pending_row_activation: Cell<Option<i64>>,
     /// View position an in-app single-row reorder drag started from — set at
     /// drag-prepare, cleared on drag end/cancel. `None` while no reorder-
     /// eligible drag is in flight; the drop-indicator eligibility check in

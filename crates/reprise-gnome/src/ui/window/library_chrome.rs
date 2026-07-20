@@ -85,6 +85,18 @@ pub(in crate::ui) fn build(
     }
 }
 
+pub(in crate::ui) fn build_navigation_back_button() -> gtk4::Button {
+    let label = strings::text(strings::NAVIGATE_BACK);
+    let button = gtk4::Button::builder()
+        .icon_name("go-previous-symbolic")
+        .tooltip_text(&label)
+        .action_name("win.nav-back")
+        .css_classes(["flat", "reprise-panel-toggle"])
+        .build();
+    button.update_property(&[gtk4::accessible::Property::Label(&label)]);
+    button
+}
+
 pub(in crate::ui) fn search_toggle_active(search_mode: bool, query: &str) -> bool {
     search_mode || !query.trim().is_empty()
 }

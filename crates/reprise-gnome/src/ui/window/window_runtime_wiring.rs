@@ -156,6 +156,17 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         track_list,
         album_view.grid_widget(),
     );
+    super::window_history_wiring::install(super::window_history_wiring::HistoryWiring {
+        app,
+        window,
+        nav_history,
+        sidebar,
+        track_list,
+        content_stack,
+        library_views,
+        active_content_focus: &active_content_focus,
+        album_view,
+    });
 
     let minimal_toggle = minimal_view.clone();
     let compact_preferences = preferences.clone();
@@ -299,116 +310,6 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         jump_action.connect_activate(move |_, _| jump_to_current_track());
         window.add_action(&jump_action);
         app.set_accels_for_action("win.jump-to-now-playing", &["<Control>l"]);
-
-        // NAV-2 Back: pop the most recent place and route there without
-        // re-recording (begin/end_back around the synchronous re-route).
-        let back_action = gtk4::gio::SimpleAction::new("nav-back", None);
-        {
-            let nav_history = nav_history.clone();
-            let sidebar = sidebar.clone();
-            let track_list = track_list.clone();
-            let content_stack = content_stack.clone();
-            let library_stack = library_views.stack.clone();
-            let active_content_focus = active_content_focus.clone();
-            let restore_album_focus = album_view.restore_focus_callback();
-            back_action.connect_activate(move |_, _| {
-                let Some(place) = nav_history.go_back() else {
-                    tracing::debug!("nav back: history is empty");
-                    return;
-                };
-                let current_source = track_list.current_source();
-                super::album_grid_reveal::route_back_restoring_album_focus(
-                    &current_source,
-                    &place,
-                    || {
-                        nav_history.begin_back();
-                        crate::ui::sidebar_session::sync_current_source(
-                            &sidebar.shared,
-                            &track_list.current_source(),
-                        );
-                        // Remember the restored place as current — row-less targets
-                        // (Album/Artist) never reach the sidebar choke point that
-                        // would otherwise do this. Suppressed by begin_back above.
-                        nav_history.record_route(&place);
-                        super::library_shell::route_to_place(
-                            &place,
-                            &sidebar,
-                            &track_list,
-                            &content_stack,
-                            &library_stack,
-                            &active_content_focus,
-                            "nav back",
-                        );
-                        nav_history.end_back();
-                    },
-                    &restore_album_focus,
-                );
-            });
-        }
-        window.add_action(&back_action);
-        app.set_accels_for_action("win.nav-back", &["<Alt>Left"]);
-
-        // NAV-2 Forward: the browser counterpart — returns to the place the
-        // last Back left, until a new navigation invalidates it.
-        let forward_action = gtk4::gio::SimpleAction::new("nav-forward", None);
-        {
-            let nav_history = nav_history.clone();
-            let sidebar = sidebar.clone();
-            let track_list = track_list.clone();
-            let content_stack = content_stack.clone();
-            let library_stack = library_views.stack.clone();
-            let active_content_focus = active_content_focus.clone();
-            forward_action.connect_activate(move |_, _| {
-                let Some(place) = nav_history.go_forward() else {
-                    tracing::debug!("nav forward: nothing ahead");
-                    return;
-                };
-                nav_history.begin_back();
-                crate::ui::sidebar_session::sync_current_source(
-                    &sidebar.shared,
-                    &track_list.current_source(),
-                );
-                nav_history.record_route(&place);
-                super::library_shell::route_to_place(
-                    &place,
-                    &sidebar,
-                    &track_list,
-                    &content_stack,
-                    &library_stack,
-                    &active_content_focus,
-                    "nav forward",
-                );
-                nav_history.end_back();
-            });
-        }
-        window.add_action(&forward_action);
-        app.set_accels_for_action("win.nav-forward", &["<Alt>Right"]);
-
-        // Browser-style mouse navigation buttons: 8 (back) / 9 (forward)
-        // fire the same actions as Alt+Left / Alt+Right. One gesture
-        // listening to all buttons, claiming ONLY 8/9 so every other button
-        // passes through untouched; capture phase on the toplevel so it
-        // works over every view.
-        // input-parity: ACC-8 keyboard=alt-left-right
-        let mouse_nav = gtk4::GestureClick::builder()
-            .button(0)
-            .propagation_phase(gtk4::PropagationPhase::Capture)
-            .build();
-        {
-            let window = window.downgrade();
-            mouse_nav.connect_pressed(move |gesture, _n, _x, _y| {
-                let action = match gesture.current_button() {
-                    8 => "nav-back",
-                    9 => "nav-forward",
-                    _ => return,
-                };
-                gesture.set_state(gtk4::EventSequenceState::Claimed);
-                if let Some(window) = window.upgrade() {
-                    gtk4::gio::prelude::ActionGroupExt::activate_action(&window, action, None);
-                }
-            });
-        }
-        window.add_controller(mouse_nav);
 
         // Dev/verification hook (permanent, like `REPRISE_SMOKE_ACTIVATE`):
         // `REPRISE_SMOKE_JUMP=1` fires the NAV-9b jump action ~2s after
