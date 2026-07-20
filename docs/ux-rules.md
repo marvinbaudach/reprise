@@ -1691,6 +1691,38 @@ deterministisch und hoch-konfident, nie „ohne Review".
   keine Spalte erzwingt horizontales Seiten-Scrolling, und die Oberfläche
   bleibt während echter Datei-Jobs bedienbar.
 
+## Z. Einteiliger Track-Browser
+
+- **BROWSE-1** [geplant] [e2e] — **Music besitzt genau eine Trackliste.**
+  Album und Interpret sind navigierbare, aus Track-Metadaten abgeleitete
+  Library-Scopes derselben virtualisierten Trackliste, keine Tabs, Modi oder
+  dauerhaften Datenbankentitäten. My Stats bleibt ein eigener Dashboard-Ort.
+
+- **BROWSE-2** [geplant] [core] — **Jeder Browser-Ort besitzt seinen Zustand.**
+  Quelle, Scope, Textsuche, Facetten, Sortierung, ID-plus-Offset-Anker,
+  Auswahl und stabiler Inhaltsfokus werden gemeinsam im History-Eintrag
+  gehalten. Eine frische Album-/Interpret-Navigation startet unverfeinert;
+  Back/Forward restauriert exakt. Ein leer gewordener Scope bleibt in der
+  Sitzung als ehrlicher Leerzustand navigierbar.
+
+- **BROWSE-3** [geplant] [gtk] — **Sidebar-Einträge sind absolute Ziele.**
+  Jede Aktivierung verlässt auch Utility-Seiten und routet in die aktive
+  Zielansicht; Music führt aus einem Unter-Scope zur gemerkten Library-Wurzel.
+  Ein bereits aktives Root-Ziel ist ein No-op. Laufende Jobs bleiben global
+  sichtbar und blockieren Navigation nie.
+
+- **BROWSE-4** [geplant] [gtk] — **Metadaten navigieren appweit identisch.**
+  Track, Album und Interpret lösen unabhängig von Playerleiste,
+  Now-Playing-Panel, Trackliste, Queue, Cover oder My Stats genau die zentralen
+  Intents RevealTrack, OpenAlbum und OpenArtist aus. Das Ziel selektiert,
+  fokussiert und zentriert den Ankertrack; Back restauriert den Ausgangsort.
+
+- **BROWSE-5** [geplant] [core] — **Session-Restore ist begrenzt.** Der
+  aktuelle Browser-Ort, die gemerkte Library-Wurzel und der strukturierte
+  Wiedergabe-Ursprung werden restauriert. History, offene Suchoberflaechen,
+  Utilities und rohe Widget-Fokusse überleben den Neustart nicht. Nicht mehr
+  auflösbare Ziele fallen auf die Library-Wurzel zurück.
+
 ---
 
 Wenn beim Testen ein Fall auftaucht, den keine Regel deckt: Regel ergänzen
