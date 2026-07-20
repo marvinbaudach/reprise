@@ -90,6 +90,13 @@ fi
 results_dir=$(mktemp -d)
 trap 'rm -rf "$results_dir"' EXIT
 
+cleanup_worker_roots() {
+  # Portal and accessibility helpers can release private mounts slightly
+  # after the test process exits. Cleanup must not overwrite the recorded
+  # test result or abort the remaining display-test balance sheet.
+  rm -rf "$@" 2>/dev/null || true
+}
+
 run_display_test() {
   local index=$1
   local test=$2
@@ -115,6 +122,7 @@ run_display_test() {
     if env \
       XDG_DATA_HOME="$data_home" XDG_CACHE_HOME="$cache_home" \
       XDG_CONFIG_HOME="$config_home" XDG_RUNTIME_DIR="$runtime_dir" \
+      GIO_USE_VFS=local GTK_USE_PORTAL=0 \
       GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink \
       DISPLAY_TEST="$test" DISPLAY_TEST_PASSED="$display_test_passed" \
       dbus-run-session -- xvfb-run --server-num="$server_num" \
@@ -127,8 +135,8 @@ run_display_test() {
       echo fail >"$results_dir/$index.status"
     fi
   } >"$results_dir/$index.log" 2>&1
-  rm -rf "$data_home" "$cache_home" "$config_home" "$runtime_dir" \
-    "$marker_dir"
+  cleanup_worker_roots "$data_home" "$cache_home" "$config_home" \
+    "$runtime_dir" "$marker_dir"
 }
 
 active=0
