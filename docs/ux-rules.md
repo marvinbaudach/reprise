@@ -1182,12 +1182,19 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   durchscheinenden Content. Artist, Zeit, Suchfeld und Header-Aktionen sind
   aktive Inhalte; nur deaktivierte oder rein dekorative Elemente dürfen
   darunter liegen.
-- **NAV-10** [aktiv] [gtk] — Der laufende Kontext bleibt in allen Ansichten
-  mit einer gemeinsamen Playback-Akzent-Markierung sichtbar; beim ersten
-  Eintritt einer Ansicht wird er einmalig aufgedeckt, spätere Wechsel stellen
-  NAV-5s gemerkten ID-plus-Offset-Anker wieder her. Explizites „Go to
+- **NAV-10** [ersetzt durch NAV-10a] — Der laufende Kontext bleibt in allen
+  Ansichten mit einer gemeinsamen Playback-Akzent-Markierung sichtbar; beim
+  ersten Eintritt einer Ansicht wird er einmalig aufgedeckt, spätere Wechsel
+  stellen NAV-5s gemerkten ID-plus-Offset-Anker wieder her. Explizites „Go to
   album/artist" springt immer deterministisch; Selektion folgt der Wiedergabe
   nie.
+- **NAV-10a** [aktiv] [gtk] — **Markieren und Scrollen sind getrennt.** Jede
+  sichtbare Instanz des geladenen Tracks trägt dieselbe Playback-Markierung.
+  Doppelklick/Enter auf eine bereits sichtbare Row verändert den Viewport
+  nicht. Play aus Stopped sowie explizites Previous/Next zentrieren den neuen
+  Track ohne Fokus- oder Selektionsdiebstahl. Auto-Advance zentriert nur,
+  wenn seit 1,5 Sekunden keine Scrollbewegung stattfand; explizite
+  Metadaten-/Reveal-Navigation selektiert, fokussiert und zentriert immer.
 - **QUE-7** [aktiv] [gtk] — Up Next besteht aus der manuellen Queue plus
   einem virtuellen, benannten Kontext-Tail mit Count. Der Tail wird nicht als
   Einzelzeilen materialisiert, sondern nur im sichtbaren Fenster gerendert;

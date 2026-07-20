@@ -554,7 +554,18 @@ impl PlayerController {
     /// straight to `skip_after_failure`. `pub(in crate::ui)` so `mpris_mirror.rs`
     /// and `playback_faults.rs` can call it too.
     pub(in crate::ui) fn play_track_id(&self, id: i64) {
-        self.present_track(id, StartPlayback::Yes);
+        self.play_track_id_with_change(
+            id,
+            super::current_track_selection::CurrentTrackChange::PlaybackStarted,
+        );
+    }
+
+    pub(in crate::ui) fn play_track_id_with_change(
+        &self,
+        id: i64,
+        change: super::current_track_selection::CurrentTrackChange,
+    ) {
+        self.present_track(id, StartPlayback::Yes, change);
     }
 
     /// Loads `id` as the now-playing track and reflects it across every
@@ -564,7 +575,12 @@ impl PlayerController {
     /// advance); `No` means the audio is *already* rolling because `playbin3`
     /// handed off gaplessly to this track's pre-fed URI (see `advance_
     /// gaplessly`), so only the metadata/UI catch up — no `play()`, no gap.
-    pub(in crate::ui) fn present_track(&self, id: i64, start: StartPlayback) {
+    pub(in crate::ui) fn present_track(
+        &self,
+        id: i64,
+        start: StartPlayback,
+        change: super::current_track_selection::CurrentTrackChange,
+    ) {
         self.evaluate_play_tracking();
         self.sync_lyrics_track(None);
 
@@ -635,11 +651,7 @@ impl PlayerController {
                                 .then(|| summary.album.clone()),
                             duration_ms: summary.duration_ms,
                         });
-                        self.notify_current_track_changed(
-                            id,
-                            None,
-                            super::current_track_selection::CurrentTrackChange::PlaybackStarted,
-                        );
+                        self.notify_current_track_changed(id, None, change);
                         // The composite Queue view keys its Now Playing row
                         // and Up Next tail off the playhead — every track
                         // change re-partitions it (QUE-1) and shrinks the

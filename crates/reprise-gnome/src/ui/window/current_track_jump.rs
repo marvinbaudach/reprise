@@ -166,7 +166,7 @@ mod tests {
             .split_whitespace()
             .collect::<String>();
         assert!(
-            selection.contains("CurrentTrackChange::ExplicitReveal=>{self.shared.selection.select_item(position,true);"),
+            selection.contains("TrackRevealPolicy::SelectFocusCenter=>{self.shared.selection.select_item(position,true);"),
             "an explicit jump must replace selection with the playing row"
         );
 

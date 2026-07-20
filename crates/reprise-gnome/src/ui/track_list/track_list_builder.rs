@@ -85,6 +85,7 @@ pub(in crate::ui) fn build(
         selection: selection.clone(),
         column_view: column_view.clone(),
         playing_track_id: Cell::new(None),
+        last_scroll_activity: Cell::new(None),
         active_reorder_drag_from: Cell::new(None),
         conn,
         cover_loader: cover_loader.clone(),
@@ -133,6 +134,17 @@ pub(in crate::ui) fn build(
         on_import_errors_mutated: RefCell::new(None),
         player: RefCell::new(std::rc::Weak::new()),
     });
+
+    {
+        let shared_weak = Rc::downgrade(&shared);
+        scrolled.vadjustment().connect_value_changed(move |_| {
+            if let Some(shared) = shared_weak.upgrade() {
+                shared
+                    .last_scroll_activity
+                    .set(Some(std::time::Instant::now()));
+            }
+        });
+    }
 
     {
         let shared_weak = Rc::downgrade(&shared);
