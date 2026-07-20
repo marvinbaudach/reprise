@@ -16,7 +16,7 @@ if [[ ${GITHUB_EVENT_NAME:-} == pull_request \
   && $head_branch != dev \
   && $head_branch != hotfix/* ]]; then
   if git cat-file -e origin/main:.github/workflows/ci.yml 2>/dev/null; then
-    echo "main accepts promotion pull requests from dev only" >&2
+    echo "main accepts only dev promotions or emergency hotfix/* pull requests" >&2
     exit 1
   fi
   echo "Allowing the one-time CI bootstrap before main contains this workflow"
