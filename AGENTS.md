@@ -43,6 +43,8 @@ plans — they live at `docs/` top level and outrank the code.
 - The **superpowers** process skills (brainstorming, TDD, systematic-debugging,
   verification-before-completion) carry the iron rules: TDD, verify-before-done, hard gates,
   isolation, honesty.
+- **`docs/agents/branching.md`** defines the protected GitHub flow: feature branches merge into
+  `dev`; only a green `dev` promotion pull request may enter `main`.
 
 ## UX rules are binding
 
@@ -69,7 +71,8 @@ The project is built **plan-by-plan, task-by-task, test-first**. To continue:
 2. Work each task test-first: **write the failing test → run it, see it fail → implement the
    minimal code → run tests, see them pass → run the full gate battery → commit.**
 3. One commit per task (fixes get their own follow-up commits). **No attribution footer. Do
-   not push.**
+   not push unless explicitly requested.** Branch from `dev`, open feature pull requests to
+   `dev`, and promote only `dev` to `main`; see `docs/agents/branching.md`.
 4. Append one line to `.superpowers/sdd/progress.md`:
    `Task N: complete (commit <hash>, base <hash>, <one-line note>)`.
 5. Recommended: after each task, do (or dispatch) an adversarial review of the diff before

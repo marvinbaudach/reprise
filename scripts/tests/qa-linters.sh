@@ -41,6 +41,7 @@ require_executable scripts/tests/performance-runtime-baseline.sh
 require_executable scripts/tests/readme-showcase.sh
 require_executable scripts/tests/accessibility-semantics.sh
 require_executable scripts/tests/input-parity.sh
+require_executable scripts/tests/github-flow.sh
 require_executable scripts/tests/weekly-portfolio-sync.sh
 require_executable scripts/weekly-portfolio-sync.sh
 require_executable .githooks/pre-push
@@ -95,6 +96,7 @@ scripts/tests/performance-runtime-baseline.sh
 scripts/tests/readme-showcase.sh
 scripts/tests/accessibility-semantics.sh
 scripts/tests/input-parity.sh
+scripts/tests/github-flow.sh
 scripts/tests/weekly-portfolio-sync.sh
 scripts/check-architecture.sh
 
