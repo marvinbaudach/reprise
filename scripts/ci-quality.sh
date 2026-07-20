@@ -4,6 +4,10 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$repo_root"
 
+if [[ ${CI:-} == true ]]; then
+  git config --global --add safe.directory "$repo_root"
+fi
+
 base_branch=${GITHUB_BASE_REF:-${GITHUB_REF_NAME:-main}}
 head_branch=${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-}}
 

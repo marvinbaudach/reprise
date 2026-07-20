@@ -44,6 +44,7 @@ require_pattern 'archlinux:latest' "$workflow"
 require_pattern 'scripts/ci-quality.sh' "$workflow"
 
 require_pattern 'GITHUB_EVENT_NAME' scripts/ci-quality.sh
+require_pattern 'git config --global --add safe.directory' scripts/ci-quality.sh
 require_pattern 'GITHUB_BASE_REF' scripts/ci-quality.sh
 require_pattern 'GITHUB_HEAD_REF' scripts/ci-quality.sh
 require_pattern 'git cat-file -e origin/main:.github/workflows/ci.yml' scripts/ci-quality.sh
