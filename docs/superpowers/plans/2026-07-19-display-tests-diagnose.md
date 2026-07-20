@@ -2,7 +2,7 @@
 slug: display-tests-fix
 worktree: /home/marvin/Projects/reprise/.worktrees/album-view-improvements-display-tests-fix
 branch: feature/display-tests-fix
-phase: coded
+phase: shipped
 codex_session:
 created: 2026-07-19
 ---
