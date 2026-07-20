@@ -194,6 +194,15 @@ impl ScanProgressView {
             .child(&container)
             .reveal_child(false)
             .build();
+        // `AdwToolbarView::add_top_bar` still allocates an unrevealed child's
+        // natural height. Keep the complete widget out of layout while idle,
+        // then hide it only after the crossfade has finished.
+        revealer.set_visible(false);
+        revealer.connect_child_revealed_notify(|revealer| {
+            if !revealer.is_child_revealed() && !revealer.reveals_child() {
+                revealer.set_visible(false);
+            }
+        });
 
         let on_cancel: OnCancelSlot = Rc::new(RefCell::new(None));
 
@@ -389,6 +398,7 @@ impl ScanProgressView {
     }
 
     fn begin_visibility(&self) {
+        self.inner.revealer.set_visible(true);
         self.inner
             .visibility_generation
             .set(self.inner.visibility_generation.get().wrapping_add(1));
@@ -605,12 +615,17 @@ mod tests {
             return;
         }
         let view = ScanProgressView::new();
+        assert!(
+            !view.widget().is_visible(),
+            "a dormant toolbar progress view must not reserve vertical space"
+        );
         view.show(&ScanProgress::Scanning {
             processed: 2,
             total: 4,
             current_path: PathBuf::from("/music/song.flac"),
         });
 
+        assert!(view.widget().is_visible());
         assert!(view.inner.revealer.reveals_child());
         assert!(view.inner.spinner.is_spinning());
         assert_eq!(view.inner.percent.label(), "50%");
@@ -631,6 +646,7 @@ mod tests {
         );
         main_loop.run();
         assert!(!view.inner.revealer.reveals_child());
+        assert!(!view.widget().is_visible());
     }
 
     #[test]
