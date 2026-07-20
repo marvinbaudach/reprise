@@ -131,7 +131,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   samt Scroll-Position; alle anderen Modi starten oben, unselektiert.
 - **NAV-6** [aktiv] [e2e] — Suche (Ctrl+F) filtert die aktuelle Ansicht
   live; Esc leert und schließt. Suche navigiert nie selbst.
-- **NAV-7** [geplant] [e2e] — Hamburger-Menü: „Scan Library" → startet Scan,
+- **NAV-7** [aktiv] [e2e] — Hamburger-Menü: „Scan Library" → startet Scan,
   bleibt in der Ansicht (Karte erscheint). „Preferences" →
   Preferences-Fenster. „Keyboard Shortcuts" → Shortcuts-Overlay. „About
   Reprise" → About-Dialog. Kein Menüpunkt wechselt kommentarlos die
@@ -1719,7 +1719,7 @@ deterministisch und hoch-konfident, nie „ohne Review".
   Back/Forward restauriert exakt. Ein leer gewordener Scope bleibt in der
   Sitzung als ehrlicher Leerzustand navigierbar.
 
-- **BROWSE-3** [geplant] [gtk] — **Sidebar-Einträge sind absolute Ziele.**
+- **BROWSE-3** [aktiv] [gtk] — **Sidebar-Einträge sind absolute Ziele.**
   Jede Aktivierung verlässt auch Utility-Seiten und routet in die aktive
   Zielansicht; Music führt aus einem Unter-Scope zur gemerkten Library-Wurzel.
   Ein bereits aktives Root-Ziel ist ein No-op. Laufende Jobs bleiben global

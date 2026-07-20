@@ -394,6 +394,32 @@ cua_click_label() {
   cua_pointer_action_label click "$@"
 }
 
+# Click a known screen point when AT-SPI flattens every descendant to
+# the native window's origin. That geometry defect makes a labelled-element
+# click land on the title bar even though the retained screenshot proves the
+# control's actual position. Keep this escape hatch explicit at the scenario
+# call site instead of silently trusting bad accessibility bounds.
+cua_click_screen_point() {
+  local pid=$1 window_id=$2 x=$3 y=$4 stem=$5
+  local action_path payload
+
+  cua_snapshot "$pid" "$window_id" "$stem-before" >/dev/null || return 1
+  action_path="$CUA_E2E_OUT_DIR/$stem-action.json"
+  payload=$(jq -nc \
+    --argjson pid "$pid" \
+    --argjson window_id "$window_id" \
+    --argjson x "$x" \
+    --argjson y "$y" \
+    --arg session "$CUA_E2E_SESSION" \
+    '{pid: $pid, window_id: $window_id, x: $x, y: $y, session: $session}')
+  if ! cua_driver click "$payload" >"$action_path"; then
+    echo "CUA screen-point click command failed: $stem" >&2
+    return 1
+  fi
+  assert_action_landed "$action_path" || return 1
+  cua_snapshot "$pid" "$window_id" "$stem-after" >/dev/null || return 1
+}
+
 cua_double_click_label() {
   cua_pointer_action_label double_click "$@"
 }

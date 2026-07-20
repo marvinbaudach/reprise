@@ -20,13 +20,15 @@ fixtures. It exercises five public workflows:
    reveals the `No music yet` empty-library state;
 2. a populated profile scans two copied fixtures, proves Music exposes one
    canonical track table without Tracks/Albums/Artists mode tabs, types into
-   the accessible `Search all fields` control to reveal `No results`, and runs
-   the keyboard-only surface inventory;
+   the accessible `Search all fields` control to reveal `No results`, verifies
+   a menu rescan stays in place with a perceivable progress bar, and runs the
+   keyboard-only surface inventory;
 3. a tag write preserves selection and scroll position;
 4. the multi-track Tag Editor exposes its complete accessible structure;
-5. Library Doctor opts in from Plugins, scans copied fixtures, verifies wide
-   and narrow review layouts, applies the reviewed plan, disables the module,
-   and reverts the cleanup from the still-available action.
+5. Library Doctor opts in from Plugins, proves re-activating the already
+   selected Music row escapes the Doctor page, scans copied fixtures, verifies
+   wide and narrow review layouts, applies the reviewed plan, disables the
+   module, and reverts the cleanup from the still-available action.
 
 Every CUA action is bracketed by a fresh `get_window_state` snapshot. The run
 fails on a degraded accessibility tree, a suspected no-op/escalation request,
