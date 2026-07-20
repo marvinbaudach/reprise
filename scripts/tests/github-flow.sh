@@ -11,7 +11,7 @@ require_file() {
 
 require_executable() {
   local path=$1
-  [[ -x $path ]] || { echo "$path must be executable" >&2; exit 1; }
+  [[ -x $path ]] || { echo "$path must exist and be executable" >&2; exit 1; }
 }
 
 require_pattern() {
@@ -48,12 +48,19 @@ require_pattern 'git config --global --add safe.directory' scripts/ci-quality.sh
 require_pattern 'GITHUB_BASE_REF' scripts/ci-quality.sh
 require_pattern 'GITHUB_HEAD_REF' scripts/ci-quality.sh
 require_pattern 'git cat-file -e origin/main:.github/workflows/ci.yml' scripts/ci-quality.sh
+require_pattern 'head_branch != hotfix/\\*' scripts/ci-quality.sh
 require_pattern 'MERGE_READINESS_BASE_REF' scripts/ci-quality.sh
 require_pattern 'check-merge-readiness.sh --no-fetch' scripts/ci-quality.sh
 require_pattern '^main <- dev <- feature/' "$guide"
 require_pattern 'CI / Quality gate' "$guide"
 require_pattern 'Every pull request runs' "$guide"
 require_pattern 'Direct pushes to `main`' "$guide"
+require_pattern 'hotfix/\\*' "$guide"
+require_pattern 'hotfix/' AGENTS.md
 require_pattern 'package-ecosystem: github-actions' .github/dependabot.yml
+if [[ $(rg -c '^    target-branch: dev$' .github/dependabot.yml) -ne 2 ]]; then
+  echo ".github/dependabot.yml must target dev for every update stream" >&2
+  exit 1
+fi
 
 echo "GitHub flow policy checks passed"

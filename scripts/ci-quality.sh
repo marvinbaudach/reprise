@@ -11,7 +11,10 @@ fi
 base_branch=${GITHUB_BASE_REF:-${GITHUB_REF_NAME:-main}}
 head_branch=${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-}}
 
-if [[ ${GITHUB_EVENT_NAME:-} == pull_request && $base_branch == main && $head_branch != dev ]]; then
+if [[ ${GITHUB_EVENT_NAME:-} == pull_request \
+  && $base_branch == main \
+  && $head_branch != dev \
+  && $head_branch != hotfix/* ]]; then
   if git cat-file -e origin/main:.github/workflows/ci.yml 2>/dev/null; then
     echo "main accepts promotion pull requests from dev only" >&2
     exit 1
