@@ -70,6 +70,7 @@ pub(in crate::ui) fn build(
     search_bar.connect_entry(search_entry);
     search_bar.set_key_capture_widget(Some(key_capture_widget));
     wire_search_toggle(&search_toggle, &search_bar, search_entry);
+    wire_search_focus_collapse(&search_bar, search_entry);
 
     let root = adw::ToolbarView::new();
     root.set_top_bar_style(adw::ToolbarStyle::Flat);
@@ -86,6 +87,41 @@ pub(in crate::ui) fn build(
 
 pub(in crate::ui) fn search_toggle_active(search_mode: bool, query: &str) -> bool {
     search_mode || !query.trim().is_empty()
+}
+
+fn should_collapse_search_after_focus_change(search_mode: bool, entry_has_focus: bool) -> bool {
+    search_mode && !entry_has_focus
+}
+
+fn wire_search_focus_collapse(search_bar: &gtk4::SearchBar, search_entry: &gtk4::SearchEntry) {
+    let focus = gtk4::EventControllerFocus::new();
+    let bar = search_bar.downgrade();
+    focus.connect_contains_focus_notify(move |focus| {
+        let Some(bar) = bar.upgrade() else {
+            return;
+        };
+        if !should_collapse_search_after_focus_change(bar.is_search_mode(), focus.contains_focus())
+        {
+            return;
+        }
+        // Pointer activation transfers focus before emitting `clicked`. Wait
+        // until that click has run so the search toggle cannot observe the
+        // blur-driven collapse as a request to reopen the bar.
+        let bar = bar.downgrade();
+        let focus = focus.downgrade();
+        gtk4::glib::idle_add_local_once(move || {
+            let (Some(bar), Some(focus)) = (bar.upgrade(), focus.upgrade()) else {
+                return;
+            };
+            if should_collapse_search_after_focus_change(
+                bar.is_search_mode(),
+                focus.contains_focus(),
+            ) {
+                bar.set_search_mode(false);
+            }
+        });
+    });
+    search_entry.add_controller(focus);
 }
 
 fn update_preserved_query(search_mode: bool, query: &str, preserved_query: &mut String) {
@@ -487,6 +523,46 @@ mod tests {
         update_preserved_query(false, "", &mut preserved_query);
 
         assert_eq!(preserved_query, "falling");
+    }
+
+    #[test]
+    fn search_7_focus_loss_collapses_only_an_open_search() {
+        assert!(should_collapse_search_after_focus_change(true, false));
+        assert!(!should_collapse_search_after_focus_change(true, true));
+        assert!(!should_collapse_search_after_focus_change(false, false));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn search_7_blur_collapses_the_bar_and_preserves_the_filter() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let app = adw::Application::builder()
+            .application_id("org.reprise.Reprise.SearchBlurTest")
+            .flags(gtk4::gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        app.register(None::<&gtk4::gio::Cancellable>).unwrap();
+        let window = adw::ApplicationWindow::new(&app);
+        let header = adw::HeaderBar::new();
+        let entry = gtk4::SearchEntry::new();
+        let content = gtk4::Button::with_label("Library content");
+        let chrome = build(&header, &content, &entry, &window);
+        window.set_content(Some(&chrome.root));
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        chrome.search_bar.set_search_mode(true);
+        entry.set_text("falling");
+        entry.grab_focus();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        assert!(chrome.search_bar.is_search_mode());
+
+        content.grab_focus();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        assert!(!chrome.search_bar.is_search_mode());
+        assert_eq!(entry.text(), "falling");
+        assert!(chrome.search_toggle.is_active());
     }
 
     #[test]

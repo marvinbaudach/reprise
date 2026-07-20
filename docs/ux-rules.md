@@ -1124,6 +1124,12 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   beidseitig (zeigen ↔ verstecken). Das Verstecken löscht die Query nie: bei
   nicht leerer Query bleibt ihr Chip sichtbar und die Lupe im
   `:checked`-Akzentstil (FIL-1, SEARCH-3/5).
+- **SEARCH-7** [aktiv] [gtk] — Verliert das Suchfeld samt seiner internen
+  Controls den Tastaturfokus, klappt die offene Suchleiste nach Abschluss der
+  laufenden Pointer-Aktivierung ein. Eine nicht leere Query bleibt gemäß
+  SEARCH-3/5 als aktiver Filter samt Chip und Akzent-Lupe erhalten; ein Klick
+  auf die Lupe darf die durch denselben Fokuswechsel geschlossene Leiste nicht
+  versehentlich erneut öffnen.
 - **LYR-4** [aktiv] [gtk] — Die Zentrierung der aktiven Lyrics-Zeile wird
   am Songanfang nach oben geklemmt. Solange nicht genug Kontextzeilen über
   der aktiven Zeile liegen, sitzt der Textblock oben; erst mit genügend
