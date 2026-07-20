@@ -42,7 +42,7 @@ jobs:
           fetch-depth: 0
 
       - name: Cache Cargo downloads and build output
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
