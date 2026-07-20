@@ -5,6 +5,8 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 
 # shellcheck source=lib.sh
 source "$repo_root/scripts/cua-e2e/lib.sh"
+# shellcheck source=navigation_playback.sh
+source "$repo_root/scripts/cua-e2e/navigation_playback.sh"
 
 APP_ID=org.reprise.Reprise
 WINDOW_CLASS_MATCH=reprise
@@ -250,6 +252,138 @@ run_populated_library_scenario() {
   finish_scenario populated-library \
     "dev scan complete" \
     "first-run decision"
+}
+
+run_navigation_playback_scenario() {
+  local fixture_dir="$CUA_E2E_SCRATCH_ROOT/navigation-playback-fixture-music"
+  local base_track="$CUA_E2E_SCRATCH_ROOT/navigation-playback-base.flac"
+  local detail_path playing_path back_path panel_path album_log_line artist_log_line
+  local target="Navigation Track 14"
+  local music_target="Navigation Track 10"
+
+  echo "[cua-e2e] nav-12-back-restores-focus"
+  echo "[cua-e2e] nav-13-playback-is-not-navigation"
+  prepare_navigation_playback_fixture "$fixture_dir" "$base_track"
+
+  start_scenario_app \
+    navigation-playback "$fixture_dir" "" "$CUA_E2E_KEYBOARD_QUIT_DELAY_SECS"
+  cua_resize_window \
+    "$APP_PID" "$WINDOW_ID" 1200 800 navigation-normalized-window
+  wait_for_label \
+    "$APP_PID" "$WINDOW_ID" "Navigation Track 01" navigation-library >/dev/null
+  panel_path=$(cua_snapshot \
+    "$APP_PID" "$WINDOW_ID" navigation-initial-panel-state)
+  if snapshot_exposes_label "$panel_path" "Queue is empty"; then
+    cua_click_label \
+      "$APP_PID" "$WINDOW_ID" "Toggle Now Playing panel" navigation-panel-close
+  fi
+
+  cua_click_label \
+    "$APP_PID" "$WINDOW_ID" "Back to previous view" navigation-back-disabled
+  assert_snapshot_contains \
+    "$CUA_E2E_OUT_DIR/navigation-back-disabled-after.json" "+ Add filter"
+
+  cua_focus_label_via_tab \
+    "$APP_PID" "$WINDOW_ID" "$target" navigation-track-focus-current >/dev/null
+  cua_focus_label_via_key \
+    "$APP_PID" "$WINDOW_ID" "$music_target" up navigation-track-target >/dev/null
+  cua_press_key_window \
+    "$APP_PID" "$WINDOW_ID" enter navigation-track-activate
+  playing_path="$CUA_E2E_OUT_DIR/navigation-track-activate-after.json"
+  assert_snapshot_contains "$playing_path" "$music_target"
+  assert_focus_evidence_label "$playing_path" "$music_target"
+
+  cua_click_label "$APP_PID" "$WINDOW_ID" "Albums" navigation-albums
+  wait_for_label \
+    "$APP_PID" "$WINDOW_ID" "Navigation Album" navigation-album-grid >/dev/null
+  wait_for_label \
+    "$APP_PID" "$WINDOW_ID" "Sentinel Album" navigation-album-grid-sentinel >/dev/null
+  cua_focus_label_via_tab \
+    "$APP_PID" "$WINDOW_ID" "N" navigation-album-focus >/dev/null
+  cua_press_key_window \
+    "$APP_PID" "$WINDOW_ID" enter navigation-album-tracks
+  detail_path=$(wait_for_label \
+    "$APP_PID" "$WINDOW_ID" "Navigation Track 01" navigation-album-detail)
+  assert_snapshot_contains "$detail_path" "Back to previous view"
+  assert_snapshot_absent "$detail_path" "Sentinel Track"
+
+  cua_focus_label_via_key \
+    "$APP_PID" "$WINDOW_ID" "$target" down navigation-album-target >/dev/null
+  album_log_line=$(wc -l <"$APP_LOG")
+  cua_press_key_window \
+    "$APP_PID" "$WINDOW_ID" enter navigation-album-activate
+  playing_path="$CUA_E2E_OUT_DIR/navigation-album-activate-after.json"
+  assert_snapshot_contains "$playing_path" "Back to previous view"
+  assert_snapshot_contains "$playing_path" "$target"
+  assert_snapshot_absent "$playing_path" "Sentinel Track"
+  assert_snapshot_contains "$playing_path" "Pause (Space)"
+  assert_focus_evidence_label "$playing_path" "$target"
+  assert_app_log_contains_since \
+    "$APP_LOG" "$album_log_line" "queue set from view" navigation-album-activate
+  assert_no_library_source_since \
+    "$APP_LOG" "$album_log_line" \
+    "album activation navigated back to the Library root"
+
+  cua_click_label \
+    "$APP_PID" "$WINDOW_ID" "Back to previous view" navigation-album-back
+  back_path=$(wait_for_label \
+    "$APP_PID" "$WINDOW_ID" "Navigation Album" navigation-album-restored)
+  assert_focus_evidence_label "$back_path" "N"
+
+  cua_click_label "$APP_PID" "$WINDOW_ID" "Artists" navigation-artists
+  wait_for_label \
+    "$APP_PID" "$WINDOW_ID" "Navigation Artist" navigation-artist-master >/dev/null
+  cua_hotkey \
+    "$APP_PID" "$WINDOW_ID" navigation-artist-detail shift tab
+  cua_focus_label_via_key \
+    "$APP_PID" "$WINDOW_ID" "NA" up navigation-artist-master-row >/dev/null
+  detail_path=$(wait_for_label \
+    "$APP_PID" "$WINDOW_ID" \
+    "1 Navigation Track 10 Navigation Album 1 play 0:30" \
+    navigation-artist-tracks)
+  assert_snapshot_contains "$detail_path" "Navigation Album 16 tracks"
+
+  # Artist top tracks are native row buttons, not the shared track table.
+  # Their activation must play in artist context without changing the mode.
+  artist_log_line=$(wc -l <"$APP_LOG")
+  cua_click_label \
+    "$APP_PID" "$WINDOW_ID" \
+    "1 Navigation Track 10 Navigation Album 1 play 0:30" \
+    navigation-artist-top-track-activate
+  playing_path="$CUA_E2E_OUT_DIR/navigation-artist-top-track-activate-after.json"
+  assert_snapshot_contains "$playing_path" "Artists"
+  assert_snapshot_contains "$playing_path" "Navigation Artist"
+  assert_snapshot_contains "$playing_path" "Pause (Space)"
+  assert_app_log_contains_since \
+    "$APP_LOG" "$artist_log_line" "queue set from view" navigation-artist-top-track-activate
+  assert_no_library_source_since \
+    "$APP_LOG" "$artist_log_line" \
+    "artist top-track activation navigated back to the Library root"
+
+  # Exercise the reported Artist -> Album -> lower-track playback path.
+  cua_click_label \
+    "$APP_PID" "$WINDOW_ID" "Navigation Album 16 tracks" navigation-artist-album
+  detail_path=$(wait_for_label \
+    "$APP_PID" "$WINDOW_ID" "$target" navigation-artist-album-tracks)
+  assert_snapshot_absent "$detail_path" "Sentinel Track"
+  assert_app_log_contains \
+    "$APP_LOG" "source=album:Navigation Album:Navigation Artist" navigation-artist-album
+  cua_focus_label_via_tab \
+    "$APP_PID" "$WINDOW_ID" "$target" navigation-artist-album-target >/dev/null
+  artist_log_line=$(wc -l <"$APP_LOG")
+  cua_press_key_window \
+    "$APP_PID" "$WINDOW_ID" enter navigation-artist-album-activate
+  playing_path="$CUA_E2E_OUT_DIR/navigation-artist-album-activate-after.json"
+  assert_snapshot_contains "$playing_path" "$target"
+  assert_snapshot_absent "$playing_path" "Sentinel Track"
+  assert_focus_evidence_label "$playing_path" "$target"
+  assert_no_library_source_since \
+    "$APP_LOG" "$artist_log_line" \
+    "artist-derived album activation navigated back to the Library root"
+
+  finish_scenario navigation-playback \
+    "dev scan complete" \
+    "queue set from view"
 }
 
 run_song_visuals_scenario() {
@@ -522,6 +656,7 @@ run_private_session() {
     all)
       run_fresh_install_scenario
       run_populated_library_scenario
+      run_navigation_playback_scenario
       run_tag_1_no_jump_after_save_scenario
       run_tag_3_multi_dialog_structure_scenario
       run_library_doctor_scenario
@@ -529,6 +664,9 @@ run_private_session() {
       ;;
     populated-library)
       run_populated_library_scenario
+      ;;
+    navigation-playback)
+      run_navigation_playback_scenario
       ;;
     fresh-install)
       run_fresh_install_scenario
