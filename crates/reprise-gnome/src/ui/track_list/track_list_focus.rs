@@ -15,15 +15,25 @@ fn target_for_page(visible_page: Option<&str>) -> TrackContentFocusTarget {
     }
 }
 
+fn focus_visible_page(page: &gtk4::Widget) -> bool {
+    if let Some(scrolled) = page.downcast_ref::<gtk4::ScrolledWindow>() {
+        let focused_content = scrolled.child().is_some_and(|content| {
+            content.child_focus(gtk4::DirectionType::TabForward) || content.grab_focus()
+        });
+        return focused_content || scrolled.grab_focus();
+    }
+    page.child_focus(gtk4::DirectionType::TabForward) || page.grab_focus()
+}
+
 pub(super) fn focus_visible_content(
     stack: &gtk4::Stack,
     column_view: &impl IsA<gtk4::Widget>,
 ) -> bool {
     match target_for_page(stack.visible_child_name().as_deref()) {
         TrackContentFocusTarget::ColumnView => column_view.grab_focus(),
-        TrackContentFocusTarget::VisiblePage => stack.visible_child().is_some_and(|child| {
-            child.child_focus(gtk4::DirectionType::TabForward) || child.grab_focus()
-        }),
+        TrackContentFocusTarget::VisiblePage => stack
+            .visible_child()
+            .is_some_and(|child| focus_visible_page(&child)),
     }
 }
 
