@@ -1,10 +1,10 @@
-//! The compact, right-aligned status information in the track content's
-//! bottom bar: `"{n} tracks · {total duration}"`, e.g.
+//! The compact, right-aligned status information over the track content's
+//! bottom-right corner: `"{n} tracks · {total duration}"`, e.g.
 //! `"1,704 tracks · 4 days, 6 hours and 28 minutes"`. The status line always
 //! describes the whole library; the filter row owns restriction state. It
 //! therefore only appears while the Library source is shown — in every
 //! other source the filter row is the one count on screen (FIL-2's
-//! role split: row = current view, bottom bar = library).
+//! role split: row = current view, overlay = library).
 //! Storage size (e.g.
 //! "43.4 GB") is out of scope: the schema has no file-size column yet (a
 //! later stage).
@@ -20,10 +20,10 @@
 //!
 //! ## Empty library
 //!
-//! When the library has zero tracks, the complete status surface is hidden
+//! When the library has zero tracks, the complete status pill is hidden
 //! rather than showing "0 tracks · 0 minutes" — the
 //! empty-library placeholder in the track list already communicates that
-//! state; a zeroed bar would be redundant clutter, and the player bar is
+//! state; a zeroed pill would be redundant clutter, and the player bar is
 //! `set_sensitive(false)`/blank in that state anyway (see `window.rs`).
 
 use std::cell::{Cell, RefCell};
@@ -67,10 +67,10 @@ impl StatusBar {
         let label = gtk4::Label::new(None);
         label.set_halign(gtk4::Align::End);
         label.set_xalign(1.0);
-        label.set_hexpand(true);
-        label.set_margin_top(4);
-        label.set_margin_bottom(4);
-        label.set_margin_end(12);
+        label.set_margin_top(8);
+        label.set_margin_bottom(8);
+        label.set_margin_start(16);
+        label.set_margin_end(16);
         label.add_css_class("reprise-text-secondary");
         label.add_css_class("caption");
         surface.append(&label);
@@ -88,7 +88,7 @@ impl StatusBar {
         }
     }
 
-    /// The complete bottom status surface placed below the track list.
+    /// The complete compact surface overlaid on the track list.
     pub fn widget(&self) -> &gtk4::Box {
         &self.inner.surface
     }

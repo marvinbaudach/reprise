@@ -1123,10 +1123,17 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Status, Metadaten und Spaltenköpfe, Hint ungefähr 0,5 für Platzhalter,
   Hinweise und deaktivierte Sekundärtexte. Passende Adwaita-Named-Colors
   haben Vorrang vor eigenen Alphas; pro Element wird nicht nachgetönt.
-- **CONTRAST-2** [aktiv] [gtk] — Jede „N tracks · Dauer"-Statuszeile ist
-  eine echte untere Leiste mit definierter Fläche und oberer Hairline. Sie
-  reserviert eigenen Platz und überdeckt nie eine Trackzeile; erst gegen
-  diese feste Fläche wird ihr Sekundärtext-Kontrast bestimmt.
+- **CONTRAST-2** [ersetzt durch CONTRAST-2a] — Jede „N tracks ·
+  Dauer"-Statuszeile ist eine echte untere Leiste mit definierter Fläche und
+  oberer Hairline. Sie reserviert eigenen Platz und überdeckt nie eine
+  Trackzeile; erst gegen diese feste Fläche wird ihr Sekundärtext-Kontrast
+  bestimmt.
+- **CONTRAST-2a** [aktiv] [gtk] — Die „N tracks · Dauer"-Statuszeile ist ein
+  kompakter Pill-Overlay mit definierter Fläche, Rundung und Hairline unten
+  rechts in der Tracktabelle. Sie reserviert keine Vollbreiten-Zeile. Öffnet
+  sich die rechte Info-Spalte, bleibt der Pill mit gleichem Abstand an deren
+  linker Kante; erst gegen seine feste Fläche wird der Sekundärtext-Kontrast
+  bestimmt.
 - **CONTRAST-3** [aktiv] [gtk] — Statuszeilen, Spaltenköpfe,
   Sidebar-Sektionslabels und Kartenmetazeilen erreichen gegen ihre jeweilige
   Fläche mindestens 4,5:1. `.caption` plus Sekundärstufe gilt dabei als
