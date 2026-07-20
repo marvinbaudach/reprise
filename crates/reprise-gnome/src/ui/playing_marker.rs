@@ -37,7 +37,7 @@ mod tests {
     }
 
     #[test]
-    fn nav_10_playing_marked_in_canonical_list_and_player_bar() {
+    fn nav_10a_playing_marked_in_canonical_list_and_player_bar() {
         for source in [
             include_str!("track_list/track_list_columns.rs"),
             include_str!("player_bar/player_bar_layout.rs"),

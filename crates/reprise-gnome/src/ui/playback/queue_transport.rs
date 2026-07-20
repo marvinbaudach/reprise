@@ -208,11 +208,17 @@ impl PlayerController {
                             .map(|ids| ids.contains(&id))
                     };
                     match playable {
-                        Ok(true) => self.play_track_id(id),
+                        Ok(true) => self.play_track_id_with_change(
+                            id,
+                            crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport,
+                        ),
                         Ok(false) => self.advance_playback(AdvanceReason::Manual),
                         Err(error) => {
                             tracing::error!(%error, id, "could not validate restored current track; trying it directly");
-                            self.play_track_id(id);
+                            self.play_track_id_with_change(
+                                id,
+                                crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport,
+                            );
                         }
                     }
                 }
@@ -221,6 +227,10 @@ impl PlayerController {
             ToggleAction::TogglePipeline => {
                 if let Err(error) = self.player.toggle_pause() {
                     tracing::error!(%error, "toggle play/pause failed");
+                } else if status == reprise_core::media_integration::MprisPlaybackStatus::Paused {
+                    self.notify_current_track(
+                        crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport,
+                    );
                 }
             }
             ToggleAction::Noop => tracing::debug!("play/pause: queue is empty; nothing to play"),
@@ -443,7 +453,10 @@ impl PlayerController {
                     }
                 };
                 match next {
-                    Some(id) => self.play_track_id(id),
+                    Some(id) => self.play_track_id_with_change(
+                        id,
+                        crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport,
+                    ),
                     None => self.reset_to_stopped(),
                 }
             }
@@ -499,7 +512,10 @@ impl PlayerController {
                 };
                 self.current_up_next.set(None);
                 self.notify_queue_changed();
-                self.play_track_id(id);
+                self.play_track_id_with_change(
+                    id,
+                    crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport,
+                );
             }
             QueueRow::NowPlaying => {
                 let current = self
@@ -507,7 +523,10 @@ impl PlayerController {
                     .get()
                     .or_else(|| self.queue.borrow().current());
                 if let Some(id) = current {
-                    self.play_track_id(id);
+                    self.play_track_id_with_change(
+                        id,
+                        crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport,
+                    );
                 }
             }
         }
@@ -602,7 +621,11 @@ impl PlayerController {
                     next,
                     "the playing track was deleted; skipping to its successor"
                 );
-                self.present_track(next, StartPlayback::Yes);
+                self.present_track(
+                    next,
+                    StartPlayback::Yes,
+                    crate::ui::current_track_selection::CurrentTrackChange::AutomaticAdvance,
+                );
             }
             None => {
                 tracing::info!(

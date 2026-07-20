@@ -1,8 +1,10 @@
-//! Keeps playing markers synchronized with playback while leaving the user's
-//! selection and viewport untouched. Explicit NAV-9b reveal paths select and
-//! center the loaded track; session restoration only centers it.
+//! Keeps playing markers synchronized with playback while applying NAV-10a's
+//! intent-sensitive viewport policy. Row activation never moves the viewport;
+//! explicit transport centers, automatic advance yields to recent scrolling,
+//! and explicit NAV-9b reveal also selects and focuses the loaded track.
 
 use std::rc::Rc;
+use std::time::Duration;
 
 use gtk4::prelude::*;
 use reprise_core::playback::PlaybackState;
@@ -17,8 +19,30 @@ use crate::ui::scroll_center;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::ui) enum CurrentTrackChange {
     PlaybackStarted,
+    AutomaticAdvance,
+    ExplicitTransport,
     SessionRestore,
     ExplicitReveal,
+}
+
+const USER_SCROLL_GRACE: Duration = Duration::from_millis(1_500);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TrackRevealPolicy {
+    MarkerOnly,
+    Center,
+    SelectFocusCenter,
+}
+
+fn reveal_policy(change: CurrentTrackChange, user_scrolling: bool) -> TrackRevealPolicy {
+    match change {
+        CurrentTrackChange::PlaybackStarted => TrackRevealPolicy::MarkerOnly,
+        CurrentTrackChange::AutomaticAdvance if user_scrolling => TrackRevealPolicy::MarkerOnly,
+        CurrentTrackChange::AutomaticAdvance
+        | CurrentTrackChange::ExplicitTransport
+        | CurrentTrackChange::SessionRestore => TrackRevealPolicy::Center,
+        CurrentTrackChange::ExplicitReveal => TrackRevealPolicy::SelectFocusCenter,
+    }
 }
 
 pub(in crate::ui) type OnCurrentTrackChanged = Rc<dyn Fn(i64, Option<usize>, CurrentTrackChange)>;
@@ -127,7 +151,7 @@ impl PlayerController {
         self.notify_current_track(CurrentTrackChange::ExplicitReveal);
     }
 
-    fn notify_current_track(&self, change: CurrentTrackChange) {
+    pub(in crate::ui) fn notify_current_track(&self, change: CurrentTrackChange) {
         let current = self
             .current_up_next
             .get()
@@ -196,7 +220,12 @@ impl TrackList {
         let ids = self.shared.current_view_ids();
         let is_queue = matches!(*self.shared.source.borrow(), ViewSource::Queue);
 
-        if change == CurrentTrackChange::PlaybackStarted {
+        if matches!(
+            change,
+            CurrentTrackChange::PlaybackStarted
+                | CurrentTrackChange::AutomaticAdvance
+                | CurrentTrackChange::ExplicitTransport
+        ) {
             let previous_id = self.shared.playing_track_id.replace(Some(track_id));
             if let Some(previous_id) = previous_id.filter(|id| *id != track_id) {
                 if let Some(old_pos) = ids
@@ -219,8 +248,13 @@ impl TrackList {
             return;
         };
 
-        match change {
-            CurrentTrackChange::PlaybackStarted => {
+        let user_scrolling = self
+            .shared
+            .last_scroll_activity
+            .get()
+            .is_some_and(|last| last.elapsed() < USER_SCROLL_GRACE);
+        match reveal_policy(change, user_scrolling) {
+            TrackRevealPolicy::MarkerOnly => {
                 self.shared.model.invalidate_window_at(position);
                 tracing::info!(
                     track_id,
@@ -228,11 +262,16 @@ impl TrackList {
                     "table playing marker updated without selection follow"
                 );
             }
-            CurrentTrackChange::SessionRestore => {
-                reveal_track_position(&self.shared.column_view, position, 8);
-                tracing::info!(track_id, position, "restored current track centered");
+            TrackRevealPolicy::Center => {
+                self.shared.model.invalidate_window_at(position);
+                if change == CurrentTrackChange::AutomaticAdvance {
+                    reveal_automatic_track_position(&self.shared, position, 8);
+                } else {
+                    reveal_track_position(&self.shared.column_view, position, 8);
+                }
+                tracing::info!(track_id, position, ?change, "current track centered");
             }
-            CurrentTrackChange::ExplicitReveal => {
+            TrackRevealPolicy::SelectFocusCenter => {
                 self.shared.selection.select_item(position, true);
                 let _ = self.shared.column_view.grab_focus();
                 reveal_track_position(&self.shared.column_view, position, 8);
@@ -304,6 +343,40 @@ fn reveal_track_position(column_view: &gtk4::ColumnView, position: u32, attempts
     });
 }
 
+fn reveal_automatic_track_position(
+    shared: &Rc<super::track_list::Shared>,
+    position: u32,
+    attempts: u8,
+) {
+    let user_scrolling = shared
+        .last_scroll_activity
+        .get()
+        .is_some_and(|last| last.elapsed() < USER_SCROLL_GRACE);
+    if user_scrolling {
+        tracing::debug!(
+            position,
+            "automatic track centering suppressed by scroll activity"
+        );
+        return;
+    }
+    let n_rows = track_table_row_count(&shared.column_view);
+    if let Some((adjustment, value)) =
+        scroll_center::centered_scroll_target(&shared.column_view, n_rows, position)
+    {
+        adjustment.set_value(value);
+        return;
+    }
+    if attempts == 0 {
+        return;
+    }
+    let shared = Rc::downgrade(shared);
+    gtk4::glib::idle_add_local_once(move || {
+        if let Some(shared) = shared.upgrade() {
+            reveal_automatic_track_position(&shared, position, attempts - 1);
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
@@ -313,8 +386,32 @@ mod tests {
     use super::*;
 
     #[test]
+    fn nav_10a_playback_scroll_policy_distinguishes_user_intent() {
+        assert_eq!(
+            reveal_policy(CurrentTrackChange::PlaybackStarted, false),
+            TrackRevealPolicy::MarkerOnly
+        );
+        assert_eq!(
+            reveal_policy(CurrentTrackChange::ExplicitTransport, true),
+            TrackRevealPolicy::Center
+        );
+        assert_eq!(
+            reveal_policy(CurrentTrackChange::AutomaticAdvance, false),
+            TrackRevealPolicy::Center
+        );
+        assert_eq!(
+            reveal_policy(CurrentTrackChange::AutomaticAdvance, true),
+            TrackRevealPolicy::MarkerOnly
+        );
+        assert_eq!(
+            reveal_policy(CurrentTrackChange::ExplicitReveal, true),
+            TrackRevealPolicy::SelectFocusCenter
+        );
+    }
+
+    #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn nav_10_playback_marker_does_not_move_selection_or_viewport() {
+    fn nav_10a_row_activation_marker_does_not_move_selection_or_viewport() {
         gtk4::init().unwrap();
         let mut conn = Connection::open_in_memory().unwrap();
         reprise_core::db::migrate(&conn).unwrap();
@@ -373,6 +470,27 @@ mod tests {
         assert!((adjustment.value() - before).abs() < 0.5);
         assert!(track_list.shared.selection.is_selected(10));
         assert!(!track_list.shared.selection.is_selected(position));
+
+        let auto_position = 80;
+        let auto_track_id = track_list.shared.model.track_at(auto_position).unwrap().id;
+        track_list
+            .shared
+            .last_scroll_activity
+            .set(Some(std::time::Instant::now()));
+        track_list.update_current_track(auto_track_id, None, CurrentTrackChange::AutomaticAdvance);
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        assert!(
+            (adjustment.value() - before).abs() < 0.5,
+            "automatic advance must not fight an active scroll"
+        );
+
+        track_list.shared.last_scroll_activity.set(None);
+        track_list.update_current_track(auto_track_id, None, CurrentTrackChange::AutomaticAdvance);
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        assert!(
+            (adjustment.value() - before).abs() >= 0.5,
+            "idle automatic advance must center the new track"
+        );
 
         track_list.update_current_track(track_id, None, CurrentTrackChange::SessionRestore);
         while gtk4::glib::MainContext::default().iteration(false) {}

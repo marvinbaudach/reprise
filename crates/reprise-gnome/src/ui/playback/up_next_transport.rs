@@ -140,7 +140,18 @@ impl PlayerController {
             self.notify_queue_changed();
         }
         match next {
-            Some(id) => self.present_track(id, start),
+            Some(id) => self.present_track(
+                id,
+                start,
+                match reason {
+                    AdvanceReason::Automatic => {
+                        crate::ui::current_track_selection::CurrentTrackChange::AutomaticAdvance
+                    }
+                    AdvanceReason::Manual => {
+                        crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport
+                    }
+                },
+            ),
             None => {
                 // A *manual* "next" that ran off the end of an exhausted
                 // queue (`Repeat::Off` — often a stale queue restored from
@@ -190,7 +201,10 @@ impl PlayerController {
                     start_index,
                     "queue exhausted on manual next; refilled from the visible view"
                 );
-                self.play_track_id(id);
+                self.play_track_id_with_change(
+                    id,
+                    crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport,
+                );
                 true
             }
             None => false,
@@ -265,7 +279,10 @@ impl PlayerController {
         };
         self.current_up_next.set(current_pending);
         self.notify_queue_changed();
-        self.play_track_id(id);
+        self.play_track_id_with_change(
+            id,
+            crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport,
+        );
     }
 
     pub(in crate::ui) fn previous_with_up_next(&self) {
@@ -276,7 +293,10 @@ impl PlayerController {
         };
         self.current_up_next.set(current_pending);
         match previous {
-            Some(id) => self.play_track_id(id),
+            Some(id) => self.play_track_id_with_change(
+                id,
+                crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport,
+            ),
             None => self.reset_to_stopped(),
         }
     }
