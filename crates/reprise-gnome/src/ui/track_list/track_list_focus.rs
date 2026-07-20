@@ -17,9 +17,16 @@ fn target_for_page(visible_page: Option<&str>) -> TrackContentFocusTarget {
 
 fn focus_visible_page(page: &gtk4::Widget) -> bool {
     if let Some(scrolled) = page.downcast_ref::<gtk4::ScrolledWindow>() {
+        // GtkScrolledWindow's focus implementation prefers the scroll surface
+        // itself, even when a focusable child is requested explicitly. Keep
+        // that fallback available, but take it out of the focus chain while
+        // entering the visible page's actual content.
+        let scroller_was_focusable = scrolled.is_focusable();
+        scrolled.set_focusable(false);
         let focused_content = scrolled
             .child()
             .is_some_and(|content| focus_widget_or_descendant(&content));
+        scrolled.set_focusable(scroller_was_focusable);
         return focused_content || scrolled.grab_focus();
     }
     page.child_focus(gtk4::DirectionType::TabForward) || page.grab_focus()
@@ -99,6 +106,10 @@ mod tests {
         assert_eq!(
             gtk4::prelude::GtkWindowExt::focus(&window).as_ref(),
             Some(auto_clean.upcast_ref())
+        );
+        assert!(
+            missing_page.is_focusable(),
+            "scroller fallback must be restored"
         );
 
         window.close();
