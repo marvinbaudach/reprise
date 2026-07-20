@@ -202,16 +202,21 @@ impl StatsPeriod {
     ) -> PeriodRange;
 
     /// Dropdown contents, in display order.
-    pub fn available(conn: &Connection, now_year: i32) -> Result<Vec<StatsPeriod>, rusqlite::Error>;
+    pub fn available<Tz: chrono::TimeZone>(
+        conn: &Connection,
+        now_year: i32,
+        tz: &Tz,
+    ) -> Result<Vec<StatsPeriod>, rusqlite::Error>;
 }
 ```
 
 `AllTime` starts at the first recorded event; with `first_event_unix == None` it
 resolves to an empty bucket vector (see "Empty / sparse" in section 7).
-Dropdown order per spec: `"<Y> so far" / "<Y-1>" / "All time" / "Last 30 days"`,
-default = `YearToDate(current_year)`. `available` always offers the current year
-even on an empty DB (today's `populate_year_model` already does this — keep the
-behaviour).
+Dropdown order is `"<Y> so far"`, then every older local calendar year that
+contains at least one `listen_event` (newest first), followed by `"All time" /
+"Last 30 days"`; default = `YearToDate(current_year)`. `available` always offers
+the current year even on an empty DB. Untimestamped imported
+`tracks.play_count` values never create a selectable year.
 The bucket list is produced **in core**, not in the widget — that is what makes
 `stats_1_ribbon_axis_matches_period` a `[core]` test.
 
