@@ -10,8 +10,15 @@ pub(super) type MetadataCallback = Rc<RefCell<Option<Rc<dyn Fn(StatsMetadataTarg
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::ui) enum StatsMetadataTarget {
     Track(i64),
-    Album { track_id: i64, album: String },
-    Artist { track_id: i64, artist: String },
+    Album {
+        track_id: i64,
+        album: String,
+        album_artist: String,
+    },
+    Artist {
+        track_id: i64,
+        artist: String,
+    },
 }
 
 pub(super) fn button(

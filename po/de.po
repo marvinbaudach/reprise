@@ -340,6 +340,10 @@ msgstr "Die Datenbank konnte nicht zum Entfernen geöffnet werden"
 msgid "Could not start the removal worker"
 msgstr "Das Entfernen konnte nicht gestartet werden"
 
+#: crates/reprise-gnome/src/ui/strings.rs:194
+msgid "Track is no longer in the library"
+msgstr "Der Titel ist nicht mehr in der Musiksammlung"
+
 #: crates/reprise-gnome/src/ui/strings.rs:185
 #, rust-format
 msgid ""

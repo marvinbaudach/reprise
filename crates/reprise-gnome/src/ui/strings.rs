@@ -191,6 +191,7 @@ pub const DELETE_TRACKS_TRASH: &str = N_!("Move to Trash");
 pub const DELETE_DATABASE_UNAVAILABLE: &str =
     N_!("Could not open the library database for removal");
 pub const DELETE_WORKER_FAILED: &str = N_!("Could not start the removal worker");
+pub const TRACK_NOT_IN_LIBRARY: &str = N_!("Track is no longer in the library");
 
 pub fn remove_confirmation_body(count: usize) -> String {
     let count_text = count.to_string();

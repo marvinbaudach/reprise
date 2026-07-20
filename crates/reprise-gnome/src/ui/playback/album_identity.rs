@@ -1,4 +1,4 @@
-//! Borrow-safe loaded-album identity queries shared by artist navigation and GRID-5.
+//! Borrow-safe loaded metadata identities shared by universal navigation.
 
 use super::player_controller::PlayerController;
 
@@ -12,18 +12,14 @@ impl PlayerController {
     /// track is loaded or the resolved artist is blank. The Artists view
     /// groups by this value rather than by the display track artist.
     pub fn current_track_album_artist(&self) -> Option<String> {
-        let id = self.now_playing.borrow().as_ref().map(|track| track.id)?;
-        let artist = {
-            let conn = self.conn.borrow();
-            reprise_core::queries::query_track_album_artist(&conn, id)
-                .inspect_err(|error| {
-                    tracing::warn!(%error, id, "album-artist deep-link lookup failed");
-                })
-                .ok()
-                .flatten()?
+        let now_playing = self.now_playing.borrow();
+        let track = now_playing.as_ref()?;
+        let effective = if track.album_artist.trim().is_empty() {
+            &track.artist
+        } else {
+            &track.album_artist
         };
-        let trimmed = artist.trim();
-        (!trimmed.is_empty()).then(|| trimmed.to_string())
+        (!effective.trim().is_empty()).then(|| effective.trim().to_string())
     }
 
     /// Clone-out album identity for album-card toggle and reveal decisions.
@@ -33,9 +29,8 @@ impl PlayerController {
             let track = now_playing.as_ref()?;
             (track.album.clone(), track.artist.clone())
         };
-        // A track removed from the database can still be loaded. Preserve an
-        // identity in that case so GRID-5 attempts the lookup and reaches its
-        // required NAV-9b fallback instead of silently becoming a no-op.
+        // A track removed from the database can still be loaded. Its complete
+        // player-owned snapshot keeps album navigation deterministic.
         let album_artist = self.current_track_album_artist().unwrap_or(track_artist);
         Some((album, album_artist))
     }

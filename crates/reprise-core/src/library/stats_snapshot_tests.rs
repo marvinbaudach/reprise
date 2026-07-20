@@ -64,7 +64,7 @@ fn history_4_top_track_uses_the_latest_listen_snapshot_after_tag_edits() {
     );
     insert_event(&conn, 1, timestamp(2026, 1, 2, 12, 0), 100_000);
     conn.execute(
-        "UPDATE tracks SET title='New title', album='New album' WHERE id=1",
+        "UPDATE tracks SET title='New title', album='New album', album_artist='Album Artist' WHERE id=1",
         [],
     )
     .unwrap();
@@ -74,6 +74,7 @@ fn history_4_top_track_uses_the_latest_listen_snapshot_after_tag_edits() {
     assert_eq!(snapshot.top_tracks[0].play_count, 2);
     assert_eq!(snapshot.top_tracks[0].title, "New title");
     assert_eq!(snapshot.top_tracks[0].album, "New album");
+    assert_eq!(snapshot.top_tracks[0].effective_artist, "Album Artist");
 }
 
 #[test]

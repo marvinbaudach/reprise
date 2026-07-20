@@ -109,6 +109,7 @@ impl PlayerController {
             queue.set_repeat(repeat);
             queue.set_shuffle(shuffled);
         }
+        self.deferred_queue_purge_id.set(None);
         *self.play_origin.borrow_mut() = None;
         // `now_playing` must be cleared BEFORE the queue notify below: the
         // notify chain synchronously rebuilds a visible Queue view through

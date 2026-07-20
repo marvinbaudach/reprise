@@ -1758,6 +1758,20 @@ deterministisch und hoch-konfident, nie „ohne Review".
   ändert ausschließlich diese Liste. Der langlebige Hörverlauf folgt immer
   BROWSE-6.
 
+- **BROWSE-8** [aktiv] [gtk] — **Katalog-Löschung unterbricht den geladenen
+  Track nicht.** Wird der aktuell geladene Track entfernt, getrasht oder durch
+  Wartung hart gelöscht, laufen sein Player-eigener Metadaten-Snapshot und die
+  bereits geöffnete Audiodatei bis zum natürlichen oder expliziten
+  Transportwechsel weiter. Alle zukünftigen Vorkommen gelöschter IDs
+  verschwinden sofort aus Queue und Up Next; Repeat One kann einen gelöschten
+  Track nicht erneut starten. Nach dem Wechsel wird auch der geladene
+  Queue-Tombstone entfernt. Ein Track-Link auf eine nicht mehr vorhandene ID
+  bleibt am Ausgangsort und erklärt dies per Toast; Album- und Interpret-Links
+  öffnen weiterhin den Snapshot-Scope, jedoch ohne Phantom-Anker. Nach einer
+  Löschserie bleiben überlebende ausgewählte Zeilen fokussiert; andernfalls
+  fällt Auswahl und Fokus auf die nächste, am Listenende auf die vorherige
+  Zeile und bei leerer Liste auf den stabilen Content-Container.
+
 ---
 
 Wenn beim Testen ein Fall auftaucht, den keine Regel deckt: Regel ergänzen

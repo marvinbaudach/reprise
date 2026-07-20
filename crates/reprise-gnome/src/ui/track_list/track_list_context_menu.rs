@@ -695,7 +695,7 @@ pub(in crate::ui) fn handle_remove_from_library(shared: &Rc<Shared>, ids: &[i64]
                 shared,
                 &strings::tracks_removed_from_library_toast(removed.len()),
             );
-            reload(shared);
+            crate::ui::delete_tracks::reload_after_catalog_delete(shared);
         }
         Err(error) => {
             tracing::error!(%error, "context menu: failed to remove tracks from library");

@@ -1,7 +1,6 @@
 //! Tests for queue_transport.rs (extracted to keep the source under the 800-line gate).
 
 use super::*;
-use reprise_core::queue::Repeat;
 
 /// Context queue seeded with `ids`, currently playing the one at
 /// `start_index` — the ordinary "playing from the Library view" shape.
@@ -37,73 +36,19 @@ fn que_8_drag_from_continuing_materialises_one_entry() {
 }
 
 #[test]
-fn purging_the_playing_context_track_plays_the_next_surviving_one() {
-    let mut queue = context(&[10, 20, 30], 0);
-    let mut up_next = pending(&[]);
-    let mut current_pending = None;
-    // `purge_queue_ids` runs this first; it already steps the cursor onto
-    // the next survivor, which is why the successor must NOT advance again.
-    queue.remove_ids(&[10]);
+fn browse_8_loaded_deleted_track_is_deferred_while_future_entries_are_purged() {
+    let plan = queue_purge_plan(&[10, 20, 10, 30], Some(10));
 
-    let next = successor_after_purge(&mut queue, &mut up_next, &mut current_pending, false);
-
-    assert_eq!(next, Some(20));
-    assert_eq!(current_pending, None);
+    assert_eq!(plan.immediate, vec![20, 30]);
+    assert_eq!(plan.after_loaded_track, Some(10));
 }
 
 #[test]
-fn purging_the_playing_context_track_prefers_a_pending_up_next_track() {
-    let mut queue = context(&[10, 20], 0);
-    let mut up_next = pending(&[99]);
-    let mut current_pending = None;
-    queue.remove_ids(&[10]);
+fn queue_purge_without_a_loaded_deleted_track_is_immediate() {
+    let plan = queue_purge_plan(&[20, 30], Some(10));
 
-    let next = successor_after_purge(&mut queue, &mut up_next, &mut current_pending, false);
-
-    assert_eq!(next, Some(99));
-    assert_eq!(current_pending, Some(99));
-    assert!(up_next.is_empty());
-}
-
-#[test]
-fn purging_the_playing_up_next_track_steps_the_context_forward() {
-    // The context cursor still sits on 10 — the track that played before
-    // the up-next interjection — so resuming it would replay it.
-    let mut queue = context(&[10, 20], 0);
-    let mut up_next = pending(&[]);
-    let mut current_pending = None;
-
-    let next = successor_after_purge(&mut queue, &mut up_next, &mut current_pending, true);
-
-    assert_eq!(next, Some(20));
-    assert_eq!(current_pending, None);
-}
-
-#[test]
-fn purging_the_last_surviving_track_stops_playback() {
-    let mut queue = context(&[10], 0);
-    let mut up_next = pending(&[]);
-    let mut current_pending = None;
-    queue.remove_ids(&[10]);
-
-    let next = successor_after_purge(&mut queue, &mut up_next, &mut current_pending, false);
-
-    assert_eq!(next, None);
-}
-
-#[test]
-fn purging_the_playing_track_under_repeat_one_moves_on_instead_of_looping() {
-    // Repeat::One cannot repeat a track that no longer exists, so the
-    // deleted track's successor wins over the repeat mode.
-    let mut queue = context(&[10, 20], 0);
-    queue.set_repeat(Repeat::One);
-    let mut up_next = pending(&[]);
-    let mut current_pending = None;
-    queue.remove_ids(&[10]);
-
-    let next = successor_after_purge(&mut queue, &mut up_next, &mut current_pending, false);
-
-    assert_eq!(next, Some(20));
+    assert_eq!(plan.immediate, vec![20, 30]);
+    assert_eq!(plan.after_loaded_track, None);
 }
 
 #[test]

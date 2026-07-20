@@ -15,7 +15,7 @@
 
 use std::rc::Rc;
 
-use crate::ui::player_controller::{PlayerController, StartPlayback};
+use crate::ui::player_controller::PlayerController;
 use crate::ui::track_list::queue_sections::{compose_virtual, QueueViewModel, VirtualContextTail};
 use crate::ui::up_next_transport::AdvanceReason;
 use reprise_core::media_integration::MprisPlaybackStatus;
@@ -30,37 +30,28 @@ enum ToggleAction {
     Noop,
 }
 
-/// The track that should take over when the *currently playing* one was
-/// hard-deleted out from under the pipeline (see `purge_queue_ids`). Runs
-/// AFTER the purge has already mutated both queues, which is the one thing
-/// that keeps it from mirroring `up_next_transport.rs`'s `next_target`:
-///
-/// - Pending Up Next wins, exactly as it would on a natural end-of-track.
-/// - Otherwise the context takes over, and *how* depends on where the deleted
-///   track came from. Playing from the context: `Queue::remove_ids` has
-///   already stepped the cursor onto the next survivor, so `current()` IS the
-///   successor and advancing again would skip a track. Playing from Up Next:
-///   the cursor still sits on the context track that played *before* the
-///   interjection, so it must step forward like `next_target` does.
-///
-/// Repeat mode deliberately gets no say: `Repeat::One` cannot loop a track
-/// that no longer exists, and `advance_auto` still honours `Repeat::All` for
-/// the Up Next case.
-fn successor_after_purge(
-    context: &mut Queue,
-    pending: &mut UpNextQueue,
-    current_pending: &mut Option<i64>,
-    was_playing_from_up_next: bool,
-) -> Option<i64> {
-    if let Some(next) = pending.pop_front() {
-        *current_pending = Some(next);
-        return Some(next);
+#[derive(Debug, PartialEq, Eq)]
+struct QueuePurgePlan {
+    immediate: Vec<i64>,
+    after_loaded_track: Option<i64>,
+}
+
+/// Separates a loaded catalog tombstone from every future deletion. The
+/// loaded id stays as the queue playhead until playback leaves it, which
+/// keeps ordinary next/previous/gapless calculations exact. Other ids are
+/// purged immediately; duplicate slots of the loaded id are handled by
+/// `Queue::remove_ids_except_current`.
+fn queue_purge_plan(ids: &[i64], loaded: Option<i64>) -> QueuePurgePlan {
+    let after_loaded_track = loaded.filter(|id| ids.contains(id));
+    let mut immediate = Vec::new();
+    for id in ids.iter().copied() {
+        if Some(id) != after_loaded_track && !immediate.contains(&id) {
+            immediate.push(id);
+        }
     }
-    *current_pending = None;
-    if was_playing_from_up_next {
-        context.advance_auto()
-    } else {
-        context.current()
+    QueuePurgePlan {
+        immediate,
+        after_loaded_track,
     }
 }
 
@@ -287,6 +278,7 @@ impl PlayerController {
     ) {
         self.queue.borrow_mut().set_tracks(ids, start_index);
         self.current_up_next.set(None);
+        self.deferred_queue_purge_id.set(None);
 
         let queue_len = self.queue.borrow().len();
         // An empty seed (nothing to play) resets to stopped below and must
@@ -318,7 +310,13 @@ impl PlayerController {
     /// track, pending manual entries, and virtual metadata for the snapshot's
     /// play-order tail. The tail provider clones only requested windows.
     pub(in crate::ui) fn queue_view_model(self: &Rc<Self>) -> QueueViewModel {
-        let now_playing = self.now_playing.borrow().as_ref().map(|np| np.id);
+        let deferred = self.deferred_queue_purge_id.get();
+        let now_playing = self
+            .now_playing
+            .borrow()
+            .as_ref()
+            .map(|np| np.id)
+            .filter(|id| Some(*id) != deferred);
         let play_next = self.up_next.borrow().ids().to_vec();
         let context_count = self.queue.borrow().remaining_len();
         let origin_label = self
@@ -545,35 +543,41 @@ impl PlayerController {
     /// and so were never deleted. A no-op for an empty slice (no `queue`
     /// borrow taken at all).
     ///
-    /// Purging the models is only half the job: when the deleted id is the
-    /// track the pipeline is *currently playing*, this also hands playback to
-    /// its successor (`successor_after_purge`), or stops when nothing
-    /// survives. Nothing else would — deleting never attempts a `play()`, so
-    /// `handle_unplayable_track`'s skip path can't fire, and the audio itself
-    /// is unaffected by the file going away (trashing is a rename, and even a
-    /// real unlink leaves an open descriptor's inode playable). Without this,
-    /// a trashed track keeps playing to its end.
+    /// A loaded deleted track is intentionally different: its player-owned
+    /// metadata and already-open audio continue until a natural or explicit
+    /// transport transition. The context retains exactly its current slot as
+    /// a tombstone so next/previous and gapless prediction keep their normal
+    /// cursor semantics; the Queue view omits that unresolvable row. Every
+    /// duplicate/future occurrence is still removed immediately.
     pub(in crate::ui) fn purge_queue_ids(&self, ids: &[i64]) {
         if ids.is_empty() {
             return;
         }
-        // Read before the purge below clears `current_up_next`: which track
-        // the user is actually hearing, and whether it came from Up Next
-        // rather than the playback context. `now_playing` is the loaded
-        // track's identity (the same source `present_track` compares its
-        // `previous_id` against); the borrow ends inside this statement.
         let playing = self.now_playing.borrow().as_ref().map(|track| track.id);
-        let playing_purged = playing.is_some_and(|id| ids.contains(&id));
-        let played_from_up_next = playing_purged && self.current_up_next.get() == playing;
-
-        let context_changed = self.queue.borrow_mut().remove_ids(ids);
+        let plan = queue_purge_plan(ids, playing);
+        let playing_from_up_next = plan.after_loaded_track.is_some()
+            && self.current_up_next.get() == plan.after_loaded_track;
+        let context_changed = if playing_from_up_next {
+            self.queue.borrow_mut().remove_ids(ids)
+        } else {
+            let mut queue = self.queue.borrow_mut();
+            let immediate = queue.remove_ids(&plan.immediate);
+            let duplicates = plan
+                .after_loaded_track
+                .is_some_and(|id| queue.remove_ids_except_current(&[id]));
+            immediate || duplicates
+        };
         let pending_changed = self.up_next.borrow_mut().remove_ids(ids);
         if self
             .current_up_next
             .get()
             .is_some_and(|id| ids.contains(&id))
+            && !playing_from_up_next
         {
             self.current_up_next.set(None);
+        }
+        if let Some(id) = plan.after_loaded_track {
+            self.deferred_queue_purge_id.set(Some(id));
         }
         if context_changed || pending_changed {
             tracing::info!(
@@ -585,57 +589,16 @@ impl PlayerController {
             // pending counter), so a context-only purge must refresh too
             // (adversarial review, queue+nav plan, finding 3).
             self.notify_queue_changed();
-        }
-        // The loaded track itself was purged: the successor logic below
-        // (merged from feat/queue-dnd) both skips playback ahead AND keeps
-        // the composite Queue view's Now Playing row from pointing at a
-        // dead id (adversarial review finding 4) — `present_track` reloads
-        // `now_playing`, the stop path clears it.
-        if !playing_purged {
-            return;
-        }
-        // The pipeline is still playing the deleted file — trashing is a
-        // rename, and an already-open descriptor keeps its inode alive — so
-        // nothing stops on its own. Take over: hand playback to the
-        // successor, or stop when nothing survives.
-        let before = self.up_next.borrow().len();
-        let mut current_pending = self.current_up_next.get();
-        let successor = {
-            let mut context = self.queue.borrow_mut();
-            let mut pending = self.up_next.borrow_mut();
-            successor_after_purge(
-                &mut context,
-                &mut pending,
-                &mut current_pending,
-                played_from_up_next,
-            )
-        };
-        self.current_up_next.set(current_pending);
-        if self.up_next.borrow().len() != before {
+        } else if plan.after_loaded_track.is_some() {
+            // The Queue projection changed even when there were no future
+            // entries to remove: its dead Now Playing row is now omitted.
             self.notify_queue_changed();
         }
-        match successor {
-            Some(next) => {
-                tracing::info!(
-                    deleted = ?playing,
-                    next,
-                    "the playing track was deleted; skipping to its successor"
-                );
-                self.present_track(
-                    next,
-                    StartPlayback::Yes,
-                    crate::ui::current_track_selection::CurrentTrackChange::AutomaticAdvance,
-                );
-            }
-            None => {
-                tracing::info!(
-                    deleted = ?playing,
-                    "the playing track was deleted and nothing follows it; stopping"
-                );
-                self.consecutive_skips.set(0);
-                self.failure_skip_limit.set(0);
-                self.reset_to_stopped();
-            }
+        if let Some(id) = plan.after_loaded_track {
+            tracing::info!(
+                deleted = id,
+                "loaded track left playing from its owned snapshot after catalog deletion"
+            );
         }
     }
 }
