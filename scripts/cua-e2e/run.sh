@@ -206,7 +206,7 @@ run_fresh_install_scenario() {
 
 run_populated_library_scenario() {
   local fixture_dir="$CUA_E2E_SCRATCH_ROOT/fixture-music"
-  local initial_path missing_path results_path
+  local initial_path missing_path progress_path results_path
 
   echo "[cua-e2e] populated library: fixture scan -> semantic search"
   mkdir -p "$fixture_dir"
@@ -225,6 +225,16 @@ run_populated_library_scenario() {
   assert_snapshot_absent "$initial_path" "Tracks"
   assert_snapshot_absent "$initial_path" "Albums"
   assert_snapshot_absent "$initial_path" "Artists"
+
+  echo "[cua-e2e] nav-7-rescan-progress: menu rescan keeps content and exposes progress"
+  cua_activate_main_menu_item \
+    "$APP_PID" "$WINDOW_ID" "Rescan Library" nav-7-rescan-progress
+  progress_path=$(wait_for_label \
+    "$APP_PID" "$WINDOW_ID" "Scanning library" nav-7-rescan-progress-visible)
+  assert_snapshot_contains "$progress_path" "Search all fields"
+  wait_for_label_absent \
+    "$APP_PID" "$WINDOW_ID" "Scanning library" nav-7-rescan-progress-finished \
+    >/dev/null
 
   # This is an isolated copy below the run's mktemp root, never user music.
   # Removing it exercises the real watcher and makes the Issues surface part
@@ -343,6 +353,29 @@ run_library_doctor_scenario() {
   wait_for_label "$APP_PID" "$WINDOW_ID" "Enable Library Doctor" doctor-plugin >/dev/null
   cua_click_label "$APP_PID" "$WINDOW_ID" "Enable Library Doctor" doctor-enable
   wait_for_label "$APP_PID" "$WINDOW_ID" "Run Scan Now" doctor-run-ready >/dev/null
+
+  # Enabling the module happens in the modal Preferences window. Close that
+  # transient and enter the real Doctor utility page before proving that the
+  # already-selected Music row remains an absolute navigation target.
+  cua_hotkey "$APP_PID" "$WINDOW_ID" doctor-enable-close ctrl w
+  wait_for_label "$APP_PID" "$WINDOW_ID" "Search all fields" doctor-enable-closed >/dev/null
+  cua_activate_main_menu_item \
+    "$APP_PID" "$WINDOW_ID" "Library Doctor" doctor-page-entry
+  wait_for_label "$APP_PID" "$WINDOW_ID" "Run Scan Now" doctor-page-ready >/dev/null
+
+  echo "[cua-e2e] browse-3-sidebar-escapes-doctor: active Music is an absolute target"
+  # cua-driver currently reports every descendant of this nested utility
+  # page at the native window's screen origin (200,50). The runner fixes the
+  # window at 1200x800, so the Music-row centre at local (110,115) is the
+  # deterministic screen point (310,165).
+  cua_click_screen_point \
+    "$APP_PID" "$WINDOW_ID" 310 165 browse-3-sidebar-escapes-doctor
+  root_path=$(wait_for_label \
+    "$APP_PID" "$WINDOW_ID" "Search all fields" browse-3-library-restored)
+  assert_snapshot_absent "$root_path" "Run Scan Now"
+  cua_activate_main_menu_item \
+    "$APP_PID" "$WINDOW_ID" "Library Doctor" browse-3-doctor-reopen
+  wait_for_label "$APP_PID" "$WINDOW_ID" "Run Scan Now" doctor-run-reopened >/dev/null
   cua_click_label "$APP_PID" "$WINDOW_ID" "Run Scan Now" doctor-run
 
   root_path=$(wait_for_label \

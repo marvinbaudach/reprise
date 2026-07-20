@@ -11,6 +11,11 @@ use super::strings;
 
 const PULSE_INTERVAL: Duration = Duration::from_millis(100);
 const PULSE_STEP: f64 = 0.08;
+const MIN_VISIBLE_TIME: Duration = Duration::from_millis(700);
+
+fn remaining_visible_time(visible_for: Duration) -> Option<Duration> {
+    (visible_for < MIN_VISIBLE_TIME).then(|| MIN_VISIBLE_TIME - visible_for)
+}
 
 type OnCancel = Rc<dyn Fn()>;
 type OnCancelSlot = Rc<RefCell<Option<OnCancel>>>;
@@ -113,6 +118,8 @@ struct ScanProgressWidgets {
     detail: gtk4::Label,
     cancel: gtk4::Button,
     pulse_generation: Rc<Cell<u64>>,
+    visibility_generation: Rc<Cell<u64>>,
+    visible_since: Cell<Option<std::time::Instant>>,
     phase: Rc<Cell<DisplayPhase>>,
     on_cancel: OnCancelSlot,
 }
@@ -234,6 +241,8 @@ impl ScanProgressView {
                 detail,
                 cancel,
                 pulse_generation: Rc::new(Cell::new(0)),
+                visibility_generation: Rc::new(Cell::new(0)),
+                visible_since: Cell::new(None),
                 phase: Rc::new(Cell::new(DisplayPhase::Hidden)),
                 on_cancel,
             }),
@@ -255,6 +264,7 @@ impl ScanProgressView {
     }
 
     pub(in crate::ui) fn show(&self, progress: &ScanProgress) {
+        self.begin_visibility();
         let state = view_state(progress);
         self.inner
             .title
@@ -312,6 +322,7 @@ impl ScanProgressView {
     /// independent of the `ScanProgress` enum. Used for the cover download
     /// batch whose progress model (`BatchProgress`) lives in the UI layer.
     pub(in crate::ui) fn show_batch(&self, title: &str, detail: &str, fraction: f64) {
+        self.begin_visibility();
         self.cancel_pulsing();
         self.inner.title.set_label(title);
         self.inner.spinner.set_spinning(true);
@@ -333,6 +344,7 @@ impl ScanProgressView {
     }
 
     pub(in crate::ui) fn show_unavailable(&self, root: &Path) {
+        self.begin_visibility();
         let state = unavailable_state(root);
         self.cancel_pulsing();
         self.inner.phase.set(DisplayPhase::Hidden);
@@ -352,9 +364,41 @@ impl ScanProgressView {
         self.cancel_pulsing();
         self.inner.phase.set(DisplayPhase::Hidden);
         self.inner.spinner.set_spinning(false);
-        self.inner.revealer.set_reveal_child(false);
         self.inner.cancel.set_visible(false);
-        self.inner.progress.set_fraction(0.0);
+        let Some(visible_since) = self.inner.visible_since.take() else {
+            // A hide is already pending (or this view was never shown).
+            // Repeated completion notifications must not bypass the original
+            // minimum-visible deadline.
+            return;
+        };
+        let delay = remaining_visible_time(visible_since.elapsed());
+        let generation = self.inner.visibility_generation.get();
+        if let Some(delay) = delay {
+            let revealer = self.inner.revealer.downgrade();
+            let visibility_generation = self.inner.visibility_generation.clone();
+            glib::timeout_add_local_once(delay, move || {
+                if visibility_generation.get() == generation {
+                    if let Some(revealer) = revealer.upgrade() {
+                        revealer.set_reveal_child(false);
+                    }
+                }
+            });
+        } else {
+            self.inner.revealer.set_reveal_child(false);
+        }
+    }
+
+    fn begin_visibility(&self) {
+        self.inner
+            .visibility_generation
+            .set(self.inner.visibility_generation.get().wrapping_add(1));
+        if self.inner.phase.get() == DisplayPhase::Hidden
+            || self.inner.visible_since.get().is_none()
+        {
+            self.inner
+                .visible_since
+                .set(Some(std::time::Instant::now()));
+        }
     }
 
     fn start_pulsing(&self) -> bool {
@@ -485,7 +529,10 @@ mod tests {
     use gtk4::prelude::*;
     use reprise_core::library::scanner::ScanProgress;
 
-    use super::{unavailable_state, view_state, ProgressMode, ScanProgressView};
+    use super::{
+        remaining_visible_time, unavailable_state, view_state, ProgressMode, ScanProgressView,
+        MIN_VISIBLE_TIME,
+    };
 
     #[test]
     fn unavailable_root_replaces_progress_with_an_honest_mount_status() {
@@ -542,6 +589,16 @@ mod tests {
     }
 
     #[test]
+    fn nav_7_fast_rescan_progress_remains_perceivable() {
+        assert_eq!(
+            remaining_visible_time(Duration::from_millis(200)),
+            Some(Duration::from_millis(500))
+        );
+        assert_eq!(remaining_visible_time(Duration::from_millis(700)), None);
+        assert_eq!(remaining_visible_time(Duration::from_secs(2)), None);
+    }
+
+    #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn widgets_reveal_progress_and_hide_after_finish() {
         if gtk4::init().is_err() {
@@ -562,9 +619,18 @@ mod tests {
         assert!(view.inner.cancel.is_focusable());
 
         view.finish();
-        assert!(!view.inner.revealer.reveals_child());
+        view.finish();
+        assert!(view.inner.revealer.reveals_child());
         assert!(!view.inner.spinner.is_spinning());
         assert!(!view.inner.cancel.is_visible());
+        let main_loop = gtk4::glib::MainLoop::new(None, false);
+        let quit = main_loop.clone();
+        gtk4::glib::timeout_add_local_once(
+            MIN_VISIBLE_TIME + Duration::from_millis(20),
+            move || quit.quit(),
+        );
+        main_loop.run();
+        assert!(!view.inner.revealer.reveals_child());
     }
 
     #[test]
