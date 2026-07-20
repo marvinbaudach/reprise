@@ -6,14 +6,33 @@ use std::time::Duration;
 
 use reprise_core::library::settings::{TrackTransition, CROSSFADE_SECONDS_DEFAULT};
 use reprise_core::playback::{
-    AudioEffects, PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent,
+    AudioEffects, PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent, SpectrumFrame,
+    SPECTRUM_BAND_COUNT,
 };
 
 use crate::crossfade::{CrossfadeEngine, IncomingSlot, Transition};
 use crate::gapless::{connect_about_to_finish, note_stream_start, HandoffFlag, NextUri};
 use crate::player_effects::{
-    apply_audio_filter, replace_audio_filter, update_existing_audio_filter,
+    apply_audio_filter, replace_audio_filter, set_playbin_spectrum_messages,
+    update_existing_audio_filter,
 };
+
+pub(super) fn spectrum_frame_from_structure(
+    structure: &gst::StructureRef,
+) -> Option<SpectrumFrame> {
+    if structure.name() != "spectrum" {
+        return None;
+    }
+    let magnitudes = structure.get::<gst::List>("magnitude").ok()?;
+    if magnitudes.len() != SPECTRUM_BAND_COUNT {
+        return None;
+    }
+    let mut decibels = [0.0_f32; SPECTRUM_BAND_COUNT];
+    for (slot, magnitude) in decibels.iter_mut().zip(magnitudes.iter()) {
+        *slot = magnitude.get::<f32>().ok()?;
+    }
+    Some(SpectrumFrame::from_decibels(decibels))
+}
 
 /// Default playback volume before the user ever moves the slider — full scale,
 /// matching `playbin3`'s own `volume` property default. Also the value the
@@ -82,6 +101,7 @@ pub struct Player {
     /// The incoming secondary pipeline during a crossfade, so an abort can
     /// silence it immediately. See `crossfade.rs`.
     incoming: IncomingSlot,
+    spectrum_enabled: Arc<AtomicBool>,
 }
 
 /// Builds a fresh `playbin3` element with the `REPRISE_AUDIO_SINK` override
@@ -179,6 +199,13 @@ pub(crate) fn attach_bus_watch(
                 // by the `about-to-finish` handler) turns into `AdvancedToNext`.
                 note_stream_start(&handoff_pending, on_event.as_ref());
             }
+            MessageView::Element(element) => {
+                if let Some(structure) = element.structure() {
+                    if let Some(frame) = spectrum_frame_from_structure(structure) {
+                        (*on_event)(PlayerEvent::Spectrum(frame));
+                    }
+                }
+            }
             MessageView::Error(e) => {
                 tracing::error!(error = %e.error(), debug = ?e.debug(), "GStreamer bus error");
                 (*on_event)(PlayerEvent::Error(e.error().to_string()));
@@ -216,6 +243,7 @@ impl Player {
         let user_volume = Arc::new(Mutex::new(DEFAULT_VOLUME));
         let fade_generation = Arc::new(AtomicU64::new(0));
         let incoming: IncomingSlot = Arc::new(Mutex::new(None));
+        let spectrum_enabled = Arc::new(AtomicBool::new(false));
 
         let playbin = build_playbin(
             &effects.lock().unwrap_or_else(PoisonError::into_inner),
@@ -244,6 +272,7 @@ impl Player {
             user_volume: user_volume.clone(),
             generation: fade_generation.clone(),
             incoming: incoming.clone(),
+            spectrum_enabled: spectrum_enabled.clone(),
         };
 
         // Position ticker: report position + duration every 500 ms while
@@ -290,6 +319,7 @@ impl Player {
             user_volume,
             fade_generation,
             incoming,
+            spectrum_enabled,
         })
     }
 
@@ -383,6 +413,7 @@ impl Player {
             self.handoff_pending.clone(),
             self.transition.clone(),
         )?;
+        set_playbin_spectrum_messages(&new_playbin, self.spectrum_enabled.load(Ordering::SeqCst))?;
         let new_watch = attach_bus_watch(
             &new_playbin,
             self.on_event.clone(),
@@ -525,7 +556,24 @@ impl PlaybackBackend for Player {
             return Ok(());
         }
         replace_audio_filter(&playbin, &effects, apply_audio_filter)?;
+        set_playbin_spectrum_messages(&playbin, self.spectrum_enabled.load(Ordering::SeqCst))?;
         *current_effects = effects;
+        Ok(())
+    }
+
+    fn set_spectrum_enabled(&self, enabled: bool) -> Result<(), PlaybackError> {
+        let playbin = self.playbin.lock().unwrap_or_else(PoisonError::into_inner);
+        set_playbin_spectrum_messages(&playbin, enabled)?;
+        drop(playbin);
+        if let Some(incoming) = self
+            .incoming
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+        {
+            set_playbin_spectrum_messages(incoming, enabled)?;
+        }
+        self.spectrum_enabled.store(enabled, Ordering::SeqCst);
         Ok(())
     }
 
