@@ -4,6 +4,7 @@ description = "Linux platform backends for Reprise: GStreamer playback, MPRIS me
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [dependencies]

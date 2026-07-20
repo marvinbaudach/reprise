@@ -41,6 +41,7 @@ require_executable scripts/tests/performance-runtime-baseline.sh
 require_executable scripts/tests/readme-showcase.sh
 require_executable scripts/tests/accessibility-semantics.sh
 require_executable scripts/tests/input-parity.sh
+require_executable scripts/tests/msrv.sh
 require_executable scripts/tests/weekly-portfolio-sync.sh
 require_executable scripts/weekly-portfolio-sync.sh
 require_executable .githooks/pre-push
@@ -54,10 +55,13 @@ require_pattern 'cargo audit' scripts/check-merge-readiness.sh
 require_pattern 'check-architecture.sh' scripts/check-merge-readiness.sh
 require_pattern 'check-accessibility-semantics.sh' scripts/check-merge-readiness.sh
 require_pattern 'check-input-parity.sh' scripts/check-merge-readiness.sh
+require_pattern 'scripts/tests/msrv.sh' scripts/check-release.sh
 require_pattern 'check-motion-tokens.sh' scripts/check-merge-readiness.sh
 require_pattern 'check-display-tests.sh --css' scripts/check-merge-readiness.sh
 require_pattern 'mode=css' scripts/check-display-tests.sh
 require_pattern 'display_test_passed' scripts/check-display-tests.sh
+require_pattern 'config_home=\$\(mktemp -d\)' scripts/check-display-tests.sh
+require_pattern 'XDG_CONFIG_HOME="\$config_home"' scripts/check-display-tests.sh
 require_pattern 'Frontend lint' scripts/check-architecture.sh
 require_pattern 'composition root must stay below 600' scripts/check-architecture.sh
 require_pattern 'UI orchestrators must stay below 600' scripts/check-architecture.sh
