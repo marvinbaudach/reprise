@@ -189,8 +189,13 @@ fn ambiguous_duplicates_are_not_guessed() {
     let tmp = tempfile::tempdir().unwrap();
     let path_a = fixture_copy(tmp.path(), "a.flac");
     tag_file(&path_a, "Duplicate Song", "Some Artist", "Some Album");
-    let path_b = fixture_copy(tmp.path(), "b.flac");
-    tag_file(&path_b, "Duplicate Song", "Some Artist", "Some Album");
+    let path_b = tmp.path().join("b.flac");
+    std::fs::copy(&path_a, &path_b).unwrap();
+    assert_eq!(
+        std::fs::metadata(&path_a).unwrap().len(),
+        std::fs::metadata(&path_b).unwrap().len(),
+        "duplicate fixtures must have the same fingerprint size"
+    );
 
     let mut conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
@@ -198,17 +203,17 @@ fn ambiguous_duplicates_are_not_guessed() {
     assert_eq!(r1.added, 2);
     assert_eq!(row_count(&conn), 2);
 
-    std::fs::remove_file(&path_a).unwrap();
-    std::fs::remove_file(&path_b).unwrap();
     let new_dir = tmp.path().join("new_subdir");
     std::fs::create_dir(&new_dir).unwrap();
     let new_path = new_dir.join("c.flac");
-    std::fs::copy(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac"),
-        &new_path,
-    )
-    .unwrap();
-    tag_file(&new_path, "Duplicate Song", "Some Artist", "Some Album");
+    std::fs::copy(&path_a, &new_path).unwrap();
+    assert_eq!(
+        std::fs::metadata(&path_a).unwrap().len(),
+        std::fs::metadata(&new_path).unwrap().len(),
+        "relocated fixture must preserve the ambiguous fingerprint size"
+    );
+    std::fs::remove_file(&path_a).unwrap();
+    std::fs::remove_file(&path_b).unwrap();
 
     let r2 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r2.moved, 0);
