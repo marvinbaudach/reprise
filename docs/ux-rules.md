@@ -1463,6 +1463,19 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
   aktueller, geeigneter Bibliothekstitel. Leere, laufende, pausierte,
   fehlgeschlagene und vollständige Zustände bleiben unterscheidbar; „Reanalyze
   library" verlangt wegen der Rechenlast eine Bestätigung.
+- **AC-7** [aktiv] [core] [gtk] — „Song Visuals" ist ein standardmäßig
+  ausgeschaltetes, live anwendbares Plugin. Eingeschaltet visualisiert der
+  Audio-Character-Tab ausschließlich lokal berechnete, auf 16 Bänder und den
+  Bereich 0–1 begrenzte Spektraldaten als die drei tastaturbedienbaren Modi
+  Rings, Flow und Pulse. Die Darstellung übernimmt die Cover-Akzentfarbe;
+  Farbe bleibt durch benannte Modi und eine Screenreader-Beschriftung redundant.
+- **AC-8** [aktiv] [gtk] — Dauerbewegung existiert ausschließlich während
+  laufender Wiedergabe und nur bei sichtbarer Visual-Fläche oder deren
+  Vollbildansicht. Pause und Stop klingen auf das statische Klangprofil aus;
+  `gtk-enable-animations=false` zeigt dieses Profil ohne Tick-Callback. Bei
+  aktiviertem Plugin öffnet F11 aus dem sichtbaren Audio-Character-Tab die
+  Vollbildansicht; F11 und Escape schließen sie. Das ist die in MOT-2 erlaubte,
+  audiofunktionale Ausnahme für Dauerbewegung.
 
 ## Y. Library Doctor / Tag Cleanup
 

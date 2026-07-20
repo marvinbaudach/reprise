@@ -1,4 +1,27 @@
 use super::*;
+
+#[test]
+fn ac_8_f11_is_scoped_to_the_enabled_song_visuals_plugin() {
+    assert!(should_toggle_visual_fullscreen(
+        true,
+        true,
+        PanelTab::AudioCharacter,
+        gtk4::gdk::Key::F11,
+    ));
+    for unavailable in [
+        should_toggle_visual_fullscreen(false, true, PanelTab::AudioCharacter, gtk4::gdk::Key::F11),
+        should_toggle_visual_fullscreen(true, false, PanelTab::AudioCharacter, gtk4::gdk::Key::F11),
+        should_toggle_visual_fullscreen(true, true, PanelTab::Lyrics, gtk4::gdk::Key::F11),
+        should_toggle_visual_fullscreen(
+            true,
+            true,
+            PanelTab::AudioCharacter,
+            gtk4::gdk::Key::Escape,
+        ),
+    ] {
+        assert!(!unavailable);
+    }
+}
 use libadwaita::prelude::AdwApplicationWindowExt;
 use std::time::Duration;
 
