@@ -98,6 +98,7 @@ pub(crate) struct CrossfadeEngine {
     /// sicher, ohne verworfene Elemente anzufassen.
     pub(crate) generation: Arc<AtomicU64>,
     pub(crate) incoming: IncomingSlot,
+    pub(crate) spectrum_enabled: Arc<AtomicBool>,
 }
 
 impl CrossfadeEngine {
@@ -165,6 +166,12 @@ impl CrossfadeEngine {
                 return;
             }
         };
+        if let Err(error) = crate::player_effects::set_playbin_spectrum_messages(
+            &secondary,
+            self.spectrum_enabled.load(Ordering::SeqCst),
+        ) {
+            tracing::warn!(%error, "crossfade: could not configure spectrum analyzer");
+        }
         secondary.set_property("uri", uri);
         secondary.set_property("volume", 0.0_f64);
         if let Err(error) = secondary.set_state(gst::State::Playing) {
