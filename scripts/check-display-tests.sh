@@ -93,18 +93,26 @@ trap 'rm -rf "$results_dir"' EXIT
 run_display_test() {
   local index=$1
   local test=$2
-  local data_home cache_home marker_dir display_test_passed
+  local data_home cache_home config_home runtime_dir marker_dir
+  local display_test_passed server_num
   # The parent owns the shared results directory. A background worker must
   # never inherit its EXIT cleanup and remove siblings' logs or statuses.
   trap - EXIT
   data_home=$(mktemp -d)
   cache_home=$(mktemp -d)
+  config_home=$(mktemp -d)
+  runtime_dir=$(mktemp -d)
+  chmod 700 "$runtime_dir"
   marker_dir=$(mktemp -d)
   display_test_passed="$marker_dir/passed"
+  # xvfb-run -a can race while parallel workers probe the same free display.
+  # Assign a stable, unique server number to every worker instead.
+  server_num=$((99 + index))
   {
     echo "== display test: $test =="
-    if dbus-run-session -- xvfb-run -a env \
+    if dbus-run-session -- xvfb-run --server-num="$server_num" env \
       XDG_DATA_HOME="$data_home" XDG_CACHE_HOME="$cache_home" \
+      XDG_CONFIG_HOME="$config_home" XDG_RUNTIME_DIR="$runtime_dir" \
       GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink \
       DISPLAY_TEST="$test" DISPLAY_TEST_PASSED="$display_test_passed" \
       bash -c '
@@ -116,7 +124,8 @@ run_display_test() {
       echo fail >"$results_dir/$index.status"
     fi
   } >"$results_dir/$index.log" 2>&1
-  rm -rf "$data_home" "$cache_home" "$marker_dir"
+  rm -rf "$data_home" "$cache_home" "$config_home" "$runtime_dir" \
+    "$marker_dir"
 }
 
 active=0
