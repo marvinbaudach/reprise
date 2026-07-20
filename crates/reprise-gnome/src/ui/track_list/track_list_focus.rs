@@ -22,6 +22,14 @@ fn focus_visible_page(page: &gtk4::Widget) -> bool {
         // that fallback available, but take it out of the focus chain while
         // entering the visible page's actual content.
         let scroller_was_focusable = scrolled.is_focusable();
+        if let Some(window) = scrolled
+            .root()
+            .and_then(|root| root.downcast::<gtk4::Window>().ok())
+        {
+            // Clear the wrapper's existing focus first. GTK otherwise keeps
+            // it as the focus owner even after the leaf accepts grab_focus().
+            gtk4::prelude::GtkWindowExt::set_focus(&window, gtk4::Widget::NONE);
+        }
         scrolled.set_focusable(false);
         let focused_content = scrolled
             .child()
