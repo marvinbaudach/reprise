@@ -1472,6 +1472,38 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
   Vollbildansicht; F11 und Escape schließen sie. Das ist die in MOT-2 erlaubte,
   audiofunktionale Ausnahme für Dauerbewegung.
 
+- **AC-12** [aktiv] [gtk] — „Create similar mix…" ist eine Selektionsaktion im
+  gemeinsamen Track-Kontextmenü. Sie erscheint für mindestens einen
+  abspielbaren Titel, übernimmt ausschließlich die abspielbare sichtbare
+  Selektion als benannte Seeds und öffnet vor jeder Queue-, Wiedergabe- oder
+  Playliständerung den nativen Mix Builder.
+- **AC-13** [aktiv] [core] — Der Mix Builder trennt Kriterien ausdrücklich:
+  Klangprofil, Genre, ähnliche Artists oder eine gewichtete Balance. Nicht
+  analysierte Titel werden nie still als Klangprofil-Treffer ausgegeben;
+  fehlende Genre- oder Artist-Evidenz wird als Coverage-Diagnostic sichtbar.
+- **AC-14** [aktiv] [gtk] — Jede Control-Änderung macht den bisherigen
+  Mix-Entwurf ungültig. Die neue Preview zeigt die exakte Reihenfolge,
+  Gesamtdauer, Coverage, Diagnostics und kurze strukturierte Auswahlgründe;
+  Play, Add to Queue und Save as Playlist verwenden ausschließlich genau
+  diese sichtbare Draft-ID und planen nicht heimlich neu.
+- **AC-15** [aktiv] [core] — Gleiche Mix-Absicht, Seeds, Kandidaten- und
+  Quellsnapshots erzeugen denselben diversen Mix. Harte Bedingungen werden
+  vor dem Scoring angewandt, maximal 500 Kandidaten gelangen in die
+  Auswahlphase, und unspielbare, entfernte oder ausgeschlossene Titel werden
+  nie ergänzt.
+- **AC-16** [aktiv] [gtk] — Artist-Empfehlungen außerhalb der Bibliothek
+  bleiben von der abspielbaren Preview getrennt. Sie nennen Seed-Bezug,
+  Quelle und Grund, enthalten ausschließlich Artists, die nach kanonischer
+  MBID- oder normalisierter Namensidentität nicht in der Sammlung vorkommen,
+  und lassen sich öffnen, ausblenden und in einer eigenen Übersicht wieder
+  einblenden.
+- **AC-17** [aktiv] [core] — Ähnliche-Artist-Evidenz ist ein eigenes,
+  standardmäßig ausgeschaltetes Netzmodul. Ein Abruf startet nur nach einer
+  ausdrücklichen Mix-/Discovery-Aktion, verwendet begrenzte gecachte
+  Provider-Ergebnisse und verändert weder Musikdateien noch Wiedergabe,
+  Queue oder Playlists. Ohne Provider bleibt der lokale Mix vollständig
+  nutzbar; KI-generierte Audiodateien gehören nicht zu dieser Funktion.
+
 ## Y. Library Doctor / Tag Cleanup
 
 Library Doctor trennt Erkennen, Entscheiden und Schreiben strikt: Ein Scan

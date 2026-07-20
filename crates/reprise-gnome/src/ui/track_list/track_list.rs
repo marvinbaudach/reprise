@@ -78,9 +78,10 @@ use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
 
 pub(in crate::ui) use super::track_list_callbacks::{
-    OnActivate, OnGoToAlbum, OnGoToArtist, OnLibraryMutated, OnQueueActivate, OnQueueMoveToTop,
-    OnQueueRemove, OnQueueReorder, OnQueueSelected, OnReload, OnScanQueuePurgeIds, OnShowMissing,
-    OnShowMissingFiles, OnSidebarPlaylistDrop, OnSidebarQueueDrop, OnTagsMutated,
+    OnActivate, OnGoToAlbum, OnGoToArtist, OnLibraryMutated, OnPlayMix, OnQueueActivate,
+    OnQueueMoveToTop, OnQueueRemove, OnQueueReorder, OnQueueSelected, OnReload,
+    OnScanQueuePurgeIds, OnShowMissing, OnShowMissingFiles, OnSidebarPlaylistDrop,
+    OnSidebarQueueDrop, OnTagsMutated,
 };
 pub(in crate::ui) use super::track_list_toast::show_toast;
 
@@ -209,6 +210,8 @@ pub(in crate::ui) struct Shared {
     /// `TrackList::set_on_queue_selected` — wraps `PlayerController::
     /// append_to_queue`.
     pub(in crate::ui) on_queue_selected: RefCell<Option<OnQueueSelected>>,
+    /// Mix Builder playback seam; receives the exact visible draft order.
+    pub(in crate::ui) on_play_mix: RefCell<Option<OnPlayMix>>,
     /// Context-menu "Play next" (QUE-3): same shape as `on_queue_selected`,
     /// but the ids jump the manual line instead of appending to it.
     pub(in crate::ui) on_play_next_selected: RefCell<Option<OnQueueSelected>>,
