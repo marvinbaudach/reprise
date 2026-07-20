@@ -47,7 +47,15 @@ fn spotlight_play_uses_the_group_track_ids() {
     insert_track(&conn.borrow(), 2, "Lorna\tShore");
 
     let group_ids = stats_spotlight_track_ids(&conn, "name:lorna shore").unwrap();
-    let label_ids = artist_track_ids(&conn, "Lorna Shore".to_string()).unwrap();
+    let label_ids = reprise_core::queries::query_track_ids(
+        &conn.borrow(),
+        &ViewSource::Artist("Lorna Shore".to_string()),
+        "album",
+        "asc",
+        "",
+        &[],
+    )
+    .unwrap();
 
     assert_eq!(group_ids, vec![1, 2]);
     assert!(group_ids.len() > label_ids.len());

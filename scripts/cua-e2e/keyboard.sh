@@ -12,50 +12,20 @@ assert_after_has_focus() {
   assert_unique_focus "$CUA_E2E_OUT_DIR/$stem-after.json"
 }
 
-focus_active_library_tab() {
-  local pid=$1 window_id=$2 stem=$3
-  local snapshot_path focus_path label attempt
-
-  snapshot_path=$(cua_snapshot "$pid" "$window_id" "$stem-initial") || return 1
-  for attempt in $(seq 0 48); do
-    focus_path="${snapshot_path%.json}-focus.txt"
-    label=""
-    if [[ -s "$focus_path" ]]; then
-      label=$(sed -n 's/^label=//p' "$focus_path" | head -n 1)
-    fi
-    case "$label" in
-      Tracks | Albums | Artists)
-        printf '%s\n' "$label"
-        return 0
-        ;;
-    esac
-    if ((attempt == 48)); then
-      break
-    fi
-    cua_press_key_window \
-      "$pid" "$window_id" tab "$stem-tab-$((attempt + 1))" || return 1
-    snapshot_path="$CUA_E2E_OUT_DIR/$stem-tab-$((attempt + 1))-after.json"
-  done
-  echo "Tab traversal never reached the active Library view tab" >&2
-  return 1
-}
-
-# Returns the app to the state every scenario assumes: Tracks visible, no
-# search filter, nothing popped up.
+# Returns the app to the state every scenario assumes: the canonical TrackList
+# visible, no search filter, nothing popped up.
 #
-# The manifest drives twelve scenarios against ONE app instance. Nothing used to
+# The manifest drives ten scenarios against ONE app instance. Nothing used to
 # reset between them, and it stayed invisible only because the runner died on
 # the first red surface. Once it ran the whole list, one leaked search filter
 # from `app-shell` cascaded: `tracks` searched a list filtered to zero rows,
-# `albums` pressed Enter on the wrong target and opened the main menu, `artists`
-# ran trapped inside that popover and toggled Compact Mode, and the last two
-# scenarios then measured a 430x76 mini-player. Five failures, one leak.
+# later scenarios then acted on a list filtered to zero rows.
 #
 # This must verify rather than hope. A reset that silently fails would make the
 # next surface fail for a reason that has nothing to do with what it tests —
 # exactly the confusion it exists to prevent.
 reset_surface_baseline() {
-  local pid=$1 window_id=$2 stem=$3 state_path active_tab left_steps step
+  local pid=$1 window_id=$2 stem=$3 state_path
 
   # Escape closes a popover or dialog; a second one collapses a revealed search
   # bar. Both are no-ops when nothing is open.
@@ -81,32 +51,10 @@ reset_surface_baseline() {
     cua_hotkey "$pid" "$window_id" "$stem-reset-back-$attempt" alt left || return 1
   done
 
-  # Back restores navigation within a top-level Library mode; it deliberately
-  # does not undo Tracks/Albums/Artists mode switches (NAV-2). Target the
-  # active member of the roving switcher, move left to Tracks, then activate it
-  # so the next scenario starts from the table without a pointer dependency.
-  active_tab=$(focus_active_library_tab "$pid" "$window_id" "$stem-reset-tab") \
-    || return 1
-  case "$active_tab" in
-    Tracks) left_steps=0 ;;
-    Albums) left_steps=1 ;;
-    Artists) left_steps=2 ;;
-    *) return 1 ;;
-  esac
-  for ((step = 1; step <= left_steps; step++)); do
-    cua_press_key_window "$pid" "$window_id" left "$stem-reset-tab-left-$step" \
-      || return 1
-  done
-  cua_press_key_window "$pid" "$window_id" enter "$stem-reset-tracks" || return 1
-
-  # Verify against something only the Tracks view has. "Tracks" is the switcher
-  # button and is present in every view, and `sine_01` shows up in the album
-  # cards and the Now Playing panel too — an earlier version of this check used
-  # both and therefore passed while the app sat on Albums, which is precisely
-  # the silent-reset failure this function exists to prevent. Column headers
-  # only exist on the track table: 6 occurrences there, 0 on Albums.
+  # The canonical TrackList has no inner mode switch to normalize. Its column
+  # header is the unambiguous baseline after Back has restored the root place.
   state_path=$(cua_wait_for_label "$pid" "$window_id" "Title" "$stem-reset-state") || {
-    echo "reset before '$stem' did not restore the Tracks baseline; the previous" >&2
+    echo "reset before '$stem' did not restore the TrackList baseline; the previous" >&2
     echo "surface left state behind that this scenario cannot run against" >&2
     return 1
   }
@@ -153,44 +101,6 @@ keyboard_tracks_playlist_queue() {
   assert_after_has_focus acc-tracks-context
   cua_press_key_focused "$pid" "$window_id" escape acc-tracks-context-close
   assert_after_has_focus acc-tracks-context-close
-}
-
-# The view switcher is a toggle group, which GTK exposes as a SINGLE tab stop:
-# Tab reaches the group, arrow keys move between members. Tabbing for "Albums"
-# or "Artists" directly therefore never lands — the old version walked the ring
-# repeatedly and pressed Enter on wherever it stopped, once on the unlabeled
-# main-menu button, which opened a popover and left Compact Mode on two
-# scenarios later.
-#
-# The group is entered by tabbing to the ACTIVE member, which is labelled after
-# the current view — "Tracks" while the track table is showing (measured: it is
-# stop 14 of the ring there). Hence the reset above must genuinely return to
-# Tracks first; when it silently did not, this traversal failed for that reason
-# rather than for anything about the switcher.
-keyboard_albums() {
-  local pid=$1 window_id=$2 tab_path focus_path
-  tab_path=$(cua_focus_label_via_tab \
-    "$pid" "$window_id" Tracks acc-albums-tabs)
-  assert_focus_evidence_label "$tab_path" Tracks
-  focus_path=$(cua_focus_label_via_key \
-    "$pid" "$window_id" Albums right acc-albums-focus)
-  assert_focus_evidence_label "$focus_path" Albums
-  cua_press_key_window "$pid" "$window_id" enter acc-albums-open
-  assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-albums-open-after.json" Albums
-  assert_after_has_focus acc-albums-open
-}
-
-keyboard_artists() {
-  local pid=$1 window_id=$2 tab_path focus_path
-  tab_path=$(cua_focus_label_via_tab \
-    "$pid" "$window_id" Albums acc-artists-tabs)
-  assert_focus_evidence_label "$tab_path" Albums
-  focus_path=$(cua_focus_label_via_key \
-    "$pid" "$window_id" Artists right acc-artists-focus)
-  assert_focus_evidence_label "$focus_path" Artists
-  cua_press_key_window "$pid" "$window_id" enter acc-artists-open
-  assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-artists-open-after.json" Artists
-  assert_after_has_focus acc-artists-open
 }
 
 keyboard_player_now_playing() {
@@ -269,7 +179,7 @@ keyboard_stats() {
   cua_press_key_window "$pid" "$window_id" enter acc-stats-open
   assert_after_has_focus acc-stats-open
   cua_hotkey "$pid" "$window_id" acc-stats-return alt left
-  assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-stats-return-after.json" Tracks
+  assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-stats-return-after.json" Title
   assert_after_has_focus acc-stats-return
 }
 
@@ -281,7 +191,7 @@ keyboard_compact_minimal() {
   assert_snapshot_absent "$CUA_E2E_OUT_DIR/acc-compact-open-after.json" "Search all fields"
   cua_hotkey "$pid" "$window_id" acc-compact-close ctrl m
   assert_after_has_focus acc-compact-close
-  assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-compact-close-after.json" Tracks
+  assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-compact-close-after.json" Title
   cua_resize_window "$pid" "$window_id" 1200 760 acc-wide-window
   assert_unique_focus "$CUA_E2E_OUT_DIR/acc-wide-window-after-resize.json"
 }

@@ -12,7 +12,6 @@ use reprise_core::view_source::ViewSource;
 use super::player_controller::PlayerController;
 use super::track_list::TrackList;
 use super::track_list_activation::current_queue_ids;
-use crate::ui::artist_view::ArtistView;
 use crate::ui::scroll_center;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -28,15 +27,6 @@ pub(in crate::ui) type OnCurrentTrackChanged = Rc<dyn Fn(i64, Option<usize>, Cur
 /// `.playback-paused` class on the `ColumnView`) and drop the marker on stop.
 /// Mirror of `OnCurrentTrackChanged`'s seam — see `wire`.
 pub(in crate::ui) type OnPlaybackStateChanged = Rc<dyn Fn(PlaybackState)>;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(in crate::ui) struct NowPlayingAlbum {
-    pub(in crate::ui) album: String,
-    pub(in crate::ui) artist: String,
-    pub(in crate::ui) track_path: String,
-}
-
-pub(in crate::ui) type OnNowPlayingAlbumChanged = Rc<dyn Fn(Option<NowPlayingAlbum>)>;
 
 fn visible_position_for_track_in_source(
     ids: &[i64],
@@ -61,65 +51,31 @@ fn track_table_row_count(column_view: &gtk4::ColumnView) -> u32 {
     column_view.model().map_or(0, |model| model.n_items())
 }
 
-pub(in crate::ui) fn wire(
-    player: Option<&Rc<PlayerController>>,
-    track_list: &Rc<TrackList>,
-    artist_view: &Rc<ArtistView>,
-) {
+pub(in crate::ui) fn wire(player: Option<&Rc<PlayerController>>, track_list: &Rc<TrackList>) {
     let Some(player) = player else {
         return;
     };
-    // The two closures below capture a *strong* `Rc<ArtistView>`: the
-    // controller outlives `window::build`, so this keeps `ArtistView`'s
-    // pure-Rust `Inner` alive past `build()` — which is what makes the Artists
-    // tab-switch's `refresh_callback` (a `Weak<Inner>::upgrade`) succeed. No
-    // cycle: the artist view's hero play/shuffle/queue closures capture the
-    // controller only via `Weak` (see `window::build`), upgrading at call time.
     let track_list_for_current = Rc::downgrade(track_list);
-    let player_weak = Rc::downgrade(player);
-    {
-        let artist_view = artist_view.clone();
-        player.set_on_current_track_changed(move |track_id, queue_position, change| {
-            match track_list_for_current.upgrade() {
-                Some(track_list) => {
-                    track_list.update_current_track(track_id, queue_position, change);
-                }
-                None => tracing::warn!(
-                    track_id,
-                    "current-track marker update skipped: track list is gone"
-                ),
+    player.set_on_current_track_changed(move |track_id, queue_position, change| {
+        match track_list_for_current.upgrade() {
+            Some(track_list) => {
+                track_list.update_current_track(track_id, queue_position, change);
             }
-            // Light the Artists view's mini-EQ — only for an actual playback
-            // start; a restored-but-stopped track must not glow. The view
-            // groups by *album* artist, so resolve the effective album artist
-            // for the now-playing track (the same fallback the master rows
-            // group by) before handing it over.
-            if change != CurrentTrackChange::PlaybackStarted {
-                return;
-            }
-            if let Some(player) = player_weak.upgrade() {
-                let album_artist = player.current_track_album_artist();
-                artist_view.set_now_playing(album_artist, Some(track_id));
-            }
-        });
-    }
+            None => tracing::warn!(
+                track_id,
+                "current-track marker update skipped: track list is gone"
+            ),
+        }
+    });
 
     let track_list_for_state = Rc::downgrade(track_list);
-    {
-        let artist_view = artist_view.clone();
-        player.set_on_playback_state_changed(move |state| {
-            if let Some(track_list) = track_list_for_state.upgrade() {
-                track_list.on_playback_state(state);
-            } else {
-                tracing::debug!("playback-state marker skipped: track list is gone");
-            }
-            // `current_track_changed` never fires on stop, so the Artists
-            // mini-EQ is turned off here — the `Stopped` counterpart.
-            if matches!(state, PlaybackState::Stopped) {
-                artist_view.set_now_playing(None, None);
-            }
-        });
-    }
+    player.set_on_playback_state_changed(move |state| {
+        if let Some(track_list) = track_list_for_state.upgrade() {
+            track_list.on_playback_state(state);
+        } else {
+            tracing::debug!("playback-state marker skipped: track list is gone");
+        }
+    });
 }
 
 impl PlayerController {
@@ -149,24 +105,12 @@ impl PlayerController {
         *self.playback_state_changed.borrow_mut() = Some(Rc::new(callback));
     }
 
-    pub(in crate::ui) fn set_on_playback_state_changed_album(
-        &self,
-        callback: impl Fn(PlaybackState) + 'static,
-    ) {
-        *self.playback_state_changed_album.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    /// Fans a coarse playback-state change out to all registered listeners
-    /// (track list + album grid). Clones callbacks out of their `RefCell`s
-    /// before invoking — never holds borrows across calls — per this
-    /// project's reentrancy discipline.
+    /// Fans a coarse playback-state change out to registered listeners.
+    /// Clones callbacks out of their `RefCell`s before invoking — never holds
+    /// borrows across calls — per this project's reentrancy discipline.
     pub(in crate::ui) fn notify_playback_state_changed(&self, state: PlaybackState) {
         let callback = self.playback_state_changed.borrow().clone();
         if let Some(callback) = callback {
-            callback(state);
-        }
-        let album_cb = self.playback_state_changed_album.borrow().clone();
-        if let Some(callback) = album_cb {
             callback(state);
         }
         let panel_callback = self.now_playing_panel_state_changed.borrow().clone();
@@ -299,20 +243,6 @@ impl TrackList {
                 );
             }
         }
-    }
-
-    pub(in crate::ui) fn reveal_playing_context(&self) -> bool {
-        let Some(track_id) = self.shared.playing_track_id.get() else {
-            return false;
-        };
-        let ids = self.shared.current_view_ids();
-        let is_queue = matches!(*self.shared.source.borrow(), ViewSource::Queue);
-        let Some(position) = visible_position_for_track_in_source(&ids, track_id, None, is_queue)
-        else {
-            return false;
-        };
-        reveal_track_position(&self.shared.column_view, position, 8);
-        true
     }
 
     /// Reacts to a coarse playback-state change: freeze the now-playing

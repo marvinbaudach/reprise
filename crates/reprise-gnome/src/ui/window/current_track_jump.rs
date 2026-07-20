@@ -26,7 +26,6 @@ pub(in crate::ui) struct JumpContext {
     pub track_list: Rc<TrackList>,
     pub nav_history: Rc<NavHistory>,
     pub content_stack: gtk4::Stack,
-    pub library_stack: libadwaita::ViewStack,
     pub active_content_focus: library_shell::ActiveContentFocus,
 }
 
@@ -40,7 +39,6 @@ pub(in crate::ui) fn runtime_coordinator(context: &JumpContext) -> JumpCallback 
     let track_list_for_route = context.track_list.clone();
     let nav_history_for_route = context.nav_history.clone();
     let content_stack_for_route = context.content_stack.clone();
-    let library_stack_for_route = context.library_stack.clone();
     let active_content_focus_for_route = context.active_content_focus.clone();
 
     coordinator(JumpSteps {
@@ -60,17 +58,13 @@ pub(in crate::ui) fn runtime_coordinator(context: &JumpContext) -> JumpCallback 
             );
         }),
         route_origin: Rc::new(move |origin| {
-            let place = NavPlace::source(
-                origin.clone(),
-                Some(library_shell::LIBRARY_VIEW_TRACKS.to_owned()),
-            );
+            let place = NavPlace::source(origin.clone());
             nav_history_for_route.record_route(&place);
             library_shell::route_to_place(
                 &place,
                 &sidebar_for_route,
                 &track_list_for_route,
                 &content_stack_for_route,
-                &library_stack_for_route,
                 &active_content_focus_for_route,
                 "jump to current track origin",
             );
@@ -109,10 +103,7 @@ mod tests {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         let events = Rc::new(RefCell::new(Vec::new()));
         let history = Rc::new(NavHistory::default());
-        let queue = NavPlace::source(
-            ViewSource::Queue,
-            Some(library_shell::LIBRARY_VIEW_TRACKS.into()),
-        );
+        let queue = NavPlace::source(ViewSource::Queue);
         history.record_route(&queue);
         let jump = coordinator(JumpSteps {
             current_origin: Rc::new(|| Some(ViewSource::Playlist(7))),
@@ -124,10 +115,7 @@ mod tests {
                 let events = events.clone();
                 let history = history.clone();
                 Rc::new(move |source| {
-                    history.record_route(&NavPlace::source(
-                        source.clone(),
-                        Some(library_shell::LIBRARY_VIEW_TRACKS.into()),
-                    ));
+                    history.record_route(&NavPlace::source(source.clone()));
                     events.borrow_mut().push(("route", source.clone()));
                 })
             },

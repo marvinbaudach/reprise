@@ -214,7 +214,7 @@ fn now_playing_css_parses_without_gtk_errors() {
 }
 
 #[test]
-fn now_playing_css_defines_the_adaptive_view_switcher_and_footer() {
+fn npp_11_now_playing_css_defines_the_adaptive_view_switcher_and_footer() {
     let css = css();
 
     assert!(css.contains(".reprise-now-playing-tabs"));
@@ -395,7 +395,7 @@ fn loaded_and_idle_tracks_render_from_the_player_context() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn grid_5_now_playing_cover_and_title_are_album_reveal_links() {
+fn browse_4_now_playing_cover_and_title_are_album_reveal_links() {
     gtk4::init().unwrap();
     let (_window, panel) = test_panel("org.reprise.Reprise.NowPlayingRevealLinkTest");
 
@@ -477,7 +477,6 @@ fn test_panel(application_id: &str) -> (adw::ApplicationWindow, Rc<NowPlayingPan
     let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
     reprise_core::db::migrate(&conn.borrow()).unwrap();
     let runtime = ArtistNewsRuntime::setup(&conn.borrow());
-    let portraits = ArtistPortraitRuntime::setup_for_test();
     let cover_runtime = crate::ui::cover_download_worker::setup_for_test();
     let cover_loader = CoverLoader::new(cover_runtime);
     let app = adw::Application::builder()
@@ -486,15 +485,7 @@ fn test_panel(application_id: &str) -> (adw::ApplicationWindow, Rc<NowPlayingPan
     app.register(None::<&gtk4::gio::Cancellable>).unwrap();
     let window = adw::ApplicationWindow::new(&app);
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    let panel = NowPlayingPanel::new(
-        &content,
-        &window,
-        conn,
-        runtime,
-        &portraits,
-        cover_loader,
-        None,
-    );
+    let panel = NowPlayingPanel::new(&content, &window, conn, runtime, cover_loader, None);
     window.set_content(Some(panel.widget()));
     (window, panel)
 }

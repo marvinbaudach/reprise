@@ -4,7 +4,6 @@ use std::cell::RefCell;
 use std::path::Path;
 use std::rc::{Rc, Weak};
 
-use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use rusqlite::Connection;
@@ -13,20 +12,14 @@ use reprise_core::library::watcher::WatcherHandle;
 use reprise_core::library::{group_key::GroupKind, playlists, stats_screen::group_track_ids};
 use reprise_core::view_source::ViewSource;
 
-use super::album_view::AlbumView;
-use super::artist_view::ArtistView;
 use super::player_controller::PlayerController;
 use super::scan_flow::ScanControls;
 use super::sidebar::Sidebar;
 use super::stats_view::StatsView;
 use super::track_list::TrackList;
-use crate::ui::album_card_state::{primary_album_action, PrimaryAlbumAction};
+use crate::ui::nav_history::{NavHistory, NavPlace};
 use crate::ui::playback::play_origin;
 use crate::ui::stats::stats_highlights::TopGenre;
-use crate::ui::{
-    nav_history::{NavHistory, NavPlace},
-    window::library_shell::LIBRARY_VIEW_TRACKS,
-};
 
 #[derive(Clone, Copy)]
 pub(in crate::ui) struct ActionWiring<'a> {
@@ -36,13 +29,10 @@ pub(in crate::ui) struct ActionWiring<'a> {
     pub(in crate::ui) toast_overlay: &'a adw::ToastOverlay,
     pub(in crate::ui) track_list: &'a Rc<TrackList>,
     pub(in crate::ui) sidebar: &'a Rc<Sidebar>,
-    pub(in crate::ui) album_view: &'a AlbumView,
-    pub(in crate::ui) artist_view: &'a Rc<ArtistView>,
     pub(in crate::ui) player: &'a Option<Rc<PlayerController>>,
     pub(in crate::ui) stats_view: &'a StatsView,
     pub(in crate::ui) nav_history: &'a Rc<NavHistory>,
     pub(in crate::ui) content_stack: &'a gtk4::Stack,
-    pub(in crate::ui) library_stack: &'a adw::ViewStack,
     pub(in crate::ui) scan_controls: &'a ScanControls,
     pub(in crate::ui) watcher_state: &'a Rc<RefCell<Option<WatcherHandle>>>,
 }
@@ -55,13 +45,10 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
         toast_overlay,
         track_list,
         sidebar,
-        album_view,
-        artist_view,
         player,
         stats_view,
         nav_history,
         content_stack,
-        library_stack,
         scan_controls,
         watcher_state,
     } = context;
@@ -166,20 +153,15 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
     {
         let track_list = Rc::downgrade(track_list);
         let content_stack = content_stack.clone();
-        let library_stack = library_stack.clone();
         let nav_history = nav_history.clone();
         stats_view.set_on_go_to_artist(move |artist| {
             let Some(track_list) = track_list.upgrade() else {
                 return;
             };
             let source = ViewSource::Artist(artist);
-            nav_history.record_route(&NavPlace::source(
-                source.clone(),
-                Some(LIBRARY_VIEW_TRACKS.to_owned()),
-            ));
+            nav_history.record_route(&NavPlace::source(source.clone()));
             track_list.set_source(source);
             content_stack.set_visible_child_name("library");
-            library_stack.set_visible_child_name(LIBRARY_VIEW_TRACKS);
         });
     }
     {
@@ -248,70 +230,6 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
             None => tracing::warn!("sidebar is gone; cannot show Missing files"),
         });
     }
-    // Album view playback wiring.
-    {
-        let player = player.clone();
-        album_view.set_on_play(move |ids, start_index, source| match &player {
-            Some(player) => {
-                player.play_from_view(ids, start_index, play_origin::from_album_source(source));
-            }
-            None => tracing::warn!("player unavailable; ignoring album play action"),
-        });
-    }
-    {
-        let player = player.clone();
-        album_view.set_on_primary(move |ids, start_index, source, album| match &player {
-            Some(player) => {
-                let is_current_album =
-                    player
-                        .current_album_identity()
-                        .is_some_and(|(title, artist)| {
-                            title.eq_ignore_ascii_case(&album.album)
-                                && artist.eq_ignore_ascii_case(&album.album_artist)
-                        });
-                match primary_album_action(is_current_album, player.playback_state()) {
-                    PrimaryAlbumAction::RebuildQueue => player.play_from_view(
-                        ids,
-                        start_index,
-                        play_origin::from_album_source(source),
-                    ),
-                    PrimaryAlbumAction::Pause | PrimaryAlbumAction::Resume => {
-                        player.toggle_pause();
-                    }
-                }
-            }
-            None => tracing::warn!("player unavailable; ignoring album primary action"),
-        });
-    }
-    {
-        let player = player.clone();
-        album_view.set_on_play_next(move |ids| match &player {
-            Some(player) => player.play_next(&ids),
-            None => tracing::warn!("player unavailable; ignoring album play-next action"),
-        });
-    }
-    {
-        let player = player.clone();
-        album_view.set_on_queue(move |ids| match &player {
-            Some(player) => player.append_to_queue(&ids),
-            None => tracing::warn!("player unavailable; ignoring album queue action"),
-        });
-    }
-    {
-        let track_list = Rc::downgrade(track_list);
-        album_view.set_on_edit_tags(move |ids| {
-            if let Some(track_list) = track_list.upgrade() {
-                track_list.edit_tags_for_ids(&ids);
-            }
-        });
-    }
-    // Wire now-playing fan-out to album grid EQ markers.
-    if let Some(ref player) = player {
-        let album_view_np = album_view.now_playing_callback();
-        player.set_on_now_playing_album_changed(move |album| {
-            album_view_np(album);
-        });
-    }
     {
         let player = player.clone();
         track_list.set_on_queue_activate(move |row| {
@@ -340,7 +258,6 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
         let track_list_weak = Rc::downgrade(track_list);
         let sidebar_weak = Rc::downgrade(sidebar);
         let content_stack = content_stack.downgrade();
-        let library_stack = library_stack.downgrade();
         track_list.set_on_go_to_album(move |album, album_artist| {
             let Some(track_list) = track_list_weak.upgrade() else {
                 return;
@@ -356,16 +273,12 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
             if let Some(content_stack) = content_stack.upgrade() {
                 content_stack.set_visible_child_name("library");
             }
-            if let Some(library_stack) = library_stack.upgrade() {
-                library_stack.set_visible_child_name(super::library_shell::LIBRARY_VIEW_TRACKS);
-            }
         });
     }
     {
         let track_list_weak = Rc::downgrade(track_list);
         let sidebar_weak = Rc::downgrade(sidebar);
         let content_stack = content_stack.downgrade();
-        let library_stack = library_stack.downgrade();
         track_list.set_on_go_to_artist(move |artist| {
             let Some(track_list) = track_list_weak.upgrade() else {
                 return;
@@ -377,9 +290,6 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
             track_list.set_source(source);
             if let Some(content_stack) = content_stack.upgrade() {
                 content_stack.set_visible_child_name("library");
-            }
-            if let Some(library_stack) = library_stack.upgrade() {
-                library_stack.set_visible_child_name(super::library_shell::LIBRARY_VIEW_TRACKS);
             }
         });
     }
@@ -411,87 +321,6 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
                 false
             }
         });
-    }
-    // Task 9a: Artists detail-pane hero playback actions. Player-dependent, so
-    // wired here (where `player` + `conn` + `artist_view` are all in scope)
-    // rather than in `wire_artist_view`, which handles only the
-    // navigation-only setters. Each closure resolves the artist's ordered track
-    // ids via `query_track_ids` (album-ordered — a natural "Play all") and hands
-    // them to the player.
-    {
-        // `player` is captured `Weak`: this closure is stored on `ArtistView`,
-        // which the controller retains strongly (see
-        // `current_track_selection::wire`'s doc comment), so a strong capture
-        // here would close the cycle back to the controller.
-        let player = player.as_ref().map(Rc::downgrade);
-        let conn = conn.clone();
-        artist_view.set_on_play_all(move |artist| {
-            let Some(player) = player.as_ref().and_then(Weak::upgrade) else {
-                return;
-            };
-            let origin = play_origin::from_artist(&artist);
-            match artist_track_ids(&conn, artist) {
-                Ok(ids) if !ids.is_empty() => player.play_from_view(ids, 0, origin),
-                Ok(_) => {}
-                Err(error) => tracing::warn!(%error, "artist play-all query failed"),
-            }
-        });
-    }
-    {
-        // Weak `player` capture — see the `set_on_play_all` comment above.
-        let player = player.as_ref().map(Rc::downgrade);
-        let conn = conn.clone();
-        artist_view.set_on_shuffle(move |artist| {
-            let Some(player) = player.as_ref().and_then(Weak::upgrade) else {
-                return;
-            };
-            let origin = play_origin::from_artist(&artist);
-            match artist_track_ids(&conn, artist) {
-                Ok(ids) if !ids.is_empty() => player.play_from_view(shuffle_ids(ids), 0, origin),
-                Ok(_) => {}
-                Err(error) => tracing::warn!(%error, "artist shuffle query failed"),
-            }
-        });
-    }
-    {
-        // Weak `player` capture — see the `set_on_play_all` comment above.
-        // Double-clicking a top-track starts it within the artist's full track
-        // list (same origin as Play all), just seeked to the clicked track.
-        let player = player.as_ref().map(Rc::downgrade);
-        let conn = conn.clone();
-        artist_view.set_on_track_activate(move |track_id, artist| {
-            let Some(player) = player.as_ref().and_then(Weak::upgrade) else {
-                return;
-            };
-            let origin = play_origin::from_artist(&artist);
-            match artist_track_ids(&conn, artist) {
-                Ok(ids) if !ids.is_empty() => {
-                    let start_index = ids.iter().position(|id| *id == track_id).unwrap_or(0);
-                    player.play_from_view(ids, start_index, origin);
-                }
-                Ok(_) => {}
-                Err(error) => tracing::warn!(%error, "artist top-track play query failed"),
-            }
-        });
-    }
-    {
-        // Weak `player` capture — see the `set_on_play_all` comment above.
-        let player = player.as_ref().map(Rc::downgrade);
-        let conn = conn.clone();
-        artist_view.set_on_add_to_queue(move |artist| {
-            let Some(player) = player.as_ref().and_then(Weak::upgrade) else {
-                return;
-            };
-            match artist_track_ids(&conn, artist) {
-                Ok(ids) if !ids.is_empty() => player.append_to_queue(&ids),
-                Ok(_) => {}
-                Err(error) => tracing::warn!(%error, "artist add-to-queue query failed"),
-            }
-        });
-    }
-    {
-        let conn = conn.clone();
-        artist_view.set_on_go_to_folder(move |artist| open_artist_folder(&conn, &artist));
     }
     {
         // `Weak`, not a strong `Rc`: mirrors the `sidebar_weak`/`track_list_
@@ -572,23 +401,6 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
     }
 }
 
-/// Ordered track ids for `artist`, album-ordered — the natural order for the
-/// Artists hero's Play all / Shuffle / Add-to-queue actions.
-fn artist_track_ids(
-    conn: &Rc<RefCell<Connection>>,
-    artist: String,
-) -> Result<Vec<i64>, rusqlite::Error> {
-    let conn = conn.borrow();
-    reprise_core::queries::query_track_ids(
-        &conn,
-        &ViewSource::Artist(artist),
-        "album",
-        "asc",
-        "",
-        &[],
-    )
-}
-
 fn stats_spotlight_track_ids(
     conn: &Rc<RefCell<Connection>>,
     key: &str,
@@ -654,71 +466,6 @@ fn group_genre_spellings(
     Ok(spellings)
 }
 
-/// Fisher–Yates shuffle for the Artists hero "Shuffle" action. `reprise-gnome`
-/// carries no direct `rand`/`fastrand` dependency (the crate split kept its dep
-/// set minimal), so this seeds a tiny xorshift64 from the wall clock rather
-/// than pulling in a new crate. A listen-order shuffle is not security
-/// sensitive, so a non-cryptographic PRNG is appropriate here.
-fn shuffle_ids(mut ids: Vec<i64>) -> Vec<i64> {
-    // `| 1` guards against the degenerate all-zero xorshift state.
-    let mut state = (glib::real_time() as u64) | 1;
-    for i in (1..ids.len()).rev() {
-        state ^= state << 13;
-        state ^= state >> 7;
-        state ^= state << 17;
-        let j = (state % (i as u64 + 1)) as usize;
-        ids.swap(i, j);
-    }
-    ids
-}
-
 #[cfg(test)]
 #[path = "window_action_wiring_tests.rs"]
 mod stats_tests;
-
-/// Opens the containing folder of the artist's first (album-ordered) track in
-/// the desktop file manager, via `gio::AppInfo::launch_default_for_uri` on the
-/// parent directory's `file://` URI — the same default-handler path
-/// `preference_lastfm.rs` uses for external URLs. Logs and returns on any
-/// lookup/launch failure.
-fn open_artist_folder(conn: &Rc<RefCell<Connection>>, artist: &str) {
-    let path = {
-        let conn = conn.borrow();
-        let ids = match reprise_core::queries::query_track_ids(
-            &conn,
-            &ViewSource::Artist(artist.to_string()),
-            "album",
-            "asc",
-            "",
-            &[],
-        ) {
-            Ok(ids) => ids,
-            Err(error) => {
-                tracing::warn!(%error, "artist go-to-folder query failed");
-                return;
-            }
-        };
-        let Some(&first) = ids.first() else {
-            return;
-        };
-        match reprise_core::queries::query_track_summary(&conn, first) {
-            Ok(Some(summary)) => summary.path,
-            Ok(None) => return,
-            Err(error) => {
-                tracing::warn!(%error, "artist go-to-folder path lookup failed");
-                return;
-            }
-        }
-    };
-
-    let Some(dir) = Path::new(&path).parent() else {
-        tracing::warn!(path, "artist track has no parent directory");
-        return;
-    };
-    let uri = gtk4::gio::File::for_path(dir).uri();
-    if let Err(error) =
-        gtk4::gio::AppInfo::launch_default_for_uri(&uri, gtk4::gio::AppLaunchContext::NONE)
-    {
-        tracing::warn!(%error, %uri, "failed to open artist folder");
-    }
-}

@@ -18,9 +18,10 @@ fixtures. It exercises five public workflows:
 
 1. a fresh profile exposes the first-run wizard; activating `Skip for Now`
    reveals the `No music yet` empty-library state;
-2. a populated profile scans two copied fixtures; typing into the accessible
-   `Search all fields` control reveals the `No results` state and runs the
-   keyboard-only surface inventory;
+2. a populated profile scans two copied fixtures, proves Music exposes one
+   canonical track table without Tracks/Albums/Artists mode tabs, types into
+   the accessible `Search all fields` control to reveal `No results`, and runs
+   the keyboard-only surface inventory;
 3. a tag write preserves selection and scroll position;
 4. the multi-track Tag Editor exposes its complete accessible structure;
 5. Library Doctor opts in from Plugins, scans copied fixtures, verifies wide

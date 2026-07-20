@@ -158,8 +158,6 @@ expected_surfaces=(
   app-shell
   sidebar
   tracks-playlist-queue
-  albums
-  artists
   issues-import
   player-now-playing
   device-sync
@@ -193,25 +191,17 @@ for pattern in \
   fi
 done
 for pattern in \
-  '"$pid" "$window_id" Tracks acc-albums-tabs' \
-  '"$pid" "$window_id" Albums right acc-albums-focus' \
-  '"$pid" "$window_id" Albums acc-artists-tabs' \
-  '"$pid" "$window_id" Artists right acc-artists-focus'; do
+  'cua_wait_for_label "$pid" "$window_id" "Title" "$stem-reset-state"' \
+  'assert_snapshot_contains "$state_path" "sine_01"'; do
   if ! rg --quiet --fixed-strings "$pattern" "$keyboard_runner"; then
-    echo "$keyboard_runner must navigate the view switcher as one roving tab stop: $pattern" >&2
+    echo "the keyboard reset must restore the canonical TrackList: $pattern" >&2
     exit 1
   fi
 done
-for pattern in \
-  'focus_active_library_tab() {' \
-  'active_tab=$(focus_active_library_tab "$pid" "$window_id" "$stem-reset-tab")' \
-  'cua_press_key_window "$pid" "$window_id" left "$stem-reset-tab-left-$step"' \
-  'cua_press_key_window "$pid" "$window_id" enter "$stem-reset-tracks"'; do
-  if ! rg --quiet --fixed-strings "$pattern" "$keyboard_runner"; then
-    echo "the keyboard reset must restore the Tracks top-level view: $pattern" >&2
-    exit 1
-  fi
-done
+if rg --quiet 'focus_active_library_tab|keyboard_(albums|artists)' "$keyboard_runner"; then
+  echo "$keyboard_runner must not retain removed Library mode-switch flows" >&2
+  exit 1
+fi
 for pattern in \
   '"$pid" "$window_id" "Pause (Space)" acc-player-focus' \
   '"$pid" "$window_id" "Play (Space)" acc-player-paused' \
@@ -221,7 +211,7 @@ for pattern in \
   '"$pid" "$window_id" "My Stats" down acc-stats-focus' \
   'cua_hotkey "$pid" "$window_id" acc-stats-return alt left' \
   'assert_snapshot_absent "$CUA_E2E_OUT_DIR/acc-compact-open-after.json" "Search all fields"' \
-  'assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-compact-close-after.json" Tracks'; do
+  'assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-compact-close-after.json" Title'; do
   if ! rg --quiet --fixed-strings "$pattern" "$keyboard_runner"; then
     echo "$keyboard_runner must preserve playback while traversing later surfaces: $pattern" >&2
     exit 1
@@ -314,12 +304,12 @@ case "$tool" in
           structuredContent: {
             elements: [
               {element_index: 9, role: "panel", label: "Library", parent_index: null, depth: 0},
-              {element_index: 10, role: "list item", label: "Albums", parent_index: 9,
+              {element_index: 10, role: "list item", label: "sine_01", parent_index: 9,
                depth: 1, focused: $focused,
                states: (if $focused then ["focused"] else [] end)}
             ]
           },
-          tree_markdown: "Library > Albums"
+          tree_markdown: "Library > sine_01"
         }'
         exit 0
         ;;
@@ -433,10 +423,10 @@ assert_snapshot_contains \
   "$CUA_E2E_OUT_DIR/populated-search-after.json" \
   "No results"
 
-cua_press_key_label 42 7 "Albums" enter "keyboard-enter"
-albums_focused="$CUA_E2E_OUT_DIR/keyboard-enter-after.json"
-assert_focused_label "$albums_focused" "Albums"
-assert_focus_within "$albums_focused" "Library"
+cua_press_key_label 42 7 "sine_01" enter "keyboard-enter"
+track_focused="$CUA_E2E_OUT_DIR/keyboard-enter-after.json"
+assert_focused_label "$track_focused" "sine_01"
+assert_focus_within "$track_focused" "Library"
 
 cua_hotkey 42 7 "keyboard-search" ctrl f
 assert_focused_label \
@@ -453,9 +443,9 @@ assert_snapshot_absent \
   "$CUA_E2E_OUT_DIR/keyboard-escape-after.json" \
   "No results"
 assert_focus_returns_to \
-  "$albums_focused" \
+  "$track_focused" \
   "$CUA_E2E_OUT_DIR/keyboard-escape-after.json" \
-  "Albums"
+  "sine_01"
 
 jq -n '{effect: "suspected_noop"}' >"$tmp_root/suspected-noop.json"
 if assert_action_landed "$tmp_root/suspected-noop.json" 2>/dev/null; then

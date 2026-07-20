@@ -193,7 +193,7 @@ mod tests {
     }
 
     #[test]
-    fn nav_5_remembers_scroll_and_selection_per_view() {
+    fn browse_2_remembers_scroll_and_selection_per_place() {
         let library = SavedViewState {
             anchor: Some((42, 7.5)),
             selected_ids: vec![42, 99],
@@ -211,7 +211,7 @@ mod tests {
     }
 
     #[test]
-    fn nav_5_anchor_survives_resort() {
+    fn browse_2_anchor_survives_resort() {
         let state = SavedViewState {
             anchor: Some((42, 6.0)),
             selected_ids: vec![42],

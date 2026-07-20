@@ -219,7 +219,12 @@ run_populated_library_scenario() {
   initial_path=$(wait_for_label \
     "$APP_PID" "$WINDOW_ID" "Search all fields" populated-initial)
   assert_snapshot_contains "$initial_path" "sine_01"
-  assert_snapshot_contains "$initial_path" "Tracks"
+  echo "[cua-e2e] browse-1-single-track-surface: one table without mode tabs"
+  assert_snapshot_contains "$initial_path" "Title"
+  assert_snapshot_contains "$initial_path" "Artist"
+  assert_snapshot_absent "$initial_path" "Tracks"
+  assert_snapshot_absent "$initial_path" "Albums"
+  assert_snapshot_absent "$initial_path" "Artists"
 
   # This is an isolated copy below the run's mktemp root, never user music.
   # Removing it exercises the real watcher and makes the Issues surface part
@@ -264,7 +269,7 @@ run_tag_1_no_jump_after_save_scenario() {
     tag-1-no-jump-after-save "$fixture_dir" "title:CUA selection preserved"
   saved_path=$(wait_for_label \
     "$APP_PID" "$WINDOW_ID" "CUA selection preserved" tag-1-saved)
-  assert_snapshot_contains "$saved_path" "Tracks"
+  assert_snapshot_contains "$saved_path" "Title"
   assert_snapshot_contains "$saved_path" "Search all fields"
   finish_scenario tag-1-no-jump-after-save \
     "dev scan complete" \
