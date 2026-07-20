@@ -30,6 +30,9 @@ pub struct ScanReport {
     pub added: u32,
     pub updated: u32,
     pub skipped_unchanged: u32,
+    /// Files deliberately removed from the catalog and matched by stable
+    /// filesystem identity (or an exact-path fallback) before tag parsing.
+    pub excluded: u32,
     pub errors: u32,
     /// Stage 2 Task 8: files recognized as relocated (same `(device, inode)`
     /// or, failing that, an unambiguous tag+size fingerprint match against a
@@ -419,6 +422,20 @@ fn scan_folder_inner(
         audio_files_seen += 1;
         let path_str = path.to_string_lossy().to_string();
         let mtime = file_mtime(path);
+        // Compute identity before touching tags. An exclusion follows the
+        // same file across a rename and must win over move detection.
+        let stat = file_stat(path);
+        let (file_size, device, inode): (i64, Option<i64>, Option<i64>) = match stat {
+            Some((size, dev, ino)) => (size as i64, Some(dev as i64), Some(ino as i64)),
+            None => (0, None, None),
+        };
+        if super::exclusions::matches_file(&tx, path, device, inode)? {
+            report.excluded += 1;
+            if let Some(progress) = &mut progress {
+                progress.advance(path);
+            }
+            continue;
+        }
         let known: Option<(i64, Option<i64>, Option<i64>)> = tx
             .query_row(
                 "SELECT file_mtime, missing_since, removed_at FROM tracks WHERE path = ?1",
@@ -473,14 +490,6 @@ fn scan_folder_inner(
             }
             continue;
         }
-        // `file_stat` is `None` only on a race with the file vanishing; see
-        // its own doc comment. Computed once, up front, so both the
-        // dismiss-check below and the `Ok(meta)` arm reuse it.
-        let stat = file_stat(path);
-        let (file_size, device, inode): (i64, Option<i64>, Option<i64>) = match stat {
-            Some((size, dev, ino)) => (size as i64, Some(dev as i64), Some(ino as i64)),
-            None => (0, None, None),
-        };
         // Dismiss-skip fast path: a `stat`, not a tag parse. Must run
         // BEFORE `read_meta` — see `check_dismissed`'s doc comment.
         if import_errors::check_dismissed(&tx, &path_str, mtime, file_size, now_unix())? {
@@ -769,3 +778,7 @@ mod untagged_tests;
 #[cfg(test)]
 #[path = "scanner_tombstone_tests.rs"]
 mod tombstone_tests;
+
+#[cfg(test)]
+#[path = "scanner_exclusion_tests.rs"]
+mod exclusion_tests;

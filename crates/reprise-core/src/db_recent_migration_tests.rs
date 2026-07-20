@@ -46,7 +46,7 @@ fn migrate_v5_to_v6_creates_lastfm_queue_and_preserves_listenbrainz_rows() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 23);
+    assert_eq!(version, 24);
     let lastfm_exists: bool = conn
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='lastfm_queue')",
@@ -70,7 +70,7 @@ fn migrate_v7_to_v8_adds_waveform_peaks_column() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 23);
+    assert_eq!(version, 24);
     conn.execute(
         "INSERT INTO tracks (path, title, artist, added_at) VALUES ('/test.flac', 'T', 'A', 0)",
         [],
@@ -124,7 +124,7 @@ fn migrate_v8_to_v9_creates_device_sync_tables_and_cascades_tracks() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 23);
+    assert_eq!(version, 24);
 
     conn.execute(
         "INSERT INTO device_settings (device_serial, device_name) VALUES ('serial-1', 'Pixel')",
@@ -207,7 +207,7 @@ fn migrate_v9_to_v10_backfills_missing_since_for_missing_tracks() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 23);
+    assert_eq!(version, 24);
 
     let (missing_since, missing_reason): (Option<i64>, Option<String>) = conn
         .query_row(
@@ -257,7 +257,7 @@ fn migrate_v9_to_v10_rebuilds_import_errors_table() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 23);
+    assert_eq!(version, 24);
 
     let remaining: i64 = conn
         .query_row("SELECT COUNT(*) FROM import_errors", [], |row| row.get(0))
@@ -312,7 +312,7 @@ fn migrate_v10_to_v11_drops_missing_column_and_preserves_data() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 23);
+    assert_eq!(version, 24);
 
     // Verify data is intact after column drop
     let (path, title, artist): (String, String, String) = conn
@@ -376,7 +376,7 @@ fn net_2_migration_preserves_existing_cover_usage() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 23);
+    assert_eq!(version, 24);
 }
 
 #[test]
@@ -470,7 +470,7 @@ fn assert_new_releases_schema(conn: &Connection) {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 23);
+    assert_eq!(version, 24);
 
     let track_columns = conn
         .prepare("PRAGMA table_info(tracks)")
@@ -586,7 +586,7 @@ fn migrate_v12_to_v13_indexes_present_title_order_without_changing_rows() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 23);
+    assert_eq!(version, 24);
     let index_sql: String = conn
         .query_row(
             "SELECT sql FROM sqlite_master \
@@ -661,7 +661,7 @@ fn migrate_v13_to_v14_indexes_present_album_order_without_changing_rows() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 23);
+    assert_eq!(version, 24);
     let index_sql: String = conn
         .query_row(
             "SELECT sql FROM sqlite_master \
@@ -752,7 +752,7 @@ fn migrate_v14_to_v15_adds_disc_number_without_losing_tracks() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 23);
+    assert_eq!(version, 24);
     let preserved: (String, String, Option<i32>) = conn
         .query_row(
             "SELECT path, title, disc_no FROM tracks WHERE id = 7",

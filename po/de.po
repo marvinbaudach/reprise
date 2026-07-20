@@ -238,6 +238,25 @@ msgid "Choose Folder…"
 msgstr "Ordner auswählen…"
 
 #: crates/reprise-gnome/src/ui/strings.rs:153
+msgid "Excluded Files"
+msgstr "Ausgeschlossene Dateien"
+
+#: crates/reprise-gnome/src/ui/strings.rs:154
+msgid "Restore All"
+msgstr "Alle wiederherstellen"
+
+#: crates/reprise-gnome/src/ui/strings.rs:155
+msgid "Could not restore excluded files"
+msgstr "Ausgeschlossene Dateien konnten nicht wiederhergestellt werden"
+
+#: crates/reprise-gnome/src/ui/strings.rs:160
+#, rust-format
+msgid "{count} file ignored during library scans"
+msgid_plural "{count} files ignored during library scans"
+msgstr[0] "{count} Datei wird beim Einlesen der Musiksammlung ignoriert"
+msgstr[1] "{count} Dateien werden beim Einlesen der Musiksammlung ignoriert"
+
+#: crates/reprise-gnome/src/ui/strings.rs:153
 msgid "Restart required"
 msgstr "Neustart erforderlich"
 
@@ -324,15 +343,23 @@ msgstr "Das Entfernen konnte nicht gestartet werden"
 #: crates/reprise-gnome/src/ui/strings.rs:185
 #, rust-format
 msgid ""
-"Remove {count} track from the library? The music file will remain on disk."
+"Remove {count} track from the library? Its rating, playlist entries, and "
+"device sync state are removed. The music file stays on disk and will be "
+"ignored during future scans. Listening history stays in My Stats."
 msgid_plural ""
-"Remove {count} tracks from the library? The music files will remain on disk."
+"Remove {count} tracks from the library? Their ratings, playlist entries, "
+"and device sync state are removed. The music files stay on disk and will be "
+"ignored during future scans. Listening history stays in My Stats."
 msgstr[0] ""
-"{count} Titel aus der Musiksammlung entfernen? Die Musikdatei bleibt auf dem "
-"Datenträger."
+"{count} Titel aus der Musiksammlung entfernen? Seine Bewertung, Playlist-"
+"Einträge und sein Geräte-Sync-Status werden entfernt. Die Musikdatei bleibt "
+"auf dem Datenträger und wird bei künftigen Einlesevorgängen ignoriert. Der "
+"Hörverlauf bleibt in My Stats erhalten."
 msgstr[1] ""
-"{count} Titel aus der Musiksammlung entfernen? Die Musikdateien bleiben auf "
-"dem Datenträger."
+"{count} Titel aus der Musiksammlung entfernen? Ihre Bewertungen, Playlist-"
+"Einträge und ihr Geräte-Sync-Status werden entfernt. Die Musikdateien "
+"bleiben auf dem Datenträger und werden bei künftigen Einlesevorgängen "
+"ignoriert. Der Hörverlauf bleibt in My Stats erhalten."
 
 #: crates/reprise-gnome/src/ui/strings.rs:195
 #, rust-format

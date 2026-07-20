@@ -236,6 +236,25 @@ msgid "Choose Folder…"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:153
+msgid "Excluded Files"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:154
+msgid "Restore All"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:155
+msgid "Could not restore excluded files"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:160
+#, rust-format
+msgid "{count} file ignored during library scans"
+msgid_plural "{count} files ignored during library scans"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:153
 msgid "Restart required"
 msgstr ""
 
@@ -320,9 +339,13 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/strings.rs:185
 #, rust-format
 msgid ""
-"Remove {count} track from the library? The music file will remain on disk."
+"Remove {count} track from the library? Its rating, playlist entries, and "
+"device sync state are removed. The music file stays on disk and will be "
+"ignored during future scans. Listening history stays in My Stats."
 msgid_plural ""
-"Remove {count} tracks from the library? The music files will remain on disk."
+"Remove {count} tracks from the library? Their ratings, playlist entries, "
+"and device sync state are removed. The music files stay on disk and will be "
+"ignored during future scans. Listening history stays in My Stats."
 msgstr[0] ""
 msgstr[1] ""
 

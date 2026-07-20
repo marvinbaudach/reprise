@@ -1746,6 +1746,18 @@ deterministisch und hoch-konfident, nie „ohne Review".
   bei mehreren Snapshots desselben Track-IDs die jüngsten Metadaten zeigen.
   Dialoge unterscheiden explizit Katalogfolgen von erhaltenem Hörverlauf.
 
+- **BROWSE-7** [aktiv] [core] — **Entfernen, Trash und Listenaktionen sind
+  verschiedene Befehle.** „Remove from library" lässt Dateien unberührt,
+  entfernt aktuelle Katalog-, Rating-, Playlist- und Geräte-Sync-Daten und
+  legt atomar eine persistente Scan-Ausnahme für die Dateidentität an; ein
+  Rename derselben Datei hebt sie nicht auf. Preferences > Library zeigt die
+  Anzahl und „Restore All" löscht die Ausnahmen und startet einen Rescan.
+  „Move to Trash" verschiebt ausschließlich erfolgreich bestätigte Dateien,
+  entfernt nur deren aktuelle Katalogdaten und erzeugt keine Ausnahme — eine
+  später restaurierte Datei darf wiederkehren. „Remove from playlist/queue"
+  ändert ausschließlich diese Liste. Der langlebige Hörverlauf folgt immer
+  BROWSE-6.
+
 ---
 
 Wenn beim Testen ein Fall auftaucht, den keine Regel deckt: Regel ergänzen
