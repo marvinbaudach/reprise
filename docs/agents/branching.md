@@ -18,7 +18,8 @@ for the next stable revision. Normal feature and fix branches start from
 3. Open a pull request to `dev`.
 4. Merge only after `CI / Quality gate` is green.
 5. Promote a tested development snapshot with a pull request from `dev` to
-   `main`. Pull requests from any other head branch to `main` fail CI.
+   `main`. Pull requests from any other head branch to `main` fail CI unless
+   they use the emergency `hotfix/*` path below.
 
 Direct pushes to `main` and `dev` are prohibited by GitHub branch rules.
 Force pushes and branch deletion are prohibited. Required checks are strict,
@@ -26,8 +27,12 @@ so a pull request must be tested against the latest target branch before it
 can merge. Conversations must be resolved. The repository has one maintainer,
 so an approval is not required; CI and the pull-request boundary are required.
 
-Hotfixes use the same path: branch from `dev`, merge back to `dev`, then
-promote `dev` to `main`. Do not bypass the stable branch rule for urgency.
+Emergency hotfixes branch from the current `main` as `hotfix/*` and may open
+a pull request directly to `main`. They run the same complete required gate;
+urgency never bypasses CI or the pull-request boundary. After the hotfix
+merges, immediately synchronize `main` back into `dev` through a pull request
+so the integration branch cannot lose the repair. Routine fixes still use the
+normal feature-to-`dev` promotion path.
 
 ## What CI enforces
 
