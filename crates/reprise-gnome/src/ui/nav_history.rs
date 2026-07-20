@@ -62,6 +62,24 @@ impl NavHistory {
         let _ = router.navigate(intent_for(&new.browser));
     }
 
+    pub(in crate::ui) fn restore(&self, current: BrowserPlace, library_root: BrowserPlace) {
+        *self.navigation.borrow_mut() = Some(BrowserNavigation::restore(current, library_root));
+        self.replaying_history.set(false);
+    }
+
+    pub(in crate::ui) fn session_places(
+        &self,
+        visible_track_place: BrowserPlace,
+    ) -> Option<(BrowserPlace, BrowserPlace)> {
+        self.replace_current(visible_track_place);
+        let navigation = self.navigation.borrow();
+        let navigation = navigation.as_ref()?;
+        Some((
+            navigation.current().clone(),
+            navigation.library_root().clone(),
+        ))
+    }
+
     pub(in crate::ui) fn record_route_from(&self, new: &NavPlace, current: BrowserPlace) {
         self.replace_current(current);
         self.record_route(new);
@@ -294,5 +312,19 @@ mod tests {
                 .browser_place(),
             &library
         );
+    }
+
+    #[test]
+    fn browse_5_restore_keeps_current_and_library_root_but_drops_history() {
+        let nav = NavHistory::default();
+        let mut root = BrowserPlace::from(ViewSource::Library);
+        root.track_state_mut().unwrap().search = "root query".into();
+        let current = BrowserPlace::fresh_album("Blue", "Joni Mitchell");
+
+        nav.restore(current.clone(), root.clone());
+
+        assert_eq!(nav.session_places(current.clone()), Some((current, root)));
+        assert_eq!(nav.go_back(), None);
+        assert_eq!(nav.go_forward(), None);
     }
 }

@@ -566,21 +566,26 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     super::window_smoke::arm_bar_position(conn, library_player_bar);
     super::lyrics_smoke::arm(player.as_ref(), info_panel, conn);
 
-    super::session_restore::restore_runtime(
-        search_entry,
-        track_list,
+    super::session_restore::restore_runtime(player.as_ref(), session_state);
+    let restored_place = session_state
+        .browser_place
+        .clone()
+        .unwrap_or_else(|| BrowserPlace::from(ViewSource::Library));
+    let restored_root = session_state
+        .library_root
+        .clone()
+        .unwrap_or_else(|| BrowserPlace::from(ViewSource::Library));
+    nav_history.restore(restored_place.clone(), restored_root);
+    nav_history.begin_back();
+    super::library_shell::route_to_place(
+        &crate::ui::nav_history::NavPlace::browser(restored_place),
         sidebar,
-        window_title,
-        &search_restore_guard,
-        player.as_ref(),
-        session_state,
+        track_list,
+        content_stack,
+        &active_content_focus,
+        "session restore",
     );
-    let restored_source = super::view_session::snapshot(track_list).source;
-    // NAV-2: session restore selects the source silently (no `on_select`),
-    // so seed the history's "current place" here — without it the FIRST
-    // cross-navigation after startup (e.g. opening an album from the grid)
-    // would have no previous place to push and Back would do nothing.
-    nav_history.record_route(&crate::ui::nav_history::NavPlace::source(restored_source));
+    nav_history.end_back();
     super::session_restore::wire_close(
         window,
         conn,
@@ -588,6 +593,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         player.as_ref(),
         session_state,
         geometry_guard,
+        nav_history,
     );
     super::session_restore::arm_seed_close(window);
     super::first_run::run(window, scan_button, conn, first_run_decision);
