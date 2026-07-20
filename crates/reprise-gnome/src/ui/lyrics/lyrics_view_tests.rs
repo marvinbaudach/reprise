@@ -51,6 +51,7 @@ fn npp_5_line_hierarchy_uses_the_decided_alpha_steps() {
         "min-width: 26px",
         "min-height: 2.5px",
         "background-color: @reprise_player_accent",
+        "box-shadow: 0 0 8px alpha(@reprise_player_accent, 0.55)",
     ] {
         assert!(css.contains(declaration), "missing {declaration}");
     }

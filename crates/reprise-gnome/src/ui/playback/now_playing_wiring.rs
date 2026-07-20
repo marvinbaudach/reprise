@@ -323,6 +323,7 @@ impl PlayerController {
     pub(in crate::ui) fn sync_state(&self, state: PlaybackState) {
         self.bar.set_state(state);
         self.compact_player.set_state(state);
+        self.sync_lyrics_state(state);
         // Fan the same state out to the track list's now-playing equaliser
         // (freeze on pause, drop the marker on stop). Cloned-out before the
         // call inside `notify_playback_state_changed`, per RefCell discipline.
