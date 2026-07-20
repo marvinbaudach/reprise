@@ -74,30 +74,71 @@ if [[ ${#tests[@]} -eq 0 ]]; then
   exit 1
 fi
 
+jobs=${DISPLAY_TEST_JOBS:-1}
+if [[ ! $jobs =~ ^[1-9][0-9]*$ ]]; then
+  echo "DISPLAY_TEST_JOBS must be a positive integer" >&2
+  exit 2
+fi
+
 # Every test runs, whatever the ones before it did. A fail-fast loop reports
 # the first red test and hides how many others are red — which is exactly the
 # information needed to judge whether the suite is trustworthy at all. Failures
-# are collected and reported in one balance sheet at the end instead.
-passed=0
-failed_tests=()
+# are collected and reported in one balance sheet at the end instead. Each
+# worker owns its XDG roots, D-Bus session, X server, marker, and log. Keeping
+# the default at one preserves the local debugging order; CI opts into a small
+# bounded pool through DISPLAY_TEST_JOBS.
+results_dir=$(mktemp -d)
+trap 'rm -rf "$results_dir"' EXIT
 
-for test in "${tests[@]}"; do
+run_display_test() {
+  local index=$1
+  local test=$2
+  local data_home cache_home marker_dir display_test_passed
+  # The parent owns the shared results directory. A background worker must
+  # never inherit its EXIT cleanup and remove siblings' logs or statuses.
+  trap - EXIT
   data_home=$(mktemp -d)
   cache_home=$(mktemp -d)
   marker_dir=$(mktemp -d)
   display_test_passed="$marker_dir/passed"
-  echo "== display test: $test =="
-  if dbus-run-session -- xvfb-run -a env \
-    XDG_DATA_HOME="$data_home" XDG_CACHE_HOME="$cache_home" \
-    GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink \
-    DISPLAY_TEST="$test" DISPLAY_TEST_PASSED="$display_test_passed" \
-    bash -c '
-      cargo test -p reprise-gnome "$DISPLAY_TEST" -- --ignored --exact \
-        && : >"$DISPLAY_TEST_PASSED"
-    ' && [[ -f $display_test_passed ]]; then
+  {
+    echo "== display test: $test =="
+    if dbus-run-session -- xvfb-run -a env \
+      XDG_DATA_HOME="$data_home" XDG_CACHE_HOME="$cache_home" \
+      GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink \
+      DISPLAY_TEST="$test" DISPLAY_TEST_PASSED="$display_test_passed" \
+      bash -c '
+        cargo test -p reprise-gnome "$DISPLAY_TEST" -- --ignored --exact \
+          && : >"$DISPLAY_TEST_PASSED"
+      ' && [[ -f $display_test_passed ]]; then
+      echo pass >"$results_dir/$index.status"
+    else
+      echo fail >"$results_dir/$index.status"
+    fi
+  } >"$results_dir/$index.log" 2>&1
+  rm -rf "$data_home" "$cache_home" "$marker_dir"
+}
+
+active=0
+for index in "${!tests[@]}"; do
+  run_display_test "$index" "${tests[$index]}" &
+  active=$((active + 1))
+  if (( active >= jobs )); then
+    wait -n || true
+    active=$((active - 1))
+  fi
+done
+wait || true
+
+passed=0
+failed_tests=()
+for index in "${!tests[@]}"; do
+  cat "$results_dir/$index.log"
+  if [[ -f $results_dir/$index.status ]] \
+    && [[ $(<"$results_dir/$index.status") == pass ]]; then
     passed=$((passed + 1))
   else
-    failed_tests+=("$test")
+    failed_tests+=("${tests[$index]}")
   fi
 done
 
