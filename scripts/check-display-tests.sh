@@ -119,6 +119,9 @@ run_display_test() {
     echo "== display test: $test =="
     # Set XDG roots before dbus-run-session so D-Bus-activated Portal and
     # AT-SPI services inherit the worker isolation too.
+    # xvfb-run can return non-zero after the test process succeeded when its
+    # cleanup races an already-exited Xvfb process. The marker is written only
+    # after cargo reports success, so it remains the authoritative test result.
     if env \
       XDG_DATA_HOME="$data_home" XDG_CACHE_HOME="$cache_home" \
       XDG_CONFIG_HOME="$config_home" XDG_RUNTIME_DIR="$runtime_dir" \
@@ -129,7 +132,10 @@ run_display_test() {
       bash -c '
         cargo test -p reprise-gnome "$DISPLAY_TEST" -- --ignored --exact \
           && : >"$DISPLAY_TEST_PASSED"
-      ' && [[ -f $display_test_passed ]]; then
+      '; then
+      :
+    fi
+    if [[ -f $display_test_passed ]]; then
       echo pass >"$results_dir/$index.status"
     else
       echo fail >"$results_dir/$index.status"

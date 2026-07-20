@@ -82,6 +82,7 @@ require_pattern 'XDG_CONFIG_HOME' scripts/check-display-tests.sh
 require_pattern 'GIO_USE_VFS=local' scripts/check-display-tests.sh
 require_pattern 'GTK_USE_PORTAL=0' scripts/check-display-tests.sh
 require_pattern 'cleanup_worker_roots' scripts/check-display-tests.sh
+require_pattern 'if \[\[ -f \$display_test_passed \]\]' scripts/check-display-tests.sh
 require_pattern 'server-num' scripts/check-display-tests.sh
 require_pattern_order 'if env' 'dbus-run-session -- xvfb-run' scripts/check-display-tests.sh
 require_pattern 'DISPLAY_TEST_JOBS: 4' .github/workflows/ci.yml
