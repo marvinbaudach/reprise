@@ -59,6 +59,10 @@ require_pattern 'check-motion-tokens.sh' scripts/check-merge-readiness.sh
 require_pattern 'check-display-tests.sh --css' scripts/check-merge-readiness.sh
 require_pattern 'mode=css' scripts/check-display-tests.sh
 require_pattern 'display_test_passed' scripts/check-display-tests.sh
+require_pattern 'DISPLAY_TEST_JOBS' scripts/check-display-tests.sh
+require_pattern 'wait -n' scripts/check-display-tests.sh
+require_pattern 'results_dir' scripts/check-display-tests.sh
+require_pattern 'DISPLAY_TEST_JOBS: 4' .github/workflows/ci.yml
 require_pattern 'Frontend lint' scripts/check-architecture.sh
 require_pattern 'composition root must stay below 600' scripts/check-architecture.sh
 require_pattern 'UI orchestrators must stay below 600' scripts/check-architecture.sh
