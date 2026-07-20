@@ -54,3 +54,38 @@ _Vermeiden_: Tool-Aufruf, implizite Zustimmung
 Eine separat erteilte Klasse von Operationen über einen Agenten-Adapter; Lesen,
 Mixplanung und Playlist-Erzeugung sind verschiedene Freigaben.
 _Vermeiden_: Serverzugriff, Alles-oder-nichts-Berechtigung
+
+## Bibliotheksnavigation
+
+**Browser-Ort**:
+Ein navigierbares Ziel samt eigenem Verfeinerungs-, Sortier-, Anker-, Auswahl-
+und Inhaltsfokuszustand. Zurück und Vorwärts restaurieren denselben Ort; eine
+frische Navigation erzeugt einen frischen Ort.
+_Vermeiden_: Ansicht, Tab, globaler Filterzustand
+
+**Track-Quelle**:
+Die fachliche Herkunft einer Trackmenge, etwa Bibliothek, Playlist, Smart
+Playlist oder Queue.
+_Vermeiden_: Ansicht, Scope
+
+**Library-Scope**:
+Ein navigierbarer, aus Track-Metadaten abgeleiteter Ausschnitt der Bibliothek:
+alle Tracks, ein Album oder ein Interpret. Ein Scope verwendet dieselbe
+Trackliste und ist keine eigene Darstellungsart oder dauerhafte Entität.
+_Vermeiden_: Modus, Tab, Filterchip, Albumobjekt
+
+**Verfeinerung**:
+Eine lokale Einschränkung der sichtbaren Ergebnismenge eines Browser-Orts,
+etwa Textsuche, Genre, Jahr oder Bewertung.
+_Vermeiden_: Scope, Queue, globaler Filter
+
+**Wiedergabe-Snapshot**:
+Die beim Start eingefrorene geordnete Menge stabiler Track-IDs samt Cursor.
+Spätere Navigation, Verfeinerung oder Quellmutation berechnet sie nicht neu.
+_Vermeiden_: sichtbare Liste, Live-Query
+
+**Wiedergabe-Ursprung**:
+Der strukturierte Browser-Ort und eingefrorene Anzeigename, aus dem ein
+Wiedergabe-Snapshot gestartet wurde. Er dient dem spaeteren Aufdecken, besitzt
+aber nicht die Wiedergabe selbst.
+_Vermeiden_: aktuelle Ansicht, Queue
