@@ -47,6 +47,8 @@ the dependency audit.
 The Action uses an isolated Arch Linux container because Reprise requires GTK
 4.22 and libadwaita 1.9. Tests use temporary XDG directories, a private D-Bus
 session, Xvfb, and the fake audio sink through the existing project gates.
+CI runs up to four independently isolated display tests concurrently; local
+runs stay serial unless `DISPLAY_TEST_JOBS` is set explicitly.
 
 ## GitHub rules
 
