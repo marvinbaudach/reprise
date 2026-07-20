@@ -12,6 +12,7 @@ use crate::ui::{motion, strings};
 
 const DRAW_HEIGHT: i32 = 220;
 const EDGE: f64 = 12.0;
+const NEUTRAL_PROFILE: [f32; SPECTRUM_BAND_COUNT] = [0.12; SPECTRUM_BAND_COUNT];
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(in crate::ui) enum VisualPreset {
@@ -265,7 +266,7 @@ impl Default for RenderState {
         Self {
             current: [0.0; SPECTRUM_BAND_COUNT],
             target: [0.0; SPECTRUM_BAND_COUNT],
-            static_profile: [0.12; SPECTRUM_BAND_COUNT],
+            static_profile: NEUTRAL_PROFILE,
             phase: 0.0,
             preset: VisualPreset::Rings,
             playback: PlaybackState::Stopped,
@@ -423,6 +424,17 @@ impl SongVisualizer {
         if state.playback != PlaybackState::Playing || !motion::animations_enabled() {
             state.current = profile;
             state.target = profile;
+        }
+        drop(state);
+        queue_registered_areas(&self.areas);
+    }
+
+    pub(in crate::ui) fn clear_profile(&self) {
+        let mut state = self.state.borrow_mut();
+        state.static_profile = NEUTRAL_PROFILE;
+        if state.playback != PlaybackState::Playing || !motion::animations_enabled() {
+            state.current = NEUTRAL_PROFILE;
+            state.target = NEUTRAL_PROFILE;
         }
         drop(state);
         queue_registered_areas(&self.areas);
@@ -662,7 +674,7 @@ mod tests {
     ];
 
     #[test]
-    fn ac_7_rings_flow_and_pulse_have_distinct_bounded_geometry() {
+    fn ac_10_rings_flow_and_pulse_have_distinct_bounded_geometry() {
         let rings = scene(VisualPreset::Rings, &BANDS, 240.0, 220.0, 0.25);
         let flow = scene(VisualPreset::Flow, &BANDS, 240.0, 220.0, 0.25);
         let pulse = scene(VisualPreset::Pulse, &BANDS, 240.0, 220.0, 0.25);
@@ -679,7 +691,7 @@ mod tests {
     }
 
     #[test]
-    fn ac_7_visual_presets_are_stable_keyboard_labels() {
+    fn ac_10_visual_presets_are_stable_keyboard_labels() {
         assert_eq!(
             VisualPreset::ALL.map(VisualPreset::label),
             ["Rings", "Flow", "Pulse"]
@@ -687,7 +699,7 @@ mod tests {
     }
 
     #[test]
-    fn ac_7_louder_spectrum_changes_geometry_without_changing_cardinality() {
+    fn ac_10_louder_spectrum_changes_geometry_without_changing_cardinality() {
         let quiet = scene(VisualPreset::Rings, &[0.0; 16], 240.0, 220.0, 0.0);
         let loud = scene(VisualPreset::Rings, &[1.0; 16], 240.0, 220.0, 0.0);
 
@@ -699,7 +711,19 @@ mod tests {
     }
 
     #[test]
-    fn ac_8_playing_moves_while_pause_settles_to_the_static_profile() {
+    fn ac_10_visual_chrome_uses_the_shared_cover_accent_and_press_vocabulary() {
+        let css = css();
+        assert!(css.matches("@reprise_player_accent").count() >= 4);
+        assert!(css.contains(".reprise-song-visual-preset:checked"));
+        assert!(css.contains(".reprise-song-visual-fullscreen-canvas"));
+
+        let buttons = crate::ui::style::buttons::css();
+        assert!(buttons.contains(".reprise-btn-toggle:active"));
+        assert!(buttons.contains(".reprise-btn-toggle:focus-visible"));
+    }
+
+    #[test]
+    fn ac_11_playing_moves_while_pause_settles_to_the_static_profile() {
         let mut state = RenderState {
             current: [0.0; SPECTRUM_BAND_COUNT],
             target: [1.0; SPECTRUM_BAND_COUNT],
@@ -723,7 +747,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn ac_7_visual_widget_exposes_a_labeled_canvas_and_three_keyboard_presets() {
+    fn ac_10_visual_widget_exposes_a_labeled_canvas_and_three_keyboard_presets() {
         gtk4::init().unwrap();
         let visualizer = SongVisualizer::new();
 

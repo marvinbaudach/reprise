@@ -1,23 +1,18 @@
 use super::*;
 
 #[test]
-fn ac_8_f11_is_scoped_to_the_enabled_song_visuals_plugin() {
+fn ac_11_f11_is_scoped_to_the_enabled_visual_tab() {
     assert!(should_toggle_visual_fullscreen(
         true,
         true,
-        PanelTab::AudioCharacter,
+        PanelTab::Visual,
         gtk4::gdk::Key::F11,
     ));
     for unavailable in [
-        should_toggle_visual_fullscreen(false, true, PanelTab::AudioCharacter, gtk4::gdk::Key::F11),
-        should_toggle_visual_fullscreen(true, false, PanelTab::AudioCharacter, gtk4::gdk::Key::F11),
+        should_toggle_visual_fullscreen(false, true, PanelTab::Visual, gtk4::gdk::Key::F11),
+        should_toggle_visual_fullscreen(true, false, PanelTab::Visual, gtk4::gdk::Key::F11),
         should_toggle_visual_fullscreen(true, true, PanelTab::Lyrics, gtk4::gdk::Key::F11),
-        should_toggle_visual_fullscreen(
-            true,
-            true,
-            PanelTab::AudioCharacter,
-            gtk4::gdk::Key::Escape,
-        ),
+        should_toggle_visual_fullscreen(true, true, PanelTab::Visual, gtk4::gdk::Key::Escape),
     ] {
         assert!(!unavailable);
     }
@@ -95,11 +90,11 @@ fn no_loaded_track_uses_the_idle_presentation() {
 }
 
 #[test]
-fn ac_4_audio_character_is_the_third_persistent_panel_tab() {
-    assert_eq!(PanelTab::AudioCharacter.page_name(), AUDIO_CHARACTER_PAGE);
+fn ac_10_visual_is_the_third_panel_tab() {
+    assert_eq!(PanelTab::Visual.page_name(), VISUAL_PAGE);
     assert_eq!(
         PANEL_TABS,
-        [PanelTab::UpNext, PanelTab::Lyrics, PanelTab::AudioCharacter]
+        [PanelTab::UpNext, PanelTab::Lyrics, PanelTab::Visual]
     );
 }
 
@@ -305,23 +300,18 @@ fn head_and_pill_match_the_21a_structure() {
         widgets.tab_switcher.stack().as_ref(),
         Some(&widgets.tab_stack)
     );
-    assert!(widgets
-        .tab_stack
-        .child_by_name(AUDIO_CHARACTER_PAGE)
-        .is_some());
-    let audio_character = widgets
-        .tab_stack
-        .child_by_name(AUDIO_CHARACTER_PAGE)
-        .unwrap();
-    let page = widgets.tab_stack.page(&audio_character);
-    assert_eq!(page.title().as_deref(), Some("Audio Character"));
+    assert!(widgets.tab_stack.child_by_name(VISUAL_PAGE).is_some());
+    assert_eq!(widgets.tab_stack.pages().n_items(), 3);
+    let visual = widgets.tab_stack.child_by_name(VISUAL_PAGE).unwrap();
+    let page = widgets.tab_stack.page(&visual);
+    assert_eq!(page.title().as_deref(), Some("Visual"));
     assert_eq!(page.icon_name().as_deref(), Some("audio-speakers-symbolic"));
     assert!(widgets.footer.has_css_class("reprise-now-playing-footer"));
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_4_icons_only_switcher_keeps_three_labeled_keyboard_targets() {
+fn ac_10_icons_only_switcher_keeps_three_labeled_keyboard_targets() {
     gtk4::init().unwrap();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let widgets = test_widgets(&content, true);

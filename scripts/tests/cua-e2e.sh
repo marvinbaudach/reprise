@@ -47,6 +47,10 @@ for pattern in \
   'run_tag_1_no_jump_after_save_scenario' \
   'run_tag_3_multi_dialog_structure_scenario' \
   'run_library_doctor_scenario' \
+  'run_song_visuals_scenario' \
+  'Song analysis' \
+  'Audio-reactive song visual' \
+  'color follows the cover accent' \
   'cua_activate_main_menu_item' \
   'Enable Library Doctor' \
   'safe_change_count' \
@@ -147,6 +151,10 @@ for scenario_case in \
 done
 if ! rg --quiet --fixed-strings 'library-doctor)' "$runner"; then
   echo "$runner must support isolated scenario: library-doctor)" >&2
+  exit 1
+fi
+if ! rg --quiet --fixed-strings 'song-visuals)' "$runner"; then
+  echo "$runner must support isolated scenario: song-visuals)" >&2
   exit 1
 fi
 if ! rg --quiet --fixed-strings 'cargo build --locked -p reprise-gnome' "$runner"; then

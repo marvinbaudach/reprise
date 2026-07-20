@@ -130,7 +130,7 @@ mod song_visual_tests {
     use super::*;
 
     #[test]
-    fn ac_7_spectrum_frame_normalizes_decibels_and_rejects_non_finite_input() {
+    fn ac_10_spectrum_frame_normalizes_decibels_and_rejects_non_finite_input() {
         let frame = SpectrumFrame::from_decibels([
             -80.0,
             -72.0,

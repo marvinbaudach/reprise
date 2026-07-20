@@ -5,6 +5,7 @@ mod panel_state;
 pub(in crate::ui) mod song_visualizer;
 #[path = "now_playing.rs"]
 mod surface;
+mod surface_css;
 pub(in crate::ui) mod up_next_panel;
 
 #[allow(unused_imports)]

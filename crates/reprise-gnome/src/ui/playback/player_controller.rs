@@ -551,6 +551,12 @@ impl PlayerController {
         self.bar.connect_artist_clicked(f);
     }
 
+    /// Wires the persistent player-bar info button to the current track's
+    /// local Audio Character presentation.
+    pub fn connect_analysis_clicked(&self, f: impl Fn() + 'static) {
+        self.bar.connect_analysis_clicked(f);
+    }
+
     pub fn set_track_list_reload(&self, reload: impl Fn() + 'static) {
         *self.reload_track_list.borrow_mut() = Some(Rc::new(reload));
     }
