@@ -177,7 +177,7 @@ use crate::ui::style::cover_accent::Rgb as AccentRgb;
 use reprise_core::media_integration::{
     MediaIntegrationHandles, MprisPlaybackStatus, SharedMprisState, DEFAULT_VOLUME,
 };
-use reprise_core::playback::{PlaybackBackend, PlaybackState, PlayerEvent};
+use reprise_core::playback::{PlaybackBackend, PlaybackState, PlayerEvent, SpectrumFrame};
 use reprise_core::queries;
 use reprise_core::queue::Queue;
 use reprise_core::up_next::UpNextQueue;
@@ -258,7 +258,7 @@ pub struct PlayerController {
     pub(in crate::ui) up_next: RefCell<UpNextQueue>,
     pub(in crate::ui) current_up_next: Cell<Option<i64>>,
     /// Where the `queue` snapshot was seeded from (`play_from_view`) — the
-    /// Queue view's named virtual context tail and NAV-9a's jump target.
+    /// Queue view's named virtual context tail and NAV-9b's jump target.
     /// `None` before the first play and after a stop cleared the context.
     pub(in crate::ui) play_origin: RefCell<Option<super::play_origin::PlayOrigin>>,
     /// See the module's `## Toast + track-list-reload seam` doc section.
@@ -301,6 +301,8 @@ pub struct PlayerController {
     /// separately delivered loaded-track snapshot.
     pub(in crate::ui) now_playing_panel_state_changed:
         RefCell<Option<OnNowPlayingPanelStateChanged>>,
+    /// Bounded live-spectrum feed for the optional Now Playing visualizer.
+    pub(in crate::ui) song_visual_spectrum_changed: RefCell<Option<OnSongVisualSpectrumChanged>>,
     /// Supplies the current view's ids when an exhausted queue needs refill.
     pub(in crate::ui) view_refill_ids: RefCell<Option<ViewRefillIds>>,
     /// How many *consecutive* auto-skips (Stage 2 Task 5) have happened since
@@ -398,6 +400,7 @@ pub(in crate::ui) struct NowPlaying {
 
 type OnNowPlayingPanelTrackChanged = Rc<dyn Fn(Option<NowPlaying>)>;
 type OnNowPlayingPanelStateChanged = Rc<dyn Fn(PlaybackState)>;
+type OnSongVisualSpectrumChanged = Rc<dyn Fn(SpectrumFrame)>;
 
 impl PlayerController {
     /// Builds the controller and the event bridge around injected platform
@@ -463,6 +466,7 @@ impl PlayerController {
             playback_state_changed_album: RefCell::new(None),
             now_playing_panel_track_changed: RefCell::new(None),
             now_playing_panel_state_changed: RefCell::new(None),
+            song_visual_spectrum_changed: RefCell::new(None),
             view_refill_ids: RefCell::new(None),
             consecutive_skips: Cell::new(0),
             failure_skip_limit: Cell::new(0),
@@ -488,6 +492,15 @@ impl PlayerController {
         player_controller_wiring::wire_bar_controls(&controller);
         player_controller_wiring::wire_compact_controls(&controller);
         player_controller_wiring::arm_smoke_repeat(&controller);
+
+        let song_visuals_enabled = reprise_core::modules::is_enabled(
+            &controller.conn.borrow(),
+            &reprise_core::modules::SONG_VISUALS_MODULE,
+        )
+        .unwrap_or(reprise_core::modules::SONG_VISUALS_MODULE.default_enabled);
+        if let Err(error) = controller.player.set_spectrum_enabled(song_visuals_enabled) {
+            tracing::warn!(%error, "could not restore live song visuals; using the static profile");
+        }
 
         let weak = Rc::downgrade(&controller);
         glib::spawn_future_local(async move {
@@ -692,7 +705,11 @@ impl PlayerController {
                                 .then(|| summary.album.clone()),
                             duration_ms: summary.duration_ms,
                         });
-                        self.notify_current_track_changed(id, None, true);
+                        self.notify_current_track_changed(
+                            id,
+                            None,
+                            super::current_track_selection::CurrentTrackChange::PlaybackStarted,
+                        );
                         // The composite Queue view keys its Now Playing row
                         // and Up Next tail off the playhead — every track
                         // change re-partitions it (QUE-1) and shrinks the

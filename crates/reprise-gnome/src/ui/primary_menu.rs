@@ -115,7 +115,10 @@ pub(super) fn install(
     let menu_button = gtk4::MenuButton::builder()
         .icon_name("open-menu-symbolic")
         .menu_model(&menu)
-        .tooltip_text(strings::text(strings::MAIN_MENU))
+        .tooltip_text(strings::shortcut_tooltip(
+            strings::MAIN_MENU,
+            strings::SHORTCUT_MAIN_MENU,
+        ))
         .build();
     header.pack_end(&menu_button);
 

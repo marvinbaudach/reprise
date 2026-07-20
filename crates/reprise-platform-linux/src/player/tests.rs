@@ -1,5 +1,7 @@
 use super::*;
-use crate::player_effects::{build_audio_filter, requested_state, same_filter_topology};
+use crate::player_effects::{
+    build_audio_filter, requested_state, same_filter_topology, set_spectrum_messages,
+};
 use reprise_core::library::settings::TrackTransition;
 
 #[test]
@@ -57,6 +59,44 @@ fn disabled_equalizer_is_neutral_in_the_stable_filter() {
         .unwrap();
 
     assert_eq!(equalizer.property::<f64>("band0"), 0.0);
+}
+
+#[test]
+fn ac_10_audio_filter_contains_a_disabled_bounded_spectrum_analyzer() {
+    gst::init().unwrap();
+    let filter = build_audio_filter(&AudioEffects::default())
+        .unwrap()
+        .unwrap();
+    let bin = filter.clone().downcast::<gst::Bin>().unwrap();
+    let spectrum = bin
+        .by_name("reprise-spectrum")
+        .expect("the stable filter contains the visual analyzer");
+
+    assert_eq!(
+        spectrum.property::<u32>("bands"),
+        reprise_core::playback::SPECTRUM_BAND_COUNT as u32
+    );
+    assert_eq!(spectrum.property::<i32>("threshold"), -80);
+    assert!(!spectrum.property::<bool>("post-messages"));
+
+    set_spectrum_messages(&filter, true).unwrap();
+    assert!(spectrum.property::<bool>("post-messages"));
+}
+
+#[test]
+fn ac_10_spectrum_messages_project_exactly_one_bounded_frame() {
+    gst::init().unwrap();
+    let magnitudes = gst::List::new((0..16).map(|index| -80.0_f32 + index as f32 * 5.0));
+    let structure = gst::Structure::builder("spectrum")
+        .field("magnitude", magnitudes)
+        .build();
+
+    let frame = spectrum_frame_from_structure(&structure).expect("valid spectrum frame");
+
+    assert_eq!(frame.bands().len(), 16);
+    assert_eq!(frame.bands()[0], 0.0);
+    assert_eq!(frame.bands()[15], 0.9375);
+    assert!(spectrum_frame_from_structure(&gst::Structure::new_empty("other")).is_none());
 }
 
 /// Guards every test in this module that sets `AUDIO_SINK_ENV_VAR`:
@@ -120,6 +160,48 @@ fn play_and_stop_emit_state_changed_events() {
         PlayerEvent::StateChanged(PlaybackState::Stopped)
     ));
 
+    std::env::remove_var(AUDIO_SINK_ENV_VAR);
+}
+
+#[test]
+fn ac_10_enabled_player_emits_live_spectrum_frames() {
+    let _guard = AUDIO_SINK_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
+
+    let (tx, rx) = std::sync::mpsc::channel::<PlayerEvent>();
+    let player = Player::new(Box::new(move |event| {
+        let _ = tx.send(event);
+    }))
+    .unwrap();
+    player.set_spectrum_enabled(true).unwrap();
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
+    player.play(path).unwrap();
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let frame = 'wait: loop {
+        while gst::glib::MainContext::default().pending() {
+            gst::glib::MainContext::default().iteration(false);
+        }
+        while let Ok(event) = rx.try_recv() {
+            if let PlayerEvent::Spectrum(frame) = event {
+                break 'wait frame;
+            }
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "expected a spectrum frame within timeout"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    };
+
+    assert!(frame
+        .bands()
+        .iter()
+        .all(|value| (0.0..=1.0).contains(value)));
+    assert!(frame.bands().iter().any(|value| *value > 0.0));
+    player.stop().unwrap();
     std::env::remove_var(AUDIO_SINK_ENV_VAR);
 }
 

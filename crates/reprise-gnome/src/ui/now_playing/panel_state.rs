@@ -8,25 +8,24 @@ use super::strings;
 
 pub(super) const UP_NEXT_PAGE: &str = "up-next";
 pub(super) const LYRICS_PAGE: &str = "lyrics";
-pub(super) const AUDIO_CHARACTER_PAGE: &str = "audio-character";
+pub(super) const VISUAL_PAGE: &str = "visual";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum PanelTab {
     #[default]
     UpNext,
     Lyrics,
-    AudioCharacter,
+    Visual,
 }
 
-pub(super) const PANEL_TABS: [PanelTab; 3] =
-    [PanelTab::UpNext, PanelTab::Lyrics, PanelTab::AudioCharacter];
+pub(super) const PANEL_TABS: [PanelTab; 3] = [PanelTab::UpNext, PanelTab::Lyrics, PanelTab::Visual];
 
 impl PanelTab {
     pub(super) fn page_name(self) -> &'static str {
         match self {
             Self::UpNext => UP_NEXT_PAGE,
             Self::Lyrics => LYRICS_PAGE,
-            Self::AudioCharacter => AUDIO_CHARACTER_PAGE,
+            Self::Visual => VISUAL_PAGE,
         }
     }
 
@@ -48,7 +47,7 @@ pub(super) struct TabSession {
 pub(super) struct TabFooters {
     pub(super) up_next: String,
     pub(super) lyrics: String,
-    pub(super) audio_character: String,
+    pub(super) visual: String,
 }
 
 thread_local! {

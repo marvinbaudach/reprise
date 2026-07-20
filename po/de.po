@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-20 11:38+0200\n"
+"POT-Creation-Date: 2026-07-20 22:28+0200\n"
 "PO-Revision-Date: 2026-07-12 18:10+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -431,7 +431,7 @@ msgid "Select Music Folder"
 msgstr "Musikordner auswählen"
 
 #: crates/reprise-gnome/src/ui/strings.rs:292
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:36
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:49
 msgid "Scanning…"
 msgstr "Ordner wird eingelesen…"
 
@@ -866,10 +866,46 @@ msgid "Audio Character"
 msgstr "Klangprofil"
 
 #: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:4
+msgid "Song analysis"
+msgstr "Songanalyse"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:5
+msgid "Visual"
+msgstr "Visualisierung"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:6
+msgid "Song Visuals"
+msgstr "Song-Visuals"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:7
+msgid "Show local audio-reactive visuals in Now Playing"
+msgstr "Lokale audioreaktive Visuals in der aktuellen Wiedergabe anzeigen"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:8
+msgid "Rings"
+msgstr "Ringe"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:9
+msgid "Flow"
+msgstr "Fluss"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:10
+msgid "Pulse"
+msgstr "Puls"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:11
+msgid "Audio-reactive song visual"
+msgstr "Audioreaktive Song-Visualisierung"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:13
+msgid "F11 Fullscreen · color follows the cover accent"
+msgstr "F11 Vollbild · Farbe folgt dem Cover-Akzent"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:14
 msgid "Analyze audio locally"
 msgstr "Audio lokal analysieren"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:6
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:16
 msgid ""
 "Reprise reads audio files only on this device. Nothing is uploaded. Existing "
 "profiles are kept when this is turned off."
@@ -877,79 +913,79 @@ msgstr ""
 "Reprise liest Audiodateien nur auf diesem Gerät. Es wird nichts hochgeladen. "
 "Vorhandene Profile bleiben beim Ausschalten erhalten."
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:8
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:18
 msgid "Analysis progress"
 msgstr "Analysefortschritt"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:9
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:19
 msgid "No eligible tracks"
 msgstr "Keine geeigneten Titel"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:11
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:21
 #, rust-format
 msgid "Analysis is off · {analyzed} of {total} analyzed · {failed} failed"
 msgstr ""
 "Analyse ist aus · {analyzed} von {total} analysiert · {failed} fehlgeschlagen"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:13
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:23
 #, rust-format
 msgid "Ready · {analyzed} of {total} analyzed · {failed} failed"
 msgstr "Bereit · {analyzed} von {total} analysiert · {failed} fehlgeschlagen"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:15
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:25
 #, rust-format
 msgid "Analyzing · {analyzed} of {total} analyzed · {failed} failed"
 msgstr ""
 "Analyse läuft · {analyzed} von {total} analysiert · {failed} fehlgeschlagen"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:17
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:27
 #, rust-format
 msgid "Paused · {analyzed} of {total} analyzed · {failed} failed"
 msgstr "Pausiert · {analyzed} von {total} analysiert · {failed} fehlgeschlagen"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:19
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:29
 #, rust-format
 msgid "Cancelled · {analyzed} of {total} analyzed · {failed} failed"
 msgstr ""
 "Abgebrochen · {analyzed} von {total} analysiert · {failed} fehlgeschlagen"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:21
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:31
 #, rust-format
 msgid "Failed · {analyzed} of {total} analyzed · {failed} failed"
 msgstr ""
 "Fehlgeschlagen · {analyzed} von {total} analysiert · {failed} fehlgeschlagen"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:23
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:33
 #, rust-format
 msgid "Complete · {analyzed} of {total} analyzed · {failed} failed"
 msgstr ""
 "Vollständig · {analyzed} von {total} analysiert · {failed} fehlgeschlagen"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:24
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:34
 msgid "Pause analysis"
 msgstr "Analyse pausieren"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:25
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:35
 msgid "Resume analysis"
 msgstr "Analyse fortsetzen"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:26
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:36
 msgid "Cancel analysis"
 msgstr "Analyse abbrechen"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:27
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:37
 msgid "Retry failed tracks"
 msgstr "Fehlgeschlagene Titel erneut versuchen"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:28
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:38
 msgid "Reanalyze library"
 msgstr "Musiksammlung neu analysieren"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:29
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:39
 msgid "Reanalyze the library?"
 msgstr "Musiksammlung neu analysieren?"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:31
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:41
 msgid ""
 "Existing Audio Character profiles will be replaced. This can take time. "
 "Music files and track metadata are not changed."
@@ -957,86 +993,86 @@ msgstr ""
 "Vorhandene Klangprofile werden ersetzt. Dies kann einige Zeit dauern. "
 "Musikdateien und Titelmetadaten werden nicht verändert."
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:33
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:43
 msgid "Reanalyze"
 msgstr "Neu analysieren"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:34
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:44
 msgid "Play a track to see its Audio Character"
 msgstr "Einen Titel abspielen, um sein Klangprofil zu sehen"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:36
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:46
 msgid "The loaded track's local audio profile will appear here."
 msgstr "Hier erscheint das lokale Audioprofil des geladenen Titels."
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:37
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:47
 msgid "Local audio analysis is disabled"
 msgstr "Die lokale Audioanalyse ist deaktiviert"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:39
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:49
 msgid "Enable Analyze audio locally in Library Settings."
 msgstr "„Audio lokal analysieren“ in den Sammlungseinstellungen aktivieren."
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:40
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:50
 msgid "Audio Character is pending"
 msgstr "Klangprofil steht aus"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:42
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:52
 msgid "This track is waiting for local analysis."
 msgstr "Dieser Titel wartet auf die lokale Analyse."
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:43
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:53
 msgid "Audio Character analysis failed"
 msgstr "Klangprofilanalyse fehlgeschlagen"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:45
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:55
 msgid "Retry failed tracks from Library Settings."
 msgstr "Fehlgeschlagene Titel in den Sammlungseinstellungen erneut versuchen."
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:46
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:56
 msgid "Audio Character is stale"
 msgstr "Klangprofil ist veraltet"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:48
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:58
 msgid "The local profile will be updated in the background."
 msgstr "Das lokale Profil wird im Hintergrund aktualisiert."
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:49
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:59
 msgid "Intensity"
 msgstr "Intensität"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:50
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:60
 msgid "Brightness"
 msgstr "Helligkeit"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:51
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:61
 msgid "Dynamicity"
 msgstr "Dynamik"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:52
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:62
 msgid "Rhythmicity"
 msgstr "Rhythmik"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:53
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:63
 #, rust-format
 msgid "Confidence {confidence}%"
 msgstr "Sicherheit {confidence}%"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:55
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:65
 #, rust-format
 msgid "{dimension}, {value}%, confidence {confidence}%"
 msgstr "{dimension}, {value} %, Sicherheit {confidence} %"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:56
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:66
 msgid "Tempo"
 msgstr "Tempo"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:57
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:67
 #, rust-format
 msgid "{bpm} BPM"
 msgstr "{bpm} BPM"
 
-#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:59
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:69
 #, rust-format
 msgid "Tempo, {bpm} BPM, confidence {confidence}%"
 msgstr "Tempo, {bpm} BPM, Sicherheit {confidence} %"
@@ -2398,48 +2434,64 @@ msgstr ""
 "{checked} von {total} geprüft · {downloaded} heruntergeladen · {unavailable} "
 "nicht verfügbar"
 
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:9
+msgid "Ctrl+F"
+msgstr "Strg+F"
+
 #: crates/reprise-gnome/src/ui/strings_tooltips.rs:10
+msgid "F10"
+msgstr "F10"
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:11
+msgid "Ctrl+M"
+msgstr "Strg+M"
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:12
+msgid "Ctrl+L"
+msgstr "Strg+L"
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:23
 msgid "Play album (Ctrl+Enter)"
 msgstr "Album abspielen (Strg+Eingabe)"
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:11
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:24
 msgid "Pause album"
 msgstr "Album pausieren"
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:12
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:25
 msgid "Resume album"
 msgstr "Album fortsetzen"
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:16
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:29
 msgid "Play (Space)"
 msgstr "Wiedergeben (Leertaste)"
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:17
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:30
 msgid "Pause (Space)"
 msgstr "Pausieren (Leertaste)"
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:18
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:31
 msgid "Play previous track"
 msgstr "Vorherigen Titel wiedergeben"
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:19
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:32
 msgid "Play next track"
 msgstr "Nächsten Titel wiedergeben"
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:22
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:35
 msgid "Restore full window (Ctrl+M)"
 msgstr "Vollständiges Fenster wiederherstellen (Strg+M)"
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:23
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:36
 msgid "Close mini-player"
 msgstr "Mini-Player schließen"
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:30
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:43
 #, rust-format
 msgid "Covers & lyrics: {remaining} queued"
 msgstr "Cover & Songtexte: {remaining} in der Warteschlange"
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:41
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:54
 #, rust-format
 msgid "Scanning · {pct}%"
 msgstr "Scanne · {pct} %"

@@ -57,6 +57,7 @@ pub(in crate::ui) struct PlayerBarWidgets {
     pub(in crate::ui) position_label: gtk4::Label,
     pub(in crate::ui) duration_label: gtk4::Label,
     pub(in crate::ui) waveform: super::waveform_seek::WaveformSeek,
+    pub(in crate::ui) analysis_info_button: gtk4::Button,
     pub(in crate::ui) volume_icon: gtk4::Button,
     pub(in crate::ui) volume_scale: gtk4::Scale,
 }
@@ -103,6 +104,10 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     let artist_button = gtk4::Button::builder()
         .child(&artist_label)
         .has_frame(false)
+        .tooltip_text(strings::shortcut_tooltip(
+            strings::JUMP_TO_NOW_PLAYING,
+            strings::SHORTCUT_CURRENT_TRACK,
+        ))
         .build();
 
     let track_box = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
@@ -217,12 +222,21 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     });
     volume_scale.add_controller(knob_motion);
 
+    let analysis_info_button = gtk4::Button::from_icon_name("dialog-information-symbolic");
+    analysis_info_button.set_tooltip_text(Some(&strings::text(strings::SONG_ANALYSIS)));
+    analysis_info_button.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+        strings::SONG_ANALYSIS,
+    ))]);
+    analysis_info_button.set_valign(gtk4::Align::Center);
+    buttons::arm(&analysis_info_button, buttons::ICON_CLASS);
+
     let volume_icon = gtk4::Button::from_icon_name(ICON_VOLUME_HIGH);
     volume_icon.set_tooltip_text(Some(&strings::text(strings::VOLUME)));
     volume_icon.set_valign(gtk4::Align::Center);
     volume_icon.add_css_class("flat");
 
     let end_zone = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
+    end_zone.append(&analysis_info_button);
     end_zone.append(&volume_icon);
     end_zone.append(&volume_scale);
     end_zone.set_valign(gtk4::Align::Center);
@@ -262,6 +276,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         position_label,
         duration_label,
         waveform,
+        analysis_info_button,
         volume_icon,
         volume_scale,
     }
@@ -281,13 +296,13 @@ pub(in crate::ui) fn css() -> String {
          .{PLAY_CSS_CLASS} {{ \
            min-width: {PLAY_BUTTON_SIZE}px; min-height: {PLAY_BUTTON_SIZE}px; \
            background-color: @reprise_player_accent; color: #ffffff; \
-           box-shadow: 0 0 12px alpha(@reprise_player_accent, 0.60), \
+           box-shadow: inset 0 2px 1px alpha(#ffffff, 0.34), \
+                       inset 0 -4px 3px alpha(#000000, 0.30), \
+                       0 6px 12px alpha(#000000, 0.36), \
+                       0 0 12px alpha(@reprise_player_accent, 0.60), \
                        0 0 26px 6px alpha(@reprise_player_accent, 0.35); \
            transition: box-shadow {TRANSITION}, background-color {TRANSITION}, \
                        transform {TRANSITION}; }}\n\
-         .{PLAY_CSS_CLASS}:hover {{ \
-           box-shadow: 0 0 16px alpha(@reprise_player_accent, 0.75), \
-                       0 0 34px 8px alpha(@reprise_player_accent, 0.48); }}\n\
          /* BTN-3: the main action may answer a press more loudly than its \
             neighbours — a ring pulse in the playback accent on top of the \
             shared press sink from `style::buttons`. */\n\
@@ -445,7 +460,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn tip_1a_player_bar_buttons_follow_tooltip_discipline() {
+    fn tip_1d_player_bar_buttons_follow_tooltip_discipline() {
         if gtk4::init().is_err() {
             return;
         }
@@ -465,11 +480,29 @@ mod tests {
         assert!(css.contains("border-top: 1px solid"));
         assert!(css.contains("@keyframes reprise-play-pulse"));
         assert!(css.contains("transform: scale(0.92)"));
+        assert!(css.contains("inset 0 2px 1px alpha(#ffffff, 0.34)"));
+        assert!(css.contains("inset 0 -4px 3px alpha(#000000, 0.30)"));
+        assert!(css.contains("0 6px 12px alpha(#000000, 0.36)"));
+        assert!(css.contains("0 0 0 4px alpha(@reprise_player_accent"));
         assert!(css.contains(&format!(
             "animation: reprise-play-pulse {}ms {} 1",
             crate::ui::motion::MICRO_MS,
             crate::ui::motion::MICRO_CSS_EASING
         )));
+    }
+
+    #[test]
+    fn tip_1d_player_bar_artist_names_its_navigation_action() {
+        let source = include_str!("player_bar_layout.rs");
+        let artist_tooltip = [
+            ".tooltip_text(strings::shortcut_tooltip(\n",
+            "            strings::JUMP_TO_NOW_PLAYING,\n",
+            "            strings::SHORTCUT_CURRENT_TRACK,\n",
+            "        ))",
+        ]
+        .concat();
+
+        assert_eq!(source.matches(&artist_tooltip).count(), 1);
     }
 
     #[test]
@@ -485,12 +518,16 @@ mod tests {
     /// from the one central set (BTN-4), and the bar only adds the louder
     /// accent ring the main action is allowed (BTN-3).
     #[test]
-    fn btn_3_play_button_takes_the_shared_press_and_adds_its_own_ring() {
+    fn btn_3_play_button_keeps_depth_but_delegates_interaction_states() {
         use crate::ui::style::buttons;
 
         let css = super::css();
         assert!(css.contains(&format!(".{}:active", super::PLAY_CSS_CLASS)));
-        assert!(css.contains("box-shadow: 0 0 0 4px alpha(@reprise_player_accent"));
+        assert!(css.contains("inset 0 2px 1px alpha(#ffffff, 0.34)"));
+        assert!(css.contains("inset 0 -4px 3px alpha(#000000, 0.30)"));
+        assert!(css.contains("0 6px 12px alpha(#000000, 0.36)"));
+        assert!(css.contains("0 0 0 4px alpha(@reprise_player_accent"));
+        assert!(!css.contains(&format!(".{}:hover", super::PLAY_CSS_CLASS)));
         // The MOT-5 play/pause pulse keyframes stay; only the *press* scale
         // moved out, so no local rule may restate it.
         let press_scale = format!("scale({})", crate::ui::style::tokens::BTN_PRESS_SCALE);

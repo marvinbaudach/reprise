@@ -30,7 +30,7 @@ impl PlayerController {
         };
         // A track removed from the database can still be loaded. Preserve an
         // identity in that case so GRID-5 attempts the lookup and reaches its
-        // required NAV-9a fallback instead of silently becoming a no-op.
+        // required NAV-9b fallback instead of silently becoming a no-op.
         let album_artist = self.current_track_album_artist().unwrap_or(track_artist);
         Some((album, album_artist))
     }

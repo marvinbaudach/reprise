@@ -479,7 +479,7 @@ fn build_split_view(
     split
 }
 
-/// NAV-2/NAV-9a/GRID-5: routes to a remembered place — the re-entrant twin of
+/// NAV-2/NAV-9b/GRID-5: routes to a remembered place — the re-entrant twin of
 /// `wire_source_routing`'s `on_select` body, used by Back, Forward, and
 /// the now-playing jump. Row-backed sources go through the sidebar
 /// (keeping highlight/title/adaptive nav in sync) with the remembered
