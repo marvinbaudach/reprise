@@ -198,12 +198,16 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   kein Content-Element (Trackliste, Sidebar, rechte Info-Spalte) läuft je
   unter oder hinter ihr durch. Ihr Hintergrund ist opak.
   <!-- REVIEW: Regelvorschlag -->
-- **PLAY-7a** [aktiv] [gtk] — Header, geöffnete Suche und Player-Leiste
+- **PLAY-7a** [ersetzt durch PLAY-7b] — Header, geöffnete Suche und Player-Leiste
   liegen als globale Glaszonen über allen Bibliotheksansichten. Der Content
   läuft sichtbar darunter; sein Scroll-Anfang und -Ende erhalten exakt die
   tatsächlich allokierte Höhe der überlagernden Top-/Bottom-Zone als
   Scroll-Inset, sodass keine letzte Zeile verdeckt oder unbedienbar bleibt.
   Die Player-Leiste funktioniert spiegelbildlich oben und unten.
+- **PLAY-7b** [aktiv] [gtk] — Die Player-Leiste ist wieder eine strukturelle
+  Abgrenzung statt eines Overlays: Sie beansprucht oben oder unten ihre eigene
+  Höhe im Layout, und kein Content-Element läuft unter oder hinter ihr durch.
+  Ihr Hintergrund ist opak.
 
 ## D. Albums- & Artists-Ansicht
 
@@ -858,7 +862,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   Suchfeld ist darin per Clamp auf ungefähr 450 px zentriert. Die Leiste
   slidet mit der zentralen Standarddauer (MOT-1/3); bei GTK-eigenen Revealern
   gilt deren Default, sofern er dem Standard-Token entspricht.
-- **SEARCH-2a** [aktiv] [gtk] — Ein Klick auf die Lupe, Ctrl+F oder direktes
+- **SEARCH-2a** [ersetzt durch SEARCH-2b] — Ein Klick auf die Lupe, Ctrl+F oder direktes
   Tippen öffnet die Suchleiste und fokussiert das Feld. Header und Suche sind
   eine zusammenhängende obere Glaszone mit gemeinsamem neutralem Blur, Tint
   und genau einer unteren Hairline; Content läuft unter beiden weiter. Der
@@ -867,6 +871,13 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   Das Suchfeld ist per Clamp auf ungefähr 450 px zentriert. Die Leiste slidet
   mit der zentralen Standarddauer (MOT-1/3); bei GTK-eigenen Revealern gilt
   deren Default, sofern er dem Standard-Token entspricht.
+- **SEARCH-2b** [aktiv] [gtk] — Ein Klick auf die Lupe, Ctrl+F oder direktes
+  Tippen öffnet die Suchleiste und fokussiert das Feld. Sie ist ein
+  vollbreiter, opaker Streifen bündig unter der Headerbar mit eigener Fläche
+  und unterer Trennlinie; beim Reveal reserviert sie strukturell ihre eigene
+  Höhe. Das Suchfeld ist per Clamp auf ungefähr 450 px zentriert. Die Leiste
+  slidet mit der zentralen Standarddauer (MOT-1/3); bei GTK-eigenen Revealern
+  gilt deren Default, sofern er dem Standard-Token entspricht.
 - **SEARCH-3** [aktiv] [gtk] — Die Lupe ist ein ToggleButton und trägt bei
   offener Suchleiste **oder** aktiver nicht-leerer Query den
   `:checked`-Akzentstil. Eine Query bleibt auch bei eingeklappter Suchleiste
@@ -1097,7 +1108,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Playback-Akzent (`@reprise_player_accent`) bezeichnet ausschließlich den
   laufenden Track wie Play/Pause, Waveform, Playing-Row, EQ, Glow und
   GRID-1-Innenring. Ein Element mischt die Rollen nie.
-- **STYLE-4** [aktiv] [gtk] — Chrome-Glas ist neutral und theme-abhängig,
+- **STYLE-4** [ersetzt durch STYLE-1] — Chrome-Glas ist neutral und theme-abhängig,
   niemals vom Cover-Akzent eingefärbt. GL/NGL/Vulkan verwenden 24 px
   Backdrop-Blur über einem neutralen Tint-Floor von mindestens 80 %;
   Cairo, unbekannte Renderer, High Contrast und deaktivierte Animationen
@@ -1115,7 +1126,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Sidebar-Sektionslabels und Kartenmetazeilen erreichen gegen ihre jeweilige
   Fläche mindestens 4,5:1. `.caption` plus Sekundärstufe gilt dabei als
   Kleinschrift und benötigt dieselbe Prüfung wie Hint bei Normalgröße.
-- **CONTRAST-4** [aktiv] [gtk] — Jeder aktive Text und jedes aktive Icon im
+- **CONTRAST-4** [ersetzt durch CONTRAST-1] — Jeder aktive Text und jedes aktive Icon im
   Glas erreicht mindestens 4,5:1 gegen den Worst Case seiner Zone: den
   Tint-Floor komponiert über dem hellsten beziehungsweise dunkelsten
   durchscheinenden Content. Artist, Zeit, Suchfeld und Header-Aktionen sind

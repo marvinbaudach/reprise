@@ -208,7 +208,6 @@ fn build_widgets_for_session(
     let stage = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     stage.add_css_class("reprise-now-playing-stage");
     stage.add_css_class("reprise-now-playing-idle");
-    crate::ui::glass::mark_safe_inset_anchor(&stage);
     stage.set_vexpand(true);
     let track_content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     track_content.add_css_class("reprise-now-playing-track-content");

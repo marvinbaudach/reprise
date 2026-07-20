@@ -441,14 +441,14 @@ pub fn build(
         .as_ref()
         .map(|player| player.bar_widget().upcast_ref::<gtk4::Widget>());
     header.pack_end(&info_panel.toggle_button());
-    let library_chrome = super::library_chrome::build(&header, &search_entry, &window);
     let library_player_bar = super::library_player_bar::LibraryPlayerBarShell::new(
         &split_view,
-        &library_chrome.root,
         player_bar_widget,
         bar_position,
     );
     toast_overlay.set_child(Some(library_player_bar.widget()));
+    let library_chrome =
+        super::library_chrome::build(&header, &toast_overlay, &search_entry, &window);
     let open_new_releases = {
         let digest = new_releases_digest.clone();
         let nav_history = nav_history.clone();
@@ -479,7 +479,7 @@ pub fn build(
     let minimal_view = super::compact_mode_controls::build_mode(
         &window,
         &content_host,
-        toast_overlay.upcast_ref(),
+        library_chrome.root.upcast_ref(),
         player.as_ref().map(|player| &player.compact_player),
         conn,
         initial_view,
@@ -592,6 +592,5 @@ pub fn build(
     tracing::info!("main window built");
     window.present();
     super::runtime_performance::arm(&window, &track_list);
-    super::glass::arm_performance_measurement(&window);
     FileOpenHandler::new(&window, conn.clone(), player, &toast_overlay, sidebar)
 }

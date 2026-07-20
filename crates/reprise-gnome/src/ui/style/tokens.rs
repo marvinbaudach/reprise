@@ -90,7 +90,7 @@ pub(in crate::ui) const TRANSITION: Transition = Transition;
 
 /// Hover background alpha for flat/icon buttons, applied over `currentColor`
 /// rather than over the accent or a literal white: an accent wash sinks into
-/// the tinted glass of the player bar, and a fixed white would be invisible on
+/// the themed surface of the player bar, and a fixed white would be invisible on
 /// the light palettes. BTN-4: measured on the tint, not on a null background.
 pub(in crate::ui) const BTN_HOVER_ALPHA: &str = "0.08";
 

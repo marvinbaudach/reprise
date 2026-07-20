@@ -276,7 +276,8 @@ pub(in crate::ui) fn css() -> String {
     let micro_easing = motion::MICRO_CSS_EASING;
     format!(
         ".{SURFACE_CSS_CLASS} {{ \
-           background-color: transparent; border: none; }}\n\
+           background-color: @headerbar_bg_color; \
+           border-top: 1px solid alpha(@window_fg_color, 0.07); }}\n\
          .{PLAY_CSS_CLASS} {{ \
            min-width: {PLAY_BUTTON_SIZE}px; min-height: {PLAY_BUTTON_SIZE}px; \
            background-color: @reprise_player_accent; color: #ffffff; \
@@ -460,6 +461,8 @@ mod tests {
         assert!(css.contains(".player-bar-play"));
         assert!(css.contains("@reprise_player_accent"));
         assert!(css.contains(".player-bar-surface"));
+        assert!(css.contains("background-color: @headerbar_bg_color"));
+        assert!(css.contains("border-top: 1px solid"));
         assert!(css.contains("@keyframes reprise-play-pulse"));
         assert!(css.contains("transform: scale(0.92)"));
         assert!(css.contains(&format!(
