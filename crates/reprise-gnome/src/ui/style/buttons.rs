@@ -14,7 +14,7 @@
 //! - [`TERTIARY_CLASS`] — background hover only, no scale (menu rows).
 //!
 //! Hover and press are alphas over `currentColor`, not over the accent and not
-//! over a literal white. An accent wash sinks into the tinted glass of the
+//! over a literal white. An accent wash sinks into the themed player surface
 //! player bar and the Now Playing tab strip, and a fixed white would be
 //! invisible on the light palettes the app also ships. `currentColor` is the
 //! button's own foreground, so the state always contrasts with the surface it
