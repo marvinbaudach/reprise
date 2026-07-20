@@ -602,6 +602,23 @@ msgid "Jump to now playing"
 msgstr "Zur aktuellen Wiedergabe springen"
 
 #: crates/reprise-gnome/src/ui/strings.rs:420
+msgid "Go to playing artist"
+msgstr "Zum wiedergegebenen Interpreten wechseln"
+
+#: crates/reprise-gnome/src/ui/strings.rs:421
+msgid "Go to playing album"
+msgstr "Zum wiedergegebenen Album wechseln"
+
+#: crates/reprise-gnome/src/ui/strings.rs:422
+msgid "Reveal playing track"
+msgstr "Wiedergegebenen Titel anzeigen"
+
+#: crates/reprise-gnome/src/ui/strings.rs:423
+#, rust-format
+msgid "Go to album {album}"
+msgstr "Zum Album {album}"
+
+#: crates/reprise-gnome/src/ui/strings.rs:420
 msgid "Back to previous view"
 msgstr "Zur vorherigen Ansicht zurückkehren"
 
@@ -1390,11 +1407,13 @@ msgstr "Aus der Musiksammlung entfernen?"
 #: crates/reprise-gnome/src/ui/strings_issues.rs:39
 #, rust-format
 msgid ""
-"This removes {count} tracks from the library — their ratings and listening "
-"history go with them. Files are never touched."
+"This removes {count} tracks from the library, including their ratings, "
+"playlist entries, and device sync state. Listening history stays in My "
+"Stats. Files are never touched."
 msgstr ""
-"Das entfernt {count} Titel aus der Bibliothek — ihre Bewertungen und ihr "
-"Wiedergabeverlauf gehen mit. Dateien werden nie angetastet."
+"Das entfernt {count} Titel aus der Bibliothek, einschließlich ihrer "
+"Bewertungen, Playlist-Einträge und ihres Geräte-Sync-Status. Der Hörverlauf "
+"bleibt in My Stats erhalten. Dateien werden nie angetastet."
 
 #: crates/reprise-gnome/src/ui/strings_issues.rs:40
 msgid "1 removed"
@@ -1433,11 +1452,13 @@ msgstr "Automatisches Aufräumen aktivieren?"
 #: crates/reprise-gnome/src/ui/strings_issues.rs:49
 #, rust-format
 msgid ""
-"This will remove {count} tracks now (deleted more than {days} days ago) — "
-"their ratings and listening history go with them."
+"This will remove {count} tracks now (deleted more than {days} days ago), "
+"including their ratings, playlist entries, and device sync state. Listening "
+"history stays in My Stats."
 msgstr ""
-"Das entfernt jetzt {count} Titel (vor mehr als {days} Tagen gelöscht) — ihre "
-"Bewertungen und ihr Wiedergabeverlauf gehen mit."
+"Das entfernt jetzt {count} Titel (vor mehr als {days} Tagen gelöscht), "
+"einschließlich ihrer Bewertungen, Playlist-Einträge und ihres "
+"Geräte-Sync-Status. Der Hörverlauf bleibt in My Stats erhalten."
 
 #: crates/reprise-gnome/src/ui/strings_issues.rs:50
 msgid "Remove now"

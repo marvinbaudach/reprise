@@ -171,9 +171,9 @@ CREATE TABLE lastfm_queue (
 /// Unlike `tracks.play_count` (a running all-time counter), each row here is
 /// one completed play at a point in time, so the stats layer can build a
 /// month-by-month timeseries. `track_id` references `tracks` with
-/// `ON DELETE CASCADE` (removing a library row discards its recorded plays);
-/// `played_at` is unix seconds and indexed because every timeseries query
-/// filters/buckets on it.
+/// `ON DELETE CASCADE`; schema v23 later replaces that catalog-owned shape
+/// with self-contained historical snapshots. `played_at` is unix seconds and
+/// indexed because every timeseries query filters/buckets on it.
 const SCHEMA_V7: &str = r#"
 CREATE TABLE listen_events (
   id        INTEGER PRIMARY KEY,
@@ -635,6 +635,7 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
     crate::db_tag_write_jobs::migrate_v20(conn)?;
     crate::db_library_doctor_remote::migrate_v21(conn)?;
     crate::db_library_doctor_remote::migrate_v22(conn)?;
+    crate::db_listen_history::migrate_v23(conn)?;
     Ok(())
 }
 

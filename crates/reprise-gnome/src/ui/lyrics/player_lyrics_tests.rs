@@ -73,6 +73,8 @@ fn summary() -> TrackSummary {
         artist: "Exact artist".into(),
         album: "Exact album".into(),
         album_artist: String::new(),
+        genre: String::new(),
+        artist_mbid: None,
         year: Some(2026),
         duration_ms: 123_456,
     }

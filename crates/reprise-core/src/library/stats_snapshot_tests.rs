@@ -33,6 +33,50 @@ fn stats_0_play_definition_consistent_time_and_count() {
 }
 
 #[test]
+fn history_3_deleted_tracks_remain_in_my_stats_with_snapshot_metadata() {
+    let conn = migrated_conn();
+    insert_track(&conn, 1, "River", "Joni", "Joni", "Folk", 240_000, 0, None);
+    insert_event(&conn, 1, timestamp(2026, 1, 2, 12, 0), 200_000);
+
+    conn.execute("DELETE FROM tracks WHERE id = 1", []).unwrap();
+
+    let snapshot = compute(&conn, StatsPeriod::AllTime, NOW_2026_07_19, &Utc).unwrap();
+    assert_eq!((snapshot.hero.plays, snapshot.hero.total_ms), (1, 200_000));
+    assert_eq!(snapshot.top_tracks.len(), 1);
+    assert_eq!(snapshot.top_tracks[0].title, "River");
+    assert_eq!(snapshot.top_tracks[0].artist, "Joni");
+    assert_eq!(snapshot.genres.segments[0].label, "Folk");
+}
+
+#[test]
+fn history_4_top_track_uses_the_latest_listen_snapshot_after_tag_edits() {
+    let conn = migrated_conn();
+    insert_track(
+        &conn,
+        1,
+        "Old title",
+        "Artist",
+        "",
+        "Rock",
+        100_000,
+        0,
+        None,
+    );
+    insert_event(&conn, 1, timestamp(2026, 1, 2, 12, 0), 100_000);
+    conn.execute(
+        "UPDATE tracks SET title='New title', album='New album' WHERE id=1",
+        [],
+    )
+    .unwrap();
+    insert_event(&conn, 1, timestamp(2026, 1, 3, 12, 0), 100_000);
+
+    let snapshot = compute(&conn, StatsPeriod::AllTime, NOW_2026_07_19, &Utc).unwrap();
+    assert_eq!(snapshot.top_tracks[0].play_count, 2);
+    assert_eq!(snapshot.top_tracks[0].title, "New title");
+    assert_eq!(snapshot.top_tracks[0].album, "New album");
+}
+
+#[test]
 fn stats_6_sparse_uses_finer_granularity() {
     let sparse = migrated_conn();
     insert_track(&sparse, 1, "Sparse", "Artist", "", "Rock", 60_000, 0, None);

@@ -1,8 +1,8 @@
 //! Local, read-only primitives for the My Stats snapshot.
 //!
-//! Every local aggregate is projected from `listen_events` joined to tracks.
-//! The running library counter remains available elsewhere, but never feeds
-//! this module's stats-screen queries.
+//! Every local aggregate is projected from self-contained `listen_events`.
+//! The current catalog and its running counter remain available elsewhere,
+//! but never feed this module's stats-screen queries.
 
 use std::collections::HashMap;
 
@@ -11,14 +11,15 @@ use rusqlite::{params, Connection};
 use super::group_key::{
     fold_groups, normalize_group_key, Group, GroupInput, GroupKind, KeyResolver,
 };
-use crate::queries::library_views::EFFECTIVE_ALBUM_ARTIST;
 
 const CLAMPED_MS: &str =
-    "CASE WHEN t.duration_ms > 0 THEN MIN(le.ms_played, t.duration_ms) ELSE le.ms_played END";
+    "CASE WHEN le.duration_ms > 0 THEN MIN(le.ms_played, le.duration_ms) ELSE le.ms_played END";
 // Same fallback rule as `EFFECTIVE_ALBUM_ARTIST`, but deliberately preserves
 // the raw spelling so the runtime fold can count and display tag variants.
 const RAW_EFFECTIVE_ALBUM_ARTIST: &str =
-    "CASE WHEN TRIM(album_artist) <> '' THEN album_artist ELSE artist END";
+    "CASE WHEN TRIM(le.album_artist) <> '' THEN le.album_artist ELSE le.artist END";
+const CURRENT_EFFECTIVE_ALBUM_ARTIST: &str =
+    "CASE WHEN TRIM(t.album_artist) <> '' THEN t.album_artist ELSE t.artist END";
 
 /// Compatibility payload retained for the unwired remote stats clients.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,6 +62,21 @@ pub struct TopTrack {
     pub play_count: i64,
     pub total_ms: i64,
     pub track_path: String,
+}
+
+/// Metadata owned by an in-flight play. It deliberately contains every
+/// field My Stats needs so a track removed from the catalog before the play
+/// qualifies can still become a complete historical event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListenEventSnapshot {
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub album_artist: String,
+    pub genre: String,
+    pub duration_ms: i64,
+    pub path: String,
+    pub artist_mbid: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -131,10 +147,26 @@ pub fn record_listen_event(
     track_id: i64,
     played_at: i64,
     ms_played: i64,
+    snapshot: &ListenEventSnapshot,
 ) -> Result<(), rusqlite::Error> {
     conn.execute(
-        "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (?1, ?2, ?3)",
-        params![track_id, played_at, ms_played],
+        "INSERT INTO listen_events
+         (track_id, played_at, ms_played, title, artist, album, album_artist,
+          genre, duration_ms, path, artist_mbid)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        params![
+            track_id,
+            played_at,
+            ms_played,
+            snapshot.title,
+            snapshot.artist,
+            snapshot.album,
+            snapshot.album_artist,
+            snapshot.genre,
+            snapshot.duration_ms,
+            snapshot.path,
+            snapshot.artist_mbid,
+        ],
     )?;
     Ok(())
 }
@@ -152,7 +184,7 @@ pub(crate) fn listen_rows(
 ) -> Result<Vec<ListenRow>, rusqlite::Error> {
     let sql = format!(
         "SELECT le.played_at, {CLAMPED_MS} \
-         FROM listen_events le JOIN tracks t ON t.id = le.track_id \
+         FROM listen_events le \
          WHERE le.played_at >= ?1 AND le.played_at < ?2 \
          ORDER BY le.played_at, le.id"
     );
@@ -175,7 +207,7 @@ pub(crate) fn total_ms_in_range(
 ) -> Result<i64, rusqlite::Error> {
     let sql = format!(
         "SELECT COALESCE(SUM({CLAMPED_MS}), 0) \
-         FROM listen_events le JOIN tracks t ON t.id = le.track_id \
+         FROM listen_events le \
          WHERE le.played_at >= ?1 AND le.played_at < ?2"
     );
     conn.query_row(&sql, params![start_unix, end_unix], |row| row.get(0))
@@ -190,13 +222,13 @@ pub(crate) fn artist_rows(
     // a per-row question (see `eligible_artist_mbid`) and SQLite cannot answer
     // it: its `lower()` folds no diacritics. Rust decides, then folds.
     let sql = format!(
-        "SELECT {RAW_EFFECTIVE_ALBUM_ARTIST} AS raw, t.artist, t.album_artist, \
-                NULLIF(TRIM(t.artist_mbid), ''), COUNT(le.id), \
-                COALESCE(SUM({CLAMPED_MS}), 0), MAX(le.played_at), MIN(t.path) \
-         FROM listen_events le JOIN tracks t ON t.id = le.track_id \
+        "SELECT {RAW_EFFECTIVE_ALBUM_ARTIST} AS raw, le.artist, le.album_artist, \
+                NULLIF(TRIM(le.artist_mbid), ''), COUNT(le.id), \
+                COALESCE(SUM({CLAMPED_MS}), 0), MAX(le.played_at), MIN(le.path) \
+         FROM listen_events le \
          WHERE le.played_at >= ?1 AND le.played_at < ?2 \
-           AND TRIM({EFFECTIVE_ALBUM_ARTIST}) <> '' \
-         GROUP BY raw, t.artist, t.album_artist, t.artist_mbid"
+           AND TRIM({RAW_EFFECTIVE_ALBUM_ARTIST}) <> '' \
+         GROUP BY raw, le.artist, le.album_artist, le.artist_mbid"
     );
     let mut statement = conn.prepare(&sql)?;
     let rows = statement
@@ -224,11 +256,11 @@ pub(crate) fn genre_rows(
     end_unix: i64,
 ) -> Result<Vec<NamedRow>, rusqlite::Error> {
     let sql = format!(
-        "SELECT t.genre, NULL, COUNT(le.id), COALESCE(SUM({CLAMPED_MS}), 0), \
-                MAX(le.played_at), MIN(t.path) \
-         FROM listen_events le JOIN tracks t ON t.id = le.track_id \
-         WHERE le.played_at >= ?1 AND le.played_at < ?2 AND TRIM(t.genre) <> '' \
-         GROUP BY t.genre"
+        "SELECT le.genre, NULL, COUNT(le.id), COALESCE(SUM({CLAMPED_MS}), 0), \
+                MAX(le.played_at), MIN(le.path) \
+         FROM listen_events le \
+         WHERE le.played_at >= ?1 AND le.played_at < ?2 AND TRIM(le.genre) <> '' \
+         GROUP BY le.genre"
     );
     query_named_rows(conn, &sql, start_unix, end_unix)
 }
@@ -239,12 +271,12 @@ pub(crate) fn album_rows(
     end_unix: i64,
 ) -> Result<Vec<AlbumRow>, rusqlite::Error> {
     let sql = format!(
-        "SELECT t.album, {RAW_EFFECTIVE_ALBUM_ARTIST} AS raw, NULL, COUNT(le.id), \
-                COALESCE(SUM({CLAMPED_MS}), 0), MAX(le.played_at), MIN(t.path) \
-         FROM listen_events le JOIN tracks t ON t.id = le.track_id \
+        "SELECT le.album, {RAW_EFFECTIVE_ALBUM_ARTIST} AS raw, NULL, COUNT(le.id), \
+                COALESCE(SUM({CLAMPED_MS}), 0), MAX(le.played_at), MIN(le.path) \
+         FROM listen_events le \
          WHERE le.played_at >= ?1 AND le.played_at < ?2 \
-           AND TRIM(t.album) <> '' AND TRIM({EFFECTIVE_ALBUM_ARTIST}) <> '' \
-         GROUP BY t.album, raw"
+           AND TRIM(le.album) <> '' AND TRIM({RAW_EFFECTIVE_ALBUM_ARTIST}) <> '' \
+         GROUP BY le.album, raw"
     );
     let mut statement = conn.prepare(&sql)?;
     let rows = statement
@@ -271,12 +303,24 @@ pub(crate) fn track_rows(
     end_unix: i64,
 ) -> Result<Vec<TrackAggregate>, rusqlite::Error> {
     let sql = format!(
-        "SELECT t.id, t.title, t.artist, t.album, COUNT(le.id), \
-                COALESCE(SUM({CLAMPED_MS}), 0), t.path, \
-                {RAW_EFFECTIVE_ALBUM_ARTIST} \
-         FROM listen_events le JOIN tracks t ON t.id = le.track_id \
-         WHERE le.played_at >= ?1 AND le.played_at < ?2 \
-         GROUP BY t.id"
+        "WITH aggregate AS ( \
+           SELECT le.track_id, COUNT(le.id) AS plays, \
+                  COALESCE(SUM({CLAMPED_MS}), 0) AS total_ms \
+           FROM listen_events le \
+           WHERE le.played_at >= ?1 AND le.played_at < ?2 \
+           GROUP BY le.track_id \
+         ) \
+         SELECT latest.track_id, latest.title, latest.artist, latest.album, \
+                aggregate.plays, aggregate.total_ms, latest.path, \
+                CASE WHEN TRIM(latest.album_artist) <> '' \
+                     THEN latest.album_artist ELSE latest.artist END \
+         FROM aggregate \
+         JOIN listen_events latest ON latest.id = ( \
+           SELECT candidate.id FROM listen_events candidate \
+           WHERE candidate.track_id = aggregate.track_id \
+             AND candidate.played_at >= ?1 AND candidate.played_at < ?2 \
+           ORDER BY candidate.played_at DESC, candidate.id DESC LIMIT 1 \
+         )"
     );
     let mut statement = conn.prepare(&sql)?;
     let rows = statement
@@ -326,7 +370,7 @@ pub fn group_track_ids(
     key: &str,
 ) -> Result<Vec<i64>, rusqlite::Error> {
     let raw_expression = match kind {
-        GroupKind::Artist | GroupKind::AlbumArtist => RAW_EFFECTIVE_ALBUM_ARTIST,
+        GroupKind::Artist | GroupKind::AlbumArtist => CURRENT_EFFECTIVE_ALBUM_ARTIST,
         GroupKind::Genre => "t.genre",
     };
     let sql = format!(

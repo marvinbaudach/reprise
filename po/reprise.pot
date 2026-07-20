@@ -588,6 +588,23 @@ msgid "Jump to now playing"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:420
+msgid "Go to playing artist"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:421
+msgid "Go to playing album"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:422
+msgid "Reveal playing track"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:423
+#, rust-format
+msgid "Go to album {album}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:420
 msgid "Back to previous view"
 msgstr ""
 
@@ -1360,8 +1377,9 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/strings_issues.rs:39
 #, rust-format
 msgid ""
-"This removes {count} tracks from the library — their ratings and listening "
-"history go with them. Files are never touched."
+"This removes {count} tracks from the library, including their ratings, "
+"playlist entries, and device sync state. Listening history stays in My "
+"Stats. Files are never touched."
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_issues.rs:40
@@ -1401,8 +1419,9 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/strings_issues.rs:49
 #, rust-format
 msgid ""
-"This will remove {count} tracks now (deleted more than {days} days ago) — "
-"their ratings and listening history go with them."
+"This will remove {count} tracks now (deleted more than {days} days ago), "
+"including their ratings, playlist entries, and device sync state. Listening "
+"history stays in My Stats."
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_issues.rs:50

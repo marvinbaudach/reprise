@@ -90,9 +90,9 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Inhalte; für dynamisch erscheinende Elemente (Altwert-Zeile im Tag-Editor)
   ist Platz reserviert. Hintergrundereignisse (Scan, Watcher, Mount)
   verschieben nie sichtbare Inhalte unter dem Cursor.
-- **P-5** [geplant] [core] — Die App löscht nie Dateien. „Remove" heißt
-  immer: Library-Eintrag. Dialoge benennen Kaskaden (Ratings, Hörhistorie)
-  beim Namen.
+- **P-5** [ersetzt durch BROWSE-6] — Die frühere Regel koppelte den lokalen
+  Hörverlauf an den Library-Eintrag. BROWSE-6 trennt historische Ereignisse
+  vom aktuellen Katalog.
 - **P-6** [aktiv] [core] — Evidenz-Regel: Was beweisbar da ist, wird
   angezeigt/geheilt (Mount-Event, Resurrect); was beweisbar weg ist, wird
   sofort ehrlich markiert (Eject). Vermutungen (unmounted) sind nie
@@ -334,12 +334,13 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Destruktiver Umschalter konkret: Wird Auto-clean aktiviert, während die
   Deleted-Gruppe bereits Zeilen jenseits der gewählten Frist enthält,
   erscheint einmalig ein Dialog: „This will remove N tracks now (deleted
-  more than 30 days ago) — their ratings and listening history go with
-  them. Remove now / Start counting from today." Letzteres speichert das
+  more than 30 days ago), including their ratings, playlist entries, and
+  device sync state. Listening history stays in My Stats. Remove now / Start
+  counting from today." Letzteres speichert das
   Aktivierungsdatum als Stichtag (`auto_clean_armed_at`); gelöscht wird nur,
   was Frist UND Stichtag reißt. Beide Lösch-Dialoge der App (dieser und
-  „Remove all N") benennen die Kaskade explizit: Ratings + Hörhistorie gehen
-  mit (P-5).
+  „Remove all N") benennen die Kaskade explizit: Ratings, Playlist-Einträge
+  und Geräte-Sync-Zustand gehen; Hörereignisse bleiben (BROWSE-6).
 - **SET-5** [aktiv] [gtk] — Der Inhalt jeder Preferences-Hauptseite beginnt
   mit dem kompakten Standardabstand direkt unter dem Inhalts-Header. Kurze
   Seiten werden nicht vertikal zentriert; ungenutzter Raum bleibt unter der
@@ -396,7 +397,8 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   `removed_at = NULL` zurück — deshalb ist die Wiederherstellung exakt
   (gleiche id, keine Race mit parallel laufenden Scans). Der Remove-Toast
   trägt immer Undo (FB-1, 10 s). Nach Toast-Ablauf wird hart gelöscht
-  (Kaskade: Playlist-Einträge, Hörhistorie, Sync-Zustand); App-Ende im
+  (Kaskade: Playlist-Einträge, Ratings, Sync-Zustand); der eigenständige
+  Hörverlauf bleibt gemäß BROWSE-6 erhalten. App-Ende im
   Fenster → Löschung wird beim nächsten Start committed, nie zurückgerollt
   („7 removed" muss wahr bleiben). Auto-clean (opt-in, default off, nur
   deleted-Tracks) löscht hart ohne Toast und ohne Undo — es feuert
@@ -1734,6 +1736,15 @@ deterministisch und hoch-konfident, nie „ohne Review".
   Wiedergabe-Ursprung werden restauriert. History, offene Suchoberflaechen,
   Utilities und rohe Widget-Fokusse überleben den Neustart nicht. Nicht mehr
   auflösbare Ziele fallen auf die Library-Wurzel zurück.
+
+- **BROWSE-6** [aktiv] [core] — **Hörereignisse sind historische Fakten.**
+  Jeder qualifizierte Play speichert den beim Wiedergabestart eingefrorenen
+  Titel-, Album-, Interpret-, Genre-, Dauer-, Pfad- und MBID-Snapshot.
+  Entfernen, Auto-clean oder Trash eines aktuellen Library-Eintrags löscht
+  diese Ereignisse nicht; My Stats bleibt dadurch zeitlich stabil. Ein
+  späterer Tag-Edit ändert alte Ereignisse nicht, während Track-Ranglisten
+  bei mehreren Snapshots desselben Track-IDs die jüngsten Metadaten zeigen.
+  Dialoge unterscheiden explizit Katalogfolgen von erhaltenem Hörverlauf.
 
 ---
 

@@ -375,6 +375,9 @@ pub(in crate::ui) struct NowPlaying {
     pub(in crate::ui) title: String,
     pub(in crate::ui) artist: String,
     pub(in crate::ui) album: String,
+    pub(in crate::ui) album_artist: String,
+    pub(in crate::ui) genre: String,
+    pub(in crate::ui) artist_mbid: Option<String>,
     /// File URI for the resolved cached cover. It starts empty while the
     /// off-thread cover pipeline runs and is retained here so later status
     /// changes keep MPRIS metadata complete.
@@ -605,6 +608,9 @@ impl PlayerController {
                     title: summary.title.clone(),
                     artist: summary.artist.clone(),
                     album: summary.album.clone(),
+                    album_artist: summary.album_artist.clone(),
+                    genre: summary.genre.clone(),
+                    artist_mbid: summary.artist_mbid.clone(),
                     art_url: None,
                     duration_ms: summary.duration_ms,
                     path: summary.path.clone(),
