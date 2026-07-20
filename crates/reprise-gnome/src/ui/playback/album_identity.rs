@@ -3,6 +3,11 @@
 use super::player_controller::PlayerController;
 
 impl PlayerController {
+    /// Stable identity for the loaded track even while it is filtered out.
+    pub fn current_track_id(&self) -> Option<i64> {
+        self.now_playing.borrow().as_ref().map(|track| track.id)
+    }
+
     /// The effective album artist of the loaded track, or `None` when no
     /// track is loaded or the resolved artist is blank. The Artists view
     /// groups by this value rather than by the display track artist.
@@ -33,5 +38,15 @@ impl PlayerController {
         // required NAV-9b fallback instead of silently becoming a no-op.
         let album_artist = self.current_track_album_artist().unwrap_or(track_artist);
         Some((album, album_artist))
+    }
+
+    /// Effective artist identity for universal metadata navigation.
+    pub fn current_artist_identity(&self) -> Option<String> {
+        let display_artist = self
+            .now_playing
+            .borrow()
+            .as_ref()
+            .map(|track| track.artist.clone())?;
+        Some(self.current_track_album_artist().unwrap_or(display_artist))
     }
 }

@@ -363,7 +363,7 @@ pub(in crate::ui) fn wire_context_menu_actions(
             };
             let callback = shared.on_go_to_album.borrow().clone();
             if let Some(callback) = callback {
-                callback(track.album, track.album_artist);
+                callback(track.id, track.album, track.album_artist);
             }
         });
     }
@@ -378,7 +378,7 @@ pub(in crate::ui) fn wire_context_menu_actions(
             };
             let callback = shared.on_go_to_artist.borrow().clone();
             if let Some(callback) = callback {
-                callback(track.album_artist);
+                callback(track.id, track.album_artist);
             }
         });
     }

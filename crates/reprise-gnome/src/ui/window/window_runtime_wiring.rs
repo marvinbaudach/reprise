@@ -12,6 +12,8 @@ use std::sync::Arc;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
+use reprise_core::browser::navigation::NavigationIntent;
+use reprise_core::browser::{AlbumKey, ArtistKey, BrowserPlace};
 use reprise_core::library::session::SessionState;
 use reprise_core::library::watcher::WatcherHandle;
 use reprise_core::view_source::ViewSource;
@@ -66,6 +68,8 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) first_run_decision: FirstRunDecision,
     pub(in crate::ui) nav_history: &'a Rc<crate::ui::nav_history::NavHistory>,
     pub(in crate::ui) content_nav: &'a adw::NavigationView,
+    pub(in crate::ui) active_content_focus: &'a super::library_shell::ActiveContentFocus,
+    pub(in crate::ui) metadata_navigator: &'a super::metadata_navigation::MetadataNavigator,
 }
 
 pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
@@ -101,6 +105,8 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         first_run_decision,
         nav_history,
         content_nav,
+        active_content_focus,
+        metadata_navigator,
     } = args;
 
     let refresh_doctor_views = {
@@ -134,8 +140,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         });
     }
 
-    let active_content_focus =
-        super::library_shell::ActiveContentFocus::new(content_stack, track_list);
+    let active_content_focus = active_content_focus.clone();
 
     let minimal_toggle = minimal_view.clone();
     let compact_preferences = preferences.clone();
@@ -202,47 +207,66 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     });
 
     if let Some(player) = player {
-        // NAV-9b: Ctrl+L and the player-bar artist share one explicit jump to
-        // the loaded track's origin, selection, focus, and centered row.
-        let jump_to_current_track = super::current_track_jump::runtime_coordinator(
-            &super::current_track_jump::JumpContext {
-                player: Rc::downgrade(player),
-                sidebar: sidebar.clone(),
-                track_list: track_list.clone(),
-                nav_history: nav_history.clone(),
-                content_stack: content_stack.clone(),
-                active_content_focus: active_content_focus.clone(),
-            },
-        );
-        let jump_from_artist = jump_to_current_track.clone();
-        player.connect_artist_clicked(move || jump_from_artist());
-
-        let reveal_playing_album: Rc<dyn Fn()> = {
+        // BROWSE-4: every metadata surface emits one of the same three
+        // semantic navigation intents. The router owns history and anchors.
+        let reveal_playing_track: Rc<dyn Fn()> = {
             let player = Rc::downgrade(player);
-            let nav_history = nav_history.clone();
-            let sidebar = sidebar.clone();
-            let track_list = track_list.clone();
-            let content_stack = content_stack.clone();
-            let active_content_focus = active_content_focus.clone();
+            let navigator = metadata_navigator.clone();
             Rc::new(move || {
-                let Some((album, album_artist)) = player
-                    .upgrade()
-                    .and_then(|player| player.current_album_identity())
-                else {
+                let Some(player) = player.upgrade() else {
                     return;
                 };
-                let place = crate::ui::nav_history::NavPlace::source(ViewSource::Album {
-                    album,
-                    album_artist,
-                });
-                nav_history.record_route_from(&place, track_list.browser_place());
-                super::library_shell::route_to_place(
-                    &place,
-                    &sidebar,
-                    &track_list,
-                    &content_stack,
-                    &active_content_focus,
-                    "open playing album",
+                let Some(track_id) = player.current_track_id() else {
+                    return;
+                };
+                let origin = player.current_play_origin().map_or_else(
+                    || BrowserPlace::from(ViewSource::Library),
+                    |origin| origin.place,
+                );
+                navigator.navigate(
+                    NavigationIntent::RevealTrack {
+                        origin: Box::new(origin),
+                        track_id,
+                    },
+                    "playing track link",
+                );
+            })
+        };
+        let reveal_playing_album: Rc<dyn Fn()> = {
+            let player = Rc::downgrade(player);
+            let navigator = metadata_navigator.clone();
+            Rc::new(move || {
+                let Some(player) = player.upgrade() else {
+                    return;
+                };
+                let Some((album, album_artist)) = player.current_album_identity() else {
+                    return;
+                };
+                navigator.navigate(
+                    NavigationIntent::OpenAlbum {
+                        album: AlbumKey::new(album, album_artist),
+                        anchor_track_id: player.current_track_id(),
+                    },
+                    "playing album link",
+                );
+            })
+        };
+        let reveal_playing_artist: Rc<dyn Fn()> = {
+            let player = Rc::downgrade(player);
+            let navigator = metadata_navigator.clone();
+            Rc::new(move || {
+                let Some(player) = player.upgrade() else {
+                    return;
+                };
+                let Some(artist) = player.current_artist_identity() else {
+                    return;
+                };
+                navigator.navigate(
+                    NavigationIntent::OpenArtist {
+                        artist: ArtistKey::new(artist),
+                        anchor_track_id: player.current_track_id(),
+                    },
+                    "playing artist link",
                 );
             })
         };
@@ -251,15 +275,27 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             player.connect_cover_clicked(move || reveal());
         }
         {
-            let reveal = reveal_playing_album.clone();
+            let reveal = reveal_playing_track.clone();
             player.set_on_title_click(move || reveal());
+        }
+        {
+            let reveal = reveal_playing_artist.clone();
+            player.connect_artist_clicked(move || reveal());
         }
         {
             let reveal = reveal_playing_album.clone();
             info_panel.set_on_album_reveal(move || reveal());
         }
+        {
+            let reveal = reveal_playing_track.clone();
+            info_panel.set_on_track_reveal(move || reveal());
+        }
+        {
+            let reveal = reveal_playing_artist.clone();
+            info_panel.set_on_artist_reveal(move || reveal());
+        }
         let jump_action = gtk4::gio::SimpleAction::new("jump-to-now-playing", None);
-        jump_action.connect_activate(move |_, _| jump_to_current_track());
+        jump_action.connect_activate(move |_, _| reveal_playing_track());
         window.add_action(&jump_action);
         app.set_accels_for_action("win.jump-to-now-playing", &["<Control>l"]);
 

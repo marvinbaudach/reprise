@@ -34,7 +34,8 @@ struct PanelWidgets {
     audio_character: AudioCharacterView,
     cover: gtk4::Image,
     title: gtk4::Label,
-    subtitle: gtk4::Label,
+    artist: gtk4::Label,
+    album: gtk4::Label,
     // Retained for T9's shared track-content crossfade; the T5 acceptance
     // test also inspects the selected page directly.
     tab_stack: adw::ViewStack,
@@ -77,18 +78,26 @@ fn build_widgets_for_session(
         .ellipsize(gtk4::pango::EllipsizeMode::End)
         .build();
     title.add_css_class("reprise-now-playing-title");
-    let subtitle = gtk4::Label::builder()
+    let artist = gtk4::Label::builder()
         .xalign(0.5)
         .justify(gtk4::Justification::Center)
         .wrap(true)
         .ellipsize(gtk4::pango::EllipsizeMode::End)
         .build();
-    subtitle.add_css_class("reprise-now-playing-subtitle");
+    artist.add_css_class("reprise-now-playing-subtitle");
+    let album = gtk4::Label::builder()
+        .xalign(0.5)
+        .justify(gtk4::Justification::Center)
+        .wrap(true)
+        .ellipsize(gtk4::pango::EllipsizeMode::End)
+        .build();
+    album.add_css_class("reprise-now-playing-subtitle");
 
     let metadata = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
     metadata.set_halign(gtk4::Align::Fill);
     metadata.append(&title);
-    metadata.append(&subtitle);
+    metadata.append(&artist);
+    metadata.append(&album);
     let head = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
     head.add_css_class("reprise-now-playing-head");
     head.set_halign(gtk4::Align::Center);
@@ -229,7 +238,8 @@ fn build_widgets_for_session(
         audio_character,
         cover,
         title,
-        subtitle,
+        artist,
+        album,
         tab_stack,
         #[cfg(test)]
         tab_switcher,
@@ -252,7 +262,9 @@ pub(in crate::ui) struct NowPlayingPanel {
     track_animation: RefCell<Option<adw::TimedAnimation>>,
     track_animation_generation: Cell<u64>,
     audio_character_generation: Cell<u64>,
+    on_track_reveal: crate::ui::link_activation::ActivationSlot,
     on_album_reveal: crate::ui::link_activation::ActivationSlot,
+    on_artist_reveal: crate::ui::link_activation::ActivationSlot,
 }
 
 impl NowPlayingPanel {
@@ -284,10 +296,30 @@ impl NowPlayingPanel {
             track_animation: RefCell::new(None),
             track_animation_generation: Cell::new(0),
             audio_character_generation: Cell::new(0),
+            on_track_reveal: Rc::new(RefCell::new(None)),
             on_album_reveal: Rc::new(RefCell::new(None)),
+            on_artist_reveal: Rc::new(RefCell::new(None)),
         });
-        crate::ui::link_activation::arm_slot(&panel.widgets.cover, &panel.on_album_reveal);
-        crate::ui::link_activation::arm_slot(&panel.widgets.title, &panel.on_album_reveal);
+        crate::ui::link_activation::arm_slot(
+            &panel.widgets.cover,
+            &crate::ui::strings::text(crate::ui::strings::GO_TO_PLAYING_ALBUM),
+            &panel.on_album_reveal,
+        );
+        crate::ui::link_activation::arm_slot(
+            &panel.widgets.title,
+            &crate::ui::strings::text(crate::ui::strings::REVEAL_PLAYING_TRACK),
+            &panel.on_track_reveal,
+        );
+        crate::ui::link_activation::arm_slot(
+            &panel.widgets.artist,
+            &crate::ui::strings::text(crate::ui::strings::GO_TO_PLAYING_ARTIST),
+            &panel.on_artist_reveal,
+        );
+        crate::ui::link_activation::arm_slot(
+            &panel.widgets.album,
+            &crate::ui::strings::text(crate::ui::strings::GO_TO_PLAYING_ALBUM),
+            &panel.on_album_reveal,
+        );
         panel.wire();
         panel.render_track();
         panel.queue_audio_character_refresh();
@@ -401,6 +433,14 @@ impl NowPlayingPanel {
         *self.on_album_reveal.borrow_mut() = Some(Rc::new(callback));
     }
 
+    pub(in crate::ui) fn set_on_track_reveal(&self, callback: impl Fn() + 'static) {
+        *self.on_track_reveal.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(in crate::ui) fn set_on_artist_reveal(&self, callback: impl Fn() + 'static) {
+        *self.on_artist_reveal.borrow_mut() = Some(Rc::new(callback));
+    }
+
     /// Keeps the callback owner alive for exactly as long as the window.
     pub(in crate::ui) fn retain_for_window(self: &Rc<Self>, window: &adw::ApplicationWindow) {
         let panel = self.clone();
@@ -510,8 +550,13 @@ impl NowPlayingPanel {
         let track = self.loaded_track.borrow().clone();
         let presentation = panel_presentation(track.as_ref(), self.playback_state.get());
         self.widgets.title.set_label(&presentation.title);
-        self.widgets.subtitle.set_label(&presentation.subtitle);
-        self.widgets.subtitle.set_visible(!presentation.idle);
+        let (artist, album) = track.as_ref().map_or(("", ""), |track| {
+            (track.artist.as_str(), track.album.as_str())
+        });
+        self.widgets.artist.set_label(artist);
+        self.widgets.album.set_label(album);
+        self.widgets.artist.set_visible(!artist.trim().is_empty());
+        self.widgets.album.set_visible(!album.trim().is_empty());
         if presentation.idle {
             self.widgets.stage.add_css_class("reprise-now-playing-idle");
         } else {

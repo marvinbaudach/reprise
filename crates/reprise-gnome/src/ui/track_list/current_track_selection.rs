@@ -1,7 +1,7 @@
 //! Keeps playing markers synchronized with playback while applying NAV-10a's
 //! intent-sensitive viewport policy. Row activation never moves the viewport;
-//! explicit transport centers, automatic advance yields to recent scrolling,
-//! and explicit NAV-9b reveal also selects and focuses the loaded track.
+//! explicit transport centers, and automatic advance yields to recent scrolling.
+//! Explicit metadata reveals restore selection/focus through `BrowserPlace`.
 
 use std::rc::Rc;
 use std::time::Duration;
@@ -22,7 +22,6 @@ pub(in crate::ui) enum CurrentTrackChange {
     AutomaticAdvance,
     ExplicitTransport,
     SessionRestore,
-    ExplicitReveal,
 }
 
 const USER_SCROLL_GRACE: Duration = Duration::from_millis(1_500);
@@ -31,7 +30,6 @@ const USER_SCROLL_GRACE: Duration = Duration::from_millis(1_500);
 enum TrackRevealPolicy {
     MarkerOnly,
     Center,
-    SelectFocusCenter,
 }
 
 fn reveal_policy(change: CurrentTrackChange, user_scrolling: bool) -> TrackRevealPolicy {
@@ -41,7 +39,6 @@ fn reveal_policy(change: CurrentTrackChange, user_scrolling: bool) -> TrackRevea
         CurrentTrackChange::AutomaticAdvance
         | CurrentTrackChange::ExplicitTransport
         | CurrentTrackChange::SessionRestore => TrackRevealPolicy::Center,
-        CurrentTrackChange::ExplicitReveal => TrackRevealPolicy::SelectFocusCenter,
     }
 }
 
@@ -145,10 +142,6 @@ impl PlayerController {
 
     pub(in crate::ui) fn notify_restored_current_track(&self) {
         self.notify_current_track(CurrentTrackChange::SessionRestore);
-    }
-
-    pub(in crate::ui) fn notify_revealed_current_track(&self) {
-        self.notify_current_track(CurrentTrackChange::ExplicitReveal);
     }
 
     pub(in crate::ui) fn notify_current_track(&self, change: CurrentTrackChange) {
@@ -270,16 +263,6 @@ impl TrackList {
                     reveal_track_position(&self.shared.column_view, position, 8);
                 }
                 tracing::info!(track_id, position, ?change, "current track centered");
-            }
-            TrackRevealPolicy::SelectFocusCenter => {
-                self.shared.selection.select_item(position, true);
-                let _ = self.shared.column_view.grab_focus();
-                reveal_track_position(&self.shared.column_view, position, 8);
-                tracing::info!(
-                    track_id,
-                    position,
-                    "explicit current-track reveal selected and centered"
-                );
             }
         }
     }
@@ -403,10 +386,6 @@ mod tests {
             reveal_policy(CurrentTrackChange::AutomaticAdvance, true),
             TrackRevealPolicy::MarkerOnly
         );
-        assert_eq!(
-            reveal_policy(CurrentTrackChange::ExplicitReveal, true),
-            TrackRevealPolicy::SelectFocusCenter
-        );
     }
 
     #[test]
@@ -497,10 +476,6 @@ mod tests {
         assert!(track_list.shared.selection.is_selected(10));
         assert!(!track_list.shared.selection.is_selected(position));
 
-        track_list.update_current_track(track_id, None, CurrentTrackChange::ExplicitReveal);
-        while gtk4::glib::MainContext::default().iteration(false) {}
-        assert!(!track_list.shared.selection.is_selected(10));
-        assert!(track_list.shared.selection.is_selected(position));
         window.close();
     }
 

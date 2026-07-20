@@ -147,11 +147,10 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   geladenen Tracks, selektiert dessen Zeile und zentriert sie ohne
   scrollIntoView-Kantenkleben. Der Sprung pusht auf den globalen
   History-Stack; Back kehrt zum vorherigen Ort zurück.
-- **NAV-9b** [aktiv] [gtk] — Ctrl+L und die Aktivierung des Interpreten in
-  der Playerleiste verwenden denselben Sprung: Sie navigieren zur
-  Herkunftsansicht des geladenen Tracks, selektieren und fokussieren dessen
-  Zeile und zentrieren sie ohne scrollIntoView-Kantenkleben. Der Sprung pusht
-  auf den globalen History-Stack; Back kehrt zum vorherigen Ort zurück.
+- **NAV-9b** [ersetzt durch BROWSE-4] — Ctrl+L und Player-Metadaten wurden
+  früher als gemeinsamer Track-Sprung behandelt. BROWSE-4 trennt Track-,
+  Album- und Interpret-Intents appweit und behält den expliziten Track-Sprung
+  für Ctrl+L und den Player-Titel bei.
 - **NAV-11** [aktiv] [gtk] — Jeder bedienbare Sidebar-Eintrag exponiert
   gegenüber Assistenztechnik eine eigene Bezeichnung, eine interaktive Rolle
   und eine auslösbare Aktion. Sektionsüberschriften bleiben nicht bedienbar,
@@ -1724,7 +1723,7 @@ deterministisch und hoch-konfident, nie „ohne Review".
   Ein bereits aktives Root-Ziel ist ein No-op. Laufende Jobs bleiben global
   sichtbar und blockieren Navigation nie.
 
-- **BROWSE-4** [geplant] [gtk] — **Metadaten navigieren appweit identisch.**
+- **BROWSE-4** [aktiv] [gtk] — **Metadaten navigieren appweit identisch.**
   Track, Album und Interpret lösen unabhängig von Playerleiste,
   Now-Playing-Panel, Trackliste, Queue, Cover oder My Stats genau die zentralen
   Intents RevealTrack, OpenAlbum und OpenArtist aus. Das Ziel selektiert,
