@@ -341,6 +341,16 @@ pub fn build(
     content_stack.set_visible_child_name("library");
     toolbar_view.set_content(Some(&content_stack));
 
+    let active_content_focus =
+        super::library_shell::ActiveContentFocus::new(&content_stack, &track_list);
+    let metadata_navigator = super::metadata_navigation::MetadataNavigator::new(
+        nav_history.clone(),
+        sidebar.clone(),
+        track_list.clone(),
+        content_stack.clone(),
+        active_content_focus.clone(),
+    );
+
     let bar_position = settings::get_player_bar_position(&conn.borrow());
 
     // The toast layer is attached after the player-bar shell exists so
@@ -356,10 +366,10 @@ pub fn build(
         sidebar: &sidebar,
         player: &player,
         stats_view: &stats_view,
-        nav_history: &nav_history,
         content_stack: &content_stack,
         scan_controls: &scan_controls,
         watcher_state: &watcher_state,
+        metadata_navigator: &metadata_navigator,
     });
 
     let library_shell = super::library_shell::build(
@@ -513,6 +523,8 @@ pub fn build(
         first_run_decision,
         nav_history: &nav_history,
         content_nav: &content_nav,
+        active_content_focus: &active_content_focus,
+        metadata_navigator: &metadata_navigator,
     });
 
     tracing::info!("main window built");

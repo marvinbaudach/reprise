@@ -17,6 +17,7 @@ pub(in crate::ui) struct NavPlace {
 }
 
 impl NavPlace {
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(in crate::ui) fn browser(browser: BrowserPlace) -> Self {
         Self { browser }
     }
@@ -64,6 +65,18 @@ impl NavHistory {
     pub(in crate::ui) fn record_route_from(&self, new: &NavPlace, current: BrowserPlace) {
         self.replace_current(current);
         self.record_route(new);
+    }
+
+    pub(in crate::ui) fn navigate_from(
+        &self,
+        intent: NavigationIntent,
+        current: BrowserPlace,
+    ) -> Option<NavPlace> {
+        self.replace_current(current);
+        let transition = self.navigation.borrow_mut().as_mut()?.navigate(intent)?;
+        Some(NavPlace {
+            browser: transition.to,
+        })
     }
 
     pub(in crate::ui) fn record_new_releases(&self) -> Option<NavPlace> {
@@ -255,5 +268,31 @@ mod tests {
             .expect("Library must be in Back history");
 
         assert_eq!(restored.browser_place(), &current);
+    }
+
+    #[test]
+    fn browse_4_metadata_intents_share_one_anchored_navigation_path() {
+        let nav = NavHistory::default();
+        let library = BrowserPlace::from(ViewSource::Library);
+        nav.record_route(&NavPlace::browser(library.clone()));
+
+        let album = nav
+            .navigate_from(
+                NavigationIntent::OpenAlbum {
+                    album: AlbumKey::new("Pain Remains", "Lorna Shore"),
+                    anchor_track_id: Some(42),
+                },
+                library.clone(),
+            )
+            .unwrap();
+        let state = album.browser_place().track_state().unwrap();
+        assert_eq!(state.selected_ids, vec![42]);
+        assert_eq!(state.focus, reprise_core::browser::TrackFocus::Track(42));
+        assert_eq!(
+            nav.go_back_from(album.browser_place().clone())
+                .unwrap()
+                .browser_place(),
+            &library
+        );
     }
 }

@@ -8,6 +8,8 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use rusqlite::Connection;
 
+use reprise_core::browser::navigation::NavigationIntent;
+use reprise_core::browser::{AlbumKey, ArtistKey};
 use reprise_core::library::watcher::WatcherHandle;
 use reprise_core::library::{group_key::GroupKind, playlists, stats_screen::group_track_ids};
 use reprise_core::view_source::ViewSource;
@@ -17,9 +19,9 @@ use super::scan_flow::ScanControls;
 use super::sidebar::Sidebar;
 use super::stats_view::StatsView;
 use super::track_list::TrackList;
-use crate::ui::nav_history::{NavHistory, NavPlace};
 use crate::ui::playback::play_origin;
 use crate::ui::stats::stats_highlights::TopGenre;
+use crate::ui::stats::stats_metadata_links::StatsMetadataTarget;
 
 #[derive(Clone, Copy)]
 pub(in crate::ui) struct ActionWiring<'a> {
@@ -31,10 +33,10 @@ pub(in crate::ui) struct ActionWiring<'a> {
     pub(in crate::ui) sidebar: &'a Rc<Sidebar>,
     pub(in crate::ui) player: &'a Option<Rc<PlayerController>>,
     pub(in crate::ui) stats_view: &'a StatsView,
-    pub(in crate::ui) nav_history: &'a Rc<NavHistory>,
     pub(in crate::ui) content_stack: &'a gtk4::Stack,
     pub(in crate::ui) scan_controls: &'a ScanControls,
     pub(in crate::ui) watcher_state: &'a Rc<RefCell<Option<WatcherHandle>>>,
+    pub(in crate::ui) metadata_navigator: &'a super::metadata_navigation::MetadataNavigator,
 }
 
 pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
@@ -47,10 +49,10 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
         sidebar,
         player,
         stats_view,
-        nav_history,
         content_stack,
         scan_controls,
         watcher_state,
+        metadata_navigator,
     } = context;
 
     // Stage 2 Task 5 fault-tolerance seam: the toast overlay and the track
@@ -151,20 +153,63 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
         });
     }
     {
-        let track_list = Rc::downgrade(track_list);
-        let content_stack = content_stack.clone();
-        let nav_history = nav_history.clone();
+        let navigator = metadata_navigator.clone();
         stats_view.set_on_go_to_artist(move |artist| {
-            let Some(track_list) = track_list.upgrade() else {
-                return;
-            };
-            let source = ViewSource::Artist(artist);
-            nav_history.record_route_from(
-                &NavPlace::source(source.clone()),
-                track_list.browser_place(),
+            navigator.navigate(
+                NavigationIntent::OpenArtist {
+                    artist: ArtistKey::new(artist),
+                    anchor_track_id: None,
+                },
+                "stats artist link",
             );
-            track_list.set_source(source);
-            content_stack.set_visible_child_name("library");
+        });
+    }
+    {
+        let navigator = metadata_navigator.clone();
+        let conn = conn.clone();
+        stats_view.set_on_metadata_activate(move |target| match target {
+            StatsMetadataTarget::Track(track_id) => navigator.navigate(
+                NavigationIntent::RevealTrack {
+                    origin: Box::new(reprise_core::browser::BrowserPlace::from(
+                        ViewSource::Library,
+                    )),
+                    track_id,
+                },
+                "stats track link",
+            ),
+            StatsMetadataTarget::Album { track_id, album } => {
+                let album_artist = {
+                    let conn = conn.borrow();
+                    reprise_core::queries::query_track_album_artist(&conn, track_id)
+                        .ok()
+                        .flatten()
+                };
+                if let Some(album_artist) = album_artist {
+                    navigator.navigate(
+                        NavigationIntent::OpenAlbum {
+                            album: AlbumKey::new(album, album_artist),
+                            anchor_track_id: Some(track_id),
+                        },
+                        "stats album link",
+                    );
+                }
+            }
+            StatsMetadataTarget::Artist { track_id, artist } => {
+                let effective_artist = {
+                    let conn = conn.borrow();
+                    reprise_core::queries::query_track_album_artist(&conn, track_id)
+                        .ok()
+                        .flatten()
+                        .unwrap_or(artist)
+                };
+                navigator.navigate(
+                    NavigationIntent::OpenArtist {
+                        artist: ArtistKey::new(effective_artist),
+                        anchor_track_id: Some(track_id),
+                    },
+                    "stats artist link",
+                );
+            }
         });
     }
     {
@@ -258,42 +303,27 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
         });
     }
     {
-        let track_list_weak = Rc::downgrade(track_list);
-        let sidebar_weak = Rc::downgrade(sidebar);
-        let content_stack = content_stack.downgrade();
-        track_list.set_on_go_to_album(move |album, album_artist| {
-            let Some(track_list) = track_list_weak.upgrade() else {
-                return;
-            };
-            let source = ViewSource::Album {
-                album,
-                album_artist,
-            };
-            if let Some(sidebar) = sidebar_weak.upgrade() {
-                crate::ui::sidebar_session::sync_current_source(&sidebar.shared, &source);
-            }
-            track_list.set_source(source);
-            if let Some(content_stack) = content_stack.upgrade() {
-                content_stack.set_visible_child_name("library");
-            }
+        let navigator = metadata_navigator.clone();
+        track_list.set_on_go_to_album(move |track_id, album, album_artist| {
+            navigator.navigate(
+                NavigationIntent::OpenAlbum {
+                    album: AlbumKey::new(album, album_artist),
+                    anchor_track_id: Some(track_id),
+                },
+                "track-list album link",
+            );
         });
     }
     {
-        let track_list_weak = Rc::downgrade(track_list);
-        let sidebar_weak = Rc::downgrade(sidebar);
-        let content_stack = content_stack.downgrade();
-        track_list.set_on_go_to_artist(move |artist| {
-            let Some(track_list) = track_list_weak.upgrade() else {
-                return;
-            };
-            let source = ViewSource::Artist(artist);
-            if let Some(sidebar) = sidebar_weak.upgrade() {
-                crate::ui::sidebar_session::sync_current_source(&sidebar.shared, &source);
-            }
-            track_list.set_source(source);
-            if let Some(content_stack) = content_stack.upgrade() {
-                content_stack.set_visible_child_name("library");
-            }
+        let navigator = metadata_navigator.clone();
+        track_list.set_on_go_to_artist(move |track_id, artist| {
+            navigator.navigate(
+                NavigationIntent::OpenArtist {
+                    artist: ArtistKey::new(artist),
+                    anchor_track_id: Some(track_id),
+                },
+                "track-list artist link",
+            );
         });
     }
     {

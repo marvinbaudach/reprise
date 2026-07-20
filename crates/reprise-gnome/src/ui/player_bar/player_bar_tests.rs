@@ -23,6 +23,7 @@ fn run_until_idle() {
 fn player_metadata_uses_native_keyboard_activation() {
     gtk4::init().unwrap();
     let bar = PlayerBar::new();
+    bar.set_track("Track title", "Artist name");
     for button in [&bar.cover_button, &bar.title_button, &bar.artist_button] {
         assert!(button.is_focusable());
     }
@@ -212,13 +213,25 @@ fn mot_7_player_bar_hard_switches_when_system_animations_are_disabled() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn browse_4_player_bar_cover_and_title_are_native_album_reveal_buttons() {
+fn browse_4_player_bar_metadata_has_distinct_track_album_and_artist_targets() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let bar = PlayerBar::new();
+    bar.set_track("Track title", "Artist name");
 
-    for surface in [
-        bar.cover_button.clone().upcast::<gtk4::Widget>(),
-        bar.title_button.clone().upcast::<gtk4::Widget>(),
+    for (surface, tooltip) in [
+        (
+            bar.cover_button.clone().upcast::<gtk4::Widget>(),
+            "Reveal playing album",
+        ),
+        (
+            bar.title_button.clone().upcast::<gtk4::Widget>(),
+            "Jump to now playing",
+        ),
+        (
+            bar.artist_button.clone().upcast::<gtk4::Widget>(),
+            "Go to playing artist",
+        ),
     ] {
         assert!(surface.is_focusable());
         assert!(gtk4::test_accessible_has_role(
@@ -229,10 +242,7 @@ fn browse_4_player_bar_cover_and_title_are_native_album_reveal_buttons() {
             &surface,
             gtk4::AccessibleProperty::Label
         ));
-        assert_eq!(
-            surface.tooltip_text().as_deref(),
-            Some("Reveal playing album")
-        );
+        assert_eq!(surface.tooltip_text().as_deref(), Some(tooltip));
     }
 
     assert_eq!(

@@ -170,6 +170,9 @@ pub(in crate::ui) fn append_column(
         if alignment.uses_tabular_figures() {
             label.add_css_class("numeric");
         }
+        if let Some(target) = MetadataCell::from_sort_id(sort_id) {
+            wire_metadata_link(&label, item, &shared, target);
+        }
         track_list_context_menu::wire_context_menu_gesture(
             &label,
             item,
@@ -399,6 +402,7 @@ pub(in crate::ui) fn append_cover_column(
             let cover = TrackCover::new();
             track_list_row_interaction::expand_to_cell(&cover);
             cover.set_placeholder();
+            wire_metadata_link(&cover, item, &shared, MetadataCell::Album);
             track_list_context_menu::wire_context_menu_gesture(&cover, item, &shared, &column_view);
             track_list_dnd::wire_row_dnd(&cover, item, &shared);
             generations
@@ -430,6 +434,11 @@ pub(in crate::ui) fn append_cover_column(
                 return;
             };
             let track = boxed.borrow::<Track>();
+            let accessible_label = crate::ui::strings::formatted(
+                crate::ui::strings::GO_TO_ALBUM_NAMED,
+                &[("album", &track.album)],
+            );
+            cover.update_property(&[gtk4::accessible::Property::Label(&accessible_label)]);
             apply_now_playing(&cover, track.id, &shared, true);
 
             let key = item.as_ptr() as usize;
@@ -473,6 +482,75 @@ pub(in crate::ui) fn append_cover_column(
 
     column_view.append_column(&column);
     column
+}
+
+#[derive(Clone, Copy)]
+enum MetadataCell {
+    Album,
+    Artist,
+}
+
+impl MetadataCell {
+    fn from_sort_id(sort_id: &str) -> Option<Self> {
+        match sort_id {
+            "album" => Some(Self::Album),
+            "artist" => Some(Self::Artist),
+            _ => None,
+        }
+    }
+}
+
+fn wire_metadata_link(
+    widget: &impl IsA<gtk4::Widget>,
+    item: &gtk4::ListItem,
+    shared: &Rc<Shared>,
+    target: MetadataCell,
+) {
+    let widget = widget.upcast_ref::<gtk4::Widget>();
+    // a11y-semantics: role=link name=bound-metadata state=enabled action=activate
+    widget.set_focusable(true);
+    // input-parity: ACC-8 keyboard=metadata-link-enter-controller
+    widget.set_cursor_from_name(Some("pointer"));
+    widget.set_accessible_role(gtk4::AccessibleRole::Link);
+    widget.add_css_class(crate::ui::link_activation::LINK_CLASS);
+
+    let activate = {
+        let item = item.clone();
+        let shared = shared.clone();
+        Rc::new(move || activate_metadata_link(&item, &shared, target))
+    };
+    // input-parity: ACC-8 keyboard=metadata-link-enter-controller
+    let click = gtk4::GestureClick::builder().button(1).build();
+    let click_activate = activate.clone();
+    click.connect_released(move |_, _, _, _| click_activate());
+    widget.add_controller(click);
+    let keys = gtk4::EventControllerKey::new();
+    keys.connect_key_pressed(move |_, key, _, _| {
+        crate::ui::link_activation::route_key(key, || activate())
+    });
+    widget.add_controller(keys);
+}
+
+fn activate_metadata_link(item: &gtk4::ListItem, shared: &Rc<Shared>, target: MetadataCell) {
+    let Some(boxed) = item
+        .item()
+        .and_then(|object| object.downcast::<glib::BoxedAnyObject>().ok())
+    else {
+        return;
+    };
+    let track = boxed.borrow::<Track>();
+    match target {
+        MetadataCell::Album => {
+            if let Some(callback) = shared.on_go_to_album.borrow().clone() {
+                callback(track.id, track.album.clone(), track.album_artist.clone());
+            }
+        }
+        MetadataCell::Artist => {
+            if let Some(callback) = shared.on_go_to_artist.borrow().clone() {
+                callback(track.id, track.album_artist.clone());
+            }
+        }
+    }
 }
 
 /// Builds the interactive `Rating` column: each cell is a `RatingWidget`

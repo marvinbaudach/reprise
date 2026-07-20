@@ -39,8 +39,8 @@ pub(in crate::ui) type OnQueueActivate = Rc<dyn Fn(super::queue_row_mapping::Que
 pub(in crate::ui) type OnQueueRemove = Rc<dyn Fn(&[super::queue_row_mapping::QueueRow]) -> usize>;
 pub(in crate::ui) type OnQueueMoveToTop =
     Rc<dyn Fn(&[super::queue_row_mapping::QueueRow]) -> usize>;
-pub(in crate::ui) type OnGoToAlbum = Rc<dyn Fn(String, String)>;
-pub(in crate::ui) type OnGoToArtist = Rc<dyn Fn(String)>;
+pub(in crate::ui) type OnGoToAlbum = Rc<dyn Fn(i64, String, String)>;
+pub(in crate::ui) type OnGoToArtist = Rc<dyn Fn(i64, String)>;
 pub(in crate::ui) type OnShowMissingFiles = Rc<dyn Fn()>;
 /// Queue drag-reorder callback — see the `Shared::on_queue_reorder` doc
 /// comment. Returns whether the move actually happened (`false` for a
