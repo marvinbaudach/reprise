@@ -23,7 +23,12 @@ fn run_until_idle() {
 fn player_metadata_uses_native_keyboard_activation() {
     gtk4::init().unwrap();
     let bar = PlayerBar::new();
-    for button in [&bar.cover_button, &bar.title_button, &bar.artist_button] {
+    for button in [
+        &bar.cover_button,
+        &bar.title_button,
+        &bar.artist_button,
+        &bar.analysis_info_button,
+    ] {
         assert!(button.is_focusable());
     }
     let activations = Rc::new(Cell::new(0));
@@ -33,10 +38,28 @@ fn player_metadata_uses_native_keyboard_activation() {
     bar.connect_cover_clicked(move || cover_activations.set(cover_activations.get() + 1));
     let artist_activations = activations.clone();
     bar.connect_artist_clicked(move || artist_activations.set(artist_activations.get() + 1));
+    let analysis_activations = activations.clone();
+    bar.connect_analysis_clicked(move || analysis_activations.set(analysis_activations.get() + 1));
     bar.title_button.emit_clicked();
     bar.cover_button.emit_clicked();
     bar.artist_button.emit_clicked();
-    assert_eq!(activations.get(), 3);
+    bar.analysis_info_button.emit_clicked();
+    assert_eq!(activations.get(), 4);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn ac_10_analysis_info_button_is_an_accessible_keyboard_target() {
+    gtk4::init().unwrap();
+    let bar = PlayerBar::new();
+    let button = bar.analysis_info_button.clone().upcast::<gtk4::Widget>();
+
+    assert!(button.is_focusable());
+    assert!(gtk4::test_accessible_has_role(
+        &button,
+        gtk4::AccessibleRole::Button
+    ));
+    assert_eq!(button.tooltip_text().as_deref(), Some("Song analysis"));
 }
 
 #[test]

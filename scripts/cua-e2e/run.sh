@@ -252,6 +252,77 @@ run_populated_library_scenario() {
     "first-run decision"
 }
 
+run_song_visuals_scenario() {
+  local fixture_dir="$CUA_E2E_SCRATCH_ROOT/song-visuals-fixture-music"
+  local cover_path="$CUA_E2E_SCRATCH_ROOT/song-visuals-cover.png"
+  local initial_path panel_path visual_path dialog_path closed_path
+
+  echo "[cua-e2e] ac-9/ac-10/ac-11: player info dialog and album-accent visuals"
+  mkdir -p "$fixture_dir"
+  ffmpeg -hide_banner -loglevel error -y \
+    -f lavfi -i color=c=0xd86a45:s=600x600 -frames:v 1 "$cover_path"
+  ffmpeg -hide_banner -loglevel error -y \
+    -f lavfi -i sine=frequency=440:duration=120 \
+    -i "$cover_path" \
+    -map 0:a -map 1:v \
+    -metadata title="Accent Fixture" \
+    -metadata artist="Visual Artist" \
+    -metadata album="Copper Album" \
+    -c:a flac -c:v png -disposition:v:0 attached_pic \
+    "$fixture_dir/accent_fixture.flac"
+
+  start_scenario_app \
+    song-visuals "$fixture_dir" "" "$CUA_E2E_KEYBOARD_QUIT_DELAY_SECS"
+  initial_path=$(wait_for_label \
+    "$APP_PID" "$WINDOW_ID" "Accent Fixture" song-visuals-library)
+  assert_snapshot_contains "$initial_path" "Search all fields"
+  cua_focus_label_via_key \
+    "$APP_PID" "$WINDOW_ID" "Accent Fixture" down song-visuals-track-focus >/dev/null
+  cua_press_key_window "$APP_PID" "$WINDOW_ID" enter song-visuals-play
+  wait_for_label "$APP_PID" "$WINDOW_ID" "Pause (Space)" song-visuals-playing >/dev/null
+
+  cua_activate_main_menu_item \
+    "$APP_PID" "$WINDOW_ID" "Preferences" song-visuals-preferences
+  wait_for_label "$APP_PID" "$WINDOW_ID" "Plugins" song-visuals-preferences-open >/dev/null
+  cua_focus_label_via_key \
+    "$APP_PID" "$WINDOW_ID" "Plugins" down song-visuals-plugins-focus >/dev/null
+  cua_press_key_window \
+    "$APP_PID" "$WINDOW_ID" enter song-visuals-plugins-enter
+  wait_for_label "$APP_PID" "$WINDOW_ID" "Song Visuals" song-visuals-plugin >/dev/null
+  cua_click_label "$APP_PID" "$WINDOW_ID" "Song Visuals" song-visuals-enable
+  cua_hotkey "$APP_PID" "$WINDOW_ID" song-visuals-preferences-close ctrl w
+  wait_for_label_absent \
+    "$APP_PID" "$WINDOW_ID" "Preferences" song-visuals-preferences-closed >/dev/null
+
+  panel_path=$(cua_snapshot "$APP_PID" "$WINDOW_ID" song-visuals-panel-state)
+  if ! snapshot_exposes_label "$panel_path" "Visual"; then
+    cua_click_label \
+      "$APP_PID" "$WINDOW_ID" "Toggle Now Playing panel" song-visuals-panel-open
+  fi
+  wait_for_label "$APP_PID" "$WINDOW_ID" "Visual" song-visuals-visual-tab >/dev/null
+  cua_click_label "$APP_PID" "$WINDOW_ID" "Visual" song-visuals-select-visual
+  visual_path=$(wait_for_label \
+    "$APP_PID" "$WINDOW_ID" "Audio-reactive song visual" song-visuals-visible)
+  assert_snapshot_contains "$visual_path" "Rings"
+  assert_snapshot_contains "$visual_path" "Flow"
+  assert_snapshot_contains "$visual_path" "Pulse"
+  assert_snapshot_contains "$visual_path" "F11 Fullscreen · color follows the cover accent"
+  assert_snapshot_absent "$visual_path" "Audio Character"
+
+  cua_click_label "$APP_PID" "$WINDOW_ID" "Song analysis" song-analysis-open
+  dialog_path=$(wait_for_label \
+    "$APP_PID" "$WINDOW_ID" "Audio Character" song-analysis-dialog)
+  assert_snapshot_contains "$dialog_path" "Local audio analysis is disabled"
+  cua_press_key_window "$APP_PID" "$WINDOW_ID" escape song-analysis-close
+  closed_path=$(wait_for_label_absent \
+    "$APP_PID" "$WINDOW_ID" "Audio Character" song-analysis-closed)
+  assert_focus_evidence_label "$closed_path" "Song analysis"
+
+  finish_scenario song-visuals \
+    "dev scan complete" \
+    "queue set from view"
+}
+
 run_tag_1_no_jump_after_save_scenario() {
   local fixture_dir="$CUA_E2E_SCRATCH_ROOT/tag-1-fixture-music"
   local saved_path
@@ -454,6 +525,7 @@ run_private_session() {
       run_tag_1_no_jump_after_save_scenario
       run_tag_3_multi_dialog_structure_scenario
       run_library_doctor_scenario
+      run_song_visuals_scenario
       ;;
     populated-library)
       run_populated_library_scenario
@@ -469,6 +541,9 @@ run_private_session() {
       ;;
     library-doctor)
       run_library_doctor_scenario
+      ;;
+    song-visuals)
+      run_song_visuals_scenario
       ;;
     *)
       echo "unknown CUA_E2E_ONLY scenario: $CUA_E2E_ONLY" >&2
