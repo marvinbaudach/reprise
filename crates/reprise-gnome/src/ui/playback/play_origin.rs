@@ -5,6 +5,7 @@
 //! playlist renamed mid-playback keeps the name the user pressed play on,
 //! and so a session restore never needs a second lookup.
 
+use reprise_core::browser::BrowserPlace;
 use reprise_core::library::playlists;
 use reprise_core::library::session::SessionSource;
 use reprise_core::view_source::ViewSource;
@@ -12,11 +13,12 @@ use rusqlite::Connection;
 
 use crate::ui::strings;
 
-/// Where the current playback context came from. `source` is the jump
-/// target (NAV-9b); `label` is the human name shown in the Queue view.
+/// Where the current playback context came from. `place` is the immutable,
+/// structured jump target; `label` is the equally immutable human name shown
+/// in the Queue view.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct PlayOrigin {
-    pub source: ViewSource,
+    pub place: BrowserPlace,
     pub label: String,
 }
 
@@ -25,23 +27,22 @@ impl PlayOrigin {
     /// "Music" row.
     pub(crate) fn library() -> Self {
         Self {
-            source: ViewSource::Library,
+            place: BrowserPlace::from(ViewSource::Library),
             label: strings::text(strings::SIDEBAR_MUSIC),
         }
     }
 }
 
-/// Builds the origin for a play started from `source`, resolving the
-/// display label. Sources that are not a stable "home" (Queue itself,
-/// stats, devices) collapse to the library origin.
-pub(crate) fn resolve(conn: &Connection, source: &ViewSource) -> PlayOrigin {
+/// Builds the origin for a play started from `place`, resolving the display
+/// label once. Queue itself is a projection of the active snapshot rather
+/// than an independent origin, so only that destination collapses to Music.
+pub(crate) fn resolve(conn: &Connection, place: &BrowserPlace) -> PlayOrigin {
+    let source = place.view_source();
     match source {
-        ViewSource::Queue | ViewSource::MyStats | ViewSource::Device { .. } => {
-            PlayOrigin::library()
-        }
+        ViewSource::Queue => PlayOrigin::library(),
         _ => PlayOrigin {
-            source: source.clone(),
-            label: resolve_label(conn, source),
+            place: place.clone(),
+            label: resolve_label(conn, &source),
         },
     }
 }
@@ -76,19 +77,19 @@ fn resolve_label(conn: &Connection, source: &ViewSource) -> String {
 /// Origin for a container-play from an artist hero ("Play all"/"Shuffle").
 pub(crate) fn from_artist(artist: &str) -> PlayOrigin {
     PlayOrigin {
-        source: ViewSource::Artist(artist.to_string()),
+        place: BrowserPlace::from(ViewSource::Artist(artist.to_string())),
         label: artist.to_string(),
     }
 }
 
-/// Session-persistence projection. `SessionSource` cannot carry Album/Artist
-/// origins — those collapse to `Library` for the *jump target* while the
-/// label (the album/artist name) is kept for the Queue view's section title.
+/// Legacy session-persistence projection used until BROWSE-5 stores complete
+/// browser places. `SessionSource` cannot carry Album/Artist origins — those
+/// collapse to `Library` for the jump target while the frozen label remains.
 pub(crate) fn to_session(origin: Option<&PlayOrigin>) -> (Option<SessionSource>, Option<String>) {
     let Some(origin) = origin else {
         return (None, None);
     };
-    let source = match origin.source {
+    let source = match origin.place.view_source() {
         ViewSource::Playlist(id) => SessionSource::Playlist(id),
         ViewSource::Smart(id) => SessionSource::Smart(id),
         ViewSource::Missing => SessionSource::Missing,
@@ -112,7 +113,7 @@ pub(crate) fn from_session(
         SessionSource::ImportErrors => ViewSource::ImportErrors,
     };
     Some(PlayOrigin {
-        source,
+        place: BrowserPlace::from(source),
         label: label.unwrap_or_else(|| strings::text(strings::SIDEBAR_MUSIC)),
     })
 }
@@ -128,48 +129,78 @@ mod tests {
     }
 
     #[test]
-    fn playlist_origin_resolves_its_name_and_survives_the_session_round_trip() {
+    fn playlist_origin_resolves_its_name_and_legacy_session_destination() {
         let conn = conn();
         let id = playlists::create(&conn, "Late Night").unwrap();
-        let origin = resolve(&conn, &ViewSource::Playlist(id));
+        let mut place = reprise_core::browser::BrowserPlace::from(ViewSource::Playlist(id));
+        place.track_state_mut().unwrap().search = "night".into();
+        let origin = resolve(&conn, &place);
         assert_eq!(origin.label, "Late Night");
-        assert_eq!(origin.source, ViewSource::Playlist(id));
+        assert_eq!(origin.place, place);
 
         let (kind, label) = to_session(Some(&origin));
-        assert_eq!(from_session(kind, label), Some(origin));
+        let restored = from_session(kind, label).unwrap();
+        assert_eq!(restored.place.view_source(), ViewSource::Playlist(id));
+        assert_eq!(restored.label, origin.label);
     }
 
     #[test]
     fn deleted_playlist_falls_back_to_the_library_label() {
         let conn = conn();
-        let origin = resolve(&conn, &ViewSource::Playlist(9999));
+        let origin = resolve(
+            &conn,
+            &reprise_core::browser::BrowserPlace::from(ViewSource::Playlist(9999)),
+        );
         assert_eq!(origin.label, strings::text(strings::SIDEBAR_MUSIC));
     }
 
     #[test]
     fn album_origin_keeps_its_label_but_collapses_to_library_in_the_session() {
         let conn = conn();
-        let origin = resolve(
-            &conn,
-            &ViewSource::Album {
-                album: "Neverbloom".into(),
-                album_artist: "Make Them Suffer".into(),
-            },
-        );
+        let place =
+            reprise_core::browser::BrowserPlace::fresh_album("Neverbloom", "Make Them Suffer");
+        let origin = resolve(&conn, &place);
         assert_eq!(origin.label, "Neverbloom");
 
         let (kind, label) = to_session(Some(&origin));
         assert_eq!(kind, Some(SessionSource::Library));
         let restored = from_session(kind, label).unwrap();
-        assert_eq!(restored.source, ViewSource::Library);
+        assert_eq!(
+            restored.place,
+            reprise_core::browser::BrowserPlace::from(ViewSource::Library)
+        );
         assert_eq!(restored.label, "Neverbloom");
     }
 
     #[test]
     fn queue_and_transient_sources_collapse_to_the_library_origin() {
         let conn = conn();
-        assert_eq!(resolve(&conn, &ViewSource::Queue), PlayOrigin::library());
-        assert_eq!(resolve(&conn, &ViewSource::MyStats), PlayOrigin::library());
+        assert_eq!(
+            resolve(
+                &conn,
+                &reprise_core::browser::BrowserPlace::from(ViewSource::Queue)
+            ),
+            PlayOrigin::library()
+        );
+        let stats = reprise_core::browser::BrowserPlace::MyStats;
+        let stats_origin = resolve(&conn, &stats);
+        assert_eq!(stats_origin.place, stats);
+    }
+
+    #[test]
+    fn play_8_origin_freezes_the_complete_browser_place() {
+        let conn = conn();
+        let mut place =
+            reprise_core::browser::BrowserPlace::fresh_album("Pain Remains", "Lorna Shore");
+        let state = place.track_state_mut().unwrap();
+        state.search = "fire".into();
+        state.selected_ids = vec![42];
+
+        let origin = resolve(&conn, &place);
+        place.track_state_mut().unwrap().search = "changed later".into();
+
+        assert_eq!(origin.place.track_state().unwrap().search, "fire");
+        assert_eq!(origin.place.track_state().unwrap().selected_ids, vec![42]);
     }
 
     #[test]

@@ -693,6 +693,30 @@ fn browse_and_text_filter_match_across_window_count_ids_and_stats() {
 }
 
 #[test]
+fn play_1_scoped_playback_ids_are_the_exact_visible_refined_order() {
+    let mut conn = seeded_browse_conn();
+    let source = ViewSource::Artist("A".into());
+    let browse = BrowseFilter {
+        genre: Some("Rock".into()),
+        ..BrowseFilter::default()
+    };
+
+    let rows =
+        query_track_window_browsed(&mut conn, &source, "title", "desc", "", &browse, 0, 10, &[])
+            .unwrap();
+    let visible = rows.iter().map(|track| track.id).collect::<Vec<_>>();
+    let playback =
+        query_track_ids_browsed(&conn, &source, "title", "desc", "", &browse, &[]).unwrap();
+
+    assert_eq!(visible, vec![2, 1]);
+    assert_eq!(playback, visible);
+    assert_eq!(
+        query_track_count_browsed(&conn, &source, "", &browse, &[]).unwrap(),
+        2
+    );
+}
+
+#[test]
 fn non_library_sources_ignore_browse_filter() {
     let mut conn = seeded_browse_conn();
     let playlist = crate::library::playlists::create(&conn, "All").unwrap();

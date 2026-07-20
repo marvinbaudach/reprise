@@ -159,7 +159,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 
 ## C. Abspielen, Queue, Shuffle, Filter
 
-- **PLAY-1** [geplant] [gtk] — Queue-Quelle = sichtbare Trackliste. „Was du
+- **PLAY-1** [aktiv] [gtk] — Queue-Quelle = sichtbare Trackliste. „Was du
   siehst, ist was spielt": Doppelklick/Play all/Shuffle in einer Trackliste
   bauen die Queue aus der aktuell sichtbaren (gefilterten, sortierten)
   Liste. Für Container-Buttons gilt PLAY-1a.
@@ -177,7 +177,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **PLAY-3a** [aktiv] [core] — Filter schränkt Shuffle ein — absichtlich.
   Gefilterte Playlist + Shuffle = Shuffle über die Treffer („shuffle my 90s
   tracks"); die Queue ist genau die Treffermenge, kein Track von außerhalb.
-- **PLAY-3b** [geplant] [gtk] — Filter nachträglich ändern fasst eine bereits
+- **PLAY-3b** [aktiv] [gtk] — Filter nachträglich ändern fasst eine bereits
   gebaute Queue nicht an (Queue ist ein Snapshot; sichtbar in „Queue").
 - **PLAY-4a** [aktiv] [core] — Missing in Listen: Listen-Playback und
   Queue-Advance überspringen Missing still.
@@ -213,6 +213,13 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Abgrenzung statt eines Overlays: Sie beansprucht oben oder unten ihre eigene
   Höhe im Layout, und kein Content-Element läuft unter oder hinter ihr durch.
   Ihr Hintergrund ist opak.
+
+- **PLAY-8** [aktiv] [core] — **Wiedergabe ist ein unveränderlicher Snapshot.**
+  Beim Start werden geordnete Track-IDs, Cursor, vollständiger Browser-Ursprung
+  und dessen Anzeigename eingefroren. Spätere Navigation, Suche, Facetten oder
+  selbst ein Verfeinern auf null Treffer verändern weder Snapshot noch laufenden
+  Track. Nach dem letzten Track endet die Wiedergabe bei Repeat Off, sofern
+  nicht ein expliziter Up-Next-Eintrag folgt; Löschhygiene regeln PLAY-5a/5b.
 
 ## D. Albums- & Artists-Ansicht
 

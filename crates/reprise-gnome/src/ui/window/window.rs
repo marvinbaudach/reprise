@@ -228,11 +228,11 @@ pub fn build(
     let on_activate: OnActivate = {
         let player = player.clone();
         let conn = conn.clone();
-        Box::new(move |track, ids, start_index, source| match &player {
+        Box::new(move |track, ids, start_index, place| match &player {
             Some(player) => {
                 let origin = {
                     let conn = conn.borrow();
-                    crate::ui::playback::play_origin::resolve(&conn, &source)
+                    crate::ui::playback::play_origin::resolve(&conn, &place)
                 };
                 player.play_from_view(ids, start_index, origin);
             }

@@ -206,6 +206,14 @@ impl BrowserPlace {
     }
 
     #[must_use]
+    pub fn track_state_mut(&mut self) -> Option<&mut TrackViewState> {
+        match self {
+            Self::Tracks(place) => Some(&mut place.state),
+            Self::NewReleases | Self::ImportErrors | Self::MyStats | Self::Device { .. } => None,
+        }
+    }
+
+    #[must_use]
     pub fn view_source(&self) -> ViewSource {
         match self {
             Self::Tracks(place) => match &place.collection {

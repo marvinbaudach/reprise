@@ -139,6 +139,18 @@ pub(in crate::ui) fn capture(shared: &Shared) -> SavedViewState {
     }
 }
 
+pub(in crate::ui) fn capture_place(shared: &Shared) -> reprise_core::browser::BrowserPlace {
+    let source = shared.source.borrow().clone();
+    let state = capture(shared).to_core();
+    let collection = reprise_core::browser::BrowserPlace::from(source)
+        .collection()
+        .cloned()
+        .unwrap_or(reprise_core::browser::TrackCollection::Library(
+            reprise_core::browser::LibraryScope::All,
+        ));
+    reprise_core::browser::BrowserPlace::tracks(collection, state)
+}
+
 fn row_height(column_view: &gtk4::ColumnView, n_rows: u32) -> Option<f64> {
     if n_rows == 0 {
         return None;
