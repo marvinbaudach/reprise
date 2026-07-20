@@ -45,6 +45,7 @@ fn ac_10_louder_spectrum_changes_geometry_without_changing_cardinality() {
 fn ac_10_visual_chrome_uses_the_shared_cover_accent_and_press_vocabulary() {
     let css = css();
     assert!(css.matches("@reprise_player_accent").count() >= 4);
+    assert!(css.matches("color: @reprise_player_accent").count() >= 2);
     assert!(css.contains(".reprise-song-visual-preset:checked"));
     assert!(css.contains(".reprise-song-visual-fullscreen-canvas"));
 
