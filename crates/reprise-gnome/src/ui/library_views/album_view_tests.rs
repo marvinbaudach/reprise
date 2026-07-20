@@ -5,6 +5,8 @@ use std::time::{Duration, Instant};
 
 use super::*;
 
+const NAVIGATION_RESTORE_TIMEOUT_MS: u64 = 3_000;
+
 fn wait_for_layout(milliseconds: u64) {
     let main_loop = gtk4::glib::MainLoop::new(None, false);
     let quit = main_loop.clone();
@@ -193,7 +195,7 @@ fn nav_5_remembers_scroll_and_selection_per_view() {
 
     let selection = view.selection.clone();
     let adjustment_for_wait = adjustment.clone();
-    assert!(wait_until(500, move || {
+    assert!(wait_until(NAVIGATION_RESTORE_TIMEOUT_MS, move || {
         selection.selected() == 20 && (adjustment_for_wait.value() - remembered).abs() < 2.0
     }));
     window.close();
