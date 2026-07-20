@@ -235,7 +235,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn tip_1c_mini_player_buttons_follow_tooltip_discipline() {
+    fn tip_1d_mini_player_buttons_follow_tooltip_discipline() {
         if gtk4::init().is_err() {
             return;
         }

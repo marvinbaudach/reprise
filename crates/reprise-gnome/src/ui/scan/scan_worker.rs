@@ -385,7 +385,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn tip_1c_scan_button_keeps_label_only() {
+    fn tip_1d_scan_button_keeps_label_only() {
         if gtk4::init().is_err() {
             return;
         }
