@@ -68,7 +68,7 @@ fn stats_7_customize_toggles_sections() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_6b_fresh_library_without_counters_keeps_plain_empty_state() {
+fn stats_6c_fresh_library_without_counters_keeps_plain_empty_state() {
     gtk4::init().unwrap();
     let (view, conn) = view_and_conn();
     view.wire_year_selector(&conn);
@@ -93,7 +93,7 @@ fn stats_6b_fresh_library_without_counters_keeps_plain_empty_state() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_6b_imported_history_gets_its_own_empty_state() {
+fn stats_6c_imported_counters_do_not_change_the_empty_period_state() {
     gtk4::init().unwrap();
     let (view, conn) = view_and_conn();
     seed_imported_plays(&conn.borrow(), 194);
@@ -102,31 +102,63 @@ fn stats_6b_imported_history_gets_its_own_empty_state() {
 
     assert_eq!(
         view.page_stack.visible_child_name().as_deref(),
-        Some("imported")
-    );
-    let imported = view
-        .page_stack
-        .child_by_name("imported")
-        .unwrap()
-        .downcast::<adw::StatusPage>()
-        .unwrap();
-    assert_eq!(imported.title(), "Your Rhythmbox history was imported");
-    assert_eq!(
-        imported.description().as_deref(),
-        Some("194 plays were imported. Detailed stats start now, with what you listen to in Reprise.")
+        Some("empty")
     );
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_6b_imported_state_disappears_when_real_events_exist() {
+fn stats_6c_empty_period_keeps_the_period_selector_available() {
+    gtk4::init().unwrap();
+    let (view, conn) = view_and_conn();
+    seed_play_at(&conn.borrow(), now_unix() - 60 * 24 * 60 * 60);
+    view.wire_year_selector(&conn);
+
+    let last_30_days = view
+        .periods
+        .borrow()
+        .iter()
+        .position(|period| *period == StatsPeriod::Last30Days)
+        .unwrap() as u32;
+    let window = adw::Window::builder()
+        .default_width(1_000)
+        .default_height(700)
+        .content(view.widget())
+        .build();
+    window.present();
+    wait_for_layout();
+
+    view.period_dropdown.set_selected(last_30_days);
+    while glib::MainContext::default().iteration(false) {}
+
+    assert_eq!(
+        view.page_stack.visible_child_name().as_deref(),
+        Some("empty")
+    );
+    assert!(
+        view.period_dropdown.is_mapped(),
+        "the selector must remain operable while the selected period is empty"
+    );
+
+    view.period_dropdown.set_selected(0);
+    while glib::MainContext::default().iteration(false) {}
+    assert_eq!(
+        view.page_stack.visible_child_name().as_deref(),
+        Some("sections")
+    );
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_6c_empty_state_disappears_when_real_events_exist() {
     gtk4::init().unwrap();
     let (view, conn) = view_and_conn();
     seed_imported_plays(&conn.borrow(), 194);
     view.wire_year_selector(&conn);
     assert_eq!(
         view.page_stack.visible_child_name().as_deref(),
-        Some("imported")
+        Some("empty")
     );
 
     for seconds_ago in 0..5 {
@@ -203,6 +235,10 @@ fn wait_for_layout() {
 /// the sections instead of the empty state — a hidden stack page is never
 /// allocated, and an unallocated row cannot prove responsive wrapping.
 fn seed_one_play(conn: &Connection) {
+    seed_play_at(conn, now_unix());
+}
+
+fn seed_play_at(conn: &Connection, played_at: i64) {
     conn.execute(
         "INSERT INTO tracks \
          (id, path, title, artist, album, album_artist, genre, duration_ms, \
@@ -213,7 +249,7 @@ fn seed_one_play(conn: &Connection) {
     .unwrap();
     conn.execute(
         "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, 200000)",
-        rusqlite::params![now_unix()],
+        rusqlite::params![played_at],
     )
     .unwrap();
 }
