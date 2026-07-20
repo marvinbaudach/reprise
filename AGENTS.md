@@ -79,8 +79,8 @@ The project is built **plan-by-plan, task-by-task, test-first**. To continue:
 
 - Never commit or push directly to `dev` or `main`. Create a dedicated branch for every
   change and open a pull request whose base branch is `dev`.
-- Agents may prepare, update, and verify pull requests into `dev`, but must not merge
-  `dev` into `main` or approve a production release.
+- Agents may prepare, update, verify, and merge pull requests into `dev` after all required
+  checks are green, but must not merge `dev` into `main` or approve a production release.
 - Only the repository owner promotes `dev` to `main`, after reviewing the accumulated
   changes and confirming that all required checks are green.
 - Emergency production fixes still start on a `hotfix/*` branch and require an explicit
