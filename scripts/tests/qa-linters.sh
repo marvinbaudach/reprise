@@ -41,6 +41,7 @@ require_executable scripts/tests/performance-runtime-baseline.sh
 require_executable scripts/tests/readme-showcase.sh
 require_executable scripts/tests/accessibility-semantics.sh
 require_executable scripts/tests/input-parity.sh
+require_executable scripts/tests/msrv.sh
 require_executable scripts/tests/weekly-portfolio-sync.sh
 require_executable scripts/weekly-portfolio-sync.sh
 require_executable .githooks/pre-push
@@ -54,6 +55,7 @@ require_pattern 'cargo audit' scripts/check-merge-readiness.sh
 require_pattern 'check-architecture.sh' scripts/check-merge-readiness.sh
 require_pattern 'check-accessibility-semantics.sh' scripts/check-merge-readiness.sh
 require_pattern 'check-input-parity.sh' scripts/check-merge-readiness.sh
+require_pattern 'scripts/tests/msrv.sh' scripts/check-release.sh
 require_pattern 'check-motion-tokens.sh' scripts/check-merge-readiness.sh
 require_pattern 'check-display-tests.sh --css' scripts/check-merge-readiness.sh
 require_pattern 'mode=css' scripts/check-display-tests.sh

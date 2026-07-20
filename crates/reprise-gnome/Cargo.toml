@@ -4,6 +4,7 @@ description = "A native GTK4 music player, successor to Rhythmbox — GNOME fron
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license = "GPL-3.0-or-later"
 
 [[bin]]
