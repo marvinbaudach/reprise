@@ -29,6 +29,8 @@ pub(in crate::ui) type OnReload = Box<dyn Fn(&ViewSource, usize, &str, &BrowseFi
 /// Context-menu "Add to queue" action callback — see the `Shared::on_queue_
 /// selected` doc comment.
 pub(in crate::ui) type OnQueueSelected = Rc<dyn Fn(Vec<i64>)>;
+/// Mix Builder "Play" callback. The ids are the exact visible draft order.
+pub(in crate::ui) type OnPlayMix = Rc<dyn Fn(Vec<i64>)>;
 /// Navigation callback for the action on a concrete missing-row toast.
 pub(in crate::ui) type OnShowMissing = Rc<dyn Fn(ViewSource)>;
 pub(in crate::ui) type OnQueueActivate = Rc<dyn Fn(super::queue_row_mapping::QueueRow)>;

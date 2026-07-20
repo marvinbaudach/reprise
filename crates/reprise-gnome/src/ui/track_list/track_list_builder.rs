@@ -111,6 +111,7 @@ pub(in crate::ui) fn build(
         window: gtk4::glib::WeakRef::new(),
         menu_actions: gtk4::gio::SimpleActionGroup::new(),
         on_queue_selected: RefCell::new(None),
+        on_play_mix: RefCell::new(None),
         on_play_next_selected: RefCell::new(None),
         on_show_missing: RefCell::new(None),
         on_queue_activate: RefCell::new(None),

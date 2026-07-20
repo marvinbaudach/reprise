@@ -4,6 +4,7 @@ use super::{plural, text, MOVE_TO_TRASH, REMOVE_FROM_LIBRARY};
 
 pub const CONTEXT_MENU_ADD_TO_QUEUE: &str = N_!("Add to queue");
 pub const CONTEXT_MENU_ADD_TO_PLAYLIST: &str = N_!("Add to playlist");
+pub const CONTEXT_MENU_CREATE_SIMILAR_MIX: &str = N_!("Create similar mix…");
 pub const CONTEXT_MENU_MOVE_TO_TOP: &str = N_!("Move to top");
 pub const CONTEXT_MENU_GO_TO_ALBUM: &str = N_!("Go to album");
 pub const CONTEXT_MENU_GO_TO_ARTIST: &str = N_!("Go to artist");

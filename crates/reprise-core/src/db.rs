@@ -635,6 +635,7 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
     crate::db_tag_write_jobs::migrate_v20(conn)?;
     crate::db_library_doctor_remote::migrate_v21(conn)?;
     crate::db_library_doctor_remote::migrate_v22(conn)?;
+    crate::db_mix_planner::migrate_v23(conn)?;
     Ok(())
 }
 
