@@ -27,6 +27,7 @@ jobs:
       GDK_BACKEND: x11
       WAYLAND_DISPLAY: ""
       REPRISE_AUDIO_SINK: fakesink
+      DISPLAY_TEST_JOBS: 4
     steps:
       - name: Install system dependencies
         run: >-
