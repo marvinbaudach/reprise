@@ -48,7 +48,10 @@ pub(in crate::ui) fn build(
     header.add_css_class("reprise-library-header");
     let search_toggle = gtk4::ToggleButton::builder()
         .icon_name("system-search-symbolic")
-        .tooltip_text(strings::text(strings::SEARCH_PLACEHOLDER))
+        .tooltip_text(strings::shortcut_tooltip(
+            strings::SEARCH_PLACEHOLDER,
+            strings::SHORTCUT_SEARCH,
+        ))
         .css_classes(["flat", "reprise-panel-toggle"])
         .build();
     search_toggle.update_property(&[gtk4::accessible::Property::Label(&strings::text(
