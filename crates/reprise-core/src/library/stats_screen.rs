@@ -145,16 +145,6 @@ pub(crate) fn first_event_unix(conn: &Connection) -> Result<Option<i64>, rusqlit
     })
 }
 
-/// Returns the legacy per-track play-counter total used only to distinguish an
-/// imported-history message from a fresh-library empty state.
-pub fn stored_play_count_total(conn: &Connection) -> Result<i64, rusqlite::Error> {
-    conn.query_row(
-        "SELECT COALESCE(SUM(play_count), 0) FROM tracks",
-        [],
-        |row| row.get(0),
-    )
-}
-
 pub(crate) fn listen_rows(
     conn: &Connection,
     start_unix: i64,
