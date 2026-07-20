@@ -12,7 +12,8 @@ CUA_E2E_PROFILE="${CUA_E2E_PROFILE:-debug}"
 CUA_E2E_OUT_DIR="${CUA_E2E_OUT_DIR:-/tmp/reprise-cua-e2e}"
 CUA_E2E_SCREEN_RES="${CUA_E2E_SCREEN_RES:-1600x900x24}"
 CUA_E2E_QUIT_DELAY_SECS="${CUA_E2E_QUIT_DELAY_SECS:-15}"
-CUA_E2E_KEYBOARD_QUIT_DELAY_SECS="${CUA_E2E_KEYBOARD_QUIT_DELAY_SECS:-180}"
+CUA_E2E_KEYBOARD_QUIT_DELAY_SECS="${CUA_E2E_KEYBOARD_QUIT_DELAY_SECS:-150}"
+CUA_E2E_DRIVER_TIMEOUT_SECS="${CUA_E2E_DRIVER_TIMEOUT_SECS:-20}"
 export CUA_E2E_OUT_DIR CUA_E2E_SESSION="${CUA_E2E_SESSION:-reprise-acceptance}"
 
 required_command() {
@@ -184,6 +185,8 @@ finish_scenario() {
     assert_app_log_contains "$APP_LOG" "$marker" "$scenario"
   done
   APP_PID=""
+  CUA_E2E_APP_PID=""
+  export CUA_E2E_APP_PID
   WINDOW_ID=""
 }
 
@@ -246,6 +249,8 @@ run_populated_library_scenario() {
 
   CUA_E2E_FOCUS_STATE="$CUA_E2E_OUT_DIR/populated-library-focus-state.txt" \
   CUA_E2E_APP_PID="$APP_PID" \
+  CUA_E2E_DRIVER_TIMEOUT_SECS="$CUA_E2E_DRIVER_TIMEOUT_SECS" \
+  CUA_E2E_KEYBOARD_GROUP=primary \
     "$repo_root/scripts/cua-e2e/keyboard.sh" --run "$APP_PID" "$WINDOW_ID"
   restart_private_cua_daemon
 
@@ -263,6 +268,33 @@ run_populated_library_scenario() {
   results_path=$(wait_for_label "$APP_PID" "$WINDOW_ID" "No results" populated-no-results)
   assert_snapshot_contains "$results_path" "Try a different search"
   finish_scenario populated-library \
+    "dev scan complete" \
+    "first-run decision"
+}
+
+run_populated_library_secondary_scenario() {
+  local fixture_dir="$CUA_E2E_SCRATCH_ROOT/fixture-music-secondary"
+
+  # cua-driver 0.8 loses its persistent AT-SPI listener during longer sweeps.
+  # The outer runner therefore executes this half of the same manifest in a
+  # fresh D-Bus, AT-SPI, app, and daemon lifecycle instead of allowing one
+  # infrastructure failure to masquerade as four product regressions.
+  mkdir -p "$fixture_dir"
+  cp "$repo_root/crates/reprise-core/tests/fixtures/sine.flac" \
+    "$fixture_dir/sine_01.flac"
+  restart_private_cua_daemon
+  start_scenario_app \
+    populated-library-secondary "$fixture_dir" "" "$CUA_E2E_KEYBOARD_QUIT_DELAY_SECS"
+  wait_for_label \
+    "$APP_PID" "$WINDOW_ID" "Search all fields" populated-secondary-initial \
+    >/dev/null
+  CUA_E2E_FOCUS_STATE="$CUA_E2E_OUT_DIR/populated-library-secondary-focus-state.txt" \
+  CUA_E2E_APP_PID="$APP_PID" \
+  CUA_E2E_DRIVER_TIMEOUT_SECS="$CUA_E2E_DRIVER_TIMEOUT_SECS" \
+  CUA_E2E_KEYBOARD_GROUP=secondary \
+    "$repo_root/scripts/cua-e2e/keyboard.sh" --run "$APP_PID" "$WINDOW_ID"
+  restart_private_cua_daemon
+  finish_scenario populated-library-secondary \
     "dev scan complete" \
     "first-run decision"
 }
@@ -450,7 +482,8 @@ private_session_cleanup() {
 
 start_private_cua_daemon() {
   rm -f -- "$CUA_DRIVER_SOCKET"
-  cua_driver serve --no-overlay \
+  env CUA_DRIVER_RS_UPDATE_CHECK=0 \
+    "$CUA_DRIVER_BIN" serve --no-overlay --socket "$CUA_DRIVER_SOCKET" \
     >>"$CUA_E2E_OUT_DIR/cua-driver.log" 2>&1 &
   CUA_DAEMON_PID=$!
   for _ in $(seq 1 40); do
@@ -469,32 +502,29 @@ restart_private_cua_daemon() {
 }
 
 run_private_session() {
+  local private_group=${CUA_E2E_PRIVATE_GROUP:-${CUA_E2E_ONLY:-all}}
   trap private_session_cleanup EXIT
 
   /usr/lib/at-spi-bus-launcher \
     --launch-immediately --a11y=1 --screen-reader=1 \
-    >"$CUA_E2E_OUT_DIR/at-spi.log" 2>&1 &
+    >"$CUA_E2E_OUT_DIR/$private_group-at-spi.log" 2>&1 &
   ATSPI_PID=$!
   sleep 0.3
 
   /usr/lib/at-spi2-registryd \
-    >"$CUA_E2E_OUT_DIR/at-spi-registryd.log" 2>&1 &
+    >"$CUA_E2E_OUT_DIR/$private_group-at-spi-registryd.log" 2>&1 &
   ATSPI_REGISTRYD_PID=$!
   sleep 0.3
 
-  export CUA_DRIVER_SOCKET="$CUA_E2E_SCRATCH_ROOT/cua-driver.sock"
+  export CUA_DRIVER_SOCKET="$CUA_E2E_SCRATCH_ROOT/$private_group-cua-driver.sock"
   start_private_cua_daemon
 
-  case "${CUA_E2E_ONLY:-all}" in
-    all)
-      run_fresh_install_scenario
-      run_populated_library_scenario
-      run_tag_1_no_jump_after_save_scenario
-      run_tag_3_multi_dialog_structure_scenario
-      run_library_doctor_scenario
-      ;;
+  case "$private_group" in
     populated-library)
       run_populated_library_scenario
+      ;;
+    populated-library-secondary)
+      run_populated_library_secondary_scenario
       ;;
     fresh-install)
       run_fresh_install_scenario
@@ -509,11 +539,11 @@ run_private_session() {
       run_library_doctor_scenario
       ;;
     *)
-      echo "unknown CUA_E2E_ONLY scenario: $CUA_E2E_ONLY" >&2
+      echo "unknown private CUA scenario group: $private_group" >&2
       return 2
       ;;
   esac
-  echo "[cua-e2e] all acceptance scenarios passed"
+  echo "[cua-e2e] private scenario group passed: $private_group"
 }
 
 if [[ "${1:-}" == "--private-session" ]]; then
@@ -521,7 +551,7 @@ if [[ "${1:-}" == "--private-session" ]]; then
   exit 0
 fi
 
-for command in "$CUA_DRIVER_BIN" Xvfb openbox cargo dbus-run-session ffmpeg jq rg wmctrl; do
+for command in "$CUA_DRIVER_BIN" Xvfb openbox cargo dbus-run-session ffmpeg jq rg timeout wmctrl; do
   required_command "$command"
 done
 if [[ ! -x /usr/lib/at-spi-bus-launcher ]]; then
@@ -601,23 +631,60 @@ if ! kill -0 "$OPENBOX_PID" 2>/dev/null; then
   exit 1
 fi
 
-runtime_dir="$CUA_E2E_SCRATCH_ROOT/runtime"
-mkdir -m 700 "$runtime_dir"
-dbus-run-session -- env \
-  XDG_RUNTIME_DIR="$runtime_dir" \
-  XDG_DATA_HOME="$CUA_E2E_SCRATCH_ROOT/root-data" \
-  XDG_CACHE_HOME="$CUA_E2E_SCRATCH_ROOT/root-cache" \
-  XDG_CONFIG_HOME="$CUA_E2E_SCRATCH_ROOT/root-config" \
-  GDK_BACKEND=x11 \
-  WAYLAND_DISPLAY= \
-  GTK_A11Y=atspi \
-  NO_AT_BRIDGE=0 \
-  REPRISE_AUDIO_SINK=fakesink \
-  CUA_E2E_OUT_DIR="$CUA_E2E_OUT_DIR" \
-  CUA_E2E_SCRATCH_ROOT="$CUA_E2E_SCRATCH_ROOT" \
-  CUA_E2E_BIN_PATH="$CUA_E2E_BIN_PATH" \
-  CUA_E2E_SESSION="$CUA_E2E_SESSION" \
-  CUA_E2E_QUIT_DELAY_SECS="$CUA_E2E_QUIT_DELAY_SECS" \
-  CUA_E2E_KEYBOARD_QUIT_DELAY_SECS="$CUA_E2E_KEYBOARD_QUIT_DELAY_SECS" \
-  CUA_DRIVER_BIN="$CUA_DRIVER_BIN" \
-  "$0" --private-session
+run_private_scenario_group() {
+  local scenario_group=$1
+  local runtime_dir="$CUA_E2E_SCRATCH_ROOT/runtime-$scenario_group"
+  local root_profile="$CUA_E2E_SCRATCH_ROOT/root-$scenario_group"
+
+  mkdir -m 700 "$runtime_dir"
+  mkdir -p "$root_profile/data" "$root_profile/cache" "$root_profile/config"
+  dbus-run-session -- env \
+    XDG_RUNTIME_DIR="$runtime_dir" \
+    XDG_DATA_HOME="$root_profile/data" \
+    XDG_CACHE_HOME="$root_profile/cache" \
+    XDG_CONFIG_HOME="$root_profile/config" \
+    GDK_BACKEND=x11 \
+    WAYLAND_DISPLAY= \
+    GTK_A11Y=atspi \
+    NO_AT_BRIDGE=0 \
+    REPRISE_AUDIO_SINK=fakesink \
+    CUA_E2E_OUT_DIR="$CUA_E2E_OUT_DIR" \
+    CUA_E2E_SCRATCH_ROOT="$CUA_E2E_SCRATCH_ROOT" \
+    CUA_E2E_BIN_PATH="$CUA_E2E_BIN_PATH" \
+    CUA_E2E_SESSION="$CUA_E2E_SESSION" \
+    CUA_E2E_QUIT_DELAY_SECS="$CUA_E2E_QUIT_DELAY_SECS" \
+    CUA_E2E_KEYBOARD_QUIT_DELAY_SECS="$CUA_E2E_KEYBOARD_QUIT_DELAY_SECS" \
+    CUA_E2E_DRIVER_TIMEOUT_SECS="$CUA_E2E_DRIVER_TIMEOUT_SECS" \
+    CUA_E2E_PRIVATE_GROUP="$scenario_group" \
+    CUA_DRIVER_BIN="$CUA_DRIVER_BIN" \
+    "$0" --private-session
+}
+
+case "${CUA_E2E_ONLY:-all}" in
+  all)
+    scenario_groups=(
+      fresh-install
+      populated-library
+      populated-library-secondary
+      tag-1-no-jump-after-save
+      tag-3-multi-dialog-structure
+      library-doctor
+    )
+    ;;
+  populated-library)
+    scenario_groups=(populated-library populated-library-secondary)
+    ;;
+  fresh-install | populated-library-secondary | tag-1-no-jump-after-save \
+    | tag-3-multi-dialog-structure | library-doctor)
+    scenario_groups=("$CUA_E2E_ONLY")
+    ;;
+  *)
+    echo "unknown CUA_E2E_ONLY scenario: $CUA_E2E_ONLY" >&2
+    exit 2
+    ;;
+esac
+
+for scenario_group in "${scenario_groups[@]}"; do
+  run_private_scenario_group "$scenario_group"
+done
+echo "[cua-e2e] all acceptance scenarios passed"

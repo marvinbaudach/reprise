@@ -25,16 +25,25 @@ for pattern in \
   'run-manifest.txt' \
   'run_fresh_install_scenario' \
   'run_populated_library_scenario' \
+  'run_private_scenario_group' \
+  'CUA_E2E_PRIVATE_GROUP=' \
+  'for scenario_group in' \
+  'dbus-run-session ffmpeg jq rg timeout wmctrl' \
   'CUA_DRIVER_SOCKET=' \
-  'cua_driver serve --no-overlay' \
+  'CUA_DRIVER_RS_UPDATE_CHECK=0' \
+  'CUA_E2E_DRIVER_TIMEOUT_SECS=' \
+  'CUA_E2E_KEYBOARD_GROUP=primary' \
+  'CUA_E2E_KEYBOARD_GROUP=secondary' \
+  '"\$CUA_DRIVER_BIN" serve --no-overlay' \
   'cua_driver status' \
   'cua_driver list_windows' \
   'sine=frequency=440:duration=120' \
-  'CUA_E2E_KEYBOARD_QUIT_DELAY_SECS=.*180' \
+  'CUA_E2E_KEYBOARD_QUIT_DELAY_SECS=.*150' \
   'restart_private_cua_daemon' \
   'wmctrl' \
   'REPRISE_SMOKE_TAG_EDIT=' \
   'REPRISE_SMOKE_FOCUS_STATE=' \
+  'CUA_E2E_APP_PID=""' \
   'run_tag_1_no_jump_after_save_scenario' \
   'run_tag_3_multi_dialog_structure_scenario' \
   'run_library_doctor_scenario' \
@@ -176,6 +185,10 @@ if [[ "${actual_surfaces[*]}" != "${expected_surfaces[*]}" ]]; then
   exit 1
 fi
 "$keyboard_runner" --check-manifest
+if CUA_E2E_KEYBOARD_GROUP=unknown "$keyboard_runner" --check-manifest 2>/dev/null; then
+  echo "$keyboard_runner must reject unknown keyboard surface groups" >&2
+  exit 1
+fi
 for pattern in \
   'acc-1-keyboard-only-surface-sweep' \
   'acc-3-tab-order-and-roving-collections' \
@@ -183,9 +196,12 @@ for pattern in \
   'acc-5-transients-and-navigation-restore-focus' \
   'acc-8-direct-manipulation-has-keyboard-equivalence' \
   'cua_hotkey' \
+  'cua_hotkey_focused' \
   'cua_focus_label_via_tab' \
   'cua_focus_label_via_key' \
   'cua_resize_window' \
+  'reset_surface_is_at_baseline' \
+  'surface_in_group' \
   'assert_after_has_focus'; do
   if ! rg --quiet "$pattern" "$keyboard_runner"; then
     echo "$keyboard_runner must contain keyboard acceptance pattern: $pattern" >&2
@@ -193,7 +209,7 @@ for pattern in \
   fi
 done
 for pattern in \
-  'cua_wait_for_label "$pid" "$window_id" "Title" "$stem-reset-state"' \
+  'reset_surface_is_at_baseline "$pid" "$window_id" "$stem"' \
   'assert_snapshot_contains "$state_path" "sine_01"'; do
   if ! rg --quiet --fixed-strings "$pattern" "$keyboard_runner"; then
     echo "the keyboard reset must restore the canonical TrackList: $pattern" >&2
@@ -211,6 +227,8 @@ for pattern in \
   '"$pid" "$window_id" "Missing files" down acc-issues-focus' \
   '"$pid" "$window_id" "Music" acc-stats-main-collection' \
   '"$pid" "$window_id" "My Stats" down acc-stats-focus' \
+  'cua_hotkey_focused "$pid" "$window_id" acc-device-close ctrl w' \
+  'cua_hotkey_focused "$pid" "$window_id" acc-preferences-open ctrl comma' \
   'cua_hotkey "$pid" "$window_id" acc-stats-return alt left' \
   'assert_snapshot_absent "$CUA_E2E_OUT_DIR/acc-compact-open-after.json" "Search all fields"' \
   'assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-compact-close-after.json" Title'; do
