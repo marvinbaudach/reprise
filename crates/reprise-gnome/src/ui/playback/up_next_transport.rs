@@ -453,6 +453,25 @@ mod tests {
     }
 
     #[test]
+    fn browse_8_repeat_one_cannot_repeat_a_loaded_catalog_tombstone() {
+        let mut context = context(&[1, 2]);
+        context.set_repeat(Repeat::One);
+        let mut pending = pending(&[]);
+        let mut current_pending = None;
+
+        assert_eq!(
+            next_matching_target(
+                &mut context,
+                &mut pending,
+                &mut current_pending,
+                AdvanceReason::Automatic,
+                |id| id != 1,
+            ),
+            Some(2)
+        );
+    }
+
+    #[test]
     fn previous_from_a_pending_track_returns_to_unchanged_context() {
         let mut context = context(&[1, 2]);
         let mut current_pending = Some(10);

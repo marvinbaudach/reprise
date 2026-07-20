@@ -636,7 +636,7 @@ fn render_tracks(
             "stats-item-subtitle",
             StatsMetadataTarget::Artist {
                 track_id: track.track_id,
-                artist: track.artist.clone(),
+                artist: track.effective_artist.clone(),
             },
             on_metadata_activate,
         ));
@@ -646,6 +646,7 @@ fn render_tracks(
             StatsMetadataTarget::Album {
                 track_id: track.track_id,
                 album: track.album.clone(),
+                album_artist: track.effective_artist.clone(),
             },
             on_metadata_activate,
         ));

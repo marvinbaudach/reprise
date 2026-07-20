@@ -166,7 +166,6 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
     }
     {
         let navigator = metadata_navigator.clone();
-        let conn = conn.clone();
         stats_view.set_on_metadata_activate(move |target| match target {
             StatsMetadataTarget::Track(track_id) => navigator.navigate(
                 NavigationIntent::RevealTrack {
@@ -177,34 +176,23 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
                 },
                 "stats track link",
             ),
-            StatsMetadataTarget::Album { track_id, album } => {
-                let album_artist = {
-                    let conn = conn.borrow();
-                    reprise_core::queries::query_track_album_artist(&conn, track_id)
-                        .ok()
-                        .flatten()
-                };
-                if let Some(album_artist) = album_artist {
-                    navigator.navigate(
-                        NavigationIntent::OpenAlbum {
-                            album: AlbumKey::new(album, album_artist),
-                            anchor_track_id: Some(track_id),
-                        },
-                        "stats album link",
-                    );
-                }
+            StatsMetadataTarget::Album {
+                track_id,
+                album,
+                album_artist,
+            } => {
+                navigator.navigate(
+                    NavigationIntent::OpenAlbum {
+                        album: AlbumKey::new(album, album_artist),
+                        anchor_track_id: Some(track_id),
+                    },
+                    "stats album link",
+                );
             }
             StatsMetadataTarget::Artist { track_id, artist } => {
-                let effective_artist = {
-                    let conn = conn.borrow();
-                    reprise_core::queries::query_track_album_artist(&conn, track_id)
-                        .ok()
-                        .flatten()
-                        .unwrap_or(artist)
-                };
                 navigator.navigate(
                     NavigationIntent::OpenArtist {
-                        artist: ArtistKey::new(effective_artist),
+                        artist: ArtistKey::new(artist),
                         anchor_track_id: Some(track_id),
                     },
                     "stats artist link",

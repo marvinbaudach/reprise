@@ -257,6 +257,9 @@ pub struct PlayerController {
     pub(in crate::ui) queue: RefCell<Queue>,
     pub(in crate::ui) up_next: RefCell<UpNextQueue>,
     pub(in crate::ui) current_up_next: Cell<Option<i64>>,
+    /// Catalog id removed while its player-owned snapshot remains loaded.
+    /// The exact current queue slot survives until `present_track` hands off.
+    pub(in crate::ui) deferred_queue_purge_id: Cell<Option<i64>>,
     /// Where the `queue` snapshot was seeded from (`play_from_view`) — the
     /// Queue view's named virtual context tail and NAV-9b's jump target.
     /// `None` before the first play and after a stop cleared the context.
@@ -444,6 +447,7 @@ impl PlayerController {
             queue: RefCell::new(Queue::new()),
             up_next: RefCell::new(UpNextQueue::default()),
             current_up_next: Cell::new(None),
+            deferred_queue_purge_id: Cell::new(None),
             play_origin: RefCell::new(None),
             toast_overlay: glib::WeakRef::new(),
             reload_track_list: RefCell::new(None),
@@ -600,6 +604,21 @@ impl PlayerController {
                 // same id (see the module's `## Track-change notification`
                 // doc section).
                 let previous_id = self.now_playing.borrow().as_ref().map(|np| np.id);
+
+                if let Some(deleted) = self
+                    .deferred_queue_purge_id
+                    .get()
+                    .filter(|deleted| *deleted != id)
+                {
+                    self.deferred_queue_purge_id.set(None);
+                    let context_changed = self.queue.borrow_mut().remove_ids(&[deleted]);
+                    if self.current_up_next.get() == Some(deleted) {
+                        self.current_up_next.set(None);
+                    }
+                    if context_changed {
+                        self.notify_queue_changed();
+                    }
+                }
 
                 self.current_track.set(Some((id, summary.duration_ms)));
                 self.max_position_ms.set(0);

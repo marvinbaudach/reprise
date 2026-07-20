@@ -411,6 +411,15 @@ impl TrackList {
         show_toast(&self.shared, message);
     }
 
+    pub(in crate::ui) fn contains_track(&self, id: i64) -> bool {
+        let conn = self.shared.conn.borrow();
+        reprise_core::queries::query_track_summary(&conn, id)
+            .inspect_err(|error| {
+                tracing::warn!(%error, id, "metadata-link catalog lookup failed");
+            })
+            .is_ok_and(|track| track.is_some())
+    }
+
     /// Injects the window's toast overlay, once it exists — see the
     /// `Shared::toast_overlay` doc comment for why this can't be a
     /// constructor parameter. Stored as a `WeakRef`; `show_toast` degrades
