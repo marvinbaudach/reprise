@@ -49,6 +49,7 @@ require_pattern 'GITHUB_BASE_REF' scripts/ci-quality.sh
 require_pattern 'GITHUB_HEAD_REF' scripts/ci-quality.sh
 require_pattern 'git cat-file -e origin/main:.github/workflows/ci.yml' scripts/ci-quality.sh
 require_pattern 'head_branch != hotfix/\\*' scripts/ci-quality.sh
+require_pattern 'main accepts only dev promotions or emergency hotfix' scripts/ci-quality.sh
 require_pattern 'MERGE_READINESS_BASE_REF' scripts/ci-quality.sh
 require_pattern 'check-merge-readiness.sh --no-fetch' scripts/ci-quality.sh
 require_pattern '^main <- dev <- feature/' "$guide"
