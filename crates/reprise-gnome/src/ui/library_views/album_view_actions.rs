@@ -8,7 +8,7 @@ use reprise_core::queries::AlbumSummary;
 use reprise_core::view_source::ViewSource;
 
 /// The `ViewSource` a container-play from this album card/menu belongs to —
-/// the playback origin (QUE-1 section label, NAV-9a jump target).
+/// the playback origin (QUE-1 section label, NAV-9b jump target).
 fn album_source(album: &AlbumSummary) -> ViewSource {
     ViewSource::Album {
         album: album.album.clone(),

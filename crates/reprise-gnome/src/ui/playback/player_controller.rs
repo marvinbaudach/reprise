@@ -258,7 +258,7 @@ pub struct PlayerController {
     pub(in crate::ui) up_next: RefCell<UpNextQueue>,
     pub(in crate::ui) current_up_next: Cell<Option<i64>>,
     /// Where the `queue` snapshot was seeded from (`play_from_view`) — the
-    /// Queue view's named virtual context tail and NAV-9a's jump target.
+    /// Queue view's named virtual context tail and NAV-9b's jump target.
     /// `None` before the first play and after a stop cleared the context.
     pub(in crate::ui) play_origin: RefCell<Option<super::play_origin::PlayOrigin>>,
     /// See the module's `## Toast + track-list-reload seam` doc section.
@@ -692,7 +692,11 @@ impl PlayerController {
                                 .then(|| summary.album.clone()),
                             duration_ms: summary.duration_ms,
                         });
-                        self.notify_current_track_changed(id, None, true);
+                        self.notify_current_track_changed(
+                            id,
+                            None,
+                            super::current_track_selection::CurrentTrackChange::PlaybackStarted,
+                        );
                         // The composite Queue view keys its Now Playing row
                         // and Up Next tail off the playhead — every track
                         // change re-partitions it (QUE-1) and shrinks the

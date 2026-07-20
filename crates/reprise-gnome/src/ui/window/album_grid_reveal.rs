@@ -106,7 +106,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_album_invokes_nav_9a_fallback_exactly_once() {
+    fn missing_album_invokes_nav_9b_fallback_exactly_once() {
         let fallback_calls = Rc::new(Cell::new(0));
         let reveal = coordinator(RevealSteps {
             current_album: Rc::new(|| Some(("Missing".into(), "Artist".into()))),

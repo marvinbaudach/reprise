@@ -139,14 +139,19 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **NAV-8** [geplant] [gtk] — My Stats ist ein Sidebar-Ort wie jeder andere:
   volle Content-Fläche, Headerbar mit Suche bleibt stehen (Suche dort
   disabled/ausgeblendet ist erlaubt, aber die Leiste bleibt).
-- **NAV-9** [ersetzt durch NAV-9a/GRID-5] — Ursprünglich teilten Cover/Titel
+- **NAV-9** [ersetzt durch NAV-9b/GRID-5] — Ursprünglich teilten Cover/Titel
   der Player-Leiste und Ctrl+L denselben Sprung zur Heimat des spielenden
   Tracks. Aufgeteilt in Track-Ursprung per Ctrl+L (NAV-9a) und Album-Grid-
   Reveal per Player-Oberflächen (GRID-5).
-- **NAV-9a** [aktiv] [gtk] — Ctrl+L navigiert zur Herkunftsansicht des
+- **NAV-9a** [ersetzt durch NAV-9b] — Ctrl+L navigiert zur Herkunftsansicht des
   geladenen Tracks, selektiert dessen Zeile und zentriert sie ohne
   scrollIntoView-Kantenkleben. Der Sprung pusht auf den globalen
   History-Stack; Back kehrt zum vorherigen Ort zurück.
+- **NAV-9b** [aktiv] [gtk] — Ctrl+L und die Aktivierung des Interpreten in
+  der Playerleiste verwenden denselben Sprung: Sie navigieren zur
+  Herkunftsansicht des geladenen Tracks, selektieren und fokussieren dessen
+  Zeile und zentrieren sie ohne scrollIntoView-Kantenkleben. Der Sprung pusht
+  auf den globalen History-Stack; Back kehrt zum vorherigen Ort zurück.
 - **NAV-11** [aktiv] [gtk] — Jeder bedienbare Sidebar-Eintrag exponiert
   gegenüber Assistenztechnik eine eigene Bezeichnung, eine interaktive Rolle
   und eine auslösbare Aktion. Sektionsüberschriften bleiben nicht bedienbar,
@@ -249,7 +254,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   in die Album-Ansicht, leert ein sichtbares Suchfeld samt Albumfilter,
   scrollt per GtkGridView/Adjustment zur geladenen Albumkachel, fokussiert sie
   und hebt sie rund 1 s hervor. Der Ortswechsel ist ein History-Push; bereits
-  im Album-Grid entsteht kein Duplikat. Fehlt die Albumkachel, greift NAV-9a
+  im Album-Grid entsteht kein Duplikat. Fehlt die Albumkachel, greift NAV-9b
   ohne Fehlerdialog. `gtk-enable-animations=false` zeigt für dieselbe Dauer
   ein statisches Highlight.
 - **GRID-6** [aktiv] [gtk] — Rückkehrfokus: Back aus einem Album-Detail in
@@ -629,12 +634,18 @@ ist ihre eigene Aussage).
        (tag_editor_form.rs, Ownership feat/tag-editor-rework) und „Back" in
        browse_bar (Ownership feat/global-search-rework) sind noch
        Substantive. [aktiv] erst, wenn beide nachgezogen sind. -->
-- **TIP-1c** [aktiv] [gtk] — Existenz folgt Beschriftung und Aktion:
+- **TIP-1c** [ersetzt durch TIP-1d] — Existenz folgt Beschriftung und Aktion:
   Icon-only-Buttons haben immer einen Tooltip; Buttons mit sichtbarem
   Aktionslabel bekommen keinen. Ein kompaktes Metadaten-Label darf die
   verborgene Aktion benennen (Player-Bar-Interpret: „Go to artist").
   Ellipsierte Labels zeigen weiterhin nur bei tatsächlicher Kürzung den
   vollen Text.
+- **TIP-1d** [aktiv] [gtk] — Existenz folgt Beschriftung und Aktion:
+  Icon-only-Buttons haben immer einen Tooltip; Buttons mit sichtbarem
+  Aktionslabel bekommen keinen. Ein kompaktes Metadaten-Label darf die
+  verborgene Aktion samt passendem Shortcut benennen (Player-Bar-Interpret:
+  „Jump to now playing (Ctrl+L)"). Ellipsierte Labels zeigen weiterhin nur
+  bei tatsächlicher Kürzung den vollen Text.
 - **TIP-2a** [aktiv] [gtk] — Disabled erklärt sich (icon-only): ein
   deaktiviertes Icon-only-Control behält seinen Tooltip und ergänzt den
   Grund („Eject device — Sync in progress"). Nie ein toter Button ohne

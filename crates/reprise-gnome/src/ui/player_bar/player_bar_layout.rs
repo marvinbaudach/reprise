@@ -103,7 +103,10 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     let artist_button = gtk4::Button::builder()
         .child(&artist_label)
         .has_frame(false)
-        .tooltip_text(strings::text(strings::PLAYER_BAR_GO_TO_ARTIST))
+        .tooltip_text(strings::shortcut_tooltip(
+            strings::JUMP_TO_NOW_PLAYING,
+            strings::SHORTCUT_CURRENT_TRACK,
+        ))
         .build();
 
     let track_box = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
@@ -446,7 +449,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn tip_1c_player_bar_buttons_follow_tooltip_discipline() {
+    fn tip_1d_player_bar_buttons_follow_tooltip_discipline() {
         if gtk4::init().is_err() {
             return;
         }
@@ -474,12 +477,13 @@ mod tests {
     }
 
     #[test]
-    fn tip_1c_player_bar_artist_names_its_navigation_action() {
+    fn tip_1d_player_bar_artist_names_its_navigation_action() {
         let source = include_str!("player_bar_layout.rs");
         let artist_tooltip = [
-            ".tooltip_text(strings::text(strings::",
-            "PLAYER_BAR_GO_TO_ARTIST",
-            "))",
+            ".tooltip_text(strings::shortcut_tooltip(\n",
+            "            strings::JUMP_TO_NOW_PLAYING,\n",
+            "            strings::SHORTCUT_CURRENT_TRACK,\n",
+            "        ))",
         ]
         .concat();
 

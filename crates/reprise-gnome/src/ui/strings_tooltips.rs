@@ -9,6 +9,7 @@ use super::{formatted, text};
 pub const SHORTCUT_SEARCH: &str = N_!("Ctrl+F");
 pub const SHORTCUT_MAIN_MENU: &str = N_!("F10");
 pub const SHORTCUT_COMPACT_MODE: &str = N_!("Ctrl+M");
+pub const SHORTCUT_CURRENT_TRACK: &str = N_!("Ctrl+L");
 
 pub fn shortcut_tooltip(message: &str, shortcut: &str) -> String {
     append_shortcut(&text(message), &text(shortcut))
@@ -92,6 +93,11 @@ mod tests {
                 "mini-player close",
                 include_str!("compact/compact_player_layouts.rs"),
                 "close_button.set_tooltip_text(Some(&strings::shortcut_tooltip(strings::TOOLTIP_CLOSE_MINI_PLAYER,strings::SHORTCUT_COMPACT_MODE,)))",
+            ),
+            (
+                "player-bar current track",
+                include_str!("player_bar/player_bar_layout.rs"),
+                "strings::shortcut_tooltip(strings::JUMP_TO_NOW_PLAYING,strings::SHORTCUT_CURRENT_TRACK,)",
             ),
         ];
 

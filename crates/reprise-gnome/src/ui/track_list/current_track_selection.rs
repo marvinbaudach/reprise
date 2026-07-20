@@ -1,6 +1,6 @@
 //! Keeps playing markers synchronized with playback while leaving the user's
-//! selection and viewport untouched. NAV-10 reveal paths call the separate
-//! centering helper explicitly.
+//! selection and viewport untouched. Explicit NAV-9b reveal paths select and
+//! center the loaded track; session restoration only centers it.
 
 use std::rc::Rc;
 
@@ -15,9 +15,14 @@ use super::track_list_activation::current_queue_ids;
 use crate::ui::artist_view::ArtistView;
 use crate::ui::scroll_center;
 
-/// `(track_id, queue_position, playback_started)` — `playback_started` moves
-/// only the marker; `false` is an explicit/session reveal without selection.
-pub(in crate::ui) type OnCurrentTrackChanged = Rc<dyn Fn(i64, Option<usize>, bool)>;
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::ui) enum CurrentTrackChange {
+    PlaybackStarted,
+    SessionRestore,
+    ExplicitReveal,
+}
+
+pub(in crate::ui) type OnCurrentTrackChanged = Rc<dyn Fn(i64, Option<usize>, CurrentTrackChange)>;
 /// Callback carrying coarse playback-state changes to the track list, which
 /// uses them to freeze the now-playing equaliser on pause (via the
 /// `.playback-paused` class on the `ColumnView`) and drop the marker on stop.
@@ -74,10 +79,10 @@ pub(in crate::ui) fn wire(
     let player_weak = Rc::downgrade(player);
     {
         let artist_view = artist_view.clone();
-        player.set_on_current_track_changed(move |track_id, queue_position, playback_started| {
+        player.set_on_current_track_changed(move |track_id, queue_position, change| {
             match track_list_for_current.upgrade() {
                 Some(track_list) => {
-                    track_list.update_current_track(track_id, queue_position, playback_started);
+                    track_list.update_current_track(track_id, queue_position, change);
                 }
                 None => tracing::warn!(
                     track_id,
@@ -89,7 +94,7 @@ pub(in crate::ui) fn wire(
             // groups by *album* artist, so resolve the effective album artist
             // for the now-playing track (the same fallback the master rows
             // group by) before handing it over.
-            if !playback_started {
+            if change != CurrentTrackChange::PlaybackStarted {
                 return;
             }
             if let Some(player) = player_weak.upgrade() {
@@ -120,7 +125,7 @@ pub(in crate::ui) fn wire(
 impl PlayerController {
     pub(in crate::ui) fn set_on_current_track_changed(
         &self,
-        callback: impl Fn(i64, Option<usize>, bool) + 'static,
+        callback: impl Fn(i64, Option<usize>, CurrentTrackChange) + 'static,
     ) {
         *self.current_track_changed.borrow_mut() = Some(Rc::new(callback));
     }
@@ -129,11 +134,11 @@ impl PlayerController {
         &self,
         track_id: i64,
         queue_position: Option<usize>,
-        playback_started: bool,
+        change: CurrentTrackChange,
     ) {
         let callback = self.current_track_changed.borrow().clone();
         if let Some(callback) = callback {
-            callback(track_id, queue_position, playback_started);
+            callback(track_id, queue_position, change);
         }
     }
 
@@ -171,14 +176,20 @@ impl PlayerController {
     }
 
     pub(in crate::ui) fn notify_restored_current_track(&self) {
+        self.notify_current_track(CurrentTrackChange::SessionRestore);
+    }
+
+    pub(in crate::ui) fn notify_revealed_current_track(&self) {
+        self.notify_current_track(CurrentTrackChange::ExplicitReveal);
+    }
+
+    fn notify_current_track(&self, change: CurrentTrackChange) {
         let current = self
             .current_up_next
             .get()
             .or_else(|| self.queue.borrow().current());
         if let Some(track_id) = current {
-            // `false`: this is an explicit/session reveal, not a playback
-            // start. It centers without selecting and leaves the marker off.
-            self.notify_current_track_changed(track_id, None, false);
+            self.notify_current_track_changed(track_id, None, change);
         }
     }
 }
@@ -236,12 +247,12 @@ impl TrackList {
         &self,
         track_id: i64,
         queue_position: Option<usize>,
-        playback_started: bool,
+        change: CurrentTrackChange,
     ) {
         let ids = self.shared.current_view_ids();
         let is_queue = matches!(*self.shared.source.borrow(), ViewSource::Queue);
 
-        if playback_started {
+        if change == CurrentTrackChange::PlaybackStarted {
             let previous_id = self.shared.playing_track_id.replace(Some(track_id));
             if let Some(previous_id) = previous_id.filter(|id| *id != track_id) {
                 if let Some(old_pos) = ids
@@ -264,20 +275,29 @@ impl TrackList {
             return;
         };
 
-        if playback_started {
-            self.shared.model.invalidate_window_at(position);
-            tracing::info!(
-                track_id,
-                position,
-                "table playing marker updated without selection follow"
-            );
-        } else {
-            reveal_track_position(&self.shared.column_view, position, 8);
-            tracing::info!(
-                track_id,
-                position,
-                "explicit current-track reveal centered without selection"
-            );
+        match change {
+            CurrentTrackChange::PlaybackStarted => {
+                self.shared.model.invalidate_window_at(position);
+                tracing::info!(
+                    track_id,
+                    position,
+                    "table playing marker updated without selection follow"
+                );
+            }
+            CurrentTrackChange::SessionRestore => {
+                reveal_track_position(&self.shared.column_view, position, 8);
+                tracing::info!(track_id, position, "restored current track centered");
+            }
+            CurrentTrackChange::ExplicitReveal => {
+                self.shared.selection.select_item(position, true);
+                let _ = self.shared.column_view.grab_focus();
+                reveal_track_position(&self.shared.column_view, position, 8);
+                tracing::info!(
+                    track_id,
+                    position,
+                    "explicit current-track reveal selected and centered"
+                );
+            }
         }
     }
 
@@ -417,12 +437,22 @@ mod tests {
             "precondition: the list must be scrolled away from the top"
         );
         track_list.shared.selection.select_item(10, true);
-        track_list.update_current_track(track_id, None, true);
+        track_list.update_current_track(track_id, None, CurrentTrackChange::PlaybackStarted);
         while gtk4::glib::MainContext::default().iteration(false) {}
 
         assert!((adjustment.value() - before).abs() < 0.5);
         assert!(track_list.shared.selection.is_selected(10));
         assert!(!track_list.shared.selection.is_selected(position));
+
+        track_list.update_current_track(track_id, None, CurrentTrackChange::SessionRestore);
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        assert!(track_list.shared.selection.is_selected(10));
+        assert!(!track_list.shared.selection.is_selected(position));
+
+        track_list.update_current_track(track_id, None, CurrentTrackChange::ExplicitReveal);
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        assert!(!track_list.shared.selection.is_selected(10));
+        assert!(track_list.shared.selection.is_selected(position));
         window.close();
     }
 

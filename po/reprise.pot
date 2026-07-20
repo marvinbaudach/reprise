@@ -2334,48 +2334,52 @@ msgstr ""
 msgid "Ctrl+M"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:22
-msgid "Play album (Ctrl+Enter)"
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:12
+msgid "Ctrl+L"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tooltips.rs:23
-msgid "Pause album"
+msgid "Play album (Ctrl+Enter)"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tooltips.rs:24
+msgid "Pause album"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:25
 msgid "Resume album"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:28
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:29
 msgid "Play (Space)"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:29
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:30
 msgid "Pause (Space)"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:30
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:31
 msgid "Play previous track"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:31
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:32
 msgid "Play next track"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:34
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:35
 msgid "Restore full window (Ctrl+M)"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:35
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:36
 msgid "Close mini-player"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:42
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:43
 #, rust-format
 msgid "Covers & lyrics: {remaining} queued"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:53
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:54
 #, rust-format
 msgid "Scanning · {pct}%"
 msgstr ""
