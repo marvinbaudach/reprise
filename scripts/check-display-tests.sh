@@ -84,11 +84,13 @@ failed_tests=()
 for test in "${tests[@]}"; do
   data_home=$(mktemp -d)
   cache_home=$(mktemp -d)
+  config_home=$(mktemp -d)
   marker_dir=$(mktemp -d)
   display_test_passed="$marker_dir/passed"
   echo "== display test: $test =="
   if dbus-run-session -- xvfb-run -a env \
     XDG_DATA_HOME="$data_home" XDG_CACHE_HOME="$cache_home" \
+    XDG_CONFIG_HOME="$config_home" \
     GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink \
     DISPLAY_TEST="$test" DISPLAY_TEST_PASSED="$display_test_passed" \
     bash -c '
