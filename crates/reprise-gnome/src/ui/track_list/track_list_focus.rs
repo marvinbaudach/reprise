@@ -15,15 +15,60 @@ fn target_for_page(visible_page: Option<&str>) -> TrackContentFocusTarget {
     }
 }
 
+fn focus_visible_page(page: &gtk4::Widget) -> bool {
+    if let Some(scrolled) = page.downcast_ref::<gtk4::ScrolledWindow>() {
+        // GtkScrolledWindow's focus implementation prefers the scroll surface
+        // itself, even when a focusable child is requested explicitly. Keep
+        // that fallback available, but take it out of the focus chain while
+        // entering the visible page's actual content.
+        let scroller_was_focusable = scrolled.is_focusable();
+        if let Some(window) = scrolled
+            .root()
+            .and_then(|root| root.downcast::<gtk4::Window>().ok())
+        {
+            // Clear the wrapper's existing focus first. GTK otherwise keeps
+            // it as the focus owner even after the leaf accepts grab_focus().
+            gtk4::prelude::GtkWindowExt::set_focus(&window, gtk4::Widget::NONE);
+        }
+        scrolled.set_focusable(false);
+        let focused_content = scrolled
+            .child()
+            .is_some_and(|content| focus_widget_or_descendant(&content));
+        if focused_content {
+            return true;
+        }
+        scrolled.set_focusable(scroller_was_focusable);
+        return scrolled.grab_focus();
+    }
+    page.child_focus(gtk4::DirectionType::TabForward) || page.grab_focus()
+}
+
+fn focus_widget_or_descendant(widget: &gtk4::Widget) -> bool {
+    if widget.is_focusable()
+        && widget.root().is_some_and(|root| {
+            let Ok(window) = root.downcast::<gtk4::Window>() else {
+                return false;
+            };
+            // ScrolledWindow may otherwise retain focus even when its direct
+            // child accepts grab_focus(). Set and verify the leaf explicitly.
+            gtk4::prelude::GtkWindowExt::set_focus(&window, Some(widget));
+            gtk4::prelude::GtkWindowExt::focus(&window).as_ref() == Some(widget)
+        })
+    {
+        return true;
+    }
+    widget.child_focus(gtk4::DirectionType::TabForward) || widget.grab_focus()
+}
+
 pub(super) fn focus_visible_content(
     stack: &gtk4::Stack,
     column_view: &impl IsA<gtk4::Widget>,
 ) -> bool {
     match target_for_page(stack.visible_child_name().as_deref()) {
         TrackContentFocusTarget::ColumnView => column_view.grab_focus(),
-        TrackContentFocusTarget::VisiblePage => stack.visible_child().is_some_and(|child| {
-            child.child_focus(gtk4::DirectionType::TabForward) || child.grab_focus()
-        }),
+        TrackContentFocusTarget::VisiblePage => stack
+            .visible_child()
+            .is_some_and(|child| focus_visible_page(&child)),
     }
 }
 
@@ -73,6 +118,7 @@ mod tests {
             gtk4::prelude::GtkWindowExt::focus(&window).as_ref(),
             Some(auto_clean.upcast_ref())
         );
+        assert!(!missing_page.is_focusable());
 
         window.close();
     }
