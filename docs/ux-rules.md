@@ -1258,15 +1258,16 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   read"), nie die Einladung „Start listening to see your stats". Sichtbarkeit
   entsteht dabei über die Seitenumschaltung, nicht über zusätzliches
   Ein-/Ausblenden einzelner Sektionen darunter.
-- **STATS-6b** [aktiv] [gtk] — Importierte Hörhistorie ist kein normaler
-  Leerzustand: enthält der gewählte Zeitraum keine `listen_events`, während
-  `SUM(tracks.play_count) > 0` ist, erscheint eine eigene Statusseite („Your
-  Rhythmbox history was imported"), nennt die Zahl der importierten Plays und
-  erklärt, dass detaillierte Statistiken ab jetzt mit dem Hören in Reprise
-  entstehen. Sobald im Zeitraum echte `listen_events` vorliegen, verschwindet
-  die Seite selbständig. Eine frische Bibliothek ohne Zähler behält den
-  regulären Leerzustand. `tracks.play_count` entscheidet ausschließlich über
-  diese Nachricht und speist gemäß STATS-0 weiterhin keine Statistik.
+- **STATS-6b** [ersetzt durch STATS-6c] [gtk] — Importierte Hörhistorie erzeugte
+  früher eine eigene Statusseite, obwohl ihre Zähler keinem Statistikzeitraum
+  zugeordnet werden können.
+- **STATS-6c** [aktiv] [gtk] — Die Zeitraumliste folgt ausschließlich der
+  detaillierten Hörhistorie: Das laufende Jahr bleibt immer verfügbar, ältere
+  Kalenderjahre erscheinen nur, wenn sie mindestens ein `listen_event`
+  enthalten. Importierte `tracks.play_count`-Zähler erzeugen weder ein Jahr
+  noch eine Sondermeldung. Ist ein verfügbarer Zeitraum leer, bleibt der
+  reguläre Leerzustand sichtbar; Hero und Zeitraum-Dropdown bleiben darüber
+  bedienbar, damit die Auswahl nie zur Sackgasse wird.
 - **STATS-7** [aktiv] [gtk] — My Stats ist kuratiert, nicht frei editierbar:
   kein Drag-and-Drop-Widget-Board. Ein ⋮-Menü „Customize" blendet die Sektionen
   Clock, Genres und Highlights per CheckButton ein und aus; die Auswahl bleibt

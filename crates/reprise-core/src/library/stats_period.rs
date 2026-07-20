@@ -1,4 +1,7 @@
+use std::collections::BTreeSet;
+
 use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Timelike};
+use rusqlite::Connection;
 
 /// Length of the rolling window behind [`StatsPeriod::Last30Days`], counted in
 /// whole local calendar days including today.
@@ -164,14 +167,36 @@ impl StatsPeriod {
         (start < end).then_some((start, end))
     }
 
-    /// Dropdown contents in their fixed editorial display order.
-    pub fn available_periods(now_year: i32) -> Vec<StatsPeriod> {
-        vec![
-            Self::YearToDate(now_year),
-            Self::Year(now_year.saturating_sub(1)),
-            Self::AllTime,
-            Self::Last30Days,
-        ]
+    /// Dropdown contents in editorial display order, limited to calendar
+    /// years that contain detailed listening history.
+    ///
+    /// Imported `tracks.play_count` values have no trustworthy timestamp, so
+    /// they cannot make a calendar year selectable. The current year remains
+    /// available even before the first Reprise listen event.
+    pub fn available<Tz: TimeZone>(
+        conn: &Connection,
+        now_year: i32,
+        tz: &Tz,
+    ) -> Result<Vec<StatsPeriod>, rusqlite::Error> {
+        let mut statement = conn.prepare("SELECT played_at FROM listen_events")?;
+        let timestamps = statement.query_map([], |row| row.get::<_, i64>(0))?;
+        let mut historical_years = BTreeSet::new();
+        for timestamp in timestamps {
+            let timestamp = timestamp?;
+            let Some(local) = tz.timestamp_opt(timestamp, 0).earliest() else {
+                continue;
+            };
+            if local.year() < now_year {
+                historical_years.insert(local.year());
+            }
+        }
+
+        let mut periods = Vec::with_capacity(historical_years.len() + 3);
+        periods.push(Self::YearToDate(now_year));
+        periods.extend(historical_years.into_iter().rev().map(Self::Year));
+        periods.push(Self::AllTime);
+        periods.push(Self::Last30Days);
+        Ok(periods)
     }
 
     pub fn label(self) -> String {
