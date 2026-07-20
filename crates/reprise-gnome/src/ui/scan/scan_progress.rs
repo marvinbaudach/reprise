@@ -187,6 +187,15 @@ impl ScanProgressView {
             .child(&container)
             .reveal_child(false)
             .build();
+        // `AdwToolbarView::add_top_bar` still allocates an unrevealed child's
+        // natural height. Keep the complete widget out of layout while idle,
+        // then hide it only after the crossfade has finished.
+        revealer.set_visible(false);
+        revealer.connect_child_revealed_notify(|revealer| {
+            if !revealer.is_child_revealed() && !revealer.reveals_child() {
+                revealer.set_visible(false);
+            }
+        });
 
         let on_cancel: OnCancelSlot = Rc::new(RefCell::new(None));
 
@@ -260,7 +269,7 @@ impl ScanProgressView {
             .title
             .set_label(&strings::text(strings::SCAN_CARD_TITLE));
         self.inner.spinner.set_spinning(true);
-        self.inner.revealer.set_reveal_child(true);
+        self.begin_visibility();
         self.inner.progress.set_visible(true);
         self.inner.cancel.set_visible(true);
 
@@ -315,7 +324,7 @@ impl ScanProgressView {
         self.cancel_pulsing();
         self.inner.title.set_label(title);
         self.inner.spinner.set_spinning(true);
-        self.inner.revealer.set_reveal_child(true);
+        self.begin_visibility();
         self.inner.progress.set_visible(true);
         self.inner.cancel.set_visible(true);
         self.inner.progress.set_fraction(fraction.clamp(0.0, 1.0));
@@ -345,7 +354,7 @@ impl ScanProgressView {
         self.inner.detail.set_label(&state.detail);
         self.inner.detail.set_visible(true);
         self.inner.container.set_tooltip_text(None);
-        self.inner.revealer.set_reveal_child(true);
+        self.begin_visibility();
     }
 
     pub(in crate::ui) fn finish(&self) {
@@ -355,6 +364,11 @@ impl ScanProgressView {
         self.inner.revealer.set_reveal_child(false);
         self.inner.cancel.set_visible(false);
         self.inner.progress.set_fraction(0.0);
+    }
+
+    fn begin_visibility(&self) {
+        self.inner.revealer.set_visible(true);
+        self.inner.revealer.set_reveal_child(true);
     }
 
     fn start_pulsing(&self) -> bool {
@@ -543,17 +557,22 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn widgets_reveal_progress_and_hide_after_finish() {
+    fn set_5_dormant_scan_progress_reserves_no_preferences_space() {
         if gtk4::init().is_err() {
             return;
         }
         let view = ScanProgressView::new();
+        assert!(
+            !view.widget().is_visible(),
+            "a dormant toolbar progress view must not reserve vertical space"
+        );
         view.show(&ScanProgress::Scanning {
             processed: 2,
             total: 4,
             current_path: PathBuf::from("/music/song.flac"),
         });
 
+        assert!(view.widget().is_visible());
         assert!(view.inner.revealer.reveals_child());
         assert!(view.inner.spinner.is_spinning());
         assert_eq!(view.inner.percent.label(), "50%");
@@ -565,6 +584,14 @@ mod tests {
         assert!(!view.inner.revealer.reveals_child());
         assert!(!view.inner.spinner.is_spinning());
         assert!(!view.inner.cancel.is_visible());
+        let main_loop = gtk4::glib::MainLoop::new(None, false);
+        let quit = main_loop.clone();
+        gtk4::glib::timeout_add_local_once(
+            Duration::from_millis(u64::from(crate::ui::motion::STANDARD_MS) + 50),
+            move || quit.quit(),
+        );
+        main_loop.run();
+        assert!(!view.widget().is_visible());
     }
 
     #[test]
