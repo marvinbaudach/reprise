@@ -466,6 +466,11 @@ pub struct TrackSummary {
     /// other summary fields so `notify_now_playing_album_changed` can send the
     /// same effective-artist key the album grid uses for EQ-marker matching.
     pub album_artist: String,
+    /// Raw genre and artist MBID are retained by the in-flight playback
+    /// snapshot so local listen history remains complete after catalog
+    /// deletion.
+    pub genre: String,
+    pub artist_mbid: Option<String>,
     /// Optional release year displayed by metadata-rich player surfaces.
     pub year: Option<i32>,
     pub duration_ms: i64,

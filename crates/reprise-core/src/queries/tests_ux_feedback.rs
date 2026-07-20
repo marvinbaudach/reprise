@@ -119,8 +119,8 @@ fn fb_4_badges_count_new_since_viewed_and_reactivated_episode_is_new() {
     assert_eq!(count_new_import_errors(&conn, 900).unwrap(), 0);
 }
 
-// UX FB-7: tombstones preserve identity and user history for exact Undo,
-// while expiry commits the removal and its cascades.
+// UX FB-7: tombstones preserve catalog identity for exact Undo. Expiry
+// commits catalog-owned cascades while durable listen history remains.
 #[test]
 fn fb_7_tombstone_undo_is_exact_and_expiry_commits_cascades() {
     let mut conn = crate::db::open_migrated(None).unwrap();
@@ -192,7 +192,7 @@ fn fb_7_tombstone_undo_is_exact_and_expiry_commits_cascades() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(listens, 0);
+    assert_eq!(listens, 1);
 
     // The same rule's unattended exception is opt-in and evidence-bound:
     // default Off removes nothing, and an armed 30-day run removes only a
