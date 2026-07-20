@@ -35,9 +35,9 @@ reset_surface_baseline() {
   # Escape does not undo navigation, and several scenarios end on a different
   # view — `issues-import` finishes inside Missing files. Use the documented
   # Back accelerator (help.rs lists <Alt>Left as "Back to previous view"),
-  # which is what a keyboard user would reach for and is one keystroke rather
-  # than a traversal. Repeat it: a scenario may be several places deep, and
-  # Back on an empty history is a no-op.
+  # but stop as soon as the canonical TrackList is present. Sending four blind
+  # no-op Back events at the root needlessly exercises an unavailable command
+  # and has wedged older accessibility drivers.
   #
   # An earlier version of this comment claimed the sidebar is absent from the
   # accessibility tree on that view and therefore cannot be tabbed to. That was
@@ -46,19 +46,29 @@ reset_surface_baseline() {
   # window manager had died and no key was reaching the app at all, not because
   # of anything about this view. Alt+Left remains the better reset; the reason
   # given for it was not.
+  if reset_surface_is_at_baseline "$pid" "$window_id" "$stem"; then
+    return 0
+  fi
   local attempt
   for attempt in 1 2 3 4; do
     cua_hotkey "$pid" "$window_id" "$stem-reset-back-$attempt" alt left || return 1
+    if reset_surface_is_at_baseline "$pid" "$window_id" "$stem"; then
+      return 0
+    fi
   done
 
+  echo "reset before '$stem' did not restore the TrackList baseline; the previous" >&2
+  echo "surface left state behind that this scenario cannot run against" >&2
+  return 1
+}
+
+reset_surface_is_at_baseline() {
+  local pid=$1 window_id=$2 stem=$3 state_path
   # The canonical TrackList has no inner mode switch to normalize. Its column
   # header is the unambiguous baseline after Back has restored the root place.
-  state_path=$(cua_wait_for_label "$pid" "$window_id" "Title" "$stem-reset-state") || {
-    echo "reset before '$stem' did not restore the TrackList baseline; the previous" >&2
-    echo "surface left state behind that this scenario cannot run against" >&2
-    return 1
-  }
-  assert_snapshot_contains "$state_path" "sine_01" || return 1
+  state_path=$(cua_snapshot "$pid" "$window_id" "$stem-reset-state") || return 1
+  assert_snapshot_contains "$state_path" "Title" 2>/dev/null \
+    && assert_snapshot_contains "$state_path" "sine_01" 2>/dev/null
 }
 
 keyboard_app_shell() {
@@ -148,14 +158,21 @@ keyboard_device_sync() {
   cua_press_key_window "$pid" "$window_id" enter acc-device-open
   assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-device-open-after.json" Synchronization
   assert_after_has_focus acc-device-open
+  cua_hotkey_focused "$pid" "$window_id" acc-device-close ctrl w
+  cua_wait_for_label "$pid" "$window_id" Title acc-device-closed >/dev/null
+  assert_after_has_focus acc-device-close
 }
 
 keyboard_preferences() {
   local pid=$1 window_id=$2
+  cua_hotkey_focused "$pid" "$window_id" acc-preferences-open ctrl comma
+  assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-preferences-open-after.json" Preferences
+  assert_after_has_focus acc-preferences-open
   cua_press_key_focused "$pid" "$window_id" tab acc-preferences-tab
   assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-preferences-tab-after.json" Preferences
   assert_after_has_focus acc-preferences-tab
-  cua_hotkey "$pid" "$window_id" acc-preferences-close ctrl w
+  cua_hotkey_focused "$pid" "$window_id" acc-preferences-close ctrl w
+  cua_wait_for_label "$pid" "$window_id" Title acc-preferences-closed >/dev/null
   assert_after_has_focus acc-preferences-close
 }
 
@@ -164,7 +181,7 @@ keyboard_modals() {
   cua_hotkey "$pid" "$window_id" acc-help-open ctrl shift /
   assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-help-open-after.json" Help
   assert_after_has_focus acc-help-open
-  cua_hotkey "$pid" "$window_id" acc-help-close ctrl w
+  cua_hotkey_focused "$pid" "$window_id" acc-help-close ctrl w
   assert_after_has_focus acc-help-close
 }
 
@@ -201,6 +218,8 @@ check_manifest() {
   local count=0
   declare -A seen=()
 
+  check_keyboard_group
+
   while IFS=$'\t' read -r surface scenario; do
     [[ -z "$surface" || "$surface" == \#* ]] && continue
     if [[ -z "$scenario" ]] || ! declare -F "$scenario" >/dev/null; then
@@ -219,6 +238,37 @@ check_manifest() {
     echo "keyboard manifest is empty" >&2
     return 1
   fi
+}
+
+check_keyboard_group() {
+  case "${CUA_E2E_KEYBOARD_GROUP:-all}" in
+    all | primary | secondary)
+      ;;
+    *)
+      echo "unknown keyboard surface group: $CUA_E2E_KEYBOARD_GROUP" >&2
+      return 1
+      ;;
+  esac
+}
+
+surface_in_group() {
+  local surface=$1
+  case "${CUA_E2E_KEYBOARD_GROUP:-all}" in
+    all)
+      return 0
+      ;;
+    primary)
+      [[ "$surface" == app-shell || "$surface" == sidebar \
+        || "$surface" == tracks-playlist-queue || "$surface" == issues-import \
+        || "$surface" == player-now-playing ]]
+      ;;
+    secondary)
+      [[ "$surface" == device-sync || "$surface" == preferences \
+        || "$surface" == modals || "$surface" == stats \
+        || "$surface" == compact-minimal ]]
+      ;;
+    *) return 1 ;;
+  esac
 }
 
 run_manifest() {
@@ -240,6 +290,7 @@ run_manifest() {
   local passed=0
   while IFS=$'\t' read -r surface scenario; do
     [[ -z "$surface" || "$surface" == \#* ]] && continue
+    surface_in_group "$surface" || continue
     echo "[cua-keyboard] $surface"
     if ! reset_surface_baseline "$pid" "$window_id" "$surface"; then
       echo "[cua-keyboard] $surface: reset failed, surface not exercised" >&2

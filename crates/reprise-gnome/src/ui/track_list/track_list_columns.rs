@@ -507,28 +507,50 @@ fn wire_metadata_link(
     target: MetadataCell,
 ) {
     let widget = widget.upcast_ref::<gtk4::Widget>();
-    // a11y-semantics: role=link name=bound-metadata state=enabled action=activate
-    widget.set_focusable(true);
-    // input-parity: ACC-8 keyboard=metadata-link-enter-controller
-    widget.set_cursor_from_name(Some("pointer"));
-    widget.set_accessible_role(gtk4::AccessibleRole::Link);
-    widget.add_css_class(crate::ui::link_activation::LINK_CLASS);
+    configure_metadata_link_widget(widget);
 
+    // input-parity: ACC-8 keyboard=track-context-menu-go-to-album-or-artist
+    // ACC-3 makes the complete TrackList one Tab stop. Pointer users can
+    // activate inline metadata directly; keyboard and assistive-technology
+    // users get the same central navigation intents from the selected row's
+    // Shift+F10/Menu context actions instead of three nested stops per row.
+    // a11y-semantics: role=link name=bound-metadata state=enabled action=context-menu-equivalent
     let activate = {
         let item = item.clone();
         let shared = shared.clone();
         Rc::new(move || activate_metadata_link(&item, &shared, target))
     };
-    // input-parity: ACC-8 keyboard=metadata-link-enter-controller
+    // input-parity: ACC-8 keyboard=track-context-menu
     let click = gtk4::GestureClick::builder().button(1).build();
-    let click_activate = activate.clone();
-    click.connect_released(move |_, _, _, _| click_activate());
+    click.connect_released(move |_, _, _, _| activate());
     widget.add_controller(click);
-    let keys = gtk4::EventControllerKey::new();
-    keys.connect_key_pressed(move |_, key, _, _| {
-        crate::ui::link_activation::route_key(key, || activate())
-    });
-    widget.add_controller(keys);
+}
+
+fn configure_metadata_link_widget(widget: &impl IsA<gtk4::Widget>) {
+    let widget = widget.upcast_ref::<gtk4::Widget>();
+    widget.set_focusable(false);
+    // input-parity: ACC-8 keyboard=track-context-menu
+    widget.set_cursor_from_name(Some("pointer"));
+    widget.set_accessible_role(gtk4::AccessibleRole::Link);
+    widget.add_css_class(crate::ui::link_activation::LINK_CLASS);
+}
+
+#[cfg(test)]
+mod metadata_link_focus_tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn acc_3_metadata_links_keep_the_tracklist_as_one_tab_stop() {
+        gtk4::init().unwrap();
+        let label = gtk4::Label::new(Some("Album"));
+
+        configure_metadata_link_widget(&label);
+
+        assert!(!label.is_focusable());
+        assert_eq!(label.accessible_role(), gtk4::AccessibleRole::Link);
+        assert!(label.has_css_class(crate::ui::link_activation::LINK_CLASS));
+    }
 }
 
 fn activate_metadata_link(item: &gtk4::ListItem, shared: &Rc<Shared>, target: MetadataCell) {
