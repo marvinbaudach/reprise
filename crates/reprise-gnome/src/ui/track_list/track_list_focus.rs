@@ -17,12 +17,29 @@ fn target_for_page(visible_page: Option<&str>) -> TrackContentFocusTarget {
 
 fn focus_visible_page(page: &gtk4::Widget) -> bool {
     if let Some(scrolled) = page.downcast_ref::<gtk4::ScrolledWindow>() {
-        let focused_content = scrolled.child().is_some_and(|content| {
-            content.grab_focus() || content.child_focus(gtk4::DirectionType::TabForward)
-        });
+        let focused_content = scrolled
+            .child()
+            .is_some_and(|content| focus_widget_or_descendant(&content));
         return focused_content || scrolled.grab_focus();
     }
     page.child_focus(gtk4::DirectionType::TabForward) || page.grab_focus()
+}
+
+fn focus_widget_or_descendant(widget: &gtk4::Widget) -> bool {
+    if widget.is_focusable()
+        && widget.root().is_some_and(|root| {
+            let Ok(window) = root.downcast::<gtk4::Window>() else {
+                return false;
+            };
+            // ScrolledWindow may otherwise retain focus even when its direct
+            // child accepts grab_focus(). Set and verify the leaf explicitly.
+            gtk4::prelude::GtkWindowExt::set_focus(&window, Some(widget));
+            gtk4::prelude::GtkWindowExt::focus(&window).as_ref() == Some(widget)
+        })
+    {
+        return true;
+    }
+    widget.child_focus(gtk4::DirectionType::TabForward) || widget.grab_focus()
 }
 
 pub(super) fn focus_visible_content(
