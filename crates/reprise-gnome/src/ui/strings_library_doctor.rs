@@ -25,6 +25,7 @@ pub const DOCTOR_SCAN_OPTIONS: &str = N_!("Scan Options");
 pub const DOCTOR_RUN_SCAN: &str = N_!("Run Scan Now");
 pub const DOCTOR_SCANNING: &str = N_!("Checking tracks…");
 pub const DOCTOR_RESULTS: &str = N_!("Results");
+pub const DOCTOR_RESULTS_SO_FAR: &str = N_!("Results Found So Far");
 pub const DOCTOR_SAFE_FIXES: &str = N_!("Safe · local, preselected");
 pub const DOCTOR_SUGGESTIONS: &str = N_!("Suggestions · review");
 pub const DOCTOR_UNRESOLVED_GROUPS: &str = N_!("Unresolved Groups");

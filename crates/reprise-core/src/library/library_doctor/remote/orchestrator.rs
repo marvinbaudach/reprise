@@ -101,9 +101,9 @@ impl<P: RemoteProvider> RemoteResolver for ProviderRemoteResolver<P> {
                 return Err(RemoteProviderError::Cancelled);
             }
             matches.extend(source_result(self.provider.direct(&lookup, control))?);
-        }
-        if arbitration::is_complete(metadata, &matches) {
-            return Ok(arbitration::arbitrate(metadata, &matches));
+            if direct_resolution_is_complete(metadata, &matches) {
+                return Ok(arbitration::arbitrate(metadata, &matches));
+            }
         }
         if control() == ScanControl::Cancel {
             return Err(RemoteProviderError::Cancelled);
@@ -172,9 +172,9 @@ pub(crate) fn resolve_with_provider(
     let mut matches = Vec::new();
     for lookup in metadata.direct_lookups() {
         matches.extend(provider.direct(&lookup, &mut control).unwrap_or_default());
-    }
-    if arbitration::is_complete(metadata, &matches) {
-        return arbitration::arbitrate(metadata, &matches);
+        if direct_resolution_is_complete(metadata, &matches) {
+            return arbitration::arbitrate(metadata, &matches);
+        }
     }
     let searched = provider
         .search_musicbrainz(metadata, &mut control)
@@ -191,4 +191,40 @@ pub(crate) fn resolve_with_provider(
         .unwrap_or_default();
     matches.extend(acoustid);
     arbitration::arbitrate(metadata, &matches)
+}
+
+fn direct_resolution_is_complete(
+    metadata: &RemoteTrackMetadata,
+    identities: &[RemoteIdentity],
+) -> bool {
+    arbitration::is_complete(metadata, identities)
+        && identities
+            .iter()
+            .any(|identity| identity_confirms_embedded_ids(metadata, identity))
+}
+
+fn identity_confirms_embedded_ids(
+    metadata: &RemoteTrackMetadata,
+    identity: &RemoteIdentity,
+) -> bool {
+    metadata
+        .recording_mbid
+        .as_deref()
+        .is_none_or(|expected| identity.recording_mbid.as_deref() == Some(expected))
+        && metadata
+            .release_mbid
+            .as_deref()
+            .is_none_or(|expected| identity.release_mbid.as_deref() == Some(expected))
+        && metadata
+            .release_group_mbid
+            .as_deref()
+            .is_none_or(|expected| identity.release_group_mbid.as_deref() == Some(expected))
+        && metadata
+            .artist_mbid
+            .as_deref()
+            .is_none_or(|expected| identity.artist_mbid.as_deref() == Some(expected))
+        && metadata
+            .release_artist_mbid
+            .as_deref()
+            .is_none_or(|expected| identity.release_artist_mbid.as_deref() == Some(expected))
 }

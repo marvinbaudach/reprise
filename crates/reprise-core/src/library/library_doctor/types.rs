@@ -300,6 +300,7 @@ pub enum ScanControl {
 pub struct DoctorScanProgress {
     pub completed_tracks: usize,
     pub total_tracks: usize,
+    pub summary: super::DoctorScanSummary,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

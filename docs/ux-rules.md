@@ -1500,6 +1500,15 @@ deterministisch und hoch-konfident, nie „ohne Review".
   ausgeschaltetem Remote-Schalter verschwinden Remote-Klassen, -Zeilen und
   -Counts vollständig, während das lokale Ergebnis bestehen bleibt.
 
+- **DOC-2c** [aktiv] [gtk] — **Ein laufender Scan zeigt ehrliche
+  Zwischenergebnisse.** 26a ersetzt den leeren Startzustand während des Jobs
+  durch „Results found so far" und aktualisiert geprüfte/übersprungene Tracks,
+  Safe-, Review-, Problem- und Unresolved-Zähler nach jedem abgeschlossenen
+  Track. Der Zwischenstand ist ausschließlich lesbar: Review-Aktionen bleiben
+  bis zum vollständigen Abschluss verborgen, er wird weder persistiert noch
+  anwendbar. Cancel oder Fehler verwerfen ihn und zeigen wieder das letzte
+  vollständig abgeschlossene Ergebnis aus DOC-2a.
+
 - **DOC-3a** [aktiv] [core] — **Review entscheidet pro Feld.** Jede konkrete
   Track-Feld-Änderung besitzt eine eigene Auswahl. „All safe" ist ein
   Reset-Preset auf exakt alle aktuell zulässigen eindeutigen Local-Fixes und

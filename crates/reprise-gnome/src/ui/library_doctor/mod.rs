@@ -49,6 +49,7 @@ pub(in crate::ui) struct LibraryDoctorCoordinator {
     preferences: std::rc::Weak<PreferencesContext>,
     cancellation: RefCell<Option<Arc<AtomicBool>>>,
     running: Cell<bool>,
+    scan_generation: Cell<u64>,
     review: RefCell<Option<Rc<LibraryDoctorReviewPage>>>,
     job_kind: Cell<Option<DoctorJobKind>>,
     progress: DoctorProgressCard,
@@ -119,6 +120,7 @@ impl LibraryDoctorCoordinator {
                 preferences: Rc::downgrade(preferences),
                 cancellation: RefCell::new(None),
                 running: Cell::new(false),
+                scan_generation: Cell::new(0),
                 review: RefCell::new(None),
                 job_kind: Cell::new(None),
                 progress,
@@ -297,6 +299,8 @@ impl LibraryDoctorCoordinator {
             },
         };
         let cancellation = Arc::new(AtomicBool::new(false));
+        let generation = self.scan_generation.get().wrapping_add(1);
+        self.scan_generation.set(generation);
         self.cancellation.borrow_mut().replace(cancellation.clone());
         self.running.set(true);
         if let Some(preferences) = self.preferences.upgrade() {
@@ -304,6 +308,7 @@ impl LibraryDoctorCoordinator {
         }
         self.job_kind.set(Some(DoctorJobKind::Scan));
         self.page.set_running(true);
+        self.page.begin_partial_scan();
         self.progress.show(DoctorJobKind::Scan, 0, 0);
         self.scan_controls.button.set_sensitive(false);
         let db_path = self.db_path.clone();
@@ -333,6 +338,15 @@ impl LibraryDoctorCoordinator {
         glib::spawn_future_local(async move {
             while let Ok(progress) = progress.recv().await {
                 if let Some(coordinator) = weak.upgrade() {
+                    if !accepts_scan_progress(
+                        coordinator.scan_generation.get(),
+                        generation,
+                        coordinator.running.get(),
+                        coordinator.job_kind.get(),
+                    ) {
+                        break;
+                    }
+                    coordinator.page.set_partial_summary(progress.summary);
                     coordinator.progress.show(
                         DoctorJobKind::Scan,
                         progress.completed_tracks,
@@ -387,6 +401,7 @@ impl LibraryDoctorCoordinator {
         }
         self.job_kind.set(None);
         self.page.set_running(false);
+        self.page.clear_partial_scan();
         self.progress.hide();
         self.scan_controls.button.set_sensitive(true);
     }
@@ -724,6 +739,15 @@ impl LibraryDoctorCoordinator {
             self.toast_overlay.add_toast(toast);
         }
     }
+}
+
+fn accepts_scan_progress(
+    current_generation: u64,
+    expected_generation: u64,
+    running: bool,
+    job_kind: Option<DoctorJobKind>,
+) -> bool {
+    current_generation == expected_generation && running && job_kind == Some(DoctorJobKind::Scan)
 }
 
 fn current_view_snapshot(track_list: &TrackList) -> DoctorViewSnapshot {

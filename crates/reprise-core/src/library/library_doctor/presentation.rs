@@ -23,6 +23,20 @@ impl DoctorScanSummary {
     pub const fn counts_for(self, class: ProblemClass) -> DoctorProblemCount {
         self.problem_counts[problem_class_position(class)]
     }
+
+    pub(crate) fn merge(&mut self, other: Self) {
+        self.safe_changes = self.safe_changes.saturating_add(other.safe_changes);
+        self.review_changes = self.review_changes.saturating_add(other.review_changes);
+        self.unresolved_groups = self
+            .unresolved_groups
+            .saturating_add(other.unresolved_groups);
+        self.checked_tracks = self.checked_tracks.saturating_add(other.checked_tracks);
+        self.skipped_tracks = self.skipped_tracks.saturating_add(other.skipped_tracks);
+        for (counts, added) in self.problem_counts.iter_mut().zip(other.problem_counts) {
+            counts.safe = counts.safe.saturating_add(added.safe);
+            counts.review = counts.review.saturating_add(added.review);
+        }
+    }
 }
 
 pub fn project_scan(scan: &DoctorScan, remote_visible: bool) -> DoctorScan {
@@ -74,13 +88,44 @@ pub fn project_scan(scan: &DoctorScan, remote_visible: bool) -> DoctorScan {
 pub fn scan_summary(scan: &DoctorScan, remote_visible: bool) -> DoctorScanSummary {
     let projected = project_scan(scan, remote_visible);
     let stale_tracks = projected.stale_track_ids();
+    summary_for_parts(
+        &projected.proposals,
+        projected.unresolved_groups.len(),
+        projected.checked_tracks,
+        projected.skipped_tracks,
+        &stale_tracks,
+    )
+}
+
+pub(crate) fn partial_scan_summary(
+    proposals: &[DoctorProposal],
+    unresolved_groups: usize,
+    checked_tracks: usize,
+    skipped_tracks: usize,
+) -> DoctorScanSummary {
+    summary_for_parts(
+        proposals,
+        unresolved_groups,
+        checked_tracks,
+        skipped_tracks,
+        &[],
+    )
+}
+
+fn summary_for_parts(
+    proposals: &[DoctorProposal],
+    unresolved_groups: usize,
+    checked_tracks: usize,
+    skipped_tracks: usize,
+    stale_tracks: &[i64],
+) -> DoctorScanSummary {
     let mut summary = DoctorScanSummary {
-        checked_tracks: projected.checked_tracks,
-        skipped_tracks: projected.skipped_tracks,
-        unresolved_groups: projected.unresolved_groups.len(),
+        checked_tracks,
+        skipped_tracks,
+        unresolved_groups,
         ..DoctorScanSummary::default()
     };
-    for proposal in &projected.proposals {
+    for proposal in proposals {
         let safe = proposal.source == ProposalSource::Local
             && proposal.preselected
             && !stale_tracks.contains(&proposal.track_id);

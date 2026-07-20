@@ -62,18 +62,45 @@ fn hide_sidebar(split_view: &adw::OverlaySplitView, manually_hidden: &std::cell:
     split_view.set_show_sidebar(false);
 }
 
-pub(in crate::ui) fn show_content_callback(split_view: &adw::OverlaySplitView) -> Rc<dyn Fn()> {
+fn activate_sidebar_route(
+    collapsed: bool,
+    show_library_root: impl FnOnce(),
+    hide_sidebar_overlay: impl FnOnce(),
+) {
+    show_library_root();
+    if collapsed {
+        hide_sidebar_overlay();
+    }
+}
+
+pub(in crate::ui) fn show_content_callback(
+    split_view: &adw::OverlaySplitView,
+    content_navigation: &adw::NavigationView,
+) -> Rc<dyn Fn()> {
     let split_view = split_view.downgrade();
-    Rc::new(move || match split_view.upgrade() {
-        Some(split_view) => {
-            if split_view.is_collapsed() {
-                split_view.set_show_sidebar(false);
+    let content_navigation = content_navigation.downgrade();
+    Rc::new(
+        move || match (split_view.upgrade(), content_navigation.upgrade()) {
+            (Some(split_view), Some(content_navigation)) => {
+                activate_sidebar_route(
+                    split_view.is_collapsed(),
+                    || {
+                        if let Some(root) = content_navigation
+                            .find_page(super::now_playing_wiring::LIBRARY_CONTENT_TAG)
+                        {
+                            content_navigation.pop_to_page(&root);
+                        }
+                    },
+                    || split_view.set_show_sidebar(false),
+                );
             }
-        }
-        None => {
-            tracing::warn!("split view is gone; cannot show content pane after sidebar navigation");
-        }
-    })
+            _ => {
+                tracing::warn!(
+                    "split view is gone; cannot show content pane after sidebar navigation"
+                );
+            }
+        },
+    )
 }
 
 pub(in crate::ui) fn wire_sidebar_toggle(
@@ -176,6 +203,51 @@ mod tests {
     }
 
     #[test]
+    fn doc_6b_sidebar_activation_routes_to_library_while_the_job_keeps_running() {
+        let showed_library = std::cell::Cell::new(false);
+        let hid_overlay = std::cell::Cell::new(false);
+
+        activate_sidebar_route(false, || showed_library.set(true), || hid_overlay.set(true));
+
+        assert!(showed_library.get());
+        assert!(!hid_overlay.get(), "wide navigation keeps the sidebar open");
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn doc_6b_sidebar_navigation_leaves_a_running_job_page_visible_in_the_background() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let sidebar = adw::NavigationPage::builder()
+            .title("Sidebar")
+            .child(&gtk4::Label::new(Some("Sidebar")))
+            .build();
+        let library = adw::NavigationPage::builder()
+            .title("Library")
+            .tag(super::super::now_playing_wiring::LIBRARY_CONTENT_TAG)
+            .child(&gtk4::Label::new(Some("Library")))
+            .build();
+        let doctor = adw::NavigationPage::builder()
+            .title("Library Doctor")
+            .tag("library-doctor")
+            .child(&gtk4::Label::new(Some("Running")))
+            .build();
+        let navigation = adw::NavigationView::new();
+        navigation.add(&library);
+        navigation.push(&doctor);
+        let split = adw::OverlaySplitView::builder()
+            .sidebar(&sidebar)
+            .content(&navigation)
+            .collapsed(false)
+            .show_sidebar(true)
+            .build();
+
+        show_content_callback(&split, &navigation)();
+
+        assert_eq!(navigation.visible_page().as_ref(), Some(&library));
+    }
+
+    #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn mot_3_left_sidebar_matches_the_info_panel_and_roundtrips_at_the_breakpoint() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
@@ -185,9 +257,16 @@ mod tests {
             .child(&gtk4::Label::new(Some("Sidebar")))
             .build();
         let content = gtk4::Label::new(Some("Content"));
+        let content_page = adw::NavigationPage::builder()
+            .title("Library")
+            .tag(super::super::now_playing_wiring::LIBRARY_CONTENT_TAG)
+            .child(&content)
+            .build();
+        let content_navigation = adw::NavigationView::new();
+        content_navigation.add(&content_page);
         let split = adw::OverlaySplitView::builder()
             .sidebar(&sidebar)
-            .content(&content)
+            .content(&content_navigation)
             .sidebar_position(gtk4::PackType::Start)
             .collapsed(false)
             .show_sidebar(true)
@@ -235,7 +314,7 @@ mod tests {
 
         button.set_active(true);
         assert!(split.shows_sidebar(), "the narrow toggle opens the overlay");
-        show_content_callback(&split)();
+        show_content_callback(&split, &content_navigation)();
         assert!(!split.shows_sidebar());
 
         split.set_collapsed(false);

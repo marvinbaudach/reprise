@@ -323,15 +323,34 @@ fn combined_scan_progress_is_monotonic_and_completes_after_remote_resolution() {
             None,
             &mut CollisionRemoteResolver,
             &mut |item| {
-                progress.push((item.completed_tracks, item.total_tracks));
+                progress.push(item);
                 ScanControl::Continue
             },
         )
         .unwrap();
     assert!(matches!(outcome, DoctorScanOutcome::Completed(_)));
-    assert!(progress.windows(2).all(|pair| pair[0].0 <= pair[1].0));
-    assert_eq!(progress.last(), Some(&(2, 2)));
-    assert_eq!(progress.iter().filter(|item| **item == (2, 2)).count(), 1);
+    assert!(progress
+        .windows(2)
+        .all(|pair| pair[0].completed_tracks <= pair[1].completed_tracks));
+    assert_eq!(
+        progress
+            .last()
+            .map(|item| (item.completed_tracks, item.total_tracks)),
+        Some((2, 2))
+    );
+    assert_eq!(
+        progress
+            .iter()
+            .filter(|item| item.completed_tracks == 2 && item.total_tracks == 2)
+            .count(),
+        1
+    );
+    let first_complete_track = progress
+        .iter()
+        .find(|item| item.completed_tracks == 1)
+        .expect("the first completed track must be published");
+    assert_eq!(first_complete_track.summary.review_changes, 1);
+    assert_eq!(first_complete_track.summary.checked_tracks, 1);
 }
 
 #[test]

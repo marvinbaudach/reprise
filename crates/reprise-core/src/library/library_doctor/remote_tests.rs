@@ -147,6 +147,71 @@ fn doc_1b_embedded_mbids_precede_metadata_and_fingerprint() {
 }
 
 #[test]
+fn complete_recording_lookup_skips_redundant_embedded_id_requests() {
+    let mut value = metadata();
+    value.release_mbid = Some("123e4567-e89b-12d3-a456-426614174001".into());
+    value.release_group_mbid = Some("123e4567-e89b-12d3-a456-426614174002".into());
+    value.artist_mbid = Some("123e4567-e89b-12d3-a456-426614174003".into());
+    value.release_artist_mbid = Some("323e4567-e89b-12d3-a456-426614174003".into());
+    let provider = FakeProvider {
+        direct: vec![identity(
+            RemoteEvidenceSource::MusicBrainz,
+            100,
+            "Canonical",
+        )],
+        ..Default::default()
+    };
+    let mut resolver = ProviderRemoteResolver::new(provider);
+
+    RemoteResolver::resolve_track(
+        &mut resolver,
+        &value,
+        Path::new("ignored"),
+        None,
+        &mut || ScanControl::Continue,
+    )
+    .unwrap();
+
+    let provider = resolver.into_provider();
+    assert_eq!(provider.calls, ["direct"]);
+    assert_eq!(
+        provider.direct_lookups,
+        [RemoteDirectLookup::Recording(
+            "123e4567-e89b-12d3-a456-426614174000".into()
+        )]
+    );
+}
+
+#[test]
+fn embedded_ids_split_across_candidates_do_not_short_circuit() {
+    let mut value = metadata();
+    value.release_mbid = Some("123e4567-e89b-12d3-a456-426614174001".into());
+    value.release_group_mbid = Some("123e4567-e89b-12d3-a456-426614174002".into());
+    value.artist_mbid = Some("123e4567-e89b-12d3-a456-426614174003".into());
+    value.release_artist_mbid = Some("323e4567-e89b-12d3-a456-426614174003".into());
+    let mut release_candidate = identity(RemoteEvidenceSource::MusicBrainz, 100, "Canonical");
+    release_candidate.release_artist_mbid = None;
+    let mut artist_candidate = identity(RemoteEvidenceSource::MusicBrainz, 100, "Canonical");
+    artist_candidate.release_mbid = None;
+    let provider = FakeProvider {
+        direct_responses: vec![vec![release_candidate, artist_candidate]],
+        ..Default::default()
+    };
+    let mut resolver = ProviderRemoteResolver::new(provider);
+
+    RemoteResolver::resolve_track(
+        &mut resolver,
+        &value,
+        Path::new("ignored"),
+        None,
+        &mut || ScanControl::Continue,
+    )
+    .unwrap();
+
+    assert!(resolver.into_provider().direct_lookups.len() > 1);
+}
+
+#[test]
 fn doc_1b_musicbrainz_precedes_acoustid() {
     let mut value = metadata();
     value.recording_mbid = None;
@@ -179,20 +244,21 @@ fn all_relevant_embedded_mbids_are_resolved_before_metadata_search() {
 }
 
 #[test]
-fn production_cascade_exhausts_embedded_ids_before_testing_completeness() {
+fn production_cascade_exhausts_embedded_ids_when_recording_response_is_incomplete() {
     let mut value = metadata();
     value.release_mbid = Some("123e4567-e89b-12d3-a456-426614174001".into());
     value.release_group_mbid = Some("123e4567-e89b-12d3-a456-426614174002".into());
     value.artist_mbid = Some("123e4567-e89b-12d3-a456-426614174003".into());
     value.release_artist_mbid = Some("323e4567-e89b-12d3-a456-426614174003".into());
 
-    let complete = identity(RemoteEvidenceSource::MusicBrainz, 100, "Canonical");
-    let mut contradictory = complete.clone();
+    let mut incomplete = identity(RemoteEvidenceSource::MusicBrainz, 100, "Canonical");
+    incomplete.artist_mbid = None;
+    let mut contradictory = incomplete.clone();
     contradictory.recording_mbid = Some("223e4567-e89b-12d3-a456-426614174000".into());
     contradictory.title = Some("Contradictory".into());
     let provider = FakeProvider {
         direct_responses: vec![
-            vec![complete],
+            vec![incomplete],
             Vec::new(),
             vec![contradictory],
             Vec::new(),

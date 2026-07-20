@@ -531,7 +531,8 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     app.set_accels_for_action("win.help", &[super::help::HELP_ACCELERATOR]);
 
     super::window_navigation::wire_sidebar_toggle(sidebar_toggle, split_view, sidebar_page, conn);
-    let show_content_if_collapsed = super::window_navigation::show_content_callback(split_view);
+    let show_content_if_collapsed =
+        super::window_navigation::show_content_callback(split_view, content_nav);
     super::library_shell::wire_source_routing(
         sidebar,
         nav_history,

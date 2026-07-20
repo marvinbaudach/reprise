@@ -369,12 +369,15 @@ impl PlayerController {
 
 /// Builds the content `adw::NavigationView`: the library page (wrapping the
 /// existing toast overlay) as the static root.
+pub(in crate::ui) const LIBRARY_CONTENT_TAG: &str = "library-content";
+
 pub(in crate::ui) fn build_content_nav(
     library_content: &impl IsA<gtk4::Widget>,
     app_name: &str,
 ) -> adw::NavigationView {
     let library_page = adw::NavigationPage::builder()
         .title(app_name)
+        .tag(LIBRARY_CONTENT_TAG)
         .child(library_content)
         .build();
     let nav = adw::NavigationView::new();
