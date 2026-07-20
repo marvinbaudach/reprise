@@ -13,7 +13,6 @@ pub const REPRISE_ENGINE_AND_LINUX_PLATFORM: &str = N_!("Reprise Engine and Linu
 pub const HELP: &str = N_!("Help");
 pub const NAVIGATION: &str = N_!("Navigation");
 pub const PLAY_OR_PAUSE: &str = N_!("Play or Pause");
-pub const STOP_PLAYBACK: &str = N_!("Stop Playback");
 pub const INCREASE_VOLUME: &str = N_!("Increase Volume");
 pub const DECREASE_VOLUME: &str = N_!("Decrease Volume");
 pub const SEARCH_LIBRARY: &str = N_!("Search Library");

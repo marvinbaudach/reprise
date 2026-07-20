@@ -1117,10 +1117,6 @@ msgstr ""
 msgid "Play or Pause"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:57
-msgid "Stop Playback"
-msgstr ""
-
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:58
 msgid "Increase Volume"
 msgstr ""
