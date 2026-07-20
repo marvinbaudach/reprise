@@ -616,7 +616,7 @@ Wird ein ganzer Container deaktiviert, gilt TIP-2a/b für die
 Container-Aussage, nicht für jedes Kind einzeln (die leere Player-Leiste
 ist ihre eigene Aussage).
 
-- **TIP-1a** [aktiv] [gtk] — Existenz folgt der Beschriftung:
+- **TIP-1a** [ersetzt durch TIP-1c] — Existenz folgt der Beschriftung:
   Icon-only-Buttons haben immer einen Tooltip; Buttons mit sichtbarem
   Textlabel bekommen keinen — das Label ist die Aussage, ein
   wiederholender Tooltip ist Rauschen. Ausnahme: ellipsierte/abgeschnittene
@@ -629,6 +629,12 @@ ist ihre eigene Aussage).
        (tag_editor_form.rs, Ownership feat/tag-editor-rework) und „Back" in
        browse_bar (Ownership feat/global-search-rework) sind noch
        Substantive. [aktiv] erst, wenn beide nachgezogen sind. -->
+- **TIP-1c** [aktiv] [gtk] — Existenz folgt Beschriftung und Aktion:
+  Icon-only-Buttons haben immer einen Tooltip; Buttons mit sichtbarem
+  Aktionslabel bekommen keinen. Ein kompaktes Metadaten-Label darf die
+  verborgene Aktion benennen (Player-Bar-Interpret: „Go to artist").
+  Ellipsierte Labels zeigen weiterhin nur bei tatsächlicher Kürzung den
+  vollen Text.
 - **TIP-2a** [aktiv] [gtk] — Disabled erklärt sich (icon-only): ein
   deaktiviertes Icon-only-Control behält seinen Tooltip und ergänzt den
   Grund („Eject device — Sync in progress"). Nie ein toter Button ohne

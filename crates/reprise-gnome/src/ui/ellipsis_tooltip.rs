@@ -25,7 +25,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tip_1a_ellipsis_tooltip_returns_exact_full_text_only_when_truncated() {
+    fn tip_1c_ellipsis_tooltip_returns_exact_full_text_only_when_truncated() {
         assert_eq!(
             tooltip_text("Complete title", 120, 80),
             Some("Complete title")
