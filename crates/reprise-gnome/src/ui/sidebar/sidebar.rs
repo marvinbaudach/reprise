@@ -430,6 +430,16 @@ fn build_navigation_scroller(listbox: &gtk4::ListBox) -> gtk4::ScrolledWindow {
         let adjustment = adjustment.clone();
         move |scrolled| update_navigation_scrollbar(scrolled, &adjustment)
     });
+    scrolled.vscrollbar().connect_visible_notify({
+        let scrolled = scrolled.downgrade();
+        let adjustment = adjustment.clone();
+        move |_| {
+            let Some(scrolled) = scrolled.upgrade() else {
+                return;
+            };
+            update_navigation_scrollbar(&scrolled, &adjustment);
+        }
+    });
     update_navigation_scrollbar(&scrolled, &adjustment);
     scrolled
 }
@@ -439,7 +449,9 @@ fn update_navigation_scrollbar(scrolled: &gtk4::ScrolledWindow, adjustment: &gtk
 
     let overflow = adjustment.upper() > adjustment.page_size() + OVERFLOW_EPSILON_PX;
     let scrollbar = scrolled.vscrollbar();
-    scrollbar.set_opacity(if overflow { 1.0 } else { 0.0 });
+    if scrollbar.is_visible() != overflow {
+        scrollbar.set_visible(overflow);
+    }
     scrollbar.set_can_target(overflow);
 }
 

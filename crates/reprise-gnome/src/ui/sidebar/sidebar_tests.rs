@@ -191,7 +191,7 @@ fn acc_3_sidebar_uses_the_available_page_height_before_scrolling() {
         gtk4::PolicyType::Automatic,
         "hiding the inert thumb must not disable future scrolling"
     );
-    assert_eq!(scrolled.vscrollbar().opacity(), 0.0);
+    assert!(!scrolled.vscrollbar().is_visible());
     assert!(!scrolled.vscrollbar().can_target());
     window.close();
 }
@@ -234,7 +234,7 @@ fn acc_3_short_sidebar_keeps_navigation_rows_scrollable() {
         gtk4::PolicyType::Automatic,
         "a short sidebar must retain visible scrolling"
     );
-    assert_eq!(scrolled.vscrollbar().opacity(), 1.0);
+    assert!(scrolled.vscrollbar().is_visible());
     assert!(scrolled.vscrollbar().can_target());
     window.close();
 }
