@@ -258,6 +258,10 @@ impl AlbumView {
         content.append(&stack);
 
         let ambient = gtk4::Overlay::new();
+        // The cover glow is the Overlay's main child while the complete Album
+        // page is an overlay child. Request the Library's remaining height
+        // explicitly so the glow's natural size cannot clip the card grid.
+        ambient.set_vexpand(true);
         ambient.set_child(Some(glow.picture()));
         ambient.add_overlay(&content);
         ambient.set_measure_overlay(&content, true);

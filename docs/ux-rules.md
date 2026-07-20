@@ -262,6 +262,11 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   niemals ein Live-Blur über der Liste ausgeführt. Ohne Cover, nach Stop und
   in High Contrast bleibt die Textur unsichtbar. Sie ist nicht interaktiv und
   verwendet den Coverinhalt, färbt aber keine Chrome-Fläche ein.
+- **GRID-8** [aktiv] [gtk] — Die Album-Übersicht füllt unabhängig von der
+  Anzahl sichtbarer Karten die gesamte verfügbare Höhe des Library-Bereichs.
+  Ambient-Layer, Inhalt, Grid-Seite und Scroller bleiben nach dem Wechsel aus
+  Tracks oder Artists vertikal expandiert; Kartenzeilen werden weder
+  abgeschnitten noch auf ihre natürliche Gesamthöhe begrenzt.
 - **ART-1** [aktiv] [gtk] — Artist-Liste: Klick selektiert und zeigt Detail
   rechts; Selection folgt NIE der Wiedergabe, spielender Artist zeigt nur
   Mini-EQ.

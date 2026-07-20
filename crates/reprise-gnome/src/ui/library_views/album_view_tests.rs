@@ -36,6 +36,106 @@ fn wait_until(milliseconds: u64, mut predicate: impl FnMut() -> bool + 'static) 
     matched.get()
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn grid_8_album_view_fills_the_available_library_height() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    reprise_core::db::migrate(&conn).unwrap();
+    for index in 0..12 {
+        conn.execute(
+            "INSERT INTO tracks (path,title,artist,album,added_at) VALUES (?1,?2,'Artist',?3,?4)",
+            rusqlite::params![
+                format!("/grid-height-{index}.flac"),
+                format!("Track {index}"),
+                format!("Album {index:02}"),
+                index,
+            ],
+        )
+        .unwrap();
+    }
+    let conn = Rc::new(RefCell::new(conn));
+    let loader = crate::ui::cover_loader::CoverLoader::new(
+        crate::ui::cover_download_worker::setup_for_test(),
+    );
+    let view = AlbumView::new(&conn, loader);
+
+    let tracks = gtk4::Label::new(Some("Tracks"));
+    tracks.set_vexpand(true);
+    let library = libadwaita::ViewStack::builder()
+        .hhomogeneous(false)
+        .transition_duration(crate::ui::motion::STANDARD_MS)
+        .build();
+    library.add_named(&tracks, Some("tracks"));
+    library.add_named(view.widget(), Some("albums"));
+    library.set_visible_child_name("tracks");
+
+    let scrolled = view
+        .grid_widget()
+        .parent()
+        .and_downcast::<gtk4::ScrolledWindow>()
+        .expect("the album grid must remain the native scroller child");
+    let page_stack = scrolled
+        .parent()
+        .and_downcast::<gtk4::Stack>()
+        .expect("the album scroller must remain on the grid page");
+    let content = page_stack
+        .parent()
+        .and_downcast::<gtk4::Box>()
+        .expect("the album grid page must remain in its content column");
+    let ambient = content
+        .parent()
+        .and_downcast::<gtk4::Overlay>()
+        .expect("the album content column must remain above the ambient glow");
+
+    let window = gtk4::Window::builder()
+        .default_width(800)
+        .default_height(600)
+        .child(&library)
+        .build();
+    window.present();
+    wait_for_layout(50);
+    library.set_visible_child_name("albums");
+    wait_for_layout(u64::from(crate::ui::motion::STANDARD_MS + 50));
+
+    let geometry = format!(
+        "library={} album={} ambient={} content={} page_stack={} scroller={} grid={}",
+        library.height(),
+        view.widget().height(),
+        ambient.height(),
+        content.height(),
+        page_stack.height(),
+        scrolled.height(),
+        view.grid_widget().height(),
+    );
+    assert_eq!(
+        view.widget().height(),
+        library.height(),
+        "the album root must fill the Library viewport: {geometry}"
+    );
+    assert_eq!(
+        ambient.height(),
+        view.widget().height(),
+        "the ambient Album layer collapsed to the card rows: {geometry}"
+    );
+    assert_eq!(
+        content.height(),
+        ambient.height(),
+        "the Album content did not fill its ambient layer: {geometry}"
+    );
+    assert!(
+        page_stack.height() * 2 > library.height(),
+        "the Album grid page remained clipped near its natural height: {geometry}"
+    );
+    assert_eq!(
+        scrolled.height(),
+        page_stack.height(),
+        "the Album scroller lost the grid-page allocation: {geometry}"
+    );
+    window.close();
+}
+
 fn descendants_with_class(root: &gtk4::Widget, class: &str) -> Vec<gtk4::Widget> {
     let mut matches = Vec::new();
     let mut pending = vec![root.clone()];
