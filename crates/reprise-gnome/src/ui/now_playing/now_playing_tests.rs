@@ -1,5 +1,15 @@
 use super::*;
 use libadwaita::prelude::AdwApplicationWindowExt;
+use std::time::Duration;
+
+fn wait_for_layout(milliseconds: u64) {
+    let main_loop = gtk4::glib::MainLoop::new(None, false);
+    let quit = main_loop.clone();
+    gtk4::glib::timeout_add_local_once(Duration::from_millis(milliseconds), move || {
+        quit.quit();
+    });
+    main_loop.run();
+}
 
 fn loaded_track() -> NowPlaying {
     NowPlaying {
@@ -90,6 +100,93 @@ fn que_6_closed_panel_does_not_render() {
 #[test]
 fn now_playing_panel_has_the_fixed_npp_width() {
     assert_eq!(PANEL_WIDTH, 300);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn npp_1_full_size_cover_cannot_resize_the_fixed_sidebar() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let (window, panel) = test_panel("org.reprise.Reprise.NowPlayingCoverWidthTest");
+    panel.retain_for_window(&window);
+    window.set_default_size(1200, 800);
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    let placeholder_width = panel.widgets.stage.width();
+    let bytes = gtk4::glib::Bytes::from_owned(vec![0x80_u8; 1024 * 768 * 4]);
+    let texture = gtk4::gdk::MemoryTexture::new(
+        1024,
+        768,
+        gtk4::gdk::MemoryFormat::R8g8b8a8,
+        &bytes,
+        1024 * 4,
+    );
+    panel.widgets.cover.set_paintable(Some(&texture));
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    assert_eq!(
+        placeholder_width, PANEL_WIDTH,
+        "the placeholder must begin at the fixed sidebar width"
+    );
+    assert_eq!(
+        panel.widgets.stage.width(),
+        PANEL_WIDTH,
+        "a decoded cover's intrinsic dimensions must not widen the sidebar"
+    );
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn npp_1_long_queue_source_cannot_resize_the_fixed_sidebar() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let (window, panel) = test_panel("org.reprise.Reprise.NowPlayingSourceWidthTest");
+    panel.retain_for_window(&window);
+    panel
+        .conn
+        .borrow()
+        .execute(
+            "INSERT INTO tracks (id,path,title,artist,album,duration_ms,added_at) \
+             VALUES (1,'/source-width.flac','Track','Artist','Album',180000,0)",
+            [],
+        )
+        .unwrap();
+    window.set_default_size(1200, 800);
+    window.present();
+
+    let short =
+        crate::ui::track_list::queue_sections::compose(None, &[], &[1], Some("Popular Monster"));
+    panel.set_up_next_model(&short);
+    wait_for_layout(100);
+    let short_width = panel.widgets.stage.width();
+
+    let long = crate::ui::track_list::queue_sections::compose(
+        None,
+        &[],
+        &[1],
+        Some("I Feel The Everblack Festering Within Me"),
+    );
+    panel.set_up_next_model(&long);
+    wait_for_layout(100);
+
+    let expected_header = "Playing from I Feel The Everblack Festering Within Me · 1 track";
+    assert!(
+        widget_tree(panel.widgets.up_next.widget().upcast_ref())
+            .into_iter()
+            .filter_map(|widget| widget.downcast::<gtk4::Label>().ok())
+            .any(|label| label.text() == expected_header),
+        "the production ListView header must be bound before measuring its width"
+    );
+
+    assert_eq!(short_width, PANEL_WIDTH);
+    assert_eq!(
+        panel.widgets.stage.width(),
+        PANEL_WIDTH,
+        "the Playing-from header must ellipsize instead of widening the sidebar"
+    );
+    window.close();
 }
 
 #[test]

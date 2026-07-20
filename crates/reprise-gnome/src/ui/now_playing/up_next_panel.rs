@@ -17,6 +17,8 @@ use crate::ui::track_list::queue_sections::{
 };
 use crate::ui::track_list::track_list_model::TrackListModel;
 
+const SECTION_HEADER_MAX_WIDTH_CHARS: i32 = 32;
+
 #[cfg(test)]
 fn queue_rows(model: &QueueViewModel) -> Vec<QueueRow> {
     (0..u32::try_from(model.total_len()).unwrap_or(u32::MAX))
@@ -200,6 +202,8 @@ fn build_header_factory(
         let label = gtk4::Label::builder()
             .label(&title)
             .xalign(0.0)
+            .ellipsize(gtk4::pango::EllipsizeMode::End)
+            .max_width_chars(SECTION_HEADER_MAX_WIDTH_CHARS)
             .css_classes(["heading", "reprise-up-next-section"])
             .build();
         header.set_child(Some(&label));
