@@ -27,6 +27,10 @@ impl NavPlace {
         self.browser.view_source()
     }
 
+    pub(in crate::ui) fn browser_place(&self) -> &BrowserPlace {
+        &self.browser
+    }
+
     pub(in crate::ui) fn is_new_releases(&self) -> bool {
         self.browser == BrowserPlace::NewReleases
     }
@@ -53,6 +57,11 @@ impl NavHistory {
         let _ = router.navigate(intent_for(&new.browser));
     }
 
+    pub(in crate::ui) fn record_route_from(&self, new: &NavPlace, current: BrowserPlace) {
+        self.replace_current(current);
+        self.record_route(new);
+    }
+
     pub(in crate::ui) fn record_new_releases(&self) -> Option<NavPlace> {
         let mut navigation = self.navigation.borrow_mut();
         let router = navigation.as_mut()?;
@@ -60,6 +69,14 @@ impl NavHistory {
         Some(NavPlace {
             browser: transition.to,
         })
+    }
+
+    pub(in crate::ui) fn record_new_releases_from(
+        &self,
+        current: BrowserPlace,
+    ) -> Option<NavPlace> {
+        self.replace_current(current);
+        self.record_new_releases()
     }
 
     pub(in crate::ui) fn go_back(&self) -> Option<NavPlace> {
@@ -73,6 +90,11 @@ impl NavHistory {
         })
     }
 
+    pub(in crate::ui) fn go_back_from(&self, current: BrowserPlace) -> Option<NavPlace> {
+        self.replace_current(current);
+        self.go_back()
+    }
+
     pub(in crate::ui) fn go_forward(&self) -> Option<NavPlace> {
         let transition = self
             .navigation
@@ -84,12 +106,23 @@ impl NavHistory {
         })
     }
 
+    pub(in crate::ui) fn go_forward_from(&self, current: BrowserPlace) -> Option<NavPlace> {
+        self.replace_current(current);
+        self.go_forward()
+    }
+
     pub(in crate::ui) fn begin_back(&self) {
         self.replaying_history.set(true);
     }
 
     pub(in crate::ui) fn end_back(&self) {
         self.replaying_history.set(false);
+    }
+
+    fn replace_current(&self, current: BrowserPlace) {
+        if let Some(router) = self.navigation.borrow_mut().as_mut() {
+            let _ = router.replace_current(current);
+        }
     }
 }
 
@@ -194,5 +227,29 @@ mod tests {
             Some(place(ViewSource::Library))
         );
         assert_eq!(simulate(&nav, nav.go_forward()), Some(digest));
+    }
+
+    #[test]
+    fn browse_2_back_restores_the_complete_track_place_captured_on_leave() {
+        let nav = NavHistory::default();
+        nav.record_route(&place(ViewSource::Library));
+        let mut current = BrowserPlace::from(ViewSource::Library);
+        let BrowserPlace::Tracks(track_place) = &mut current else {
+            unreachable!();
+        };
+        track_place.state.search = "shore".into();
+        track_place.state.selected_ids = vec![42];
+        track_place.state.focus = reprise_core::browser::TrackFocus::Track(42);
+        let album = place(ViewSource::Album {
+            album: "Pain Remains".into(),
+            album_artist: "Lorna Shore".into(),
+        });
+
+        nav.record_route_from(&album, current.clone());
+        let restored = nav
+            .go_back_from(album.browser_place().clone())
+            .expect("Library must be in Back history");
+
+        assert_eq!(restored.browser_place(), &current);
     }
 }

@@ -163,7 +163,10 @@ pub(in crate::ui) fn wire_source_routing(
     sidebar.set_on_select(move |source, source_name| {
         // NAV-2: every routed switch records the place it leaves. Back
         // re-routes through here too, silenced by its suppression flag.
-        nav_history.record_route(&NavPlace::source(source.clone()));
+        nav_history.record_route_from(
+            &NavPlace::source(source.clone()),
+            track_list.browser_place(),
+        );
         let viewed = {
             let conn = conn.borrow();
             crate::ui::view_session::record_issue_viewed(
@@ -255,12 +258,13 @@ pub(in crate::ui) fn route_to_place(
     match &source {
         ViewSource::Album { .. } | ViewSource::Artist(_) => {
             content_stack.set_visible_child_name("library");
-            track_list.set_source(source.clone());
+            let _ = track_list.restore_browser_place(place.browser_place());
             crate::ui::sidebar_session::sync_current_source(&sidebar.shared, &source);
         }
         _ => {
             crate::ui::sidebar_session::prepare_history_reroute(&sidebar.shared, &source);
             sidebar.refresh_and_select(source, reason);
+            let _ = track_list.restore_browser_place(place.browser_place());
         }
     }
     // Keyboard flow: hand focus to the restored view (the Back/Forward twin

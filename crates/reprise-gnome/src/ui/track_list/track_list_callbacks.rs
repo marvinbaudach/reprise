@@ -25,6 +25,7 @@ pub type OnActivate = Box<dyn Fn(&Track, Vec<i64>, usize, ViewSource)>;
 /// on_reload` doc comment for what each parameter carries and why
 /// `window.rs` needs all four.
 pub(in crate::ui) type OnReload = Box<dyn Fn(&ViewSource, usize, &str, &BrowseFilter)>;
+pub(in crate::ui) type OnSearchRestored = Rc<dyn Fn(&str)>;
 
 /// Context-menu "Add to queue" action callback — see the `Shared::on_queue_
 /// selected` doc comment.

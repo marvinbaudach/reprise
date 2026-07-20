@@ -32,7 +32,6 @@ pub(in crate::ui) struct JumpContext {
 pub(in crate::ui) fn runtime_coordinator(context: &JumpContext) -> JumpCallback {
     let player_for_origin = context.player.clone();
     let player_for_notify = context.player.clone();
-    let track_list_for_prepare = context.track_list.clone();
     let sidebar_for_prepare = context.sidebar.clone();
     let track_list_for_sync = context.track_list.clone();
     let sidebar_for_route = context.sidebar.clone();
@@ -50,8 +49,7 @@ pub(in crate::ui) fn runtime_coordinator(context: &JumpContext) -> JumpCallback 
                     .map_or(ViewSource::Library, |origin| origin.source),
             )
         }),
-        prepare_origin: Rc::new(move |origin| {
-            track_list_for_prepare.forget_view_state(origin);
+        prepare_origin: Rc::new(move |_origin| {
             crate::ui::sidebar_session::sync_current_source(
                 &sidebar_for_prepare.shared,
                 &track_list_for_sync.current_source(),
@@ -59,7 +57,7 @@ pub(in crate::ui) fn runtime_coordinator(context: &JumpContext) -> JumpCallback 
         }),
         route_origin: Rc::new(move |origin| {
             let place = NavPlace::source(origin.clone());
-            nav_history_for_route.record_route(&place);
+            nav_history_for_route.record_route_from(&place, track_list_for_route.browser_place());
             library_shell::route_to_place(
                 &place,
                 &sidebar_for_route,

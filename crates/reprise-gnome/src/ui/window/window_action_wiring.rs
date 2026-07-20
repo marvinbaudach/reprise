@@ -159,7 +159,10 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
                 return;
             };
             let source = ViewSource::Artist(artist);
-            nav_history.record_route(&NavPlace::source(source.clone()));
+            nav_history.record_route_from(
+                &NavPlace::source(source.clone()),
+                track_list.browser_place(),
+            );
             track_list.set_source(source);
             content_stack.set_visible_child_name("library");
         });
