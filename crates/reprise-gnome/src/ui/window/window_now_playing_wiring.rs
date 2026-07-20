@@ -24,6 +24,12 @@ pub(in crate::ui) fn install(
             panel.set_playback_state(state);
         }
     });
+    let panel_weak = Rc::downgrade(panel);
+    player.set_on_song_visual_spectrum_changed(move |frame| {
+        if let Some(panel) = panel_weak.upgrade() {
+            panel.set_spectrum(frame);
+        }
+    });
 
     let refresh = {
         let panel = Rc::downgrade(panel);

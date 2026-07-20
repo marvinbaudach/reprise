@@ -2,12 +2,15 @@
 
 use gtk4::prelude::*;
 use libadwaita as adw;
+use reprise_core::playback::{PlaybackState, SpectrumFrame};
 use reprise_core::sound_profile::{
     self, AnalysisState, AnalysisVersions, ReadyAnalysis, TrackAnalysis,
 };
 use rusqlite::Connection;
 
 use crate::ui::strings;
+
+use super::song_visualizer::SongVisualizer;
 
 const READY_PAGE: &str = "ready";
 const STATUS_PAGE: &str = "status";
@@ -185,24 +188,35 @@ pub(in crate::ui) fn visible_text(presentation: &AudioCharacterPresentation) -> 
     }
 }
 
+#[derive(Clone)]
 struct DimensionWidgets {
     value: gtk4::Label,
     confidence: gtk4::Label,
     bar: gtk4::ProgressBar,
 }
 
+#[derive(Clone)]
 pub(in crate::ui) struct AudioCharacterView {
+    root: gtk4::Box,
     stack: gtk4::Stack,
     status: adw::StatusPage,
     dimensions: Vec<DimensionWidgets>,
     tempo: gtk4::Box,
     tempo_value: gtk4::Label,
     tempo_confidence: gtk4::Label,
+    visualizer: SongVisualizer,
 }
 
 impl AudioCharacterView {
     pub(in crate::ui) fn new() -> Self {
+        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        let visualizer = SongVisualizer::new();
+        visualizer.widget().set_visible(false);
+        root.append(visualizer.widget());
+
         let stack = gtk4::Stack::new();
+        stack.set_vexpand(true);
+        root.append(&stack);
         let status = adw::StatusPage::new();
         status.set_icon_name(Some("audio-x-generic-symbolic"));
         stack.add_named(&status, Some(STATUS_PAGE));
@@ -258,21 +272,54 @@ impl AudioCharacterView {
             .build();
         stack.add_named(&scroller, Some(READY_PAGE));
         Self {
+            root,
             stack,
             status,
             dimensions: dimension_widgets,
             tempo,
             tempo_value,
             tempo_confidence,
+            visualizer,
         }
     }
 
-    pub(in crate::ui) fn widget(&self) -> &gtk4::Stack {
-        &self.stack
+    pub(in crate::ui) fn widget(&self) -> &gtk4::Box {
+        &self.root
+    }
+
+    pub(in crate::ui) fn set_visuals_enabled(&self, enabled: bool) {
+        self.visualizer.widget().set_visible(enabled);
+        if !enabled {
+            self.visualizer.set_active(false);
+            self.visualizer.close_fullscreen();
+        }
+    }
+
+    pub(in crate::ui) fn set_visual_active(&self, active: bool) {
+        self.visualizer
+            .set_active(active && self.visualizer.widget().is_visible());
+    }
+
+    pub(in crate::ui) fn set_spectrum(&self, frame: SpectrumFrame) {
+        self.visualizer.set_spectrum(frame);
+    }
+
+    pub(in crate::ui) fn set_playback_state(&self, state: PlaybackState) {
+        self.visualizer.set_playback_state(state);
+    }
+
+    pub(in crate::ui) fn toggle_visual_fullscreen(&self, parent: &adw::ApplicationWindow) {
+        self.visualizer.toggle_fullscreen(parent);
     }
 
     pub(in crate::ui) fn render(&self, presentation: &AudioCharacterPresentation) {
         if let AudioCharacterPresentation::Ready { dimensions, tempo } = presentation {
+            self.visualizer.set_profile(
+                &dimensions
+                    .as_ref()
+                    .each_ref()
+                    .map(|dimension| dimension.value_percent),
+            );
             for (widgets, dimension) in self.dimensions.iter().zip(dimensions.iter()) {
                 widgets
                     .value

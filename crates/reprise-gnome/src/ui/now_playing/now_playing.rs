@@ -5,7 +5,7 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::{AnimationExt, BreakpointBinExt};
 use reprise_core::cover::ThumbnailSize;
-use reprise_core::playback::PlaybackState;
+use reprise_core::playback::{PlaybackState, SpectrumFrame};
 use rusqlite::Connection;
 
 use super::audio_character_view::{self, AudioCharacterView};
@@ -24,6 +24,18 @@ use crate::ui::scan::audio_analysis_runtime::AudioAnalysisRuntime;
 use crate::ui::style::tokens;
 
 type OnVoid = Rc<dyn Fn()>;
+
+fn should_toggle_visual_fullscreen(
+    enabled: bool,
+    panel_visible: bool,
+    selected_tab: PanelTab,
+    key: gtk4::gdk::Key,
+) -> bool {
+    enabled
+        && panel_visible
+        && selected_tab == PanelTab::AudioCharacter
+        && key == gtk4::gdk::Key::F11
+}
 
 struct PanelWidgets {
     column: NowPlayingColumn,
@@ -263,6 +275,7 @@ pub(in crate::ui) struct NowPlayingPanel {
     track_animation_generation: Cell<u64>,
     audio_character_generation: Cell<u64>,
     on_track_reveal: crate::ui::link_activation::ActivationSlot,
+    song_visuals_enabled: Cell<bool>,
     on_album_reveal: crate::ui::link_activation::ActivationSlot,
     on_artist_reveal: crate::ui::link_activation::ActivationSlot,
 }
@@ -271,13 +284,18 @@ impl NowPlayingPanel {
     #[allow(clippy::too_many_arguments)]
     pub(in crate::ui) fn new(
         content: &impl IsA<gtk4::Widget>,
-        _window: &adw::ApplicationWindow,
+        window: &adw::ApplicationWindow,
         conn: Rc<RefCell<Connection>>,
         _runtime: Rc<ArtistNewsRuntime>,
         cover_loader: Rc<CoverLoader>,
         audio_analysis: Option<&AudioAnalysisRuntime>,
     ) -> Rc<Self> {
         let visible = reprise_core::library::settings::get_info_panel_visible(&conn.borrow());
+        let song_visuals_enabled = reprise_core::modules::is_enabled(
+            &conn.borrow(),
+            &reprise_core::modules::SONG_VISUALS_MODULE,
+        )
+        .unwrap_or(reprise_core::modules::SONG_VISUALS_MODULE.default_enabled);
         let panel = Rc::new(Self {
             widgets: build_widgets(content, visible, conn.clone(), &cover_loader),
             toggle: gtk4::ToggleButton::builder()
@@ -297,6 +315,7 @@ impl NowPlayingPanel {
             track_animation_generation: Cell::new(0),
             audio_character_generation: Cell::new(0),
             on_track_reveal: Rc::new(RefCell::new(None)),
+            song_visuals_enabled: Cell::new(song_visuals_enabled),
             on_album_reveal: Rc::new(RefCell::new(None)),
             on_artist_reveal: Rc::new(RefCell::new(None)),
         });
@@ -320,7 +339,10 @@ impl NowPlayingPanel {
             &crate::ui::strings::text(crate::ui::strings::GO_TO_PLAYING_ALBUM),
             &panel.on_album_reveal,
         );
+        panel.set_song_visuals_enabled(song_visuals_enabled);
         panel.wire();
+        panel.install_visual_fullscreen_shortcut(window);
+        panel.sync_visual_activity();
         panel.render_track();
         panel.queue_audio_character_refresh();
         panel.install_audio_character_updates(audio_analysis);
@@ -350,6 +372,7 @@ impl NowPlayingPanel {
         self.toggle.set_active(visible);
         self.syncing_visibility.set(false);
         self.request_up_next_refresh_if_visible();
+        self.sync_visual_activity();
     }
 
     pub(in crate::ui) fn set_loaded_track(self: &Rc<Self>, track: Option<NowPlaying>) {
@@ -380,6 +403,28 @@ impl NowPlayingPanel {
 
     pub(in crate::ui) fn set_playback_state(&self, state: PlaybackState) {
         self.playback_state.set(state);
+        self.widgets.audio_character.set_playback_state(state);
+    }
+
+    pub(in crate::ui) fn set_spectrum(&self, frame: SpectrumFrame) {
+        if self.song_visuals_enabled.get() {
+            self.widgets.audio_character.set_spectrum(frame);
+        }
+    }
+
+    pub(in crate::ui) fn set_song_visuals_enabled(&self, enabled: bool) {
+        self.song_visuals_enabled.set(enabled);
+        self.widgets.audio_character.set_visuals_enabled(enabled);
+        let footer = if enabled {
+            strings::text(strings::SONG_VISUALS_FULLSCREEN_HINT)
+        } else {
+            String::new()
+        };
+        self.widgets.footers.borrow_mut().audio_character = footer.clone();
+        if self.widgets.session.selected.get() == PanelTab::AudioCharacter {
+            self.widgets.footer.set_label(&footer);
+        }
+        self.sync_visual_activity();
     }
 
     pub(in crate::ui) fn set_up_next_model(
@@ -462,8 +507,9 @@ impl NowPlayingPanel {
         self.widgets
             .tab_stack
             .connect_visible_child_name_notify(move |stack| {
-                if stack.visible_child_name().as_deref() == Some(UP_NEXT_PAGE) {
-                    if let Some(panel) = weak.upgrade() {
+                if let Some(panel) = weak.upgrade() {
+                    panel.sync_visual_activity();
+                    if stack.visible_child_name().as_deref() == Some(UP_NEXT_PAGE) {
                         panel.request_up_next_refresh_if_visible();
                     }
                 }
@@ -491,7 +537,45 @@ impl NowPlayingPanel {
                     tracing::warn!(%error, "could not save now-playing panel visibility");
                 }
                 panel.request_up_next_refresh_if_visible();
+                panel.sync_visual_activity();
             });
+    }
+
+    fn sync_visual_activity(&self) {
+        self.widgets.audio_character.set_visual_active(
+            self.song_visuals_enabled.get()
+                && self.widgets.column.is_visible()
+                && self.widgets.session.selected.get() == PanelTab::AudioCharacter,
+        );
+    }
+
+    fn install_visual_fullscreen_shortcut(self: &Rc<Self>, window: &adw::ApplicationWindow) {
+        let key = gtk4::EventControllerKey::new();
+        key.set_propagation_phase(gtk4::PropagationPhase::Capture);
+        let panel = Rc::downgrade(self);
+        let parent = window.downgrade();
+        key.connect_key_pressed(move |_, key, _, _| {
+            let Some(panel) = panel.upgrade() else {
+                return gtk4::glib::Propagation::Proceed;
+            };
+            if !should_toggle_visual_fullscreen(
+                panel.song_visuals_enabled.get(),
+                panel.widgets.column.is_visible(),
+                panel.widgets.session.selected.get(),
+                key,
+            ) {
+                return gtk4::glib::Propagation::Proceed;
+            }
+            let Some(parent) = parent.upgrade() else {
+                return gtk4::glib::Propagation::Proceed;
+            };
+            panel
+                .widgets
+                .audio_character
+                .toggle_visual_fullscreen(&parent);
+            gtk4::glib::Propagation::Stop
+        });
+        window.add_controller(key);
     }
 
     fn request_up_next_refresh_if_visible(&self) {
