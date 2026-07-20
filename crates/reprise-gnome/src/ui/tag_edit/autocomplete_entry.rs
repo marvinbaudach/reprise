@@ -191,6 +191,7 @@ impl AutocompleteEntry {
             .build();
 
         let container = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        container.add_css_class("reprise-autocomplete-menu");
         container.append(&section_header);
         container.append(&scrolled);
 
@@ -201,6 +202,9 @@ impl AutocompleteEntry {
             .has_arrow(false)
             .build();
         popover.set_parent(&row);
+        popover.set_position(gtk4::PositionType::Bottom);
+        popover.set_halign(gtk4::Align::Start);
+        popover.set_offset(0, -1);
         popover.add_css_class("reprise-autocomplete-popover");
 
         let ghost_label = gtk4::Label::builder()
@@ -325,14 +329,13 @@ impl AutocompleteEntry {
                     *current_rows.borrow_mut() = rows;
                     // TAG-6: the first row is always pre-marked.
                     listbox.select_row(listbox.row_at_index(0).as_ref());
-                    // Match the dropdown to the field's width. Without this
-                    // the popover sizes to its content's natural width, and
-                    // the value labels (hexpand + ellipsize) collapse to a few
-                    // pixels — the dropdown rendered as a tiny box showing just
-                    // "…". `parent()` is the anchor row, `child()` the content.
+                    // Match the dropdown to the field's width. Labels declare
+                    // a tiny natural width and ellipsize, so long copy cannot
+                    // expand the popover beyond this anchor width.
                     if let Some(anchor) = popover.parent() {
                         let width = anchor.width();
                         if width > 0 {
+                            popover.set_size_request(width, -1);
                             if let Some(content) = popover.child() {
                                 content.set_size_request(width, -1);
                             }
@@ -547,22 +550,12 @@ fn populate_listbox(
     }
 }
 
-/// Builds a dropdown row for a ranked library value, with the matched
-/// substring bolded via Pango and the track count shown alongside.
+/// Builds a dropdown row with the match accented and the track count alongside.
 fn value_row(suggestion: &AutocompleteSuggestion, input_lower: &str) -> gtk4::ListBoxRow {
     let hbox = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
 
-    let value_label = gtk4::Label::builder()
-        .label(&suggestion.value)
-        .xalign(0.0)
-        .hexpand(true)
-        .ellipsize(pango::EllipsizeMode::End)
-        .build();
-    if !input_lower.is_empty() {
-        if let Some(attrs) = highlight_match(&suggestion.value, input_lower) {
-            value_label.set_attributes(Some(&attrs));
-        }
-    }
+    let value = highlighted_value(&suggestion.value, input_lower);
+    value.set_hexpand(true);
 
     let count_label = gtk4::Label::builder()
         .label(crate::ui::strings::tag_autocomplete_track_count(
@@ -570,10 +563,74 @@ fn value_row(suggestion: &AutocompleteSuggestion, input_lower: &str) -> gtk4::Li
         ))
         .css_classes(["dim-label"])
         .build();
+    let enter_hint = gtk4::Label::builder()
+        .label("↵")
+        .css_classes(["reprise-autocomplete-enter-hint"])
+        .build();
+    enter_hint.set_accessible_role(gtk4::AccessibleRole::Presentation);
 
-    hbox.append(&value_label);
+    hbox.append(&value);
     hbox.append(&count_label);
+    hbox.append(&enter_hint);
     gtk4::ListBoxRow::builder().child(&hbox).build()
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct MatchSegments<'a> {
+    before: &'a str,
+    matched: &'a str,
+    after: &'a str,
+}
+
+fn match_segments<'a>(text: &'a str, input_lower: &str) -> Option<MatchSegments<'a>> {
+    if input_lower.is_empty() {
+        return None;
+    }
+    let text_lower = text.to_lowercase();
+    let start = text_lower.find(input_lower)?;
+    let end = start + input_lower.len();
+    if !text.is_char_boundary(start) || !text.is_char_boundary(end) {
+        return None;
+    }
+    Some(MatchSegments {
+        before: &text[..start],
+        matched: &text[start..end],
+        after: &text[end..],
+    })
+}
+
+fn highlighted_value(text: &str, input_lower: &str) -> gtk4::Box {
+    let value = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+    let segments = match_segments(text, input_lower);
+    let parts = segments.map_or([(text, false), ("", false), ("", false)], |segments| {
+        [
+            (segments.before, false),
+            (segments.matched, true),
+            (segments.after, false),
+        ]
+    });
+    for (index, (part, matched)) in parts.into_iter().enumerate() {
+        if part.is_empty() {
+            continue;
+        }
+        let label = gtk4::Label::builder()
+            .label(part)
+            .xalign(0.0)
+            .css_classes(["reprise-autocomplete-value"])
+            .build();
+        if matched {
+            label.add_css_class("reprise-autocomplete-match");
+        }
+        if !matched {
+            label.set_ellipsize(pango::EllipsizeMode::End);
+            label.set_max_width_chars(1);
+        }
+        if index == 2 || segments.is_none() {
+            label.set_hexpand(true);
+        }
+        value.append(&label);
+    }
+    value
 }
 
 /// Builds the trailing "Use “X” as new …" row (TAG-6) — always present,
@@ -582,38 +639,14 @@ fn use_as_new_row(text: &str, column: AutocompleteColumn) -> gtk4::ListBoxRow {
     let label = gtk4::Label::builder()
         .label(use_as_new_text(column, text))
         .xalign(0.0)
+        .hexpand(true)
+        .max_width_chars(1)
         .ellipsize(pango::EllipsizeMode::End)
         .css_classes(["reprise-autocomplete-use-as-new"])
         .build();
-    gtk4::ListBoxRow::builder().child(&label).build()
-}
-
-/// Returns Pango attributes that bold the matched substring within `text`.
-///
-/// Finds `input_lower` (already lowercased) inside `text` by lowercasing
-/// `text` for comparison, then maps byte offsets back to the original.
-/// The match start/end byte positions in `text_lower` are valid for Pango
-/// because Pango uses UTF-8 byte indices.
-fn highlight_match(text: &str, input_lower: &str) -> Option<pango::AttrList> {
-    let text_lower = text.to_lowercase();
-    let start_byte = text_lower.find(input_lower)?;
-    // Walk the original text to find the same byte boundary.
-    // For ASCII and most Latin text, start_byte in text_lower == start_byte in
-    // text because to_lowercase() is length-preserving for those code points.
-    // For the uncommon cases (e.g. 'İ' → 'i̇'), we fall back to a safe scan.
-    let end_byte = start_byte + input_lower.len();
-
-    // Verify the byte boundaries are valid char boundaries in the original.
-    if !text.is_char_boundary(start_byte) || !text.is_char_boundary(end_byte) {
-        return None;
-    }
-
-    let attrs = pango::AttrList::new();
-    let mut bold = pango::AttrInt::new_weight(pango::Weight::Bold);
-    bold.set_start_index(start_byte as u32);
-    bold.set_end_index(end_byte as u32);
-    attrs.insert(bold);
-    Some(attrs)
+    let row = gtk4::ListBoxRow::builder().child(&label).build();
+    row.add_css_class("reprise-autocomplete-use-as-new-row");
+    row
 }
 
 #[cfg(test)]
@@ -673,6 +706,39 @@ mod tests {
         let rows = build_rows(&[], "Sui");
         assert_eq!(row_value(&rows, 5), None);
         assert_eq!(row_value(&rows, -1), None);
+    }
+
+    #[test]
+    fn tag_6_match_segments_preserve_prefix_match_and_suffix() {
+        assert_eq!(
+            match_segments("Radio Cognac", "cog"),
+            Some(MatchSegments {
+                before: "Radio ",
+                matched: "Cog",
+                after: "nac",
+            })
+        );
+        assert_eq!(match_segments("Cogitations", "cog").unwrap().matched, "Cog");
+        assert_eq!(match_segments("Perpetual Rain", "cog"), None);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn tag_6_dropdown_is_anchored_to_the_field_start() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let entry = AutocompleteEntry::new(
+            "Artist",
+            AutocompleteColumn::Artist,
+            Rc::new(RefCell::new(Connection::open_in_memory().unwrap())),
+        );
+        assert_eq!(entry.popover.position(), gtk4::PositionType::Bottom);
+        assert_eq!(entry.popover.halign(), gtk4::Align::Start);
+        assert!(entry
+            .popover
+            .child()
+            .unwrap()
+            .has_css_class("reprise-autocomplete-menu"));
     }
 
     #[test]
