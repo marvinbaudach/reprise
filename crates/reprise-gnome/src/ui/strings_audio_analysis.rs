@@ -1,6 +1,8 @@
 //! User-facing copy for local Audio Character analysis.
 
 pub const AUDIO_CHARACTER: &str = N_!("Audio Character");
+pub const SONG_VISUALS: &str = N_!("Song Visuals");
+pub const SONG_VISUALS_DESCRIPTION: &str = N_!("Show local audio-reactive visuals in Now Playing");
 pub const AUDIO_ANALYSIS_TITLE: &str = N_!("Analyze audio locally");
 pub const AUDIO_ANALYSIS_PRIVACY: &str = N_!(
     "Reprise reads audio files only on this device. Nothing is uploaded. Existing profiles are kept when this is turned off."

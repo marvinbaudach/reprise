@@ -73,6 +73,34 @@ impl Default for AudioEffects {
     }
 }
 
+pub const SPECTRUM_BAND_COUNT: usize = 16;
+const SPECTRUM_FLOOR_DB: f32 = -80.0;
+
+/// One bounded, path-free snapshot of the currently playing audio spectrum.
+/// Values are normalized to `0..=1` so frontends never depend on a platform
+/// analyzer's decibel floor or message representation.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SpectrumFrame {
+    bands: [f32; SPECTRUM_BAND_COUNT],
+}
+
+impl SpectrumFrame {
+    pub fn from_decibels(decibels: [f32; SPECTRUM_BAND_COUNT]) -> Self {
+        Self {
+            bands: decibels.map(|value| {
+                if !value.is_finite() {
+                    return 0.0;
+                }
+                ((value - SPECTRUM_FLOOR_DB) / -SPECTRUM_FLOOR_DB).clamp(0.0, 1.0)
+            }),
+        }
+    }
+
+    pub fn bands(&self) -> &[f32; SPECTRUM_BAND_COUNT] {
+        &self.bands
+    }
+}
+
 /// Events the player reports asynchronously, from the GStreamer bus watch and
 /// the position ticker. The UI layer subscribes to these via the callback
 /// passed to `Player::new`.
@@ -92,7 +120,43 @@ pub enum PlayerEvent {
     /// `TrackFinished`, which fires on a real end-of-stream (no next track was
     /// pre-fed) and is the frontend's cue to *start* the next track.
     AdvancedToNext,
+    /// A local-only, normalized audio spectrum for optional visual rendering.
+    Spectrum(SpectrumFrame),
     Error(String),
+}
+
+#[cfg(test)]
+mod song_visual_tests {
+    use super::*;
+
+    #[test]
+    fn ac_7_spectrum_frame_normalizes_decibels_and_rejects_non_finite_input() {
+        let frame = SpectrumFrame::from_decibels([
+            -80.0,
+            -72.0,
+            -64.0,
+            -56.0,
+            -48.0,
+            -40.0,
+            -32.0,
+            -24.0,
+            -16.0,
+            -8.0,
+            0.0,
+            -120.0,
+            12.0,
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+        ]);
+
+        assert_eq!(frame.bands()[0], 0.0);
+        assert_eq!(frame.bands()[5], 0.5);
+        assert_eq!(frame.bands()[10], 1.0);
+        assert_eq!(frame.bands()[11], 0.0);
+        assert_eq!(frame.bands()[12], 1.0);
+        assert_eq!(&frame.bands()[13..], &[0.0, 0.0, 0.0]);
+    }
 }
 
 /// The audio-playback contract every platform implements (Linux: GStreamer
@@ -108,6 +172,11 @@ pub trait PlaybackBackend {
     fn seek_to(&self, position_ms: i64) -> Result<(), PlaybackError>;
     fn set_volume(&self, volume: f64);
     fn set_audio_effects(&self, effects: AudioEffects) -> Result<(), PlaybackError>;
+    /// Enables or disables the optional spectrum analyzer at runtime. Backends
+    /// without an analyzer may keep the default no-op implementation.
+    fn set_spectrum_enabled(&self, _enabled: bool) -> Result<(), PlaybackError> {
+        Ok(())
+    }
     fn stop(&self) -> Result<(), PlaybackError>;
 
     /// Pre-feeds the path of the track that should play next, so the backend
