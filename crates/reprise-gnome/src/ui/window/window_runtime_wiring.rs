@@ -235,7 +235,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                     album,
                     album_artist,
                 });
-                nav_history.record_route(&place);
+                nav_history.record_route_from(&place, track_list.browser_place());
                 super::library_shell::route_to_place(
                     &place,
                     &sidebar,
@@ -273,7 +273,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             let content_stack = content_stack.clone();
             let active_content_focus = active_content_focus.clone();
             back_action.connect_activate(move |_, _| {
-                let Some(place) = nav_history.go_back() else {
+                let Some(place) = nav_history.go_back_from(track_list.browser_place()) else {
                     tracing::debug!("nav back: history is empty");
                     return;
                 };
@@ -307,7 +307,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             let content_stack = content_stack.clone();
             let active_content_focus = active_content_focus.clone();
             forward_action.connect_activate(move |_, _| {
-                let Some(place) = nav_history.go_forward() else {
+                let Some(place) = nav_history.go_forward_from(track_list.browser_place()) else {
                     tracing::debug!("nav forward: nothing ahead");
                     return;
                 };

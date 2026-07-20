@@ -144,7 +144,7 @@ impl super::Shared {
     /// vec (and logs) on a query failure rather than propagating, since every
     /// caller degrades to "leave the marker where it is" on an empty result.
     /// On `Shared` (not `TrackList`) so the reload path can reach it for the
-    /// NAV-5 view-state restore.
+    /// BROWSE-2 view-state restore.
     pub(in crate::ui) fn current_view_ids(&self) -> Vec<i64> {
         let sort = self.sort.borrow().clone();
         let filter = self.filter.borrow().clone();

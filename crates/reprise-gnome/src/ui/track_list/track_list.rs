@@ -79,8 +79,9 @@ use reprise_core::view_source::ViewSource;
 
 pub(in crate::ui) use super::track_list_callbacks::{
     OnActivate, OnGoToAlbum, OnGoToArtist, OnLibraryMutated, OnQueueActivate, OnQueueMoveToTop,
-    OnQueueRemove, OnQueueReorder, OnQueueSelected, OnReload, OnScanQueuePurgeIds, OnShowMissing,
-    OnShowMissingFiles, OnSidebarPlaylistDrop, OnSidebarQueueDrop, OnTagsMutated,
+    OnQueueRemove, OnQueueReorder, OnQueueSelected, OnReload, OnScanQueuePurgeIds,
+    OnSearchRestored, OnShowMissing, OnShowMissingFiles, OnSidebarPlaylistDrop, OnSidebarQueueDrop,
+    OnTagsMutated,
 };
 pub(in crate::ui) use super::track_list_toast::show_toast;
 
@@ -124,13 +125,6 @@ pub(in crate::ui) struct Shared {
     /// `track_list_dnd` reads it so markers only appear where a drop would
     /// actually do something.
     pub(in crate::ui) active_reorder_drag_from: Cell<Option<u32>>,
-    /// NAV-5: per-source scroll/selection memory for this session. Written
-    /// by `view_state_memory::remember_on_leave` when a source switch leaves
-    /// a view, read by `view_state_memory::restore_on_attach` after the
-    /// switched-to source reloaded. Never persisted (NAV-5 precision: view
-    /// state must not survive an app restart).
-    pub(in crate::ui) view_state_memory:
-        RefCell<std::collections::HashMap<ViewSource, super::view_state_memory::SavedViewState>>,
     /// The same UI-owned connection `TrackList::new` was given, kept here
     /// too (alongside the clone `TrackListModel` holds internally) so the
     /// rating column's click handler can write through `library::stats`
@@ -155,6 +149,7 @@ pub(in crate::ui) struct Shared {
     pub(in crate::ui) sort: RefCell<SortState>,
     pub(in crate::ui) restoring_view: Cell<bool>,
     pub(in crate::ui) filter: RefCell<String>,
+    pub(in crate::ui) on_search_restored: RefCell<Option<OnSearchRestored>>,
     /// Which of the six sources (Stage 3 Task 3) the list is currently
     /// showing — defaults to `ViewSource::Library`. Set via `TrackList::
     /// set_source` (and the `REPRISE_SMOKE_SOURCE` hook); read by `reload`
@@ -367,7 +362,34 @@ impl TrackList {
     /// private `set_source_and_reload` directly instead (no live `TrackList`
     /// handle to call a public method on at that point).
     pub fn set_source(&self, source: ViewSource) {
-        set_source_and_reload(&self.shared, source);
+        if self.current_source() == source {
+            reload(&self.shared);
+            return;
+        }
+        let _ = self.restore_browser_place(&reprise_core::browser::BrowserPlace::from(source));
+    }
+
+    pub(in crate::ui) fn browser_place(&self) -> reprise_core::browser::BrowserPlace {
+        let source = self.current_source();
+        let state = super::view_state_memory::capture(&self.shared).to_core();
+        let collection = reprise_core::browser::BrowserPlace::from(source)
+            .collection()
+            .cloned()
+            .unwrap_or(reprise_core::browser::TrackCollection::Library(
+                reprise_core::browser::LibraryScope::All,
+            ));
+        reprise_core::browser::BrowserPlace::tracks(collection, state)
+    }
+
+    pub(in crate::ui) fn restore_browser_place(
+        &self,
+        place: &reprise_core::browser::BrowserPlace,
+    ) -> bool {
+        crate::ui::view_session::restore_browser_place(self, place)
+    }
+
+    pub(in crate::ui) fn set_on_search_restored(&self, callback: impl Fn(&str) + 'static) {
+        *self.shared.on_search_restored.borrow_mut() = Some(Rc::new(callback));
     }
 
     /// Re-runs the current sort/filter query and refreshes the list without
@@ -426,14 +448,6 @@ impl TrackList {
     /// jump hands to `Sidebar::sync_current_source` before navigating.
     pub fn current_source(&self) -> ViewSource {
         self.shared.source.borrow().clone()
-    }
-
-    /// Drops the NAV-5 remembered scroll/selection for `source`. NAV-9b's
-    /// jump calls this before navigating: an explicit "show me the playing
-    /// track" supersedes the stale remembered viewport — without this, the
-    /// deferred NAV-5 scroll restore would clobber the jump's centering.
-    pub fn forget_view_state(&self, source: &ViewSource) {
-        self.shared.view_state_memory.borrow_mut().remove(source);
     }
 
     pub fn set_on_play_next_selected(&self, callback: impl Fn(Vec<i64>) + 'static) {

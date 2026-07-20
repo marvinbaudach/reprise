@@ -1697,7 +1697,7 @@ deterministisch und hoch-konfident, nie „ohne Review".
   Library-Scopes derselben virtualisierten Trackliste, keine Tabs, Modi oder
   dauerhaften Datenbankentitäten. My Stats bleibt ein eigener Dashboard-Ort.
 
-- **BROWSE-2** [geplant] [core] — **Jeder Browser-Ort besitzt seinen Zustand.**
+- **BROWSE-2** [aktiv] [core] — **Jeder Browser-Ort besitzt seinen Zustand.**
   Quelle, Scope, Textsuche, Facetten, Sortierung, ID-plus-Offset-Anker,
   Auswahl und stabiler Inhaltsfokus werden gemeinsam im History-Eintrag
   gehalten. Eine frische Album-/Interpret-Navigation startet unverfeinert;

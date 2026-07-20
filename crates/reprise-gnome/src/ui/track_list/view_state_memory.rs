@@ -1,23 +1,21 @@
-//! NAV-5: session-scoped view-state memory for the track table. Leaving a
-//! source (sidebar switch, album/artist cross-navigation) captures scroll
-//! position + selected track ids into a per-`ViewSource` map on `Shared`;
-//! re-attaching the same source restores both, so the user finds the list
-//! exactly as left. Deliberately in-memory only — NAV-5's precision says
-//! view state must NOT persist across app restarts, so nothing here touches
-//! the settings table. Save/restore happens ONLY on source switches
-//! (`set_source_and_reload`), never on plain reloads (typing a filter or
-//! clicking a sort header legitimately resets the viewport). Scroll is stored
-//! as the stable id of the row at the viewport edge plus the offset into that
-//! row, never as an absolute adjustment value.
+//! BROWSE-2 projection between the live TrackList and a history-owned
+//! `TrackViewState`. Capture and restore include local search, browse facets,
+//! sort, stable ID-plus-offset anchor, selection, and content focus. No widget
+//! state map lives beside the core router: Back/Forward carries the complete
+//! place. Scroll is never stored as an absolute pixel value.
 
 use gtk4::prelude::*;
+use reprise_core::browser::TrackFocus;
+use reprise_core::browser::{SortDirection, TrackAnchor, TrackSort, TrackViewState};
+use reprise_core::queries::BrowseFilter;
 
 use crate::ui::track_list::Shared;
+use crate::ui::track_list_sort::SortState;
 
 /// Upper bound on remembered selected ids per source — a guard against a
 /// pathological select-all on a 10k-track view being cloned around on every
 /// source switch. Restoring the first 512 of such a selection is fine; the
-/// point of NAV-5 is orientation, not perfect multi-selection fidelity.
+/// point of BROWSE-2 is orientation, not perfect multi-selection fidelity.
 const MAX_REMEMBERED_SELECTED_IDS: usize = 512;
 
 /// How many idle-callback rounds the scroll restore waits for the rebuilt
@@ -26,12 +24,57 @@ const MAX_REMEMBERED_SELECTED_IDS: usize = 512;
 /// updated after the first allocation pass.
 const SCROLL_RESTORE_MAX_ATTEMPTS: u8 = 8;
 
-/// Scroll offset + selected track ids of a track-table view, captured the
-/// moment the user navigates away from a source.
+/// GTK-side representation of one complete track place.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(in crate::ui) struct SavedViewState {
+    pub search: String,
+    pub browse: BrowseFilter,
+    pub sort: SortState,
     pub anchor: Option<(i64, f64)>,
     pub selected_ids: Vec<i64>,
+    pub focus: TrackFocus,
+}
+
+impl SavedViewState {
+    pub(in crate::ui) fn to_core(&self) -> TrackViewState {
+        TrackViewState {
+            search: self.search.clone(),
+            browse: self.browse.clone(),
+            sort: TrackSort::new(
+                &self.sort.field,
+                if self.sort.dir == "desc" {
+                    SortDirection::Descending
+                } else {
+                    SortDirection::Ascending
+                },
+            ),
+            anchor: self
+                .anchor
+                .map(|(track_id, row_offset)| TrackAnchor::new(track_id, row_offset)),
+            selected_ids: self.selected_ids.clone(),
+            focus: self.focus,
+        }
+    }
+
+    pub(in crate::ui) fn from_core(state: &TrackViewState) -> Self {
+        Self {
+            search: state.search.clone(),
+            browse: state.browse.clone(),
+            sort: SortState {
+                field: state.sort.field.clone(),
+                dir: match state.sort.direction {
+                    SortDirection::Ascending => "asc",
+                    SortDirection::Descending => "desc",
+                }
+                .into(),
+            },
+            anchor: state
+                .anchor
+                .map(|anchor| (anchor.track_id, anchor.row_offset)),
+            selected_ids: state.selected_ids.clone(),
+            focus: state.focus,
+        }
+    }
 }
 
 /// Maps remembered selected ids onto positions in the view's *current* id
@@ -81,9 +124,18 @@ pub(in crate::ui) fn capture(shared: &Shared) -> SavedViewState {
             selected_ids.push(track.id);
         }
     }
+    let focus = selected_ids
+        .first()
+        .copied()
+        .filter(|_| shared.column_view.has_focus())
+        .map_or(TrackFocus::Content, TrackFocus::Track);
     SavedViewState {
+        search: shared.filter.borrow().clone(),
+        browse: shared.browse_filter.borrow().clone(),
+        sort: shared.sort.borrow().clone(),
         anchor,
         selected_ids,
+        focus,
     }
 }
 
@@ -111,6 +163,9 @@ pub(in crate::ui) fn restore(shared: &Shared, saved: &SavedViewState, current_id
         current_ids.to_vec(),
         SCROLL_RESTORE_MAX_ATTEMPTS,
     );
+    if matches!(saved.focus, TrackFocus::Track(_)) {
+        let _ = shared.column_view.grab_focus();
+    }
 }
 
 /// Applies `value` to the table's vadjustment as soon as the adjustment has
@@ -143,64 +198,44 @@ fn restore_scroll_when_ready(
     });
 }
 
-/// The `set_source_and_reload` hook: captures `old_source`'s state before the
-/// model is replaced. A same-source "switch" is a plain reload and captures
-/// nothing (NAV-5 governs mode *changes* only).
-pub(in crate::ui) fn remember_on_leave(
-    shared: &Shared,
-    old_source: &reprise_core::view_source::ViewSource,
-    new_source: &reprise_core::view_source::ViewSource,
-) {
-    if old_source == new_source {
-        return;
-    }
-    let state = capture(shared);
-    shared
-        .view_state_memory
-        .borrow_mut()
-        .insert(old_source.clone(), state);
-}
-
-/// The post-reload counterpart: restores the re-attached source's remembered
-/// state, if any. The state stays in the map (not `remove`d) so bouncing
-/// between two sources keeps restoring both ways; a later leave overwrites.
-pub(in crate::ui) fn restore_on_attach(
-    shared: &Shared,
-    source: &reprise_core::view_source::ViewSource,
-    current_ids: &[i64],
-) {
-    let saved = shared.view_state_memory.borrow().get(source).cloned();
-    if let Some(saved) = saved {
-        restore(shared, &saved, current_ids);
-        tracing::debug!(
-            source = %source.label(),
-            anchor = ?saved.anchor,
-            selected = saved.selected_ids.len(),
-            "restored view state on source re-attach (NAV-5)"
-        );
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn saved(ids: &[i64]) -> SavedViewState {
         SavedViewState {
+            search: String::new(),
+            browse: BrowseFilter::default(),
+            sort: SortState::default(),
             anchor: None,
             selected_ids: ids.to_vec(),
+            focus: TrackFocus::Content,
         }
     }
 
     #[test]
     fn browse_2_remembers_scroll_and_selection_per_place() {
         let library = SavedViewState {
+            search: "shore".into(),
+            browse: reprise_core::queries::BrowseFilter {
+                genre: Some("Metal".into()),
+                ..reprise_core::queries::BrowseFilter::default()
+            },
+            sort: crate::ui::track_list_sort::SortState {
+                field: "album".into(),
+                dir: "desc".into(),
+            },
             anchor: Some((42, 7.5)),
             selected_ids: vec![42, 99],
+            focus: reprise_core::browser::TrackFocus::Track(42),
         };
         let playlist = SavedViewState {
+            search: String::new(),
+            browse: reprise_core::queries::BrowseFilter::default(),
+            sort: crate::ui::track_list_sort::SortState::default(),
             anchor: Some((7, 2.0)),
             selected_ids: vec![7],
+            focus: reprise_core::browser::TrackFocus::Content,
         };
         let mut memory = std::collections::HashMap::new();
         memory.insert("tracks", library.clone());
@@ -208,13 +243,21 @@ mod tests {
 
         assert_eq!(memory.get("tracks"), Some(&library));
         assert_eq!(memory.get("playlist"), Some(&playlist));
+        assert_eq!(library.search, "shore");
+        assert_eq!(library.browse.genre.as_deref(), Some("Metal"));
+        assert_eq!(library.sort.field, "album");
+        assert_eq!(library.focus, reprise_core::browser::TrackFocus::Track(42));
     }
 
     #[test]
     fn browse_2_anchor_survives_resort() {
         let state = SavedViewState {
+            search: String::new(),
+            browse: reprise_core::queries::BrowseFilter::default(),
+            sort: crate::ui::track_list_sort::SortState::default(),
             anchor: Some((42, 6.0)),
             selected_ids: vec![42],
+            focus: reprise_core::browser::TrackFocus::Content,
         };
         let resorted = [5, 9, 11, 42, 77, 88];
 
@@ -234,5 +277,25 @@ mod tests {
     fn positions_to_select_handles_empty_saved_and_empty_view() {
         assert_eq!(positions_to_select(&saved(&[]), &[1, 2]), Vec::<u32>::new());
         assert_eq!(positions_to_select(&saved(&[1]), &[]), Vec::<u32>::new());
+    }
+
+    #[test]
+    fn browse_2_ui_state_round_trips_through_the_core_browser_place() {
+        let saved = SavedViewState {
+            search: "shore".into(),
+            browse: BrowseFilter {
+                album: Some("Pain Remains".into()),
+                ..BrowseFilter::default()
+            },
+            sort: SortState {
+                field: "year".into(),
+                dir: "desc".into(),
+            },
+            anchor: Some((42, 3.5)),
+            selected_ids: vec![42, 44],
+            focus: TrackFocus::Track(42),
+        };
+
+        assert_eq!(SavedViewState::from_core(&saved.to_core()), saved);
     }
 }

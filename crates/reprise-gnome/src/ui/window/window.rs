@@ -397,8 +397,10 @@ pub fn build(
         let digest = new_releases_digest.clone();
         let nav_history = nav_history.clone();
         let content_stack = content_stack.clone();
+        let track_list = track_list.clone();
         Rc::new(move || {
-            let Some(_place) = nav_history.record_new_releases() else {
+            let Some(_place) = nav_history.record_new_releases_from(track_list.browser_place())
+            else {
                 tracing::warn!("cannot open New Releases before navigation is initialized");
                 return;
             };
