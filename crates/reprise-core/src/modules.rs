@@ -2,8 +2,8 @@
 //!
 //! Core player capabilities such as Equalizer and ReplayGain deliberately do
 //! not belong here. Device support likewise belongs to Synchronization. This
-//! registry is reserved for optional integrations and features that depend on
-//! external services or APIs.
+//! registry is reserved for optional integrations and deliberately opt-in
+//! experiences such as local song visuals.
 
 use rusqlite::Connection;
 
@@ -85,8 +85,17 @@ pub const ONLINE_LYRICS_MODULE: ModuleDescriptor = ModuleDescriptor {
     applies_live: true,
 };
 
+pub const SONG_VISUALS_MODULE: ModuleDescriptor = ModuleDescriptor {
+    id: "song_visuals",
+    name: "Song Visuals",
+    description: "Show local audio-reactive visuals in Now Playing",
+    default_enabled: false,
+    applies_live: true,
+};
+
 /// Every optional integration the app currently exposes, in Plugins-page order.
 pub const ALL_MODULES: &[&ModuleDescriptor] = &[
+    &SONG_VISUALS_MODULE,
     &LIBRARY_DOCTOR_MODULE,
     &NEW_RELEASES_MODULE,
     &COVER_DOWNLOAD_MODULE,
@@ -274,5 +283,22 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn ac_7_song_visuals_are_a_live_opt_in_module() {
+        let conn = migrated_conn();
+        let descriptor = ALL_MODULES
+            .iter()
+            .copied()
+            .find(|module| module.id == "song_visuals")
+            .expect("Song Visuals must be exposed on the Plugins page");
+
+        assert_eq!(descriptor.name, "Song Visuals");
+        assert!(!descriptor.default_enabled);
+        assert!(descriptor.applies_live);
+        assert!(!is_enabled(&conn, descriptor).unwrap());
+        set_enabled(&conn, descriptor, true).unwrap();
+        assert!(is_enabled(&conn, descriptor).unwrap());
     }
 }

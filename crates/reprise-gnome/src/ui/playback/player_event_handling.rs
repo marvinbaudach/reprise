@@ -59,6 +59,7 @@ impl PlayerController {
                 tracing::info!("gapless hand-off: advancing queue model without restart");
                 self.advance_gaplessly();
             }
+            PlayerEvent::Spectrum(_) => {}
             PlayerEvent::Error(message) => {
                 // Stage 2 Task 5: this can fire asynchronously for the
                 // *currently loaded* queue track (e.g. GStreamer resolving a
