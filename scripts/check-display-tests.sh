@@ -110,11 +110,14 @@ run_display_test() {
   server_num=$((99 + index))
   {
     echo "== display test: $test =="
-    if dbus-run-session -- xvfb-run --server-num="$server_num" env \
+    # Set XDG roots before dbus-run-session so D-Bus-activated Portal and
+    # AT-SPI services inherit the worker isolation too.
+    if env \
       XDG_DATA_HOME="$data_home" XDG_CACHE_HOME="$cache_home" \
       XDG_CONFIG_HOME="$config_home" XDG_RUNTIME_DIR="$runtime_dir" \
       GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink \
       DISPLAY_TEST="$test" DISPLAY_TEST_PASSED="$display_test_passed" \
+      dbus-run-session -- xvfb-run --server-num="$server_num" \
       bash -c '
         cargo test -p reprise-gnome "$DISPLAY_TEST" -- --ignored --exact \
           && : >"$DISPLAY_TEST_PASSED"
