@@ -139,14 +139,19 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **NAV-8** [geplant] [gtk] — My Stats ist ein Sidebar-Ort wie jeder andere:
   volle Content-Fläche, Headerbar mit Suche bleibt stehen (Suche dort
   disabled/ausgeblendet ist erlaubt, aber die Leiste bleibt).
-- **NAV-9** [ersetzt durch NAV-9a/GRID-5] — Ursprünglich teilten Cover/Titel
+- **NAV-9** [ersetzt durch NAV-9b/GRID-5] — Ursprünglich teilten Cover/Titel
   der Player-Leiste und Ctrl+L denselben Sprung zur Heimat des spielenden
   Tracks. Aufgeteilt in Track-Ursprung per Ctrl+L (NAV-9a) und Album-Grid-
   Reveal per Player-Oberflächen (GRID-5).
-- **NAV-9a** [aktiv] [gtk] — Ctrl+L navigiert zur Herkunftsansicht des
+- **NAV-9a** [ersetzt durch NAV-9b] — Ctrl+L navigiert zur Herkunftsansicht des
   geladenen Tracks, selektiert dessen Zeile und zentriert sie ohne
   scrollIntoView-Kantenkleben. Der Sprung pusht auf den globalen
   History-Stack; Back kehrt zum vorherigen Ort zurück.
+- **NAV-9b** [aktiv] [gtk] — Ctrl+L und die Aktivierung des Interpreten in
+  der Playerleiste verwenden denselben Sprung: Sie navigieren zur
+  Herkunftsansicht des geladenen Tracks, selektieren und fokussieren dessen
+  Zeile und zentrieren sie ohne scrollIntoView-Kantenkleben. Der Sprung pusht
+  auf den globalen History-Stack; Back kehrt zum vorherigen Ort zurück.
 - **NAV-11** [aktiv] [gtk] — Jeder bedienbare Sidebar-Eintrag exponiert
   gegenüber Assistenztechnik eine eigene Bezeichnung, eine interaktive Rolle
   und eine auslösbare Aktion. Sektionsüberschriften bleiben nicht bedienbar,
@@ -249,7 +254,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   in die Album-Ansicht, leert ein sichtbares Suchfeld samt Albumfilter,
   scrollt per GtkGridView/Adjustment zur geladenen Albumkachel, fokussiert sie
   und hebt sie rund 1 s hervor. Der Ortswechsel ist ein History-Push; bereits
-  im Album-Grid entsteht kein Duplikat. Fehlt die Albumkachel, greift NAV-9a
+  im Album-Grid entsteht kein Duplikat. Fehlt die Albumkachel, greift NAV-9b
   ohne Fehlerdialog. `gtk-enable-animations=false` zeigt für dieselbe Dauer
   ein statisches Highlight.
 - **GRID-6** [aktiv] [gtk] — Rückkehrfokus: Back aus einem Album-Detail in
@@ -329,6 +334,10 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   was Frist UND Stichtag reißt. Beide Lösch-Dialoge der App (dieser und
   „Remove all N") benennen die Kaskade explizit: Ratings + Hörhistorie gehen
   mit (P-5).
+- **SET-5** [aktiv] [gtk] — Der Inhalt jeder Preferences-Hauptseite beginnt
+  mit dem kompakten Standardabstand direkt unter dem Inhalts-Header. Kurze
+  Seiten werden nicht vertikal zentriert; ungenutzter Raum bleibt unter der
+  letzten Gruppe.
 
 ## G. Feedback-Vokabular
 
@@ -612,7 +621,7 @@ Wird ein ganzer Container deaktiviert, gilt TIP-2a/b für die
 Container-Aussage, nicht für jedes Kind einzeln (die leere Player-Leiste
 ist ihre eigene Aussage).
 
-- **TIP-1a** [aktiv] [gtk] — Existenz folgt der Beschriftung:
+- **TIP-1a** [ersetzt durch TIP-1c] — Existenz folgt der Beschriftung:
   Icon-only-Buttons haben immer einen Tooltip; Buttons mit sichtbarem
   Textlabel bekommen keinen — das Label ist die Aussage, ein
   wiederholender Tooltip ist Rauschen. Ausnahme: ellipsierte/abgeschnittene
@@ -625,6 +634,18 @@ ist ihre eigene Aussage).
        (tag_editor_form.rs, Ownership feat/tag-editor-rework) und „Back" in
        browse_bar (Ownership feat/global-search-rework) sind noch
        Substantive. [aktiv] erst, wenn beide nachgezogen sind. -->
+- **TIP-1c** [ersetzt durch TIP-1d] — Existenz folgt Beschriftung und Aktion:
+  Icon-only-Buttons haben immer einen Tooltip; Buttons mit sichtbarem
+  Aktionslabel bekommen keinen. Ein kompaktes Metadaten-Label darf die
+  verborgene Aktion benennen (Player-Bar-Interpret: „Go to artist").
+  Ellipsierte Labels zeigen weiterhin nur bei tatsächlicher Kürzung den
+  vollen Text.
+- **TIP-1d** [aktiv] [gtk] — Existenz folgt Beschriftung und Aktion:
+  Icon-only-Buttons haben immer einen Tooltip; Buttons mit sichtbarem
+  Aktionslabel bekommen keinen. Ein kompaktes Metadaten-Label darf die
+  verborgene Aktion samt passendem Shortcut benennen (Player-Bar-Interpret:
+  „Jump to now playing (Ctrl+L)"). Ellipsierte Labels zeigen weiterhin nur
+  bei tatsächlicher Kürzung den vollen Text.
 - **TIP-2a** [aktiv] [gtk] — Disabled erklärt sich (icon-only): ein
   deaktiviertes Icon-only-Control behält seinen Tooltip und ergänzt den
   Grund („Eject device — Sync in progress"). Nie ein toter Button ohne
@@ -655,6 +676,11 @@ ist ihre eigene Aussage).
 - **TIP-5** [aktiv] [manuell] — GTK-Standardverhalten: keine
   Custom-Delays, keine interaktiven/Rich-Tooltips; dynamische Werte
   (Prozent, Zeit, ellipsierter Volltext) sind erlaubt.
+- **TIP-6** [aktiv] [gtk] — Shortcut-Hinweise bleiben aktionsgleich:
+  besitzt die im Tooltip benannte Control-Aktion bereits einen dokumentierten
+  Tastatur-Shortcut, steht er in Klammern hinter der Beschriftung. Shortcuts
+  anderer Aktionen werden nicht an benachbarte Controls angehängt; Controls
+  ohne passenden Shortcut bleiben unverändert.
 
 ## N. Track-Kontextmenü
 
@@ -1098,6 +1124,12 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   beidseitig (zeigen ↔ verstecken). Das Verstecken löscht die Query nie: bei
   nicht leerer Query bleibt ihr Chip sichtbar und die Lupe im
   `:checked`-Akzentstil (FIL-1, SEARCH-3/5).
+- **SEARCH-7** [aktiv] [gtk] — Verliert das Suchfeld samt seiner internen
+  Controls den Tastaturfokus, klappt die offene Suchleiste nach Abschluss der
+  laufenden Pointer-Aktivierung ein. Eine nicht leere Query bleibt gemäß
+  SEARCH-3/5 als aktiver Filter samt Chip und Akzent-Lupe erhalten; ein Klick
+  auf die Lupe darf die durch denselben Fokuswechsel geschlossene Leiste nicht
+  versehentlich erneut öffnen.
 - **LYR-4** [aktiv] [gtk] — Die Zentrierung der aktiven Lyrics-Zeile wird
   am Songanfang nach oben geklemmt. Solange nicht genug Kontextzeilen über
   der aktiven Zeile liegen, sitzt der Textblock oben; erst mit genügend
@@ -1405,10 +1437,7 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
   Abbrechen und „Retry failed" sind erreichbar; ein Neustart setzt offene
   Arbeit fort. Ausschalten startet keine neue Profil-Arbeit, verhindert aber
   niemals den bestehenden Waveform-Backfill.
-- **AC-4** [aktiv] [gtk] — Das rechte Now-Playing-Panel besitzt neben „Up
-  Next" und „Lyrics" den adaptiven Tab „Audio Character" für den geladenen
-  Track. Er unterscheidet Disabled, Pending, Failed, Stale und Ready; ein
-  Trackwechsel darf nie Werte des vorherigen Tracks zeigen.
+- **AC-4** [ersetzt durch AC-9]
 - **AC-5** [aktiv] [gtk] — Ready zeigt die vier benannten Dimensionen und
   optional BPM samt Unsicherheit. Farbe ist nie der einzige Informationsträger;
   Screenreader erhalten Dimension und Wert. Dateipfade, interne Versionen und
@@ -1417,6 +1446,31 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
   aktueller, geeigneter Bibliothekstitel. Leere, laufende, pausierte,
   fehlgeschlagene und vollständige Zustände bleiben unterscheidbar; „Reanalyze
   library" verlangt wegen der Rechenlast eine Bestätigung.
+- **AC-7** [ersetzt durch AC-10]
+- **AC-8** [ersetzt durch AC-11]
+- **AC-9** [aktiv] [gtk] — Das rechte Now-Playing-Panel enthält keine
+  Audioanalyse, sondern genau „Up Next", „Lyrics" und — bei aktiviertem
+  Plugin — „Visual". Der permanente Info-Button in der Playerleiste öffnet
+  „Audio Character" für den geladenen Track als schließbaren Dialog. Er
+  unterscheidet Disabled, Pending, Failed, Stale und Ready; Trackwechsel zeigen
+  nie Werte oder ein statisches Klangprofil des vorherigen Tracks. Beim
+  Schließen per Escape, Strg+W oder Dialogsteuerung kehrt der Tastaturfokus zum
+  auslösenden Button zurück.
+- **AC-10** [aktiv] [core] [gtk] — „Song Visuals" ist ein standardmäßig
+  ausgeschaltetes, live anwendbares Plugin. Eingeschaltet visualisiert der
+  dritte Panel-Tab „Visual" ausschließlich lokal berechnete, auf 16 Bänder und
+  den Bereich 0–1 begrenzte Spektraldaten als die drei tastaturbedienbaren Modi
+  Rings, Flow und Pulse. Canvas, Auswahlzustand und Vollbild übernehmen den
+  aktuellen Cover-Akzent über denselben globalen Ambient-Crossfade wie die
+  Playerleiste; nur ohne brauchbare Coverfarbe gilt der Theme-Akzent. Farbe
+  bleibt durch benannte Modi und eine Screenreader-Beschriftung redundant.
+- **AC-11** [aktiv] [gtk] — Dauerbewegung existiert ausschließlich während
+  laufender Wiedergabe und nur bei sichtbarem Visual-Tab oder dessen
+  Vollbildansicht. Pause und Stop klingen auf das statische Klangprofil aus;
+  `gtk-enable-animations=false` zeigt dieses Profil ohne Tick-Callback. Bei
+  aktiviertem Plugin öffnet F11 aus dem sichtbaren Visual-Tab die
+  Vollbildansicht; F11 und Escape schließen sie. Das ist die in MOT-2 erlaubte,
+  audiofunktionale Ausnahme für Dauerbewegung.
 
 ## Y. Library Doctor / Tag Cleanup
 

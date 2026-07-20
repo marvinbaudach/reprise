@@ -222,8 +222,8 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     });
 
     if let Some(player) = player {
-        // NAV-9a remains Ctrl+L only: jump to the loaded track's origin,
-        // select it and center its row.
+        // NAV-9b: Ctrl+L and the player-bar artist share one explicit jump to
+        // the loaded track's origin, selection, focus, and centered row.
         let jump_to_current_track = super::current_track_jump::runtime_coordinator(
             &super::current_track_jump::JumpContext {
                 player: Rc::downgrade(player),
@@ -235,10 +235,12 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                 active_content_focus: active_content_focus.clone(),
             },
         );
+        let jump_from_artist = jump_to_current_track.clone();
+        player.connect_artist_clicked(move || jump_from_artist());
 
         // GRID-5 is a separate player-surface action: route to Albums,
         // visibly clear search/filter, focus/scroll/pulse the loaded album,
-        // and fall back to NAV-9a only if that album is absent.
+        // and fall back to NAV-9b only if that album is absent.
         let reveal_playing_album =
             super::album_grid_reveal::coordinator(super::album_grid_reveal::RevealSteps {
                 current_album: {
@@ -409,7 +411,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         window.add_controller(mouse_nav);
 
         // Dev/verification hook (permanent, like `REPRISE_SMOKE_ACTIVATE`):
-        // `REPRISE_SMOKE_JUMP=1` fires the NAV-9a jump action ~2s after
+        // `REPRISE_SMOKE_JUMP=1` fires the NAV-9b jump action ~2s after
         // startup (past the other smoke hooks' idle work) and the NAV-2
         // back action ~2s later — the exact same `gio` actions Ctrl+L and
         // Alt+Left run. Headless E2E asserts the resulting routing +

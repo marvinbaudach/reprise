@@ -2,6 +2,7 @@
 
 use gtk4::prelude::*;
 use libadwaita as adw;
+use libadwaita::prelude::*;
 use reprise_core::sound_profile::{
     self, AnalysisState, AnalysisVersions, ReadyAnalysis, TrackAnalysis,
 };
@@ -164,6 +165,18 @@ pub(in crate::ui) fn result_is_current(
     requested_generation == current_generation && requested_track == current_track
 }
 
+pub(in crate::ui) fn visual_profile(presentation: &AudioCharacterPresentation) -> Option<[u8; 4]> {
+    let AudioCharacterPresentation::Ready { dimensions, .. } = presentation else {
+        return None;
+    };
+    Some(
+        dimensions
+            .as_ref()
+            .each_ref()
+            .map(|dimension| dimension.value_percent),
+    )
+}
+
 #[cfg(test)]
 pub(in crate::ui) fn visible_text(presentation: &AudioCharacterPresentation) -> String {
     match presentation {
@@ -185,13 +198,16 @@ pub(in crate::ui) fn visible_text(presentation: &AudioCharacterPresentation) -> 
     }
 }
 
+#[derive(Clone)]
 struct DimensionWidgets {
     value: gtk4::Label,
     confidence: gtk4::Label,
     bar: gtk4::ProgressBar,
 }
 
+#[derive(Clone)]
 pub(in crate::ui) struct AudioCharacterView {
+    root: gtk4::Box,
     stack: gtk4::Stack,
     status: adw::StatusPage,
     dimensions: Vec<DimensionWidgets>,
@@ -202,7 +218,15 @@ pub(in crate::ui) struct AudioCharacterView {
 
 impl AudioCharacterView {
     pub(in crate::ui) fn new() -> Self {
+        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        // a11y-semantics: role=group name=song-analysis state=focusable action=close-escape
+        root.set_focusable(true);
+        root.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+            strings::AUDIO_CHARACTER,
+        ))]);
         let stack = gtk4::Stack::new();
+        stack.set_vexpand(true);
+        root.append(&stack);
         let status = adw::StatusPage::new();
         status.set_icon_name(Some("audio-x-generic-symbolic"));
         stack.add_named(&status, Some(STATUS_PAGE));
@@ -258,6 +282,7 @@ impl AudioCharacterView {
             .build();
         stack.add_named(&scroller, Some(READY_PAGE));
         Self {
+            root,
             stack,
             status,
             dimensions: dimension_widgets,
@@ -267,8 +292,8 @@ impl AudioCharacterView {
         }
     }
 
-    pub(in crate::ui) fn widget(&self) -> &gtk4::Stack {
-        &self.stack
+    pub(in crate::ui) fn widget(&self) -> &gtk4::Box {
+        &self.root
     }
 
     pub(in crate::ui) fn render(&self, presentation: &AudioCharacterPresentation) {
@@ -319,6 +344,84 @@ impl AudioCharacterView {
         ));
         self.tempo
             .update_property(&[gtk4::accessible::Property::Label(&tempo.accessible_label)]);
+    }
+}
+
+pub(in crate::ui) struct AudioCharacterDialog {
+    dialog: adw::Dialog,
+    view: AudioCharacterView,
+    focus_guard:
+        std::rc::Rc<std::cell::RefCell<Option<crate::ui::transient_focus::TransientFocusGuard>>>,
+}
+
+impl AudioCharacterDialog {
+    pub(in crate::ui) fn new() -> Self {
+        let view = AudioCharacterView::new();
+        let title = gtk4::Label::new(Some(&strings::text(strings::AUDIO_CHARACTER)));
+        title.add_css_class("title");
+        let header = adw::HeaderBar::new();
+        header.set_title_widget(Some(&title));
+        let toolbar = adw::ToolbarView::new();
+        toolbar.add_top_bar(&header);
+        toolbar.set_content(Some(view.widget()));
+        let dialog = adw::Dialog::builder()
+            .child(&toolbar)
+            .content_width(420)
+            .content_height(560)
+            .build();
+        let focus_guard = std::rc::Rc::new(std::cell::RefCell::new(
+            None::<crate::ui::transient_focus::TransientFocusGuard>,
+        ));
+        let focus_on_close = focus_guard.clone();
+        dialog.connect_closed(move |_| {
+            if let Some(guard) = focus_on_close.borrow_mut().take() {
+                guard.restore();
+            }
+        });
+        let initial_focus = view.widget().downgrade();
+        dialog.connect_map(move |dialog| {
+            if let Some(initial_focus) = initial_focus.upgrade() {
+                dialog.set_focus(Some(&initial_focus));
+            }
+        });
+        let keys = gtk4::EventControllerKey::new();
+        let dialog_weak = dialog.downgrade();
+        keys.connect_key_pressed(move |_, key, _, modifiers| {
+            if !crate::ui::transient_focus::is_close_shortcut(key, modifiers) {
+                return gtk4::glib::Propagation::Proceed;
+            }
+            if let Some(dialog) = dialog_weak.upgrade() {
+                dialog.close();
+            }
+            gtk4::glib::Propagation::Stop
+        });
+        dialog.add_controller(keys);
+        Self {
+            dialog,
+            view,
+            focus_guard,
+        }
+    }
+
+    pub(in crate::ui) fn present(&self, parent: &adw::ApplicationWindow) {
+        *self.focus_guard.borrow_mut() = Some(
+            crate::ui::transient_focus::TransientFocusGuard::capture(parent),
+        );
+        self.dialog.present(Some(parent));
+    }
+
+    pub(in crate::ui) fn render(&self, presentation: &AudioCharacterPresentation) {
+        self.view.render(presentation);
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn dialog(&self) -> &adw::Dialog {
+        &self.dialog
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn shows_ready_for_test(&self) -> bool {
+        self.view.stack.visible_child_name().as_deref() == Some(READY_PAGE)
     }
 }
 
@@ -426,7 +529,7 @@ mod tests {
     }
 
     #[test]
-    fn ac_4_disabled_pending_failed_stale_and_empty_are_distinct() {
+    fn ac_9_dialog_states_disabled_pending_failed_stale_and_empty_are_distinct() {
         let cases = [
             (
                 presentation(false, Some(AnalysisState::Ready), None),
@@ -458,10 +561,25 @@ mod tests {
     }
 
     #[test]
-    fn ac_4_generation_rejects_a_previous_track_result() {
+    fn ac_9_dialog_generation_rejects_a_previous_track_result() {
         assert!(result_is_current(4, 4, Some(7), Some(7)));
         assert!(!result_is_current(3, 4, Some(7), Some(7)));
         assert!(!result_is_current(4, 4, Some(7), Some(8)));
+    }
+
+    #[test]
+    fn ac_9_visual_profile_never_reuses_a_previous_tracks_ready_values() {
+        let ready = presentation(true, Some(AnalysisState::Ready), Some(&ready(None)));
+        assert_eq!(visual_profile(&ready), Some([72, 43, 61, 88]));
+        for current in [
+            AudioCharacterPresentation::Empty,
+            AudioCharacterPresentation::Disabled,
+            AudioCharacterPresentation::Pending,
+            AudioCharacterPresentation::Failed,
+            AudioCharacterPresentation::Stale,
+        ] {
+            assert_eq!(visual_profile(&current), None);
+        }
     }
 
     #[test]
@@ -533,5 +651,32 @@ mod tests {
         }
         assert!(view.tempo.is_visible());
         assert_eq!(view.tempo_value.text(), "128 BPM");
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn ac_9_dialog_focus_returns_to_the_player_bar_invoker() {
+        gtk4::init().unwrap();
+        let window = adw::ApplicationWindow::builder().build();
+        let invoker = gtk4::Button::with_label("Song analysis");
+        window.set_content(Some(&invoker));
+        window.present();
+        assert!(invoker.grab_focus());
+
+        let dialog = AudioCharacterDialog::new();
+        dialog.present(&window);
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        assert_eq!(
+            dialog.dialog().focus(),
+            Some(dialog.view.widget().clone().upcast())
+        );
+
+        dialog.dialog().close();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        assert_eq!(
+            gtk4::prelude::GtkWindowExt::focus(&window),
+            Some(invoker.clone().upcast())
+        );
+        window.close();
     }
 }

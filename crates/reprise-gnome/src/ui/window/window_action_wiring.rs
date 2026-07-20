@@ -493,35 +493,6 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
         let conn = conn.clone();
         artist_view.set_on_go_to_folder(move |artist| open_artist_folder(&conn, &artist));
     }
-    if let Some(player) = &player {
-        // Task 9b: clicking the player-bar artist name deep-links to the
-        // Artists tab and selects the playing album artist (no history/back
-        // stack — out of scope). `player` is captured `Weak`: the closure is
-        // stored on the bar, itself owned by the controller, so a strong
-        // capture would cycle (same reason as `set_track_list_reload` above).
-        // The two stacks are cheap GObject clones; `select_artist` is a
-        // self-contained callable that holds no strong controller/view
-        // reference (see `ArtistMaster::select_callback`).
-        let player_weak = Rc::downgrade(player);
-        let content_stack = content_stack.clone();
-        let library_stack = library_stack.clone();
-        let select_artist = artist_view.select_artist_callback();
-        player.connect_artist_clicked(move || {
-            let Some(player) = player_weak.upgrade() else {
-                return;
-            };
-            let Some(artist) = player.current_track_album_artist() else {
-                return;
-            };
-            content_stack.set_visible_child_name("library");
-            // Switching to the Artists tab synchronously fires the stack's
-            // `visible-child-name` notify handler, which reloads the master
-            // (see `library_shell::wire_artist_view`), so the target row
-            // exists by the time `select_artist` runs on the next line.
-            library_stack.set_visible_child_name(super::library_shell::LIBRARY_VIEW_ARTISTS);
-            select_artist(&artist);
-        });
-    }
     {
         // `Weak`, not a strong `Rc`: mirrors the `sidebar_weak`/`track_list_
         // weak` pattern already used for `player.set_track_list_reload`

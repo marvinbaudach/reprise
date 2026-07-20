@@ -114,6 +114,7 @@ pub(in crate::ui) fn build(
     foreground_top_bar: Option<&gtk4::Widget>,
 ) -> PreferencesShell {
     let stack = adw::ViewStack::new();
+    stack.set_vexpand(true);
     for (id, page) in pages {
         page.add_css_class("reprise-preferences-page");
         stack.add_titled_with_icon(&page, Some(id.name()), &id.title(), id.icon_name());
@@ -220,6 +221,18 @@ mod tests {
         let css = css();
         assert!(css.contains(".reprise-preferences-page"));
         assert!(css.contains("margin: 12px"));
+    }
+
+    #[test]
+    fn set_5_preferences_short_pages_expand_from_the_top() {
+        let source = include_str!("preferences_window.rs");
+        let stack_expansion = ["stack.set_", "vexpand(true);"].concat();
+
+        assert_eq!(
+            source.matches(&stack_expansion).count(),
+            1,
+            "the page stack must fill the toolbar content height so short pages stay top-aligned"
+        );
     }
 
     #[test]
