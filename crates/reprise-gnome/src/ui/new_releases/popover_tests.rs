@@ -60,6 +60,28 @@ fn noop_show_album() -> release_row::OnShowAlbum {
 }
 
 #[test]
+fn periodic_fetch_due_is_true_only_when_enabled_idle_and_due() {
+    assert!(periodic_fetch_due(true, false, true));
+}
+
+#[test]
+fn periodic_fetch_due_is_false_while_disabled() {
+    assert!(!periodic_fetch_due(false, false, true));
+    assert!(!periodic_fetch_due(false, true, true));
+    assert!(!periodic_fetch_due(false, false, false));
+}
+
+#[test]
+fn periodic_fetch_due_is_false_while_a_fetch_is_already_running() {
+    assert!(!periodic_fetch_due(true, true, true));
+}
+
+#[test]
+fn periodic_fetch_due_is_false_when_not_yet_due() {
+    assert!(!periodic_fetch_due(true, false, false));
+}
+
+#[test]
 fn nr_7_disabled_module_hides_the_button_and_blocks_fetch() {
     assert_eq!(
         module_effect(false, true, true, false),
@@ -249,5 +271,49 @@ fn nr_9_opening_the_popover_clears_the_badge() {
     assert!(
         !state.badge.is_visible(),
         "opening stamps every listed release seen, so the badge must clear"
+    );
+}
+
+/// B5: the hourly background staleness timer's lifecycle is coupled to the
+/// enabled subscription, not to the popover being open. `fetch_completed` is
+/// set beforehand so `enabled_changed(true)` takes the `render` branch rather
+/// than `fetch_now` — this test only checks the timer field, not a real
+/// fetch, and must not spawn a worker thread that reaches the network.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn enabling_starts_the_refresh_timer_and_disabling_stops_it() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    if gtk4::init().is_err() {
+        return;
+    }
+    let conn = reprise_core::db::open(None).unwrap();
+    reprise_core::db::migrate(&conn).unwrap();
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::NEW_RELEASES_MODULE, true)
+        .unwrap();
+    reprise_core::library::settings::set_new_releases_fetch_completed(&conn, true).unwrap();
+    let conn = Rc::new(RefCell::new(conn));
+    let state = NewReleasesPopover::new(conn, PathBuf::from("unused.db"), noop_show_album());
+
+    assert!(
+        !state.has_active_timer(),
+        "no timer runs before the module is known to be enabled"
+    );
+
+    state.enabled_changed(true);
+
+    assert!(
+        state.has_active_timer(),
+        "enabling the module must start the hourly staleness timer"
+    );
+    assert!(
+        !state.fetching.get(),
+        "fetch_completed was set beforehand, so this must not have started a fetch"
+    );
+
+    state.enabled_changed(false);
+
+    assert!(
+        !state.has_active_timer(),
+        "disabling the module must stop the hourly staleness timer"
     );
 }
