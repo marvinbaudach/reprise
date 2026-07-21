@@ -1,251 +1,27 @@
 //! Audio-reactive song visuals for the Now Playing Audio Character page.
 //!
-//! The reactivity signals (`level`, `bass`, `beat`, `dynamics`) are derived in
-//! `reprise-core`'s `SpectrumAnalyzer`; this module only renders them. Motion is
-//! deliberately punchy and playful: bands ease up fast and fall back slowly so
-//! hits land, and discrete events (beats, drops) spawn transient ornaments via
-//! the [`impact`] overlay so you can *see* what the music is doing.
+//! All reactive state (eased spectrum bands, envelopes, water, dust, impact
+//! overlay, accent palette) and the per-mode geometry live in
+//! `reprise_core::visuals::VisualEngine` — a portable core the GUI never has
+//! to reimplement. This module only owns the widget shell (inline canvas,
+//! fullscreen overlay, transport chrome, auto-hide, mode picker) and turns
+//! the engine's [`reprise_core::visuals::Scene`] into pixels via [`render`].
 
-mod impact;
+mod render;
 
 use std::cell::{Cell, RefCell};
-use std::f64::consts::TAU;
 use std::rc::Rc;
 use std::time::Duration;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
-use reprise_core::playback::{PlaybackState, SpectrumFrame, SPECTRUM_BAND_COUNT};
+use reprise_core::playback::{PlaybackState, SpectrumFrame};
+use reprise_core::visuals::{VisualEngine, VisualMode};
 
+use crate::ui::style::buttons;
 use crate::ui::{motion, strings};
 
-use self::impact::ImpactState;
-
 const DRAW_HEIGHT: i32 = 220;
-const EDGE: f64 = 12.0;
-const NEUTRAL_PROFILE: [f32; SPECTRUM_BAND_COUNT] = [0.12; SPECTRUM_BAND_COUNT];
-
-/// Bands rise fast (attack) and fall slowly (release): the asymmetry is what
-/// makes transients punch instead of averaging away.
-const BAND_ATTACK: f32 = 0.55;
-const BAND_RELEASE: f32 = 0.14;
-const SCALAR_ATTACK: f32 = 0.6;
-const SCALAR_RELEASE: f32 = 0.16;
-/// Peak-hold markers fall slowly so the frequency picture stays legible.
-const PEAK_DECAY: f32 = 0.018;
-
-#[derive(Clone, Copy, Debug)]
-struct Point {
-    x: f64,
-    y: f64,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct Bar {
-    center: Point,
-    length: f64,
-    width: f64,
-    alpha: f64,
-}
-
-#[derive(Clone, Debug, Default)]
-struct Scene {
-    bars: Vec<Bar>,
-}
-
-impl Scene {
-    #[cfg(test)]
-    fn is_finite_and_bounded(&self, width: f64, height: f64) -> bool {
-        let point_ok = |point: Point| {
-            point.x.is_finite()
-                && point.y.is_finite()
-                && (0.0..=width).contains(&point.x)
-                && (0.0..=height).contains(&point.y)
-        };
-        self.bars.iter().all(|bar| {
-            point_ok(bar.center)
-                && bar.length.is_finite()
-                && bar.length >= 0.0
-                && bar.center.y - bar.length / 2.0 >= 0.0
-                && bar.center.y + bar.length / 2.0 <= height
-        })
-    }
-}
-
-/// The per-frame render inputs the bar builder needs: the smoothed bands plus
-/// their slow-falling peak-hold markers.
-struct SceneInput<'a> {
-    bands: &'a [f32; SPECTRUM_BAND_COUNT],
-    peaks: &'a [f32; SPECTRUM_BAND_COUNT],
-}
-
-fn scene(input: &SceneInput, width: f64, height: f64) -> Scene {
-    bars_scene(input, width.max(1.0), height.max(1.0))
-}
-
-fn bars_scene(input: &SceneInput, width: f64, height: f64) -> Scene {
-    let usable_width = width - EDGE * 2.0;
-    let usable_height = height - EDGE * 2.0;
-    let step = usable_width / SPECTRUM_BAND_COUNT as f64;
-    let bottom = height - EDGE;
-    let bar_width = (step * 0.62).clamp(2.0, 10.0);
-    let mut bars = Vec::with_capacity(SPECTRUM_BAND_COUNT * 2);
-    for index in 0..SPECTRUM_BAND_COUNT {
-        let x = EDGE + step * (index as f64 + 0.5);
-        let value = f64::from(input.bands[index]).clamp(0.0, 1.0);
-        let length = (value * usable_height * 0.92).max(2.0);
-        bars.push(Bar {
-            center: Point {
-                x,
-                y: bottom - length / 2.0,
-            },
-            length,
-            width: bar_width,
-            alpha: 0.45 + value * 0.55,
-        });
-        // Peak-hold tick.
-        let peak = f64::from(input.peaks[index]).clamp(0.0, 1.0);
-        let peak_y = (bottom - peak * usable_height * 0.92).clamp(EDGE, bottom);
-        bars.push(Bar {
-            center: Point { x, y: peak_y },
-            length: 3.0,
-            width: bar_width,
-            alpha: 0.85,
-        });
-    }
-    Scene {
-        bars,
-        ..Scene::default()
-    }
-}
-
-struct RenderState {
-    current: [f32; SPECTRUM_BAND_COUNT],
-    target: [f32; SPECTRUM_BAND_COUNT],
-    peaks: [f32; SPECTRUM_BAND_COUNT],
-    static_profile: [f32; SPECTRUM_BAND_COUNT],
-    level: f32,
-    level_target: f32,
-    playback: PlaybackState,
-    impact: ImpactState,
-}
-
-impl Default for RenderState {
-    fn default() -> Self {
-        Self {
-            current: [0.0; SPECTRUM_BAND_COUNT],
-            target: [0.0; SPECTRUM_BAND_COUNT],
-            peaks: [0.0; SPECTRUM_BAND_COUNT],
-            static_profile: NEUTRAL_PROFILE,
-            level: 0.0,
-            level_target: 0.0,
-            playback: PlaybackState::Stopped,
-            impact: ImpactState::new(),
-        }
-    }
-}
-
-impl RenderState {
-    fn scene_input(&self) -> SceneInput<'_> {
-        SceneInput {
-            bands: &self.current,
-            peaks: &self.peaks,
-        }
-    }
-}
-
-fn drawing_area(
-    state: &Rc<RefCell<RenderState>>,
-    height_request: i32,
-    css_class: &str,
-) -> gtk4::DrawingArea {
-    let area = gtk4::DrawingArea::builder()
-        .height_request(height_request)
-        .hexpand(true)
-        .accessible_role(gtk4::AccessibleRole::Img)
-        .build();
-    area.add_css_class(css_class);
-    area.update_property(&[gtk4::accessible::Property::Label(&strings::text(
-        strings::SONG_VISUALS_ACCESSIBLE,
-    ))]);
-    let state = state.clone();
-    area.set_draw_func(move |area, cr, width, height| {
-        let state = state.borrow();
-        let scene = scene(&state.scene_input(), f64::from(width), f64::from(height));
-        draw_scene(
-            cr,
-            &scene,
-            &state.impact,
-            f64::from(width),
-            f64::from(height),
-            f64::from(state.level),
-            accent_rgb(area),
-        );
-    });
-    area
-}
-
-fn register_area(
-    areas: &Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::DrawingArea>>>>,
-    area: &gtk4::DrawingArea,
-) {
-    let weak = gtk4::glib::WeakRef::new();
-    weak.set(Some(area));
-    areas.borrow_mut().push(weak);
-}
-
-fn queue_registered_areas(areas: &Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::DrawingArea>>>>) {
-    areas.borrow_mut().retain(|weak| {
-        let Some(area) = weak.upgrade() else {
-            return false;
-        };
-        area.queue_draw();
-        true
-    });
-}
-
-fn ease(current: f32, target: f32, attack: f32, release: f32) -> f32 {
-    let delta = target - current;
-    let coeff = if delta > 0.0 { attack } else { release };
-    current + delta * coeff
-}
-
-fn advance_state(state: &mut RenderState) -> bool {
-    let mut settled = true;
-    for index in 0..SPECTRUM_BAND_COUNT {
-        let next = ease(
-            state.current[index],
-            state.target[index],
-            BAND_ATTACK,
-            BAND_RELEASE,
-        );
-        settled &= (state.target[index] - next).abs() < 0.002;
-        state.current[index] = next;
-        // Peak-hold: instant rise, slow fall.
-        state.peaks[index] = state.peaks[index].max(next);
-        state.peaks[index] = (state.peaks[index] - PEAK_DECAY).max(next);
-    }
-    state.level = ease(
-        state.level,
-        state.level_target,
-        SCALAR_ATTACK,
-        SCALAR_RELEASE,
-    );
-    state.impact.advance();
-    if state.playback == PlaybackState::Playing {
-        // Playing never settles — the tick keeps feeding fresh frames in.
-        settled = false;
-    }
-    settled && state.impact.is_idle()
-}
-
-fn clear_static_profile(state: &mut RenderState, animations_enabled: bool) {
-    state.static_profile = NEUTRAL_PROFILE;
-    state.target = NEUTRAL_PROFILE;
-    if !animations_enabled {
-        state.current = NEUTRAL_PROFILE;
-    }
-}
 
 /// Transport actions the fullscreen overlay can trigger. Wired from the player
 /// controller; each is optional so the visualizer works standalone (tests).
@@ -257,12 +33,19 @@ struct Transport {
     next: Option<Rc<dyn Fn()>>,
 }
 
+/// Accessor for one [`Transport`] slot, used to wire a fullscreen button to
+/// its callback without repeating the field type at every call site.
+type TransportSlot = fn(&Transport) -> &Option<Rc<dyn Fn()>>;
+
 #[derive(Clone)]
 pub(in crate::ui) struct SongVisualizer {
     root: gtk4::Box,
     area: gtk4::DrawingArea,
     areas: Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::DrawingArea>>>>,
-    state: Rc<RefCell<RenderState>>,
+    engine: Rc<RefCell<VisualEngine>>,
+    /// Mirrored outside the engine (which has no getter) so `set_spectrum`
+    /// can gate on "are we actually playing" without borrowing it.
+    playback: Rc<Cell<PlaybackState>>,
     panel_active: Rc<Cell<bool>>,
     fullscreen_active: Rc<Cell<bool>>,
     fullscreen_window: Rc<RefCell<Option<gtk4::glib::WeakRef<gtk4::Window>>>>,
@@ -278,19 +61,21 @@ pub(in crate::ui) struct SongVisualizer {
 
 impl SongVisualizer {
     pub(in crate::ui) fn new() -> Self {
-        let state = Rc::new(RefCell::new(RenderState::default()));
+        let engine = Rc::new(RefCell::new(VisualEngine::new()));
         let areas = Rc::new(RefCell::new(Vec::new()));
-        let area = drawing_area(&state, DRAW_HEIGHT, "reprise-song-visual-canvas");
+        let area = drawing_area(&engine, DRAW_HEIGHT, "reprise-song-visual-canvas");
         register_area(&areas, &area);
 
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 10);
         root.add_css_class("reprise-song-visuals");
         root.append(&area);
+        root.append(&mode_controls(&engine, &areas));
         Self {
             root,
             area,
             areas,
-            state,
+            engine,
+            playback: Rc::new(Cell::new(PlaybackState::Stopped)),
             panel_active: Rc::new(Cell::new(false)),
             fullscreen_active: Rc::new(Cell::new(false)),
             fullscreen_window: Rc::new(RefCell::new(None)),
@@ -335,48 +120,20 @@ impl SongVisualizer {
     }
 
     pub(in crate::ui) fn set_profile(&self, dimensions: &[u8; 4]) {
-        let profile = std::array::from_fn(|index| {
-            let dimension = dimensions[index / 8] as f32 / 100.0;
-            (0.08 + dimension * 0.34).clamp(0.0, 1.0)
-        });
-        let mut state = self.state.borrow_mut();
-        state.static_profile = profile;
-        if state.playback != PlaybackState::Playing || !motion::animations_enabled() {
-            state.current = profile;
-            state.target = profile;
-        }
-        drop(state);
-        queue_registered_areas(&self.areas);
+        self.engine.borrow_mut().set_static_profile(dimensions);
+        self.settle_or_animate();
     }
 
     pub(in crate::ui) fn clear_profile(&self) {
-        let animations_enabled = motion::animations_enabled();
-        let mut state = self.state.borrow_mut();
-        clear_static_profile(&mut state, animations_enabled);
-        drop(state);
-        if animations_enabled {
-            self.ensure_tick();
-        } else {
-            queue_registered_areas(&self.areas);
-        }
+        self.engine.borrow_mut().clear_static_profile();
+        self.settle_or_animate();
     }
 
     pub(in crate::ui) fn set_spectrum(&self, frame: SpectrumFrame) {
-        if !motion::animations_enabled() {
+        if !motion::animations_enabled() || self.playback.get() != PlaybackState::Playing {
             return;
         }
-        let mut state = self.state.borrow_mut();
-        if state.playback != PlaybackState::Playing {
-            return;
-        }
-        state.target = *frame.bands();
-        state.level_target = frame.level();
-        let beat = frame.beat();
-        if beat.fired {
-            state.impact.spawn_beat(beat.strength);
-        }
-        state.impact.spawn_drop(frame.dynamics());
-        drop(state);
+        self.engine.borrow_mut().ingest(&frame);
         self.ensure_tick();
     }
 
@@ -388,17 +145,16 @@ impl SongVisualizer {
                 "media-playback-start-symbolic"
             });
         }
-        let mut state = self.state.borrow_mut();
-        state.playback = playback;
-        if playback != PlaybackState::Playing || !motion::animations_enabled() {
-            state.target = state.static_profile;
-            state.level_target = 0.0;
-            if !motion::animations_enabled() {
-                state.current = state.static_profile;
+        self.playback.set(playback);
+        let animations_enabled = motion::animations_enabled();
+        {
+            let mut engine = self.engine.borrow_mut();
+            engine.set_playing(playback == PlaybackState::Playing);
+            if !animations_enabled {
+                engine.snap_to_static();
             }
         }
-        drop(state);
-        if playback == PlaybackState::Playing || motion::animations_enabled() {
+        if playback == PlaybackState::Playing || animations_enabled {
             self.ensure_tick();
         } else {
             self.stop_tick();
@@ -437,7 +193,7 @@ impl SongVisualizer {
             return;
         }
 
-        let area = drawing_area(&self.state, -1, "reprise-song-visual-fullscreen-canvas");
+        let area = drawing_area(&self.engine, -1, "reprise-song-visual-fullscreen-canvas");
         area.set_vexpand(true);
         register_area(&self.areas, &area);
 
@@ -449,6 +205,7 @@ impl SongVisualizer {
         controls.set_margin_bottom(28);
         controls.add_css_class("reprise-song-visual-chrome");
         controls.append(&self.transport_controls());
+        controls.append(&mode_controls(&self.engine, &self.areas));
         let hint = gtk4::Label::new(Some(&strings::text(strings::SONG_VISUALS_FULLSCREEN_HINT)));
         hint.add_css_class("dim-label");
         controls.append(&hint);
@@ -553,7 +310,7 @@ impl SongVisualizer {
             strings::SONG_VISUALS_PREVIOUS,
             false,
         );
-        let play_pause_icon = if self.state.borrow().playback == PlaybackState::Playing {
+        let play_pause_icon = if self.playback.get() == PlaybackState::Playing {
             "media-playback-pause-symbolic"
         } else {
             "media-playback-start-symbolic"
@@ -570,8 +327,7 @@ impl SongVisualizer {
             false,
         );
 
-        let fire = |slot: fn(&Transport) -> &Option<Rc<dyn Fn()>>,
-                    transport: &Rc<RefCell<Transport>>| {
+        let fire = |slot: TransportSlot, transport: &Rc<RefCell<Transport>>| {
             let transport = transport.clone();
             move || {
                 if let Some(callback) = slot(&transport.borrow()) {
@@ -600,11 +356,22 @@ impl SongVisualizer {
         self.panel_active.get() || self.fullscreen_active.get()
     }
 
+    /// After a static-profile change: ease toward it over the tick loop when
+    /// motion is allowed, otherwise snap straight to rest and repaint once.
+    fn settle_or_animate(&self) {
+        if motion::animations_enabled() {
+            self.ensure_tick();
+        } else {
+            self.engine.borrow_mut().snap_to_static();
+            queue_registered_areas(&self.areas);
+        }
+    }
+
     fn ensure_tick(&self) {
         if !self.is_active() || !motion::animations_enabled() || self.tick_id.borrow().is_some() {
             return;
         }
-        let state = self.state.clone();
+        let engine = self.engine.clone();
         let areas = self.areas.clone();
         let panel_active = self.panel_active.clone();
         let fullscreen_active = self.fullscreen_active.clone();
@@ -614,9 +381,7 @@ impl SongVisualizer {
                 *slot.borrow_mut() = None;
                 return gtk4::glib::ControlFlow::Break;
             }
-            let mut state = state.borrow_mut();
-            let settled = advance_state(&mut state);
-            drop(state);
+            let settled = engine.borrow_mut().tick();
             queue_registered_areas(&areas);
             if settled {
                 *slot.borrow_mut() = None;
@@ -633,6 +398,116 @@ impl SongVisualizer {
             id.remove();
         }
     }
+}
+
+fn drawing_area(
+    engine: &Rc<RefCell<VisualEngine>>,
+    height_request: i32,
+    css_class: &str,
+) -> gtk4::DrawingArea {
+    let area = gtk4::DrawingArea::builder()
+        .height_request(height_request)
+        .hexpand(true)
+        .accessible_role(gtk4::AccessibleRole::Img)
+        .build();
+    area.add_css_class(css_class);
+    area.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+        strings::SONG_VISUALS_ACCESSIBLE,
+    ))]);
+    let engine = engine.clone();
+    area.set_draw_func(move |area, cr, width, height| {
+        let accent = accent_rgb(area);
+        engine.borrow_mut().set_accent(accent);
+        let scene = engine.borrow().scene(width as f32, height as f32);
+        render::draw_scene(cr, &scene);
+    });
+    area
+}
+
+fn register_area(
+    areas: &Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::DrawingArea>>>>,
+    area: &gtk4::DrawingArea,
+) {
+    let weak = gtk4::glib::WeakRef::new();
+    weak.set(Some(area));
+    areas.borrow_mut().push(weak);
+}
+
+fn queue_registered_areas(areas: &Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::DrawingArea>>>>) {
+    areas.borrow_mut().retain(|weak| {
+        let Some(area) = weak.upgrade() else {
+            return false;
+        };
+        area.queue_draw();
+        true
+    });
+}
+
+fn accent_rgb(area: &gtk4::DrawingArea) -> (f32, f32, f32) {
+    let color = area.color();
+    (color.red(), color.green(), color.blue())
+}
+
+/// The picker's user-facing label for one visual mode.
+fn mode_label(mode: VisualMode) -> &'static str {
+    match mode {
+        VisualMode::Grid => strings::SONG_VISUALS_MODE_GRID,
+        VisualMode::Bars => strings::SONG_VISUALS_MODE_BARS,
+        VisualMode::Rings => strings::SONG_VISUALS_MODE_RINGS,
+        VisualMode::Flow => strings::SONG_VISUALS_MODE_FLOW,
+        VisualMode::Pulse => strings::SONG_VISUALS_MODE_PULSE,
+        VisualMode::Particles => strings::SONG_VISUALS_MODE_PARTICLES,
+        VisualMode::Neon => strings::SONG_VISUALS_MODE_NEON,
+        VisualMode::Tunnel => strings::SONG_VISUALS_MODE_TUNNEL,
+    }
+}
+
+/// Builds the grouped mode-toggle row: one [`gtk4::ToggleButton`] per
+/// [`VisualMode`], wrapped in a [`gtk4::FlowBox`] so it reflows at narrow
+/// widths instead of overflowing. Shared by the inline canvas and the
+/// fullscreen overlay — each call builds a fresh, independent row that reads
+/// the engine's current mode at construction time.
+fn mode_controls(
+    engine: &Rc<RefCell<VisualEngine>>,
+    areas: &Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::DrawingArea>>>>,
+) -> gtk4::FlowBox {
+    let flow = gtk4::FlowBox::builder()
+        .selection_mode(gtk4::SelectionMode::None)
+        .max_children_per_line(4)
+        .column_spacing(6)
+        .row_spacing(6)
+        .halign(gtk4::Align::Center)
+        .build();
+    flow.add_css_class("reprise-song-visual-modes");
+
+    let current_mode = engine.borrow().mode();
+    let mut group_leader: Option<gtk4::ToggleButton> = None;
+    for mode in VisualMode::ALL {
+        let button = gtk4::ToggleButton::builder()
+            .label(strings::text(mode_label(mode)))
+            .active(mode == current_mode)
+            .build();
+        button.set_widget_name(mode.id());
+        button.add_css_class("flat");
+        buttons::arm(&button, buttons::TOGGLE_CLASS);
+        match &group_leader {
+            Some(leader) => button.set_group(Some(leader)),
+            None => group_leader = Some(button.clone()),
+        }
+
+        let engine = engine.clone();
+        let areas = areas.clone();
+        button.connect_toggled(move |button| {
+            if !button.is_active() {
+                return;
+            }
+            engine.borrow_mut().set_mode(mode);
+            queue_registered_areas(&areas);
+        });
+
+        flow.append(&button);
+    }
+    flow
 }
 
 /// Fades the fullscreen chrome (header + transport) out after the pointer sits
@@ -691,107 +566,6 @@ fn install_chrome_autohide(
     reveal();
 }
 
-fn accent_rgb(area: &gtk4::DrawingArea) -> (f64, f64, f64) {
-    let color = area.color();
-    (
-        f64::from(color.red()),
-        f64::from(color.green()),
-        f64::from(color.blue()),
-    )
-}
-
-/// Brightens the accent toward white by `boost` (beats lift the color, not just
-/// the size), leaving the accent identity intact at rest.
-fn lift(rgb: (f64, f64, f64), boost: f64) -> (f64, f64, f64) {
-    let boost = boost.clamp(0.0, 1.0) * 0.5;
-    (
-        rgb.0 + (1.0 - rgb.0) * boost,
-        rgb.1 + (1.0 - rgb.1) * boost,
-        rgb.2 + (1.0 - rgb.2) * boost,
-    )
-}
-
-fn draw_scene(
-    cr: &gtk4::cairo::Context,
-    scene: &Scene,
-    impact: &ImpactState,
-    width: f64,
-    height: f64,
-    level: f64,
-    rgb: (f64, f64, f64),
-) {
-    let boosted = lift(rgb, impact.accent_boost());
-    // Louder passages read brighter; quiet ones contract.
-    let alpha_mult = 1.0 + level * 0.4;
-    let center = Point {
-        x: width / 2.0,
-        y: height / 2.0,
-    };
-    let min = width.min(height);
-
-    draw_flash(cr, rgb, impact.flash(), &center, min);
-
-    cr.set_line_cap(gtk4::cairo::LineCap::Round);
-    cr.set_line_join(gtk4::cairo::LineJoin::Round);
-    let paint = |alpha: f64| (alpha * alpha_mult).clamp(0.0, 1.0);
-    for bar in &scene.bars {
-        cr.set_source_rgba(boosted.0, boosted.1, boosted.2, paint(bar.alpha));
-        cr.set_line_width(bar.width);
-        cr.move_to(bar.center.x, bar.center.y - bar.length / 2.0);
-        cr.line_to(bar.center.x, bar.center.y + bar.length / 2.0);
-        let _ = cr.stroke();
-    }
-
-    draw_impacts(cr, boosted, impact, &center, min);
-}
-
-fn draw_flash(
-    cr: &gtk4::cairo::Context,
-    rgb: (f64, f64, f64),
-    flash: f64,
-    center: &Point,
-    min: f64,
-) {
-    if flash <= 0.0 {
-        return;
-    }
-    let radius = min * 1.2;
-    let gradient =
-        gtk4::cairo::RadialGradient::new(center.x, center.y, 0.0, center.x, center.y, radius);
-    gradient.add_color_stop_rgba(0.0, rgb.0, rgb.1, rgb.2, (flash * 0.15).clamp(0.0, 0.2));
-    gradient.add_color_stop_rgba(1.0, rgb.0, rgb.1, rgb.2, 0.0);
-    if cr.set_source(&gradient).is_ok() {
-        let _ = cr.paint();
-    }
-}
-
-fn draw_impacts(
-    cr: &gtk4::cairo::Context,
-    rgb: (f64, f64, f64),
-    impact: &ImpactState,
-    center: &Point,
-    min: f64,
-) {
-    let base_r = min * 0.1;
-    let reach = min * 0.55;
-    for wave in impact.shockwaves() {
-        let radius = base_r + wave.progress * reach;
-        let alpha = ((1.0 - wave.progress) * wave.strength * 0.55).clamp(0.0, 1.0);
-        cr.set_source_rgba(rgb.0, rgb.1, rgb.2, alpha);
-        cr.set_line_width(1.0 + wave.strength * 2.5);
-        cr.arc(center.x, center.y, radius, 0.0, TAU);
-        let _ = cr.stroke();
-    }
-    for spark in impact.particles() {
-        let x = center.x + spark.angle.cos() * spark.dist;
-        let y = center.y + spark.angle.sin() * spark.dist;
-        let radius = 1.4 + spark.life_frac * 2.6;
-        cr.set_source_rgba(rgb.0, rgb.1, rgb.2, spark.life_frac.clamp(0.0, 1.0));
-        cr.arc(x, y, radius, 0.0, TAU);
-        let _ = cr.fill();
-    }
-}
-
 pub(in crate::ui) fn css() -> String {
     ".reprise-song-visuals { margin: 0 18px 12px; }\n\
      .reprise-song-visual-canvas {\
@@ -800,6 +574,7 @@ pub(in crate::ui) fn css() -> String {
        border: 1px solid alpha(@reprise_player_accent, 0.14);\
        border-radius: 24px;\
      }\n\
+     .reprise-song-visual-modes { margin-top: 2px; }\n\
      window.reprise-song-visual-fullscreen { background: #090b0c; }\n\
      .reprise-song-visual-chrome {\
        transition: opacity 260ms ease-out;\
