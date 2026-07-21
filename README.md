@@ -28,6 +28,9 @@ explicit Linux platform contracts.
 | `reprise-core` | Library, SQLite queries, queue semantics, scanning, playlists, settings, and platform contracts | GTK, libadwaita, GStreamer, zbus, or GLib dependencies |
 | `reprise-platform-linux` | GStreamer playback and analysis, MPRIS/D-Bus, MTP, Trash, and other Linux adapters | Product UI or duplicated domain rules |
 | `reprise-gnome` | GTK4/libadwaita presentation, interaction state, accessibility, and desktop composition | Productive SQL, blocking HTTP, or direct GStreamer orchestration |
+| `reprise-cli` | Headless CLI over core facades: playlists, search, library summary, scan, and instrumental jobs | Any workspace crate beyond reprise-core (bar the feature-gated mpris/worker exceptions) or productive SQL |
+| `reprise-mcp` | Local stdio MCP server exposing read-only library resources and capability-gated create tools to agents | Any workspace crate beyond reprise-core, productive SQL, or playback/queue/tag/delete tools |
+| `reprise-stems` | Portable stem-separation backend (ML inference) for the experimental instrumental jobs | Any workspace crate beyond reprise-core, or GUI/engine coupling |
 
 The shared engine owns behavior and data; platform crates implement narrow
 contracts, while each frontend remains native. `scripts/check-architecture.sh`
