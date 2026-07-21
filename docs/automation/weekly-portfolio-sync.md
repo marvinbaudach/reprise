@@ -16,13 +16,27 @@ history completely before editing. Read Bewerbung's `CLAUDE.md` completely befor
 Treat each repository's committed `main` snapshot as ground truth; never use remembered figures
 or changes from another working tree.
 
-## Reprise showroom
+## Reprise showroom and developer README
 
-Review the README, `docs/showcase.md`, and the SVGs under `docs/assets/`. Update them only where
-the committed code, accepted benchmark evidence, or completed ledger entries have materially
-changed. Keep the presentation concise, precise, visually consistent, and suitable for a senior
-engineering portfolio. Every claim must map to code, a test, an accepted benchmark report, or the
-progress ledger.
+Review `docs/showcase.md` and the SVGs under `docs/assets/` as the portfolio evidence source.
+Update them only where the committed code, accepted benchmark evidence, or completed ledger
+entries have materially changed. Keep the presentation concise, precise, visually consistent,
+and suitable for a senior engineering portfolio. Every claim must map to code, a test, an
+accepted benchmark report, or the progress ledger.
+
+Maintain `README.md` and `README.de.md` separately as the bilingual developer README. Keep each a
+technical entry point to the Reprise repository. Do not mirror the portfolio narrative, CV metrics, exhaustive
+feature inventory, or speculative roadmap there. Keep both files within their tested length budget,
+use one architecture visual, explain the three crate boundaries, provide current build and gate
+commands, and route deeper evidence to `TESTING.md`, `docs/ux-rules.md`, and `docs/showcase.md`.
+Prefer a table only for exact repeated mappings such as crate ownership; use prose or short lists
+for everything else. A changing test count, source-line total, or benchmark table belongs in the
+showcase evidence, not in the developer entry point.
+
+Performance evidence defaults to a compact comparison table that names the workload, before and
+after values, effect, and material trade-off. Use a visual only when it explains a relationship the
+table cannot, such as `full scan + temporary sort → partial index scan`; do not use a large KPI-card
+graphic that merely repeats the same figures with less context.
 
 Do not rerun host-sensitive performance benchmarks as part of this weekly task. Change benchmark
 figures only when a newer accepted report is committed on `main`, and retain its workload,
@@ -35,6 +49,12 @@ Run `scripts/reprise-stats.sh {{REPRISE_WORKTREE}}` from the Bewerbung worktree.
 production and test code figures everywhere required by `CLAUDE.md`, including the CV and shared
 profile contracts. Recount the top-level merge-readiness gates from the committed Reprise script
 when that script changed. Keep the CV and showroom terminology semantically aligned.
+
+Review the CV Reprise project summary whenever the architecture or strongest shipped engineering
+evidence changes materially. Keep it to a compact, factual system description rather than a feature
+inventory or speculative roadmap. Prefer stable architecture evidence over counters that drift every
+week, distinguish shipped capabilities from targets, and rebuild the versioned PDFs after any CV
+change.
 
 Build and test the Bewerbung documents exactly as its repository instructions require. Do not
 alter its established visual design or attempt to repair the documented PDF-viewer colour

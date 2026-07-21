@@ -14,10 +14,15 @@ It records communication and visual decisions, not product behavior.
 
 ## Visual system
 
-- Use repository-native SVG for architecture, performance, and other
-  data-oriented visuals. Fixed layouts are preferred over Mermaid for primary
-  showcase graphics because GitHub rendering must not clip text or reroute
-  edges unpredictably.
+- Use repository-native SVG for architecture and other relationship-oriented
+  visuals. Fixed layouts are preferred over Mermaid for primary showcase
+  graphics because GitHub rendering must not clip text or reroute edges
+  unpredictably.
+- Default performance evidence to a compact comparison table that keeps the
+  workload, before/after result, method, limitation, and trade-off together.
+  A performance visual earns its space only when it explains causality, such
+  as a query-plan transition; enlarged KPI cards are less informative than the
+  table they repeat.
 - Keep a consistent 1440×900 canvas, dark neutral background, Reprise blue for
   product/frontend context, mint green for verified outcomes, and restrained
   amber only for costs or trade-offs.
@@ -45,8 +50,9 @@ It records communication and visual decisions, not product behavior.
 
 - `docs/assets/reprise-architecture.svg` — current three-crate architecture,
   dependency direction, and enforced core purity.
-- `docs/assets/reprise-performance.svg` — accepted 100,000-track query result,
-  deterministic cache bounds, queue-memory evidence, and index trade-off.
+- `docs/assets/reprise-performance.svg` — causal before/change/after view of
+  the accepted 100,000-track comparison: query-plan problem, partial-index
+  intervention, both measured read-path effects, and the storage trade-off.
 
 The performance figures originate from the accepted same-host release pair on
 `feat/performance-optimizations`: baseline `ddaa3f3`, index implementation
