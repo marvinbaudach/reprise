@@ -22,15 +22,17 @@ use super::water::WaterGrid;
 /// Bands rise fast (attack) and fall slowly (release): the asymmetry is what
 /// makes transients punch instead of averaging away.
 const BAND_ATTACK: f32 = 0.9;
-/// Per-band release floor: band 0 (bass) lingers, high bands sparkle.
-const BAND_RELEASE_MIN: f32 = 0.07;
-const BAND_RELEASE_SPAN: f32 = 0.08;
+/// Per-band release floor: band 0 (bass) lingers, high bands sparkle. Snappier
+/// than a gentle gauge so bands track fine musical detail instead of gliding
+/// smoothly between values.
+const BAND_RELEASE_MIN: f32 = 0.13;
+const BAND_RELEASE_SPAN: f32 = 0.15;
 const SCALAR_ATTACK: f32 = 0.9;
-const SCALAR_RELEASE: f32 = 0.16;
+const SCALAR_RELEASE: f32 = 0.22;
 /// Peak-hold markers fall slowly so the frequency picture stays legible.
-const PEAK_DECAY: f32 = 0.018;
+const PEAK_DECAY: f32 = 0.02;
 /// `mid`/`high` envelopes: instant rise, slow release, same shape as `kick`.
-const MID_HIGH_RELEASE: f32 = 0.16;
+const MID_HIGH_RELEASE: f32 = 0.22;
 /// Below this an eased value reads as "arrived" for settle detection.
 const SETTLE_EPSILON: f32 = 0.002;
 /// Fixed physics step: the tick loop always advances by this much, never by

@@ -41,18 +41,20 @@ impl WaterGrid {
         }
     }
 
-    /// One 60 Hz step: far row driven by the mirrored display bands, spring
-    /// coupling (30), restoring force (4.5), damping `exp(-dt·1.7)`, `h`
-    /// clamped to `-0.9..=2.2`.
+    /// One 60 Hz step: far row driven hard by the mirrored display bands
+    /// (fast, so fine musical detail reaches the surface), spring coupling
+    /// (42), a light restoring force (2.6) and light damping `exp(-dt·1.15)`
+    /// so ripples travel and linger instead of reading as viscous sludge, `h`
+    /// clamped to `-1.1..=3.0`.
     pub fn advance(&mut self, bands: &[f32; SPECTRUM_BAND_COUNT]) {
         let half = (WATER_COLS - 1) as f32 / 2.0;
         for (col, drive_cell) in self.v.iter_mut().take(WATER_COLS).enumerate() {
             let f = (col as f32 - half).abs() / half;
             let drive = bands[((f * 0.775 * (SPECTRUM_BAND_COUNT - 1) as f32) as usize)
                 .min(SPECTRUM_BAND_COUNT - 1)];
-            *drive_cell += (drive * 1.5 - self.h[col]) * DT * 26.0;
+            *drive_cell += (drive * 1.9 - self.h[col]) * DT * 34.0;
         }
-        let damp = (-DT * 1.7).exp();
+        let damp = (-DT * 1.15).exp();
         for row in 0..WATER_ROWS {
             for col in 0..WATER_COLS {
                 let i = row * WATER_COLS + col;
@@ -73,12 +75,12 @@ impl WaterGrid {
                     self.h[i]
                 };
                 self.v[i] +=
-                    ((up + down + left + right - 4.0 * self.h[i]) * 30.0 - self.h[i] * 4.5) * DT;
+                    ((up + down + left + right - 4.0 * self.h[i]) * 42.0 - self.h[i] * 2.6) * DT;
                 self.v[i] *= damp;
             }
         }
         for (height, velocity) in self.h.iter_mut().zip(self.v.iter()) {
-            *height = (*height + velocity * DT).clamp(-0.9, 2.2);
+            *height = (*height + velocity * DT).clamp(-1.1, 3.0);
         }
     }
 
@@ -145,7 +147,7 @@ mod tests {
             for row in 0..WATER_ROWS {
                 for col in 0..WATER_COLS {
                     let height = water.height(row, col);
-                    assert!(height.is_finite() && (-0.9..=2.2).contains(&height));
+                    assert!(height.is_finite() && (-1.1..=3.0).contains(&height));
                     peak = peak.max(height);
                 }
             }
