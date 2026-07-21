@@ -27,6 +27,7 @@ use super::stats_highlights::{StatsHighlights, TopGenre};
 use super::stats_metadata_links::{self, MetadataCallback, StatsMetadataTarget};
 use super::stats_ribbon::StatsRibbon;
 use super::stats_spotlight::StatsSpotlight;
+use super::stats_view_widgets::{card, clear, label, section};
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::strings;
 
@@ -762,34 +763,6 @@ fn metric(track: &TopTrack, sort_by: SortBy) -> i64 {
     match sort_by {
         SortBy::Plays => track.play_count,
         SortBy::Time => track.total_ms,
-    }
-}
-
-fn section(title: &str, content: &impl IsA<gtk4::Widget>) -> gtk4::Box {
-    let root = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
-    root.append(&label(title, "stats-section-title"));
-    root.append(content);
-    root
-}
-
-fn card(content: &impl IsA<gtk4::Widget>) -> gtk4::Box {
-    let card = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    card.add_css_class("stats-card");
-    card.append(content);
-    card
-}
-
-fn label(text: &str, class: &str) -> gtk4::Label {
-    let label = gtk4::Label::new(Some(text));
-    label.add_css_class(class);
-    label.set_xalign(0.0);
-    label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-    label
-}
-
-fn clear(container: &gtk4::Box) {
-    while let Some(child) = container.first_child() {
-        container.remove(&child);
     }
 }
 

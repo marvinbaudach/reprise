@@ -11,5 +11,6 @@ pub(in crate::ui) mod stats_ribbon;
 pub(in crate::ui) mod stats_ribbon_math;
 pub(in crate::ui) mod stats_spotlight;
 pub(crate) mod stats_view;
+pub(in crate::ui) mod stats_view_widgets;
 #[allow(unused_imports)]
 use super::*;
