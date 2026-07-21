@@ -1,4 +1,12 @@
 //! Audio-reactive song visuals for the Now Playing Audio Character page.
+//!
+//! The reactivity signals (`level`, `bass`, `beat`, `dynamics`) are derived in
+//! `reprise-core`'s `SpectrumAnalyzer`; this module only renders them. Motion is
+//! deliberately punchy and playful: bands ease up fast and fall back slowly so
+//! hits land, and discrete events (beats, drops) spawn transient ornaments via
+//! the [`impact`] overlay so you can *see* what the music is doing.
+
+mod impact;
 
 use std::cell::{Cell, RefCell};
 use std::f64::consts::TAU;
@@ -10,9 +18,20 @@ use reprise_core::playback::{PlaybackState, SpectrumFrame, SPECTRUM_BAND_COUNT};
 
 use crate::ui::{motion, strings};
 
+use self::impact::ImpactState;
+
 const DRAW_HEIGHT: i32 = 220;
 const EDGE: f64 = 12.0;
 const NEUTRAL_PROFILE: [f32; SPECTRUM_BAND_COUNT] = [0.12; SPECTRUM_BAND_COUNT];
+
+/// Bands rise fast (attack) and fall slowly (release): the asymmetry is what
+/// makes transients punch instead of averaging away.
+const BAND_ATTACK: f32 = 0.55;
+const BAND_RELEASE: f32 = 0.14;
+const SCALAR_ATTACK: f32 = 0.6;
+const SCALAR_RELEASE: f32 = 0.16;
+/// Peak-hold markers (Bars mode) fall slowly so the frequency picture is legible.
+const PEAK_DECAY: f32 = 0.018;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(in crate::ui) enum VisualPreset {
@@ -20,16 +39,18 @@ pub(in crate::ui) enum VisualPreset {
     Rings,
     Flow,
     Pulse,
+    Bars,
 }
 
 impl VisualPreset {
-    pub(in crate::ui) const ALL: [Self; 3] = [Self::Rings, Self::Flow, Self::Pulse];
+    pub(in crate::ui) const ALL: [Self; 4] = [Self::Rings, Self::Flow, Self::Pulse, Self::Bars];
 
     fn id(self) -> &'static str {
         match self {
             Self::Rings => "rings",
             Self::Flow => "flow",
             Self::Pulse => "pulse",
+            Self::Bars => "bars",
         }
     }
 
@@ -38,6 +59,7 @@ impl VisualPreset {
             Self::Rings => strings::SONG_VISUALS_RINGS,
             Self::Flow => strings::SONG_VISUALS_FLOW,
             Self::Pulse => strings::SONG_VISUALS_PULSE,
+            Self::Bars => strings::SONG_VISUALS_BARS,
         }
     }
 }
@@ -88,10 +110,7 @@ impl Scene {
                 && (0.0..=height).contains(&point.y)
         };
         self.circles.iter().all(|circle| {
-            point_ok(circle.center)
-                && circle.radius.is_finite()
-                && circle.radius >= 0.0
-                && circle.radius <= width.min(height) / 2.0
+            point_ok(circle.center) && circle.radius.is_finite() && circle.radius >= 0.0
         }) && self.bars.iter().all(|bar| {
             point_ok(bar.center)
                 && bar.length.is_finite()
@@ -106,129 +125,66 @@ impl Scene {
     }
 }
 
+/// The per-frame render inputs a scene builder needs: smoothed bands plus the
+/// derived envelopes and the ambient-drift phase.
+struct SceneInput<'a> {
+    bands: &'a [f32; SPECTRUM_BAND_COUNT],
+    peaks: &'a [f32; SPECTRUM_BAND_COUNT],
+    level: f32,
+    bass: f32,
+    phase: f64,
+}
+
 fn average(bands: &[f32; SPECTRUM_BAND_COUNT], range: std::ops::Range<usize>) -> f64 {
     let count = range.len().max(1) as f64;
     range.map(|index| f64::from(bands[index])).sum::<f64>() / count
 }
 
-fn scene(
-    preset: VisualPreset,
-    bands: &[f32; SPECTRUM_BAND_COUNT],
-    width: f64,
-    height: f64,
-    phase: f64,
-) -> Scene {
+fn scene(preset: VisualPreset, input: &SceneInput, width: f64, height: f64) -> Scene {
     let width = width.max(1.0);
     let height = height.max(1.0);
     match preset {
-        VisualPreset::Rings => rings_scene(bands, width, height, phase),
-        VisualPreset::Flow => flow_scene(bands, width, height, phase),
-        VisualPreset::Pulse => pulse_scene(bands, width, height, phase),
+        VisualPreset::Rings => rings_scene(input, width, height),
+        VisualPreset::Flow => flow_scene(input, width, height),
+        VisualPreset::Pulse => pulse_scene(input, width, height),
+        VisualPreset::Bars => bars_scene(input, width, height),
     }
 }
 
-fn rings_scene(bands: &[f32; SPECTRUM_BAND_COUNT], width: f64, height: f64, phase: f64) -> Scene {
+fn rings_scene(input: &SceneInput, width: f64, height: f64) -> Scene {
     let center = Point {
         x: width / 2.0,
         y: height / 2.0,
     };
-    let low = average(bands, 0..5);
-    let mid = average(bands, 5..11);
-    let high = average(bands, 11..16);
-    let base = width.min(height) * 0.16;
-    let energies = [low, mid, high, (low + mid + high) / 3.0];
+    let min = width.min(height);
+    let low = average(input.bands, 0..8);
+    let mid = average(input.bands, 8..20);
+    let high = average(input.bands, 20..SPECTRUM_BAND_COUNT);
+    // The whole ring stack breathes with the kick.
+    let base = min * (0.11 + f64::from(input.bass) * 0.12);
+    let energies = [low, mid, high];
     let circles = energies
         .into_iter()
         .enumerate()
         .map(|(index, energy)| Circle {
             center,
-            radius: base + index as f64 * width.min(height) * 0.075 + energy * 8.0,
-            width: if index == 0 { 2.8 } else { 1.3 },
-            alpha: 0.32 + energy * 0.5,
+            radius: base + index as f64 * min * 0.09 + energy * min * 0.10,
+            width: if index == 0 { 3.0 } else { 1.6 },
+            alpha: 0.30 + energy * 0.6,
         })
         .collect();
-    let step = (width - EDGE * 2.0) / SPECTRUM_BAND_COUNT as f64;
-    let bars = bands
+    // Bands as radial spokes, slowly rotating. Capped to the canvas half so the
+    // base composition stays inside the frame.
+    let inner = base + 4.0;
+    let max_reach = min * 0.5 - 3.0;
+    let strokes = input
+        .bands
         .iter()
         .enumerate()
         .map(|(index, band)| {
             let energy = f64::from(*band);
-            let shimmer = (phase * TAU + index as f64 * 0.63).sin() * energy * 3.0;
-            Bar {
-                center: Point {
-                    x: EDGE + step * (index as f64 + 0.5),
-                    y: center.y,
-                },
-                length: 18.0 + energy * height * 0.34 + shimmer,
-                width: (step * 0.48).clamp(3.0, 8.0),
-                alpha: 0.46 + energy * 0.54,
-            }
-        })
-        .collect();
-    Scene {
-        circles,
-        bars,
-        strokes: Vec::new(),
-    }
-}
-
-fn flow_scene(bands: &[f32; SPECTRUM_BAND_COUNT], width: f64, height: f64, phase: f64) -> Scene {
-    let usable = width - EDGE * 2.0;
-    let strokes = (0..3)
-        .map(|trail| {
-            let points = (0..=SPECTRUM_BAND_COUNT)
-                .map(|index| {
-                    let band = f64::from(bands[index.min(SPECTRUM_BAND_COUNT - 1)]);
-                    let x = EDGE + usable * index as f64 / SPECTRUM_BAND_COUNT as f64;
-                    let wave = (index as f64 * 0.72 + phase * TAU + trail as f64 * 0.9).sin();
-                    let amplitude = 12.0 + band * height * (0.23 - trail as f64 * 0.035);
-                    Point {
-                        x,
-                        y: (height / 2.0 + wave * amplitude).clamp(EDGE, height - EDGE),
-                    }
-                })
-                .collect();
-            Stroke {
-                points,
-                width: 3.2 - trail as f64 * 0.7,
-                alpha: 0.78 - trail as f64 * 0.2,
-            }
-        })
-        .collect();
-    Scene {
-        strokes,
-        ..Scene::default()
-    }
-}
-
-fn pulse_scene(bands: &[f32; SPECTRUM_BAND_COUNT], width: f64, height: f64, phase: f64) -> Scene {
-    let center = Point {
-        x: width / 2.0,
-        y: height / 2.0,
-    };
-    let energy = average(bands, 0..SPECTRUM_BAND_COUNT);
-    let base = width.min(height) * (0.16 + energy * 0.035);
-    let circles = vec![
-        Circle {
-            center,
-            radius: base,
-            width: 2.6,
-            alpha: 0.85,
-        },
-        Circle {
-            center,
-            radius: base + 20.0 + energy * 10.0,
-            width: 1.2,
-            alpha: 0.34,
-        },
-    ];
-    let strokes = bands
-        .iter()
-        .enumerate()
-        .map(|(index, band)| {
-            let angle = index as f64 / SPECTRUM_BAND_COUNT as f64 * TAU + phase * 0.35;
-            let inner = base + 7.0;
-            let outer = inner + 10.0 + f64::from(*band) * width.min(height) * 0.2;
+            let angle = index as f64 / SPECTRUM_BAND_COUNT as f64 * TAU + input.phase * 0.15;
+            let outer = (inner + 8.0 + energy * min * 0.34).min(max_reach);
             Stroke {
                 points: vec![
                     Point {
@@ -240,8 +196,8 @@ fn pulse_scene(bands: &[f32; SPECTRUM_BAND_COUNT], width: f64, height: f64, phas
                         y: center.y + angle.sin() * outer,
                     },
                 ],
-                width: 2.0 + f64::from(*band) * 3.0,
-                alpha: 0.42 + f64::from(*band) * 0.58,
+                width: 2.0 + energy * 3.0,
+                alpha: 0.4 + energy * 0.6,
             }
         })
         .collect();
@@ -252,13 +208,145 @@ fn pulse_scene(bands: &[f32; SPECTRUM_BAND_COUNT], width: f64, height: f64, phas
     }
 }
 
+fn flow_scene(input: &SceneInput, width: f64, height: f64) -> Scene {
+    let usable = width - EDGE * 2.0;
+    let steps = SPECTRUM_BAND_COUNT;
+    let level = f64::from(input.level);
+    let strokes = (0..3)
+        .map(|trail| {
+            let points = (0..=steps)
+                .map(|index| {
+                    let band = f64::from(input.bands[index.min(steps - 1)]);
+                    let x = EDGE + usable * index as f64 / steps as f64;
+                    let wave = (index as f64 * 0.55 + input.phase * TAU + trail as f64 * 0.9).sin();
+                    // Amplitude tracks overall level; per-band energy sharpens
+                    // the crests so onsets tear through the trail.
+                    let amplitude = 8.0
+                        + level * height * (0.16 - trail as f64 * 0.03)
+                        + band * height * (0.22 - trail as f64 * 0.04);
+                    Point {
+                        x,
+                        y: (height / 2.0 + wave * amplitude).clamp(EDGE, height - EDGE),
+                    }
+                })
+                .collect();
+            Stroke {
+                points,
+                width: 3.4 - trail as f64 * 0.7,
+                alpha: 0.82 - trail as f64 * 0.2,
+            }
+        })
+        .collect();
+    Scene {
+        strokes,
+        ..Scene::default()
+    }
+}
+
+fn pulse_scene(input: &SceneInput, width: f64, height: f64) -> Scene {
+    let center = Point {
+        x: width / 2.0,
+        y: height / 2.0,
+    };
+    let min = width.min(height);
+    // Core punches on the kick.
+    let base = min * (0.11 + f64::from(input.bass) * 0.16);
+    let circles = vec![
+        Circle {
+            center,
+            radius: base,
+            width: 3.0,
+            alpha: 0.9,
+        },
+        Circle {
+            center,
+            radius: base + 18.0 + f64::from(input.level) * 22.0,
+            width: 1.4,
+            alpha: 0.32,
+        },
+    ];
+    let inner = base + 6.0;
+    let max_reach = min * 0.5 - 3.0;
+    let strokes = input
+        .bands
+        .iter()
+        .enumerate()
+        .map(|(index, band)| {
+            let energy = f64::from(*band);
+            let angle = index as f64 / SPECTRUM_BAND_COUNT as f64 * TAU + input.phase * 0.3;
+            let outer = (inner + 8.0 + energy * min * 0.34).min(max_reach);
+            Stroke {
+                points: vec![
+                    Point {
+                        x: center.x + angle.cos() * inner,
+                        y: center.y + angle.sin() * inner,
+                    },
+                    Point {
+                        x: center.x + angle.cos() * outer,
+                        y: center.y + angle.sin() * outer,
+                    },
+                ],
+                width: 2.0 + energy * 3.5,
+                alpha: 0.42 + energy * 0.58,
+            }
+        })
+        .collect();
+    Scene {
+        circles,
+        strokes,
+        ..Scene::default()
+    }
+}
+
+fn bars_scene(input: &SceneInput, width: f64, height: f64) -> Scene {
+    let usable_width = width - EDGE * 2.0;
+    let usable_height = height - EDGE * 2.0;
+    let step = usable_width / SPECTRUM_BAND_COUNT as f64;
+    let bottom = height - EDGE;
+    let bar_width = (step * 0.62).clamp(2.0, 10.0);
+    let mut bars = Vec::with_capacity(SPECTRUM_BAND_COUNT * 2);
+    for index in 0..SPECTRUM_BAND_COUNT {
+        let x = EDGE + step * (index as f64 + 0.5);
+        let value = f64::from(input.bands[index]).clamp(0.0, 1.0);
+        let length = (value * usable_height * 0.92).max(2.0);
+        bars.push(Bar {
+            center: Point {
+                x,
+                y: bottom - length / 2.0,
+            },
+            length,
+            width: bar_width,
+            alpha: 0.45 + value * 0.55,
+        });
+        // Peak-hold tick.
+        let peak = f64::from(input.peaks[index]).clamp(0.0, 1.0);
+        let peak_y = (bottom - peak * usable_height * 0.92).clamp(EDGE, bottom);
+        bars.push(Bar {
+            center: Point { x, y: peak_y },
+            length: 3.0,
+            width: bar_width,
+            alpha: 0.85,
+        });
+    }
+    Scene {
+        bars,
+        ..Scene::default()
+    }
+}
+
 struct RenderState {
     current: [f32; SPECTRUM_BAND_COUNT],
     target: [f32; SPECTRUM_BAND_COUNT],
+    peaks: [f32; SPECTRUM_BAND_COUNT],
     static_profile: [f32; SPECTRUM_BAND_COUNT],
+    level: f32,
+    bass: f32,
+    level_target: f32,
+    bass_target: f32,
     phase: f64,
     preset: VisualPreset,
     playback: PlaybackState,
+    impact: ImpactState,
 }
 
 impl Default for RenderState {
@@ -266,10 +354,28 @@ impl Default for RenderState {
         Self {
             current: [0.0; SPECTRUM_BAND_COUNT],
             target: [0.0; SPECTRUM_BAND_COUNT],
+            peaks: [0.0; SPECTRUM_BAND_COUNT],
             static_profile: NEUTRAL_PROFILE,
+            level: 0.0,
+            bass: 0.0,
+            level_target: 0.0,
+            bass_target: 0.0,
             phase: 0.0,
             preset: VisualPreset::Rings,
             playback: PlaybackState::Stopped,
+            impact: ImpactState::new(),
+        }
+    }
+}
+
+impl RenderState {
+    fn scene_input(&self) -> SceneInput<'_> {
+        SceneInput {
+            bands: &self.current,
+            peaks: &self.peaks,
+            level: self.level,
+            bass: self.bass,
+            phase: self.phase,
         }
     }
 }
@@ -291,16 +397,20 @@ fn drawing_area(
     let state = state.clone();
     area.set_draw_func(move |area, cr, width, height| {
         let state = state.borrow();
+        let scene = scene(
+            state.preset,
+            &state.scene_input(),
+            f64::from(width),
+            f64::from(height),
+        );
         draw_scene(
-            area,
             cr,
-            &scene(
-                state.preset,
-                &state.current,
-                f64::from(width),
-                f64::from(height),
-                state.phase,
-            ),
+            &scene,
+            &state.impact,
+            f64::from(width),
+            f64::from(height),
+            f64::from(state.level),
+            accent_rgb(area),
         );
     });
     area
@@ -359,19 +469,35 @@ fn preset_controls(
     modes
 }
 
+fn ease(current: f32, target: f32, attack: f32, release: f32) -> f32 {
+    let delta = target - current;
+    let coeff = if delta > 0.0 { attack } else { release };
+    current + delta * coeff
+}
+
 fn advance_state(state: &mut RenderState) -> bool {
     let mut settled = true;
     for index in 0..SPECTRUM_BAND_COUNT {
-        let delta = state.target[index] - state.current[index];
-        state.current[index] += delta * 0.18;
-        settled &= delta.abs() < 0.002;
+        let next = ease(
+            state.current[index],
+            state.target[index],
+            BAND_ATTACK,
+            BAND_RELEASE,
+        );
+        settled &= (state.target[index] - next).abs() < 0.002;
+        state.current[index] = next;
+        // Peak-hold: instant rise, slow fall.
+        state.peaks[index] = state.peaks[index].max(next);
+        state.peaks[index] = (state.peaks[index] - PEAK_DECAY).max(next);
     }
+    state.level = ease(state.level, state.level_target, SCALAR_ATTACK, SCALAR_RELEASE);
+    state.bass = ease(state.bass, state.bass_target, SCALAR_ATTACK, SCALAR_RELEASE);
+    state.impact.advance();
     if state.playback == PlaybackState::Playing {
-        let energy = average(&state.current, 0..SPECTRUM_BAND_COUNT);
-        state.phase = (state.phase + 0.004 + energy * 0.014) % 1.0;
+        state.phase = (state.phase + 0.0018 + f64::from(state.level) * 0.02) % 1.0;
         settled = false;
     }
-    settled
+    settled && state.impact.is_idle()
 }
 
 fn clear_static_profile(state: &mut RenderState, animations_enabled: bool) {
@@ -424,7 +550,7 @@ impl SongVisualizer {
 
     pub(in crate::ui) fn set_profile(&self, dimensions: &[u8; 4]) {
         let profile = std::array::from_fn(|index| {
-            let dimension = dimensions[index / 4] as f32 / 100.0;
+            let dimension = dimensions[index / 8] as f32 / 100.0;
             (0.08 + dimension * 0.34).clamp(0.0, 1.0)
         });
         let mut state = self.state.borrow_mut();
@@ -458,6 +584,13 @@ impl SongVisualizer {
             return;
         }
         state.target = *frame.bands();
+        state.level_target = frame.level();
+        state.bass_target = frame.bass();
+        let beat = frame.beat();
+        if beat.fired {
+            state.impact.spawn_beat(beat.strength);
+        }
+        state.impact.spawn_drop(frame.dynamics());
         drop(state);
         self.ensure_tick();
     }
@@ -467,6 +600,8 @@ impl SongVisualizer {
         state.playback = playback;
         if playback != PlaybackState::Playing || !motion::animations_enabled() {
             state.target = state.static_profile;
+            state.level_target = 0.0;
+            state.bass_target = 0.0;
             if !motion::animations_enabled() {
                 state.current = state.static_profile;
             }
@@ -606,23 +741,57 @@ impl SongVisualizer {
     }
 }
 
-fn draw_scene(area: &gtk4::DrawingArea, cr: &gtk4::cairo::Context, scene: &Scene) {
+fn accent_rgb(area: &gtk4::DrawingArea) -> (f64, f64, f64) {
     let color = area.color();
-    let rgb = (
+    (
         f64::from(color.red()),
         f64::from(color.green()),
         f64::from(color.blue()),
-    );
+    )
+}
+
+/// Brightens the accent toward white by `boost` (beats lift the color, not just
+/// the size), leaving the accent identity intact at rest.
+fn lift(rgb: (f64, f64, f64), boost: f64) -> (f64, f64, f64) {
+    let boost = boost.clamp(0.0, 1.0) * 0.5;
+    (
+        rgb.0 + (1.0 - rgb.0) * boost,
+        rgb.1 + (1.0 - rgb.1) * boost,
+        rgb.2 + (1.0 - rgb.2) * boost,
+    )
+}
+
+fn draw_scene(
+    cr: &gtk4::cairo::Context,
+    scene: &Scene,
+    impact: &ImpactState,
+    width: f64,
+    height: f64,
+    level: f64,
+    rgb: (f64, f64, f64),
+) {
+    let boosted = lift(rgb, impact.accent_boost());
+    // Louder passages read brighter; quiet ones contract.
+    let alpha_mult = 1.0 + level * 0.4;
+    let center = Point {
+        x: width / 2.0,
+        y: height / 2.0,
+    };
+    let min = width.min(height);
+
+    draw_flash(cr, rgb, impact.flash(), &center, min);
+
     cr.set_line_cap(gtk4::cairo::LineCap::Round);
     cr.set_line_join(gtk4::cairo::LineJoin::Round);
+    let paint = |alpha: f64| (alpha * alpha_mult).clamp(0.0, 1.0);
     for circle in &scene.circles {
-        cr.set_source_rgba(rgb.0, rgb.1, rgb.2, circle.alpha.clamp(0.0, 1.0));
+        cr.set_source_rgba(boosted.0, boosted.1, boosted.2, paint(circle.alpha));
         cr.set_line_width(circle.width);
         cr.arc(circle.center.x, circle.center.y, circle.radius, 0.0, TAU);
         let _ = cr.stroke();
     }
     for bar in &scene.bars {
-        cr.set_source_rgba(rgb.0, rgb.1, rgb.2, bar.alpha.clamp(0.0, 1.0));
+        cr.set_source_rgba(boosted.0, boosted.1, boosted.2, paint(bar.alpha));
         cr.set_line_width(bar.width);
         cr.move_to(bar.center.x, bar.center.y - bar.length / 2.0);
         cr.line_to(bar.center.x, bar.center.y + bar.length / 2.0);
@@ -632,13 +801,62 @@ fn draw_scene(area: &gtk4::DrawingArea, cr: &gtk4::cairo::Context, scene: &Scene
         let Some(first) = stroke.points.first() else {
             continue;
         };
-        cr.set_source_rgba(rgb.0, rgb.1, rgb.2, stroke.alpha.clamp(0.0, 1.0));
+        cr.set_source_rgba(boosted.0, boosted.1, boosted.2, paint(stroke.alpha));
         cr.set_line_width(stroke.width);
         cr.move_to(first.x, first.y);
         for point in &stroke.points[1..] {
             cr.line_to(point.x, point.y);
         }
         let _ = cr.stroke();
+    }
+
+    draw_impacts(cr, boosted, impact, &center, min);
+}
+
+fn draw_flash(
+    cr: &gtk4::cairo::Context,
+    rgb: (f64, f64, f64),
+    flash: f64,
+    center: &Point,
+    min: f64,
+) {
+    if flash <= 0.0 {
+        return;
+    }
+    let radius = min * 1.2;
+    let gradient =
+        gtk4::cairo::RadialGradient::new(center.x, center.y, 0.0, center.x, center.y, radius);
+    gradient.add_color_stop_rgba(0.0, rgb.0, rgb.1, rgb.2, (flash * 0.15).clamp(0.0, 0.2));
+    gradient.add_color_stop_rgba(1.0, rgb.0, rgb.1, rgb.2, 0.0);
+    if cr.set_source(&gradient).is_ok() {
+        let _ = cr.paint();
+    }
+}
+
+fn draw_impacts(
+    cr: &gtk4::cairo::Context,
+    rgb: (f64, f64, f64),
+    impact: &ImpactState,
+    center: &Point,
+    min: f64,
+) {
+    let base_r = min * 0.1;
+    let reach = min * 0.55;
+    for wave in impact.shockwaves() {
+        let radius = base_r + wave.progress * reach;
+        let alpha = ((1.0 - wave.progress) * wave.strength * 0.55).clamp(0.0, 1.0);
+        cr.set_source_rgba(rgb.0, rgb.1, rgb.2, alpha);
+        cr.set_line_width(1.0 + wave.strength * 2.5);
+        cr.arc(center.x, center.y, radius, 0.0, TAU);
+        let _ = cr.stroke();
+    }
+    for spark in impact.particles() {
+        let x = center.x + spark.angle.cos() * spark.dist;
+        let y = center.y + spark.angle.sin() * spark.dist;
+        let radius = 1.4 + spark.life_frac * 2.6;
+        cr.set_source_rgba(rgb.0, rgb.1, rgb.2, spark.life_frac.clamp(0.0, 1.0));
+        cr.arc(x, y, radius, 0.0, TAU);
+        let _ = cr.fill();
     }
 }
 
@@ -651,7 +869,7 @@ pub(in crate::ui) fn css() -> String {
        border-radius: 24px;\
      }\n\
      .reprise-song-visual-preset {\
-       min-height: 0; min-width: 72px; padding: 5px 14px;\
+       min-height: 0; min-width: 64px; padding: 5px 14px;\
        border-radius: 999px;\
        color: alpha(#ffffff, 0.68);\
        background-color: alpha(#ffffff, 0.06);\
