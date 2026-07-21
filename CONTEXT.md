@@ -89,3 +89,39 @@ Der strukturierte Browser-Ort und eingefrorene Anzeigename, aus dem ein
 Wiedergabe-Snapshot gestartet wurde. Er dient dem spaeteren Aufdecken, besitzt
 aber nicht die Wiedergabe selbst.
 _Vermeiden_: aktuelle Ansicht, Queue
+
+## KI-Fassungen und Provenienz
+
+**Instrumental-Fassung**:
+Eine explizit beauftragte, dauerhafte Variante eines Bibliothekstitels, aus der
+per ML-Stem-Separation der Gesang entfernt wurde; ein regulärer, klar als
+KI-manipuliert gekennzeichneter Titel mit dem Titelsuffix „(Instrumental)", kein
+flüchtiger Effekt beim Abspielen und keine Regel-Playlist.
+_Vermeiden_: Karaoke-Spur, Remix, flüchtiger Render, Vocal-Toggle
+
+**KI-Provenienz**:
+Die offengelegte Herkunft eines KI-erzeugten oder -manipulierten Titels, doppelt
+hinterlegt: primär als Zeile in der Provenance-Registry der Datenbank (Flag und
+optionaler Quelltitel) und sekundär in menschenlesbaren Datei-Tags, damit die
+Kennzeichnung Rescans und den Export aus Reprise überlebt. Der Ausblende-Filter
+schlüsselt auf das DB-Flag, nie auf den Ablageordner.
+_Vermeiden_: Wasserzeichen, versteckte Markierung, App-interne ID im Tag
+
+## Änderungspropagation
+
+**change_log (Outbox)**:
+Die transaktionale Outbox: eine je Mutation in derselben Transaktion angehängte
+Zeile, die das *Was* einer Änderung total geordnet festhält (Entität,
+Entitäts-ID, Operation, Writer-Token). Sie ist die Wahrheit über Änderungen
+zwischen Prozessen, nicht der Weckruf selbst; Konsumenten spielen sie nicht
+nach, sondern lesen daraus den aktuellen Zustand.
+_Vermeiden_: Log-Datei, Audit-Trail, Nachrichten-Queue, Event-Sourcing
+
+**Notifier**:
+Der prozessübergreifende Weckruf: ein Hintergrund-Thread mit eigener Connection,
+der Datenbank und WAL beobachtet und nach kurzer Beruhigung `PRAGMA
+data_version` prüft — die sich nur bei Commits *anderer* Connections ändert. Er
+meldet nur, *dass* etwas geschah, worauf Konsumenten das change_log lesen; lässt
+sich kein Dateisystem-Watch armieren, degradiert er auf 2-Sekunden-Polling statt
+aufzugeben.
+_Vermeiden_: Daemon, Push-Dienst, Socket-Signal, IPC-Kanal
