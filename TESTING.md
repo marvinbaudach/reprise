@@ -15,8 +15,9 @@ whose display or host contracts require controlled execution.
 The repository also has focused pointer-driven smoke tests, a synchronized-
 lyrics smoke, release/package validation, an architecture/frontend linter, and
 a merge-readiness linter. The QA policy also executes
-`scripts/tests/readme-showcase.sh`, which keeps the English and German showroom
-documents aligned on their date, evidence, architecture, and roadmap status.
+`scripts/tests/readme-showcase.sh`, which keeps the English and German developer
+entry points concise and aligned on crate boundaries, build commands, gates,
+documentation routes, and the single architecture visual.
 Headless success proves behavior and widget state;
 it does not prove native Wayland rendering, pointer feel, audible output,
 desktop media integration, portals, or real hardware.
