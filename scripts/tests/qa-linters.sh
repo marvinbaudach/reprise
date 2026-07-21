@@ -21,6 +21,19 @@ require_pattern() {
   fi
 }
 
+require_pattern_order() {
+  local before=$1
+  local after=$2
+  local path=$3
+  local before_line after_line
+  before_line=$(rg --line-number --max-count 1 "$before" "$path" | cut -d: -f1 || true)
+  after_line=$(rg --line-number --max-count 1 "$after" "$path" | cut -d: -f1 || true)
+  if [[ -z $before_line || -z $after_line || $before_line -ge $after_line ]]; then
+    echo "$path must place $before before $after" >&2
+    exit 1
+  fi
+}
+
 require_executable scripts/check-architecture.sh
 require_executable scripts/check-accessibility-semantics.sh
 require_executable scripts/check-input-parity.sh
@@ -42,6 +55,7 @@ require_executable scripts/tests/readme-showcase.sh
 require_executable scripts/tests/accessibility-semantics.sh
 require_executable scripts/tests/input-parity.sh
 require_executable scripts/tests/msrv.sh
+require_executable scripts/tests/github-flow.sh
 require_executable scripts/tests/weekly-portfolio-sync.sh
 require_executable scripts/weekly-portfolio-sync.sh
 require_executable .githooks/pre-push
@@ -60,8 +74,18 @@ require_pattern 'check-motion-tokens.sh' scripts/check-merge-readiness.sh
 require_pattern 'check-display-tests.sh --css' scripts/check-merge-readiness.sh
 require_pattern 'mode=css' scripts/check-display-tests.sh
 require_pattern 'display_test_passed' scripts/check-display-tests.sh
-require_pattern 'config_home=\$\(mktemp -d\)' scripts/check-display-tests.sh
-require_pattern 'XDG_CONFIG_HOME="\$config_home"' scripts/check-display-tests.sh
+require_pattern 'DISPLAY_TEST_JOBS' scripts/check-display-tests.sh
+require_pattern 'wait -n' scripts/check-display-tests.sh
+require_pattern 'results_dir' scripts/check-display-tests.sh
+require_pattern 'XDG_RUNTIME_DIR' scripts/check-display-tests.sh
+require_pattern 'XDG_CONFIG_HOME' scripts/check-display-tests.sh
+require_pattern 'GIO_USE_VFS=local' scripts/check-display-tests.sh
+require_pattern 'GTK_USE_PORTAL=0' scripts/check-display-tests.sh
+require_pattern 'cleanup_worker_roots' scripts/check-display-tests.sh
+require_pattern 'if \[\[ -f \$display_test_passed \]\]' scripts/check-display-tests.sh
+require_pattern 'server-num' scripts/check-display-tests.sh
+require_pattern_order 'if env' 'dbus-run-session -- xvfb-run' scripts/check-display-tests.sh
+require_pattern 'DISPLAY_TEST_JOBS: 4' .github/workflows/ci.yml
 require_pattern 'Frontend lint' scripts/check-architecture.sh
 require_pattern 'composition root must stay below 600' scripts/check-architecture.sh
 require_pattern 'UI orchestrators must stay below 600' scripts/check-architecture.sh
@@ -99,6 +123,7 @@ scripts/tests/performance-runtime-baseline.sh
 scripts/tests/readme-showcase.sh
 scripts/tests/accessibility-semantics.sh
 scripts/tests/input-parity.sh
+scripts/tests/github-flow.sh
 scripts/tests/weekly-portfolio-sync.sh
 scripts/check-architecture.sh
 

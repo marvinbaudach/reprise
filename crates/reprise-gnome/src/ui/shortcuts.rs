@@ -436,38 +436,15 @@ mod tests {
             counted.set(counted.get() + 1);
             true
         });
-        let controller_count = search_bar.observe_controllers().n_items();
-        wire_escape(&search_bar, &entry, focus_active_content);
-        let controller = search_bar
-            .observe_controllers()
-            .item(controller_count)
-            .and_downcast::<gtk4::EventControllerKey>()
-            .expect("wire_escape must append one key controller");
+        let collapse_on_release = std::cell::Cell::new(false);
+        apply_search_escape_pressed(&search_bar, &entry, &collapse_on_release);
 
-        let stopped = controller.emit_by_name::<bool>(
-            "key-pressed",
-            &[
-                &gtk4::gdk::Key::Escape,
-                &0_u32,
-                &gtk4::gdk::ModifierType::empty(),
-            ],
-        );
-        assert!(stopped);
-
-        // Keep the bar mapped until release so the controller remains in the
-        // event route. GtkSearchBar may reassert this same open state from its
-        // separate window-level key capture before release arrives.
+        // GtkSearchBar may reassert this same open state from its separate
+        // window-level key capture before release arrives.
         assert!(search_bar.is_search_mode());
         search_bar.set_search_mode(true);
 
-        controller.emit_by_name::<()>(
-            "key-released",
-            &[
-                &gtk4::gdk::Key::Escape,
-                &0_u32,
-                &gtk4::gdk::ModifierType::empty(),
-            ],
-        );
+        apply_search_escape_released(&search_bar, &collapse_on_release, &focus_active_content);
         while gtk4::glib::MainContext::default().iteration(false) {}
 
         assert!(

@@ -418,6 +418,11 @@ impl AudioCharacterDialog {
     pub(in crate::ui) fn dialog(&self) -> &adw::Dialog {
         &self.dialog
     }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn shows_ready_for_test(&self) -> bool {
+        self.view.stack.visible_child_name().as_deref() == Some(READY_PAGE)
+    }
 }
 
 fn status_copy(

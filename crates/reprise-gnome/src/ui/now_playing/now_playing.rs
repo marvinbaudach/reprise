@@ -388,6 +388,9 @@ impl NowPlayingPanel {
             }
         };
         *self.loaded_track.borrow_mut() = track;
+        if changed {
+            self.render_audio_character(&audio_character_view::AudioCharacterPresentation::Empty);
+        }
         self.queue_audio_character_refresh();
         if !changed {
             if self.track_animation.borrow().is_none() {

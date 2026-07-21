@@ -1,0 +1,3227 @@
+# French translations for Reprise package.
+# Copyright (C) 2026 Marvin Baudach
+# This file is distributed under the same license as the Reprise package.
+# Initial translation by Reprise contributors, 2026.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Reprise 0.1.0\n"
+"Report-Msgid-Bugs-To: Marvin Baudach\n"
+"POT-Creation-Date: 2026-07-20 23:14+0200\n"
+"PO-Revision-Date: 2026-07-20 11:38+0200\n"
+"Last-Translator: Reprise contributors\n"
+"Language-Team: French\n"
+"Language: fr\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+
+#: crates/reprise-gnome/src/ui/strings.rs:83
+msgid "Welcome to Reprise"
+msgstr "Bienvenue dans Reprise"
+
+#: crates/reprise-gnome/src/ui/strings.rs:84
+msgid "Reprise keeps your library local. Missing album covers are retrieved automatically from MusicBrainz and Cover Art Archive. Music files are changed only when you explicitly edit tags or move tracks to Trash."
+msgstr "Reprise conserve votre bibliothèque en local. Les pochettes d’album manquantes sont récupérées automatiquement depuis MusicBrainz et Cover Art Archive. Les fichiers musicaux ne sont modifiés que lorsque vous éditez explicitement les étiquettes ou déplacez des pistes vers la corbeille."
+
+#: crates/reprise-gnome/src/ui/strings.rs:85
+msgid "Import from Rhythmbox"
+msgstr "Importer depuis Rhythmbox"
+
+#: crates/reprise-gnome/src/ui/strings.rs:87
+msgid "Rhythmbox was found. Choose what Reprise should import."
+msgstr "Rhythmbox a été trouvé. Choisissez ce que Reprise doit importer."
+
+#: crates/reprise-gnome/src/ui/strings.rs:88
+msgid "Column layout"
+msgstr "Disposition des colonnes"
+
+#: crates/reprise-gnome/src/ui/strings.rs:90
+msgid "Read the layout without changing Rhythmbox settings"
+msgstr "Lire la disposition sans modifier les paramètres de Rhythmbox"
+
+#: crates/reprise-gnome/src/ui/strings.rs:96
+msgid "Skip for Now"
+msgstr "Ignorer pour l’instant"
+
+#: crates/reprise-gnome/src/ui/strings.rs:97
+msgid "Set Up Library"
+msgstr "Configurer la bibliothèque"
+
+#: crates/reprise-gnome/src/ui/strings.rs:98
+msgid "Main menu"
+msgstr "Menu principal"
+
+#: crates/reprise-gnome/src/ui/strings.rs:99
+msgid "Compact Mode"
+msgstr "Mode compact"
+
+#: crates/reprise-gnome/src/ui/strings.rs:101
+msgid "Restore Full Window"
+msgstr "Restaurer la fenêtre complète"
+
+#: crates/reprise-gnome/src/ui/strings.rs:103
+msgid "Repeat Off"
+msgstr "Répétition désactivée"
+
+#: crates/reprise-gnome/src/ui/strings.rs:105
+msgid "Repeat All"
+msgstr "Tout répéter"
+
+#: crates/reprise-gnome/src/ui/strings.rs:107
+msgid "Repeat One"
+msgstr "Répéter une piste"
+
+#: crates/reprise-gnome/src/ui/strings.rs:108
+msgid "Could not save the window view"
+msgstr "Impossible d’enregistrer la vue de la fenêtre"
+
+#: crates/reprise-gnome/src/ui/strings.rs:109
+msgid "Compact player is unavailable"
+msgstr "Le lecteur compact est indisponible"
+
+#: crates/reprise-gnome/src/ui/strings.rs:110
+msgid "Preferences"
+msgstr "Préférences"
+
+#: crates/reprise-gnome/src/ui/strings.rs:111
+msgid "Appearance"
+msgstr "Apparence"
+
+#: crates/reprise-gnome/src/ui/strings.rs:112
+msgid "Layout"
+msgstr "Disposition"
+
+#: crates/reprise-gnome/src/ui/strings.rs:113
+msgid "Player Bar Position"
+msgstr "Position de la barre du lecteur"
+
+#: crates/reprise-gnome/src/ui/strings.rs:114
+msgid "Bottom"
+msgstr "Bas"
+
+#: crates/reprise-gnome/src/ui/strings.rs:115
+msgid "Top"
+msgstr "Haut"
+
+#: crates/reprise-gnome/src/ui/strings.rs:116
+msgid "Show Sidebar"
+msgstr "Afficher le panneau latéral"
+
+#: crates/reprise-gnome/src/ui/strings.rs:117
+msgid "Show Status Line"
+msgstr "Afficher la ligne d’état"
+
+#: crates/reprise-gnome/src/ui/strings.rs:118
+msgid "List Density"
+msgstr "Densité de la liste"
+
+#: crates/reprise-gnome/src/ui/strings.rs:119
+msgid "Comfortable"
+msgstr "Confortable"
+
+#: crates/reprise-gnome/src/ui/strings.rs:120
+msgid "Standard"
+msgstr "Standard"
+
+#: crates/reprise-gnome/src/ui/strings.rs:121
+msgid "Compact"
+msgstr "Compact"
+
+#: crates/reprise-gnome/src/ui/strings.rs:122
+msgid "Library"
+msgstr "Bibliothèque"
+
+#: crates/reprise-gnome/src/ui/strings.rs:123
+msgid "Plugins"
+msgstr "Greffons"
+
+#: crates/reprise-gnome/src/ui/strings.rs:124
+msgid "Playback"
+msgstr "Lecture"
+
+#: crates/reprise-gnome/src/ui/strings.rs:125
+msgid "Equalizer"
+msgstr "Égaliseur"
+
+#: crates/reprise-gnome/src/ui/strings.rs:126
+msgid "Enable Equalizer"
+msgstr "Activer l’égaliseur"
+
+#: crates/reprise-gnome/src/ui/strings.rs:127
+msgid "Preset"
+msgstr "Préconfiguré"
+
+#: crates/reprise-gnome/src/ui/strings.rs:128
+msgid "Flat"
+msgstr "Plat"
+
+#: crates/reprise-gnome/src/ui/strings.rs:129
+msgid "Rock"
+msgstr "Rock"
+
+#: crates/reprise-gnome/src/ui/strings.rs:130
+msgid "Pop"
+msgstr "Pop"
+
+#: crates/reprise-gnome/src/ui/strings.rs:131
+msgid "Bass Boost"
+msgstr "Booster de basses"
+
+#: crates/reprise-gnome/src/ui/strings.rs:132
+msgid "ReplayGain"
+msgstr "ReplayGain"
+
+#: crates/reprise-gnome/src/ui/strings.rs:133
+msgid "Volume Normalization"
+msgstr "Normalisation du volume"
+
+#: crates/reprise-gnome/src/ui/strings.rs:134
+#: crates/reprise-gnome/src/ui/strings.rs:140
+#: crates/reprise-gnome/src/ui/strings_issues.rs:45
+msgid "Off"
+msgstr "Hors Tension"
+
+#: crates/reprise-gnome/src/ui/strings.rs:135
+msgid "Per Track"
+msgstr "Par piste"
+
+#: crates/reprise-gnome/src/ui/strings.rs:136
+msgid "Per Album"
+msgstr "Par album"
+
+#: crates/reprise-gnome/src/ui/strings.rs:137
+msgid "Audio Transitions"
+msgstr "Transitions audio"
+
+#: crates/reprise-gnome/src/ui/strings.rs:138
+msgid "Crossfade"
+msgstr "Fondu enchaîné"
+
+#: crates/reprise-gnome/src/ui/strings.rs:139
+msgid "Smoothly blend the end of a track into the next"
+msgstr "Fondre progressivement la fin d’une piste dans la suivante"
+
+#: crates/reprise-gnome/src/ui/strings.rs:141
+msgid "Gapless Playback"
+msgstr "Lecture sans interruption"
+
+#: crates/reprise-gnome/src/ui/strings.rs:142
+msgid "No silence between tracks of the same album"
+msgstr "Aucun silence entre les pistes d’un même album"
+
+#: crates/reprise-gnome/src/ui/strings.rs:143
+msgid "Inactive while Crossfade is enabled"
+msgstr "Inactif lorsque le fondu enchaîné est activé"
+
+#: crates/reprise-gnome/src/ui/strings.rs:144
+msgid "Could not apply audio effects"
+msgstr "Impossible d’appliquer les effets audio"
+
+#: crates/reprise-gnome/src/ui/strings.rs:150
+msgid "Library Folder"
+msgstr "Dossier de la bibliothèque"
+
+#: crates/reprise-gnome/src/ui/strings.rs:151
+msgid "No folder selected"
+msgstr "Aucun dossier sélectionné"
+
+#: crates/reprise-gnome/src/ui/strings.rs:152
+msgid "Choose Folder…"
+msgstr "Choisir un dossier…"
+
+#: crates/reprise-gnome/src/ui/strings.rs:153
+msgid "Restart required"
+msgstr "Redémarrage requis"
+
+#: crates/reprise-gnome/src/ui/strings.rs:154
+msgid "Edit column layout…"
+msgstr "Modifier la disposition des colonnes…"
+
+#: crates/reprise-gnome/src/ui/strings.rs:155
+msgid "Reset to Default"
+msgstr "Réinitialiser par défaut"
+
+#: crates/reprise-gnome/src/ui/strings.rs:156
+msgid "Close"
+msgstr "Fermer"
+
+#: crates/reprise-gnome/src/ui/strings.rs:157
+msgid "Drag to reorder"
+msgstr "Faire glisser pour réorganiser"
+
+#: crates/reprise-gnome/src/ui/strings.rs:158
+msgid "Could not save the column layout"
+msgstr "Impossible d’enregistrer la disposition des colonnes"
+
+#: crates/reprise-gnome/src/ui/strings.rs:159
+msgid "Rhythmbox column layout imported"
+msgstr "Disposition des colonnes de Rhythmbox importée"
+
+#: crates/reprise-gnome/src/ui/strings.rs:161
+msgid "Could not save the imported column layout"
+msgstr "Impossible d’enregistrer la disposition des colonnes importée"
+
+#: crates/reprise-gnome/src/ui/strings.rs:165
+#, rust-format
+msgid "Could not import Rhythmbox columns: {error}"
+msgstr "Impossible d’importer les colonnes de Rhythmbox : {error}"
+
+#: crates/reprise-gnome/src/ui/strings.rs:169
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:19
+msgid "Edit tags…"
+msgstr "Modifier les étiquettes…"
+
+#: crates/reprise-gnome/src/ui/strings.rs:170
+msgid "Remove from library…"
+msgstr "Retirer de la bibliothèque…"
+
+#: crates/reprise-gnome/src/ui/strings.rs:171
+msgid "Move to Trash…"
+msgstr "Déplacer vers la corbeille…"
+
+#: crates/reprise-gnome/src/ui/strings.rs:172
+msgid "Remove Selected Tracks?"
+msgstr "Retirer les pistes sélectionnées ?"
+
+#: crates/reprise-gnome/src/ui/strings.rs:174
+msgid "Remove only the library entries, or move the music files to Trash as well."
+msgstr "Retirez uniquement les entrées de la bibliothèque ou déplacez également les fichiers musicaux vers la corbeille."
+
+#: crates/reprise-gnome/src/ui/strings.rs:175
+#: crates/reprise-gnome/src/ui/strings.rs:440
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:32
+#: crates/reprise-gnome/src/ui/sidebar/sidebar_issue_strings.rs:27
+msgid "Cancel"
+msgstr "Annuler"
+
+#: crates/reprise-gnome/src/ui/strings.rs:176
+msgid "Remove Only"
+msgstr "Retirer uniquement"
+
+#: crates/reprise-gnome/src/ui/strings.rs:177
+msgid "Move to Trash"
+msgstr "Déplacer vers la corbeille"
+
+#: crates/reprise-gnome/src/ui/strings.rs:179
+msgid "Could not open the library database for removal"
+msgstr "Impossible d’ouvrir la base de données de la bibliothèque pour le retrait"
+
+#: crates/reprise-gnome/src/ui/strings.rs:180
+msgid "Could not start the removal worker"
+msgstr "Impossible de démarrer le processus de retrait"
+
+#: crates/reprise-gnome/src/ui/strings.rs:185
+#, rust-format
+msgid "Remove {count} track from the library? The music file will remain on disk."
+msgid_plural "Remove {count} tracks from the library? The music files will remain on disk."
+msgstr[0] "Retirer {count} piste de la bibliothèque ? Le fichier musical restera sur le disque."
+msgstr[1] "Retirer {count} pistes de la bibliothèque ? Les fichiers musicaux resteront sur le disque."
+
+#: crates/reprise-gnome/src/ui/strings.rs:195
+#, rust-format
+msgid "Move {count} music file to Trash and remove the library entry?"
+msgid_plural "Move {count} music files to Trash and remove the library entries?"
+msgstr[0] "Déplacer {count} fichier musical vers la corbeille et retirer l’entrée de la bibliothèque ?"
+msgstr[1] "Déplacer {count} fichiers musicaux vers la corbeille et retirer les entrées de la bibliothèque ?"
+
+#: crates/reprise-gnome/src/ui/strings.rs:211
+#, rust-format
+msgid "{removed} track moved to Trash"
+msgid_plural "{removed} tracks moved to Trash"
+msgstr[0] "{removed} piste déplacée vers la corbeille"
+msgstr[1] "{removed} pistes déplacées vers la corbeille"
+
+#: crates/reprise-gnome/src/ui/strings.rs:217
+#, rust-format
+msgid "{removed} track removed"
+msgid_plural "{removed} tracks removed"
+msgstr[0] "{removed} piste retirée"
+msgstr[1] "{removed} pistes retirées"
+
+#: crates/reprise-gnome/src/ui/strings.rs:223
+#, rust-format
+msgid "{removed} track moved to Trash; {failed} failed"
+msgid_plural "{removed} tracks moved to Trash; {failed} failed"
+msgstr[0] "{removed} piste déplacée vers la corbeille ; {failed} échec"
+msgstr[1] "{removed} pistes déplacées vers la corbeille ; {failed} échecs"
+
+#: crates/reprise-gnome/src/ui/strings.rs:229
+#, rust-format
+msgid "{removed} track removed; {failed} failed"
+msgid_plural "{removed} tracks removed; {failed} failed"
+msgstr[0] "{removed} piste retirée ; {failed} échec"
+msgstr[1] "{removed} pistes retirées ; {failed} échecs"
+
+#: crates/reprise-gnome/src/ui/strings.rs:252
+#, rust-format
+msgid "Updated {updated} track"
+msgid_plural "Updated {updated} tracks"
+msgstr[0] "{updated} piste mise à jour"
+msgstr[1] "{updated} pistes mises à jour"
+
+#: crates/reprise-gnome/src/ui/strings.rs:259
+#, rust-format
+msgid "Updated {updated} track; {failed} failed"
+msgid_plural "Updated {updated} tracks; {failed} failed"
+msgstr[0] "{updated} piste mise à jour ; {failed} échec"
+msgstr[1] "{updated} pistes mises à jour ; {failed} échecs"
+
+#: crates/reprise-gnome/src/ui/strings.rs:266
+msgid "Search all fields"
+msgstr "Recherche dans tous les champs"
+
+#: crates/reprise-gnome/src/ui/strings.rs:267
+msgid "Scan folder…"
+msgstr "Analyser un dossier…"
+
+#: crates/reprise-gnome/src/ui/strings.rs:268
+msgid "No music yet"
+msgstr "Pas encore de musique"
+
+#: crates/reprise-gnome/src/ui/strings.rs:269
+msgid "Scan a folder to build your library"
+msgstr "Analysez un dossier pour créer votre bibliothèque"
+
+#: crates/reprise-gnome/src/ui/strings.rs:270
+msgid "No results"
+msgstr "Aucun résultat"
+
+#: crates/reprise-gnome/src/ui/strings.rs:271
+msgid "Try a different search"
+msgstr "Essayez une autre recherche"
+
+#: crates/reprise-gnome/src/ui/strings.rs:277
+msgid "Nothing here"
+msgstr "Rien ici"
+
+#: crates/reprise-gnome/src/ui/strings.rs:278
+msgid "This view has no tracks right now"
+msgstr "Cette vue ne contient actuellement aucune piste"
+
+#: crates/reprise-gnome/src/ui/strings.rs:281
+msgid "Scanning library"
+msgstr "Analyse de la bibliothèque"
+
+#: crates/reprise-gnome/src/ui/strings.rs:291
+msgid "Select Music Folder"
+msgstr "Sélectionner le dossier de musique"
+
+#: crates/reprise-gnome/src/ui/strings.rs:292
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:49
+msgid "Scanning…"
+msgstr "Analyse…"
+
+#: crates/reprise-gnome/src/ui/strings.rs:293
+msgid "Finding music files…"
+msgstr "Recherche de fichiers musicaux…"
+
+#: crates/reprise-gnome/src/ui/strings.rs:299
+#, rust-format
+msgid "{processed} of {total} files scanned"
+msgstr "{processed} fichiers analysés sur {total}"
+
+#: crates/reprise-gnome/src/ui/strings.rs:305
+msgid "Scan failed: "
+msgstr "Échec de l’analyse : "
+
+#: crates/reprise-gnome/src/ui/strings.rs:306
+msgid "covers & lyrics…"
+msgstr "pochettes et paroles…"
+
+#: crates/reprise-gnome/src/ui/strings.rs:313
+msgid "track"
+msgstr "piste"
+
+#: crates/reprise-gnome/src/ui/strings.rs:314
+msgid "tracks"
+msgstr "pistes"
+
+#: crates/reprise-gnome/src/ui/strings.rs:317
+msgid " · "
+msgstr " · "
+
+#: crates/reprise-gnome/src/ui/strings.rs:320
+msgid "Title"
+msgstr "Titre"
+
+#: crates/reprise-gnome/src/ui/strings.rs:321
+msgid "Cover"
+msgstr "Couverture"
+
+#: crates/reprise-gnome/src/ui/strings.rs:322
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:20
+msgid "Artist"
+msgstr "Artiste"
+
+#: crates/reprise-gnome/src/ui/strings.rs:323
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:21
+msgid "Album"
+msgstr "Album"
+
+#: crates/reprise-gnome/src/ui/strings.rs:324
+msgid "Track"
+msgstr "Piste"
+
+#: crates/reprise-gnome/src/ui/strings.rs:325
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:19
+msgid "Genre"
+msgstr "Genre"
+
+#: crates/reprise-gnome/src/ui/strings.rs:326
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:10
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:22
+msgid "Year"
+msgstr "Année"
+
+#: crates/reprise-gnome/src/ui/strings.rs:327
+msgid "Length"
+msgstr "Longueur"
+
+#: crates/reprise-gnome/src/ui/strings.rs:328
+msgid "Plays"
+msgstr "Écoutes"
+
+#: crates/reprise-gnome/src/ui/strings.rs:334
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:15
+msgid "Play"
+msgstr "Lecture"
+
+#: crates/reprise-gnome/src/ui/strings.rs:335
+msgid "Pause"
+msgstr "Pause"
+
+#: crates/reprise-gnome/src/ui/strings.rs:336
+msgid "Playback position"
+msgstr "Position de lecture"
+
+#: crates/reprise-gnome/src/ui/strings.rs:337
+msgid "Volume"
+msgstr "Volume"
+
+#: crates/reprise-gnome/src/ui/strings.rs:338
+msgid "Shuffle"
+msgstr "Mélanger"
+
+#: crates/reprise-gnome/src/ui/strings.rs:339
+msgid "Previous"
+msgstr "Précédent"
+
+#: crates/reprise-gnome/src/ui/strings.rs:340
+msgid "Next"
+msgstr "Suivant"
+
+#: crates/reprise-gnome/src/ui/strings.rs:341
+msgid "Repeat"
+msgstr "Répéter"
+
+#: crates/reprise-gnome/src/ui/strings.rs:346
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:23
+msgid "Rating"
+msgstr "Classement"
+
+#: crates/reprise-gnome/src/ui/strings.rs:354
+#, rust-format
+msgid "Rate {count} star"
+msgid_plural "Rate {count} stars"
+msgstr[0] "Noter {count} étoile"
+msgstr[1] "Noter {count} étoiles"
+
+#: crates/reprise-gnome/src/ui/strings.rs:371
+#, rust-format
+msgid "File not found — marked as missing: {title}"
+msgstr "Fichier introuvable — marqué comme manquant : {title}"
+
+#: crates/reprise-gnome/src/ui/strings.rs:381
+#, rust-format
+msgid "Could not play {title} — skipping"
+msgstr "Impossible de lire {title} — piste ignorée"
+
+#: crates/reprise-gnome/src/ui/strings.rs:390
+msgid "Playback stopped — too many unplayable tracks"
+msgstr "Lecture arrêtée — trop de pistes illisibles"
+
+#: crates/reprise-gnome/src/ui/strings.rs:401
+#, rust-format
+msgid "Could not save rating for {title}"
+msgstr "Impossible d’enregistrer la note de {title}"
+
+#: crates/reprise-gnome/src/ui/strings.rs:411
+msgid "LIBRARY"
+msgstr "BIBLIOTHÈQUE"
+
+#: crates/reprise-gnome/src/ui/strings.rs:412
+msgid "PLAYLISTS"
+msgstr "LISTES DE LECTURE"
+
+#: crates/reprise-gnome/src/ui/strings.rs:413
+msgid "SMART"
+msgstr "INTELLIGENTES"
+
+#: crates/reprise-gnome/src/ui/strings.rs:414
+msgid "ISSUES"
+msgstr "PROBLÈMES"
+
+#: crates/reprise-gnome/src/ui/strings.rs:416
+msgid "Music"
+msgstr "Musique"
+
+#: crates/reprise-gnome/src/ui/strings.rs:417
+msgid "Queue"
+msgstr "File d’attente"
+
+#: crates/reprise-gnome/src/ui/strings.rs:418
+msgid "Now Playing"
+msgstr "En cours de lecture"
+
+#: crates/reprise-gnome/src/ui/strings.rs:419
+msgid "Jump to now playing"
+msgstr "Aller à la lecture en cours"
+
+#: crates/reprise-gnome/src/ui/strings.rs:420
+msgid "Back to previous view"
+msgstr "Revenir à la vue précédente"
+
+#: crates/reprise-gnome/src/ui/strings.rs:421
+msgid "Forward to next view"
+msgstr "Avancer vers la vue suivante"
+
+#: crates/reprise-gnome/src/ui/strings.rs:422
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:16
+msgid "Play next"
+msgstr "Lire ensuite"
+
+#: crates/reprise-gnome/src/ui/strings.rs:423
+msgid "Clear"
+msgstr "Effacer"
+
+#: crates/reprise-gnome/src/ui/strings.rs:424
+msgid "Play Next"
+msgstr "Lire ensuite"
+
+#: crates/reprise-gnome/src/ui/strings.rs:427
+msgid "Nothing queued"
+msgstr "File d’attente vide"
+
+#: crates/reprise-gnome/src/ui/strings.rs:428
+msgid "Play something"
+msgstr "Lisez quelque chose"
+
+#: crates/reprise-gnome/src/ui/strings.rs:429
+#: crates/reprise-gnome/src/ui/strings.rs:438
+msgid "New playlist"
+msgstr "Nouvelle liste de lecture"
+
+#: crates/reprise-gnome/src/ui/strings.rs:430
+msgid "Import errors"
+msgstr "Erreurs d’importation"
+
+#: crates/reprise-gnome/src/ui/strings.rs:431
+msgid "Missing files"
+msgstr "Fichiers manquants"
+
+#: crates/reprise-gnome/src/ui/strings.rs:432
+msgid "My Stats"
+msgstr "Mes statistiques"
+
+#: crates/reprise-gnome/src/ui/strings.rs:436
+msgid "Toggle sidebar"
+msgstr "Afficher ou masquer la barre latérale"
+
+#: crates/reprise-gnome/src/ui/strings.rs:439
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:68
+msgid "Playlist name"
+msgstr "Nom de la liste de lecture"
+
+#: crates/reprise-gnome/src/ui/strings.rs:441
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:69
+msgid "Create"
+msgstr "Créer"
+
+#: crates/reprise-gnome/src/ui/strings.rs:446
+#, rust-format
+msgid "Could not create playlist “{name}”"
+msgstr "Impossible de créer la liste de lecture « {name} »"
+
+#: crates/reprise-gnome/src/ui/strings.rs:457
+msgid "Rescan library"
+msgstr "Réanalyser la bibliothèque"
+
+#: crates/reprise-gnome/src/ui/strings.rs:463
+msgid "No library folder to rescan yet — use “Scan folder…” first"
+msgstr "Aucun dossier de bibliothèque à réanalyser — utilisez d’abord « Analyser un dossier… »"
+
+#: crates/reprise-gnome/src/ui/strings.rs:471
+msgid "A scan is already running"
+msgstr "Une analyse est déjà en cours"
+
+#: crates/reprise-gnome/src/ui/strings.rs:479
+#, rust-format
+msgid "{count} track removed from library"
+msgid_plural "{count} tracks removed from library"
+msgstr[0] "{count} piste retirée de la bibliothèque"
+msgstr[1] "{count} pistes retirées de la bibliothèque"
+
+#: crates/reprise-gnome/src/ui/strings.rs:489
+msgid "Could not remove tracks from library"
+msgstr "Impossible de retirer les pistes de la bibliothèque"
+
+#: crates/reprise-gnome/src/ui/strings.rs:500
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:15
+msgid "Retry"
+msgstr "Réessayer"
+
+#: crates/reprise-gnome/src/ui/strings.rs:503
+#: crates/reprise-gnome/src/ui/strings_news.rs:51
+msgid "Dismiss"
+msgstr "Ignorer"
+
+#: crates/reprise-gnome/src/ui/strings.rs:509
+msgid "Could not retry — see the log for details"
+msgstr "Nouvelle tentative impossible — consultez le journal pour plus de détails"
+
+#: crates/reprise-gnome/src/ui/strings.rs:518
+#, rust-format
+msgid "{count} track added to queue"
+msgid_plural "{count} tracks added to queue"
+msgstr[0] "{count} piste ajoutée à la file d’attente"
+msgstr[1] "{count} pistes ajoutées à la file d’attente"
+
+#: crates/reprise-gnome/src/ui/strings.rs:525
+msgid "Move up"
+msgstr "Déplacer vers le haut"
+
+#: crates/reprise-gnome/src/ui/strings.rs:526
+msgid "Move down"
+msgstr "Se déplacer vers le bas"
+
+#: crates/reprise-gnome/src/ui/strings.rs:535
+#, rust-format
+msgid "{count} track added to {playlist}"
+msgid_plural "{count} tracks added to {playlist}"
+msgstr[0] "{count} piste ajoutée à {playlist}"
+msgstr[1] "{count} pistes ajoutées à {playlist}"
+
+#: crates/reprise-gnome/src/ui/strings.rs:547
+#, rust-format
+msgid "{count} track removed from playlist"
+msgid_plural "{count} tracks removed from playlist"
+msgstr[0] "{count} piste retirée de la liste de lecture"
+msgstr[1] "{count} pistes retirées de la liste de lecture"
+
+#: crates/reprise-gnome/src/ui/strings.rs:557
+#, rust-format
+msgid "Could not add tracks to “{name}”"
+msgstr "Impossible d’ajouter des pistes à « {name} »"
+
+#: crates/reprise-gnome/src/ui/strings.rs:563
+msgid "Could not remove tracks from playlist"
+msgstr "Impossible de retirer les pistes de la liste de lecture"
+
+#: crates/reprise-gnome/src/ui/strings.rs:572
+msgid "Could not remove — reload the playlist and try again"
+msgstr "Retrait impossible — rechargez la liste de lecture et réessayez"
+
+#: crates/reprise-gnome/src/ui/strings.rs:585
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:38
+#: crates/reprise-gnome/src/ui/strings_artist.rs:28
+#: crates/reprise-gnome/src/ui/strings_artist.rs:93
+#: crates/reprise-gnome/src/ui/strings_artist.rs:118
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:151
+#, rust-format
+msgid "{count} track"
+msgid_plural "{count} tracks"
+msgstr[0] "{count} piste"
+msgstr[1] "{count} pistes"
+
+#: crates/reprise-gnome/src/ui/strings.rs:601
+msgid "Could not reorder playlist"
+msgstr "Impossible de réorganiser la liste de lecture"
+
+#: crates/reprise-gnome/src/ui/strings.rs:608
+msgid "Import playlist…"
+msgstr "Importer une liste de lecture…"
+
+#: crates/reprise-gnome/src/ui/strings.rs:609
+msgid "Export playlist…"
+msgstr "Exporter la liste de lecture…"
+
+#: crates/reprise-gnome/src/ui/strings.rs:610
+msgid "Delete playlist…"
+msgstr "Supprimer la liste de lecture…"
+
+#: crates/reprise-gnome/src/ui/strings.rs:611
+msgid "Delete Playlist"
+msgstr "Supprimer la liste de lecture"
+
+#: crates/reprise-gnome/src/ui/strings.rs:613
+msgid "The playlist will be deleted. Its tracks will remain in your library."
+msgstr "La liste de lecture sera supprimée. Ses pistes resteront dans votre bibliothèque."
+
+#: crates/reprise-gnome/src/ui/strings.rs:615
+#, rust-format
+msgid "Delete “{name}”?"
+msgstr "Supprimer « {name} » ?"
+
+#: crates/reprise-gnome/src/ui/strings.rs:618
+#, rust-format
+msgid "Deleted playlist “{name}”"
+msgstr "Liste de lecture « {name} » supprimée"
+
+#: crates/reprise-gnome/src/ui/strings.rs:621
+#, rust-format
+msgid "Could not delete playlist “{name}”"
+msgstr "Impossible de supprimer la liste de lecture « {name} »"
+
+#: crates/reprise-gnome/src/ui/strings.rs:623
+msgid "Import Playlist"
+msgstr "Importer une liste de lecture"
+
+#: crates/reprise-gnome/src/ui/strings.rs:624
+msgid "Export Playlist"
+msgstr "Exporter la liste de lecture"
+
+#: crates/reprise-gnome/src/ui/strings.rs:627
+msgid "M3U Playlists"
+msgstr "Listes de lecture M3U"
+
+#: crates/reprise-gnome/src/ui/strings.rs:631
+msgid "Imported playlist"
+msgstr "Liste de lecture importée"
+
+#: crates/reprise-gnome/src/ui/strings.rs:639
+#, rust-format
+msgid "Imported {name}: {matched} of {total} tracks matched"
+msgstr "{name} importée : {matched} pistes correspondantes sur {total}"
+
+#: crates/reprise-gnome/src/ui/strings.rs:654
+#, rust-format
+msgid "Imported {name}: 0 of {total} tracks matched — nothing added"
+msgstr "{name} importée : aucune piste correspondante sur {total} — aucun ajout"
+
+#: crates/reprise-gnome/src/ui/strings.rs:662
+msgid "Could not import playlist"
+msgstr "Impossible d’importer la liste de lecture"
+
+#: crates/reprise-gnome/src/ui/strings.rs:668
+#, rust-format
+msgid "One opened audio file is not in the library"
+msgid_plural "{count} opened audio files are not in the library"
+msgstr[0] "Un fichier audio ouvert ne figure pas dans la bibliothèque"
+msgstr[1] "{count} fichiers audio ouverts ne figurent pas dans la bibliothèque"
+
+#: crates/reprise-gnome/src/ui/strings.rs:678
+#, rust-format
+msgid "One opened file is not supported"
+msgid_plural "{count} opened files are not supported"
+msgstr[0] "Un fichier ouvert n’est pas pris en charge"
+msgstr[1] "{count} fichiers ouverts ne sont pas pris en charge"
+
+#: crates/reprise-gnome/src/ui/strings.rs:686
+msgid "Playback is unavailable"
+msgstr "La lecture est indisponible"
+
+#: crates/reprise-gnome/src/ui/strings.rs:691
+#, rust-format
+msgid "Exported {name}"
+msgstr "{name} exportée"
+
+#: crates/reprise-gnome/src/ui/strings.rs:696
+#, rust-format
+msgid "Could not export “{name}”"
+msgstr "Impossible d’exporter « {name} »"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:3
+msgid "Audio Character"
+msgstr "Caractère audio"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:4
+msgid "Song analysis"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:5
+msgid "Visual"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:6
+msgid "Song Visuals"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:7
+msgid "Show local audio-reactive visuals in Now Playing"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:8
+msgid "Rings"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:9
+msgid "Flow"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:10
+msgid "Pulse"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:11
+msgid "Audio-reactive song visual"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:13
+msgid "F11 Fullscreen · color follows the cover accent"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:14
+msgid "Analyze audio locally"
+msgstr "Analyser le son localement"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:16
+msgid "Reprise reads audio files only on this device. Nothing is uploaded. Existing profiles are kept when this is turned off."
+msgstr "Reprise lit les fichiers audio uniquement sur cet appareil. Rien n’est envoyé. Les profils existants sont conservés lorsque cette option est désactivée."
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:18
+msgid "Analysis progress"
+msgstr "Progression de l’analyse"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:19
+msgid "No eligible tracks"
+msgstr "Aucune piste admissible"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:21
+#, rust-format
+msgid "Analysis is off · {analyzed} of {total} analyzed · {failed} failed"
+msgstr "Analyse désactivée · {analyzed} sur {total} analysées · {failed} échecs"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:23
+#, rust-format
+msgid "Ready · {analyzed} of {total} analyzed · {failed} failed"
+msgstr "Prêt · {analyzed} sur {total} analysées · {failed} échecs"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:25
+#, rust-format
+msgid "Analyzing · {analyzed} of {total} analyzed · {failed} failed"
+msgstr "Analyse · {analyzed} sur {total} analysées · {failed} échecs"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:27
+#, rust-format
+msgid "Paused · {analyzed} of {total} analyzed · {failed} failed"
+msgstr "En pause · {analyzed} sur {total} analysées · {failed} échecs"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:29
+#, rust-format
+msgid "Cancelled · {analyzed} of {total} analyzed · {failed} failed"
+msgstr "Annulé · {analyzed} sur {total} analysées · {failed} échecs"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:31
+#, rust-format
+msgid "Failed · {analyzed} of {total} analyzed · {failed} failed"
+msgstr "Échec · {analyzed} sur {total} analysées · {failed} échecs"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:33
+#, rust-format
+msgid "Complete · {analyzed} of {total} analyzed · {failed} failed"
+msgstr "Terminé · {analyzed} sur {total} analysées · {failed} échecs"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:34
+msgid "Pause analysis"
+msgstr "Suspendre l’analyse"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:35
+msgid "Resume analysis"
+msgstr "Reprendre l’analyse"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:36
+msgid "Cancel analysis"
+msgstr "Annuler l’analyse"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:37
+msgid "Retry failed tracks"
+msgstr "Réessayer les pistes en échec"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:38
+msgid "Reanalyze library"
+msgstr "Réanalyser la bibliothèque"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:39
+msgid "Reanalyze the library?"
+msgstr "Réanalyser la bibliothèque ?"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:41
+msgid "Existing Audio Character profiles will be replaced. This can take time. Music files and track metadata are not changed."
+msgstr "Les profils de Caractère audio existants seront remplacés. Cela peut prendre du temps. Les fichiers musicaux et métadonnées des pistes ne sont pas modifiés."
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:43
+msgid "Reanalyze"
+msgstr "Réanalyser"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:44
+msgid "Play a track to see its Audio Character"
+msgstr "Lisez une piste pour voir son Caractère audio"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:46
+msgid "The loaded track's local audio profile will appear here."
+msgstr "Le profil audio local de la piste chargée apparaîtra ici."
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:47
+msgid "Local audio analysis is disabled"
+msgstr "L’analyse audio locale est désactivée"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:49
+msgid "Enable Analyze audio locally in Library Settings."
+msgstr "Activez « Analyser le son localement » dans les paramètres de la bibliothèque."
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:50
+msgid "Audio Character is pending"
+msgstr "Le Caractère audio est en attente"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:52
+msgid "This track is waiting for local analysis."
+msgstr "Cette piste attend l’analyse locale."
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:53
+msgid "Audio Character analysis failed"
+msgstr "L’analyse du Caractère audio a échoué"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:55
+msgid "Retry failed tracks from Library Settings."
+msgstr "Réessayez les pistes en échec depuis les paramètres de la bibliothèque."
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:56
+msgid "Audio Character is stale"
+msgstr "Le Caractère audio est obsolète"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:58
+msgid "The local profile will be updated in the background."
+msgstr "Le profil local sera mis à jour en arrière-plan."
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:59
+msgid "Intensity"
+msgstr "Intensité"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:60
+msgid "Brightness"
+msgstr "Luminosité"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:61
+msgid "Dynamicity"
+msgstr "Dynamisme"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:62
+msgid "Rhythmicity"
+msgstr "Rythmicité"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:63
+#, rust-format
+msgid "Confidence {confidence}%"
+msgstr "Confiance {confidence} %"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:65
+#, rust-format
+msgid "{dimension}, {value}%, confidence {confidence}%"
+msgstr "{dimension}, {value} %, confiance {confidence} %"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:66
+msgid "Tempo"
+msgstr "Tempo"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:67
+#, rust-format
+msgid "{bpm} BPM"
+msgstr "{bpm} BPM"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:69
+#, rust-format
+msgid "Tempo, {bpm} BPM, confidence {confidence}%"
+msgstr "Tempo, {bpm} BPM, confiance {confidence} %"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:7
+msgid "Recently added"
+msgstr "Ajouts récents"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:8
+msgid "Title A–Z"
+msgstr "Titre A–Z"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:9
+msgid "Artist A–Z"
+msgstr "Artiste A–Z"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:11
+#: crates/reprise-gnome/src/ui/strings_artist.rs:36
+msgid "Most played"
+msgstr "Les plus écoutées"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:12
+#, rust-format
+msgid "{} albums"
+msgstr "{} albums"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:13
+#, rust-format
+msgid "No albums match \"{}\""
+msgstr "Aucun album ne correspond à « {} »"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:17
+#: crates/reprise-gnome/src/ui/strings_artist.rs:58
+msgid "Add to queue"
+msgstr "Ajouter à la file d’attente"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:18
+msgid "Go to artist"
+msgstr "Aller à l’artiste"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:20
+msgid "Reveal playing album"
+msgstr "Afficher l’album en cours de lecture"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:39
+#: crates/reprise-gnome/src/ui/strings_issues.rs:58
+#, rust-format
+msgid "{count} tracks"
+msgstr "{count} pistes"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:50
+msgid "About Reprise"
+msgstr "À propos de Reprise"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:51
+msgid "Reprise Engine and Linux Platform"
+msgstr "Moteur Reprise et plateforme Linux"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:54
+msgid "Help"
+msgstr "Aide"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:55
+msgid "Navigation"
+msgstr "Navigation"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:56
+msgid "Play or Pause"
+msgstr "Lire ou mettre en pause"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:57
+msgid "Stop Playback"
+msgstr "Arrêter la lecture"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:58
+msgid "Increase Volume"
+msgstr "Augmenter le volume"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:59
+msgid "Decrease Volume"
+msgstr "Diminuer le volume"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:60
+msgid "Search Library"
+msgstr "Rechercher dans la bibliothèque"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:61
+msgid "Toggle Compact View"
+msgstr "Afficher ou masquer la vue compacte"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:62
+msgid "Clear Search or Return to Content"
+msgstr "Effacer la recherche ou revenir au contenu"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:63
+msgid "Play Selected Track"
+msgstr "Lire la piste sélectionnée"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:64
+msgid "Open Context Menu"
+msgstr "Ouvrir le menu contextuel"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:65
+msgid "Open Help"
+msgstr "Ouvrir l’aide"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:66
+msgid "Open Main Menu"
+msgstr "Ouvrir le menu principal"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:67
+msgid "Close Window"
+msgstr "Fermer la fenêtre"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:68
+msgid "Quit Reprise"
+msgstr "Quitter Reprise"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:71
+msgid "Rescan Library"
+msgstr "Réanalyser la bibliothèque"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:72
+msgid "Cancel Scan"
+msgstr "Annuler l’analyse"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:73
+msgid "Sync Device…"
+msgstr "Synchroniser l’appareil…"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:74
+msgid "Keyboard Shortcuts"
+msgstr "Raccourcis-clavier"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:75
+msgid "Open Keyboard Shortcuts"
+msgstr "Ouvrir les raccourcis clavier"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:78
+msgid "Always on Top"
+msgstr "Toujours au premier plan"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:79
+msgid "Quit"
+msgstr "Quitter"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:82
+msgid "Color Scheme"
+msgstr "Schéma de couleurs"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:83
+msgid "Choose light, dark, or follow system preference"
+msgstr "Choisir le thème clair, sombre ou suivre la préférence du système"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:84
+msgid "Light"
+msgstr "Clair"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:85
+msgid "Dark"
+msgstr "Foncé"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:86
+msgid "System"
+msgstr "Système"
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:8
+msgid "Reprise"
+msgstr "Reprise"
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:9
+msgid "Tracks"
+msgstr "Pistes"
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:10
+#: crates/reprise-gnome/src/ui/strings_artist.rs:64
+msgid "Albums"
+msgstr "Albums"
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:11
+#: crates/reprise-gnome/src/ui/strings_news.rs:52
+msgid "Artists"
+msgstr "Artistes"
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:12
+msgid "No Albums Yet"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:13
+msgid "Scan a music folder to see album covers here."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:14
+msgid "No Artists Yet"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:15
+msgid "Scan a music folder to see artists here."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:16
+msgid "Unknown Artist"
+msgstr "Artiste inconnu"
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:22
+#: crates/reprise-gnome/src/ui/strings_artist.rs:87
+#, rust-format
+msgid "{count} album"
+msgid_plural "{count} albums"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:35
+msgid "A–Z"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:37
+msgid "Recently played"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:43
+#, rust-format
+msgid "{count} artist"
+msgid_plural "{count} artists"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:52
+msgid "ARTIST"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:54
+msgid "Play all"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:56
+msgid "More artist actions"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:60
+msgid "Edit tags for all"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:62
+msgid "Go to folder"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:66
+msgid "Top tracks"
+msgstr "Meilleurs titres"
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:68
+msgid "Show all"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:70
+msgid "Show less"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:72
+msgid "No albums for this artist yet."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:99
+#, rust-format
+msgid "{count} hour"
+msgid_plural "{count} hours"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:105
+#, rust-format
+msgid "{count} play this year"
+msgid_plural "{count} plays this year"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:135
+#, rust-format
+msgid "{count} play"
+msgid_plural "{count} plays"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:147
+#, rust-format
+msgid "Show all {count} track ›"
+msgid_plural "Show all {count} tracks ›"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:10
+msgid "Show 1 more"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:11
+#, rust-format
+msgid "Show {count} more"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:24
+msgid "No missing files ✓"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:25
+msgid "Your library has no missing file entries."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:27
+msgid "On unavailable drive"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:28
+msgid "unknown location"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:29
+msgid "not mounted"
+msgstr "non monté"
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:31
+msgid "return automatically when the drive is mounted"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:32
+msgid "will be verified on next scan"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:34
+msgid "Deleted from disk"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:35
+msgid "folder still exists"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:36
+#: crates/reprise-gnome/src/ui/sidebar/sidebar_issue_strings.rs:28
+msgid "Remove"
+msgstr "Supprimer"
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:37
+#, rust-format
+msgid "Remove all {count} from library"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:38
+msgid "Remove from library?"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:39
+#, rust-format
+msgid "This removes {count} tracks from the library — their ratings and listening history go with them. Files are never touched."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:40
+msgid "1 removed"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:41
+#, rust-format
+msgid "{count} removed"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:42
+msgid "Undo"
+msgstr "Annuler"
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:43
+msgid "Auto-clean: off ▾"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:44
+#, rust-format
+msgid "Auto-clean: {days} days ▾"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:46
+msgid "30 days"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:47
+msgid "90 days"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:48
+msgid "Enable auto-clean?"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:49
+#, rust-format
+msgid "This will remove {count} tracks now (deleted more than {days} days ago) — their ratings and listening history go with them."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:50
+msgid "Remove now"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:51
+msgid "Start counting from today"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:53
+msgid "Reprise automatically reconnects moved tracks when it can identify them."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:54
+#, rust-format
+msgid "Last scan relinked {count} tracks"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:55
+msgid "Tracks deleted from disk stay listed until you remove them — enable auto-clean to do this automatically."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:56
+msgid "Remove only removes library entries — never files."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:57
+msgid "1 track"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:59
+#, rust-format
+msgid "since {date}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:60
+msgid "On unavailable drive — returns when mounted"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:61
+#, rust-format
+msgid "File missing since {date}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:62
+msgid "Show in Missing files"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:63
+msgid "Locate…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:64
+msgid "Locate replacement file"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:65
+msgid "Search folder…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:66
+msgid "Search folder for missing tracks"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:67
+msgid "This looks like a different recording"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:68
+msgid "Outside library folder"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:69
+msgid "Relink anyway"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:70
+#, rust-format
+msgid "Duration: {old} → {new}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:71
+#, rust-format
+msgid "Title: {old} → {new}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:73
+msgid "This file is outside your library folder — it won't be watched or rescanned."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:74
+msgid "Searching for missing tracks"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:76
+#, rust-format
+msgid "{processed} of {total} files checked · {count} tracks to relink"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:77
+#, rust-format
+msgid "{relinked} of {count} tracks relinked"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:78
+msgid "Could not relink the selected track"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:79
+msgid "A folder search is already running"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:80
+msgid "no readable title"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:167
+msgid "Unreadable tags"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:169
+msgid "Tags unreadable — the file itself can usually still be played"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:171
+msgid "Permission denied"
+msgstr "Permission non accordée"
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:172
+msgid "Reprise cannot read this file"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:174
+msgid "Unsupported format"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:175
+msgid "This audio format is not supported"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:177
+msgid "Read error"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:178
+msgid "The file could not be read"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:180
+msgid "Unclassified"
+msgstr "Non classé"
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:181
+msgid "The error could not be classified"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:182
+msgid "1 file"
+msgstr "1 fichier"
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:183
+#, rust-format
+msgid "{count} files"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:184
+msgid "seen in 1 scan"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:185
+#, rust-format
+msgid "seen in {count} scans"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:186
+msgid "Imported without metadata"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:187
+msgid "Open in Tag Editor"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:188
+msgid "Show in Files"
+msgstr "Afficher dans Fichiers"
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:189
+msgid "Retry all"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:190
+msgid "Dismiss all"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:191
+msgid "Export list…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:192
+msgid "Export import errors"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:193
+msgid "Restore"
+msgstr "Restaurer"
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:194
+#, rust-format
+msgid "{count} dismissed · Show"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:195
+msgid "Hide dismissed"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:196
+msgid "Could not dismiss — the file is unavailable"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:197
+msgid "Could not retry all import errors"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:198
+msgid "Could not export the import-error list"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:199
+msgid "1 failed"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:200
+#, rust-format
+msgid "{count} failed"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:201
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:74
+msgid "Details"
+msgstr "Détails"
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:239
+msgid "Track unavailable — skipped"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:9
+msgid "Library Doctor"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:11
+msgid "Review local tag cleanup suggestions; optional remote suggestions; contacts MusicBrainz / AcoustID"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:12
+msgid "MusicBrainz / AcoustID suggestions"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:14
+msgid "Optional network lookup · local fixes are always included · no file paths or private library data"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:15
+msgid "Enable remote tag suggestions?"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:17
+msgid "Reprise sends only existing title, artist, album, album artist, MusicBrainz IDs, and duration to MusicBrainz. AcoustID receives only a fingerprint and duration. File paths, filenames, library roots, ratings, listening history, playlists, and device data are never sent."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:19
+msgid "Enable Suggestions"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:20
+msgid "Scope"
+msgstr "Portée"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:21
+msgid "Whole Library"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:22
+msgid "Current View"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:23
+msgid "Selection"
+msgstr "Sélection"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:24
+msgid "Scan Options"
+msgstr "Options de numérisation"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:25
+msgid "Run Scan Now"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:26
+msgid "Checking tracks…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:27
+msgid "Results"
+msgstr "Résultats"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:28
+msgid "Results Found So Far"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:29
+msgid "Safe · local, preselected"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:30
+msgid "Suggestions · review"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:31
+msgid "Unresolved Groups"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:32
+msgid "Tracks Checked · skipped"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:33
+msgid "Casing / Whitespace"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:34
+msgid "Missing Album Artist"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:35
+msgid "Genre Variants"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:36
+msgid "Missing / Incorrect Year"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:37
+msgid "Missing Recording MBID"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:38
+msgid "Review Changes"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:39
+msgid "Review Safe Fixes"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:40
+msgid "No Library Doctor Results Yet"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:42
+msgid "Choose a scope and run a read-only scan. No tags are changed here."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:44
+msgid "That scope is no longer available. Scanning the whole library instead."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:45
+msgid "AcoustID Unavailable"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:47
+msgid "Local checks and MusicBrainz suggestions remain available."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:48
+msgid "Local"
+msgstr "Local"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:49
+msgid "MusicBrainz"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:50
+msgid "AcoustID"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:51
+msgid "Recording MBID"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:52
+msgid "Unknown Track"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:53
+msgid "— empty —"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:54
+msgid "Select tag change"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:55
+msgid "Track + Field"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:56
+msgid "Current"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:57
+msgid "Proposed"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:58
+msgid "Source"
+msgstr "Source"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:59
+msgid "Low confidence; review before selecting"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:60
+msgid "Edit track tags…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:61
+msgid "No Changes to Review"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:63
+msgid "Return to the results and choose another review filter."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:64
+msgid "All Safe"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:65
+msgid "None"
+msgstr "Aucun"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:66
+msgid "Review Tag Changes"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:67
+msgid "Pick one spelling to materialize its track changes."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:68
+msgid "Updating tags…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:69
+msgid "Reverting tags…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:70
+msgid "Library Doctor progress"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:71
+msgid "Locked while a Library Doctor job is running"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:72
+msgid "Another tag-writing job is already running"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:73
+msgid "Revert"
+msgstr "Inverser"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:75
+msgid "Applied"
+msgstr "Appliqué"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:76
+msgid "Reverted"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:77
+msgid "Remaining"
+msgstr "Restant"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:78
+msgid "Conflict"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:79
+msgid "Stale"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:80
+msgid "Failed"
+msgstr "Échec"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:81
+msgid "Cleanup Status"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:82
+msgid "Revert Status"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:83
+msgid "Local fixes always included · no network"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:84
+msgid "Revert Last Cleanup"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:86
+msgid "Available even when Library Doctor is disabled"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:87
+msgid "Enable Library Doctor"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:89
+msgid "This job continues in the background. Progress and Cancel stay in the sidebar."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:90
+msgid "Library Doctor Job Failed"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:94
+#, rust-format
+msgid "{source} · {confidence}%"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:101
+#, rust-format
+msgid "{source} · {confidence}% · low confidence"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:114
+#, rust-format
+msgid "{track}, {field}. Current: {current}. Proposed: {proposed}. Source: {source}."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:128
+#, rust-format
+msgid "Apply {count} track"
+msgid_plural "Apply {count} tracks"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:137
+#, rust-format
+msgid "{changes} tag changes · {files} files · undo available after"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:147
+#, rust-format
+msgid "{value} ({count})"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:155
+#, rust-format
+msgid "{count} spelling, no clear winner"
+msgid_plural "{count} spellings, no clear winner"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:164
+#, rust-format
+msgid "{label}: {value}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:171
+#, rust-format
+msgid "Duration: {duration} ms"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:178
+#, rust-format
+msgid "Duration difference: {delta} ms"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:185
+#, rust-format
+msgid "{completed}/{total} tracks"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:195
+#, rust-format
+msgid "Tags updated · {count} tracks"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:202
+#, rust-format
+msgid "Tags reverted · {count} tracks"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:209
+#, rust-format
+msgid "{updated} tracks updated · {cancelled} cancelled"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:219
+#, rust-format
+msgid "{updated} updated, {failed} failed"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:229
+#, rust-format
+msgid "{applied} applied · {remaining} remaining"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:240
+#, rust-format
+msgid "{count} change"
+msgid_plural "{count} changes"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:250
+#, rust-format
+msgid "{count} group"
+msgid_plural "{count} groups"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:259
+#, rust-format
+msgid "{safe} safe · {review} review"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:266
+#, rust-format
+msgid "{checked} checked · {skipped} skipped"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:277
+#, rust-format
+msgid "Review {count} change"
+msgid_plural "Review {count} changes"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:287
+#, rust-format
+msgid "Review {count} safe fix"
+msgid_plural "Review {count} safe fixes"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:10
+msgid "Information"
+msgstr "Information"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:12
+msgid "Toggle Now Playing panel"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:13
+msgid "Nothing playing"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:14
+msgid "Up Next"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:15
+msgid "Queue is empty"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:16
+msgid "Next in Queue"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:17
+msgid "Artist & Album News"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:19
+msgid "Show upcoming and newly released albums from MusicBrainz (network; off by default)"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:21
+msgid "When enabled, selected artist names are sent to MusicBrainz. Reprise never sends file paths or listening history."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:22
+msgid "Artist News is Off"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:23
+msgid "Select a track to see artist and album news."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:25
+msgid "Artist News is paused while multiple tracks are selected."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:26
+msgid "This track has no artist information."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:27
+msgid "Checking MusicBrainz for album news…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:28
+msgid "No new or upcoming regular albums found."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:29
+msgid "Artist News is temporarily unavailable."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:30
+msgid "Artist could not be matched."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:31
+msgid "Artist could not be matched unambiguously."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:32
+msgid "Upcoming"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:33
+msgid "New"
+msgstr "Nouvelle"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:34
+msgid "Refresh Artist News"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:35
+msgid "Open in MusicBrainz"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:36
+msgid "New Releases"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:38
+msgid "Show upcoming and newly released albums · contacts MusicBrainz"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:39
+msgid "Album Covers"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:41
+msgid "Download missing album covers · contacts MusicBrainz and coverartarchive.org"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:42
+msgid "Artist Portraits"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:43
+msgid "Show artist images · contacts Deezer"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:44
+msgid "Online Lyrics"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:45
+msgid "Load missing lyrics · contacts LRCLIB"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:46
+msgid "Enable album cover downloads →"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:47
+msgid "Enable artist images →"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:48
+msgid "Enable new releases →"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:50
+msgid "Enable network features for artists (images & new releases) →"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:53
+msgid "Top artists only"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:54
+msgid "All artists"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:55
+msgid "Fetch now"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:56
+msgid "Refresh failed · showing saved releases"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:57
+msgid "Checking for new releases…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:58
+msgid "No upcoming releases from your artists"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:59
+msgid "Updated just now"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:60
+msgid "See all"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:61
+msgid "Hide"
+msgstr "Cacher"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:66
+#, rust-format
+msgid "{count} track selected"
+msgid_plural "{count} tracks selected"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:77
+#, rust-format
+msgid "{count} track · {duration}"
+msgid_plural "{count} tracks · {duration}"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:88
+#, rust-format
+msgid "Playing from {source} · {count} track"
+msgid_plural "Playing from {source} · {count} tracks"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:97
+#, rust-format
+msgid "{type} · {date}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:104
+#, rust-format
+msgid "MusicBrainz · Updated {date}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:109
+#, rust-format
+msgid "Cached · Updated {date}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:120
+#, rust-format
+msgid "Updated {age} min ago"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:126
+#, rust-format
+msgid "Updated {age} h ago"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:129
+#, rust-format
+msgid "Updated {age} d ago"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:134
+#, rust-format
+msgid "{count} hidden · Show"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:139
+msgid "unknown date"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:148
+msgid "Checking missing album covers…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:149
+msgid "Cover check complete"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:150
+msgid "Could not check album covers"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:163
+#, rust-format
+msgid "{checked} of {total} checked · {downloaded} downloaded · {unavailable} unavailable"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:9
+msgid "Ctrl+F"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:10
+msgid "F10"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:11
+msgid "Ctrl+M"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:12
+msgid "Ctrl+L"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:23
+msgid "Play album (Ctrl+Enter)"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:24
+msgid "Pause album"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:25
+msgid "Resume album"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:29
+msgid "Play (Space)"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:30
+msgid "Pause (Space)"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:31
+msgid "Play previous track"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:32
+msgid "Play next track"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:35
+msgid "Restore full window (Ctrl+M)"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:36
+msgid "Close mini-player"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:43
+#, rust-format
+msgid "Covers & lyrics: {remaining} queued"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs:54
+#, rust-format
+msgid "Scanning · {pct}%"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:12
+msgid "Import ratings, play counts, date-added and last-played information, playlists, and optionally the column layout"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:13
+msgid "Ratings"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:14
+msgid "Date added"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:15
+msgid "Play counts & last played"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:16
+msgid "Playlists"
+msgstr "Listes de lecture"
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:17
+msgid "Import"
+msgstr "Importer"
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:20
+msgid "Could not read the Rhythmbox library — import stays disabled"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:21
+msgid "Rhythmbox library found"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:23
+msgid "Choose what to copy into Reprise. Rhythmbox and your audio files remain unchanged — you can undo the whole operation."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:25
+msgid "Import complete"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:26
+msgid "Importing from Rhythmbox…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:27
+msgid "Undo import"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:28
+msgid "Files outside your library folder"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:29
+msgid "Files no longer on disk"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:30
+msgid "Podcasts & radio streams"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:31
+msgid "Done"
+msgstr "Terminé"
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:38
+#, rust-format
+msgid "{matched} of {total} Rhythmbox entries matched your library"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:45
+#, rust-format
+msgid "{count} entries skipped"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:54
+#, rust-format
+msgid "{entries} entries · last used {days} days ago"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:58
+#, rust-format
+msgid "{entries} entries"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:65
+#, rust-format
+msgid "{matched} match your library"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:72
+#, rust-format
+msgid "{count} rated tracks found"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:77
+#, rust-format
+msgid "{count} tracks with history"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:81
+msgid "Original “added to library” timeline"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:88
+#, rust-format
+msgid "{playlists} playlists · {tracks} tracks"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:97
+#, rust-format
+msgid "{done} of {total} tracks"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:104
+#, rust-format
+msgid "{count} imported"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:109
+#, rust-format
+msgid "{count} raised"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:116
+#, rust-format
+msgid "{dates} · {last_played} restored"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:123
+#, rust-format
+msgid "{count} created"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:129
+#, rust-format
+msgid "{count} Rhythmbox entries point to files outside your library folder — they will be skipped."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:12
+msgid "Scrobble completed listens to ListenBrainz (network; off by default)"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:14
+msgid "Scrobble completed listens to Last.fm (network; off by default)"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:15
+msgid "ListenBrainz"
+msgstr "ListenBrainz"
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:16
+msgid "ListenBrainz Account"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:17
+msgid "Not connected"
+msgstr "Non connectée"
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:18
+msgid "Connecting…"
+msgstr "Connexion en cours…"
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:19
+msgid "Token rejected"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:20
+msgid "Connection error"
+msgstr "Erreur de connexion"
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:21
+msgid "Offline"
+msgstr "Déconnecté"
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:23
+msgid "Enter a user token from your ListenBrainz profile. The token is stored in the system keyring."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:25
+msgid "User token"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:26
+msgid "Connect"
+msgstr "Connecter"
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:28
+msgid "Requires your ListenBrainz user token"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:29
+msgid "Disconnect"
+msgstr "Déconnexion"
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:31
+msgid "Could not access the system keyring. The token was not stored."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:33
+msgid "Could not validate the ListenBrainz token. Try again later."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:35
+msgid "Could not remove the ListenBrainz token from the system keyring."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:36
+msgid "Last.fm"
+msgstr "Last.fm"
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:37
+msgid "Last.fm Account"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:39
+msgid "Enter credentials for a Last.fm desktop API application. They and the resulting session are stored only in the system keyring."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:41
+msgid "API key"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:42
+msgid "Shared secret"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:43
+msgid "Authorize Reprise in Your Browser"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:45
+msgid "After approving access on Last.fm, return here and continue."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:46
+msgid "Continue"
+msgstr "Continuer"
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:47
+msgid "Credentials or authorization rejected"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:49
+msgid "Could not access the system keyring. Last.fm credentials were not stored."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:50
+msgid "Could not connect to Last.fm. Try again later."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:52
+msgid "Could not remove Last.fm credentials from the system keyring."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:53
+msgid "Open Browser"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:55
+msgid "Requires API key and shared secret"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:56
+msgid "Sign in with Last.fm"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:57
+msgid "Sign in with your Last.fm account. No API key needed."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:58
+msgid "Use your own API key"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:59
+msgid "Test connection"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:60
+msgid "Test failed — try again later."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:64
+#, rust-format
+msgid "Connected as {user_name} ✓"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:70
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:74
+#, rust-format
+msgid "Connected as {user_name}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:83
+#, rust-format
+msgid "{n} submitted"
+msgid_plural "{n} submitted"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:93
+#, rust-format
+msgid "{n} queued"
+msgid_plural "{n} queued"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:11
+msgid "1 hour"
+msgstr "1 heure"
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:12
+#, rust-format
+msgid "{count} hours"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:13
+msgid "1 minute"
+msgstr "1 minute"
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:14
+#, rust-format
+msgid "{count} minutes"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:15
+#, rust-format
+msgid "▲ {percent}% vs {period}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:16
+#, rust-format
+msgid "▼ {percent}% vs {period}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:17
+#, rust-format
+msgid "▲ ×{factor} vs {period}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:18
+#, rust-format
+msgid "▼ ×{factor} vs {period}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:19
+#, rust-format
+msgid "{whole}.{fraction}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:20
+#, rust-format
+msgid "<{factor}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:21
+#, rust-format
+msgid "previous {count} days"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:22
+#, rust-format
+msgid "same period {year}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:23
+msgid "New this year"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:24
+#, rust-format
+msgid "New in {year}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:25
+#, rust-format
+msgid "New in the last {count} days"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:26
+#, rust-format
+msgid "Less than one minute in the same period {year}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:27
+#, rust-format
+msgid "Less than one minute in {year}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:28
+#, rust-format
+msgid "Less than one minute in the previous {count} days"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:29
+msgid "1 spelling merged — unify it in the tag editor?"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:31
+#, rust-format
+msgid "{count} spellings merged — unify them in the tag editor?"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:32
+#, rust-format
+msgid "Mix from {genre} · Create"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:33
+msgid "Mix from your top genre · Create"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:34
+msgid "Start listening to see your stats"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:35
+msgid "Your stats could not be read"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:37
+msgid "Reading the listening history failed. Nothing is missing from it — this view just could not load it."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:13
+msgid "Eject device"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:14
+#, rust-format
+msgid "Open {name}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:15
+msgid "Eject device — Sync in progress"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:16
+msgid "Kept on device"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:18
+msgid "GVfs did not report total capacity; the bar shows known music and free space."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:24
+#, rust-format
+msgid "Syncing {name} · {percent}%"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:51
+msgid "Synchronization"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:52
+msgid "Connected Android Devices"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:53
+msgid "No Android Device Connected"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:55
+msgid "Connect your unlocked Android device by USB and select File transfer in its USB options."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:56
+msgid "Connected"
+msgstr "Connecté"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:57
+msgid "Disconnected"
+msgstr "Déconnecté"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:58
+msgid "Reading music on device…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:59
+msgid "Could not read music on this device"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:60
+msgid "Available space unknown"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:61
+msgid "Music on Device"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:62
+msgid "Phone Playlists"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:63
+msgid "No music was found in the device Music folder."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:64
+msgid "Create a phone playlist, then drag tracks onto it."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:65
+msgid "Waiting for tracks"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:66
+msgid "New Phone Playlist"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:67
+msgid "Add Selected Tracks"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:70
+msgid "Refresh Device Music"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:71
+msgid "Not Enough Space on Device"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:72
+msgid "Synchronization Progress"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:73
+msgid "Cancel Current Copy"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:74
+msgid "Preparing copy…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:75
+msgid "Paused — reconnect the device to continue"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:76
+msgid "Cancelling current copy…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:77
+msgid "Synchronization complete"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:78
+msgid "Synchronization failed"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:79
+msgid "Ready to synchronize"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:80
+msgid "Current file"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:81
+msgid "Overall progress"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:88
+#, rust-format
+msgid "{size} available"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:96
+#, rust-format
+msgid "{state} · {space}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:111
+#, rust-format
+msgid "{completed} of {total} tracks"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:119
+#, rust-format
+msgid "{count} job waiting"
+msgid_plural "{count} jobs waiting"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:128
+#, rust-format
+msgid "{copied} copied · {skipped} skipped · {failed} failed"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:141
+#, rust-format
+msgid "{count} track queued · job {position}"
+msgid_plural "{count} tracks queued · job {position}"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:170
+#, rust-format
+msgid "{percent} %"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:193
+#, rust-format
+msgid "{done} of {total}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:231
+#, rust-format
+msgid "~{minutes} min left"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:236
+#, rust-format
+msgid "~{seconds} s left"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:251
+#, rust-format
+msgid "This copy needs {required}, but only {available} is available for this action. Free some space or select fewer tracks."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/sidebar/sidebar_issue_strings.rs:22
+msgid "Dismiss all import errors"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/sidebar/sidebar_issue_strings.rs:23
+msgid "Remove all missing entries…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/sidebar/sidebar_issue_strings.rs:24
+msgid "Could not dismiss import errors"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/sidebar/sidebar_issue_strings.rs:25
+msgid "Remove All Missing Entries?"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/sidebar/sidebar_issue_strings.rs:26
+msgid "Could not remove missing entries"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/sidebar/sidebar_issue_strings.rs:32
+#, rust-format
+msgid "Dismissed {count} import error"
+msgid_plural "Dismissed {count} import errors"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/preferences/preference_visual_strings.rs:11
+msgid "Player Bar"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/preferences/preference_visual_strings.rs:12
+msgid "Library Window"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/preferences/preference_visual_strings.rs:13
+msgid "Columns"
+msgstr "Colonnes"
+
+#: crates/reprise-gnome/src/ui/preferences/preference_visual_strings.rs:14
+msgid "Show Filters"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/preferences/preference_visual_strings.rs:15
+msgid "Show Information Panel"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/preferences/preference_visual_strings.rs:17
+msgid "Could not save the player bar position"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/preferences/preference_visual_strings.rs:19
+msgid "Could not save sidebar visibility"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/preferences/preference_visual_strings.rs:21
+msgid "Could not save filter visibility"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/preferences/preference_visual_strings.rs:23
+msgid "Could not save information panel visibility"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/preferences/preference_visual_strings.rs:25
+msgid "Could not save status line visibility"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/preferences/preference_visual_strings.rs:26
+msgid "Could not save list density"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:12
+msgid "FILTER"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:13
+msgid "Add filter"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:14
+msgid "Clear all"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:16
+msgid "Back"
+msgstr "Précédent"
+
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:17
+msgid "Search filter values"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:18
+msgid "All filters are active"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:24
+msgid "Unknown genre"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:25
+msgid "Unknown artist"
+msgstr "Artiste inconnu"
+
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:26
+msgid "Unknown album"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:27
+msgid "Unknown year"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:28
+msgid "Unrated"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:36
+#, rust-format
+msgid "{facet}: {value}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:43
+#, rust-format
+msgid "Remove {facet} filter: {value}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:49
+#, rust-format
+msgid "⌕ “{query}” in any field"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:53
+#, rust-format
+msgid "Remove search: {query}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:63
+#, rust-format
+msgid "{total} track"
+msgid_plural "{total} tracks"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:67
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:89
+#, rust-format
+msgid "{filtered} of {total} track"
+msgid_plural "{filtered} of {total} tracks"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:9
+msgid "Lyrics"
+msgstr "Paroles"
+
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:10
+msgid "Play a track to see its lyrics"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:11
+msgid "Loading lyrics…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:12
+msgid "Instrumental"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:13
+msgid "No lyrics found"
+msgstr "Aucune parole trouvée"
+
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:14
+msgid "Could not load lyrics"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:16
+msgid "synced · LRCLIB"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:17
+msgid "lyrics · tags"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:18
+msgid "Online lyrics are disabled"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:20
+msgid "Enable them to load missing lyrics automatically"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:21
+msgid "Enable in Settings"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/track_list/track_list_queue_menu.rs:18
+msgid "Removed one track from Queue"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/track_list/track_list_queue_menu.rs:19
+#, rust-format
+msgid "Removed {count} tracks from Queue"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:14
+msgid "Window Decorations"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:16
+msgid "Use Reprise's flat header, or add a separate native title bar"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:17
+msgid "Chromium (CSD)"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
+msgid "Separate title bar"
+msgstr ""
