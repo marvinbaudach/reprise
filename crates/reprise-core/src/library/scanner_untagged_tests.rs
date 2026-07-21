@@ -227,6 +227,61 @@ fn scanner_repairs_a_damaged_mp3_container_on_import() {
     assert_eq!(tags.album, "Some Album");
 }
 
+/// A library imported *before* the on-import auto-repair existed left damaged
+/// files sitting in `tracks` rows flagged `untagged = 1`, their `file_mtime`
+/// already matching the file on disk. A later scan must NOT take the unchanged-
+/// mtime fast path for such a row — it re-reads and repairs the container in
+/// place, even though the file itself never changed since import. This is the
+/// regression guard for the reported top tracks that stayed untagged after the
+/// on-import repair shipped, because a plain rescan skipped them.
+#[test]
+fn a_later_scan_repairs_an_already_imported_untagged_track_with_unchanged_mtime() {
+    let tmp = tempfile::tempdir().unwrap();
+    let album_dir = tmp.path().join("Some Album");
+    std::fs::create_dir(&album_dir).unwrap();
+    let path = album_dir.join("Broken Song.mp3");
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/broken-tags.mp3"),
+        &path,
+    )
+    .unwrap();
+
+    let mut conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+
+    // Seed the row exactly as a pre-repair import would have: flagged untagged,
+    // with the file's current mtime so the incremental fast path would skip it.
+    let mtime = file_mtime(&path);
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, album, added_at, file_mtime, untagged) \
+         VALUES (?1, 'Broken Song', '', 'Some Album', 0, ?2, 1)",
+        rusqlite::params![path.to_string_lossy().to_string(), mtime],
+    )
+    .unwrap();
+
+    let report = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    assert_eq!(
+        report.skipped_unchanged, 0,
+        "an untagged row must not be fast-path skipped on an unchanged mtime"
+    );
+
+    let (_, _, _, untagged) =
+        track_row(&conn, &path).expect("the seeded row must survive the rescan");
+    assert_eq!(
+        untagged, 0,
+        "the already-imported damaged container must be repaired on a later scan"
+    );
+    assert_eq!(
+        error_kind(&conn, &path),
+        None,
+        "a repaired file carries no import-error hint"
+    );
+
+    let tags = crate::library::tag_edit::read_editable_tags(&path)
+        .expect("the repaired file is strictly readable again");
+    assert_eq!(tags.title, "Broken Song");
+}
+
 /// Brief case 2 ("Pass-2-Fehlschlag"): a pure garbage file (not a real
 /// container at all — the same fixture shape `scanner_import_errors_tests.
 /// rs`'s `broken_mp3` uses) fails BOTH passes. No track row is inserted; the
