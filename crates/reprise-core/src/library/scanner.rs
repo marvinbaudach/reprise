@@ -505,8 +505,15 @@ fn scan_folder_inner(
                 // function's `## Hint coexistence` doc section just below.
                 let (meta, hint) = match outcome {
                     track_meta::MetaOutcome::Tagged(meta) => (meta, None),
+                    // A file the strict reader couldn't parse is repaired in
+                    // place (damaged containers stripped, fresh ID3v2 written
+                    // from the file name / folder), then re-read as a normal
+                    // tagged import. On any repair failure it stays untagged.
                     track_meta::MetaOutcome::Untagged { meta, kind, detail } => {
-                        (meta, Some((kind, detail)))
+                        match repair::repair_damaged_tags(path, &meta, kind) {
+                            Some(repaired) => (repaired, None),
+                            None => (meta, Some((kind, detail))),
+                        }
                     }
                 };
                 let untagged = hint.is_some();
@@ -735,6 +742,9 @@ mod mount;
 // `scanner_meta.rs`'s own module doc comment.
 #[path = "scanner_meta.rs"]
 pub(crate) mod track_meta;
+
+#[path = "scanner_repair.rs"]
+mod repair;
 
 // Task 1.8: move detection also moved out to make room for the above — see
 // `scanner_move.rs`'s own module doc comment.

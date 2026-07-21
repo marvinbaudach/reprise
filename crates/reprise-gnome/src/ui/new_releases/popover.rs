@@ -8,7 +8,7 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
-use crate::ui::{one_shot_task, popover_lifecycle, strings};
+use crate::ui::{one_shot_task, strings};
 
 use super::release_cover::{fallback_accent_for_artist, LazyReleaseCover};
 
@@ -137,7 +137,11 @@ impl NewReleasesPopover {
         content.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
         content.append(&footer);
         popover.set_child(Some(&content));
-        popover_lifecycle::unparent_after_actions(&popover);
+        // The MenuButton owns and parents this popover for its whole lifetime
+        // (set_popover). It must NOT be unparented on close — unlike the
+        // manually set_parent()/popup()-driven context menus that use
+        // popover_lifecycle — or the second open realizes a parentless popover
+        // and crashes (gdk_surface_new_popup: parent assertion / SIGSEGV).
         button.set_popover(Some(&popover));
 
         let state = Rc::new(Self {
