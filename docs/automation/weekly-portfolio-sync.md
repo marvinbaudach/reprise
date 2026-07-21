@@ -27,6 +27,12 @@ accepted benchmark report, or the progress ledger.
 Public showroom languages: English and German only. Do not create, restore, or maintain additional
 translations; their review cost is not justified by the target audience.
 
+Keep architecture goals narrow. They describe thin native frontends for additional platforms that
+reuse the portable core, plus MCP and CLI adapters over the same tested application layer.
+Use natural prose for these goals. Do not classify product features, experiments, packaging, or release
+work as architecture goals; mention such work in its own product or delivery context only when it is
+material and supported by committed evidence.
+
 Maintain `README.md` and `README.de.md` separately as the bilingual developer README: English and
 German only. Keep each a compact developer-facing product story and technical entry point to the
 Reprise repository: make the product worth building, expose meaningful contribution seams, and
