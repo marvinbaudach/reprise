@@ -213,7 +213,11 @@ separate files).
   layers (`PlayerEvent::Spectrum`, panel/window plumbing) for no semantic gain.
   The stateful producer is `SpectrumAnalyzer::ingest`; `from_decibels` stays as
   the neutral-scalar constructor for stateless callers/tests.
-- **Bars mode shipped** (peak-hold), giving the most direct frequency read.
+- **Only the Bars mode ships** (user decision mid-build): Rings/Flow/Pulse and
+  the mode selector were removed — the 32-band peak-hold bars are the clearest
+  read of the music. The impact overlay (shockwaves, sparks, glow) stays.
+- **Fullscreen chrome auto-hides**: header + transport fade out (and the cursor
+  hides) after ~2.5 s of pointer idle, returning on the next mouse move.
 - **Fullscreen gained transport + metadata** (added mid-build at user request):
   the immersive view now shows the track title/subtitle and previous /
   play-pause / stop / next buttons wired to the same player actions as the bar.
