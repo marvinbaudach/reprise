@@ -277,8 +277,8 @@ impl SpectrumAnalyzer {
     pub fn ingest(&mut self, decibels: [f32; SPECTRUM_ANALYSIS_BAND_COUNT]) -> SpectrumFrame {
         let raw = normalize_db(decibels);
         let mut folded = [0.0_f32; SPECTRUM_BAND_COUNT];
-        for band in 0..SPECTRUM_BAND_COUNT {
-            folded[band] = (self.edges[band]..self.edges[band + 1])
+        for (band, slot) in folded.iter_mut().enumerate() {
+            *slot = (self.edges[band]..self.edges[band + 1])
                 .map(|bin| raw[bin])
                 .fold(0.0_f32, f32::max);
         }
@@ -294,22 +294,32 @@ impl SpectrumAnalyzer {
 
         let mut bands = [0.0_f32; SPECTRUM_BAND_COUNT];
         for band in 0..SPECTRUM_BAND_COUNT {
-            self.agc[band] = (self.agc[band] * self.agc_decay).max(folded[band]).max(AGC_FLOOR);
-            bands[band] = (folded[band] / self.agc[band]).clamp(0.0, 1.0).powf(DISPLAY_GAMMA);
+            self.agc[band] = (self.agc[band] * self.agc_decay)
+                .max(folded[band])
+                .max(AGC_FLOOR);
+            bands[band] = (folded[band] / self.agc[band])
+                .clamp(0.0, 1.0)
+                .powf(DISPLAY_GAMMA);
         }
-        SpectrumFrame { bands, level, bass, beat, dynamics }
+        SpectrumFrame {
+            bands,
+            level,
+            bass,
+            beat,
+            dynamics,
+        }
     }
 
     fn detect_beat(&mut self, bands: &[f32; SPECTRUM_BAND_COUNT]) -> Beat {
         let mut flux = 0.0_f32;
         let mut total_weight = 0.0_f32;
-        for index in 0..SPECTRUM_BAND_COUNT {
+        for (index, (&band, &prev)) in bands.iter().zip(self.prev_bands.iter()).enumerate() {
             let weight = if index < FLUX_LOW_BANDS {
                 FLUX_LOW_WEIGHT
             } else {
                 FLUX_HIGH_WEIGHT
             };
-            flux += (bands[index] - self.prev_bands[index]).max(0.0) * weight;
+            flux += (band - prev).max(0.0) * weight;
             total_weight += weight;
         }
         flux /= total_weight.max(1.0);
@@ -359,6 +369,9 @@ fn mean(bands: &[f32; SPECTRUM_BAND_COUNT], range: std::ops::Range<usize>) -> f3
 /// Events the player reports asynchronously, from the GStreamer bus watch and
 /// the position ticker. The UI layer subscribes to these via the callback
 /// passed to `Player::new`.
+// `Spectrum` carries a fixed 64-band snapshot (~276 B) emitted ~60×/s; boxing
+// it would add a per-frame heap allocation on the audio hot path.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum PlayerEvent {
     StateChanged(PlaybackState),
@@ -422,7 +435,8 @@ mod song_visual_tests {
 mod spectrum_analyzer_tests {
     use super::*;
 
-    const SILENCE: [f32; SPECTRUM_ANALYSIS_BAND_COUNT] = [SPECTRUM_FLOOR_DB; SPECTRUM_ANALYSIS_BAND_COUNT];
+    const SILENCE: [f32; SPECTRUM_ANALYSIS_BAND_COUNT] =
+        [SPECTRUM_FLOOR_DB; SPECTRUM_ANALYSIS_BAND_COUNT];
     const FULL: [f32; SPECTRUM_ANALYSIS_BAND_COUNT] = [0.0; SPECTRUM_ANALYSIS_BAND_COUNT];
 
     fn ingest_n(
@@ -443,8 +457,15 @@ mod spectrum_analyzer_tests {
         let moderate = [-20.0_f32; SPECTRUM_ANALYSIS_BAND_COUNT]; // pre-AGC 0.75
         let frame = ingest_n(&mut analyzer, moderate, 60);
         assert!(!frame.beat().fired);
-        assert!((frame.level() - 0.75).abs() < 0.05, "level pre-AGC, got {}", frame.level());
-        assert!(frame.bands().iter().all(|&band| band > 0.95), "AGC → full range");
+        assert!(
+            (frame.level() - 0.75).abs() < 0.05,
+            "level pre-AGC, got {}",
+            frame.level()
+        );
+        assert!(
+            frame.bands().iter().all(|&band| band > 0.95),
+            "AGC → full range"
+        );
     }
 
     #[test]
@@ -453,7 +474,10 @@ mod spectrum_analyzer_tests {
         ingest_n(&mut analyzer, [-20.0; SPECTRUM_ANALYSIS_BAND_COUNT], 60);
         let quiet = ingest_n(&mut analyzer, [-40.0; SPECTRUM_ANALYSIS_BAND_COUNT], 3);
         assert!(
-            quiet.bands().iter().all(|&band| (0.30..=0.75).contains(&band)),
+            quiet
+                .bands()
+                .iter()
+                .all(|&band| (0.30..=0.75).contains(&band)),
             "expected visible contrast, got {:?}",
             &quiet.bands()[..4]
         );
@@ -514,7 +538,10 @@ mod spectrum_analyzer_tests {
         for step in 0..200 {
             let db = [-80.0_f32 + (step % 80) as f32; SPECTRUM_ANALYSIS_BAND_COUNT];
             let frame = analyzer.ingest(db);
-            assert!(frame.bands().iter().all(|b| b.is_finite() && (0.0..=1.0).contains(b)));
+            assert!(frame
+                .bands()
+                .iter()
+                .all(|b| b.is_finite() && (0.0..=1.0).contains(b)));
             assert!((0.0..=1.0).contains(&frame.level()));
             assert!((0.0..=1.0).contains(&frame.bass()));
             assert!((0.0..=1.0).contains(&frame.beat().strength));
@@ -528,7 +555,10 @@ mod spectrum_analyzer_tests {
         assert_eq!(edges[0], 0);
         assert_eq!(edges[SPECTRUM_BAND_COUNT], SPECTRUM_ANALYSIS_BAND_COUNT);
         for band in 0..SPECTRUM_BAND_COUNT {
-            assert!(edges[band] < edges[band + 1], "band {band} empty or non-monotonic");
+            assert!(
+                edges[band] < edges[band + 1],
+                "band {band} empty or non-monotonic"
+            );
         }
     }
 
