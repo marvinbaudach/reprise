@@ -30,13 +30,6 @@ mod imp {
     use super::*;
     use gtk4::subclass::prelude::*;
 
-    /// Signature for the vignette-style "paint something behind the scene"
-    /// hook the fullscreen canvas installs via `GlowArea::set_pre_paint`;
-    /// unused by the inline canvas. Runs on the crisp layer's Cairo context,
-    /// before `render::draw_crisp`, in its own unblurred snapshot layer
-    /// beneath the (optional) glow blur — see `snapshot()`.
-    pub type PrePaint = dyn Fn(&gtk4::cairo::Context, f32, f32);
-
     #[derive(Default)]
     pub struct GlowArea {
         pub engine: RefCell<Option<Rc<RefCell<VisualEngine>>>>,
@@ -44,7 +37,6 @@ mod imp {
         /// minimum (the fullscreen canvas relies on its `Overlay` parent and
         /// `vexpand` to fill the available height instead).
         pub min_height: Cell<i32>,
-        pub pre_paint: RefCell<Option<Rc<PrePaint>>>,
     }
 
     #[glib::object_subclass]
@@ -80,16 +72,6 @@ mod imp {
             let scene = engine.borrow().scene(width, height);
 
             let bounds = gtk4::graphene::Rect::new(0.0, 0.0, width, height);
-
-            // Background layer (fullscreen vignette only; a no-op for the
-            // inline canvas, which never installs `pre_paint`) — its own
-            // unblurred snapshot layer, painted before the glow blur so the
-            // vignette sits behind everything, exactly like the Cairo
-            // fallback's `paint_vignette` call before `draw_scene`.
-            if let Some(pre_paint) = self.pre_paint.borrow().as_ref() {
-                let cr = snapshot.append_cairo(&bounds);
-                pre_paint(&cr, width, height);
-            }
 
             let radius = render::scene_blur_radius(&scene);
             if radius > 0.5 {
@@ -135,14 +117,6 @@ impl GlowArea {
         *imp.engine.borrow_mut() = Some(engine);
         imp.min_height.set(min_height);
         obj
-    }
-
-    /// Installs a "paint something behind the scene" hook — the fullscreen
-    /// canvas uses this for its dark vignette (`fullscreen::paint_vignette`);
-    /// the inline canvas never calls this, so `snapshot()` simply skips the
-    /// background layer for it. See `imp::PrePaint`.
-    pub fn set_pre_paint(&self, pre_paint: impl Fn(&gtk4::cairo::Context, f32, f32) + 'static) {
-        *self.imp().pre_paint.borrow_mut() = Some(Rc::new(pre_paint));
     }
 }
 

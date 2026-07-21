@@ -23,16 +23,6 @@ use super::{
     register_area, render, FullscreenChrome, PlayerHooks, SongVisualizer, SEEK_SCALE_MAX,
 };
 
-/// Dark vignette color (design mock's `#0f101c`) painted under the engine's
-/// scene, as two overlaid `cairo::RadialGradient`s: a flat center wash at
-/// 0.45 alpha, plus an outer ring ramping to 0.87 alpha that only shows past
-/// the wash's radius — so the center reads close to 0.45 and the corners
-/// read close to 0.87, matching the mock's "0.45 center → 0.87 edge" without
-/// a hard seam.
-const VIGNETTE_RGB: (f64, f64, f64) = (15.0 / 255.0, 16.0 / 255.0, 28.0 / 255.0);
-const VIGNETTE_CENTER_ALPHA: f64 = 0.45;
-const VIGNETTE_EDGE_ALPHA: f64 = 0.87;
-
 const COVER_THUMB_SIZE: i32 = 84;
 const VOLUME_SCALE_WIDTH: i32 = 110;
 /// Wide centered seek bar per the design (~min(700px, 78vw)).
@@ -208,22 +198,22 @@ pub(super) fn build(visualizer: &SongVisualizer, parent: &adw::ApplicationWindow
     window
 }
 
-/// The fullscreen canvas: same engine-driven scene as the inline canvas, but
-/// with the dark vignette (see [`VIGNETTE_RGB`]) painted first so the scene
-/// always reads over a moody backdrop rather than the accent-tinted CSS
-/// background alone. Built as a GSK `glow_area::GlowArea` (real GPU blur) or
-/// the Cairo `DrawingArea` fallback per `gpu_visuals_enabled()` — mirrors
-/// `song_visualizer::build_canvas`, but kept local to this module since the
-/// vignette pre-paint is fullscreen-only chrome, not something the inline
-/// canvas needs.
+/// The fullscreen canvas: same engine-driven scene as the inline canvas. The
+/// moody backdrop is a static CSS radial gradient on the canvas
+/// (`.reprise-song-visual-fullscreen-canvas`), so the per-frame draw path only
+/// paints the live scene. Built as a GSK `glow_area::GlowArea` (real GPU blur)
+/// or the Cairo `DrawingArea` fallback per `gpu_visuals_enabled()` — mirrors
+/// `song_visualizer::build_canvas`, kept local to this module because the
+/// fullscreen canvas carries its own CSS class and accessibility label.
 fn fullscreen_canvas(engine: &Rc<RefCell<VisualEngine>>) -> gtk4::Widget {
     const CSS_CLASS: &str = "reprise-song-visual-fullscreen-canvas";
+    // The dark backdrop/vignette is a static CSS background on the canvas
+    // (rendered once by GTK, not recomputed per frame) — see the
+    // `.reprise-song-visual-fullscreen-canvas` rule. The draw path only paints
+    // the live scene, so a big fullscreen canvas isn't re-filling two
+    // screen-sized radial gradients every frame.
     if gpu_visuals_enabled() {
-        let area = glow_area::GlowArea::new(engine.clone(), -1, true, CSS_CLASS);
-        area.set_pre_paint(|cr, width, height| {
-            paint_vignette(cr, f64::from(width), f64::from(height));
-        });
-        area.upcast()
+        glow_area::GlowArea::new(engine.clone(), -1, true, CSS_CLASS).upcast()
     } else {
         let area = gtk4::DrawingArea::builder()
             .height_request(-1)
@@ -237,37 +227,12 @@ fn fullscreen_canvas(engine: &Rc<RefCell<VisualEngine>>) -> gtk4::Widget {
         ))]);
         let engine = engine.clone();
         area.set_draw_func(move |area, cr, width, height| {
-            paint_vignette(cr, f64::from(width), f64::from(height));
             let accent = accent_rgb(area);
             engine.borrow_mut().set_accent(accent);
             let scene = engine.borrow().scene(width as f32, height as f32);
             render::draw_scene(cr, &scene);
         });
         area.upcast()
-    }
-}
-
-fn paint_vignette(cr: &gtk4::cairo::Context, width: f64, height: f64) {
-    let (r, g, b) = VIGNETTE_RGB;
-    let cx = width / 2.0;
-    let cy = height / 2.0;
-    let wash_r = (width.min(height) * 0.5).max(1.0);
-    let edge_r = (width.max(height) * 0.75).max(1.0);
-
-    let wash = gtk4::cairo::RadialGradient::new(cx, cy, 0.0, cx, cy, wash_r);
-    wash.add_color_stop_rgba(0.0, r, g, b, VIGNETTE_CENTER_ALPHA);
-    wash.add_color_stop_rgba(1.0, r, g, b, VIGNETTE_CENTER_ALPHA);
-    if cr.set_source(&wash).is_ok() {
-        cr.rectangle(0.0, 0.0, width, height);
-        let _ = cr.fill();
-    }
-
-    let edge = gtk4::cairo::RadialGradient::new(cx, cy, wash_r * 0.6, cx, cy, edge_r);
-    edge.add_color_stop_rgba(0.0, r, g, b, 0.0);
-    edge.add_color_stop_rgba(1.0, r, g, b, VIGNETTE_EDGE_ALPHA);
-    if cr.set_source(&edge).is_ok() {
-        cr.rectangle(0.0, 0.0, width, height);
-        let _ = cr.fill();
     }
 }
 
