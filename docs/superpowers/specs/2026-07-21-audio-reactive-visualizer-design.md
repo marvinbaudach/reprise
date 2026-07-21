@@ -206,6 +206,21 @@ envelopes use spring/overshoot decay for bounce. This is the core fix for the
 Steps 1 and 2 can be prepared in parallel (core vs. visualizer envelope touch
 separate files).
 
+## Implementation notes / deviations
+
+- **`SpectrumFrame` kept its name** (not renamed to `VisualFrame`). The enriched
+  frame carries the new scalars; keeping the name avoided churn across ~6 wiring
+  layers (`PlayerEvent::Spectrum`, panel/window plumbing) for no semantic gain.
+  The stateful producer is `SpectrumAnalyzer::ingest`; `from_decibels` stays as
+  the neutral-scalar constructor for stateless callers/tests.
+- **Bars mode shipped** (peak-hold), giving the most direct frequency read.
+- **Fullscreen gained transport + metadata** (added mid-build at user request):
+  the immersive view now shows the track title/subtitle and previous /
+  play-pause / stop / next buttons wired to the same player actions as the bar.
+- Headless visual check: a gated `render_preset_gallery_pngs` test renders each
+  preset to a PPM (dep-free; cairo's png/svg surfaces aren't in the feature set)
+  for external rasterization — no desktop window.
+
 ## Out of scope
 
 - Beat-grid / BPM display, tempo sync, or persisted per-track analysis.
