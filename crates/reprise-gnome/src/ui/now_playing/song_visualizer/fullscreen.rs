@@ -61,13 +61,6 @@ pub(super) fn build(visualizer: &SongVisualizer, parent: &adw::ApplicationWindow
     let area = fullscreen_canvas(&visualizer.engine);
     register_area(&visualizer.areas, &area);
 
-    let backdrop = gtk4::Picture::new();
-    backdrop.set_content_fit(gtk4::ContentFit::Cover);
-    backdrop.set_can_target(false);
-    backdrop.set_hexpand(true);
-    backdrop.set_vexpand(true);
-    backdrop.add_css_class("reprise-fs-backdrop");
-
     let (header, title, subtitle, state, timecode) = header_row();
     let (
         bottom,
@@ -90,7 +83,6 @@ pub(super) fn build(visualizer: &SongVisualizer, parent: &adw::ApplicationWindow
         track_pos,
         next_up,
         cover_thumb,
-        backdrop: backdrop.clone(),
         play_pause,
         time_cur,
         time_total,
@@ -112,8 +104,7 @@ pub(super) fn build(visualizer: &SongVisualizer, parent: &adw::ApplicationWindow
     *visualizer.fullscreen_chrome.borrow_mut() = Some(chrome);
 
     let overlay = gtk4::Overlay::new();
-    overlay.set_child(Some(&backdrop));
-    overlay.add_overlay(&area);
+    overlay.set_child(Some(&area));
     overlay.add_overlay(&header);
     overlay.add_overlay(&bottom);
 
