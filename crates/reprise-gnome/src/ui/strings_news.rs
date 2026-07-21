@@ -134,6 +134,31 @@ pub fn new_releases_hidden(count: usize) -> String {
     formatted(N_!("{count} hidden · Show"), &[("count", &count)])
 }
 
+pub const NEW_RELEASES_HEADER: &str = N_!("New Releases");
+pub const RELEASED: &str = N_!("released");
+pub const IN_LIBRARY: &str = N_!("In library");
+pub const SHOW_HISTORY: &str = N_!("Show history");
+pub const SHOW_IN_LIBRARY: &str = N_!("Show in library");
+pub const OPEN_ANNOUNCEMENT: &str = N_!("Open announcement");
+pub const HIDE_RELEASE_ACTION: &str = N_!("Hide");
+pub const SHOW_AGAIN: &str = N_!("Show again");
+pub const ALL_CAUGHT_UP: &str = N_!("All caught up");
+pub const HISTORY_HEADER: &str = N_!("History");
+pub const RETENTION_SIX_MONTHS: &str = N_!("Retention: 6 months");
+
+/// „in N d" for a release that is still `days` days out. Only meant for
+/// `days > 0`; whether `days <= 0` reads as „today" or „released" is a UI
+/// decision made by the caller, not by this formatter.
+pub fn new_releases_days_until(days: i64) -> String {
+    formatted(N_!("in {days} d"), &[("days", &days.to_string())])
+}
+
+/// „N new" count pill for the New Releases badge/header. „new" does not
+/// change with the count, so no plural form is needed.
+pub fn new_releases_new_count(count: i64) -> String {
+    formatted(N_!("{count} new"), &[("count", &count.to_string())])
+}
+
 fn news_timestamp_date(timestamp: i64) -> String {
     chrono::DateTime::from_timestamp(timestamp, 0).map_or_else(
         || text(N_!("unknown date")),
@@ -168,4 +193,21 @@ pub fn cover_download_progress(
             ("unavailable", &unavailable),
         ],
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_releases_days_until_formats_positive_days() {
+        let copy = new_releases_days_until(25);
+        assert!(copy.contains("25"));
+        assert!(copy.contains('d'));
+    }
+
+    #[test]
+    fn new_releases_new_count_formats_count() {
+        assert_eq!(new_releases_new_count(3), "3 new");
+    }
 }
