@@ -251,23 +251,38 @@ impl TrackList {
     ) {
         let ids = self.shared.current_view_ids();
         let is_queue = matches!(*self.shared.source.borrow(), ViewSource::Queue);
+        let activated_position = if change == CurrentTrackChange::PlaybackStarted {
+            consume_activation_position(&self.shared.pending_row_activation, track_id, 0)
+        } else {
+            None
+        };
 
-        if change == CurrentTrackChange::PlaybackStarted {
+        let previous_position = if change == CurrentTrackChange::PlaybackStarted {
             let previous_id = self.shared.playing_track_id.replace(Some(track_id));
-            if let Some(previous_id) = previous_id.filter(|id| *id != track_id) {
-                if let Some(old_pos) = ids
-                    .iter()
-                    .position(|candidate| *candidate == previous_id)
-                    .and_then(|position| u32::try_from(position).ok())
-                {
-                    self.shared.model.invalidate_window_at(old_pos);
-                }
-            }
-        }
+            previous_id
+                .filter(|id| *id != track_id)
+                .and_then(|previous_id| {
+                    ids.iter()
+                        .position(|candidate| *candidate == previous_id)
+                        .and_then(|position| u32::try_from(position).ok())
+                })
+        } else {
+            None
+        };
 
         let Some(position) =
             visible_position_for_track_in_source(&ids, track_id, queue_position, is_queue)
         else {
+            if let Some(previous_position) = previous_position {
+                invalidate_playing_markers_preserving_view(
+                    &self.shared.column_view,
+                    &self.shared.selection,
+                    &self.shared.model,
+                    Some(previous_position),
+                    None,
+                    None,
+                );
+            }
             tracing::debug!(
                 track_id,
                 "current track is not visible in the active table query"
@@ -277,7 +292,14 @@ impl TrackList {
 
         match change {
             CurrentTrackChange::PlaybackStarted => {
-                self.shared.model.invalidate_window_at(position);
+                invalidate_playing_markers_preserving_view(
+                    &self.shared.column_view,
+                    &self.shared.selection,
+                    &self.shared.model,
+                    previous_position,
+                    Some(position),
+                    activated_position.map(|_| position),
+                );
                 tracing::info!(
                     track_id,
                     position,
@@ -357,6 +379,72 @@ impl TrackList {
     }
 }
 
+/// Rebinding the focused `GtkColumnView` row via `items_changed(position,
+/// 1, 1)` makes GTK discard its row widget. Without an explicit hand-off,
+/// focus falls back to row zero and the view scrolls there — exactly the
+/// visible jump that used to follow double-click/Enter activation. Preserve
+/// the activated row and the user's current scroll offset only when that row
+/// actually owns selection/focus; playback started elsewhere must not steal
+/// focus into the table.
+fn consume_activation_position(
+    pending_track_id: &std::cell::Cell<Option<i64>>,
+    track_id: i64,
+    position: u32,
+) -> Option<u32> {
+    (pending_track_id.take() == Some(track_id)).then_some(position)
+}
+
+fn invalidate_playing_markers_preserving_view(
+    column_view: &gtk4::ColumnView,
+    selection: &gtk4::MultiSelection,
+    model: &super::track_list_model::TrackListModel,
+    previous_position: Option<u32>,
+    current_position: Option<u32>,
+    activated_position: Option<u32>,
+) {
+    let restore_activation = activated_position.filter(|_| widget_owns_focus(column_view));
+    let scroll_value = column_view
+        .vadjustment()
+        .map(|adjustment| adjustment.value());
+    let previous_selected =
+        previous_position.is_some_and(|position| selection.is_selected(position));
+    let current_selected = current_position.is_some_and(|position| selection.is_selected(position));
+    if let Some(position) = previous_position {
+        model.invalidate_window_at(position);
+    }
+    if let Some(position) = current_position.filter(|position| Some(*position) != previous_position)
+    {
+        model.invalidate_window_at(position);
+    }
+    if let Some(position) = previous_position.filter(|_| previous_selected) {
+        selection.select_item(position, false);
+    }
+    if let Some(position) = current_position.filter(|_| current_selected) {
+        selection.select_item(position, false);
+    }
+    if let Some(position) = restore_activation {
+        column_view.scroll_to(position, None, gtk4::ListScrollFlags::FOCUS, None);
+    }
+    let Some(scroll_value) = scroll_value else {
+        return;
+    };
+    let column_view = column_view.clone();
+    gtk4::glib::idle_add_local_once(move || {
+        if let Some(adjustment) = column_view.vadjustment() {
+            adjustment.set_value(scroll_value);
+        }
+    });
+}
+
+fn widget_owns_focus(widget: &impl IsA<gtk4::Widget>) -> bool {
+    let widget = widget.upcast_ref::<gtk4::Widget>();
+    widget
+        .root()
+        .and_downcast::<gtk4::Window>()
+        .and_then(|window| gtk4::prelude::GtkWindowExt::focus(&window))
+        .is_some_and(|focus| focus == *widget || focus.is_ancestor(widget))
+}
+
 fn reveal_track_position(column_view: &gtk4::ColumnView, position: u32, attempts: u8) {
     let n_rows = track_table_row_count(column_view);
     if let Some((adjustment, value)) =
@@ -376,6 +464,7 @@ fn reveal_track_position(column_view: &gtk4::ColumnView, position: u32, attempts
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
     use std::cell::RefCell;
 
     use rusqlite::Connection;
@@ -453,6 +542,92 @@ mod tests {
         while gtk4::glib::MainContext::default().iteration(false) {}
         assert!(!track_list.shared.selection.is_selected(10));
         assert!(track_list.shared.selection.is_selected(position));
+        window.close();
+    }
+
+    #[test]
+    fn nav_13_activation_restore_token_is_exact_and_one_shot() {
+        let pending = Cell::new(Some(42));
+
+        assert_eq!(consume_activation_position(&pending, 7, 3), None);
+        assert_eq!(pending.get(), None, "a mismatched stale token is discarded");
+
+        pending.set(Some(42));
+        assert_eq!(consume_activation_position(&pending, 42, 9), Some(9));
+        assert_eq!(pending.get(), None, "a matching token is consumed once");
+        assert_eq!(consume_activation_position(&pending, 42, 9), None);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn nav_10_automatic_advance_preserves_multiselection_and_viewport() {
+        gtk4::init().unwrap();
+        let mut conn = Connection::open_in_memory().unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        let tx = conn.transaction().unwrap();
+        for id in 1..=100 {
+            tx.execute(
+                "INSERT INTO tracks (id, path, title, artist, added_at) \
+                 VALUES (?1, ?2, ?3, 'Synthetic Artist', 0)",
+                (
+                    id,
+                    format!("/synthetic/{id:03}.flac"),
+                    format!("Track {id:03}"),
+                ),
+            )
+            .unwrap();
+        }
+        tx.commit().unwrap();
+        let track_list = TrackList::new(
+            Rc::new(RefCell::new(conn)),
+            Box::new(|_, _, _, _| {}),
+            |_, _, _, _| {},
+            super::super::queue_sections::QueueViewModel::default,
+            crate::ui::cover_download_worker::setup_for_test(),
+        );
+        let window = gtk4::Window::builder()
+            .default_width(900)
+            .default_height(320)
+            .child(track_list.widget())
+            .build();
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        let old_position = 60;
+        let new_position = 70;
+        let old_id = track_list.shared.model.track_at(old_position).unwrap().id;
+        let new_id = track_list.shared.model.track_at(new_position).unwrap().id;
+        track_list.shared.column_view.scroll_to(
+            old_position,
+            None,
+            gtk4::ListScrollFlags::FOCUS,
+            None,
+        );
+        track_list.shared.selection.select_item(old_position, false);
+        track_list.shared.selection.select_item(new_position, false);
+        let adjustment = track_list.shared.column_view.vadjustment().unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(1000);
+        while adjustment.value() <= 0.0 && std::time::Instant::now() < deadline {
+            gtk4::glib::MainContext::default().iteration(false);
+        }
+        let before = adjustment.value();
+        assert!(before > 0.0, "precondition: viewport moved away from top");
+        assert!(
+            track_list.shared.selection.is_selected(old_position),
+            "precondition: old playing row is selected"
+        );
+        assert!(
+            track_list.shared.selection.is_selected(new_position),
+            "precondition: next row is also selected"
+        );
+        track_list.shared.playing_track_id.set(Some(old_id));
+
+        track_list.update_current_track(new_id, None, CurrentTrackChange::PlaybackStarted);
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        assert!((adjustment.value() - before).abs() < 0.5);
+        assert!(track_list.shared.selection.is_selected(old_position));
+        assert!(track_list.shared.selection.is_selected(new_position));
         window.close();
     }
 

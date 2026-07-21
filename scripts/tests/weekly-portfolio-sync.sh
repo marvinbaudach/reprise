@@ -4,6 +4,7 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 runner="$repo_root/scripts/weekly-portfolio-sync.sh"
 cron_file="$repo_root/docs/automation/reprise-portfolio-sync.cron"
+prompt_file="$repo_root/docs/automation/weekly-portfolio-sync.md"
 
 if [[ ! -x $runner ]]; then
   echo "weekly portfolio runner is missing or not executable" >&2
@@ -13,9 +14,32 @@ if [[ ! -f $cron_file ]]; then
   echo "weekly portfolio cron definition is missing" >&2
   exit 1
 fi
+if [[ ! -f $prompt_file ]]; then
+  echo "weekly portfolio prompt is missing" >&2
+  exit 1
+fi
 rg -q '^CRON_TZ=Europe/Zurich$' "$cron_file"
 rg -q '^30 7 \* \* 1 ' "$cron_file"
 rg -q '/home/marvin/Projects/reprise/scripts/weekly-portfolio-sync\.sh' "$cron_file"
+
+for prompt_contract in \
+  'developer README' \
+  'developer-facing product story' \
+  'technical entry point' \
+  'English and German only' \
+  'Keep architecture goals narrow' \
+  'thin native frontends' \
+  'MCP and CLI adapters' \
+  'Do not classify product features, experiments, packaging, or release' \
+  'work as architecture goals' \
+  'Use natural prose' \
+  'one architecture visual' \
+  'Performance evidence defaults to a compact comparison table' \
+  'Do not mirror the portfolio narrative' \
+  'CV Reprise project summary' \
+  'rebuild the versioned PDFs'; do
+  rg -Fq "$prompt_contract" "$prompt_file"
+done
 
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/reprise-weekly-sync.XXXXXX")
 trap 'rm -rf "$fixture"' EXIT

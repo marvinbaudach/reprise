@@ -22,14 +22,7 @@ if cargo tree -p reprise-core | grep -Eq 'gtk4|libadwaita|gstreamer|zbus'; then
 fi
 
 echo "== gettext =="
-xgettext --directory=. --files-from=po/POTFILES.in --output="$tmp_root/reprise.pot" \
-  --from-code=UTF-8 --language=Rust '--keyword=N_!:1' --keyword=plural:1,2 \
-  --package-name=Reprise --package-version=0.1.0 \
-  --msgid-bugs-address='Marvin Baudach' --copyright-holder='Marvin Baudach'
-msgfmt --check --check-format -o "$tmp_root/reprise.mo" po/de.po
-msgcmp --use-fuzzy po/de.po "$tmp_root/reprise.pot"
-test -z "$(msgattrib --untranslated po/de.po)"
-test -z "$(msgattrib --only-fuzzy po/de.po)"
+scripts/tests/gettext-catalogs.sh
 
 echo "== Desktop metadata =="
 desktop-file-validate data/org.reprise.Reprise.desktop
@@ -80,6 +73,9 @@ test -f "$tmp_root/root/usr/share/applications/org.reprise.Reprise.desktop"
 test -f "$tmp_root/root/usr/share/metainfo/org.reprise.Reprise.metainfo.xml"
 test -f "$tmp_root/root/usr/share/icons/hicolor/scalable/apps/org.reprise.Reprise.svg"
 test -f "$tmp_root/root/usr/share/icons/hicolor/symbolic/apps/org.reprise.Reprise-symbolic.svg"
-test -f "$tmp_root/root/usr/share/locale/de/LC_MESSAGES/reprise.mo"
+while IFS= read -r locale; do
+  [[ -z "$locale" || "$locale" == \#* ]] && continue
+  test -f "$tmp_root/root/usr/share/locale/$locale/LC_MESSAGES/reprise.mo"
+done < po/LINGUAS
 
 echo "Release checks passed"

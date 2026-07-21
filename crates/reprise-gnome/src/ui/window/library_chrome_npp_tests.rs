@@ -6,6 +6,22 @@ use super::*;
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn nav_12_header_back_is_a_named_action_control() {
+    gtk4::init().unwrap();
+
+    let button = build_navigation_back_button();
+
+    assert_eq!(button.icon_name().as_deref(), Some("go-previous-symbolic"));
+    assert_eq!(button.action_name().as_deref(), Some("win.nav-back"));
+    assert_eq!(
+        button.tooltip_text().as_deref(),
+        Some(strings::text(strings::NAVIGATE_BACK).as_str())
+    );
+    assert!(button.has_css_class("reprise-panel-toggle"));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn npp_11_switcher_is_centred_when_wide() {
     if gtk4::init().is_err() {
         return;

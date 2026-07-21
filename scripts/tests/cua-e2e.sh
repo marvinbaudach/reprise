@@ -39,6 +39,8 @@ for pattern in \
   'run_tag_3_multi_dialog_structure_scenario' \
   'run_library_doctor_scenario' \
   'run_song_visuals_scenario' \
+  'run_navigation_playback_scenario' \
+  'nav-13-playback-is-not-navigation' \
   'Song analysis' \
   'Audio-reactive song visual' \
   'color follows the cover accent' \
@@ -144,6 +146,10 @@ if ! rg --quiet --fixed-strings 'library-doctor)' "$runner"; then
 fi
 if ! rg --quiet --fixed-strings 'song-visuals)' "$runner"; then
   echo "$runner must support isolated scenario: song-visuals)" >&2
+  exit 1
+fi
+if ! rg --quiet --fixed-strings 'navigation-playback)' "$runner"; then
+  echo "$runner must support isolated scenario: navigation-playback)" >&2
   exit 1
 fi
 if ! rg --quiet --fixed-strings 'cargo build --locked -p reprise-gnome' "$runner"; then
