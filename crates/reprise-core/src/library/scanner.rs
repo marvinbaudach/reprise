@@ -724,10 +724,34 @@ fn scan_folder_inner(
         }
     } else {
         report.vanished = vanish::mark_vanished(&tx, candidates)?;
+        // T0.3: one collective change-log row per scan that actually touched
+        // the catalog (never per track, never for a no-op reconcile), inside
+        // the same transaction as the walk so the event and the rows it
+        // announces commit together. Foreign scanners (`reprise-cli scan`)
+        // wake the running app through this; the app's own scans carry its
+        // writer token and are filtered out by its own consumer.
+        if scan_touched_library(&report) {
+            crate::events::record(&tx, "library", "", "scan")?;
+        }
         ScanOutcome::Completed(report)
     };
     tx.commit()?;
     Ok(outcome)
+}
+
+/// Whether a completed scan changed anything a consumer's view reflects — any
+/// catalog upsert/move/vanish/exclusion or an import-error row added or healed.
+/// A scan that only skipped unchanged files leaves every view identical and so
+/// logs no event.
+fn scan_touched_library(report: &ScanReport) -> bool {
+    report.added
+        + report.updated
+        + report.moved
+        + report.vanished
+        + report.excluded
+        + report.healed
+        + report.errors
+        > 0
 }
 
 // Task 1.5: the vanish-mark phase `scan_folder_inner` folds in above lives in

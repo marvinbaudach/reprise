@@ -62,7 +62,11 @@ struct Rule {
 /// Positions are assigned sequentially (new playlist gets `max(position) + 1`).
 /// Empty or whitespace-only name is accepted (backend is dumb; UI validates).
 pub fn create(conn: &Connection, name: &str) -> Result<i64, rusqlite::Error> {
-    create_playlist_row(conn, name)
+    crate::events::in_txn(conn, |conn| {
+        let id = create_playlist_row(conn, name)?;
+        crate::events::record(conn, "playlist", &id.to_string(), "create")?;
+        Ok(id)
+    })
 }
 
 /// Shared insert logic behind [`create`] and [`create_with_tracks`] — takes a
@@ -103,11 +107,14 @@ fn create_playlist_row(conn: &Connection, name: &str) -> Result<i64, rusqlite::E
 /// Renames a playlist by id.
 #[allow(dead_code)]
 pub fn rename(conn: &Connection, id: i64, name: &str) -> Result<(), rusqlite::Error> {
-    conn.execute(
-        "UPDATE playlists SET name = ?1 WHERE id = ?2",
-        params![name, id],
-    )?;
-    Ok(())
+    crate::events::in_txn(conn, |conn| {
+        conn.execute(
+            "UPDATE playlists SET name = ?1 WHERE id = ?2",
+            params![name, id],
+        )?;
+        crate::events::record(conn, "playlist", &id.to_string(), "rename")?;
+        Ok(())
+    })
 }
 
 /// Lists all manual playlists, ordered by position (ascending).
@@ -150,6 +157,9 @@ pub fn add_tracks(
 
     let tx = conn.transaction()?;
     let inserted = append_tracks_rows(&tx, playlist_id, track_ids)?;
+    if inserted > 0 {
+        crate::events::record(&tx, "playlist", &playlist_id.to_string(), "add")?;
+    }
     tx.commit()?;
     Ok(inserted)
 }
@@ -204,6 +214,7 @@ pub fn create_with_tracks(
 ) -> Result<i64, rusqlite::Error> {
     let tx = conn.transaction()?;
     let playlist_id = create_with_tracks_in(&tx, name, track_ids)?;
+    crate::events::record(&tx, "playlist", &playlist_id.to_string(), "create")?;
     tx.commit()?;
     Ok(playlist_id)
 }
@@ -250,6 +261,9 @@ pub fn remove_positions(
 
     renumber_positions(&tx, playlist_id)?;
 
+    if deleted > 0 {
+        crate::events::record(&tx, "playlist", &playlist_id.to_string(), "remove")?;
+    }
     tx.commit()?;
     Ok(deleted)
 }
@@ -381,6 +395,7 @@ pub fn move_position(
         )?;
     }
 
+    crate::events::record(&tx, "playlist", &playlist_id.to_string(), "move")?;
     tx.commit()?;
     Ok(())
 }
@@ -545,26 +560,31 @@ pub fn create_smart(
 ) -> Result<i64, rusqlite::Error> {
     smart_rules_to_sql(rules_json)
         .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
-    let existing = conn
-        .query_row(
-            "SELECT id FROM smart_playlists \
-             WHERE name = ?1 AND rules_json = ?2 AND sort_field = ?3 \
-               AND sort_dir = ?4 AND limit_count IS ?5 \
-             ORDER BY id LIMIT 1",
+    crate::events::in_txn(conn, |conn| {
+        let existing = conn
+            .query_row(
+                "SELECT id FROM smart_playlists \
+                 WHERE name = ?1 AND rules_json = ?2 AND sort_field = ?3 \
+                   AND sort_dir = ?4 AND limit_count IS ?5 \
+                 ORDER BY id LIMIT 1",
+                params![name, rules_json, sort_field, sort_dir, limit_count],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?;
+        // A dedup hit persists nothing, so it must log nothing.
+        if let Some(id) = existing {
+            return Ok(id);
+        }
+        conn.execute(
+            "INSERT INTO smart_playlists \
+             (name, rules_json, sort_field, sort_dir, limit_count) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
             params![name, rules_json, sort_field, sort_dir, limit_count],
-            |row| row.get::<_, i64>(0),
-        )
-        .optional()?;
-    if let Some(id) = existing {
-        return Ok(id);
-    }
-    conn.execute(
-        "INSERT INTO smart_playlists \
-         (name, rules_json, sort_field, sort_dir, limit_count) \
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![name, rules_json, sort_field, sort_dir, limit_count],
-    )?;
-    Ok(conn.last_insert_rowid())
+        )?;
+        let id = conn.last_insert_rowid();
+        crate::events::record(conn, "smart_playlist", &id.to_string(), "create")?;
+        Ok(id)
+    })
 }
 
 /// Lists all smart playlists.
