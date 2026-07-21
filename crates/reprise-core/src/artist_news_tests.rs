@@ -2,10 +2,9 @@ use chrono::NaiveDate;
 
 use crate::artist_news::{
     artist_search_url, artists_for_fetch, configured_fetch_scope, hidden_release_count,
-    jitter_seconds, latest_fetched_at, mark_releases_seen, most_played_album_track_path,
-    parse_artist_mbid, parse_release_groups, query_releases, refresh_due, refresh_with,
-    release_groups_url, set_fetch_all_artists, set_release_hidden, show_hidden_releases,
-    unseen_release_count, ArtistMatch, FetchScope, NewsKind,
+    mark_releases_seen, most_played_album_track_path, parse_artist_mbid, parse_release_groups,
+    query_releases, refresh_with, release_groups_url, set_fetch_all_artists, set_release_hidden,
+    show_hidden_releases, unseen_release_count, ArtistMatch, FetchScope, NewsKind,
 };
 
 const ARTIST_ID: &str = "83d91898-7763-47d7-b03b-b92132375c47";
@@ -669,74 +668,4 @@ fn insert_release(conn: &rusqlite::Connection, mbid: &str, seen_at: Option<i64>)
         rusqlite::params![mbid, seen_at],
     )
     .unwrap();
-}
-
-fn insert_release_fetched_at(conn: &rusqlite::Connection, mbid: &str, fetched_at: i64) {
-    conn.execute(
-        "INSERT INTO new_releases (
-           release_group_mbid, artist_name, artist_mbid, title, release_type,
-           first_release_date, fetched_at, fallback_accent
-         ) VALUES (?1, 'Artist', 'artist-id', 'Release', 'Album', '2026-08-01', ?2, '#123456')",
-        rusqlite::params![mbid, fetched_at],
-    )
-    .unwrap();
-}
-
-#[test]
-fn refresh_due_is_true_when_never_fetched() {
-    assert!(refresh_due(None, 1_000_000, 0));
-}
-
-#[test]
-fn refresh_due_is_false_just_below_the_base_interval() {
-    let now = 1_000_000;
-    assert!(!refresh_due(Some(now - (6 * 3600 - 1)), now, 0));
-}
-
-#[test]
-fn refresh_due_is_true_at_and_above_the_interval_plus_jitter() {
-    let now = 1_000_000;
-    let jitter = 900;
-    assert!(refresh_due(Some(now - (6 * 3600 + jitter)), now, jitter));
-    assert!(refresh_due(
-        Some(now - (6 * 3600 + jitter + 1)),
-        now,
-        jitter
-    ));
-}
-
-#[test]
-fn refresh_due_is_false_when_the_clock_moved_backwards() {
-    let now = 1_000_000;
-    assert!(!refresh_due(Some(now + 10), now, 0));
-}
-
-#[test]
-fn jitter_seconds_is_deterministic_and_bounded() {
-    let max = 45 * 60;
-    for seed in ["x", "/home/user/.local/share/reprise/library.db", ""] {
-        let value = jitter_seconds(seed);
-        assert_eq!(value, jitter_seconds(seed), "same seed, same jitter");
-        assert!((0..=max).contains(&value), "{seed} jitter out of range");
-    }
-}
-
-#[test]
-fn jitter_seconds_differs_across_seeds() {
-    assert_ne!(jitter_seconds("install-a"), jitter_seconds("install-b"));
-}
-
-#[test]
-fn latest_fetched_at_is_none_for_an_empty_table() {
-    let conn = migrated_conn();
-    assert_eq!(latest_fetched_at(&conn).unwrap(), None);
-}
-
-#[test]
-fn latest_fetched_at_returns_the_maximum_across_rows() {
-    let conn = migrated_conn();
-    insert_release_fetched_at(&conn, "1", 1_000);
-    insert_release_fetched_at(&conn, "2", 5_000);
-    insert_release_fetched_at(&conn, "3", 2_500);
-    assert_eq!(latest_fetched_at(&conn).unwrap(), Some(5_000));
 }

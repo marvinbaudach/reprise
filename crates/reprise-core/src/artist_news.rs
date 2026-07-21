@@ -82,56 +82,11 @@ pub fn set_fetch_all_artists(conn: &Connection, all_artists: bool) -> Result<(),
     crate::library::settings::set_bool(conn, FETCH_ALL_ARTISTS_KEY, all_artists)
 }
 
-const REFRESH_INTERVAL_SECONDS: i64 = 6 * 60 * 60;
-const REFRESH_JITTER_MAX_SECONDS: i64 = 45 * 60;
-
-/// Is a background refresh due? Never fetched (`None`) is always due.
-/// Otherwise due once `now - last_fetch_at` reaches the base interval plus
-/// jitter. A clock that moved backwards (negative elapsed time) is never due
-/// — only the "never fetched" case forces an immediate refresh.
-pub fn refresh_due(last_fetch_at: Option<i64>, now: i64, jitter: i64) -> bool {
-    let Some(last) = last_fetch_at else {
-        return true;
-    };
-    let elapsed = now.saturating_sub(last);
-    if elapsed < 0 {
-        return false;
-    }
-    let jitter = jitter.clamp(0, REFRESH_JITTER_MAX_SECONDS);
-    elapsed >= REFRESH_INTERVAL_SECONDS + jitter
-}
-
-/// Deterministic jitter in `[0, REFRESH_JITTER_MAX_SECONDS]` derived from a
-/// seed (e.g. the database path), so different installations do not all
-/// refresh at the same wall-clock moment. Uses a hand-rolled FNV-1a hash
-/// rather than `std::collections::hash_map::DefaultHasher`: `DefaultHasher`'s
-/// algorithm is an unspecified implementation detail of the standard library
-/// and is not guaranteed stable across Rust versions, so the same seed could
-/// yield a different jitter after a toolchain upgrade. FNV-1a's definition is
-/// fixed, so the same seed always yields the same jitter everywhere.
-pub fn jitter_seconds(seed: &str) -> i64 {
-    let hash = fnv1a_64(seed.as_bytes());
-    (hash % (REFRESH_JITTER_MAX_SECONDS as u64 + 1)) as i64
-}
-
-/// FNV-1a (64-bit): a fixed, non-cryptographic hash whose definition never
-/// changes, so the same bytes always produce the same value across Rust
-/// versions, platforms, and process runs — unlike `DefaultHasher`.
-fn fnv1a_64(bytes: &[u8]) -> u64 {
-    const OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
-    const PRIME: u64 = 0x0000_0100_0000_01b3;
-    bytes.iter().fold(OFFSET_BASIS, |hash, &byte| {
-        (hash ^ u64::from(byte)).wrapping_mul(PRIME)
-    })
-}
-
-/// The most recent `fetched_at` across all `new_releases` rows, or `None` if
-/// the table is empty.
-pub fn latest_fetched_at(conn: &Connection) -> Result<Option<i64>, rusqlite::Error> {
-    conn.query_row("SELECT MAX(fetched_at) FROM new_releases", [], |row| {
-        row.get(0)
-    })
-}
+/// Staleness policy (when a refresh is due, the per-install jitter, and the
+/// latest fetch timestamp) lives in `artist_news_refresh`; re-exported here
+/// so existing callers keep using `artist_news::{refresh_due, jitter_seconds,
+/// latest_fetched_at}`.
+pub use crate::artist_news_refresh::{jitter_seconds, latest_fetched_at, refresh_due};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RefreshReport {
