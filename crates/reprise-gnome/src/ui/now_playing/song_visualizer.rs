@@ -39,11 +39,6 @@ const DRAW_HEIGHT: i32 = 220;
 /// hue/saturation sample.
 const COVER_PALETTE_EDGE: i32 = 32;
 const COVER_PALETTE_PIXELS: usize = (COVER_PALETTE_EDGE * COVER_PALETTE_EDGE) as usize;
-/// Width (px) the cover texture is rasterized down to for the fullscreen
-/// backdrop. Small enough that the `Picture`'s bilinear upscaling reads as a
-/// soft wash of the cover's dominant colors — a fast, GPU-independent
-/// "fake blur" — rather than a sharp thumbnail.
-const BACKDROP_WIDTH: i32 = 24;
 /// The fullscreen seek `Scale`'s range top; its value is always
 /// `fraction * SEEK_SCALE_MAX`.
 const SEEK_SCALE_MAX: f64 = 1000.0;
@@ -74,7 +69,6 @@ struct FullscreenChrome {
     track_pos: gtk4::Label,
     next_up: gtk4::Label,
     cover_thumb: gtk4::Image,
-    backdrop: gtk4::Picture,
     play_pause: gtk4::Button,
     time_cur: gtk4::Label,
     time_total: gtk4::Label,
@@ -132,16 +126,6 @@ impl FullscreenChrome {
             None => {
                 self.cover_thumb.set_paintable(gtk4::gdk::Paintable::NONE);
                 self.cover_thumb.set_visible(false);
-            }
-        }
-        match texture.and_then(|texture| backdrop_texture(texture, BACKDROP_WIDTH)) {
-            Some(blurred) => {
-                self.backdrop.set_paintable(Some(&blurred));
-                self.backdrop.set_visible(true);
-            }
-            None => {
-                self.backdrop.set_paintable(gtk4::gdk::Paintable::NONE);
-                self.backdrop.set_visible(false);
             }
         }
     }
@@ -568,49 +552,6 @@ fn downscale_cover_rgba(texture: &gtk4::gdk::Texture, edge: i32) -> Option<Vec<u
     Some(rgba)
 }
 
-/// Rasterizes `texture` down to a `width`-px-wide (aspect-preserving) surface
-/// for the fullscreen backdrop and wraps the raw bytes in a
-/// `gdk::MemoryTexture` — no RGB reordering needed here (unlike
-/// `downscale_cover_rgba`, which feeds a byte-order-agnostic palette
-/// sampler): Cairo's premultiplied `ARGB32` byte layout on the little-endian
-/// hosts this app targets is exactly GDK's `B8g8r8a8Premultiplied`, so the
-/// surface's bytes are handed to `MemoryTexture` as-is. `None` if
-/// rasterization fails or the source texture reports a zero size.
-fn backdrop_texture(texture: &gtk4::gdk::Texture, width: i32) -> Option<gtk4::gdk::Texture> {
-    let (tex_w, tex_h) = (texture.width(), texture.height());
-    if tex_w <= 0 || tex_h <= 0 || width <= 0 {
-        return None;
-    }
-    let height = ((width as f32) * (tex_h as f32) / (tex_w as f32))
-        .round()
-        .max(1.0) as i32;
-
-    let snapshot = gtk4::Snapshot::new();
-    let bounds = gtk4::graphene::Rect::new(0.0, 0.0, width as f32, height as f32);
-    snapshot.append_texture(texture, &bounds);
-    let node = snapshot.to_node()?;
-
-    let mut surface =
-        gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, width, height).ok()?;
-    {
-        let cr = gtk4::cairo::Context::new(&surface).ok()?;
-        node.draw(&cr);
-    }
-    surface.flush();
-    let stride = surface.stride() as usize;
-    let bytes = gtk4::glib::Bytes::from_owned(surface.data().ok()?.to_vec());
-    Some(
-        gtk4::gdk::MemoryTexture::new(
-            width,
-            height,
-            gtk4::gdk::MemoryFormat::B8g8r8a8Premultiplied,
-            &bytes,
-            stride,
-        )
-        .upcast(),
-    )
-}
-
 fn format_time(ms: i64) -> String {
     let seconds = ms.max(0) / 1_000;
     format!("{}:{:02}", seconds / 60, seconds % 60)
@@ -821,7 +762,6 @@ pub(in crate::ui) fn css() -> String {
      }\n\
      .reprise-fs-title { font-size: 36px; font-weight: 600; color: #ffffff; }\n\
      .reprise-fs-meta { font-size: 16px; color: alpha(#ffffff, 0.7); }\n\
-     .reprise-fs-backdrop { opacity: 0.45; }\n\
      .reprise-fs-cover-thumb { border-radius: 14px; }\n\
      .reprise-fs-pill {\
        border-radius: 999px;\

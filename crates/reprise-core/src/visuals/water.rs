@@ -41,20 +41,21 @@ impl WaterGrid {
         }
     }
 
-    /// One 60 Hz step: far row driven hard by the mirrored display bands
-    /// (fast, so fine musical detail reaches the surface), spring coupling
-    /// (42), a light restoring force (2.6) and light damping `exp(-dt·1.15)`
-    /// so ripples travel and linger instead of reading as viscous sludge, `h`
-    /// clamped to `-1.1..=3.0`.
+    /// One 60 Hz step: far row driven very hard by the mirrored display bands
+    /// (near-instant, so the surface snaps to the music instead of lagging it),
+    /// fast spring coupling (60, so the disturbance crosses the depth quickly
+    /// rather than crawling forward), a light restoring force (1.6) and light
+    /// damping `exp(-dt·0.9)` so ripples travel and linger instead of reading
+    /// as viscous sludge, `h` clamped to `-1.1..=3.0`.
     pub fn advance(&mut self, bands: &[f32; SPECTRUM_BAND_COUNT]) {
         let half = (WATER_COLS - 1) as f32 / 2.0;
         for (col, drive_cell) in self.v.iter_mut().take(WATER_COLS).enumerate() {
             let f = (col as f32 - half).abs() / half;
             let drive = bands[((f * 0.775 * (SPECTRUM_BAND_COUNT - 1) as f32) as usize)
                 .min(SPECTRUM_BAND_COUNT - 1)];
-            *drive_cell += (drive * 1.9 - self.h[col]) * DT * 34.0;
+            *drive_cell += (drive * 2.4 - self.h[col]) * DT * 55.0;
         }
-        let damp = (-DT * 1.15).exp();
+        let damp = (-DT * 0.9).exp();
         for row in 0..WATER_ROWS {
             for col in 0..WATER_COLS {
                 let i = row * WATER_COLS + col;
@@ -75,7 +76,7 @@ impl WaterGrid {
                     self.h[i]
                 };
                 self.v[i] +=
-                    ((up + down + left + right - 4.0 * self.h[i]) * 42.0 - self.h[i] * 2.6) * DT;
+                    ((up + down + left + right - 4.0 * self.h[i]) * 60.0 - self.h[i] * 1.6) * DT;
                 self.v[i] *= damp;
             }
         }
