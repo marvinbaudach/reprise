@@ -28,7 +28,7 @@ fn urls_encode_artist_and_bound_release_group_browse() {
     assert!(hostile.contains("%5C%5C%5C%22"));
     assert_eq!(
         release_groups_url(ARTIST_ID),
-        format!("https://musicbrainz.org/ws/2/release-group?artist={ARTIST_ID}&type=album%7Cep%7Csingle&release-group-status=website-default&limit=100&fmt=json")
+        format!("https://musicbrainz.org/ws/2/release-group?artist={ARTIST_ID}&type=album%7Cep%7Csingle&release-group-status=website-default&limit=100&inc=url-rels&fmt=json")
     );
 }
 

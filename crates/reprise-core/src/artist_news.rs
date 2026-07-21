@@ -31,6 +31,7 @@ pub struct AlbumNews {
     pub first_release_date: String,
     pub primary_type: String,
     pub kind: NewsKind,
+    pub announce_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -128,7 +129,7 @@ pub fn artist_search_url(artist: &str) -> String {
 
 pub fn release_groups_url(mbid: &str) -> String {
     format!(
-        "https://musicbrainz.org/ws/2/release-group?artist={}&type=album%7Cep%7Csingle&release-group-status=website-default&limit=100&fmt=json",
+        "https://musicbrainz.org/ws/2/release-group?artist={}&type=album%7Cep%7Csingle&release-group-status=website-default&limit=100&inc=url-rels&fmt=json",
         musicbrainz::urlencode(mbid)
     )
 }
@@ -390,15 +391,16 @@ fn upsert_releases(
         transaction.execute(
             "INSERT INTO new_releases (
                release_group_mbid, artist_name, artist_mbid, title, release_type,
-               first_release_date, fetched_at, fallback_accent, first_seen
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?7)
+               first_release_date, fetched_at, fallback_accent, first_seen, announce_url
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?7, ?9)
              ON CONFLICT(release_group_mbid) DO UPDATE SET
                artist_name = excluded.artist_name,
                artist_mbid = excluded.artist_mbid,
                title = excluded.title,
                release_type = excluded.release_type,
                first_release_date = excluded.first_release_date,
-               fetched_at = excluded.fetched_at",
+               fetched_at = excluded.fetched_at,
+               announce_url = COALESCE(excluded.announce_url, new_releases.announce_url)",
             rusqlite::params![
                 item.release_group_mbid,
                 artist,
@@ -408,6 +410,7 @@ fn upsert_releases(
                 item.first_release_date,
                 fetched_at,
                 fallback_accent,
+                item.announce_url,
             ],
         )?;
     }
@@ -569,6 +572,7 @@ pub fn query_artist_news(
             }),
             first_release_date: release.first_release_date,
             primary_type: release.release_type,
+            announce_url: release.announce_url,
         })
         .collect();
     Ok(Some(ArtistNews {
@@ -684,6 +688,7 @@ fn parse_release_group(
             first_release_date: date_text,
             primary_type,
             kind,
+            announce_url: crate::artist_news_links::parse_announce_url(group),
         },
         release_date,
     ))
