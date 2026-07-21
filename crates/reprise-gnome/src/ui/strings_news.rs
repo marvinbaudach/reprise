@@ -159,6 +159,14 @@ pub fn new_releases_new_count(count: i64) -> String {
     formatted(N_!("{count} new"), &[("count", &count.to_string())])
 }
 
+/// „Show history (N)" row label at the foot of the New Releases list page.
+pub fn new_releases_show_history_count(count: usize) -> String {
+    formatted(
+        N_!("Show history ({count})"),
+        &[("count", &count.to_string())],
+    )
+}
+
 fn news_timestamp_date(timestamp: i64) -> String {
     chrono::DateTime::from_timestamp(timestamp, 0).map_or_else(
         || text(N_!("unknown date")),
@@ -209,5 +217,10 @@ mod tests {
     #[test]
     fn new_releases_new_count_formats_count() {
         assert_eq!(new_releases_new_count(3), "3 new");
+    }
+
+    #[test]
+    fn new_releases_show_history_count_formats_count() {
+        assert_eq!(new_releases_show_history_count(12), "Show history (12)");
     }
 }
