@@ -32,22 +32,31 @@ pub(in crate::ui) enum HistoryAction {
 /// One action per history row: a hidden entry can only be restored — that
 /// takes priority even if the release also matches the library, since
 /// "restore" is the more specific and more urgent action for a hidden row.
-/// A visible entry that matches the library navigates there; everything
-/// else opens its announcement. Unlike `release_row::primary_action`, this
-/// does not carve out upcoming-but-in-library releases: a history row only
-/// ever has `in_library` set from a real name match against the local
-/// library (see `query_history`), independent of release date.
-pub(in crate::ui) fn history_action(entry: &HistoryEntry) -> HistoryAction {
+/// A visible entry that matches the library *and* has already been released
+/// navigates there; everything else — including an in-library name match
+/// whose release date is still ahead of `today` — opens its announcement
+/// instead. This mirrors `release_row::primary_action`'s NR-13 carve-out:
+/// `in_library` here comes from a name match against the local library (see
+/// `query_history`) and can true-positive on an announced reissue/remaster
+/// of an album already owned, so "Show in library" must not be offered
+/// until the matching release has actually shipped.
+pub(in crate::ui) fn history_action(entry: &HistoryEntry, today: NaiveDate) -> HistoryAction {
     if entry.hidden {
         return HistoryAction::Restore;
     }
-    if entry.in_library {
+    if entry.in_library && !is_upcoming(entry, today) {
         return HistoryAction::ShowInLibrary;
     }
     HistoryAction::OpenAnnouncement(reprise_core::artist_news_links::announce_url_or_fallback(
         entry.announce_url.as_deref(),
         &entry.release_group_mbid,
     ))
+}
+
+/// Mirrors `release_row::is_upcoming` for `HistoryEntry` (C1): true once the
+/// entry's release date parses and lies strictly after `today`.
+fn is_upcoming(entry: &HistoryEntry, today: NaiveDate) -> bool {
+    release_row::parse_release_date(&entry.first_release_date).is_some_and(|date| date > today)
 }
 
 fn row_opacity(entry: &HistoryEntry) -> f64 {
@@ -183,7 +192,7 @@ fn build_entry_row(
     text.append(&title);
     text.append(&meta);
 
-    let action = build_action_button(entry, on_show_album, on_restore, close_popover);
+    let action = build_action_button(entry, today, on_show_album, on_restore, close_popover);
 
     let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
     row.add_css_class("new-release-row");
@@ -201,11 +210,12 @@ fn build_entry_row(
 
 fn build_action_button(
     entry: &HistoryEntry,
+    today: NaiveDate,
     on_show_album: &OnShowAlbum,
     on_restore: &Rc<dyn Fn(&str)>,
     close_popover: &Rc<dyn Fn()>,
 ) -> gtk4::Button {
-    match history_action(entry) {
+    match history_action(entry, today) {
         HistoryAction::Restore => {
             let button = release_row::action_button(
                 "view-reveal-symbolic",
@@ -306,7 +316,7 @@ mod tests {
         hidden_and_in_library.hidden = true;
         hidden_and_in_library.in_library = true;
         assert_eq!(
-            history_action(&hidden_and_in_library),
+            history_action(&hidden_and_in_library, today()),
             HistoryAction::Restore
         );
     }
@@ -316,7 +326,7 @@ mod tests {
         let mut visible_in_library = entry("one");
         visible_in_library.in_library = true;
         assert_eq!(
-            history_action(&visible_in_library),
+            history_action(&visible_in_library, today()),
             HistoryAction::ShowInLibrary
         );
     }
@@ -326,15 +336,34 @@ mod tests {
         let mut with_url = entry("one");
         with_url.announce_url = Some("https://band.example/album".to_string());
         assert_eq!(
-            history_action(&with_url),
+            history_action(&with_url, today()),
             HistoryAction::OpenAnnouncement("https://band.example/album".to_string())
         );
 
         let without_url = entry("two");
         assert_eq!(
-            history_action(&without_url),
+            history_action(&without_url, today()),
             HistoryAction::OpenAnnouncement(
                 "https://musicbrainz.org/release-group/two".to_string()
+            )
+        );
+    }
+
+    /// NR-13 (C1 carve-out): an in-library history entry whose release date
+    /// is still ahead of `today` must open its announcement, not "Show in
+    /// library" — mirrors
+    /// `release_row::nr_13_upcoming_in_library_release_still_opens_announcement`.
+    /// This covers a reissue/remaster/deluxe announcement that name-matches
+    /// an album already in the library but has not shipped yet.
+    #[test]
+    fn nr_13_upcoming_in_library_history_entry_opens_announcement() {
+        let mut upcoming_in_library = entry("one");
+        upcoming_in_library.in_library = true;
+        upcoming_in_library.first_release_date = "2026-08-15".to_string();
+        assert_eq!(
+            history_action(&upcoming_in_library, today()),
+            HistoryAction::OpenAnnouncement(
+                "https://musicbrainz.org/release-group/one".to_string()
             )
         );
     }
@@ -408,11 +437,11 @@ mod tests {
         for row in &groups[0].entries {
             match row.release_group_mbid.as_str() {
                 "this-week-hidden" => {
-                    assert_eq!(history_action(row), HistoryAction::Restore);
+                    assert_eq!(history_action(row, today()), HistoryAction::Restore);
                     assert_eq!(row_opacity(row), HIDDEN_ROW_OPACITY);
                 }
                 "this-week-in-library" => {
-                    assert_eq!(history_action(row), HistoryAction::ShowInLibrary);
+                    assert_eq!(history_action(row, today()), HistoryAction::ShowInLibrary);
                     assert_eq!(row_opacity(row), 1.0);
                 }
                 other => panic!("unexpected entry in the This week group: {other}"),
@@ -422,7 +451,7 @@ mod tests {
         let older_row = &groups[1].entries[0];
         assert_eq!(older_row.release_group_mbid, "older-month-announce");
         assert_eq!(
-            history_action(older_row),
+            history_action(older_row, today()),
             HistoryAction::OpenAnnouncement(
                 "https://musicbrainz.org/release-group/older-month-announce".to_string()
             )
