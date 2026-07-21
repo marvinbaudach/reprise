@@ -22,7 +22,7 @@ fn build_dialog() -> adw::AboutDialog {
     let dialog = adw::AboutDialog::builder()
         .application_icon(crate::APP_ID)
         .application_name(strings::text(strings::APP_NAME))
-        .version(&version_string())
+        .version(version_string())
         .developer_name(DEVELOPER)
         .developers(vec![DEVELOPER])
         .copyright(COPYRIGHT)
