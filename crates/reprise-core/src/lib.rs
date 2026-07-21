@@ -15,6 +15,7 @@
 pub mod artist_news;
 pub mod artist_news_history;
 pub mod artist_news_links;
+pub mod artist_news_refresh;
 pub mod artist_portrait;
 pub mod audio_analysis;
 pub mod browser;
