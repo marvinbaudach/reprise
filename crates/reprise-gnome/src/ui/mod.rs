@@ -108,12 +108,7 @@ use device_sync::{
     device_sync_smoke, device_sync_strings,
 };
 #[allow(unused_imports)]
-use library_views::{
-    album_card, album_card_actions, album_card_css, album_card_state, album_context_menu,
-    album_glow, album_header, album_view, album_view_actions, album_view_memory, album_view_state,
-    artist_avatar, artist_detail_hero, artist_detail_pane, artist_detail_row, artist_master,
-    artist_master_row, artist_view, artist_view_css, discovery_hint, library_view_css,
-};
+use library_views::artist_avatar;
 #[allow(unused_imports)]
 use lyrics::{
     lyrics_smoke, lyrics_state, lyrics_strings, lyrics_view, lyrics_worker, player_lyrics,
@@ -182,7 +177,6 @@ pub(crate) use track_list::{
 };
 #[allow(unused_imports)]
 use window::{
-    library_chrome, library_shell, library_view_memory_wiring, navigation_context,
-    window_action_wiring, window_decoration_strings, window_decorations, window_navigation,
-    window_runtime_wiring, window_smoke,
+    library_chrome, library_shell, window_action_wiring, window_decoration_strings,
+    window_decorations, window_navigation, window_runtime_wiring, window_smoke,
 };

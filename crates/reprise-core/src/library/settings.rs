@@ -74,11 +74,13 @@ pub fn set_bool(conn: &Connection, key: &str, value: bool) -> Result<(), rusqlit
 }
 
 /// Whether Reprise may read local audio to build Audio Character profiles.
-/// Fresh installations deliberately default to off; this is explicit opt-in.
+/// Fresh installations analyze locally by default. Users can disable the
+/// background worker; current file fingerprints and analysis versions keep
+/// already-current tracks from being decoded again.
 pub fn get_audio_analysis_enabled(conn: &Connection) -> bool {
-    get_bool(conn, AUDIO_ANALYSIS_ENABLED_KEY, false).unwrap_or_else(|error| {
-        tracing::warn!(%error, "could not read audio-analysis setting; using off");
-        false
+    get_bool(conn, AUDIO_ANALYSIS_ENABLED_KEY, true).unwrap_or_else(|error| {
+        tracing::warn!(%error, "could not read audio-analysis setting; using on");
+        true
     })
 }
 

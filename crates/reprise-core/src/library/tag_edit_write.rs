@@ -259,6 +259,70 @@ mod tests {
         (conn, id, path)
     }
 
+    /// Copies the broken-tag MP3 fixture (a valid MPEG stream carrying an APE
+    /// container with an invalid item size, exactly the "unreadable_tags"
+    /// scanner import failure) into a scanned in-memory library.
+    fn seeded_broken_track(dir: &Path, name: &str) -> (Connection, i64, PathBuf) {
+        let path = dir.join(name);
+        std::fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/broken-tags.mp3"),
+            &path,
+        )
+        .unwrap();
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        // Register the row directly instead of scanning: the scanner now
+        // auto-repairs damaged containers, which would fix this file before the
+        // test can exercise the editor's own repair path — keep it broken here.
+        let path_text = path.to_string_lossy().to_string();
+        conn.execute(
+            "INSERT INTO tracks (path, title, untagged, added_at) VALUES (?1, ?2, 1, 0)",
+            rusqlite::params![path_text, name],
+        )
+        .unwrap();
+        let id = conn.last_insert_rowid();
+        (conn, id, path)
+    }
+
+    #[test]
+    fn tag_editor_repairs_an_unreadable_container_by_stripping_and_rewriting() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut conn, id, path) = seeded_broken_track(dir.path(), "broken.mp3");
+
+        // Precondition: the strict read the write path relies on genuinely
+        // fails on this container, which is why editing used to be impossible.
+        assert!(
+            matches!(read_editable_tags(&path), Err(TagEditError::Lofty(_))),
+            "fixture must have an unreadable tag container"
+        );
+
+        let write = TrackWrite {
+            id,
+            path: path.clone(),
+            patch: TrackEditPatch {
+                tags: TagPatch {
+                    title: Some("Repaired".into()),
+                    artist: Some("Tester".into()),
+                    ..TagPatch::default()
+                },
+                rating: None,
+            },
+        };
+        let report = apply_track_writes(&mut conn, &[write], &mut |_, _| {});
+
+        assert!(
+            report.failures.is_empty(),
+            "unexpected failures: {:?}",
+            report.failures
+        );
+        assert_eq!(report.updated_ids, vec![id]);
+
+        // The container is now strictly readable and carries the new values.
+        let tags = read_editable_tags(&path).unwrap();
+        assert_eq!(tags.title, "Repaired");
+        assert_eq!(tags.artist, "Tester");
+    }
+
     #[test]
     fn tag_5_noop_write_is_skipped_file_untouched() {
         let dir = tempfile::tempdir().unwrap();

@@ -71,6 +71,7 @@ use reprise_core::view_source::ViewSource;
 /// menu item labels themselves).
 const ACTION_PLAY: &str = "play";
 const ACTION_ADD_TO_QUEUE: &str = "add-to-queue";
+const ACTION_CREATE_SIMILAR_MIX: &str = "create-similar-mix";
 pub(in crate::ui) const ACTION_PLAY_NEXT: &str = "play-next";
 const ACTION_MOVE_TO_TOP: &str = "move-to-top";
 const ACTION_MOVE_UP: &str = "move-up";
@@ -249,6 +250,7 @@ fn update_menu_action_states(
     for (name, enabled) in [
         (ACTION_PLAY_NEXT, enqueue_enabled),
         (ACTION_ADD_TO_QUEUE, enqueue_enabled),
+        (ACTION_CREATE_SIMILAR_MIX, states.similar_mix),
         (ACTION_MOVE_UP, move_up),
         (ACTION_MOVE_DOWN, move_down),
         (ACTION_MOVE_TO_TOP, move_to_top),
@@ -312,6 +314,19 @@ pub(in crate::ui) fn wire_context_menu_actions(
     }
     action_group.add_action(&queue_action);
 
+    let similar_mix_action = gio::SimpleAction::new(ACTION_CREATE_SIMILAR_MIX, None);
+    {
+        let shared = shared.clone();
+        similar_mix_action.connect_activate(move |_, _| {
+            let seeds: Vec<_> = current_selection_tracks(&shared)
+                .into_iter()
+                .filter(|track| !track.is_missing())
+                .collect();
+            super::mix_builder::present(&shared, &seeds);
+        });
+    }
+    action_group.add_action(&similar_mix_action);
+
     for (name, direction) in [
         (
             ACTION_MOVE_UP,
@@ -363,7 +378,7 @@ pub(in crate::ui) fn wire_context_menu_actions(
             };
             let callback = shared.on_go_to_album.borrow().clone();
             if let Some(callback) = callback {
-                callback(track.album, track.album_artist);
+                callback(track.id, track.album, track.album_artist);
             }
         });
     }
@@ -378,7 +393,7 @@ pub(in crate::ui) fn wire_context_menu_actions(
             };
             let callback = shared.on_go_to_artist.borrow().clone();
             if let Some(callback) = callback {
-                callback(track.album_artist);
+                callback(track.id, track.album_artist);
             }
         });
     }
@@ -541,8 +556,8 @@ fn handle_play(shared: &Rc<Shared>, first_position: u32, ids: &[i64]) {
     };
     let count = ids.len();
     tracing::info!(count, "context menu: play action starting playback");
-    let source = shared.source.borrow().clone();
-    (shared.on_activate)(&track, ids.to_vec(), 0, source);
+    let place = crate::ui::track_list::view_state_memory::capture_place(shared);
+    (shared.on_activate)(&track, ids.to_vec(), 0, place);
 }
 
 /// Looks up `playlist_id`'s display name for a toast, falling back to a
@@ -695,7 +710,7 @@ pub(in crate::ui) fn handle_remove_from_library(shared: &Rc<Shared>, ids: &[i64]
                 shared,
                 &strings::tracks_removed_from_library_toast(removed.len()),
             );
-            reload(shared);
+            crate::ui::delete_tracks::reload_after_catalog_delete(shared);
         }
         Err(error) => {
             tracing::error!(%error, "context menu: failed to remove tracks from library");

@@ -90,9 +90,31 @@ impl PlayerController {
         if !stats_screen::counts_as_play(max_position_ms, duration_ms) {
             return;
         }
+        let snapshot = self.now_playing.borrow().as_ref().and_then(|track| {
+            (track.id == track_id).then(|| stats_screen::ListenEventSnapshot {
+                title: track.title.clone(),
+                artist: track.artist.clone(),
+                album: track.album.clone(),
+                album_artist: track.album_artist.clone(),
+                genre: track.genre.clone(),
+                duration_ms: track.duration_ms,
+                path: track.path.clone(),
+                artist_mbid: track.artist_mbid.clone(),
+            })
+        });
+        let Some(snapshot) = snapshot else {
+            tracing::error!(track_id, "missing playback snapshot for listen event");
+            return;
+        };
         let result = {
             let conn = self.conn.borrow();
-            stats_screen::record_listen_event(&conn, track_id, now_unix(), max_position_ms)
+            stats_screen::record_listen_event(
+                &conn,
+                track_id,
+                now_unix(),
+                max_position_ms,
+                &snapshot,
+            )
         };
         match result {
             Ok(()) => {

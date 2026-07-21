@@ -162,12 +162,12 @@ pub use library_views::{
     query_artist_detail_albums, query_artists, AlbumSummary, ArtistAlbum, ArtistSummary,
 };
 pub use maintenance::{
-    mark_track_missing_if_current, purge_tombstones, query_import_error_count,
-    query_live_track_ids, query_live_track_paths, query_queue_purge_track_ids,
-    query_queue_retained_track_ids, query_sync_tracks, query_track_album_artist,
-    query_track_ids_by_title_desc, query_track_ids_by_titles, query_track_summary,
-    remove_missing_tracks, remove_tracks_matching_paths, tombstone_tracks, track_id_for_path,
-    undo_tombstone,
+    exclude_tracks_matching_paths, mark_track_missing_if_current, purge_tombstones,
+    query_import_error_count, query_live_track_ids, query_live_track_paths,
+    query_queue_purge_track_ids, query_queue_retained_track_ids, query_sync_tracks,
+    query_track_album_artist, query_track_ids_by_title_desc, query_track_ids_by_titles,
+    query_track_summary, remove_missing_tracks, remove_tracks_matching_paths, tombstone_tracks,
+    track_id_for_path, undo_tombstone,
 };
 // `remove_tracks_impl`/`RemoveGuard` are the internal shared deletion path
 // `remove_missing_tracks`/`purge_tombstones`/`remove_tracks_matching_paths` all funnel
@@ -274,11 +274,12 @@ pub fn query_track_window_browsed(
             sort_field,
             sort_dir,
             filter,
+            browse,
             offset,
             limit,
         ),
         ViewSource::Artist(artist) => library_views::query_artist_track_window(
-            conn, artist, sort_field, sort_dir, filter, offset, limit,
+            conn, artist, sort_field, sort_dir, filter, browse, offset, limit,
         ),
         ViewSource::ImportErrors | ViewSource::MyStats | ViewSource::Device { .. } => {
             Ok(Vec::new())
@@ -325,8 +326,10 @@ pub fn query_track_count_browsed(
         ViewSource::Album {
             album,
             album_artist,
-        } => library_views::query_album_track_count(conn, album, album_artist, filter),
-        ViewSource::Artist(artist) => library_views::query_artist_track_count(conn, artist, filter),
+        } => library_views::query_album_track_count(conn, album, album_artist, filter, browse),
+        ViewSource::Artist(artist) => {
+            library_views::query_artist_track_count(conn, artist, filter, browse)
+        }
         ViewSource::ImportErrors | ViewSource::MyStats | ViewSource::Device { .. } => Ok(0),
     }
 }
@@ -401,17 +404,18 @@ pub fn query_track_ids_browsed(
         ViewSource::Album {
             album,
             album_artist,
-        } => library_views::query_album_track_ids(
+        } => library_views::query_album_track_ids_browsed(
             conn,
             album,
             album_artist,
             sort_field,
             sort_dir,
             filter,
+            browse,
         ),
-        ViewSource::Artist(artist) => {
-            library_views::query_artist_track_ids(conn, artist, sort_field, sort_dir, filter)
-        }
+        ViewSource::Artist(artist) => library_views::query_artist_track_ids(
+            conn, artist, sort_field, sort_dir, filter, browse,
+        ),
         ViewSource::ImportErrors | ViewSource::MyStats | ViewSource::Device { .. } => {
             Ok(Vec::new())
         }
@@ -462,6 +466,11 @@ pub struct TrackSummary {
     /// other summary fields so `notify_now_playing_album_changed` can send the
     /// same effective-artist key the album grid uses for EQ-marker matching.
     pub album_artist: String,
+    /// Raw genre and artist MBID are retained by the in-flight playback
+    /// snapshot so local listen history remains complete after catalog
+    /// deletion.
+    pub genre: String,
+    pub artist_mbid: Option<String>,
     /// Optional release year displayed by metadata-rich player surfaces.
     pub year: Option<i32>,
     pub duration_ms: i64,

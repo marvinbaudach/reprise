@@ -119,6 +119,7 @@ impl PlayerController {
             queue.set_repeat(repeat);
             queue.set_shuffle(shuffled);
         }
+        self.deferred_queue_purge_id.set(None);
         *self.play_origin.borrow_mut() = None;
         // `now_playing` must be cleared BEFORE the queue notify below: the
         // notify chain synchronously rebuilds a visible Queue view through
@@ -139,7 +140,6 @@ impl PlayerController {
         // just always bring it in sync with "stopped, nothing loaded" right
         // here regardless of how `player.stop()` turns out.
         *self.now_playing.borrow_mut() = None;
-        self.notify_now_playing_album_changed(None);
         self.update_mpris_mirror(MprisPlaybackStatus::Stopped);
         match self.player.stop() {
             Ok(()) => {}

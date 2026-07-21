@@ -11,6 +11,7 @@ use libadwaita as adw;
 use reprise_core::cover::ThumbnailSize;
 use reprise_core::format::format_thousands;
 use reprise_core::library::group_key::GroupKind;
+use reprise_core::library::listened_audio_character;
 use reprise_core::library::settings::{self, StatsLayout};
 use reprise_core::library::stats_period::StatsPeriod;
 use reprise_core::library::stats_screen::{group_track_ids, TopTrack};
@@ -18,12 +19,15 @@ use reprise_core::library::stats_snapshot::{self, ComparisonPresentation, SortBy
 use rusqlite::Connection;
 
 use super::hourly_chart::HourlyChart;
+use super::stats_audio_character::StatsAudioCharacter;
 use super::stats_customize::StatsCustomize;
 use super::stats_genre_bar::StatsGenreBar;
 use super::stats_hero::StatsHero;
 use super::stats_highlights::{StatsHighlights, TopGenre};
+use super::stats_metadata_links::{self, MetadataCallback, StatsMetadataTarget};
 use super::stats_ribbon::StatsRibbon;
 use super::stats_spotlight::StatsSpotlight;
+use super::stats_view_widgets::{card, clear, label, section};
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::strings;
 
@@ -41,11 +45,12 @@ const ASYMMETRIC_SPACING: i32 = 20;
 /// The fixed editorial order of the page's sections (STATS-7). The test reads
 /// the real widget tree and compares against this.
 #[cfg(test)]
-const SECTION_ORDER: [&str; 6] = [
+const SECTION_ORDER: [&str; 7] = [
     "hero",
     "ribbon",
     "spotlight",
     "genres",
+    "audio-character",
     "clock-highlights",
     "top-tracks",
 ];
@@ -54,7 +59,6 @@ type StringCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
 type PairCallback = Rc<RefCell<Option<Rc<dyn Fn(String, String)>>>>;
 type GenreCallback = Rc<RefCell<Option<Rc<dyn Fn(TopGenre)>>>>;
 type IdsCallback = Rc<RefCell<Option<Rc<dyn Fn(Vec<i64>)>>>>;
-
 #[derive(Clone)]
 pub(in crate::ui) struct StatsView {
     root: gtk4::ScrolledWindow,
@@ -80,6 +84,7 @@ pub(in crate::ui) struct StatsView {
     on_go_to_artist: StringCallback,
     on_create_smart_mix: GenreCallback,
     on_unify_spellings: IdsCallback,
+    on_metadata_activate: MetadataCallback,
 }
 
 impl StatsView {
@@ -98,6 +103,7 @@ impl StatsView {
         let genres = StatsGenreBar::new();
         let clock = HourlyChart::new();
         let highlights = StatsHighlights::new();
+        let audio_character = StatsAudioCharacter::new();
 
         let genres_section = section("GENRE SPECTRUM", genres.widget());
         let clock_section = section("LISTENING CLOCK", clock.widget());
@@ -124,12 +130,14 @@ impl StatsView {
         let current_snapshot = Rc::new(RefCell::new(None::<StatsSnapshot>));
         let sort_by = Rc::new(Cell::new(SortBy::Plays));
         let top_track_generation = Rc::new(Cell::new(0_u64));
+        let on_metadata_activate: MetadataCallback = Rc::new(RefCell::new(None));
         let sort_controls = build_sort_controls(
             &top_tracks_box,
             &current_snapshot,
             &sort_by,
             &cover_loader,
             &top_track_generation,
+            &on_metadata_activate,
         );
         let top_tracks_content = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
         top_tracks_content.append(&sort_controls);
@@ -139,6 +147,9 @@ impl StatsView {
         sections.append(&card(ribbon.widget()));
         sections.append(&card(spotlight.widget()));
         sections.append(&genres_section);
+        let audio_character_section = section("AUDIO CHARACTER", audio_character.widget());
+        audio_character_section.set_visible(false);
+        sections.append(&audio_character_section);
         sections.append(&asymmetric_row);
         sections.append(&section("TOP TRACKS", &top_tracks_content));
 
@@ -254,10 +265,13 @@ impl StatsView {
             sort_by: sort_by.clone(),
             cover_loader,
             top_track_generation: top_track_generation.clone(),
+            on_metadata_activate: on_metadata_activate.clone(),
             customize: customize.clone(),
             clock_section: clock_section.clone(),
             genres_section: genres_section.clone(),
             highlights_section: highlights_section.clone(),
+            audio_character,
+            audio_character_section,
         });
 
         Self {
@@ -278,6 +292,7 @@ impl StatsView {
             on_go_to_artist,
             on_create_smart_mix,
             on_unify_spellings,
+            on_metadata_activate,
         }
     }
 
@@ -368,6 +383,20 @@ impl StatsView {
         *self.on_unify_spellings.borrow_mut() = Some(Rc::new(callback));
     }
 
+    pub(in crate::ui) fn set_on_metadata_activate(
+        &self,
+        callback: impl Fn(StatsMetadataTarget) + 'static,
+    ) {
+        *self.on_metadata_activate.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(in crate::ui) fn set_on_audio_character_mix(
+        &self,
+        callback: impl Fn(reprise_core::mix_planner::ProfileTarget) + 'static,
+    ) {
+        self.render.audio_character.set_on_create_mix(callback);
+    }
+
     /// The sections in the order the page actually stacks them, read off the
     /// live widget tree — not off a constant that nothing binds to it.
     #[cfg(test)]
@@ -399,6 +428,8 @@ impl StatsView {
             "spotlight"
         } else if render.genres_section_data.widget().is_ancestor(widget) {
             "genres"
+        } else if render.audio_character.widget().is_ancestor(widget) {
+            "audio-character"
         } else if render.clock_section_data.widget().is_ancestor(widget)
             && render.highlights_section_data.widget().is_ancestor(widget)
         {
@@ -425,10 +456,13 @@ struct RenderParts {
     sort_by: Rc<Cell<SortBy>>,
     cover_loader: Rc<CoverLoader>,
     top_track_generation: Rc<Cell<u64>>,
+    on_metadata_activate: MetadataCallback,
     customize: StatsCustomize,
     clock_section: gtk4::Box,
     genres_section: gtk4::Box,
     highlights_section: gtk4::Box,
+    audio_character: StatsAudioCharacter,
+    audio_character_section: gtk4::Box,
 }
 
 fn refresh_parts(
@@ -442,11 +476,13 @@ fn refresh_parts(
     let result = {
         let conn = conn.borrow();
         let layout = settings::get_stats_layout(&conn);
-        stats_snapshot::compute(&conn, period, now_unix, &chrono::Local)
-            .map(|snapshot| (snapshot, layout))
+        stats_snapshot::compute(&conn, period, now_unix, &chrono::Local).and_then(|snapshot| {
+            listened_audio_character::compute(&conn, period, now_unix, &chrono::Local)
+                .map(|audio_character| (snapshot, layout, audio_character))
+        })
     };
     match result {
-        Ok((snapshot, layout)) => {
+        Ok((snapshot, layout, audio_character)) => {
             apply_layout_widgets(
                 layout,
                 &render.clock_section,
@@ -455,6 +491,10 @@ fn refresh_parts(
             );
             render.customize.set_layout(layout);
             render_hero(render, &snapshot, period);
+            render.audio_character.set_data(audio_character.as_ref());
+            render
+                .audio_character_section
+                .set_visible(audio_character.is_some());
             // The stack decides what is on screen; hiding sections inside the
             // page it just switched away from changes nothing.
             if snapshot.is_empty() {
@@ -500,6 +540,7 @@ fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot) {
         render.sort_by.get(),
         &render.cover_loader,
         &render.top_track_generation,
+        &render.on_metadata_activate,
     );
 }
 
@@ -538,6 +579,7 @@ fn build_sort_controls(
     sort_by: &Rc<Cell<SortBy>>,
     cover_loader: &Rc<CoverLoader>,
     generation: &Rc<Cell<u64>>,
+    on_metadata_activate: &MetadataCallback,
 ) -> gtk4::Box {
     let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
     row.set_halign(gtk4::Align::End);
@@ -552,6 +594,7 @@ fn build_sort_controls(
             let sort_by = sort_by.clone();
             let cover_loader = cover_loader.clone();
             let generation = generation.clone();
+            let on_metadata_activate = on_metadata_activate.clone();
             move |button| {
                 if !button.is_active() {
                     return;
@@ -559,7 +602,14 @@ fn build_sort_controls(
                 sort_by.set(value);
                 let snapshot = snapshot.borrow().clone();
                 if let Some(snapshot) = snapshot {
-                    render_tracks(&tracks_box, &snapshot, value, &cover_loader, &generation);
+                    render_tracks(
+                        &tracks_box,
+                        &snapshot,
+                        value,
+                        &cover_loader,
+                        &generation,
+                        &on_metadata_activate,
+                    );
                 }
             }
         });
@@ -575,6 +625,7 @@ fn render_tracks(
     sort_by: SortBy,
     cover_loader: &Rc<CoverLoader>,
     generation: &Rc<Cell<u64>>,
+    on_metadata_activate: &MetadataCallback,
 ) {
     clear(container);
     let token = generation.get().wrapping_add(1);
@@ -601,8 +652,31 @@ fn render_tracks(
         row.append(&cover);
         let text = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
         text.set_hexpand(true);
-        text.append(&label(&track.title, "stats-item-title"));
-        text.append(&label(&track.artist, "stats-item-subtitle"));
+        text.append(&stats_metadata_links::button(
+            &track.title,
+            "stats-item-title",
+            StatsMetadataTarget::Track(track.track_id),
+            on_metadata_activate,
+        ));
+        text.append(&stats_metadata_links::button(
+            &track.artist,
+            "stats-item-subtitle",
+            StatsMetadataTarget::Artist {
+                track_id: track.track_id,
+                artist: track.effective_artist.clone(),
+            },
+            on_metadata_activate,
+        ));
+        text.append(&stats_metadata_links::button(
+            &track.album,
+            "stats-item-subtitle",
+            StatsMetadataTarget::Album {
+                track_id: track.track_id,
+                album: track.album.clone(),
+                album_artist: track.effective_artist.clone(),
+            },
+            on_metadata_activate,
+        ));
         row.append(&text);
         let bar = gtk4::LevelBar::new();
         bar.set_min_value(0.0);
@@ -689,34 +763,6 @@ fn metric(track: &TopTrack, sort_by: SortBy) -> i64 {
     match sort_by {
         SortBy::Plays => track.play_count,
         SortBy::Time => track.total_ms,
-    }
-}
-
-fn section(title: &str, content: &impl IsA<gtk4::Widget>) -> gtk4::Box {
-    let root = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
-    root.append(&label(title, "stats-section-title"));
-    root.append(content);
-    root
-}
-
-fn card(content: &impl IsA<gtk4::Widget>) -> gtk4::Box {
-    let card = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    card.add_css_class("stats-card");
-    card.append(content);
-    card
-}
-
-fn label(text: &str, class: &str) -> gtk4::Label {
-    let label = gtk4::Label::new(Some(text));
-    label.add_css_class(class);
-    label.set_xalign(0.0);
-    label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-    label
-}
-
-fn clear(container: &gtk4::Box) {
-    while let Some(child) = container.first_child() {
-        container.remove(&child);
     }
 }
 

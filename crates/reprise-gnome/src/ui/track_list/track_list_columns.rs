@@ -430,6 +430,11 @@ pub(in crate::ui) fn append_cover_column(
                 return;
             };
             let track = boxed.borrow::<Track>();
+            let accessible_label = crate::ui::strings::formatted(
+                crate::ui::strings::GO_TO_ALBUM_NAMED,
+                &[("album", &track.album)],
+            );
+            cover.update_property(&[gtk4::accessible::Property::Label(&accessible_label)]);
             apply_now_playing(&cover, track.id, &shared, true);
 
             let key = item.as_ptr() as usize;

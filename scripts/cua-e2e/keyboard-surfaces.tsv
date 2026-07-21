@@ -2,8 +2,6 @@
 app-shell	keyboard_app_shell
 sidebar	keyboard_sidebar
 tracks-playlist-queue	keyboard_tracks_playlist_queue
-albums	keyboard_albums
-artists	keyboard_artists
 issues-import	keyboard_issues_import
 player-now-playing	keyboard_player_now_playing
 device-sync	keyboard_device_sync
