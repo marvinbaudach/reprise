@@ -27,6 +27,12 @@ for prompt_contract in \
   'developer-facing product story' \
   'technical entry point' \
   'English and German only' \
+  'Keep architecture goals narrow' \
+  'thin native frontends' \
+  'MCP and CLI adapters' \
+  'Do not classify product features, experiments, packaging, or release' \
+  'work as architecture goals' \
+  'Use natural prose' \
   'one architecture visual' \
   'Performance evidence defaults to a compact comparison table' \
   'Do not mirror the portfolio narrative' \
