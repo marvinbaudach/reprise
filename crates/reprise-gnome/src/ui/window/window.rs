@@ -138,6 +138,7 @@ pub fn build(
 
     let header = adw::HeaderBar::new();
     header.pack_start(&sidebar_toggle);
+    header.pack_start(&super::library_chrome::build_navigation_back_button());
     header.set_title_widget(Some(&window_title));
     let maintenance_actions = super::library_chrome::build_maintenance_actions();
     let scan_button = maintenance_actions.scan;

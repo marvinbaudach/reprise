@@ -490,6 +490,29 @@ fn npp_10_track_change_uses_one_shared_crossfade() {
     settings.set_gtk_enable_animations(animations_were_enabled);
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn ac_9_track_change_clears_prior_analysis_before_idle_refresh() {
+    gtk4::init().unwrap();
+    let (window, panel) = test_panel("org.reprise.Reprise.AnalysisTrackChangeTest");
+    panel.retain_for_window(&window);
+    let dimensions = std::array::from_fn(|_| audio_character_view::DimensionPresentation {
+        name: strings::AUDIO_CHARACTER_INTENSITY,
+        value_percent: 80,
+        confidence_percent: 90,
+        accessible_label: "Intensity, 80%, confidence 90%".into(),
+    });
+    panel.render_audio_character(&audio_character_view::AudioCharacterPresentation::Ready {
+        dimensions: Box::new(dimensions),
+        tempo: None,
+    });
+    assert!(panel.widgets.audio_character.shows_ready_for_test());
+
+    panel.set_loaded_track(Some(loaded_track()));
+
+    assert!(!panel.widgets.audio_character.shows_ready_for_test());
+}
+
 fn test_panel(application_id: &str) -> (adw::ApplicationWindow, Rc<NowPlayingPanel>) {
     let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
     reprise_core::db::migrate(&conn.borrow()).unwrap();

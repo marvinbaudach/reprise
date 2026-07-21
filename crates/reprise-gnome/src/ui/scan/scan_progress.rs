@@ -279,7 +279,7 @@ impl ScanProgressView {
             .title
             .set_label(&strings::text(strings::SCAN_CARD_TITLE));
         self.inner.spinner.set_spinning(true);
-        self.inner.revealer.set_reveal_child(true);
+        self.begin_visibility();
         self.inner.progress.set_visible(true);
         self.inner.cancel.set_visible(true);
 
@@ -335,7 +335,7 @@ impl ScanProgressView {
         self.cancel_pulsing();
         self.inner.title.set_label(title);
         self.inner.spinner.set_spinning(true);
-        self.inner.revealer.set_reveal_child(true);
+        self.begin_visibility();
         self.inner.progress.set_visible(true);
         self.inner.cancel.set_visible(true);
         self.inner.progress.set_fraction(fraction.clamp(0.0, 1.0));
@@ -366,7 +366,7 @@ impl ScanProgressView {
         self.inner.detail.set_label(&state.detail);
         self.inner.detail.set_visible(true);
         self.inner.container.set_tooltip_text(None);
-        self.inner.revealer.set_reveal_child(true);
+        self.begin_visibility();
     }
 
     pub(in crate::ui) fn finish(&self) {
@@ -610,7 +610,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn widgets_reveal_progress_and_hide_after_finish() {
+    fn set_5_dormant_scan_progress_reserves_no_preferences_space() {
         if gtk4::init().is_err() {
             return;
         }

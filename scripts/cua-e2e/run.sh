@@ -5,6 +5,8 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 
 # shellcheck source=lib.sh
 source "$repo_root/scripts/cua-e2e/lib.sh"
+# shellcheck source=navigation_playback.sh
+source "$repo_root/scripts/cua-e2e/navigation_playback.sh"
 
 APP_ID=org.reprise.Reprise
 WINDOW_CLASS_MATCH=reprise

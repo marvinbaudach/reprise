@@ -50,6 +50,21 @@ fn player_metadata_uses_native_keyboard_activation() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn ac_10_analysis_info_button_is_an_accessible_keyboard_target() {
+    gtk4::init().unwrap();
+    let bar = PlayerBar::new();
+    let button = bar.analysis_info_button.clone().upcast::<gtk4::Widget>();
+
+    assert!(button.is_focusable());
+    assert!(gtk4::test_accessible_has_role(
+        &button,
+        gtk4::AccessibleRole::Button
+    ));
+    assert_eq!(button.tooltip_text().as_deref(), Some("Song analysis"));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn mot_5_play_pause_pulses_on_state_change() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
@@ -113,9 +128,12 @@ fn mot_5_play_pause_pulses_on_state_change() {
     run_main_loop_for(30);
     assert!(bar.play_pause_button.has_css_class("pulsing"));
 
-    run_main_loop_for(motion::half(motion::MICRO) + 20);
-    assert!(bar.play_pause_button.has_css_class("pulsing"));
-    run_main_loop_for(motion::half(motion::MICRO) + 20);
+    // Avoid an elapsed-time midpoint assertion here. A requested main-loop
+    // duration is only a lower bound under X11/Xvfb, so a busy runner may
+    // legitimately process the 150 ms removal before a nominal 95 ms wait
+    // returns. The immediate assertion above and eventual removal below are
+    // the stable behavior boundaries.
+    run_main_loop_for(motion::MICRO_MS + 20);
     assert!(!bar.play_pause_button.has_css_class("pulsing"));
 
     settings.set_gtk_enable_animations(previous);
