@@ -155,15 +155,15 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   gegenüber Assistenztechnik eine eigene Bezeichnung, eine interaktive Rolle
   und eine auslösbare Aktion. Sektionsüberschriften bleiben nicht bedienbar,
   werden aber semantisch als Überschriften exponiert.
-- **NAV-12** [aktiv] [e2e] — Die globale Zurück-Historie ist als benannter
-  ‹-Button in der Headerbar sichtbar. Der Button ist ohne vorherigen Ort
-  deaktiviert, wird nach einer Detailnavigation aktiv und stellt beim
-  Auslösen den vorherigen Ort samt Fokus wieder her.
-- **NAV-13** [aktiv] [e2e] — Wiedergabestart ist keine Navigation: Enter oder
-  Doppelklick auf eine Track-Row lässt Quelle, Modus, Selektion, Tastaturfokus
-  und Viewport unverändert. Das gilt insbesondere in Album- und
-  Artist-Details sowie in der ungefilterten Musikliste; nur die
-  Now-Playing-Markierung wechselt.
+- **NAV-12** [ersetzt durch NAV-2] — Die globale Zurück-Historie als benannter
+  ‹-Button in der Headerbar (deaktiviert ohne vorherigen Ort, aktiv nach einer
+  Navigation, stellt beim Auslösen den vorherigen Ort samt Fokus wieder her)
+  gehört im Single-Track-Browser zum NAV-2-History-Komplex; Album und Interpret
+  sind keine eigenen Ansichten mehr, sondern Scopes der Musikliste.
+- **NAV-13** [ersetzt durch NAV-10a] — Wiedergabestart ist keine Navigation:
+  Enter oder Doppelklick auf eine Track-Row lässt Selektion, Tastaturfokus und
+  Viewport unverändert; nur die Now-Playing-Markierung wechselt. Die Trennung
+  von Markieren und Scrollen im einen Track-Browser regelt jetzt NAV-10a.
 
 ## C. Abspielen, Queue, Shuffle, Filter
 

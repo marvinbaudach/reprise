@@ -597,12 +597,11 @@ impl SongVisualizer {
     }
 }
 
-#[allow(deprecated)] // GTK4 has no non-deprecated API for resolving a named CSS color.
 fn draw_scene(area: &gtk4::DrawingArea, cr: &gtk4::cairo::Context, scene: &Scene) {
-    let color = area
-        .style_context()
-        .lookup_color("reprise_player_accent")
-        .unwrap_or_else(|| area.color());
+    // The canvas CSS sets `color: @reprise_player_accent`, so the widget's
+    // resolved foreground color is the player accent — no deprecated
+    // style-context color lookup required.
+    let color = area.color();
     let rgb = (
         f64::from(color.red()),
         f64::from(color.green()),
@@ -640,6 +639,7 @@ fn draw_scene(area: &gtk4::DrawingArea, cr: &gtk4::cairo::Context, scene: &Scene
 pub(in crate::ui) fn css() -> String {
     ".reprise-song-visuals { margin: 0 18px 12px; }\n\
      .reprise-song-visual-canvas {\
+       color: @reprise_player_accent;\
        background-color: alpha(#ffffff, 0.025);\
        border: 1px solid alpha(@reprise_player_accent, 0.14);\
        border-radius: 24px;\
@@ -658,6 +658,7 @@ pub(in crate::ui) fn css() -> String {
      }\n\
      window.reprise-song-visual-fullscreen { background: #090b0c; }\n\
      .reprise-song-visual-fullscreen-canvas {\
+       color: @reprise_player_accent;\
        background-image: radial-gradient(ellipse at center,\
          alpha(@reprise_player_accent, 0.12) 0%,\
          alpha(#090b0c, 0) 72%);\

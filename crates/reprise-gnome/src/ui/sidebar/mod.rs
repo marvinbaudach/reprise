@@ -1,4 +1,5 @@
 mod sidebar_activity_slot;
+mod sidebar_navigation_scroller;
 pub(in crate::ui) mod sidebar_device_card;
 pub(crate) mod sidebar_dnd;
 pub(crate) mod sidebar_export;
