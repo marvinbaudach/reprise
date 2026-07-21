@@ -1,6 +1,6 @@
 //! Per-mode scene builders. Each mode module owns exactly one function,
 //! `scene(ctx: &ModeCtx) -> Vec<Shape>`, translating the shared reactive
-//! state in [`ModeCtx`] into resolution-independent shapes. [`build_scene`]
+//! state in [`ModeCtx`] into resolution-independent shapes. `build_scene`
 //! dispatches to the right one; the engine wraps the result with the accent
 //! wash and flash overlay (see [`super::engine::VisualEngine::scene`]).
 

@@ -3,8 +3,7 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
-use libadwaita::prelude::{AnimationExt, BreakpointBinExt};
-use reprise_core::cover::ThumbnailSize;
+use libadwaita::prelude::BreakpointBinExt;
 use reprise_core::playback::{PlaybackState, SpectrumFrame};
 use rusqlite::Connection;
 
@@ -25,6 +24,9 @@ use crate::ui::scan::audio_analysis_runtime::AudioAnalysisRuntime;
 use crate::ui::style::tokens;
 
 type OnVoid = Rc<dyn Fn()>;
+
+#[path = "now_playing_effects.rs"]
+mod now_playing_effects;
 
 fn should_toggle_visual_fullscreen(
     enabled: bool,
@@ -723,133 +725,6 @@ impl NowPlayingPanel {
             self.widgets.visualizer.clear_profile();
         }
         self.widgets.audio_character.render(presentation);
-    }
-
-    fn render_track(&self) {
-        let track = self.loaded_track.borrow().clone();
-        let presentation = panel_presentation(track.as_ref(), self.playback_state.get());
-        self.widgets.title.set_label(&presentation.title);
-        let (artist, album) = track.as_ref().map_or(("", ""), |track| {
-            (track.artist.as_str(), track.album.as_str())
-        });
-        self.widgets.artist.set_label(artist);
-        self.widgets.album.set_label(album);
-        self.widgets.artist.set_visible(!artist.trim().is_empty());
-        self.widgets.album.set_visible(!album.trim().is_empty());
-        self.widgets.visualizer.set_track_meta(
-            &presentation.title,
-            if presentation.idle {
-                ""
-            } else {
-                &presentation.subtitle
-            },
-        );
-        if presentation.idle {
-            self.widgets.stage.add_css_class("reprise-now-playing-idle");
-        } else {
-            self.widgets
-                .stage
-                .remove_css_class("reprise-now-playing-idle");
-        }
-        let generation = self.cover_generation.get().wrapping_add(1);
-        self.cover_generation.set(generation);
-        CoverLoader::set_placeholder(&self.widgets.cover);
-        // Revert the visualizer's cover-derived accent up front, same reason
-        // `PlayerController::sync_cover`'s `reset_cover_accent` does for the
-        // bar: without this, a track with no (or slow-to-decode) cover would
-        // leave the previous track's accent lingering in the engine.
-        self.widgets.visualizer.set_cover(None);
-        if let Some(track) = track {
-            let visualizer = self.widgets.visualizer.clone();
-            let cover_widget = self.widgets.cover.clone();
-            self.cover_loader.load_into_with_path(
-                &self.widgets.cover,
-                &track.path,
-                ThumbnailSize::Full,
-                generation,
-                &self.cover_generation,
-                move |resolved_path| {
-                    // `load_target` already set `cover_widget`'s paintable to
-                    // the decoded texture before invoking this callback (same
-                    // generation), so reuse it instead of decoding the
-                    // full-resolution file a second time. Only fall back to a
-                    // fresh decode if the paintable isn't a texture for some
-                    // reason (e.g. still showing the placeholder icon).
-                    let texture = cover_widget
-                        .paintable()
-                        .and_downcast::<gtk4::gdk::Texture>()
-                        .or_else(|| gtk4::gdk::Texture::from_filename(&resolved_path).ok());
-                    visualizer.set_cover(texture);
-                },
-            );
-        }
-    }
-
-    fn animate_track_change(self: &Rc<Self>) {
-        self.cancel_track_animation();
-        let generation = self.track_animation_generation.get().wrapping_add(1);
-        self.track_animation_generation.set(generation);
-        let target = adw::CallbackAnimationTarget::new({
-            let content = self.widgets.track_content.clone();
-            move |value| content.set_opacity(value)
-        });
-        let fade_out = crate::ui::motion::timed(
-            &self.widgets.track_content,
-            self.widgets.track_content.opacity(),
-            0.0,
-            crate::ui::motion::STANDARD,
-            target,
-        );
-        fade_out.set_duration(crate::ui::motion::half(crate::ui::motion::STANDARD));
-        let panel = Rc::downgrade(self);
-        fade_out.connect_done(move |_| {
-            let Some(panel) = panel.upgrade() else {
-                return;
-            };
-            if panel.track_animation_generation.get() != generation {
-                return;
-            }
-            panel.render_track();
-            let target = adw::CallbackAnimationTarget::new({
-                let content = panel.widgets.track_content.clone();
-                move |value| content.set_opacity(value)
-            });
-            let fade_in = crate::ui::motion::timed(
-                &panel.widgets.track_content,
-                0.0,
-                1.0,
-                crate::ui::motion::STANDARD,
-                target,
-            );
-            fade_in.set_duration(crate::ui::motion::half(crate::ui::motion::STANDARD));
-            let panel_for_done = Rc::downgrade(&panel);
-            fade_in.connect_done(move |_| {
-                let Some(panel) = panel_for_done.upgrade() else {
-                    return;
-                };
-                if panel.track_animation_generation.get() == generation {
-                    panel.track_animation.borrow_mut().take();
-                    panel.widgets.track_content.set_opacity(1.0);
-                }
-            });
-            *panel.track_animation.borrow_mut() = Some(fade_in.clone());
-            fade_in.play();
-        });
-        *self.track_animation.borrow_mut() = Some(fade_out.clone());
-        fade_out.play();
-    }
-
-    fn cancel_track_animation(&self) {
-        self.track_animation_generation
-            .set(self.track_animation_generation.get().wrapping_add(1));
-        if let Some(animation) = self.track_animation.borrow_mut().take() {
-            animation.pause();
-        }
-    }
-
-    #[cfg(test)]
-    fn has_track_animation(&self) -> bool {
-        self.track_animation.borrow().is_some()
     }
 }
 
