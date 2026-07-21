@@ -13,6 +13,11 @@ It records communication and visual decisions, not product behavior.
   broad marketing superlatives.
 - Publish the showroom in English and German only. Additional translations add
   maintenance and review cost without serving the intended audience.
+- Keep future architecture goals to thin native frontends that reuse the
+  portable core and MCP or CLI adapters over the same tested application
+  layer. Describe them in natural prose. Product features, experiments,
+  packaging, and release work belong in their own context rather than under an
+  architecture heading.
 
 ## Visual system
 
