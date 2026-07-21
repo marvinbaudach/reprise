@@ -24,6 +24,7 @@ rg -q '/home/marvin/Projects/reprise/scripts/weekly-portfolio-sync\.sh' "$cron_f
 
 for prompt_contract in \
   'developer README' \
+  'developer-facing product story' \
   'technical entry point' \
   'English and German only' \
   'one architecture visual' \

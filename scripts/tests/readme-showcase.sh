@@ -65,6 +65,7 @@ require_fixed '[English](README.md)' "$german"
 for value in \
   '## Architecture' \
   '## Engineering contracts' \
+  '## Contributing' \
   '## Build and run' \
   '## Verification' \
   '## Documentation' \
@@ -75,12 +76,16 @@ done
 for value in \
   '## Architektur' \
   '## Engineering-Verträge' \
+  '## Mitentwickeln' \
   '## Bauen und starten' \
   '## Verifikation' \
   '## Dokumentation' \
   '## Lizenz'; do
   require_fixed "$value" "$german"
 done
+
+require_fixed 'Choose your seam' "$english"
+require_fixed 'Wähle deine Naht' "$german"
 
 for path in "$english" "$german"; do
   for crate in reprise-core reprise-platform-linux reprise-gnome; do

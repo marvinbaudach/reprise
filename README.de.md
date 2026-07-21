@@ -2,22 +2,22 @@
 
 [English](README.md) · [Deutsch](README.de.md)
 
-Reprise ist ein nativer GTK4-/libadwaita-Musikplayer für GNOME. Die Fachlogik
-liegt in einem portablen Rust-Core ohne GUI-Abhängigkeiten; Linux-Wiedergabe und
-Desktop-Integration hängen hinter expliziten Plattformverträgen.
+Reprise ist für Menschen, die ihre Musik noch selbst besitzen — und für Devs,
+die native Desktop-UX, portables Domänendesign und messbare Systemarbeit in
+einer Rust-Codebase verbinden wollen. Eine GTK4-/libadwaita-App für GNOME trifft
+auf einen GUI-freien Core und explizite Linux-Plattformverträge.
 
 > **Status:** aktive Alpha. Reprise ist noch kein öffentliches Release.
 
-## Produktumfang
+## Warum Reprise
 
-- Grosse lokale Bibliotheken mit inkrementellem Scan, Move-Reconciliation,
-  Suche, Album-/Artist-Ansichten, Playlists, Queue, Ratings und Play History.
-- GStreamer-Wiedergabe mit Gapless-Übergängen, Crossfade, ReplayGain,
-  Zehnband-Equalizer, synchronisierten Lyrics und optionalem Scrobbling.
-- Native GNOME-Integration über MPRIS, Medientasten, Benachrichtigungen,
-  Session Restore, System-Keyring und bestätigte Papierkorb-Flows.
-- Android-USB-/MTP-Browsing und -Synchronisierung mit expliziten Plänen,
-  Fortschritt, Abbruch und begrenzten Gerätepfaden.
+- **Local-first mit Tiefe.** Scans grosser Bibliotheken, Metadaten, Suche,
+  Playlists, Hörverlauf, Android-Sync und Dateisicherheit funktionieren ohne
+  Cloudkonto für die Musiksammlung.
+- **Nativ per Design.** GTK4/libadwaita besitzt das GNOME-Erlebnis; GStreamer,
+  MPRIS, MTP, Keyring und Papierkorb bleiben am Linux-Rand.
+- **Gebaut zum Nachvollziehen.** Architektur, UX, Accessibility, Performance
+  und Delivery sind ausführbare Verträge statt README-Versprechen.
 
 ## Architektur
 
@@ -56,14 +56,24 @@ Benchmarkmethoden, Einschränkungen und akzeptierte Evidenz stehen in
 [TESTING.md](TESTING.md) und im [Engineering-Showcase](docs/showcase.md), nicht
 als schnell veraltende Summen in diesem technischen Einstiegspunkt.
 
+## Mitentwickeln
+
+**Wähle deine Naht:** reine Bibliotheks-, Scanner-, Queue- oder Playlistlogik
+in `reprise-core`; native Interaktion und Accessibility in `reprise-gnome`;
+oder Audio-, Desktop- und Geräteadapter in `reprise-platform-linux`.
+
+Starte mit [AGENTS.md](AGENTS.md) und dem [UX-Regelwerk](docs/ux-rules.md).
+Änderungen beginnen mit einem fehlschlagenden Test, halten die Core-Grenze ein
+und laufen per Pull Request durch `feature → dev → main`. Ziel ist nicht mehr
+Code, sondern ein besserer Musikplayer mit Evidenz für seine Korrektheit.
+
 ## Bauen und starten
 
-Voraussetzungen:
+Voraussetzungen: Rust 1.92+, Meson 1.3+, Ninja, GTK 4.22+, libadwaita 1.9+,
+SQLite, gettext, GStreamer 1.x und GVfs mit MTP-Volume-Monitor.
 
-- Rust 1.92+ (Edition 2021), Meson 1.3+ und Ninja
-- GTK 4.22+, libadwaita 1.9+, SQLite, gettext und übliche GNOME-Build-Tools
-- GStreamer 1.x plus die für die Musikdateien benötigten Codec-Plugins
-- GVfs mit MTP-Volume-Monitor für Android-Geräte
+Installiere zusätzlich die GStreamer-Codecs für die Musikformate, die du
+abspielen möchtest.
 
 ```sh
 cargo build --locked --workspace
