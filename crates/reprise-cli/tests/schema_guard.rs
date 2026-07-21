@@ -2,8 +2,9 @@ mod common;
 
 use common::{code, stderr, Harness};
 
-/// The exact wording the multi-frontend-core plan pins for a too-new schema.
-const SCHEMA_TOO_NEW_MESSAGE: &str = "Datenbank ist neuer als dieses CLI — bitte aktualisieren.";
+/// The exact wording the CLI prints for a too-new schema (English per AGENTS.md).
+const SCHEMA_TOO_NEW_MESSAGE: &str =
+    "Database schema is newer than this reprise-cli — please update.";
 
 /// Bumps the migrated temp database's `user_version` past what this binary
 /// supports, so `open_migrated` fails the fail-closed guard.
