@@ -4,7 +4,7 @@ use crate::artist_news::{
     artist_search_url, artists_for_fetch, configured_fetch_scope, hidden_release_count,
     mark_releases_seen, most_played_album_track_path, parse_artist_mbid, parse_release_groups,
     query_releases, refresh_with, release_groups_url, set_fetch_all_artists, set_release_hidden,
-    show_hidden_releases, unseen_release_count, ArtistMatch, FetchScope, NewsKind,
+    unseen_release_count, ArtistMatch, FetchScope, NewsKind,
 };
 
 const ARTIST_ID: &str = "83d91898-7763-47d7-b03b-b92132375c47";
@@ -485,7 +485,7 @@ fn nr_3_seen_item_not_rebadged() {
 }
 
 #[test]
-fn hide_sets_hidden_and_show_restores_hidden_releases() {
+fn hide_sets_hidden_and_set_release_hidden_false_restores_it() {
     let conn = migrated_conn();
     insert_release(&conn, "one", None);
     insert_release(&conn, "two", None);
@@ -530,7 +530,11 @@ fn hide_sets_hidden_and_show_restores_hidden_releases() {
 
     set_release_hidden(&conn, "one", true).unwrap();
 
-    show_hidden_releases(&conn).unwrap();
+    // The former blanket "un-hide everything" helper (`show_hidden_releases`)
+    // is gone — `restore_release` (A2) replaces it for the real UI path
+    // (single release, wired in C1), and `set_release_hidden(.., false)`
+    // remains the primitive both build on, which this asserts directly.
+    set_release_hidden(&conn, "one", false).unwrap();
 
     assert_eq!(hidden_release_count(&conn).unwrap(), 0);
     assert_eq!(query_releases(&conn, false, date()).unwrap().len(), 2);
