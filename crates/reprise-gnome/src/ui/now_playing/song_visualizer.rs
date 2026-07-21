@@ -9,9 +9,16 @@
 //! this module's private helpers (`drawing_area`, `mode_controls`, the
 //! [`FullscreenChrome`] live-update handles, …) as a descendant module. Both
 //! turn the engine's [`reprise_core::visuals::Scene`] into pixels via
-//! [`render`].
+//! [`render`] — normally through a Cairo `DrawingArea`, or, when
+//! `gpu_visuals_enabled()` opts in, through `glow_area::GlowArea`, a GSK
+//! `Widget` subclass that swaps the Cairo path's fake bloom (a wide
+//! translucent under-stroke) for a real GPU-composited Gaussian blur. Both
+//! canvas kinds upcast to `gtk4::Widget` and are driven by the exact same
+//! tick loop and `queue_registered_areas` calls, so nothing else in this
+//! module or `fullscreen.rs` needs to know which one is live.
 
 mod fullscreen;
+mod glow_area;
 mod render;
 
 use std::cell::{Cell, RefCell};
@@ -158,8 +165,12 @@ impl FullscreenChrome {
 #[derive(Clone)]
 pub(in crate::ui) struct SongVisualizer {
     root: gtk4::Box,
-    area: gtk4::DrawingArea,
-    areas: Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::DrawingArea>>>>,
+    /// The inline canvas — a `DrawingArea` (Cairo) or `glow_area::GlowArea`
+    /// (GSK) depending on `gpu_visuals_enabled()`, upcast to `gtk4::Widget`
+    /// so callers don't need to know which. Used only as the tick loop's
+    /// `add_tick_callback` host; drawing itself goes through `areas`.
+    area: gtk4::Widget,
+    areas: Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::Widget>>>>,
     engine: Rc<RefCell<VisualEngine>>,
     /// Mirrored outside the engine (which has no getter) so `set_spectrum`
     /// can gate on "are we actually playing" without borrowing it.
@@ -193,7 +204,7 @@ impl SongVisualizer {
     pub(in crate::ui) fn new() -> Self {
         let engine = Rc::new(RefCell::new(VisualEngine::new()));
         let areas = Rc::new(RefCell::new(Vec::new()));
-        let area = drawing_area(&engine, DRAW_HEIGHT, "reprise-song-visual-canvas");
+        let area = build_canvas(&engine, DRAW_HEIGHT, false, "reprise-song-visual-canvas");
         register_area(&areas, &area);
 
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 10);
@@ -422,6 +433,43 @@ impl SongVisualizer {
     }
 }
 
+/// Env var toggling the GSK GPU-blur canvas (`glow_area::GlowArea`) on in
+/// place of the Cairo `DrawingArea` fallback. Truthy: `"1"` or `"true"`
+/// (case-insensitive); anything else, including unset, keeps the Cairo path.
+const GPU_VISUALS_ENV: &str = "REPRISE_GPU_VISUALS";
+
+/// Whether to build the GPU-blur canvas instead of the Cairo one. Read once
+/// per canvas construction (inline panel build, each fullscreen open) rather
+/// than cached, so flipping the env var and reopening the fullscreen view is
+/// enough to compare the two paths without restarting the app.
+fn gpu_visuals_enabled() -> bool {
+    std::env::var(GPU_VISUALS_ENV)
+        .is_ok_and(|value| value.eq_ignore_ascii_case("1") || value.eq_ignore_ascii_case("true"))
+}
+
+/// Builds the canvas widget shared by the inline panel and the fullscreen
+/// overlay: a GSK `glow_area::GlowArea` when `gpu_visuals_enabled()`, else
+/// the Cairo `DrawingArea` fallback (`drawing_area`). Both are upcast to
+/// `gtk4::Widget` so every other helper here (`register_area`, the tick
+/// loop's `add_tick_callback`) works identically regardless of which one a
+/// given call site got. `height_request`/`vexpand` mirror the caller's
+/// intended sizing: the inline canvas is fixed-height and non-expanding, the
+/// fullscreen canvas has no minimum and expands to fill its `Overlay`.
+fn build_canvas(
+    engine: &Rc<RefCell<VisualEngine>>,
+    height_request: i32,
+    vexpand: bool,
+    css_class: &str,
+) -> gtk4::Widget {
+    if gpu_visuals_enabled() {
+        glow_area::GlowArea::new(engine.clone(), height_request, vexpand, css_class).upcast()
+    } else {
+        let area = drawing_area(engine, height_request, css_class);
+        area.set_vexpand(vexpand);
+        area.upcast()
+    }
+}
+
 fn drawing_area(
     engine: &Rc<RefCell<VisualEngine>>,
     height_request: i32,
@@ -447,15 +495,15 @@ fn drawing_area(
 }
 
 fn register_area(
-    areas: &Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::DrawingArea>>>>,
-    area: &gtk4::DrawingArea,
+    areas: &Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::Widget>>>>,
+    area: &impl IsA<gtk4::Widget>,
 ) {
     let weak = gtk4::glib::WeakRef::new();
-    weak.set(Some(area));
+    weak.set(Some(area.upcast_ref::<gtk4::Widget>()));
     areas.borrow_mut().push(weak);
 }
 
-fn queue_registered_areas(areas: &Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::DrawingArea>>>>) {
+fn queue_registered_areas(areas: &Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::Widget>>>>) {
     areas.borrow_mut().retain(|weak| {
         let Some(area) = weak.upgrade() else {
             return false;
@@ -465,8 +513,13 @@ fn queue_registered_areas(areas: &Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::Drawi
     });
 }
 
-fn accent_rgb(area: &gtk4::DrawingArea) -> (f32, f32, f32) {
-    let color = area.color();
+/// Reads `widget`'s resolved CSS `color` (the app accent, via
+/// `@reprise_player_accent`) as an `(r, g, b)` triple the engine can use for
+/// its accent-driven fills. Generic over both canvas kinds — the Cairo
+/// `DrawingArea` and the GSK `glow_area::GlowArea` both resolve `color()`
+/// the same way since both are plain `gtk4::Widget`s with a CSS class.
+fn accent_rgb(widget: &impl IsA<gtk4::Widget>) -> (f32, f32, f32) {
+    let color = widget.color();
     (color.red(), color.green(), color.blue())
 }
 
@@ -594,7 +647,7 @@ fn mode_label(mode: VisualMode) -> &'static str {
 /// that dark-surface styling onto the docked panel's copy.
 fn mode_controls(
     engine: &Rc<RefCell<VisualEngine>>,
-    areas: &Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::DrawingArea>>>>,
+    areas: &Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::Widget>>>>,
     extra_classes: &[&str],
 ) -> gtk4::FlowBox {
     let flow = gtk4::FlowBox::builder()
