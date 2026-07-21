@@ -281,7 +281,7 @@ fn set_patch_fields(tag: &mut Tag, patch: &TagPatch) {
 /// This is the sole way to make a file with a damaged APE/ID3 container
 /// editable again — `TagType::remove_from_path` parses the tag before removing
 /// it and so can't clear the very container that fails to parse.
-fn strip_and_rewrite_tag(path: &Path, patch: &TagPatch) -> Result<(), TagEditError> {
+pub(super) fn strip_and_rewrite_tag(path: &Path, patch: &TagPatch) -> Result<(), TagEditError> {
     let data = std::fs::read(path).map_err(lofty::error::LoftyError::from)?;
     std::fs::write(path, strip_tag_containers(data)).map_err(lofty::error::LoftyError::from)?;
     // The file is now strictly readable and tag-free; route through the single

@@ -188,6 +188,45 @@ fn pass2_rescues_broken_tags_and_keeps_the_hint_row() {
     );
 }
 
+/// The scanner auto-repairs a damaged MP3 tag container on import: it strips the
+/// broken ID3v2/APE/ID3v1 containers and writes a fresh ID3v2 from the file name
+/// / folder, so the file imports as a normal *tagged* track (not untagged) and
+/// no import-error hint remains — and the file is strictly readable afterwards.
+#[test]
+fn scanner_repairs_a_damaged_mp3_container_on_import() {
+    let tmp = tempfile::tempdir().unwrap();
+    let album_dir = tmp.path().join("Some Album");
+    std::fs::create_dir(&album_dir).unwrap();
+    let path = album_dir.join("Broken Song.mp3");
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/broken-tags.mp3"),
+        &path,
+    )
+    .unwrap();
+
+    let mut conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    let report = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    assert_eq!(report.added, 1);
+    assert_eq!(report.errors, 0);
+
+    let (title, album, _duration, untagged) =
+        track_row(&conn, &path).expect("the repaired file must insert a track row");
+    assert_eq!(untagged, 0, "the damaged container was repaired");
+    assert_eq!(title, "Broken Song", "title comes from the file stem");
+    assert_eq!(album, "Some Album", "album comes from the folder name");
+    assert_eq!(
+        error_kind(&conn, &path),
+        None,
+        "a repaired file carries no import-error hint"
+    );
+
+    let tags = crate::library::tag_edit::read_editable_tags(&path)
+        .expect("the repaired file is strictly readable again");
+    assert_eq!(tags.title, "Broken Song");
+    assert_eq!(tags.album, "Some Album");
+}
+
 /// Brief case 2 ("Pass-2-Fehlschlag"): a pure garbage file (not a real
 /// container at all — the same fixture shape `scanner_import_errors_tests.
 /// rs`'s `broken_mp3` uses) fails BOTH passes. No track row is inserted; the
