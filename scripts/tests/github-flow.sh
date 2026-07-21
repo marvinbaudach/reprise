@@ -42,6 +42,12 @@ require_pattern '^  contents: read$' "$workflow"
 require_pattern '^    name: Quality gate$' "$workflow"
 require_pattern 'archlinux:latest' "$workflow"
 require_pattern 'scripts/ci-quality.sh' "$workflow"
+require_pattern '^            ~/.cargo/registry$' "$workflow"
+require_pattern '^            ~/.cargo/git$' "$workflow"
+if rg --quiet '^            target/?$' "$workflow"; then
+  echo "$workflow must not cache Cargo build output on the bounded GitHub runner" >&2
+  exit 1
+fi
 
 require_pattern 'GITHUB_EVENT_NAME' scripts/ci-quality.sh
 require_pattern 'git config --global --add safe.directory' scripts/ci-quality.sh
