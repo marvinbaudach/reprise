@@ -25,6 +25,25 @@ fn nr_5a_opening_the_popover_never_requests_navigation() {
     assert!(!effect.navigates);
 }
 
+/// The popover used to cap stamping at `POPOVER_LIMIT` (5), matching the old
+/// capped row list. The list now scrolls instead of capping, so opening it
+/// must stamp every listed release as seen, not just the first few.
+#[test]
+fn nr_9_opening_stamps_every_listed_release_seen() {
+    let releases: Vec<_> = (1..=7).map(|n| release(&format!("release-{n}"))).collect();
+
+    let effect = opening_effect(&releases);
+
+    assert_eq!(effect.seen_ids.len(), 7);
+    assert_eq!(
+        effect.seen_ids,
+        releases
+            .iter()
+            .map(|release| release.release_group_mbid.clone())
+            .collect::<Vec<_>>()
+    );
+}
+
 #[test]
 fn nr_6_failure_keeps_updated_age_with_an_inline_cached_hint() {
     let presentation = footer_presentation(Some(100), 3_700, true);
@@ -208,4 +227,52 @@ fn nr_8_enabling_the_module_reaches_a_fetch() {
         strings::text(strings::NEW_RELEASES_CHECKING)
     );
     assert!(!state.badge.is_visible());
+}
+
+/// NR-9: opening the popover stamps every listed release seen, so the badge
+/// (visible beforehand for the unseen releases) must be gone afterwards.
+/// `render(true, ..)` is called directly rather than emitting the popover's
+/// real "show" signal: the popover here is never parented under a realized
+/// toplevel (no test in this file maps one), and GTK's real show handling
+/// tries to create a native surface for it, which segfaults without one.
+/// `connect_show` in `wire()` calls exactly this method first, so this
+/// exercises the same production code path the real signal would.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn nr_9_opening_the_popover_clears_the_badge() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    if gtk4::init().is_err() {
+        return;
+    }
+    let conn = reprise_core::db::open(None).unwrap();
+    reprise_core::db::migrate(&conn).unwrap();
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::NEW_RELEASES_MODULE, true)
+        .unwrap();
+    reprise_core::library::settings::set_new_releases_fetch_completed(&conn, true).unwrap();
+    let now = chrono::Utc::now().timestamp();
+    for mbid in ["release-one", "release-two"] {
+        conn.execute(
+            "INSERT INTO new_releases (
+               release_group_mbid, artist_name, artist_mbid, title, release_type,
+               first_release_date, fetched_at, fallback_accent
+             ) VALUES (?1, 'Artist', 'artist', 'Release', 'Album',
+                       '2026-08-01', ?2, '#123456')",
+            rusqlite::params![mbid, now],
+        )
+        .unwrap();
+    }
+    let conn = Rc::new(RefCell::new(conn));
+    let state = NewReleasesPopover::new(conn, PathBuf::from("unused.db"));
+
+    assert!(
+        state.badge.is_visible(),
+        "two unseen releases should badge before the popover ever opens"
+    );
+
+    state.render(true, false);
+
+    assert!(
+        !state.badge.is_visible(),
+        "opening stamps every listed release seen, so the badge must clear"
+    );
 }

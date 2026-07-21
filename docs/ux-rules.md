@@ -1004,11 +1004,10 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   einen Start-Abruf gibt es nicht. NR-8 schließt diese Schleife, ohne NR-5 zu
   kippen. Datenschutzlich unverändert: Netzverkehr entsteht ausschließlich nach
   ausdrücklicher Aktivierung, nur sofort statt nie.
-- **NR-9** [geplant] [gtk] — setzt auf NR-3 auf (NR-3 bleibt aktiv): Der Badge
+- **NR-9** [aktiv] [gtk] — setzt auf NR-3 auf (NR-3 bleibt aktiv): Der Badge
   aus NR-3 zeigt die **Anzahl** der Einträge mit `seen_at IS NULL`, ab 10 als
   „9+", verschwindet mit dem Öffnen (alle gelisteten Einträge werden
   gestempelt) und rendert bei 0 kein leeres Element.
-  <!-- REVIEW: Regelvorschlag -->
 - **NR-10** [geplant] [gtk] — Zeilen-Hover bzw. -Fokus blendet den
   Status-Chip aus und die Zeilen-Aktionen ein; beim Verlassen kehrt der Chip
   zurück. Tastaturparität: die Zeile ist fokussierbar, Fokus zeigt die
