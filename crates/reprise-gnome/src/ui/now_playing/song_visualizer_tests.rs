@@ -10,6 +10,10 @@ fn ac_10_visual_chrome_uses_the_shared_cover_accent_and_press_vocabulary() {
     // Fullscreen chrome fades rather than snapping.
     assert!(css.contains(".reprise-song-visual-chrome-hidden"));
     assert!(css.contains("transition: opacity"));
+    // Design-mock chrome: header/bottom scrims and the fullscreen title.
+    assert!(css.contains(".reprise-fs-header-scrim"));
+    assert!(css.contains(".reprise-fs-bottom-scrim"));
+    assert!(css.contains(".reprise-fs-title"));
 
     let buttons = crate::ui::style::buttons::css();
     assert!(buttons.contains(".reprise-btn-toggle:active"));
@@ -49,6 +53,53 @@ fn ac_10_visual_widget_exposes_a_labeled_canvas() {
         &visualizer.area,
         gtk4::AccessibleProperty::Label
     ));
+}
+
+/// End-to-end smoke test for the Task 9 fullscreen chrome: builds the whole
+/// overlay (backdrop, vignette-painted canvas, header, bottom bar with seek
+/// and volume scales, transport, mode pills) with a cover texture and
+/// player hooks installed, and confirms it constructs and tears down without
+/// panicking — the unit tests above only exercise pure formatting/CSS
+/// helpers, not the widget tree itself.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn ac_10_fullscreen_chrome_builds_and_tears_down_without_panicking() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let app = adw::Application::builder()
+        .application_id("org.reprise.Reprise.SongVisualizerFullscreenTest")
+        .build();
+    let window = adw::ApplicationWindow::new(&app);
+
+    let visualizer = SongVisualizer::new();
+    visualizer.set_track_meta("Song Title", "Artist · Album");
+    visualizer.set_queue_position(2, 9);
+    visualizer.set_next_up(Some("Up next: Another Song".to_owned()));
+    visualizer.set_position(42_000, 210_000);
+    visualizer.set_playback_state(PlaybackState::Playing);
+    visualizer.set_player_hooks(PlayerHooks {
+        previous: Rc::new(|| {}),
+        play_pause: Rc::new(|| {}),
+        stop: Rc::new(|| {}),
+        next: Rc::new(|| {}),
+        seek_to_ms: Rc::new(|_| {}),
+        set_volume: Rc::new(|_| {}),
+        initial_volume: 0.6,
+    });
+
+    visualizer.toggle_fullscreen(&window);
+    assert!(visualizer.fullscreen_active.get());
+    assert!(visualizer.fullscreen_chrome.borrow().is_some());
+
+    // A live update while the overlay is open should reach the chrome
+    // without panicking (this is what `set_position`/`set_playback_state`
+    // do on every player tick while the window is up).
+    visualizer.set_position(84_000, 210_000);
+    visualizer.set_playback_state(PlaybackState::Paused);
+
+    visualizer.close_fullscreen();
+    assert!(!visualizer.fullscreen_active.get());
+    assert!(visualizer.fullscreen_chrome.borrow().is_none());
 }
 
 /// Builds an engine that has just been hammered by a beat-then-slam: playing,

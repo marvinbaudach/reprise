@@ -3,10 +3,15 @@
 //! All reactive state (eased spectrum bands, envelopes, water, dust, impact
 //! overlay, accent palette) and the per-mode geometry live in
 //! `reprise_core::visuals::VisualEngine` — a portable core the GUI never has
-//! to reimplement. This module only owns the widget shell (inline canvas,
-//! fullscreen overlay, transport chrome, auto-hide, mode picker) and turns
-//! the engine's [`reprise_core::visuals::Scene`] into pixels via [`render`].
+//! to reimplement. This module owns the inline canvas + mode picker shell;
+//! the fullscreen overlay's chrome (header, transport, seek, volume, mode
+//! pills) lives in `song_visualizer/fullscreen.rs`, which reaches back into
+//! this module's private helpers (`drawing_area`, `mode_controls`, the
+//! [`FullscreenChrome`] live-update handles, …) as a descendant module. Both
+//! turn the engine's [`reprise_core::visuals::Scene`] into pixels via
+//! [`render`].
 
+mod fullscreen;
 mod render;
 
 use std::cell::{Cell, RefCell};
@@ -27,6 +32,14 @@ const DRAW_HEIGHT: i32 = 220;
 /// hue/saturation sample.
 const COVER_PALETTE_EDGE: i32 = 32;
 const COVER_PALETTE_PIXELS: usize = (COVER_PALETTE_EDGE * COVER_PALETTE_EDGE) as usize;
+/// Width (px) the cover texture is rasterized down to for the fullscreen
+/// backdrop. Small enough that the `Picture`'s bilinear upscaling reads as a
+/// soft wash of the cover's dominant colors — a fast, GPU-independent
+/// "fake blur" — rather than a sharp thumbnail.
+const BACKDROP_WIDTH: i32 = 24;
+/// The fullscreen seek `Scale`'s range top; its value is always
+/// `fraction * SEEK_SCALE_MAX`.
+const SEEK_SCALE_MAX: f64 = 1000.0;
 
 /// Player actions (and the volume slider's starting value) the fullscreen
 /// overlay drives. Wired from the player controller; the widget works
@@ -36,19 +49,111 @@ pub(in crate::ui) struct PlayerHooks {
     pub(in crate::ui) play_pause: Rc<dyn Fn()>,
     pub(in crate::ui) stop: Rc<dyn Fn()>,
     pub(in crate::ui) next: Rc<dyn Fn()>,
-    // Wired now, consumed by the fullscreen seek scale and volume slider a
-    // later task builds — see `song_visualizer/fullscreen.rs`'s plan.
-    #[allow(dead_code)]
     pub(in crate::ui) seek_to_ms: Rc<dyn Fn(i64)>,
-    #[allow(dead_code)]
     pub(in crate::ui) set_volume: Rc<dyn Fn(f64)>,
-    #[allow(dead_code)]
     pub(in crate::ui) initial_volume: f64,
 }
 
-/// Accessor for one [`PlayerHooks`] slot, used to wire a fullscreen button to
-/// its callback without repeating the field type at every call site.
-type HookSlot = fn(&PlayerHooks) -> &Rc<dyn Fn()>;
+/// Live fullscreen-chrome widgets, present only while the overlay window is
+/// open. One struct rather than a handful of parallel `Option` fields on
+/// [`SongVisualizer`] because every member shares the same lifecycle: built
+/// in `fullscreen::build`, populated immediately via the `apply_*` methods
+/// below, mirrored on every subsequent `set_*` call, and dropped together in
+/// the fullscreen window's `connect_destroy` handler.
+struct FullscreenChrome {
+    title: gtk4::Label,
+    subtitle: gtk4::Label,
+    state: gtk4::Label,
+    track_pos: gtk4::Label,
+    next_up: gtk4::Label,
+    cover_thumb: gtk4::Picture,
+    backdrop: gtk4::Picture,
+    play_pause: gtk4::Button,
+    time_cur: gtk4::Label,
+    time_total: gtk4::Label,
+    timecode: gtk4::Label,
+    seek: gtk4::Scale,
+    /// Guards the seek `Scale`'s `change-value` handler against a feedback
+    /// loop with `apply_position`'s own programmatic `set_value` — set
+    /// around that write, checked (and ignored) by the handler in
+    /// `fullscreen.rs::wire_seek`.
+    seek_updating: Rc<Cell<bool>>,
+}
+
+impl FullscreenChrome {
+    fn apply_track_meta(&self, title: &str, subtitle: &str) {
+        self.title.set_label(title);
+        self.subtitle.set_label(subtitle);
+        self.subtitle.set_visible(!subtitle.is_empty());
+    }
+
+    fn apply_playback_state(&self, playback: PlaybackState) {
+        self.play_pause
+            .set_icon_name(if playback == PlaybackState::Playing {
+                "media-playback-pause-symbolic"
+            } else {
+                "media-playback-start-symbolic"
+            });
+        let text = match playback {
+            PlaybackState::Playing => strings::SONG_VISUALS_STATE_PLAYING,
+            PlaybackState::Paused => strings::SONG_VISUALS_STATE_PAUSED,
+            PlaybackState::Stopped => strings::SONG_VISUALS_STATE_STOPPED,
+        };
+        self.state.set_label(&strings::text(text).to_uppercase());
+    }
+
+    fn apply_position(&self, position_ms: i64, duration_ms: i64) {
+        self.time_cur.set_label(&format_time(position_ms));
+        self.time_total.set_label(&format_time(duration_ms));
+        self.timecode.set_label(&format!(
+            "{} / {}",
+            format_time(position_ms),
+            format_time(duration_ms)
+        ));
+        self.seek_updating.set(true);
+        self.seek
+            .set_value(seek_fraction(position_ms, duration_ms) * SEEK_SCALE_MAX);
+        self.seek_updating.set(false);
+    }
+
+    fn apply_cover(&self, texture: Option<&gtk4::gdk::Texture>) {
+        match texture {
+            Some(texture) => {
+                self.cover_thumb.set_paintable(Some(texture));
+                self.cover_thumb.set_visible(true);
+            }
+            None => {
+                self.cover_thumb.set_paintable(gtk4::gdk::Paintable::NONE);
+                self.cover_thumb.set_visible(false);
+            }
+        }
+        match texture.and_then(|texture| backdrop_texture(texture, BACKDROP_WIDTH)) {
+            Some(blurred) => {
+                self.backdrop.set_paintable(Some(&blurred));
+                self.backdrop.set_visible(true);
+            }
+            None => {
+                self.backdrop.set_paintable(gtk4::gdk::Paintable::NONE);
+                self.backdrop.set_visible(false);
+            }
+        }
+    }
+
+    fn apply_next_up(&self, line: Option<&str>) {
+        self.next_up.set_label(line.unwrap_or_default());
+        self.next_up.set_visible(line.is_some());
+    }
+
+    fn apply_queue_position(&self, index: usize, total: usize) {
+        self.track_pos.set_label(&strings::formatted(
+            strings::SONG_VISUALS_TRACK_POS,
+            &[
+                ("index", &(index + 1).to_string()),
+                ("total", &total.to_string()),
+            ],
+        ));
+    }
+}
 
 #[derive(Clone)]
 pub(in crate::ui) struct SongVisualizer {
@@ -66,23 +171,22 @@ pub(in crate::ui) struct SongVisualizer {
     /// Current track title + subtitle, mirrored into the fullscreen header.
     meta: Rc<RefCell<(String, String)>>,
     hooks: Rc<RefCell<Option<PlayerHooks>>>,
-    /// Latest position tick (`position_ms`, `duration_ms`), mirrored for the
-    /// fullscreen seek row a later task builds.
+    /// Latest position tick (`position_ms`, `duration_ms`), mirrored into the
+    /// fullscreen seek row.
     position: Rc<Cell<(i64, i64)>>,
-    /// Latest cover texture, mirrored for the fullscreen backdrop a later
-    /// task builds. Also drives the engine's secondary accent (see
+    /// Latest cover texture, mirrored into the fullscreen backdrop and cover
+    /// thumbnail. Also drives the engine's secondary accent (see
     /// `set_cover`).
     cover: Rc<RefCell<Option<gtk4::gdk::Texture>>>,
-    /// Pre-formatted "Up next: …" line, mirrored for the fullscreen queue
-    /// strip a later task builds.
+    /// Pre-formatted "Up next: …" line, mirrored into the fullscreen queue
+    /// strip.
     next_up: Rc<RefCell<Option<String>>>,
-    /// `(index, total)` within the up-next queue, mirrored for the
-    /// fullscreen "TRACK i / n" label a later task builds.
+    /// `(index, total)` within the up-next queue, mirrored into the
+    /// fullscreen "TRACK i / n" label.
     queue_position: Rc<Cell<(usize, usize)>>,
-    /// Live fullscreen header labels + play/pause button, so metadata and
-    /// playback-state changes reflect while the overlay is open.
-    fullscreen_meta: Rc<RefCell<Option<(gtk4::Label, gtk4::Label)>>>,
-    fullscreen_play_pause: Rc<RefCell<Option<gtk4::Button>>>,
+    /// Live fullscreen-chrome widget handles, `Some` only while the overlay
+    /// is open — see [`FullscreenChrome`].
+    fullscreen_chrome: Rc<RefCell<Option<FullscreenChrome>>>,
 }
 
 impl SongVisualizer {
@@ -95,7 +199,7 @@ impl SongVisualizer {
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 10);
         root.add_css_class("reprise-song-visuals");
         root.append(&area);
-        root.append(&mode_controls(&engine, &areas));
+        root.append(&mode_controls(&engine, &areas, &[]));
         Self {
             root,
             area,
@@ -112,8 +216,7 @@ impl SongVisualizer {
             cover: Rc::new(RefCell::new(None)),
             next_up: Rc::new(RefCell::new(None)),
             queue_position: Rc::new(Cell::new((0, 0))),
-            fullscreen_meta: Rc::new(RefCell::new(None)),
-            fullscreen_play_pause: Rc::new(RefCell::new(None)),
+            fullscreen_chrome: Rc::new(RefCell::new(None)),
         }
     }
 
@@ -126,28 +229,28 @@ impl SongVisualizer {
     /// metadata); only the immersive fullscreen view shows it.
     pub(in crate::ui) fn set_track_meta(&self, title: &str, subtitle: &str) {
         *self.meta.borrow_mut() = (title.to_owned(), subtitle.to_owned());
-        if let Some((title_label, subtitle_label)) = self.fullscreen_meta.borrow().as_ref() {
-            title_label.set_label(title);
-            subtitle_label.set_label(subtitle);
-            subtitle_label.set_visible(!subtitle.is_empty());
+        if let Some(chrome) = self.fullscreen_chrome.borrow().as_ref() {
+            chrome.apply_track_meta(title, subtitle);
         }
     }
 
     /// Wires the fullscreen transport buttons, seek scale, and volume slider
-    /// to player actions. Replaces the narrower `set_transport`.
+    /// to player actions.
     pub(in crate::ui) fn set_player_hooks(&self, hooks: PlayerHooks) {
         *self.hooks.borrow_mut() = Some(hooks);
     }
 
-    /// Mirrors the live playback position for the fullscreen seek row (built
-    /// out in a later task). No-op on the inline canvas, same shape as
-    /// `set_track_meta`.
+    /// Mirrors the live playback position into the fullscreen seek row (time
+    /// labels, timecode, and the seek scale itself).
     pub(in crate::ui) fn set_position(&self, position_ms: i64, duration_ms: i64) {
         self.position.set((position_ms, duration_ms));
+        if let Some(chrome) = self.fullscreen_chrome.borrow().as_ref() {
+            chrome.apply_position(position_ms, duration_ms);
+        }
     }
 
-    /// Mirrors the current cover for the fullscreen backdrop (built out in a
-    /// later task) AND feeds the engine's secondary accent: the texture is
+    /// Mirrors the current cover into the fullscreen backdrop and cover
+    /// thumbnail AND feeds the engine's secondary accent: the texture is
     /// rasterized down to a small RGBA sample and handed to
     /// `VisualEngine::set_cover_pixels`, or cleared on `None`.
     pub(in crate::ui) fn set_cover(&self, texture: Option<gtk4::gdk::Texture>) {
@@ -161,20 +264,29 @@ impl SongVisualizer {
             },
             None => self.engine.borrow_mut().clear_cover(),
         }
+        if let Some(chrome) = self.fullscreen_chrome.borrow().as_ref() {
+            chrome.apply_cover(texture.as_ref());
+        }
         *self.cover.borrow_mut() = texture;
         queue_registered_areas(&self.areas);
     }
 
-    /// Mirrors the pre-formatted "Up next: …" line for the fullscreen queue
-    /// strip (built out in a later task).
+    /// Mirrors the pre-formatted "Up next: …" line into the fullscreen queue
+    /// strip.
     pub(in crate::ui) fn set_next_up(&self, line: Option<String>) {
+        if let Some(chrome) = self.fullscreen_chrome.borrow().as_ref() {
+            chrome.apply_next_up(line.as_deref());
+        }
         *self.next_up.borrow_mut() = line;
     }
 
-    /// Mirrors the up-next queue position (`index`, `total`) for the
-    /// fullscreen "TRACK i / n" label (built out in a later task).
+    /// Mirrors the up-next queue position (`index`, `total`) into the
+    /// fullscreen "TRACK i / n" label.
     pub(in crate::ui) fn set_queue_position(&self, index: usize, total: usize) {
         self.queue_position.set((index, total));
+        if let Some(chrome) = self.fullscreen_chrome.borrow().as_ref() {
+            chrome.apply_queue_position(index, total);
+        }
     }
 
     /// A new track started: resets the engine's clock, water surface, and
@@ -204,12 +316,8 @@ impl SongVisualizer {
     }
 
     pub(in crate::ui) fn set_playback_state(&self, playback: PlaybackState) {
-        if let Some(button) = self.fullscreen_play_pause.borrow().as_ref() {
-            button.set_icon_name(if playback == PlaybackState::Playing {
-                "media-playback-pause-symbolic"
-            } else {
-                "media-playback-start-symbolic"
-            });
+        if let Some(chrome) = self.fullscreen_chrome.borrow().as_ref() {
+            chrome.apply_playback_state(playback);
         }
         self.playback.set(playback);
         let animations_enabled = motion::animations_enabled();
@@ -259,163 +367,11 @@ impl SongVisualizer {
             return;
         }
 
-        let area = drawing_area(&self.engine, -1, "reprise-song-visual-fullscreen-canvas");
-        area.set_vexpand(true);
-        register_area(&self.areas, &area);
-
-        let header = self.fullscreen_header();
-        header.add_css_class("reprise-song-visual-chrome");
-        let controls = gtk4::Box::new(gtk4::Orientation::Vertical, 14);
-        controls.set_halign(gtk4::Align::Center);
-        controls.set_valign(gtk4::Align::End);
-        controls.set_margin_bottom(28);
-        controls.add_css_class("reprise-song-visual-chrome");
-        controls.append(&self.transport_controls());
-        controls.append(&mode_controls(&self.engine, &self.areas));
-        let hint = gtk4::Label::new(Some(&strings::text(strings::SONG_VISUALS_FULLSCREEN_HINT)));
-        hint.add_css_class("dim-label");
-        controls.append(&hint);
-
-        let overlay = gtk4::Overlay::new();
-        overlay.set_child(Some(&area));
-        overlay.add_overlay(&header);
-        overlay.add_overlay(&controls);
-        let window = gtk4::Window::builder()
-            .title(strings::text(strings::SONG_VISUALS))
-            .transient_for(parent)
-            .decorated(false)
-            .child(&overlay)
-            .build();
-        window.add_css_class("reprise-song-visual-fullscreen");
-
-        let key = gtk4::EventControllerKey::new();
-        let window_weak = window.downgrade();
-        key.connect_key_pressed(move |_, key, _, _| {
-            if matches!(key, gtk4::gdk::Key::Escape | gtk4::gdk::Key::F11) {
-                if let Some(window) = window_weak.upgrade() {
-                    window.close();
-                }
-                return gtk4::glib::Propagation::Stop;
-            }
-            gtk4::glib::Propagation::Proceed
-        });
-        window.add_controller(key);
-
-        install_chrome_autohide(&window, &overlay, &header, &controls);
-
-        let fullscreen_active = self.fullscreen_active.clone();
-        let panel_active = self.panel_active.clone();
-        let tick_id = self.tick_id.clone();
-        let slot = self.fullscreen_window.clone();
-        let meta_slot = self.fullscreen_meta.clone();
-        let play_pause_slot = self.fullscreen_play_pause.clone();
-        window.connect_destroy(move |_| {
-            fullscreen_active.set(false);
-            slot.borrow_mut().take();
-            meta_slot.borrow_mut().take();
-            play_pause_slot.borrow_mut().take();
-            if !panel_active.get() {
-                if let Some(id) = tick_id.borrow_mut().take() {
-                    id.remove();
-                }
-            }
-        });
+        let window = fullscreen::build(self, parent);
         self.fullscreen_active.set(true);
         *self.fullscreen_window.borrow_mut() = Some(window.downgrade());
         self.ensure_tick();
-        window.fullscreen();
         window.present();
-    }
-
-    /// Builds the fullscreen header: track title over subtitle, top-centered.
-    /// The labels are stashed so `set_track_meta` can update them live.
-    fn fullscreen_header(&self) -> gtk4::Box {
-        let (title_text, subtitle_text) = self.meta.borrow().clone();
-        let header = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
-        header.set_halign(gtk4::Align::Center);
-        header.set_valign(gtk4::Align::Start);
-        header.set_margin_top(36);
-        header.add_css_class("reprise-song-visual-header");
-
-        let title = gtk4::Label::new(Some(&title_text));
-        title.add_css_class("reprise-song-visual-header-title");
-        title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-        let subtitle = gtk4::Label::new(Some(&subtitle_text));
-        subtitle.add_css_class("reprise-song-visual-header-subtitle");
-        subtitle.add_css_class("dim-label");
-        subtitle.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-        subtitle.set_visible(!subtitle_text.is_empty());
-
-        header.append(&title);
-        header.append(&subtitle);
-        *self.fullscreen_meta.borrow_mut() = Some((title, subtitle));
-        header
-    }
-
-    /// Builds the fullscreen transport row (previous · play/pause · stop · next),
-    /// wired to the stored [`PlayerHooks`]. Buttons read the callbacks at
-    /// click time, so they stay valid even if hooks are installed after this.
-    fn transport_controls(&self) -> gtk4::Box {
-        let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 14);
-        row.set_halign(gtk4::Align::Center);
-        row.add_css_class("reprise-song-visual-transport");
-
-        let button = |icon: &str, label: &str, primary: bool| {
-            let button = gtk4::Button::from_icon_name(icon);
-            button.add_css_class("circular");
-            button.add_css_class("reprise-song-visual-transport-btn");
-            if primary {
-                button.add_css_class("reprise-song-visual-transport-primary");
-            }
-            button.update_property(&[gtk4::accessible::Property::Label(&strings::text(label))]);
-            button
-        };
-
-        let previous = button(
-            "media-skip-backward-symbolic",
-            strings::SONG_VISUALS_PREVIOUS,
-            false,
-        );
-        let play_pause_icon = if self.playback.get() == PlaybackState::Playing {
-            "media-playback-pause-symbolic"
-        } else {
-            "media-playback-start-symbolic"
-        };
-        let play_pause = button(play_pause_icon, strings::SONG_VISUALS_PLAY_PAUSE, true);
-        let stop = button(
-            "media-playback-stop-symbolic",
-            strings::SONG_VISUALS_STOP,
-            false,
-        );
-        let next = button(
-            "media-skip-forward-symbolic",
-            strings::SONG_VISUALS_NEXT,
-            false,
-        );
-
-        let fire = |slot: HookSlot, hooks: &Rc<RefCell<Option<PlayerHooks>>>| {
-            let hooks = hooks.clone();
-            move || {
-                if let Some(hooks) = hooks.borrow().as_ref() {
-                    (slot(hooks))();
-                }
-            }
-        };
-        let previous_cb = fire(|h| &h.previous, &self.hooks);
-        previous.connect_clicked(move |_| previous_cb());
-        let play_pause_cb = fire(|h| &h.play_pause, &self.hooks);
-        play_pause.connect_clicked(move |_| play_pause_cb());
-        let stop_cb = fire(|h| &h.stop, &self.hooks);
-        stop.connect_clicked(move |_| stop_cb());
-        let next_cb = fire(|h| &h.next, &self.hooks);
-        next.connect_clicked(move |_| next_cb());
-
-        row.append(&previous);
-        row.append(&play_pause);
-        row.append(&stop);
-        row.append(&next);
-        *self.fullscreen_play_pause.borrow_mut() = Some(play_pause);
-        row
     }
 
     fn is_active(&self) -> bool {
@@ -559,6 +515,62 @@ fn downscale_cover_rgba(texture: &gtk4::gdk::Texture, edge: i32) -> Option<Vec<u
     Some(rgba)
 }
 
+/// Rasterizes `texture` down to a `width`-px-wide (aspect-preserving) surface
+/// for the fullscreen backdrop and wraps the raw bytes in a
+/// `gdk::MemoryTexture` — no RGB reordering needed here (unlike
+/// `downscale_cover_rgba`, which feeds a byte-order-agnostic palette
+/// sampler): Cairo's premultiplied `ARGB32` byte layout on the little-endian
+/// hosts this app targets is exactly GDK's `B8g8r8a8Premultiplied`, so the
+/// surface's bytes are handed to `MemoryTexture` as-is. `None` if
+/// rasterization fails or the source texture reports a zero size.
+fn backdrop_texture(texture: &gtk4::gdk::Texture, width: i32) -> Option<gtk4::gdk::Texture> {
+    let (tex_w, tex_h) = (texture.width(), texture.height());
+    if tex_w <= 0 || tex_h <= 0 || width <= 0 {
+        return None;
+    }
+    let height = ((width as f32) * (tex_h as f32) / (tex_w as f32))
+        .round()
+        .max(1.0) as i32;
+
+    let snapshot = gtk4::Snapshot::new();
+    let bounds = gtk4::graphene::Rect::new(0.0, 0.0, width as f32, height as f32);
+    snapshot.append_texture(texture, &bounds);
+    let node = snapshot.to_node()?;
+
+    let mut surface =
+        gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, width, height).ok()?;
+    {
+        let cr = gtk4::cairo::Context::new(&surface).ok()?;
+        node.draw(&cr);
+    }
+    surface.flush();
+    let stride = surface.stride() as usize;
+    let bytes = gtk4::glib::Bytes::from_owned(surface.data().ok()?.to_vec());
+    Some(
+        gtk4::gdk::MemoryTexture::new(
+            width,
+            height,
+            gtk4::gdk::MemoryFormat::B8g8r8a8Premultiplied,
+            &bytes,
+            stride,
+        )
+        .upcast(),
+    )
+}
+
+fn format_time(ms: i64) -> String {
+    let seconds = ms.max(0) / 1_000;
+    format!("{}:{:02}", seconds / 60, seconds % 60)
+}
+
+fn seek_fraction(position_ms: i64, duration_ms: i64) -> f64 {
+    if duration_ms <= 0 {
+        0.0
+    } else {
+        (position_ms as f64 / duration_ms as f64).clamp(0.0, 1.0)
+    }
+}
+
 /// The picker's user-facing label for one visual mode.
 fn mode_label(mode: VisualMode) -> &'static str {
     match mode {
@@ -577,10 +589,13 @@ fn mode_label(mode: VisualMode) -> &'static str {
 /// [`VisualMode`], wrapped in a [`gtk4::FlowBox`] so it reflows at narrow
 /// widths instead of overflowing. Shared by the inline canvas and the
 /// fullscreen overlay — each call builds a fresh, independent row that reads
-/// the engine's current mode at construction time.
+/// the engine's current mode at construction time. `extra_classes` lets the
+/// fullscreen overlay style its pills (`.reprise-fs-pill`) without leaking
+/// that dark-surface styling onto the docked panel's copy.
 fn mode_controls(
     engine: &Rc<RefCell<VisualEngine>>,
     areas: &Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::DrawingArea>>>>,
+    extra_classes: &[&str],
 ) -> gtk4::FlowBox {
     let flow = gtk4::FlowBox::builder()
         .selection_mode(gtk4::SelectionMode::None)
@@ -600,6 +615,9 @@ fn mode_controls(
             .build();
         button.set_widget_name(mode.id());
         button.add_css_class("flat");
+        for class in extra_classes {
+            button.add_css_class(class);
+        }
         buttons::arm(&button, buttons::TOGGLE_CLASS);
         match &group_leader {
             Some(leader) => button.set_group(Some(leader)),
@@ -621,27 +639,27 @@ fn mode_controls(
     flow
 }
 
-/// Fades the fullscreen chrome (header + transport) out after the pointer sits
+/// Fades the fullscreen chrome (header + bottom bar) out after the pointer sits
 /// idle and brings it — plus the cursor — back on the next mouse move. Immersive
 /// by default: the GUI only appears when you reach for it.
 fn install_chrome_autohide(
     window: &gtk4::Window,
     overlay: &gtk4::Overlay,
-    header: &gtk4::Box,
-    controls: &gtk4::Box,
+    header: &gtk4::Widget,
+    bottom: &gtk4::Widget,
 ) {
     const IDLE: Duration = Duration::from_millis(2500);
     let timer: Rc<RefCell<Option<gtk4::glib::SourceId>>> = Rc::new(RefCell::new(None));
     let header = header.downgrade();
-    let controls = controls.downgrade();
+    let bottom = bottom.downgrade();
     let window_weak = window.downgrade();
 
     let reveal = move || {
         if let Some(header) = header.upgrade() {
             header.remove_css_class("reprise-song-visual-chrome-hidden");
         }
-        if let Some(controls) = controls.upgrade() {
-            controls.remove_css_class("reprise-song-visual-chrome-hidden");
+        if let Some(bottom) = bottom.upgrade() {
+            bottom.remove_css_class("reprise-song-visual-chrome-hidden");
         }
         if let Some(window) = window_weak.upgrade() {
             window.set_cursor(None);
@@ -650,15 +668,15 @@ fn install_chrome_autohide(
             id.remove();
         }
         let header = header.clone();
-        let controls = controls.clone();
+        let bottom = bottom.clone();
         let window_weak = window_weak.clone();
         let timer_inner = timer.clone();
         let id = gtk4::glib::timeout_add_local_once(IDLE, move || {
             if let Some(header) = header.upgrade() {
                 header.add_css_class("reprise-song-visual-chrome-hidden");
             }
-            if let Some(controls) = controls.upgrade() {
-                controls.add_css_class("reprise-song-visual-chrome-hidden");
+            if let Some(bottom) = bottom.upgrade() {
+                bottom.add_css_class("reprise-song-visual-chrome-hidden");
             }
             if let Some(window) = window_weak.upgrade() {
                 window.set_cursor_from_name(Some("none"));
@@ -697,6 +715,35 @@ pub(in crate::ui) fn css() -> String {
        background-image: radial-gradient(ellipse at center,\
          alpha(@reprise_player_accent, 0.12) 0%,\
          alpha(#090b0c, 0) 72%);\
+     }\n\
+     .reprise-fs-header-scrim {\
+       background: linear-gradient(to bottom, alpha(#0b0c15, 0.55), alpha(#0b0c15, 0));\
+     }\n\
+     .reprise-fs-bottom-scrim {\
+       background: linear-gradient(to top, alpha(#0b0c15, 0.6), alpha(#0b0c15, 0));\
+     }\n\
+     .reprise-fs-timecode {\
+       font-size: 13px; letter-spacing: 0.08em; color: alpha(#ffffff, 0.45);\
+     }\n\
+     .reprise-fs-state {\
+       font-size: 12px; letter-spacing: 0.22em;\
+       color: alpha(@reprise_player_accent, 0.85);\
+     }\n\
+     .reprise-fs-title { font-size: 36px; font-weight: 600; color: #ffffff; }\n\
+     .reprise-fs-meta { font-size: 16px; color: alpha(#ffffff, 0.7); }\n\
+     .reprise-fs-backdrop { opacity: 0.45; }\n\
+     .reprise-fs-cover-thumb { border-radius: 14px; }\n\
+     .reprise-fs-pill {\
+       border-radius: 999px;\
+       background-color: alpha(#ffffff, 0.06);\
+       border: 1px solid alpha(#ffffff, 0.14);\
+       color: alpha(#ffffff, 0.75);\
+       padding: 6px 14px;\
+     }\n\
+     .reprise-fs-pill:checked {\
+       border-color: alpha(@reprise_player_accent, 0.8);\
+       background-color: alpha(@reprise_player_accent, 0.12);\
+       color: #ffffff;\
      }\n\
      .reprise-song-visual-header-title {\
        font-size: 1.6rem; font-weight: 800; color: #ffffff;\
