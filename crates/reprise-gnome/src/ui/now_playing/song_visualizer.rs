@@ -73,7 +73,7 @@ struct FullscreenChrome {
     state: gtk4::Label,
     track_pos: gtk4::Label,
     next_up: gtk4::Label,
-    cover_thumb: gtk4::Picture,
+    cover_thumb: gtk4::Image,
     backdrop: gtk4::Picture,
     play_pause: gtk4::Button,
     time_cur: gtk4::Label,

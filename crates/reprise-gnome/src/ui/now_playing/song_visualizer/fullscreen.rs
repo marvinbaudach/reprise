@@ -332,8 +332,8 @@ fn header_row() -> (
 fn bottom_bar(
     visualizer: &SongVisualizer,
 ) -> (
-    gtk4::Box,
-    gtk4::Picture,
+    gtk4::Overlay,
+    gtk4::Image,
     gtk4::Label,
     gtk4::Label,
     gtk4::Label,
@@ -344,11 +344,9 @@ fn bottom_bar(
     gtk4::Scale,
     gtk4::FlowBox,
 ) {
-    let cover_thumb = gtk4::Picture::new();
-    cover_thumb.set_content_fit(gtk4::ContentFit::Cover);
+    let cover_thumb = gtk4::Image::builder().pixel_size(COVER_THUMB_SIZE).build();
     cover_thumb.set_overflow(gtk4::Overflow::Hidden);
     cover_thumb.add_css_class("reprise-fs-cover-thumb");
-    cover_thumb.set_size_request(COVER_THUMB_SIZE, COVER_THUMB_SIZE);
 
     let track_pos = gtk4::Label::new(None);
     track_pos.add_css_class("dim-label");
@@ -386,15 +384,6 @@ fn bottom_bar(
     ))]);
     wire_volume(&visualizer.hooks, &volume, &mute, initial_volume);
 
-    let row1 = gtk4::Box::new(gtk4::Orientation::Horizontal, 14);
-    row1.append(&cover_thumb);
-    row1.append(&meta_column);
-    let spacer = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
-    spacer.set_hexpand(true);
-    row1.append(&spacer);
-    row1.append(&mute);
-    row1.append(&volume);
-
     let time_cur = gtk4::Label::new(None);
     time_cur.add_css_class("dim-label");
     time_cur.add_css_class("reprise-fs-timecode");
@@ -429,18 +418,49 @@ fn bottom_bar(
     let hint = gtk4::Label::new(Some(&strings::text(strings::SONG_VISUALS_FULLSCREEN_HINT)));
     hint.add_css_class("dim-label");
 
-    let bottom = gtk4::Box::new(gtk4::Orientation::Vertical, 14);
-    bottom.set_valign(gtk4::Align::End);
-    bottom.set_margin_bottom(BOTTOM_MARGIN);
-    bottom.set_margin_start(BOTTOM_MARGIN);
-    bottom.set_margin_end(BOTTOM_MARGIN);
-    bottom.add_css_class("reprise-song-visual-chrome");
-    bottom.add_css_class("reprise-fs-bottom-scrim");
-    bottom.append(&row1);
-    bottom.append(&row2);
-    bottom.append(&row3);
-    bottom.append(&row4);
-    bottom.append(&hint);
+    // Centered controls column: seek → transport → mode pills → hint, rising
+    // from the bottom edge. Carries the chrome/scrim styling the old single
+    // `bottom` box had — see `bottom`'s doc comment for why the corner blocks
+    // below don't also carry it.
+    let controls = gtk4::Box::new(gtk4::Orientation::Vertical, 14);
+    controls.set_halign(gtk4::Align::Center);
+    controls.set_valign(gtk4::Align::End);
+    controls.set_margin_bottom(BOTTOM_MARGIN);
+    controls.add_css_class("reprise-song-visual-chrome");
+    controls.add_css_class("reprise-fs-bottom-scrim");
+    controls.append(&row2);
+    controls.append(&row3);
+    controls.append(&row4);
+    controls.append(&hint);
+
+    // Bottom-left corner: small cover thumb + "TITEL x/n" / next-up meta.
+    let cover_block = gtk4::Box::new(gtk4::Orientation::Horizontal, 14);
+    cover_block.set_halign(gtk4::Align::Start);
+    cover_block.set_valign(gtk4::Align::End);
+    cover_block.set_margin_start(BOTTOM_MARGIN);
+    cover_block.set_margin_bottom(BOTTOM_MARGIN);
+    cover_block.append(&cover_thumb);
+    cover_block.append(&meta_column);
+
+    // Bottom-right corner: mute + volume.
+    let volume_block = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    volume_block.set_halign(gtk4::Align::End);
+    volume_block.set_valign(gtk4::Align::End);
+    volume_block.set_margin_end(BOTTOM_MARGIN);
+    volume_block.set_margin_bottom(BOTTOM_MARGIN);
+    volume_block.append(&mute);
+    volume_block.append(&volume);
+
+    // `bottom` stays a single widget (an `Overlay` now, was a `Box`) so the
+    // existing auto-hide — which fades `header` + `bottom` as one unit via
+    // `reprise-song-visual-chrome-hidden` — keeps working: hiding the
+    // `Overlay` hides the corner blocks and the centered column together,
+    // even though only `controls` carries the chrome/scrim CSS classes.
+    let bottom = gtk4::Overlay::new();
+    bottom.set_hexpand(true);
+    bottom.set_child(Some(&controls));
+    bottom.add_overlay(&cover_block);
+    bottom.add_overlay(&volume_block);
 
     (
         bottom,
