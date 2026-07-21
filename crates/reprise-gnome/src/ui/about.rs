@@ -8,11 +8,21 @@ use super::strings;
 const DEVELOPER: &str = "Marvin Baudach";
 const COPYRIGHT: &str = "© 2026 Marvin Baudach";
 
+/// The version shown in About: the crate version, plus the short git commit of
+/// this build when one was embedded at build time (nightly dev builds set
+/// `REPRISE_GIT_SHA`). Lets a tester read off exactly which dev revision runs.
+fn version_string() -> String {
+    match option_env!("REPRISE_GIT_SHA") {
+        Some(sha) if !sha.is_empty() => format!("{} ({sha})", env!("CARGO_PKG_VERSION")),
+        _ => env!("CARGO_PKG_VERSION").to_string(),
+    }
+}
+
 fn build_dialog() -> adw::AboutDialog {
     let dialog = adw::AboutDialog::builder()
         .application_icon(crate::APP_ID)
         .application_name(strings::text(strings::APP_NAME))
-        .version(env!("CARGO_PKG_VERSION"))
+        .version(version_string())
         .developer_name(DEVELOPER)
         .developers(vec![DEVELOPER])
         .copyright(COPYRIGHT)
@@ -47,7 +57,8 @@ mod tests {
 
         assert_eq!(dialog.application_icon(), crate::APP_ID);
         assert_eq!(dialog.application_name(), "Reprise");
-        assert_eq!(dialog.version(), env!("CARGO_PKG_VERSION"));
+        assert_eq!(dialog.version(), version_string());
+        assert!(dialog.version().starts_with(env!("CARGO_PKG_VERSION")));
         assert_eq!(dialog.developer_name(), DEVELOPER);
         assert_eq!(dialog.developers(), [DEVELOPER]);
         assert_eq!(dialog.copyright(), COPYRIGHT);

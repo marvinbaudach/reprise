@@ -94,6 +94,11 @@ pub(crate) struct PreparedTagMutation {
     pub(crate) path: PathBuf,
     pub(crate) before: EditableTags,
     pub(crate) patch: TagPatch,
+    /// The strict reader could not parse this file's tag container at all (a
+    /// damaged ID3v2/APE/ID3v1 the scanner only imported via its relaxed,
+    /// tag-free pass). Commit strips every container and writes a fresh ID3v2
+    /// instead of editing an existing tag in place.
+    pub(crate) strip_and_rewrite: bool,
 }
 
 pub(crate) fn effective_tag_patch(current: &EditableTags, patch: &TagPatch) -> TagPatch {
@@ -155,11 +160,23 @@ pub(crate) fn prepare_tag_mutation(
             file_written: false,
         });
     }
-    let before = read_editable_tags(path).map_err(|error| TagMutationFailure {
-        kind: classify_write_error(&error),
-        error: error.to_string(),
-        file_written: false,
-    })?;
+    let (before, strip_and_rewrite) = match read_editable_tags(path) {
+        Ok(tags) => (tags, false),
+        // A container the strict reader rejects (the scanner only imported it
+        // through its relaxed, tag-free pass) is repaired rather than refused:
+        // treat the current tags as empty so every requested field is written,
+        // and flag the commit to strip the damaged containers first.
+        Err(error) if classify_write_error(&error) == WriteErrorKind::UnreadableTags => {
+            (EditableTags::default(), true)
+        }
+        Err(error) => {
+            return Err(TagMutationFailure {
+                kind: classify_write_error(&error),
+                error: error.to_string(),
+                file_written: false,
+            });
+        }
+    };
     let patch = effective_tag_patch(&before, requested);
     if patch.is_empty() {
         return Ok(None);
@@ -169,6 +186,7 @@ pub(crate) fn prepare_tag_mutation(
         path: path.to_path_buf(),
         before,
         patch,
+        strip_and_rewrite,
     }))
 }
 
@@ -197,6 +215,15 @@ fn apply_tag_patch_to_tagged(
     }
     .ok_or(TagEditError::NoWritableTag)?;
 
+    set_patch_fields(tag, patch);
+
+    save_loaded_tagged(tagged, path)
+}
+
+/// Applies a narrowed [`TagPatch`] onto a single tag — sets non-empty values,
+/// removes empty ones. Shared by the in-place edit and the strip-and-rewrite
+/// repair path so both write identical fields.
+fn set_patch_fields(tag: &mut Tag, patch: &TagPatch) {
     if let Some(value) = &patch.title {
         if value.is_empty() {
             tag.remove_title();
@@ -247,8 +274,67 @@ fn apply_tag_patch_to_tagged(
             tag.set_genre(value.clone());
         }
     }
+}
 
-    save_loaded_tagged(tagged, path)
+/// Repair path for files the strict reader can't parse: byte-strip every known
+/// tag container, then write a fresh ID3v2 carrying only the requested fields.
+/// This is the sole way to make a file with a damaged APE/ID3 container
+/// editable again — `TagType::remove_from_path` parses the tag before removing
+/// it and so can't clear the very container that fails to parse.
+fn strip_and_rewrite_tag(path: &Path, patch: &TagPatch) -> Result<(), TagEditError> {
+    let data = std::fs::read(path).map_err(lofty::error::LoftyError::from)?;
+    std::fs::write(path, strip_tag_containers(data)).map_err(lofty::error::LoftyError::from)?;
+    // The file is now strictly readable and tag-free; route through the single
+    // loaded-container save seam, which inserts a fresh primary (ID3v2) tag.
+    let mut tagged = lofty::read_from_path(path)?;
+    apply_tag_patch_to_tagged(&mut tagged, path, patch)
+}
+
+/// Removes an ID3v2 header (front), and a trailing ID3v1 and APEv2 container
+/// by their size headers, without parsing their (possibly damaged) contents.
+/// A container whose header is absent or self-inconsistent is left untouched,
+/// so an intact audio stream is never truncated.
+fn strip_tag_containers(mut data: Vec<u8>) -> Vec<u8> {
+    // ID3v2 at the front: "ID3" + version(2) + flags(1) + synchsafe size(4).
+    if data.len() >= 10 && &data[0..3] == b"ID3" {
+        let size = ((data[6] as usize & 0x7f) << 21)
+            | ((data[7] as usize & 0x7f) << 14)
+            | ((data[8] as usize & 0x7f) << 7)
+            | (data[9] as usize & 0x7f);
+        let total = 10 + size;
+        if total <= data.len() {
+            data.drain(0..total);
+        }
+    }
+    // ID3v1 at the very end: 128 bytes starting with "TAG".
+    if data.len() >= 128 && &data[data.len() - 128..data.len() - 125] == b"TAG" {
+        data.truncate(data.len() - 128);
+    }
+    // APEv2 footer at the end: "APETAGEX", 32 bytes from the end.
+    if data.len() >= 32 && &data[data.len() - 32..data.len() - 24] == b"APETAGEX" {
+        let footer = data.len() - 32;
+        let tag_size = u32::from_le_bytes([
+            data[footer + 12],
+            data[footer + 13],
+            data[footer + 14],
+            data[footer + 15],
+        ]) as usize;
+        let flags = u32::from_le_bytes([
+            data[footer + 20],
+            data[footer + 21],
+            data[footer + 22],
+            data[footer + 23],
+        ]);
+        let has_header = flags & (1 << 31) != 0;
+        let mut start = (footer + 32).saturating_sub(tag_size);
+        if has_header {
+            start = start.saturating_sub(32);
+        }
+        if start <= footer {
+            data.truncate(start);
+        }
+    }
+    data
 }
 
 pub(super) fn save_loaded_tagged(tagged: &TaggedFile, path: &Path) -> Result<(), TagEditError> {
@@ -351,6 +437,25 @@ pub(crate) fn commit_tag_mutation(
             file_written: false,
         }
     })?;
+    if prepared.strip_and_rewrite {
+        if ignore_watcher {
+            super::watcher::ignore_path(&prepared.path, IGNORE_DURATION);
+        }
+        strip_and_rewrite_tag(&prepared.path, &prepared.patch).map_err(|error| {
+            TagMutationFailure {
+                kind: classify_write_error(&error),
+                error: error.to_string(),
+                file_written: true,
+            }
+        })?;
+        return reconcile_after_write(conn, prepared.id, &prepared.path).map_err(|error| {
+            TagMutationFailure {
+                kind: WriteErrorKind::Io,
+                error,
+                file_written: true,
+            }
+        });
+    }
     let mut tagged = lofty::read_from_path(&prepared.path).map_err(|error| {
         let error = TagEditError::from(error);
         TagMutationFailure {
