@@ -3,7 +3,7 @@
 //! wrap at the edges of the unit box so the field reads as endless, and
 //! drift speed responds to the current audio level rather than a wall clock.
 //!
-//! Also home to [`xorshift`], the tiny deterministic RNG shared with
+//! Also home to `xorshift`, the tiny deterministic RNG shared with
 //! [`super::impact`] — one implementation instead of two copies drifting
 //! apart.
 
