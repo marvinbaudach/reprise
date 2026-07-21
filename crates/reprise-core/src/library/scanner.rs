@@ -436,23 +436,28 @@ fn scan_folder_inner(
             }
             continue;
         }
-        let known: Option<(i64, Option<i64>, Option<i64>)> = tx
+        let known: Option<(i64, Option<i64>, Option<i64>, i64)> = tx
             .query_row(
-                "SELECT file_mtime, missing_since, removed_at FROM tracks WHERE path = ?1",
+                "SELECT file_mtime, missing_since, removed_at, untagged FROM tracks WHERE path = ?1",
                 [&path_str],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )
             .ok();
-        let known_mtime = known.map(|(file_mtime, _, _)| file_mtime);
-        let known_missing = known.is_some_and(|(_, missing_since, _)| missing_since.is_some());
+        let known_mtime = known.map(|(file_mtime, ..)| file_mtime);
+        let known_missing = known.is_some_and(|(_, missing_since, ..)| missing_since.is_some());
         // Task 1.9: a row can be tombstoned (`removed_at` set, via a future
         // "Remove from library") independently of ever having been marked
         // missing — evidence that the file is still sitting at its exact
         // recorded path outranks that removal (evidence rule, Beschluss
         // 7/12), so this reappearance check must fire for a tombstoned row
         // too, not only a missing one.
-        let known_removed = known.is_some_and(|(_, _, removed_at)| removed_at.is_some());
-        if known_mtime == Some(mtime) {
+        let known_removed = known.is_some_and(|(_, _, removed_at, _)| removed_at.is_some());
+        // A present row still flagged `untagged` (an earlier scan couldn't parse
+        // its container) must NOT take the unchanged-mtime fast path: excluding
+        // it here drops it through to re-read + `repair_damaged_tags`, so a
+        // library imported before auto-repair existed stops staying untagged.
+        let known_untagged = known.is_some_and(|(_, _, _, untagged)| untagged != 0);
+        if known_mtime == Some(mtime) && !known_untagged {
             if known_missing || known_removed {
                 // The file reappeared at its exact recorded path with an
                 // unchanged mtime (NAS remount, restore-from-trash, or a
