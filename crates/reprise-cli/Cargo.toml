@@ -1,0 +1,22 @@
+[package]
+name = "reprise-cli"
+description = "Headless command-line surface for the Reprise music library (built out in package A)."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+# MIT, like reprise-core: the CLI is a first-party frontend over the MIT
+# engine and must stay redistributable outside the GPL GTK app.
+license = "MIT"
+
+[[bin]]
+name = "reprise-cli"
+path = "src/main.rs"
+
+[dependencies]
+# Package A (CLI v1) adds clap v4 + serde_json on top; the default build must
+# stay core-only (enforced by package I via `cargo tree`).
+reprise-core = { path = "../reprise-core" }
+
+[lints]
+workspace = true

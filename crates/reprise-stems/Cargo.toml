@@ -1,0 +1,18 @@
+[package]
+name = "reprise-stems"
+description = "Stem-separation backend (ML inference) for Reprise's instrumental jobs (built out in packages E/G)."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+# MIT (runtime/model licences are checked at the package E gate before any
+# weights ship). Platform-neutral so the job pipeline stays portable.
+license = "MIT"
+
+[dependencies]
+# Package E's spike picks the ML runtime (candle or ort); package G implements
+# the `StemSeparationBackend` contract that reprise-core (package D) will add.
+reprise-core = { path = "../reprise-core" }
+
+[lints]
+workspace = true

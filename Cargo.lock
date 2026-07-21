@@ -2240,6 +2240,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
+name = "reprise-cli"
+version = "0.1.0"
+dependencies = [
+ "reprise-core",
+]
+
+[[package]]
 name = "reprise-core"
 version = "0.1.0"
 dependencies = [
@@ -2288,6 +2295,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "reprise-mcp"
+version = "0.1.0"
+dependencies = [
+ "reprise-core",
+]
+
+[[package]]
 name = "reprise-platform-linux"
 version = "0.1.0"
 dependencies = [
@@ -2300,6 +2314,13 @@ dependencies = [
  "tracing",
  "trash",
  "zbus",
+]
+
+[[package]]
+name = "reprise-stems"
+version = "0.1.0"
+dependencies = [
+ "reprise-core",
 ]
 
 [[package]]
