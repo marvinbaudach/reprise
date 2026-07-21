@@ -72,6 +72,10 @@ pub use tag_edit::*;
 mod track_menu;
 pub use track_menu::*;
 
+#[path = "strings_mix_builder.rs"]
+mod mix_builder;
+pub use mix_builder::*;
+
 #[path = "strings_stats.rs"]
 mod stats;
 pub use stats::*;
