@@ -7,7 +7,7 @@ use std::time::Duration;
 use reprise_core::library::settings::{TrackTransition, CROSSFADE_SECONDS_DEFAULT};
 use reprise_core::playback::{
     AudioEffects, PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent, SpectrumAnalyzer,
-    SPECTRUM_BAND_COUNT,
+    SPECTRUM_ANALYSIS_BAND_COUNT,
 };
 
 use crate::crossfade::{CrossfadeEngine, IncomingSlot, Transition};
@@ -23,15 +23,15 @@ use crate::player_effects::{
 /// dynamics derivation stays in `reprise-core`.
 pub(super) fn spectrum_decibels_from_structure(
     structure: &gst::StructureRef,
-) -> Option<[f32; SPECTRUM_BAND_COUNT]> {
+) -> Option<[f32; SPECTRUM_ANALYSIS_BAND_COUNT]> {
     if structure.name() != "spectrum" {
         return None;
     }
     let magnitudes = structure.get::<gst::List>("magnitude").ok()?;
-    if magnitudes.len() != SPECTRUM_BAND_COUNT {
+    if magnitudes.len() != SPECTRUM_ANALYSIS_BAND_COUNT {
         return None;
     }
-    let mut decibels = [0.0_f32; SPECTRUM_BAND_COUNT];
+    let mut decibels = [0.0_f32; SPECTRUM_ANALYSIS_BAND_COUNT];
     for (slot, magnitude) in decibels.iter_mut().zip(magnitudes.iter()) {
         *slot = magnitude.get::<f32>().ok()?;
     }
