@@ -11,6 +11,7 @@ mod impact;
 use std::cell::{Cell, RefCell};
 use std::f64::consts::TAU;
 use std::rc::Rc;
+use std::time::Duration;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -30,52 +31,13 @@ const BAND_ATTACK: f32 = 0.55;
 const BAND_RELEASE: f32 = 0.14;
 const SCALAR_ATTACK: f32 = 0.6;
 const SCALAR_RELEASE: f32 = 0.16;
-/// Peak-hold markers (Bars mode) fall slowly so the frequency picture is legible.
+/// Peak-hold markers fall slowly so the frequency picture stays legible.
 const PEAK_DECAY: f32 = 0.018;
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(in crate::ui) enum VisualPreset {
-    #[default]
-    Rings,
-    Flow,
-    Pulse,
-    Bars,
-}
-
-impl VisualPreset {
-    pub(in crate::ui) const ALL: [Self; 4] = [Self::Rings, Self::Flow, Self::Pulse, Self::Bars];
-
-    fn id(self) -> &'static str {
-        match self {
-            Self::Rings => "rings",
-            Self::Flow => "flow",
-            Self::Pulse => "pulse",
-            Self::Bars => "bars",
-        }
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::Rings => strings::SONG_VISUALS_RINGS,
-            Self::Flow => strings::SONG_VISUALS_FLOW,
-            Self::Pulse => strings::SONG_VISUALS_PULSE,
-            Self::Bars => strings::SONG_VISUALS_BARS,
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug)]
 struct Point {
     x: f64,
     y: f64,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct Circle {
-    center: Point,
-    radius: f64,
-    width: f64,
-    alpha: f64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -86,18 +48,9 @@ struct Bar {
     alpha: f64,
 }
 
-#[derive(Clone, Debug)]
-struct Stroke {
-    points: Vec<Point>,
-    width: f64,
-    alpha: f64,
-}
-
 #[derive(Clone, Debug, Default)]
 struct Scene {
-    circles: Vec<Circle>,
     bars: Vec<Bar>,
-    strokes: Vec<Stroke>,
 }
 
 impl Scene {
@@ -109,193 +62,25 @@ impl Scene {
                 && (0.0..=width).contains(&point.x)
                 && (0.0..=height).contains(&point.y)
         };
-        self.circles.iter().all(|circle| {
-            point_ok(circle.center) && circle.radius.is_finite() && circle.radius >= 0.0
-        }) && self.bars.iter().all(|bar| {
+        self.bars.iter().all(|bar| {
             point_ok(bar.center)
                 && bar.length.is_finite()
                 && bar.length >= 0.0
                 && bar.center.y - bar.length / 2.0 >= 0.0
                 && bar.center.y + bar.length / 2.0 <= height
-        }) && self
-            .strokes
-            .iter()
-            .flat_map(|stroke| stroke.points.iter().copied())
-            .all(point_ok)
+        })
     }
 }
 
-/// The per-frame render inputs a scene builder needs: smoothed bands plus the
-/// derived envelopes and the ambient-drift phase.
+/// The per-frame render inputs the bar builder needs: the smoothed bands plus
+/// their slow-falling peak-hold markers.
 struct SceneInput<'a> {
     bands: &'a [f32; SPECTRUM_BAND_COUNT],
     peaks: &'a [f32; SPECTRUM_BAND_COUNT],
-    level: f32,
-    bass: f32,
-    phase: f64,
 }
 
-fn average(bands: &[f32; SPECTRUM_BAND_COUNT], range: std::ops::Range<usize>) -> f64 {
-    let count = range.len().max(1) as f64;
-    range.map(|index| f64::from(bands[index])).sum::<f64>() / count
-}
-
-fn scene(preset: VisualPreset, input: &SceneInput, width: f64, height: f64) -> Scene {
-    let width = width.max(1.0);
-    let height = height.max(1.0);
-    match preset {
-        VisualPreset::Rings => rings_scene(input, width, height),
-        VisualPreset::Flow => flow_scene(input, width, height),
-        VisualPreset::Pulse => pulse_scene(input, width, height),
-        VisualPreset::Bars => bars_scene(input, width, height),
-    }
-}
-
-fn rings_scene(input: &SceneInput, width: f64, height: f64) -> Scene {
-    let center = Point {
-        x: width / 2.0,
-        y: height / 2.0,
-    };
-    let min = width.min(height);
-    let low = average(input.bands, 0..8);
-    let mid = average(input.bands, 8..20);
-    let high = average(input.bands, 20..SPECTRUM_BAND_COUNT);
-    // The whole ring stack breathes with the kick.
-    let base = min * (0.11 + f64::from(input.bass) * 0.12);
-    let energies = [low, mid, high];
-    let circles = energies
-        .into_iter()
-        .enumerate()
-        .map(|(index, energy)| Circle {
-            center,
-            radius: base + index as f64 * min * 0.09 + energy * min * 0.10,
-            width: if index == 0 { 3.0 } else { 1.6 },
-            alpha: 0.30 + energy * 0.6,
-        })
-        .collect();
-    // Bands as radial spokes, slowly rotating. Capped to the canvas half so the
-    // base composition stays inside the frame.
-    let inner = base + 4.0;
-    let max_reach = min * 0.5 - 3.0;
-    let strokes = input
-        .bands
-        .iter()
-        .enumerate()
-        .map(|(index, band)| {
-            let energy = f64::from(*band);
-            let angle = index as f64 / SPECTRUM_BAND_COUNT as f64 * TAU + input.phase * 0.15;
-            let outer = (inner + 8.0 + energy * min * 0.34).min(max_reach);
-            Stroke {
-                points: vec![
-                    Point {
-                        x: center.x + angle.cos() * inner,
-                        y: center.y + angle.sin() * inner,
-                    },
-                    Point {
-                        x: center.x + angle.cos() * outer,
-                        y: center.y + angle.sin() * outer,
-                    },
-                ],
-                width: 2.0 + energy * 3.0,
-                alpha: 0.4 + energy * 0.6,
-            }
-        })
-        .collect();
-    Scene {
-        circles,
-        strokes,
-        ..Scene::default()
-    }
-}
-
-fn flow_scene(input: &SceneInput, width: f64, height: f64) -> Scene {
-    let usable = width - EDGE * 2.0;
-    let steps = SPECTRUM_BAND_COUNT;
-    let level = f64::from(input.level);
-    let strokes = (0..3)
-        .map(|trail| {
-            let points = (0..=steps)
-                .map(|index| {
-                    let band = f64::from(input.bands[index.min(steps - 1)]);
-                    let x = EDGE + usable * index as f64 / steps as f64;
-                    let wave = (index as f64 * 0.55 + input.phase * TAU + trail as f64 * 0.9).sin();
-                    // Amplitude tracks overall level; per-band energy sharpens
-                    // the crests so onsets tear through the trail.
-                    let amplitude = 8.0
-                        + level * height * (0.16 - trail as f64 * 0.03)
-                        + band * height * (0.22 - trail as f64 * 0.04);
-                    Point {
-                        x,
-                        y: (height / 2.0 + wave * amplitude).clamp(EDGE, height - EDGE),
-                    }
-                })
-                .collect();
-            Stroke {
-                points,
-                width: 3.4 - trail as f64 * 0.7,
-                alpha: 0.82 - trail as f64 * 0.2,
-            }
-        })
-        .collect();
-    Scene {
-        strokes,
-        ..Scene::default()
-    }
-}
-
-fn pulse_scene(input: &SceneInput, width: f64, height: f64) -> Scene {
-    let center = Point {
-        x: width / 2.0,
-        y: height / 2.0,
-    };
-    let min = width.min(height);
-    // Core punches on the kick.
-    let base = min * (0.11 + f64::from(input.bass) * 0.16);
-    let circles = vec![
-        Circle {
-            center,
-            radius: base,
-            width: 3.0,
-            alpha: 0.9,
-        },
-        Circle {
-            center,
-            radius: base + 18.0 + f64::from(input.level) * 22.0,
-            width: 1.4,
-            alpha: 0.32,
-        },
-    ];
-    let inner = base + 6.0;
-    let max_reach = min * 0.5 - 3.0;
-    let strokes = input
-        .bands
-        .iter()
-        .enumerate()
-        .map(|(index, band)| {
-            let energy = f64::from(*band);
-            let angle = index as f64 / SPECTRUM_BAND_COUNT as f64 * TAU + input.phase * 0.3;
-            let outer = (inner + 8.0 + energy * min * 0.34).min(max_reach);
-            Stroke {
-                points: vec![
-                    Point {
-                        x: center.x + angle.cos() * inner,
-                        y: center.y + angle.sin() * inner,
-                    },
-                    Point {
-                        x: center.x + angle.cos() * outer,
-                        y: center.y + angle.sin() * outer,
-                    },
-                ],
-                width: 2.0 + energy * 3.5,
-                alpha: 0.42 + energy * 0.58,
-            }
-        })
-        .collect();
-    Scene {
-        circles,
-        strokes,
-        ..Scene::default()
-    }
+fn scene(input: &SceneInput, width: f64, height: f64) -> Scene {
+    bars_scene(input, width.max(1.0), height.max(1.0))
 }
 
 fn bars_scene(input: &SceneInput, width: f64, height: f64) -> Scene {
@@ -340,11 +125,7 @@ struct RenderState {
     peaks: [f32; SPECTRUM_BAND_COUNT],
     static_profile: [f32; SPECTRUM_BAND_COUNT],
     level: f32,
-    bass: f32,
     level_target: f32,
-    bass_target: f32,
-    phase: f64,
-    preset: VisualPreset,
     playback: PlaybackState,
     impact: ImpactState,
 }
@@ -357,11 +138,7 @@ impl Default for RenderState {
             peaks: [0.0; SPECTRUM_BAND_COUNT],
             static_profile: NEUTRAL_PROFILE,
             level: 0.0,
-            bass: 0.0,
             level_target: 0.0,
-            bass_target: 0.0,
-            phase: 0.0,
-            preset: VisualPreset::Rings,
             playback: PlaybackState::Stopped,
             impact: ImpactState::new(),
         }
@@ -373,9 +150,6 @@ impl RenderState {
         SceneInput {
             bands: &self.current,
             peaks: &self.peaks,
-            level: self.level,
-            bass: self.bass,
-            phase: self.phase,
         }
     }
 }
@@ -397,12 +171,7 @@ fn drawing_area(
     let state = state.clone();
     area.set_draw_func(move |area, cr, width, height| {
         let state = state.borrow();
-        let scene = scene(
-            state.preset,
-            &state.scene_input(),
-            f64::from(width),
-            f64::from(height),
-        );
+        let scene = scene(&state.scene_input(), f64::from(width), f64::from(height));
         draw_scene(
             cr,
             &scene,
@@ -435,40 +204,6 @@ fn queue_registered_areas(areas: &Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::Drawi
     });
 }
 
-fn preset_controls(
-    state: &Rc<RefCell<RenderState>>,
-    areas: &Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::DrawingArea>>>>,
-) -> gtk4::Box {
-    let modes = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-    modes.set_halign(gtk4::Align::Center);
-    modes.add_css_class("reprise-song-visual-presets");
-    let selected = state.borrow().preset;
-    let mut previous: Option<gtk4::ToggleButton> = None;
-    for preset in VisualPreset::ALL {
-        let button = gtk4::ToggleButton::builder()
-            .label(strings::text(preset.label()))
-            .css_classes(["reprise-btn-toggle", "reprise-song-visual-preset"])
-            .active(preset == selected)
-            .build();
-        button.set_widget_name(preset.id());
-        if let Some(previous) = &previous {
-            button.set_group(Some(previous));
-        }
-        let state = state.clone();
-        let areas = areas.clone();
-        button.connect_toggled(move |button| {
-            if !button.is_active() {
-                return;
-            }
-            state.borrow_mut().preset = preset;
-            queue_registered_areas(&areas);
-        });
-        modes.append(&button);
-        previous = Some(button);
-    }
-    modes
-}
-
 fn ease(current: f32, target: f32, attack: f32, release: f32) -> f32 {
     let delta = target - current;
     let coeff = if delta > 0.0 { attack } else { release };
@@ -496,10 +231,9 @@ fn advance_state(state: &mut RenderState) -> bool {
         SCALAR_ATTACK,
         SCALAR_RELEASE,
     );
-    state.bass = ease(state.bass, state.bass_target, SCALAR_ATTACK, SCALAR_RELEASE);
     state.impact.advance();
     if state.playback == PlaybackState::Playing {
-        state.phase = (state.phase + 0.0018 + f64::from(state.level) * 0.02) % 1.0;
+        // Playing never settles — the tick keeps feeding fresh frames in.
         settled = false;
     }
     settled && state.impact.is_idle()
@@ -548,12 +282,10 @@ impl SongVisualizer {
         let areas = Rc::new(RefCell::new(Vec::new()));
         let area = drawing_area(&state, DRAW_HEIGHT, "reprise-song-visual-canvas");
         register_area(&areas, &area);
-        let modes = preset_controls(&state, &areas);
 
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 10);
         root.add_css_class("reprise-song-visuals");
         root.append(&area);
-        root.append(&modes);
         Self {
             root,
             area,
@@ -639,7 +371,6 @@ impl SongVisualizer {
         }
         state.target = *frame.bands();
         state.level_target = frame.level();
-        state.bass_target = frame.bass();
         let beat = frame.beat();
         if beat.fired {
             state.impact.spawn_beat(beat.strength);
@@ -662,7 +393,6 @@ impl SongVisualizer {
         if playback != PlaybackState::Playing || !motion::animations_enabled() {
             state.target = state.static_profile;
             state.level_target = 0.0;
-            state.bass_target = 0.0;
             if !motion::animations_enabled() {
                 state.current = state.static_profile;
             }
@@ -712,12 +442,13 @@ impl SongVisualizer {
         register_area(&self.areas, &area);
 
         let header = self.fullscreen_header();
+        header.add_css_class("reprise-song-visual-chrome");
         let controls = gtk4::Box::new(gtk4::Orientation::Vertical, 14);
         controls.set_halign(gtk4::Align::Center);
         controls.set_valign(gtk4::Align::End);
         controls.set_margin_bottom(28);
+        controls.add_css_class("reprise-song-visual-chrome");
         controls.append(&self.transport_controls());
-        controls.append(&preset_controls(&self.state, &self.areas));
         let hint = gtk4::Label::new(Some(&strings::text(strings::SONG_VISUALS_FULLSCREEN_HINT)));
         hint.add_css_class("dim-label");
         controls.append(&hint);
@@ -746,6 +477,8 @@ impl SongVisualizer {
             gtk4::glib::Propagation::Proceed
         });
         window.add_controller(key);
+
+        install_chrome_autohide(&window, &overlay, &header, &controls);
 
         let fullscreen_active = self.fullscreen_active.clone();
         let panel_active = self.panel_active.clone();
@@ -902,6 +635,62 @@ impl SongVisualizer {
     }
 }
 
+/// Fades the fullscreen chrome (header + transport) out after the pointer sits
+/// idle and brings it — plus the cursor — back on the next mouse move. Immersive
+/// by default: the GUI only appears when you reach for it.
+fn install_chrome_autohide(
+    window: &gtk4::Window,
+    overlay: &gtk4::Overlay,
+    header: &gtk4::Box,
+    controls: &gtk4::Box,
+) {
+    const IDLE: Duration = Duration::from_millis(2500);
+    let timer: Rc<RefCell<Option<gtk4::glib::SourceId>>> = Rc::new(RefCell::new(None));
+    let header = header.downgrade();
+    let controls = controls.downgrade();
+    let window_weak = window.downgrade();
+
+    let reveal = move || {
+        if let Some(header) = header.upgrade() {
+            header.remove_css_class("reprise-song-visual-chrome-hidden");
+        }
+        if let Some(controls) = controls.upgrade() {
+            controls.remove_css_class("reprise-song-visual-chrome-hidden");
+        }
+        if let Some(window) = window_weak.upgrade() {
+            window.set_cursor(None);
+        }
+        if let Some(id) = timer.borrow_mut().take() {
+            id.remove();
+        }
+        let header = header.clone();
+        let controls = controls.clone();
+        let window_weak = window_weak.clone();
+        let timer_inner = timer.clone();
+        let id = gtk4::glib::timeout_add_local_once(IDLE, move || {
+            if let Some(header) = header.upgrade() {
+                header.add_css_class("reprise-song-visual-chrome-hidden");
+            }
+            if let Some(controls) = controls.upgrade() {
+                controls.add_css_class("reprise-song-visual-chrome-hidden");
+            }
+            if let Some(window) = window_weak.upgrade() {
+                window.set_cursor_from_name(Some("none"));
+            }
+            timer_inner.borrow_mut().take();
+        });
+        *timer.borrow_mut() = Some(id);
+    };
+
+    let motion = gtk4::EventControllerMotion::new();
+    let reveal = Rc::new(reveal);
+    let reveal_motion = reveal.clone();
+    motion.connect_motion(move |_, _, _| reveal_motion());
+    overlay.add_controller(motion);
+    // Show once on open, then arm the idle timer.
+    reveal();
+}
+
 fn accent_rgb(area: &gtk4::DrawingArea) -> (f64, f64, f64) {
     let color = area.color();
     (
@@ -945,29 +734,11 @@ fn draw_scene(
     cr.set_line_cap(gtk4::cairo::LineCap::Round);
     cr.set_line_join(gtk4::cairo::LineJoin::Round);
     let paint = |alpha: f64| (alpha * alpha_mult).clamp(0.0, 1.0);
-    for circle in &scene.circles {
-        cr.set_source_rgba(boosted.0, boosted.1, boosted.2, paint(circle.alpha));
-        cr.set_line_width(circle.width);
-        cr.arc(circle.center.x, circle.center.y, circle.radius, 0.0, TAU);
-        let _ = cr.stroke();
-    }
     for bar in &scene.bars {
         cr.set_source_rgba(boosted.0, boosted.1, boosted.2, paint(bar.alpha));
         cr.set_line_width(bar.width);
         cr.move_to(bar.center.x, bar.center.y - bar.length / 2.0);
         cr.line_to(bar.center.x, bar.center.y + bar.length / 2.0);
-        let _ = cr.stroke();
-    }
-    for stroke in &scene.strokes {
-        let Some(first) = stroke.points.first() else {
-            continue;
-        };
-        cr.set_source_rgba(boosted.0, boosted.1, boosted.2, paint(stroke.alpha));
-        cr.set_line_width(stroke.width);
-        cr.move_to(first.x, first.y);
-        for point in &stroke.points[1..] {
-            cr.line_to(point.x, point.y);
-        }
         let _ = cr.stroke();
     }
 
@@ -1029,19 +800,12 @@ pub(in crate::ui) fn css() -> String {
        border: 1px solid alpha(@reprise_player_accent, 0.14);\
        border-radius: 24px;\
      }\n\
-     .reprise-song-visual-preset {\
-       min-height: 0; min-width: 64px; padding: 5px 14px;\
-       border-radius: 999px;\
-       color: alpha(#ffffff, 0.68);\
-       background-color: alpha(#ffffff, 0.06);\
-       border: 1px solid alpha(#ffffff, 0.12);\
-     }\n\
-     .reprise-song-visual-preset:checked {\
-       color: #ffffff;\
-       background-color: alpha(@reprise_player_accent, 0.18);\
-       border-color: alpha(@reprise_player_accent, 0.75);\
-     }\n\
      window.reprise-song-visual-fullscreen { background: #090b0c; }\n\
+     .reprise-song-visual-chrome {\
+       transition: opacity 260ms ease-out;\
+       opacity: 1;\
+     }\n\
+     .reprise-song-visual-chrome-hidden { opacity: 0; }\n\
      .reprise-song-visual-fullscreen-canvas {\
        color: @reprise_player_accent;\
        background-image: radial-gradient(ellipse at center,\
