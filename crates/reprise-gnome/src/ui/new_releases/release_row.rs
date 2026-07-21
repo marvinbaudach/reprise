@@ -159,15 +159,13 @@ fn primary_button(
     }
 }
 
-fn hide_button(release: &StoredRelease, on_hide: &Rc<dyn Fn(&str)>) -> gtk4::Button {
-    let button = action_button(
+/// Only builds the button; the click is wired in `build`, where the
+/// row's `Revealer` exists to collapse before `on_hide` actually runs (B4).
+fn hide_button() -> gtk4::Button {
+    action_button(
         "view-conceal-symbolic",
         &strings::text(strings::HIDE_RELEASE),
-    );
-    let on_hide = on_hide.clone();
-    let mbid = release.release_group_mbid.clone();
-    button.connect_clicked(move |_| on_hide(&mbid));
-    button
+    )
 }
 
 fn wire_hover_and_focus(row: &gtk4::Box, stack: &gtk4::Stack) {
@@ -268,7 +266,8 @@ pub(in crate::ui) fn build(
         on_show_album,
         close_popover,
     ));
-    actions.append(&hide_button(release, on_hide));
+    let hide = hide_button();
+    actions.append(&hide);
 
     let right_stack = gtk4::Stack::new();
     right_stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
@@ -288,7 +287,38 @@ pub(in crate::ui) fn build(
 
     wire_hover_and_focus(&row, &right_stack);
 
-    row.upcast()
+    // Hide collapses the row instead of yanking it out (B4): the button only
+    // starts the collapse; `on_hide` (which persists hidden/hidden_at and
+    // rebuilds the list) runs once the collapse animation is done, i.e. once
+    // `child-revealed` goes false. That same notify also fires once the
+    // initial `reveal_child(true)` below finishes revealing — the guard here
+    // keys off `!is_child_revealed()`, so that initial fire (revealed ==
+    // true) never triggers `on_hide`.
+    let revealer = gtk4::Revealer::builder()
+        .transition_type(gtk4::RevealerTransitionType::SlideUp)
+        .transition_duration(crate::ui::motion::STANDARD_MS)
+        .child(&row)
+        .reveal_child(true)
+        .build();
+
+    let on_hide = on_hide.clone();
+    let mbid = release.release_group_mbid.clone();
+    revealer.connect_child_revealed_notify(move |rev| {
+        if !rev.is_child_revealed() {
+            on_hide(&mbid);
+        }
+    });
+
+    // Weak: the button (owned by the row, owned by the revealer) must not
+    // hold a strong ref back to the revealer, or the pair leaks.
+    let revealer_weak = revealer.downgrade();
+    hide.connect_clicked(move |_| {
+        if let Some(revealer) = revealer_weak.upgrade() {
+            revealer.set_reveal_child(false);
+        }
+    });
+
+    revealer.upcast()
 }
 
 #[cfg(test)]
@@ -406,10 +436,16 @@ mod tests {
         assert_eq!(stack_target(true, true), ACTIONS_CHILD);
     }
 
+    /// Depth-first search rather than a single sibling scan: since B4 wraps
+    /// the row in a `Revealer`, the stack is a grandchild (revealer -> row
+    /// box -> stack), not a direct sibling of the returned widget.
     fn find_stack(widget: &gtk4::Widget) -> Option<gtk4::Stack> {
+        if let Ok(stack) = widget.clone().downcast::<gtk4::Stack>() {
+            return Some(stack);
+        }
         let mut child = widget.first_child();
         while let Some(current) = child {
-            if let Ok(stack) = current.clone().downcast::<gtk4::Stack>() {
+            if let Some(stack) = find_stack(&current) {
                 return Some(stack);
             }
             child = current.next_sibling();
@@ -452,29 +488,52 @@ mod tests {
         assert_eq!(stack.visible_child_name().as_deref(), Some(CHIP_CHILD));
     }
 
+    /// B4: the Hide button no longer invokes `on_hide` directly — it only
+    /// starts the Revealer's collapse (`set_reveal_child(false)`); `on_hide`
+    /// (persist + rebuild) is wired to the `child-revealed` notify instead.
+    /// This test never realizes/maps the row (no window is shown — see the
+    /// brief), and GTK's `Revealer` skips the timed tween entirely for an
+    /// unmapped widget, jumping straight to the target position — so both
+    /// the initial `reveal_child(true)` and the click-triggered
+    /// `reveal_child(false)` resolve synchronously here, which is what lets
+    /// this test assert the guard deterministically without pumping the
+    /// main loop: `on_hide` must stay unfired across construction (the
+    /// initial reveal notifies with `is_child_revealed() == true`, which the
+    /// `if !revealed` guard must swallow) and only fire once, after the
+    /// click actually collapses the row.
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn row_hide_button_invokes_callback_with_mbid() {
+    fn hide_button_collapses_the_row_before_removing_it() {
         if gtk4::init().is_err() {
             return;
         }
         let release = release_with_date("2026-01-01");
-        let hidden: Rc<std::cell::RefCell<Vec<String>>> =
-            Rc::new(std::cell::RefCell::new(Vec::new()));
+        let hidden = Rc::new(Cell::new(false));
         let sink = hidden.clone();
-        let on_hide: Rc<dyn Fn(&str)> = Rc::new(move |mbid: &str| {
-            sink.borrow_mut().push(mbid.to_string());
-        });
+        let on_hide: Rc<dyn Fn(&str)> = Rc::new(move |_: &str| sink.set(true));
         let on_show_album: OnShowAlbum = Rc::new(|_, _| {});
         let close_popover: Rc<dyn Fn()> = Rc::new(|| {});
 
         let row = build(&release, today(), &on_hide, &on_show_album, &close_popover);
+        let revealer = row
+            .clone()
+            .downcast::<gtk4::Revealer>()
+            .expect("build wraps the row in a Revealer (B4)");
+        assert!(revealer.reveals_child(), "row starts revealed");
+        assert!(
+            !hidden.get(),
+            "the initial reveal(true) must not trigger on_hide (init guard)"
+        );
 
         let buttons = action_buttons(&row);
         let hide = buttons.last().expect("row exposes a Hide button");
         hide.emit_clicked();
 
-        assert_eq!(hidden.borrow().as_slice(), ["rg-sample"]);
+        assert!(!revealer.reveals_child(), "click collapses the row");
+        assert!(
+            hidden.get(),
+            "on_hide must run once the collapse finishes (child-revealed == false)"
+        );
     }
 
     /// NR-13: clicking "Show in library" navigates via the injected callback
