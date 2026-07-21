@@ -27,6 +27,7 @@ mod db_listen_history;
 mod db_mix_planner;
 mod db_tag_write_jobs;
 pub mod device_sync;
+pub mod events;
 pub mod fingerprint;
 pub mod format;
 pub mod library;
