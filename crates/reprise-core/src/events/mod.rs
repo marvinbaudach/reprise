@@ -26,10 +26,6 @@ pub fn writer_token() -> WriterToken {
     *TOKEN.get_or_init(|| WriterToken(fastrand::i64(..)))
 }
 
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "mutating facades adopt this in task T0.3")
-)]
 pub(crate) fn record(
     conn: &Connection,
     entity: &str,
@@ -60,6 +56,27 @@ fn record_at(
         params![entity, entity_id, operation, writer.0, at],
     )?;
     Ok(conn.last_insert_rowid())
+}
+
+/// Runs `body` so its writes — the facade's mutation *and* any [`record`]
+/// call — commit atomically. When `conn` is not already inside a transaction
+/// a fresh one is opened and committed here; when the caller already holds one
+/// (SQLite forbids a nested `BEGIN`) `body` simply joins it, and the event
+/// then lands or rolls back with the caller's transaction. Either way a
+/// facade never logs a change it did not also persist, and never persists a
+/// change it did not log.
+pub(crate) fn in_txn<T>(
+    conn: &Connection,
+    body: impl FnOnce(&Connection) -> Result<T, rusqlite::Error>,
+) -> Result<T, rusqlite::Error> {
+    if conn.is_autocommit() {
+        let tx = conn.unchecked_transaction()?;
+        let value = body(&tx)?;
+        tx.commit()?;
+        Ok(value)
+    } else {
+        body(conn)
+    }
 }
 
 pub fn read_since(
@@ -121,3 +138,6 @@ fn unix_timestamp() -> i64 {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod facade_tests;

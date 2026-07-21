@@ -36,12 +36,20 @@ pub fn get_setting(conn: &Connection, key: &str) -> Result<Option<String>, rusql
 /// `ON CONFLICT`, not a delete-then-insert (keeps this a single statement,
 /// no transaction needed).
 pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<(), rusqlite::Error> {
-    conn.execute(
-        "INSERT INTO settings (key, value) VALUES (?1, ?2) \
-         ON CONFLICT(key) DO UPDATE SET value = ?2",
-        rusqlite::params![key, value],
-    )?;
-    Ok(())
+    // Every settings write funnels through here, so a single change-log append
+    // covers both plain settings and module toggles (which persist under the
+    // `module.<id>.enabled` key via `modules::set_enabled`) — exactly one event
+    // per write, keyed by the setting key. `in_txn` keeps the row and the event
+    // atomic without a nested `BEGIN` when a caller already holds one.
+    crate::events::in_txn(conn, |conn| {
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2) \
+             ON CONFLICT(key) DO UPDATE SET value = ?2",
+            rusqlite::params![key, value],
+        )?;
+        crate::events::record(conn, "settings", key, "set")?;
+        Ok(())
+    })
 }
 
 /// Canonical stored forms for boolean settings. `get_bool` additionally
