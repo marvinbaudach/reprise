@@ -5,6 +5,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection};
 
+pub mod notifier;
+pub use notifier::{Handle, Notifier};
+
 pub const MAX_RETAINED_CHANGES: usize = 10_000;
 pub const RETENTION_SECS: i64 = 7 * 24 * 60 * 60;
 
