@@ -393,12 +393,29 @@ impl SongVisualizer {
         let panel_active = self.panel_active.clone();
         let fullscreen_active = self.fullscreen_active.clone();
         let slot = self.tick_id.clone();
-        let id = self.area.add_tick_callback(move |_, _| {
+        // Decouple the sim's advance from the render frame rate: each engine
+        // tick is a fixed 1/60 s step, but the frame clock slows to the render
+        // rate when a big (fullscreen) canvas can't keep up — so at, say, 20
+        // fps we advance ~3 steps per frame to keep the animation at real-time
+        // speed instead of running in slow motion. Capped so a hitch never
+        // spirals into a burst of catch-up work.
+        let last_frame_us = Cell::new(0i64);
+        let id = self.area.add_tick_callback(move |_, frame_clock| {
             if (!panel_active.get() && !fullscreen_active.get()) || !motion::animations_enabled() {
                 *slot.borrow_mut() = None;
                 return gtk4::glib::ControlFlow::Break;
             }
-            let settled = engine.borrow_mut().tick();
+            let now = frame_clock.frame_time();
+            let previous = last_frame_us.replace(now);
+            let steps = if previous == 0 {
+                1
+            } else {
+                (((now - previous) as f64 / 16_667.0).round() as i32).clamp(1, 4)
+            };
+            let mut settled = true;
+            for _ in 0..steps {
+                settled = engine.borrow_mut().tick();
+            }
             queue_registered_areas(&areas);
             if settled {
                 *slot.borrow_mut() = None;
@@ -743,9 +760,13 @@ pub(in crate::ui) fn css() -> String {
      .reprise-song-visual-chrome-hidden { opacity: 0; }\n\
      .reprise-song-visual-fullscreen-canvas {\
        color: @reprise_player_accent;\
-       background-image: radial-gradient(ellipse at center,\
-         alpha(@reprise_player_accent, 0.12) 0%,\
-         alpha(#090b0c, 0) 72%);\
+       background-image:\
+         radial-gradient(ellipse at center,\
+           alpha(#0f101c, 0) 42%,\
+           alpha(#0f101c, 0.62) 100%),\
+         radial-gradient(ellipse at center,\
+           alpha(@reprise_player_accent, 0.12) 0%,\
+           alpha(#090b0c, 0) 72%);\
      }\n\
      .reprise-fs-header-scrim {\
        background: linear-gradient(to bottom, alpha(#0b0c15, 0.55), alpha(#0b0c15, 0));\
