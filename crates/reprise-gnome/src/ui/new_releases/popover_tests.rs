@@ -52,38 +52,11 @@ fn nr_6_failure_keeps_updated_age_with_an_inline_cached_hint() {
     assert!(presentation.show_cached_failure);
 }
 
-/// Hiding is reachable straight from the popover row, not gated behind a
-/// separate view or an overflow condition.
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn popover_rows_offer_hide() {
-    if gtk4::init().is_err() {
-        return;
-    }
-    let hidden: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
-    let sink = hidden.clone();
-    let on_hide: Rc<dyn Fn(&str)> = Rc::new(move |mbid: &str| {
-        sink.borrow_mut().push(mbid.to_string());
-    });
-
-    let row = build_release_row(&release("rg-sample"), false, &on_hide);
-
-    let button =
-        last_button(row.upcast_ref::<gtk4::Widget>()).expect("a popover row exposes a Hide button");
-    button.emit_clicked();
-    assert_eq!(hidden.borrow().as_slice(), ["rg-sample"]);
-}
-
-fn last_button(widget: &gtk4::Widget) -> Option<gtk4::Button> {
-    let mut found = None;
-    let mut child = widget.first_child();
-    while let Some(current) = child {
-        if let Ok(button) = current.clone().downcast::<gtk4::Button>() {
-            found = Some(button);
-        }
-        child = current.next_sibling();
-    }
-    found
+/// A no-op stand-in for the window-supplied navigation callback: these
+/// tests exercise fetch/render/badge behavior, not NR-13 navigation (that
+/// lives in `release_row.rs`'s own tests).
+fn noop_show_album() -> release_row::OnShowAlbum {
+    Rc::new(|_, _| {})
 }
 
 #[test]
@@ -156,7 +129,7 @@ fn nr_7_header_button_stays_hidden_with_cached_releases_while_disabled() {
     .unwrap();
     let conn = Rc::new(RefCell::new(conn));
 
-    let state = NewReleasesPopover::new(conn, PathBuf::from("unused.db"));
+    let state = NewReleasesPopover::new(conn, PathBuf::from("unused.db"), noop_show_album());
 
     assert!(!state.button.is_visible());
 }
@@ -168,7 +141,8 @@ fn nr_3_header_button_is_visible_only_when_releases_exist_after_first_fetch() {
     let conn = reprise_core::db::open(None).unwrap();
     reprise_core::db::migrate(&conn).unwrap();
     let conn = Rc::new(RefCell::new(conn));
-    let state = NewReleasesPopover::new(conn.clone(), PathBuf::from("unused.db"));
+    let state =
+        NewReleasesPopover::new(conn.clone(), PathBuf::from("unused.db"), noop_show_album());
     assert!(!state.button.is_visible());
 
     reprise_core::library::settings::set_new_releases_fetch_completed(&conn.borrow(), true)
@@ -209,7 +183,8 @@ fn nr_8_enabling_the_module_reaches_a_fetch() {
     let conn = reprise_core::db::open(None).unwrap();
     reprise_core::db::migrate(&conn).unwrap();
     let conn = Rc::new(RefCell::new(conn));
-    let state = NewReleasesPopover::new(conn.clone(), PathBuf::from("unused.db"));
+    let state =
+        NewReleasesPopover::new(conn.clone(), PathBuf::from("unused.db"), noop_show_album());
     let runtime = ArtistNewsRuntime::setup(&conn.borrow());
     bind_runtime(&state, &runtime);
 
@@ -262,7 +237,7 @@ fn nr_9_opening_the_popover_clears_the_badge() {
         .unwrap();
     }
     let conn = Rc::new(RefCell::new(conn));
-    let state = NewReleasesPopover::new(conn, PathBuf::from("unused.db"));
+    let state = NewReleasesPopover::new(conn, PathBuf::from("unused.db"), noop_show_album());
 
     assert!(
         state.badge.is_visible(),

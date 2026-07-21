@@ -11,10 +11,9 @@ use crate::ui::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::{one_shot_task, popover_lifecycle, strings};
 
 use super::badge;
-use super::release_cover::{fallback_accent_for_artist, LazyReleaseCover};
+use super::release_cover::fallback_accent_for_artist;
+use super::release_row;
 
-const HERO_COVER_EDGE: i32 = 56;
-const ROW_COVER_EDGE: i32 = 34;
 /// Popover content width (NR-9 compact layout).
 const POPOVER_WIDTH: i32 = 336;
 /// Caps the scrolling release list's natural height before it scrolls.
@@ -113,10 +112,15 @@ struct NewReleasesPopover {
     updated: gtk4::Label,
     failure: gtk4::Label,
     fetching: Cell<bool>,
+    on_show_album: release_row::OnShowAlbum,
 }
 
 impl NewReleasesPopover {
-    fn new(conn: Rc<RefCell<rusqlite::Connection>>, database_path: PathBuf) -> Rc<Self> {
+    fn new(
+        conn: Rc<RefCell<rusqlite::Connection>>,
+        database_path: PathBuf,
+        on_show_album: release_row::OnShowAlbum,
+    ) -> Rc<Self> {
         let (button, badge) = badge::build_button();
         let popover = gtk4::Popover::new();
 
@@ -216,6 +220,7 @@ impl NewReleasesPopover {
             updated,
             failure,
             fetching: Cell::new(false),
+            on_show_album,
         });
         state.wire();
         state.render(false, false);
@@ -307,9 +312,18 @@ impl NewReleasesPopover {
                 state.render(false, false);
             })
         };
-        for (index, release) in releases.iter().enumerate() {
-            self.list
-                .append(&build_release_row(release, index == 0, &on_hide));
+        let close_popover: Rc<dyn Fn()> = {
+            let popover = self.popover.clone();
+            Rc::new(move || popover.popdown())
+        };
+        for release in &releases {
+            self.list.append(&release_row::build(
+                release,
+                today,
+                &on_hide,
+                &self.on_show_album,
+                &close_popover,
+            ));
         }
         if mark_seen {
             let effect = opening_effect(&releases);
@@ -483,8 +497,9 @@ pub(in crate::ui) fn install(
     conn: &Rc<RefCell<rusqlite::Connection>>,
     database_path: &Path,
     runtime: &Rc<ArtistNewsRuntime>,
+    on_show_album: release_row::OnShowAlbum,
 ) {
-    let state = NewReleasesPopover::new(conn.clone(), database_path.to_path_buf());
+    let state = NewReleasesPopover::new(conn.clone(), database_path.to_path_buf(), on_show_album);
     header.pack_end(&state.button);
     bind_runtime(&state, runtime);
     state.retain_for_window(window);
@@ -542,51 +557,6 @@ fn build_footer() -> (
     footer.append(&fetch_button);
     footer.append(&status);
     (footer, fetch_button, stack, spinner, updated, failure)
-}
-
-/// One popover entry. Hiding lives on the row itself rather than behind a
-/// separate destination, so it stays reachable regardless of list length.
-fn build_release_row(
-    release: &reprise_core::artist_news::StoredRelease,
-    hero: bool,
-    on_hide: &Rc<dyn Fn(&str)>,
-) -> gtk4::Box {
-    let cover = LazyReleaseCover::new(
-        &release.release_group_mbid,
-        &release.artist_name,
-        &release.fallback_accent,
-        if hero {
-            HERO_COVER_EDGE
-        } else {
-            ROW_COVER_EDGE
-        },
-    );
-    let title = gtk4::Label::new(Some(&release.title));
-    title.set_xalign(0.0);
-    title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-    let meta = gtk4::Label::new(Some(&format!(
-        "{} · {}",
-        release.artist_name, release.first_release_date
-    )));
-    meta.set_xalign(0.0);
-    meta.add_css_class("dim-label");
-    let text = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-    text.set_hexpand(true);
-    text.append(&title);
-    text.append(&meta);
-    let hide = gtk4::Button::with_label(&strings::text(strings::HIDE_RELEASE));
-    hide.add_css_class("flat");
-    hide.add_css_class("pill");
-    hide.set_valign(gtk4::Align::Center);
-    let on_hide = on_hide.clone();
-    let mbid = release.release_group_mbid.clone();
-    hide.connect_clicked(move |_| on_hide(&mbid));
-
-    let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-    row.append(cover.widget());
-    row.append(&text);
-    row.append(&hide);
-    row
 }
 
 #[cfg(test)]
