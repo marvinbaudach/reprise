@@ -1,10 +1,10 @@
 mod sidebar_activity_slot;
-mod sidebar_navigation_scroller;
 pub(in crate::ui) mod sidebar_device_card;
 pub(crate) mod sidebar_dnd;
 pub(crate) mod sidebar_export;
 pub(in crate::ui) mod sidebar_issue_cleanup;
 pub(in crate::ui) mod sidebar_issue_strings;
+mod sidebar_navigation_scroller;
 pub(in crate::ui) mod sidebar_playlist_creation;
 pub(in crate::ui) mod sidebar_presentation;
 pub(in crate::ui) mod sidebar_rebuild;
