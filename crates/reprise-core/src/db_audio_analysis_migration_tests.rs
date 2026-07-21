@@ -20,6 +20,9 @@ fn reset_fully_migrated_database_to_v17(conn: &Connection) {
          DROP TABLE library_doctor_scan_tracks;
          DROP TABLE library_doctor_scans;
          DROP TABLE track_audio_analysis;
+         ALTER TABLE new_releases DROP COLUMN first_seen;
+         ALTER TABLE new_releases DROP COLUMN hidden_at;
+         ALTER TABLE new_releases DROP COLUMN announce_url;
          PRAGMA user_version = 17;",
     )
     .unwrap();
@@ -46,7 +49,7 @@ fn audio_analysis_schema_migrates_v17_and_preserves_library_data() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 25);
+    assert_eq!(version, 26);
     let preserved: (String, Vec<u8>, i64, i64) = conn
         .query_row(
             "SELECT t.title, t.waveform_peaks,
