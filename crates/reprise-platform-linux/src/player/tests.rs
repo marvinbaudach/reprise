@@ -74,7 +74,7 @@ fn ac_10_audio_filter_contains_a_disabled_bounded_spectrum_analyzer() {
 
     assert_eq!(
         spectrum.property::<u32>("bands"),
-        reprise_core::playback::SPECTRUM_BAND_COUNT as u32
+        reprise_core::playback::SPECTRUM_ANALYSIS_BAND_COUNT as u32
     );
     assert_eq!(spectrum.property::<i32>("threshold"), -80);
     assert!(!spectrum.property::<bool>("post-messages"));
@@ -87,22 +87,22 @@ fn ac_10_audio_filter_contains_a_disabled_bounded_spectrum_analyzer() {
 fn ac_10_spectrum_messages_project_exactly_one_bounded_frame() {
     gst::init().unwrap();
     let magnitudes = gst::List::new(
-        (0..reprise_core::playback::SPECTRUM_BAND_COUNT)
-            .map(|index| -80.0_f32 + index as f32 * 2.5),
+        (0..reprise_core::playback::SPECTRUM_ANALYSIS_BAND_COUNT)
+            .map(|index| -80.0_f32 + (index % 80) as f32),
     );
     let structure = gst::Structure::builder("spectrum")
         .field("magnitude", magnitudes)
         .build();
-
     let decibels = spectrum_decibels_from_structure(&structure).expect("valid spectrum frame");
-    let frame = reprise_core::playback::SpectrumFrame::from_decibels(decibels);
-
+    let frame = reprise_core::playback::SpectrumAnalyzer::new().ingest(decibels);
     assert_eq!(
         frame.bands().len(),
         reprise_core::playback::SPECTRUM_BAND_COUNT
     );
-    assert_eq!(frame.bands()[0], 0.0);
-    assert_eq!(frame.bands()[16], 0.5);
+    assert!(frame
+        .bands()
+        .iter()
+        .all(|b| b.is_finite() && (0.0..=1.0).contains(b)));
     assert!(spectrum_decibels_from_structure(&gst::Structure::new_empty("other")).is_none());
 }
 

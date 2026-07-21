@@ -10,7 +10,7 @@ Started: 2026-07-21
 11 grid · 12 rings · 13 flow · 14 pulse · 15 particles · 16 neon · 17 tunnel · 18 final
 
 ## Progress
-(none complete yet)
+- Task 1+2: complete (commits bfc2a28..9cc724f, base c1cbee2, log bands + AGC + gamma; fix pass for fmt/clippy gate; review clean after fix)
 
 ## Minor findings roll-up (for final review)
 (none yet)
