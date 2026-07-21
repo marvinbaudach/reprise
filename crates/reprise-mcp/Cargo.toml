@@ -1,0 +1,22 @@
+[package]
+name = "reprise-mcp"
+description = "Local stdio MCP server exposing the Reprise library to agents (built out in package B)."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+# MIT, like reprise-core: the MCP server is a first-party frontend over the
+# MIT engine.
+license = "MIT"
+
+[[bin]]
+name = "reprise-mcp"
+path = "src/main.rs"
+
+[dependencies]
+# Package B adds the pinned rmcp SDK, serde/serde_json and tokio (only here,
+# forced by the SDK); the seam back to the library is core-only.
+reprise-core = { path = "../reprise-core" }
+
+[lints]
+workspace = true
