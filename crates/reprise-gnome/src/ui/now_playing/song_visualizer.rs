@@ -640,38 +640,31 @@ fn mode_controls(
 }
 
 /// Fades the fullscreen chrome (header + bottom bar) out after the pointer sits
-/// idle and brings it — plus the cursor — back on the next mouse move. Immersive
-/// by default: the GUI only appears when you reach for it.
+/// idle and brings it — plus the cursor — back on the next mouse move or key
+/// press (the caller wires the returned wake function into its key
+/// controller). Immersive by default: the GUI only appears when you reach for
+/// it — but only while `playing()` reports `PlaybackState::Playing`. On
+/// Paused/Stopped the chrome stays visible and the idle timer is disarmed
+/// (music has stopped moving, so there's nothing to get out of the way of);
+/// pointer-leave hides immediately, also gated on `playing()`.
 fn install_chrome_autohide(
     window: &gtk4::Window,
     overlay: &gtk4::Overlay,
     header: &gtk4::Widget,
     bottom: &gtk4::Widget,
-) {
-    const IDLE: Duration = Duration::from_millis(2500);
+    playing: &Rc<dyn Fn() -> bool>,
+) -> Rc<dyn Fn()> {
+    const IDLE: Duration = Duration::from_millis(3000);
     let timer: Rc<RefCell<Option<gtk4::glib::SourceId>>> = Rc::new(RefCell::new(None));
     let header = header.downgrade();
     let bottom = bottom.downgrade();
     let window_weak = window.downgrade();
 
-    let reveal = move || {
-        if let Some(header) = header.upgrade() {
-            header.remove_css_class("reprise-song-visual-chrome-hidden");
-        }
-        if let Some(bottom) = bottom.upgrade() {
-            bottom.remove_css_class("reprise-song-visual-chrome-hidden");
-        }
-        if let Some(window) = window_weak.upgrade() {
-            window.set_cursor(None);
-        }
-        if let Some(id) = timer.borrow_mut().take() {
-            id.remove();
-        }
+    let hide_now: Rc<dyn Fn()> = {
         let header = header.clone();
         let bottom = bottom.clone();
         let window_weak = window_weak.clone();
-        let timer_inner = timer.clone();
-        let id = gtk4::glib::timeout_add_local_once(IDLE, move || {
+        Rc::new(move || {
             if let Some(header) = header.upgrade() {
                 header.add_css_class("reprise-song-visual-chrome-hidden");
             }
@@ -681,18 +674,64 @@ fn install_chrome_autohide(
             if let Some(window) = window_weak.upgrade() {
                 window.set_cursor_from_name(Some("none"));
             }
-            timer_inner.borrow_mut().take();
-        });
-        *timer.borrow_mut() = Some(id);
+        })
+    };
+
+    let reveal: Rc<dyn Fn()> = {
+        let header = header.clone();
+        let bottom = bottom.clone();
+        let window_weak = window_weak.clone();
+        let timer = timer.clone();
+        let playing = playing.clone();
+        let hide_now = hide_now.clone();
+        Rc::new(move || {
+            if let Some(header) = header.upgrade() {
+                header.remove_css_class("reprise-song-visual-chrome-hidden");
+            }
+            if let Some(bottom) = bottom.upgrade() {
+                bottom.remove_css_class("reprise-song-visual-chrome-hidden");
+            }
+            if let Some(window) = window_weak.upgrade() {
+                window.set_cursor(None);
+            }
+            if let Some(id) = timer.borrow_mut().take() {
+                id.remove();
+            }
+            if !playing() {
+                // Paused/Stopped: stay visible, no idle timer armed.
+                return;
+            }
+            let hide_now = hide_now.clone();
+            let timer_inner = timer.clone();
+            let id = gtk4::glib::timeout_add_local_once(IDLE, move || {
+                hide_now();
+                timer_inner.borrow_mut().take();
+            });
+            *timer.borrow_mut() = Some(id);
+        })
     };
 
     let motion = gtk4::EventControllerMotion::new();
-    let reveal = Rc::new(reveal);
     let reveal_motion = reveal.clone();
     motion.connect_motion(move |_, _, _| reveal_motion());
+
+    let hide_leave = hide_now.clone();
+    let playing_leave = playing.clone();
+    let timer_leave = timer.clone();
+    motion.connect_leave(move |_| {
+        if !playing_leave() {
+            return;
+        }
+        if let Some(id) = timer_leave.borrow_mut().take() {
+            id.remove();
+        }
+        hide_leave();
+    });
     overlay.add_controller(motion);
-    // Show once on open, then arm the idle timer.
+
+    // Show once on open, then arm the idle timer (only if already playing).
     reveal();
+    reveal
 }
 
 pub(in crate::ui) fn css() -> String {

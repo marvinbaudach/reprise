@@ -42,6 +42,11 @@ const BOTTOM_MARGIN: i32 = 28;
 const ICON_VOLUME_MUTED: &str = "audio-volume-muted-symbolic";
 const ICON_VOLUME_HIGH: &str = "audio-volume-high-symbolic";
 
+/// Seek step for the ←/→ keys, in milliseconds.
+const SEEK_STEP_MS: i64 = 5_000;
+/// Volume step for the ↑/↓ keys.
+const VOLUME_STEP: f64 = 0.05;
+
 /// Accessor for one [`PlayerHooks`] slot, used to wire a transport button to
 /// its callback without repeating the field type at every call site.
 type HookSlot = fn(&PlayerHooks) -> &Rc<dyn Fn()>;
@@ -72,6 +77,8 @@ pub(super) fn build(visualizer: &SongVisualizer, parent: &adw::ApplicationWindow
         seek,
         seek_updating,
         play_pause,
+        volume,
+        mode_row,
     ) = bottom_bar(visualizer);
 
     let chrome = FullscreenChrome {
@@ -116,25 +123,81 @@ pub(super) fn build(visualizer: &SongVisualizer, parent: &adw::ApplicationWindow
         .build();
     window.add_css_class("reprise-song-visual-fullscreen");
 
-    let key = gtk4::EventControllerKey::new();
-    let window_weak = window.downgrade();
-    key.connect_key_pressed(move |_, key, _, _| {
-        if matches!(key, gtk4::gdk::Key::Escape | gtk4::gdk::Key::F11) {
-            if let Some(window) = window_weak.upgrade() {
-                window.close();
-            }
-            return gtk4::glib::Propagation::Stop;
-        }
-        gtk4::glib::Propagation::Proceed
-    });
-    window.add_controller(key);
-
-    install_chrome_autohide(
+    let playback = visualizer.playback.clone();
+    let playing: Rc<dyn Fn() -> bool> = Rc::new(move || playback.get() == PlaybackState::Playing);
+    let wake = install_chrome_autohide(
         &window,
         &overlay,
         header.upcast_ref::<gtk4::Widget>(),
         bottom.upcast_ref::<gtk4::Widget>(),
+        &playing,
     );
+
+    let key = gtk4::EventControllerKey::new();
+    let window_weak = window.downgrade();
+    let hooks = visualizer.hooks.clone();
+    let position = visualizer.position.clone();
+    let volume_weak = volume.downgrade();
+    let mode_row_weak = mode_row.downgrade();
+    key.connect_key_pressed(move |_, key, _, _| {
+        // Every key wakes the chrome, even ones we don't otherwise handle
+        // (e.g. Tab) — reaching for the keyboard at all should feel like
+        // reaching for the mouse.
+        wake();
+        match key {
+            gtk4::gdk::Key::Escape
+            | gtk4::gdk::Key::F11
+            | gtk4::gdk::Key::F
+            | gtk4::gdk::Key::f => {
+                if let Some(window) = window_weak.upgrade() {
+                    window.close();
+                }
+                gtk4::glib::Propagation::Stop
+            }
+            gtk4::gdk::Key::space => {
+                fire_hook(&hooks, |h| &h.play_pause);
+                gtk4::glib::Propagation::Stop
+            }
+            gtk4::gdk::Key::n | gtk4::gdk::Key::N => {
+                fire_hook(&hooks, |h| &h.next);
+                gtk4::glib::Propagation::Stop
+            }
+            gtk4::gdk::Key::p | gtk4::gdk::Key::P => {
+                fire_hook(&hooks, |h| &h.previous);
+                gtk4::glib::Propagation::Stop
+            }
+            gtk4::gdk::Key::Left => {
+                seek_relative(&hooks, &position, -SEEK_STEP_MS);
+                gtk4::glib::Propagation::Stop
+            }
+            gtk4::gdk::Key::Right => {
+                seek_relative(&hooks, &position, SEEK_STEP_MS);
+                gtk4::glib::Propagation::Stop
+            }
+            gtk4::gdk::Key::Up => {
+                adjust_volume(&volume_weak, VOLUME_STEP);
+                gtk4::glib::Propagation::Stop
+            }
+            gtk4::gdk::Key::Down => {
+                adjust_volume(&volume_weak, -VOLUME_STEP);
+                gtk4::glib::Propagation::Stop
+            }
+            // Fall through for anything else — digits 1-8 select a mode;
+            // everything else (Tab, Shift, …) is left to proceed so normal
+            // keyboard focus navigation among the chrome's widgets still
+            // works.
+            other => match digit_mode_index(other) {
+                Some(index) => {
+                    if let Some(mode_row) = mode_row_weak.upgrade() {
+                        select_mode_pill(&mode_row, index);
+                    }
+                    gtk4::glib::Propagation::Stop
+                }
+                None => gtk4::glib::Propagation::Proceed,
+            },
+        }
+    });
+    window.add_controller(key);
 
     let visualizer = visualizer.clone();
     window.connect_destroy(move |_| {
@@ -249,7 +312,9 @@ fn header_row() -> (
 
 /// Builds the bottom bar's five rows (cover/queue/volume, seek, transport,
 /// mode pills, hint) and returns the row plus every widget that needs live
-/// updates or event wiring.
+/// updates or event wiring — including the volume `Scale` and the mode-pill
+/// `FlowBox`, which the fullscreen key controller (↑/↓ and digits 1–8) also
+/// drives.
 #[allow(clippy::type_complexity)]
 fn bottom_bar(
     visualizer: &SongVisualizer,
@@ -263,6 +328,8 @@ fn bottom_bar(
     gtk4::Scale,
     Rc<Cell<bool>>,
     gtk4::Button,
+    gtk4::Scale,
+    gtk4::FlowBox,
 ) {
     let cover_thumb = gtk4::Picture::new();
     cover_thumb.set_content_fit(gtk4::ContentFit::Cover);
@@ -372,6 +439,8 @@ fn bottom_bar(
         seek,
         seek_updating,
         play_pause,
+        volume,
+        row4,
     )
 }
 
@@ -438,6 +507,80 @@ fn transport_row(visualizer: &SongVisualizer) -> (gtk4::Box, gtk4::Button) {
     row.append(&stop);
     row.append(&next);
     (row, play_pause)
+}
+
+/// Fires one `PlayerHooks` slot (see [`HookSlot`]) if hooks are installed —
+/// the keyboard-shortcut equivalent of `transport_row`'s click handlers.
+fn fire_hook(hooks: &Rc<RefCell<Option<PlayerHooks>>>, slot: HookSlot) {
+    if let Some(hooks) = hooks.borrow().as_ref() {
+        (slot(hooks))();
+    }
+}
+
+/// The ←/→ keys' seek-by-`delta_ms`: reads the same `(position_ms,
+/// duration_ms)` mirror the seek `Scale` uses (`SongVisualizer::position`),
+/// clamps to the track's bounds, and sends the result straight to
+/// `hooks.seek_to_ms` — the seek `Scale` itself catches up on the next
+/// position tick via `FullscreenChrome::apply_position`.
+fn seek_relative(
+    hooks: &Rc<RefCell<Option<PlayerHooks>>>,
+    position: &Rc<Cell<(i64, i64)>>,
+    delta_ms: i64,
+) {
+    let (position_ms, duration_ms) = position.get();
+    if duration_ms <= 0 {
+        return;
+    }
+    let target_ms = (position_ms + delta_ms).clamp(0, duration_ms);
+    if let Some(hooks) = hooks.borrow().as_ref() {
+        (hooks.seek_to_ms)(target_ms);
+    }
+}
+
+/// The ↑/↓ keys' volume step: nudges the volume `Scale`'s value, which fires
+/// its existing `connect_value_changed` handler (`wire_volume`) and so calls
+/// `hooks.set_volume` for us — this is the single write that keeps the slider
+/// and the player's volume in sync.
+fn adjust_volume(volume: &gtk4::glib::WeakRef<gtk4::Scale>, delta: f64) {
+    let Some(volume) = volume.upgrade() else {
+        return;
+    };
+    let new_value = (volume.value() + delta).clamp(0.0, 1.0);
+    volume.set_value(new_value);
+}
+
+/// Maps digit keys 1–8 to a zero-based index into `VisualMode::ALL` /
+/// the mode-pill `FlowBox` (same order, see `mode_controls`).
+fn digit_mode_index(key: gtk4::gdk::Key) -> Option<usize> {
+    use gtk4::gdk::Key;
+    match key {
+        Key::_1 => Some(0),
+        Key::_2 => Some(1),
+        Key::_3 => Some(2),
+        Key::_4 => Some(3),
+        Key::_5 => Some(4),
+        Key::_6 => Some(5),
+        Key::_7 => Some(6),
+        Key::_8 => Some(7),
+        _ => None,
+    }
+}
+
+/// Activates the mode pill at `index` (the digit-key equivalent of clicking
+/// it): `ToggleButton::set_active` fires the same `connect_toggled` handler
+/// `mode_controls` wired up, which sets the engine's mode and queues a
+/// redraw — so this one call satisfies "select mode + queue redraw + reflect
+/// in the picker" together.
+fn select_mode_pill(mode_row: &gtk4::FlowBox, index: usize) {
+    let Some(child) = mode_row.child_at_index(index as i32) else {
+        return;
+    };
+    let Some(widget) = child.child() else {
+        return;
+    };
+    if let Ok(button) = widget.downcast::<gtk4::ToggleButton>() {
+        button.set_active(true);
+    }
 }
 
 /// Wires the seek scale: user drags/clicks/keypresses fire `change-value`,
