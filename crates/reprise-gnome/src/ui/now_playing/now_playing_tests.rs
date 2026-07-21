@@ -35,6 +35,9 @@ fn loaded_track() -> NowPlaying {
         title: "Loaded title".into(),
         artist: "Loaded artist".into(),
         album: "Loaded album".into(),
+        album_artist: "Loaded artist".into(),
+        genre: "Test".into(),
+        artist_mbid: None,
         art_url: None,
         duration_ms: 180_000,
         path: "/tmp/loaded.mp3".into(),
@@ -232,7 +235,7 @@ fn now_playing_css_parses_without_gtk_errors() {
 }
 
 #[test]
-fn now_playing_css_defines_the_adaptive_view_switcher_and_footer() {
+fn npp_11_now_playing_css_defines_the_adaptive_view_switcher_and_footer() {
     let css = css();
 
     assert!(css.contains(".reprise-now-playing-tabs"));
@@ -287,9 +290,8 @@ fn head_and_pill_match_the_21a_structure() {
     assert_eq!(widgets.cover.width_request(), 168);
     assert_eq!(widgets.cover.height_request(), 168);
     assert!(widgets.title.has_css_class("reprise-now-playing-title"));
-    assert!(widgets
-        .subtitle
-        .has_css_class("reprise-now-playing-subtitle"));
+    assert!(widgets.artist.has_css_class("reprise-now-playing-subtitle"));
+    assert!(widgets.album.has_css_class("reprise-now-playing-subtitle"));
     assert_eq!(PANEL_TABS.len(), 3);
     assert!(widgets
         .tab_switcher
@@ -393,28 +395,30 @@ fn loaded_and_idle_tracks_render_from_the_player_context() {
     panel.set_loaded_track(Some(loaded_track()));
     panel.set_playback_state(PlaybackState::Playing);
     assert_eq!(panel.widgets.title.text(), "Loaded title");
-    assert_eq!(
-        panel.widgets.subtitle.text(),
-        "Loaded artist · Loaded album"
-    );
+    assert_eq!(panel.widgets.artist.text(), "Loaded artist");
+    assert_eq!(panel.widgets.album.text(), "Loaded album");
     panel.set_playback_state(PlaybackState::Paused);
     assert_eq!(panel.widgets.title.text(), "Loaded title");
 
     panel.set_loaded_track(None);
     assert_eq!(panel.widgets.title.text(), "Nothing playing");
-    assert!(panel.widgets.subtitle.text().is_empty());
+    assert!(panel.widgets.artist.text().is_empty());
+    assert!(panel.widgets.album.text().is_empty());
     settings.set_gtk_enable_animations(animations_were_enabled);
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn grid_5_now_playing_cover_and_title_are_album_reveal_links() {
+fn browse_4_now_playing_metadata_exposes_track_album_and_artist_links() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let (_window, panel) = test_panel("org.reprise.Reprise.NowPlayingRevealLinkTest");
 
     for surface in [
         panel.widgets.cover.clone().upcast::<gtk4::Widget>(),
         panel.widgets.title.clone().upcast::<gtk4::Widget>(),
+        panel.widgets.artist.clone().upcast::<gtk4::Widget>(),
+        panel.widgets.album.clone().upcast::<gtk4::Widget>(),
     ] {
         assert!(surface.is_focusable());
         assert!(gtk4::test_accessible_has_role(
@@ -513,7 +517,6 @@ fn test_panel(application_id: &str) -> (adw::ApplicationWindow, Rc<NowPlayingPan
     let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
     reprise_core::db::migrate(&conn.borrow()).unwrap();
     let runtime = ArtistNewsRuntime::setup(&conn.borrow());
-    let portraits = ArtistPortraitRuntime::setup_for_test();
     let cover_runtime = crate::ui::cover_download_worker::setup_for_test();
     let cover_loader = CoverLoader::new(cover_runtime);
     let app = adw::Application::builder()
@@ -522,15 +525,7 @@ fn test_panel(application_id: &str) -> (adw::ApplicationWindow, Rc<NowPlayingPan
     app.register(None::<&gtk4::gio::Cancellable>).unwrap();
     let window = adw::ApplicationWindow::new(&app);
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    let panel = NowPlayingPanel::new(
-        &content,
-        &window,
-        conn,
-        runtime,
-        &portraits,
-        cover_loader,
-        None,
-    );
+    let panel = NowPlayingPanel::new(&content, &window, conn, runtime, cover_loader, None);
     window.set_content(Some(panel.widget()));
     (window, panel)
 }

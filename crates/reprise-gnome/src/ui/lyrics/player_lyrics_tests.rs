@@ -73,6 +73,8 @@ fn summary() -> TrackSummary {
         artist: "Exact artist".into(),
         album: "Exact album".into(),
         album_artist: String::new(),
+        genre: String::new(),
+        artist_mbid: None,
         year: Some(2026),
         duration_ms: 123_456,
     }
@@ -189,4 +191,79 @@ fn runtime_result_tracks_position_and_stop_clears_the_view() {
     lyrics.set_track(None);
     assert!(view.line_labels().is_empty());
     assert_eq!(view.visible_state_name().as_deref(), Some("status"));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn playing_synced_lyrics_advance_at_the_line_boundary_without_a_player_tick() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let runtime = LyricsRuntime::setup_with_lookup(Arc::new(|_| {
+        Ok(LyricsBody::Synced(vec![
+            TimedLine::new(0, "first synthetic line"),
+            TimedLine::new(120, "second synthetic line"),
+        ]))
+    }));
+    let lyrics = PlayerLyrics::setup_with_runtime(runtime, true);
+    let view = LyricsView::new();
+    view.set_tab_open(true);
+    lyrics.set_view(&view);
+    lyrics.set_track(Some(lyrics_query("Precisely timed")));
+
+    let load_deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    while view.line_labels().len() != 2 && std::time::Instant::now() < load_deadline {
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(view.line_labels().len(), 2);
+
+    lyrics.set_position(0);
+    lyrics.set_playback_state(PlaybackState::Playing);
+    let labels = view.line_labels();
+    assert!(labels[0].has_css_class(ACTIVE_LINE_CLASS));
+
+    let line_deadline = std::time::Instant::now() + std::time::Duration::from_millis(400);
+    while !labels[1].has_css_class(ACTIVE_LINE_CLASS) && std::time::Instant::now() < line_deadline {
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(!labels[0].has_css_class(ACTIVE_LINE_CLASS));
+    assert!(labels[1].has_css_class(ACTIVE_LINE_CLASS));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn paused_synced_lyrics_do_not_advance_at_a_scheduled_line_boundary() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let runtime = LyricsRuntime::setup_with_lookup(Arc::new(|_| {
+        Ok(LyricsBody::Synced(vec![
+            TimedLine::new(0, "first synthetic line"),
+            TimedLine::new(150, "second synthetic line"),
+        ]))
+    }));
+    let lyrics = PlayerLyrics::setup_with_runtime(runtime, true);
+    let view = LyricsView::new();
+    view.set_tab_open(true);
+    lyrics.set_view(&view);
+    lyrics.set_track(Some(lyrics_query("Paused timing")));
+
+    let load_deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    while view.line_labels().len() != 2 && std::time::Instant::now() < load_deadline {
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(view.line_labels().len(), 2);
+
+    lyrics.set_position(0);
+    lyrics.set_playback_state(PlaybackState::Playing);
+    lyrics.set_playback_state(PlaybackState::Paused);
+    let labels = view.line_labels();
+    let pause_deadline = std::time::Instant::now() + std::time::Duration::from_millis(300);
+    while std::time::Instant::now() < pause_deadline {
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(labels[0].has_css_class(ACTIVE_LINE_CLASS));
+    assert!(!labels[1].has_css_class(ACTIVE_LINE_CLASS));
 }

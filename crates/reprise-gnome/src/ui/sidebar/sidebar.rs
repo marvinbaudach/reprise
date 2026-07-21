@@ -60,6 +60,7 @@ use libadwaita as adw;
 use rusqlite::Connection;
 
 use super::sidebar_activity_slot::SidebarActivitySlot;
+use super::sidebar_navigation_scroller::build_navigation_scroller;
 use crate::ui::sidebar_dnd;
 use reprise_core::view_source::ViewSource;
 
@@ -214,11 +215,7 @@ impl Sidebar {
         // issues to show.
         issues_listbox.set_visible(false);
 
-        let scrolled = gtk4::ScrolledWindow::builder()
-            .child(&listbox)
-            .vexpand(true)
-            .hscrollbar_policy(gtk4::PolicyType::Never)
-            .build();
+        let scrolled = build_navigation_scroller(&listbox);
 
         let activity_slot = SidebarActivitySlot::new();
         let root = build_root(&scrolled, activity_slot.widget(), &issues_listbox);

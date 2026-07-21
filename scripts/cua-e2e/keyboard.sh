@@ -12,50 +12,20 @@ assert_after_has_focus() {
   assert_unique_focus "$CUA_E2E_OUT_DIR/$stem-after.json"
 }
 
-focus_active_library_tab() {
-  local pid=$1 window_id=$2 stem=$3
-  local snapshot_path focus_path label attempt
-
-  snapshot_path=$(cua_snapshot "$pid" "$window_id" "$stem-initial") || return 1
-  for attempt in $(seq 0 48); do
-    focus_path="${snapshot_path%.json}-focus.txt"
-    label=""
-    if [[ -s "$focus_path" ]]; then
-      label=$(sed -n 's/^label=//p' "$focus_path" | head -n 1)
-    fi
-    case "$label" in
-      Tracks | Albums | Artists)
-        printf '%s\n' "$label"
-        return 0
-        ;;
-    esac
-    if ((attempt == 48)); then
-      break
-    fi
-    cua_press_key_window \
-      "$pid" "$window_id" tab "$stem-tab-$((attempt + 1))" || return 1
-    snapshot_path="$CUA_E2E_OUT_DIR/$stem-tab-$((attempt + 1))-after.json"
-  done
-  echo "Tab traversal never reached the active Library view tab" >&2
-  return 1
-}
-
-# Returns the app to the state every scenario assumes: Tracks visible, no
-# search filter, nothing popped up.
+# Returns the app to the state every scenario assumes: the canonical TrackList
+# visible, no search filter, nothing popped up.
 #
-# The manifest drives twelve scenarios against ONE app instance. Nothing used to
+# The manifest drives ten scenarios against ONE app instance. Nothing used to
 # reset between them, and it stayed invisible only because the runner died on
 # the first red surface. Once it ran the whole list, one leaked search filter
 # from `app-shell` cascaded: `tracks` searched a list filtered to zero rows,
-# `albums` pressed Enter on the wrong target and opened the main menu, `artists`
-# ran trapped inside that popover and toggled Compact Mode, and the last two
-# scenarios then measured a 430x76 mini-player. Five failures, one leak.
+# later scenarios then acted on a list filtered to zero rows.
 #
 # This must verify rather than hope. A reset that silently fails would make the
 # next surface fail for a reason that has nothing to do with what it tests —
 # exactly the confusion it exists to prevent.
 reset_surface_baseline() {
-  local pid=$1 window_id=$2 stem=$3 state_path active_tab left_steps step
+  local pid=$1 window_id=$2 stem=$3 state_path
 
   # Escape closes a popover or dialog; a second one collapses a revealed search
   # bar. Both are no-ops when nothing is open.
@@ -65,9 +35,9 @@ reset_surface_baseline() {
   # Escape does not undo navigation, and several scenarios end on a different
   # view — `issues-import` finishes inside Missing files. Use the documented
   # Back accelerator (help.rs lists <Alt>Left as "Back to previous view"),
-  # which is what a keyboard user would reach for and is one keystroke rather
-  # than a traversal. Repeat it: a scenario may be several places deep, and
-  # Back on an empty history is a no-op.
+  # but stop as soon as the canonical TrackList is present. Sending four blind
+  # no-op Back events at the root needlessly exercises an unavailable command
+  # and has wedged older accessibility drivers.
   #
   # An earlier version of this comment claimed the sidebar is absent from the
   # accessibility tree on that view and therefore cannot be tabbed to. That was
@@ -76,41 +46,29 @@ reset_surface_baseline() {
   # window manager had died and no key was reaching the app at all, not because
   # of anything about this view. Alt+Left remains the better reset; the reason
   # given for it was not.
+  if reset_surface_is_at_baseline "$pid" "$window_id" "$stem"; then
+    return 0
+  fi
   local attempt
   for attempt in 1 2 3 4; do
     cua_hotkey "$pid" "$window_id" "$stem-reset-back-$attempt" alt left || return 1
+    if reset_surface_is_at_baseline "$pid" "$window_id" "$stem"; then
+      return 0
+    fi
   done
 
-  # Back restores navigation within a top-level Library mode; it deliberately
-  # does not undo Tracks/Albums/Artists mode switches (NAV-2). Target the
-  # active member of the roving switcher, move left to Tracks, then activate it
-  # so the next scenario starts from the table without a pointer dependency.
-  active_tab=$(focus_active_library_tab "$pid" "$window_id" "$stem-reset-tab") \
-    || return 1
-  case "$active_tab" in
-    Tracks) left_steps=0 ;;
-    Albums) left_steps=1 ;;
-    Artists) left_steps=2 ;;
-    *) return 1 ;;
-  esac
-  for ((step = 1; step <= left_steps; step++)); do
-    cua_press_key_window "$pid" "$window_id" left "$stem-reset-tab-left-$step" \
-      || return 1
-  done
-  cua_press_key_window "$pid" "$window_id" enter "$stem-reset-tracks" || return 1
+  echo "reset before '$stem' did not restore the TrackList baseline; the previous" >&2
+  echo "surface left state behind that this scenario cannot run against" >&2
+  return 1
+}
 
-  # Verify against something only the Tracks view has. "Tracks" is the switcher
-  # button and is present in every view, and `sine_01` shows up in the album
-  # cards and the Now Playing panel too — an earlier version of this check used
-  # both and therefore passed while the app sat on Albums, which is precisely
-  # the silent-reset failure this function exists to prevent. Column headers
-  # only exist on the track table: 6 occurrences there, 0 on Albums.
-  state_path=$(cua_wait_for_label "$pid" "$window_id" "Title" "$stem-reset-state") || {
-    echo "reset before '$stem' did not restore the Tracks baseline; the previous" >&2
-    echo "surface left state behind that this scenario cannot run against" >&2
-    return 1
-  }
-  assert_snapshot_contains "$state_path" "sine_01" || return 1
+reset_surface_is_at_baseline() {
+  local pid=$1 window_id=$2 stem=$3 state_path
+  # The canonical TrackList has no inner mode switch to normalize. Its column
+  # header is the unambiguous baseline after Back has restored the root place.
+  state_path=$(cua_snapshot "$pid" "$window_id" "$stem-reset-state") || return 1
+  assert_snapshot_contains "$state_path" "Title" 2>/dev/null \
+    && assert_snapshot_contains "$state_path" "sine_01" 2>/dev/null
 }
 
 keyboard_app_shell() {
@@ -153,44 +111,6 @@ keyboard_tracks_playlist_queue() {
   assert_after_has_focus acc-tracks-context
   cua_press_key_focused "$pid" "$window_id" escape acc-tracks-context-close
   assert_after_has_focus acc-tracks-context-close
-}
-
-# The view switcher is a toggle group, which GTK exposes as a SINGLE tab stop:
-# Tab reaches the group, arrow keys move between members. Tabbing for "Albums"
-# or "Artists" directly therefore never lands — the old version walked the ring
-# repeatedly and pressed Enter on wherever it stopped, once on the unlabeled
-# main-menu button, which opened a popover and left Compact Mode on two
-# scenarios later.
-#
-# The group is entered by tabbing to the ACTIVE member, which is labelled after
-# the current view — "Tracks" while the track table is showing (measured: it is
-# stop 14 of the ring there). Hence the reset above must genuinely return to
-# Tracks first; when it silently did not, this traversal failed for that reason
-# rather than for anything about the switcher.
-keyboard_albums() {
-  local pid=$1 window_id=$2 tab_path focus_path
-  tab_path=$(cua_focus_label_via_tab \
-    "$pid" "$window_id" Tracks acc-albums-tabs)
-  assert_focus_evidence_label "$tab_path" Tracks
-  focus_path=$(cua_focus_label_via_key \
-    "$pid" "$window_id" Albums right acc-albums-focus)
-  assert_focus_evidence_label "$focus_path" Albums
-  cua_press_key_window "$pid" "$window_id" enter acc-albums-open
-  assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-albums-open-after.json" Albums
-  assert_after_has_focus acc-albums-open
-}
-
-keyboard_artists() {
-  local pid=$1 window_id=$2 tab_path focus_path
-  tab_path=$(cua_focus_label_via_tab \
-    "$pid" "$window_id" Albums acc-artists-tabs)
-  assert_focus_evidence_label "$tab_path" Albums
-  focus_path=$(cua_focus_label_via_key \
-    "$pid" "$window_id" Artists right acc-artists-focus)
-  assert_focus_evidence_label "$focus_path" Artists
-  cua_press_key_window "$pid" "$window_id" enter acc-artists-open
-  assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-artists-open-after.json" Artists
-  assert_after_has_focus acc-artists-open
 }
 
 keyboard_player_now_playing() {
@@ -238,14 +158,21 @@ keyboard_device_sync() {
   cua_press_key_window "$pid" "$window_id" enter acc-device-open
   assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-device-open-after.json" Synchronization
   assert_after_has_focus acc-device-open
+  cua_hotkey_focused "$pid" "$window_id" acc-device-close ctrl w
+  cua_wait_for_label "$pid" "$window_id" Title acc-device-closed >/dev/null
+  assert_after_has_focus acc-device-close
 }
 
 keyboard_preferences() {
   local pid=$1 window_id=$2
+  cua_hotkey_focused "$pid" "$window_id" acc-preferences-open ctrl comma
+  assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-preferences-open-after.json" Preferences
+  assert_after_has_focus acc-preferences-open
   cua_press_key_focused "$pid" "$window_id" tab acc-preferences-tab
   assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-preferences-tab-after.json" Preferences
   assert_after_has_focus acc-preferences-tab
-  cua_hotkey "$pid" "$window_id" acc-preferences-close ctrl w
+  cua_hotkey_focused "$pid" "$window_id" acc-preferences-close ctrl w
+  cua_wait_for_label "$pid" "$window_id" Title acc-preferences-closed >/dev/null
   assert_after_has_focus acc-preferences-close
 }
 
@@ -254,7 +181,7 @@ keyboard_modals() {
   cua_hotkey "$pid" "$window_id" acc-help-open ctrl shift /
   assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-help-open-after.json" Help
   assert_after_has_focus acc-help-open
-  cua_hotkey "$pid" "$window_id" acc-help-close ctrl w
+  cua_hotkey_focused "$pid" "$window_id" acc-help-close ctrl w
   assert_after_has_focus acc-help-close
 }
 
@@ -269,7 +196,7 @@ keyboard_stats() {
   cua_press_key_window "$pid" "$window_id" enter acc-stats-open
   assert_after_has_focus acc-stats-open
   cua_hotkey "$pid" "$window_id" acc-stats-return alt left
-  assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-stats-return-after.json" Tracks
+  assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-stats-return-after.json" Title
   assert_after_has_focus acc-stats-return
 }
 
@@ -281,7 +208,7 @@ keyboard_compact_minimal() {
   assert_snapshot_absent "$CUA_E2E_OUT_DIR/acc-compact-open-after.json" "Search all fields"
   cua_hotkey "$pid" "$window_id" acc-compact-close ctrl m
   assert_after_has_focus acc-compact-close
-  assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-compact-close-after.json" Tracks
+  assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-compact-close-after.json" Title
   cua_resize_window "$pid" "$window_id" 1200 760 acc-wide-window
   assert_unique_focus "$CUA_E2E_OUT_DIR/acc-wide-window-after-resize.json"
 }
@@ -290,6 +217,8 @@ check_manifest() {
   local surface scenario
   local count=0
   declare -A seen=()
+
+  check_keyboard_group
 
   while IFS=$'\t' read -r surface scenario; do
     [[ -z "$surface" || "$surface" == \#* ]] && continue
@@ -311,6 +240,37 @@ check_manifest() {
   fi
 }
 
+check_keyboard_group() {
+  case "${CUA_E2E_KEYBOARD_GROUP:-all}" in
+    all | primary | secondary)
+      ;;
+    *)
+      echo "unknown keyboard surface group: $CUA_E2E_KEYBOARD_GROUP" >&2
+      return 1
+      ;;
+  esac
+}
+
+surface_in_group() {
+  local surface=$1
+  case "${CUA_E2E_KEYBOARD_GROUP:-all}" in
+    all)
+      return 0
+      ;;
+    primary)
+      [[ "$surface" == app-shell || "$surface" == sidebar \
+        || "$surface" == tracks-playlist-queue || "$surface" == issues-import \
+        || "$surface" == player-now-playing ]]
+      ;;
+    secondary)
+      [[ "$surface" == device-sync || "$surface" == preferences \
+        || "$surface" == modals || "$surface" == stats \
+        || "$surface" == compact-minimal ]]
+      ;;
+    *) return 1 ;;
+  esac
+}
+
 run_manifest() {
   local pid=$1 window_id=$2 surface scenario
 
@@ -330,6 +290,7 @@ run_manifest() {
   local passed=0
   while IFS=$'\t' read -r surface scenario; do
     [[ -z "$surface" || "$surface" == \#* ]] && continue
+    surface_in_group "$surface" || continue
     echo "[cua-keyboard] $surface"
     if ! reset_surface_baseline "$pid" "$window_id" "$surface"; then
       echo "[cua-keyboard] $surface: reset failed, surface not exercised" >&2

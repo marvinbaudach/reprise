@@ -7,6 +7,7 @@ use std::time::Duration;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
+use reprise_core::browser::BrowserPlace;
 use reprise_core::library::session::{SessionSource, SessionState};
 use reprise_core::library::settings;
 use reprise_core::queries::BrowseFilter;
@@ -80,6 +81,15 @@ pub(super) fn wire_search(
     track_list: Rc<TrackList>,
     restoring: SearchRestoreGuard,
 ) {
+    {
+        let entry = search_entry.clone();
+        let restoring = restoring.clone();
+        track_list.set_on_search_restored(move |search| {
+            restoring.set(true);
+            entry.set_text(search);
+            restoring.set(false);
+        });
+    }
     let pending: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
     search_entry.connect_search_changed(move |entry| {
         if restoring.get() {
@@ -96,16 +106,42 @@ pub(super) fn wire_search(
             return;
         }
         let text = entry.text().to_string();
+        // Browser state follows the visible entry synchronously so leaving a
+        // place during the debounce window still captures the exact query.
+        *track_list.shared.filter.borrow_mut() = text;
         let track_list = track_list.clone();
         let pending_for_timeout = pending.clone();
         let source_id =
             glib::timeout_add_local(Duration::from_millis(SEARCH_DEBOUNCE_MS), move || {
-                track_list.set_filter(&text);
+                track_list.reload();
                 pending_for_timeout.borrow_mut().take();
                 glib::ControlFlow::Break
             });
         *pending.borrow_mut() = Some(source_id);
     });
+}
+
+pub(super) fn restore_browser_place(track_list: &TrackList, place: &BrowserPlace) -> bool {
+    let BrowserPlace::Tracks(track_place) = place else {
+        return false;
+    };
+    let source = place.view_source();
+    let saved =
+        crate::ui::track_list::view_state_memory::SavedViewState::from_core(&track_place.state);
+    prepare_track_view(
+        track_list,
+        &saved.search,
+        &saved.browse,
+        &saved.sort.field,
+        &saved.sort.dir,
+    );
+    finish_track_source(track_list, &source);
+    let ids = track_list.shared.current_view_ids();
+    crate::ui::track_list::view_state_memory::restore(&track_list.shared, &saved, &ids);
+    if let Some(callback) = track_list.shared.on_search_restored.borrow().as_ref() {
+        callback(&saved.search);
+    }
+    true
 }
 
 fn prepare_track_view(

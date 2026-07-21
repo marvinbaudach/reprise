@@ -346,7 +346,10 @@ impl PlayerController {
                     .get()
                     .or_else(|| self.queue.borrow().current());
                 match current {
-                    Some(id) => self.play_track_id(id),
+                    Some(id) => self.play_track_id_with_change(
+                        id,
+                        crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport,
+                    ),
                     None if !self.up_next.borrow().is_empty() => {
                         self.advance_playback(crate::ui::up_next_transport::AdvanceReason::Manual);
                     }

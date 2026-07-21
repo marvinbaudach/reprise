@@ -39,6 +39,27 @@ same-host evidence rather than portable promises. The hard contracts are
 bounded streaming memory, one default analysis worker, versioned results, and
 no network or write access to source audio.
 
+### Mix-planning and agent safety matrix
+
+Mix-planner tests use generated metadata and in-memory databases only. They
+cover malformed and unknown intent fields, non-finite and out-of-range profile
+values, oversized explicit ID lists, contradictory sources and exclusions,
+stale analysis, missing or removed tracks, the 500-candidate ceiling, stable
+tie-breaking, duration underfill, and draft expiry. Preview, playback, queue,
+and playlist approval must all consume the same persisted draft positions;
+tests fail if a caller can submit replacement track IDs during approval.
+
+Related-artist providers are system boundaries. Automated tests inject fixture
+responses and prove opt-in gating, bounded requests, cache expiry, provider
+attribution, canonical in-library exclusion, and hide/restore behavior without
+contacting a live service. A provider failure may remove discovery suggestions
+but may never prevent a local mix based on available evidence.
+
+Future MCP adapters must repeat the validation matrix at their schema boundary:
+no free SQL or file paths, bounded pagination and ID counts, read/plan/create
+capabilities separated fail-closed, draft planning unable to mutate playback or
+the queue, and playlist creation idempotent and limited to an approved draft.
+
 ### Generated-metadata scalability baseline
 
 Run the release-profile scalability baseline with an explicit new output

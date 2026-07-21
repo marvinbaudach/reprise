@@ -96,18 +96,15 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     let title_button = gtk4::Button::builder()
         .child(&title_row)
         .has_frame(false)
-        .tooltip_text(strings::text(strings::REVEAL_PLAYING_ALBUM))
+        .tooltip_text(strings::text(strings::JUMP_TO_NOW_PLAYING))
         .build();
     title_button.update_property(&[gtk4::accessible::Property::Label(&strings::text(
-        strings::REVEAL_PLAYING_ALBUM,
+        strings::JUMP_TO_NOW_PLAYING,
     ))]);
     let artist_button = gtk4::Button::builder()
         .child(&artist_label)
         .has_frame(false)
-        .tooltip_text(strings::shortcut_tooltip(
-            strings::JUMP_TO_NOW_PLAYING,
-            strings::SHORTCUT_CURRENT_TRACK,
-        ))
+        .tooltip_text(strings::text(strings::GO_TO_PLAYING_ARTIST))
         .build();
 
     let track_box = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
@@ -303,11 +300,20 @@ pub(in crate::ui) fn css() -> String {
                        0 0 26px 6px alpha(@reprise_player_accent, 0.35); \
            transition: box-shadow {TRANSITION}, background-color {TRANSITION}, \
                        transform {TRANSITION}; }}\n\
+         .{PLAY_CSS_CLASS}:hover {{ \
+           box-shadow: inset 0 2px 1px alpha(#ffffff, 0.42), \
+                       inset 0 -4px 3px alpha(#000000, 0.26), \
+                       0 7px 14px alpha(#000000, 0.34), \
+                       0 0 16px alpha(@reprise_player_accent, 0.75), \
+                       0 0 34px 8px alpha(@reprise_player_accent, 0.48); }}\n\
          /* BTN-3: the main action may answer a press more loudly than its \
             neighbours — a ring pulse in the playback accent on top of the \
             shared press sink from `style::buttons`. */\n\
          .{PLAY_CSS_CLASS}:active {{ \
-           box-shadow: 0 0 0 4px alpha(@reprise_player_accent, 0.45), \
+           box-shadow: inset 0 4px 6px alpha(#000000, 0.44), \
+                       inset 0 -1px 0 alpha(#ffffff, 0.12), \
+                       0 1px 2px alpha(#000000, 0.22), \
+                       0 0 0 4px alpha(@reprise_player_accent, 0.45), \
                        0 0 18px alpha(@reprise_player_accent, 0.80); }}\n\
          .{PLAY_CSS_CLASS}.pulsing {{ \
            animation: reprise-play-pulse {micro_ms}ms {micro_easing} 1; }}\n\
@@ -483,7 +489,8 @@ mod tests {
         assert!(css.contains("inset 0 2px 1px alpha(#ffffff, 0.34)"));
         assert!(css.contains("inset 0 -4px 3px alpha(#000000, 0.30)"));
         assert!(css.contains("0 6px 12px alpha(#000000, 0.36)"));
-        assert!(css.contains("0 0 0 4px alpha(@reprise_player_accent"));
+        assert!(css.contains("inset 0 4px 6px alpha(#000000, 0.44)"));
+        assert!(css.contains("0 1px 2px alpha(#000000, 0.22)"));
         assert!(css.contains(&format!(
             "animation: reprise-play-pulse {}ms {} 1",
             crate::ui::motion::MICRO_MS,
@@ -493,14 +500,11 @@ mod tests {
 
     #[test]
     fn tip_1d_player_bar_artist_names_its_navigation_action() {
-        let source = include_str!("player_bar_layout.rs");
-        let artist_tooltip = [
-            ".tooltip_text(strings::shortcut_tooltip(\n",
-            "            strings::JUMP_TO_NOW_PLAYING,\n",
-            "            strings::SHORTCUT_CURRENT_TRACK,\n",
-            "        ))",
-        ]
-        .concat();
+        let source = include_str!("player_bar_layout.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        let artist_tooltip = ".tooltip_text(strings::text(strings::GO_TO_PLAYING_ARTIST))";
 
         assert_eq!(source.matches(&artist_tooltip).count(), 1);
     }
@@ -518,7 +522,7 @@ mod tests {
     /// from the one central set (BTN-4), and the bar only adds the louder
     /// accent ring the main action is allowed (BTN-3).
     #[test]
-    fn btn_3_play_button_keeps_depth_but_delegates_interaction_states() {
+    fn btn_3_play_button_has_sculpted_depth_and_a_distinct_pressed_well() {
         use crate::ui::style::buttons;
 
         let css = super::css();
@@ -526,8 +530,8 @@ mod tests {
         assert!(css.contains("inset 0 2px 1px alpha(#ffffff, 0.34)"));
         assert!(css.contains("inset 0 -4px 3px alpha(#000000, 0.30)"));
         assert!(css.contains("0 6px 12px alpha(#000000, 0.36)"));
+        assert!(css.contains("inset 0 4px 6px alpha(#000000, 0.44)"));
         assert!(css.contains("0 0 0 4px alpha(@reprise_player_accent"));
-        assert!(!css.contains(&format!(".{}:hover", super::PLAY_CSS_CLASS)));
         // The MOT-5 play/pause pulse keyframes stay; only the *press* scale
         // moved out, so no local rule may restate it.
         let press_scale = format!("scale({})", crate::ui::style::tokens::BTN_PRESS_SCALE);

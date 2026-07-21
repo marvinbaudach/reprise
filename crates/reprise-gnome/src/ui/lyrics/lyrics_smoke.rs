@@ -24,6 +24,10 @@ pub(in crate::ui) fn arm(
         tracing::error!("lyrics smoke failed: playback is unavailable");
         return;
     };
+    if let Err(error) = player.set_online_lyrics_enabled(true) {
+        tracing::error!(%error, "lyrics smoke failed: could not enable the isolated lyrics module");
+        return;
+    }
     let ids = match smoke_track_ids(&conn.borrow()) {
         Ok(ids) => ids,
         Err(error) => {
@@ -52,13 +56,13 @@ pub(in crate::ui) fn arm(
         first_player.play_track_id(first);
     });
     let first_pause = player.clone();
-    glib::timeout_add_local_once(Duration::from_millis(350), move || {
+    glib::timeout_add_local_once(Duration::from_millis(1_100), move || {
         first_pause.toggle_pause();
     });
 
     let first_position = player.clone();
     let first_view = panel.lyrics_view();
-    glib::timeout_add_local_once(Duration::from_millis(700), move || {
+    glib::timeout_add_local_once(Duration::from_millis(1_300), move || {
         first_position.seek(100);
         first_position.sync_lyrics_position(100);
         log_snapshot("first-line", &first_view, "First current", "Slow stale");
@@ -66,27 +70,27 @@ pub(in crate::ui) fn arm(
 
     let second_position = player.clone();
     let second_view = panel.lyrics_view();
-    glib::timeout_add_local_once(Duration::from_millis(950), move || {
+    glib::timeout_add_local_once(Duration::from_millis(1_550), move || {
         second_position.seek(700);
         second_position.sync_lyrics_position(700);
         log_snapshot("second-line", &second_view, "First later", "Slow stale");
     });
 
     let slow_player = player.clone();
-    glib::timeout_add_local_once(Duration::from_millis(1_200), move || {
+    glib::timeout_add_local_once(Duration::from_millis(1_800), move || {
         slow_player.play_track_id(slow);
     });
     let fast_player = player.clone();
-    glib::timeout_add_local_once(Duration::from_millis(1_250), move || {
+    glib::timeout_add_local_once(Duration::from_millis(1_850), move || {
         fast_player.play_track_id(fast);
     });
     let fast_pause = player;
-    glib::timeout_add_local_once(Duration::from_millis(1_350), move || {
+    glib::timeout_add_local_once(Duration::from_millis(1_950), move || {
         fast_pause.toggle_pause();
     });
 
     let final_view = panel.lyrics_view();
-    glib::timeout_add_local_once(Duration::from_millis(2_500), move || {
+    glib::timeout_add_local_once(Duration::from_millis(3_200), move || {
         log_snapshot("latest-track", &final_view, "Fast current", "Slow stale");
     });
 }

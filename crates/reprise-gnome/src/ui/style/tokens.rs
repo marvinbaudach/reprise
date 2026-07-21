@@ -163,23 +163,8 @@ pub(in crate::ui) const NOW_PLAYING_FOOTER_SIZE: &str = "10.5px";
 pub(in crate::ui) const NOW_PLAYING_QUEUE_COVER_SIZE: i32 = 32;
 pub(in crate::ui) const NOW_PLAYING_QUEUE_TITLE_SIZE: &str = "13.5px";
 
-// --- Artists master/detail view (see `super::super::artist_view_css`) ---
-
-/// Muted secondary-text alpha (over `@window_fg_color`) shared by the Artists
-/// view's count, list meta, eyebrow, empty hint, and top-track play/duration
-/// labels.
+// Muted secondary-text alpha shared by compact metadata surfaces.
 pub(in crate::ui) const MUTED_TEXT_ALPHA: &str = "0.45";
-
-/// Resting fill alpha for the subtle non-accent pills/buttons (Shuffle, the ⋮
-/// menu) — a barely-there wash over `@window_fg_color`.
-pub(in crate::ui) const SUBTLE_FILL_ALPHA: &str = "0.09";
-
-/// Hover fill alpha for those same subtle pills/buttons.
-pub(in crate::ui) const SUBTLE_FILL_HOVER_ALPHA: &str = "0.14";
-
-/// Initials color for the gradient avatars — near-white so it reads on any
-/// per-artist gradient (list row and hero both).
-pub(in crate::ui) const AVATAR_INITIALS_COLOR: &str = "rgba(255, 255, 255, 0.95)";
 
 #[cfg(test)]
 mod tests {
