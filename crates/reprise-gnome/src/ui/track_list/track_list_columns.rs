@@ -480,7 +480,6 @@ pub(in crate::ui) fn append_cover_column(
     column
 }
 
-
 /// Builds the interactive `Rating` column: each cell is a `RatingWidget`
 /// (`ui::rating`) instead of a `gtk::Label` — the one column whose factory
 /// writes back to the database on user interaction rather than only
