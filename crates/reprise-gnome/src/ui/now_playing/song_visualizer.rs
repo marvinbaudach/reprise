@@ -22,20 +22,33 @@ use crate::ui::style::buttons;
 use crate::ui::{motion, strings};
 
 const DRAW_HEIGHT: i32 = 220;
+/// Edge length (px) the cover texture is rasterized down to before feeding
+/// the engine's secondary-accent palette extraction — cheap and plenty for a
+/// hue/saturation sample.
+const COVER_PALETTE_EDGE: i32 = 32;
+const COVER_PALETTE_PIXELS: usize = (COVER_PALETTE_EDGE * COVER_PALETTE_EDGE) as usize;
 
-/// Transport actions the fullscreen overlay can trigger. Wired from the player
-/// controller; each is optional so the visualizer works standalone (tests).
-#[derive(Default, Clone)]
-struct Transport {
-    previous: Option<Rc<dyn Fn()>>,
-    play_pause: Option<Rc<dyn Fn()>>,
-    stop: Option<Rc<dyn Fn()>>,
-    next: Option<Rc<dyn Fn()>>,
+/// Player actions (and the volume slider's starting value) the fullscreen
+/// overlay drives. Wired from the player controller; the widget works
+/// standalone without hooks installed (tests) since `hooks` starts `None`.
+pub(in crate::ui) struct PlayerHooks {
+    pub(in crate::ui) previous: Rc<dyn Fn()>,
+    pub(in crate::ui) play_pause: Rc<dyn Fn()>,
+    pub(in crate::ui) stop: Rc<dyn Fn()>,
+    pub(in crate::ui) next: Rc<dyn Fn()>,
+    // Wired now, consumed by the fullscreen seek scale and volume slider a
+    // later task builds — see `song_visualizer/fullscreen.rs`'s plan.
+    #[allow(dead_code)]
+    pub(in crate::ui) seek_to_ms: Rc<dyn Fn(i64)>,
+    #[allow(dead_code)]
+    pub(in crate::ui) set_volume: Rc<dyn Fn(f64)>,
+    #[allow(dead_code)]
+    pub(in crate::ui) initial_volume: f64,
 }
 
-/// Accessor for one [`Transport`] slot, used to wire a fullscreen button to
+/// Accessor for one [`PlayerHooks`] slot, used to wire a fullscreen button to
 /// its callback without repeating the field type at every call site.
-type TransportSlot = fn(&Transport) -> &Option<Rc<dyn Fn()>>;
+type HookSlot = fn(&PlayerHooks) -> &Rc<dyn Fn()>;
 
 #[derive(Clone)]
 pub(in crate::ui) struct SongVisualizer {
@@ -52,7 +65,20 @@ pub(in crate::ui) struct SongVisualizer {
     tick_id: Rc<RefCell<Option<gtk4::TickCallbackId>>>,
     /// Current track title + subtitle, mirrored into the fullscreen header.
     meta: Rc<RefCell<(String, String)>>,
-    transport: Rc<RefCell<Transport>>,
+    hooks: Rc<RefCell<Option<PlayerHooks>>>,
+    /// Latest position tick (`position_ms`, `duration_ms`), mirrored for the
+    /// fullscreen seek row a later task builds.
+    position: Rc<Cell<(i64, i64)>>,
+    /// Latest cover texture, mirrored for the fullscreen backdrop a later
+    /// task builds. Also drives the engine's secondary accent (see
+    /// `set_cover`).
+    cover: Rc<RefCell<Option<gtk4::gdk::Texture>>>,
+    /// Pre-formatted "Up next: …" line, mirrored for the fullscreen queue
+    /// strip a later task builds.
+    next_up: Rc<RefCell<Option<String>>>,
+    /// `(index, total)` within the up-next queue, mirrored for the
+    /// fullscreen "TRACK i / n" label a later task builds.
+    queue_position: Rc<Cell<(usize, usize)>>,
     /// Live fullscreen header labels + play/pause button, so metadata and
     /// playback-state changes reflect while the overlay is open.
     fullscreen_meta: Rc<RefCell<Option<(gtk4::Label, gtk4::Label)>>>,
@@ -81,7 +107,11 @@ impl SongVisualizer {
             fullscreen_window: Rc::new(RefCell::new(None)),
             tick_id: Rc::new(RefCell::new(None)),
             meta: Rc::new(RefCell::new((String::new(), String::new()))),
-            transport: Rc::new(RefCell::new(Transport::default())),
+            hooks: Rc::new(RefCell::new(None)),
+            position: Rc::new(Cell::new((0, 0))),
+            cover: Rc::new(RefCell::new(None)),
+            next_up: Rc::new(RefCell::new(None)),
+            queue_position: Rc::new(Cell::new((0, 0))),
             fullscreen_meta: Rc::new(RefCell::new(None)),
             fullscreen_play_pause: Rc::new(RefCell::new(None)),
         }
@@ -103,20 +133,56 @@ impl SongVisualizer {
         }
     }
 
-    /// Wires the fullscreen transport buttons to player actions.
-    pub(in crate::ui) fn set_transport(
-        &self,
-        previous: impl Fn() + 'static,
-        play_pause: impl Fn() + 'static,
-        stop: impl Fn() + 'static,
-        next: impl Fn() + 'static,
-    ) {
-        *self.transport.borrow_mut() = Transport {
-            previous: Some(Rc::new(previous)),
-            play_pause: Some(Rc::new(play_pause)),
-            stop: Some(Rc::new(stop)),
-            next: Some(Rc::new(next)),
-        };
+    /// Wires the fullscreen transport buttons, seek scale, and volume slider
+    /// to player actions. Replaces the narrower `set_transport`.
+    pub(in crate::ui) fn set_player_hooks(&self, hooks: PlayerHooks) {
+        *self.hooks.borrow_mut() = Some(hooks);
+    }
+
+    /// Mirrors the live playback position for the fullscreen seek row (built
+    /// out in a later task). No-op on the inline canvas, same shape as
+    /// `set_track_meta`.
+    pub(in crate::ui) fn set_position(&self, position_ms: i64, duration_ms: i64) {
+        self.position.set((position_ms, duration_ms));
+    }
+
+    /// Mirrors the current cover for the fullscreen backdrop (built out in a
+    /// later task) AND feeds the engine's secondary accent: the texture is
+    /// rasterized down to a small RGBA sample and handed to
+    /// `VisualEngine::set_cover_pixels`, or cleared on `None`.
+    pub(in crate::ui) fn set_cover(&self, texture: Option<gtk4::gdk::Texture>) {
+        match &texture {
+            Some(texture) => match downscale_cover_rgba(texture, COVER_PALETTE_EDGE) {
+                Some(rgba) => self
+                    .engine
+                    .borrow_mut()
+                    .set_cover_pixels(&rgba, COVER_PALETTE_PIXELS),
+                None => self.engine.borrow_mut().clear_cover(),
+            },
+            None => self.engine.borrow_mut().clear_cover(),
+        }
+        *self.cover.borrow_mut() = texture;
+        queue_registered_areas(&self.areas);
+    }
+
+    /// Mirrors the pre-formatted "Up next: …" line for the fullscreen queue
+    /// strip (built out in a later task).
+    pub(in crate::ui) fn set_next_up(&self, line: Option<String>) {
+        *self.next_up.borrow_mut() = line;
+    }
+
+    /// Mirrors the up-next queue position (`index`, `total`) for the
+    /// fullscreen "TRACK i / n" label (built out in a later task).
+    pub(in crate::ui) fn set_queue_position(&self, index: usize, total: usize) {
+        self.queue_position.set((index, total));
+    }
+
+    /// A new track started: resets the engine's clock, water surface, and
+    /// impact overlay so ripples/sparks from the previous track don't bleed
+    /// into the new one.
+    pub(in crate::ui) fn note_track_changed(&self) {
+        self.engine.borrow_mut().note_track_changed();
+        queue_registered_areas(&self.areas);
     }
 
     pub(in crate::ui) fn set_profile(&self, dimensions: &[u8; 4]) {
@@ -287,8 +353,8 @@ impl SongVisualizer {
     }
 
     /// Builds the fullscreen transport row (previous · play/pause · stop · next),
-    /// wired to the stored [`Transport`] actions. Buttons read the callbacks at
-    /// click time, so they stay valid even if transport is wired after this.
+    /// wired to the stored [`PlayerHooks`]. Buttons read the callbacks at
+    /// click time, so they stay valid even if hooks are installed after this.
     fn transport_controls(&self) -> gtk4::Box {
         let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 14);
         row.set_halign(gtk4::Align::Center);
@@ -327,21 +393,21 @@ impl SongVisualizer {
             false,
         );
 
-        let fire = |slot: TransportSlot, transport: &Rc<RefCell<Transport>>| {
-            let transport = transport.clone();
+        let fire = |slot: HookSlot, hooks: &Rc<RefCell<Option<PlayerHooks>>>| {
+            let hooks = hooks.clone();
             move || {
-                if let Some(callback) = slot(&transport.borrow()) {
-                    callback();
+                if let Some(hooks) = hooks.borrow().as_ref() {
+                    (slot(hooks))();
                 }
             }
         };
-        let previous_cb = fire(|t| &t.previous, &self.transport);
+        let previous_cb = fire(|h| &h.previous, &self.hooks);
         previous.connect_clicked(move |_| previous_cb());
-        let play_pause_cb = fire(|t| &t.play_pause, &self.transport);
+        let play_pause_cb = fire(|h| &h.play_pause, &self.hooks);
         play_pause.connect_clicked(move |_| play_pause_cb());
-        let stop_cb = fire(|t| &t.stop, &self.transport);
+        let stop_cb = fire(|h| &h.stop, &self.hooks);
         stop.connect_clicked(move |_| stop_cb());
-        let next_cb = fire(|t| &t.next, &self.transport);
+        let next_cb = fire(|h| &h.next, &self.hooks);
         next.connect_clicked(move |_| next_cb());
 
         row.append(&previous);
@@ -446,6 +512,51 @@ fn queue_registered_areas(areas: &Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::Drawi
 fn accent_rgb(area: &gtk4::DrawingArea) -> (f32, f32, f32) {
     let color = area.color();
     (color.red(), color.green(), color.blue())
+}
+
+/// Rasterizes `texture` down to an `edge`×`edge` RGBA byte buffer for the
+/// engine's secondary-accent palette sample. Uses a `gtk4::Snapshot` →
+/// `gsk::RenderNode` → cairo surface round trip (GSK does the scaling while
+/// rasterizing) rather than `gdk_texture_download`'s full-resolution
+/// readback — cheap regardless of the source texture's size, and avoids the
+/// deprecated `gdk_pixbuf_get_from_texture`. `None` if rasterization fails
+/// (an unreadable/zero-size texture); callers fall back to clearing the
+/// engine's cover accent.
+fn downscale_cover_rgba(texture: &gtk4::gdk::Texture, edge: i32) -> Option<Vec<u8>> {
+    let snapshot = gtk4::Snapshot::new();
+    let bounds = gtk4::graphene::Rect::new(0.0, 0.0, edge as f32, edge as f32);
+    snapshot.append_texture(texture, &bounds);
+    let node = snapshot.to_node()?;
+
+    let mut surface =
+        gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, edge, edge).ok()?;
+    {
+        let cr = gtk4::cairo::Context::new(&surface).ok()?;
+        node.draw(&cr);
+    }
+    surface.flush();
+    let stride = surface.stride() as usize;
+    let data = surface.data().ok()?;
+
+    let edge = edge as usize;
+    let mut rgba = Vec::with_capacity(edge * edge * 4);
+    for y in 0..edge {
+        for x in 0..edge {
+            let o = y * stride + x * 4;
+            if o + 3 >= data.len() {
+                continue;
+            }
+            // Cairo's ARGB32 is premultiplied, native-endian — on the
+            // little-endian hosts this app targets that's byte order
+            // [B, G, R, A], same assumption `render_mode_gallery_ppm`
+            // (below, in tests) makes when writing PPM output.
+            rgba.push(data[o + 2]);
+            rgba.push(data[o + 1]);
+            rgba.push(data[o]);
+            rgba.push(data[o + 3]);
+        }
+    }
+    Some(rgba)
 }
 
 /// The picker's user-facing label for one visual mode.

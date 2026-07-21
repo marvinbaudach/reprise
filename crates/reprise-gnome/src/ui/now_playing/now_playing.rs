@@ -349,15 +349,24 @@ impl NowPlayingPanel {
     }
 
     pub(in crate::ui) fn set_loaded_track(self: &Rc<Self>, track: Option<NowPlaying>) {
-        let changed = {
+        let (changed, id_changed) = {
             let current = self.loaded_track.borrow();
             match (current.as_ref(), track.as_ref()) {
-                (Some(current), Some(next)) => current.id != next.id || current.path != next.path,
-                (None, None) => false,
-                _ => true,
+                (Some(current), Some(next)) => (
+                    current.id != next.id || current.path != next.path,
+                    current.id != next.id,
+                ),
+                (None, None) => (false, false),
+                _ => (true, true),
             }
         };
         *self.loaded_track.borrow_mut() = track;
+        if id_changed {
+            // A new track started: reset the visual engine's clock, water
+            // surface, and impact overlay so ripples/sparks from the
+            // previous track don't bleed into the new one.
+            self.widgets.visualizer.note_track_changed();
+        }
         if changed {
             self.render_audio_character(&audio_character_view::AudioCharacterPresentation::Empty);
         }
@@ -429,6 +438,45 @@ impl NowPlayingPanel {
         if self.widgets.session.selected.get() == PanelTab::UpNext {
             self.widgets.footer.set_label(&text);
         }
+        self.sync_visual_queue_position(model);
+    }
+
+    /// Feeds the fullscreen visualizer's "TRACK i / n" + "Up next: …" state
+    /// from the same composite queue model the Up Next tab renders: current
+    /// index is the loaded track's position within `model.ids`, and the
+    /// next-up title is a direct lookup on the panel's own `conn` (same
+    /// ad hoc single-row-read shape `queue_audio_character_refresh` already
+    /// uses off that connection).
+    fn sync_visual_queue_position(
+        &self,
+        model: &crate::ui::track_list::queue_sections::QueueViewModel,
+    ) {
+        let total = model.ids.len();
+        let current_id = self.loaded_track.borrow().as_ref().map(|track| track.id);
+        let index =
+            current_id.and_then(|id| model.ids.iter().position(|candidate| *candidate == id));
+        self.widgets
+            .visualizer
+            .set_queue_position(index.unwrap_or(0), total);
+        let next_up_title = index
+            .and_then(|index| model.ids.get(index + 1))
+            .and_then(|id| self.track_title(*id));
+        self.widgets
+            .visualizer
+            .set_next_up(next_up_title.map(|title| format!("Up next: {title}")));
+    }
+
+    /// Best-effort track title lookup for the next-up preview. `None` on any
+    /// error (missing row, closed connection) rather than surfacing a DB
+    /// failure in the fullscreen chrome.
+    fn track_title(&self, track_id: i64) -> Option<String> {
+        let conn = self.conn.borrow();
+        conn.query_row(
+            "SELECT title FROM tracks WHERE id = ?1",
+            [track_id],
+            |row| row.get(0),
+        )
+        .ok()
     }
 
     pub(in crate::ui) fn set_on_up_next_jump(
@@ -460,17 +508,17 @@ impl NowPlayingPanel {
         self.request_up_next_refresh_if_visible();
     }
 
-    /// Wires the fullscreen visualizer's transport buttons to player actions.
-    pub(in crate::ui) fn set_visual_transport(
-        &self,
-        previous: impl Fn() + 'static,
-        play_pause: impl Fn() + 'static,
-        stop: impl Fn() + 'static,
-        next: impl Fn() + 'static,
-    ) {
+    /// Wires the fullscreen visualizer's transport, seek, and volume actions
+    /// to the player. Replaces the narrower `set_visual_transport`.
+    pub(in crate::ui) fn set_visual_player_hooks(&self, hooks: super::PlayerHooks) {
+        self.widgets.visualizer.set_player_hooks(hooks);
+    }
+
+    /// Forwards a live playback-position tick to the fullscreen visualizer.
+    pub(in crate::ui) fn set_position(&self, position_ms: i64, duration_ms: i64) {
         self.widgets
             .visualizer
-            .set_transport(previous, play_pause, stop, next);
+            .set_position(position_ms, duration_ms);
     }
 
     pub(in crate::ui) fn is_up_next_visible(&self) -> bool {
@@ -661,13 +709,24 @@ impl NowPlayingPanel {
         let generation = self.cover_generation.get().wrapping_add(1);
         self.cover_generation.set(generation);
         CoverLoader::set_placeholder(&self.widgets.cover);
+        // Revert the visualizer's cover-derived accent up front, same reason
+        // `PlayerController::sync_cover`'s `reset_cover_accent` does for the
+        // bar: without this, a track with no (or slow-to-decode) cover would
+        // leave the previous track's accent lingering in the engine.
+        self.widgets.visualizer.set_cover(None);
         if let Some(track) = track {
-            self.cover_loader.load_into(
+            let visualizer = self.widgets.visualizer.clone();
+            self.cover_loader.load_into_with_resolution(
                 &self.widgets.cover,
                 &track.path,
                 ThumbnailSize::Full,
                 generation,
                 &self.cover_generation,
+                move |resolved_path| {
+                    let texture =
+                        resolved_path.and_then(|path| gtk4::gdk::Texture::from_filename(path).ok());
+                    visualizer.set_cover(texture);
+                },
             );
         }
     }
