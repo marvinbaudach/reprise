@@ -24,9 +24,13 @@ entries have materially changed. Keep the presentation concise, precise, visuall
 and suitable for a senior engineering portfolio. Every claim must map to code, a test, an
 accepted benchmark report, or the progress ledger.
 
-Maintain `README.md` and `README.de.md` separately as the bilingual developer README. Keep each a
-technical entry point to the Reprise repository. Do not mirror the portfolio narrative, CV metrics, exhaustive
-feature inventory, or speculative roadmap there. Keep both files within their tested length budget,
+Keep the public showroom and its visuals in English and German only. Do not create, restore, or
+maintain additional translations; their review cost is not justified by the target audience.
+
+Maintain `README.md` and `README.de.md` separately as the bilingual developer README: English and
+German only. Keep each a technical entry point to the Reprise repository. Do not mirror the portfolio
+narrative, CV metrics, exhaustive feature inventory, or speculative roadmap there. Keep both files
+within their tested length budget,
 use one architecture visual, explain the three crate boundaries, provide current build and gate
 commands, and route deeper evidence to `TESTING.md`, `docs/ux-rules.md`, and `docs/showcase.md`.
 Prefer a table only for exact repeated mappings such as crate ownership; use prose or short lists

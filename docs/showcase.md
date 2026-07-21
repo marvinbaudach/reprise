@@ -11,6 +11,8 @@ It records communication and visual decisions, not product behavior.
   implementation detail before the reader understands why the project matters.
 - Use calm, precise language. Prefer a small number of defensible claims over
   broad marketing superlatives.
+- Publish the showroom in English and German only. Additional translations add
+  maintenance and review cost without serving the intended audience.
 
 ## Visual system
 

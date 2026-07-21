@@ -25,6 +25,7 @@ rg -q '/home/marvin/Projects/reprise/scripts/weekly-portfolio-sync\.sh' "$cron_f
 for prompt_contract in \
   'developer README' \
   'technical entry point' \
+  'English and German only' \
   'one architecture visual' \
   'Performance evidence defaults to a compact comparison table' \
   'Do not mirror the portfolio narrative' \
