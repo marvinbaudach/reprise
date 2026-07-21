@@ -40,6 +40,68 @@ if cargo tree -p reprise-core | rg --quiet '(^| )(gtk4|libadwaita|gstreamer|zbus
   exit 1
 fi
 
+echo "== Multi-frontend core boundaries =="
+
+# The headless surfaces (reprise-cli, reprise-mcp) and the removable stem-
+# separation backend (reprise-stems) build on the MIT engine only. These gates
+# make the multi-frontend-core dependency contract (docs/plans/multi-frontend-
+# core.md §2.5) mechanical:
+#   * among workspace crates, the DEFAULT builds of reprise-cli and reprise-mcp
+#     pull in reprise-core and nothing else. The CLI's `mpris` (zbus) and
+#     `worker` (reprise-stems) exceptions are feature-gated, so the default
+#     tree must stay core-only — exactly what the plan pins as the enforced
+#     probe;
+#   * reprise-stems depends only on reprise-core, and only binary hosts (the
+#     GTK app; the CLI behind `worker`) may depend on it — the MCP server and
+#     the engine never may, so the feature stays removable;
+#   * no GTK/libadwaita/GLib/GStreamer/zbus family crate links into the default
+#     dependency tree of any of the three.
+#
+# `-e normal` scopes every probe to what actually links into the shipped
+# binary (dev- and build-dependencies are irrelevant to the boundary), and
+# `--prefix none` prints one `name vX.Y.Z (path)` line per crate so a workspace
+# edge is a simple line-anchored match.
+banned_dependency_families='(^| )(gtk4|libadwaita|glib|gstreamer|zbus)( |$| v)'
+
+for surface in reprise-cli reprise-mcp; do
+  stray_workspace_edge=$(cargo tree -p "$surface" -e normal --prefix none 2>/dev/null \
+    | rg '^reprise-[a-z-]+ ' \
+    | rg -v "^(reprise-core|$surface) " || true)
+  if [[ -n "$stray_workspace_edge" ]]; then
+    echo "$surface default build may depend on reprise-core only; found:" >&2
+    echo "$stray_workspace_edge" >&2
+    exit 1
+  fi
+done
+
+for surface in reprise-cli reprise-mcp reprise-stems; do
+  if cargo tree -p "$surface" -e normal 2>/dev/null \
+    | rg --quiet "$banned_dependency_families"; then
+    echo "$surface default build must not depend on GTK, libadwaita, GLib, GStreamer, or zbus" >&2
+    exit 1
+  fi
+done
+
+# reprise-stems stays a removable, binary-host-only backend: neither the engine
+# nor the MCP server may pull it in under ANY feature set.
+for stems_non_host in reprise-core reprise-mcp; do
+  if cargo tree -p "$stems_non_host" --all-features -e normal --prefix none 2>/dev/null \
+    | rg --quiet '^reprise-stems '; then
+    echo "$stems_non_host must never depend on reprise-stems (binary-host-only, removable backend)" >&2
+    exit 1
+  fi
+done
+
+# reprise-stems itself links only the engine.
+stray_stems_edge=$(cargo tree -p reprise-stems --all-features -e normal --prefix none 2>/dev/null \
+  | rg '^reprise-[a-z-]+ ' \
+  | rg -v '^(reprise-core|reprise-stems) ' || true)
+if [[ -n "$stray_stems_edge" ]]; then
+  echo "reprise-stems may depend on reprise-core only; found:" >&2
+  echo "$stray_stems_edge" >&2
+  exit 1
+fi
+
 if [[ -e crates/reprise-gnome/src/ui/compact/compact_player_state.rs ]]; then
   echo "orphan compact_player_state.rs must not be restored" >&2
   exit 1
@@ -125,6 +187,20 @@ for frontend_sql in \
   'SELECT id FROM tracks ORDER BY title DESC'; do
   if rg --fixed-strings --quiet "$frontend_sql" crates/reprise-gnome/src --glob '*.rs'; then
     echo "productive GNOME code must use core database facades: $frontend_sql" >&2
+    exit 1
+  fi
+done
+
+# The headless surfaces route every database operation through named core
+# facades too. They hold a rusqlite Connection only to open the migrated
+# database and to read busy/lock error codes — never to assemble SQL. This is
+# the "no SQL outside core" gate extended to reprise-cli/reprise-mcp (plan
+# §2.5). Uppercase statement keywords match real queries, not prose; test
+# fixtures (under tests/) may still use SQL to arrange and inspect their data.
+for headless_src in crates/reprise-cli/src crates/reprise-mcp/src; do
+  if rg --quiet '\b(SELECT |INSERT INTO|UPDATE .* SET |DELETE FROM|CREATE TABLE|CREATE INDEX|DROP TABLE|ALTER TABLE)' \
+    "$headless_src" --glob '*.rs'; then
+    echo "productive SQL is not allowed outside reprise-core: $headless_src" >&2
     exit 1
   fi
 done
