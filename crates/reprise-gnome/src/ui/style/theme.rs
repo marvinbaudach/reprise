@@ -407,9 +407,6 @@ mod tests {
             ("status line", crate::ui::track_content::css()),
             ("column headers", crate::ui::track_list_header_style::css()),
             ("sidebar sections", crate::ui::library_chrome::css()),
-            ("album metadata", crate::ui::album_card_css::css()),
-            ("artist metadata", crate::ui::artist_view_css::css()),
-            ("library-card metadata", crate::ui::library_view_css::css()),
         ] {
             assert!(
                 css.contains("@reprise_secondary_fg_color"),

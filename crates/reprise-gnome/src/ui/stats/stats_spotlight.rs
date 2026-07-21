@@ -249,6 +249,7 @@ mod tests {
                     title: format!("Track {id}"),
                     artist: "Lorna Shore".to_string(),
                     album: "Album".to_string(),
+                    effective_artist: "Lorna Shore".to_string(),
                     play_count: 3,
                     total_ms: 180_000,
                     track_path: format!("/music/{id}.flac"),

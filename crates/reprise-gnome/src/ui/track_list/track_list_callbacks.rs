@@ -6,6 +6,7 @@
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use reprise_core::browser::BrowserPlace;
 use reprise_core::models::Track;
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
@@ -18,13 +19,16 @@ use reprise_core::view_source::ViewSource;
 /// full queue this activation should start: `ids` is every track id in the
 /// activated row's current sort/filter view (via `queue_ids_for_activation`)
 /// and `start_index` is the activated row's position within that list —
-/// together, exactly `PlayerController::play_from_view`'s parameters.
-pub type OnActivate = Box<dyn Fn(&Track, Vec<i64>, usize, ViewSource)>;
+/// together, exactly `PlayerController::play_from_view`'s parameters. The
+/// final argument is the complete browser place captured at activation time,
+/// not a live source lookup.
+pub type OnActivate = Box<dyn Fn(&Track, Vec<i64>, usize, BrowserPlace)>;
 
 /// Callback invoked at the end of every `reload()` — see the `Shared::
 /// on_reload` doc comment for what each parameter carries and why
 /// `window.rs` needs all four.
 pub(in crate::ui) type OnReload = Box<dyn Fn(&ViewSource, usize, &str, &BrowseFilter)>;
+pub(in crate::ui) type OnSearchRestored = Rc<dyn Fn(&str)>;
 
 /// Context-menu "Add to queue" action callback — see the `Shared::on_queue_
 /// selected` doc comment.
@@ -37,8 +41,8 @@ pub(in crate::ui) type OnQueueActivate = Rc<dyn Fn(super::queue_row_mapping::Que
 pub(in crate::ui) type OnQueueRemove = Rc<dyn Fn(&[super::queue_row_mapping::QueueRow]) -> usize>;
 pub(in crate::ui) type OnQueueMoveToTop =
     Rc<dyn Fn(&[super::queue_row_mapping::QueueRow]) -> usize>;
-pub(in crate::ui) type OnGoToAlbum = Rc<dyn Fn(String, String)>;
-pub(in crate::ui) type OnGoToArtist = Rc<dyn Fn(String)>;
+pub(in crate::ui) type OnGoToAlbum = Rc<dyn Fn(i64, String, String)>;
+pub(in crate::ui) type OnGoToArtist = Rc<dyn Fn(i64, String)>;
 pub(in crate::ui) type OnShowMissingFiles = Rc<dyn Fn()>;
 /// Queue drag-reorder callback — see the `Shared::on_queue_reorder` doc
 /// comment. Returns whether the move actually happened (`false` for a

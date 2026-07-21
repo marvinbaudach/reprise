@@ -90,9 +90,9 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Inhalte; für dynamisch erscheinende Elemente (Altwert-Zeile im Tag-Editor)
   ist Platz reserviert. Hintergrundereignisse (Scan, Watcher, Mount)
   verschieben nie sichtbare Inhalte unter dem Cursor.
-- **P-5** [geplant] [core] — Die App löscht nie Dateien. „Remove" heißt
-  immer: Library-Eintrag. Dialoge benennen Kaskaden (Ratings, Hörhistorie)
-  beim Namen.
+- **P-5** [ersetzt durch BROWSE-6] — Die frühere Regel koppelte den lokalen
+  Hörverlauf an den Library-Eintrag. BROWSE-6 trennt historische Ereignisse
+  vom aktuellen Katalog.
 - **P-6** [aktiv] [core] — Evidenz-Regel: Was beweisbar da ist, wird
   angezeigt/geheilt (Mount-Event, Resurrect); was beweisbar weg ist, wird
   sofort ehrlich markiert (Eject). Vermutungen (unmounted) sind nie
@@ -100,7 +100,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 
 ## B. Navigationsmodell
 
-- **NAV-1** [geplant] [gtk] — Sidebar = Orte, Content = Modus. Sidebar wählt
+- **NAV-1** [ersetzt durch BROWSE-1] — Sidebar = Orte, Content = Modus. Sidebar wählt
   den Ort (Music, Queue, Playlists, My Stats, Devices, Issues). Innerhalb von
   „Music" schaltet der Switcher den Modus: Tracks | Albums | Artists.
 - **NAV-2** [geplant] [core] — Ein globaler History-Stack über den gesamten
@@ -122,7 +122,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   sichtbaren Liste (siehe PLAY-2). Einfachklick = selektieren. Enter = wie
   Doppelklick. Ausnahme Queue-View: Doppelklick springt gemäß QUE-3 zum Track
   (Playhead), statt die Queue neu zu bauen.
-- **NAV-5** [aktiv] [gtk] — Modus-Gedächtnis (Scroll + Selektion je
+- **NAV-5** [ersetzt durch BROWSE-2] — Modus-Gedächtnis (Scroll + Selektion je
   Tracks/Albums/Artists) gilt nur innerhalb der Session; auch Sidebar-/
   Ortswechsel erhalten Scroll + Selektion des verlassenen Modus. Der
   Scroll-Anker besteht aus Track-/Album-ID plus Offset, nie aus einem rohen
@@ -131,7 +131,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   samt Scroll-Position; alle anderen Modi starten oben, unselektiert.
 - **NAV-6** [aktiv] [e2e] — Suche (Ctrl+F) filtert die aktuelle Ansicht
   live; Esc leert und schließt. Suche navigiert nie selbst.
-- **NAV-7** [geplant] [e2e] — Hamburger-Menü: „Scan Library" → startet Scan,
+- **NAV-7** [aktiv] [e2e] — Hamburger-Menü: „Scan Library" → startet Scan,
   bleibt in der Ansicht (Karte erscheint). „Preferences" →
   Preferences-Fenster. „Keyboard Shortcuts" → Shortcuts-Overlay. „About
   Reprise" → About-Dialog. Kein Menüpunkt wechselt kommentarlos die
@@ -147,28 +147,27 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   geladenen Tracks, selektiert dessen Zeile und zentriert sie ohne
   scrollIntoView-Kantenkleben. Der Sprung pusht auf den globalen
   History-Stack; Back kehrt zum vorherigen Ort zurück.
-- **NAV-9b** [aktiv] [gtk] — Ctrl+L und die Aktivierung des Interpreten in
-  der Playerleiste verwenden denselben Sprung: Sie navigieren zur
-  Herkunftsansicht des geladenen Tracks, selektieren und fokussieren dessen
-  Zeile und zentrieren sie ohne scrollIntoView-Kantenkleben. Der Sprung pusht
-  auf den globalen History-Stack; Back kehrt zum vorherigen Ort zurück.
+- **NAV-9b** [ersetzt durch BROWSE-4] — Ctrl+L und Player-Metadaten wurden
+  früher als gemeinsamer Track-Sprung behandelt. BROWSE-4 trennt Track-,
+  Album- und Interpret-Intents appweit und behält den expliziten Track-Sprung
+  für Ctrl+L und den Player-Titel bei.
 - **NAV-11** [aktiv] [gtk] — Jeder bedienbare Sidebar-Eintrag exponiert
   gegenüber Assistenztechnik eine eigene Bezeichnung, eine interaktive Rolle
   und eine auslösbare Aktion. Sektionsüberschriften bleiben nicht bedienbar,
   werden aber semantisch als Überschriften exponiert.
-- **NAV-12** [aktiv] [e2e] — Die globale Zurück-Historie ist als benannter
-  ‹-Button in der Headerbar sichtbar. Der Button ist ohne vorherigen Ort
-  deaktiviert, wird nach einer Detailnavigation aktiv und stellt beim
-  Auslösen den vorherigen Ort samt Fokus wieder her.
-- **NAV-13** [aktiv] [e2e] — Wiedergabestart ist keine Navigation: Enter oder
-  Doppelklick auf eine Track-Row lässt Quelle, Modus, Selektion, Tastaturfokus
-  und Viewport unverändert. Das gilt insbesondere in Album- und
-  Artist-Details sowie in der ungefilterten Musikliste; nur die
-  Now-Playing-Markierung wechselt.
+- **NAV-12** [ersetzt durch NAV-2] — Die globale Zurück-Historie als benannter
+  ‹-Button in der Headerbar (deaktiviert ohne vorherigen Ort, aktiv nach einer
+  Navigation, stellt beim Auslösen den vorherigen Ort samt Fokus wieder her)
+  gehört im Single-Track-Browser zum NAV-2-History-Komplex; Album und Interpret
+  sind keine eigenen Ansichten mehr, sondern Scopes der Musikliste.
+- **NAV-13** [ersetzt durch NAV-10a] — Wiedergabestart ist keine Navigation:
+  Enter oder Doppelklick auf eine Track-Row lässt Selektion, Tastaturfokus und
+  Viewport unverändert; nur die Now-Playing-Markierung wechselt. Die Trennung
+  von Markieren und Scrollen im einen Track-Browser regelt jetzt NAV-10a.
 
 ## C. Abspielen, Queue, Shuffle, Filter
 
-- **PLAY-1** [geplant] [gtk] — Queue-Quelle = sichtbare Trackliste. „Was du
+- **PLAY-1** [aktiv] [gtk] — Queue-Quelle = sichtbare Trackliste. „Was du
   siehst, ist was spielt": Doppelklick/Play all/Shuffle in einer Trackliste
   bauen die Queue aus der aktuell sichtbaren (gefilterten, sortierten)
   Liste. Für Container-Buttons gilt PLAY-1a.
@@ -186,7 +185,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **PLAY-3a** [aktiv] [core] — Filter schränkt Shuffle ein — absichtlich.
   Gefilterte Playlist + Shuffle = Shuffle über die Treffer („shuffle my 90s
   tracks"); die Queue ist genau die Treffermenge, kein Track von außerhalb.
-- **PLAY-3b** [geplant] [gtk] — Filter nachträglich ändern fasst eine bereits
+- **PLAY-3b** [aktiv] [gtk] — Filter nachträglich ändern fasst eine bereits
   gebaute Queue nicht an (Queue ist ein Snapshot; sichtbar in „Queue").
 - **PLAY-4a** [aktiv] [core] — Missing in Listen: Listen-Playback und
   Queue-Advance überspringen Missing still.
@@ -223,6 +222,13 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Höhe im Layout, und kein Content-Element läuft unter oder hinter ihr durch.
   Ihr Hintergrund ist opak.
 
+- **PLAY-8** [aktiv] [core] — **Wiedergabe ist ein unveränderlicher Snapshot.**
+  Beim Start werden geordnete Track-IDs, Cursor, vollständiger Browser-Ursprung
+  und dessen Anzeigename eingefroren. Spätere Navigation, Suche, Facetten oder
+  selbst ein Verfeinern auf null Treffer verändern weder Snapshot noch laufenden
+  Track. Nach dem letzten Track endet die Wiedergabe bei Repeat Off, sofern
+  nicht ein expliziter Up-Next-Eintrag folgt; Löschhygiene regeln PLAY-5a/5b.
+
 ## D. Albums- & Artists-Ansicht
 
 - **ALB-1** [ersetzt durch GRID-2/GRID-4] — Ursprüngliche gemeinsame
@@ -233,32 +239,32 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Farbfläche (Akzent-Pipeline), Play all/Shuffle-Pills (PLAY-1a), Trackliste
   nach Disc/Tracknummer. Spielender Track: Akzent-Row + EQ-Icon + bold —
   identisch in jeder Liste der App (eine Markierungssprache).
-- **GRID-1** [aktiv] [gtk] — Persistenter Playing-Zustand: Das geladene
+- **GRID-1** [ersetzt durch BROWSE-1] — Persistenter Playing-Zustand: Das geladene
   Album zeigt unabhängig von Hover und Fokus oben links auf dem Cover das
   gemeinsame EQ-Badge und einen 1.5-px-Innenring um das Cover. Beides nutzt
   `@reprise_player_accent`. Bei Pause bleibt der Ring und die EQ-Bewegung
   friert ein; bei `gtk-enable-animations=false` ist die Glyphe statisch.
-- **GRID-2** [aktiv] [gtk] — Bedienung und Aktionen: Das native
+- **GRID-2** [ersetzt durch BROWSE-1] — Bedienung und Aktionen: Das native
   GtkGridView bewegt den Fokus mit Pfeiltasten zweidimensional. Enter öffnet
   die Album-Detailquelle als History-Push, Ctrl+Enter ersetzt die Queue durch
   das Album in kanonischer Disc-/Track-Reihenfolge und startet bei Track 1.
   Space bleibt global Play/Pause. Menütaste und Shift+F10 öffnen an der
   fokussierten Kachel dasselbe Menü wie Rechtsklick, exakt mit Play, Play
   next, Add to queue, Go to artist und Edit tags….
-- **GRID-3** [aktiv] [gtk] — Sichtbarer Fokus und Zustandskomposition:
+- **GRID-3** [ersetzt durch BROWSE-1] — Sichtbarer Fokus und Zustandskomposition:
   Tastaturfokus zeichnet einen 2-px-Außenring in `@accent_color` nur um das
   Cover und zeigt dieselbe Play-Affordance wie Hover. Playing, Fokus und
   Hover bleiben getrennte Zustandslayer: Playing innen, Fokus außen,
   Interaktions-Overlay darüber; kombinierte Zustände verdecken einander
   nicht.
-- **GRID-4** [aktiv] [gtk] — Bottom-Gradient-Overlay: Hover oder Fokus
+- **GRID-4** [ersetzt durch BROWSE-1] — Bottom-Gradient-Overlay: Hover oder Fokus
   blendet statt einer schwebenden Tooltip-Box einen unten verankerten
   Abdunkel-Gradienten ein. Darin stehen eine dünne Metazeile („13 tracks ·
   47 min") und unten rechts ein Play/Pause-Button in
   `@reprise_player_accent`; Album und Artist bleiben unter dem Cover. Die
   Covermitte bleibt frei. Der Kartencontainer hat keinen Metadaten-Tooltip;
   nur tatsächlich ellipsierte Titel-/Artist-Labels zeigen ihren Volltext.
-- **GRID-5** [aktiv] [gtk] — Spielendes Album aufdecken: Aktivierung von
+- **GRID-5** [ersetzt durch BROWSE-4] — Spielendes Album aufdecken: Aktivierung von
   Cover oder Titel in Playerleiste oder Now-Playing-Panel wechselt bei Bedarf
   in die Album-Ansicht, leert ein sichtbares Suchfeld samt Albumfilter,
   scrollt per GtkGridView/Adjustment zur geladenen Albumkachel, fokussiert sie
@@ -266,22 +272,22 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   im Album-Grid entsteht kein Duplikat. Fehlt die Albumkachel, greift NAV-9b
   ohne Fehlerdialog. `gtk-enable-animations=false` zeigt für dieselbe Dauer
   ein statisches Highlight.
-- **GRID-6** [aktiv] [gtk] — Rückkehrfokus: Back aus einem Album-Detail in
+- **GRID-6** [ersetzt durch BROWSE-2/BROWSE-4] — Rückkehrfokus: Back aus einem Album-Detail in
   die Album-Übersicht stellt den Tastaturfokus auf genau der zuvor
   aktivierten Albumkachel wieder her und scrollt sie bei Bedarf sichtbar.
-- **GRID-7** [aktiv] [gtk] — Die Album-Übersicht trägt hinter ihren Karten
+- **GRID-7** [ersetzt durch BROWSE-1] — Die Album-Übersicht trägt hinter ihren Karten
   eine dezente Textur des aktuell spielenden Covers. Das Cover wird pro
   Trackwechsel genau einmal auf 32 px verkleinert und vorgerendert
   weichgezeichnet; beim Zeichnen wird nur diese gecachte Textur skaliert,
   niemals ein Live-Blur über der Liste ausgeführt. Ohne Cover, nach Stop und
   in High Contrast bleibt die Textur unsichtbar. Sie ist nicht interaktiv und
   verwendet den Coverinhalt, färbt aber keine Chrome-Fläche ein.
-- **GRID-8** [aktiv] [gtk] — Die Album-Übersicht füllt unabhängig von der
+- **GRID-8** [ersetzt durch BROWSE-1] — Die Album-Übersicht füllt unabhängig von der
   Anzahl sichtbarer Karten die gesamte verfügbare Höhe des Library-Bereichs.
   Ambient-Layer, Inhalt, Grid-Seite und Scroller bleiben nach dem Wechsel aus
   Tracks oder Artists vertikal expandiert; Kartenzeilen werden weder
   abgeschnitten noch auf ihre natürliche Gesamthöhe begrenzt.
-- **ART-1** [aktiv] [gtk] — Artist-Liste: Klick selektiert und zeigt Detail
+- **ART-1** [ersetzt durch BROWSE-1/BROWSE-4] — Artist-Liste: Klick selektiert und zeigt Detail
   rechts; Selection folgt NIE der Wiedergabe, spielender Artist zeigt nur
   Mini-EQ.
 - **ART-2** [geplant] [gtk] — Artist-Detail: Hero-Glow (vorberechnete
@@ -337,12 +343,13 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Destruktiver Umschalter konkret: Wird Auto-clean aktiviert, während die
   Deleted-Gruppe bereits Zeilen jenseits der gewählten Frist enthält,
   erscheint einmalig ein Dialog: „This will remove N tracks now (deleted
-  more than 30 days ago) — their ratings and listening history go with
-  them. Remove now / Start counting from today." Letzteres speichert das
+  more than 30 days ago), including their ratings, playlist entries, and
+  device sync state. Listening history stays in My Stats. Remove now / Start
+  counting from today." Letzteres speichert das
   Aktivierungsdatum als Stichtag (`auto_clean_armed_at`); gelöscht wird nur,
   was Frist UND Stichtag reißt. Beide Lösch-Dialoge der App (dieser und
-  „Remove all N") benennen die Kaskade explizit: Ratings + Hörhistorie gehen
-  mit (P-5).
+  „Remove all N") benennen die Kaskade explizit: Ratings, Playlist-Einträge
+  und Geräte-Sync-Zustand gehen; Hörereignisse bleiben (BROWSE-6).
 - **SET-5** [aktiv] [gtk] — Der Inhalt jeder Preferences-Hauptseite beginnt
   mit dem kompakten Standardabstand direkt unter dem Inhalts-Header. Kurze
   Seiten werden nicht vertikal zentriert; ungenutzter Raum bleibt unter der
@@ -399,7 +406,8 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   `removed_at = NULL` zurück — deshalb ist die Wiederherstellung exakt
   (gleiche id, keine Race mit parallel laufenden Scans). Der Remove-Toast
   trägt immer Undo (FB-1, 10 s). Nach Toast-Ablauf wird hart gelöscht
-  (Kaskade: Playlist-Einträge, Hörhistorie, Sync-Zustand); App-Ende im
+  (Kaskade: Playlist-Einträge, Ratings, Sync-Zustand); der eigenständige
+  Hörverlauf bleibt gemäß BROWSE-6 erhalten. App-Ende im
   Fenster → Löschung wird beim nächsten Start committed, nie zurückgerollt
   („7 removed" muss wahr bleiben). Auto-clean (opt-in, default off, nur
   deleted-Tracks) löscht hart ohne Toast und ohne Undo — es feuert
@@ -786,8 +794,7 @@ Ort und Stelle (MOT-2, die Motion-Lesart von P-4).
   + gleiches Token. Konkret: die linke Bibliotheks-Sidebar nutzt exakt das
   Widget und damit exakt die Transition der rechten Info-Spalte
   (`adw::OverlaySplitView`, Position Start — Auslöser dieser Sektion); der
-  innere Tracks/Albums/Artists-Wechsel und die StatusPage⇄Liste-Stacks
-  crossfaden mit dem Standard-Token wie der äußere
+  StatusPage⇄Liste-Stacks crossfaden mit dem Standard-Token wie der äußere
   Library/Stats/Device-Stack.
 - **MOT-4** [aktiv] [manuell] — Listen bewegen sich nicht: kein
   Stagger/Fade-in pro Row (windowed Model, 200er-Fenster, Bibliotheken
@@ -1112,14 +1119,14 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   hervorgehobenen Plugins-Zeile. Solange LYR-1 geplant ist, verspricht dieser
   Zustand keine lokalen eingebetteten Songtexte. Ein eingeschaltetes Modul
   ohne Treffer zeigt stattdessen „No lyrics found".
-- **DISCOVER-1** [aktiv] [gtk] — Netz-Features ohne dauerhaft sichtbare
+- **DISCOVER-1** [ersetzt durch BROWSE-1] — Netz-Features ohne dauerhaft sichtbare
   eigene Fläche erhalten genau einen dezenten, schließbaren Inline-Hinweis am
   Ort der sichtbaren Lücke: Cover ab drei gleichzeitig sichtbaren Fallback-
   Kacheln, Portraits ab drei gleichzeitig sichtbaren Initialen-Avataren und
   New Releases am Kopf der Artists-Ansicht. Sichtbare Evidenz rastet den
   Hinweis ein; einmal gezeigt oder geschlossen kehrt er dauerhaft nicht
   zurück. Der Hinweis ist kein Badge und kein Toast.
-- **DISCOVER-2** [aktiv] [gtk] — Pro Ansicht ist höchstens eine
+- **DISCOVER-2** [ersetzt durch BROWSE-1] — Pro Ansicht ist höchstens eine
   Aktivierungszeile sichtbar. Treffen Portrait- und New-Releases-Hinweis in
   der Artists-Ansicht zusammen, werden sie zu einer Zeile „Enable network
   features for artists (images & new releases) →" mit Deep-Link auf die
@@ -1185,12 +1192,19 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   durchscheinenden Content. Artist, Zeit, Suchfeld und Header-Aktionen sind
   aktive Inhalte; nur deaktivierte oder rein dekorative Elemente dürfen
   darunter liegen.
-- **NAV-10** [aktiv] [gtk] — Der laufende Kontext bleibt in allen Ansichten
-  mit einer gemeinsamen Playback-Akzent-Markierung sichtbar; beim ersten
-  Eintritt einer Ansicht wird er einmalig aufgedeckt, spätere Wechsel stellen
-  NAV-5s gemerkten ID-plus-Offset-Anker wieder her. Explizites „Go to
+- **NAV-10** [ersetzt durch NAV-10a] — Der laufende Kontext bleibt in allen
+  Ansichten mit einer gemeinsamen Playback-Akzent-Markierung sichtbar; beim
+  ersten Eintritt einer Ansicht wird er einmalig aufgedeckt, spätere Wechsel
+  stellen NAV-5s gemerkten ID-plus-Offset-Anker wieder her. Explizites „Go to
   album/artist" springt immer deterministisch; Selektion folgt der Wiedergabe
   nie.
+- **NAV-10a** [aktiv] [gtk] — **Markieren und Scrollen sind getrennt.** Jede
+  sichtbare Instanz des geladenen Tracks trägt dieselbe Playback-Markierung.
+  Doppelklick/Enter auf eine bereits sichtbare Row verändert den Viewport
+  nicht. Play aus Stopped sowie explizites Previous/Next zentrieren den neuen
+  Track ohne Fokus- oder Selektionsdiebstahl. Auto-Advance zentriert nur,
+  wenn seit 1,5 Sekunden keine Scrollbewegung stattfand; explizite
+  Metadaten-/Reveal-Navigation selektiert, fokussiert und zentriert immer.
 - **QUE-7** [aktiv] [gtk] — Up Next besteht aus der manuellen Queue plus
   einem virtuellen, benannten Kontext-Tail mit Count. Der Tail wird nicht als
   Einzelzeilen materialisiert, sondern nur im sichtbaren Fenster gerendert;
@@ -1757,6 +1771,73 @@ deterministisch und hoch-konfident, nie „ohne Review".
   Scan-/Apply-/Revert-Fortschrittskarte geprüft. Kein Text wird abgeschnitten,
   keine Spalte erzwingt horizontales Seiten-Scrolling, und die Oberfläche
   bleibt während echter Datei-Jobs bedienbar.
+
+## Z. Einteiliger Track-Browser
+
+- **BROWSE-1** [aktiv] [e2e] — **Music besitzt genau eine Trackliste.**
+  Album und Interpret sind navigierbare, aus Track-Metadaten abgeleitete
+  Library-Scopes derselben virtualisierten Trackliste, keine Tabs, Modi oder
+  dauerhaften Datenbankentitäten. My Stats bleibt ein eigener Dashboard-Ort.
+
+- **BROWSE-2** [aktiv] [core] — **Jeder Browser-Ort besitzt seinen Zustand.**
+  Quelle, Scope, Textsuche, Facetten, Sortierung, ID-plus-Offset-Anker,
+  Auswahl und stabiler Inhaltsfokus werden gemeinsam im History-Eintrag
+  gehalten. Eine frische Album-/Interpret-Navigation startet unverfeinert;
+  Back/Forward restauriert exakt. Ein leer gewordener Scope bleibt in der
+  Sitzung als ehrlicher Leerzustand navigierbar.
+
+- **BROWSE-3** [aktiv] [gtk] — **Sidebar-Einträge sind absolute Ziele.**
+  Jede Aktivierung verlässt auch Utility-Seiten und routet in die aktive
+  Zielansicht; Music führt aus einem Unter-Scope zur gemerkten Library-Wurzel.
+  Ein bereits aktives Root-Ziel ist ein No-op. Laufende Jobs bleiben global
+  sichtbar und blockieren Navigation nie.
+
+- **BROWSE-4** [aktiv] [gtk] — **Metadaten navigieren appweit identisch.**
+  Track, Album und Interpret lösen unabhängig von Playerleiste,
+  Now-Playing-Panel, Trackliste, Queue, Cover oder My Stats genau die zentralen
+  Intents RevealTrack, OpenAlbum und OpenArtist aus. Das Ziel selektiert,
+  fokussiert und zentriert den Ankertrack; Back restauriert den Ausgangsort.
+
+- **BROWSE-5** [aktiv] [core] — **Session-Restore ist begrenzt.** Der
+  aktuelle Browser-Ort, die gemerkte Library-Wurzel und der strukturierte
+  Wiedergabe-Ursprung werden restauriert. History, offene Suchoberflaechen,
+  Utilities und rohe Widget-Fokusse überleben den Neustart nicht. Nicht mehr
+  auflösbare Ziele fallen auf die Library-Wurzel zurück.
+
+- **BROWSE-6** [aktiv] [core] — **Hörereignisse sind historische Fakten.**
+  Jeder qualifizierte Play speichert den beim Wiedergabestart eingefrorenen
+  Titel-, Album-, Interpret-, Genre-, Dauer-, Pfad- und MBID-Snapshot.
+  Entfernen, Auto-clean oder Trash eines aktuellen Library-Eintrags löscht
+  diese Ereignisse nicht; My Stats bleibt dadurch zeitlich stabil. Ein
+  späterer Tag-Edit ändert alte Ereignisse nicht, während Track-Ranglisten
+  bei mehreren Snapshots desselben Track-IDs die jüngsten Metadaten zeigen.
+  Dialoge unterscheiden explizit Katalogfolgen von erhaltenem Hörverlauf.
+
+- **BROWSE-7** [aktiv] [core] — **Entfernen, Trash und Listenaktionen sind
+  verschiedene Befehle.** „Remove from library" lässt Dateien unberührt,
+  entfernt aktuelle Katalog-, Rating-, Playlist- und Geräte-Sync-Daten und
+  legt atomar eine persistente Scan-Ausnahme für die Dateidentität an; ein
+  Rename derselben Datei hebt sie nicht auf. Preferences > Library zeigt die
+  Anzahl und „Restore All" löscht die Ausnahmen und startet einen Rescan.
+  „Move to Trash" verschiebt ausschließlich erfolgreich bestätigte Dateien,
+  entfernt nur deren aktuelle Katalogdaten und erzeugt keine Ausnahme — eine
+  später restaurierte Datei darf wiederkehren. „Remove from playlist/queue"
+  ändert ausschließlich diese Liste. Der langlebige Hörverlauf folgt immer
+  BROWSE-6.
+
+- **BROWSE-8** [aktiv] [gtk] — **Katalog-Löschung unterbricht den geladenen
+  Track nicht.** Wird der aktuell geladene Track entfernt, getrasht oder durch
+  Wartung hart gelöscht, laufen sein Player-eigener Metadaten-Snapshot und die
+  bereits geöffnete Audiodatei bis zum natürlichen oder expliziten
+  Transportwechsel weiter. Alle zukünftigen Vorkommen gelöschter IDs
+  verschwinden sofort aus Queue und Up Next; Repeat One kann einen gelöschten
+  Track nicht erneut starten. Nach dem Wechsel wird auch der geladene
+  Queue-Tombstone entfernt. Ein Track-Link auf eine nicht mehr vorhandene ID
+  bleibt am Ausgangsort und erklärt dies per Toast; Album- und Interpret-Links
+  öffnen weiterhin den Snapshot-Scope, jedoch ohne Phantom-Anker. Nach einer
+  Löschserie bleiben überlebende ausgewählte Zeilen fokussiert; andernfalls
+  fällt Auswahl und Fokus auf die nächste, am Listenende auf die vorherige
+  Zeile und bei leerer Liste auf den stabilen Content-Container.
 
 ---
 

@@ -24,8 +24,10 @@ use super::stats_customize::StatsCustomize;
 use super::stats_genre_bar::StatsGenreBar;
 use super::stats_hero::StatsHero;
 use super::stats_highlights::{StatsHighlights, TopGenre};
+use super::stats_metadata_links::{self, MetadataCallback, StatsMetadataTarget};
 use super::stats_ribbon::StatsRibbon;
 use super::stats_spotlight::StatsSpotlight;
+use super::stats_view_widgets::{card, clear, label, section};
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::strings;
 
@@ -57,7 +59,6 @@ type StringCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
 type PairCallback = Rc<RefCell<Option<Rc<dyn Fn(String, String)>>>>;
 type GenreCallback = Rc<RefCell<Option<Rc<dyn Fn(TopGenre)>>>>;
 type IdsCallback = Rc<RefCell<Option<Rc<dyn Fn(Vec<i64>)>>>>;
-
 #[derive(Clone)]
 pub(in crate::ui) struct StatsView {
     root: gtk4::ScrolledWindow,
@@ -83,6 +84,7 @@ pub(in crate::ui) struct StatsView {
     on_go_to_artist: StringCallback,
     on_create_smart_mix: GenreCallback,
     on_unify_spellings: IdsCallback,
+    on_metadata_activate: MetadataCallback,
 }
 
 impl StatsView {
@@ -128,12 +130,14 @@ impl StatsView {
         let current_snapshot = Rc::new(RefCell::new(None::<StatsSnapshot>));
         let sort_by = Rc::new(Cell::new(SortBy::Plays));
         let top_track_generation = Rc::new(Cell::new(0_u64));
+        let on_metadata_activate: MetadataCallback = Rc::new(RefCell::new(None));
         let sort_controls = build_sort_controls(
             &top_tracks_box,
             &current_snapshot,
             &sort_by,
             &cover_loader,
             &top_track_generation,
+            &on_metadata_activate,
         );
         let top_tracks_content = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
         top_tracks_content.append(&sort_controls);
@@ -261,6 +265,7 @@ impl StatsView {
             sort_by: sort_by.clone(),
             cover_loader,
             top_track_generation: top_track_generation.clone(),
+            on_metadata_activate: on_metadata_activate.clone(),
             customize: customize.clone(),
             clock_section: clock_section.clone(),
             genres_section: genres_section.clone(),
@@ -287,6 +292,7 @@ impl StatsView {
             on_go_to_artist,
             on_create_smart_mix,
             on_unify_spellings,
+            on_metadata_activate,
         }
     }
 
@@ -377,6 +383,13 @@ impl StatsView {
         *self.on_unify_spellings.borrow_mut() = Some(Rc::new(callback));
     }
 
+    pub(in crate::ui) fn set_on_metadata_activate(
+        &self,
+        callback: impl Fn(StatsMetadataTarget) + 'static,
+    ) {
+        *self.on_metadata_activate.borrow_mut() = Some(Rc::new(callback));
+    }
+
     pub(in crate::ui) fn set_on_audio_character_mix(
         &self,
         callback: impl Fn(reprise_core::mix_planner::ProfileTarget) + 'static,
@@ -443,6 +456,7 @@ struct RenderParts {
     sort_by: Rc<Cell<SortBy>>,
     cover_loader: Rc<CoverLoader>,
     top_track_generation: Rc<Cell<u64>>,
+    on_metadata_activate: MetadataCallback,
     customize: StatsCustomize,
     clock_section: gtk4::Box,
     genres_section: gtk4::Box,
@@ -526,6 +540,7 @@ fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot) {
         render.sort_by.get(),
         &render.cover_loader,
         &render.top_track_generation,
+        &render.on_metadata_activate,
     );
 }
 
@@ -564,6 +579,7 @@ fn build_sort_controls(
     sort_by: &Rc<Cell<SortBy>>,
     cover_loader: &Rc<CoverLoader>,
     generation: &Rc<Cell<u64>>,
+    on_metadata_activate: &MetadataCallback,
 ) -> gtk4::Box {
     let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
     row.set_halign(gtk4::Align::End);
@@ -578,6 +594,7 @@ fn build_sort_controls(
             let sort_by = sort_by.clone();
             let cover_loader = cover_loader.clone();
             let generation = generation.clone();
+            let on_metadata_activate = on_metadata_activate.clone();
             move |button| {
                 if !button.is_active() {
                     return;
@@ -585,7 +602,14 @@ fn build_sort_controls(
                 sort_by.set(value);
                 let snapshot = snapshot.borrow().clone();
                 if let Some(snapshot) = snapshot {
-                    render_tracks(&tracks_box, &snapshot, value, &cover_loader, &generation);
+                    render_tracks(
+                        &tracks_box,
+                        &snapshot,
+                        value,
+                        &cover_loader,
+                        &generation,
+                        &on_metadata_activate,
+                    );
                 }
             }
         });
@@ -601,6 +625,7 @@ fn render_tracks(
     sort_by: SortBy,
     cover_loader: &Rc<CoverLoader>,
     generation: &Rc<Cell<u64>>,
+    on_metadata_activate: &MetadataCallback,
 ) {
     clear(container);
     let token = generation.get().wrapping_add(1);
@@ -627,8 +652,31 @@ fn render_tracks(
         row.append(&cover);
         let text = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
         text.set_hexpand(true);
-        text.append(&label(&track.title, "stats-item-title"));
-        text.append(&label(&track.artist, "stats-item-subtitle"));
+        text.append(&stats_metadata_links::button(
+            &track.title,
+            "stats-item-title",
+            StatsMetadataTarget::Track(track.track_id),
+            on_metadata_activate,
+        ));
+        text.append(&stats_metadata_links::button(
+            &track.artist,
+            "stats-item-subtitle",
+            StatsMetadataTarget::Artist {
+                track_id: track.track_id,
+                artist: track.effective_artist.clone(),
+            },
+            on_metadata_activate,
+        ));
+        text.append(&stats_metadata_links::button(
+            &track.album,
+            "stats-item-subtitle",
+            StatsMetadataTarget::Album {
+                track_id: track.track_id,
+                album: track.album.clone(),
+                album_artist: track.effective_artist.clone(),
+            },
+            on_metadata_activate,
+        ));
         row.append(&text);
         let bar = gtk4::LevelBar::new();
         bar.set_min_value(0.0);
@@ -715,34 +763,6 @@ fn metric(track: &TopTrack, sort_by: SortBy) -> i64 {
     match sort_by {
         SortBy::Plays => track.play_count,
         SortBy::Time => track.total_ms,
-    }
-}
-
-fn section(title: &str, content: &impl IsA<gtk4::Widget>) -> gtk4::Box {
-    let root = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
-    root.append(&label(title, "stats-section-title"));
-    root.append(content);
-    root
-}
-
-fn card(content: &impl IsA<gtk4::Widget>) -> gtk4::Box {
-    let card = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    card.add_css_class("stats-card");
-    card.append(content);
-    card
-}
-
-fn label(text: &str, class: &str) -> gtk4::Label {
-    let label = gtk4::Label::new(Some(text));
-    label.add_css_class(class);
-    label.set_xalign(0.0);
-    label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-    label
-}
-
-fn clear(container: &gtk4::Box) {
-    while let Some(child) = container.first_child() {
-        container.remove(&child);
     }
 }
 

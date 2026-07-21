@@ -21,7 +21,11 @@ pub(in crate::ui) fn route_key(
     }
 }
 
-pub(in crate::ui) fn arm(widget: &impl IsA<gtk4::Widget>, activate: Rc<dyn Fn()>) {
+pub(in crate::ui) fn arm(
+    widget: &impl IsA<gtk4::Widget>,
+    accessible_label: &str,
+    activate: Rc<dyn Fn()>,
+) {
     let widget = widget.upcast_ref::<gtk4::Widget>();
     // a11y-semantics: role=link name=reveal-playing-album state=enabled action=activate
     widget.set_focusable(true);
@@ -29,8 +33,7 @@ pub(in crate::ui) fn arm(widget: &impl IsA<gtk4::Widget>, activate: Rc<dyn Fn()>
     widget.set_cursor_from_name(Some("pointer"));
     widget.set_accessible_role(gtk4::AccessibleRole::Link);
     widget.add_css_class(LINK_CLASS);
-    let label = crate::ui::strings::text(crate::ui::strings::REVEAL_PLAYING_ALBUM);
-    widget.update_property(&[gtk4::accessible::Property::Label(&label)]);
+    widget.update_property(&[gtk4::accessible::Property::Label(accessible_label)]);
 
     // input-parity: ACC-8 keyboard=link-enter-controller
     let click = gtk4::GestureClick::new();
@@ -43,10 +46,15 @@ pub(in crate::ui) fn arm(widget: &impl IsA<gtk4::Widget>, activate: Rc<dyn Fn()>
     widget.add_controller(keys);
 }
 
-pub(in crate::ui) fn arm_slot(widget: &impl IsA<gtk4::Widget>, slot: &ActivationSlot) {
+pub(in crate::ui) fn arm_slot(
+    widget: &impl IsA<gtk4::Widget>,
+    accessible_label: &str,
+    slot: &ActivationSlot,
+) {
     let slot = slot.clone();
     arm(
         widget,
+        accessible_label,
         Rc::new(move || {
             let callback = slot.borrow().clone();
             if let Some(callback) = callback {

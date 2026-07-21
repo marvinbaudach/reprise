@@ -154,6 +154,19 @@ pub use scrobbling::*;
 pub const LIBRARY_FOLDER: &str = N_!("Library Folder");
 pub const NO_LIBRARY_FOLDER: &str = N_!("No folder selected");
 pub const CHOOSE_FOLDER: &str = N_!("Choose Folder…");
+pub const EXCLUDED_FILES: &str = N_!("Excluded Files");
+pub const RESTORE_EXCLUDED_FILES: &str = N_!("Restore All");
+pub const RESTORE_EXCLUDED_FILES_FAILED: &str = N_!("Could not restore excluded files");
+
+pub fn excluded_files_subtitle(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} file ignored during library scans",
+        "{count} files ignored during library scans",
+        count,
+        &[("count", &count_text)],
+    )
+}
 pub const RESTART_REQUIRED: &str = N_!("Restart required");
 pub const EDIT_COLUMN_LAYOUT: &str = N_!("Edit column layout…");
 pub const RESET_TO_DEFAULT: &str = N_!("Reset to Default");
@@ -182,12 +195,13 @@ pub const DELETE_TRACKS_TRASH: &str = N_!("Move to Trash");
 pub const DELETE_DATABASE_UNAVAILABLE: &str =
     N_!("Could not open the library database for removal");
 pub const DELETE_WORKER_FAILED: &str = N_!("Could not start the removal worker");
+pub const TRACK_NOT_IN_LIBRARY: &str = N_!("Track is no longer in the library");
 
 pub fn remove_confirmation_body(count: usize) -> String {
     let count_text = count.to_string();
     plural(
-        "Remove {count} track from the library? The music file will remain on disk.",
-        "Remove {count} tracks from the library? The music files will remain on disk.",
+        "Remove {count} track from the library? Its rating, playlist entries, and device sync state are removed. The music file stays on disk and will be ignored during future scans. Listening history stays in My Stats.",
+        "Remove {count} tracks from the library? Their ratings, playlist entries, and device sync state are removed. The music files stay on disk and will be ignored during future scans. Listening history stays in My Stats.",
         count,
         &[("count", &count_text)],
     )
@@ -421,6 +435,10 @@ pub const SIDEBAR_MUSIC: &str = N_!("Music");
 pub const SIDEBAR_QUEUE: &str = N_!("Queue");
 pub const QUEUE_SECTION_NOW_PLAYING: &str = N_!("Now Playing");
 pub const JUMP_TO_NOW_PLAYING: &str = N_!("Jump to now playing");
+pub const GO_TO_PLAYING_ARTIST: &str = N_!("Go to playing artist");
+pub const GO_TO_PLAYING_ALBUM: &str = N_!("Go to playing album");
+pub const REVEAL_PLAYING_TRACK: &str = N_!("Reveal playing track");
+pub const GO_TO_ALBUM_NAMED: &str = N_!("Go to album {album}");
 pub const NAVIGATE_BACK: &str = N_!("Back to previous view");
 pub const NAVIGATE_FORWARD: &str = N_!("Forward to next view");
 pub const CONTEXT_MENU_PLAY_NEXT: &str = N_!("Play next");
@@ -722,5 +740,21 @@ mod tests {
     #[test]
     fn que_4_footer_uses_the_shared_thousands_format() {
         assert_eq!(up_next_footer(1_652, "4 days"), "1,652 tracks · 4 days");
+    }
+
+    #[test]
+    fn browse_7_remove_copy_explains_scan_exclusion_and_history() {
+        let body = remove_confirmation_body(2);
+        assert!(body.contains("ratings, playlist entries, and device sync state are removed"));
+        assert!(body.contains("ignored during future scans"));
+        assert!(body.contains("Listening history stays in My Stats"));
+        assert_eq!(
+            excluded_files_subtitle(0),
+            "0 files ignored during library scans"
+        );
+        assert_eq!(
+            excluded_files_subtitle(1),
+            "1 file ignored during library scans"
+        );
     }
 }

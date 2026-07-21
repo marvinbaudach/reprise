@@ -257,6 +257,9 @@ pub struct PlayerController {
     pub(in crate::ui) queue: RefCell<Queue>,
     pub(in crate::ui) up_next: RefCell<UpNextQueue>,
     pub(in crate::ui) current_up_next: Cell<Option<i64>>,
+    /// Catalog id removed while its player-owned snapshot remains loaded.
+    /// The exact current queue slot survives until `present_track` hands off.
+    pub(in crate::ui) deferred_queue_purge_id: Cell<Option<i64>>,
     /// Where the `queue` snapshot was seeded from (`play_from_view`) — the
     /// Queue view's named virtual context tail and NAV-9b's jump target.
     /// `None` before the first play and after a stop cleared the context.
@@ -281,17 +284,6 @@ pub struct PlayerController {
     /// track_selection.rs`. Same callback seam as `current_track_changed`,
     /// invoked from `now_playing_wiring.rs`'s `sync_state`.
     pub(in crate::ui) playback_state_changed:
-        RefCell<Option<super::current_track_selection::OnPlaybackStateChanged>>,
-    /// Fans now-playing album identity changes to the album grid's EQ markers.
-    /// Fired with a `NowPlayingAlbum` when a new track starts and `None` when
-    /// playback stops. `pub(in crate::ui)` field so sibling modules can fire
-    /// it; public setter so `window.rs` can register the album-view callback.
-    pub(in crate::ui) now_playing_album_changed:
-        RefCell<Option<super::current_track_selection::OnNowPlayingAlbumChanged>>,
-    /// Same seam as `playback_state_changed`, but for the album grid's
-    /// now-playing equaliser (freeze on pause). Kept as a separate named slot
-    /// so the track-list and album-view consumers stay independent.
-    pub(in crate::ui) playback_state_changed_album:
         RefCell<Option<super::current_track_selection::OnPlaybackStateChanged>>,
     /// Independent loaded-track feed for the right Now Playing panel. This
     /// follows the player's cache, never the library selection.
@@ -388,6 +380,9 @@ pub(in crate::ui) struct NowPlaying {
     pub(in crate::ui) title: String,
     pub(in crate::ui) artist: String,
     pub(in crate::ui) album: String,
+    pub(in crate::ui) album_artist: String,
+    pub(in crate::ui) genre: String,
+    pub(in crate::ui) artist_mbid: Option<String>,
     /// File URI for the resolved cached cover. It starts empty while the
     /// off-thread cover pipeline runs and is retained here so later status
     /// changes keep MPRIS metadata complete.
@@ -455,6 +450,7 @@ impl PlayerController {
             queue: RefCell::new(Queue::new()),
             up_next: RefCell::new(UpNextQueue::default()),
             current_up_next: Cell::new(None),
+            deferred_queue_purge_id: Cell::new(None),
             play_origin: RefCell::new(None),
             toast_overlay: glib::WeakRef::new(),
             reload_track_list: RefCell::new(None),
@@ -462,8 +458,6 @@ impl PlayerController {
             queue_changed: RefCell::new(Vec::new()),
             current_track_changed: RefCell::new(None),
             playback_state_changed: RefCell::new(None),
-            now_playing_album_changed: RefCell::new(None),
-            playback_state_changed_album: RefCell::new(None),
             now_playing_panel_track_changed: RefCell::new(None),
             now_playing_panel_state_changed: RefCell::new(None),
             song_visual_spectrum_changed: RefCell::new(None),
@@ -547,15 +541,6 @@ impl PlayerController {
         *self.view_refill_ids.borrow_mut() = Some(Rc::new(provider));
     }
 
-    /// Current coarse playback state without exposing controller internals.
-    pub fn playback_state(&self) -> PlaybackState {
-        match self.session_playback_status() {
-            MprisPlaybackStatus::Playing => PlaybackState::Playing,
-            MprisPlaybackStatus::Paused => PlaybackState::Paused,
-            MprisPlaybackStatus::Stopped => PlaybackState::Stopped,
-        }
-    }
-
     /// Wires the cover-image click gesture — see `PlayerBar::connect_cover_clicked`.
     pub fn connect_cover_clicked(&self, f: impl Fn() + 'static) {
         self.bar.connect_cover_clicked(f);
@@ -566,34 +551,18 @@ impl PlayerController {
         self.bar.connect_artist_clicked(f);
     }
 
+    /// Wires the persistent player-bar info button to the current track's
+    /// local Audio Character presentation.
+    pub fn connect_analysis_clicked(&self, f: impl Fn() + 'static) {
+        self.bar.connect_analysis_clicked(f);
+    }
+
     pub fn set_track_list_reload(&self, reload: impl Fn() + 'static) {
         *self.reload_track_list.borrow_mut() = Some(Rc::new(reload));
     }
 
     pub(in crate::ui) fn set_on_listen_event_recorded(&self, callback: impl Fn() + 'static) {
         *self.listen_event_recorded.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    /// Registers a callback that receives the now-playing album identity and
-    /// source track path whenever it changes. Called with `Some` when a new
-    /// track starts and `None` when playback stops. Used by `window.rs` to
-    /// forward now-playing state to the album-grid EQ marker and static glow.
-    pub(in crate::ui) fn set_on_now_playing_album_changed(
-        &self,
-        callback: impl Fn(Option<super::current_track_selection::NowPlayingAlbum>) + 'static,
-    ) {
-        *self.now_playing_album_changed.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    /// Fires the now-playing-album-changed callback.
-    pub(in crate::ui) fn notify_now_playing_album_changed(
-        &self,
-        album: Option<super::current_track_selection::NowPlayingAlbum>,
-    ) {
-        let callback = self.now_playing_album_changed.borrow().clone();
-        if let Some(callback) = callback {
-            callback(album);
-        }
     }
 
     /// Resolves `id` via `queries::query_track_summary` and starts its
@@ -611,7 +580,18 @@ impl PlayerController {
     /// straight to `skip_after_failure`. `pub(in crate::ui)` so `mpris_mirror.rs`
     /// and `playback_faults.rs` can call it too.
     pub(in crate::ui) fn play_track_id(&self, id: i64) {
-        self.present_track(id, StartPlayback::Yes);
+        self.play_track_id_with_change(
+            id,
+            super::current_track_selection::CurrentTrackChange::PlaybackStarted,
+        );
+    }
+
+    pub(in crate::ui) fn play_track_id_with_change(
+        &self,
+        id: i64,
+        change: super::current_track_selection::CurrentTrackChange,
+    ) {
+        self.present_track(id, StartPlayback::Yes, change);
     }
 
     /// Loads `id` as the now-playing track and reflects it across every
@@ -621,7 +601,12 @@ impl PlayerController {
     /// advance); `No` means the audio is *already* rolling because `playbin3`
     /// handed off gaplessly to this track's pre-fed URI (see `advance_
     /// gaplessly`), so only the metadata/UI catch up — no `play()`, no gap.
-    pub(in crate::ui) fn present_track(&self, id: i64, start: StartPlayback) {
+    pub(in crate::ui) fn present_track(
+        &self,
+        id: i64,
+        start: StartPlayback,
+        change: super::current_track_selection::CurrentTrackChange,
+    ) {
         self.evaluate_play_tracking();
         self.sync_lyrics_track(None);
 
@@ -639,6 +624,21 @@ impl PlayerController {
                 // doc section).
                 let previous_id = self.now_playing.borrow().as_ref().map(|np| np.id);
 
+                if let Some(deleted) = self
+                    .deferred_queue_purge_id
+                    .get()
+                    .filter(|deleted| *deleted != id)
+                {
+                    self.deferred_queue_purge_id.set(None);
+                    let context_changed = self.queue.borrow_mut().remove_ids(&[deleted]);
+                    if self.current_up_next.get() == Some(deleted) {
+                        self.current_up_next.set(None);
+                    }
+                    if context_changed {
+                        self.notify_queue_changed();
+                    }
+                }
+
                 self.current_track.set(Some((id, summary.duration_ms)));
                 self.max_position_ms.set(0);
                 *self.now_playing.borrow_mut() = Some(NowPlaying {
@@ -646,23 +646,13 @@ impl PlayerController {
                     title: summary.title.clone(),
                     artist: summary.artist.clone(),
                     album: summary.album.clone(),
+                    album_artist: summary.album_artist.clone(),
+                    genre: summary.genre.clone(),
+                    artist_mbid: summary.artist_mbid.clone(),
                     art_url: None,
                     duration_ms: summary.duration_ms,
                     path: summary.path.clone(),
                 });
-
-                // Notify the album grid so it can display the EQ marker on
-                // the now-playing album card. Use the effective album artist
-                // (album_artist when non-empty, artist otherwise) to match the
-                // key `AlbumSummary::album_artist` uses — they must agree so
-                // `rebind_in_store`'s `eq_ignore_ascii_case` comparison hits.
-                self.notify_now_playing_album_changed(Some(
-                    super::current_track_selection::NowPlayingAlbum {
-                        album: summary.album.clone(),
-                        artist: summary.effective_album_artist().to_owned(),
-                        track_path: summary.path.clone(),
-                    },
-                ));
 
                 // Feeds the bar AND the Now-Playing page from this one call
                 // — see `now_playing_wiring.rs`'s `sync_track`/`sync_cover`
@@ -705,11 +695,7 @@ impl PlayerController {
                                 .then(|| summary.album.clone()),
                             duration_ms: summary.duration_ms,
                         });
-                        self.notify_current_track_changed(
-                            id,
-                            None,
-                            super::current_track_selection::CurrentTrackChange::PlaybackStarted,
-                        );
+                        self.notify_current_track_changed(id, None, change);
                         // The composite Queue view keys its Now Playing row
                         // and Up Next tail off the playhead — every track
                         // change re-partitions it (QUE-1) and shrinks the

@@ -163,13 +163,13 @@ mod tests {
     }
 
     #[test]
-    fn marker_1_single_implementation_serves_grid_and_bar() {
-        let album_card = include_str!("library_views/album_card.rs");
+    fn marker_1_single_implementation_serves_track_list_and_bar() {
+        let track_list = include_str!("track_list/track_list_columns.rs");
         let player_bar = include_str!("player_bar/player_bar_layout.rs");
 
-        assert!(album_card.contains("playing_marker::build"));
+        assert!(track_list.contains("playing_marker::build"));
         assert!(player_bar.contains("playing_marker::build"));
-        assert!(!album_card.contains("eq_bars::build"));
+        assert!(!track_list.contains("eq_bars::build"));
         assert!(!player_bar.contains("mini_eq.append(&bar)"));
     }
 }

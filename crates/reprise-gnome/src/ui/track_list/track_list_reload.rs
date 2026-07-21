@@ -27,20 +27,9 @@
 //! this; deleted/removed ids already fall out of the selection silently,
 //! which is the correct behavior, not a reset).
 //!
-//! `set_source_and_reload` is a special case: it already owns cross-source
-//! selection/scroll memory via `view_state_memory` (NAV-5). Running TAG-1's
-//! generic id-based restore on TOP of a genuine source switch would use a
-//! stale anchor from the *old* source's id space against the *new* source's
-//! ids — usually a harmless no-op (the old anchor id won't exist in an
-//! unrelated source), but not always: if the same track id happens to exist
-//! in both sources, TAG-1's restore could act on a coincidence, then race
-//! NAV-5's own (correct) idle-scheduled scroll restore. So a genuine source
-//! change (`old_source != source`) skips TAG-1's wrapper entirely and calls
-//! the bare query (`run_query`) directly — `view_state_memory` wins on a
-//! location change, exactly as for any other NAV-5-governed transition. A
-//! same-source call (e.g. a redundant `set_source` to the already-active
-//! source) has nothing for NAV-5 to do and gets TAG-1's restore like any
-//! other `reload()` caller.
+//! `set_source_and_reload` is retained for smoke hooks. Live navigation goes
+//! through `TrackList::restore_browser_place`: fresh destinations receive a
+//! fresh state, while Back/Forward restore the complete router-owned place.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -60,7 +49,7 @@ use reprise_core::view_source::ViewSource;
 
 /// How many idle-callback rounds the scroll restore waits for the rebuilt
 /// list to gain usable geometry before giving up — mirrors `view_state_
-/// memory`'s identical constant (NAV-5), which faces the same "freshly
+/// memory`'s identical constant (BROWSE-2), which faces the same "freshly
 /// repopulated `ColumnView` doesn't have adjustment geometry until the next
 /// allocation pass" issue.
 const SCROLL_RESTORE_MAX_ATTEMPTS: u8 = 8;
@@ -198,35 +187,27 @@ pub(in crate::ui) fn set_filter_and_reload(shared: &Rc<Shared>, text: &str) {
 /// exercised by that module's own unit tests, never by the live UI path.
 /// A column-header click (`on_sorter_changed`) still overrides this
 /// temporarily, exactly as before.
-pub(in crate::ui) fn set_source_and_reload(shared: &Rc<Shared>, source: ViewSource) {
-    // NAV-5: capture the leaving source's scroll/selection BEFORE the model
-    // is replaced below; restore the entering source's remembered state
-    // after the query rebuilt it. Same-source calls are plain reloads and
-    // deliberately skip both halves.
+pub(in crate::ui) fn set_source_and_reload(shared: &Rc<Shared>, source: &ViewSource) {
     let old_source = source_snapshot(&shared.source);
-    super::view_state_memory::remember_on_leave(shared, &old_source, &source);
-    // Hoisted so the `sort` borrow ends before the `borrow_mut` below.
-    let new_sort = resolve_sort_on_switch(&shared.sort.borrow(), &source);
-    *shared.sort.borrow_mut() = new_sort;
-    *shared.source.borrow_mut() = source;
-    let source = source_snapshot(&shared.source);
-    // TAG-1 vs NAV-5: a genuine source switch hands selection/scroll
-    // restoration entirely to `view_state_memory` below, so it calls the
-    // bare `run_query` and skips TAG-1's generic id/anchor restore — running
-    // both would let a stale anchor from the *old* source's id space act on
-    // the *new* source (see this module's doc comment). A same-source call
-    // has nothing for NAV-5 to do, so it goes through `reload` and gets
-    // TAG-1's restore like any other caller.
-    //
-    // The browse bar's visibility used to be toggled here; FIL made the
-    // filter row a permanent header, so that call is intentionally gone.
-    if old_source == source {
+    if old_source == *source {
         reload(shared);
-    } else {
-        run_query(shared);
-        let current_ids = shared.current_view_ids();
-        super::view_state_memory::restore_on_attach(shared, &source, &current_ids);
+        return;
     }
+    *shared.filter.borrow_mut() = String::new();
+    *shared.browse_filter.borrow_mut() = BrowseFilter::default();
+    shared.browse_bar.restore_filter(&BrowseFilter::default());
+    let new_sort = resolve_sort_on_switch(&Default::default(), source);
+    *shared.sort.borrow_mut() = new_sort;
+    *shared.source.borrow_mut() = source.clone();
+    shared.browse_bar.set_source_context(source);
+    shared.selection.unselect_all();
+    if let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view) {
+        adjustment.set_value(0.0);
+    }
+    if let Some(callback) = shared.on_search_restored.borrow().as_ref() {
+        callback("");
+    }
+    run_query(shared);
 }
 
 /// Re-runs the query against the current source/sort/filter state via
@@ -246,7 +227,10 @@ fn run_query(shared: &Rc<Shared>) {
     let sort = shared.sort.borrow().clone();
     let filter = shared.filter.borrow().clone();
     let source = shared.source.borrow().clone();
-    let browse = if matches!(source, ViewSource::Library) {
+    let browse = if matches!(
+        source,
+        ViewSource::Library | ViewSource::Album { .. } | ViewSource::Artist(_)
+    ) {
         shared.browse_filter.borrow().clone()
     } else {
         BrowseFilter::default()

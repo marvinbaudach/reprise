@@ -214,7 +214,7 @@ pub(in crate::ui) fn arm_smoke_source(shared: &Rc<Shared>) {
             return;
         }
         tracing::info!(value = %text, "{SMOKE_SOURCE_ENV_VAR} set: applying programmatic view-source switch");
-        set_source_and_reload(&shared, source);
+        set_source_and_reload(&shared, &source);
         let label = shared.source.borrow().label();
         // Stage 3 Task 8: the ImportErrors source's rows live in `import_
         // errors_view`, not `shared.model` (which is always empty for this

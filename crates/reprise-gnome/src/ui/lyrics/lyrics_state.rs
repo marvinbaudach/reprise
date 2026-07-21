@@ -90,6 +90,16 @@ impl LyricsState {
             .and_then(|index| lines.get(index))
             .map(|line| line.start_ms)
     }
+
+    pub(in crate::ui) fn next_line_timestamp_ms(&self, position_ms: i64) -> Option<i64> {
+        let LyricsBody::Synced(lines) = self.body.as_ref()? else {
+            return None;
+        };
+        lines
+            .iter()
+            .find(|line| line.start_ms > position_ms)
+            .map(|line| line.start_ms)
+    }
 }
 
 #[cfg(test)]
@@ -161,6 +171,19 @@ mod tests {
         assert_eq!(state.update_position(2_000), Some(Some(1)));
         assert_eq!(state.update_position(500), Some(None));
         assert_eq!(state.update_position(500), None);
+    }
+
+    #[test]
+    fn synchronized_body_reports_the_next_future_line_boundary() {
+        let mut state = LyricsState::default();
+        state.set_track(Some(query("One")));
+        state.set_body(synced());
+
+        assert_eq!(state.next_line_timestamp_ms(0), Some(1_000));
+        assert_eq!(state.next_line_timestamp_ms(1_000), Some(2_000));
+        assert_eq!(state.next_line_timestamp_ms(1_999), Some(2_000));
+        assert_eq!(state.next_line_timestamp_ms(2_000), None);
+        assert_eq!(state.next_line_timestamp_ms(20_000), None);
     }
 
     #[test]
