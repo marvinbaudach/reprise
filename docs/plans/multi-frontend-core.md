@@ -513,8 +513,8 @@ Settings-Keys; eine eigene Preferences-Unterseite „Agent Access“ ist ein
 CLI-Festlegungen (Beschlüsse 3, 4): Name `reprise-cli`; `clap` v4 derive;
 alles zusätzlich als `--json` (stabile Shapes); typisierte Exit-Codes;
 `--db <path>` für Tests; destruktive Kommandos verlangen `--yes`
-(`playlist delete`); `SchemaTooNew` ⇒ „Datenbank ist neuer als dieses
-CLI — bitte aktualisieren.“
+(`playlist delete`); `SchemaTooNew` ⇒ „Database schema is newer than this
+reprise-cli — please update.“ (englisch nach AGENTS.md-Regel)
 
 ### 2.6 Portabilitätspfad (KDE/Qt, Windows, Android, iOS) — nur Fundament
 

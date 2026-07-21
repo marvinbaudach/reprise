@@ -8,16 +8,14 @@
 use reprise_core::db::DbError;
 
 /// The exact user-facing message shown when the on-disk schema is newer than
-/// this binary understands. Fixed verbatim by the multi-frontend-core plan
-/// (section 2.5, "CLI-Festlegungen"): a stale binary must tell the user which
-/// direction the drift runs so they update the CLI rather than the database.
+/// this binary understands: a stale binary must tell the user which direction
+/// the drift runs so they update the CLI rather than the database.
 ///
-/// It is German on purpose — the plan pins this precise wording, the same way
-/// the repository already keeps verbatim German rule tokens (`[aktiv]`,
-/// `[geplant]`) inside otherwise-English code. User-facing localization comes
-/// later via gettext.
+/// English per the AGENTS.md rule that all code, log, and UI strings are
+/// English — which overrides the multi-frontend-core plan's German draft of
+/// this wording. User-facing localization comes later via gettext.
 pub const SCHEMA_TOO_NEW_MESSAGE: &str =
-    "Datenbank ist neuer als dieses CLI — bitte aktualisieren.";
+    "Database schema is newer than this reprise-cli — please update.";
 
 /// Process exit codes. `Usage` (2) is emitted by clap itself on argument
 /// errors; the rest are produced by [`CliError::exit_code`]. Values are stable
@@ -42,8 +40,7 @@ impl ExitCode {
 }
 
 /// A command failure, tagged with enough structure to pick an exit code and
-/// render a clear message. Detail strings are pre-formatted English (except
-/// the plan-pinned [`SCHEMA_TOO_NEW_MESSAGE`]).
+/// render a clear message. Detail strings are pre-formatted English.
 #[derive(Debug)]
 pub enum CliError {
     /// A referenced entity (e.g. a playlist id) does not exist.
@@ -149,7 +146,7 @@ mod tests {
     }
 
     #[test]
-    fn schema_too_new_renders_the_plan_pinned_message() {
+    fn schema_too_new_renders_the_expected_message() {
         assert_eq!(CliError::SchemaTooNew.to_string(), SCHEMA_TOO_NEW_MESSAGE);
     }
 
