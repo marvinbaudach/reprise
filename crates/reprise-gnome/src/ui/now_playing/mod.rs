@@ -10,6 +10,7 @@ pub(in crate::ui) mod up_next_panel;
 
 #[allow(unused_imports)]
 use super::*;
+pub(in crate::ui) use song_visualizer::PlayerHooks;
 pub(in crate::ui) use surface::NowPlayingPanel;
 
 pub(in crate::ui) fn css() -> String {

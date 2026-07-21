@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use reprise_core::library::settings::{TrackTransition, CROSSFADE_SECONDS_DEFAULT};
 use reprise_core::playback::{
-    AudioEffects, PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent, SpectrumFrame,
-    SPECTRUM_BAND_COUNT,
+    AudioEffects, PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent, SpectrumAnalyzer,
+    SPECTRUM_ANALYSIS_BAND_COUNT,
 };
 
 use crate::crossfade::{CrossfadeEngine, IncomingSlot, Transition};
@@ -17,21 +17,25 @@ use crate::player_effects::{
     update_existing_audio_filter,
 };
 
-pub(super) fn spectrum_frame_from_structure(
+/// Extracts the raw per-band decibel magnitudes from a GStreamer `spectrum`
+/// element message. The values are handed to a [`SpectrumAnalyzer`] (which owns
+/// the cross-frame state) rather than turned into a frame here, so onset and
+/// dynamics derivation stays in `reprise-core`.
+pub(super) fn spectrum_decibels_from_structure(
     structure: &gst::StructureRef,
-) -> Option<SpectrumFrame> {
+) -> Option<[f32; SPECTRUM_ANALYSIS_BAND_COUNT]> {
     if structure.name() != "spectrum" {
         return None;
     }
     let magnitudes = structure.get::<gst::List>("magnitude").ok()?;
-    if magnitudes.len() != SPECTRUM_BAND_COUNT {
+    if magnitudes.len() != SPECTRUM_ANALYSIS_BAND_COUNT {
         return None;
     }
-    let mut decibels = [0.0_f32; SPECTRUM_BAND_COUNT];
+    let mut decibels = [0.0_f32; SPECTRUM_ANALYSIS_BAND_COUNT];
     for (slot, magnitude) in decibels.iter_mut().zip(magnitudes.iter()) {
         *slot = magnitude.get::<f32>().ok()?;
     }
-    Some(SpectrumFrame::from_decibels(decibels))
+    Some(decibels)
 }
 
 /// Default playback volume before the user ever moves the slider — full scale,
@@ -180,6 +184,10 @@ pub(crate) fn attach_bus_watch(
     let bus = playbin
         .bus()
         .ok_or_else(|| PlaybackError::Backend("GStreamer: no bus".into()))?;
+    // Owns the cross-frame reactivity state for this pipeline's watch. Reset on
+    // each stream start so one track's dynamics baseline never bleeds into the
+    // next.
+    let mut spectrum_analyzer = SpectrumAnalyzer::new();
     bus.add_watch(move |_, msg| {
         use gst::MessageView;
         match msg.view() {
@@ -197,12 +205,13 @@ pub(crate) fn attach_bus_watch(
             MessageView::StreamStart(_) => {
                 // Fires on every stream start; only a gapless handoff (flagged
                 // by the `about-to-finish` handler) turns into `AdvancedToNext`.
+                spectrum_analyzer = SpectrumAnalyzer::new();
                 note_stream_start(&handoff_pending, on_event.as_ref());
             }
             MessageView::Element(element) => {
                 if let Some(structure) = element.structure() {
-                    if let Some(frame) = spectrum_frame_from_structure(structure) {
-                        (*on_event)(PlayerEvent::Spectrum(frame));
+                    if let Some(decibels) = spectrum_decibels_from_structure(structure) {
+                        (*on_event)(PlayerEvent::Spectrum(spectrum_analyzer.ingest(decibels)));
                     }
                 }
             }
