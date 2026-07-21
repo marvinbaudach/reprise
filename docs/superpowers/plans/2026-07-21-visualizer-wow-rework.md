@@ -1336,6 +1336,52 @@ pub(crate) fn scene(ctx: &ModeCtx) -> Vec<Shape> {
 
 ---
 
+### Task 19 (optional, quality upgrade): GPU bloom via GSK
+
+**Runs independently after Task 18.** Goal: replace the fake bloom (wide translucent under-stroke) with real GPU-composited blur, so Neon/Aurora/Tunnel glow like the reference images — without shaders, raw GL, or any change to `reprise-core` or the `Scene` model.
+
+**Why GSK, not GtkGLArea:** GTK4's scene graph (GSK) already composites on the GPU (Vulkan/GL). `gtk4::Snapshot::push_blur(radius)` / `pop()` wraps a subtree in a real Gaussian blur node — that is exactly the bloom we want, GPU-run, with a trivial Cairo fallback. `GtkGLArea` + fragment shaders would give more control but adds GL boilerplate and a hard dependency on a working GL context; not worth it for this.
+
+**Files:**
+- Create: `crates/reprise-gnome/src/ui/now_playing/song_visualizer/glow_area.rs` — a `gtk4::Widget` subclass `GlowArea` that hosts the same `Rc<RefCell<VisualEngine>>` and renders via `snapshot()`.
+- Modify: `song_visualizer/render.rs` — split the Cairo drawing into `draw_crisp(cr, scene)` (all shapes, NO under-stroke bloom pass) and `draw_glow_layer(cr, scene)` (only shapes with `glow > 0`, stroked/filled at their normal geometry, alpha scaled by `glow`). The existing `draw_scene` keeps the fake-bloom pass for the Cairo path.
+- Modify: `song_visualizer.rs` — a `use_gpu: bool` chosen once at construction from `motion::gpu_visuals_enabled()` (new tiny helper reading env `REPRISE_GPU_VISUALS` and/or a settings flag; default on when a GL/Vulkan renderer is available, else Cairo). When `use_gpu`, build a `GlowArea` instead of the `DrawingArea`; both share the same tick loop and `queue_draw`.
+
+**Interfaces:**
+```rust
+// render.rs
+pub(super) fn draw_crisp(cr: &gtk4::cairo::Context, scene: &Scene);
+pub(super) fn draw_glow_layer(cr: &gtk4::cairo::Context, scene: &Scene);   // glow>0 shapes only
+/// Max glow across the scene → blur radius in px (0 → skip the blur push).
+pub(super) fn scene_blur_radius(scene: &Scene) -> f32;                      // e.g. 2.0 + 14.0*max_glow
+
+// glow_area.rs — GObject subclass; the snapshot vfunc does:
+//   let bounds = graphene::Rect::new(0,0,w,h);
+//   let radius = render::scene_blur_radius(&scene);
+//   if radius > 0.5 {
+//       snapshot.push_blur(radius as f64);
+//       let cr = snapshot.append_cairo(&bounds);
+//       render::draw_glow_layer(&cr, &scene);   // blurred bloom layer
+//       snapshot.pop();
+//   }
+//   let cr = snapshot.append_cairo(&bounds);
+//   render::draw_crisp(&cr, &scene);            // crisp shapes on top
+pub(in crate::ui) struct GlowArea(ObjectSubclass<imp::GlowArea>);
+impl GlowArea {
+    pub(in crate::ui) fn new(engine: Rc<RefCell<VisualEngine>>, accent: impl Fn() -> (f32,f32,f32) + 'static) -> Self;
+    pub(in crate::ui) fn widget(&self) -> &gtk4::Widget;
+}
+```
+
+- [ ] **Step 1 (test — pure layer split):** in `render.rs`, `#[cfg(test)]`: build a `Scene` with two shapes (one `glow: 0.0`, one `glow: 0.8`); assert `scene_blur_radius` scales with the max glow (`> 0` here, `0.0` for an all-crisp scene); and that a glow-layer accounting helper (`#[cfg(test)] fn glow_shape_count(scene) -> usize`) counts exactly the `glow > 0` shapes. RED → implement `draw_crisp`/`draw_glow_layer`/`scene_blur_radius` → GREEN. (`draw_*` themselves are exercised by the gallery, not unit-tested.)
+- [ ] **Step 2:** Implement `GlowArea` GObject subclass (`glib::wrapper!` + `ObjectSubclass` + `WidgetImpl::snapshot`) per the pseudocode above. Reduced motion / no-GPU: `snapshot()` still works (blur node degrades to a CPU blur in the software fallback renderer — acceptable), but respect `animations_enabled()` the same way the DrawingArea path does (engine snapped to static, no tick).
+- [ ] **Step 3:** Wire the `use_gpu` switch in `song_visualizer.rs`; both the inline canvas and the fullscreen canvas honor it.
+- [ ] **Step 4:** Gallery: extend the ignored gallery test with a GPU pass IF a headless GL context is available (`GlowArea` snapshot → `gtk4::gdk::Texture` via `WidgetPaintable`/`gtk4::Snapshot::to_paintable`), else skip with a logged note. Eyeball GPU-bloom vs Cairo-fake side by side.
+- [ ] **Step 5:** `cargo fmt` + `clippy --workspace --all-targets` clean; `cargo test -p reprise-gnome render` green; Xvfb live smoke to confirm the widget renders and toggling `REPRISE_GPU_VISUALS` switches paths.
+- [ ] **Step 6:** Commit `feat(visualizer): optional GSK GPU bloom renderer with Cairo fallback`; update spec deviations (GPU path optional, Scene/core unchanged, blur radius from `glow`).
+
+**Portability note:** other frontends get the same lever for free — KDE/Qt via `QGraphicsBlurEffect`/QRhi, Android via `RenderEffect.createBlurEffect`, all reading the same `Shape.glow`. The `Scene` model already carries everything a GPU renderer needs.
+
 ## Self-Review Notes
 
 - Portability: every mode, envelope, pool, palette-extraction and the engine live in `reprise-core` with zero GUI deps; the GTK side is one Cairo mapper + widgets. A KDE/Android frontend implements `draw_scene` + feeds `ingest`/`tick`.
