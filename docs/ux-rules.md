@@ -1839,6 +1839,48 @@ deterministisch und hoch-konfident, nie „ohne Review".
   fällt Auswahl und Fokus auf die nächste, am Listenende auf die vorherige
   Zeile und bei leerer Liste auf den stabilen Content-Container.
 
+## AA. Externe Änderungen (Live-Refresh von CLI/MCP)
+
+<!-- Sektionsbuchstabe: A–Z sind auf main bereits vergeben (T doppelt); die
+     nächste freie Marke jenseits von Z ist AA. Die Buchstabenlage wurde beim
+     Einfügen gegen den main-Stand verifiziert. Diese Sektion verankert
+     Beschluss 6 des multi-frontend-core-Plans (Live-Sichtbarkeit fremd
+     erzeugter Änderungen) und serialisiert vor Paket F, das sie später um die
+     Instrumental-/Filter-Regeln ergänzt (Track 2). -->
+
+Ein zweiter Prozess (CLI, MCP; künftig weitere Oberflächen) schreibt über
+denselben Core-Pfad in dieselbe Datenbank. Die laufende App macht solche
+fremden Änderungen sichtbar — ohne Neustart, als **Hintergrundereignis** und
+damit nach P-1/P-4/MOT-2: leise, ohne Layout-Diebstahl, ohne eigene
+Ankündigung. Die App refresht ihre *eigenen* Schreibaktionen weiterhin selbst
+(Writer-Token-Filter); diese Sektion regelt ausschließlich den Fremd-Write.
+
+- **EXT-1a** [aktiv] [gtk] — Fremd erzeugte Inhalte erscheinen ohne
+  Neustart: eine von einem anderen Prozess über dieselbe Datenbank angelegte
+  Playlist — allgemein jede fremde Änderung an Playlists, Smart-Playlists oder
+  Katalog — wird in der laufenden App sichtbar; die betroffenen Ansichten
+  (Sidebar, aktuelle Track-Liste) aktualisieren sich von selbst. Das
+  Sichtbarkeitsbudget ist großzügig und degradiert bewusst (Notifier-Weckruf,
+  bei nicht armierbarem Datei-Watch Polling); geprüft wird das *Was* (die
+  Playlist erscheint), nicht das *Wie-schnell*.
+- **EXT-1b** [geplant] [manuell] — Der Fremd-Refresh ist still: kein Toast,
+  kein Badge, kein Indikator, keine Fokus-Wanderung als Ankündigung. Ein
+  Hintergrundereignis bedient nie die Ankündigungs-Rolle (P-1); die
+  Aktualisierung geschieht geräuschlos an Ort und Stelle.
+- **EXT-2** [geplant] [gtk] — Selektion und Scrollposition überstehen den
+  Fremd-Refresh: ein extern ausgelöster Reload setzt weder Auswahl noch
+  Scrollposition zurück (navigations-neutraler Reload nach TAG-1). Eine
+  unberührte Liste zahlt nichts — kein Anker, kein Sprung.
+- **EXT-3** [geplant] [gtk] — Kein Fokus-Diebstahl: ein Hintergrund-Refresh
+  entzieht der aktuellen Eingabe nichts, grabt keinen Fokus und zieht keine
+  View in den Vordergrund. Der Nutzer bemerkt die Aktualisierung nur an neuen
+  Inhalten, nie an springendem Fokus (P-3/P-4 in der Live-Refresh-Lesart).
+- **EXT-4** [geplant] [core] — Laufende Wiedergabe und Queue bleiben
+  unberührt: fremde Änderungen aktualisieren ausschließlich Ansichten. Die
+  Wiedergabe-Queue ist ein Snapshot (`queue::snapshot`); ein Fremd-Write an
+  der Bibliothek ändert weder die laufende Wiedergabe noch die Reihenfolge der
+  bereits eingereihten Titel.
+
 ---
 
 Wenn beim Testen ein Fall auftaucht, den keine Regel deckt: Regel ergänzen
