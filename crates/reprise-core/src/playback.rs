@@ -407,7 +407,10 @@ mod spectrum_analyzer_tests {
         let mut analyzer = SpectrumAnalyzer::new();
         let moderate = [-20.0_f32; SPECTRUM_BAND_COUNT]; // normalized 0.75
         let frame = ingest_n(&mut analyzer, moderate, 60);
-        assert!(!frame.beat().fired, "steady tone must not keep firing beats");
+        assert!(
+            !frame.beat().fired,
+            "steady tone must not keep firing beats"
+        );
         assert!(
             (frame.level() - 0.75).abs() < 0.05,
             "level should track the steady input, got {}",
@@ -420,7 +423,10 @@ mod spectrum_analyzer_tests {
         let mut analyzer = SpectrumAnalyzer::new();
         ingest_n(&mut analyzer, SILENCE, 20);
         let hit = analyzer.ingest(FULL);
-        assert!(hit.beat().fired, "a slam after silence must register a beat");
+        assert!(
+            hit.beat().fired,
+            "a slam after silence must register a beat"
+        );
         assert!(hit.beat().strength > 0.0);
         assert!(
             hit.level() > 0.9,
@@ -435,7 +441,10 @@ mod spectrum_analyzer_tests {
         ingest_n(&mut analyzer, SILENCE, 20);
         let hit = analyzer.ingest(FULL);
         let after = analyzer.ingest(SILENCE);
-        assert!(after.level() < hit.level(), "level must decay after the hit");
+        assert!(
+            after.level() < hit.level(),
+            "level must decay after the hit"
+        );
         assert!(
             after.level() > 0.1,
             "release is gradual, not an instant drop to zero, got {}",
@@ -479,7 +488,9 @@ mod spectrum_analyzer_tests {
             let frame = analyzer.ingest(db);
             assert!(frame.level().is_finite() && (0.0..=1.0).contains(&frame.level()));
             assert!(frame.bass().is_finite() && (0.0..=1.0).contains(&frame.bass()));
-            assert!(frame.beat().strength.is_finite() && (0.0..=1.0).contains(&frame.beat().strength));
+            assert!(
+                frame.beat().strength.is_finite() && (0.0..=1.0).contains(&frame.beat().strength)
+            );
             assert!(frame.dynamics().is_finite() && (-1.0..=1.0).contains(&frame.dynamics()));
         }
     }

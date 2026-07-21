@@ -203,10 +203,13 @@ impl ImpactState {
     }
 
     pub(super) fn particles(&self) -> impl Iterator<Item = ParticleDraw> + '_ {
-        self.particles.iter().filter(|p| p.alive()).map(|p| ParticleDraw {
-            angle: p.angle,
-            dist: p.dist,
-            life_frac: (p.life / p.max_life).clamp(0.0, 1.0),
-        })
+        self.particles
+            .iter()
+            .filter(|p| p.alive())
+            .map(|p| ParticleDraw {
+                angle: p.angle,
+                dist: p.dist,
+                life_frac: (p.life / p.max_life).clamp(0.0, 1.0),
+            })
     }
 }
