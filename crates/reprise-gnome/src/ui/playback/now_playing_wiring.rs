@@ -196,6 +196,13 @@ impl PlayerController {
         *self.now_playing_panel_state_changed.borrow_mut() = Some(Rc::new(callback));
     }
 
+    pub(in crate::ui) fn set_on_now_playing_panel_position_changed(
+        &self,
+        callback: impl Fn(i64, i64) + 'static,
+    ) {
+        *self.now_playing_panel_position_changed.borrow_mut() = Some(Rc::new(callback));
+    }
+
     pub(in crate::ui) fn set_on_song_visual_spectrum_changed(
         &self,
         callback: impl Fn(SpectrumFrame) + 'static,

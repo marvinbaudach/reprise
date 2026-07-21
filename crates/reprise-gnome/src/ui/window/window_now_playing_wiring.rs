@@ -35,22 +35,44 @@ pub(in crate::ui) fn install(
         }
     });
 
-    // Fullscreen visualizer transport buttons drive the same player actions as
-    // the player bar.
-    let transport_action = |player: &Rc<PlayerController>, action: fn(&PlayerController)| {
+    // Fullscreen visualizer transport, seek, and volume all drive the same
+    // player actions as the player bar.
+    let hook = |player: &Rc<PlayerController>, action: fn(&PlayerController)| -> Rc<dyn Fn()> {
         let weak = Rc::downgrade(player);
-        move || {
+        Rc::new(move || {
             if let Some(player) = weak.upgrade() {
                 action(&player);
             }
-        }
+        })
     };
-    panel.set_visual_transport(
-        transport_action(player, PlayerController::previous),
-        transport_action(player, PlayerController::toggle_pause),
-        transport_action(player, PlayerController::reset_to_stopped),
-        transport_action(player, PlayerController::next),
-    );
+    let seek_weak = Rc::downgrade(player);
+    let volume_weak = Rc::downgrade(player);
+    panel.set_visual_player_hooks(crate::ui::now_playing::PlayerHooks {
+        previous: hook(player, PlayerController::previous),
+        play_pause: hook(player, PlayerController::toggle_pause),
+        stop: hook(player, PlayerController::reset_to_stopped),
+        next: hook(player, PlayerController::next),
+        seek_to_ms: Rc::new(move |ms| {
+            if let Some(player) = seek_weak.upgrade() {
+                player.seek(ms);
+            }
+        }),
+        set_volume: Rc::new(move |volume| {
+            if let Some(player) = volume_weak.upgrade() {
+                player.player.set_volume(volume);
+                player.sync_volume_indicator(volume);
+                player.volume.set(volume);
+                player.update_mpris_volume(volume);
+            }
+        }),
+        initial_volume: player.volume.get(),
+    });
+    let panel_weak = Rc::downgrade(panel);
+    player.set_on_now_playing_panel_position_changed(move |position_ms, duration_ms| {
+        if let Some(panel) = panel_weak.upgrade() {
+            panel.set_position(position_ms, duration_ms);
+        }
+    });
 
     let panel_weak = Rc::downgrade(panel);
     let window_weak = window.downgrade();
