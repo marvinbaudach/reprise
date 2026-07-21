@@ -170,9 +170,6 @@ pub(in crate::ui) fn append_column(
         if alignment.uses_tabular_figures() {
             label.add_css_class("numeric");
         }
-        if let Some(target) = MetadataCell::from_sort_id(sort_id) {
-            wire_metadata_link(&label, item, &shared, target);
-        }
         track_list_context_menu::wire_context_menu_gesture(
             &label,
             item,
@@ -402,7 +399,6 @@ pub(in crate::ui) fn append_cover_column(
             let cover = TrackCover::new();
             track_list_row_interaction::expand_to_cell(&cover);
             cover.set_placeholder();
-            wire_metadata_link(&cover, item, &shared, MetadataCell::Album);
             track_list_context_menu::wire_context_menu_gesture(&cover, item, &shared, &column_view);
             track_list_dnd::wire_row_dnd(&cover, item, &shared);
             generations
@@ -484,96 +480,6 @@ pub(in crate::ui) fn append_cover_column(
     column
 }
 
-#[derive(Clone, Copy)]
-enum MetadataCell {
-    Album,
-    Artist,
-}
-
-impl MetadataCell {
-    fn from_sort_id(sort_id: &str) -> Option<Self> {
-        match sort_id {
-            "album" => Some(Self::Album),
-            "artist" => Some(Self::Artist),
-            _ => None,
-        }
-    }
-}
-
-fn wire_metadata_link(
-    widget: &impl IsA<gtk4::Widget>,
-    item: &gtk4::ListItem,
-    shared: &Rc<Shared>,
-    target: MetadataCell,
-) {
-    let widget = widget.upcast_ref::<gtk4::Widget>();
-    configure_metadata_link_widget(widget);
-
-    // input-parity: ACC-8 keyboard=track-context-menu-go-to-album-or-artist
-    // ACC-3 makes the complete TrackList one Tab stop. Pointer users can
-    // activate inline metadata directly; keyboard and assistive-technology
-    // users get the same central navigation intents from the selected row's
-    // Shift+F10/Menu context actions instead of three nested stops per row.
-    // a11y-semantics: role=link name=bound-metadata state=enabled action=context-menu-equivalent
-    let activate = {
-        let item = item.clone();
-        let shared = shared.clone();
-        Rc::new(move || activate_metadata_link(&item, &shared, target))
-    };
-    // input-parity: ACC-8 keyboard=track-context-menu
-    let click = gtk4::GestureClick::builder().button(1).build();
-    click.connect_released(move |_, _, _, _| activate());
-    widget.add_controller(click);
-}
-
-fn configure_metadata_link_widget(widget: &impl IsA<gtk4::Widget>) {
-    let widget = widget.upcast_ref::<gtk4::Widget>();
-    widget.set_focusable(false);
-    // input-parity: ACC-8 keyboard=track-context-menu
-    widget.set_cursor_from_name(Some("pointer"));
-    widget.set_accessible_role(gtk4::AccessibleRole::Link);
-    widget.add_css_class(crate::ui::link_activation::LINK_CLASS);
-}
-
-#[cfg(test)]
-mod metadata_link_focus_tests {
-    use super::*;
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn acc_3_metadata_links_keep_the_tracklist_as_one_tab_stop() {
-        gtk4::init().unwrap();
-        let label = gtk4::Label::new(Some("Album"));
-
-        configure_metadata_link_widget(&label);
-
-        assert!(!label.is_focusable());
-        assert_eq!(label.accessible_role(), gtk4::AccessibleRole::Link);
-        assert!(label.has_css_class(crate::ui::link_activation::LINK_CLASS));
-    }
-}
-
-fn activate_metadata_link(item: &gtk4::ListItem, shared: &Rc<Shared>, target: MetadataCell) {
-    let Some(boxed) = item
-        .item()
-        .and_then(|object| object.downcast::<glib::BoxedAnyObject>().ok())
-    else {
-        return;
-    };
-    let track = boxed.borrow::<Track>();
-    match target {
-        MetadataCell::Album => {
-            if let Some(callback) = shared.on_go_to_album.borrow().clone() {
-                callback(track.id, track.album.clone(), track.album_artist.clone());
-            }
-        }
-        MetadataCell::Artist => {
-            if let Some(callback) = shared.on_go_to_artist.borrow().clone() {
-                callback(track.id, track.album_artist.clone());
-            }
-        }
-    }
-}
 
 /// Builds the interactive `Rating` column: each cell is a `RatingWidget`
 /// (`ui::rating`) instead of a `gtk::Label` — the one column whose factory

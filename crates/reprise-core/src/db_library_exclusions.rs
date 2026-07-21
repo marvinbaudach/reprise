@@ -3,7 +3,7 @@
 use rusqlite::Connection;
 
 const SCHEMA_V25: &str = r#"
-CREATE TABLE library_exclusions (
+CREATE TABLE IF NOT EXISTS library_exclusions (
   id          INTEGER PRIMARY KEY,
   path        TEXT NOT NULL,
   device      INTEGER,
@@ -12,10 +12,10 @@ CREATE TABLE library_exclusions (
   file_mtime  INTEGER NOT NULL DEFAULT 0,
   excluded_at INTEGER NOT NULL
 );
-CREATE UNIQUE INDEX idx_library_exclusions_path
+CREATE UNIQUE INDEX IF NOT EXISTS idx_library_exclusions_path
   ON library_exclusions(path)
   WHERE device IS NULL OR inode IS NULL;
-CREATE UNIQUE INDEX idx_library_exclusions_identity
+CREATE UNIQUE INDEX IF NOT EXISTS idx_library_exclusions_identity
   ON library_exclusions(device, inode)
   WHERE device IS NOT NULL AND inode IS NOT NULL;
 "#;
