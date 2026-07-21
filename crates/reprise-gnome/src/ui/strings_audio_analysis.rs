@@ -11,7 +11,15 @@ pub const SONG_VISUALS_PLAY_PAUSE: &str = N_!("Play or pause");
 pub const SONG_VISUALS_STOP: &str = N_!("Stop");
 pub const SONG_VISUALS_NEXT: &str = N_!("Next track");
 pub const SONG_VISUALS_FULLSCREEN_HINT: &str =
-    N_!("F11 Fullscreen · color follows the cover accent");
+    N_!("Space pause · ←/→ seek · 1–8 mode · F fullscreen");
+pub const SONG_VISUALS_STATE_PLAYING: &str = N_!("Playing");
+pub const SONG_VISUALS_STATE_PAUSED: &str = N_!("Paused");
+pub const SONG_VISUALS_STATE_STOPPED: &str = N_!("Stopped");
+pub const SONG_VISUALS_TRACK_POS: &str = N_!("TRACK {index} / {total}");
+pub const SONG_VISUALS_NEXT_UP: &str = N_!("Up next: {title}");
+pub const SONG_VISUALS_MUTE: &str = N_!("Mute");
+pub const SONG_VISUALS_VOLUME: &str = N_!("Volume");
+pub const SONG_VISUALS_SEEK: &str = N_!("Seek");
 pub const SONG_VISUALS_MODE_GRID: &str = N_!("Grid");
 pub const SONG_VISUALS_MODE_BARS: &str = N_!("Bars");
 pub const SONG_VISUALS_MODE_RINGS: &str = N_!("Rings");

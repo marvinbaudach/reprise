@@ -461,9 +461,11 @@ impl NowPlayingPanel {
         let next_up_title = index
             .and_then(|index| model.ids.get(index + 1))
             .and_then(|id| self.track_title(*id));
-        self.widgets
-            .visualizer
-            .set_next_up(next_up_title.map(|title| format!("Up next: {title}")));
+        self.widgets.visualizer.set_next_up(
+            next_up_title.map(|title| {
+                strings::formatted(strings::SONG_VISUALS_NEXT_UP, &[("title", &title)])
+            }),
+        );
     }
 
     /// Best-effort track title lookup for the next-up preview. `None` on any
@@ -716,6 +718,7 @@ impl NowPlayingPanel {
         self.widgets.visualizer.set_cover(None);
         if let Some(track) = track {
             let visualizer = self.widgets.visualizer.clone();
+            let cover_widget = self.widgets.cover.clone();
             self.cover_loader.load_into_with_resolution(
                 &self.widgets.cover,
                 &track.path,
@@ -723,8 +726,19 @@ impl NowPlayingPanel {
                 generation,
                 &self.cover_generation,
                 move |resolved_path| {
-                    let texture =
-                        resolved_path.and_then(|path| gtk4::gdk::Texture::from_filename(path).ok());
+                    // `load_target` already set `cover_widget`'s paintable to
+                    // the decoded texture before invoking this callback (same
+                    // generation), so reuse it instead of decoding the
+                    // full-resolution file a second time. Only fall back to a
+                    // fresh decode if the paintable isn't a texture for some
+                    // reason (e.g. still showing the placeholder icon).
+                    let texture = cover_widget
+                        .paintable()
+                        .and_downcast::<gtk4::gdk::Texture>()
+                        .or_else(|| {
+                            resolved_path
+                                .and_then(|path| gtk4::gdk::Texture::from_filename(path).ok())
+                        });
                     visualizer.set_cover(texture);
                 },
             );
