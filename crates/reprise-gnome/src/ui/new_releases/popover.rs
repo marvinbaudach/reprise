@@ -10,6 +10,7 @@ use libadwaita as adw;
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::{one_shot_task, popover_lifecycle, strings};
 
+use super::badge;
 use super::release_cover::{fallback_accent_for_artist, LazyReleaseCover};
 
 const POPOVER_LIMIT: usize = 5;
@@ -103,7 +104,7 @@ struct NewReleasesPopover {
 
 impl NewReleasesPopover {
     fn new(conn: Rc<RefCell<rusqlite::Connection>>, database_path: PathBuf) -> Rc<Self> {
-        let (button, badge) = build_button();
+        let (button, badge) = badge::build_button();
         let popover = gtk4::Popover::new();
         let rows = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
         let empty = gtk4::Label::new(None);
@@ -247,7 +248,13 @@ impl NewReleasesPopover {
         }
         let unseen = reprise_core::artist_news::unseen_release_count(&self.conn.borrow())
             .unwrap_or_default();
-        self.badge.set_visible(effect.badge_allowed && unseen > 0);
+        match badge::badge_presentation(unseen) {
+            Some(text) if effect.badge_allowed => {
+                self.badge.set_label(&text);
+                self.badge.set_visible(true);
+            }
+            _ => self.badge.set_visible(false),
+        }
         let latest = all_releases.iter().map(|release| release.fetched_at).max();
         let footer = footer_presentation(latest, chrono::Utc::now().timestamp(), failed);
         self.updated.set_label(&footer.updated);
@@ -377,29 +384,6 @@ fn fetch_from_database(
     let scope = reprise_core::artist_news::configured_fetch_scope(&conn, today)
         .map_err(|error| reprise_core::artist_news::NewsError::Database(error.to_string()))?;
     reprise_core::artist_news::refresh(&conn, today, scope, true, fallback_accent_for_artist)
-}
-
-fn build_button() -> (gtk4::MenuButton, gtk4::Label) {
-    let glyph = gtk4::Label::new(Some("✦"));
-    glyph.add_css_class("title-3");
-    let badge = gtk4::Label::new(Some("•"));
-    badge.add_css_class("accent");
-    badge.set_halign(gtk4::Align::End);
-    badge.set_valign(gtk4::Align::Start);
-    badge.set_visible(false);
-    let overlay = gtk4::Overlay::new();
-    overlay.set_child(Some(&glyph));
-    overlay.add_overlay(&badge);
-    let button = gtk4::MenuButton::builder()
-        .child(&overlay)
-        .tooltip_text(strings::text(strings::NEW_RELEASES))
-        .css_classes(["flat"])
-        .visible(false)
-        .build();
-    button.update_property(&[gtk4::accessible::Property::Label(&strings::text(
-        strings::NEW_RELEASES,
-    ))]);
-    (button, badge)
 }
 
 fn build_footer() -> (
