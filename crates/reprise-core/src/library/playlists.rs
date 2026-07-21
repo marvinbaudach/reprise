@@ -203,11 +203,20 @@ pub fn create_with_tracks(
     track_ids: &[i64],
 ) -> Result<i64, rusqlite::Error> {
     let tx = conn.transaction()?;
-    let playlist_id = create_playlist_row(&tx, name)?;
-    if !track_ids.is_empty() {
-        append_tracks_rows(&tx, playlist_id, track_ids)?;
-    }
+    let playlist_id = create_with_tracks_in(&tx, name, track_ids)?;
     tx.commit()?;
+    Ok(playlist_id)
+}
+
+pub(crate) fn create_with_tracks_in(
+    conn: &Connection,
+    name: &str,
+    track_ids: &[i64],
+) -> Result<i64, rusqlite::Error> {
+    let playlist_id = create_playlist_row(conn, name)?;
+    if !track_ids.is_empty() {
+        append_tracks_rows(conn, playlist_id, track_ids)?;
+    }
     Ok(playlist_id)
 }
 

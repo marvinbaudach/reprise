@@ -29,6 +29,25 @@ fn test_shared() -> Rc<Shared> {
     })
 }
 
+/// Recursively finds the first descendant `Label` carrying the `numeric`
+/// CSS class — the sidebar's trailing count-badge label (see
+/// `sidebar_presentation::build_nav_row`).
+fn numeric_badge_text(widget: &gtk4::Widget) -> Option<String> {
+    if let Some(label) = widget.downcast_ref::<gtk4::Label>() {
+        if label.has_css_class("numeric") {
+            return Some(label.text().to_string());
+        }
+    }
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        if let Some(found) = numeric_badge_text(&current) {
+            return Some(found);
+        }
+        child = current.next_sibling();
+    }
+    None
+}
+
 fn has_drop_target(row: &gtk4::ListBoxRow) -> bool {
     let controllers = row.observe_controllers();
     (0..controllers.n_items()).any(|index| {
@@ -135,6 +154,108 @@ fn issues_list_is_the_bottom_most_root_child_below_the_activity_slot() {
         Some(activity.upcast_ref())
     );
     assert_eq!(root.last_child().as_ref(), Some(issues.upcast_ref()));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn acc_3_sidebar_uses_the_available_page_height_before_scrolling() {
+    gtk4::init().unwrap();
+    let list = gtk4::ListBox::new();
+    for label in [
+        "Music",
+        "Queue",
+        "New playlist",
+        "Import playlist",
+        "Recently played",
+        "Top rated",
+        "Recently added",
+        "My Stats",
+    ] {
+        list.append(&gtk4::Label::new(Some(label)));
+    }
+    let scrolled = build_navigation_scroller(&list);
+    let activity = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let issues = gtk4::ListBox::new();
+    issues.set_visible(false);
+    let root = build_root(&scrolled, &activity, &issues);
+    let page = adw::NavigationPage::builder()
+        .title("Library")
+        .child(&root)
+        .build();
+    let window = gtk4::Window::builder()
+        .default_width(300)
+        .default_height(900)
+        .child(&page)
+        .build();
+
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    assert_eq!(
+        root.height(),
+        page.height(),
+        "the sidebar root must consume the complete navigation page: root={}, page={}",
+        root.height(),
+        page.height()
+    );
+    assert_eq!(
+        scrolled.height(),
+        root.height(),
+        "with no activity or issues, the navigation viewport must consume the sidebar: scrolled={}, root={}",
+        scrolled.height(),
+        root.height()
+    );
+    assert_eq!(
+        scrolled.vscrollbar_policy(),
+        gtk4::PolicyType::Automatic,
+        "hiding the inert thumb must not disable future scrolling"
+    );
+    assert!(!scrolled.vscrollbar().is_visible());
+    assert!(!scrolled.vscrollbar().can_target());
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn acc_3_short_sidebar_keeps_navigation_rows_scrollable() {
+    gtk4::init().unwrap();
+    let list = gtk4::ListBox::new();
+    for index in 0..24 {
+        list.append(&gtk4::Label::new(Some(&format!("Playlist {index}"))));
+    }
+    let scrolled = build_navigation_scroller(&list);
+    let activity = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let issues = gtk4::ListBox::new();
+    issues.set_visible(false);
+    let root = build_root(&scrolled, &activity, &issues);
+    let page = adw::NavigationPage::builder()
+        .title("Library")
+        .child(&root)
+        .build();
+    let window = gtk4::Window::builder()
+        .default_width(300)
+        .default_height(100)
+        .child(&page)
+        .build();
+
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    let adjustment = scrolled.vadjustment();
+    assert!(
+        adjustment.upper() > adjustment.page_size(),
+        "the fixture must overflow: upper={}, page_size={}",
+        adjustment.upper(),
+        adjustment.page_size()
+    );
+    assert_eq!(
+        scrolled.vscrollbar_policy(),
+        gtk4::PolicyType::Automatic,
+        "a short sidebar must retain visible scrolling"
+    );
+    assert!(scrolled.vscrollbar().is_visible());
+    assert!(scrolled.vscrollbar().can_target());
+    window.close();
 }
 
 #[test]
@@ -308,6 +429,76 @@ fn acc_3_sidebar_collection_boundaries_link_main_and_issues() {
     assert_eq!(
         last_main_row(&shared).unwrap().parent().as_ref(),
         Some(shared.listbox.upcast_ref())
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn smart_playlist_rows_badge_their_live_track_count() {
+    gtk4::init().unwrap();
+    let shared = test_shared();
+
+    // Seed five present tracks; the default "Recently added" smart list has an
+    // empty rule set, so it matches every present track — the badge must read 5.
+    let smart_id = {
+        let conn = shared.conn.borrow();
+        for id in 1..=5i64 {
+            conn.execute(
+                "INSERT INTO tracks (path, title, artist, added_at) \
+                 VALUES (?1, ?2, 'Synthetic Artist', ?3)",
+                (
+                    format!("/synthetic/{id:03}.flac"),
+                    format!("Track {id:03}"),
+                    id,
+                ),
+            )
+            .unwrap();
+        }
+        conn.query_row(
+            "SELECT id FROM smart_playlists WHERE name = 'Recently added'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap()
+    };
+
+    rebuild(&shared, None, "test build");
+
+    let row = find_row(&shared, &ViewSource::Smart(smart_id))
+        .expect("the 'Recently added' smart list must have a sidebar row");
+    assert_eq!(
+        numeric_badge_text(row.upcast_ref()),
+        Some("5".to_string()),
+        "the smart list must badge its live track count like a manual playlist"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn empty_smart_playlist_shows_no_badge() {
+    gtk4::init().unwrap();
+    let shared = test_shared();
+
+    // No tracks seeded: every default smart list resolves to zero and must
+    // therefore render no badge at all (nonzero-only policy).
+    let smart_id = {
+        let conn = shared.conn.borrow();
+        conn.query_row(
+            "SELECT id FROM smart_playlists WHERE name = 'Recently added'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap()
+    };
+
+    rebuild(&shared, None, "test build");
+
+    let row = find_row(&shared, &ViewSource::Smart(smart_id))
+        .expect("the 'Recently added' smart list must have a sidebar row");
+    assert_eq!(
+        numeric_badge_text(row.upcast_ref()),
+        None,
+        "a zero-count smart list must not render a literal-zero badge"
     );
 }
 

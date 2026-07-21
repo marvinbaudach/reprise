@@ -6,6 +6,7 @@
 CUA_DRIVER_BIN="${CUA_DRIVER_BIN:-cua-driver}"
 CUA_E2E_OUT_DIR="${CUA_E2E_OUT_DIR:-/tmp/reprise-cua-e2e}"
 CUA_E2E_SESSION="${CUA_E2E_SESSION:-reprise-acceptance}"
+CUA_E2E_DRIVER_TIMEOUT_SECS="${CUA_E2E_DRIVER_TIMEOUT_SECS:-20}"
 
 # PID of the app under test, set by the runner. Used only to fail fast when the
 # app has died: the driver waits out its full 120s timeout on a dead peer, so a
@@ -31,9 +32,13 @@ cua_driver() {
     return 1
   fi
   if [[ -n "${CUA_DRIVER_SOCKET:-}" ]]; then
-    "$CUA_DRIVER_BIN" "$@" --socket "$CUA_DRIVER_SOCKET"
+    timeout --signal=TERM --kill-after=2 \
+      "${CUA_E2E_DRIVER_TIMEOUT_SECS}s" \
+      "$CUA_DRIVER_BIN" "$@" --socket "$CUA_DRIVER_SOCKET"
   else
-    "$CUA_DRIVER_BIN" "$@"
+    timeout --signal=TERM --kill-after=2 \
+      "${CUA_E2E_DRIVER_TIMEOUT_SECS}s" \
+      "$CUA_DRIVER_BIN" "$@"
   fi
 }
 
@@ -394,6 +399,32 @@ cua_click_label() {
   cua_pointer_action_label click "$@"
 }
 
+# Click a known screen point when AT-SPI flattens every descendant to
+# the native window's origin. That geometry defect makes a labelled-element
+# click land on the title bar even though the retained screenshot proves the
+# control's actual position. Keep this escape hatch explicit at the scenario
+# call site instead of silently trusting bad accessibility bounds.
+cua_click_screen_point() {
+  local pid=$1 window_id=$2 x=$3 y=$4 stem=$5
+  local action_path payload
+
+  cua_snapshot "$pid" "$window_id" "$stem-before" >/dev/null || return 1
+  action_path="$CUA_E2E_OUT_DIR/$stem-action.json"
+  payload=$(jq -nc \
+    --argjson pid "$pid" \
+    --argjson window_id "$window_id" \
+    --argjson x "$x" \
+    --argjson y "$y" \
+    --arg session "$CUA_E2E_SESSION" \
+    '{pid: $pid, window_id: $window_id, x: $x, y: $y, session: $session}')
+  if ! cua_driver click "$payload" >"$action_path"; then
+    echo "CUA screen-point click command failed: $stem" >&2
+    return 1
+  fi
+  assert_action_landed "$action_path" || return 1
+  cua_snapshot "$pid" "$window_id" "$stem-after" >/dev/null || return 1
+}
+
 cua_double_click_label() {
   cua_pointer_action_label double_click "$@"
 }
@@ -569,6 +600,33 @@ cua_hotkey() {
       echo "CUA foreground hotkey command failed: $stem" >&2
       return 1
     fi
+  fi
+  assert_action_landed "$action_path" || return 1
+  cua_snapshot "$pid" "$window_id" "$stem-after" >/dev/null || return 1
+}
+
+# Deliver a chord to the currently focused transient without asking the
+# driver to reactivate its parent native window. Modal libadwaita pages reject
+# that activation even though their focused control can receive Ctrl+W.
+cua_hotkey_focused() {
+  local pid=$1 window_id=$2 stem=$3
+  shift 3
+  local before_path action_path keys payload
+
+  before_path=$(cua_snapshot "$pid" "$window_id" "$stem-before")
+  assert_unique_focus "$before_path" || return 1
+  keys=$(printf '%s\n' "$@" | jq -R . | jq -s .)
+  action_path="$CUA_E2E_OUT_DIR/$stem-action.json"
+  payload=$(jq -nc \
+    --argjson pid "$pid" \
+    --argjson window_id "$window_id" \
+    --argjson keys "$keys" \
+    --arg session "$CUA_E2E_SESSION" \
+    '{pid: $pid, window_id: $window_id, keys: $keys, session: $session,
+      delivery_mode: "foreground"}')
+  if ! cua_driver hotkey "$payload" >"$action_path"; then
+    echo "CUA focused hotkey command failed: $stem" >&2
+    return 1
   fi
   assert_action_landed "$action_path" || return 1
   cua_snapshot "$pid" "$window_id" "$stem-after" >/dev/null || return 1

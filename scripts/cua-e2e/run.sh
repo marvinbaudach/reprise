@@ -14,7 +14,8 @@ CUA_E2E_PROFILE="${CUA_E2E_PROFILE:-debug}"
 CUA_E2E_OUT_DIR="${CUA_E2E_OUT_DIR:-/tmp/reprise-cua-e2e}"
 CUA_E2E_SCREEN_RES="${CUA_E2E_SCREEN_RES:-1600x900x24}"
 CUA_E2E_QUIT_DELAY_SECS="${CUA_E2E_QUIT_DELAY_SECS:-15}"
-CUA_E2E_KEYBOARD_QUIT_DELAY_SECS="${CUA_E2E_KEYBOARD_QUIT_DELAY_SECS:-180}"
+CUA_E2E_KEYBOARD_QUIT_DELAY_SECS="${CUA_E2E_KEYBOARD_QUIT_DELAY_SECS:-150}"
+CUA_E2E_DRIVER_TIMEOUT_SECS="${CUA_E2E_DRIVER_TIMEOUT_SECS:-20}"
 export CUA_E2E_OUT_DIR CUA_E2E_SESSION="${CUA_E2E_SESSION:-reprise-acceptance}"
 
 required_command() {
@@ -186,6 +187,8 @@ finish_scenario() {
     assert_app_log_contains "$APP_LOG" "$marker" "$scenario"
   done
   APP_PID=""
+  CUA_E2E_APP_PID=""
+  export CUA_E2E_APP_PID
   WINDOW_ID=""
 }
 
@@ -208,7 +211,7 @@ run_fresh_install_scenario() {
 
 run_populated_library_scenario() {
   local fixture_dir="$CUA_E2E_SCRATCH_ROOT/fixture-music"
-  local initial_path missing_path results_path
+  local initial_path missing_path progress_path results_path
 
   echo "[cua-e2e] populated library: fixture scan -> semantic search"
   mkdir -p "$fixture_dir"
@@ -221,7 +224,22 @@ run_populated_library_scenario() {
   initial_path=$(wait_for_label \
     "$APP_PID" "$WINDOW_ID" "Search all fields" populated-initial)
   assert_snapshot_contains "$initial_path" "sine_01"
-  assert_snapshot_contains "$initial_path" "Tracks"
+  echo "[cua-e2e] browse-1-single-track-surface: one table without mode tabs"
+  assert_snapshot_contains "$initial_path" "Title"
+  assert_snapshot_contains "$initial_path" "Artist"
+  assert_snapshot_absent "$initial_path" "Tracks"
+  assert_snapshot_absent "$initial_path" "Albums"
+  assert_snapshot_absent "$initial_path" "Artists"
+
+  echo "[cua-e2e] nav-7-rescan-progress: menu rescan keeps content and exposes progress"
+  cua_activate_main_menu_item \
+    "$APP_PID" "$WINDOW_ID" "Rescan Library" nav-7-rescan-progress
+  progress_path=$(wait_for_label \
+    "$APP_PID" "$WINDOW_ID" "Scanning library" nav-7-rescan-progress-visible)
+  assert_snapshot_contains "$progress_path" "Search all fields"
+  wait_for_label_absent \
+    "$APP_PID" "$WINDOW_ID" "Scanning library" nav-7-rescan-progress-finished \
+    >/dev/null
 
   # This is an isolated copy below the run's mktemp root, never user music.
   # Removing it exercises the real watcher and makes the Issues surface part
@@ -233,6 +251,8 @@ run_populated_library_scenario() {
 
   CUA_E2E_FOCUS_STATE="$CUA_E2E_OUT_DIR/populated-library-focus-state.txt" \
   CUA_E2E_APP_PID="$APP_PID" \
+  CUA_E2E_DRIVER_TIMEOUT_SECS="$CUA_E2E_DRIVER_TIMEOUT_SECS" \
+  CUA_E2E_KEYBOARD_GROUP=primary \
     "$repo_root/scripts/cua-e2e/keyboard.sh" --run "$APP_PID" "$WINDOW_ID"
   restart_private_cua_daemon
 
@@ -254,136 +274,31 @@ run_populated_library_scenario() {
     "first-run decision"
 }
 
-run_navigation_playback_scenario() {
-  local fixture_dir="$CUA_E2E_SCRATCH_ROOT/navigation-playback-fixture-music"
-  local base_track="$CUA_E2E_SCRATCH_ROOT/navigation-playback-base.flac"
-  local detail_path playing_path back_path panel_path album_log_line artist_log_line
-  local target="Navigation Track 14"
-  local music_target="Navigation Track 10"
+run_populated_library_secondary_scenario() {
+  local fixture_dir="$CUA_E2E_SCRATCH_ROOT/fixture-music-secondary"
 
-  echo "[cua-e2e] nav-12-back-restores-focus"
-  echo "[cua-e2e] nav-13-playback-is-not-navigation"
-  prepare_navigation_playback_fixture "$fixture_dir" "$base_track"
-
+  # cua-driver 0.8 loses its persistent AT-SPI listener during longer sweeps.
+  # The outer runner therefore executes this half of the same manifest in a
+  # fresh D-Bus, AT-SPI, app, and daemon lifecycle instead of allowing one
+  # infrastructure failure to masquerade as four product regressions.
+  mkdir -p "$fixture_dir"
+  cp "$repo_root/crates/reprise-core/tests/fixtures/sine.flac" \
+    "$fixture_dir/sine_01.flac"
+  restart_private_cua_daemon
   start_scenario_app \
-    navigation-playback "$fixture_dir" "" "$CUA_E2E_KEYBOARD_QUIT_DELAY_SECS"
-  cua_resize_window \
-    "$APP_PID" "$WINDOW_ID" 1200 800 navigation-normalized-window
+    populated-library-secondary "$fixture_dir" "" "$CUA_E2E_KEYBOARD_QUIT_DELAY_SECS"
   wait_for_label \
-    "$APP_PID" "$WINDOW_ID" "Navigation Track 01" navigation-library >/dev/null
-  panel_path=$(cua_snapshot \
-    "$APP_PID" "$WINDOW_ID" navigation-initial-panel-state)
-  if snapshot_exposes_label "$panel_path" "Queue is empty"; then
-    cua_click_label \
-      "$APP_PID" "$WINDOW_ID" "Toggle Now Playing panel" navigation-panel-close
-  fi
-
-  cua_click_label \
-    "$APP_PID" "$WINDOW_ID" "Back to previous view" navigation-back-disabled
-  assert_snapshot_contains \
-    "$CUA_E2E_OUT_DIR/navigation-back-disabled-after.json" "+ Add filter"
-
-  cua_focus_label_via_tab \
-    "$APP_PID" "$WINDOW_ID" "$target" navigation-track-focus-current >/dev/null
-  cua_focus_label_via_key \
-    "$APP_PID" "$WINDOW_ID" "$music_target" up navigation-track-target >/dev/null
-  cua_press_key_window \
-    "$APP_PID" "$WINDOW_ID" enter navigation-track-activate
-  playing_path="$CUA_E2E_OUT_DIR/navigation-track-activate-after.json"
-  assert_snapshot_contains "$playing_path" "$music_target"
-  assert_focus_evidence_label "$playing_path" "$music_target"
-
-  cua_click_label "$APP_PID" "$WINDOW_ID" "Albums" navigation-albums
-  wait_for_label \
-    "$APP_PID" "$WINDOW_ID" "Navigation Album" navigation-album-grid >/dev/null
-  wait_for_label \
-    "$APP_PID" "$WINDOW_ID" "Sentinel Album" navigation-album-grid-sentinel >/dev/null
-  cua_focus_label_via_tab \
-    "$APP_PID" "$WINDOW_ID" "N" navigation-album-focus >/dev/null
-  cua_press_key_window \
-    "$APP_PID" "$WINDOW_ID" enter navigation-album-tracks
-  detail_path=$(wait_for_label \
-    "$APP_PID" "$WINDOW_ID" "Navigation Track 01" navigation-album-detail)
-  assert_snapshot_contains "$detail_path" "Back to previous view"
-  assert_snapshot_absent "$detail_path" "Sentinel Track"
-
-  cua_focus_label_via_key \
-    "$APP_PID" "$WINDOW_ID" "$target" down navigation-album-target >/dev/null
-  album_log_line=$(wc -l <"$APP_LOG")
-  cua_press_key_window \
-    "$APP_PID" "$WINDOW_ID" enter navigation-album-activate
-  playing_path="$CUA_E2E_OUT_DIR/navigation-album-activate-after.json"
-  assert_snapshot_contains "$playing_path" "Back to previous view"
-  assert_snapshot_contains "$playing_path" "$target"
-  assert_snapshot_absent "$playing_path" "Sentinel Track"
-  assert_snapshot_contains "$playing_path" "Pause (Space)"
-  assert_focus_evidence_label "$playing_path" "$target"
-  assert_app_log_contains_since \
-    "$APP_LOG" "$album_log_line" "queue set from view" navigation-album-activate
-  assert_no_library_source_since \
-    "$APP_LOG" "$album_log_line" \
-    "album activation navigated back to the Library root"
-
-  cua_click_label \
-    "$APP_PID" "$WINDOW_ID" "Back to previous view" navigation-album-back
-  back_path=$(wait_for_label \
-    "$APP_PID" "$WINDOW_ID" "Navigation Album" navigation-album-restored)
-  assert_focus_evidence_label "$back_path" "N"
-
-  cua_click_label "$APP_PID" "$WINDOW_ID" "Artists" navigation-artists
-  wait_for_label \
-    "$APP_PID" "$WINDOW_ID" "Navigation Artist" navigation-artist-master >/dev/null
-  cua_hotkey \
-    "$APP_PID" "$WINDOW_ID" navigation-artist-detail shift tab
-  cua_focus_label_via_key \
-    "$APP_PID" "$WINDOW_ID" "NA" up navigation-artist-master-row >/dev/null
-  detail_path=$(wait_for_label \
-    "$APP_PID" "$WINDOW_ID" \
-    "1 Navigation Track 10 Navigation Album 1 play 0:30" \
-    navigation-artist-tracks)
-  assert_snapshot_contains "$detail_path" "Navigation Album 16 tracks"
-
-  # Artist top tracks are native row buttons, not the shared track table.
-  # Their activation must play in artist context without changing the mode.
-  artist_log_line=$(wc -l <"$APP_LOG")
-  cua_click_label \
-    "$APP_PID" "$WINDOW_ID" \
-    "1 Navigation Track 10 Navigation Album 1 play 0:30" \
-    navigation-artist-top-track-activate
-  playing_path="$CUA_E2E_OUT_DIR/navigation-artist-top-track-activate-after.json"
-  assert_snapshot_contains "$playing_path" "Artists"
-  assert_snapshot_contains "$playing_path" "Navigation Artist"
-  assert_snapshot_contains "$playing_path" "Pause (Space)"
-  assert_app_log_contains_since \
-    "$APP_LOG" "$artist_log_line" "queue set from view" navigation-artist-top-track-activate
-  assert_no_library_source_since \
-    "$APP_LOG" "$artist_log_line" \
-    "artist top-track activation navigated back to the Library root"
-
-  # Exercise the reported Artist -> Album -> lower-track playback path.
-  cua_click_label \
-    "$APP_PID" "$WINDOW_ID" "Navigation Album 16 tracks" navigation-artist-album
-  detail_path=$(wait_for_label \
-    "$APP_PID" "$WINDOW_ID" "$target" navigation-artist-album-tracks)
-  assert_snapshot_absent "$detail_path" "Sentinel Track"
-  assert_app_log_contains \
-    "$APP_LOG" "source=album:Navigation Album:Navigation Artist" navigation-artist-album
-  cua_focus_label_via_tab \
-    "$APP_PID" "$WINDOW_ID" "$target" navigation-artist-album-target >/dev/null
-  artist_log_line=$(wc -l <"$APP_LOG")
-  cua_press_key_window \
-    "$APP_PID" "$WINDOW_ID" enter navigation-artist-album-activate
-  playing_path="$CUA_E2E_OUT_DIR/navigation-artist-album-activate-after.json"
-  assert_snapshot_contains "$playing_path" "$target"
-  assert_snapshot_absent "$playing_path" "Sentinel Track"
-  assert_focus_evidence_label "$playing_path" "$target"
-  assert_no_library_source_since \
-    "$APP_LOG" "$artist_log_line" \
-    "artist-derived album activation navigated back to the Library root"
-
-  finish_scenario navigation-playback \
+    "$APP_PID" "$WINDOW_ID" "Search all fields" populated-secondary-initial \
+    >/dev/null
+  CUA_E2E_FOCUS_STATE="$CUA_E2E_OUT_DIR/populated-library-secondary-focus-state.txt" \
+  CUA_E2E_APP_PID="$APP_PID" \
+  CUA_E2E_DRIVER_TIMEOUT_SECS="$CUA_E2E_DRIVER_TIMEOUT_SECS" \
+  CUA_E2E_KEYBOARD_GROUP=secondary \
+    "$repo_root/scripts/cua-e2e/keyboard.sh" --run "$APP_PID" "$WINDOW_ID"
+  restart_private_cua_daemon
+  finish_scenario populated-library-secondary \
     "dev scan complete" \
-    "queue set from view"
+    "first-run decision"
 }
 
 run_song_visuals_scenario() {
@@ -469,7 +384,7 @@ run_tag_1_no_jump_after_save_scenario() {
     tag-1-no-jump-after-save "$fixture_dir" "title:CUA selection preserved"
   saved_path=$(wait_for_label \
     "$APP_PID" "$WINDOW_ID" "CUA selection preserved" tag-1-saved)
-  assert_snapshot_contains "$saved_path" "Tracks"
+  assert_snapshot_contains "$saved_path" "Title"
   assert_snapshot_contains "$saved_path" "Search all fields"
   finish_scenario tag-1-no-jump-after-save \
     "dev scan complete" \
@@ -543,6 +458,29 @@ run_library_doctor_scenario() {
   wait_for_label "$APP_PID" "$WINDOW_ID" "Enable Library Doctor" doctor-plugin >/dev/null
   cua_click_label "$APP_PID" "$WINDOW_ID" "Enable Library Doctor" doctor-enable
   wait_for_label "$APP_PID" "$WINDOW_ID" "Run Scan Now" doctor-run-ready >/dev/null
+
+  # Enabling the module happens in the modal Preferences window. Close that
+  # transient and enter the real Doctor utility page before proving that the
+  # already-selected Music row remains an absolute navigation target.
+  cua_hotkey "$APP_PID" "$WINDOW_ID" doctor-enable-close ctrl w
+  wait_for_label "$APP_PID" "$WINDOW_ID" "Search all fields" doctor-enable-closed >/dev/null
+  cua_activate_main_menu_item \
+    "$APP_PID" "$WINDOW_ID" "Library Doctor" doctor-page-entry
+  wait_for_label "$APP_PID" "$WINDOW_ID" "Run Scan Now" doctor-page-ready >/dev/null
+
+  echo "[cua-e2e] browse-3-sidebar-escapes-doctor: active Music is an absolute target"
+  # cua-driver currently reports every descendant of this nested utility
+  # page at the native window's screen origin (200,50). The runner fixes the
+  # window at 1200x800, so the Music-row centre at local (110,115) is the
+  # deterministic screen point (310,165).
+  cua_click_screen_point \
+    "$APP_PID" "$WINDOW_ID" 310 165 browse-3-sidebar-escapes-doctor
+  root_path=$(wait_for_label \
+    "$APP_PID" "$WINDOW_ID" "Search all fields" browse-3-library-restored)
+  assert_snapshot_absent "$root_path" "Run Scan Now"
+  cua_activate_main_menu_item \
+    "$APP_PID" "$WINDOW_ID" "Library Doctor" browse-3-doctor-reopen
+  wait_for_label "$APP_PID" "$WINDOW_ID" "Run Scan Now" doctor-run-reopened >/dev/null
   cua_click_label "$APP_PID" "$WINDOW_ID" "Run Scan Now" doctor-run
 
   root_path=$(wait_for_label \
@@ -617,7 +555,8 @@ private_session_cleanup() {
 
 start_private_cua_daemon() {
   rm -f -- "$CUA_DRIVER_SOCKET"
-  cua_driver serve --no-overlay \
+  env CUA_DRIVER_RS_UPDATE_CHECK=0 \
+    "$CUA_DRIVER_BIN" serve --no-overlay --socket "$CUA_DRIVER_SOCKET" \
     >>"$CUA_E2E_OUT_DIR/cua-driver.log" 2>&1 &
   CUA_DAEMON_PID=$!
   for _ in $(seq 1 40); do
@@ -636,37 +575,29 @@ restart_private_cua_daemon() {
 }
 
 run_private_session() {
+  local private_group=${CUA_E2E_PRIVATE_GROUP:-${CUA_E2E_ONLY:-all}}
   trap private_session_cleanup EXIT
 
   /usr/lib/at-spi-bus-launcher \
     --launch-immediately --a11y=1 --screen-reader=1 \
-    >"$CUA_E2E_OUT_DIR/at-spi.log" 2>&1 &
+    >"$CUA_E2E_OUT_DIR/$private_group-at-spi.log" 2>&1 &
   ATSPI_PID=$!
   sleep 0.3
 
   /usr/lib/at-spi2-registryd \
-    >"$CUA_E2E_OUT_DIR/at-spi-registryd.log" 2>&1 &
+    >"$CUA_E2E_OUT_DIR/$private_group-at-spi-registryd.log" 2>&1 &
   ATSPI_REGISTRYD_PID=$!
   sleep 0.3
 
-  export CUA_DRIVER_SOCKET="$CUA_E2E_SCRATCH_ROOT/cua-driver.sock"
+  export CUA_DRIVER_SOCKET="$CUA_E2E_SCRATCH_ROOT/$private_group-cua-driver.sock"
   start_private_cua_daemon
 
-  case "${CUA_E2E_ONLY:-all}" in
-    all)
-      run_fresh_install_scenario
-      run_populated_library_scenario
-      run_navigation_playback_scenario
-      run_tag_1_no_jump_after_save_scenario
-      run_tag_3_multi_dialog_structure_scenario
-      run_library_doctor_scenario
-      run_song_visuals_scenario
-      ;;
+  case "$private_group" in
     populated-library)
       run_populated_library_scenario
       ;;
-    navigation-playback)
-      run_navigation_playback_scenario
+    populated-library-secondary)
+      run_populated_library_secondary_scenario
       ;;
     fresh-install)
       run_fresh_install_scenario
@@ -684,11 +615,11 @@ run_private_session() {
       run_song_visuals_scenario
       ;;
     *)
-      echo "unknown CUA_E2E_ONLY scenario: $CUA_E2E_ONLY" >&2
+      echo "unknown private CUA scenario group: $private_group" >&2
       return 2
       ;;
   esac
-  echo "[cua-e2e] all acceptance scenarios passed"
+  echo "[cua-e2e] private scenario group passed: $private_group"
 }
 
 if [[ "${1:-}" == "--private-session" ]]; then
@@ -696,7 +627,7 @@ if [[ "${1:-}" == "--private-session" ]]; then
   exit 0
 fi
 
-for command in "$CUA_DRIVER_BIN" Xvfb openbox cargo dbus-run-session ffmpeg jq rg wmctrl; do
+for command in "$CUA_DRIVER_BIN" Xvfb openbox cargo dbus-run-session ffmpeg jq rg timeout wmctrl; do
   required_command "$command"
 done
 if [[ ! -x /usr/lib/at-spi-bus-launcher ]]; then
@@ -776,23 +707,61 @@ if ! kill -0 "$OPENBOX_PID" 2>/dev/null; then
   exit 1
 fi
 
-runtime_dir="$CUA_E2E_SCRATCH_ROOT/runtime"
-mkdir -m 700 "$runtime_dir"
-dbus-run-session -- env \
-  XDG_RUNTIME_DIR="$runtime_dir" \
-  XDG_DATA_HOME="$CUA_E2E_SCRATCH_ROOT/root-data" \
-  XDG_CACHE_HOME="$CUA_E2E_SCRATCH_ROOT/root-cache" \
-  XDG_CONFIG_HOME="$CUA_E2E_SCRATCH_ROOT/root-config" \
-  GDK_BACKEND=x11 \
-  WAYLAND_DISPLAY= \
-  GTK_A11Y=atspi \
-  NO_AT_BRIDGE=0 \
-  REPRISE_AUDIO_SINK=fakesink \
-  CUA_E2E_OUT_DIR="$CUA_E2E_OUT_DIR" \
-  CUA_E2E_SCRATCH_ROOT="$CUA_E2E_SCRATCH_ROOT" \
-  CUA_E2E_BIN_PATH="$CUA_E2E_BIN_PATH" \
-  CUA_E2E_SESSION="$CUA_E2E_SESSION" \
-  CUA_E2E_QUIT_DELAY_SECS="$CUA_E2E_QUIT_DELAY_SECS" \
-  CUA_E2E_KEYBOARD_QUIT_DELAY_SECS="$CUA_E2E_KEYBOARD_QUIT_DELAY_SECS" \
-  CUA_DRIVER_BIN="$CUA_DRIVER_BIN" \
-  "$0" --private-session
+run_private_scenario_group() {
+  local scenario_group=$1
+  local runtime_dir="$CUA_E2E_SCRATCH_ROOT/runtime-$scenario_group"
+  local root_profile="$CUA_E2E_SCRATCH_ROOT/root-$scenario_group"
+
+  mkdir -m 700 "$runtime_dir"
+  mkdir -p "$root_profile/data" "$root_profile/cache" "$root_profile/config"
+  dbus-run-session -- env \
+    XDG_RUNTIME_DIR="$runtime_dir" \
+    XDG_DATA_HOME="$root_profile/data" \
+    XDG_CACHE_HOME="$root_profile/cache" \
+    XDG_CONFIG_HOME="$root_profile/config" \
+    GDK_BACKEND=x11 \
+    WAYLAND_DISPLAY= \
+    GTK_A11Y=atspi \
+    NO_AT_BRIDGE=0 \
+    REPRISE_AUDIO_SINK=fakesink \
+    CUA_E2E_OUT_DIR="$CUA_E2E_OUT_DIR" \
+    CUA_E2E_SCRATCH_ROOT="$CUA_E2E_SCRATCH_ROOT" \
+    CUA_E2E_BIN_PATH="$CUA_E2E_BIN_PATH" \
+    CUA_E2E_SESSION="$CUA_E2E_SESSION" \
+    CUA_E2E_QUIT_DELAY_SECS="$CUA_E2E_QUIT_DELAY_SECS" \
+    CUA_E2E_KEYBOARD_QUIT_DELAY_SECS="$CUA_E2E_KEYBOARD_QUIT_DELAY_SECS" \
+    CUA_E2E_DRIVER_TIMEOUT_SECS="$CUA_E2E_DRIVER_TIMEOUT_SECS" \
+    CUA_E2E_PRIVATE_GROUP="$scenario_group" \
+    CUA_DRIVER_BIN="$CUA_DRIVER_BIN" \
+    "$0" --private-session
+}
+
+case "${CUA_E2E_ONLY:-all}" in
+  all)
+    scenario_groups=(
+      fresh-install
+      populated-library
+      populated-library-secondary
+      tag-1-no-jump-after-save
+      tag-3-multi-dialog-structure
+      library-doctor
+      song-visuals
+    )
+    ;;
+  populated-library)
+    scenario_groups=(populated-library populated-library-secondary)
+    ;;
+  fresh-install | populated-library-secondary | tag-1-no-jump-after-save \
+    | tag-3-multi-dialog-structure | library-doctor | song-visuals)
+    scenario_groups=("$CUA_E2E_ONLY")
+    ;;
+  *)
+    echo "unknown CUA_E2E_ONLY scenario: $CUA_E2E_ONLY" >&2
+    exit 2
+    ;;
+esac
+
+for scenario_group in "${scenario_groups[@]}"; do
+  run_private_scenario_group "$scenario_group"
+done
+echo "[cua-e2e] all acceptance scenarios passed"

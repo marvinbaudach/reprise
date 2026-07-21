@@ -13,9 +13,8 @@ use reprise_core::view_source::ViewSource;
 use rusqlite::Connection;
 
 use crate::ui::player_controller::PlayerController;
-use crate::ui::sidebar::Sidebar;
 use crate::ui::track_list::TrackList;
-use crate::ui::view_session::{self, SearchRestoreGuard, TrackViewSnapshot};
+use crate::ui::view_session::{self, TrackViewSnapshot};
 
 const SEED_ENV: &str = "REPRISE_SMOKE_SESSION_SEED";
 const REPORT_ENV: &str = "REPRISE_SMOKE_SESSION_REPORT";
@@ -46,16 +45,7 @@ pub(super) fn apply_initial_geometry(window: &adw::ApplicationWindow, state: &Se
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(super) fn restore_runtime(
-    search_entry: &gtk4::SearchEntry,
-    track_list: &TrackList,
-    sidebar: &Sidebar,
-    window_title: &adw::WindowTitle,
-    search_guard: &SearchRestoreGuard,
-    player: Option<&Rc<PlayerController>>,
-    state: &SessionState,
-) {
+pub(super) fn restore_runtime(player: Option<&Rc<PlayerController>>, state: &SessionState) {
     if let Some(player) = player {
         player.restore_session_queue(
             state.queue.clone(),
@@ -64,17 +54,10 @@ pub(super) fn restore_runtime(
             crate::ui::playback::play_origin::from_session(
                 state.play_origin.clone(),
                 state.play_origin_label.clone(),
+                state.play_origin_place.clone(),
             ),
         );
     }
-    view_session::restore(
-        search_entry,
-        track_list,
-        sidebar,
-        window_title,
-        search_guard,
-        state,
-    );
     if let Some(player) = player {
         player.notify_restored_current_track();
         arm_play(player);
@@ -112,6 +95,7 @@ pub(super) fn wire_close(
     player: Option<&Rc<PlayerController>>,
     loaded: &SessionState,
     geometry_suppressed: &Rc<Cell<bool>>,
+    nav_history: &Rc<crate::ui::nav_history::NavHistory>,
 ) {
     let geometry = Rc::new(Cell::new((
         loaded.window_width,
@@ -127,6 +111,7 @@ pub(super) fn wire_close(
     let saved = Cell::new(false);
     let geometry = geometry.clone();
     let geometry_suppressed = geometry_suppressed.clone();
+    let nav_history = nav_history.clone();
     window.connect_close_request(move |window| {
         if saved.replace(true) {
             return glib::Propagation::Proceed;
@@ -140,6 +125,12 @@ pub(super) fn wire_close(
         state.maximized = maximized;
         if let Some(track_list) = track_list.upgrade() {
             apply_view_snapshot(&mut state, view_session::snapshot(&track_list));
+            if let Some((current, library_root)) =
+                nav_history.session_places(track_list.browser_place())
+            {
+                state.browser_place = Some(current);
+                state.library_root = Some(library_root);
+            }
         }
         if let Some(player) = player.as_ref().and_then(std::rc::Weak::upgrade) {
             state.queue = player.session_queue_snapshot();
@@ -147,10 +138,11 @@ pub(super) fn wire_close(
             state.up_next = up_next;
             state.current_up_next = current_up_next;
             let origin = player.current_play_origin();
-            let (origin_kind, origin_label) =
+            let (origin_kind, origin_label, origin_place) =
                 crate::ui::playback::play_origin::to_session(origin.as_ref());
             state.play_origin = origin_kind;
             state.play_origin_label = origin_label;
+            state.play_origin_place = origin_place;
         }
 
         let result = session::save(&conn.borrow(), &state);
@@ -246,18 +238,29 @@ fn seeded_state(fixture: &str) -> Option<SessionState> {
     };
     let mut order: Vec<_> = (0..ids.len()).collect();
     order.reverse();
+    let browse = reprise_core::queries::BrowseFilter {
+        genre: Some("Rock".into()),
+        artist: Some(String::new()),
+        ..reprise_core::queries::BrowseFilter::default()
+    };
+    let mut browser_place = reprise_core::browser::BrowserPlace::from(ViewSource::Queue);
+    if let Some(track_state) = browser_place.track_state_mut() {
+        track_state.search = "session".into();
+        track_state.browse = browse.clone();
+        track_state.sort = reprise_core::browser::TrackSort::new(
+            "rating",
+            reprise_core::browser::SortDirection::Descending,
+        );
+    }
     Some(SessionState {
         window_width: 1111,
         window_height: 777,
         source: SessionSource::Queue,
         search: "session".into(),
-        browse: reprise_core::queries::BrowseFilter {
-            genre: Some("Rock".into()),
-            artist: Some(String::new()),
-            ..reprise_core::queries::BrowseFilter::default()
-        },
+        browse,
         sort_field: "rating".into(),
         sort_dir: "desc".into(),
+        browser_place: Some(browser_place),
         queue: QueueSnapshot {
             position: (!ids.is_empty()).then_some(0),
             ids,
@@ -281,6 +284,7 @@ fn seeded_up_next_state(value: &str) -> Option<SessionState> {
     up_next.append(&pending);
     Some(SessionState {
         source: SessionSource::Queue,
+        browser_place: Some(reprise_core::browser::BrowserPlace::from(ViewSource::Queue)),
         queue: QueueSnapshot {
             position: (!context.is_empty()).then_some(0),
             order: (0..context.len()).collect(),

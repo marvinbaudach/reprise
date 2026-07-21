@@ -30,6 +30,9 @@ pub struct ScanReport {
     pub added: u32,
     pub updated: u32,
     pub skipped_unchanged: u32,
+    /// Files deliberately removed from the catalog and matched by stable
+    /// filesystem identity (or an exact-path fallback) before tag parsing.
+    pub excluded: u32,
     pub errors: u32,
     /// Stage 2 Task 8: files recognized as relocated (same `(device, inode)`
     /// or, failing that, an unambiguous tag+size fingerprint match against a
@@ -419,23 +422,42 @@ fn scan_folder_inner(
         audio_files_seen += 1;
         let path_str = path.to_string_lossy().to_string();
         let mtime = file_mtime(path);
-        let known: Option<(i64, Option<i64>, Option<i64>)> = tx
+        // Compute identity before touching tags. An exclusion follows the
+        // same file across a rename and must win over move detection.
+        let stat = file_stat(path);
+        let (file_size, device, inode): (i64, Option<i64>, Option<i64>) = match stat {
+            Some((size, dev, ino)) => (size as i64, Some(dev as i64), Some(ino as i64)),
+            None => (0, None, None),
+        };
+        if super::exclusions::matches_file(&tx, path, device, inode)? {
+            report.excluded += 1;
+            if let Some(progress) = &mut progress {
+                progress.advance(path);
+            }
+            continue;
+        }
+        let known: Option<(i64, Option<i64>, Option<i64>, i64)> = tx
             .query_row(
-                "SELECT file_mtime, missing_since, removed_at FROM tracks WHERE path = ?1",
+                "SELECT file_mtime, missing_since, removed_at, untagged FROM tracks WHERE path = ?1",
                 [&path_str],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )
             .ok();
-        let known_mtime = known.map(|(file_mtime, _, _)| file_mtime);
-        let known_missing = known.is_some_and(|(_, missing_since, _)| missing_since.is_some());
+        let known_mtime = known.map(|(file_mtime, ..)| file_mtime);
+        let known_missing = known.is_some_and(|(_, missing_since, ..)| missing_since.is_some());
         // Task 1.9: a row can be tombstoned (`removed_at` set, via a future
         // "Remove from library") independently of ever having been marked
         // missing — evidence that the file is still sitting at its exact
         // recorded path outranks that removal (evidence rule, Beschluss
         // 7/12), so this reappearance check must fire for a tombstoned row
         // too, not only a missing one.
-        let known_removed = known.is_some_and(|(_, _, removed_at)| removed_at.is_some());
-        if known_mtime == Some(mtime) {
+        let known_removed = known.is_some_and(|(_, _, removed_at, _)| removed_at.is_some());
+        // A present row still flagged `untagged` (an earlier scan couldn't parse
+        // its container) must NOT take the unchanged-mtime fast path: excluding
+        // it here drops it through to re-read + `repair_damaged_tags`, so a
+        // library imported before auto-repair existed stops staying untagged.
+        let known_untagged = known.is_some_and(|(_, _, _, untagged)| untagged != 0);
+        if known_mtime == Some(mtime) && !known_untagged {
             if known_missing || known_removed {
                 // The file reappeared at its exact recorded path with an
                 // unchanged mtime (NAS remount, restore-from-trash, or a
@@ -473,14 +495,6 @@ fn scan_folder_inner(
             }
             continue;
         }
-        // `file_stat` is `None` only on a race with the file vanishing; see
-        // its own doc comment. Computed once, up front, so both the
-        // dismiss-check below and the `Ok(meta)` arm reuse it.
-        let stat = file_stat(path);
-        let (file_size, device, inode): (i64, Option<i64>, Option<i64>) = match stat {
-            Some((size, dev, ino)) => (size as i64, Some(dev as i64), Some(ino as i64)),
-            None => (0, None, None),
-        };
         // Dismiss-skip fast path: a `stat`, not a tag parse. Must run
         // BEFORE `read_meta` — see `check_dismissed`'s doc comment.
         if import_errors::check_dismissed(&tx, &path_str, mtime, file_size, now_unix())? {
@@ -496,8 +510,15 @@ fn scan_folder_inner(
                 // function's `## Hint coexistence` doc section just below.
                 let (meta, hint) = match outcome {
                     track_meta::MetaOutcome::Tagged(meta) => (meta, None),
+                    // A file the strict reader couldn't parse is repaired in
+                    // place (damaged containers stripped, fresh ID3v2 written
+                    // from the file name / folder), then re-read as a normal
+                    // tagged import. On any repair failure it stays untagged.
                     track_meta::MetaOutcome::Untagged { meta, kind, detail } => {
-                        (meta, Some((kind, detail)))
+                        match repair::repair_damaged_tags(path, &meta, kind) {
+                            Some(repaired) => (repaired, None),
+                            None => (meta, Some((kind, detail))),
+                        }
                     }
                 };
                 let untagged = hint.is_some();
@@ -727,6 +748,9 @@ mod mount;
 #[path = "scanner_meta.rs"]
 pub(crate) mod track_meta;
 
+#[path = "scanner_repair.rs"]
+mod repair;
+
 // Task 1.8: move detection also moved out to make room for the above — see
 // `scanner_move.rs`'s own module doc comment.
 #[path = "scanner_move.rs"]
@@ -769,3 +793,7 @@ mod untagged_tests;
 #[cfg(test)]
 #[path = "scanner_tombstone_tests.rs"]
 mod tombstone_tests;
+
+#[cfg(test)]
+#[path = "scanner_exclusion_tests.rs"]
+mod exclusion_tests;

@@ -1,6 +1,7 @@
 use std::cell::Cell;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::time::Duration;
 
 use reprise_core::library::scanner::ScanProgress;
 
@@ -85,6 +86,12 @@ fn foreground_progress_view_replays_and_tracks_the_active_scan() {
     assert!(main.widget().reveals_child());
     assert!(foreground.widget().reveals_child());
     controls.finish_progress();
+    assert!(main.widget().reveals_child());
+    assert!(foreground.widget().reveals_child());
+    let main_loop = gtk4::glib::MainLoop::new(None, false);
+    let quit = main_loop.clone();
+    gtk4::glib::timeout_add_local_once(Duration::from_millis(720), move || quit.quit());
+    main_loop.run();
     assert!(!main.widget().reveals_child());
     assert!(!foreground.widget().reveals_child());
 

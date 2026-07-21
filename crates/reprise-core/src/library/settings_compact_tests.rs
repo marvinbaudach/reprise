@@ -7,14 +7,14 @@ fn migrated_conn() -> Connection {
 }
 
 #[test]
-fn audio_analysis_is_opt_in_and_round_trips() {
+fn ac_18_audio_analysis_defaults_on_and_round_trips() {
     let conn = migrated_conn();
 
-    assert!(!get_audio_analysis_enabled(&conn));
-    set_audio_analysis_enabled(&conn, true).unwrap();
     assert!(get_audio_analysis_enabled(&conn));
     set_audio_analysis_enabled(&conn, false).unwrap();
     assert!(!get_audio_analysis_enabled(&conn));
+    set_audio_analysis_enabled(&conn, true).unwrap();
+    assert!(get_audio_analysis_enabled(&conn));
 }
 
 #[test]
