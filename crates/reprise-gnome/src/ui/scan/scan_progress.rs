@@ -279,7 +279,7 @@ impl ScanProgressView {
             .title
             .set_label(&strings::text(strings::SCAN_CARD_TITLE));
         self.inner.spinner.set_spinning(true);
-        self.begin_visibility();
+        self.inner.revealer.set_reveal_child(true);
         self.inner.progress.set_visible(true);
         self.inner.cancel.set_visible(true);
 
@@ -335,7 +335,7 @@ impl ScanProgressView {
         self.cancel_pulsing();
         self.inner.title.set_label(title);
         self.inner.spinner.set_spinning(true);
-        self.begin_visibility();
+        self.inner.revealer.set_reveal_child(true);
         self.inner.progress.set_visible(true);
         self.inner.cancel.set_visible(true);
         self.inner.progress.set_fraction(fraction.clamp(0.0, 1.0));
@@ -366,7 +366,7 @@ impl ScanProgressView {
         self.inner.detail.set_label(&state.detail);
         self.inner.detail.set_visible(true);
         self.inner.container.set_tooltip_text(None);
-        self.begin_visibility();
+        self.inner.revealer.set_reveal_child(true);
     }
 
     pub(in crate::ui) fn finish(&self) {
@@ -640,8 +640,13 @@ mod tests {
         assert!(!view.inner.cancel.is_visible());
         let main_loop = gtk4::glib::MainLoop::new(None, false);
         let quit = main_loop.clone();
+        // Wait out the minimum-visible hold AND the revealer's collapse
+        // transition (STANDARD_MS): finish() schedules set_reveal_child(false)
+        // after MIN_VISIBLE_TIME, and reveals_child() only clears once the
+        // animation completes.
         gtk4::glib::timeout_add_local_once(
-            MIN_VISIBLE_TIME + Duration::from_millis(20),
+            MIN_VISIBLE_TIME
+                + Duration::from_millis(u64::from(crate::ui::motion::STANDARD_MS) + 50),
             move || quit.quit(),
         );
         main_loop.run();
