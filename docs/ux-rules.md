@@ -956,14 +956,20 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   Einträgen und trägt einen Badge ausschließlich für `seen_at IS NULL`.
   Öffnen stempelt die gelistete Episode als gesehen; sie badgt nie erneut,
   erst ein später neu gefundener Eintrag erzeugt wieder einen Badge (FB-4).
-- **NR-4** [aktiv] [gtk] — „See all" öffnet einen echten Digest-Ort mit
-  Back/Forward-Historie, aber ohne Sidebar-Eintrag. Releases lassen sich dort
-  verbergen; vorhandene Hidden-Einträge halten „See all" erreichbar und die
-  Fußzeile „N hidden · Show" macht sie rückholbar. Ein künftiges „Remind me"
-  bleibt bis zu einem eigenen Scheduler ausdrücklich außerhalb dieser Regel.
-- **NR-5** [aktiv] [gtk] — Das Popover ist transient und verändert den
-  Navigations-Stack nie. Erst „See all" navigiert regulär in den Digest-Ort;
-  Schließen kehrt ohne Zustandsverlust zur aktuellen Ansicht zurück.
+- **NR-4** [ersetzt durch NR-12] [gtk] — „See all" öffnet einen echten
+  Digest-Ort mit Back/Forward-Historie, aber ohne Sidebar-Eintrag. Releases
+  lassen sich dort verbergen; vorhandene Hidden-Einträge halten „See all"
+  erreichbar und die Fußzeile „N hidden · Show" macht sie rückholbar. Ein
+  künftiges „Remind me" bleibt bis zu einem eigenen Scheduler ausdrücklich
+  außerhalb dieser Regel.
+- **NR-5** [ersetzt durch NR-5a] [gtk] — Das Popover ist transient und
+  verändert den Navigations-Stack nie. Erst „See all" navigiert regulär in
+  den Digest-Ort; Schließen kehrt ohne Zustandsverlust zur aktuellen Ansicht
+  zurück.
+- **NR-5a** [aktiv] [gtk] — Das Popover ist transient; Öffnen/Schließen
+  verändert den Navigations-Stack nie. Nur explizite Zeilen-Aktionen (Show in
+  library) navigieren regulär und schließen das Popover; der Verlauf ist eine
+  Popover-interne Unterseite ohne Navigation.
 - **NR-6** [aktiv] [gtk] — „Fetch now" ersetzt während des Abrufs sein
   Refresh-Icon durch einen Spinner und zeigt sonst das Alter der letzten
   Aktualisierung. Offline oder Fehler zeigen weiter den letzten Cache samt

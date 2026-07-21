@@ -49,10 +49,6 @@ fn footer_presentation(latest: Option<i64>, now: i64, failed: bool) -> FooterPre
     }
 }
 
-fn see_all_visible(total: usize, visible: usize, hidden: usize) -> bool {
-    total > visible || hidden > 0
-}
-
 #[derive(Debug, PartialEq, Eq)]
 struct ModuleEffect {
     button_visible: bool,
@@ -97,22 +93,16 @@ struct NewReleasesPopover {
     popover: gtk4::Popover,
     rows: gtk4::Box,
     empty: gtk4::Label,
-    see_all: gtk4::Button,
     fetch_button: gtk4::Button,
     fetch_stack: gtk4::Stack,
     spinner: gtk4::Spinner,
     updated: gtk4::Label,
     failure: gtk4::Label,
     fetching: Cell<bool>,
-    on_see_all: Rc<dyn Fn()>,
 }
 
 impl NewReleasesPopover {
-    fn new(
-        conn: Rc<RefCell<rusqlite::Connection>>,
-        database_path: PathBuf,
-        on_see_all: Rc<dyn Fn()>,
-    ) -> Rc<Self> {
+    fn new(conn: Rc<RefCell<rusqlite::Connection>>, database_path: PathBuf) -> Rc<Self> {
         let (button, badge) = build_button();
         let popover = gtk4::Popover::new();
         let rows = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
@@ -121,11 +111,6 @@ impl NewReleasesPopover {
         empty.set_justify(gtk4::Justification::Center);
         empty.set_margin_top(12);
         empty.set_margin_bottom(12);
-        let see_all = gtk4::Button::with_label(&strings::text(strings::SEE_ALL_RELEASES));
-        see_all.add_css_class("flat");
-        see_all.add_css_class("pill");
-        see_all.set_halign(gtk4::Align::Center);
-        see_all.set_visible(false);
         let (footer, fetch_button, fetch_stack, spinner, updated, failure) = build_footer();
         let content = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
         content.set_margin_top(10);
@@ -133,7 +118,6 @@ impl NewReleasesPopover {
         content.set_margin_start(10);
         content.set_margin_end(10);
         content.append(&rows);
-        content.append(&see_all);
         content.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
         content.append(&footer);
         popover.set_child(Some(&content));
@@ -148,14 +132,12 @@ impl NewReleasesPopover {
             popover,
             rows,
             empty,
-            see_all,
             fetch_button,
             fetch_stack,
             spinner,
             updated,
             failure,
             fetching: Cell::new(false),
-            on_see_all,
         });
         state.wire();
         state.render(false, false);
@@ -181,14 +163,6 @@ impl NewReleasesPopover {
         self.fetch_button.connect_clicked(move |_| {
             if let Some(state) = weak.upgrade() {
                 state.fetch_now();
-            }
-        });
-
-        let weak = Rc::downgrade(self);
-        self.see_all.connect_clicked(move |_| {
-            if let Some(state) = weak.upgrade() {
-                state.popover.popdown();
-                (state.on_see_all)();
             }
         });
     }
@@ -219,7 +193,6 @@ impl NewReleasesPopover {
             .filter(|release| !release.hidden)
             .cloned()
             .collect::<Vec<_>>();
-        let hidden = all_releases.iter().filter(|release| release.hidden).count();
         let fetch_completed = self.fetch_completed();
         let effect = module_effect(
             enabled,
@@ -259,10 +232,6 @@ impl NewReleasesPopover {
             self.rows
                 .append(&build_release_row(release, index == 0, &on_hide));
         }
-        let visible = releases.len().min(POPOVER_LIMIT);
-        self.see_all
-            .set_visible(see_all_visible(releases.len(), visible, hidden));
-
         if mark_seen {
             let effect = opening_effect(&releases);
             if !effect.seen_ids.is_empty() {
@@ -386,10 +355,9 @@ pub(in crate::ui) fn install(
     window: &adw::ApplicationWindow,
     conn: &Rc<RefCell<rusqlite::Connection>>,
     database_path: &Path,
-    on_see_all: Rc<dyn Fn()>,
     runtime: &Rc<ArtistNewsRuntime>,
 ) {
-    let state = NewReleasesPopover::new(conn.clone(), database_path.to_path_buf(), on_see_all);
+    let state = NewReleasesPopover::new(conn.clone(), database_path.to_path_buf());
     header.pack_end(&state.button);
     bind_runtime(&state, runtime);
     state.retain_for_window(window);
@@ -472,12 +440,8 @@ fn build_footer() -> (
     (footer, fetch_button, stack, spinner, updated, failure)
 }
 
-/// One popover entry. `on_hide` is what keeps NR-4 reachable: hiding used to
-/// live only in the digest view, which is itself only reachable through
-/// "See all" — and that button appears only when the list overflows or
-/// something is already hidden. A user with a short list could therefore
-/// never hide anything, and the digest's "N hidden · Show" footer could never
-/// appear for them. The action belongs where the entries are.
+/// One popover entry. Hiding lives on the row itself rather than behind a
+/// separate destination, so it stays reachable regardless of list length.
 fn build_release_row(
     release: &reprise_core::artist_news::StoredRelease,
     hero: bool,

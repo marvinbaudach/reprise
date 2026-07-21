@@ -16,7 +16,7 @@ fn release(id: &str) -> reprise_core::artist_news::StoredRelease {
 }
 
 #[test]
-fn nr_5_opening_the_popover_never_requests_navigation() {
+fn nr_5a_opening_the_popover_never_requests_navigation() {
     let effect = opening_effect(&[release("one"), release("two")]);
 
     assert_eq!(effect.seen_ids, ["one", "two"]);
@@ -31,23 +31,11 @@ fn nr_6_failure_keeps_updated_age_with_an_inline_cached_hint() {
     assert!(presentation.show_cached_failure);
 }
 
-#[test]
-fn nr_4_see_all_appears_for_overflow_or_hidden_entries() {
-    assert!(!see_all_visible(5, 5, 0));
-    assert!(see_all_visible(6, 5, 0));
-    assert!(see_all_visible(5, 5, 1));
-}
-
-/// UX NR-4: hiding has to be reachable from the popover itself.
-///
-/// The short-list case above (`!see_all_visible(5, 5, 0)`) is exactly the
-/// state in which the digest view is unreachable — so if "Hide" lived
-/// only there, a user with few releases could never hide one, and the
-/// digest's "N hidden · Show" footer could never appear for them. The row
-/// carries the action, which closes that loop.
+/// Hiding is reachable straight from the popover row, not gated behind a
+/// separate view or an overflow condition.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn nr_4_popover_rows_offer_hide_without_the_digest_view() {
+fn popover_rows_offer_hide() {
     if gtk4::init().is_err() {
         return;
     }
@@ -147,7 +135,7 @@ fn nr_7_header_button_stays_hidden_with_cached_releases_while_disabled() {
     .unwrap();
     let conn = Rc::new(RefCell::new(conn));
 
-    let state = NewReleasesPopover::new(conn, PathBuf::from("unused.db"), Rc::new(|| {}));
+    let state = NewReleasesPopover::new(conn, PathBuf::from("unused.db"));
 
     assert!(!state.button.is_visible());
 }
@@ -159,7 +147,7 @@ fn nr_3_header_button_is_visible_only_when_releases_exist_after_first_fetch() {
     let conn = reprise_core::db::open(None).unwrap();
     reprise_core::db::migrate(&conn).unwrap();
     let conn = Rc::new(RefCell::new(conn));
-    let state = NewReleasesPopover::new(conn.clone(), PathBuf::from("unused.db"), Rc::new(|| {}));
+    let state = NewReleasesPopover::new(conn.clone(), PathBuf::from("unused.db"));
     assert!(!state.button.is_visible());
 
     reprise_core::library::settings::set_new_releases_fetch_completed(&conn.borrow(), true)
@@ -200,7 +188,7 @@ fn nr_8_enabling_the_module_reaches_a_fetch() {
     let conn = reprise_core::db::open(None).unwrap();
     reprise_core::db::migrate(&conn).unwrap();
     let conn = Rc::new(RefCell::new(conn));
-    let state = NewReleasesPopover::new(conn.clone(), PathBuf::from("unused.db"), Rc::new(|| {}));
+    let state = NewReleasesPopover::new(conn.clone(), PathBuf::from("unused.db"));
     let runtime = ArtistNewsRuntime::setup(&conn.borrow());
     bind_runtime(&state, &runtime);
 

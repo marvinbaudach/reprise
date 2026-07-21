@@ -459,7 +459,7 @@ fn nr_3_seen_item_not_rebadged() {
 }
 
 #[test]
-fn nr_4_hide_sets_hidden_and_show_restores_hidden_releases() {
+fn hide_sets_hidden_and_show_restores_hidden_releases() {
     let conn = migrated_conn();
     insert_release(&conn, "one", None);
     insert_release(&conn, "two", None);
