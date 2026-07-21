@@ -37,17 +37,16 @@ jobs:
           ripgrep rust sqlite xorg-server-xvfb xorg-xauth
 
       - name: Check out the tested revision
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - name: Cache Cargo downloads and build output
-        uses: actions/cache@v4
+      - name: Cache Cargo downloads
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
           key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             cargo-${{ runner.os }}-

@@ -9,6 +9,7 @@
 //! set, so returning never pushes.
 
 use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
 use reprise_core::view_source::ViewSource;
 
@@ -16,6 +17,8 @@ use reprise_core::view_source::ViewSource;
 /// navigation depth; just keeps a pathological click loop from growing
 /// the stack forever.
 const MAX_HISTORY: usize = 50;
+
+type AvailabilityCallback = Rc<dyn Fn(bool)>;
 
 /// A place the user can return to: the routed source plus the library
 /// tab (`library_shell::LIBRARY_VIEW_*`) that was visible there. The tab
@@ -60,15 +63,39 @@ pub(in crate::ui) struct NavHistory {
     /// Its `library_tab` is kept fresh by `note_library_tab`.
     last: RefCell<Option<NavPlace>>,
     navigating_back: Cell<bool>,
+    can_go_back_changed: RefCell<Vec<AvailabilityCallback>>,
 }
 
 impl NavHistory {
+    pub(in crate::ui) fn connect_can_go_back_changed(&self, callback: impl Fn(bool) + 'static) {
+        callback(self.can_go_back());
+        self.can_go_back_changed
+            .borrow_mut()
+            .push(Rc::new(callback));
+    }
+
+    fn can_go_back(&self) -> bool {
+        !self.stack.borrow().is_empty()
+    }
+
+    fn notify_can_go_back_if_changed(&self, was_available: bool) {
+        let available = self.can_go_back();
+        if available == was_available {
+            return;
+        }
+        let callbacks = self.can_go_back_changed.borrow().clone();
+        for callback in callbacks {
+            callback(available);
+        }
+    }
+
     /// Called from the routing paths with the place being routed TO.
     /// Pushes the previously-routed place (consecutive duplicates and
     /// back/forward re-routes excluded), then remembers `new` as current.
     /// A real navigation also clears the forward stack — like a browser,
     /// where following a link discards the "forward" pages.
     pub(in crate::ui) fn record_route(&self, new: &NavPlace) {
+        let was_available = self.can_go_back();
         let previous = self.last.borrow_mut().replace(new.clone());
         if self.navigating_back.get() {
             return;
@@ -88,6 +115,8 @@ impl NavHistory {
         if stack.len() > MAX_HISTORY {
             stack.remove(0);
         }
+        drop(stack);
+        self.notify_can_go_back_if_changed(was_available);
     }
 
     /// Records a tab-only navigation within the current source — e.g. the
@@ -128,11 +157,13 @@ impl NavHistory {
     /// to the returned place wrapped in `begin_back`/`end_back` (plus a
     /// `record_route` of the target) so the re-route stays silent.
     pub(in crate::ui) fn go_back(&self) -> Option<NavPlace> {
+        let was_available = self.can_go_back();
         let target = self.stack.borrow_mut().pop()?;
         let current = self.last.borrow().clone();
         if let Some(current) = current {
             self.forward.borrow_mut().push(current);
         }
+        self.notify_can_go_back_if_changed(was_available);
         Some(target)
     }
 
@@ -140,6 +171,7 @@ impl NavHistory {
     /// the current one back onto the back stack. Same caller contract as
     /// `go_back` (wrap the re-route in `begin_back`/`end_back`).
     pub(in crate::ui) fn go_forward(&self) -> Option<NavPlace> {
+        let was_available = self.can_go_back();
         let target = self.forward.borrow_mut().pop()?;
         let current = self.last.borrow().clone();
         if let Some(current) = current {
@@ -149,6 +181,7 @@ impl NavHistory {
                 stack.remove(0);
             }
         }
+        self.notify_can_go_back_if_changed(was_available);
         Some(target)
     }
 
@@ -164,9 +197,26 @@ impl NavHistory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::rc::Rc;
 
     fn place(source: ViewSource) -> NavPlace {
         NavPlace::source(source, None)
+    }
+
+    #[test]
+    fn nav_12_back_availability_tracks_history_depth() {
+        let nav = NavHistory::default();
+        let observed = Rc::new(RefCell::new(Vec::new()));
+        let observed_for_callback = observed.clone();
+        nav.connect_can_go_back_changed(move |available| {
+            observed_for_callback.borrow_mut().push(available);
+        });
+
+        nav.record_route(&place(ViewSource::Library));
+        nav.record_route(&place(ViewSource::Queue));
+        assert_eq!(nav.go_back(), Some(place(ViewSource::Library)));
+
+        assert_eq!(&*observed.borrow(), &[false, true, false]);
     }
 
     #[test]
