@@ -259,6 +259,7 @@ where
         report.artists_fetched += 1;
         report.releases_upserted += items.len();
     }
+    crate::artist_news_history::enforce_retention(conn, now).map_err(database_error)?;
     Ok(report)
 }
 
@@ -709,7 +710,7 @@ fn has_excluded_secondary_type(group: &serde_json::Value) -> bool {
         })
 }
 
-fn parse_partial_date(value: &str) -> Option<NaiveDate> {
+pub(crate) fn parse_partial_date(value: &str) -> Option<NaiveDate> {
     match value.len() {
         10 => NaiveDate::parse_from_str(value, "%Y-%m-%d").ok(),
         7 => NaiveDate::parse_from_str(&format!("{value}-01"), "%Y-%m-%d").ok(),
@@ -733,7 +734,7 @@ fn compare_news(
     .then_with(|| left.title.cmp(&right.title))
 }
 
-fn normalize(value: &str) -> String {
+pub(crate) fn normalize(value: &str) -> String {
     value
         .split_whitespace()
         .collect::<Vec<_>>()
