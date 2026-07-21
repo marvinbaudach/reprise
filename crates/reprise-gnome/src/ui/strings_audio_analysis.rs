@@ -12,6 +12,14 @@ pub const SONG_VISUALS_STOP: &str = N_!("Stop");
 pub const SONG_VISUALS_NEXT: &str = N_!("Next track");
 pub const SONG_VISUALS_FULLSCREEN_HINT: &str =
     N_!("F11 Fullscreen · color follows the cover accent");
+pub const SONG_VISUALS_MODE_GRID: &str = N_!("Grid");
+pub const SONG_VISUALS_MODE_BARS: &str = N_!("Bars");
+pub const SONG_VISUALS_MODE_RINGS: &str = N_!("Rings");
+pub const SONG_VISUALS_MODE_FLOW: &str = N_!("Flow");
+pub const SONG_VISUALS_MODE_PULSE: &str = N_!("Pulse");
+pub const SONG_VISUALS_MODE_PARTICLES: &str = N_!("Particles");
+pub const SONG_VISUALS_MODE_NEON: &str = N_!("Neon");
+pub const SONG_VISUALS_MODE_TUNNEL: &str = N_!("Tunnel");
 pub const AUDIO_ANALYSIS_TITLE: &str = N_!("Analyze audio locally");
 pub const AUDIO_ANALYSIS_PRIVACY: &str = N_!(
     "Reprise reads audio files only on this device. Nothing is uploaded. Existing profiles are kept when this is turned off."
