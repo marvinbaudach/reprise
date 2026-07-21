@@ -26,7 +26,7 @@ fn migrating_a_v16_database_adds_the_listen_events_track_index() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 24);
+    assert_eq!(version, 25);
     let indexes = conn
         .prepare("PRAGMA index_list(listen_events)")
         .unwrap()
@@ -40,7 +40,7 @@ fn migrating_a_v16_database_adds_the_listen_events_track_index() {
 }
 
 #[test]
-fn temporary_file_databases_migrate_from_fresh_and_v16_to_v24() {
+fn temporary_file_databases_migrate_from_fresh_and_v16_to_v25() {
     let cover_cache = tempfile::tempdir().unwrap();
     let portrait_cache = tempfile::tempdir().unwrap();
 
@@ -55,6 +55,8 @@ fn temporary_file_databases_migrate_from_fresh_and_v16_to_v24() {
         if starting_version == 16 {
             conn.execute_batch(
                 "DROP TABLE library_exclusions;
+                 DROP TABLE mix_draft_tracks;
+                 DROP TABLE mix_drafts;
                  DROP TABLE library_doctor_remote_cache;
                  DROP TRIGGER tag_write_journal_identity_immutable;
                  DROP TABLE tag_write_journal;
@@ -86,7 +88,7 @@ fn temporary_file_databases_migrate_from_fresh_and_v16_to_v24() {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 24, "starting version {starting_version}");
+        assert_eq!(version, 25, "starting version {starting_version}");
         assert!(index_exists, "starting version {starting_version}");
     }
 }
