@@ -1,22 +1,48 @@
+use super::impact::ImpactState;
 use super::*;
 
-const BANDS: [f32; 16] = [
-    0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 0.8, 0.6, 0.4, 0.3, 0.2, 0.1,
-];
+fn bands_ramp() -> [f32; SPECTRUM_BAND_COUNT] {
+    std::array::from_fn(|index| (index as f32 / SPECTRUM_BAND_COUNT as f32).clamp(0.0, 1.0))
+}
+
+fn input_for<'a>(
+    bands: &'a [f32; SPECTRUM_BAND_COUNT],
+    peaks: &'a [f32; SPECTRUM_BAND_COUNT],
+) -> SceneInput<'a> {
+    SceneInput {
+        bands,
+        peaks,
+        level: 0.5,
+        bass: 0.5,
+        phase: 0.25,
+    }
+}
 
 #[test]
-fn ac_10_rings_flow_and_pulse_have_distinct_bounded_geometry() {
-    let rings = scene(VisualPreset::Rings, &BANDS, 240.0, 220.0, 0.25);
-    let flow = scene(VisualPreset::Flow, &BANDS, 240.0, 220.0, 0.25);
-    let pulse = scene(VisualPreset::Pulse, &BANDS, 240.0, 220.0, 0.25);
+fn ac_10_every_preset_has_distinct_bounded_geometry() {
+    let bands = bands_ramp();
+    let peaks = bands_ramp();
+    let input = input_for(&bands, &peaks);
+    let rings = scene(VisualPreset::Rings, &input, 240.0, 220.0);
+    let flow = scene(VisualPreset::Flow, &input, 240.0, 220.0);
+    let pulse = scene(VisualPreset::Pulse, &input, 240.0, 220.0);
+    let bars = scene(VisualPreset::Bars, &input, 240.0, 220.0);
 
-    assert_eq!(rings.circles.len(), 4);
-    assert_eq!(rings.bars.len(), 16);
+    assert_eq!(rings.circles.len(), 3);
+    assert_eq!(rings.strokes.len(), SPECTRUM_BAND_COUNT);
+    assert!(rings.bars.is_empty());
+
     assert_eq!(flow.strokes.len(), 3);
-    assert!(flow.circles.is_empty());
+    assert!(flow.circles.is_empty() && flow.bars.is_empty());
+
     assert_eq!(pulse.circles.len(), 2);
-    assert_eq!(pulse.strokes.len(), 16);
-    for scene in [&rings, &flow, &pulse] {
+    assert_eq!(pulse.strokes.len(), SPECTRUM_BAND_COUNT);
+
+    // One value bar + one peak-hold tick per band.
+    assert_eq!(bars.bars.len(), SPECTRUM_BAND_COUNT * 2);
+    assert!(bars.circles.is_empty() && bars.strokes.is_empty());
+
+    for scene in [&rings, &flow, &pulse, &bars] {
         assert!(scene.is_finite_and_bounded(240.0, 220.0));
     }
 }
@@ -25,14 +51,16 @@ fn ac_10_rings_flow_and_pulse_have_distinct_bounded_geometry() {
 fn ac_10_visual_presets_are_stable_keyboard_labels() {
     assert_eq!(
         VisualPreset::ALL.map(VisualPreset::label),
-        ["Rings", "Flow", "Pulse"]
+        ["Rings", "Flow", "Pulse", "Bars"]
     );
 }
 
 #[test]
-fn ac_10_louder_spectrum_changes_geometry_without_changing_cardinality() {
-    let quiet = scene(VisualPreset::Rings, &[0.0; 16], 240.0, 220.0, 0.0);
-    let loud = scene(VisualPreset::Rings, &[1.0; 16], 240.0, 220.0, 0.0);
+fn ac_10_louder_spectrum_grows_the_geometry() {
+    let quiet_bands = [0.0; SPECTRUM_BAND_COUNT];
+    let loud_bands = [1.0; SPECTRUM_BAND_COUNT];
+    let quiet = scene(VisualPreset::Bars, &input_for(&quiet_bands, &quiet_bands), 240.0, 220.0);
+    let loud = scene(VisualPreset::Bars, &input_for(&loud_bands, &loud_bands), 240.0, 220.0);
 
     assert_eq!(quiet.bars.len(), loud.bars.len());
     assert!(
@@ -55,52 +83,168 @@ fn ac_10_visual_chrome_uses_the_shared_cover_accent_and_press_vocabulary() {
 }
 
 #[test]
-fn ac_11_playing_moves_while_pause_settles_to_the_static_profile() {
+fn ac_11_playing_rises_fast_then_pause_eases_down_and_freezes_phase() {
     let mut state = RenderState {
-        current: [0.0; SPECTRUM_BAND_COUNT],
         target: [1.0; SPECTRUM_BAND_COUNT],
         static_profile: [0.2; SPECTRUM_BAND_COUNT],
-        phase: 0.0,
-        preset: VisualPreset::Rings,
+        level_target: 1.0,
         playback: PlaybackState::Playing,
+        ..RenderState::default()
     };
 
+    // Playing never settles, phase advances, and fast attack lifts bands hard.
     assert!(!advance_state(&mut state));
     assert!(state.phase > 0.0);
-    assert!(state.current.iter().all(|band| *band > 0.0));
+    let risen = state.current[0];
+    assert!(risen > 0.3, "fast attack should lift quickly, got {risen}");
 
-    let phase = state.phase;
     state.playback = PlaybackState::Paused;
     state.target = state.static_profile;
-    assert!(!advance_state(&mut state));
-    assert_eq!(state.phase, phase);
-    assert!(state.current.iter().all(|band| *band < 0.2));
+    let frozen_phase = state.phase;
+    advance_state(&mut state);
+    assert_eq!(state.phase, frozen_phase, "phase freezes when not playing");
+    assert!(
+        state.current[0] < risen,
+        "release should ease back down toward the static profile"
+    );
 }
 
 #[test]
-fn ac_11_stop_then_track_clear_settles_instead_of_snapping() {
+fn ac_11_stop_then_track_clear_settles_toward_neutral() {
     let mut state = RenderState {
         current: [0.8; SPECTRUM_BAND_COUNT],
         target: [0.2; SPECTRUM_BAND_COUNT],
         static_profile: [0.2; SPECTRUM_BAND_COUNT],
         phase: 0.5,
-        preset: VisualPreset::Rings,
         playback: PlaybackState::Stopped,
+        ..RenderState::default()
     };
 
     clear_static_profile(&mut state, true);
     assert_eq!(state.current, [0.8; SPECTRUM_BAND_COUNT]);
     assert_eq!(state.target, NEUTRAL_PROFILE);
-    assert!(!advance_state(&mut state));
+
+    let mut settled = false;
+    for _ in 0..1000 {
+        if advance_state(&mut state) {
+            settled = true;
+            break;
+        }
+    }
+    assert!(settled, "a stopped visualizer must come to rest");
     assert!(state
         .current
         .iter()
-        .all(|band| *band < 0.8 && *band > NEUTRAL_PROFILE[0]));
+        .all(|band| (*band - NEUTRAL_PROFILE[0]).abs() < 0.01));
+}
+
+#[test]
+fn impact_beat_storm_stays_within_fixed_capacity() {
+    let mut impact = ImpactState::new();
+    for _ in 0..200 {
+        impact.spawn_beat(1.0);
+    }
+    // Pools are fixed-capacity: a beat storm never grows without bound.
+    assert!(impact.shockwaves().count() <= 6);
+    assert!(impact.particles().count() <= 56);
+    for spark in impact.particles() {
+        assert!(spark.dist.is_finite() && spark.life_frac.is_finite());
+        assert!((0.0..=1.0).contains(&spark.life_frac));
+    }
+    for wave in impact.shockwaves() {
+        assert!((0.0..=1.0).contains(&wave.progress));
+    }
+}
+
+#[test]
+fn impact_decays_to_rest_after_a_burst() {
+    let mut impact = ImpactState::new();
+    assert!(impact.is_idle());
+    impact.spawn_beat(1.0);
+    impact.spawn_drop(0.9);
+    assert!(!impact.is_idle());
+    for _ in 0..200 {
+        impact.advance();
+    }
+    assert!(impact.is_idle(), "all ornaments must decay to rest");
+}
+
+#[test]
+fn impact_drop_below_threshold_is_a_noop() {
+    let mut impact = ImpactState::new();
+    impact.spawn_drop(0.1);
+    assert!(impact.is_idle(), "ordinary loudness must not flash");
+    assert_eq!(impact.flash(), 0.0);
+
+    impact.spawn_drop(0.95);
+    assert!(!impact.is_idle());
+    assert!(impact.flash() > 0.0);
+}
+
+#[test]
+#[ignore = "visual gallery: renders preset PNGs to REPRISE_VIS_OUT for eyeballing"]
+fn render_preset_gallery_pngs() {
+    let out = std::env::var("REPRISE_VIS_OUT").unwrap_or_else(|_| "/tmp".to_owned());
+    let (w, h) = (548.0_f64, 300.0_f64);
+    // A lively, bass-heavy frame mid-beat.
+    let bands: [f32; SPECTRUM_BAND_COUNT] = std::array::from_fn(|i| {
+        let x = i as f32 / SPECTRUM_BAND_COUNT as f32;
+        (0.9 * (1.0 - x) + 0.35 * (x * 9.0).sin().abs()).clamp(0.05, 1.0)
+    });
+    let accent = (0.22, 0.78, 0.74); // app teal
+
+    for preset in VisualPreset::ALL {
+        let mut state = RenderState {
+            current: bands,
+            target: bands,
+            peaks: std::array::from_fn(|i| bands[i] * 0.85),
+            level: 0.82,
+            bass: 0.92,
+            level_target: 0.82,
+            bass_target: 0.92,
+            phase: 0.18,
+            preset,
+            playback: PlaybackState::Playing,
+            ..RenderState::default()
+        };
+        state.impact.spawn_beat(0.9);
+        state.impact.spawn_drop(0.7);
+        for _ in 0..5 {
+            state.impact.advance();
+        }
+
+        let mut surface =
+            gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, w as i32, h as i32)
+                .unwrap();
+        {
+            let cr = gtk4::cairo::Context::new(&surface).unwrap();
+            cr.set_source_rgb(0.078, 0.094, 0.102); // dark panel
+            let _ = cr.paint();
+            let scene = scene(preset, &state.scene_input(), w, h);
+            draw_scene(&cr, &scene, &state.impact, w, h, f64::from(state.level), accent);
+        }
+        // Opaque background → alpha is 255 everywhere, so premultiplied BGRA
+        // equals straight RGB. Emit a dep-free PPM for external rasterization.
+        let (iw, ih) = (w as usize, h as usize);
+        let stride = surface.stride() as usize;
+        let data = surface.data().unwrap();
+        let mut ppm = format!("P6\n{iw} {ih}\n255\n").into_bytes();
+        for y in 0..ih {
+            for x in 0..iw {
+                let o = y * stride + x * 4;
+                ppm.extend_from_slice(&[data[o + 2], data[o + 1], data[o]]);
+            }
+        }
+        drop(data);
+        let path = format!("{out}/visualizer-{}.ppm", preset.id());
+        std::fs::write(&path, ppm).unwrap();
+        println!("wrote {path}");
+    }
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_10_visual_widget_exposes_a_labeled_canvas_and_three_keyboard_presets() {
+fn ac_10_visual_widget_exposes_a_labeled_canvas_and_keyboard_presets() {
     gtk4::init().unwrap();
     let visualizer = SongVisualizer::new();
 
@@ -123,5 +267,5 @@ fn ac_10_visual_widget_exposes_a_labeled_canvas_and_three_keyboard_presets() {
         labels.push(button.label().unwrap().to_string());
         child = widget.next_sibling();
     }
-    assert_eq!(labels, ["Rings", "Flow", "Pulse"]);
+    assert_eq!(labels, ["Rings", "Flow", "Pulse", "Bars"]);
 }

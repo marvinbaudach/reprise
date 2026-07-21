@@ -8,6 +8,7 @@ pub const SONG_VISUALS_DESCRIPTION: &str = N_!("Show local audio-reactive visual
 pub const SONG_VISUALS_RINGS: &str = N_!("Rings");
 pub const SONG_VISUALS_FLOW: &str = N_!("Flow");
 pub const SONG_VISUALS_PULSE: &str = N_!("Pulse");
+pub const SONG_VISUALS_BARS: &str = N_!("Bars");
 pub const SONG_VISUALS_ACCESSIBLE: &str = N_!("Audio-reactive song visual");
 pub const SONG_VISUALS_FULLSCREEN_HINT: &str =
     N_!("F11 Fullscreen · color follows the cover accent");
