@@ -60,6 +60,7 @@ use libadwaita as adw;
 use rusqlite::Connection;
 
 use super::sidebar_activity_slot::SidebarActivitySlot;
+use super::sidebar_navigation_scroller::build_navigation_scroller;
 use crate::ui::sidebar_dnd;
 use reprise_core::view_source::ViewSource;
 
@@ -407,52 +408,6 @@ fn configure_issues_listbox(listbox: &gtk4::ListBox) {
     // moves to its first selectable issue row.
     // a11y-semantics: role=list name=issues state=focusable action=arrow-navigation
     listbox.set_focusable(true);
-}
-
-fn build_navigation_scroller(listbox: &gtk4::ListBox) -> gtk4::ScrolledWindow {
-    let scrolled = gtk4::ScrolledWindow::builder()
-        .child(listbox)
-        .vexpand(true)
-        .hscrollbar_policy(gtk4::PolicyType::Never)
-        .vscrollbar_policy(gtk4::PolicyType::Automatic)
-        .build();
-    let adjustment = scrolled.vadjustment();
-    adjustment.connect_changed({
-        let scrolled = scrolled.downgrade();
-        move |adjustment| {
-            let Some(scrolled) = scrolled.upgrade() else {
-                return;
-            };
-            update_navigation_scrollbar(&scrolled, adjustment);
-        }
-    });
-    scrolled.connect_map({
-        let adjustment = adjustment.clone();
-        move |scrolled| update_navigation_scrollbar(scrolled, &adjustment)
-    });
-    scrolled.vscrollbar().connect_visible_notify({
-        let scrolled = scrolled.downgrade();
-        let adjustment = adjustment.clone();
-        move |_| {
-            let Some(scrolled) = scrolled.upgrade() else {
-                return;
-            };
-            update_navigation_scrollbar(&scrolled, &adjustment);
-        }
-    });
-    update_navigation_scrollbar(&scrolled, &adjustment);
-    scrolled
-}
-
-fn update_navigation_scrollbar(scrolled: &gtk4::ScrolledWindow, adjustment: &gtk4::Adjustment) {
-    const OVERFLOW_EPSILON_PX: f64 = 0.5;
-
-    let overflow = adjustment.upper() > adjustment.page_size() + OVERFLOW_EPSILON_PX;
-    let scrollbar = scrolled.vscrollbar();
-    if scrollbar.is_visible() != overflow {
-        scrollbar.set_visible(overflow);
-    }
-    scrollbar.set_can_target(overflow);
 }
 
 pub(in crate::ui) fn remember_issue_focus_entry(listbox: &gtk4::ListBox, row: &gtk4::ListBoxRow) {
