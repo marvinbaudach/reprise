@@ -35,6 +35,8 @@ const VIGNETTE_EDGE_ALPHA: f64 = 0.87;
 
 const COVER_THUMB_SIZE: i32 = 84;
 const VOLUME_SCALE_WIDTH: i32 = 110;
+/// Wide centered seek bar per the design (~min(700px, 78vw)).
+const SEEK_WIDTH: i32 = 620;
 const HEADER_MARGIN_TOP: i32 = 28;
 const HEADER_MARGIN_SIDE: i32 = 28;
 const BOTTOM_MARGIN: i32 = 28;
@@ -393,6 +395,9 @@ fn bottom_bar(
 
     let seek = gtk4::Scale::with_range(gtk4::Orientation::Horizontal, 0.0, SEEK_SCALE_MAX, 1.0);
     seek.set_hexpand(true);
+    // Wide, centered seek per the design (roughly min(700px, 78vw)); the
+    // centered controls column sizes to this.
+    seek.set_size_request(SEEK_WIDTH, -1);
     seek.set_draw_value(false);
     seek.add_css_class("reprise-fs-seek");
     seek.update_property(&[gtk4::accessible::Property::Label(&strings::text(
@@ -419,15 +424,14 @@ fn bottom_bar(
     hint.add_css_class("dim-label");
 
     // Centered controls column: seek → transport → mode pills → hint, rising
-    // from the bottom edge. Carries the chrome/scrim styling the old single
-    // `bottom` box had — see `bottom`'s doc comment for why the corner blocks
-    // below don't also carry it.
+    // from the bottom edge. Per the design it floats directly on the
+    // visualization (no panel/scrim box) — the canvas vignette already darkens
+    // the bottom for legibility. The fade lives on the `bottom` Overlay below
+    // (the unit the auto-hide toggles), not here.
     let controls = gtk4::Box::new(gtk4::Orientation::Vertical, 14);
     controls.set_halign(gtk4::Align::Center);
     controls.set_valign(gtk4::Align::End);
     controls.set_margin_bottom(BOTTOM_MARGIN);
-    controls.add_css_class("reprise-song-visual-chrome");
-    controls.add_css_class("reprise-fs-bottom-scrim");
     controls.append(&row2);
     controls.append(&row3);
     controls.append(&row4);
@@ -458,6 +462,10 @@ fn bottom_bar(
     // even though only `controls` carries the chrome/scrim CSS classes.
     let bottom = gtk4::Overlay::new();
     bottom.set_hexpand(true);
+    // The fade transition lives here (the unit the auto-hide toggles), so the
+    // whole bottom cluster — centered controls + both corner blocks — fades as
+    // one via `reprise-song-visual-chrome-hidden`.
+    bottom.add_css_class("reprise-song-visual-chrome");
     bottom.set_child(Some(&controls));
     bottom.add_overlay(&cover_block);
     bottom.add_overlay(&volume_block);
@@ -582,7 +590,7 @@ fn adjust_volume(volume: &gtk4::glib::WeakRef<gtk4::Scale>, delta: f64) {
     volume.set_value(new_value);
 }
 
-/// Maps digit keys 1–8 to a zero-based index into `VisualMode::ALL` /
+/// Maps digit keys 1–6 to a zero-based index into `VisualMode::ALL` /
 /// the mode-pill `FlowBox` (same order, see `mode_controls`).
 fn digit_mode_index(key: gtk4::gdk::Key) -> Option<usize> {
     use gtk4::gdk::Key;
@@ -593,8 +601,6 @@ fn digit_mode_index(key: gtk4::gdk::Key) -> Option<usize> {
         Key::_4 => Some(3),
         Key::_5 => Some(4),
         Key::_6 => Some(5),
-        Key::_7 => Some(6),
-        Key::_8 => Some(7),
         _ => None,
     }
 }

@@ -59,24 +59,20 @@ pub enum VisualMode {
     Grid,
     #[default]
     Bars,
-    Rings,
     Flow,
     Pulse,
     Particles,
     Neon,
-    Tunnel,
 }
 
 impl VisualMode {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 6] = [
         Self::Grid,
         Self::Bars,
-        Self::Rings,
         Self::Flow,
         Self::Pulse,
         Self::Particles,
         Self::Neon,
-        Self::Tunnel,
     ];
 
     /// Stable, lowercase identifier: used for widget names and persisted
@@ -85,12 +81,10 @@ impl VisualMode {
         match self {
             Self::Grid => "grid",
             Self::Bars => "bars",
-            Self::Rings => "rings",
             Self::Flow => "flow",
             Self::Pulse => "pulse",
             Self::Particles => "particles",
             Self::Neon => "neon",
-            Self::Tunnel => "tunnel",
         }
     }
 }
