@@ -20,6 +20,10 @@ const POPOVER_WIDTH: i32 = 336;
 const SCROLLER_MAX_HEIGHT: i32 = 288;
 const LIST_PAGE: &str = "list";
 const HISTORY_PAGE: &str = "history";
+/// How often the background timer re-checks staleness while the module is
+/// enabled (Beschluss 8). Deliberately coarse: `refresh_due`'s own 6 h+jitter
+/// window is the real gate, this just samples it periodically.
+const REFRESH_TIMER_SECONDS: u32 = 3600;
 
 #[derive(Debug, PartialEq, Eq)]
 struct OpeningEffect {
@@ -92,6 +96,14 @@ fn module_effect(
     }
 }
 
+/// Whether a background (non-user-initiated) fetch should run right now:
+/// shared by the popover's open path (`trigger_staleness_refresh`) and the
+/// hourly timer (`maybe_background_refresh`), so the two never drift apart
+/// with their own copy of the same condition.
+fn periodic_fetch_due(enabled: bool, fetching: bool, refresh_due: bool) -> bool {
+    enabled && !fetching && refresh_due
+}
+
 struct NewReleasesPopover {
     conn: Rc<RefCell<rusqlite::Connection>>,
     database_path: PathBuf,
@@ -112,6 +124,10 @@ struct NewReleasesPopover {
     updated: gtk4::Label,
     failure: gtk4::Label,
     fetching: Cell<bool>,
+    /// The hourly background staleness timer (Beschluss 8), running only
+    /// while the module is enabled. `SourceId` is move-only, so `Cell::take`
+    /// is how `stop_refresh_timer` retrieves it to call `remove()`.
+    refresh_timer: Cell<Option<gtk4::glib::SourceId>>,
     on_show_album: release_row::OnShowAlbum,
 }
 
@@ -220,6 +236,7 @@ impl NewReleasesPopover {
             updated,
             failure,
             fetching: Cell::new(false),
+            refresh_timer: Cell::new(None),
             on_show_album,
         });
         state.wire();
@@ -374,26 +391,74 @@ impl NewReleasesPopover {
 
     /// A5's staleness policy: opening the popover is a natural moment to
     /// check whether a background refresh is due, without blocking the
-    /// synchronous render above. Skips while a fetch is already running or
-    /// the module is disabled, so this never fights `fetch_now`'s own guard.
+    /// synchronous render above. B5 adds the hourly timer as a second entry
+    /// point into the exact same check, so both share `maybe_background_refresh`
+    /// instead of drifting apart with their own copy of the condition.
     fn trigger_staleness_refresh(self: &Rc<Self>) {
+        self.maybe_background_refresh();
+    }
+
+    /// The shared background-refresh check behind both the popover's open
+    /// path and the hourly timer (Beschluss 8). Skips while a fetch is
+    /// already running or the module is disabled, so this never fights
+    /// `fetch_now`'s own guard and never touches the network while the
+    /// module is off.
+    fn maybe_background_refresh(self: &Rc<Self>) {
         let enabled = reprise_core::modules::is_enabled(
             &self.conn.borrow(),
             &reprise_core::modules::NEW_RELEASES_MODULE,
         )
         .unwrap_or(false);
-        if !enabled || self.fetching.get() {
-            return;
-        }
         let latest = reprise_core::artist_news::latest_fetched_at(&self.conn.borrow())
             .ok()
             .flatten();
         let now = chrono::Utc::now().timestamp();
         let jitter =
             reprise_core::artist_news::jitter_seconds(&self.database_path.to_string_lossy());
-        if reprise_core::artist_news::refresh_due(latest, now, jitter) {
+        let due = reprise_core::artist_news::refresh_due(latest, now, jitter);
+        if periodic_fetch_due(enabled, self.fetching.get(), due) {
             self.fetch_now();
         }
+    }
+
+    /// Starts the hourly background staleness timer if it is not already
+    /// running. Coupled to `enabled_changed` so it only ever runs while the
+    /// module is enabled — no timer, no network, while the module is off.
+    fn start_refresh_timer(self: &Rc<Self>) {
+        // `Cell<Option<SourceId>>` has no `Copy`-friendly peek, so `take` it
+        // out to check, then put it straight back if one was already running.
+        let existing = self.refresh_timer.take();
+        if existing.is_some() {
+            self.refresh_timer.set(existing);
+            return;
+        }
+        let weak = Rc::downgrade(self);
+        let id = gtk4::glib::timeout_add_seconds_local(REFRESH_TIMER_SECONDS, move || {
+            let Some(state) = weak.upgrade() else {
+                return gtk4::glib::ControlFlow::Break; // Popover gone: stop the timer.
+            };
+            state.maybe_background_refresh();
+            gtk4::glib::ControlFlow::Continue
+        });
+        self.refresh_timer.set(Some(id));
+    }
+
+    /// Stops the hourly timer, if one is running. Called whenever the module
+    /// is disabled so a disabled module never keeps a background timer alive.
+    fn stop_refresh_timer(&self) {
+        if let Some(id) = self.refresh_timer.take() {
+            id.remove();
+        }
+    }
+
+    /// Test-only peek at the timer field without consuming the `SourceId`
+    /// (it is move-only, so a plain `Cell::get` is not available).
+    #[cfg(test)]
+    fn has_active_timer(&self) -> bool {
+        let existing = self.refresh_timer.take();
+        let active = existing.is_some();
+        self.refresh_timer.set(existing);
+        active
     }
 
     fn fetch_completed(&self) -> bool {
@@ -408,9 +473,15 @@ impl NewReleasesPopover {
     }
 
     fn enabled_changed(self: &Rc<Self>, enabled: bool) {
-        if enabled && !self.fetch_completed() {
-            self.fetch_now();
+        if enabled {
+            self.start_refresh_timer();
+            if !self.fetch_completed() {
+                self.fetch_now();
+            } else {
+                self.render(false, false);
+            }
         } else {
+            self.stop_refresh_timer();
             self.render(false, false);
         }
     }
