@@ -2,7 +2,7 @@
 
 use rusqlite::Connection;
 
-const SCHEMA_V23: &str = r#"
+const SCHEMA_V24: &str = r#"
 CREATE TABLE listen_events_v23 (
   id           INTEGER PRIMARY KEY,
   track_id     INTEGER NOT NULL,
@@ -50,14 +50,14 @@ BEGIN
 END;
 "#;
 
-pub(crate) fn migrate_v23(conn: &Connection) -> Result<(), rusqlite::Error> {
+pub(crate) fn migrate_v24(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version >= 23 {
+    if version >= 24 {
         return Ok(());
     }
     let transaction = conn.unchecked_transaction()?;
-    transaction.execute_batch(SCHEMA_V23)?;
-    transaction.pragma_update(None, "user_version", 23)?;
+    transaction.execute_batch(SCHEMA_V24)?;
+    transaction.pragma_update(None, "user_version", 24)?;
     transaction.commit()
 }
 
@@ -152,7 +152,7 @@ mod tests {
              );
              CREATE INDEX idx_listen_events_played_at ON listen_events(played_at);
              CREATE INDEX idx_listen_events_track_played ON listen_events(track_id, played_at);
-             PRAGMA user_version = 22;
+             PRAGMA user_version = 23;
              INSERT INTO tracks
                (id,path,title,artist,album,album_artist,genre,duration_ms,added_at)
              VALUES
@@ -162,8 +162,8 @@ mod tests {
         )
         .unwrap();
 
-        super::migrate_v23(&conn).unwrap();
-        super::migrate_v23(&conn).unwrap();
+        super::migrate_v24(&conn).unwrap();
+        super::migrate_v24(&conn).unwrap();
 
         let stored: (i64, String, String, i64) = conn
             .query_row(
@@ -176,6 +176,6 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 23);
+        assert_eq!(version, 24);
     }
 }

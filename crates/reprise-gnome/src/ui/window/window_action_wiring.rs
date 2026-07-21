@@ -219,6 +219,14 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
             }
         });
     }
+    {
+        let track_list = Rc::downgrade(track_list);
+        stats_view.set_on_audio_character_mix(move |target| {
+            if let Some(track_list) = track_list.upgrade() {
+                track_list.open_mix_builder_for_target(target);
+            }
+        });
+    }
     // Stage 3 Task 5: context menu action wiring. `track_list` stays
     // decoupled from `PlayerController`/`Sidebar` themselves (same
     // decoupling-via-closure seam as `on_activate`/`queue_ids_provider`
@@ -257,6 +265,21 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
             None => {
                 tracing::warn!("player unavailable; ignoring context menu add-to-queue action");
             }
+        });
+    }
+    {
+        let player = player.clone();
+        let conn = Rc::clone(conn);
+        track_list.set_on_play_mix(move |ids| match &player {
+            Some(player) if !ids.is_empty() => {
+                let origin = play_origin::resolve(
+                    &conn.borrow(),
+                    &reprise_core::browser::BrowserPlace::from(ViewSource::Library),
+                );
+                player.play_from_view(ids, 0, origin);
+            }
+            Some(_) => tracing::debug!("mix builder: empty draft play ignored"),
+            None => tracing::warn!("player unavailable; ignoring mix play action"),
         });
     }
     {

@@ -2,7 +2,7 @@
 
 use rusqlite::Connection;
 
-const SCHEMA_V24: &str = r#"
+const SCHEMA_V25: &str = r#"
 CREATE TABLE library_exclusions (
   id          INTEGER PRIMARY KEY,
   path        TEXT NOT NULL,
@@ -20,36 +20,36 @@ CREATE UNIQUE INDEX idx_library_exclusions_identity
   WHERE device IS NOT NULL AND inode IS NOT NULL;
 "#;
 
-pub(crate) fn migrate_v24(conn: &Connection) -> Result<(), rusqlite::Error> {
+pub(crate) fn migrate_v25(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version >= 24 {
+    if version >= 25 {
         return Ok(());
     }
     let transaction = conn.unchecked_transaction()?;
-    transaction.execute_batch(SCHEMA_V24)?;
-    transaction.pragma_update(None, "user_version", 24)?;
+    transaction.execute_batch(SCHEMA_V25)?;
+    transaction.pragma_update(None, "user_version", 25)?;
     transaction.commit()
 }
 
 #[cfg(test)]
 mod tests {
     #[test]
-    fn browse_7_v23_upgrade_adds_idempotent_exclusion_schema() {
+    fn browse_7_v24_upgrade_adds_idempotent_exclusion_schema() {
         let conn = crate::db::open(None).unwrap();
         crate::db::migrate(&conn).unwrap();
         conn.execute_batch(
             "DROP TABLE library_exclusions;
-             PRAGMA user_version = 23;",
+             PRAGMA user_version = 24;",
         )
         .unwrap();
 
-        super::migrate_v24(&conn).unwrap();
-        super::migrate_v24(&conn).unwrap();
+        super::migrate_v25(&conn).unwrap();
+        super::migrate_v25(&conn).unwrap();
 
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 24);
+        assert_eq!(version, 25);
         let table: i64 = conn
             .query_row(
                 "SELECT count(*) FROM sqlite_master

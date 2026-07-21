@@ -327,7 +327,7 @@ mod tests {
     }
 
     #[test]
-    fn ac_1_fresh_install_copy_is_explicitly_local_and_opt_in() {
+    fn ac_18_fresh_install_copy_is_explicitly_local_and_controllable() {
         assert_eq!(AUDIO_ANALYSIS_TITLE, "Analyze audio locally");
         assert!(AUDIO_ANALYSIS_PRIVACY.contains("only on this device"));
         assert!(AUDIO_ANALYSIS_PRIVACY.contains("Nothing is uploaded"));

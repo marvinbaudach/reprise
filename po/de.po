@@ -3683,3 +3683,24 @@ msgstr "Separate Titelleiste"
 
 #~ msgid "Filters"
 #~ msgstr "Filter"
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:227
+msgid "Your listening leaned toward higher intensity"
+msgstr "Deine Wiedergabe tendierte zu höherer Intensität"
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:228
+msgid "Your listening leaned toward higher brightness"
+msgstr "Deine Wiedergabe tendierte zu hellerem Klang"
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:229
+msgid "Your listening leaned toward higher dynamicity"
+msgstr "Deine Wiedergabe tendierte zu höherer Dynamik"
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:230
+msgid "Your listening leaned toward higher rhythmicity"
+msgstr "Deine Wiedergabe tendierte zu stärkerer Rhythmik"
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:231
+#, rust-format
+msgid "Based on {count} analyzed plays · {coverage}% coverage"
+msgstr "Basierend auf {count} analysierten Wiedergaben · {coverage}% Abdeckung"

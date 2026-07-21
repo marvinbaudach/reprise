@@ -6,6 +6,7 @@ pub(crate) mod import_errors;
 pub mod lastfm_stats;
 pub mod library_doctor;
 pub mod listenbrainz;
+pub mod listened_audio_character;
 pub mod m3u;
 pub(crate) mod mounts;
 mod playlist_delete;

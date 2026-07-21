@@ -3145,3 +3145,24 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:227
+msgid "Your listening leaned toward higher intensity"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:228
+msgid "Your listening leaned toward higher brightness"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:229
+msgid "Your listening leaned toward higher dynamicity"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:230
+msgid "Your listening leaned toward higher rhythmicity"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:231
+#, rust-format
+msgid "Based on {count} analyzed plays · {coverage}% coverage"
+msgstr ""

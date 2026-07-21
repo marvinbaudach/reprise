@@ -224,6 +224,22 @@ pub fn stats_unavailable_description() -> String {
     text(STATS_UNAVAILABLE_DESCRIPTION)
 }
 
+pub const STATS_AUDIO_INTENSITY: &str = N_!("Your listening leaned toward higher intensity");
+pub const STATS_AUDIO_BRIGHTNESS: &str = N_!("Your listening leaned toward higher brightness");
+pub const STATS_AUDIO_DYNAMICITY: &str = N_!("Your listening leaned toward higher dynamicity");
+pub const STATS_AUDIO_RHYTHMICITY: &str = N_!("Your listening leaned toward higher rhythmicity");
+const STATS_AUDIO_EVIDENCE: &str = N_!("Based on {count} analyzed plays · {coverage}% coverage");
+
+pub fn stats_audio_evidence(count: i64, coverage: i64) -> String {
+    formatted(
+        STATS_AUDIO_EVIDENCE,
+        &[
+            ("count", &count.to_string()),
+            ("coverage", &coverage.to_string()),
+        ],
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

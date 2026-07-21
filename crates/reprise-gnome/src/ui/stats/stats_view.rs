@@ -11,6 +11,7 @@ use libadwaita as adw;
 use reprise_core::cover::ThumbnailSize;
 use reprise_core::format::format_thousands;
 use reprise_core::library::group_key::GroupKind;
+use reprise_core::library::listened_audio_character;
 use reprise_core::library::settings::{self, StatsLayout};
 use reprise_core::library::stats_period::StatsPeriod;
 use reprise_core::library::stats_screen::{group_track_ids, TopTrack};
@@ -18,6 +19,7 @@ use reprise_core::library::stats_snapshot::{self, ComparisonPresentation, SortBy
 use rusqlite::Connection;
 
 use super::hourly_chart::HourlyChart;
+use super::stats_audio_character::StatsAudioCharacter;
 use super::stats_customize::StatsCustomize;
 use super::stats_genre_bar::StatsGenreBar;
 use super::stats_hero::StatsHero;
@@ -42,11 +44,12 @@ const ASYMMETRIC_SPACING: i32 = 20;
 /// The fixed editorial order of the page's sections (STATS-7). The test reads
 /// the real widget tree and compares against this.
 #[cfg(test)]
-const SECTION_ORDER: [&str; 6] = [
+const SECTION_ORDER: [&str; 7] = [
     "hero",
     "ribbon",
     "spotlight",
     "genres",
+    "audio-character",
     "clock-highlights",
     "top-tracks",
 ];
@@ -99,6 +102,7 @@ impl StatsView {
         let genres = StatsGenreBar::new();
         let clock = HourlyChart::new();
         let highlights = StatsHighlights::new();
+        let audio_character = StatsAudioCharacter::new();
 
         let genres_section = section("GENRE SPECTRUM", genres.widget());
         let clock_section = section("LISTENING CLOCK", clock.widget());
@@ -142,6 +146,9 @@ impl StatsView {
         sections.append(&card(ribbon.widget()));
         sections.append(&card(spotlight.widget()));
         sections.append(&genres_section);
+        let audio_character_section = section("AUDIO CHARACTER", audio_character.widget());
+        audio_character_section.set_visible(false);
+        sections.append(&audio_character_section);
         sections.append(&asymmetric_row);
         sections.append(&section("TOP TRACKS", &top_tracks_content));
 
@@ -262,6 +269,8 @@ impl StatsView {
             clock_section: clock_section.clone(),
             genres_section: genres_section.clone(),
             highlights_section: highlights_section.clone(),
+            audio_character,
+            audio_character_section,
         });
 
         Self {
@@ -380,6 +389,13 @@ impl StatsView {
         *self.on_metadata_activate.borrow_mut() = Some(Rc::new(callback));
     }
 
+    pub(in crate::ui) fn set_on_audio_character_mix(
+        &self,
+        callback: impl Fn(reprise_core::mix_planner::ProfileTarget) + 'static,
+    ) {
+        self.render.audio_character.set_on_create_mix(callback);
+    }
+
     /// The sections in the order the page actually stacks them, read off the
     /// live widget tree — not off a constant that nothing binds to it.
     #[cfg(test)]
@@ -411,6 +427,8 @@ impl StatsView {
             "spotlight"
         } else if render.genres_section_data.widget().is_ancestor(widget) {
             "genres"
+        } else if render.audio_character.widget().is_ancestor(widget) {
+            "audio-character"
         } else if render.clock_section_data.widget().is_ancestor(widget)
             && render.highlights_section_data.widget().is_ancestor(widget)
         {
@@ -442,6 +460,8 @@ struct RenderParts {
     clock_section: gtk4::Box,
     genres_section: gtk4::Box,
     highlights_section: gtk4::Box,
+    audio_character: StatsAudioCharacter,
+    audio_character_section: gtk4::Box,
 }
 
 fn refresh_parts(
@@ -455,11 +475,13 @@ fn refresh_parts(
     let result = {
         let conn = conn.borrow();
         let layout = settings::get_stats_layout(&conn);
-        stats_snapshot::compute(&conn, period, now_unix, &chrono::Local)
-            .map(|snapshot| (snapshot, layout))
+        stats_snapshot::compute(&conn, period, now_unix, &chrono::Local).and_then(|snapshot| {
+            listened_audio_character::compute(&conn, period, now_unix, &chrono::Local)
+                .map(|audio_character| (snapshot, layout, audio_character))
+        })
     };
     match result {
-        Ok((snapshot, layout)) => {
+        Ok((snapshot, layout, audio_character)) => {
             apply_layout_widgets(
                 layout,
                 &render.clock_section,
@@ -468,6 +490,10 @@ fn refresh_parts(
             );
             render.customize.set_layout(layout);
             render_hero(render, &snapshot, period);
+            render.audio_character.set_data(audio_character.as_ref());
+            render
+                .audio_character_section
+                .set_visible(audio_character.is_some());
             // The stack decides what is on screen; hiding sections inside the
             // page it just switched away from changes nothing.
             if snapshot.is_empty() {
