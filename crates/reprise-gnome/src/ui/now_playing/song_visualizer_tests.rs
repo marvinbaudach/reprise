@@ -9,68 +9,26 @@ fn input_for<'a>(
     bands: &'a [f32; SPECTRUM_BAND_COUNT],
     peaks: &'a [f32; SPECTRUM_BAND_COUNT],
 ) -> SceneInput<'a> {
-    SceneInput {
-        bands,
-        peaks,
-        level: 0.5,
-        bass: 0.5,
-        phase: 0.25,
-    }
+    SceneInput { bands, peaks }
 }
 
 #[test]
-fn ac_10_every_preset_has_distinct_bounded_geometry() {
+fn ac_10_bars_geometry_is_bounded_with_value_and_peak_marks() {
     let bands = bands_ramp();
     let peaks = bands_ramp();
-    let input = input_for(&bands, &peaks);
-    let rings = scene(VisualPreset::Rings, &input, 240.0, 220.0);
-    let flow = scene(VisualPreset::Flow, &input, 240.0, 220.0);
-    let pulse = scene(VisualPreset::Pulse, &input, 240.0, 220.0);
-    let bars = scene(VisualPreset::Bars, &input, 240.0, 220.0);
-
-    assert_eq!(rings.circles.len(), 3);
-    assert_eq!(rings.strokes.len(), SPECTRUM_BAND_COUNT);
-    assert!(rings.bars.is_empty());
-
-    assert_eq!(flow.strokes.len(), 3);
-    assert!(flow.circles.is_empty() && flow.bars.is_empty());
-
-    assert_eq!(pulse.circles.len(), 2);
-    assert_eq!(pulse.strokes.len(), SPECTRUM_BAND_COUNT);
+    let bars = scene(&input_for(&bands, &peaks), 240.0, 220.0);
 
     // One value bar + one peak-hold tick per band.
     assert_eq!(bars.bars.len(), SPECTRUM_BAND_COUNT * 2);
-    assert!(bars.circles.is_empty() && bars.strokes.is_empty());
-
-    for scene in [&rings, &flow, &pulse, &bars] {
-        assert!(scene.is_finite_and_bounded(240.0, 220.0));
-    }
-}
-
-#[test]
-fn ac_10_visual_presets_are_stable_keyboard_labels() {
-    assert_eq!(
-        VisualPreset::ALL.map(VisualPreset::label),
-        ["Rings", "Flow", "Pulse", "Bars"]
-    );
+    assert!(bars.is_finite_and_bounded(240.0, 220.0));
 }
 
 #[test]
 fn ac_10_louder_spectrum_grows_the_geometry() {
     let quiet_bands = [0.0; SPECTRUM_BAND_COUNT];
     let loud_bands = [1.0; SPECTRUM_BAND_COUNT];
-    let quiet = scene(
-        VisualPreset::Bars,
-        &input_for(&quiet_bands, &quiet_bands),
-        240.0,
-        220.0,
-    );
-    let loud = scene(
-        VisualPreset::Bars,
-        &input_for(&loud_bands, &loud_bands),
-        240.0,
-        220.0,
-    );
+    let quiet = scene(&input_for(&quiet_bands, &quiet_bands), 240.0, 220.0);
+    let loud = scene(&input_for(&loud_bands, &loud_bands), 240.0, 220.0);
 
     assert_eq!(quiet.bars.len(), loud.bars.len());
     assert!(
@@ -84,8 +42,10 @@ fn ac_10_visual_chrome_uses_the_shared_cover_accent_and_press_vocabulary() {
     let css = css();
     assert!(css.matches("@reprise_player_accent").count() >= 4);
     assert!(css.matches("color: @reprise_player_accent").count() >= 2);
-    assert!(css.contains(".reprise-song-visual-preset:checked"));
     assert!(css.contains(".reprise-song-visual-fullscreen-canvas"));
+    // Fullscreen chrome fades rather than snapping.
+    assert!(css.contains(".reprise-song-visual-chrome-hidden"));
+    assert!(css.contains("transition: opacity"));
 
     let buttons = crate::ui::style::buttons::css();
     assert!(buttons.contains(".reprise-btn-toggle:active"));
@@ -93,7 +53,7 @@ fn ac_10_visual_chrome_uses_the_shared_cover_accent_and_press_vocabulary() {
 }
 
 #[test]
-fn ac_11_playing_rises_fast_then_pause_eases_down_and_freezes_phase() {
+fn ac_11_playing_rises_fast_then_pause_eases_down() {
     let mut state = RenderState {
         target: [1.0; SPECTRUM_BAND_COUNT],
         static_profile: [0.2; SPECTRUM_BAND_COUNT],
@@ -102,17 +62,15 @@ fn ac_11_playing_rises_fast_then_pause_eases_down_and_freezes_phase() {
         ..RenderState::default()
     };
 
-    // Playing never settles, phase advances, and fast attack lifts bands hard.
+    // Playing never settles, and fast attack lifts bands hard in one step.
     assert!(!advance_state(&mut state));
-    assert!(state.phase > 0.0);
     let risen = state.current[0];
     assert!(risen > 0.3, "fast attack should lift quickly, got {risen}");
 
     state.playback = PlaybackState::Paused;
     state.target = state.static_profile;
-    let frozen_phase = state.phase;
+    state.level_target = 0.0;
     advance_state(&mut state);
-    assert_eq!(state.phase, frozen_phase, "phase freezes when not playing");
     assert!(
         state.current[0] < risen,
         "release should ease back down toward the static profile"
@@ -125,7 +83,6 @@ fn ac_11_stop_then_track_clear_settles_toward_neutral() {
         current: [0.8; SPECTRUM_BAND_COUNT],
         target: [0.2; SPECTRUM_BAND_COUNT],
         static_profile: [0.2; SPECTRUM_BAND_COUNT],
-        phase: 0.5,
         playback: PlaybackState::Stopped,
         ..RenderState::default()
     };
@@ -192,8 +149,8 @@ fn impact_drop_below_threshold_is_a_noop() {
 }
 
 #[test]
-#[ignore = "visual gallery: renders preset PNGs to REPRISE_VIS_OUT for eyeballing"]
-fn render_preset_gallery_pngs() {
+#[ignore = "visual gallery: renders the bars scene to REPRISE_VIS_OUT for eyeballing"]
+fn render_bars_gallery_png() {
     let out = std::env::var("REPRISE_VIS_OUT").unwrap_or_else(|_| "/tmp".to_owned());
     let (w, h) = (548.0_f64, 300.0_f64);
     // A lively, bass-heavy frame mid-beat.
@@ -201,68 +158,60 @@ fn render_preset_gallery_pngs() {
         let x = i as f32 / SPECTRUM_BAND_COUNT as f32;
         (0.9 * (1.0 - x) + 0.35 * (x * 9.0).sin().abs()).clamp(0.05, 1.0)
     });
+    let peaks: [f32; SPECTRUM_BAND_COUNT] = std::array::from_fn(|i| bands[i] * 0.9);
     let accent = (0.22, 0.78, 0.74); // app teal
 
-    for preset in VisualPreset::ALL {
-        let mut state = RenderState {
-            current: bands,
-            target: bands,
-            peaks: std::array::from_fn(|i| bands[i] * 0.85),
-            level: 0.82,
-            bass: 0.92,
-            level_target: 0.82,
-            bass_target: 0.92,
-            phase: 0.18,
-            preset,
-            playback: PlaybackState::Playing,
-            ..RenderState::default()
-        };
-        state.impact.spawn_beat(0.9);
-        state.impact.spawn_drop(0.7);
-        for _ in 0..5 {
-            state.impact.advance();
-        }
-
-        let mut surface =
-            gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, w as i32, h as i32)
-                .unwrap();
-        {
-            let cr = gtk4::cairo::Context::new(&surface).unwrap();
-            cr.set_source_rgb(0.078, 0.094, 0.102); // dark panel
-            let _ = cr.paint();
-            let scene = scene(preset, &state.scene_input(), w, h);
-            draw_scene(
-                &cr,
-                &scene,
-                &state.impact,
-                w,
-                h,
-                f64::from(state.level),
-                accent,
-            );
-        }
-        // Opaque background → alpha is 255 everywhere, so premultiplied BGRA
-        // equals straight RGB. Emit a dep-free PPM for external rasterization.
-        let (iw, ih) = (w as usize, h as usize);
-        let stride = surface.stride() as usize;
-        let data = surface.data().unwrap();
-        let mut ppm = format!("P6\n{iw} {ih}\n255\n").into_bytes();
-        for y in 0..ih {
-            for x in 0..iw {
-                let o = y * stride + x * 4;
-                ppm.extend_from_slice(&[data[o + 2], data[o + 1], data[o]]);
-            }
-        }
-        drop(data);
-        let path = format!("{out}/visualizer-{}.ppm", preset.id());
-        std::fs::write(&path, ppm).unwrap();
-        println!("wrote {path}");
+    let mut state = RenderState {
+        current: bands,
+        target: bands,
+        peaks,
+        level: 0.82,
+        level_target: 0.82,
+        playback: PlaybackState::Playing,
+        ..RenderState::default()
+    };
+    state.impact.spawn_beat(0.9);
+    state.impact.spawn_drop(0.7);
+    for _ in 0..5 {
+        state.impact.advance();
     }
+
+    let mut surface =
+        gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, w as i32, h as i32).unwrap();
+    {
+        let cr = gtk4::cairo::Context::new(&surface).unwrap();
+        cr.set_source_rgb(0.078, 0.094, 0.102); // dark panel
+        let _ = cr.paint();
+        let scene = scene(&state.scene_input(), w, h);
+        draw_scene(
+            &cr,
+            &scene,
+            &state.impact,
+            w,
+            h,
+            f64::from(state.level),
+            accent,
+        );
+    }
+    let (iw, ih) = (w as usize, h as usize);
+    let stride = surface.stride() as usize;
+    let data = surface.data().unwrap();
+    let mut ppm = format!("P6\n{iw} {ih}\n255\n").into_bytes();
+    for y in 0..ih {
+        for x in 0..iw {
+            let o = y * stride + x * 4;
+            ppm.extend_from_slice(&[data[o + 2], data[o + 1], data[o]]);
+        }
+    }
+    drop(data);
+    let path = format!("{out}/visualizer-bars.ppm");
+    std::fs::write(&path, ppm).unwrap();
+    println!("wrote {path}");
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_10_visual_widget_exposes_a_labeled_canvas_and_keyboard_presets() {
+fn ac_10_visual_widget_exposes_a_labeled_canvas() {
     gtk4::init().unwrap();
     let visualizer = SongVisualizer::new();
 
@@ -271,19 +220,4 @@ fn ac_10_visual_widget_exposes_a_labeled_canvas_and_keyboard_presets() {
         &visualizer.area,
         gtk4::AccessibleProperty::Label
     ));
-    let presets = visualizer
-        .root
-        .last_child()
-        .expect("preset row")
-        .downcast::<gtk4::Box>()
-        .unwrap();
-    let mut child = presets.first_child();
-    let mut labels = Vec::new();
-    while let Some(widget) = child {
-        let button = widget.clone().downcast::<gtk4::ToggleButton>().unwrap();
-        assert!(button.is_focusable());
-        labels.push(button.label().unwrap().to_string());
-        child = widget.next_sibling();
-    }
-    assert_eq!(labels, ["Rings", "Flow", "Pulse", "Bars"]);
 }
