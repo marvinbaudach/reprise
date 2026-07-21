@@ -236,7 +236,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_1_fetch_respects_rate_limit() {
+    fn nr_1a_fetch_respects_rate_limit() {
         let base = Instant::now();
         let elapsed = Cell::new(Duration::ZERO);
         let slept = Cell::new(Duration::ZERO);

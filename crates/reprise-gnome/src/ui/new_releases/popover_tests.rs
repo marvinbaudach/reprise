@@ -12,6 +12,8 @@ fn release(id: &str) -> reprise_core::artist_news::StoredRelease {
         seen_at: None,
         hidden: false,
         fallback_accent: "#123456".into(),
+        in_library: false,
+        announce_url: None,
     }
 }
 

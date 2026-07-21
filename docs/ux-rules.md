@@ -941,13 +941,22 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
 
 ## R. New Releases
 
-- **NR-1** [aktiv] [core] — Eine bibliotheksweite MusicBrainz-Pipeline ist
+- **NR-1** [ersetzt durch NR-1a] [core] — Eine bibliotheksweite
+  MusicBrainz-Pipeline ist die einzige Wahrheit für neue Releases und
+  spätere Artist-News-Ansichten. Artist-MBIDs kommen zuerst aus Tags, sonst
+  aus einer persistierten Namensauflösung inklusive negativer Ergebnisse;
+  Artists werden nach Play-Count priorisiert. Pro Artist bleiben höchstens
+  fünf reguläre Alben oder EPs der letzten 90 Tage sowie ausschließlich
+  zukünftige Singles; unvollständige Daten gelten nie als zukünftig,
+  Sekundärtypen bleiben draußen.
+- **NR-1a** [aktiv] [core] — Eine bibliotheksweite MusicBrainz-Pipeline ist
   die einzige Wahrheit für neue Releases und spätere Artist-News-Ansichten.
   Artist-MBIDs kommen zuerst aus Tags, sonst aus einer persistierten
   Namensauflösung inklusive negativer Ergebnisse; Artists werden nach
-  Play-Count priorisiert. Pro Artist bleiben höchstens fünf reguläre Alben
-  oder EPs der letzten 90 Tage sowie ausschließlich zukünftige Singles;
-  unvollständige Daten gelten nie als zukünftig, Sekundärtypen bleiben draußen.
+  Play-Count priorisiert. Pro Artist bleiben höchstens zwanzig reguläre
+  Alben oder EPs der letzten 90 Tage sowie ausschließlich zukünftige
+  Singles; unvollständige Daten gelten nie als zukünftig, Sekundärtypen
+  bleiben draußen.
 - **NR-2** [aktiv] [gtk] — Release-Cover laden lazy über Cover Art Archive
   (`/release-group/{mbid}/front-250`). Ein fehlendes Cover ist Normalzustand
   und zeigt sofort eine gleich große Kachel aus gespeicherter Artist-
