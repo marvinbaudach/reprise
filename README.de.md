@@ -33,7 +33,10 @@ auf einen GUI-freien Core und explizite Linux-Plattformverträge.
 | `reprise-stems` | Portables Stem-Separation-Backend (ML-Inferenz) für die experimentellen Instrumental-Jobs | Andere Workspace-Crates als reprise-core oder GUI-/Engine-Kopplung |
 
 Die gemeinsame Engine besitzt Verhalten und Daten; Plattform-Crates
-implementieren schmale Verträge, während jedes Frontend nativ bleibt.
+implementieren schmale Verträge, während jedes Frontend nativ bleibt. Die
+`reprise-cli`- und `reprise-mcp`-Frontends laufen als eigene Prozesse über
+derselben Datenbank, und ein Change-Log-Notifier lässt ihre Änderungen in einer
+laufenden GTK-App live erscheinen — ohne Neustart.
 `scripts/check-architecture.sh` erzwingt Abhängigkeitsrichtung, Core Purity,
 Dateigrössen und bekannte Kopplungsgrenzen der Präsentationsschicht.
 

@@ -33,9 +33,11 @@ explicit Linux platform contracts.
 | `reprise-stems` | Portable stem-separation backend (ML inference) for the experimental instrumental jobs | Any workspace crate beyond reprise-core, or GUI/engine coupling |
 
 The shared engine owns behavior and data; platform crates implement narrow
-contracts, while each frontend remains native. `scripts/check-architecture.sh`
-enforces the dependency direction, core purity, source-size limits, and known
-presentation-layer coupling hazards.
+contracts, while each frontend remains native. The `reprise-cli` and
+`reprise-mcp` frontends run as separate processes over the same database, and a
+change-log notifier surfaces their edits in a running GTK app live, without a
+restart. `scripts/check-architecture.sh` enforces the dependency direction, core
+purity, source-size limits, and known presentation-layer coupling hazards.
 
 ## Engineering contracts
 
