@@ -41,13 +41,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Cache Cargo downloads and build output
+      - name: Cache Cargo downloads
         uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
           key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             cargo-${{ runner.os }}-
