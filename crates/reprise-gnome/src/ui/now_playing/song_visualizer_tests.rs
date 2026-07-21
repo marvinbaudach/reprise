@@ -29,16 +29,7 @@ fn mode_labels_match_visual_mode_order() {
     let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
     assert_eq!(
         labels,
-        [
-            "Grid",
-            "Bars",
-            "Rings",
-            "Flow",
-            "Pulse",
-            "Particles",
-            "Neon",
-            "Tunnel",
-        ]
+        ["Grid", "Bars", "Flow", "Pulse", "Particles", "Neon"]
     );
 }
 

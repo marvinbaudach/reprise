@@ -629,12 +629,10 @@ fn mode_label(mode: VisualMode) -> &'static str {
     match mode {
         VisualMode::Grid => strings::SONG_VISUALS_MODE_GRID,
         VisualMode::Bars => strings::SONG_VISUALS_MODE_BARS,
-        VisualMode::Rings => strings::SONG_VISUALS_MODE_RINGS,
         VisualMode::Flow => strings::SONG_VISUALS_MODE_FLOW,
         VisualMode::Pulse => strings::SONG_VISUALS_MODE_PULSE,
         VisualMode::Particles => strings::SONG_VISUALS_MODE_PARTICLES,
         VisualMode::Neon => strings::SONG_VISUALS_MODE_NEON,
-        VisualMode::Tunnel => strings::SONG_VISUALS_MODE_TUNNEL,
     }
 }
 
@@ -827,10 +825,10 @@ pub(in crate::ui) fn css() -> String {
      .reprise-fs-cover-thumb { border-radius: 14px; }\n\
      .reprise-fs-pill {\
        border-radius: 999px;\
-       background-color: alpha(#ffffff, 0.06);\
+       background-color: alpha(#0b0c15, 0.5);\
        border: 1px solid alpha(#ffffff, 0.14);\
-       color: alpha(#ffffff, 0.75);\
-       padding: 6px 14px;\
+       color: alpha(#ffffff, 0.78);\
+       padding: 8px 18px;\
      }\n\
      .reprise-fs-pill:checked {\
        border-color: alpha(@reprise_player_accent, 0.8);\
@@ -842,22 +840,22 @@ pub(in crate::ui) fn css() -> String {
      }\n\
      .reprise-song-visual-header-subtitle { font-size: 1.05rem; }\n\
      .reprise-song-visual-transport-btn {\
-       min-width: 46px; min-height: 46px;\
-       color: alpha(#ffffff, 0.82);\
-       background-color: alpha(#ffffff, 0.08);\
-       border: 1px solid alpha(#ffffff, 0.12);\
+       min-width: 44px; min-height: 44px;\
+       color: alpha(@reprise_player_accent, 0.85);\
+       background-color: transparent;\
+       border: 1px solid transparent;\
      }\n\
      .reprise-song-visual-transport-btn:hover {\
-       color: #ffffff; background-color: alpha(#ffffff, 0.16);\
+       color: #ffffff; background-color: alpha(#ffffff, 0.10);\
      }\n\
      .reprise-song-visual-transport-primary {\
-       min-width: 56px; min-height: 56px;\
-       color: #ffffff;\
-       background-color: alpha(@reprise_player_accent, 0.28);\
-       border-color: alpha(@reprise_player_accent, 0.85);\
+       min-width: 60px; min-height: 60px;\
+       color: @reprise_player_accent;\
+       background-color: transparent;\
+       border: 2px solid @reprise_player_accent;\
      }\n\
      .reprise-song-visual-transport-primary:hover {\
-       background-color: alpha(@reprise_player_accent, 0.42);\
+       background-color: alpha(@reprise_player_accent, 0.14);\
      }"
     .to_owned()
 }
