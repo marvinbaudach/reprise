@@ -4,7 +4,7 @@ use gstreamer::prelude::*;
 use reprise_core::playback::{AudioEffects, PlaybackError};
 
 const SPECTRUM_ELEMENT_NAME: &str = "reprise-spectrum";
-const SPECTRUM_INTERVAL_NS: u64 = 50_000_000;
+const SPECTRUM_INTERVAL_NS: u64 = reprise_core::playback::SPECTRUM_INTERVAL_MS * 1_000_000;
 const SPECTRUM_THRESHOLD_DB: i32 = -80;
 
 pub(super) fn build_audio_filter(

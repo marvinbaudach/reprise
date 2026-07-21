@@ -86,17 +86,21 @@ fn ac_10_audio_filter_contains_a_disabled_bounded_spectrum_analyzer() {
 #[test]
 fn ac_10_spectrum_messages_project_exactly_one_bounded_frame() {
     gst::init().unwrap();
-    let magnitudes = gst::List::new((0..16).map(|index| -80.0_f32 + index as f32 * 5.0));
+    let magnitudes = gst::List::new(
+        (0..reprise_core::playback::SPECTRUM_BAND_COUNT)
+            .map(|index| -80.0_f32 + index as f32 * 2.5),
+    );
     let structure = gst::Structure::builder("spectrum")
         .field("magnitude", magnitudes)
         .build();
 
-    let frame = spectrum_frame_from_structure(&structure).expect("valid spectrum frame");
+    let decibels = spectrum_decibels_from_structure(&structure).expect("valid spectrum frame");
+    let frame = reprise_core::playback::SpectrumFrame::from_decibels(decibels);
 
-    assert_eq!(frame.bands().len(), 16);
+    assert_eq!(frame.bands().len(), reprise_core::playback::SPECTRUM_BAND_COUNT);
     assert_eq!(frame.bands()[0], 0.0);
-    assert_eq!(frame.bands()[15], 0.9375);
-    assert!(spectrum_frame_from_structure(&gst::Structure::new_empty("other")).is_none());
+    assert_eq!(frame.bands()[16], 0.5);
+    assert!(spectrum_decibels_from_structure(&gst::Structure::new_empty("other")).is_none());
 }
 
 /// Guards every test in this module that sets `AUDIO_SINK_ENV_VAR`:
