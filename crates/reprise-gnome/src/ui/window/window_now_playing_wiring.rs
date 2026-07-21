@@ -35,6 +35,23 @@ pub(in crate::ui) fn install(
         }
     });
 
+    // Fullscreen visualizer transport buttons drive the same player actions as
+    // the player bar.
+    let transport_action = |player: &Rc<PlayerController>, action: fn(&PlayerController)| {
+        let weak = Rc::downgrade(player);
+        move || {
+            if let Some(player) = weak.upgrade() {
+                action(&player);
+            }
+        }
+    };
+    panel.set_visual_transport(
+        transport_action(player, PlayerController::previous),
+        transport_action(player, PlayerController::toggle_pause),
+        transport_action(player, PlayerController::reset_to_stopped),
+        transport_action(player, PlayerController::next),
+    );
+
     let panel_weak = Rc::downgrade(panel);
     let window_weak = window.downgrade();
     player.connect_analysis_clicked(move || {
