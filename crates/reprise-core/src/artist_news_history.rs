@@ -1,11 +1,11 @@
 //! Persistent history of every New Releases entry ever shown, plus the hard
 //! retention that keeps the underlying `new_releases` table bounded.
 //!
-//! This is the data layer behind the future popover history sub-page
-//! (NR-12, still `[geplant]` in `docs/ux-rules.md` — the UI and the rule
-//! flip land in a later task). It reads the same table `artist_news.rs`
-//! writes and reuses that module's date-parsing and hide/show primitives
-//! rather than re-deriving them.
+//! This is the data layer behind the popover history sub-page (NR-12,
+//! `[aktiv]` in `docs/ux-rules.md`; the UI lives in
+//! `crates/reprise-gnome/src/ui/new_releases/history_page.rs`). It reads
+//! the same table `artist_news.rs` writes and reuses that module's
+//! date-parsing and hide/show primitives rather than re-deriving them.
 
 use std::cmp::Ordering;
 
@@ -283,8 +283,9 @@ fn is_protected_by_fetch_window(first_release_date: &str, window_start: NaiveDat
 
 /// Un-hides exactly one release. Reuses `set_release_hidden`'s `hidden = 0`
 /// path (which also nulls `hidden_at`) so there is a single place that
-/// defines what "un-hidden" means. Replaces the blanket
-/// `show_hidden_releases`, whose removal is C2's job, not this task's.
+/// defines what "un-hidden" means. Replaces the former blanket
+/// `show_hidden_releases` (removed; see the history sub-page's Restore
+/// action in `history_page.rs`, its only real caller).
 pub fn restore_release(conn: &Connection, release_group_mbid: &str) -> Result<(), rusqlite::Error> {
     crate::artist_news::set_release_hidden(conn, release_group_mbid, false)
 }

@@ -167,7 +167,20 @@ pub fn new_releases_show_history_count(count: usize) -> String {
     )
 }
 
-fn news_timestamp_date(timestamp: i64) -> String {
+/// Formats a release date already known to be released as-is (dates from
+/// `first_release_date` come pre-formatted from MusicBrainz, including the
+/// partial year/year-month forms `release_row::parse_release_date` accepts).
+pub fn new_releases_released_on(date: &str) -> String {
+    formatted(N_!("released on {date}"), &[("date", date)])
+}
+
+/// Formats a history entry's hidden date, already resolved from its
+/// `hidden_at` Unix timestamp via `news_timestamp_date`.
+pub fn new_releases_hidden_on(date: &str) -> String {
+    formatted(N_!("hidden on {date}"), &[("date", date)])
+}
+
+pub fn news_timestamp_date(timestamp: i64) -> String {
     chrono::DateTime::from_timestamp(timestamp, 0).map_or_else(
         || text(N_!("unknown date")),
         |value| {
@@ -222,5 +235,18 @@ mod tests {
     #[test]
     fn new_releases_show_history_count_formats_count() {
         assert_eq!(new_releases_show_history_count(12), "Show history (12)");
+    }
+
+    #[test]
+    fn new_releases_released_on_formats_the_given_date() {
+        assert_eq!(
+            new_releases_released_on("2026-07-01"),
+            "released on 2026-07-01"
+        );
+    }
+
+    #[test]
+    fn new_releases_hidden_on_formats_the_given_date() {
+        assert_eq!(new_releases_hidden_on("2026-07-01"), "hidden on 2026-07-01");
     }
 }

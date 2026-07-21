@@ -525,11 +525,6 @@ pub fn set_release_hidden(
     Ok(())
 }
 
-pub fn show_hidden_releases(conn: &Connection) -> Result<(), rusqlite::Error> {
-    conn.execute("UPDATE new_releases SET hidden = 0 WHERE hidden = 1", [])?;
-    Ok(())
-}
-
 pub fn mark_releases_seen(
     conn: &Connection,
     release_group_mbids: &[String],

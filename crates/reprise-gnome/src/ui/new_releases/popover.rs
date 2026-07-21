@@ -11,15 +11,18 @@ use crate::ui::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::{one_shot_task, popover_lifecycle, strings};
 
 use super::badge;
+use super::history_page;
 use super::release_cover::fallback_accent_for_artist;
 use super::release_row;
 
 /// Popover content width (NR-9 compact layout).
 const POPOVER_WIDTH: i32 = 336;
 /// Caps the scrolling release list's natural height before it scrolls.
-const SCROLLER_MAX_HEIGHT: i32 = 288;
-const LIST_PAGE: &str = "list";
-const HISTORY_PAGE: &str = "history";
+/// Shared with `history_page.rs` (C1) so both pages scroll at the same
+/// height.
+pub(in crate::ui) const SCROLLER_MAX_HEIGHT: i32 = 288;
+pub(in crate::ui) const LIST_PAGE: &str = "list";
+pub(in crate::ui) const HISTORY_PAGE: &str = "history";
 /// How often the background timer re-checks staleness while the module is
 /// enabled (Beschluss 8). Deliberately coarse: `refresh_due`'s own 6 h+jitter
 /// window is the real gate, this just samples it periodically.
@@ -110,13 +113,12 @@ struct NewReleasesPopover {
     button: gtk4::MenuButton,
     badge: gtk4::Label,
     popover: gtk4::Popover,
-    #[allow(dead_code)] // Consumed by the list<->history navigation in C1.
     stack: gtk4::Stack,
     list: gtk4::ListBox,
     empty: gtk4::Label,
     new_tag: gtk4::Label,
+    history_row: gtk4::Button,
     history_row_label: gtk4::Label,
-    #[allow(dead_code)] // Filled in by history_page.rs in C1.
     history_page: gtk4::Box,
     fetch_button: gtk4::Button,
     fetch_stack: gtk4::Stack,
@@ -169,8 +171,6 @@ impl NewReleasesPopover {
         let separator = gtk4::Separator::new(gtk4::Orientation::Horizontal);
         separator.add_css_class("new-release-separator");
 
-        // The click handler is a stub: C1 wires the actual list<->history
-        // navigation once the history sub-page has real content.
         let history_row_label = gtk4::Label::new(None);
         history_row_label.set_xalign(0.0);
         history_row_label.set_hexpand(true);
@@ -184,9 +184,6 @@ impl NewReleasesPopover {
             .child(&history_content)
             .css_classes(["flat", "new-release-history-row"])
             .build();
-        history_row.connect_clicked(|_| {
-            // Stub: C1 wires list<->history navigation.
-        });
 
         let (footer, fetch_button, fetch_stack, spinner, updated, failure) = build_footer();
 
@@ -197,7 +194,8 @@ impl NewReleasesPopover {
         list_page.append(&history_row);
         list_page.append(&footer);
 
-        // C1 fills this with history_page.rs; B2 only lays out the stack.
+        // `show_history` fills this fresh from `history_page::build` every
+        // time it navigates here, rather than keeping one instance alive.
         let history_page = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
 
         let stack = gtk4::Stack::new();
@@ -228,6 +226,7 @@ impl NewReleasesPopover {
             list,
             empty,
             new_tag,
+            history_row,
             history_row_label,
             history_page,
             fetch_button,
@@ -266,6 +265,64 @@ impl NewReleasesPopover {
                 state.fetch_now();
             }
         });
+
+        let weak = Rc::downgrade(self);
+        self.history_row.connect_clicked(move |_| {
+            if let Some(state) = weak.upgrade() {
+                state.show_history();
+            }
+        });
+    }
+
+    /// Builds the history sub-page fresh from the latest `query_history`
+    /// snapshot and navigates the stack to it. Rebuilt every time (rather
+    /// than once and kept around) so a restore or the passage of time is
+    /// always reflected without extra invalidation bookkeeping.
+    fn show_history(self: &Rc<Self>) {
+        let today = chrono::Local::now().date_naive();
+        let entries = reprise_core::artist_news_history::query_history(&self.conn.borrow(), today)
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, "could not query New Releases history");
+                Vec::new()
+            });
+
+        while let Some(child) = self.history_page.first_child() {
+            self.history_page.remove(&child);
+        }
+
+        let on_back: Rc<dyn Fn()> = {
+            let stack = self.stack.clone();
+            Rc::new(move || stack.set_visible_child_name(LIST_PAGE))
+        };
+        let on_restore: Rc<dyn Fn(&str)> = {
+            let weak = Rc::downgrade(self);
+            Rc::new(move |mbid: &str| {
+                let Some(state) = weak.upgrade() else { return };
+                if let Err(error) =
+                    reprise_core::artist_news_history::restore_release(&state.conn.borrow(), mbid)
+                {
+                    tracing::warn!(%error, release_group_mbid = mbid, "could not restore New Release");
+                    return;
+                }
+                state.render(false, false);
+                state.show_history();
+            })
+        };
+        let close_popover: Rc<dyn Fn()> = {
+            let popover = self.popover.clone();
+            Rc::new(move || popover.popdown())
+        };
+
+        let page = history_page::build(
+            entries,
+            today,
+            on_back,
+            &self.on_show_album,
+            &on_restore,
+            &close_popover,
+        );
+        self.history_page.append(&page);
+        self.stack.set_visible_child_name(HISTORY_PAGE);
     }
 
     fn render(self: &Rc<Self>, mark_seen: bool, failed: bool) {

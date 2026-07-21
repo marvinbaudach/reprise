@@ -43,7 +43,9 @@ pub(in crate::ui) enum PrimaryAction {
 /// `reprise_core::artist_news::parse_partial_date` is `pub(crate)` to that
 /// crate, and reprise-gnome is a different crate — so this mirrors its
 /// year / year-month / full-date fallback rather than reaching for it.
-fn parse_release_date(value: &str) -> Option<NaiveDate> {
+/// Shared with `history_page.rs` (C1), which needs the same fallback to
+/// tell an upcoming history entry from an already-released one.
+pub(in crate::ui) fn parse_release_date(value: &str) -> Option<NaiveDate> {
     match value.len() {
         10 => NaiveDate::parse_from_str(value, "%Y-%m-%d").ok(),
         7 => NaiveDate::parse_from_str(&format!("{value}-01"), "%Y-%m-%d").ok(),
@@ -94,7 +96,12 @@ pub(in crate::ui) fn stack_target(hovered: bool, focused: bool) -> &'static str 
     }
 }
 
-fn icon_with_fallback(primary: &'static str, fallback: &'static str) -> &'static str {
+/// Shared with `history_page.rs` (C1) so both rows fall back the same way
+/// when the running icon theme lacks a symbolic icon.
+pub(in crate::ui) fn icon_with_fallback(
+    primary: &'static str,
+    fallback: &'static str,
+) -> &'static str {
     let Some(display) = gtk4::gdk::Display::default() else {
         return primary;
     };
@@ -105,7 +112,9 @@ fn icon_with_fallback(primary: &'static str, fallback: &'static str) -> &'static
     }
 }
 
-fn action_button(icon_name: &str, label: &str) -> gtk4::Button {
+/// Shared with `history_page.rs` (C1): both build a flat icon button with a
+/// tooltip and an accessible label from the same two arguments.
+pub(in crate::ui) fn action_button(icon_name: &str, label: &str) -> gtk4::Button {
     let button = gtk4::Button::from_icon_name(icon_name);
     button.add_css_class("flat");
     button.add_css_class("new-release-action");
@@ -114,7 +123,9 @@ fn action_button(icon_name: &str, label: &str) -> gtk4::Button {
     button
 }
 
-fn launch_uri(url: &str) {
+/// Shared with `history_page.rs` (C1): opening an announcement URL is the
+/// same "launch externally, log and swallow any failure" action either way.
+pub(in crate::ui) fn launch_uri(url: &str) {
     gtk4::UriLauncher::new(url).launch(
         None::<&gtk4::Window>,
         gtk4::gio::Cancellable::NONE,
