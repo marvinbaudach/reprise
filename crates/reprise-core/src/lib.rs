@@ -13,6 +13,7 @@
 //! MPRIS in `reprise-platform-linux`).
 
 pub mod artist_news;
+pub mod artist_news_history;
 pub mod artist_portrait;
 pub mod audio_analysis;
 pub mod browser;
