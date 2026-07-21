@@ -108,6 +108,10 @@ pub(super) fn draw_scene(cr: &gtk4::cairo::Context, scene: &Scene) {
     cr.set_line_cap(gtk4::cairo::LineCap::Round);
     cr.set_line_join(gtk4::cairo::LineJoin::Round);
     for shape in &scene.shapes {
+        match shape.dash {
+            Some((on, off)) => cr.set_dash(&[f64::from(on), f64::from(off)], 0.0),
+            None => cr.set_dash(&[], 0.0),
+        }
         if shape.glow > 0.0 && shape.width > 0.0 {
             apply_fill(cr, &shape.fill, f64::from(shape.glow) * 0.35);
             cr.set_line_width(f64::from(shape.width) * 3.0);
