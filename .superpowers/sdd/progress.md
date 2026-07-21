@@ -11,6 +11,8 @@ Started: 2026-07-21
 
 ## Progress
 - Task 1+2: complete (commits bfc2a28..9cc724f, base c1cbee2, log bands + AGC + gamma; fix pass for fmt/clippy gate; review clean after fix)
+- Task 3: complete (commit 848f636, base 9cc724f, platform 256-band element + raw parse; 77 tests, gates clean; review ✅ no issues)
+- Plan: added optional Task 19 (GSK GPU bloom) — commit after 848f636
 
 ## Minor findings roll-up (for final review)
 (none yet)
