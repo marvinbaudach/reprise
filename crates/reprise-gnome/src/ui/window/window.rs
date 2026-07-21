@@ -402,7 +402,29 @@ pub fn build(
     toast_overlay.set_child(Some(library_player_bar.widget()));
     let library_chrome =
         super::library_chrome::build(&header, &toast_overlay, &search_entry, &window);
-    crate::ui::new_releases::popover::install(&header, &window, conn, db_path, &artist_news);
+    // New Releases' "Show in library" (NR-13) navigates and focuses through
+    // the same edge every other metadata link uses; the popover module
+    // itself stays navigation-agnostic behind this closure.
+    let on_show_album: crate::ui::new_releases::release_row::OnShowAlbum = {
+        let navigator = metadata_navigator.clone();
+        Rc::new(move |album: &str, artist: &str| {
+            navigator.navigate(
+                reprise_core::browser::navigation::NavigationIntent::OpenAlbum {
+                    album: reprise_core::browser::AlbumKey::new(album, artist),
+                    anchor_track_id: None,
+                },
+                "new releases",
+            );
+        })
+    };
+    crate::ui::new_releases::popover::install(
+        &header,
+        &window,
+        conn,
+        db_path,
+        &artist_news,
+        on_show_album,
+    );
     let compact_root = player
         .as_ref()
         .map(|player| player.compact_player.handle().upcast_ref());

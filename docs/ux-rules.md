@@ -1008,16 +1008,14 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   aus NR-3 zeigt die **Anzahl** der Einträge mit `seen_at IS NULL`, ab 10 als
   „9+", verschwindet mit dem Öffnen (alle gelisteten Einträge werden
   gestempelt) und rendert bei 0 kein leeres Element.
-- **NR-10** [geplant] [gtk] — Zeilen-Hover bzw. -Fokus blendet den
+- **NR-10** [aktiv] [gtk] — Zeilen-Hover bzw. -Fokus blendet den
   Status-Chip aus und die Zeilen-Aktionen ein; beim Verlassen kehrt der Chip
   zurück. Tastaturparität: die Zeile ist fokussierbar, Fokus zeigt die
   Aktionen, die Buttons sind per Tab/Enter erreichbar.
-  <!-- REVIEW: Regelvorschlag -->
-- **NR-11** [geplant] [gtk] — „Open announcement" öffnet eine URL nach
+- **NR-11** [aktiv] [gtk] — „Open announcement" öffnet eine URL nach
   Priorität: MusicBrainz-URL-Relations der Release-Group (Bandcamp/Kauf/
   Streaming vor offizieller Homepage/Discography) → Fallback
   MusicBrainz-Release-Group-Seite. Geöffnet wird extern (Standardbrowser).
-  <!-- REVIEW: Regelvorschlag -->
 - **NR-12** [geplant] [gtk] — Der Verlauf ist eine persistente Historie
   aller je gezeigten Meldungen als **Popover-Unterseite** (kein eigener
   Navigations-Ort), gruppiert nach Zeitraum, ausgeblendete Einträge einzeln
@@ -1025,11 +1023,10 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   Grenze gewinnt), hartes Löschen, aber nie innerhalb des
   90-Tage-Fetch-Fensters. Ersetzt NR-4.
   <!-- REVIEW: Regelvorschlag -->
-- **NR-13** [geplant] [gtk] — Bereits in der Bibliothek vorhandene,
+- **NR-13** [aktiv] [gtk] — Bereits in der Bibliothek vorhandene,
   erschienene Releases werden markiert (nicht herausgefiltert) und bieten
   die Aktion „Show in library" (Navigieren + Fokussieren, **kein** direkter
   Play-Pfad).
-  <!-- REVIEW: Regelvorschlag -->
 
 ## S. Flächen & Geometrie
 
