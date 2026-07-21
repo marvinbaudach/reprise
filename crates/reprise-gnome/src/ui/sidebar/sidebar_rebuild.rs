@@ -78,10 +78,32 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
             tracing::error!(%error, "failed to list playlists for sidebar");
             Vec::new()
         });
-        let smart_rows = playlists::list_smart(&conn).unwrap_or_else(|error| {
-            tracing::error!(%error, "failed to list smart playlists for sidebar");
-            Vec::new()
-        });
+        // Each smart list carries its own live track count so the sidebar can
+        // badge it like a manual playlist (SIDEBAR-badge parity). The count is
+        // the rule-based `ViewSource::Smart` count — the same query the list
+        // itself resolves to — so the badge always matches what opening the
+        // list shows. Paired with its row here (rather than as a parallel vec)
+        // so the count travels with the row it belongs to.
+        let smart_rows: Vec<(playlists::SmartPlaylist, i64)> = playlists::list_smart(&conn)
+            .unwrap_or_else(|error| {
+                tracing::error!(%error, "failed to list smart playlists for sidebar");
+                Vec::new()
+            })
+            .into_iter()
+            .map(|smart| {
+                let count =
+                    queries::query_track_count(&conn, &ViewSource::Smart(smart.id), "", &[])
+                        .unwrap_or_else(|error| {
+                            tracing::error!(
+                                %error,
+                                smart_id = smart.id,
+                                "failed to count smart playlist tracks for sidebar badge"
+                            );
+                            0
+                        });
+                (smart, count)
+            })
+            .collect();
         (
             music_count,
             missing_count,
@@ -142,12 +164,12 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         &shared.listbox,
         &strings::text(strings::SIDEBAR_SECTION_SMART),
     );
-    for smart in &smart_rows {
+    for (smart, count) in &smart_rows {
         add_row(
             shared,
             ViewSource::Smart(smart.id),
             &smart.name,
-            None,
+            sidebar_presentation::nonzero_count(*count),
             sidebar_presentation::smart_icon(&smart.sort_field),
         );
     }
