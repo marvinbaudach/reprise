@@ -1855,7 +1855,7 @@ damit nach P-1/P-4/MOT-2: leise, ohne Layout-Diebstahl, ohne eigene
 Ankündigung. Die App refresht ihre *eigenen* Schreibaktionen weiterhin selbst
 (Writer-Token-Filter); diese Sektion regelt ausschließlich den Fremd-Write.
 
-- **EXT-1a** [geplant] [gtk] — Fremd erzeugte Inhalte erscheinen ohne
+- **EXT-1a** [aktiv] [gtk] — Fremd erzeugte Inhalte erscheinen ohne
   Neustart: eine von einem anderen Prozess über dieselbe Datenbank angelegte
   Playlist — allgemein jede fremde Änderung an Playlists, Smart-Playlists oder
   Katalog — wird in der laufenden App sichtbar; die betroffenen Ansichten
