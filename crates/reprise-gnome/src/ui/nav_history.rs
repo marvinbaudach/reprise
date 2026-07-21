@@ -1,342 +1,214 @@
-//! NAV-2: the global navigation history. Every routed source switch (the
-//! sidebar's `on_select` choke point) and every cross-navigation that
-//! bypasses it (album cards, artist deep-links — see `library_shell`)
-//! records the place it LEFT; "Back" (Alt+← / mouse back button) pops and
-//! re-routes there. A place is the routed `ViewSource` plus which library
-//! tab was showing — the visual Albums/Artists grids are tabs of the same
-//! `ViewSource::Library`, so the source alone cannot express "the album
-//! grid I was looking at". Back itself routes with the suppression flag
-//! set, so returning never pushes.
+//! Compatibility edge around the canonical core browser router.
+//!
+//! GTK routing still speaks in `NavPlace` while the browser migration is in
+//! progress, but all current-place and Back/Forward state lives in
+//! [`BrowserNavigation`]. Album and artist destinations are ordinary scoped
+//! track places; there is no parallel library-tab history.
 
 use std::cell::{Cell, RefCell};
-use std::rc::Rc;
 
+use reprise_core::browser::navigation::{BrowserNavigation, NavigationIntent, SidebarTarget};
+use reprise_core::browser::{AlbumKey, ArtistKey, BrowserPlace};
 use reprise_core::view_source::ViewSource;
 
-/// Upper bound on remembered places. Far beyond any real session's
-/// navigation depth; just keeps a pathological click loop from growing
-/// the stack forever.
-const MAX_HISTORY: usize = 50;
-
-type AvailabilityCallback = Rc<dyn Fn(bool)>;
-
-/// A place the user can return to: the routed source plus the library
-/// tab (`library_shell::LIBRARY_VIEW_*`) that was visible there. The tab
-/// is semantically meaningful only for sources rendered inside the
-/// library tab stack; for Device/MyStats it is carried along but the
-/// content-stack switch on the way back makes it invisible.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(in crate::ui) struct NavPlace {
-    pub(in crate::ui) source: ViewSource,
-    pub(in crate::ui) library_tab: Option<String>,
-    transient: Option<TransientPlace>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum TransientPlace {
-    NewReleases,
+    browser: BrowserPlace,
 }
 
 impl NavPlace {
-    pub(in crate::ui) fn source(source: ViewSource, library_tab: Option<String>) -> Self {
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(in crate::ui) fn browser(browser: BrowserPlace) -> Self {
+        Self { browser }
+    }
+
+    pub(in crate::ui) fn source(source: ViewSource) -> Self {
         Self {
-            source,
-            library_tab,
-            transient: None,
+            browser: BrowserPlace::from(source),
         }
     }
 
+    pub(in crate::ui) fn view_source(&self) -> ViewSource {
+        self.browser.view_source()
+    }
+
+    pub(in crate::ui) fn browser_place(&self) -> &BrowserPlace {
+        &self.browser
+    }
+
     pub(in crate::ui) fn is_new_releases(&self) -> bool {
-        self.transient == Some(TransientPlace::NewReleases)
+        self.browser == BrowserPlace::NewReleases
     }
 }
 
 #[derive(Default)]
 pub(in crate::ui) struct NavHistory {
-    stack: RefCell<Vec<NavPlace>>,
-    /// Places "ahead" of the current one, populated by `go_back` and
-    /// invalidated by any real forward navigation — browser semantics.
-    forward: RefCell<Vec<NavPlace>>,
-    /// The place currently routed to — the value `record_route` will push
-    /// as "the place we left" on the NEXT route. `None` until the first
-    /// route after startup (a fresh window has no place to go back to).
-    /// Its `library_tab` is kept fresh by `note_library_tab`.
-    last: RefCell<Option<NavPlace>>,
-    navigating_back: Cell<bool>,
-    can_go_back_changed: RefCell<Vec<AvailabilityCallback>>,
+    navigation: RefCell<Option<BrowserNavigation>>,
+    replaying_history: Cell<bool>,
 }
 
 impl NavHistory {
-    pub(in crate::ui) fn connect_can_go_back_changed(&self, callback: impl Fn(bool) + 'static) {
-        callback(self.can_go_back());
-        self.can_go_back_changed
-            .borrow_mut()
-            .push(Rc::new(callback));
-    }
-
-    fn can_go_back(&self) -> bool {
-        !self.stack.borrow().is_empty()
-    }
-
-    fn notify_can_go_back_if_changed(&self, was_available: bool) {
-        let available = self.can_go_back();
-        if available == was_available {
-            return;
-        }
-        let callbacks = self.can_go_back_changed.borrow().clone();
-        for callback in callbacks {
-            callback(available);
-        }
-    }
-
-    /// Called from the routing paths with the place being routed TO.
-    /// Pushes the previously-routed place (consecutive duplicates and
-    /// back/forward re-routes excluded), then remembers `new` as current.
-    /// A real navigation also clears the forward stack — like a browser,
-    /// where following a link discards the "forward" pages.
+    /// Seeds the router on the first call, then records an absolute user
+    /// navigation through the canonical core state machine.
     pub(in crate::ui) fn record_route(&self, new: &NavPlace) {
-        let was_available = self.can_go_back();
-        let previous = self.last.borrow_mut().replace(new.clone());
-        if self.navigating_back.get() {
+        if self.replaying_history.get() {
             return;
         }
-        let Some(previous) = previous else {
-            return;
-        };
-        if previous == *new {
-            return;
-        }
-        self.forward.borrow_mut().clear();
-        let mut stack = self.stack.borrow_mut();
-        if stack.last() == Some(&previous) {
-            return;
-        }
-        stack.push(previous);
-        if stack.len() > MAX_HISTORY {
-            stack.remove(0);
-        }
-        drop(stack);
-        self.notify_can_go_back_if_changed(was_available);
-    }
-
-    /// Records a tab-only navigation within the current source — e.g. the
-    /// album card's artist deep-link jumping the Albums tab to the Artists
-    /// tab. A no-op before the first routed place exists.
-    pub(in crate::ui) fn record_tab_route(&self, tab: &str) {
-        let current = self.last.borrow().clone();
-        let Some(mut place) = current else {
+        let mut navigation = self.navigation.borrow_mut();
+        let Some(router) = navigation.as_mut() else {
+            *navigation = Some(BrowserNavigation::new(new.browser.clone()));
             return;
         };
-        place.library_tab = Some(tab.to_owned());
-        self.record_route(&place);
+        let _ = router.navigate(intent_for(&new.browser));
     }
 
-    /// Keeps the current place's tab fresh while the user switches library
-    /// tabs WITHOUT routing — the Tracks/Albums/Artists switcher is a mode
-    /// switch, not a history entry, but the next push must remember the
-    /// tab the user actually left. Wired to the library stack's
-    /// `visible-child-name` notify in `library_shell`.
-    pub(in crate::ui) fn note_library_tab(&self, tab: &str) {
-        if let Some(last) = self.last.borrow_mut().as_mut() {
-            last.library_tab = Some(tab.to_owned());
-        }
+    pub(in crate::ui) fn restore(&self, current: BrowserPlace, library_root: BrowserPlace) {
+        *self.navigation.borrow_mut() = Some(BrowserNavigation::restore(current, library_root));
+        self.replaying_history.set(false);
     }
 
-    /// Records the row-less New Releases digest over the current routed
-    /// source. The retained source/tab is the place Back restores, while the
-    /// transient marker makes Forward return to the digest itself.
+    pub(in crate::ui) fn session_places(
+        &self,
+        visible_track_place: BrowserPlace,
+    ) -> Option<(BrowserPlace, BrowserPlace)> {
+        self.replace_current(visible_track_place);
+        let navigation = self.navigation.borrow();
+        let navigation = navigation.as_ref()?;
+        Some((
+            navigation.current().clone(),
+            navigation.library_root().clone(),
+        ))
+    }
+
+    pub(in crate::ui) fn record_route_from(&self, new: &NavPlace, current: BrowserPlace) {
+        self.replace_current(current);
+        self.record_route(new);
+    }
+
+    pub(in crate::ui) fn navigate_from(
+        &self,
+        intent: NavigationIntent,
+        current: BrowserPlace,
+    ) -> Option<NavPlace> {
+        self.replace_current(current);
+        let transition = self.navigation.borrow_mut().as_mut()?.navigate(intent)?;
+        Some(NavPlace {
+            browser: transition.to,
+        })
+    }
+
     pub(in crate::ui) fn record_new_releases(&self) -> Option<NavPlace> {
-        let mut place = self.last.borrow().clone()?;
-        place.transient = Some(TransientPlace::NewReleases);
-        self.record_route(&place);
-        Some(place)
+        let mut navigation = self.navigation.borrow_mut();
+        let router = navigation.as_mut()?;
+        let transition = router.navigate(NavigationIntent::OpenNewReleases)?;
+        Some(NavPlace {
+            browser: transition.to,
+        })
     }
 
-    /// Pops the most recent place and remembers the CURRENT place on the
-    /// forward stack, so `go_forward` can return here. The caller routes
-    /// to the returned place wrapped in `begin_back`/`end_back` (plus a
-    /// `record_route` of the target) so the re-route stays silent.
+    pub(in crate::ui) fn record_new_releases_from(
+        &self,
+        current: BrowserPlace,
+    ) -> Option<NavPlace> {
+        self.replace_current(current);
+        self.record_new_releases()
+    }
+
     pub(in crate::ui) fn go_back(&self) -> Option<NavPlace> {
-        let was_available = self.can_go_back();
-        let target = self.stack.borrow_mut().pop()?;
-        let current = self.last.borrow().clone();
-        if let Some(current) = current {
-            self.forward.borrow_mut().push(current);
-        }
-        self.notify_can_go_back_if_changed(was_available);
-        Some(target)
+        let transition = self
+            .navigation
+            .borrow_mut()
+            .as_mut()?
+            .navigate(NavigationIntent::Back)?;
+        Some(NavPlace {
+            browser: transition.to,
+        })
     }
 
-    /// The inverse of `go_back`: pops the nearest "ahead" place and pushes
-    /// the current one back onto the back stack. Same caller contract as
-    /// `go_back` (wrap the re-route in `begin_back`/`end_back`).
+    pub(in crate::ui) fn go_back_from(&self, current: BrowserPlace) -> Option<NavPlace> {
+        self.replace_current(current);
+        self.go_back()
+    }
+
     pub(in crate::ui) fn go_forward(&self) -> Option<NavPlace> {
-        let was_available = self.can_go_back();
-        let target = self.forward.borrow_mut().pop()?;
-        let current = self.last.borrow().clone();
-        if let Some(current) = current {
-            let mut stack = self.stack.borrow_mut();
-            stack.push(current);
-            if stack.len() > MAX_HISTORY {
-                stack.remove(0);
-            }
-        }
-        self.notify_can_go_back_if_changed(was_available);
-        Some(target)
+        let transition = self
+            .navigation
+            .borrow_mut()
+            .as_mut()?
+            .navigate(NavigationIntent::Forward)?;
+        Some(NavPlace {
+            browser: transition.to,
+        })
+    }
+
+    pub(in crate::ui) fn go_forward_from(&self, current: BrowserPlace) -> Option<NavPlace> {
+        self.replace_current(current);
+        self.go_forward()
     }
 
     pub(in crate::ui) fn begin_back(&self) {
-        self.navigating_back.set(true);
+        self.replaying_history.set(true);
     }
 
     pub(in crate::ui) fn end_back(&self) {
-        self.navigating_back.set(false);
+        self.replaying_history.set(false);
+    }
+
+    fn replace_current(&self, current: BrowserPlace) {
+        if let Some(router) = self.navigation.borrow_mut().as_mut() {
+            let _ = router.replace_current(current);
+        }
+    }
+}
+
+fn intent_for(place: &BrowserPlace) -> NavigationIntent {
+    match place {
+        BrowserPlace::Tracks(track_place) => match &track_place.collection {
+            reprise_core::browser::TrackCollection::Library(
+                reprise_core::browser::LibraryScope::All,
+            ) => NavigationIntent::Sidebar(SidebarTarget::Music),
+            reprise_core::browser::TrackCollection::Library(
+                reprise_core::browser::LibraryScope::Album(key),
+            ) => NavigationIntent::OpenAlbum {
+                album: AlbumKey::new(&key.album, &key.album_artist),
+                anchor_track_id: None,
+            },
+            reprise_core::browser::TrackCollection::Library(
+                reprise_core::browser::LibraryScope::Artist(key),
+            ) => NavigationIntent::OpenArtist {
+                artist: ArtistKey::new(&key.artist),
+                anchor_track_id: None,
+            },
+            reprise_core::browser::TrackCollection::Playlist(id) => {
+                NavigationIntent::Sidebar(SidebarTarget::Playlist(*id))
+            }
+            reprise_core::browser::TrackCollection::Smart(id) => {
+                NavigationIntent::Sidebar(SidebarTarget::Smart(*id))
+            }
+            reprise_core::browser::TrackCollection::Queue => {
+                NavigationIntent::Sidebar(SidebarTarget::Queue)
+            }
+            reprise_core::browser::TrackCollection::Missing => {
+                NavigationIntent::Sidebar(SidebarTarget::Missing)
+            }
+        },
+        BrowserPlace::NewReleases => NavigationIntent::OpenNewReleases,
+        BrowserPlace::ImportErrors => NavigationIntent::Sidebar(SidebarTarget::ImportErrors),
+        BrowserPlace::MyStats => NavigationIntent::Sidebar(SidebarTarget::MyStats),
+        BrowserPlace::Device { serial } => {
+            NavigationIntent::Sidebar(SidebarTarget::Device(serial.clone()))
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::rc::Rc;
 
     fn place(source: ViewSource) -> NavPlace {
-        NavPlace::source(source, None)
+        NavPlace::source(source)
     }
 
-    #[test]
-    fn nav_12_back_availability_tracks_history_depth() {
-        let nav = NavHistory::default();
-        let observed = Rc::new(RefCell::new(Vec::new()));
-        let observed_for_callback = observed.clone();
-        nav.connect_can_go_back_changed(move |available| {
-            observed_for_callback.borrow_mut().push(available);
-        });
-
-        nav.record_route(&place(ViewSource::Library));
-        nav.record_route(&place(ViewSource::Queue));
-        assert_eq!(nav.go_back(), Some(place(ViewSource::Library)));
-
-        assert_eq!(&*observed.borrow(), &[false, true, false]);
-    }
-
-    #[test]
-    fn routes_push_the_left_place_and_pop_in_reverse_order() {
-        let nav = NavHistory::default();
-        nav.record_route(&place(ViewSource::Library)); // startup: nothing left yet
-        nav.record_route(&place(ViewSource::Queue)); // left Library
-        nav.record_route(&place(ViewSource::Playlist(7))); // left Queue
-        assert_eq!(nav.go_back(), Some(place(ViewSource::Queue)));
-        assert_eq!(nav.go_back(), Some(place(ViewSource::Library)));
-        assert_eq!(nav.go_back(), None);
-    }
-
-    #[test]
-    fn back_navigation_does_not_push() {
-        let nav = NavHistory::default();
-        nav.record_route(&place(ViewSource::Library));
-        nav.record_route(&place(ViewSource::Queue));
-        let target = nav.go_back().unwrap();
-        nav.begin_back();
-        nav.record_route(&target);
-        nav.end_back();
-        // Returning to Library must not have recorded "left Queue".
-        assert_eq!(nav.go_back(), None);
-        // …but the next forward route records leaving Library again.
-        nav.record_route(&place(ViewSource::Missing));
-        assert_eq!(nav.go_back(), Some(place(ViewSource::Library)));
-    }
-
-    #[test]
-    fn consecutive_duplicates_are_not_stacked() {
-        let nav = NavHistory::default();
-        nav.record_route(&place(ViewSource::Library));
-        nav.record_route(&place(ViewSource::Library));
-        nav.record_route(&place(ViewSource::Queue));
-        assert_eq!(nav.go_back(), Some(place(ViewSource::Library)));
-        assert_eq!(nav.go_back(), None);
-    }
-
-    #[test]
-    fn history_is_bounded() {
-        let nav = NavHistory::default();
-        nav.record_route(&place(ViewSource::Library));
-        for id in 0..200 {
-            nav.record_route(&place(ViewSource::Playlist(id)));
-        }
-        assert!(nav.stack.borrow().len() <= MAX_HISTORY);
-        assert_eq!(nav.go_back(), Some(place(ViewSource::Playlist(198))));
-    }
-
-    #[test]
-    fn cross_navigation_pushes_the_grid_tab_the_user_left() {
-        let nav = NavHistory::default();
-        nav.record_route(&NavPlace {
-            source: ViewSource::Library,
-            library_tab: Some("tracks".into()),
-            transient: None,
-        });
-        // User clicks the Albums tab (mode switch, not a route)…
-        nav.note_library_tab("albums");
-        // …then opens an album from the grid (cross-navigation).
-        nav.record_route(&NavPlace {
-            source: ViewSource::Album {
-                album: "OK Computer".into(),
-                album_artist: "Radiohead".into(),
-            },
-            library_tab: Some("tracks".into()),
-            transient: None,
-        });
-        // Back must return to the Albums GRID, not the Tracks tab.
-        assert_eq!(
-            nav.go_back(),
-            Some(NavPlace {
-                source: ViewSource::Library,
-                library_tab: Some("albums".into()),
-                transient: None,
-            })
-        );
-    }
-
-    #[test]
-    fn artist_deep_link_records_the_tab_it_left() {
-        let nav = NavHistory::default();
-        nav.record_route(&NavPlace {
-            source: ViewSource::Library,
-            library_tab: Some("tracks".into()),
-            transient: None,
-        });
-        nav.note_library_tab("albums");
-        // Album card's artist link: same source, Albums → Artists tab.
-        nav.record_tab_route("artists");
-        assert_eq!(
-            nav.go_back(),
-            Some(NavPlace {
-                source: ViewSource::Library,
-                library_tab: Some("albums".into()),
-                transient: None,
-            })
-        );
-        // The deep-link target became current: the next route pushes it.
-        nav.record_route(&place(ViewSource::Queue));
-        assert_eq!(
-            nav.go_back(),
-            Some(NavPlace {
-                source: ViewSource::Library,
-                library_tab: Some("artists".into()),
-                transient: None,
-            })
-        );
-    }
-
-    #[test]
-    fn tab_route_before_any_route_is_a_noop() {
-        let nav = NavHistory::default();
-        nav.record_tab_route("albums");
-        assert_eq!(nav.go_back(), None);
-    }
-
-    /// Mirrors the real back/forward handlers: route to the returned
-    /// target inside the suppression window.
     fn simulate(nav: &NavHistory, target: Option<NavPlace>) -> Option<NavPlace> {
         let target = target?;
         nav.begin_back();
@@ -346,51 +218,40 @@ mod tests {
     }
 
     #[test]
-    fn forward_returns_to_the_place_back_left() {
+    fn browse_1_routes_album_and_artist_as_track_places_in_one_history() {
         let nav = NavHistory::default();
         nav.record_route(&place(ViewSource::Library));
-        nav.record_route(&place(ViewSource::Queue));
+        let album = place(ViewSource::Album {
+            album: "Blue".into(),
+            album_artist: "Joni Mitchell".into(),
+        });
+        let artist = place(ViewSource::Artist("Joni Mitchell".into()));
+
+        nav.record_route(&album);
+        nav.record_route(&artist);
+
+        assert_eq!(simulate(&nav, nav.go_back()), Some(album.clone()));
         assert_eq!(
             simulate(&nav, nav.go_back()),
             Some(place(ViewSource::Library))
         );
-        assert_eq!(
-            simulate(&nav, nav.go_forward()),
-            Some(place(ViewSource::Queue))
-        );
-        // Ping-pong keeps working.
-        assert_eq!(
-            simulate(&nav, nav.go_back()),
-            Some(place(ViewSource::Library))
-        );
-        assert_eq!(
-            simulate(&nav, nav.go_forward()),
-            Some(place(ViewSource::Queue))
-        );
+        assert_eq!(simulate(&nav, nav.go_forward()), Some(album));
     }
 
     #[test]
-    fn a_new_navigation_clears_the_forward_stack() {
+    fn new_navigation_after_back_discards_forward_places() {
         let nav = NavHistory::default();
         nav.record_route(&place(ViewSource::Library));
         nav.record_route(&place(ViewSource::Queue));
         simulate(&nav, nav.go_back());
-        // Navigating somewhere new discards the "forward" page — browser
-        // semantics.
+
         nav.record_route(&place(ViewSource::Missing));
+
         assert_eq!(nav.go_forward(), None);
     }
 
     #[test]
-    fn forward_without_a_back_is_a_noop() {
-        let nav = NavHistory::default();
-        nav.record_route(&place(ViewSource::Library));
-        nav.record_route(&place(ViewSource::Queue));
-        assert_eq!(nav.go_forward(), None);
-    }
-
-    #[test]
-    fn nr_4_digest_is_a_regular_back_forward_place() {
+    fn new_releases_is_a_regular_back_forward_place() {
         let nav = NavHistory::default();
         nav.record_route(&place(ViewSource::Library));
 
@@ -401,5 +262,69 @@ mod tests {
             Some(place(ViewSource::Library))
         );
         assert_eq!(simulate(&nav, nav.go_forward()), Some(digest));
+    }
+
+    #[test]
+    fn browse_2_back_restores_the_complete_track_place_captured_on_leave() {
+        let nav = NavHistory::default();
+        nav.record_route(&place(ViewSource::Library));
+        let mut current = BrowserPlace::from(ViewSource::Library);
+        let BrowserPlace::Tracks(track_place) = &mut current else {
+            unreachable!();
+        };
+        track_place.state.search = "shore".into();
+        track_place.state.selected_ids = vec![42];
+        track_place.state.focus = reprise_core::browser::TrackFocus::Track(42);
+        let album = place(ViewSource::Album {
+            album: "Pain Remains".into(),
+            album_artist: "Lorna Shore".into(),
+        });
+
+        nav.record_route_from(&album, current.clone());
+        let restored = nav
+            .go_back_from(album.browser_place().clone())
+            .expect("Library must be in Back history");
+
+        assert_eq!(restored.browser_place(), &current);
+    }
+
+    #[test]
+    fn browse_4_metadata_intents_share_one_anchored_navigation_path() {
+        let nav = NavHistory::default();
+        let library = BrowserPlace::from(ViewSource::Library);
+        nav.record_route(&NavPlace::browser(library.clone()));
+
+        let album = nav
+            .navigate_from(
+                NavigationIntent::OpenAlbum {
+                    album: AlbumKey::new("Pain Remains", "Lorna Shore"),
+                    anchor_track_id: Some(42),
+                },
+                library.clone(),
+            )
+            .unwrap();
+        let state = album.browser_place().track_state().unwrap();
+        assert_eq!(state.selected_ids, vec![42]);
+        assert_eq!(state.focus, reprise_core::browser::TrackFocus::Track(42));
+        assert_eq!(
+            nav.go_back_from(album.browser_place().clone())
+                .unwrap()
+                .browser_place(),
+            &library
+        );
+    }
+
+    #[test]
+    fn browse_5_restore_keeps_current_and_library_root_but_drops_history() {
+        let nav = NavHistory::default();
+        let mut root = BrowserPlace::from(ViewSource::Library);
+        root.track_state_mut().unwrap().search = "root query".into();
+        let current = BrowserPlace::fresh_album("Blue", "Joni Mitchell");
+
+        nav.restore(current.clone(), root.clone());
+
+        assert_eq!(nav.session_places(current.clone()), Some((current, root)));
+        assert_eq!(nav.go_back(), None);
+        assert_eq!(nav.go_forward(), None);
     }
 }

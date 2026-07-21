@@ -35,13 +35,13 @@ impl TrackList {
     /// Injects the "Go to album" callback (CTX-4) — `window.rs` navigates to
     /// `ViewSource::Album { album, album_artist }` and switches to the Tracks
     /// view.
-    pub fn set_on_go_to_album(&self, callback: impl Fn(String, String) + 'static) {
+    pub fn set_on_go_to_album(&self, callback: impl Fn(i64, String, String) + 'static) {
         *self.shared.on_go_to_album.borrow_mut() = Some(Rc::new(callback));
     }
 
     /// Injects the "Go to artist" callback (CTX-4) — `window.rs` navigates to
     /// `ViewSource::Artist(album_artist)`.
-    pub fn set_on_go_to_artist(&self, callback: impl Fn(String) + 'static) {
+    pub fn set_on_go_to_artist(&self, callback: impl Fn(i64, String) + 'static) {
         *self.shared.on_go_to_artist.borrow_mut() = Some(Rc::new(callback));
     }
 

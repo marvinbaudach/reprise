@@ -168,6 +168,7 @@ mod tests {
                 title: "Repeat".to_string(),
                 artist: "Artist".to_string(),
                 album: "Album".to_string(),
+                effective_artist: "Artist".to_string(),
                 play_count: 8,
                 total_ms: 800,
                 track_path: "/music/repeat.flac".to_string(),

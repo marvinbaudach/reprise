@@ -45,10 +45,6 @@ fn view_section_entries() -> Vec<(String, &'static str)> {
     )]
 }
 
-fn playback_section_entries() -> [(String, &'static str); 1] {
-    [(strings::text(strings::STOP_PLAYBACK), "win.stop-playback")]
-}
-
 /// Rebuilds the library section of the primary menu with the correct label
 /// for the current scan state: "Rescan Library" when idle, "Cancel Scan"
 /// when a scan is running. GTK reads the `gio::Menu` model on each popover
@@ -84,6 +80,22 @@ fn settings_section_entries() -> Vec<(String, &'static str)> {
     ]
 }
 
+fn build_primary_menu(library: &gio::Menu) -> gio::Menu {
+    let view = gio::Menu::new();
+    for (label, action) in view_section_entries() {
+        view.append(Some(&label), Some(action));
+    }
+    let settings = gio::Menu::new();
+    for (label, action) in settings_section_entries() {
+        settings.append(Some(&label), Some(action));
+    }
+    let menu = gio::Menu::new();
+    menu.append_section(None, &view);
+    menu.append_section(None, library);
+    menu.append_section(None, &settings);
+    menu
+}
+
 #[allow(clippy::needless_pass_by_value)]
 pub(super) fn install(
     header: &adw::HeaderBar,
@@ -92,25 +104,9 @@ pub(super) fn install(
     callbacks: Callbacks,
     scan_controls: &super::scan_flow::ScanControls,
 ) -> gio::Menu {
-    let view = gio::Menu::new();
-    for (label, action) in view_section_entries() {
-        view.append(Some(&label), Some(action));
-    }
-    let playback = gio::Menu::new();
-    for (label, action) in playback_section_entries() {
-        playback.append(Some(&label), Some(action));
-    }
     let library = gio::Menu::new();
     update_library_section(&library, scan_controls.is_scanning());
-    let settings = gio::Menu::new();
-    for (label, action) in settings_section_entries() {
-        settings.append(Some(&label), Some(action));
-    }
-    let menu = gio::Menu::new();
-    menu.append_section(None, &view);
-    menu.append_section(None, &playback);
-    menu.append_section(None, &library);
-    menu.append_section(None, &settings);
+    let menu = build_primary_menu(&library);
 
     let menu_button = gtk4::MenuButton::builder()
         .icon_name("open-menu-symbolic")
@@ -347,10 +343,23 @@ mod tests {
     }
 
     #[test]
-    fn playback_section_exposes_stop_without_a_pointer() {
-        assert_eq!(
-            playback_section_entries(),
-            [(strings::text(strings::STOP_PLAYBACK), "win.stop-playback")]
+    fn primary_menu_omits_stop_playback_when_transport_is_persistent() {
+        let library = gio::Menu::new();
+        update_library_section(&library, false);
+        let menu = build_primary_menu(&library);
+        let actions = (0..menu.n_items())
+            .filter_map(|index| menu.item_link(index, gio::MENU_LINK_SECTION))
+            .flat_map(|section| {
+                (0..section.n_items()).filter_map(move |index| {
+                    section
+                        .item_attribute_value(index, "action", Some(glib::VariantTy::STRING))
+                        .and_then(|value| value.get::<String>())
+                })
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            !actions.iter().any(|action| action == "win.stop-playback"),
+            "the persistent Player Bar owns playback controls"
         );
     }
 

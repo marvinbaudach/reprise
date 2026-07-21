@@ -15,11 +15,14 @@
 pub mod artist_news;
 pub mod artist_portrait;
 pub mod audio_analysis;
+pub mod browser;
 pub mod cover;
 pub mod cover_download;
 pub mod db;
 mod db_library_doctor;
 mod db_library_doctor_remote;
+mod db_library_exclusions;
+mod db_listen_history;
 mod db_mix_planner;
 mod db_tag_write_jobs;
 pub mod device_sync;

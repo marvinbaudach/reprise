@@ -2,10 +2,11 @@
 
 use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
+use std::time::Duration;
 
 use gtk4::glib;
 use reprise_core::lyrics::{LyricsBody, LyricsQuery};
-use reprise_core::playback::{PlaybackBackend, PlaybackError};
+use reprise_core::playback::{PlaybackBackend, PlaybackError, PlaybackState};
 use reprise_core::queries::TrackSummary;
 
 use super::lyrics_state::{LyricsState, RequestIntent};
@@ -20,6 +21,9 @@ pub(in crate::ui) struct PlayerLyrics {
     position_ms: Cell<i64>,
     enabled: Cell<bool>,
     tab_open: Cell<bool>,
+    playback_state: Cell<PlaybackState>,
+    line_timer: RefCell<Option<glib::SourceId>>,
+    line_timer_generation: Cell<u64>,
 }
 
 impl PlayerLyrics {
@@ -43,6 +47,9 @@ impl PlayerLyrics {
             position_ms: Cell::new(0),
             enabled: Cell::new(enabled),
             tab_open: Cell::new(false),
+            playback_state: Cell::new(PlaybackState::Stopped),
+            line_timer: RefCell::new(None),
+            line_timer_generation: Cell::new(0),
         })
     }
 
@@ -73,19 +80,27 @@ impl PlayerLyrics {
         if self.enabled.replace(enabled) == enabled {
             return;
         }
-        if self.tab_open.get() {
+        if !enabled {
+            self.cancel_line_timer();
+        } else if self.tab_open.get() {
             self.request_current();
         }
     }
 
     pub(in crate::ui) fn set_tab_open(self: &Rc<Self>, open: bool) {
-        if self.tab_open.replace(open) == open || !open {
+        if self.tab_open.replace(open) == open {
+            return;
+        }
+        if !open {
+            self.cancel_line_timer();
             return;
         }
         self.request_current();
+        self.schedule_next_line();
     }
 
     pub(in crate::ui) fn set_track(self: &Rc<Self>, query: Option<LyricsQuery>) {
+        self.cancel_line_timer();
         self.position_ms.set(0);
         let clear = query.is_none();
         let intent = self.state.borrow_mut().set_track(query);
@@ -97,18 +112,31 @@ impl PlayerLyrics {
         }
         if let Some(intent) = intent {
             self.start_request(intent);
+        } else {
+            self.schedule_next_line();
         }
     }
 
-    pub(in crate::ui) fn set_position(&self, position_ms: i64) {
+    pub(in crate::ui) fn set_position(self: &Rc<Self>, position_ms: i64) {
         self.update_position(position_ms, false);
     }
 
-    pub(in crate::ui) fn external_seek(&self, position_ms: i64) {
+    pub(in crate::ui) fn external_seek(self: &Rc<Self>, position_ms: i64) {
         self.update_position(position_ms, true);
     }
 
-    fn update_position(&self, position_ms: i64, external_seek: bool) {
+    pub(in crate::ui) fn set_playback_state(self: &Rc<Self>, state: PlaybackState) {
+        if self.playback_state.replace(state) == state {
+            return;
+        }
+        if state == PlaybackState::Playing {
+            self.schedule_next_line();
+        } else {
+            self.cancel_line_timer();
+        }
+    }
+
+    fn update_position(self: &Rc<Self>, position_ms: i64, external_seek: bool) {
         let position_ms = position_ms.max(0);
         self.position_ms.set(position_ms);
         let (active, timestamp_ms) = {
@@ -122,6 +150,7 @@ impl PlayerLyrics {
                 view.external_seek();
             }
         }
+        self.schedule_next_line();
     }
 
     fn retry(self: &Rc<Self>) {
@@ -182,7 +211,7 @@ impl PlayerLyrics {
         }
     }
 
-    fn apply_response(&self, response: LyricsResponse) {
+    fn apply_response(self: &Rc<Self>, response: LyricsResponse) {
         let accepted = self.state.borrow().accepts(response.generation);
         if !accepted {
             tracing::debug!(
@@ -194,6 +223,7 @@ impl PlayerLyrics {
         match response.result {
             Ok(body) => self.apply_body(&body),
             Err(error) => {
+                self.cancel_line_timer();
                 if let Some(view) = self.view() {
                     view.show_error(&error);
                 }
@@ -201,7 +231,7 @@ impl PlayerLyrics {
         }
     }
 
-    fn apply_body(&self, body: &LyricsBody) {
+    fn apply_body(self: &Rc<Self>, body: &LyricsBody) {
         self.state.borrow_mut().set_body(body.clone());
         if let Some(view) = self.view() {
             view.show_result(body);
@@ -214,9 +244,10 @@ impl PlayerLyrics {
         if let Some(view) = self.view() {
             view.set_active_line_at(active, timestamp_ms, self.position_ms.get());
         }
+        self.schedule_next_line();
     }
 
-    fn render_current(&self) {
+    fn render_current(self: &Rc<Self>) {
         let (query, body, active, timestamp_ms) = {
             let state = self.state.borrow();
             (
@@ -237,6 +268,46 @@ impl PlayerLyrics {
             (Some(_), None) if !self.enabled.get() => view.show_disabled(),
             (Some(query), None) => view.show_loading(&query.title, &query.artist),
             (None, None) => view.show_empty(),
+        }
+        self.schedule_next_line();
+    }
+
+    fn schedule_next_line(self: &Rc<Self>) {
+        self.cancel_line_timer();
+        if !self.enabled.get()
+            || !self.tab_open.get()
+            || self.playback_state.get() != PlaybackState::Playing
+        {
+            return;
+        }
+        let position_ms = self.position_ms.get();
+        let next_timestamp_ms = self.state.borrow().next_line_timestamp_ms(position_ms);
+        let Some(next_timestamp_ms) = next_timestamp_ms else {
+            return;
+        };
+        let Ok(delay_ms) = u64::try_from(next_timestamp_ms - position_ms) else {
+            return;
+        };
+        let generation = self.line_timer_generation.get();
+        let lyrics = Rc::downgrade(self);
+        let source = glib::timeout_add_local_once(Duration::from_millis(delay_ms), move || {
+            let Some(lyrics) = lyrics.upgrade() else {
+                return;
+            };
+            if lyrics.line_timer_generation.get() != generation {
+                return;
+            }
+            lyrics.line_timer.borrow_mut().take();
+            lyrics.update_position(next_timestamp_ms, false);
+        });
+        *self.line_timer.borrow_mut() = Some(source);
+    }
+
+    fn cancel_line_timer(&self) {
+        self.line_timer_generation
+            .set(self.line_timer_generation.get().wrapping_add(1));
+        if let Some(source) = self.line_timer.borrow_mut().take() {
+            source.remove();
         }
     }
 
@@ -282,6 +353,10 @@ impl PlayerController {
 
     pub(in crate::ui) fn sync_lyrics_position(&self, position_ms: i64) {
         self.lyrics.set_position(position_ms);
+    }
+
+    pub(in crate::ui) fn sync_lyrics_state(&self, state: PlaybackState) {
+        self.lyrics.set_playback_state(state);
     }
 
     pub(in crate::ui) fn set_online_lyrics_enabled(

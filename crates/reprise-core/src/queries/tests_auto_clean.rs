@@ -132,8 +132,9 @@ fn auto_clean_eligible_is_empty_without_an_armed_at() {
 }
 
 /// `run_auto_clean` hard-deletes exactly the eligible ids — a real,
-/// cascading delete with no tombstone and no undo — and leaves every other
-/// row (wrong reason, or not yet past its deadline) untouched.
+/// catalog delete with no tombstone and no undo — and leaves every other row
+/// (wrong reason, or not yet past its deadline) untouched. Durable listen
+/// events are historical facts and are not catalog rows.
 #[test]
 fn run_auto_clean_hard_deletes_eligible_tracks_and_spares_the_rest() {
     let mut conn = crate::db::open_migrated(None).unwrap();
@@ -174,8 +175,8 @@ fn run_auto_clean_hard_deletes_eligible_tracks_and_spares_the_rest() {
         )
         .unwrap();
     assert_eq!(
-        listen_event_count, 0,
-        "the cascade wipes listening history — no tombstone, no undo"
+        listen_event_count, 1,
+        "catalog cleanup must preserve durable listening history"
     );
 }
 
