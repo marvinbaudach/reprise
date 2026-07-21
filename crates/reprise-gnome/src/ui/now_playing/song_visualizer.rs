@@ -490,7 +490,12 @@ fn advance_state(state: &mut RenderState) -> bool {
         state.peaks[index] = state.peaks[index].max(next);
         state.peaks[index] = (state.peaks[index] - PEAK_DECAY).max(next);
     }
-    state.level = ease(state.level, state.level_target, SCALAR_ATTACK, SCALAR_RELEASE);
+    state.level = ease(
+        state.level,
+        state.level_target,
+        SCALAR_ATTACK,
+        SCALAR_RELEASE,
+    );
     state.bass = ease(state.bass, state.bass_target, SCALAR_ATTACK, SCALAR_RELEASE);
     state.impact.advance();
     if state.playback == PlaybackState::Playing {
@@ -821,10 +826,19 @@ impl SongVisualizer {
             "media-playback-start-symbolic"
         };
         let play_pause = button(play_pause_icon, strings::SONG_VISUALS_PLAY_PAUSE, true);
-        let stop = button("media-playback-stop-symbolic", strings::SONG_VISUALS_STOP, false);
-        let next = button("media-skip-forward-symbolic", strings::SONG_VISUALS_NEXT, false);
+        let stop = button(
+            "media-playback-stop-symbolic",
+            strings::SONG_VISUALS_STOP,
+            false,
+        );
+        let next = button(
+            "media-skip-forward-symbolic",
+            strings::SONG_VISUALS_NEXT,
+            false,
+        );
 
-        let fire = |slot: fn(&Transport) -> &Option<Rc<dyn Fn()>>, transport: &Rc<RefCell<Transport>>| {
+        let fire = |slot: fn(&Transport) -> &Option<Rc<dyn Fn()>>,
+                    transport: &Rc<RefCell<Transport>>| {
             let transport = transport.clone();
             move || {
                 if let Some(callback) = slot(&transport.borrow()) {

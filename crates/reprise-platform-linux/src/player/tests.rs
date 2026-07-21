@@ -97,7 +97,10 @@ fn ac_10_spectrum_messages_project_exactly_one_bounded_frame() {
     let decibels = spectrum_decibels_from_structure(&structure).expect("valid spectrum frame");
     let frame = reprise_core::playback::SpectrumFrame::from_decibels(decibels);
 
-    assert_eq!(frame.bands().len(), reprise_core::playback::SPECTRUM_BAND_COUNT);
+    assert_eq!(
+        frame.bands().len(),
+        reprise_core::playback::SPECTRUM_BAND_COUNT
+    );
     assert_eq!(frame.bands()[0], 0.0);
     assert_eq!(frame.bands()[16], 0.5);
     assert!(spectrum_decibels_from_structure(&gst::Structure::new_empty("other")).is_none());

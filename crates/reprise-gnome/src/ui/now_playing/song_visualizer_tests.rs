@@ -59,8 +59,18 @@ fn ac_10_visual_presets_are_stable_keyboard_labels() {
 fn ac_10_louder_spectrum_grows_the_geometry() {
     let quiet_bands = [0.0; SPECTRUM_BAND_COUNT];
     let loud_bands = [1.0; SPECTRUM_BAND_COUNT];
-    let quiet = scene(VisualPreset::Bars, &input_for(&quiet_bands, &quiet_bands), 240.0, 220.0);
-    let loud = scene(VisualPreset::Bars, &input_for(&loud_bands, &loud_bands), 240.0, 220.0);
+    let quiet = scene(
+        VisualPreset::Bars,
+        &input_for(&quiet_bands, &quiet_bands),
+        240.0,
+        220.0,
+    );
+    let loud = scene(
+        VisualPreset::Bars,
+        &input_for(&loud_bands, &loud_bands),
+        240.0,
+        220.0,
+    );
 
     assert_eq!(quiet.bars.len(), loud.bars.len());
     assert!(
@@ -221,7 +231,15 @@ fn render_preset_gallery_pngs() {
             cr.set_source_rgb(0.078, 0.094, 0.102); // dark panel
             let _ = cr.paint();
             let scene = scene(preset, &state.scene_input(), w, h);
-            draw_scene(&cr, &scene, &state.impact, w, h, f64::from(state.level), accent);
+            draw_scene(
+                &cr,
+                &scene,
+                &state.impact,
+                w,
+                h,
+                f64::from(state.level),
+                accent,
+            );
         }
         // Opaque background → alpha is 255 everywhere, so premultiplied BGRA
         // equals straight RGB. Emit a dep-free PPM for external rasterization.
