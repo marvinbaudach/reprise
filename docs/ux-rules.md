@@ -156,6 +156,15 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   gegenüber Assistenztechnik eine eigene Bezeichnung, eine interaktive Rolle
   und eine auslösbare Aktion. Sektionsüberschriften bleiben nicht bedienbar,
   werden aber semantisch als Überschriften exponiert.
+- **NAV-12** [aktiv] [e2e] — Die globale Zurück-Historie ist als benannter
+  ‹-Button in der Headerbar sichtbar. Der Button ist ohne vorherigen Ort
+  deaktiviert, wird nach einer Detailnavigation aktiv und stellt beim
+  Auslösen den vorherigen Ort samt Fokus wieder her.
+- **NAV-13** [aktiv] [e2e] — Wiedergabestart ist keine Navigation: Enter oder
+  Doppelklick auf eine Track-Row lässt Quelle, Modus, Selektion, Tastaturfokus
+  und Viewport unverändert. Das gilt insbesondere in Album- und
+  Artist-Details sowie in der ungefilterten Musikliste; nur die
+  Now-Playing-Markierung wechselt.
 
 ## C. Abspielen, Queue, Shuffle, Filter
 
@@ -1422,11 +1431,7 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
 
 ## X. Lokales Klangprofil
 
-- **AC-1** [aktiv] [gtk] — Die lokale Audioanalyse ist bei einer neuen
-  Installation ausgeschaltet. Erst „Analyze audio locally" startet Arbeit;
-  die Erklärung nennt ausdrücklich, dass Reprise Musikdateien nur lokal liest,
-  nichts hochlädt und vorhandene Profile beim Ausschalten behält. Die Funktion
-  steht unter Library, nicht auf der Plugins-Seite.
+- **AC-1** [ersetzt durch AC-18]
 - **AC-2** [aktiv] [core] — Ein Klangprofil behauptet keine Emotion. Es
   projiziert versionierte Audio-Evidenz ausschließlich auf Intensity,
   Brightness, Dynamicity und Rhythmicity im Bereich 0–1; Tempo bleibt optional
@@ -1503,6 +1508,14 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
   Provider-Ergebnisse und verändert weder Musikdateien noch Wiedergabe,
   Queue oder Playlists. Ohne Provider bleibt der lokale Mix vollständig
   nutzbar; KI-generierte Audiodateien gehören nicht zu dieser Funktion.
+- **AC-18** [aktiv] [core] [gtk] — Die ausschließlich lokale Audioanalyse ist
+  bei neuen Installationen aktiv und verarbeitet jeden geeigneten neuen,
+  fehlenden oder durch Datei-/Versionsänderung veralteten Titel genau über den
+  fingerprint-geprüften Hintergrund-Worker; aktuelle Profile werden nicht
+  erneut dekodiert. „Analyze audio locally" bleibt unter Library abschaltbar,
+  nennt ausdrücklich die rein lokale Verarbeitung und behält vorhandene
+  Profile. Der ausgewogene Mix bleibt bei Teilabdeckung nutzbar, behandelt
+  fehlende Profile nie als Klangtreffer und nennt die Lücke als Diagnostic.
 
 ## Y. Library Doctor / Tag Cleanup
 

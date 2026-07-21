@@ -80,7 +80,11 @@ pub(in crate::ui) fn activate_track(shared: &Rc<Shared>, position: u32, track: &
     }
     let (ids, start_index) = queue_ids_for_activation(shared, position, track.id);
     let source = shared.source.borrow().clone();
+    shared.pending_row_activation.set(Some(track.id));
     (shared.on_activate)(track, ids, start_index, source);
+    if shared.pending_row_activation.get() == Some(track.id) {
+        shared.pending_row_activation.set(None);
+    }
 }
 
 pub(in crate::ui) fn explain_missing_track(shared: &Rc<Shared>, track: &Track) -> bool {

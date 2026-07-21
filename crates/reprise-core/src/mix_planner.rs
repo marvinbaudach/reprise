@@ -52,7 +52,7 @@ pub enum CriteriaMode {
 
 impl CriteriaMode {
     fn requires_profile(self) -> bool {
-        matches!(self, Self::AudioCharacter | Self::Balanced)
+        self == Self::AudioCharacter
     }
 }
 
@@ -570,6 +570,58 @@ pub fn profile_target_for_tracks(
             "seed profile is unavailable",
         ))?,
     )
+}
+
+pub fn profile_target_for_available_tracks(
+    conn: &Connection,
+    track_ids: &[i64],
+) -> Result<Option<ProfileTarget>, MixPlannerError> {
+    if track_ids.is_empty() || track_ids.len() > MAX_SEED_TRACK_IDS {
+        return Err(MixPlannerError::InvalidIntent("seed track list is invalid"));
+    }
+    let mut ids = track_ids.to_vec();
+    normalize_ids(&mut ids, MAX_SEED_TRACK_IDS, false)?;
+    let mut values = Vec::<Value>::new();
+    let mut conditions = vec![
+        "t.missing_since IS NULL".to_string(),
+        "t.removed_at IS NULL".to_string(),
+    ];
+    push_id_condition(&mut conditions, &mut values, "t.id", &ids, false);
+    let sql = format!(
+        "SELECT AVG(a.intensity), AVG(a.brightness), AVG(a.dynamicity), AVG(a.rhythmicity), COUNT(*)
+         FROM tracks t JOIN track_audio_analysis a ON a.track_id = t.id
+         WHERE {} AND a.status = 'ready' AND a.source_mtime = t.file_mtime
+           AND a.source_size = t.file_size AND a.extractor_version = {CURRENT_EXTRACTOR_VERSION}
+           AND a.profile_version = {CURRENT_PROFILE_VERSION}",
+        conditions.join(" AND ")
+    );
+    let row: (Option<f64>, Option<f64>, Option<f64>, Option<f64>, i64) =
+        conn.query_row(&sql, rusqlite::params_from_iter(values), |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+            ))
+        })?;
+    if row.4 == 0 {
+        return Ok(None);
+    }
+    Ok(Some(ProfileTarget::new(
+        row.0.ok_or(MixPlannerError::InvalidIntent(
+            "seed profile is unavailable",
+        ))?,
+        row.1.ok_or(MixPlannerError::InvalidIntent(
+            "seed profile is unavailable",
+        ))?,
+        row.2.ok_or(MixPlannerError::InvalidIntent(
+            "seed profile is unavailable",
+        ))?,
+        row.3.ok_or(MixPlannerError::InvalidIntent(
+            "seed profile is unavailable",
+        ))?,
+    )?))
 }
 
 fn push_id_condition(
