@@ -38,6 +38,7 @@ pub fn open(path: Option<&Path>) -> Result<Connection, DbError> {
 pub fn open_migrated(path: Option<&Path>) -> Result<Connection, DbError> {
     let conn = open(path)?;
     migrate(&conn)?;
+    crate::events::prune(&conn)?;
     Ok(conn)
 }
 
