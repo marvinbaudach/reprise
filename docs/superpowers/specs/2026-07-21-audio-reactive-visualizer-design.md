@@ -225,6 +225,30 @@ separate files).
   preset to a PPM (dep-free; cairo's png/svg surfaces aren't in the feature set)
   for external rasterization — no desktop window.
 
+### Task 11–18 follow-up: design-mock rework
+
+- **Supersedes "Only the Bars mode ships" above.** A later design-mock pass
+  brought the mode roster to 8: Grid, Bars, Rings, Flow, Pulse, Particles,
+  Neon, Tunnel — each a distinct `scene` builder over the same engine state.
+- **The whole visual engine moved to `reprise-core::visuals`** (a portable
+  `Scene`/shape model, not GTK/Cairo types) so the KDE and Android frontends
+  can render the same modes; `reprise-gnome` only maps `Scene` to Cairo.
+- **Dual accent**: a secondary accent is derived from the cover art's
+  palette when a distinct hue exists, falling back to a fixed hue-shift of
+  the primary (cover) accent otherwise.
+- **Grid is a water surface**: a rippling grid that takes beat-driven
+  splashes rather than a static wireframe.
+- **256 → 64 log-spaced display bands + per-band AGC** replaced the earlier
+  flat band mapping and fixed the "sluggish" reactivity complaint — each
+  band auto-gains against its own recent peak.
+- **Fullscreen chrome** grew backdrop blur, seek/volume scales, full
+  transport, keyboard shortcuts, and auto-hide on pointer idle.
+- **Dropped mock artifacts**: fake BPM readout, drag-drop cover upload, the
+  `colorSource` toggle, and the frame timecode overlay — none survived
+  contact with the real player.
+- **Optional GPU bloom** is deferred to Task 19; the current renderer is
+  CPU/Cairo only.
+
 ## Out of scope
 
 - Beat-grid / BPM display, tempo sync, or persisted per-track analysis.

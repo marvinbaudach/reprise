@@ -102,11 +102,26 @@ fn ac_10_fullscreen_chrome_builds_and_tears_down_without_panicking() {
     assert!(visualizer.fullscreen_chrome.borrow().is_none());
 }
 
-/// Builds an engine that has just been hammered by a beat-then-slam: playing,
-/// accented, 20 silent frames (settles the envelopes at rest) followed by 10
-/// full-scale frames (fires a beat, a kick, and pins the bands high). Mirrors
-/// `reprise_core::visuals::engine::lively_engine`, which is test-only and not
-/// exported across the crate boundary.
+/// Builds an engine that has just been hammered by a beat-then-drop: playing,
+/// accented, 20 silent frames (settles the envelopes at rest), one
+/// full-spectrum impact frame (fires the beat/kick off the silence-to-loud
+/// flux jump — a real kick is broadband for an instant), then 9 frames of a
+/// realistic bass-heavy sustain.
+///
+/// The sustain is intentionally *not* fed from silence directly: the
+/// engine's per-band auto-gain (`SpectrumAnalyzer::ingest`, `playback.rs`)
+/// tracks each band's own recent peak and snaps its ratio to `1.0` the
+/// instant a band first exceeds that peak, so any spectrum shape held
+/// constant over several frames converges to a uniform wall regardless of
+/// its per-bin variation — which is exactly what made the Bars mode render
+/// as a flat maxed-out slab instead of a spectrum silhouette. Leading with
+/// one loud broadband frame seeds every band's auto-gain ceiling near 1.0;
+/// the following bass-heavy, treble-light sustain then reads back as
+/// genuine relative contrast (bass stays pinned near its ceiling, treble
+/// reads well under its still-decaying one), which is what a real
+/// kick-into-sustain transient looks like. Mirrors
+/// `reprise_core::visuals::engine::lively_engine`, which is test-only and
+/// not exported across the crate boundary.
 fn lively_engine() -> VisualEngine {
     use reprise_core::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
 
@@ -118,8 +133,22 @@ fn lively_engine() -> VisualEngine {
         engine.ingest(&analyzer.ingest([-80.0; SPECTRUM_ANALYSIS_BAND_COUNT]));
         engine.tick();
     }
-    for _ in 0..10 {
-        engine.ingest(&analyzer.ingest([0.0; SPECTRUM_ANALYSIS_BAND_COUNT]));
+    // One full-scale impact frame: fires the beat and seeds every band's
+    // auto-gain ceiling near its max.
+    engine.ingest(&analyzer.ingest([0.0; SPECTRUM_ANALYSIS_BAND_COUNT]));
+    engine.tick();
+    // Bass-heavy descending sustain with a couple of ripples, not a flat
+    // 0 dB slam: db(i) = -6 - 55*(i/255)^0.6 + 8*sin(i*0.20), clamped. Held
+    // well above the auto-gain floor throughout, so it reads as a smooth
+    // taper rather than a hard on/off cutoff.
+    let mut shaped = [0.0_f32; SPECTRUM_ANALYSIS_BAND_COUNT];
+    for (i, bin) in shaped.iter_mut().enumerate() {
+        let x = i as f32 / (SPECTRUM_ANALYSIS_BAND_COUNT - 1) as f32;
+        let db = -6.0 - 55.0 * x.powf(0.6) + 8.0 * (i as f32 * 0.20).sin();
+        *bin = db.clamp(-80.0, 0.0);
+    }
+    for _ in 0..9 {
+        engine.ingest(&analyzer.ingest(shaped));
         engine.tick();
     }
     engine
