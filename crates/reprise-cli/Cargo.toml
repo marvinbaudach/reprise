@@ -1,6 +1,6 @@
 [package]
 name = "reprise-cli"
-description = "Headless command-line surface for the Reprise music library (built out in package A)."
+description = "Headless command-line surface for the Reprise music library."
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -14,9 +14,27 @@ name = "reprise-cli"
 path = "src/main.rs"
 
 [dependencies]
-# Package A (CLI v1) adds clap v4 + serde_json on top; the default build must
-# stay core-only (enforced by package I via `cargo tree`).
+# Default build stays core-only plus the CLI's own presentation deps (clap +
+# serde_json), enforced by package I via `cargo tree`. `rusqlite` is the same
+# direct engine-connection dependency the GNOME frontend already takes: core
+# hands out `&rusqlite::Connection`-based facades, so any frontend that opens
+# the database and inspects busy/lock error codes must name those types. It is
+# neither a workspace crate nor one of the banned gtk/glib/gstreamer/zbus
+# families, so the dependency rule holds.
 reprise-core = { path = "../reprise-core" }
+clap = { version = "4", features = ["derive"] }
+serde_json = "1.0"
+rusqlite = { version = "0.40", features = ["bundled"] }
+
+[dev-dependencies]
+# Integration tests run the built binary via CARGO_BIN_EXE and arrange/inspect
+# their temp databases through the same core facades and JSON the CLI uses.
+# These mirror existing normal dependencies (a binary crate's tests otherwise
+# cannot name them), so they add no new edge to `cargo tree` beyond tempfile.
+tempfile = "3"
+reprise-core = { path = "../reprise-core" }
+rusqlite = { version = "0.40", features = ["bundled"] }
+serde_json = "1.0"
 
 [lints]
 workspace = true

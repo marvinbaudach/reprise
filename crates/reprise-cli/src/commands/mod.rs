@@ -1,0 +1,8 @@
+//! Command implementations. Each function opens the database through the core
+//! facade, calls into `reprise-core`, and renders text or JSON.
+
+pub mod events;
+pub mod library;
+pub mod playlist;
+pub mod scan;
+pub mod search;
