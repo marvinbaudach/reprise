@@ -85,9 +85,8 @@ pub(in crate::ui) fn build(
         selection: selection.clone(),
         column_view: column_view.clone(),
         playing_track_id: Cell::new(None),
-        pending_row_activation: Cell::new(None),
+        last_scroll_activity: Cell::new(None),
         active_reorder_drag_from: Cell::new(None),
-        view_state_memory: RefCell::new(std::collections::HashMap::new()),
         conn,
         cover_loader: cover_loader.clone(),
         browse_bar: browse_bar.clone(),
@@ -103,6 +102,7 @@ pub(in crate::ui) fn build(
         sort: RefCell::new(SortState::default()),
         restoring_view: Cell::new(false),
         filter: RefCell::new(String::new()),
+        on_search_restored: RefCell::new(None),
         source: RefCell::new(ViewSource::default()),
         queue_ids_provider: Box::new(queue_ids_provider),
         queue_sections: RefCell::new(Vec::new()),
@@ -112,6 +112,7 @@ pub(in crate::ui) fn build(
         window: gtk4::glib::WeakRef::new(),
         menu_actions: gtk4::gio::SimpleActionGroup::new(),
         on_queue_selected: RefCell::new(None),
+        on_play_mix: RefCell::new(None),
         on_play_next_selected: RefCell::new(None),
         on_show_missing: RefCell::new(None),
         on_queue_activate: RefCell::new(None),
@@ -134,6 +135,17 @@ pub(in crate::ui) fn build(
         on_import_errors_mutated: RefCell::new(None),
         player: RefCell::new(std::rc::Weak::new()),
     });
+
+    {
+        let shared_weak = Rc::downgrade(&shared);
+        scrolled.vadjustment().connect_value_changed(move |_| {
+            if let Some(shared) = shared_weak.upgrade() {
+                shared
+                    .last_scroll_activity
+                    .set(Some(std::time::Instant::now()));
+            }
+        });
+    }
 
     {
         let shared_weak = Rc::downgrade(&shared);

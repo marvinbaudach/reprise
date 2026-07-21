@@ -78,9 +78,10 @@ use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
 
 pub(in crate::ui) use super::track_list_callbacks::{
-    OnActivate, OnGoToAlbum, OnGoToArtist, OnLibraryMutated, OnQueueActivate, OnQueueMoveToTop,
-    OnQueueRemove, OnQueueReorder, OnQueueSelected, OnReload, OnScanQueuePurgeIds, OnShowMissing,
-    OnShowMissingFiles, OnSidebarPlaylistDrop, OnSidebarQueueDrop, OnTagsMutated,
+    OnActivate, OnGoToAlbum, OnGoToArtist, OnLibraryMutated, OnPlayMix, OnQueueActivate,
+    OnQueueMoveToTop, OnQueueRemove, OnQueueReorder, OnQueueSelected, OnReload,
+    OnScanQueuePurgeIds, OnSearchRestored, OnShowMissing, OnShowMissingFiles,
+    OnSidebarPlaylistDrop, OnSidebarQueueDrop, OnTagsMutated,
 };
 pub(in crate::ui) use super::track_list_toast::show_toast;
 
@@ -118,26 +119,13 @@ pub(in crate::ui) struct Shared {
     /// moves without rebuilding the list. A `Cell` (not `RefCell`) because the
     /// payload is a `Copy` `Option<i64>` read on every bind.
     pub(in crate::ui) playing_track_id: Cell<Option<i64>>,
-    /// One-shot identity for playback initiated by this table's native row
-    /// activation signal. `activate_track` sets it immediately around the
-    /// synchronous player callback; the now-playing update consumes it to
-    /// restore only the row GTK just rebuilt. Selection alone is not enough
-    /// because `GtkMultiSelection` may contain several rows while only one
-    /// owns the keyboard cursor.
-    pub(in crate::ui) pending_row_activation: Cell<Option<i64>>,
+    pub(in crate::ui) last_scroll_activity: Cell<Option<std::time::Instant>>,
     /// View position an in-app single-row reorder drag started from — set at
     /// drag-prepare, cleared on drag end/cancel. `None` while no reorder-
     /// eligible drag is in flight; the drop-indicator eligibility check in
     /// `track_list_dnd` reads it so markers only appear where a drop would
     /// actually do something.
     pub(in crate::ui) active_reorder_drag_from: Cell<Option<u32>>,
-    /// NAV-5: per-source scroll/selection memory for this session. Written
-    /// by `view_state_memory::remember_on_leave` when a source switch leaves
-    /// a view, read by `view_state_memory::restore_on_attach` after the
-    /// switched-to source reloaded. Never persisted (NAV-5 precision: view
-    /// state must not survive an app restart).
-    pub(in crate::ui) view_state_memory:
-        RefCell<std::collections::HashMap<ViewSource, super::view_state_memory::SavedViewState>>,
     /// The same UI-owned connection `TrackList::new` was given, kept here
     /// too (alongside the clone `TrackListModel` holds internally) so the
     /// rating column's click handler can write through `library::stats`
@@ -162,6 +150,7 @@ pub(in crate::ui) struct Shared {
     pub(in crate::ui) sort: RefCell<SortState>,
     pub(in crate::ui) restoring_view: Cell<bool>,
     pub(in crate::ui) filter: RefCell<String>,
+    pub(in crate::ui) on_search_restored: RefCell<Option<OnSearchRestored>>,
     /// Which of the six sources (Stage 3 Task 3) the list is currently
     /// showing — defaults to `ViewSource::Library`. Set via `TrackList::
     /// set_source` (and the `REPRISE_SMOKE_SOURCE` hook); read by `reload`
@@ -216,6 +205,8 @@ pub(in crate::ui) struct Shared {
     /// `TrackList::set_on_queue_selected` — wraps `PlayerController::
     /// append_to_queue`.
     pub(in crate::ui) on_queue_selected: RefCell<Option<OnQueueSelected>>,
+    /// Mix Builder playback seam; receives the exact visible draft order.
+    pub(in crate::ui) on_play_mix: RefCell<Option<OnPlayMix>>,
     /// Context-menu "Play next" (QUE-3): same shape as `on_queue_selected`,
     /// but the ids jump the manual line instead of appending to it.
     pub(in crate::ui) on_play_next_selected: RefCell<Option<OnQueueSelected>>,
@@ -374,7 +365,26 @@ impl TrackList {
     /// private `set_source_and_reload` directly instead (no live `TrackList`
     /// handle to call a public method on at that point).
     pub fn set_source(&self, source: ViewSource) {
-        set_source_and_reload(&self.shared, source);
+        if self.current_source() == source {
+            reload(&self.shared);
+            return;
+        }
+        let _ = self.restore_browser_place(&reprise_core::browser::BrowserPlace::from(source));
+    }
+
+    pub(in crate::ui) fn browser_place(&self) -> reprise_core::browser::BrowserPlace {
+        super::view_state_memory::capture_place(&self.shared)
+    }
+
+    pub(in crate::ui) fn restore_browser_place(
+        &self,
+        place: &reprise_core::browser::BrowserPlace,
+    ) -> bool {
+        crate::ui::view_session::restore_browser_place(self, place)
+    }
+
+    pub(in crate::ui) fn set_on_search_restored(&self, callback: impl Fn(&str) + 'static) {
+        *self.shared.on_search_restored.borrow_mut() = Some(Rc::new(callback));
     }
 
     /// Re-runs the current sort/filter query and refreshes the list without
@@ -401,6 +411,15 @@ impl TrackList {
 
     pub(in crate::ui) fn toast(&self, message: &str) {
         show_toast(&self.shared, message);
+    }
+
+    pub(in crate::ui) fn contains_track(&self, id: i64) -> bool {
+        let conn = self.shared.conn.borrow();
+        reprise_core::queries::query_track_summary(&conn, id)
+            .inspect_err(|error| {
+                tracing::warn!(%error, id, "metadata-link catalog lookup failed");
+            })
+            .is_ok_and(|track| track.is_some())
     }
 
     /// Injects the window's toast overlay, once it exists — see the
@@ -433,29 +452,6 @@ impl TrackList {
     /// jump hands to `Sidebar::sync_current_source` before navigating.
     pub fn current_source(&self) -> ViewSource {
         self.shared.source.borrow().clone()
-    }
-
-    /// Drops the NAV-5 remembered scroll/selection for `source`. NAV-9b's
-    /// jump calls this before navigating: an explicit "show me the playing
-    /// track" supersedes the stale remembered viewport — without this, the
-    /// deferred NAV-5 scroll restore would clobber the jump's centering.
-    pub fn forget_view_state(&self, source: &ViewSource) {
-        self.shared.view_state_memory.borrow_mut().remove(source);
-    }
-
-    pub(in crate::ui) fn remember_current_view_state(&self) {
-        let source = self.current_source();
-        let state = super::view_state_memory::capture(&self.shared);
-        self.shared
-            .view_state_memory
-            .borrow_mut()
-            .insert(source, state);
-    }
-
-    pub(in crate::ui) fn restore_current_view_state(&self) {
-        let source = self.current_source();
-        let ids = self.shared.current_view_ids();
-        super::view_state_memory::restore_on_attach(&self.shared, &source, &ids);
     }
 
     pub fn set_on_play_next_selected(&self, callback: impl Fn(Vec<i64>) + 'static) {

@@ -9,7 +9,6 @@ use super::{formatted, text};
 pub const SHORTCUT_SEARCH: &str = N_!("Ctrl+F");
 pub const SHORTCUT_MAIN_MENU: &str = N_!("F10");
 pub const SHORTCUT_COMPACT_MODE: &str = N_!("Ctrl+M");
-pub const SHORTCUT_CURRENT_TRACK: &str = N_!("Ctrl+L");
 
 pub fn shortcut_tooltip(message: &str, shortcut: &str) -> String {
     append_shortcut(&text(message), &text(shortcut))
@@ -18,11 +17,6 @@ pub fn shortcut_tooltip(message: &str, shortcut: &str) -> String {
 fn append_shortcut(label: &str, shortcut: &str) -> String {
     format!("{label} ({shortcut})")
 }
-
-/// Tooltip of the album-card hover-overlay play button (TIP-1a).
-pub const PLAY_ALBUM: &str = N_!("Play album (Ctrl+Enter)");
-pub const PAUSE_ALBUM: &str = N_!("Pause album");
-pub const RESUME_ALBUM: &str = N_!("Resume album");
 
 /// Transport tooltips (TIP-1b): verb + object, shortcut in parentheses.
 /// PLAY/PAUSE/PREVIOUS/NEXT stay as menu labels (compact player menu).
@@ -56,9 +50,7 @@ pub fn scan_tooltip_progress(pct: u32) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        append_shortcut, PLAY_ALBUM, TOOLTIP_PAUSE, TOOLTIP_PLAY, TOOLTIP_RESTORE_FULL_WINDOW,
-    };
+    use super::{append_shortcut, TOOLTIP_PAUSE, TOOLTIP_PLAY, TOOLTIP_RESTORE_FULL_WINDOW};
 
     #[test]
     fn tip_6_controls_show_only_their_existing_action_shortcuts() {
@@ -69,7 +61,6 @@ mod tests {
         for (tooltip, shortcut) in [
             (TOOLTIP_PLAY, "Space"),
             (TOOLTIP_PAUSE, "Space"),
-            (PLAY_ALBUM, "Ctrl+Enter"),
             (TOOLTIP_RESTORE_FULL_WINDOW, "Ctrl+M"),
         ] {
             assert!(
@@ -93,11 +84,6 @@ mod tests {
                 "mini-player close",
                 include_str!("compact/compact_player_layouts.rs"),
                 "close_button.set_tooltip_text(Some(&strings::shortcut_tooltip(strings::TOOLTIP_CLOSE_MINI_PLAYER,strings::SHORTCUT_COMPACT_MODE,)))",
-            ),
-            (
-                "player-bar current track",
-                include_str!("player_bar/player_bar_layout.rs"),
-                "strings::shortcut_tooltip(strings::JUMP_TO_NOW_PLAYING,strings::SHORTCUT_CURRENT_TRACK,)",
             ),
         ];
 

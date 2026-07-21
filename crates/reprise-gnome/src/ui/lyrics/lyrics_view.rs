@@ -712,6 +712,7 @@ pub(in crate::ui) fn css() -> String {
          .{LINE_GAP_CLASS} {{ opacity: 0.60; }}\n\
          .{LINE_UNDERLINE_CLASS} {{ min-width: 26px; min-height: 2.5px; \
            background-color: @reprise_player_accent; opacity: 0; \
+           box-shadow: 0 0 8px alpha(@reprise_player_accent, 0.55); \
            transition: opacity {micro_ms}ms {micro_easing}; }}\n\
          .{ACTIVE_LINE_CLASS} .{LINE_UNDERLINE_CLASS} {{ opacity: 1; }}\n\
          .{UNSYNCED_CLASS} {{ font-size: 13px; color: alpha(#ffffff, 0.65); }}\n\

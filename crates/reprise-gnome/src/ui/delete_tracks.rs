@@ -203,7 +203,7 @@ fn run_delete(
 ) -> DeleteReport {
     match mode {
         DeleteMode::Remove => {
-            match reprise_core::queries::remove_tracks_matching_paths(conn, tracks) {
+            match reprise_core::queries::exclude_tracks_matching_paths(conn, tracks, now_unix()) {
                 Ok(removed_ids) => {
                     let failures = tracks.len().saturating_sub(removed_ids.len());
                     DeleteReport {
@@ -237,6 +237,40 @@ fn run_delete(
     }
 }
 
+fn now_unix() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_secs() as i64)
+}
+
+fn deletion_focus_position(
+    selected_before: &[u32],
+    selected_after: &[u32],
+    remaining: u32,
+) -> Option<u32> {
+    selected_after.first().copied().or_else(|| {
+        let first_removed = selected_before.first().copied()?;
+        (remaining > 0).then(|| first_removed.min(remaining - 1))
+    })
+}
+
+pub(in crate::ui) fn reload_after_catalog_delete(shared: &Rc<Shared>) {
+    let selected_before = current_selection_positions(shared);
+    reload(shared);
+    if selected_before.is_empty() {
+        return;
+    }
+    let selected_after = current_selection_positions(shared);
+    if let Some(position) =
+        deletion_focus_position(&selected_before, &selected_after, shared.model.n_items())
+    {
+        if selected_after.is_empty() {
+            shared.selection.select_item(position, true);
+        }
+    }
+    shared.column_view.grab_focus();
+}
+
 fn finish(shared: &Rc<Shared>, report: &DeleteReport, mode: DeleteMode) {
     let removed = report.removed_ids.len();
     let callback = shared.on_library_mutated.borrow().clone();
@@ -244,7 +278,7 @@ fn finish(shared: &Rc<Shared>, report: &DeleteReport, mode: DeleteMode) {
         callback(&report.removed_ids);
     }
     shared.browse_bar.refresh();
-    reload(shared);
+    reload_after_catalog_delete(shared);
     tracing::info!(
         removed,
         failed = report.failures,
@@ -409,5 +443,36 @@ mod tests {
             remove_path_after.as_deref(),
             Some(replacement_remove_path.to_string_lossy().as_ref())
         );
+    }
+
+    #[test]
+    fn browse_7_remove_creates_an_exclusion_but_trash_does_not() {
+        let temp = tempfile::tempdir().unwrap();
+        let remove_path = temp.path().join("remove.flac");
+        let trash_path = temp.path().join("trash.flac");
+        std::fs::write(&remove_path, b"remove").unwrap();
+        std::fs::write(&trash_path, b"trash").unwrap();
+        let mut conn = reprise_core::db::open_migrated(None).unwrap();
+        insert_track(&conn, 1, &remove_path, "Remove");
+        insert_track(&conn, 2, &trash_path, "Trash");
+
+        let removed = run_delete(&mut conn, &[(1, remove_path.clone())], DeleteMode::Remove);
+        let trashed = reprise_core::library::trash_tracks::trash_tracks_with(
+            &mut conn,
+            &[(2, trash_path)],
+            |_| Ok(()),
+        );
+
+        assert_eq!(removed.removed_ids, vec![1]);
+        assert_eq!(trashed.removed_ids, vec![2]);
+        assert_eq!(reprise_core::library::exclusions::count(&conn).unwrap(), 1);
+    }
+
+    #[test]
+    fn browse_8_deletion_focus_uses_survivor_then_next_then_previous() {
+        assert_eq!(deletion_focus_position(&[4, 5], &[4], 8), Some(4));
+        assert_eq!(deletion_focus_position(&[4, 5], &[], 6), Some(4));
+        assert_eq!(deletion_focus_position(&[6, 7], &[], 6), Some(5));
+        assert_eq!(deletion_focus_position(&[0], &[], 0), None);
     }
 }

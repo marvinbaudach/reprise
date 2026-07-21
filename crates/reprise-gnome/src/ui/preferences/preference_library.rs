@@ -55,6 +55,47 @@ impl PreferencesContext {
         folder.add_suffix(&choose);
         group.add(&folder);
 
+        let excluded_count = {
+            let conn = self.conn.borrow();
+            reprise_core::library::exclusions::count(&conn).unwrap_or_else(|error| {
+                tracing::warn!(%error, "could not count library exclusions");
+                0
+            }) as usize
+        };
+        let excluded = adw::ActionRow::builder()
+            .title(strings::text(strings::EXCLUDED_FILES))
+            .subtitle(strings::excluded_files_subtitle(excluded_count))
+            .build();
+        let restore = gtk4::Button::with_label(&strings::text(strings::RESTORE_EXCLUDED_FILES));
+        restore.set_valign(gtk4::Align::Center);
+        restore.set_sensitive(excluded_count > 0);
+        let weak = Rc::downgrade(self);
+        let excluded_for_restore = excluded.clone();
+        restore.connect_clicked(move |button| {
+            let Some(context) = weak.upgrade() else {
+                return;
+            };
+            let result = {
+                let conn = context.conn.borrow();
+                reprise_core::library::exclusions::clear(&conn)
+            };
+            match result {
+                Ok(_) => {
+                    button.set_sensitive(false);
+                    excluded_for_restore.set_subtitle(&strings::excluded_files_subtitle(0));
+                    context.track_list.rescan_library();
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "could not restore library exclusions");
+                    if let Some(player) = &context.player {
+                        player.show_toast(&strings::text(strings::RESTORE_EXCLUDED_FILES_FAILED));
+                    }
+                }
+            }
+        });
+        excluded.add_suffix(&restore);
+        group.add(&excluded);
+
         let weak = Rc::downgrade(self);
         group.add(&action_row(
             strings::CONTEXT_MENU_RESCAN_LIBRARY,

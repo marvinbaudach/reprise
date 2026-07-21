@@ -7,6 +7,7 @@ use thiserror::Error;
 use crate::queries::BrowseFilter;
 use crate::queue::{Queue, QueueSnapshot, Repeat};
 use crate::up_next::UpNextQueue;
+use crate::{browser::BrowserPlace, view_source::ViewSource};
 
 pub const SESSION_KEY: &str = "ui.session.v1";
 const VERSION: u8 = 1;
@@ -25,7 +26,7 @@ pub enum SessionSource {
     ImportErrors,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SessionState {
     pub version: u8,
     pub window_width: i32,
@@ -36,6 +37,13 @@ pub struct SessionState {
     pub browse: BrowseFilter,
     pub sort_field: String,
     pub sort_dir: String,
+    /// The one browser destination restored at startup. Back/Forward stacks
+    /// are deliberately not serialized.
+    #[serde(default)]
+    pub browser_place: Option<BrowserPlace>,
+    /// The remembered unscoped Music place, including its local refinements.
+    #[serde(default)]
+    pub library_root: Option<BrowserPlace>,
     pub queue: QueueSnapshot,
     #[serde(default, deserialize_with = "deserialize_up_next")]
     pub up_next: UpNextQueue,
@@ -51,6 +59,9 @@ pub struct SessionState {
     /// survives a restart without re-resolving names that may have changed.
     #[serde(default, deserialize_with = "deserialize_play_origin_label")]
     pub play_origin_label: Option<String>,
+    /// Complete immutable playback origin for scoped Album/Artist reveals.
+    #[serde(default)]
+    pub play_origin_place: Option<BrowserPlace>,
 }
 
 impl Default for SessionState {
@@ -65,11 +76,14 @@ impl Default for SessionState {
             browse: BrowseFilter::default(),
             sort_field: "artist".into(),
             sort_dir: "asc".into(),
+            browser_place: Some(BrowserPlace::from(ViewSource::Library)),
+            library_root: Some(BrowserPlace::from(ViewSource::Library)),
             queue: empty_queue(),
             up_next: UpNextQueue::default(),
             current_up_next: None,
             play_origin: None,
             play_origin_label: None,
+            play_origin_place: None,
         }
     }
 }
@@ -105,13 +119,63 @@ pub fn load(conn: &Connection) -> SessionState {
         );
         return SessionState::default();
     }
-    normalize(state)
+    resolve_persisted_places(conn, normalize(state))
 }
 
 pub fn save(conn: &Connection, state: &SessionState) -> Result<(), SessionError> {
-    let serialized = serde_json::to_string(&normalize(state.clone()))?;
+    let serialized =
+        serde_json::to_string(&resolve_persisted_places(conn, normalize(state.clone())))?;
     crate::library::settings::set_setting(conn, SESSION_KEY, &serialized)?;
     Ok(())
+}
+
+fn resolve_persisted_places(conn: &Connection, mut state: SessionState) -> SessionState {
+    let root = state
+        .library_root
+        .clone()
+        .filter(BrowserPlace::is_library_root)
+        .unwrap_or_else(|| BrowserPlace::from(ViewSource::Library));
+    if !state
+        .browser_place
+        .as_ref()
+        .is_some_and(|place| place_is_resolvable(conn, place))
+    {
+        state.browser_place = Some(root.clone());
+    }
+    if !state
+        .play_origin_place
+        .as_ref()
+        .is_some_and(|place| place_is_resolvable(conn, place))
+        && state.play_origin_place.is_some()
+    {
+        state.play_origin_place = Some(root);
+    }
+    state
+}
+
+fn place_is_resolvable(conn: &Connection, place: &BrowserPlace) -> bool {
+    use crate::browser::{LibraryScope, TrackCollection};
+
+    match place.collection() {
+        Some(TrackCollection::Playlist(id)) => row_exists(conn, "playlists", *id),
+        Some(TrackCollection::Smart(id)) => row_exists(conn, "smart_playlists", *id),
+        Some(TrackCollection::Library(LibraryScope::Album(key))) => {
+            !key.album.trim().is_empty() && !key.album_artist.trim().is_empty()
+        }
+        Some(TrackCollection::Library(LibraryScope::Artist(key))) => !key.artist.trim().is_empty(),
+        Some(
+            TrackCollection::Library(LibraryScope::All)
+            | TrackCollection::Queue
+            | TrackCollection::Missing,
+        ) => true,
+        None => matches!(place, BrowserPlace::ImportErrors | BrowserPlace::MyStats),
+    }
+}
+
+fn row_exists(conn: &Connection, table: &str, id: i64) -> bool {
+    let sql = format!("SELECT EXISTS(SELECT 1 FROM {table} WHERE id = ?1)");
+    conn.query_row(&sql, [id], |row| row.get(0))
+        .unwrap_or(false)
 }
 
 fn empty_queue() -> QueueSnapshot {
@@ -154,7 +218,25 @@ fn normalize(mut state: SessionState) -> SessionState {
     ) {
         state.play_origin = None;
     }
-    if state.play_origin.is_none() {
+    let legacy_place = legacy_browser_place(&state);
+    if state.browser_place.is_none() {
+        state.browser_place = Some(legacy_place.clone());
+    }
+    if !state
+        .library_root
+        .as_ref()
+        .is_some_and(BrowserPlace::is_library_root)
+    {
+        state.library_root = Some(if legacy_place.is_library_root() {
+            legacy_place
+        } else {
+            BrowserPlace::from(ViewSource::Library)
+        });
+    }
+    if state.play_origin_place.is_none() {
+        state.play_origin_place = state.play_origin.as_ref().map(session_source_place);
+    }
+    if state.play_origin.is_none() && state.play_origin_place.is_none() {
         state.play_origin_label = None;
     } else if let Some(label) = state.play_origin_label.as_mut() {
         truncate_utf8(label, 256);
@@ -171,6 +253,34 @@ fn normalize(mut state: SessionState) -> SessionState {
         }
     }
     state
+}
+
+fn legacy_browser_place(state: &SessionState) -> BrowserPlace {
+    let mut place = session_source_place(&state.source);
+    if let Some(track_state) = place.track_state_mut() {
+        track_state.search = state.search.clone();
+        track_state.browse = state.browse.clone();
+        track_state.sort = crate::browser::TrackSort::new(
+            &state.sort_field,
+            if state.sort_dir == "desc" {
+                crate::browser::SortDirection::Descending
+            } else {
+                crate::browser::SortDirection::Ascending
+            },
+        );
+    }
+    place
+}
+
+fn session_source_place(source: &SessionSource) -> BrowserPlace {
+    BrowserPlace::from(match source {
+        SessionSource::Library => ViewSource::Library,
+        SessionSource::Playlist(id) => ViewSource::Playlist(*id),
+        SessionSource::Smart(id) => ViewSource::Smart(*id),
+        SessionSource::Queue => ViewSource::Queue,
+        SessionSource::Missing => ViewSource::Missing,
+        SessionSource::ImportErrors => ViewSource::ImportErrors,
+    })
 }
 
 fn deserialize_up_next<'de, D>(deserializer: D) -> Result<UpNextQueue, D::Error>
@@ -242,6 +352,8 @@ mod tests {
             },
             sort_field: "rating".into(),
             sort_dir: "desc".into(),
+            browser_place: Some(BrowserPlace::from(ViewSource::Library)),
+            library_root: Some(BrowserPlace::from(ViewSource::Library)),
             queue: QueueSnapshot {
                 ids: vec![10, 20],
                 order: vec![1, 0],
@@ -253,6 +365,7 @@ mod tests {
             current_up_next: None,
             play_origin: None,
             play_origin_label: None,
+            play_origin_place: None,
         }
     }
 
@@ -262,6 +375,45 @@ mod tests {
         let state = full_state();
         save(&conn, &state).unwrap();
         assert_eq!(load(&conn), state);
+    }
+
+    #[test]
+    fn browse_5_session_round_trips_current_root_and_structured_play_origin() {
+        let conn = conn();
+        let mut state = full_state();
+        let mut current = crate::browser::BrowserPlace::fresh_album("Blue", "Joni Mitchell");
+        current.track_state_mut().unwrap().search = "river".into();
+        let mut root = crate::browser::BrowserPlace::from(crate::view_source::ViewSource::Library);
+        root.track_state_mut().unwrap().selected_ids = vec![7];
+        state.browser_place = Some(current.clone());
+        state.library_root = Some(root.clone());
+        state.play_origin_place = Some(current.clone());
+
+        save(&conn, &state).unwrap();
+        let restored = load(&conn);
+
+        assert_eq!(restored.browser_place, Some(current.clone()));
+        assert_eq!(restored.library_root, Some(root));
+        assert_eq!(restored.play_origin_place, Some(current));
+    }
+
+    #[test]
+    fn browse_5_unresolvable_places_fall_back_to_the_remembered_library_root() {
+        let conn = conn();
+        let mut state = full_state();
+        let mut root = BrowserPlace::from(ViewSource::Library);
+        root.track_state_mut().unwrap().search = "remembered".into();
+        state.library_root = Some(root.clone());
+        state.browser_place = Some(BrowserPlace::from(ViewSource::Playlist(9999)));
+        state.play_origin = Some(SessionSource::Playlist(9999));
+        state.play_origin_place = Some(BrowserPlace::from(ViewSource::Playlist(9999)));
+        state.play_origin_label = Some("Deleted".into());
+
+        save(&conn, &state).unwrap();
+        let restored = load(&conn);
+
+        assert_eq!(restored.browser_place, Some(root.clone()));
+        assert_eq!(restored.play_origin_place, Some(root));
     }
 
     #[test]
@@ -321,8 +473,10 @@ mod tests {
     fn play_origin_round_trips_and_corrupt_degrades_to_none() {
         let conn = conn();
         let mut state = full_state();
-        state.play_origin = Some(SessionSource::Playlist(7));
+        let playlist_id = crate::library::playlists::create(&conn, "Late Night").unwrap();
+        state.play_origin = Some(SessionSource::Playlist(playlist_id));
         state.play_origin_label = Some("Late Night".into());
+        state.play_origin_place = Some(BrowserPlace::from(ViewSource::Playlist(playlist_id)));
         save(&conn, &state).unwrap();
         assert_eq!(load(&conn), state);
 

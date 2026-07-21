@@ -470,6 +470,29 @@ impl Queue {
         true
     }
 
+    /// Removes every queued occurrence of `remove` except the exact slot at
+    /// the current playhead. This is the loaded-track deletion seam: an
+    /// already-open file may finish playing, while duplicate future/history
+    /// slots for the deleted catalog identity must disappear immediately.
+    /// Once playback leaves the preserved slot, ordinary [`Self::remove_ids`]
+    /// removes that final tombstone.
+    pub fn remove_ids_except_current(&mut self, remove: &[i64]) -> bool {
+        if remove.is_empty() {
+            return false;
+        }
+        let remove: std::collections::HashSet<i64> = remove.iter().copied().collect();
+        let current = self.pos;
+        let positions: Vec<usize> = self
+            .order
+            .iter()
+            .enumerate()
+            .filter_map(|(position, &index)| {
+                (Some(position) != current && remove.contains(&self.ids[index])).then_some(position)
+            })
+            .collect();
+        self.remove_order_positions(&positions)
+    }
+
     /// QUE-3: removes SINGLE occurrences by their play-order positions —
     /// unlike `remove_ids`, a duplicate id elsewhere in the queue survives.
     /// Shares `remove_ids`' current-track contract: removing the current

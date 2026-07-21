@@ -13,8 +13,8 @@ fn missing_group_copy_keeps_unknown_actionless_and_honest() {
     assert!(!copy.actionable);
 }
 
-// UX SET-4: enabling destructive auto-clean applies immediately but an
-// existing overdue backlog requires the named cascade choice.
+// UX BROWSE-6: enabling destructive auto-clean applies immediately but an
+// existing overdue backlog names what is removed and what remains historical.
 #[test]
 fn set_4_auto_clean_activation_names_cascade_and_can_start_today() {
     let mut conn = reprise_core::db::open_migrated(None).unwrap();
@@ -40,7 +40,7 @@ fn set_4_auto_clean_activation_names_cascade_and_can_start_today() {
         "the setting itself takes effect immediately"
     );
     let body = auto_clean_confirmation_body(1, 30);
-    assert!(body.contains("ratings and listening history go with them"));
+    assert!(body.contains("Listening history stays in My Stats"));
 
     start_auto_clean_counting_today(&conn, now).unwrap();
     assert_eq!(settings::get_auto_clean_armed_at(&conn).unwrap(), Some(now));
@@ -56,7 +56,9 @@ fn set_4_auto_clean_activation_names_cascade_and_can_start_today() {
 fn deleted_card_is_the_only_actionable_missing_group() {
     let deleted = group_copy(&MissingGroupKind::Deleted, 2);
     assert!(deleted.actionable);
-    assert!(remove_confirmation_body(2).contains("ratings and listening history go with them"));
+    let body = remove_confirmation_body(2);
+    assert!(body.contains("ratings, playlist entries, and device sync state"));
+    assert!(body.contains("Listening history stays in My Stats"));
     let unavailable = group_copy(
         &MissingGroupKind::Unavailable {
             mount_point: Some("/media/NAS".into()),

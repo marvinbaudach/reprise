@@ -80,12 +80,6 @@ fn set_art_url_for_current_track(mirror: &mut MprisState, track_id: i64, art_url
 }
 
 impl PlayerController {
-    /// Wires the persistent player-bar info button to the current track's
-    /// local Audio Character presentation.
-    pub fn connect_analysis_clicked(&self, f: impl Fn() + 'static) {
-        self.bar.connect_analysis_clicked(f);
-    }
-
     /// Invalidates and reloads the displayed cover when a successful tag
     /// edit touched the currently playing path. Playback itself is left
     /// untouched.
@@ -343,6 +337,7 @@ impl PlayerController {
     pub(in crate::ui) fn sync_state(&self, state: PlaybackState) {
         self.bar.set_state(state);
         self.compact_player.set_state(state);
+        self.sync_lyrics_state(state);
         // Fan the same state out to the track list's now-playing equaliser
         // (freeze on pause, drop the marker on stop). Cloned-out before the
         // call inside `notify_playback_state_changed`, per RefCell discipline.
