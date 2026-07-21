@@ -1,5 +1,6 @@
 pub(in crate::ui) mod hourly_chart;
 pub(in crate::ui) mod hourly_chart_math;
+pub(in crate::ui) mod stats_audio_character;
 pub(crate) mod stats_css;
 pub(in crate::ui) mod stats_customize;
 pub(in crate::ui) mod stats_genre_bar;
