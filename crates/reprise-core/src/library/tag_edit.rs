@@ -17,7 +17,7 @@ pub enum MixedValue<T> {
     Mixed,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EditableTags {
     pub title: String,
     pub artist: String,
