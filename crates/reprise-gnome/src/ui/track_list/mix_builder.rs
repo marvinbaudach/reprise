@@ -6,9 +6,9 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::mix_planner::{
-    approve_mix_draft, plan_mix_draft, profile_target_for_tracks, CriteriaMode, EnergyCurve,
-    Familiarity, MixDiagnostic, MixDraft, MixIntent, MixSource, ProfileTarget, SelectionReason,
-    Variety,
+    approve_mix_draft, plan_mix_draft, profile_target_for_available_tracks,
+    profile_target_for_tracks, CriteriaMode, EnergyCurve, Familiarity, MixDiagnostic, MixDraft,
+    MixIntent, MixSource, ProfileTarget, SelectionReason, Variety,
 };
 use reprise_core::models::Track;
 
@@ -351,6 +351,10 @@ fn build_intent(
     ) {
         match target_override {
             Some(target) => target,
+            None if criteria == CriteriaMode::Balanced => {
+                profile_target_for_available_tracks(&shared.conn.borrow(), seed_ids)?
+                    .unwrap_or_else(ProfileTarget::neutral)
+            }
             None => profile_target_for_tracks(&shared.conn.borrow(), seed_ids)?,
         }
     } else {

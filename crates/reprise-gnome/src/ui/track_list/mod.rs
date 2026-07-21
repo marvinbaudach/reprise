@@ -8,6 +8,7 @@ pub(in crate::ui) mod list_density;
 pub(in crate::ui) mod match_highlight;
 pub(in crate::ui) mod mix_builder;
 pub(in crate::ui) mod mix_builder_discovery;
+mod playlist_reorder_guard;
 pub(crate) mod queue_row_mapping;
 pub(crate) mod queue_sections;
 pub(crate) mod rating;
@@ -51,9 +52,10 @@ pub(in crate::ui) mod view_state_memory;
 
 #[allow(unused_imports)]
 use super::*;
+pub(in crate::ui) use playlist_reorder_guard::playlist_reorder_allowed;
 pub(in crate::ui) use surface::{
-    notify_import_errors_mutated_and_reload, playlist_reorder_allowed, reload,
-    set_filter_and_reload, set_source_and_reload, show_toast, OnActivate, Shared, TrackList,
+    notify_import_errors_mutated_and_reload, reload, set_filter_and_reload, set_source_and_reload,
+    show_toast, OnActivate, Shared, TrackList,
 };
 pub(in crate::ui) use tag_mutation_refresh::refresh_after_tag_mutation;
 pub(in crate::ui) use track_list_layout::{

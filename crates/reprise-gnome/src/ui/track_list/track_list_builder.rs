@@ -85,6 +85,7 @@ pub(in crate::ui) fn build(
         selection: selection.clone(),
         column_view: column_view.clone(),
         playing_track_id: Cell::new(None),
+        pending_row_activation: Cell::new(None),
         active_reorder_drag_from: Cell::new(None),
         view_state_memory: RefCell::new(std::collections::HashMap::new()),
         conn,

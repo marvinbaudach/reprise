@@ -596,7 +596,7 @@ mod tests {
     }
 
     #[test]
-    fn loaded_track_projection_follows_opt_in_and_current_storage_state() {
+    fn ac_18_loaded_track_projection_follows_default_on_and_current_storage_state() {
         let conn = reprise_core::db::open_migrated(None).unwrap();
         conn.execute(
             "INSERT INTO tracks
@@ -605,6 +605,11 @@ mod tests {
             [],
         )
         .unwrap();
+        assert_eq!(
+            load_presentation(&conn, Some(7)),
+            AudioCharacterPresentation::Pending
+        );
+        reprise_core::library::settings::set_audio_analysis_enabled(&conn, false).unwrap();
         assert_eq!(
             load_presentation(&conn, Some(7)),
             AudioCharacterPresentation::Disabled

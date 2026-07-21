@@ -94,6 +94,9 @@ pub fn plan_candidates(
     let mut selected = Vec::<ScoredCandidate>::new();
     let mut total_duration_ms = 0_i64;
     let mut diagnostics = Vec::new();
+    if intent.criteria() == CriteriaMode::Balanced && analyzed_candidates < total_candidates {
+        diagnostics.push(MixDiagnostic::MissingAudioEvidence);
+    }
     while !scored.is_empty() && total_duration_ms < intent.target_duration_ms() {
         let allowed = scored.iter().position(|item| {
             selected
@@ -167,10 +170,9 @@ fn score_candidate(
 ) -> Result<ScoredCandidate, MixPlannerError> {
     let mut score = 0.0;
     let mut reasons = Vec::new();
-    if matches!(
-        intent.criteria(),
-        CriteriaMode::AudioCharacter | CriteriaMode::Balanced
-    ) {
+    if intent.criteria() == CriteriaMode::AudioCharacter
+        || (intent.criteria() == CriteriaMode::Balanced && candidate.profile.is_some())
+    {
         let profile = candidate.profile.ok_or(MixPlannerError::InvalidIntent(
             "audio-character candidate has no current profile",
         ))?;

@@ -2,9 +2,10 @@ use rusqlite::{params, Connection};
 
 use crate::mix_planner::{
     approve_mix_draft, load_mix_draft, plan_candidates, plan_mix, plan_mix_draft,
-    profile_target_for_tracks, query_candidates, CandidateProfile, CriteriaMode, EnergyCurve,
-    Familiarity, MixCandidate, MixDiagnostic, MixIntent, MixSource, ProfileTarget, SelectionReason,
-    Variety, MAX_CANDIDATES, MAX_EXPLICIT_TRACK_IDS,
+    profile_target_for_available_tracks, profile_target_for_tracks, query_candidates,
+    CandidateProfile, CriteriaMode, EnergyCurve, Familiarity, MixCandidate, MixDiagnostic,
+    MixIntent, MixSource, ProfileTarget, SelectionReason, Variety, MAX_CANDIDATES,
+    MAX_EXPLICIT_TRACK_IDS,
 };
 
 fn candidate(id: i64, artist: &str, intensity: f64, duration_ms: i64) -> MixCandidate {
@@ -210,6 +211,34 @@ fn ac_13_genre_intent_uses_present_source_membership_without_inventing_audio_pro
 }
 
 #[test]
+fn balanced_planning_keeps_unanalyzed_tracks_and_reports_partial_audio_evidence() {
+    let conn = migrated();
+    insert_track(&conn, 1, true, true);
+    insert_track(&conn, 2, true, false);
+    insert_track(&conn, 3, true, true);
+    let intent = MixIntent::new(
+        MixSource::Library,
+        vec![1],
+        CriteriaMode::Balanced,
+        ProfileTarget::neutral(),
+        360_000,
+        Familiarity::Balanced,
+        Variety::Balanced,
+        EnergyCurve::Flat,
+    )
+    .unwrap();
+
+    let draft = plan_mix(&conn, &intent).unwrap();
+
+    assert_eq!(draft.total_candidates, 2);
+    assert_eq!(draft.analyzed_candidates, 1);
+    assert_eq!(draft.tracks.len(), 2);
+    assert!(draft
+        .diagnostics
+        .contains(&MixDiagnostic::MissingAudioEvidence));
+}
+
+#[test]
 fn ac_15_planning_is_deterministic_weighted_and_explainable() {
     let intent = planning_intent(360_000, EnergyCurve::Flat);
     let candidates = vec![
@@ -309,6 +338,13 @@ fn selected_seed_profiles_produce_the_exact_average_target() {
     assert_eq!(target.values()[0], 0.2);
     insert_track(&conn, 400, true, false);
     assert!(profile_target_for_tracks(&conn, &[100, 400]).is_err());
+    assert_eq!(
+        profile_target_for_available_tracks(&conn, &[100, 400])
+            .unwrap()
+            .unwrap()
+            .values()[0],
+        0.1
+    );
 }
 
 #[test]
