@@ -7,7 +7,11 @@ pub enum DbError {
     Sqlite(#[from] rusqlite::Error),
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("database schema {found} is newer than supported schema {supported}")]
+    SchemaTooNew { found: i64, supported: i64 },
 }
+
+pub const SUPPORTED_SCHEMA_VERSION: i64 = 26;
 
 pub fn open(path: Option<&Path>) -> Result<Connection, DbError> {
     let conn = match path {
@@ -476,6 +480,12 @@ pub(crate) fn migrate_with_cache_dirs(
     portrait_cache: &Path,
 ) -> Result<(), DbError> {
     let initial_version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if initial_version > SUPPORTED_SCHEMA_VERSION {
+        return Err(DbError::SchemaTooNew {
+            found: initial_version,
+            supported: SUPPORTED_SCHEMA_VERSION,
+        });
+    }
     let version = initial_version;
     if version < 1 {
         let tx = conn.unchecked_transaction()?;
@@ -638,6 +648,7 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
     crate::db_mix_planner::migrate_v23(conn)?;
     crate::db_listen_history::migrate_v24(conn)?;
     crate::db_library_exclusions::migrate_v25(conn)?;
+    crate::db_change_log::migrate_v26(conn)?;
     Ok(())
 }
 
@@ -756,3 +767,7 @@ mod audio_analysis_migration_tests;
 #[cfg(test)]
 #[path = "db_migration_repair_tests.rs"]
 mod migration_repair_tests;
+
+#[cfg(test)]
+#[path = "db_change_log_migration_tests.rs"]
+mod change_log_migration_tests;

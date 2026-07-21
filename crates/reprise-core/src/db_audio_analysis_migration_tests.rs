@@ -4,7 +4,8 @@ use super::*;
 
 fn reset_fully_migrated_database_to_v17(conn: &Connection) {
     conn.execute_batch(
-        "DROP TABLE library_exclusions;
+        "DROP TABLE change_log;
+         DROP TABLE library_exclusions;
          DROP TABLE mix_draft_tracks;
          DROP TABLE mix_drafts;
          DROP TABLE library_doctor_remote_cache;
@@ -46,7 +47,7 @@ fn audio_analysis_schema_migrates_v17_and_preserves_library_data() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 25);
+    assert_eq!(version, SUPPORTED_SCHEMA_VERSION);
     let preserved: (String, Vec<u8>, i64, i64) = conn
         .query_row(
             "SELECT t.title, t.waveform_peaks,
