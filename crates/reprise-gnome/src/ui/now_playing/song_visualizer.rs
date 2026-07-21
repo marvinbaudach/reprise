@@ -508,6 +508,16 @@ fn clear_static_profile(state: &mut RenderState, animations_enabled: bool) {
     }
 }
 
+/// Transport actions the fullscreen overlay can trigger. Wired from the player
+/// controller; each is optional so the visualizer works standalone (tests).
+#[derive(Default, Clone)]
+struct Transport {
+    previous: Option<Rc<dyn Fn()>>,
+    play_pause: Option<Rc<dyn Fn()>>,
+    stop: Option<Rc<dyn Fn()>>,
+    next: Option<Rc<dyn Fn()>>,
+}
+
 #[derive(Clone)]
 pub(in crate::ui) struct SongVisualizer {
     root: gtk4::Box,
@@ -518,6 +528,13 @@ pub(in crate::ui) struct SongVisualizer {
     fullscreen_active: Rc<Cell<bool>>,
     fullscreen_window: Rc<RefCell<Option<gtk4::glib::WeakRef<gtk4::Window>>>>,
     tick_id: Rc<RefCell<Option<gtk4::TickCallbackId>>>,
+    /// Current track title + subtitle, mirrored into the fullscreen header.
+    meta: Rc<RefCell<(String, String)>>,
+    transport: Rc<RefCell<Transport>>,
+    /// Live fullscreen header labels + play/pause button, so metadata and
+    /// playback-state changes reflect while the overlay is open.
+    fullscreen_meta: Rc<RefCell<Option<(gtk4::Label, gtk4::Label)>>>,
+    fullscreen_play_pause: Rc<RefCell<Option<gtk4::Button>>>,
 }
 
 impl SongVisualizer {
@@ -541,11 +558,43 @@ impl SongVisualizer {
             fullscreen_active: Rc::new(Cell::new(false)),
             fullscreen_window: Rc::new(RefCell::new(None)),
             tick_id: Rc::new(RefCell::new(None)),
+            meta: Rc::new(RefCell::new((String::new(), String::new()))),
+            transport: Rc::new(RefCell::new(Transport::default())),
+            fullscreen_meta: Rc::new(RefCell::new(None)),
+            fullscreen_play_pause: Rc::new(RefCell::new(None)),
         }
     }
 
     pub(in crate::ui) fn widget(&self) -> &gtk4::Box {
         &self.root
+    }
+
+    /// Mirrors the current track's title and subtitle into the fullscreen
+    /// header. No-op on the inline canvas (which sits beside the panel's own
+    /// metadata); only the immersive fullscreen view shows it.
+    pub(in crate::ui) fn set_track_meta(&self, title: &str, subtitle: &str) {
+        *self.meta.borrow_mut() = (title.to_owned(), subtitle.to_owned());
+        if let Some((title_label, subtitle_label)) = self.fullscreen_meta.borrow().as_ref() {
+            title_label.set_label(title);
+            subtitle_label.set_label(subtitle);
+            subtitle_label.set_visible(!subtitle.is_empty());
+        }
+    }
+
+    /// Wires the fullscreen transport buttons to player actions.
+    pub(in crate::ui) fn set_transport(
+        &self,
+        previous: impl Fn() + 'static,
+        play_pause: impl Fn() + 'static,
+        stop: impl Fn() + 'static,
+        next: impl Fn() + 'static,
+    ) {
+        *self.transport.borrow_mut() = Transport {
+            previous: Some(Rc::new(previous)),
+            play_pause: Some(Rc::new(play_pause)),
+            stop: Some(Rc::new(stop)),
+            next: Some(Rc::new(next)),
+        };
     }
 
     pub(in crate::ui) fn set_profile(&self, dimensions: &[u8; 4]) {
@@ -596,6 +645,13 @@ impl SongVisualizer {
     }
 
     pub(in crate::ui) fn set_playback_state(&self, playback: PlaybackState) {
+        if let Some(button) = self.fullscreen_play_pause.borrow().as_ref() {
+            button.set_icon_name(if playback == PlaybackState::Playing {
+                "media-playback-pause-symbolic"
+            } else {
+                "media-playback-start-symbolic"
+            });
+        }
         let mut state = self.state.borrow_mut();
         state.playback = playback;
         if playback != PlaybackState::Playing || !motion::animations_enabled() {
@@ -649,10 +705,13 @@ impl SongVisualizer {
         let area = drawing_area(&self.state, -1, "reprise-song-visual-fullscreen-canvas");
         area.set_vexpand(true);
         register_area(&self.areas, &area);
-        let controls = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
+
+        let header = self.fullscreen_header();
+        let controls = gtk4::Box::new(gtk4::Orientation::Vertical, 14);
         controls.set_halign(gtk4::Align::Center);
         controls.set_valign(gtk4::Align::End);
         controls.set_margin_bottom(28);
+        controls.append(&self.transport_controls());
         controls.append(&preset_controls(&self.state, &self.areas));
         let hint = gtk4::Label::new(Some(&strings::text(strings::SONG_VISUALS_FULLSCREEN_HINT)));
         hint.add_css_class("dim-label");
@@ -660,6 +719,7 @@ impl SongVisualizer {
 
         let overlay = gtk4::Overlay::new();
         overlay.set_child(Some(&area));
+        overlay.add_overlay(&header);
         overlay.add_overlay(&controls);
         let window = gtk4::Window::builder()
             .title(strings::text(strings::SONG_VISUALS))
@@ -686,9 +746,13 @@ impl SongVisualizer {
         let panel_active = self.panel_active.clone();
         let tick_id = self.tick_id.clone();
         let slot = self.fullscreen_window.clone();
+        let meta_slot = self.fullscreen_meta.clone();
+        let play_pause_slot = self.fullscreen_play_pause.clone();
         window.connect_destroy(move |_| {
             fullscreen_active.set(false);
             slot.borrow_mut().take();
+            meta_slot.borrow_mut().take();
+            play_pause_slot.borrow_mut().take();
             if !panel_active.get() {
                 if let Some(id) = tick_id.borrow_mut().take() {
                     id.remove();
@@ -700,6 +764,89 @@ impl SongVisualizer {
         self.ensure_tick();
         window.fullscreen();
         window.present();
+    }
+
+    /// Builds the fullscreen header: track title over subtitle, top-centered.
+    /// The labels are stashed so `set_track_meta` can update them live.
+    fn fullscreen_header(&self) -> gtk4::Box {
+        let (title_text, subtitle_text) = self.meta.borrow().clone();
+        let header = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+        header.set_halign(gtk4::Align::Center);
+        header.set_valign(gtk4::Align::Start);
+        header.set_margin_top(36);
+        header.add_css_class("reprise-song-visual-header");
+
+        let title = gtk4::Label::new(Some(&title_text));
+        title.add_css_class("reprise-song-visual-header-title");
+        title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+        let subtitle = gtk4::Label::new(Some(&subtitle_text));
+        subtitle.add_css_class("reprise-song-visual-header-subtitle");
+        subtitle.add_css_class("dim-label");
+        subtitle.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+        subtitle.set_visible(!subtitle_text.is_empty());
+
+        header.append(&title);
+        header.append(&subtitle);
+        *self.fullscreen_meta.borrow_mut() = Some((title, subtitle));
+        header
+    }
+
+    /// Builds the fullscreen transport row (previous · play/pause · stop · next),
+    /// wired to the stored [`Transport`] actions. Buttons read the callbacks at
+    /// click time, so they stay valid even if transport is wired after this.
+    fn transport_controls(&self) -> gtk4::Box {
+        let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 14);
+        row.set_halign(gtk4::Align::Center);
+        row.add_css_class("reprise-song-visual-transport");
+
+        let button = |icon: &str, label: &str, primary: bool| {
+            let button = gtk4::Button::from_icon_name(icon);
+            button.add_css_class("circular");
+            button.add_css_class("reprise-song-visual-transport-btn");
+            if primary {
+                button.add_css_class("reprise-song-visual-transport-primary");
+            }
+            button.update_property(&[gtk4::accessible::Property::Label(&strings::text(label))]);
+            button
+        };
+
+        let previous = button(
+            "media-skip-backward-symbolic",
+            strings::SONG_VISUALS_PREVIOUS,
+            false,
+        );
+        let play_pause_icon = if self.state.borrow().playback == PlaybackState::Playing {
+            "media-playback-pause-symbolic"
+        } else {
+            "media-playback-start-symbolic"
+        };
+        let play_pause = button(play_pause_icon, strings::SONG_VISUALS_PLAY_PAUSE, true);
+        let stop = button("media-playback-stop-symbolic", strings::SONG_VISUALS_STOP, false);
+        let next = button("media-skip-forward-symbolic", strings::SONG_VISUALS_NEXT, false);
+
+        let fire = |slot: fn(&Transport) -> &Option<Rc<dyn Fn()>>, transport: &Rc<RefCell<Transport>>| {
+            let transport = transport.clone();
+            move || {
+                if let Some(callback) = slot(&transport.borrow()) {
+                    callback();
+                }
+            }
+        };
+        let previous_cb = fire(|t| &t.previous, &self.transport);
+        previous.connect_clicked(move |_| previous_cb());
+        let play_pause_cb = fire(|t| &t.play_pause, &self.transport);
+        play_pause.connect_clicked(move |_| play_pause_cb());
+        let stop_cb = fire(|t| &t.stop, &self.transport);
+        stop.connect_clicked(move |_| stop_cb());
+        let next_cb = fire(|t| &t.next, &self.transport);
+        next.connect_clicked(move |_| next_cb());
+
+        row.append(&previous);
+        row.append(&play_pause);
+        row.append(&stop);
+        row.append(&next);
+        *self.fullscreen_play_pause.borrow_mut() = Some(play_pause);
+        row
     }
 
     fn is_active(&self) -> bool {
@@ -886,6 +1033,28 @@ pub(in crate::ui) fn css() -> String {
        background-image: radial-gradient(ellipse at center,\
          alpha(@reprise_player_accent, 0.12) 0%,\
          alpha(#090b0c, 0) 72%);\
+     }\n\
+     .reprise-song-visual-header-title {\
+       font-size: 1.6rem; font-weight: 800; color: #ffffff;\
+     }\n\
+     .reprise-song-visual-header-subtitle { font-size: 1.05rem; }\n\
+     .reprise-song-visual-transport-btn {\
+       min-width: 46px; min-height: 46px;\
+       color: alpha(#ffffff, 0.82);\
+       background-color: alpha(#ffffff, 0.08);\
+       border: 1px solid alpha(#ffffff, 0.12);\
+     }\n\
+     .reprise-song-visual-transport-btn:hover {\
+       color: #ffffff; background-color: alpha(#ffffff, 0.16);\
+     }\n\
+     .reprise-song-visual-transport-primary {\
+       min-width: 56px; min-height: 56px;\
+       color: #ffffff;\
+       background-color: alpha(@reprise_player_accent, 0.28);\
+       border-color: alpha(@reprise_player_accent, 0.85);\
+     }\n\
+     .reprise-song-visual-transport-primary:hover {\
+       background-color: alpha(@reprise_player_accent, 0.42);\
      }"
     .to_owned()
 }

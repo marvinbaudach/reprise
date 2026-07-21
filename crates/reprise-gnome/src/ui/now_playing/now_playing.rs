@@ -460,6 +460,19 @@ impl NowPlayingPanel {
         self.request_up_next_refresh_if_visible();
     }
 
+    /// Wires the fullscreen visualizer's transport buttons to player actions.
+    pub(in crate::ui) fn set_visual_transport(
+        &self,
+        previous: impl Fn() + 'static,
+        play_pause: impl Fn() + 'static,
+        stop: impl Fn() + 'static,
+        next: impl Fn() + 'static,
+    ) {
+        self.widgets
+            .visualizer
+            .set_transport(previous, play_pause, stop, next);
+    }
+
     pub(in crate::ui) fn is_up_next_visible(&self) -> bool {
         should_render_up_next(
             self.widgets.column.is_visible(),
@@ -630,6 +643,14 @@ impl NowPlayingPanel {
         self.widgets.title.set_label(&presentation.title);
         self.widgets.subtitle.set_label(&presentation.subtitle);
         self.widgets.subtitle.set_visible(!presentation.idle);
+        self.widgets.visualizer.set_track_meta(
+            &presentation.title,
+            if presentation.idle {
+                ""
+            } else {
+                &presentation.subtitle
+            },
+        );
         if presentation.idle {
             self.widgets.stage.add_css_class("reprise-now-playing-idle");
         } else {

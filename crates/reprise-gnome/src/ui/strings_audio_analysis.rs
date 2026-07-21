@@ -10,6 +10,10 @@ pub const SONG_VISUALS_FLOW: &str = N_!("Flow");
 pub const SONG_VISUALS_PULSE: &str = N_!("Pulse");
 pub const SONG_VISUALS_BARS: &str = N_!("Bars");
 pub const SONG_VISUALS_ACCESSIBLE: &str = N_!("Audio-reactive song visual");
+pub const SONG_VISUALS_PREVIOUS: &str = N_!("Previous track");
+pub const SONG_VISUALS_PLAY_PAUSE: &str = N_!("Play or pause");
+pub const SONG_VISUALS_STOP: &str = N_!("Stop");
+pub const SONG_VISUALS_NEXT: &str = N_!("Next track");
 pub const SONG_VISUALS_FULLSCREEN_HINT: &str =
     N_!("F11 Fullscreen · color follows the cover accent");
 pub const AUDIO_ANALYSIS_TITLE: &str = N_!("Analyze audio locally");
