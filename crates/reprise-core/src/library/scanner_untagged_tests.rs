@@ -227,6 +227,63 @@ fn scanner_repairs_a_damaged_mp3_container_on_import() {
     assert_eq!(tags.album, "Some Album");
 }
 
+/// The repair PRESERVES a file's real metadata instead of discarding it. The
+/// overwhelmingly common "unreadable" case is an intact front ID3v2 sitting
+/// behind a damaged trailing APEv2 footer (lofty aborts with "invalid item
+/// size"): stripping ONLY the tail recovers the real title/artist/album rather
+/// than overwriting them with the file name / folder. This guards against the
+/// earlier repair that stripped every container and rewrote from the file stem,
+/// silently destroying real tags on scan.
+#[test]
+fn repair_recovers_real_front_id3v2_tags_by_stripping_only_the_damaged_tail() {
+    let tmp = tempfile::tempdir().unwrap();
+    let album_dir = tmp.path().join("Some Album");
+    std::fs::create_dir(&album_dir).unwrap();
+    let path = album_dir.join("Broken Song.mp3");
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/broken-front-id3v2-damaged-ape.mp3"),
+        &path,
+    )
+    .unwrap();
+
+    // Sanity: lofty cannot read the fixture as-is — the damaged APE footer
+    // aborts the read, which is exactly why the scanner marks such files
+    // unreadable in the first place.
+    assert!(
+        track_meta::read_meta(&path).is_err(),
+        "fixture must start out unreadable by lofty"
+    );
+
+    // The fallback album is only consulted if recovery fails; it must NOT win.
+    let fallback = track_meta::TrackMeta {
+        album: "Some Album".to_string(),
+        ..Default::default()
+    };
+    let recovered =
+        super::repair::repair_damaged_tags(&path, &fallback, ImportErrorKind::UnreadableTags)
+            .expect("repair must recover the file rather than give up");
+
+    // The REAL front ID3v2 tags survive — NOT the file-stem/folder fallback.
+    assert_eq!(
+        recovered.title, "Silent Song",
+        "real title recovered, not the file stem"
+    );
+    assert_eq!(
+        recovered.artist, "Test Artist",
+        "real artist recovered, not left empty"
+    );
+    assert_eq!(
+        recovered.album, "Test Album",
+        "real album recovered, not the parent folder"
+    );
+
+    // And the file is now strictly readable/editable again.
+    let tags = crate::library::tag_edit::read_editable_tags(&path)
+        .expect("the repaired file is strictly readable again");
+    assert_eq!(tags.artist, "Test Artist");
+}
+
 /// A library imported *before* the on-import auto-repair existed left damaged
 /// files sitting in `tracks` rows flagged `untagged = 1`, their `file_mtime`
 /// already matching the file on disk. A later scan must NOT take the unchanged-
