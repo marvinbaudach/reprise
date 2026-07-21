@@ -6,87 +6,102 @@ cd "$repo_root"
 
 english=README.md
 german=README.de.md
+performance_visual=docs/assets/reprise-performance.svg
+architecture_visual=docs/assets/reprise-architecture.svg
 
-for path in "$english" "$german"; do
-  if [[ ! -f "$path" ]]; then
-    echo "$path must exist" >&2
-    exit 1
-  fi
-done
+fail() {
+  echo "$1" >&2
+  exit 1
+}
 
 require_fixed() {
   local value=$1
   local path=$2
-  if ! rg --fixed-strings --quiet "$value" "$path"; then
-    echo "$path must contain: $value" >&2
-    exit 1
-  fi
+  rg --fixed-strings --quiet "$value" "$path" || fail "$path must contain: $value"
 }
 
 reject_fixed() {
   local value=$1
   local path=$2
   if rg --fixed-strings --quiet "$value" "$path"; then
-    echo "$path must not contain stale claim: $value" >&2
-    exit 1
+    fail "$path must not contain portfolio copy: $value"
   fi
 }
 
+for path in "$english" "$german"; do
+  [[ -f $path ]] || fail "$path must exist"
+  (( $(wc -l < "$path") <= 170 )) || fail "$path must remain a concise developer entry point"
+  [[ $(rg -c 'docs/assets/reprise-architecture\.svg' "$path") -eq 1 ]] ||
+    fail "$path must contain exactly one architecture visual"
+  reject_fixed '```mermaid' "$path"
+  reject_fixed 'docs/assets/reprise-performance.svg' "$path"
+  reject_fixed 'Rust code lines' "$path"
+  reject_fixed 'Rust-Codezeilen' "$path"
+done
+
+[[ -f $performance_visual ]] || fail "$performance_visual must exist"
+for value in \
+  'WHAT CHANGED' \
+  'partial present-track index' \
+  'full scan + temporary sort' \
+  '40.2× faster' \
+  '+9.85% storage'; do
+  require_fixed "$value" "$performance_visual"
+done
+
+[[ -f $architecture_visual ]] || fail "$architecture_visual must exist"
+for value in \
+  'DOMAIN AUTHORITY' \
+  'COMMANDS + QUERIES' \
+  'IMPLEMENTS CORE CONTRACTS' \
+  'FORBIDDEN IN reprise-core'; do
+  require_fixed "$value" "$architecture_visual"
+done
+reject_fixed 'Future native frontends' "$architecture_visual"
+
 require_fixed '[Deutsch](README.de.md)' "$english"
 require_fixed '[English](README.md)' "$german"
-require_fixed 'Started on 11 July 2026' "$english"
-require_fixed 'Gestartet am 11. Juli 2026' "$german"
 
-require_fixed '## Architecture: one Rust core, native edges' "$english"
-require_fixed '## Architektur: ein Rust-Core, native Ränder' "$german"
-require_fixed '```mermaid' "$english"
-require_fixed '```mermaid' "$german"
-
-require_fixed '## Performance: measured, not assumed' "$english"
-require_fixed '## Performance: messen statt vermuten' "$german"
-for path in "$english" "$german"; do
-  require_fixed '1,600' "$path"
-  require_fixed 'scripts/performance-baseline.sh' "$path"
-  require_fixed 'scripts/performance-query-compare.sh' "$path"
+for value in \
+  '## Architecture' \
+  '## Engineering contracts' \
+  '## Contributing' \
+  '## Build and run' \
+  '## Verification' \
+  '## Documentation' \
+  '## License'; do
+  require_fixed "$value" "$english"
 done
-require_fixed '53,605' "$english"
-require_fixed '1,333' "$english"
-require_fixed '97.51%' "$english"
-require_fixed '+9.85%' "$english"
-require_fixed '16.10 bytes/track' "$english"
-require_fixed '53.605' "$german"
-require_fixed '1.333' "$german"
-require_fixed '97,51 %' "$german"
-require_fixed '+9,85 %' "$german"
-require_fixed '16,10 Byte/Track' "$german"
 
-require_fixed '## Quality is executable policy' "$english"
-require_fixed '## Qualität als ausführbare Policy' "$german"
-require_fixed '1,482 passing tests' "$english"
-require_fixed '1.482 bestandene Tests' "$german"
-require_fixed '88,789 Rust code lines' "$english"
-require_fixed '58,100 product + 30,700 test = 88,800 total' "$english"
-require_fixed '88.789 Rust-Codezeilen' "$german"
-require_fixed '58.100 Produkt + 30.700 Tests = 88.800 gesamt' "$german"
-require_fixed '60 active UX rules' "$english"
-require_fixed '60 aktive UX-Regeln' "$german"
-require_fixed '[UX rulebook](docs/ux-rules.md)' "$english"
-require_fixed '[UX-Regelwerk](docs/ux-rules.md)' "$german"
+for value in \
+  '## Architektur' \
+  '## Engineering-Verträge' \
+  '## Mitentwickeln' \
+  '## Bauen und starten' \
+  '## Verifikation' \
+  '## Dokumentation' \
+  '## Lizenz'; do
+  require_fixed "$value" "$german"
+done
 
-require_fixed '## Roadmap: the same core beyond today’s player' "$english"
-require_fixed '## Roadmap: derselbe Core über den heutigen Player hinaus' "$german"
-require_fixed 'MCP server' "$english"
-require_fixed 'AI-generated music' "$english"
-require_fixed 'AI visual effects' "$english"
-require_fixed 'native frontends' "$english"
-require_fixed 'MCP-Server' "$german"
-require_fixed 'KI-generierte Musik' "$german"
-require_fixed 'Visuelle KI-Effekte' "$german"
-require_fixed 'native Frontends' "$german"
-require_fixed 'These are architectural directions, not shipped features.' "$english"
-require_fixed 'Das sind Architekturziele, keine bereits ausgelieferten Features.' "$german"
+require_fixed 'Choose your seam' "$english"
+require_fixed 'Wähle deine Naht' "$german"
 
-reject_fixed 'feature-complete and locally release-ready' "$english"
-reject_fixed 'has not yet been published to a public source host' "$english"
+for path in "$english" "$german"; do
+  for crate in reprise-core reprise-platform-linux reprise-gnome; do
+    require_fixed "$crate" "$path"
+  done
+  require_fixed 'cargo build --locked --workspace' "$path"
+  require_fixed 'cargo test --locked --workspace' "$path"
+  require_fixed 'scripts/check-merge-readiness.sh --no-fetch' "$path"
+  require_fixed 'docs/showcase.md' "$path"
+  require_fixed 'docs/ux-rules.md' "$path"
+  require_fixed 'TESTING.md' "$path"
+done
 
-echo "Bilingual README showroom contract passed"
+reject_fixed '## Product surface today' "$english"
+reject_fixed '## Heutiger Produktumfang' "$german"
+reject_fixed '## Roadmap: the same core beyond today’s player' "$english"
+reject_fixed '## Roadmap: derselbe Core über den heutigen Player hinaus' "$german"
+
+echo "Bilingual developer README contract passed"
