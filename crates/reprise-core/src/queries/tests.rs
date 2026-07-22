@@ -774,3 +774,47 @@ fn missing_ids_are_sorted_like_library() {
     };
     assert_eq!(ids, by_title);
 }
+
+#[test]
+fn fil_7_count_browsed_ai_excludes_ai_tracks_via_count_star() {
+    // The cheap COUNT(*) variant that replaces the QUEUE_LIMIT-capped
+    // ids.len() fallback: with exclude_ai it counts only non-AI Library
+    // tracks; without it, every present track.
+    let conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    conn.execute_batch(
+        "INSERT INTO tracks (id, path, title, artist, added_at, file_mtime, file_size) \
+           VALUES (1, '/a.flac', 'Original', 'A', 1, 1, 1);
+         INSERT INTO tracks (id, path, title, artist, added_at, file_mtime, file_size) \
+           VALUES (2, '/b.flac', 'Instrumental', 'A', 1, 1, 1);
+         INSERT INTO track_provenance (track_id, kind, ai, created_at) \
+           VALUES (2, 'vocals-removed', 1, 0);",
+    )
+    .unwrap();
+    let browse = BrowseFilter::default();
+
+    let all =
+        query_track_count_browsed_ai(&conn, &ViewSource::Library, "", &browse, &[], false).unwrap();
+    assert_eq!(all, 2, "without the filter both present tracks count");
+    let non_ai =
+        query_track_count_browsed_ai(&conn, &ViewSource::Library, "", &browse, &[], true).unwrap();
+    assert_eq!(non_ai, 1, "the AI instrumental is excluded from the count");
+
+    // The COUNT(*) agrees with the AI-filtered id list it replaces.
+    let ids = query_track_ids_browsed_ai(
+        &conn,
+        &ViewSource::Library,
+        "title",
+        "asc",
+        "",
+        &browse,
+        &[],
+        true,
+    )
+    .unwrap();
+    assert_eq!(
+        non_ai as usize,
+        ids.len(),
+        "count matches the AI-filtered id list length"
+    );
+}

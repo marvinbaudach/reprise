@@ -262,11 +262,11 @@ impl TrackListModel {
 
     /// Like [`set_query_browsed`](Self::set_query_browsed) but honoring the
     /// FIL-7 AI-exclude filter. When `exclude_ai` is set the window uses the
-    /// core `*_ai` query; the row **count** falls back to the id-list length
-    /// (`query_track_ids_browsed_ai().len()`) because core exposes no
-    /// `query_track_count_browsed_ai` yet — a reported facade gap. Consistent
-    /// with the window (both hide the same rows), just less efficient than a
-    /// `COUNT(*)` for very large libraries.
+    /// core `*_ai` query and the row **count** uses the cheap core
+    /// `query_track_count_browsed_ai` (a `COUNT(*)`), so the total is exact even
+    /// for very large libraries — no longer the `QUEUE_LIMIT`-capped id-list
+    /// length. When that count reaches the cap the view's "play all" queue will
+    /// be truncated, so it logs the conventional `is_queue_capped` warning.
     #[allow(clippy::too_many_arguments)]
     pub fn set_query_browsed_ai(
         &self,
@@ -287,15 +287,28 @@ impl TrackListModel {
 
         let new_total = if exclude_ai {
             let conn_ref = conn.borrow();
-            queries::query_track_ids_browsed_ai(
-                &conn_ref, source, sort_field, sort_dir, filter, browse, queue_ids, true,
+            queries::query_track_count_browsed_ai(
+                &conn_ref, source, filter, browse, queue_ids, true,
             )
             .map_or_else(
                 |error| {
                     tracing::error!(%error, "failed to count non-AI tracks for query");
                     0
                 },
-                |ids| ids.len() as u32,
+                |count| {
+                    let total = count.max(0) as u32;
+                    // The count is exact now, but the "play all" queue this view
+                    // feeds still caps at QUEUE_LIMIT — warn per convention when
+                    // the view is that large, so the truncation is not silent.
+                    if queries::is_queue_capped(total as usize) {
+                        tracing::warn!(
+                            limit = queries::QUEUE_LIMIT,
+                            "AI-filtered view queue capped at {} tracks",
+                            queries::QUEUE_LIMIT
+                        );
+                    }
+                    total
+                },
             )
         } else {
             let conn_ref = conn.borrow();

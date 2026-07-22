@@ -6,8 +6,8 @@
 use crate::models::Track;
 
 use super::clauses::{
-    build_track_query_base, build_track_query_browsed, filter_clause, like_pattern, row_to_track,
-    MISSING, PRESENT,
+    ai_exclude_clause, build_track_query_base, build_track_query_browsed, filter_clause,
+    like_pattern, row_to_track, MISSING, PRESENT,
 };
 use super::MAX_WINDOW_LIMIT;
 use super::{browse::browse_clause, BrowseFilter};
@@ -65,12 +65,27 @@ pub(super) fn query_track_count_library(
     filter: &str,
     browse: &BrowseFilter,
 ) -> Result<i64, rusqlite::Error> {
+    query_track_count_library_ai(conn, filter, browse, false)
+}
+
+/// Like [`query_track_count_library`] but honoring the FIL-7 AI-exclude filter
+/// (Beschluss 17). A cheap `COUNT(*)` with the parameter-free
+/// [`ai_exclude_clause`] appended — the count the AI-filtered Library view uses
+/// as its total, so it is never silently capped at `QUEUE_LIMIT` the way an
+/// id-list length would be.
+pub(super) fn query_track_count_library_ai(
+    conn: &Connection,
+    filter: &str,
+    browse: &BrowseFilter,
+    exclude_ai: bool,
+) -> Result<i64, rusqlite::Error> {
     let has_filter = !filter.trim().is_empty();
     let browse_first_param = if has_filter { 2 } else { 1 };
     let (browse_clause, browse_values) = browse_clause(browse, browse_first_param);
     let sql = format!(
-        "SELECT count(*) FROM tracks WHERE {PRESENT}{}{browse_clause}",
+        "SELECT count(*) FROM tracks WHERE {PRESENT}{}{browse_clause}{}",
         filter_clause(has_filter, 1),
+        ai_exclude_clause(exclude_ai),
     );
     let mut params = Vec::new();
     if has_filter {
