@@ -14,7 +14,7 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use std::io::{BufRead, BufReader, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
@@ -94,6 +94,118 @@ pub fn seed_tracks(path: &Path, tracks: &[SeedTrack]) -> Vec<i64> {
 pub fn set_bool_setting(path: &Path, key: &str, value: bool) {
     let conn = reprise_core::db::open_migrated(Some(path)).expect("open fixture db");
     reprise_core::library::settings::set_bool(&conn, key, value).expect("set setting");
+}
+
+// --- AI job (instrumental) fixtures & in-process worker ---------------------
+//
+// Package H2 tests drive a real worker in-process against the same temp DB the
+// MCP server writes to, exactly as the plan intends (the core facades allow
+// claiming/completing a job without the CLI). These helpers seed a promotable
+// source track (a real FLAC on disk so the fake backend and the promotion
+// tagger/scanner have a valid file), render every queued job into staging, and
+// promote a staged render.
+
+/// The settings key granting the `ai:create` capability.
+pub const CAP_AI_CREATE: &str = "agent.capability.ai:create";
+
+/// A fixed injected clock for the worker/promotion helpers — lease and
+/// timestamp math is deterministic and needs no wall clock.
+const WORKER_NOW: i64 = 1_700_000_000;
+
+/// Copies the bundled `sine.flac` into `dir` as `<title>.flac` and seeds a
+/// track row pointing at that real file, with the metadata the promotion path
+/// reads. Returns `(track_id, flac_path)`.
+pub fn seed_real_flac_track(
+    db_path: &Path,
+    dir: &Path,
+    title: &str,
+    artist: &str,
+) -> (i64, PathBuf) {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
+    let flac = dir.join(format!("{title}.flac"));
+    std::fs::copy(&source, &flac).expect("copy sine.flac fixture");
+    let conn = reprise_core::db::open_migrated(Some(db_path)).expect("open fixture db");
+    conn.execute(
+        "INSERT INTO tracks \
+           (path, title, artist, album, album_artist, year, track_no, genre, added_at) \
+         VALUES (?1, ?2, ?3, ?4, ?3, 2020, 1, 'Test', 0)",
+        params![
+            flac.to_string_lossy(),
+            title,
+            artist,
+            format!("{artist} Album")
+        ],
+    )
+    .expect("insert real-flac track");
+    (conn.last_insert_rowid(), flac)
+}
+
+/// Claims and renders every queued job into `staging_dir` with the deterministic
+/// fake backend, leaving each `done` (staged, unsaved) — the in-process worker
+/// the plan lets the harness run.
+pub fn run_worker_until_idle(db_path: &Path, staging_dir: &Path) {
+    use reprise_core::stem_separation::StemSeparationBackend;
+    const WORKER: i64 = 42_042;
+    const LEASE_SECS: i64 = 300;
+
+    let conn = reprise_core::db::open_migrated(Some(db_path)).expect("open fixture db");
+    let staging = reprise_core::ai_staging::StagingStore::new(staging_dir);
+    staging.ensure_dir().expect("ensure staging dir");
+    let backend = reprise_core::stem_separation::FakeStemBackend::new();
+
+    while let Some(claimed) =
+        reprise_core::ai_jobs::claim_next(&conn, WORKER, WORKER_NOW, LEASE_SECS)
+            .expect("claim next job")
+    {
+        let source_id = claimed.source_track_id.expect("job has a source track");
+        let source: String = conn
+            .query_row(
+                "SELECT path FROM tracks WHERE id = ?1",
+                [source_id],
+                |row| row.get(0),
+            )
+            .expect("source path");
+        let output = staging.path_for_job(claimed.id);
+        backend
+            .separate_instrumental(
+                Path::new(&source),
+                &output,
+                &mut |permille| {
+                    let _ =
+                        reprise_core::ai_jobs::set_progress(&conn, claimed.id, WORKER, permille);
+                },
+                &|| false,
+            )
+            .expect("render instrumental");
+        reprise_core::ai_jobs::mark_done(&conn, claimed.id, WORKER, WORKER_NOW).expect("mark done");
+    }
+}
+
+/// Promotes a finished, staged render into `library_root`, returning the new
+/// library track id.
+pub fn promote_job(db_path: &Path, staging_dir: &Path, library_root: &Path, job_id: i64) -> i64 {
+    let mut conn = reprise_core::db::open_migrated(Some(db_path)).expect("open fixture db");
+    let staging = reprise_core::ai_staging::StagingStore::new(staging_dir);
+    let config = reprise_core::ai_promotion::PromotionConfig::new(library_root);
+    reprise_core::ai_promotion::promote(&mut conn, &staging, &config, job_id, WORKER_NOW)
+        .expect("promote staged render")
+        .result_track_id
+}
+
+/// The number of rows in `ai_jobs`.
+pub fn count_ai_jobs(db_path: &Path) -> i64 {
+    let conn = reprise_core::db::open_migrated(Some(db_path)).expect("open fixture db");
+    conn.query_row("SELECT COUNT(*) FROM ai_jobs", [], |row| row.get(0))
+        .expect("count ai_jobs")
+}
+
+/// Reads a job's `(status, result_track_id)` directly via the core facade.
+pub fn job_state(db_path: &Path, job_id: i64) -> (String, Option<i64>) {
+    let conn = reprise_core::db::open_migrated(Some(db_path)).expect("open fixture db");
+    let job = reprise_core::ai_jobs::get_job(&conn, job_id)
+        .expect("get job")
+        .expect("job exists");
+    (job.state.as_str().to_string(), job.result_track_id)
 }
 
 /// A live client speaking JSON-RPC to a spawned `reprise-mcp` process.
