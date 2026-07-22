@@ -22,7 +22,12 @@
 //!   non-atomic seam is between the scanner's own registration transaction and
 //!   the provenance/`save` transaction; a crash there leaves a track whose
 //!   embedded AI tags let [`crate::provenance::reconstruct_provenance`] rebuild
-//!   the row on the next scan (Beschluss 13), so the system self-heals.
+//!   the row on the next scan (Beschluss 13), so the system self-heals. If the
+//!   provenance/`save` transaction *fails* (not a crash), the destination copy
+//!   is removed but the scanner-committed `tracks` row is left in place; the
+//!   next scan of the instrumentals root marks it missing (its file is gone),
+//!   and it is never a promotion result, so the collision resolver correctly
+//!   ignores it and a retry reuses the same base path.
 
 use std::path::{Component, Path, PathBuf};
 
