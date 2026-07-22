@@ -2,7 +2,7 @@
 slug: multi-frontend-core
 worktree: /home/marvin/Projects/reprise-multi-frontend-core
 branch: feature/multi-frontend-core
-phase: reviewed
+phase: refactored
 codex_session:
 created: 2026-07-21
 ---
