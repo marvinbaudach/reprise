@@ -67,6 +67,9 @@ mod imp {
         pub sort_dir: String,
         pub filter: String,
         pub browse: BrowseFilter,
+        /// FIL-7: hide AI-flagged tracks (only honored on the flat Library
+        /// source, where the browse filter row lives).
+        pub exclude_ai: bool,
         /// Only meaningful when `source == ViewSource::Queue` — see
         /// `TrackListModel::set_query`'s doc comment. Empty (and ignored)
         /// for every other source.
@@ -252,6 +255,29 @@ impl TrackListModel {
         browse: &BrowseFilter,
         queue_ids: &[i64],
     ) {
+        self.set_query_browsed_ai(
+            source, sort_field, sort_dir, filter, browse, queue_ids, false,
+        );
+    }
+
+    /// Like [`set_query_browsed`](Self::set_query_browsed) but honoring the
+    /// FIL-7 AI-exclude filter. When `exclude_ai` is set the window uses the
+    /// core `*_ai` query; the row **count** falls back to the id-list length
+    /// (`query_track_ids_browsed_ai().len()`) because core exposes no
+    /// `query_track_count_browsed_ai` yet — a reported facade gap. Consistent
+    /// with the window (both hide the same rows), just less efficient than a
+    /// `COUNT(*)` for very large libraries.
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_query_browsed_ai(
+        &self,
+        source: &ViewSource,
+        sort_field: &str,
+        sort_dir: &str,
+        filter: &str,
+        browse: &BrowseFilter,
+        queue_ids: &[i64],
+        exclude_ai: bool,
+    ) {
         let old_total = self.imp().state.borrow().total;
 
         let Some(conn) = self.imp().conn.borrow().clone() else {
@@ -259,15 +285,28 @@ impl TrackListModel {
             return;
         };
 
-        let new_total = {
+        let new_total = if exclude_ai {
             let conn_ref = conn.borrow();
-            match queries::query_track_count_browsed(&conn_ref, source, filter, browse, queue_ids) {
-                Ok(n) => n.max(0) as u32,
-                Err(error) => {
-                    tracing::error!(%error, source = %source.label(), sort_field, sort_dir, filter, "failed to count tracks for query");
+            queries::query_track_ids_browsed_ai(
+                &conn_ref, source, sort_field, sort_dir, filter, browse, queue_ids, true,
+            )
+            .map_or_else(
+                |error| {
+                    tracing::error!(%error, "failed to count non-AI tracks for query");
                     0
-                }
-            }
+                },
+                |ids| ids.len() as u32,
+            )
+        } else {
+            let conn_ref = conn.borrow();
+            queries::query_track_count_browsed(&conn_ref, source, filter, browse, queue_ids)
+                .map_or_else(
+                    |error| {
+                        tracing::error!(%error, source = %source.label(), "failed to count tracks for query");
+                        0
+                    },
+                    |n| n.max(0) as u32,
+                )
         };
 
         {
@@ -277,6 +316,7 @@ impl TrackListModel {
             state.sort_dir = sort_dir.to_string();
             state.filter = filter.to_string();
             state.browse = browse.clone();
+            state.exclude_ai = exclude_ai;
             state.queue_ids = queue_ids.to_vec();
             state.virtual_queue = None;
             state.total = new_total;
@@ -289,6 +329,7 @@ impl TrackListModel {
             sort_field,
             sort_dir,
             filter,
+            exclude_ai,
             "model query set"
         );
 
@@ -324,7 +365,7 @@ impl TrackListModel {
             return None;
         };
 
-        let (source, sort_field, sort_dir, filter, browse, queue_ids, virtual_queue) = {
+        let (source, sort_field, sort_dir, filter, browse, exclude_ai, queue_ids, virtual_queue) = {
             let state = self.imp().state.borrow();
             (
                 state.source.clone(),
@@ -332,6 +373,7 @@ impl TrackListModel {
                 state.sort_dir.clone(),
                 state.filter.clone(),
                 state.browse.clone(),
+                state.exclude_ai,
                 state.queue_ids.clone(),
                 state.virtual_queue.clone(),
             )
@@ -352,7 +394,7 @@ impl TrackListModel {
 
         let rows = {
             let mut conn = conn.borrow_mut();
-            queries::query_track_window_browsed(
+            queries::query_track_window_browsed_ai(
                 &mut conn,
                 &source,
                 &sort_field,
@@ -362,6 +404,7 @@ impl TrackListModel {
                 query_offset,
                 i64::from(WINDOW_SIZE),
                 &queue_ids,
+                exclude_ai,
             )
         };
 

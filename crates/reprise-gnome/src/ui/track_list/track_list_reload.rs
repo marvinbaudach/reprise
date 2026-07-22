@@ -235,7 +235,12 @@ fn run_query(shared: &Rc<Shared>) {
     } else {
         BrowseFilter::default()
     };
-    let has_filter = !filter.trim().is_empty() || !browse.is_empty();
+    // FIL-7: the AI-exclude filter is opt-in, Library-only, and gated on the
+    // experimental switch (INST-11). Its sticky state lives in the browse bar.
+    let exclude_ai = shared.browse_bar.exclude_ai()
+        && matches!(source, ViewSource::Library)
+        && crate::ui::instrumental::experimental_enabled(&shared.conn.borrow());
+    let has_filter = !filter.trim().is_empty() || !browse.is_empty() || exclude_ai;
 
     let is_queue = matches!(source, ViewSource::Queue);
     let queue_model = if is_queue {
@@ -254,9 +259,15 @@ fn run_query(shared: &Rc<Shared>) {
         );
     } else {
         shared.model.set_sections(Vec::new());
-        shared
-            .model
-            .set_query_browsed(&source, &sort.field, &sort.dir, &filter, &browse, &[]);
+        shared.model.set_query_browsed_ai(
+            &source,
+            &sort.field,
+            &sort.dir,
+            &filter,
+            &browse,
+            &[],
+            exclude_ai,
+        );
     }
 
     // Strictly AFTER the query swap: installing a header factory flips
@@ -285,6 +296,7 @@ fn run_query(shared: &Rc<Shared>) {
         count,
         &filter,
         &browse,
+        exclude_ai,
         &[],
     );
     apply_empty_state(

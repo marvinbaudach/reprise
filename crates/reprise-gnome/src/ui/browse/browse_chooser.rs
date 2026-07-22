@@ -112,11 +112,14 @@ pub(super) fn wire_chooser(bar: &Rc<BrowseBar>) {
             let Some(bar) = weak.upgrade() else {
                 return;
             };
-            let facet = bar
-                .chooser_facets
-                .borrow()
-                .get(row.index() as usize)
-                .copied();
+            let index = row.index() as usize;
+            // FIL-7: the "Hide AI music" row is a boolean toggle, not a facet
+            // with a value list.
+            if bar.chooser_ai_row_index() == Some(index) {
+                bar.set_exclude_ai(true);
+                return;
+            }
+            let facet = bar.chooser_facets.borrow().get(index).copied();
             if let Some(facet) = facet {
                 bar.show_values(facet);
             }
