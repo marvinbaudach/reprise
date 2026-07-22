@@ -7,6 +7,15 @@ use super::super::engine::ModeCtx;
 use super::super::scene::{Fill, Geom, Rgba, Shape};
 use super::super::water::{WATER_COLS, WATER_ROWS};
 
+/// Water height at which a crest starts to show (secondary accent). Set high so
+/// the "hot" crest only rides genuine peaks and beat eruptions, not the modest
+/// ripples of ordinary playback.
+const CREST_THRESHOLD: f32 = 0.85;
+/// Height at which a crest reads full-intensity. Between the threshold and this
+/// the crest fades in, so the hot colour grows with the peak instead of snapping
+/// on all at once.
+const CREST_FULL: f32 = 2.0;
+
 pub(crate) fn scene(ctx: &ModeCtx) -> Vec<Shape> {
     let (w, h) = (ctx.width, ctx.height);
     let horizon = h * 0.30;
@@ -63,34 +72,42 @@ pub(crate) fn scene(ctx: &ModeCtx) -> Vec<Shape> {
             dash: None,
         });
     }
-    // Accent2 on crests thrown above 0.5 — open a segment per contiguous run.
+    // Secondary-accent crests ride any contiguous run of cells thrown above
+    // CREST_THRESHOLD. Brightness/width fade in with how high the run peaked, so
+    // a crest only reads "hot" on a genuine eruption, not on every ripple.
     for (row, (points, near)) in rows.iter().enumerate() {
         let mut run: Vec<(f32, f32)> = Vec::new();
+        let mut run_peak = 0.0_f32;
         for (col, &point) in points.iter().enumerate() {
-            if ctx.water.height(row, col) > 0.5 {
+            let height = ctx.water.height(row, col);
+            if height > CREST_THRESHOLD {
                 run.push(point);
+                run_peak = run_peak.max(height);
             } else if run.len() >= 2 {
-                shapes.push(crest(std::mem::take(&mut run), *near, ctx));
+                shapes.push(crest(std::mem::take(&mut run), run_peak, *near, ctx));
+                run_peak = 0.0;
             } else {
                 run.clear();
+                run_peak = 0.0;
             }
         }
         if run.len() >= 2 {
-            shapes.push(crest(run, *near, ctx));
+            shapes.push(crest(run, run_peak, *near, ctx));
         }
     }
     shapes
 }
 
-fn crest(points: Vec<(f32, f32)>, near: f32, ctx: &ModeCtx) -> Shape {
+fn crest(points: Vec<(f32, f32)>, peak: f32, near: f32, ctx: &ModeCtx) -> Shape {
+    let intensity = ((peak - CREST_THRESHOLD) / (CREST_FULL - CREST_THRESHOLD)).clamp(0.0, 1.0);
     Shape {
         geom: Geom::Polyline {
             points,
             closed: false,
         },
-        fill: ctx.accent2_fill(0.28 + 0.5 * near),
-        width: 1.7,
-        glow: 0.8,
+        fill: ctx.accent2_fill((0.16 + 0.34 * near) * (0.4 + 0.6 * intensity)),
+        width: 1.3 + 0.7 * intensity,
+        glow: 0.45 + 0.4 * intensity,
         dash: None,
     }
 }
@@ -105,9 +122,9 @@ mod tests {
     const HEIGHT: f32 = 300.0;
 
     /// A lively engine, ticked well past the initial beat/slam so the water
-    /// surface has time to actually rise past the `0.5` crest threshold in
-    /// multiple cells (the brief's crest invariant needs cells > 0.5, and the
-    /// spring-mesh takes more than the initial 10 loud frames to get there).
+    /// surface has time to rise past the crest threshold in multiple cells (the
+    /// crest invariant needs cells above [`CREST_THRESHOLD`], and the driven hot
+    /// zone climbs there within a few frames of sustained loud input).
     fn crested_engine() -> crate::visuals::engine::VisualEngine {
         let mut engine = lively_engine();
         for _ in 0..40 {
@@ -170,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn crests_appear_where_the_water_exceeds_half_height() {
+    fn crests_appear_where_the_water_exceeds_the_threshold() {
         let engine = crested_engine();
 
         // Confirm the fixture actually drove the surface past the crest
@@ -179,17 +196,19 @@ mod tests {
         let ctx = test_ctx(&engine, WIDTH, HEIGHT);
         let has_crest_cell = (0..WATER_ROWS)
             .flat_map(|row| (0..WATER_COLS).map(move |col| (row, col)))
-            .any(|(row, col)| ctx.water.height(row, col) > 0.5);
-        assert!(has_crest_cell, "fixture must drive some cell above 0.5");
+            .any(|(row, col)| ctx.water.height(row, col) > CREST_THRESHOLD);
+        assert!(
+            has_crest_cell,
+            "fixture must drive some cell above the crest threshold"
+        );
 
         let shapes = scene(&ctx);
-        let crest_segments = shapes
-            .iter()
-            .filter(|s| s.width == 1.7 && s.glow == 0.8)
-            .count();
+        // Crests are the only shapes drawn with a non-zero glow; the gray mesh
+        // rows and verticals all have glow 0.0.
+        let crest_segments = shapes.iter().filter(|s| s.glow > 0.0).count();
         assert!(
             crest_segments > 0,
-            "expected accent2 crest segments where water > 0.5"
+            "expected accent2 crest segments where water exceeds the threshold"
         );
     }
 
