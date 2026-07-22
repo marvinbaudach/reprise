@@ -6,12 +6,11 @@
 
 use std::path::Path;
 
-use reprise_core::audio_analysis::CURRENT_EXTRACTOR_VERSION;
 use reprise_core::db::{self, DbError};
 use reprise_core::library::playlists;
 use reprise_core::models::Track;
 use reprise_core::queries;
-use reprise_core::sound_profile::{self, AnalysisVersions, CURRENT_PROFILE_VERSION};
+use reprise_core::sound_profile::{self, AnalysisVersions};
 use reprise_core::view_source::ViewSource;
 use rusqlite::Connection;
 
@@ -136,9 +135,7 @@ pub fn library_summary(path: &Path) -> Result<LibrarySummary, DataError> {
     let artist_count = queries::query_artists(&conn).map_err(DataError::Db)?.len() as i64;
     let album_count = queries::query_albums(&conn).map_err(DataError::Db)?.len() as i64;
 
-    let versions = AnalysisVersions::new(CURRENT_EXTRACTOR_VERSION, CURRENT_PROFILE_VERSION)
-        .map_err(|error| DataError::Internal(format!("invalid analysis versions: {error}")))?;
-    let coverage = sound_profile::library_coverage(&conn, versions)
+    let coverage = sound_profile::library_coverage(&conn, AnalysisVersions::current())
         .map_err(|error| DataError::Internal(format!("coverage query failed: {error}")))?;
 
     Ok(LibrarySummary {
