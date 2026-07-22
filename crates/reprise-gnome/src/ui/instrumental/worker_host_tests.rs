@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use reprise_core::ai_jobs::{self, JobState};
+use reprise_core::ai_promotion::PromotionConfig;
 use reprise_core::ai_staging::StagingStore;
 use reprise_core::stem_separation::{FakeStemBackend, PROGRESS_COMPLETE};
 use rusqlite::Connection;
@@ -66,15 +67,16 @@ fn enqueue(h: &Harness) -> i64 {
 
 #[test]
 fn worker_completes_a_queued_job_into_staging() {
-    let h = harness();
+    let mut h = harness();
     let job_id = enqueue(&h);
     let mut ticks = 0;
 
     let run = run_next_job(
-        &h.conn,
+        &mut h.conn,
         &FakeStemBackend::new(),
         &h.staging,
         &h.resolve,
+        None,
         WORKER,
         LEASE_SECS,
         &clock,
@@ -94,12 +96,13 @@ fn worker_completes_a_queued_job_into_staging() {
 
 #[test]
 fn worker_returns_none_when_the_queue_is_empty() {
-    let h = harness();
+    let mut h = harness();
     let run = run_next_job(
-        &h.conn,
+        &mut h.conn,
         &FakeStemBackend::new(),
         &h.staging,
         &h.resolve,
+        None,
         WORKER,
         LEASE_SECS,
         &clock,
@@ -110,7 +113,7 @@ fn worker_returns_none_when_the_queue_is_empty() {
 
 #[test]
 fn worker_cancels_a_running_job_and_writes_no_output() {
-    let h = harness();
+    let mut h = harness();
     let job_id = enqueue(&h);
     // Claim it (queued -> running), then flag a cancel on the running job.
     let claimed = ai_jobs::claim_next(&h.conn, WORKER, NOW, LEASE_SECS)
@@ -122,10 +125,11 @@ fn worker_cancels_a_running_job_and_writes_no_output() {
     ));
 
     let run = run_claimed_job(
-        &h.conn,
+        &mut h.conn,
         &FakeStemBackend::new(),
         &h.staging,
         &h.resolve,
+        None,
         WORKER,
         &claimed,
         LEASE_SECS,
@@ -144,14 +148,15 @@ fn worker_cancels_a_running_job_and_writes_no_output() {
 
 #[test]
 fn worker_marks_a_backend_failure_without_output() {
-    let h = harness();
+    let mut h = harness();
     let job_id = enqueue(&h);
 
     let run = run_next_job(
-        &h.conn,
+        &mut h.conn,
         &FakeStemBackend::new().failing_at(1),
         &h.staging,
         &h.resolve,
+        None,
         WORKER,
         LEASE_SECS,
         &clock,
@@ -171,16 +176,17 @@ fn worker_marks_a_backend_failure_without_output() {
 
 #[test]
 fn worker_fails_a_job_whose_source_cannot_be_resolved() {
-    let h = harness();
+    let mut h = harness();
     let job_id = enqueue(&h);
     // A resolver that never finds the path (the P3b gap in production).
     let resolve: SourceResolver = Arc::new(|_conn: &Connection, _id: i64| None);
 
     let run = run_next_job(
-        &h.conn,
+        &mut h.conn,
         &FakeStemBackend::new(),
         &h.staging,
         &resolve,
+        None,
         WORKER,
         LEASE_SECS,
         &clock,
@@ -202,7 +208,7 @@ fn worker_progress_writes_are_throttled_but_completion_is_exact() {
     // 1000. Driving run_claimed_job directly isolates the render's own ticks
     // (throttled progress + the final done) from run_next_job's start/terminal
     // ticks.
-    let h = harness();
+    let mut h = harness();
     let job_id = enqueue(&h);
     let claimed = ai_jobs::claim_next(&h.conn, WORKER, NOW, LEASE_SECS)
         .unwrap()
@@ -211,10 +217,11 @@ fn worker_progress_writes_are_throttled_but_completion_is_exact() {
 
     let mut on_tick = || ticks.set(ticks.get() + 1);
     run_claimed_job(
-        &h.conn,
+        &mut h.conn,
         &FakeStemBackend::new().with_steps(10),
         &h.staging,
         &h.resolve,
+        None,
         WORKER,
         &claimed,
         LEASE_SECS,
@@ -234,5 +241,86 @@ fn worker_progress_writes_are_throttled_but_completion_is_exact() {
             .unwrap()
             .progress_permille,
         PROGRESS_COMPLETE
+    );
+}
+
+#[test]
+fn worker_publishes_the_render_to_its_canonical_path_and_leaves_no_temp() {
+    // A completed run must render into a claim-scoped temp and then publish it
+    // to the canonical staging path, leaving no `.partial` temp behind.
+    let mut h = harness();
+    let job_id = enqueue(&h);
+
+    let run = run_next_job(
+        &mut h.conn,
+        &FakeStemBackend::new(),
+        &h.staging,
+        &h.resolve,
+        None,
+        WORKER,
+        LEASE_SECS,
+        &clock,
+        &mut || {},
+    )
+    .unwrap();
+
+    assert_eq!(run.outcome, JobRunOutcome::Completed);
+    assert!(
+        h.staging.exists(job_id),
+        "the render is published to its canonical staging path"
+    );
+    assert!(
+        !h.staging.temp_path_for_job(job_id, WORKER).exists(),
+        "the claim-scoped temp render is consumed by the publish"
+    );
+}
+
+#[test]
+fn worker_defers_a_failed_auto_promotion_and_keeps_the_render() {
+    // With a library root configured and the job carrying save-intent, the
+    // app-hosted worker promotes on completion (the smoke path). When the
+    // promotion itself fails, it must degrade gracefully: the job stays done +
+    // unsaved with its render kept in staging and the error noted, so a manual
+    // save can retry — never a lost render or a stuck job.
+    let mut h = harness();
+    let job_id =
+        ai_jobs::enqueue_instrumental_batch(&h.conn, &h.staging, &[1], &h.model_id, true, NOW)
+            .unwrap()
+            .jobs[0]
+            .job_id();
+    let library = tempfile::tempdir().unwrap();
+    let config = PromotionConfig::new(library.path());
+    // Block the promotion destination with a directory so the copy fails
+    // deterministically (the harness track is "Song 1" by "Artist 1").
+    let blocked = config
+        .instrumentals_root()
+        .join("Artist 1")
+        .join("Song 1 (Instrumental).flac");
+    std::fs::create_dir_all(&blocked).unwrap();
+
+    let run = run_next_job(
+        &mut h.conn,
+        &FakeStemBackend::new(),
+        &h.staging,
+        &h.resolve,
+        Some(&config),
+        WORKER,
+        LEASE_SECS,
+        &clock,
+        &mut || {},
+    )
+    .unwrap();
+
+    assert_eq!(run.outcome, JobRunOutcome::Completed);
+    let job = ai_jobs::get_job(&h.conn, job_id).unwrap().unwrap();
+    assert_eq!(job.state, JobState::Done);
+    assert!(
+        job.result_track_id.is_none(),
+        "a failed auto-promotion leaves the job unsaved"
+    );
+    assert!(job.error_kind.is_some(), "the deferred promotion is noted");
+    assert!(
+        h.staging.exists(job_id),
+        "the render is kept in staging for a manual retry"
     );
 }
