@@ -167,7 +167,8 @@ pub(super) fn query_album_track_window(
     let sql = format!(
         "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
          duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
-         file_mtime, missing_since, missing_reason, untagged, file_size, device, inode \
+         file_mtime, missing_since, missing_reason, untagged, file_size, device, inode, \
+         EXISTS(SELECT 1 FROM track_provenance tp WHERE tp.track_id = tracks.id AND tp.ai = 1) AS is_ai \
          FROM tracks WHERE {PRESENT} \
          AND TRIM(album) = ?3 COLLATE NOCASE \
          AND {EFFECTIVE_ALBUM_ARTIST} = ?4 COLLATE NOCASE{filter_sql}{browse_sql} \
@@ -353,7 +354,8 @@ pub(super) fn query_artist_track_window(
     let sql = format!(
         "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
          duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
-         file_mtime, missing_since, missing_reason, untagged, file_size, device, inode \
+         file_mtime, missing_since, missing_reason, untagged, file_size, device, inode, \
+         EXISTS(SELECT 1 FROM track_provenance tp WHERE tp.track_id = tracks.id AND tp.ai = 1) AS is_ai \
          FROM tracks WHERE {PRESENT} \
          AND {EFFECTIVE_ALBUM_ARTIST} = ?3 COLLATE NOCASE{filter_sql}{browse_sql} \
          ORDER BY {order} {direction} LIMIT ?1 OFFSET ?2"

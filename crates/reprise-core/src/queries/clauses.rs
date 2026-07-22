@@ -174,7 +174,8 @@ pub(super) fn build_track_query_base_browsed(
     format!(
         "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
          duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
-         file_mtime, missing_since, missing_reason, untagged, file_size, device, inode \
+         file_mtime, missing_since, missing_reason, untagged, file_size, device, inode, \
+         EXISTS(SELECT 1 FROM track_provenance tp WHERE tp.track_id = tracks.id AND tp.ai = 1) AS is_ai \
          FROM tracks WHERE {presence}{filter_clause}{browse_clause}{ai_clause} \
          ORDER BY {order_expr} {dir} LIMIT ?1 OFFSET ?2"
     )
@@ -274,6 +275,9 @@ pub(super) fn row_to_track(r: &rusqlite::Row) -> rusqlite::Result<Track> {
         device: r.get(20)?,
         inode: r.get(21)?,
         playlist_position: None,
+        // INST-10: the `EXISTS(track_provenance … ai = 1) AS is_ai` column every
+        // windowed track SELECT projects at index 22.
+        is_ai: r.get::<_, i64>(22)? != 0,
     })
 }
 
@@ -284,7 +288,9 @@ pub(super) fn row_to_track(r: &rusqlite::Row) -> rusqlite::Result<Track> {
 /// call site.
 pub(super) fn row_to_playlist_track(r: &rusqlite::Row) -> rusqlite::Result<Track> {
     let mut track = row_to_track(r)?;
-    track.playlist_position = Some(r.get(22)?);
+    // `is_ai` sits at index 22 (read by `row_to_track`); `pt.position` follows
+    // it at index 23 in the playlist SELECTs.
+    track.playlist_position = Some(r.get(23)?);
     Ok(track)
 }
 
@@ -319,14 +325,53 @@ mod tests {
 
     #[test]
     fn browse_builder_appends_the_ai_clause_only_when_excluding() {
+        // The INST-10 `is_ai` projection references `track_provenance` in every
+        // build (via `EXISTS(...) AS is_ai`); it is the *exclude* clause
+        // (`NOT EXISTS` in the WHERE) that toggles with `exclude_ai`.
         let off = build_track_query_browsed("title", "asc", false, &BrowseFilter::default(), false);
-        assert!(!off.contains("track_provenance"));
+        assert!(
+            !off.contains("NOT EXISTS"),
+            "no exclude clause when the filter is off"
+        );
+        // The is_ai projection is still present regardless of the filter.
+        assert!(off.contains("AS is_ai"));
         let on = build_track_query_browsed("title", "asc", false, &BrowseFilter::default(), true);
         assert!(on.contains("NOT EXISTS"));
-        // The clause sits inside the WHERE, before ORDER BY.
+        // The exclude clause sits inside the WHERE, before ORDER BY.
         let where_start = on.find("WHERE").unwrap();
-        assert!(on.find("track_provenance").unwrap() > where_start);
-        assert!(on.find("track_provenance").unwrap() < on.find("ORDER BY").unwrap());
+        assert!(on.find("NOT EXISTS").unwrap() > where_start);
+        assert!(on.find("NOT EXISTS").unwrap() < on.find("ORDER BY").unwrap());
+    }
+
+    // INST-10: the windowed track query projects `is_ai` from track_provenance —
+    // true for a track with an `ai = 1` row, false otherwise.
+    #[test]
+    fn windowed_query_projects_is_ai_from_track_provenance() {
+        let mut conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO tracks (id, path, title, artist, added_at, file_mtime, file_size) \
+             VALUES (1, '/orig.flac', 'Original', 'A', 1, 1, 1), \
+                    (2, '/instr.flac', 'Instrumental', 'A', 1, 1, 1); \
+             INSERT INTO track_provenance (track_id, kind, ai, created_at) \
+             VALUES (2, 'instrumental', 1, 1);",
+        )
+        .unwrap();
+
+        let rows = crate::queries::query_track_window(
+            &mut conn,
+            &crate::view_source::ViewSource::Library,
+            "title",
+            "asc",
+            "",
+            0,
+            100,
+            &[],
+        )
+        .unwrap();
+        let find = |id: i64| rows.iter().find(|t| t.id == id).expect("row present");
+        assert!(!find(1).is_ai, "a plain track is not AI-manipulated");
+        assert!(find(2).is_ai, "a track with an ai provenance row is AI");
     }
 
     /// Seeds two present tracks — an original and an AI instrumental — plus a

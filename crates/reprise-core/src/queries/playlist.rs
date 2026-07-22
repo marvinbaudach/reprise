@@ -35,7 +35,9 @@ fn build_playlist_track_query(sort_field: &str, sort_dir: &str, has_filter: bool
          tracks.duration_ms, tracks.bitrate_kbps, tracks.rating, tracks.play_count, \
          tracks.last_played_at, tracks.added_at, tracks.file_mtime, tracks.missing_since, \
          tracks.missing_reason, tracks.untagged, tracks.file_size, tracks.device, \
-         tracks.inode, pt.position \
+         tracks.inode, \
+         EXISTS(SELECT 1 FROM track_provenance tp WHERE tp.track_id = tracks.id AND tp.ai = 1) AS is_ai, \
+         pt.position \
          FROM tracks JOIN playlist_tracks pt ON pt.track_id = tracks.id \
          WHERE pt.playlist_id = ?3{filter_clause} \
          ORDER BY {order_expr} {dir} LIMIT ?1 OFFSET ?2"
@@ -163,7 +165,9 @@ pub fn query_playlist_tracks_full(
          tracks.duration_ms, tracks.bitrate_kbps, tracks.rating, tracks.play_count, \
          tracks.last_played_at, tracks.added_at, tracks.file_mtime, tracks.missing_since, \
          tracks.missing_reason, tracks.untagged, tracks.file_size, tracks.device, \
-         tracks.inode, pt.position \
+         tracks.inode, \
+         EXISTS(SELECT 1 FROM track_provenance tp WHERE tp.track_id = tracks.id AND tp.ai = 1) AS is_ai, \
+         pt.position \
          FROM tracks JOIN playlist_tracks pt ON pt.track_id = tracks.id \
          WHERE pt.playlist_id = ?1 AND {PRESENT} \
          ORDER BY pt.position ASC LIMIT {QUEUE_LIMIT}"

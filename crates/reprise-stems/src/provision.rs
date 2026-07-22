@@ -215,13 +215,15 @@ pub fn onnxruntime_location() -> LibraryLocation {
 }
 
 /// The memory cap for a model download — generous so a mispointed URL cannot
-/// exhaust RAM (htdemucs fp32 is ~316 MB).
+/// exhaust RAM (htdemucs fp32 is ~316 MB). Only the real fetcher (`ort`) uses it.
+#[cfg(feature = "ort")]
 const MAX_DOWNLOAD_BYTES: u64 = 512 * 1024 * 1024;
 
 /// Reads `reader` to its end in 64 KiB chunks, reporting cumulative bytes read
 /// (and the server-declared total, when known) after each chunk and enforcing
 /// `max_bytes`. Pure over any [`Read`], so the progress accounting is unit-tested
-/// without touching the network.
+/// without touching the network. Part of the `ort` download machinery.
+#[cfg(feature = "ort")]
 fn read_reporting(
     mut reader: impl Read,
     content_length: Option<u64>,
@@ -528,6 +530,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "ort")]
     #[test]
     fn read_reporting_streams_all_bytes_and_reports_cumulative_progress() {
         let data = vec![7u8; 200_000];
@@ -557,6 +560,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "ort")]
     #[test]
     fn read_reporting_enforces_the_size_cap() {
         let data = vec![0u8; 10_000];
