@@ -35,7 +35,7 @@ auf einen GUI-freien Core und explizite Linux-Plattformverträge.
 Die gemeinsame Engine besitzt Verhalten und Daten; Plattform-Crates
 implementieren schmale Verträge, während jedes Frontend nativ bleibt. Die
 `reprise-cli`- und `reprise-mcp`-Frontends laufen als eigene Prozesse über
-derselben Datenbank, und ein Change-Log-Notifier lässt ihre Änderungen in einer
+dieselbe Datenbank, und ein Change-Log-Notifier lässt ihre Änderungen in einer
 laufenden GTK-App live erscheinen — ohne Neustart.
 `scripts/check-architecture.sh` erzwingt Abhängigkeitsrichtung, Core Purity,
 Dateigrössen und bekannte Kopplungsgrenzen der Präsentationsschicht.
