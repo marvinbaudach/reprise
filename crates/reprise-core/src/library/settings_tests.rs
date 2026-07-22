@@ -44,6 +44,32 @@ fn set_setting_overwrites_a_previous_value() {
 }
 
 #[test]
+fn set_setting_dedups_identical_values_and_logs_only_real_changes() {
+    let conn = migrated_conn();
+    let change_events = || -> i64 {
+        conn.query_row(
+            "SELECT count(*) FROM change_log WHERE entity = 'settings' AND entity_id = ?1",
+            rusqlite::params![COLOR_SCHEME_KEY],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+
+    set_setting(&conn, COLOR_SCHEME_KEY, "dark").unwrap();
+    // Writing the identical value again is a no-op: no second change_log row.
+    set_setting(&conn, COLOR_SCHEME_KEY, "dark").unwrap();
+    assert_eq!(change_events(), 1, "an identical write logs no new event");
+
+    // A different value is a real change: a second event lands.
+    set_setting(&conn, COLOR_SCHEME_KEY, "light").unwrap();
+    assert_eq!(change_events(), 2, "a changed value logs a second event");
+    assert_eq!(
+        get_setting(&conn, COLOR_SCHEME_KEY).unwrap(),
+        Some("light".to_string())
+    );
+}
+
+#[test]
 fn sidebar_collapse_round_trips_and_defaults_to_expanded() {
     let conn = migrated_conn();
     assert!(!get_sidebar_collapsed(&conn));

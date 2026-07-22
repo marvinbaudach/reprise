@@ -42,6 +42,22 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<(), rusq
     // per write, keyed by the setting key. `in_txn` keeps the row and the event
     // atomic without a nested `BEGIN` when a caller already holds one.
     crate::events::in_txn(conn, |conn| {
+        // Dedup (mirrors `create_smart`): an identical stored value is a
+        // genuine no-op, so it must neither rewrite the row nor append a
+        // `change_log` event — otherwise every idempotent settings write (e.g.
+        // re-persisting an unchanged layout) would wake every other frontend
+        // for nothing. Reading inside the same transaction keeps the
+        // check-then-write atomic against a concurrent writer.
+        let current: Option<String> = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?1",
+                rusqlite::params![key],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if current.as_deref() == Some(value) {
+            return Ok(());
+        }
         conn.execute(
             "INSERT INTO settings (key, value) VALUES (?1, ?2) \
              ON CONFLICT(key) DO UPDATE SET value = ?2",
