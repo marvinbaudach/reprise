@@ -19,6 +19,25 @@ const DT: f32 = 1.0 / 60.0;
 /// Below this every cell reads as fully rested (`is_still`).
 const REST_EPSILON: f32 = 0.01;
 
+/// How hard the far row is pulled toward its band target each step. Low on
+/// purpose: a high gain makes the row overshoot every frame, and that
+/// self-oscillation reads as a constant tremor — a visual noise floor — rather
+/// than the music. At this gain the row *eases* toward the (already smoothed)
+/// bands, so the surface only moves when the sound actually does.
+const DRIVE_GAIN: f32 = 14.0;
+/// Height the far row aims for at full band energy (drive target = band·this).
+const DRIVE_AMPLITUDE: f32 = 2.2;
+/// Bands below this inject no drive at all — quiet, non-dominant frequencies
+/// leave the surface flat instead of trembling it. A noise gate, essentially.
+const DRIVE_GATE: f32 = 0.10;
+/// Neighbor spring coupling: how fast a disturbance propagates across the mesh
+/// toward the viewer. Kept lively so ripples travel rather than crawl.
+const SPRING: f32 = 50.0;
+/// Restoring pull back toward a flat surface.
+const RESTORING: f32 = 1.7;
+/// Velocity damping rate; `exp(-DT·this)` per step. Light, so waves linger.
+const DAMP_RATE: f32 = 1.1;
+
 /// Height (`h`) and velocity (`v`) field for every grid cell.
 pub struct WaterGrid {
     h: [f32; CELLS],
@@ -41,21 +60,22 @@ impl WaterGrid {
         }
     }
 
-    /// One 60 Hz step: far row driven very hard by the mirrored display bands
-    /// (near-instant, so the surface snaps to the music instead of lagging it),
-    /// fast spring coupling (60, so the disturbance crosses the depth quickly
-    /// rather than crawling forward), a light restoring force (1.6) and light
-    /// damping `exp(-dt·0.9)` so ripples travel and linger instead of reading
-    /// as viscous sludge, `h` clamped to `-1.1..=3.0`.
+    /// One 60 Hz step: the far row eases toward the mirrored display bands with
+    /// a low [`DRIVE_GAIN`] (so it tracks the music without self-oscillating
+    /// into a tremor) and a [`DRIVE_GATE`] that ignores quiet bands entirely;
+    /// [`SPRING`] coupling carries the disturbance toward the viewer,
+    /// [`RESTORING`] pulls back to flat, and `exp(-DT·`[`DAMP_RATE`]`)` damps
+    /// so ripples travel and linger. `h` clamped to `-1.1..=3.0`.
     pub fn advance(&mut self, bands: &[f32; SPECTRUM_BAND_COUNT]) {
         let half = (WATER_COLS - 1) as f32 / 2.0;
         for (col, drive_cell) in self.v.iter_mut().take(WATER_COLS).enumerate() {
             let f = (col as f32 - half).abs() / half;
-            let drive = bands[((f * 0.775 * (SPECTRUM_BAND_COUNT - 1) as f32) as usize)
+            let band = bands[((f * 0.775 * (SPECTRUM_BAND_COUNT - 1) as f32) as usize)
                 .min(SPECTRUM_BAND_COUNT - 1)];
-            *drive_cell += (drive * 2.4 - self.h[col]) * DT * 55.0;
+            let drive = if band < DRIVE_GATE { 0.0 } else { band };
+            *drive_cell += (drive * DRIVE_AMPLITUDE - self.h[col]) * DT * DRIVE_GAIN;
         }
-        let damp = (-DT * 0.9).exp();
+        let damp = (-DT * DAMP_RATE).exp();
         for row in 0..WATER_ROWS {
             for col in 0..WATER_COLS {
                 let i = row * WATER_COLS + col;
@@ -75,8 +95,9 @@ impl WaterGrid {
                 } else {
                     self.h[i]
                 };
-                self.v[i] +=
-                    ((up + down + left + right - 4.0 * self.h[i]) * 60.0 - self.h[i] * 1.6) * DT;
+                self.v[i] += ((up + down + left + right - 4.0 * self.h[i]) * SPRING
+                    - self.h[i] * RESTORING)
+                    * DT;
                 self.v[i] *= damp;
             }
         }
@@ -133,6 +154,21 @@ mod tests {
             water.advance(&silent);
         }
         assert!(water.is_still(), "waves must damp out");
+    }
+
+    #[test]
+    fn sub_gate_bands_leave_the_surface_flat() {
+        let mut water = WaterGrid::new();
+        // Every band faint but non-zero, below the noise gate: the "Grundrauschen"
+        // case — must not stir the surface into a tremor.
+        let faint = [DRIVE_GATE * 0.5; SPECTRUM_BAND_COUNT];
+        for _ in 0..400 {
+            water.advance(&faint);
+        }
+        assert!(
+            water.is_still(),
+            "faint sub-gate input must leave the surface at rest"
+        );
     }
 
     #[test]
