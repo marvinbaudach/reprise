@@ -64,6 +64,19 @@ impl AnalysisVersions {
         Ok(Self { extractor, profile })
     }
 
+    /// The versions the running build analyzes at — the current extractor
+    /// ([`crate::audio_analysis::CURRENT_EXTRACTOR_VERSION`]) paired with the
+    /// current profile ([`CURRENT_PROFILE_VERSION`]). Infallible: both are
+    /// compile-time non-zero constants, so a caller that just needs "today's
+    /// versions" (coverage queries, the MCP summary) skips the fallible
+    /// [`Self::new`] and its error mapping.
+    pub fn current() -> Self {
+        Self {
+            extractor: crate::audio_analysis::CURRENT_EXTRACTOR_VERSION,
+            profile: CURRENT_PROFILE_VERSION,
+        }
+    }
+
     pub fn extractor(self) -> u32 {
         self.extractor
     }

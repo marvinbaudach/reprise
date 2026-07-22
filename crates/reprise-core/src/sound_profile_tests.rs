@@ -4,6 +4,25 @@ fn dimension(value: f64, confidence: f64) -> ProfileDimension {
     ProfileDimension::new(value, confidence).unwrap()
 }
 
+#[test]
+fn analysis_versions_current_matches_the_build_constants() {
+    let versions = AnalysisVersions::current();
+    assert_eq!(
+        versions.extractor(),
+        crate::audio_analysis::CURRENT_EXTRACTOR_VERSION
+    );
+    assert_eq!(versions.profile(), CURRENT_PROFILE_VERSION);
+    // Equivalent to spelling out the explicit constructor.
+    assert_eq!(
+        versions,
+        AnalysisVersions::new(
+            crate::audio_analysis::CURRENT_EXTRACTOR_VERSION,
+            CURRENT_PROFILE_VERSION
+        )
+        .unwrap()
+    );
+}
+
 fn ready_analysis() -> ReadyAnalysis {
     ReadyAnalysis::new(
         SourceFingerprint::new(20, 30).unwrap(),
