@@ -345,15 +345,18 @@ fn row_state_caption(state: RowState, size: Option<u64>) -> String {
     }
 }
 
-/// A compact human size for a staging render (INST-8).
+/// A compact human size for a staging render (INST-8). Uses the app's standard
+/// binary units — KiB/MiB, powers of 1024, one decimal — matching
+/// `device_view`/`device_sync`'s `format_bytes`. The math already divided by
+/// 1024; only the labels were wrong (they read KB/MB for KiB/MiB values).
 fn format_render_size(bytes: u64) -> String {
-    const MIB: f64 = 1024.0 * 1024.0;
     const KIB: f64 = 1024.0;
+    const MIB: f64 = KIB * 1024.0;
     let bytes_f = bytes as f64;
     if bytes_f >= MIB {
-        format!("{:.1} MB", bytes_f / MIB)
+        format!("{:.1} MiB", bytes_f / MIB)
     } else if bytes_f >= KIB {
-        format!("{:.0} KB", bytes_f / KIB)
+        format!("{:.1} KiB", bytes_f / KIB)
     } else {
         format!("{bytes} B")
     }

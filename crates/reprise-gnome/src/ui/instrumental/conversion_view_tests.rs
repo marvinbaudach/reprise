@@ -183,18 +183,19 @@ fn inst_8_undecided_render_shows_its_disk_cost() {
     let j1 = enqueue(&conn, &staging, 1);
     claim(&conn);
     ai_jobs::mark_done(&conn, j1, WORKER, NOW).unwrap();
-    // A 2 MiB render, so the row shows a MB figure.
+    // A 2 MiB render, so the row shows a MiB figure (binary units, like the rest
+    // of the app's size readouts — FIX-5).
     std::fs::write(staging.path_for_job(j1), vec![0u8; 2 * 1024 * 1024]).unwrap();
 
     let view = ConversionView::new(Rc::new(RefCell::new(conn)), staging);
 
     let caption = view.row_state_text(j1).expect("row exists");
     assert!(
-        caption.contains("MB"),
+        caption.contains("MiB"),
         "the row shows its disk cost: {caption:?}"
     );
     assert!(
         caption.contains("2.0"),
-        "a 2 MiB render reads as 2.0 MB: {caption:?}"
+        "a 2 MiB render reads as 2.0 MiB: {caption:?}"
     );
 }
