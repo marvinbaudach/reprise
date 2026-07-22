@@ -11,12 +11,6 @@ pub struct Rgba {
 #[derive(Clone, Debug)]
 pub enum Fill {
     Solid(Rgba),
-    /// Horizontal gradient across x0..x1 with explicit stops (offset 0..1).
-    HGradient {
-        x0: f32,
-        x1: f32,
-        stops: Vec<(f32, Rgba)>,
-    },
 }
 
 #[derive(Clone, Debug)]
@@ -93,21 +87,6 @@ impl Scene {
                         || !rgba.a.is_finite()
                     {
                         return false;
-                    }
-                }
-                Fill::HGradient { x0, x1, stops } => {
-                    if !x0.is_finite() || !x1.is_finite() {
-                        return false;
-                    }
-                    for (offset, rgba) in stops {
-                        if !offset.is_finite()
-                            || !rgba.r.is_finite()
-                            || !rgba.g.is_finite()
-                            || !rgba.b.is_finite()
-                            || !rgba.a.is_finite()
-                        {
-                            return false;
-                        }
                     }
                 }
             }
