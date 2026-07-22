@@ -90,6 +90,10 @@ meson compile -C _build
 meson install -C _build
 ```
 
+Meson builds compile the experimental stem-separation backend by default
+(`-Dstem_backend=true`); pass `-Dstem_backend=false` for a core-only binary,
+while the plain `cargo build` above always stays core-only.
+
 The Flatpak manifest targets GNOME 50 and resolves Cargo dependencies from
 pinned checksums. See [flatpak/README.md](flatpak/README.md).
 
