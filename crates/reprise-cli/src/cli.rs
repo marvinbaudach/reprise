@@ -14,6 +14,12 @@ pub struct Cli {
     #[arg(long, global = true, value_name = "PATH")]
     pub db: Option<PathBuf>,
 
+    /// Directory holding staged AI renders (defaults to the standard per-user
+    /// location). Only the `instrumental` and `jobs` commands use it; app, CLI
+    /// and worker must agree on it. Point it at a scratch dir for tests.
+    #[arg(long, global = true, value_name = "PATH")]
+    pub staging_dir: Option<PathBuf>,
+
     /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long, global = true)]
     pub json: bool,
@@ -54,6 +60,17 @@ pub enum Command {
     Events {
         #[command(subcommand)]
         action: EventsAction,
+    },
+    /// Create and manage AI instrumental (vocal-removal) versions
+    /// (experimental).
+    Instrumental {
+        #[command(subcommand)]
+        action: InstrumentalAction,
+    },
+    /// Inspect and run AI-audio jobs.
+    Jobs {
+        #[command(subcommand)]
+        action: JobsAction,
     },
 }
 
@@ -104,5 +121,38 @@ pub enum EventsAction {
         /// Only show rows with an id greater than this.
         #[arg(long, default_value_t = 0)]
         since: i64,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum InstrumentalAction {
+    /// Register instrumental jobs for one or more tracks. Multiple ids form one
+    /// batch. A track already covered by an open/staged/saved job is a skip
+    /// with a reference to the existing work (Beschluss 16), not a second
+    /// render.
+    Create {
+        /// Source track ids to convert.
+        #[arg(value_name = "TRACK_ID", required = true)]
+        track_ids: Vec<i64>,
+        /// Promote the finished render into the library — the default, because
+        /// automation wants the end result (Beschluss 15). Conflicts with
+        /// `--stage`; only observable together with `--wait` (or a later
+        /// `instrumental save`).
+        #[arg(long, conflicts_with = "stage")]
+        save: bool,
+        /// Leave the finished render in staging for an explicit later
+        /// `instrumental save`/`discard` decision instead of saving it.
+        #[arg(long)]
+        stage: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum JobsAction {
+    /// List AI-audio jobs with their state, progress and result track id.
+    Status {
+        /// Restrict to one batch id (as returned by `instrumental create`).
+        #[arg(long, value_name = "BATCH_ID")]
+        batch: Option<String>,
     },
 }
