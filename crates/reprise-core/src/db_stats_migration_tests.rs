@@ -71,6 +71,9 @@ fn temporary_file_databases_migrate_from_fresh_and_v16_to_current() {
                  DROP TABLE library_doctor_scan_tracks;
                  DROP TABLE library_doctor_scans;
                  DROP TABLE track_audio_analysis;
+                 DROP TABLE ai_jobs;
+                 DROP TABLE track_provenance;
+                 ALTER TABLE playlists DROP COLUMN role;
                  DROP INDEX idx_listen_events_track_played;
                  PRAGMA user_version = 16;",
             )

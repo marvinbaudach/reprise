@@ -21,6 +21,9 @@ fn reset_fully_migrated_database_to_v17(conn: &Connection) {
          DROP TABLE library_doctor_scan_tracks;
          DROP TABLE library_doctor_scans;
          DROP TABLE track_audio_analysis;
+         DROP TABLE ai_jobs;
+         DROP TABLE track_provenance;
+         ALTER TABLE playlists DROP COLUMN role;
          PRAGMA user_version = 17;",
     )
     .unwrap();
