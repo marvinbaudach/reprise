@@ -61,10 +61,35 @@ echo "== Multi-frontend core boundaries =="
 # binary (dev- and build-dependencies are irrelevant to the boundary), and
 # `--prefix none` prints one `name vX.Y.Z (path)` line per crate so a workspace
 # edge is a simple line-anchored match.
+#
+# Every probe runs `cargo tree` exactly once through `run_dependency_probe`,
+# which captures the output and aborts the gate on a non-zero exit. Without
+# that guard a failing `cargo tree` (unresolved package, broken manifest)
+# prints nothing, and an empty result is indistinguishable from "no violation"
+# — the gate would fail OPEN. Here a cargo-tree failure fails the gate CLOSED
+# and loud instead.
 banned_dependency_families='(^| )(gtk4|libadwaita|glib|gstreamer|zbus)( |$| v)'
 
+# Run one `cargo tree` invocation with fail-closed handling. `return 1` (never
+# `exit`, which would only leave the command-substitution subshell) lets each
+# caller abort the whole script via `|| exit 1`. On success the captured
+# stdout is echoed for the follow-up grep.
+run_dependency_probe() {
+  local label=$1
+  shift
+  local out
+  if ! out=$(cargo tree "$@" 2>&1); then
+    echo "cargo tree failed for $label; dependency boundaries cannot be verified:" >&2
+    echo "$out" >&2
+    return 1
+  fi
+  printf '%s\n' "$out"
+}
+
 for surface in reprise-cli reprise-mcp; do
-  stray_workspace_edge=$(cargo tree -p "$surface" -e normal --prefix none 2>/dev/null \
+  surface_tree=$(run_dependency_probe "$surface default build" \
+    -p "$surface" -e normal --prefix none) || exit 1
+  stray_workspace_edge=$(printf '%s\n' "$surface_tree" \
     | rg '^reprise-[a-z-]+ ' \
     | rg -v "^(reprise-core|$surface) " || true)
   if [[ -n "$stray_workspace_edge" ]]; then
@@ -75,8 +100,9 @@ for surface in reprise-cli reprise-mcp; do
 done
 
 for surface in reprise-cli reprise-mcp reprise-stems; do
-  if cargo tree -p "$surface" -e normal 2>/dev/null \
-    | rg --quiet "$banned_dependency_families"; then
+  surface_tree=$(run_dependency_probe "$surface default build" \
+    -p "$surface" -e normal) || exit 1
+  if printf '%s\n' "$surface_tree" | rg --quiet "$banned_dependency_families"; then
     echo "$surface default build must not depend on GTK, libadwaita, GLib, GStreamer, or zbus" >&2
     exit 1
   fi
@@ -85,15 +111,18 @@ done
 # reprise-stems stays a removable, binary-host-only backend: neither the engine
 # nor the MCP server may pull it in under ANY feature set.
 for stems_non_host in reprise-core reprise-mcp; do
-  if cargo tree -p "$stems_non_host" --all-features -e normal --prefix none 2>/dev/null \
-    | rg --quiet '^reprise-stems '; then
+  stems_host_tree=$(run_dependency_probe "$stems_non_host all features" \
+    -p "$stems_non_host" --all-features -e normal --prefix none) || exit 1
+  if printf '%s\n' "$stems_host_tree" | rg --quiet '^reprise-stems '; then
     echo "$stems_non_host must never depend on reprise-stems (binary-host-only, removable backend)" >&2
     exit 1
   fi
 done
 
 # reprise-stems itself links only the engine.
-stray_stems_edge=$(cargo tree -p reprise-stems --all-features -e normal --prefix none 2>/dev/null \
+stems_tree=$(run_dependency_probe "reprise-stems all features" \
+  -p reprise-stems --all-features -e normal --prefix none) || exit 1
+stray_stems_edge=$(printf '%s\n' "$stems_tree" \
   | rg '^reprise-[a-z-]+ ' \
   | rg -v '^(reprise-core|reprise-stems) ' || true)
 if [[ -n "$stray_stems_edge" ]]; then
