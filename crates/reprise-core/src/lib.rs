@@ -19,6 +19,7 @@ pub mod browser;
 pub mod cover;
 pub mod cover_download;
 pub mod db;
+mod db_ai_jobs;
 mod db_change_log;
 mod db_library_doctor;
 mod db_library_doctor_remote;

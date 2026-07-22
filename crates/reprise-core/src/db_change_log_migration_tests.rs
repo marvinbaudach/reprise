@@ -24,9 +24,15 @@ fn schema_v26_fresh_and_v25_upgrade_have_the_same_change_log_shape() {
 
     let upgraded = open(None).unwrap();
     migrate(&upgraded).unwrap();
+    // Roll back to just before change_log (v26). Every object created at v26+
+    // must go, or re-migration's later steps collide with the survivors — the
+    // v27 AI-jobs shape (ai_jobs/track_provenance/playlists.role) included.
     upgraded
         .execute_batch(
             "DROP TABLE change_log;
+             DROP TABLE ai_jobs;
+             DROP TABLE track_provenance;
+             ALTER TABLE playlists DROP COLUMN role;
              PRAGMA user_version = 25;",
         )
         .unwrap();
@@ -37,7 +43,7 @@ fn schema_v26_fresh_and_v25_upgrade_have_the_same_change_log_shape() {
         upgraded
             .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
             .unwrap(),
-        26
+        SUPPORTED_SCHEMA_VERSION
     );
 }
 
@@ -61,34 +67,34 @@ fn schema_v26_change_log_has_the_ordering_and_lookup_contract() {
 
 #[test]
 fn migrate_rejects_a_schema_newer_than_the_binary_supports() {
+    // Version-agnostic: one past whatever this binary supports is always
+    // "too new", so this guard test survives every future schema bump.
+    let too_new = SUPPORTED_SCHEMA_VERSION + 1;
     let conn = open(None).unwrap();
-    conn.pragma_update(None, "user_version", 27).unwrap();
+    conn.pragma_update(None, "user_version", too_new).unwrap();
 
     let error = migrate(&conn).unwrap_err();
 
     assert!(matches!(
         error,
-        DbError::SchemaTooNew {
-            found: 27,
-            supported: 26
-        }
+        DbError::SchemaTooNew { found, supported }
+            if found == too_new && supported == SUPPORTED_SCHEMA_VERSION
     ));
 }
 
 #[test]
 fn open_migrated_rejects_a_schema_newer_than_the_binary_supports() {
+    let too_new = SUPPORTED_SCHEMA_VERSION + 1;
     let database = tempfile::NamedTempFile::new().unwrap();
     let conn = Connection::open(database.path()).unwrap();
-    conn.pragma_update(None, "user_version", 27).unwrap();
+    conn.pragma_update(None, "user_version", too_new).unwrap();
     drop(conn);
 
     let error = open_migrated(Some(database.path())).unwrap_err();
 
     assert!(matches!(
         error,
-        DbError::SchemaTooNew {
-            found: 27,
-            supported: 26
-        }
+        DbError::SchemaTooNew { found, supported }
+            if found == too_new && supported == SUPPORTED_SCHEMA_VERSION
     ));
 }
