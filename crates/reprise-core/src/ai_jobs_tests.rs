@@ -426,6 +426,28 @@ fn discard_staged_cancels_the_job_deletes_the_file_and_frees_dedup() {
 }
 
 #[test]
+fn count_saved_counts_only_promoted_jobs() {
+    let conn = migrated();
+    let empty = StagingStore::new("/unused");
+    seed_track(&conn, 1);
+    seed_track(&conn, 2);
+    seed_track(&conn, 3);
+    assert_eq!(count_saved(&conn).unwrap(), 0, "no jobs yet");
+
+    // A queued job does not count.
+    let job = enqueue_instrumental(&conn, &empty, 1, "m@1", 0)
+        .unwrap()
+        .job_id();
+    assert_eq!(count_saved(&conn).unwrap(), 0);
+
+    // Promote it (done + result_track_id) -> counted.
+    conn.execute("UPDATE ai_jobs SET status = 'done' WHERE id = ?1", [job])
+        .unwrap();
+    attach_result_track(&conn, job, 2).unwrap();
+    assert_eq!(count_saved(&conn).unwrap(), 1, "a promoted job counts");
+}
+
+#[test]
 fn attach_result_track_moves_a_done_job_to_saved() {
     let conn = migrated();
     let empty = StagingStore::new("/unused");

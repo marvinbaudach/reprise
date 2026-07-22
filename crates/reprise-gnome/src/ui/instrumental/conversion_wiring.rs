@@ -76,13 +76,26 @@ pub(in crate::ui) fn install(deps: &ConversionWiring<'_>) {
 
     // Progress is not a change_log event (plan §2.2), so the worker's coalesced
     // tick is how the aggregate bar stays live. Drop-safe: when the worker is
-    // dropped its sender closes and this future ends.
+    // dropped its sender closes and this future ends. The same tick also drives
+    // the library refresh when the worker auto-promotes a render: that write is
+    // the app's own (filtered from the external-changes runtime), so nothing else
+    // reloads the track list — watch the saved-job count and reload when it grows.
     let receiver = worker.progress_receiver();
     let view_weak = Rc::downgrade(&view);
+    let refresh_conn = deps.conn.clone();
+    let track_list_weak = Rc::downgrade(deps.track_list);
+    let saved_baseline = std::cell::Cell::new(saved_job_count(&refresh_conn));
     glib::spawn_future_local(async move {
         while receiver.recv().await.is_ok() {
             if let Some(view) = view_weak.upgrade() {
                 view.refresh();
+            }
+            let saved_now = saved_job_count(&refresh_conn);
+            if saved_now > saved_baseline.get() {
+                saved_baseline.set(saved_now);
+                if let Some(track_list) = track_list_weak.upgrade() {
+                    track_list.reload();
+                }
             }
         }
     });
@@ -219,6 +232,13 @@ fn promote_one(
             tracing::error!(%error, job_id, "instrumental: promotion failed");
             format!("Could not save instrumental: {error}")
         })
+}
+
+/// The number of worker-promoted (saved) renders, via the core facade — the
+/// signal the progress future watches to reload the library after an app-hosted
+/// auto-promotion. A read error reads as `0` (no growth => no spurious reload).
+fn saved_job_count(conn: &Rc<RefCell<Connection>>) -> i64 {
+    reprise_core::ai_jobs::count_saved(&conn.borrow()).unwrap_or(0)
 }
 
 /// The ids of every finished, unsaved render currently in the view.
