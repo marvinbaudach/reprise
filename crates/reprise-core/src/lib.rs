@@ -13,6 +13,7 @@
 //! MPRIS in `reprise-platform-linux`).
 
 pub mod ai_jobs;
+pub mod ai_promotion;
 pub mod ai_staging;
 pub mod artist_news;
 pub mod artist_portrait;
