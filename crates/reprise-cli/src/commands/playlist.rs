@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 
 use crate::error::CliError;
 use crate::json_models;
-use crate::output::{format_duration_ms, print_json};
+use crate::output::{format_duration_ms, print_json, sanitize_for_terminal};
 use crate::retry::{rusqlite_is_busy, with_retry};
 
 /// One page of `query_track_window`; core caps a single window at 500 rows, so
@@ -42,7 +42,9 @@ pub fn list(conn: &Connection, json_output: bool) -> Result<(), CliError> {
         for playlist in &playlists {
             println!(
                 "{}\t{} ({} tracks)",
-                playlist.id, playlist.name, playlist.track_count
+                playlist.id,
+                sanitize_for_terminal(&playlist.name),
+                playlist.track_count
             );
         }
     }
@@ -91,14 +93,16 @@ pub fn show(conn: &mut Connection, id: i64, json_output: bool) -> Result<(), Cli
     } else {
         println!(
             "{} — {} ({} tracks)",
-            summary.id, summary.name, summary.track_count
+            summary.id,
+            sanitize_for_terminal(&summary.name),
+            summary.track_count
         );
         for track in &tracks {
             println!(
                 "  {}\t{} - {} [{}]",
                 track.id,
-                track.artist,
-                track.title,
+                sanitize_for_terminal(&track.artist),
+                sanitize_for_terminal(&track.title),
                 format_duration_ms(track.duration_ms)
             );
         }
@@ -122,7 +126,7 @@ pub fn create(
     if json_output {
         print_json(&json!({ "id": id, "name": name, "track_count": tracks.len() }));
     } else {
-        println!("created playlist {id}: {name}");
+        println!("created playlist {id}: {}", sanitize_for_terminal(name));
     }
     Ok(())
 }
@@ -143,7 +147,7 @@ pub fn rename(
     if json_output {
         print_json(&json!({ "id": id, "name": name }));
     } else {
-        println!("renamed playlist {id} to {name}");
+        println!("renamed playlist {id} to {}", sanitize_for_terminal(name));
     }
     Ok(())
 }

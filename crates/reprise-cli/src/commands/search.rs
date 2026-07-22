@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 
 use crate::error::CliError;
 use crate::json_models;
-use crate::output::{format_duration_ms, print_json};
+use crate::output::{format_duration_ms, print_json, sanitize_for_terminal};
 
 /// Searches the library for `query` (matched against title, artist, album and
 /// genre) and prints the requested window plus the total match count.
@@ -51,8 +51,8 @@ pub fn run(
             println!(
                 "  {}\t{} - {} [{}]",
                 track.id,
-                track.artist,
-                track.title,
+                sanitize_for_terminal(&track.artist),
+                sanitize_for_terminal(&track.title),
                 format_duration_ms(track.duration_ms)
             );
         }

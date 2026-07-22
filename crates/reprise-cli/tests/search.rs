@@ -73,3 +73,39 @@ fn search_rejects_negative_limit() {
     let out = h.run(&["search", "x", "--limit=-1"]);
     assert_eq!(code(&out), 7, "a negative limit is invalid input");
 }
+
+#[test]
+fn text_output_strips_ansi_escapes_but_json_preserves_them() {
+    let h = Harness::new();
+    // Seed a track whose tags carry a hostile ANSI escape sequence.
+    {
+        let conn = h.conn();
+        conn.execute(
+            "INSERT INTO tracks (path, title, artist, album, genre, duration_ms, added_at) \
+             VALUES (?1, ?2, ?3, 'Al', 'Ge', 1000, 1)",
+            rusqlite::params!["/music/evil.flac", "Clean\u{1b}[31mTitle", "Hack\u{1b}er"],
+        )
+        .unwrap();
+    }
+
+    // Text mode: the raw ESC byte (0x1b) must never reach stdout, yet the row is
+    // still shown (sanitized, not dropped).
+    let text = h.run(&["search", "Clean"]);
+    assert_eq!(code(&text), 0);
+    assert!(
+        !text.stdout.contains(&0x1b),
+        "an ESC byte reached the terminal in text mode: {:?}",
+        String::from_utf8_lossy(&text.stdout)
+    );
+    assert!(stdout(&text).contains("Title"));
+
+    // JSON mode is untouched: serde escapes the ESC as a six-char \u escape, so
+    // the data is preserved losslessly and no raw 0x1b byte appears on the wire.
+    let json = h.run(&["--json", "search", "Clean"]);
+    assert!(
+        !json.stdout.contains(&0x1b),
+        "a raw ESC byte must not appear in JSON output"
+    );
+    let value = parse_json(&json);
+    assert_eq!(value["tracks"][0]["title"], "Clean\u{1b}[31mTitle");
+}
