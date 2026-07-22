@@ -1,6 +1,6 @@
 //! The portable visual engine: owns every piece of reactive state a
-//! visualizer needs (eased bands, envelopes, water, dust, impact overlay,
-//! accent palette) and turns [`SpectrumFrame`]s into a resolution-independent
+//! visualizer needs (eased bands, envelopes, water, impact overlay, accent
+//! palette) and turns [`SpectrumFrame`]s into a resolution-independent
 //! [`Scene`] a frontend can draw however it likes. No frontend ever touches
 //! easing constants or per-mode geometry directly — it only feeds frames in
 //! via [`VisualEngine::ingest`], steps the clock via [`VisualEngine::tick`],
@@ -13,7 +13,6 @@
 use crate::playback::{SpectrumFrame, SPECTRUM_BAND_COUNT};
 
 use super::color::{hsla_to_rgb, hue_shift, secondary_accent};
-use super::dust::{advance_dust, make_dust, Dust, DUST_COUNT};
 use super::impact::ImpactState;
 use super::modes;
 use super::scene::{Fill, Geom, Rgba, Scene, Shape};
@@ -56,7 +55,7 @@ const PROFILE_GROUP: usize = SPECTRUM_BAND_COUNT / 4;
 /// Secondary accent hue offset when no cover-derived accent is available.
 const FALLBACK_ACCENT2_HUE_SHIFT: f32 = 42.0;
 
-/// Which of the 8 visual treatments the engine currently renders.
+/// Which of the 4 visual treatments the engine currently renders.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum VisualMode {
     #[default]
@@ -64,19 +63,10 @@ pub enum VisualMode {
     Bars,
     Flow,
     Pulse,
-    Particles,
-    Neon,
 }
 
 impl VisualMode {
-    pub const ALL: [Self; 6] = [
-        Self::Grid,
-        Self::Bars,
-        Self::Flow,
-        Self::Pulse,
-        Self::Particles,
-        Self::Neon,
-    ];
+    pub const ALL: [Self; 4] = [Self::Grid, Self::Bars, Self::Flow, Self::Pulse];
 
     /// Stable, lowercase identifier: used for widget names and persisted
     /// settings, so it must never change once shipped.
@@ -86,8 +76,6 @@ impl VisualMode {
             Self::Bars => "bars",
             Self::Flow => "flow",
             Self::Pulse => "pulse",
-            Self::Particles => "particles",
-            Self::Neon => "neon",
         }
     }
 }
@@ -109,7 +97,6 @@ pub struct ModeCtx<'a> {
     pub accent: (f32, f32, f32),
     pub accent2: (f32, f32, f32),
     pub water: &'a WaterGrid,
-    pub dust: &'a [Dust; DUST_COUNT],
     pub impact: &'a ImpactState,
     pub width: f32,
     pub height: f32,
@@ -140,26 +127,6 @@ impl ModeCtx<'_> {
         let (r, g, b) = hsla_to_rgb(hue, sat, light);
         Fill::Solid(Rgba { r, g, b, a: alpha })
     }
-
-    /// Design's neon gradient: hue−70 → hue+70 across `x0..x1`, ends fade to
-    /// transparent so the sweep reads as a glow rather than a hard band.
-    pub fn hue_sweep_fill(&self, hue: f32, alpha: f32, x0: f32, x1: f32) -> Fill {
-        const SWEEP_SAT: f32 = 0.82;
-        const SWEEP_LIGHT: f32 = 0.6;
-        let stop = |h: f32, a: f32| {
-            let (r, g, b) = hsla_to_rgb(h, SWEEP_SAT, SWEEP_LIGHT);
-            Rgba { r, g, b, a }
-        };
-        Fill::HGradient {
-            x0,
-            x1,
-            stops: vec![
-                (0.0, stop(hue - 70.0, 0.0)),
-                (0.5, stop(hue, alpha)),
-                (1.0, stop(hue + 70.0, 0.0)),
-            ],
-        }
-    }
 }
 
 fn mean_range(bands: &[f32; SPECTRUM_BAND_COUNT], range: std::ops::Range<usize>) -> f32 {
@@ -179,8 +146,8 @@ fn envelope_up(current: f32, raw: f32, release: f32) -> f32 {
 
 /// Owns every piece of state a visualizer needs across frames: eased spectrum
 /// bands and their peak-hold markers, the `level`/`mid`/`high` envelopes, the
-/// water surface, dust field, and impact overlay, plus the accent palette.
-/// Frontends drive it with [`ingest`](Self::ingest)/[`tick`](Self::tick) and
+/// water surface, and impact overlay, plus the accent palette. Frontends
+/// drive it with [`ingest`](Self::ingest)/[`tick`](Self::tick) and
 /// read a [`Scene`] back with [`scene`](Self::scene) — no frontend ever
 /// touches easing constants or per-mode geometry directly.
 pub struct VisualEngine {
@@ -200,7 +167,6 @@ pub struct VisualEngine {
     playing: bool,
     clock: f32,
     water: WaterGrid,
-    dust: [Dust; DUST_COUNT],
     impact: ImpactState,
     accent: (f32, f32, f32),
     cover_accent2: Option<(f32, f32, f32)>,
@@ -228,7 +194,6 @@ impl VisualEngine {
             playing: false,
             clock: 0.0,
             water: WaterGrid::new(),
-            dust: make_dust(),
             impact: ImpactState::new(),
             accent: (0.5, 0.5, 0.5),
             cover_accent2: None,
@@ -348,7 +313,6 @@ impl VisualEngine {
 
         self.impact.advance();
         self.water.advance(&self.bands_current);
-        advance_dust(&mut self.dust, self.level_current);
 
         if self.playing {
             self.clock += DT;
@@ -393,7 +357,6 @@ impl VisualEngine {
             accent: self.accent,
             accent2: self.accent2(),
             water: &self.water,
-            dust: &self.dust,
             impact: &self.impact,
             width,
             height,
