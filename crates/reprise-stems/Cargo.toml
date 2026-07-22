@@ -14,5 +14,51 @@ license = "MIT"
 # the `StemSeparationBackend` contract that reprise-core (package D) will add.
 reprise-core = { path = "../reprise-core" }
 
+# --- Package E SPIKE ONLY: everything below is optional and OFF by default. ---
+# The default build (`cargo check --workspace`, `cargo test --workspace`,
+# `cargo clippy --all-targets --workspace`) never compiles these; the spike
+# `examples/` carry `required-features`, so `--all-targets` skips them unless a
+# spike feature is explicitly enabled. Package G replaces this with the single
+# chosen runtime and drops the losing candidate.
+candle-core = { version = "0.11", optional = true }
+candle-nn = { version = "0.11", optional = true }
+ort = { version = "=2.0.0-rc.10", optional = true, default-features = false, features = [
+    # (rc.10 pinned deliberately: the ort 2.0 RC whose API this spike targets,
+    # with prebuilt linux-x64 binaries on pyke's CDN. The spike measures the
+    # runtime, not a specific RC; package G re-pins to current/stable then.)
+    "std",
+    "download-binaries",
+    "ndarray",
+] }
+ndarray = { version = "0.16", optional = true }
+rustfft = { version = "6", optional = true }
+hound = { version = "3.5", optional = true }
+
+[features]
+# Candidate (a): candle, pure-Rust. Verifies the pure-Rust / binary-size claim.
+spike-candle = ["dep:candle-core", "dep:candle-nn"]
+# Candidate (b): ort (ONNX Runtime) running an MDX-class ONNX model.
+spike-ort = ["dep:ort", "dep:ndarray", "dep:rustfft", "dep:hound"]
+
+# `required-features` keeps these spike examples OUT of the default build:
+# `cargo check/test/clippy --all-targets` skips them unless the spike feature is
+# explicitly enabled, so the workspace gates stay green and no one else builds
+# candle/ort. Run them with `--features spike-<runtime> --example <name>`.
+[[example]]
+name = "candle_probe"
+required-features = ["spike-candle"]
+
+[[example]]
+name = "ort_probe"
+required-features = ["spike-ort"]
+
+[[example]]
+name = "ort_mdx_bench"
+required-features = ["spike-ort"]
+
+[[example]]
+name = "ort_demucs_bench"
+required-features = ["spike-ort"]
+
 [lints]
 workspace = true
