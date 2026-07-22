@@ -62,13 +62,9 @@ pub(in crate::ui) fn set_experimental_enabled(
 /// backend reads. Injected into the worker host so the render logic stays pure
 /// and testable (the tests hand it a closure over a temp file).
 ///
-/// It takes the worker's own `&Connection` so a production resolver can look
-/// the path up through a core facade. **Core-facade gap (reported):** there is
-/// no by-id `track path` facade today (only the reverse,
-/// `queries::track_id_for_path`), and productive gnome code must not assemble
-/// SQL. So the production resolver ([`db_source_resolver`]) returns `None`
-/// until P3b adds that facade and wires the real path lookup — the same P3b
-/// commit that swaps in the real backend.
+/// It takes the worker's own `&Connection` so the production resolver
+/// ([`db_source_resolver`]) can look the path up through the core facade
+/// [`reprise_core::queries::track_source_path`] — no SQL in frontend code.
 pub(in crate::ui) type SourceResolver =
     Arc<dyn Fn(&Connection, i64) -> Option<PathBuf> + Send + Sync>;
 
@@ -125,17 +121,48 @@ pub(in crate::ui) fn now_unix() -> i64 {
         .map_or(0, |elapsed| elapsed.as_secs() as i64)
 }
 
-/// The production source-path resolver. **TODO(P3b):** returns `None` until a
-/// by-id track-path core facade exists (see [`SourceResolver`]); a worker
-/// claiming a job then fails it with a clear `source-unavailable` error rather
-/// than rendering from a bogus path. The Fake backend already rejects a missing
-/// source, so this stays honest end to end.
+/// The production source-path resolver: looks the job's `source_track_id` up
+/// through the core facade [`reprise_core::queries::track_source_path`]. A
+/// missing row (or a query error) resolves to `None`, so the worker fails the
+/// job with a clear `source-unavailable` error rather than rendering from a
+/// bogus path.
 pub(in crate::ui) fn db_source_resolver() -> SourceResolver {
     Arc::new(
-        |_conn: &Connection, _source_track_id: i64| -> Option<PathBuf> {
-            // TODO(P3b): resolve through a core facade, e.g.
-            // `queries::track_source_path(conn, source_track_id)`.
-            None
+        |conn: &Connection, source_track_id: i64| -> Option<PathBuf> {
+            match reprise_core::queries::track_source_path(conn, source_track_id) {
+                Ok(path) => path,
+                Err(error) => {
+                    tracing::error!(%error, source_track_id, "instrumental: source path lookup failed");
+                    None
+                }
+            }
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn db_source_resolver_resolves_a_seeded_track_and_none_for_a_missing_one() {
+        // P3b wiring: the production resolver now returns the real source path
+        // (it used to be a hard-coded None), so the app-hosted worker can render.
+        let conn = reprise_core::db::open(None).unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (id, path, title, artist, added_at, file_mtime, file_size) \
+             VALUES (1, '/music/x.flac', 'X', 'A', 1, 1, 1)",
+            [],
+        )
+        .unwrap();
+
+        let resolve = db_source_resolver();
+        assert_eq!(resolve(&conn, 1), Some(PathBuf::from("/music/x.flac")));
+        assert_eq!(
+            resolve(&conn, 999),
+            None,
+            "a missing track resolves to None"
+        );
+    }
 }
