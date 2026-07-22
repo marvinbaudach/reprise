@@ -359,6 +359,27 @@ pub fn query_track_count_browsed(
     }
 }
 
+/// Like [`query_track_count_browsed`] but honoring the FIL-7 AI-exclude filter
+/// (Beschluss 17), matching [`query_track_ids_browsed_ai`]: only `Library`
+/// honors `exclude_ai`, so every other source ignores it and delegates. This is
+/// the cheap `COUNT(*)` the AI-filtered view uses for its total instead of an
+/// id-list length, which would silently cap at `QUEUE_LIMIT`.
+pub fn query_track_count_browsed_ai(
+    conn: &Connection,
+    source: &ViewSource,
+    filter: &str,
+    browse: &BrowseFilter,
+    queue_ids: &[i64],
+    exclude_ai: bool,
+) -> Result<i64, rusqlite::Error> {
+    match source {
+        ViewSource::Library => {
+            library::query_track_count_library_ai(conn, filter, browse, exclude_ai)
+        }
+        _ => query_track_count_browsed(conn, source, filter, browse, queue_ids),
+    }
+}
+
 /// Returns every track id matching `(source, sort_field, sort_dir, filter)`,
 /// in the order that source's "play this whole view" queue should use,
 /// capped at `QUEUE_LIMIT`. This is the queue seam (Stage 2 Task 4; made
