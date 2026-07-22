@@ -8,6 +8,7 @@
 //! responses. Mapping from the richer core types deliberately drops the
 //! disallowed fields (e.g. [`Track::path`](reprise_core::models::Track::path)).
 
+use reprise_core::ai_jobs::{AiJob, JobState};
 use reprise_core::library::playlists::PlaylistSummary;
 use reprise_core::models::Track;
 use rmcp::schemars;
@@ -140,6 +141,82 @@ pub struct CreateInstrumentalParams {
     /// save/discard decision (`false`). Default true (Beschluss 15).
     #[serde(default = "default_true")]
     pub save: bool,
+}
+
+/// Parameters for `music_get_job_status`. Supply job ids, a batch id, or both;
+/// at least one is required.
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+pub struct JobStatusParams {
+    /// Specific job ids to report on (at most 500).
+    #[serde(default)]
+    pub job_ids: Vec<i64>,
+    /// A batch id (from `music_create_instrumental`) whose jobs to report on,
+    /// with aggregate progress.
+    #[serde(default)]
+    pub batch_id: Option<String>,
+}
+
+/// One job's status — the strict D19 allow-list for job metadata: opaque ids,
+/// state, progress and timestamps only. **Never** a source/render path or a
+/// staging location (`AiJob` already omits `params_json`, `claimed_by`, and the
+/// lease; this DTO drops nothing back in).
+#[derive(Debug, Clone, Serialize)]
+pub struct JobStatusDto {
+    pub job_id: i64,
+    pub kind: String,
+    pub state: JobState,
+    pub progress_permille: u16,
+    pub batch_id: Option<String>,
+    pub source_track_id: Option<i64>,
+    /// The saved library track once the render was promoted; null while queued,
+    /// running, or staged-but-unsaved.
+    pub result_track_id: Option<i64>,
+    pub cancel_requested: bool,
+    /// A short diagnostic kind for a failed job (never a path).
+    pub error_kind: Option<String>,
+    pub created_at: i64,
+    pub finished_at: Option<i64>,
+}
+
+impl From<&AiJob> for JobStatusDto {
+    fn from(job: &AiJob) -> Self {
+        Self {
+            job_id: job.id,
+            kind: job.kind.clone(),
+            state: job.state,
+            progress_permille: job.progress_permille,
+            batch_id: job.batch_id.clone(),
+            source_track_id: job.source_track_id,
+            result_track_id: job.result_track_id,
+            cancel_requested: job.cancel_requested,
+            error_kind: job.error_kind.clone(),
+            created_at: job.created_at,
+            finished_at: job.finished_at,
+        }
+    }
+}
+
+/// Aggregate progress for a batch — powers a single progress bar (plan 2.4/7).
+#[derive(Debug, Clone, Serialize)]
+pub struct BatchProgressDto {
+    pub batch_id: String,
+    pub total: i64,
+    pub done: i64,
+    pub failed: i64,
+    pub cancelled: i64,
+    pub running: i64,
+    pub queued: i64,
+    /// Overall completion in permille (0..=1000).
+    pub permille: u16,
+}
+
+/// The `music_get_job_status` result body.
+#[derive(Debug, Clone, Serialize)]
+pub struct JobStatusResult {
+    /// Matching jobs, in id order (unknown ids are silently absent).
+    pub jobs: Vec<JobStatusDto>,
+    /// Aggregate progress, present only when a `batch_id` was queried.
+    pub batch: Option<BatchProgressDto>,
 }
 
 /// One source track's enqueue outcome inside a `music_create_instrumental`

@@ -20,7 +20,9 @@ use rmcp::service::RequestContext;
 use rmcp::{tool, tool_handler, tool_router, ErrorData, RoleServer, ServerHandler};
 
 use crate::data;
-use crate::dto::{CreateInstrumentalParams, CreatePlaylistParams, SearchTracksParams};
+use crate::dto::{
+    CreateInstrumentalParams, CreatePlaylistParams, JobStatusParams, SearchTracksParams,
+};
 use crate::error;
 
 /// URI of the library-summary resource.
@@ -174,6 +176,53 @@ impl RepriseServer {
                     "Queued {} instrumental job(s), {} referenced existing (batch {})",
                     result.created, result.deduplicated, result.batch_id
                 );
+                error::structured_ok(&result, summary)
+            }
+            Err(err) => error::into_tool_outcome(err),
+        }
+    }
+
+    /// Reports the state and progress of instrumental jobs (read-only job
+    /// metadata; plan 3.2). Returns ids, states, progress and timestamps only —
+    /// never a file path or staging location.
+    #[tool(
+        name = "music_get_job_status",
+        description = "Report the state and progress of instrumental jobs by \
+            their ids (`job_ids`) and/or a `batch_id` (at least one required). \
+            Each job reports its state (queued/running/done/failed/cancelled), \
+            progress in permille, and the saved result track id once promoted; a \
+            queried batch also returns aggregate progress. Read-only job \
+            metadata, available under the 'library:read' capability. Never \
+            returns file paths or staging locations."
+    )]
+    async fn music_get_job_status(
+        &self,
+        Parameters(params): Parameters<JobStatusParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let db_path = self.db_path.clone();
+        let outcome = tokio::task::spawn_blocking(move || {
+            data::job_status(
+                db_path.as_path(),
+                &params.job_ids,
+                params.batch_id.as_deref(),
+            )
+        })
+        .await
+        .map_err(|error| error::join_error(&error))?;
+
+        match outcome {
+            Ok(result) => {
+                let summary = match &result.batch {
+                    Some(batch) => format!(
+                        "{} job(s); batch {} at {}permille ({}/{} done)",
+                        result.jobs.len(),
+                        batch.batch_id,
+                        batch.permille,
+                        batch.done,
+                        batch.total
+                    ),
+                    None => format!("{} job(s)", result.jobs.len()),
+                };
                 error::structured_ok(&result, summary)
             }
             Err(err) => error::into_tool_outcome(err),

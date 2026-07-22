@@ -59,6 +59,7 @@ fn tool_discovery_lists_the_expected_tools() {
         [
             "music_create_instrumental",
             "music_create_playlist",
+            "music_get_job_status",
             "music_search_tracks",
         ]
     );
