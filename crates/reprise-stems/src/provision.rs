@@ -12,6 +12,17 @@
 //!    onnxruntime dynamically (`load-dynamic`), so at runtime a
 //!    `libonnxruntime.so` must be located from an explicit, optionally
 //!    checksummed set of candidates — with a clear error when none is present.
+//!
+//! ## Security: pin the onnxruntime library in production
+//!
+//! `load-dynamic` `dlopen`s native code into the process, so a swapped or
+//! planted `libonnxruntime.so` executes with full process privileges.
+//! **Production packaging MUST set [`ORT_DYLIB_SHA256_ENV`]
+//! (`REPRISE_ORT_DYLIB_SHA256`)** to the pinned SHA-256 of the library it ships,
+//! so [`resolve_library`] refuses anything else. When it is unset the library
+//! loads unverified and the backend logs a loud warning to stderr. The model
+//! directory is also never resolved to a CWD-relative path (see
+//! [`default_model_dir`]), so a relative candidate can't be planted either.
 
 use std::fmt::Write as _;
 use std::io::Read;
@@ -45,6 +56,11 @@ pub enum ProvisionError {
     /// No onnxruntime library could be found among the candidates.
     #[error("onnxruntime library not found; looked in: {searched}. Set {env} to a libonnxruntime.so (onnxruntime 1.22.0).")]
     LibraryNotFound { searched: String, env: &'static str },
+    /// The platform exposes no data directory, so the model store cannot be
+    /// located. We refuse to fall back to a CWD-relative path (which would make
+    /// a planted, relative `libonnxruntime.so` a dlopen candidate).
+    #[error("no platform data directory is available to locate the Reprise model store")]
+    NoDataDir,
 }
 
 impl From<std::io::Error> for ProvisionError {
@@ -58,11 +74,21 @@ impl From<std::io::Error> for ProvisionError {
 pub type Fetcher<'a> = dyn Fn(&str) -> Result<Vec<u8>, String> + 'a;
 
 /// `<XDG data>/reprise/models` — the production model directory, resolved to
-/// the same base as the database and staging store.
-pub fn default_model_dir() -> PathBuf {
-    dirs::data_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("reprise/models")
+/// the same base as the database and staging store. A platform with no data
+/// directory is a clear [`ProvisionError::NoDataDir`], never a CWD-relative
+/// fallback: a relative model dir would make `./reprise/models/libonnxruntime.so`
+/// a `dlopen` candidate an attacker who controls the working directory could
+/// plant (see [`onnxruntime_location`]).
+pub fn default_model_dir() -> Result<PathBuf, ProvisionError> {
+    model_dir_from_data(dirs::data_dir())
+}
+
+/// Pure inner logic of [`default_model_dir`], with the platform data dir
+/// injected so both the success and no-data-dir paths are unit-testable.
+fn model_dir_from_data(data_dir: Option<PathBuf>) -> Result<PathBuf, ProvisionError> {
+    data_dir
+        .ok_or(ProvisionError::NoDataDir)
+        .map(|dir| dir.join("reprise/models"))
 }
 
 /// The on-disk path a spec's weights live at inside `model_dir`.
@@ -178,7 +204,10 @@ pub fn onnxruntime_location() -> LibraryLocation {
         candidates.push(PathBuf::from(explicit));
     }
     // A library the host bundled next to the models (e.g. a Flatpak extension).
-    candidates.push(default_model_dir().join("libonnxruntime.so"));
+    // Skipped when there is no data dir — never a CWD-relative candidate.
+    if let Ok(model_dir) = default_model_dir() {
+        candidates.push(model_dir.join("libonnxruntime.so"));
+    }
     LibraryLocation {
         candidates,
         expected_sha256: std::env::var(ORT_DYLIB_SHA256_ENV).ok(),
@@ -419,7 +448,34 @@ mod tests {
 
     #[test]
     fn default_model_dir_lives_under_reprise() {
-        assert!(default_model_dir().ends_with("reprise/models"));
+        assert!(default_model_dir().unwrap().ends_with("reprise/models"));
+    }
+
+    #[test]
+    fn model_dir_requires_a_data_directory_and_never_falls_back_to_cwd() {
+        // A missing platform data dir is a clear error, NOT a CWD-relative
+        // "./reprise/models" — that would make a planted, relative
+        // libonnxruntime.so a dlopen candidate.
+        assert!(matches!(
+            model_dir_from_data(None),
+            Err(ProvisionError::NoDataDir)
+        ));
+        assert_eq!(
+            model_dir_from_data(Some(PathBuf::from("/data"))).unwrap(),
+            PathBuf::from("/data/reprise/models")
+        );
+    }
+
+    #[test]
+    fn onnxruntime_candidates_are_never_relative() {
+        // No candidate may be CWD-relative, or an attacker who controls the
+        // working directory could plant the library ort dlopens.
+        let location = onnxruntime_location();
+        assert!(
+            location.candidates.iter().all(|c| c.is_absolute()),
+            "candidates must all be absolute: {:?}",
+            location.candidates
+        );
     }
 
     #[test]
