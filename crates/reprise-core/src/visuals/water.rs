@@ -200,7 +200,7 @@ impl WaterGrid {
         self.v = [0.0; CELLS];
     }
 
-    /// All `|h|`, `|v|` below [`REST_EPSILON`] — the surface has settled.
+    /// All `|h|`, `|v|` below `REST_EPSILON` — the surface has settled.
     pub fn is_still(&self) -> bool {
         self.h
             .iter()
