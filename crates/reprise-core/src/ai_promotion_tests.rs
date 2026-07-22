@@ -505,3 +505,151 @@ fn complete_render_keeps_a_failed_auto_promotion_retryable() {
     let job = ai_jobs::get_job(&conn, job_id).unwrap().unwrap();
     assert_eq!(job.result_track_id, Some(retried.result_track_id));
 }
+
+// --- complete_render_with_publish (owner-guarded temp -> canonical publish) ---
+
+/// Seeds source track 1, enqueues one job with `auto_promote`, and claims it as
+/// `worker` at `now` (lease 60) — leaving it `running`, but with NO render yet.
+fn seed_and_claim(
+    conn: &Connection,
+    staging: &StagingStore,
+    worker: i64,
+    auto_promote: bool,
+    now: i64,
+) -> i64 {
+    staging.ensure_dir().unwrap();
+    conn.execute(
+        "INSERT INTO tracks (id, path, title, artist, album, album_artist, added_at, file_mtime, file_size) \
+         VALUES (1, '/music/creep.flac', 'Creep', 'Radiohead', 'Pablo Honey', 'Radiohead', 1, 1, 1)",
+        [],
+    )
+    .unwrap();
+    let job_id = ai_jobs::enqueue_instrumental_batch(
+        conn,
+        staging,
+        &[1],
+        crate::stem_separation::CURRENT_MODEL_ID,
+        auto_promote,
+        0,
+    )
+    .unwrap()
+    .jobs[0]
+        .job_id();
+    let claimed = ai_jobs::claim_next(conn, worker, now, 60).unwrap().unwrap();
+    assert_eq!(claimed.id, job_id);
+    job_id
+}
+
+/// Renders a real FLAC into the claim-scoped **temp** path for `worker` — the
+/// way a worker renders before publishing. Returns the temp path.
+fn render_temp(staging_dir: &Path, staging: &StagingStore, job_id: i64, worker: i64) -> PathBuf {
+    use crate::stem_separation::StemSeparationBackend;
+    let source = flac_fixture(staging_dir, &format!("src-{worker}.flac"));
+    let temp = staging.temp_path_for_job(job_id, worker);
+    crate::stem_separation::FakeStemBackend::new()
+        .separate_instrumental(&source, &temp, &mut |_| {}, &|| false)
+        .unwrap();
+    temp
+}
+
+#[test]
+fn complete_render_with_publish_publishes_the_temp_render_when_owned() {
+    let staging_dir = tempfile::tempdir().unwrap();
+    let mut conn = migrated();
+    let staging = StagingStore::new(staging_dir.path());
+    let job_id = seed_and_claim(&conn, &staging, 5, false, 0);
+    let temp = render_temp(staging_dir.path(), &staging, job_id, 5);
+    assert!(
+        temp.is_file() && !staging.exists(job_id),
+        "the render sits in the temp path, not yet at its canonical path"
+    );
+
+    let outcome =
+        complete_render_with_publish(&mut conn, &staging, None, job_id, 5, &temp, 100).unwrap();
+
+    assert_eq!(outcome, CompletionOutcome::Staged);
+    assert!(
+        staging.exists(job_id),
+        "the temp render is published to its canonical staging path"
+    );
+    assert!(!temp.exists(), "the temp file is consumed by the publish");
+    let job = ai_jobs::get_job(&conn, job_id).unwrap().unwrap();
+    assert_eq!(job.state, ai_jobs::JobState::Done);
+    assert!(job.result_track_id.is_none(), "no root => stays staged");
+}
+
+#[test]
+fn complete_render_with_publish_promotes_the_published_render_when_intent_set() {
+    let library = tempfile::tempdir().unwrap();
+    let staging_dir = tempfile::tempdir().unwrap();
+    let mut conn = migrated();
+    let staging = StagingStore::new(staging_dir.path());
+    let config = PromotionConfig::new(library.path());
+    let job_id = seed_and_claim(&conn, &staging, 5, true, 0);
+    let temp = render_temp(staging_dir.path(), &staging, job_id, 5);
+
+    let outcome =
+        complete_render_with_publish(&mut conn, &staging, Some(&config), job_id, 5, &temp, 100)
+            .unwrap();
+
+    let promoted = match outcome {
+        CompletionOutcome::Promoted(promoted) => promoted,
+        other => panic!("expected Promoted, got {other:?}"),
+    };
+    assert!(promoted.path.is_file());
+    assert!(!temp.exists(), "the temp file is consumed by the publish");
+    assert!(
+        !staging.exists(job_id),
+        "the promoted render is filed and leaves staging"
+    );
+    let job = ai_jobs::get_job(&conn, job_id).unwrap().unwrap();
+    assert_eq!(job.result_track_id, Some(promoted.result_track_id));
+}
+
+#[test]
+fn a_straggler_after_discard_never_resurrects_the_staging_render() {
+    // The reviewer's trace, made deterministic via the injected clock/lease:
+    // worker A's lease is reclaimed by B mid-render; B publishes the render and
+    // the user discards it; A then finishes and tries to complete. A MUST fail
+    // the ownership guard and delete its own temp, never touching the canonical
+    // staging path — so no permanent, unlisted, un-GC'd orphan is resurrected.
+    let staging_dir = tempfile::tempdir().unwrap();
+    let mut conn = migrated();
+    let staging = StagingStore::new(staging_dir.path());
+
+    // A (5) claims at t=0 with a 60 s lease; B (6) reclaims at t=100 once it
+    // expires (claim_next reclaims a running job whose lease_expires_at < now).
+    let job_id = seed_and_claim(&conn, &staging, 5, false, 0);
+    let reclaimed = ai_jobs::claim_next(&conn, 6, 100, 60).unwrap().unwrap();
+    assert_eq!(reclaimed.id, job_id, "B reclaims A's expired lease");
+
+    // B renders and completes: the render is published to its canonical path.
+    let temp_b = render_temp(staging_dir.path(), &staging, job_id, 6);
+    let done =
+        complete_render_with_publish(&mut conn, &staging, None, job_id, 6, &temp_b, 100).unwrap();
+    assert_eq!(done, CompletionOutcome::Staged);
+    assert!(staging.exists(job_id), "B's render is committed");
+
+    // The user discards it: the canonical render is gone, the job is terminal.
+    ai_jobs::discard_staged(&conn, &staging, job_id, 150).unwrap();
+    assert!(!staging.exists(job_id), "the discarded render is removed");
+
+    // The straggler A finally finishes and tries to complete with its own temp.
+    let temp_a = render_temp(staging_dir.path(), &staging, job_id, 5);
+    let outcome =
+        complete_render_with_publish(&mut conn, &staging, None, job_id, 5, &temp_a, 300).unwrap();
+
+    assert_eq!(
+        outcome,
+        CompletionOutcome::NotOwned,
+        "A no longer owns the reclaimed-then-terminal job"
+    );
+    assert!(
+        !staging.exists(job_id),
+        "the discarded render is NOT resurrected by the straggler"
+    );
+    assert!(
+        !temp_a.exists(),
+        "the straggler deletes its own worthless temp"
+    );
+}

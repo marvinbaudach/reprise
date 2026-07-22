@@ -48,6 +48,10 @@ pub struct StagingStore {
 /// The render file extension — staging renders are always FLAC (Beschluss 15).
 const RENDER_EXTENSION: &str = "flac";
 const RENDER_PREFIX: &str = "job-";
+/// The extension of a claim-scoped, not-yet-published temp render
+/// ([`StagingStore::temp_path_for_job`]). Never a `*.flac`, so it is invisible
+/// to the render listing and the orphan sweep.
+const TEMP_EXTENSION: &str = "partial";
 
 impl StagingStore {
     /// A store rooted at an explicit directory — the test-isolation entry
@@ -72,6 +76,20 @@ impl StagingStore {
     pub fn path_for_job(&self, job_id: i64) -> PathBuf {
         self.root
             .join(format!("{RENDER_PREFIX}{job_id}.{RENDER_EXTENSION}"))
+    }
+
+    /// A claim-scoped temporary render path for `job_id`, tagged with the
+    /// `worker` token and a [`TEMP_EXTENSION`] suffix. A worker renders here
+    /// first, then publishes the finished file to its canonical
+    /// [`path_for_job`](Self::path_for_job) only after an owner-guarded
+    /// completion — so two workers legitimately holding the same job (a
+    /// straggler whose lease expired and the reclaimer that finished it) never
+    /// share the render file, and only the winner writes the canonical path. The
+    /// `.partial` extension keeps these temps out of [`list`](Self::list) and
+    /// [`sweep_orphans`](Self::sweep_orphans), which only see `*.flac` renders.
+    pub fn temp_path_for_job(&self, job_id: i64, worker: i64) -> PathBuf {
+        self.path_for_job(job_id)
+            .with_extension(format!("{worker:016x}.{TEMP_EXTENSION}"))
     }
 
     /// Creates the staging directory if it does not exist. Callers do this
