@@ -38,7 +38,17 @@ use serde_json::json;
 use crate::clock::now_unix;
 use crate::error::CliError;
 use crate::output::print_json;
+use crate::retry::{rusqlite_is_busy, with_retry};
 use crate::staging;
+
+/// Runs a mutating `ai_jobs` facade call under the shared busy-retry policy.
+/// Concurrent workers contend on the single WAL writer slot and can even see a
+/// `SQLITE_BUSY_SNAPSHOT` when a peer commits between a claim's read and write;
+/// retrying with a fresh transaction (and a fresh `now`) is exactly the right
+/// response, so no legitimate claim/heartbeat/transition is lost to contention.
+fn retrying<T>(op: impl FnMut() -> Result<T, rusqlite::Error>) -> Result<T, CliError> {
+    with_retry(op, rusqlite_is_busy).map_err(CliError::from)
+}
 
 /// Minimum spacing between in-place progress writes (plan 2.2: ≤ 2 writes/s).
 const PROGRESS_WRITE_INTERVAL: Duration = Duration::from_millis(500);
@@ -141,8 +151,8 @@ pub fn run(
         if shutdown.load(Ordering::Relaxed) {
             break;
         }
-        let now = now_unix();
-        match ai_jobs::claim_next(conn, worker, now, args.lease)? {
+        let claimed = retrying(|| ai_jobs::claim_next(conn, worker, now_unix(), args.lease))?;
+        match claimed {
             Some(job) => {
                 let outcome = process_job(
                     conn,
@@ -203,8 +213,11 @@ impl RunState<'_> {
     /// Called after each rendered chunk: heartbeat (extend lease, read cancel),
     /// then write throttled progress.
     fn on_progress(&self, permille: ProgressPermille) {
-        let now = now_unix();
-        match ai_jobs::heartbeat(self.conn, self.job_id, self.worker, now, self.lease) {
+        let beat = with_retry(
+            || ai_jobs::heartbeat(self.conn, self.job_id, self.worker, now_unix(), self.lease),
+            rusqlite_is_busy,
+        );
+        match beat {
             Ok(outcome) => {
                 if !outcome.still_owner {
                     self.stop.set(Some(StopReason::LostLease));
@@ -218,8 +231,11 @@ impl RunState<'_> {
             }
         }
         if self.should_write_progress(permille) {
-            if let Err(error) = ai_jobs::set_progress(self.conn, self.job_id, self.worker, permille)
-            {
+            let written = with_retry(
+                || ai_jobs::set_progress(self.conn, self.job_id, self.worker, permille),
+                rusqlite_is_busy,
+            );
+            if let Err(error) = written {
                 self.infra_error.set(Some(error.to_string()));
             }
             self.last_write.set(Some(Instant::now()));
@@ -257,7 +273,9 @@ fn process_job(
     shutdown: &AtomicBool,
 ) -> Result<JobOutcome, CliError> {
     let Some(source_path) = resolve_source(conn, job)? else {
-        ai_jobs::mark_failed(conn, job.id, worker, "source_track_missing", now_unix())?;
+        retrying(|| {
+            ai_jobs::mark_failed(conn, job.id, worker, "source_track_missing", now_unix())
+        })?;
         return Ok(JobOutcome::Failed);
     };
     let output_path = store.path_for_job(job.id);
@@ -288,19 +306,30 @@ fn process_job(
     if let Some(error) = state.infra_error.take() {
         return Err(CliError::Database(error));
     }
-    let now = now_unix();
     match result {
         Ok(()) => {
-            ai_jobs::mark_done(conn, job.id, worker, now)?;
-            Ok(JobOutcome::Done)
+            // The owner-guarded facade returns `false` if we lost the lease
+            // mid-render (another worker reclaimed): then this is not our job to
+            // count as done — report it abandoned instead of double-counting.
+            let marked = retrying(|| ai_jobs::mark_done(conn, job.id, worker, now_unix()))?;
+            Ok(if marked {
+                JobOutcome::Done
+            } else {
+                JobOutcome::Abandoned
+            })
         }
         Err(StemError::Cancelled) => {
             let reason = state.stop.get().unwrap_or(StopReason::Shutdown);
             abandon_or_cancel(conn, job.id, worker, reason)
         }
         Err(other) => {
-            ai_jobs::mark_failed(conn, job.id, worker, error_kind(&other), now)?;
-            Ok(JobOutcome::Failed)
+            let kind = error_kind(&other);
+            let marked = retrying(|| ai_jobs::mark_failed(conn, job.id, worker, kind, now_unix()))?;
+            Ok(if marked {
+                JobOutcome::Failed
+            } else {
+                JobOutcome::Abandoned
+            })
         }
     }
 }
@@ -315,8 +344,12 @@ fn abandon_or_cancel(
 ) -> Result<JobOutcome, CliError> {
     match reason {
         StopReason::Cancel => {
-            ai_jobs::mark_cancelled(conn, job_id, worker, now_unix())?;
-            Ok(JobOutcome::Cancelled)
+            let marked = retrying(|| ai_jobs::mark_cancelled(conn, job_id, worker, now_unix()))?;
+            Ok(if marked {
+                JobOutcome::Cancelled
+            } else {
+                JobOutcome::Abandoned
+            })
         }
         StopReason::Shutdown | StopReason::LostLease => Ok(JobOutcome::Abandoned),
     }
