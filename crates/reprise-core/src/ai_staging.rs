@@ -16,6 +16,10 @@
 
 use std::path::{Path, PathBuf};
 
+use rusqlite::Connection;
+
+use crate::ai_jobs::{self, JobState};
+
 /// The staging subdirectory under the XDG data dir
 /// (`<data_dir>/reprise/staging`). Resolves the *same* base as
 /// [`crate::db::default_path`], so app, CLI and MCP agree on where renders
@@ -145,6 +149,63 @@ impl StagingStore {
     }
 }
 
+impl StagingStore {
+    /// Removes every staging render whose job can no longer own it — an orphan
+    /// sweep to run once at each worker startup:
+    ///
+    /// * a **saved** job (`done` with a `result_track_id`): its render was
+    ///   promoted into the library, so the copy still here is a leftover;
+    /// * a **cancelled** job (also the state of a user-discarded render); or
+    /// * a render whose job **no longer exists**.
+    ///
+    /// Active (`queued`/`running`) and **undecided** (`done`, unsaved) renders
+    /// are spared — the latter is Beschluss 15 retention: a finished render
+    /// waits, visible, for the user's save/discard decision and is never
+    /// silently reaped. A `failed` job's render is likewise spared (the worker
+    /// discards a failed render itself, so none should exist), matching the
+    /// documented removal set exactly rather than reaping speculatively.
+    ///
+    /// Idempotent. Returns the job ids whose renders were removed (ascending).
+    /// Only `*.flac` renders are considered; claim-scoped `*.partial` temps are
+    /// invisible to the listing this walks.
+    pub fn sweep_orphans(&self, conn: &Connection) -> Result<Vec<i64>, SweepError> {
+        let mut removed = Vec::new();
+        for entry in self.list()? {
+            if render_is_orphan(conn, entry.job_id)? {
+                match std::fs::remove_file(&entry.path) {
+                    Ok(()) => removed.push(entry.job_id),
+                    // Already gone (listed then vanished): nothing to remove.
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(error.into()),
+                }
+            }
+        }
+        Ok(removed)
+    }
+}
+
+/// Whether the render for `job_id` is an orphan [`StagingStore::sweep_orphans`]
+/// removes (see its doc for the exact rule).
+fn render_is_orphan(conn: &Connection, job_id: i64) -> Result<bool, rusqlite::Error> {
+    let Some(job) = ai_jobs::get_job(conn, job_id)? else {
+        return Ok(true); // no job owns this render
+    };
+    Ok(match job.state {
+        JobState::Cancelled => true,
+        JobState::Done => job.result_track_id.is_some(), // saved => a leftover
+        JobState::Queued | JobState::Running | JobState::Failed => false,
+    })
+}
+
+/// Why a staging orphan sweep could not complete.
+#[derive(Debug, thiserror::Error)]
+pub enum SweepError {
+    #[error("database error during staging sweep: {0}")]
+    Db(#[from] rusqlite::Error),
+    #[error("filesystem error during staging sweep: {0}")]
+    Io(#[from] std::io::Error),
+}
+
 /// Parses `job-<id>.flac` back to its job id, or `None` for any other name.
 fn job_id_from_path(path: &Path) -> Option<i64> {
     if path.extension().and_then(|ext| ext.to_str()) != Some(RENDER_EXTENSION) {
@@ -246,5 +307,70 @@ mod tests {
         let store = StagingStore::new("/definitely/not/here/staging");
         assert_eq!(store.list().unwrap(), Vec::new());
         assert!(!store.exists(1));
+    }
+
+    #[test]
+    fn temp_path_for_job_is_worker_tagged_and_ignored_by_the_listing() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = StagingStore::new(dir.path());
+        let temp = store.temp_path_for_job(7, 5);
+        assert_ne!(temp, store.path_for_job(7));
+        assert_eq!(temp.extension().and_then(|e| e.to_str()), Some("partial"));
+        // A stray temp on disk never appears as a render.
+        store.ensure_dir().unwrap();
+        std::fs::write(&temp, b"partial").unwrap();
+        assert!(store.list().unwrap().is_empty());
+        assert!(!store.exists(7));
+    }
+
+    #[test]
+    fn sweep_orphans_removes_saved_cancelled_and_orphaned_but_spares_active_and_undecided() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = StagingStore::new(dir.path());
+        store.ensure_dir().unwrap();
+
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        // A track for the saved job's result_track_id foreign key.
+        conn.execute(
+            "INSERT INTO tracks (id, path, title, artist, added_at, file_mtime, file_size) \
+             VALUES (1, '/music/x.flac', 'X', 'A', 1, 1, 1)",
+            [],
+        )
+        .unwrap();
+
+        let make = |id: i64, status: &str, result: Option<i64>| {
+            conn.execute(
+                "INSERT INTO ai_jobs (id, kind, params_json, params_fingerprint, status, result_track_id, created_at) \
+                 VALUES (?1, 'instrumental', '{}', ?2, ?3, ?4, 0)",
+                rusqlite::params![id, format!("fp-{id}"), status, result],
+            )
+            .unwrap();
+            std::fs::write(store.path_for_job(id), b"render").unwrap();
+        };
+        make(1, "running", None); // active     -> spare
+        make(2, "done", None); //     undecided  -> spare (Beschluss 15)
+        make(3, "done", Some(1)); //  saved      -> remove
+        make(4, "cancelled", None); // cancelled -> remove
+        make(5, "failed", None); //   failed     -> spare (documented set)
+                                 // A render whose job never existed -> remove.
+        std::fs::write(store.path_for_job(9), b"orphan").unwrap();
+
+        let removed = store.sweep_orphans(&conn).unwrap();
+
+        assert_eq!(
+            removed,
+            vec![3, 4, 9],
+            "removes only saved, cancelled, and job-less renders"
+        );
+        assert!(store.exists(1), "an active render is spared");
+        assert!(store.exists(2), "an undecided render is spared");
+        assert!(!store.exists(3));
+        assert!(!store.exists(4));
+        assert!(store.exists(5), "a failed job's render is not reaped here");
+        assert!(!store.exists(9));
+
+        // Idempotent: a second sweep finds nothing more to remove.
+        assert!(store.sweep_orphans(&conn).unwrap().is_empty());
     }
 }
