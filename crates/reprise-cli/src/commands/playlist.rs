@@ -127,16 +127,19 @@ pub fn create(
     Ok(())
 }
 
-/// Renames an existing playlist. A missing id is reported rather than silently
-/// logging a no-op rename.
+/// Renames an existing playlist. The core facade reports rows affected and logs
+/// no event for a no-op, so a missing id is surfaced from its `0` return rather
+/// than a separate pre-check (which was a TOCTOU workaround).
 pub fn rename(
     conn: &mut Connection,
     id: i64,
     name: &str,
     json_output: bool,
 ) -> Result<(), CliError> {
-    require_playlist(conn, id)?;
-    retry_write(|| playlists::rename(conn, id, name))?;
+    let renamed = retry_write(|| playlists::rename(conn, id, name))?;
+    if renamed == 0 {
+        return Err(CliError::NotFound(format!("playlist {id}")));
+    }
     if json_output {
         print_json(&json!({ "id": id, "name": name }));
     } else {

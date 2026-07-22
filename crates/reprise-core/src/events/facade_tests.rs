@@ -53,6 +53,15 @@ fn rename_playlist_emits_one_rename_event() {
 }
 
 #[test]
+fn rename_missing_playlist_emits_no_event() {
+    let conn = conn();
+    // No playlist with this id: the rename matches nothing, so it must change
+    // zero rows and log nothing (no phantom rename event).
+    assert_eq!(playlists::rename(&conn, 999, "Ghost").unwrap(), 0);
+    assert!(all_changes(&conn).is_empty());
+}
+
+#[test]
 fn delete_playlist_emits_one_delete_event() {
     let conn = conn();
     let id = playlists::create(&conn, "Doomed").unwrap();
