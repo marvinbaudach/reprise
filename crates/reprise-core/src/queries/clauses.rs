@@ -87,6 +87,26 @@ pub(super) fn ai_exclude_clause(exclude_ai: bool) -> &'static str {
     }
 }
 
+/// The `is_ai` projected column expression (INST-10). When `project_ai` is set
+/// it is the correlated provenance `EXISTS` the AI badge reads; otherwise it is
+/// a literal `0`, so the query plan carries **no** per-row subquery.
+///
+/// The badge only renders while the experimental switch is on (`ui::track_list`
+/// gates it), so projecting the correlated `EXISTS` on every windowed track
+/// query — 50k–500k rows, workspace-wide, once per filtered row before `LIMIT` —
+/// was a measured 20–30% cost paid even when nothing reads the column. Callers
+/// pass whether they need it (the GTK layer knows `experimental_on`); when they
+/// do not, the literal `0` keeps the plan subquery-free. Either way the column
+/// is projected at the same position, so `row_to_track`'s fixed index is
+/// unaffected — an off-path row simply reads `is_ai = false`.
+pub(super) fn ai_projection(project_ai: bool) -> &'static str {
+    if project_ai {
+        "EXISTS(SELECT 1 FROM track_provenance tp WHERE tp.track_id = tracks.id AND tp.ai = 1)"
+    } else {
+        "0"
+    }
+}
+
 /// Builds the bound `%…%` LIKE pattern for a trimmed filter value — always
 /// through `library::playlists::escape_like` (Stage-3 close-out finding:
 /// this used to be a bare `format!("%{}%", filter.trim())` at every call
@@ -146,6 +166,7 @@ pub(super) fn build_track_query_base(
     sort_field: &str,
     sort_dir: &str,
     has_filter: bool,
+    project_ai: bool,
 ) -> String {
     build_track_query_base_browsed(
         missing_flag,
@@ -154,9 +175,11 @@ pub(super) fn build_track_query_base(
         has_filter,
         &BrowseFilter::default(),
         false,
+        project_ai,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn build_track_query_base_browsed(
     missing_flag: u8,
     sort_field: &str,
@@ -164,18 +187,20 @@ pub(super) fn build_track_query_base_browsed(
     has_filter: bool,
     browse: &BrowseFilter,
     exclude_ai: bool,
+    project_ai: bool,
 ) -> String {
     let (order_expr, dir) = order_expr_and_dir(sort_field, sort_dir);
     let filter_clause = filter_clause(has_filter, 3);
     let browse_first_param = if has_filter { 4 } else { 3 };
     let (browse_clause, _) = browse_clause(browse, browse_first_param);
     let ai_clause = ai_exclude_clause(exclude_ai);
+    let is_ai = ai_projection(project_ai);
     let presence = presence_clause(missing_flag);
     format!(
         "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
          duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
          file_mtime, missing_since, missing_reason, untagged, file_size, device, inode, \
-         EXISTS(SELECT 1 FROM track_provenance tp WHERE tp.track_id = tracks.id AND tp.ai = 1) AS is_ai \
+         {is_ai} AS is_ai \
          FROM tracks WHERE {presence}{filter_clause}{browse_clause}{ai_clause} \
          ORDER BY {order_expr} {dir} LIMIT ?1 OFFSET ?2"
     )
@@ -183,8 +208,11 @@ pub(super) fn build_track_query_base_browsed(
 
 /// Builds the parameterized SELECT for a library window (`PRESENT`).
 /// See `build_track_query_base`'s doc comment for the whitelist guarantee.
+/// Projects the real `is_ai` column (`project_ai = true`); the AI-gated hot
+/// path uses [`build_track_query_browsed`] to opt out. Its only callers are this
+/// module's tests.
 pub fn build_track_query(sort_field: &str, sort_dir: &str, has_filter: bool) -> String {
-    build_track_query_base(0, sort_field, sort_dir, has_filter)
+    build_track_query_base(0, sort_field, sort_dir, has_filter, true)
 }
 
 pub(super) fn build_track_query_browsed(
@@ -193,8 +221,11 @@ pub(super) fn build_track_query_browsed(
     has_filter: bool,
     browse: &BrowseFilter,
     exclude_ai: bool,
+    project_ai: bool,
 ) -> String {
-    build_track_query_base_browsed(0, sort_field, sort_dir, has_filter, browse, exclude_ai)
+    build_track_query_base_browsed(
+        0, sort_field, sort_dir, has_filter, browse, exclude_ai, project_ai,
+    )
 }
 
 /// Builds the parameterized `SELECT id` for the queue seam
@@ -328,14 +359,16 @@ mod tests {
         // The INST-10 `is_ai` projection references `track_provenance` in every
         // build (via `EXISTS(...) AS is_ai`); it is the *exclude* clause
         // (`NOT EXISTS` in the WHERE) that toggles with `exclude_ai`.
-        let off = build_track_query_browsed("title", "asc", false, &BrowseFilter::default(), false);
+        let off =
+            build_track_query_browsed("title", "asc", false, &BrowseFilter::default(), false, true);
         assert!(
             !off.contains("NOT EXISTS"),
             "no exclude clause when the filter is off"
         );
         // The is_ai projection is still present regardless of the filter.
         assert!(off.contains("AS is_ai"));
-        let on = build_track_query_browsed("title", "asc", false, &BrowseFilter::default(), true);
+        let on =
+            build_track_query_browsed("title", "asc", false, &BrowseFilter::default(), true, true);
         assert!(on.contains("NOT EXISTS"));
         // The exclude clause sits inside the WHERE, before ORDER BY.
         let where_start = on.find("WHERE").unwrap();
@@ -400,6 +433,7 @@ mod tests {
                 false,
                 &BrowseFilter::default(),
                 exclude_ai,
+                true,
             );
             let mut stmt = conn.prepare(&sql).unwrap();
             stmt.query_map([1000i64, 0i64], |row| row.get::<_, String>(2))
@@ -414,5 +448,87 @@ mod tests {
         // Filter on: the present AI track is hidden, the original stays, and
         // the missing AI track remains hidden (PRESENT still holds).
         assert_eq!(titles(true), ["Original"]);
+    }
+
+    // INST-10 / FIX-4: the `is_ai` projection is gated. With `project_ai` set it
+    // is the correlated provenance `EXISTS` the badge reads; without it, a
+    // literal `0` so the plan carries no per-row subquery. Either way exactly one
+    // `is_ai` column is projected, so `row_to_track`'s fixed index is unaffected.
+    #[test]
+    fn is_ai_projection_is_gated_and_the_off_path_has_no_subquery() {
+        let on =
+            build_track_query_browsed("title", "asc", false, &BrowseFilter::default(), false, true);
+        assert!(
+            on.contains("EXISTS(SELECT 1 FROM track_provenance"),
+            "the on-path projects the correlated provenance EXISTS: {on}"
+        );
+
+        let off = build_track_query_browsed(
+            "title",
+            "asc",
+            false,
+            &BrowseFilter::default(),
+            false,
+            false,
+        );
+        assert!(
+            off.contains("0 AS is_ai"),
+            "the off-path projects a literal 0: {off}"
+        );
+        assert!(
+            !off.contains("track_provenance"),
+            "the off-path carries no provenance subquery: {off}"
+        );
+
+        assert_eq!(on.matches(" AS is_ai").count(), 1);
+        assert_eq!(off.matches(" AS is_ai").count(), 1);
+    }
+
+    // FIX-4 plan evidence: EXPLAIN QUERY PLAN confirms the off-path (badge
+    // hidden) plans no correlated subquery over `track_provenance`, while the
+    // on-path's provenance lookup is backed by `track_provenance`'s INTEGER
+    // PRIMARY KEY (a SEARCH, never a full SCAN — so no extra index is needed).
+    #[test]
+    fn explain_query_plan_confirms_off_path_has_no_provenance_subquery() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+
+        let plan = |project_ai: bool| -> String {
+            let sql = build_track_query_browsed(
+                "title",
+                "asc",
+                false,
+                &BrowseFilter::default(),
+                false,
+                project_ai,
+            );
+            let mut stmt = conn.prepare(&format!("EXPLAIN QUERY PLAN {sql}")).unwrap();
+            stmt.query_map([1000i64, 0i64], |row| row.get::<_, String>(3))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
+                .join(" | ")
+                .to_lowercase()
+        };
+
+        let off = plan(false);
+        assert!(
+            !off.contains("subquery"),
+            "the off-path plan has no correlated subquery: {off}"
+        );
+        assert!(
+            !off.contains("track_provenance"),
+            "the off-path plan never touches track_provenance: {off}"
+        );
+
+        let on = plan(true);
+        assert!(
+            on.contains("subquery") || on.contains("track_provenance"),
+            "the on-path plan reads provenance for the badge: {on}"
+        );
+        assert!(
+            !on.contains("scan track_provenance"),
+            "the on-path provenance lookup is index/PK-backed, not a full scan: {on}"
+        );
     }
 }
