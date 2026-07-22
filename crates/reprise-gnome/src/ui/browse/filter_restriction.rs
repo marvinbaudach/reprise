@@ -13,7 +13,10 @@ pub(in crate::ui) fn is_restricted(search: &str, browse: &BrowseFilter, exclude_
 pub(in crate::ui) fn is_track_source(source: &ViewSource) -> bool {
     !matches!(
         source,
-        ViewSource::ImportErrors | ViewSource::MyStats | ViewSource::Device { .. }
+        ViewSource::ImportErrors
+            | ViewSource::MyStats
+            | ViewSource::Conversions
+            | ViewSource::Device { .. }
     )
 }
 

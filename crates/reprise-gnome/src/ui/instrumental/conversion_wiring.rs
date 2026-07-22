@@ -1,8 +1,9 @@
 //! Window-side wiring for the instrumental slice (INST-6/INST-7): constructs
 //! the worker host and the conversion view, drives the view off the worker's
 //! coalesced progress ticks, and connects the save/discard/save-all/clear
-//! affordances to the `ai_promotion`/`ai_jobs` core facades. Play of a staging
-//! render is a P3b concern (no play-by-path yet), so it is a clearly-marked stub.
+//! affordances to the `ai_promotion`/`ai_jobs` core facades, and plays a
+//! finished render — a staging file by path, a promoted render as a library
+//! track (INST-4b/5b).
 //!
 //! Everything here is gated on the experimental switch (INST-11): with the
 //! switch off, no worker thread starts and no view page is added.
@@ -26,10 +27,10 @@ use crate::ui::player_controller::PlayerController;
 use crate::ui::strings;
 use crate::ui::track_list::TrackList;
 
-/// The `content_stack` page name the conversion view is added under. Reachable
-/// selection from the sidebar is cross-package integration (a `ViewSource` /
-/// sidebar entry live in core + non-owned files) and is tracked for P3b; the
-/// page is added here so the view is live and progress-refreshed.
+/// The `content_stack` page name the conversion view is added under. The
+/// sidebar's `ViewSource::Conversions` row (INST-13, added under the same
+/// experimental gate) selects this page; the page is added here so the view is
+/// live and progress-refreshed. Must match `library_shell`'s Conversions branch.
 const CONVERSION_PAGE: &str = "conversions";
 
 const CLEAR_RESPONSE_DISCARD: &str = "discard-all";
@@ -219,7 +220,10 @@ fn wire_callbacks(view: &Rc<ConversionView>, staging: &StagingStore, deps: &Conv
                 Some(PlayTarget::LibraryTrack(track_id)) => player.play_track_id(track_id),
                 Some(PlayTarget::StagingPath(path)) => match path.to_str() {
                     Some(path) => {
-                        if let Err(error) = player.play_path(path) {
+                        // `player.player` is pub(in crate::ui); play the render
+                        // file directly, outside the queue (a staging render is
+                        // not a library track).
+                        if let Err(error) = player.player.play(path) {
                             tracing::warn!(%error, job_id, "instrumental: staging playback failed");
                             toast(&overlay, &strings::text(strings::STATE_FAILED));
                         }
