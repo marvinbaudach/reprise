@@ -57,12 +57,9 @@ fn trace(cr: &gtk4::cairo::Context, geom: &Geom) {
     }
 }
 
-/// Draws one shape's normal geometry (fill or stroke, never the fake-bloom
-/// under-stroke), with its fill alpha scaled by `alpha_scale`. Shared by
-/// `draw_scene` (the Cairo fallback, after its own under-stroke bloom pass),
-/// `draw_crisp` (`alpha_scale` always `1.0`), and `draw_glow_layer`
-/// (`alpha_scale` = the shape's `glow`, for shapes that have one) so the
-/// three renderers agree on exactly what "one shape, once" looks like.
+/// Draws one shape's normal geometry (fill or stroke, never the bloom
+/// under-stroke), with its fill alpha scaled by `alpha_scale`. Used by
+/// `draw_scene` after its own under-stroke bloom pass.
 fn draw_shape(cr: &gtk4::cairo::Context, shape: &Shape, alpha_scale: f64) {
     use std::f64::consts::TAU;
     if let Geom::RadialGlow { cx, cy, r } = shape.geom {
@@ -99,11 +96,9 @@ fn draw_shape(cr: &gtk4::cairo::Context, shape: &Shape, alpha_scale: f64) {
     }
 }
 
-/// The Cairo fallback: every shape crisp, plus a wide translucent
-/// under-stroke pass for `glow > 0` shapes — a cheap fake bloom for hosts
-/// with no GPU blur node. See `draw_crisp`/`draw_glow_layer` for the GPU
-/// path, which draws the same crisp pass but blurs a real glow layer via
-/// `gtk4::Snapshot::push_blur` instead of faking it here.
+/// Draws the scene: every shape crisp, plus a wide translucent under-stroke
+/// pass for `glow > 0` shapes — the bloom, approximated with Cairo since
+/// there is no GPU blur node in this path.
 pub(super) fn draw_scene(cr: &gtk4::cairo::Context, scene: &Scene) {
     cr.set_line_cap(gtk4::cairo::LineCap::Round);
     cr.set_line_join(gtk4::cairo::LineJoin::Round);
@@ -121,102 +116,4 @@ pub(super) fn draw_scene(cr: &gtk4::cairo::Context, scene: &Scene) {
         draw_shape(cr, shape, 1.0);
     }
     cr.set_dash(&[], 0.0);
-}
-
-/// All shapes drawn crisp — no fake-bloom under-stroke pass, since the GPU
-/// path's real blur (see `draw_glow_layer`) provides the bloom instead.
-pub(super) fn draw_crisp(cr: &gtk4::cairo::Context, scene: &Scene) {
-    cr.set_line_cap(gtk4::cairo::LineCap::Round);
-    cr.set_line_join(gtk4::cairo::LineJoin::Round);
-    for shape in &scene.shapes {
-        draw_shape(cr, shape, 1.0);
-    }
-    cr.set_dash(&[], 0.0);
-}
-
-/// Only shapes with `glow > 0`, drawn at their normal geometry with alpha
-/// scaled by `glow` — the layer the GPU path wraps in
-/// `gtk4::Snapshot::push_blur`/`pop` for a real Gaussian bloom.
-pub(super) fn draw_glow_layer(cr: &gtk4::cairo::Context, scene: &Scene) {
-    cr.set_line_cap(gtk4::cairo::LineCap::Round);
-    cr.set_line_join(gtk4::cairo::LineJoin::Round);
-    for shape in &scene.shapes {
-        if shape.glow > 0.0 {
-            draw_shape(cr, shape, f64::from(shape.glow));
-        }
-    }
-    cr.set_dash(&[], 0.0);
-}
-
-/// Max blur radius (px) for the scene's glow layer, derived from the
-/// brightest `glow` across all shapes; `0.0` tells the caller to skip the
-/// blur pass entirely (nothing glows this frame).
-pub(super) fn scene_blur_radius(scene: &Scene) -> f32 {
-    let max_glow = scene.shapes.iter().map(|s| s.glow).fold(0.0_f32, f32::max);
-    if max_glow <= 0.0 {
-        0.0
-    } else {
-        2.0 + 14.0 * max_glow.min(1.0)
-    }
-}
-
-#[cfg(test)]
-/// Counts shapes with `glow > 0` — the same predicate `draw_glow_layer` uses
-/// to pick its layer, exposed so the split can be unit-tested without a
-/// Cairo surface.
-fn glow_shape_count(scene: &Scene) -> usize {
-    scene.shapes.iter().filter(|s| s.glow > 0.0).count()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use reprise_core::visuals::Rgba;
-
-    fn shape(glow: f32) -> Shape {
-        Shape {
-            geom: Geom::Disc {
-                cx: 10.0,
-                cy: 10.0,
-                r: 3.0,
-            },
-            fill: Fill::Solid(Rgba {
-                r: 1.0,
-                g: 1.0,
-                b: 1.0,
-                a: 1.0,
-            }),
-            width: 0.0,
-            glow,
-            dash: None,
-        }
-    }
-
-    #[test]
-    fn blur_radius_is_zero_for_an_all_crisp_scene() {
-        let scene = Scene {
-            shapes: vec![shape(0.0), shape(0.0)],
-        };
-        assert_eq!(scene_blur_radius(&scene), 0.0);
-        assert_eq!(glow_shape_count(&scene), 0);
-    }
-
-    #[test]
-    fn blur_radius_scales_with_the_brightest_glow() {
-        let scene = Scene {
-            shapes: vec![shape(0.0), shape(0.8)],
-        };
-        let radius = scene_blur_radius(&scene);
-        assert!(radius > 0.0);
-        assert_eq!(radius, 2.0 + 14.0 * 0.8_f32);
-        assert_eq!(glow_shape_count(&scene), 1);
-    }
-
-    #[test]
-    fn blur_radius_clamps_glow_above_one() {
-        let scene = Scene {
-            shapes: vec![shape(5.0)],
-        };
-        assert_eq!(scene_blur_radius(&scene), 2.0 + 14.0);
-    }
 }

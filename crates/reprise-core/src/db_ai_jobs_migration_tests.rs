@@ -1,4 +1,4 @@
-//! Schema v27 migration regressions — the AI-jobs/provenance/role shapes.
+//! Schema v28 migration regressions — the AI-jobs/provenance/role shapes.
 
 use super::*;
 
@@ -20,14 +20,14 @@ fn object_schema(conn: &Connection, table: &str) -> Vec<(String, String)> {
         .unwrap()
 }
 
-/// Rolls a fully-migrated database back to just before v27, leaving every
+/// Rolls a fully-migrated database back to just before v28, leaving every
 /// earlier shape intact — the upgrade half of the parity tests.
-fn reset_to_v26(conn: &Connection) {
+fn reset_to_v27(conn: &Connection) {
     conn.execute_batch(
         "DROP TABLE ai_jobs;
          DROP TABLE track_provenance;
          ALTER TABLE playlists DROP COLUMN role;
-         PRAGMA user_version = 26;",
+         PRAGMA user_version = 27;",
     )
     .unwrap();
 }
@@ -47,7 +47,7 @@ fn fresh_and_upgraded_databases_have_the_same_ai_jobs_shape() {
     migrate(&fresh).unwrap();
     let upgraded = open(None).unwrap();
     migrate(&upgraded).unwrap();
-    reset_to_v26(&upgraded);
+    reset_to_v27(&upgraded);
     migrate(&upgraded).unwrap();
 
     for table in ["ai_jobs", "track_provenance"] {
@@ -69,7 +69,7 @@ fn fresh_and_upgraded_databases_have_the_same_ai_jobs_shape() {
 fn upgrade_preserves_existing_library_rows() {
     let conn = open(None).unwrap();
     migrate(&conn).unwrap();
-    reset_to_v26(&conn);
+    reset_to_v27(&conn);
     seed_track(&conn, 1);
     conn.execute(
         "INSERT INTO playlists (id, name, position) VALUES (1, 'Keep', 0)",

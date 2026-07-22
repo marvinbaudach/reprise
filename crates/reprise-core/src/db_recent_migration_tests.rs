@@ -505,6 +505,9 @@ fn assert_new_releases_schema(conn: &Connection) {
             "seen_at",
             "hidden",
             "fallback_accent",
+            "first_seen",
+            "hidden_at",
+            "announce_url",
         ]
     );
 }

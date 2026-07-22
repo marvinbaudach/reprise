@@ -12,7 +12,7 @@ use crate::musicbrainz::{self, FetchError};
 const FETCH_TTL_SECONDS: i64 = 7 * 24 * 60 * 60;
 const MIN_ARTIST_SCORE: i64 = 95;
 const NEWS_WINDOW_DAYS: i64 = 90;
-const MAX_ITEMS: usize = 5;
+const MAX_ITEMS: usize = 20;
 const TOP_ARTIST_COUNT: usize = 20;
 const DAILY_REST_COUNT: usize = 5;
 const DEFAULT_FALLBACK_ACCENT: &str = "#3584E4";
@@ -31,6 +31,7 @@ pub struct AlbumNews {
     pub first_release_date: String,
     pub primary_type: String,
     pub kind: NewsKind,
+    pub announce_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,6 +55,8 @@ pub struct StoredRelease {
     pub seen_at: Option<i64>,
     pub hidden: bool,
     pub fallback_accent: String,
+    pub in_library: bool,
+    pub announce_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,6 +81,12 @@ pub fn configured_fetch_scope(
 pub fn set_fetch_all_artists(conn: &Connection, all_artists: bool) -> Result<(), rusqlite::Error> {
     crate::library::settings::set_bool(conn, FETCH_ALL_ARTISTS_KEY, all_artists)
 }
+
+/// Staleness policy (when a refresh is due, the per-install jitter, and the
+/// latest fetch timestamp) lives in `artist_news_refresh`; re-exported here
+/// so existing callers keep using `artist_news::{refresh_due, jitter_seconds,
+/// latest_fetched_at}`.
+pub use crate::artist_news_refresh::{jitter_seconds, latest_fetched_at, refresh_due};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RefreshReport {
@@ -126,7 +135,7 @@ pub fn artist_search_url(artist: &str) -> String {
 
 pub fn release_groups_url(mbid: &str) -> String {
     format!(
-        "https://musicbrainz.org/ws/2/release-group?artist={}&type=album%7Cep%7Csingle&release-group-status=website-default&limit=100&fmt=json",
+        "https://musicbrainz.org/ws/2/release-group?artist={}&type=album%7Cep%7Csingle&release-group-status=website-default&limit=100&inc=url-rels&fmt=json",
         musicbrainz::urlencode(mbid)
     )
 }
@@ -257,6 +266,7 @@ where
         report.artists_fetched += 1;
         report.releases_upserted += items.len();
     }
+    crate::artist_news_history::enforce_retention(conn, now).map_err(database_error)?;
     Ok(report)
 }
 
@@ -387,15 +397,16 @@ fn upsert_releases(
         transaction.execute(
             "INSERT INTO new_releases (
                release_group_mbid, artist_name, artist_mbid, title, release_type,
-               first_release_date, fetched_at, fallback_accent
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+               first_release_date, fetched_at, fallback_accent, first_seen, announce_url
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?7, ?9)
              ON CONFLICT(release_group_mbid) DO UPDATE SET
                artist_name = excluded.artist_name,
                artist_mbid = excluded.artist_mbid,
                title = excluded.title,
                release_type = excluded.release_type,
                first_release_date = excluded.first_release_date,
-               fetched_at = excluded.fetched_at",
+               fetched_at = excluded.fetched_at,
+               announce_url = COALESCE(excluded.announce_url, new_releases.announce_url)",
             rusqlite::params![
                 item.release_group_mbid,
                 artist,
@@ -405,6 +416,7 @@ fn upsert_releases(
                 item.first_release_date,
                 fetched_at,
                 fallback_accent,
+                item.announce_url,
             ],
         )?;
     }
@@ -424,6 +436,25 @@ fn normalize_fallback_accent(accent: Option<String>) -> String {
         )
 }
 
+/// The set of `(normalized artist, normalized album)` pairs already present
+/// in the local library. Shared by `query_releases`'s in-library annotation
+/// and `query_history`'s (A2) identical need.
+pub(crate) fn local_album_set(
+    conn: &Connection,
+) -> Result<std::collections::HashSet<(String, String)>, rusqlite::Error> {
+    let mut statement = conn.prepare(
+        "SELECT artist, album FROM tracks
+         WHERE removed_at IS NULL AND missing_since IS NULL AND trim(album) <> ''",
+    )?;
+    let local_albums = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .map(|row| row.map(|(artist, album)| (normalize(&artist), normalize(&album))))
+        .collect::<Result<std::collections::HashSet<_>, _>>()?;
+    Ok(local_albums)
+}
+
 pub fn query_releases(
     conn: &Connection,
     include_hidden: bool,
@@ -431,7 +462,8 @@ pub fn query_releases(
 ) -> Result<Vec<StoredRelease>, rusqlite::Error> {
     let mut statement = conn.prepare(
         "SELECT release_group_mbid, artist_name, artist_mbid, title, release_type,
-                first_release_date, fetched_at, seen_at, hidden, fallback_accent
+                first_release_date, fetched_at, seen_at, hidden, fallback_accent,
+                announce_url
          FROM new_releases
          WHERE ?1 OR hidden = 0",
     )?;
@@ -448,22 +480,16 @@ pub fn query_releases(
                 seen_at: row.get(7)?,
                 hidden: row.get::<_, i64>(8)? != 0,
                 fallback_accent: row.get(9)?,
+                announce_url: row.get(10)?,
+                in_library: false,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    let mut local_statement = conn.prepare(
-        "SELECT artist, album FROM tracks
-         WHERE removed_at IS NULL AND missing_since IS NULL AND trim(album) <> ''",
-    )?;
-    let local_albums = local_statement
-        .query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })?
-        .map(|row| row.map(|(artist, album)| (normalize(&artist), normalize(&album))))
-        .collect::<Result<std::collections::HashSet<_>, _>>()?;
-    releases.retain(|release| {
-        !local_albums.contains(&(normalize(&release.artist_name), normalize(&release.title)))
-    });
+    let local_albums = local_album_set(conn)?;
+    for release in &mut releases {
+        release.in_library =
+            local_albums.contains(&(normalize(&release.artist_name), normalize(&release.title)));
+    }
     releases.sort_by(|left, right| compare_stored_releases(left, right, today));
     Ok(releases)
 }
@@ -490,14 +516,12 @@ pub fn set_release_hidden(
     hidden: bool,
 ) -> Result<(), rusqlite::Error> {
     conn.execute(
-        "UPDATE new_releases SET hidden = ?1 WHERE release_group_mbid = ?2",
+        "UPDATE new_releases
+            SET hidden = ?1,
+                hidden_at = CASE WHEN ?1 = 1 THEN strftime('%s', 'now') ELSE NULL END
+          WHERE release_group_mbid = ?2",
         rusqlite::params![i64::from(hidden), release_group_mbid],
     )?;
-    Ok(())
-}
-
-pub fn show_hidden_releases(conn: &Connection) -> Result<(), rusqlite::Error> {
-    conn.execute("UPDATE new_releases SET hidden = 0 WHERE hidden = 1", [])?;
     Ok(())
 }
 
@@ -549,6 +573,7 @@ pub fn query_artist_news(
             }),
             first_release_date: release.first_release_date,
             primary_type: release.release_type,
+            announce_url: release.announce_url,
         })
         .collect();
     Ok(Some(ArtistNews {
@@ -664,6 +689,7 @@ fn parse_release_group(
             first_release_date: date_text,
             primary_type,
             kind,
+            announce_url: crate::artist_news_links::parse_announce_url(group),
         },
         release_date,
     ))
@@ -690,7 +716,7 @@ fn has_excluded_secondary_type(group: &serde_json::Value) -> bool {
         })
 }
 
-fn parse_partial_date(value: &str) -> Option<NaiveDate> {
+pub(crate) fn parse_partial_date(value: &str) -> Option<NaiveDate> {
     match value.len() {
         10 => NaiveDate::parse_from_str(value, "%Y-%m-%d").ok(),
         7 => NaiveDate::parse_from_str(&format!("{value}-01"), "%Y-%m-%d").ok(),
@@ -714,7 +740,7 @@ fn compare_news(
     .then_with(|| left.title.cmp(&right.title))
 }
 
-fn normalize(value: &str) -> String {
+pub(crate) fn normalize(value: &str) -> String {
     value
         .split_whitespace()
         .collect::<Vec<_>>()

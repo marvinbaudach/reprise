@@ -1,3 +1,4 @@
+use crate::db_grandfather::grandfather_network_features;
 use rusqlite::Connection;
 use std::path::Path;
 
@@ -11,7 +12,7 @@ pub enum DbError {
     SchemaTooNew { found: i64, supported: i64 },
 }
 
-pub const SUPPORTED_SCHEMA_VERSION: i64 = 27;
+pub const SUPPORTED_SCHEMA_VERSION: i64 = 28;
 
 /// Default SQLite `busy_timeout` (milliseconds) every [`open`] connection is
 /// configured with: wait up to this long for a write lock instead of failing
@@ -669,67 +670,10 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
     crate::db_mix_planner::migrate_v23(conn)?;
     crate::db_listen_history::migrate_v24(conn)?;
     crate::db_library_exclusions::migrate_v25(conn)?;
-    crate::db_change_log::migrate_v26(conn)?;
-    crate::db_ai_jobs::migrate_v27(conn)?;
+    crate::db_new_releases_history::migrate_v26(conn)?;
+    crate::db_change_log::migrate_v27(conn)?;
+    crate::db_ai_jobs::migrate_v28(conn)?;
     Ok(())
-}
-
-fn grandfather_network_features(
-    tx: &rusqlite::Transaction<'_>,
-    existing_database: bool,
-    cover_cache: &Path,
-    portrait_cache: &Path,
-) -> Result<(), rusqlite::Error> {
-    if existing_database {
-        enable_module_if_unset(tx, &crate::modules::ONLINE_LYRICS_MODULE)?;
-        tx.execute(
-            "INSERT OR IGNORE INTO settings (key, value) \
-             SELECT ?1, '1' \
-             FROM settings \
-             WHERE key = ?2 AND value = '1'",
-            rusqlite::params![
-                crate::modules::enabled_key(&crate::modules::NEW_RELEASES_MODULE),
-                "module.artist_news.enabled"
-            ],
-        )?;
-    }
-    if existing_database && cache_contains_image(cover_cache, crate::cover_download::IMAGE_EXTS) {
-        enable_module_if_unset(tx, &crate::modules::COVER_DOWNLOAD_MODULE)?;
-    }
-    if existing_database
-        && cache_contains_image(portrait_cache, crate::artist_portrait::cache::IMAGE_EXTS)
-    {
-        enable_module_if_unset(tx, &crate::modules::ARTIST_PORTRAITS_MODULE)?;
-    }
-    Ok(())
-}
-
-fn enable_module_if_unset(
-    tx: &rusqlite::Transaction<'_>,
-    module: &crate::modules::ModuleDescriptor,
-) -> Result<(), rusqlite::Error> {
-    tx.execute(
-        "INSERT OR IGNORE INTO settings (key, value) VALUES (?1, '1')",
-        [crate::modules::enabled_key(module)],
-    )?;
-    Ok(())
-}
-
-fn cache_contains_image(directory: &Path, extensions: &[&str]) -> bool {
-    std::fs::read_dir(directory).is_ok_and(|entries| {
-        entries.filter_map(Result::ok).any(|entry| {
-            entry.file_type().is_ok_and(|kind| kind.is_file())
-                && entry
-                    .path()
-                    .extension()
-                    .and_then(|extension| extension.to_str())
-                    .is_some_and(|extension| {
-                        extensions
-                            .iter()
-                            .any(|candidate| extension.eq_ignore_ascii_case(candidate))
-                    })
-        })
-    })
 }
 
 /// Stores pre-computed waveform peaks for a track.

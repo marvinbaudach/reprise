@@ -13,18 +13,14 @@ mod grid;
 mod neon;
 mod particles;
 mod pulse;
-mod rings;
-mod tunnel;
 
 pub(crate) fn build_scene(mode: VisualMode, ctx: &ModeCtx) -> Vec<Shape> {
     match mode {
         VisualMode::Grid => grid::scene(ctx),
         VisualMode::Bars => bars::scene(ctx),
-        VisualMode::Rings => rings::scene(ctx),
         VisualMode::Flow => flow::scene(ctx),
         VisualMode::Pulse => pulse::scene(ctx),
         VisualMode::Particles => particles::scene(ctx),
         VisualMode::Neon => neon::scene(ctx),
-        VisualMode::Tunnel => tunnel::scene(ctx),
     }
 }

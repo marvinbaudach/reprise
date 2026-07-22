@@ -4,7 +4,7 @@ use crate::artist_news::{
     artist_search_url, artists_for_fetch, configured_fetch_scope, hidden_release_count,
     mark_releases_seen, most_played_album_track_path, parse_artist_mbid, parse_release_groups,
     query_releases, refresh_with, release_groups_url, set_fetch_all_artists, set_release_hidden,
-    show_hidden_releases, unseen_release_count, ArtistMatch, FetchScope, NewsKind,
+    unseen_release_count, ArtistMatch, FetchScope, NewsKind,
 };
 
 const ARTIST_ID: &str = "83d91898-7763-47d7-b03b-b92132375c47";
@@ -28,7 +28,7 @@ fn urls_encode_artist_and_bound_release_group_browse() {
     assert!(hostile.contains("%5C%5C%5C%22"));
     assert_eq!(
         release_groups_url(ARTIST_ID),
-        format!("https://musicbrainz.org/ws/2/release-group?artist={ARTIST_ID}&type=album%7Cep%7Csingle&release-group-status=website-default&limit=100&fmt=json")
+        format!("https://musicbrainz.org/ws/2/release-group?artist={ARTIST_ID}&type=album%7Cep%7Csingle&release-group-status=website-default&limit=100&inc=url-rels&fmt=json")
     );
 }
 
@@ -108,7 +108,7 @@ fn date_filter_keeps_current_albums_and_ignores_missing_dates() {
 }
 
 #[test]
-fn nr_1_album_and_ep_window_starts_ninety_days_ago() {
+fn nr_1a_album_and_ep_window_starts_ninety_days_ago() {
     let json = r#"{"release-groups":[
       {"id":"album-edge","title":"Album Edge","first-release-date":"2026-04-14","primary-type":"Album"},
       {"id":"ep-edge","title":"EP Edge","first-release-date":"2026-04-14","primary-type":"EP"},
@@ -125,7 +125,7 @@ fn nr_1_album_and_ep_window_starts_ninety_days_ago() {
 }
 
 #[test]
-fn nr_1_singles_require_a_complete_future_date() {
+fn nr_1a_singles_require_a_complete_future_date() {
     let json = r#"{"release-groups":[
       {"id":"future","title":"Future Single","first-release-date":"2026-07-14","primary-type":"Single"},
       {"id":"today","title":"Today Single","first-release-date":"2026-07-13","primary-type":"Single"},
@@ -143,26 +143,31 @@ fn nr_1_singles_require_a_complete_future_date() {
 }
 
 #[test]
-fn nr_1_secondary_types_are_excluded_before_the_five_item_cap() {
-    let json = r#"{"release-groups":[
-      {"id":"live","title":"Live","first-release-date":"2026-08-01","primary-type":"Album","secondary-types":["Live"]},
-      {"id":"one","title":"One","first-release-date":"2026-08-01","primary-type":"Album"},
-      {"id":"two","title":"Two","first-release-date":"2026-08-02","primary-type":"EP"},
-      {"id":"three","title":"Three","first-release-date":"2026-08-03","primary-type":"Single"},
-      {"id":"four","title":"Four","first-release-date":"2026-08-04","primary-type":"Album"},
-      {"id":"five","title":"Five","first-release-date":"2026-08-05","primary-type":"EP"},
-      {"id":"six","title":"Six","first-release-date":"2026-08-06","primary-type":"Album"}
-    ]}"#;
+fn nr_1a_secondary_types_are_excluded_before_the_twenty_item_cap() {
+    let mut groups = vec![
+        r#"{"id":"live","title":"Live","first-release-date":"2026-08-01","primary-type":"Album","secondary-types":["Live"]}"#
+            .to_string(),
+    ];
+    for index in 0..21 {
+        groups.push(format!(
+            r#"{{"id":"item-{index:02}","title":"Item {index:02}","first-release-date":"2026-08-{day:02}","primary-type":"Album"}}"#,
+            index = index,
+            day = 2 + index
+        ));
+    }
+    let json = format!(r#"{{"release-groups":[{}]}}"#, groups.join(","));
 
-    let items = parse_release_groups(json, &[], date());
+    let items = parse_release_groups(&json, &[], date());
 
-    assert_eq!(items.len(), 5);
+    assert_eq!(items.len(), 20);
     assert!(items.iter().all(|item| item.title != "Live"));
-    assert!(items.iter().all(|item| item.title != "Six"));
+    assert!(items.iter().all(|item| item.title != "Item 20"));
+    assert!(items.iter().any(|item| item.title == "Item 00"));
+    assert!(items.iter().any(|item| item.title == "Item 19"));
 }
 
 #[test]
-fn releases_sort_upcoming_ascending_then_new_descending_and_cap_at_five() {
+fn releases_sort_upcoming_ascending_then_new_descending() {
     let json = r#"{"release-groups":[
       {"id":"u3","title":"Upcoming 3","first-release-date":"2026-10-01","primary-type":"Album"},
       {"id":"n1","title":"New 1","first-release-date":"2026-06-01","primary-type":"Album"},
@@ -175,6 +180,8 @@ fn releases_sort_upcoming_ascending_then_new_descending_and_cap_at_five() {
         .into_iter()
         .map(|item| item.title)
         .collect::<Vec<_>>();
+    // "New 3" (2026-04-01) falls outside the 90-day news window measured
+    // from `date()` (2026-07-13), not because of the item cap.
     assert_eq!(
         titles,
         ["Upcoming 1", "Upcoming 2", "Upcoming 3", "New 1", "New 2"]
@@ -192,7 +199,7 @@ fn no_accent(_conn: &rusqlite::Connection, _artist: &str) -> Option<String> {
 }
 
 #[test]
-fn nr_1_tag_mbid_skips_search_and_persists_releases() {
+fn nr_1a_tag_mbid_skips_search_and_persists_releases() {
     let conn = migrated_conn();
     conn.execute(
         "INSERT INTO tracks (path, title, artist, artist_mbid, album, play_count, added_at) \
@@ -234,12 +241,31 @@ fn nr_1_tag_mbid_skips_search_and_persists_releases() {
     )
     .unwrap();
     let after_import = query_releases(&conn, true, date()).unwrap();
-    assert_eq!(after_import.len(), 1);
-    assert_eq!(after_import[0].title, "Recent EP");
+    assert_eq!(
+        after_import.len(),
+        2,
+        "an in-library release is annotated, not dropped"
+    );
+    let future_album = after_import
+        .iter()
+        .find(|release| release.title == "Future Album")
+        .unwrap();
+    assert!(
+        future_album.in_library,
+        "the newly imported album is marked in_library"
+    );
+    let recent_ep = after_import
+        .iter()
+        .find(|release| release.title == "Recent EP")
+        .unwrap();
+    assert!(
+        !recent_ep.in_library,
+        "an album with no local match stays not in_library"
+    );
 }
 
 #[test]
-fn nr_1_name_resolution_persists_positive_and_negative_results() {
+fn nr_1a_name_resolution_persists_positive_and_negative_results() {
     let conn = migrated_conn();
     for (path, artist, plays) in [
         ("/music/pink.flac", "Pink Floyd", 20),
@@ -293,7 +319,7 @@ fn nr_1_name_resolution_persists_positive_and_negative_results() {
 }
 
 #[test]
-fn nr_1_fetch_queue_prioritizes_top_artists_and_rotates_the_rest_by_day() {
+fn nr_1a_fetch_queue_prioritizes_top_artists_and_rotates_the_rest_by_day() {
     let conn = migrated_conn();
     for index in 0..27 {
         conn.execute(
@@ -459,7 +485,7 @@ fn nr_3_seen_item_not_rebadged() {
 }
 
 #[test]
-fn nr_4_hide_sets_hidden_and_show_restores_hidden_releases() {
+fn hide_sets_hidden_and_set_release_hidden_false_restores_it() {
     let conn = migrated_conn();
     insert_release(&conn, "one", None);
     insert_release(&conn, "two", None);
@@ -480,11 +506,145 @@ fn nr_4_hide_sets_hidden_and_show_restores_hidden_releases() {
         .into_iter()
         .find(|release| release.release_group_mbid == "one")
         .is_some_and(|release| release.hidden));
+    let hidden_at: Option<i64> = conn
+        .query_row(
+            "SELECT hidden_at FROM new_releases WHERE release_group_mbid = 'one'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(hidden_at.is_some(), "hiding must stamp hidden_at");
 
-    show_hidden_releases(&conn).unwrap();
+    set_release_hidden(&conn, "one", false).unwrap();
+    let hidden_at_after_unhide: Option<i64> = conn
+        .query_row(
+            "SELECT hidden_at FROM new_releases WHERE release_group_mbid = 'one'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(
+        hidden_at_after_unhide.is_none(),
+        "un-hiding via set_release_hidden clears hidden_at again"
+    );
+
+    set_release_hidden(&conn, "one", true).unwrap();
+
+    // The former blanket "un-hide everything" helper (`show_hidden_releases`)
+    // is gone — `restore_release` (A2) replaces it for the real UI path
+    // (single release, wired in C1), and `set_release_hidden(.., false)`
+    // remains the primitive both build on, which this asserts directly.
+    set_release_hidden(&conn, "one", false).unwrap();
 
     assert_eq!(hidden_release_count(&conn).unwrap(), 0);
     assert_eq!(query_releases(&conn, false, date()).unwrap().len(), 2);
+}
+
+#[test]
+fn nr_13_query_marks_local_albums_instead_of_dropping_them() {
+    let conn = migrated_conn();
+    conn.execute(
+        "INSERT INTO new_releases (
+           release_group_mbid, artist_name, artist_mbid, title, release_type,
+           first_release_date, fetched_at, fallback_accent
+         ) VALUES ('owned', 'Pink Floyd', 'artist-id', 'Local Album', 'Album', '2026-08-01', 1, '#123456')",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO new_releases (
+           release_group_mbid, artist_name, artist_mbid, title, release_type,
+           first_release_date, fetched_at, fallback_accent
+         ) VALUES ('new', 'Pink Floyd', 'artist-id', 'Brand New Album', 'Album', '2026-08-01', 1, '#123456')",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+         VALUES ('/music/local.flac', 'Track', 'Pink Floyd', 'Local Album', 5, 0)",
+        [],
+    )
+    .unwrap();
+
+    let releases = query_releases(&conn, true, date()).unwrap();
+
+    assert_eq!(releases.len(), 2, "in-library releases stay in the list");
+    let owned = releases
+        .iter()
+        .find(|release| release.release_group_mbid == "owned")
+        .unwrap();
+    assert!(
+        owned.in_library,
+        "matching local album is marked in_library"
+    );
+    let brand_new = releases
+        .iter()
+        .find(|release| release.release_group_mbid == "new")
+        .unwrap();
+    assert!(
+        !brand_new.in_library,
+        "release with no local match stays not in_library"
+    );
+}
+
+#[test]
+fn first_seen_is_set_on_insert_and_preserved_across_upsert() {
+    let conn = migrated_conn();
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, artist_mbid, play_count, added_at) \
+         VALUES ('/music/one.flac', 'One', 'Pink Floyd', ?1, 10, 0)",
+        [ARTIST_ID],
+    )
+    .unwrap();
+    let mut fetch = |_url: &str| Ok(RELEASES.to_string());
+
+    refresh_with(
+        &conn,
+        date(),
+        1_000,
+        FetchScope::TopArtists,
+        true,
+        &mut fetch,
+        &mut no_accent,
+    )
+    .unwrap();
+
+    let (first_seen, fetched_at): (i64, i64) = conn
+        .query_row(
+            "SELECT first_seen, fetched_at FROM new_releases WHERE release_group_mbid = '1'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(first_seen, 1_000);
+    assert_eq!(fetched_at, 1_000);
+
+    refresh_with(
+        &conn,
+        date(),
+        2_000,
+        FetchScope::TopArtists,
+        true,
+        &mut fetch,
+        &mut no_accent,
+    )
+    .unwrap();
+
+    let (first_seen_after, fetched_at_after): (i64, i64) = conn
+        .query_row(
+            "SELECT first_seen, fetched_at FROM new_releases WHERE release_group_mbid = '1'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        first_seen_after, 1_000,
+        "first_seen must never move on re-fetch"
+    );
+    assert_eq!(
+        fetched_at_after, 2_000,
+        "fetched_at must still track the latest fetch"
+    );
 }
 
 #[test]

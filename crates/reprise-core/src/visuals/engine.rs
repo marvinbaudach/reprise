@@ -20,17 +20,22 @@ use super::scene::{Fill, Geom, Rgba, Scene, Shape};
 use super::water::WaterGrid;
 
 /// Bands rise fast (attack) and fall slowly (release): the asymmetry is what
-/// makes transients punch instead of averaging away.
-const BAND_ATTACK: f32 = 0.9;
-/// Per-band release floor: band 0 (bass) lingers, high bands sparkle.
-const BAND_RELEASE_MIN: f32 = 0.07;
-const BAND_RELEASE_SPAN: f32 = 0.08;
+/// makes transients punch instead of averaging away. Fast so the visuals stay
+/// responsive; the noise-floor jitter is suppressed upstream (the analyzer's
+/// gamma + AGC floor squash faint bands) rather than by slowing the rise, so
+/// this can stay high without reintroducing flicker.
+const BAND_ATTACK: f32 = 0.75;
+/// Per-band release floor: band 0 (bass) lingers, high bands sparkle. Snappier
+/// than a gentle gauge so bands track fine musical detail instead of gliding
+/// smoothly between values.
+const BAND_RELEASE_MIN: f32 = 0.13;
+const BAND_RELEASE_SPAN: f32 = 0.15;
 const SCALAR_ATTACK: f32 = 0.9;
-const SCALAR_RELEASE: f32 = 0.16;
+const SCALAR_RELEASE: f32 = 0.22;
 /// Peak-hold markers fall slowly so the frequency picture stays legible.
-const PEAK_DECAY: f32 = 0.018;
+const PEAK_DECAY: f32 = 0.02;
 /// `mid`/`high` envelopes: instant rise, slow release, same shape as `kick`.
-const MID_HIGH_RELEASE: f32 = 0.16;
+const MID_HIGH_RELEASE: f32 = 0.22;
 /// Below this an eased value reads as "arrived" for settle detection.
 const SETTLE_EPSILON: f32 = 0.002;
 /// Fixed physics step: the tick loop always advances by this much, never by
@@ -54,27 +59,23 @@ const FALLBACK_ACCENT2_HUE_SHIFT: f32 = 42.0;
 /// Which of the 8 visual treatments the engine currently renders.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum VisualMode {
-    Grid,
     #[default]
+    Grid,
     Bars,
-    Rings,
     Flow,
     Pulse,
     Particles,
     Neon,
-    Tunnel,
 }
 
 impl VisualMode {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 6] = [
         Self::Grid,
         Self::Bars,
-        Self::Rings,
         Self::Flow,
         Self::Pulse,
         Self::Particles,
         Self::Neon,
-        Self::Tunnel,
     ];
 
     /// Stable, lowercase identifier: used for widget names and persisted
@@ -83,12 +84,10 @@ impl VisualMode {
         match self {
             Self::Grid => "grid",
             Self::Bars => "bars",
-            Self::Rings => "rings",
             Self::Flow => "flow",
             Self::Pulse => "pulse",
             Self::Particles => "particles",
             Self::Neon => "neon",
-            Self::Tunnel => "tunnel",
         }
     }
 }
@@ -487,7 +486,8 @@ mod tests {
 
     #[test]
     fn engine_reacts_to_a_slam_with_full_bars_and_kick() {
-        let engine = lively_engine();
+        let mut engine = lively_engine();
+        engine.set_mode(VisualMode::Bars);
         let scene = engine.scene(548.0, 300.0);
         // Bars mode: with AGC + snap attack, a slam reaches large bar lengths.
         let max_len = scene

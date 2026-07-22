@@ -19,22 +19,14 @@ use crate::ui::strings;
 use crate::ui::style::buttons;
 
 use super::{
-    accent_rgb, glow_area, gpu_visuals_enabled, install_chrome_autohide, mode_controls,
-    register_area, render, FullscreenChrome, PlayerHooks, SongVisualizer, SEEK_SCALE_MAX,
+    accent_rgb, install_chrome_autohide, mode_controls, register_area, render, FullscreenChrome,
+    PlayerHooks, SongVisualizer, SEEK_SCALE_MAX,
 };
-
-/// Dark vignette color (design mock's `#0f101c`) painted under the engine's
-/// scene, as two overlaid `cairo::RadialGradient`s: a flat center wash at
-/// 0.45 alpha, plus an outer ring ramping to 0.87 alpha that only shows past
-/// the wash's radius — so the center reads close to 0.45 and the corners
-/// read close to 0.87, matching the mock's "0.45 center → 0.87 edge" without
-/// a hard seam.
-const VIGNETTE_RGB: (f64, f64, f64) = (15.0 / 255.0, 16.0 / 255.0, 28.0 / 255.0);
-const VIGNETTE_CENTER_ALPHA: f64 = 0.45;
-const VIGNETTE_EDGE_ALPHA: f64 = 0.87;
 
 const COVER_THUMB_SIZE: i32 = 84;
 const VOLUME_SCALE_WIDTH: i32 = 110;
+/// Wide centered seek bar per the design (~min(700px, 78vw)).
+const SEEK_WIDTH: i32 = 620;
 const HEADER_MARGIN_TOP: i32 = 28;
 const HEADER_MARGIN_SIDE: i32 = 28;
 const BOTTOM_MARGIN: i32 = 28;
@@ -59,13 +51,6 @@ pub(super) fn build(visualizer: &SongVisualizer, parent: &adw::ApplicationWindow
     let area = fullscreen_canvas(&visualizer.engine);
     register_area(&visualizer.areas, &area);
 
-    let backdrop = gtk4::Picture::new();
-    backdrop.set_content_fit(gtk4::ContentFit::Cover);
-    backdrop.set_can_target(false);
-    backdrop.set_hexpand(true);
-    backdrop.set_vexpand(true);
-    backdrop.add_css_class("reprise-fs-backdrop");
-
     let (header, title, subtitle, state, timecode) = header_row();
     let (
         bottom,
@@ -88,7 +73,6 @@ pub(super) fn build(visualizer: &SongVisualizer, parent: &adw::ApplicationWindow
         track_pos,
         next_up,
         cover_thumb,
-        backdrop: backdrop.clone(),
         play_pause,
         time_cur,
         time_total,
@@ -110,8 +94,7 @@ pub(super) fn build(visualizer: &SongVisualizer, parent: &adw::ApplicationWindow
     *visualizer.fullscreen_chrome.borrow_mut() = Some(chrome);
 
     let overlay = gtk4::Overlay::new();
-    overlay.set_child(Some(&backdrop));
-    overlay.add_overlay(&area);
+    overlay.set_child(Some(&area));
     overlay.add_overlay(&header);
     overlay.add_overlay(&bottom);
 
@@ -215,67 +198,33 @@ pub(super) fn build(visualizer: &SongVisualizer, parent: &adw::ApplicationWindow
     window
 }
 
-/// The fullscreen canvas: same engine-driven scene as the inline canvas, but
-/// with the dark vignette (see [`VIGNETTE_RGB`]) painted first so the scene
-/// always reads over a moody backdrop rather than the accent-tinted CSS
-/// background alone. Built as a GSK `glow_area::GlowArea` (real GPU blur) or
-/// the Cairo `DrawingArea` fallback per `gpu_visuals_enabled()` — mirrors
-/// `song_visualizer::build_canvas`, but kept local to this module since the
-/// vignette pre-paint is fullscreen-only chrome, not something the inline
-/// canvas needs.
+/// The fullscreen Cairo `DrawingArea` canvas: same engine-driven scene as the
+/// inline canvas. The moody backdrop is a static CSS radial gradient on the
+/// canvas (`.reprise-song-visual-fullscreen-canvas`), rendered once by GTK, so
+/// the per-frame draw path only paints the live scene rather than re-filling
+/// screen-sized gradients every frame. Kept local to this module (rather than
+/// reusing `song_visualizer::build_canvas`) because the fullscreen canvas
+/// carries its own CSS class and accessibility label.
 fn fullscreen_canvas(engine: &Rc<RefCell<VisualEngine>>) -> gtk4::Widget {
     const CSS_CLASS: &str = "reprise-song-visual-fullscreen-canvas";
-    if gpu_visuals_enabled() {
-        let area = glow_area::GlowArea::new(engine.clone(), -1, true, CSS_CLASS);
-        area.set_pre_paint(|cr, width, height| {
-            paint_vignette(cr, f64::from(width), f64::from(height));
-        });
-        area.upcast()
-    } else {
-        let area = gtk4::DrawingArea::builder()
-            .height_request(-1)
-            .hexpand(true)
-            .vexpand(true)
-            .accessible_role(gtk4::AccessibleRole::Img)
-            .build();
-        area.add_css_class(CSS_CLASS);
-        area.update_property(&[gtk4::accessible::Property::Label(&strings::text(
-            strings::SONG_VISUALS_ACCESSIBLE,
-        ))]);
-        let engine = engine.clone();
-        area.set_draw_func(move |area, cr, width, height| {
-            paint_vignette(cr, f64::from(width), f64::from(height));
-            let accent = accent_rgb(area);
-            engine.borrow_mut().set_accent(accent);
-            let scene = engine.borrow().scene(width as f32, height as f32);
-            render::draw_scene(cr, &scene);
-        });
-        area.upcast()
-    }
-}
-
-fn paint_vignette(cr: &gtk4::cairo::Context, width: f64, height: f64) {
-    let (r, g, b) = VIGNETTE_RGB;
-    let cx = width / 2.0;
-    let cy = height / 2.0;
-    let wash_r = (width.min(height) * 0.5).max(1.0);
-    let edge_r = (width.max(height) * 0.75).max(1.0);
-
-    let wash = gtk4::cairo::RadialGradient::new(cx, cy, 0.0, cx, cy, wash_r);
-    wash.add_color_stop_rgba(0.0, r, g, b, VIGNETTE_CENTER_ALPHA);
-    wash.add_color_stop_rgba(1.0, r, g, b, VIGNETTE_CENTER_ALPHA);
-    if cr.set_source(&wash).is_ok() {
-        cr.rectangle(0.0, 0.0, width, height);
-        let _ = cr.fill();
-    }
-
-    let edge = gtk4::cairo::RadialGradient::new(cx, cy, wash_r * 0.6, cx, cy, edge_r);
-    edge.add_color_stop_rgba(0.0, r, g, b, 0.0);
-    edge.add_color_stop_rgba(1.0, r, g, b, VIGNETTE_EDGE_ALPHA);
-    if cr.set_source(&edge).is_ok() {
-        cr.rectangle(0.0, 0.0, width, height);
-        let _ = cr.fill();
-    }
+    let area = gtk4::DrawingArea::builder()
+        .height_request(-1)
+        .hexpand(true)
+        .vexpand(true)
+        .accessible_role(gtk4::AccessibleRole::Img)
+        .build();
+    area.add_css_class(CSS_CLASS);
+    area.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+        strings::SONG_VISUALS_ACCESSIBLE,
+    ))]);
+    let engine = engine.clone();
+    area.set_draw_func(move |area, cr, width, height| {
+        let accent = accent_rgb(area);
+        engine.borrow_mut().set_accent(accent);
+        let scene = engine.borrow().scene(width as f32, height as f32);
+        render::draw_scene(cr, &scene);
+    });
+    area.upcast()
 }
 
 /// Builds the header: timecode at the start, a centered state/title/meta
@@ -332,8 +281,8 @@ fn header_row() -> (
 fn bottom_bar(
     visualizer: &SongVisualizer,
 ) -> (
-    gtk4::Box,
-    gtk4::Picture,
+    gtk4::Overlay,
+    gtk4::Image,
     gtk4::Label,
     gtk4::Label,
     gtk4::Label,
@@ -344,11 +293,9 @@ fn bottom_bar(
     gtk4::Scale,
     gtk4::FlowBox,
 ) {
-    let cover_thumb = gtk4::Picture::new();
-    cover_thumb.set_content_fit(gtk4::ContentFit::Cover);
+    let cover_thumb = gtk4::Image::builder().pixel_size(COVER_THUMB_SIZE).build();
     cover_thumb.set_overflow(gtk4::Overflow::Hidden);
     cover_thumb.add_css_class("reprise-fs-cover-thumb");
-    cover_thumb.set_size_request(COVER_THUMB_SIZE, COVER_THUMB_SIZE);
 
     let track_pos = gtk4::Label::new(None);
     track_pos.add_css_class("dim-label");
@@ -386,15 +333,6 @@ fn bottom_bar(
     ))]);
     wire_volume(&visualizer.hooks, &volume, &mute, initial_volume);
 
-    let row1 = gtk4::Box::new(gtk4::Orientation::Horizontal, 14);
-    row1.append(&cover_thumb);
-    row1.append(&meta_column);
-    let spacer = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
-    spacer.set_hexpand(true);
-    row1.append(&spacer);
-    row1.append(&mute);
-    row1.append(&volume);
-
     let time_cur = gtk4::Label::new(None);
     time_cur.add_css_class("dim-label");
     time_cur.add_css_class("reprise-fs-timecode");
@@ -404,6 +342,9 @@ fn bottom_bar(
 
     let seek = gtk4::Scale::with_range(gtk4::Orientation::Horizontal, 0.0, SEEK_SCALE_MAX, 1.0);
     seek.set_hexpand(true);
+    // Wide, centered seek per the design (roughly min(700px, 78vw)); the
+    // centered controls column sizes to this.
+    seek.set_size_request(SEEK_WIDTH, -1);
     seek.set_draw_value(false);
     seek.add_css_class("reprise-fs-seek");
     seek.update_property(&[gtk4::accessible::Property::Label(&strings::text(
@@ -429,18 +370,52 @@ fn bottom_bar(
     let hint = gtk4::Label::new(Some(&strings::text(strings::SONG_VISUALS_FULLSCREEN_HINT)));
     hint.add_css_class("dim-label");
 
-    let bottom = gtk4::Box::new(gtk4::Orientation::Vertical, 14);
-    bottom.set_valign(gtk4::Align::End);
-    bottom.set_margin_bottom(BOTTOM_MARGIN);
-    bottom.set_margin_start(BOTTOM_MARGIN);
-    bottom.set_margin_end(BOTTOM_MARGIN);
+    // Centered controls column: seek → transport → mode pills → hint, rising
+    // from the bottom edge. Per the design it floats directly on the
+    // visualization (no panel/scrim box) — the canvas vignette already darkens
+    // the bottom for legibility. The fade lives on the `bottom` Overlay below
+    // (the unit the auto-hide toggles), not here.
+    let controls = gtk4::Box::new(gtk4::Orientation::Vertical, 14);
+    controls.set_halign(gtk4::Align::Center);
+    controls.set_valign(gtk4::Align::End);
+    controls.set_margin_bottom(BOTTOM_MARGIN);
+    controls.append(&row2);
+    controls.append(&row3);
+    controls.append(&row4);
+    controls.append(&hint);
+
+    // Bottom-left corner: small cover thumb + "TITEL x/n" / next-up meta.
+    let cover_block = gtk4::Box::new(gtk4::Orientation::Horizontal, 14);
+    cover_block.set_halign(gtk4::Align::Start);
+    cover_block.set_valign(gtk4::Align::End);
+    cover_block.set_margin_start(BOTTOM_MARGIN);
+    cover_block.set_margin_bottom(BOTTOM_MARGIN);
+    cover_block.append(&cover_thumb);
+    cover_block.append(&meta_column);
+
+    // Bottom-right corner: mute + volume.
+    let volume_block = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    volume_block.set_halign(gtk4::Align::End);
+    volume_block.set_valign(gtk4::Align::End);
+    volume_block.set_margin_end(BOTTOM_MARGIN);
+    volume_block.set_margin_bottom(BOTTOM_MARGIN);
+    volume_block.append(&mute);
+    volume_block.append(&volume);
+
+    // `bottom` stays a single widget (an `Overlay` now, was a `Box`) so the
+    // existing auto-hide — which fades `header` + `bottom` as one unit via
+    // `reprise-song-visual-chrome-hidden` — keeps working: hiding the
+    // `Overlay` hides the corner blocks and the centered column together,
+    // even though only `controls` carries the chrome/scrim CSS classes.
+    let bottom = gtk4::Overlay::new();
+    bottom.set_hexpand(true);
+    // The fade transition lives here (the unit the auto-hide toggles), so the
+    // whole bottom cluster — centered controls + both corner blocks — fades as
+    // one via `reprise-song-visual-chrome-hidden`.
     bottom.add_css_class("reprise-song-visual-chrome");
-    bottom.add_css_class("reprise-fs-bottom-scrim");
-    bottom.append(&row1);
-    bottom.append(&row2);
-    bottom.append(&row3);
-    bottom.append(&row4);
-    bottom.append(&hint);
+    bottom.set_child(Some(&controls));
+    bottom.add_overlay(&cover_block);
+    bottom.add_overlay(&volume_block);
 
     (
         bottom,
@@ -562,7 +537,7 @@ fn adjust_volume(volume: &gtk4::glib::WeakRef<gtk4::Scale>, delta: f64) {
     volume.set_value(new_value);
 }
 
-/// Maps digit keys 1–8 to a zero-based index into `VisualMode::ALL` /
+/// Maps digit keys 1–6 to a zero-based index into `VisualMode::ALL` /
 /// the mode-pill `FlowBox` (same order, see `mode_controls`).
 fn digit_mode_index(key: gtk4::gdk::Key) -> Option<usize> {
     use gtk4::gdk::Key;
@@ -573,8 +548,6 @@ fn digit_mode_index(key: gtk4::gdk::Key) -> Option<usize> {
         Key::_4 => Some(3),
         Key::_5 => Some(4),
         Key::_6 => Some(5),
-        Key::_7 => Some(6),
-        Key::_8 => Some(7),
         _ => None,
     }
 }

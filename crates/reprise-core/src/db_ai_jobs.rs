@@ -7,8 +7,8 @@
 //! This is deliberately one migration covering three shapes: they ship as a
 //! single, isolated, removable feature (plan 2.3 "isolated and removable")
 //! and no reader of one exists without the others. Kept in its own
-//! `db_*.rs` file with a `migrate_v27` entry point, exactly like every
-//! post-v18 migration (see `db_change_log::migrate_v26`).
+//! `db_*.rs` file with a `migrate_v28` entry point, exactly like every
+//! post-v18 migration (see `db_change_log::migrate_v27`).
 
 use rusqlite::Connection;
 
@@ -40,7 +40,7 @@ use rusqlite::Connection;
 ///   is deliberately **absent** from the dedup index — the intent does not
 ///   change a job's identity, so re-enqueuing the same work with a different
 ///   intent still deduplicates to the existing job.
-const SCHEMA_V27: &str = r#"
+const SCHEMA_V28: &str = r#"
 CREATE TABLE ai_jobs (
   id                 INTEGER PRIMARY KEY AUTOINCREMENT,
   kind               TEXT    NOT NULL,
@@ -85,17 +85,17 @@ CREATE INDEX idx_track_provenance_source ON track_provenance(source_track_id);
 ALTER TABLE playlists ADD COLUMN role TEXT;
 "#;
 
-/// Applies schema v27 — the AI-jobs/provenance/role migration — following the
+/// Applies schema v28 — the AI-jobs/provenance/role migration — following the
 /// one-transaction, version-gated shape every post-v18 step uses (see
 /// `db::migrate`'s doc comment for why schema change and `user_version` bump
 /// share a transaction).
-pub(crate) fn migrate_v27(conn: &Connection) -> Result<(), rusqlite::Error> {
+pub(crate) fn migrate_v28(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version >= 27 {
+    if version >= 28 {
         return Ok(());
     }
     let transaction = conn.unchecked_transaction()?;
-    transaction.execute_batch(SCHEMA_V27)?;
-    transaction.pragma_update(None, "user_version", 27)?;
+    transaction.execute_batch(SCHEMA_V28)?;
+    transaction.pragma_update(None, "user_version", 28)?;
     transaction.commit()
 }

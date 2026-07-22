@@ -17,11 +17,21 @@ const TRACK_LIST_CLASS: &str = "reprise-track-list";
 /// sortable header. The `rgba(white)` literals are deliberate — these are
 /// fixed hairlines on the dark surface, not theme-tinted borders, so they
 /// don't route through a palette `@`-color.
+///
+/// Every column carries a sorter (so its header is clickable — see
+/// `track_list_columns`'s dummy-sorter comment), and GTK renders a
+/// `sort-indicator` arrow in each header for that. On a column that isn't the
+/// active sort, that arrow gets the `unsorted` style class; left visible it
+/// paints a faint arrow on *every* column at once, which reads as a table full
+/// of sorters. Hiding the `unsorted` indicator (keeping `ascending`/
+/// `descending`) leaves a single arrow on the one column actually sorted, while
+/// still reserving its width so headers don't shift when the sort changes.
 pub(in crate::ui) fn css() -> String {
     format!(
         ".{TRACK_LIST_CLASS} > header label {{ color: @reprise_secondary_fg_color; }}\n\
          .{TRACK_LIST_CLASS} > header {{ \
            border-bottom: 1px solid rgba(255, 255, 255, 0.07); }}\n\
+         .{TRACK_LIST_CLASS} sort-indicator.unsorted {{ opacity: 0; }}\n\
          .{TRACK_LIST_CLASS} > listview > row > cell {{ \
            border-left: none; border-right: none; \
            border-bottom: 1px solid rgba(255, 255, 255, 0.045); }}"
@@ -44,6 +54,12 @@ mod tests {
         assert!(css.contains(".reprise-track-list > header label"));
         assert!(css.contains("@reprise_secondary_fg_color"));
         assert!(!css.contains("reprise-track-cell"));
+        // The inactive-column sort arrows are hidden; the active one
+        // (ascending/descending) is untouched so it still shows.
+        assert!(css.contains("sort-indicator.unsorted"));
+        assert!(css.contains("opacity: 0"));
+        assert!(!css.contains(".ascending"));
+        assert!(!css.contains(".descending"));
     }
 
     #[test]
