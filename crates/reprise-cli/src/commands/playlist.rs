@@ -21,12 +21,10 @@ fn retry_write<T>(op: impl FnMut() -> Result<T, rusqlite::Error>) -> Result<T, C
     with_retry(op, rusqlite_is_busy).map_err(CliError::from)
 }
 
-/// Looks a playlist up by id, or returns [`CliError::NotFound`].
+/// Looks a playlist up by id, or returns [`CliError::NotFound`]. Uses the
+/// single-row `playlists::get` facade rather than scanning `list()`.
 fn require_playlist(conn: &Connection, id: i64) -> Result<PlaylistSummary, CliError> {
-    playlists::list(conn)?
-        .into_iter()
-        .find(|playlist| playlist.id == id)
-        .ok_or_else(|| CliError::NotFound(format!("playlist {id}")))
+    playlists::get(conn, id)?.ok_or_else(|| CliError::NotFound(format!("playlist {id}")))
 }
 
 /// Lists every manual playlist with its track count.
