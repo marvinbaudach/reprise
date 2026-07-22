@@ -125,13 +125,18 @@ pub fn rename(conn: &Connection, id: i64, name: &str) -> Result<usize, rusqlite:
     })
 }
 
-/// Lists all manual playlists, ordered by position (ascending).
-/// Includes track count for each (0 if empty).
+/// Lists all *user* manual playlists, ordered by position (ascending).
+/// Includes track count for each (0 if empty). System playlists carrying a
+/// `role` (schema v27 — e.g. the conversion drop playlist) are excluded: they
+/// are surfaced by their own role-specific view, never in the ordinary
+/// playlist list. Pre-v27 rows all have `role IS NULL`, so this filter is a
+/// no-op for every existing playlist.
 pub fn list(conn: &Connection) -> Result<Vec<PlaylistSummary>, rusqlite::Error> {
     let mut stmt = conn.prepare(
         "SELECT p.id, p.name, COALESCE(COUNT(pt.track_id), 0) as track_count \
          FROM playlists p \
          LEFT JOIN playlist_tracks pt ON p.id = pt.playlist_id \
+         WHERE p.role IS NULL \
          GROUP BY p.id \
          ORDER BY p.position ASC",
     )?;
@@ -261,6 +266,62 @@ pub(crate) fn create_with_tracks_in(
         append_tracks_rows(conn, playlist_id, track_ids)?;
     }
     Ok(playlist_id)
+}
+
+/// Finds the single playlist carrying `role`, or `None`. Roles are unique by
+/// convention (there is at most one conversion playlist); the lowest id wins
+/// if a database somehow holds two.
+pub fn find_role_playlist(conn: &Connection, role: &str) -> Result<Option<i64>, rusqlite::Error> {
+    conn.query_row(
+        "SELECT id FROM playlists WHERE role = ?1 ORDER BY id LIMIT 1",
+        params![role],
+        |row| row.get(0),
+    )
+    .optional()
+}
+
+/// Gets, or creates, the system playlist carrying `role` — idempotent, so a
+/// caller can ensure the conversion drop playlist exists on every startup or
+/// first drop without piling up duplicates. Returns its id. A freshly created
+/// role playlist logs one `create` change-log event; an existing one logs
+/// nothing (mirrors `create_smart`'s dedup posture).
+pub fn ensure_role_playlist(
+    conn: &Connection,
+    name: &str,
+    role: &str,
+) -> Result<i64, rusqlite::Error> {
+    crate::events::in_txn(conn, |conn| {
+        if let Some(id) = find_role_playlist(conn, role)? {
+            return Ok(id);
+        }
+        let trimmed = name.trim();
+        let insert_name = if trimmed.is_empty() { name } else { trimmed };
+        let max_position: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(position), -1) FROM playlists",
+            [],
+            |row| row.get(0),
+        )?;
+        conn.execute(
+            "INSERT INTO playlists (name, position, role) VALUES (?1, ?2, ?3)",
+            params![insert_name, max_position + 1, role],
+        )?;
+        let id = conn.last_insert_rowid();
+        crate::events::record(conn, "playlist", &id.to_string(), "create")?;
+        Ok(id)
+    })
+}
+
+/// The role of a playlist, or `None` when it is an ordinary user playlist (or
+/// does not exist). Lets a frontend tell the conversion drop playlist apart
+/// from user playlists without hardcoding an id.
+pub fn playlist_role(conn: &Connection, id: i64) -> Result<Option<String>, rusqlite::Error> {
+    conn.query_row(
+        "SELECT role FROM playlists WHERE id = ?1",
+        params![id],
+        |row| row.get::<_, Option<String>>(0),
+    )
+    .optional()
+    .map(Option::flatten)
 }
 
 /// Removes tracks at the specified positions and renumbers the remaining
