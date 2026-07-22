@@ -124,6 +124,18 @@ pub fn read_since(
     }
 }
 
+/// The highest `change_log` id, or `0` when the log is empty. A single indexed
+/// `MAX(id)` read — the cheap way for a frontend to seed its live-refresh cursor
+/// at startup, instead of paging the whole log through `read_since(0, ..)` (up
+/// to [`MAX_RETAINED_CHANGES`] rows) only to keep the last row's id.
+pub fn latest_id(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    Ok(conn
+        .query_row("SELECT MAX(id) FROM change_log", [], |row| {
+            row.get::<_, Option<i64>>(0)
+        })?
+        .unwrap_or(0))
+}
+
 pub fn prune(conn: &Connection) -> Result<usize, rusqlite::Error> {
     prune_at(conn, unix_timestamp())
 }
