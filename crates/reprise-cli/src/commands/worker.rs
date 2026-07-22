@@ -3,10 +3,14 @@
 //! Claims queued AI jobs through the package-D `ai_jobs` facade
 //! (lease + heartbeat + reclaim, all atomic in core), runs the
 //! `StemSeparationBackend` one job at a time, writes each render into the
-//! staging store, and marks the job `done` (staged, awaiting the save
-//! decision). Cancellation is honored between chunks; SIGINT/SIGTERM stop the
-//! loop cleanly, leaving any in-flight job for another worker to reclaim after
-//! its lease expires.
+//! staging store, and completes the job through
+//! [`ai_promotion::complete_render`]: the owner-guarded `mark_done` plus, when a
+//! library root is configured, honoring the job's persisted save-intent by
+//! promoting the fresh render into the library (Beschluss 15) — so a `--save`
+//! create needs no manual save step. With no library root nothing can be filed,
+//! so renders are simply left staged. Cancellation is honored between chunks;
+//! SIGINT/SIGTERM stop the loop cleanly, leaving any in-flight job for another
+//! worker to reclaim after its lease expires.
 //!
 //! This module is the ONLY thing that pulls `reprise-stems` into the CLI (the
 //! removable ML backend), so the default build stays core-only. The real
@@ -19,7 +23,7 @@
 use reprise_stems as _;
 
 use std::cell::Cell;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::sleep;
@@ -27,7 +31,9 @@ use std::time::{Duration, Instant};
 
 use clap::Args;
 use reprise_core::ai_jobs::{self, ClaimedJob};
+use reprise_core::ai_promotion::{self, CompletionOutcome, PromotionConfig};
 use reprise_core::ai_staging::StagingStore;
+use reprise_core::library::settings;
 use reprise_core::queries;
 use reprise_core::stem_separation::{
     FakeStemBackend, ProgressPermille, StemError, StemSeparationBackend, PROGRESS_COMPLETE,
@@ -36,6 +42,7 @@ use rusqlite::Connection;
 use serde_json::json;
 
 use crate::clock::now_unix;
+use crate::commands::instrumental::map_promotion_error;
 use crate::error::CliError;
 use crate::output::print_json;
 use crate::retry::{rusqlite_is_busy, with_retry};
@@ -133,10 +140,25 @@ impl Tally {
     }
 }
 
+/// The per-run invariants every claimed job shares: where renders are staged,
+/// where (if anywhere) promotions are filed, the backend, this worker's token,
+/// the CLI args, and the shutdown flag. Bundled so the claim/process functions
+/// keep a small signature.
+struct WorkerCtx<'a> {
+    store: &'a StagingStore,
+    config: Option<&'a PromotionConfig>,
+    backend: &'a dyn StemSeparationBackend,
+    worker: i64,
+    args: &'a WorkerArgs,
+    shutdown: &'a AtomicBool,
+}
+
 /// Runs the worker host. `conn` is this process's own connection (WAL lets many
-/// coexist); the backend is chosen once at startup.
+/// coexist); the backend is chosen once at startup. A configured library root
+/// lets the worker honor a job's persisted save-intent by promoting the render
+/// on completion; with no root, renders are left staged (nothing to file).
 pub fn run(
-    conn: &Connection,
+    conn: &mut Connection,
     staging_dir: Option<&PathBuf>,
     args: &WorkerArgs,
     json_output: bool,
@@ -148,56 +170,64 @@ pub fn run(
         .map_err(|error| CliError::Database(format!("cannot create staging dir: {error}")))?;
     let worker = worker_token();
     let shutdown = install_signal_flag()?;
+    let config = library_promotion_config(conn)?;
+
+    let ctx = WorkerCtx {
+        store: &store,
+        config: config.as_ref(),
+        backend: backend.as_ref(),
+        worker,
+        args,
+        shutdown: &shutdown,
+    };
 
     // Run the loop with its own tally, then ALWAYS report — even when a mid-run
     // infrastructure error aborts the loop, so a `--json` caller still gets a
     // summary of the work already done and automation never sees empty output.
     let mut tally = Tally::default();
-    let outcome = work_loop(
-        conn,
-        &store,
-        backend.as_ref(),
-        worker,
-        args,
-        &shutdown,
-        &mut tally,
-    );
+    let outcome = work_loop(conn, &ctx, &mut tally);
     report(tally, json_output, outcome.is_err());
     outcome
+}
+
+/// Builds the promotion target from the configured library root, or `None` when
+/// none is set — then the worker leaves every finished render staged, since
+/// there is nowhere to file a promotion regardless of a job's save-intent.
+fn library_promotion_config(conn: &Connection) -> Result<Option<PromotionConfig>, CliError> {
+    Ok(settings::get_library_root(conn)?.map(PromotionConfig::new))
 }
 
 /// The claim/process loop. Returns the first infrastructure error that aborts
 /// it (individual failed renders are recorded on their jobs, not returned).
 fn work_loop(
-    conn: &Connection,
-    store: &StagingStore,
-    backend: &dyn StemSeparationBackend,
-    worker: i64,
-    args: &WorkerArgs,
-    shutdown: &AtomicBool,
+    conn: &mut Connection,
+    ctx: &WorkerCtx<'_>,
     tally: &mut Tally,
 ) -> Result<(), CliError> {
     loop {
-        if shutdown.load(Ordering::Relaxed) {
+        if ctx.shutdown.load(Ordering::Relaxed) {
             return Ok(());
         }
-        let claimed = retrying(|| ai_jobs::claim_next(conn, worker, now_unix(), args.lease))?;
+        // The claim only needs `&Connection`; scope an immutable reborrow so
+        // `process_job` can take `conn` mutably for the promotion path.
+        let claimed = {
+            let conn: &Connection = conn;
+            retrying(|| ai_jobs::claim_next(conn, ctx.worker, now_unix(), ctx.args.lease))?
+        };
         match claimed {
             Some(job) => {
-                tally.record(process_job(
-                    conn, store, backend, &job, worker, args, shutdown,
-                )?);
-                if args.max_jobs != 0 && tally.total() >= args.max_jobs {
+                tally.record(process_job(conn, ctx, &job)?);
+                if ctx.args.max_jobs != 0 && tally.total() >= ctx.args.max_jobs {
                     return Ok(());
                 }
             }
             None => {
-                if args.once || shutdown.load(Ordering::Relaxed) {
+                if ctx.args.once || ctx.shutdown.load(Ordering::Relaxed) {
                     return Ok(());
                 }
                 // Interruptible so SIGINT is honored within a slice, not after a
                 // whole poll interval.
-                sleep_unless_shutdown(Duration::from_secs(args.poll_interval), shutdown);
+                sleep_unless_shutdown(Duration::from_secs(ctx.args.poll_interval), ctx.shutdown);
             }
         }
     }
@@ -288,18 +318,15 @@ impl RunState<'_> {
 }
 
 /// Renders one claimed job. Terminal DB transitions go through the owner-guarded
-/// `ai_jobs` facades; a genuine infrastructure failure is returned as a
-/// [`CliError`] (stopping the worker), while a failed render is recorded on the
-/// job and reported as [`JobOutcome::Failed`].
+/// `ai_jobs`/`ai_promotion` facades; a genuine infrastructure failure is
+/// returned as a [`CliError`] (stopping the worker), while a failed render is
+/// recorded on the job and reported as [`JobOutcome::Failed`].
 fn process_job(
-    conn: &Connection,
-    store: &StagingStore,
-    backend: &dyn StemSeparationBackend,
+    conn: &mut Connection,
+    ctx: &WorkerCtx<'_>,
     job: &ClaimedJob,
-    worker: i64,
-    args: &WorkerArgs,
-    shutdown: &AtomicBool,
 ) -> Result<JobOutcome, CliError> {
+    let worker = ctx.worker;
     let Some(source_path) = resolve_source(conn, job)? else {
         retrying(|| {
             ai_jobs::mark_failed(conn, job.id, worker, "source_track_missing", now_unix())
@@ -309,62 +336,50 @@ fn process_job(
     // Render into a claim-scoped temp file, never the shared canonical path:
     // the lease protects the DB row, but two workers can legitimately hold the
     // *same* `path_for_job(id)` (a straggler whose lease expired mid-render and
-    // the reclaimer that finished it). Publishing via a rename that happens only
-    // AFTER an owned `mark_done` makes the winning owner the sole writer of the
-    // canonical file, so a straggler can never clobber the committed render.
-    let final_path = store.path_for_job(job.id);
+    // the reclaimer that finished it). Publishing via a rename gated on ownership
+    // makes the winning owner the sole writer of the canonical file, so a
+    // straggler can never clobber the committed render.
+    let final_path = ctx.store.path_for_job(job.id);
     let temp_path = temp_render_path(&final_path, worker);
 
     // Optional simulated occupancy (test aid): hold the claim without
     // heartbeating, so a short lease can expire and be reclaimed elsewhere.
-    if let Some(reason) = simulate_occupancy(args, shutdown) {
+    if let Some(reason) = simulate_occupancy(ctx.args, ctx.shutdown) {
         return abandon_or_cancel(conn, job.id, worker, reason);
     }
 
-    let state = RunState {
-        conn,
-        job_id: job.id,
-        worker,
-        lease: args.lease,
-        shutdown,
-        stop: Cell::new(None),
-        last_write: Cell::new(None),
-        infra_error: Cell::new(None),
+    // Render inside a scope so the immutable `&Connection` the heartbeat/progress
+    // sink borrows is released before the completion below takes `conn` mutably
+    // (promotion needs `&mut Connection`).
+    let (result, infra_error, stop) = {
+        let state = RunState {
+            conn,
+            job_id: job.id,
+            worker,
+            lease: ctx.args.lease,
+            shutdown: ctx.shutdown,
+            stop: Cell::new(None),
+            last_write: Cell::new(None),
+            infra_error: Cell::new(None),
+        };
+        let result = ctx.backend.separate_instrumental(
+            &source_path,
+            &temp_path,
+            &mut |permille| state.on_progress(permille),
+            &|| state.should_stop(),
+        );
+        (result, state.infra_error.take(), state.stop.get())
     };
-    let result = backend.separate_instrumental(
-        &source_path,
-        &temp_path,
-        &mut |permille| state.on_progress(permille),
-        &|| state.should_stop(),
-    );
 
-    if let Some(error) = state.infra_error.take() {
+    if let Some(error) = infra_error {
         let _ = std::fs::remove_file(&temp_path);
         return Err(CliError::Database(error));
     }
     match result {
-        Ok(()) => {
-            // The owner-guarded facade returns `false` if we lost the lease
-            // mid-render (another worker reclaimed): then this is not our job to
-            // count as done — report it abandoned and drop our temp so we never
-            // overwrite the owner's published render.
-            let marked = retrying(|| ai_jobs::mark_done(conn, job.id, worker, now_unix()))?;
-            if marked {
-                std::fs::rename(&temp_path, &final_path).map_err(|error| {
-                    CliError::Database(format!(
-                        "cannot finalize render for job {}: {error}",
-                        job.id
-                    ))
-                })?;
-                Ok(JobOutcome::Done)
-            } else {
-                let _ = std::fs::remove_file(&temp_path);
-                Ok(JobOutcome::Abandoned)
-            }
-        }
+        Ok(()) => complete_owned_render(conn, ctx, job, &temp_path, &final_path, stop),
         Err(StemError::Cancelled) => {
             let _ = std::fs::remove_file(&temp_path);
-            let reason = state.stop.get().unwrap_or(StopReason::Shutdown);
+            let reason = stop.unwrap_or(StopReason::Shutdown);
             abandon_or_cancel(conn, job.id, worker, reason)
         }
         Err(other) => {
@@ -379,6 +394,74 @@ fn process_job(
             })
         }
     }
+}
+
+/// Publishes a finished render and completes the job. With a library root
+/// configured, [`ai_promotion::complete_render`] marks the job `done`
+/// (owner-guarded) and honors its persisted save-intent — promoting an
+/// intent-carrying render into the library so no manual save is needed; without
+/// a root the render is marked `done` and left staged. The publish is one atomic
+/// rename, and core's `mark_done` stays the authority on whether we won the job.
+///
+/// A straggler that lost its lease mid-render never overwrites the committed
+/// render: with a root, a detected stop drops the temp before publishing; with
+/// no root, the owner-guarded `mark_done` gates the publish exactly as before.
+fn complete_owned_render(
+    conn: &mut Connection,
+    ctx: &WorkerCtx<'_>,
+    job: &ClaimedJob,
+    temp_path: &Path,
+    final_path: &Path,
+    stop: Option<StopReason>,
+) -> Result<JobOutcome, CliError> {
+    let now = now_unix();
+    match ctx.config {
+        Some(config) => {
+            // We detected a lost lease or shutdown during the final heartbeat, so
+            // this job is no longer ours to publish — drop our temp so a straggler
+            // never overwrites the owner's render, and let the owner finish it.
+            if stop.is_some() {
+                let _ = std::fs::remove_file(temp_path);
+                return Ok(JobOutcome::Abandoned);
+            }
+            // Publish first: `complete_render` reads the render from its canonical
+            // staging path, and its owner-guarded `mark_done` decides ownership.
+            publish_render(temp_path, final_path, job.id)?;
+            let outcome =
+                ai_promotion::complete_render(conn, ctx.store, config, job.id, ctx.worker, now)
+                    .map_err(|error| map_promotion_error(error, job.id))?;
+            Ok(match outcome {
+                // The lease lapsed between our last heartbeat and now; the DB is
+                // the reclaiming worker's. Our published render is a harmless
+                // duplicate of theirs (or is overwritten) — report abandoned.
+                CompletionOutcome::NotOwned => JobOutcome::Abandoned,
+                CompletionOutcome::Staged
+                | CompletionOutcome::Promoted(_)
+                | CompletionOutcome::PromotionDeferred { .. } => JobOutcome::Done,
+            })
+        }
+        None => {
+            // No library root: nothing can be promoted. Mark done (owner-guarded),
+            // publishing only once we own the job — the same publish order that
+            // keeps a straggler from clobbering the committed render. An intent
+            // job then waits for a manual `instrumental save` or a rooted worker.
+            let marked = retrying(|| ai_jobs::mark_done(conn, job.id, ctx.worker, now))?;
+            if marked {
+                publish_render(temp_path, final_path, job.id)?;
+                Ok(JobOutcome::Done)
+            } else {
+                let _ = std::fs::remove_file(temp_path);
+                Ok(JobOutcome::Abandoned)
+            }
+        }
+    }
+}
+
+/// Atomically publishes a claim-scoped temp render to its canonical staging path.
+fn publish_render(temp_path: &Path, final_path: &Path, job_id: i64) -> Result<(), CliError> {
+    std::fs::rename(temp_path, final_path).map_err(|error| {
+        CliError::Database(format!("cannot finalize render for job {job_id}: {error}"))
+    })
 }
 
 /// The claim-scoped temp path a render is written to before an owned `mark_done`
