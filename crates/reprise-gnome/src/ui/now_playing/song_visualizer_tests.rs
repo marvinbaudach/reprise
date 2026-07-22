@@ -27,10 +27,7 @@ fn mode_labels_match_visual_mode_order() {
         .map(|&mode| strings::text(mode_label(mode)))
         .collect();
     let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
-    assert_eq!(
-        labels,
-        ["Grid", "Bars", "Flow", "Pulse", "Particles", "Neon"]
-    );
+    assert_eq!(labels, ["Grid", "Bars", "Flow", "Pulse"]);
 }
 
 #[test]

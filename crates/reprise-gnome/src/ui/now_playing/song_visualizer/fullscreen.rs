@@ -537,7 +537,7 @@ fn adjust_volume(volume: &gtk4::glib::WeakRef<gtk4::Scale>, delta: f64) {
     volume.set_value(new_value);
 }
 
-/// Maps digit keys 1–6 to a zero-based index into `VisualMode::ALL` /
+/// Maps digit keys 1–4 to a zero-based index into `VisualMode::ALL` /
 /// the mode-pill `FlowBox` (same order, see `mode_controls`).
 fn digit_mode_index(key: gtk4::gdk::Key) -> Option<usize> {
     use gtk4::gdk::Key;
@@ -546,8 +546,6 @@ fn digit_mode_index(key: gtk4::gdk::Key) -> Option<usize> {
         Key::_2 => Some(1),
         Key::_3 => Some(2),
         Key::_4 => Some(3),
-        Key::_5 => Some(4),
-        Key::_6 => Some(5),
         _ => None,
     }
 }
