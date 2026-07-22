@@ -4,7 +4,7 @@
 //! the XDG cover cache.
 
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use crate::{cover, musicbrainz};
 
@@ -12,6 +12,12 @@ pub(crate) const IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "b
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 pub(crate) const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
+
+/// How long a release-group negative cover marker blocks a network re-fetch.
+/// Unlike the album path (permanent negative cache), release-group covers can
+/// appear on the Cover Art Archive after the fact, so a stale 404 gets
+/// rechecked instead of being cached forever.
+const NEGATIVE_MARKER_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
 /// Minimum MusicBrainz search score to even consider a release.
 const MIN_MB_SCORE: i64 = 90;
@@ -83,6 +89,19 @@ fn release_group_key(mbid: &str) -> String {
     cover::hash_hex(format!("release-group\u{1}{}", mbid.trim()).as_bytes())
 }
 
+/// Does an existing release-group negative marker still block a network
+/// re-fetch? Only while it's fresh (younger than `NEGATIVE_MARKER_MAX_AGE`).
+/// A marker with no known mtime doesn't block; a marker whose mtime is in
+/// the future (clock skew) is treated as fresh.
+fn negative_marker_blocks(marker_modified: Option<SystemTime>, now: SystemTime) -> bool {
+    match marker_modified {
+        Some(modified) => now
+            .duration_since(modified)
+            .map_or(true, |age| age < NEGATIVE_MARKER_MAX_AGE),
+        None => false,
+    }
+}
+
 pub fn release_group_cover_path(mbid: &str) -> Option<PathBuf> {
     downloaded_cover_path(&release_group_key(mbid))
 }
@@ -99,10 +118,20 @@ where
     if let Some(path) = downloaded_cover_path(&key) {
         return ReleaseGroupCover::Image(path);
     }
+    let marker_modified = std::fs::metadata(negative_marker_path(&key))
+        .and_then(|metadata| metadata.modified())
+        .ok();
+    if negative_marker_blocks(marker_modified, SystemTime::now()) {
+        return ReleaseGroupCover::Fallback;
+    }
     match fetch(&caa_release_group_front_url(mbid)) {
         CaaFetchResult::Found(bytes, extension) => store_downloaded(&key, &bytes, extension)
             .map_or(ReleaseGroupCover::Fallback, ReleaseGroupCover::Image),
-        CaaFetchResult::NotFound | CaaFetchResult::TransientFailure => ReleaseGroupCover::Fallback,
+        CaaFetchResult::NotFound => {
+            write_negative(&key);
+            ReleaseGroupCover::Fallback
+        }
+        CaaFetchResult::TransientFailure => ReleaseGroupCover::Fallback,
     }
 }
 
@@ -366,12 +395,83 @@ mod tests {
 
     #[test]
     fn nr_2_missing_cover_uses_fallback_tile() {
+        let mbid = "99999999-9999-9999-9999-999999999999";
         let mut fetch = |_url: &str| CaaFetchResult::NotFound;
 
-        let result =
-            fetch_release_group_cover_with("99999999-9999-9999-9999-999999999999", &mut fetch);
+        let result = fetch_release_group_cover_with(mbid, &mut fetch);
 
         assert_eq!(result, ReleaseGroupCover::Fallback);
+        std::fs::remove_file(negative_marker_path(&release_group_key(mbid))).ok();
+    }
+
+    #[test]
+    fn negative_marker_blocks_when_fresh() {
+        let now = SystemTime::now();
+        assert!(negative_marker_blocks(Some(now), now));
+    }
+
+    #[test]
+    fn negative_marker_does_not_block_when_stale() {
+        let now = SystemTime::now();
+        let eight_days_ago = now - Duration::from_secs(8 * 24 * 60 * 60);
+        assert!(!negative_marker_blocks(Some(eight_days_ago), now));
+    }
+
+    #[test]
+    fn negative_marker_does_not_block_when_absent() {
+        assert!(!negative_marker_blocks(None, SystemTime::now()));
+    }
+
+    #[test]
+    fn negative_marker_blocks_when_mtime_is_in_the_future() {
+        // Clock skew: a marker that appears newer than "now" is treated as fresh.
+        let now = SystemTime::now();
+        let future = now + Duration::from_secs(60);
+        assert!(negative_marker_blocks(Some(future), now));
+    }
+
+    #[test]
+    fn release_group_fetch_short_circuits_on_fresh_negative_marker_without_network() {
+        let mbid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+        let key = release_group_key(mbid);
+        std::fs::create_dir_all(downloaded_dir()).unwrap();
+        let marker = negative_marker_path(&key);
+        std::fs::write(&marker, b"").unwrap();
+
+        let mut fetch = |_url: &str| -> CaaFetchResult { panic!("must not hit the network") };
+        let result = fetch_release_group_cover_with(mbid, &mut fetch);
+
+        assert_eq!(result, ReleaseGroupCover::Fallback);
+        std::fs::remove_file(&marker).ok();
+    }
+
+    #[test]
+    fn release_group_not_found_writes_a_negative_marker() {
+        let mbid = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+        let key = release_group_key(mbid);
+        let marker = negative_marker_path(&key);
+        std::fs::remove_file(&marker).ok();
+
+        let mut fetch = |_url: &str| CaaFetchResult::NotFound;
+        let result = fetch_release_group_cover_with(mbid, &mut fetch);
+
+        assert_eq!(result, ReleaseGroupCover::Fallback);
+        assert!(marker.exists());
+        std::fs::remove_file(&marker).ok();
+    }
+
+    #[test]
+    fn release_group_transient_failure_does_not_write_a_marker() {
+        let mbid = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+        let key = release_group_key(mbid);
+        let marker = negative_marker_path(&key);
+        std::fs::remove_file(&marker).ok();
+
+        let mut fetch = |_url: &str| CaaFetchResult::TransientFailure;
+        let result = fetch_release_group_cover_with(mbid, &mut fetch);
+
+        assert_eq!(result, ReleaseGroupCover::Fallback);
+        assert!(!marker.exists());
     }
 
     #[test]

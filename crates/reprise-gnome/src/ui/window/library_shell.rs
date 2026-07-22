@@ -240,20 +240,6 @@ pub(in crate::ui) fn route_to_place(
         reason,
         "history nav: routing to place"
     );
-    if place.is_new_releases() {
-        content_stack.set_visible_child_name("new-releases");
-        let content_stack = content_stack.downgrade();
-        gtk4::glib::idle_add_local_once(move || {
-            let granted = content_stack
-                .upgrade()
-                .and_then(|stack| stack.visible_child())
-                .is_some_and(|child| child.child_focus(gtk4::DirectionType::TabForward));
-            if !granted {
-                tracing::debug!("history nav: New Releases digest did not take focus");
-            }
-        });
-        return;
-    }
     let source = place.view_source();
     match &source {
         ViewSource::Album { .. } | ViewSource::Artist(_) => {

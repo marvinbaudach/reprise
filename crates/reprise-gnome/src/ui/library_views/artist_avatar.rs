@@ -1,5 +1,5 @@
 //! Pure helper for compact artist initials used outside the retired Artists
-//! grid (for example the New Releases digest).
+//! grid (for example New Releases release covers).
 
 /// Up to two uppercase initials from the first two words; `"?"` when blank.
 pub(in crate::ui) fn initials(name: &str) -> String {

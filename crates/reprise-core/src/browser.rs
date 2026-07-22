@@ -169,7 +169,6 @@ pub struct TrackPlace {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum BrowserPlace {
     Tracks(Box<TrackPlace>),
-    NewReleases,
     ImportErrors,
     MyStats,
     Device { serial: String },
@@ -193,7 +192,7 @@ impl BrowserPlace {
     pub fn collection(&self) -> Option<&TrackCollection> {
         match self {
             Self::Tracks(place) => Some(&place.collection),
-            Self::NewReleases | Self::ImportErrors | Self::MyStats | Self::Device { .. } => None,
+            Self::ImportErrors | Self::MyStats | Self::Device { .. } => None,
         }
     }
 
@@ -206,7 +205,7 @@ impl BrowserPlace {
     pub fn track_state(&self) -> Option<&TrackViewState> {
         match self {
             Self::Tracks(place) => Some(&place.state),
-            Self::NewReleases | Self::ImportErrors | Self::MyStats | Self::Device { .. } => None,
+            Self::ImportErrors | Self::MyStats | Self::Device { .. } => None,
         }
     }
 
@@ -214,7 +213,7 @@ impl BrowserPlace {
     pub fn track_state_mut(&mut self) -> Option<&mut TrackViewState> {
         match self {
             Self::Tracks(place) => Some(&mut place.state),
-            Self::NewReleases | Self::ImportErrors | Self::MyStats | Self::Device { .. } => None,
+            Self::ImportErrors | Self::MyStats | Self::Device { .. } => None,
         }
     }
 
@@ -235,7 +234,6 @@ impl BrowserPlace {
                 TrackCollection::Queue => ViewSource::Queue,
                 TrackCollection::Missing => ViewSource::Missing,
             },
-            Self::NewReleases => ViewSource::Library,
             Self::ImportErrors => ViewSource::ImportErrors,
             Self::MyStats => ViewSource::MyStats,
             Self::Device { serial } => ViewSource::Device {

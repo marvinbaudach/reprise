@@ -638,6 +638,7 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
     crate::db_mix_planner::migrate_v23(conn)?;
     crate::db_listen_history::migrate_v24(conn)?;
     crate::db_library_exclusions::migrate_v25(conn)?;
+    crate::db_new_releases_history::migrate_v26(conn)?;
     Ok(())
 }
 
