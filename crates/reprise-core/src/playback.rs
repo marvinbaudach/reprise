@@ -207,9 +207,10 @@ const DISPLAY_GAMMA: f32 = 2.0;
 /// reads silent, at or above [`AUDIBLE_KNEE`] reads at full strength, and ramps
 /// smoothly between. This is what holds the surface still through quiet
 /// passages and only moves it on genuinely audible energy — beats, breakdowns.
-/// `0.42` ≈ -46 dB, `0.72` ≈ -20 dB.
-const AUDIBLE_FLOOR: f32 = 0.42;
-const AUDIBLE_KNEE: f32 = 0.72;
+/// `0.30` ≈ -56 dB, `0.55` ≈ -36 dB — low enough to stay reactive to most of
+/// the track, high enough to hold still through genuine quiet.
+const AUDIBLE_FLOOR: f32 = 0.30;
+const AUDIBLE_KNEE: f32 = 0.55;
 
 fn ema_coeff(interval_ms: f32, tau_ms: f32) -> f32 {
     (1.0 - (-interval_ms / tau_ms).exp()).clamp(0.0, 1.0)
