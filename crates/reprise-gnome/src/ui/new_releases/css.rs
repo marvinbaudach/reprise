@@ -27,7 +27,7 @@ pub(in crate::ui) fn css() -> String {
         min-height: 16px;\
         font-size: 10px;\
         padding: 0 4px;\
-        box-shadow: 0 0 0 2px @window_bg_color;\
+        box-shadow: 0 0 0 2px @headerbar_bg_color;\
     }\
     /* Popover chrome: a light hairline edge instead of a heavy shadow. */\
     .new-release-popover > contents {\
@@ -40,7 +40,7 @@ pub(in crate::ui) fn css() -> String {
        and dimming instead. */\
     .new-release-header {\
         font-size: 11px;\
-        letter-spacing: 0.04em;\
+        letter-spacing: 0.08em;\
         opacity: 0.55;\
     }\
     /* 'NEW' / history-count pill: accent-tinted, not a solid fill. */\
@@ -53,30 +53,39 @@ pub(in crate::ui) fn css() -> String {
     }\
     .new-release-row {\
         border-radius: 8px;\
-        padding: 4px;\
+        padding: 9px 4px;\
     }\
     .new-release-row:hover {\
         background-color: alpha(currentColor, 0.04);\
     }\
-    /* Upcoming release chip: accent outline pill. */\
+    /* Release title: the row's one point of emphasis, medium weight rather \
+       than bold so it stays quiet next to the chip/actions stack. */\
+    .new-release-title {\
+        font-size: 14px;\
+        font-weight: 500;\
+    }\
+    /* Upcoming release chip: a quiet accent tint, one step calmer than a \
+       button — thin dark-accent border, light-accent text, near-invisible \
+       fill (#4a). */\
     .new-release-chip {\
-        border: 1px solid alpha(@accent_bg_color, 0.5);\
+        border: 1px solid alpha(@accent_bg_color, 0.45);\
         color: @accent_color;\
-        background-color: alpha(@accent_bg_color, 0.10);\
+        background-color: alpha(@accent_bg_color, 0.08);\
         border-radius: 999px;\
         padding: 2px 8px;\
-        font-size: 10.5px;\
+        font-size: 11px;\
     }\
-    /* Released / already-in-library chip: neutral, dimmer than the accent one. */\
+    /* Released / already-in-library chip: neutral dimmed outline, no fill. */\
     .new-release-chip-neutral {\
         border: 1px solid alpha(@window_fg_color, 0.20);\
         color: alpha(@window_fg_color, 0.55);\
-        background-color: alpha(@window_fg_color, 0.05);\
+        background-color: transparent;\
         border-radius: 999px;\
         padding: 2px 8px;\
-        font-size: 10.5px;\
+        font-size: 11px;\
     }\
     .new-release-meta {\
+        font-size: 12px;\
         opacity: 0.55;\
     }\
     /* Thin divider between the list and the history entry point, fading at \
@@ -84,13 +93,22 @@ pub(in crate::ui) fn css() -> String {
     .new-release-separator {\
         min-height: 1px;\
         background-image: linear-gradient(to right, transparent, \
-                           alpha(@window_fg_color, 0.12), transparent);\
+                           @borders 48px, @borders calc(100% - 48px), transparent);\
     }\
+    /* Navigation, not a primary action: normal weight, dimmed text, an even \
+       quieter count fragment (#7). */\
     .new-release-history-row {\
         border-radius: 8px;\
+        font-weight: normal;\
     }\
     .new-release-history-row:hover {\
         background-color: alpha(currentColor, 0.04);\
+    }\
+    .new-release-history-label {\
+        opacity: 0.70;\
+    }\
+    .new-release-history-count {\
+        opacity: 0.50;\
     }\
     /* Row action icon buttons ('Show in library', 'Hide', history restore): \
        flat at rest, a soft tint on hover, with enough hit area for a pointer. */\
@@ -137,11 +155,14 @@ mod tests {
             ".new-release-header",
             ".new-release-tag",
             ".new-release-row",
+            ".new-release-title",
             ".new-release-chip",
             ".new-release-chip-neutral",
             ".new-release-meta",
             ".new-release-separator",
             ".new-release-history-row",
+            ".new-release-history-label",
+            ".new-release-history-count",
             ".new-release-action",
             ".new-release-ghost",
             ".new-release-cover",

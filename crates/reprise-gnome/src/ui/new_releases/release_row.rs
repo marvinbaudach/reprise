@@ -7,7 +7,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
 use gtk4::prelude::*;
 
 use reprise_core::artist_news::StoredRelease;
@@ -51,6 +51,50 @@ pub(in crate::ui) fn parse_release_date(value: &str) -> Option<NaiveDate> {
         7 => NaiveDate::parse_from_str(&format!("{value}-01"), "%Y-%m-%d").ok(),
         4 => NaiveDate::parse_from_str(&format!("{value}-01-01"), "%Y-%m-%d").ok(),
         _ => None,
+    }
+}
+
+/// `first_release_date` precision lengths MusicBrainz sends, mirrored from
+/// `parse_release_date`'s own fallback chain (full date / year-month / year).
+const RELEASE_DATE_FULL_LEN: usize = 10;
+const RELEASE_DATE_MONTH_LEN: usize = 7;
+const RELEASE_DATE_YEAR_LEN: usize = 4;
+
+/// The meta line's character budget at the popover's ~336px width / 12px
+/// type: tuned so `"{artist} · {type} · {date}"` fits the ~260px meta
+/// column before the type is dropped in favor of `"{artist} · {date}"`
+/// (#1 — the meta line must never ellipsize).
+const META_LINE_CHAR_BUDGET: usize = 34;
+
+/// Lokalisiertes Kurzdatum for the meta line (#1). Precision follows the raw
+/// string's length, same as `parse_release_date`'s own fallback: a full date
+/// renders as "15. Aug", a year-month as "Aug", and a bare year as-is. The
+/// year is appended (two digits) only when it differs from `today`'s, so a
+/// release from the current year stays as short as possible.
+fn format_release_date(raw: &str, today: NaiveDate) -> String {
+    let Some(date) = parse_release_date(raw) else {
+        return raw.to_string();
+    };
+    let show_year = date.year() != today.year();
+    match raw.len() {
+        RELEASE_DATE_FULL_LEN if show_year => date.format("%-d. %b %y").to_string(),
+        RELEASE_DATE_FULL_LEN => date.format("%-d. %b").to_string(),
+        RELEASE_DATE_MONTH_LEN if show_year => date.format("%b %y").to_string(),
+        RELEASE_DATE_MONTH_LEN => date.format("%b").to_string(),
+        RELEASE_DATE_YEAR_LEN => date.format("%Y").to_string(),
+        _ => raw.to_string(),
+    }
+}
+
+/// "Artist · Type · Date", dropping the type when the full line would
+/// overrun the meta line's character budget (#1) — "Artist · Date" instead
+/// of ellipsizing, since the meta line must never truncate with "…".
+fn meta_line(artist: &str, release_type: &str, formatted_date: &str) -> String {
+    let full = format!("{artist} · {release_type} · {formatted_date}");
+    if full.chars().count() <= META_LINE_CHAR_BUDGET {
+        full
+    } else {
+        format!("{artist} · {formatted_date}")
     }
 }
 
@@ -236,15 +280,13 @@ pub(in crate::ui) fn build(
     let title = gtk4::Label::new(Some(&release.title));
     title.set_xalign(0.0);
     title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    title.add_css_class("new-release-title");
 
-    let meta_text = format!(
-        "{} · {}",
-        release.artist_name,
-        strings::news_release_meta(&release.release_type, &release.first_release_date)
-    );
+    let formatted_date = format_release_date(&release.first_release_date, today);
+    let meta_text = meta_line(&release.artist_name, &release.release_type, &formatted_date);
     let meta = gtk4::Label::new(Some(&meta_text));
     meta.set_xalign(0.0);
-    meta.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    meta.set_ellipsize(gtk4::pango::EllipsizeMode::None);
     meta.add_css_class("new-release-meta");
 
     let text = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
@@ -355,6 +397,54 @@ mod tests {
 
     fn today() -> NaiveDate {
         NaiveDate::from_ymd_opt(2026, 7, 21).unwrap()
+    }
+
+    #[test]
+    fn format_release_date_full_date_same_year_omits_the_year() {
+        assert_eq!(format_release_date("2026-08-15", today()), "15. Aug");
+    }
+
+    #[test]
+    fn format_release_date_full_date_other_year_appends_two_digit_year() {
+        assert_eq!(format_release_date("2025-08-15", today()), "15. Aug 25");
+    }
+
+    #[test]
+    fn format_release_date_year_month_same_year_is_month_only() {
+        assert_eq!(format_release_date("2026-08", today()), "Aug");
+    }
+
+    #[test]
+    fn format_release_date_year_month_other_year_appends_two_digit_year() {
+        assert_eq!(format_release_date("2024-08", today()), "Aug 24");
+    }
+
+    #[test]
+    fn format_release_date_year_only_renders_the_bare_year() {
+        assert_eq!(format_release_date("2026", today()), "2026");
+    }
+
+    #[test]
+    fn format_release_date_unparsable_falls_back_to_the_raw_value() {
+        assert_eq!(format_release_date("tba", today()), "tba");
+        assert_eq!(format_release_date("2026-13-40", today()), "2026-13-40");
+    }
+
+    #[test]
+    fn meta_line_keeps_the_type_when_short_enough() {
+        assert_eq!(
+            meta_line("Artist", "Album", "15. Aug"),
+            "Artist · Album · 15. Aug"
+        );
+    }
+
+    #[test]
+    fn meta_line_drops_the_type_for_a_long_artist_name() {
+        let artist = "A Very Long Artist Name That Overruns The Budget";
+        assert_eq!(
+            meta_line(artist, "Album", "15. Aug"),
+            format!("{artist} · 15. Aug")
+        );
     }
 
     #[test]
