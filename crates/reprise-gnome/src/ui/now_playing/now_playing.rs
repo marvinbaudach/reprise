@@ -3,8 +3,7 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
-use libadwaita::prelude::{AnimationExt, BreakpointBinExt};
-use reprise_core::cover::ThumbnailSize;
+use libadwaita::prelude::BreakpointBinExt;
 use reprise_core::playback::{PlaybackState, SpectrumFrame};
 use rusqlite::Connection;
 
@@ -25,6 +24,9 @@ use crate::ui::scan::audio_analysis_runtime::AudioAnalysisRuntime;
 use crate::ui::style::tokens;
 
 type OnVoid = Rc<dyn Fn()>;
+
+#[path = "now_playing_effects.rs"]
+mod now_playing_effects;
 
 fn should_toggle_visual_fullscreen(
     enabled: bool,
@@ -379,15 +381,24 @@ impl NowPlayingPanel {
     }
 
     pub(in crate::ui) fn set_loaded_track(self: &Rc<Self>, track: Option<NowPlaying>) {
-        let changed = {
+        let (changed, id_changed) = {
             let current = self.loaded_track.borrow();
             match (current.as_ref(), track.as_ref()) {
-                (Some(current), Some(next)) => current.id != next.id || current.path != next.path,
-                (None, None) => false,
-                _ => true,
+                (Some(current), Some(next)) => (
+                    current.id != next.id || current.path != next.path,
+                    current.id != next.id,
+                ),
+                (None, None) => (false, false),
+                _ => (true, true),
             }
         };
         *self.loaded_track.borrow_mut() = track;
+        if id_changed {
+            // A new track started: reset the visual engine's clock, water
+            // surface, and impact overlay so ripples/sparks from the
+            // previous track don't bleed into the new one.
+            self.widgets.visualizer.note_track_changed();
+        }
         if changed {
             self.render_audio_character(&audio_character_view::AudioCharacterPresentation::Empty);
         }
@@ -459,6 +470,47 @@ impl NowPlayingPanel {
         if self.widgets.session.selected.get() == PanelTab::UpNext {
             self.widgets.footer.set_label(&text);
         }
+        self.sync_visual_queue_position(model);
+    }
+
+    /// Feeds the fullscreen visualizer's "TRACK i / n" + "Up next: …" state
+    /// from the same composite queue model the Up Next tab renders: current
+    /// index is the loaded track's position within `model.ids`, and the
+    /// next-up title is a direct lookup on the panel's own `conn` (same
+    /// ad hoc single-row-read shape `queue_audio_character_refresh` already
+    /// uses off that connection).
+    fn sync_visual_queue_position(
+        &self,
+        model: &crate::ui::track_list::queue_sections::QueueViewModel,
+    ) {
+        let total = model.ids.len();
+        let current_id = self.loaded_track.borrow().as_ref().map(|track| track.id);
+        let index =
+            current_id.and_then(|id| model.ids.iter().position(|candidate| *candidate == id));
+        self.widgets
+            .visualizer
+            .set_queue_position(index.unwrap_or(0), total);
+        let next_up_title = index
+            .and_then(|index| model.ids.get(index + 1))
+            .and_then(|id| self.track_title(*id));
+        self.widgets.visualizer.set_next_up(
+            next_up_title.map(|title| {
+                strings::formatted(strings::SONG_VISUALS_NEXT_UP, &[("title", &title)])
+            }),
+        );
+    }
+
+    /// Best-effort track title lookup for the next-up preview. `None` on any
+    /// error (missing row, closed connection) rather than surfacing a DB
+    /// failure in the fullscreen chrome.
+    fn track_title(&self, track_id: i64) -> Option<String> {
+        let conn = self.conn.borrow();
+        conn.query_row(
+            "SELECT title FROM tracks WHERE id = ?1",
+            [track_id],
+            |row| row.get(0),
+        )
+        .ok()
     }
 
     pub(in crate::ui) fn set_on_up_next_jump(
@@ -488,6 +540,19 @@ impl NowPlayingPanel {
     pub(in crate::ui) fn set_on_up_next_refresh(&self, callback: impl Fn() + 'static) {
         *self.on_up_next_refresh.borrow_mut() = Some(Rc::new(callback));
         self.request_up_next_refresh_if_visible();
+    }
+
+    /// Wires the fullscreen visualizer's transport, seek, and volume actions
+    /// to the player. Replaces the narrower `set_visual_transport`.
+    pub(in crate::ui) fn set_visual_player_hooks(&self, hooks: super::PlayerHooks) {
+        self.widgets.visualizer.set_player_hooks(hooks);
+    }
+
+    /// Forwards a live playback-position tick to the fullscreen visualizer.
+    pub(in crate::ui) fn set_position(&self, position_ms: i64, duration_ms: i64) {
+        self.widgets
+            .visualizer
+            .set_position(position_ms, duration_ms);
     }
 
     pub(in crate::ui) fn is_up_next_visible(&self) -> bool {
@@ -660,105 +725,6 @@ impl NowPlayingPanel {
             self.widgets.visualizer.clear_profile();
         }
         self.widgets.audio_character.render(presentation);
-    }
-
-    fn render_track(&self) {
-        let track = self.loaded_track.borrow().clone();
-        let presentation = panel_presentation(track.as_ref(), self.playback_state.get());
-        self.widgets.title.set_label(&presentation.title);
-        let (artist, album) = track.as_ref().map_or(("", ""), |track| {
-            (track.artist.as_str(), track.album.as_str())
-        });
-        self.widgets.artist.set_label(artist);
-        self.widgets.album.set_label(album);
-        self.widgets.artist.set_visible(!artist.trim().is_empty());
-        self.widgets.album.set_visible(!album.trim().is_empty());
-        if presentation.idle {
-            self.widgets.stage.add_css_class("reprise-now-playing-idle");
-        } else {
-            self.widgets
-                .stage
-                .remove_css_class("reprise-now-playing-idle");
-        }
-        let generation = self.cover_generation.get().wrapping_add(1);
-        self.cover_generation.set(generation);
-        CoverLoader::set_placeholder(&self.widgets.cover);
-        if let Some(track) = track {
-            self.cover_loader.load_into(
-                &self.widgets.cover,
-                &track.path,
-                ThumbnailSize::Full,
-                generation,
-                &self.cover_generation,
-            );
-        }
-    }
-
-    fn animate_track_change(self: &Rc<Self>) {
-        self.cancel_track_animation();
-        let generation = self.track_animation_generation.get().wrapping_add(1);
-        self.track_animation_generation.set(generation);
-        let target = adw::CallbackAnimationTarget::new({
-            let content = self.widgets.track_content.clone();
-            move |value| content.set_opacity(value)
-        });
-        let fade_out = crate::ui::motion::timed(
-            &self.widgets.track_content,
-            self.widgets.track_content.opacity(),
-            0.0,
-            crate::ui::motion::STANDARD,
-            target,
-        );
-        fade_out.set_duration(crate::ui::motion::half(crate::ui::motion::STANDARD));
-        let panel = Rc::downgrade(self);
-        fade_out.connect_done(move |_| {
-            let Some(panel) = panel.upgrade() else {
-                return;
-            };
-            if panel.track_animation_generation.get() != generation {
-                return;
-            }
-            panel.render_track();
-            let target = adw::CallbackAnimationTarget::new({
-                let content = panel.widgets.track_content.clone();
-                move |value| content.set_opacity(value)
-            });
-            let fade_in = crate::ui::motion::timed(
-                &panel.widgets.track_content,
-                0.0,
-                1.0,
-                crate::ui::motion::STANDARD,
-                target,
-            );
-            fade_in.set_duration(crate::ui::motion::half(crate::ui::motion::STANDARD));
-            let panel_for_done = Rc::downgrade(&panel);
-            fade_in.connect_done(move |_| {
-                let Some(panel) = panel_for_done.upgrade() else {
-                    return;
-                };
-                if panel.track_animation_generation.get() == generation {
-                    panel.track_animation.borrow_mut().take();
-                    panel.widgets.track_content.set_opacity(1.0);
-                }
-            });
-            *panel.track_animation.borrow_mut() = Some(fade_in.clone());
-            fade_in.play();
-        });
-        *self.track_animation.borrow_mut() = Some(fade_out.clone());
-        fade_out.play();
-    }
-
-    fn cancel_track_animation(&self) {
-        self.track_animation_generation
-            .set(self.track_animation_generation.get().wrapping_add(1));
-        if let Some(animation) = self.track_animation.borrow_mut().take() {
-            animation.pause();
-        }
-    }
-
-    #[cfg(test)]
-    fn has_track_animation(&self) -> bool {
-        self.track_animation.borrow().is_some()
     }
 }
 

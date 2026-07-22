@@ -281,7 +281,7 @@ fn set_patch_fields(tag: &mut Tag, patch: &TagPatch) {
 /// This is the sole way to make a file with a damaged APE/ID3 container
 /// editable again — `TagType::remove_from_path` parses the tag before removing
 /// it and so can't clear the very container that fails to parse.
-fn strip_and_rewrite_tag(path: &Path, patch: &TagPatch) -> Result<(), TagEditError> {
+pub(super) fn strip_and_rewrite_tag(path: &Path, patch: &TagPatch) -> Result<(), TagEditError> {
     let data = std::fs::read(path).map_err(lofty::error::LoftyError::from)?;
     std::fs::write(path, strip_tag_containers(data)).map_err(lofty::error::LoftyError::from)?;
     // The file is now strictly readable and tag-free; route through the single
@@ -290,22 +290,17 @@ fn strip_and_rewrite_tag(path: &Path, patch: &TagPatch) -> Result<(), TagEditErr
     apply_tag_patch_to_tagged(&mut tagged, path, patch)
 }
 
-/// Removes an ID3v2 header (front), and a trailing ID3v1 and APEv2 container
-/// by their size headers, without parsing their (possibly damaged) contents.
-/// A container whose header is absent or self-inconsistent is left untouched,
-/// so an intact audio stream is never truncated.
-fn strip_tag_containers(mut data: Vec<u8>) -> Vec<u8> {
-    // ID3v2 at the front: "ID3" + version(2) + flags(1) + synchsafe size(4).
-    if data.len() >= 10 && &data[0..3] == b"ID3" {
-        let size = ((data[6] as usize & 0x7f) << 21)
-            | ((data[7] as usize & 0x7f) << 14)
-            | ((data[8] as usize & 0x7f) << 7)
-            | (data[9] as usize & 0x7f);
-        let total = 10 + size;
-        if total <= data.len() {
-            data.drain(0..total);
-        }
-    }
+/// Removes a trailing ID3v1 and APEv2 container by their size headers, without
+/// parsing their (possibly damaged) contents, leaving any front ID3v2 intact.
+///
+/// A damaged trailing APEv2 footer is the single most common reason lofty's
+/// reader rejects an otherwise-fine MP3 ("invalid item size"), while the real
+/// metadata lives in an intact ID3v2 up front. Stripping ONLY the tail
+/// therefore recovers the file's real tags — see [`strip_trailing_tag_
+/// containers`] and the scanner's repair path. A container whose header is
+/// absent or self-inconsistent is left untouched, so an intact audio stream is
+/// never truncated.
+fn strip_trailing_containers(mut data: Vec<u8>) -> Vec<u8> {
     // ID3v1 at the very end: 128 bytes starting with "TAG".
     if data.len() >= 128 && &data[data.len() - 128..data.len() - 125] == b"TAG" {
         data.truncate(data.len() - 128);
@@ -335,6 +330,38 @@ fn strip_tag_containers(mut data: Vec<u8>) -> Vec<u8> {
         }
     }
     data
+}
+
+/// Removes an ID3v2 header (front) too, on top of [`strip_trailing_containers`]
+/// — used only when even the front container is unusable and the file must be
+/// rewritten from scratch. A container whose header is absent or
+/// self-inconsistent is left untouched, so an intact audio stream is never
+/// truncated.
+fn strip_tag_containers(mut data: Vec<u8>) -> Vec<u8> {
+    // ID3v2 at the front: "ID3" + version(2) + flags(1) + synchsafe size(4).
+    if data.len() >= 10 && &data[0..3] == b"ID3" {
+        let size = ((data[6] as usize & 0x7f) << 21)
+            | ((data[7] as usize & 0x7f) << 14)
+            | ((data[8] as usize & 0x7f) << 7)
+            | (data[9] as usize & 0x7f);
+        let total = 10 + size;
+        if total <= data.len() {
+            data.drain(0..total);
+        }
+    }
+    strip_trailing_containers(data)
+}
+
+/// Strips only the trailing ID3v1/APEv2 containers of `path` in place, keeping
+/// any front ID3v2. This is the scanner's PREFERRED repair for a file lofty
+/// couldn't read: a damaged tail footer is usually the sole culprit, and
+/// removing just it lets the real ID3v2 metadata read again — unlike
+/// [`strip_and_rewrite_tag`], which discards every container.
+pub(super) fn strip_trailing_tag_containers(path: &Path) -> Result<(), TagEditError> {
+    let data = std::fs::read(path).map_err(lofty::error::LoftyError::from)?;
+    std::fs::write(path, strip_trailing_containers(data))
+        .map_err(lofty::error::LoftyError::from)?;
+    Ok(())
 }
 
 pub(super) fn save_loaded_tagged(tagged: &TaggedFile, path: &Path) -> Result<(), TagEditError> {
