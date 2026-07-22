@@ -11,5 +11,5 @@
       "existing_instrumental_track_id": null
     }
   ],
-  "queued_hint": "Queued 1 instrumental job(s). Jobs stay queued until a worker renders them: the Reprise app while it is open, or `reprise-cli jobs work`. Finished renders can then be saved to your library from the app or with `reprise-cli instrumental save`."
+  "queued_hint": "Queued 1 instrumental job(s). Jobs stay queued until a worker renders them: the Reprise app while it is open, or `reprise-cli jobs work`. Each finished render is then saved into your library automatically — no manual save step is needed."
 }

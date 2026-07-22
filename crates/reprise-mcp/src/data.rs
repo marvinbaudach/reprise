@@ -40,19 +40,13 @@ const SEARCH_SORT_DIR: &str = "asc";
 /// fingerprint and the `REPRISE_AI_MODEL` provenance tag (Beschluss 16, plan
 /// 2.4/5).
 ///
-/// **Known gap:** `reprise-core` exposes no canonical "current instrumental
-/// model id" for the non-worker enqueuers (the app context menu, the CLI and
-/// this server) to share, and MCP must not link `reprise-stems` to read it from
-/// the backend. So this is a placeholder that matches the value the core
-/// promotion tests treat as canonical (the spike's htdemucs choice). Until core
-/// provides a shared source (a `stem_separation` constant, or a settings key
-/// written at model-download time), MCP-enqueued jobs only dedup against jobs
-/// enqueued with this same id. Routed through one function so that becomes a
-/// one-line change.
-const INSTRUMENTAL_MODEL_ID: &str = "htdemucs@4";
-
+/// Sourced from `reprise_core::stem_separation::CURRENT_MODEL_ID`, the single
+/// canonical constant the app, the CLI and this server all share, so
+/// MCP-enqueued jobs dedup against jobs from every other surface (the earlier
+/// gap — each frontend hardcoding the id and risking drift — is now closed).
+/// Kept behind one function so a future model bump stays a one-line change.
 fn instrumental_model_id() -> &'static str {
-    INSTRUMENTAL_MODEL_ID
+    reprise_core::stem_separation::CURRENT_MODEL_ID
 }
 
 /// Wall-clock seconds since the Unix epoch — the injected `now` the job facades
@@ -269,11 +263,13 @@ fn reject_absent_track_ids(conn: &Connection, track_ids: &[i64]) -> Result<(), D
 /// (plan 3.2). Capability is re-read here (immediate revocation) combined with
 /// the startup snapshot (a fresh grant needs a restart). Tracks already covered
 /// by an open, staged, or saved job are referenced, not re-rendered (Beschluss
-/// 16). `save` (default true) routes the batch: `true` enqueues directly (the
-/// automation wants the saved result), `false` also ensures the Conversion
-/// staging playlist exists so the render awaits an explicit save/discard
-/// decision (Beschluss 15). Either way the enqueue lands atomically with its
-/// `change_log` events, so a running app shows the new jobs live.
+/// 16). `save` (default true) routes the batch: `true` persists the auto-promote
+/// intent so the completion path files each finished render into the library
+/// without a manual save (the automation wants the saved result); `false` routes
+/// through the Conversion staging playlist (ensuring it exists) so the render
+/// awaits an explicit save/discard decision (Beschluss 15). Either way the
+/// enqueue lands atomically with its `change_log` events, so a running app shows
+/// the new jobs live.
 pub fn create_instrumental(
     db_path: &Path,
     staging_path: &Path,
@@ -303,10 +299,15 @@ pub fn create_instrumental(
     let model_id = instrumental_model_id();
     let now = now_secs();
     let batch = if save {
-        ai_jobs::enqueue_instrumental_batch(&conn, &staging, track_ids, model_id, now)
+        // save=true carries the auto-promote intent: the completion path files
+        // the finished render into the library without a manual save (Beschluss
+        // 15, the automation default).
+        ai_jobs::enqueue_instrumental_batch(&conn, &staging, track_ids, model_id, true, now)
             .map_err(DataError::Db)?
     } else {
-        ai_conversion::add_batch_to_conversion(&conn, &staging, track_ids, model_id, now)
+        // save=false routes through the Conversion staging playlist with no
+        // auto-promote intent, so each render awaits an explicit save/discard.
+        ai_conversion::add_batch_to_conversion(&conn, &staging, track_ids, model_id, false, now)
             .map_err(DataError::Db)?
     };
 
@@ -367,8 +368,8 @@ fn queued_hint(created: usize, deduplicated: usize, save: bool) -> String {
     );
     if save {
         hint.push_str(
-            " Finished renders can then be saved to your library from the app or \
-             with `reprise-cli instrumental save`.",
+            " Each finished render is then saved into your library automatically — \
+             no manual save step is needed.",
         );
     } else {
         hint.push_str(" Each finished render waits in the Conversion view to save or discard.");

@@ -26,14 +26,11 @@ use crate::staging;
 /// The canonical model identifier `instrumental create` records as each job's
 /// `params_fingerprint` (dedup key) and, on promotion, as the `REPRISE_AI_MODEL`
 /// provenance tag. It must match what the real worker backend produces so the
-/// dedup fingerprint and the provenance attribution agree across every surface.
-///
-/// NOTE (D-facade gap, reported not fixed): `reprise-core` exposes no shared
-/// "current instrumental model id" constant, so the app, the CLI, and the MCP
-/// each hardcode this string and could drift. This value matches the htdemucs
-/// export the runtime spike recommends (`docs/research/stem-separation-runtime.md`)
-/// and the `"htdemucs@4"` used throughout core's promotion tests.
-pub const DEFAULT_INSTRUMENTAL_MODEL: &str = "htdemucs@4";
+/// dedup fingerprint and the provenance attribution agree across every surface,
+/// so it is sourced from the single canonical constant in `reprise-core` rather
+/// than a local literal — the app, the CLI, and the MCP now share one source of
+/// truth and can no longer drift apart (the earlier D-facade gap, now closed).
+pub const DEFAULT_INSTRUMENTAL_MODEL: &str = reprise_core::stem_separation::CURRENT_MODEL_ID;
 
 /// Whether the finished render should ultimately be promoted into the library
 /// (`Save`, the default) or left in staging for an explicit later decision
@@ -60,6 +57,14 @@ impl SaveMode {
             Self::Save => "save",
             Self::Stage => "stage",
         }
+    }
+
+    /// The persisted save-intent the enqueue records on every fresh job
+    /// (Beschluss 15): `Save` auto-promotes the finished render into the library
+    /// on completion, `Stage` leaves it staged for an explicit decision. The
+    /// worker's completion path honors this without any manual save step.
+    pub(crate) fn auto_promote(self) -> bool {
+        matches!(self, Self::Save)
     }
 }
 
@@ -104,7 +109,7 @@ pub fn create(
         None
     };
 
-    let outcome = enqueue(conn, &store, track_ids, now)?;
+    let outcome = enqueue(conn, &store, track_ids, mode.auto_promote(), now)?;
 
     if !waiting.wait {
         if json_output {
@@ -134,41 +139,37 @@ pub(crate) struct CreateOutcome {
 }
 
 /// Enqueues one job (single id) or a batch (several ids), pairing each outcome
-/// with its source track id in input order. Wrapped in the busy-retry policy —
-/// a long foreign write (e.g. a running app's rescan) must not fail the enqueue.
+/// with its source track id in input order. Every job goes through the batch
+/// facade so the caller's `auto_promote` save-intent is persisted on each fresh
+/// job (Beschluss 15); a single id is still reported with `batch_id: null`,
+/// since the batch grouping of one job is an internal detail. Wrapped in the
+/// busy-retry policy — a long foreign write (e.g. a running app's rescan) must
+/// not fail the enqueue.
 fn enqueue(
     conn: &Connection,
     store: &StagingStore,
     track_ids: &[i64],
+    auto_promote: bool,
     now: i64,
 ) -> Result<CreateOutcome, CliError> {
-    if let [single] = track_ids {
-        let outcome = with_retry(
-            || ai_jobs::enqueue_instrumental(conn, store, *single, DEFAULT_INSTRUMENTAL_MODEL, now),
-            rusqlite_is_busy,
-        )?;
-        Ok(CreateOutcome {
-            batch_id: None,
-            jobs: vec![(*single, outcome)],
-        })
-    } else {
-        let BatchOutcome { batch_id, jobs } = with_retry(
-            || {
-                ai_jobs::enqueue_instrumental_batch(
-                    conn,
-                    store,
-                    track_ids,
-                    DEFAULT_INSTRUMENTAL_MODEL,
-                    now,
-                )
-            },
-            rusqlite_is_busy,
-        )?;
-        Ok(CreateOutcome {
-            batch_id: Some(batch_id),
-            jobs: track_ids.iter().copied().zip(jobs).collect(),
-        })
-    }
+    let BatchOutcome { batch_id, jobs } = with_retry(
+        || {
+            ai_jobs::enqueue_instrumental_batch(
+                conn,
+                store,
+                track_ids,
+                DEFAULT_INSTRUMENTAL_MODEL,
+                auto_promote,
+                now,
+            )
+        },
+        rusqlite_is_busy,
+    )?;
+    Ok(CreateOutcome {
+        // A lone job is not surfaced as a batch — only a multi-select create is.
+        batch_id: (track_ids.len() > 1).then_some(batch_id),
+        jobs: track_ids.iter().copied().zip(jobs).collect(),
+    })
 }
 
 /// Fails with [`CliError::NotFound`] if any id has no track row, before any job
@@ -229,9 +230,9 @@ fn emit_text(outcome: &CreateOutcome, mode: SaveMode) {
             "note: {created} job(s) queued — run `reprise-cli jobs work` or start the Reprise app to process them"
         );
         match mode {
-            SaveMode::Save => {
-                println!("note: finished renders will be saved into the library");
-            }
+            SaveMode::Save => println!(
+                "note: each finished render is saved into your library automatically once a worker renders it"
+            ),
             SaveMode::Stage => println!(
                 "note: finished renders will wait in staging for `instrumental save`/`discard`"
             ),
