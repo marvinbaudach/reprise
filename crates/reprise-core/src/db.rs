@@ -13,7 +13,29 @@ pub enum DbError {
 
 pub const SUPPORTED_SCHEMA_VERSION: i64 = 26;
 
+/// Default SQLite `busy_timeout` (milliseconds) every [`open`] connection is
+/// configured with: wait up to this long for a write lock instead of failing
+/// immediately with `SQLITE_BUSY` — cheap insurance for a concurrent writer
+/// (e.g. a scan worker thread's own `Connection` writing while the UI thread
+/// reads). Exposed as a named constant so a caller that temporarily overrides
+/// the timeout (the change-log prune's non-blocking probe in [`open_migrated`])
+/// can restore exactly this value afterwards.
+pub const DEFAULT_BUSY_TIMEOUT_MS: i64 = 5000;
+
 pub fn open(path: Option<&Path>) -> Result<Connection, DbError> {
+    open_with_options(path, DEFAULT_BUSY_TIMEOUT_MS)
+}
+
+/// Opens a connection like [`open`] but with an explicit `busy_timeout` in
+/// milliseconds. [`DEFAULT_BUSY_TIMEOUT_MS`] is the value every existing call
+/// site keeps (that is exactly what [`open`] passes); a value of `0` makes lock
+/// contention fail immediately with `SQLITE_BUSY` rather than block — the
+/// non-blocking posture [`open_migrated`]'s prune uses so a fresh open never
+/// stalls behind a long foreign write transaction.
+pub fn open_with_options(
+    path: Option<&Path>,
+    busy_timeout_ms: i64,
+) -> Result<Connection, DbError> {
     let conn = match path {
         Some(p) => {
             if let Some(dir) = p.parent() {
@@ -25,10 +47,7 @@ pub fn open(path: Option<&Path>) -> Result<Connection, DbError> {
     };
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
-    // Cheap insurance for future concurrent writers (e.g. a scan worker
-    // thread's own `Connection` writing while the UI thread reads): wait up
-    // to 5s for a lock instead of failing immediately with `SQLITE_BUSY`.
-    conn.pragma_update(None, "busy_timeout", 5000)?;
+    conn.pragma_update(None, "busy_timeout", busy_timeout_ms)?;
     Ok(conn)
 }
 

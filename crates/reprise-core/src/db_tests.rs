@@ -128,7 +128,24 @@ fn open_sets_busy_timeout() {
     let busy_timeout_ms: i64 = conn
         .query_row("PRAGMA busy_timeout", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(busy_timeout_ms, 5000);
+    assert_eq!(busy_timeout_ms, DEFAULT_BUSY_TIMEOUT_MS);
+}
+
+#[test]
+fn open_with_options_applies_the_requested_busy_timeout() {
+    // The non-blocking posture the prune probe relies on: 0 means "fail
+    // immediately on lock contention", not the 5s default.
+    let conn = open_with_options(None, 0).unwrap();
+    let busy_timeout_ms: i64 = conn
+        .query_row("PRAGMA busy_timeout", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(busy_timeout_ms, 0);
+
+    let conn = open_with_options(None, 1234).unwrap();
+    let busy_timeout_ms: i64 = conn
+        .query_row("PRAGMA busy_timeout", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(busy_timeout_ms, 1234);
 }
 
 /// v2→v3 migration: playlists tables created, smart playlists seeded
