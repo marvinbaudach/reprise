@@ -53,7 +53,7 @@ Verhältnis zu bestehenden Dokumenten:
   Klangprofil/Mix-Planung gültig. Dieser Plan **zieht deren Stufe-2-Task M1
   vor** (Gründung von `crates/reprise-mcp`) und **erweitert die Tool-Domäne**
   (Beschlüsse 2, 10). Die Markierung des dortigen M1-Absatzes als
-  „superseded by multi-frontend-core“ und der Supersessions-Vermerk zu D17
+  „superseded by multi-frontend-core“ und der Ergänzungs-Vermerk zu D17
   im Spec-Dokument sind benannte Tasks in Paket I; M2–M5 und Stufe 1B
   bleiben unberührt. Klangprofil-Analyse (Stufe 1A) ist auf `dev` gemergt
   und wird weder angefasst noch vorausgesetzt.
@@ -555,7 +555,7 @@ Spec: ≤ 500 IDs, PRESENT-Semantik; Antwort ohne Pfade), Capability
 `playlist:create`, fail-closed off. **Beschlossene Erweiterung von Spec
 D17** (Beschluss 2), die Writes bisher auf „Playlist aus freigegebenem
 Mix-Draft“ beschränkte: direkte Erzeugung jetzt; der Draft-Weg koexistiert
-später unter derselben Capability. Der Supersessions-Vermerk im
+später unter derselben Capability. Der Ergänzungs-Vermerk im
 Spec-Dokument ist ein benannter Task in Paket I.
 **Überschreiben/Löschen via Agent bleibt ausgeschlossen** — rename/delete
 gibt es nur im CLI (menschlich bedient), nie im MCP.
@@ -716,7 +716,7 @@ die zwei Vermerke unten). Inhalt:
 - **Benannter Task (Beschlüsse 2, 10):** In
   `docs/plans/audio-character-mcp.md` ausschließlich den M1-Absatz als
   „superseded by multi-frontend-core“ markieren (M2–M5/1B unberührt);
-  im Spec-Dokument die dokumentierte Supersession von D17 vermerken
+  im Spec-Dokument die dokumentierte Ergänzung zu D17 vermerken
   (direktes `music_create_playlist` jetzt; Draft-Weg koexistiert später
   unter derselben Capability `playlist:create`).
 
@@ -938,7 +938,7 @@ den Fließtext eingearbeitet — diese Liste ist die kompakte Referenz.
 2. **MCP-Write:** direktes `music_create_playlist` jetzt; der Draft-Weg
    der Spec koexistiert später unter derselben Capability
    `playlist:create`; im audio-character-Spec-Dokument als dokumentierte
-   Supersession von D17 vermerkt (benannter Task in Paket I).
+   Ergänzung zu D17 vermerkt (benannter Task in Paket I).
    Überschreiben/Löschen via Agent bleibt ausgeschlossen.
 3. **CLI-Umfang v1 maximal** (bewusste User-Abweichung von der
    Plan-Empfehlung): Basis (playlist list/show/create, search, library
