@@ -32,10 +32,7 @@ pub fn open(path: Option<&Path>) -> Result<Connection, DbError> {
 /// contention fail immediately with `SQLITE_BUSY` rather than block — the
 /// non-blocking posture [`open_migrated`]'s prune uses so a fresh open never
 /// stalls behind a long foreign write transaction.
-pub fn open_with_options(
-    path: Option<&Path>,
-    busy_timeout_ms: i64,
-) -> Result<Connection, DbError> {
+pub fn open_with_options(path: Option<&Path>, busy_timeout_ms: i64) -> Result<Connection, DbError> {
     let conn = match path {
         Some(p) => {
             if let Some(dir) = p.parent() {

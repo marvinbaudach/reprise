@@ -166,7 +166,15 @@ fn open_migrated_succeeds_while_a_foreign_write_transaction_is_held() {
     // actually reaches the (now non-blocking) DELETE rather than the idle probe.
     let conn = crate::db::open_migrated(Some(database.path())).unwrap();
     for id in 0..=MAX_RETAINED_CHANGES {
-        record_at(&conn, "scan", &id.to_string(), "complete", WriterToken(1), 1).unwrap();
+        record_at(
+            &conn,
+            "scan",
+            &id.to_string(),
+            "complete",
+            WriterToken(1),
+            1,
+        )
+        .unwrap();
     }
     drop(conn);
 
