@@ -34,7 +34,7 @@ fn track_titles(structured: &Value) -> Vec<String> {
 }
 
 #[test]
-fn tool_discovery_lists_exactly_the_two_v1_tools() {
+fn tool_discovery_lists_the_expected_tools() {
     let dir = TempDir::new().unwrap();
     let path = five_track_db(&dir);
     let mut client = McpClient::start(&path);
@@ -51,8 +51,17 @@ fn tool_discovery_lists_exactly_the_two_v1_tools() {
         .collect();
     names.sort_unstable();
 
-    assert_eq!(names, ["music_create_playlist", "music_search_tracks"]);
-    // No rename/delete/instrumental surface exists in package B (Beschluss 2).
+    // `music_create_instrumental` is listed even though `ai:create` is off by
+    // default: tools stay listed-but-refused (Beschluss 7). No rename/delete
+    // surface exists in the MCP (Beschluss 2).
+    assert_eq!(
+        names,
+        [
+            "music_create_instrumental",
+            "music_create_playlist",
+            "music_search_tracks",
+        ]
+    );
     for tool in tools {
         let schema = tool.get("inputSchema");
         assert!(

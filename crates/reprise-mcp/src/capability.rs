@@ -15,11 +15,16 @@ use rusqlite::Connection;
 pub const CAP_LIBRARY_READ: &str = "agent.capability.library:read";
 /// Settings key granting manual-playlist creation.
 pub const CAP_PLAYLIST_CREATE: &str = "agent.capability.playlist:create";
+/// Settings key granting instrumental (AI) creation (Beschluss 7).
+pub const CAP_AI_CREATE: &str = "agent.capability.ai:create";
 
 // D18: reads are on by default; a user may still revoke them explicitly.
 const LIBRARY_READ_DEFAULT: bool = true;
 // Beschluss 7 / D18: writes are fail-closed (off) by default.
 const PLAYLIST_CREATE_DEFAULT: bool = false;
+// Beschluss 7: `ai:create` is fail-closed (off) by default, exactly like
+// `playlist:create`.
+const AI_CREATE_DEFAULT: bool = false;
 
 /// Whether the read surface is currently granted.
 pub fn library_read_enabled(conn: &Connection) -> Result<bool, rusqlite::Error> {
@@ -31,17 +36,41 @@ pub fn playlist_create_granted(conn: &Connection) -> Result<bool, rusqlite::Erro
     settings::get_bool(conn, CAP_PLAYLIST_CREATE, PLAYLIST_CREATE_DEFAULT)
 }
 
-/// Whether a write is permitted right now, given the startup snapshot.
+/// Whether `ai:create` is currently granted (the live setting value).
+pub fn ai_create_granted(conn: &Connection) -> Result<bool, rusqlite::Error> {
+    settings::get_bool(conn, CAP_AI_CREATE, AI_CREATE_DEFAULT)
+}
+
+/// Combines a startup snapshot with the live setting value (spec D18 / Beschluss
+/// 7): a write-class call is permitted only when the capability was granted at
+/// startup **and** is still granted right now.
 ///
-/// `effective = granted_at_startup && currently_granted`:
-/// - revoking mid-session flips `currently_granted` to `false`, so the next
-///   call is refused immediately;
-/// - granting mid-session leaves `granted_at_startup == false`, so the write
-///   stays refused until the server restarts (spec D18: a client never gains
-///   a new tool mid-session).
+/// - revoking mid-session flips the live value to `false`, so the next call is
+///   refused immediately;
+/// - granting mid-session leaves the startup snapshot `false`, so the call
+///   stays refused until the server restarts (a client never gains a new tool
+///   mid-session).
+fn effective(granted_at_startup: bool, currently_granted: bool) -> bool {
+    granted_at_startup && currently_granted
+}
+
+/// Whether a `playlist:create` write is permitted right now, given the startup
+/// snapshot.
 pub fn write_effective(
     conn: &Connection,
     granted_at_startup: bool,
 ) -> Result<bool, rusqlite::Error> {
-    Ok(granted_at_startup && playlist_create_granted(conn)?)
+    Ok(effective(
+        granted_at_startup,
+        playlist_create_granted(conn)?,
+    ))
+}
+
+/// Whether an `ai:create` write is permitted right now, given the startup
+/// snapshot.
+pub fn ai_create_effective(
+    conn: &Connection,
+    granted_at_startup: bool,
+) -> Result<bool, rusqlite::Error> {
+    Ok(effective(granted_at_startup, ai_create_granted(conn)?))
 }
