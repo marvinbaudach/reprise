@@ -19,8 +19,9 @@ use rusqlite::Connection;
 
 use crate::capability;
 use crate::dto::{
-    CreateInstrumentalResult, CreatePlaylistResult, InstrumentalJobDto, LibrarySummary,
-    PlaylistDto, PlaylistsResult, SearchTracksResult, TrackDto,
+    BatchProgressDto, CreateInstrumentalResult, CreatePlaylistResult, InstrumentalJobDto,
+    JobStatusDto, JobStatusResult, LibrarySummary, PlaylistDto, PlaylistsResult,
+    SearchTracksResult, TrackDto,
 };
 
 /// Default page size when a search omits `limit`.
@@ -373,6 +374,70 @@ fn queued_hint(created: usize, deduplicated: usize, save: bool) -> String {
         hint.push_str(" Each finished render waits in the Conversion view to save or discard.");
     }
     hint
+}
+
+/// Reports the status of instrumental jobs by explicit ids and/or a batch id
+/// (plan 3.2). Read-only job metadata, so it needs only `library:read`. The
+/// response is strictly the D19 allow-list — states, progress, result track ids
+/// and timestamps, never a source/render path or a staging location.
+pub fn job_status(
+    db_path: &Path,
+    job_ids: &[i64],
+    batch_id: Option<&str>,
+) -> Result<JobStatusResult, DataError> {
+    let conn = open(db_path)?;
+    require_read(&conn)?;
+
+    if job_ids.is_empty() && batch_id.is_none() {
+        return Err(DataError::InvalidInput(
+            "provide job_ids or a batch_id".to_string(),
+        ));
+    }
+    if job_ids.len() > MAX_TRACK_IDS {
+        return Err(DataError::InvalidInput(format!(
+            "too many job ids: {} (maximum {MAX_TRACK_IDS})",
+            job_ids.len()
+        )));
+    }
+
+    // A BTreeMap keyed on job id gives a stable id-ordered result and folds the
+    // batch and the explicit ids into one set without duplicates.
+    let mut by_id: std::collections::BTreeMap<i64, JobStatusDto> =
+        std::collections::BTreeMap::new();
+
+    let batch = match batch_id {
+        Some(batch_id) => {
+            for job in ai_jobs::list_jobs_in_batch(&conn, batch_id).map_err(DataError::Db)? {
+                by_id.insert(job.id, JobStatusDto::from(&job));
+            }
+            let progress = ai_jobs::batch_progress(&conn, batch_id).map_err(DataError::Db)?;
+            Some(BatchProgressDto {
+                batch_id: batch_id.to_string(),
+                total: progress.total,
+                done: progress.done,
+                failed: progress.failed,
+                cancelled: progress.cancelled,
+                running: progress.running,
+                queued: progress.queued,
+                permille: progress.permille,
+            })
+        }
+        None => None,
+    };
+
+    for &id in job_ids {
+        if by_id.contains_key(&id) {
+            continue;
+        }
+        if let Some(job) = ai_jobs::get_job(&conn, id).map_err(DataError::Db)? {
+            by_id.insert(id, JobStatusDto::from(&job));
+        }
+    }
+
+    Ok(JobStatusResult {
+        jobs: by_id.into_values().collect(),
+        batch,
+    })
 }
 
 // PRESENT semantics are enforced up front via `queries::filter_present`, so by
