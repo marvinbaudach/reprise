@@ -2,6 +2,8 @@
 //! facade, calls into `reprise-core`, and renders text or JSON.
 
 pub mod events;
+pub mod instrumental;
+pub mod jobs;
 pub mod library;
 pub mod playlist;
 pub mod scan;

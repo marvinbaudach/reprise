@@ -5,16 +5,21 @@
 //! live. See `cli` for the surface and `commands` for the implementations.
 
 mod cli;
+mod clock;
 mod commands;
 mod db_open;
 mod error;
 mod json_models;
 mod output;
 mod retry;
+mod staging;
 
 use clap::Parser;
 
-use cli::{Cli, Command, EventsAction, LibraryAction, PlaylistAction};
+use cli::{
+    Cli, Command, EventsAction, InstrumentalAction, JobsAction, LibraryAction, PlaylistAction,
+};
+use commands::instrumental::SaveMode;
 use error::{CliError, ExitCode};
 
 fn main() -> std::process::ExitCode {
@@ -43,6 +48,7 @@ fn main() -> std::process::ExitCode {
 
 fn run(cli: Cli) -> Result<(), CliError> {
     let json = cli.json;
+    let staging_dir = cli.staging_dir;
     let mut conn = db_open::open(cli.db.as_ref())?;
 
     match cli.command {
@@ -59,6 +65,41 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::Events { action } => match action {
             EventsAction::Tail { since } => commands::events::tail(&conn, since, json),
         },
+        Command::Instrumental { action } => {
+            run_instrumental(&mut conn, staging_dir.as_ref(), action, json)
+        }
+        Command::Jobs { action } => run_jobs(&mut conn, staging_dir.as_ref(), action, json),
+    }
+}
+
+fn run_instrumental(
+    conn: &mut rusqlite::Connection,
+    staging_dir: Option<&std::path::PathBuf>,
+    action: InstrumentalAction,
+    json: bool,
+) -> Result<(), CliError> {
+    match action {
+        InstrumentalAction::Create {
+            track_ids,
+            save,
+            stage,
+        } => {
+            let mode = SaveMode::from_flags(save, stage);
+            commands::instrumental::create(conn, staging_dir, &track_ids, mode, json)
+        }
+    }
+}
+
+fn run_jobs(
+    conn: &mut rusqlite::Connection,
+    staging_dir: Option<&std::path::PathBuf>,
+    action: JobsAction,
+    json: bool,
+) -> Result<(), CliError> {
+    match action {
+        JobsAction::Status { batch } => {
+            commands::jobs::status(conn, staging_dir, batch.as_deref(), json)
+        }
     }
 }
 

@@ -74,6 +74,57 @@ impl Harness {
             .expect("read change log")
             .len()
     }
+
+    /// Seeds one track whose `path` is a real, readable FLAC copied into the
+    /// temp dir — needed wherever a worker's fake backend copies the source
+    /// through, or promotion reads its tags. Returns the on-disk path.
+    pub fn seed_track_with_file(&self, id: i64) -> PathBuf {
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
+        let path = self.dir.path().join(format!("track{id}.flac"));
+        std::fs::copy(&source, &path).expect("copy fixture");
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO tracks (id, path, title, artist, album, album_artist, genre, duration_ms, added_at, file_mtime, file_size) \
+             VALUES (?1, ?2, ?3, ?4, 'Test Album', ?4, 'Rock', 180000, 1000, 1, 1)",
+            rusqlite::params![id, path.to_string_lossy(), format!("Song {id}"), format!("Artist {id}")],
+        )
+        .expect("seed track with file");
+        path
+    }
+
+    /// Total number of rows in `ai_jobs` (all states) — direct SQL, allowed in
+    /// tests, so the dedup assertions can pin "exactly one job row".
+    pub fn ai_job_row_count(&self) -> i64 {
+        self.conn()
+            .query_row("SELECT COUNT(*) FROM ai_jobs", [], |row| row.get(0))
+            .expect("count ai_jobs")
+    }
+
+    /// The stored status string of one job (direct SQL).
+    pub fn ai_job_status(&self, job_id: i64) -> Option<String> {
+        self.conn()
+            .query_row(
+                "SELECT status FROM ai_jobs WHERE id = ?1",
+                [job_id],
+                |row| row.get(0),
+            )
+            .ok()
+    }
+
+    /// Marks a job `done` with an empty (unsaved) result and drops a real FLAC
+    /// render into the staging dir — the state promotion/discard act on, mirrored
+    /// from core's own `ai_promotion` tests. Returns the render path.
+    pub fn stage_done_render(&self, staging_dir: &std::path::Path, job_id: i64) -> PathBuf {
+        let store = reprise_core::ai_staging::StagingStore::new(staging_dir);
+        store.ensure_dir().expect("ensure staging dir");
+        let render = store.path_for_job(job_id);
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
+        std::fs::copy(&source, &render).expect("copy render");
+        self.conn()
+            .execute("UPDATE ai_jobs SET status = 'done' WHERE id = ?1", [job_id])
+            .expect("mark job done");
+        render
+    }
 }
 
 pub fn stdout(output: &Output) -> String {
