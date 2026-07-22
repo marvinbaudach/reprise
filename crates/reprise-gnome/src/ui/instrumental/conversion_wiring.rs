@@ -220,11 +220,16 @@ fn wire_callbacks(view: &Rc<ConversionView>, staging: &StagingStore, deps: &Conv
                 Some(PlayTarget::LibraryTrack(track_id)) => player.play_track_id(track_id),
                 Some(PlayTarget::StagingPath(path)) => match path.to_str() {
                     Some(path) => {
-                        // `player.player` is pub(in crate::ui); play the render
-                        // file directly, outside the queue (a staging render is
-                        // not a library track).
-                        if let Err(error) = player.player.play(path) {
-                            tracing::warn!(%error, job_id, "instrumental: staging playback failed");
+                        // A staging render is not a library track, so it plays as
+                        // a first-class one-off PREVIEW through the controller
+                        // (INST-4b): the controller parks the gapless pre-feed,
+                        // suspends queue-advance-on-finish, credits no play, and
+                        // reflects a marked preview state — never the raw
+                        // `player.play` bypass that let a stale pre-feed hand off
+                        // into an unrelated queue track.
+                        let (title, artist) = preview_labels(&conn, job_id);
+                        if let Err(error) = player.play_preview(path, &title, &artist) {
+                            tracing::warn!(%error, job_id, "instrumental: staging preview failed");
                             toast(&overlay, &strings::text(strings::STATE_FAILED));
                         }
                     }
@@ -268,6 +273,27 @@ fn play_target(
     staging
         .exists(job_id)
         .then(|| PlayTarget::StagingPath(staging.path_for_job(job_id)))
+}
+
+/// Resolves the source track's `(title, artist)` for a preview's marked
+/// now-playing label (INST-4b), or empty strings when the job has no source or
+/// the row is gone — `play_preview` then falls back to a plain "Instrumental
+/// preview" title. Kept out of `play_target` so that pure resolver stays
+/// player-free and testable.
+fn preview_labels(conn: &Rc<RefCell<Connection>>, job_id: i64) -> (String, String) {
+    let conn = conn.borrow();
+    let Some(source_id) = ai_jobs::get_job(&conn, job_id)
+        .ok()
+        .flatten()
+        .and_then(|job| job.source_track_id)
+    else {
+        return (String::new(), String::new());
+    };
+    reprise_core::queries::query_track_summary(&conn, source_id)
+        .ok()
+        .flatten()
+        .map(|summary| (summary.title, summary.artist))
+        .unwrap_or_default()
 }
 
 /// Reads the library root, builds the promotion config, and promotes one job.
@@ -415,6 +441,15 @@ mod tests {
             play_target(&conn, &staging, job),
             Some(PlayTarget::StagingPath(staging.path_for_job(job))),
             "an undecided render plays its staging file by path"
+        );
+        // The staging render plays as a one-off PREVIEW, not a queue track: the
+        // wiring routes a `StagingPath` through `PlayerController::play_preview`,
+        // whose preview mode stops (never advances the queue) when it finishes —
+        // so a stale gapless pre-feed can't hand off into an unrelated track and
+        // no play is credited to the wrong one.
+        assert!(
+            !crate::ui::playback::preview::PlaybackMode::Preview.advances_queue_on_finish(),
+            "a finished instrumental preview must not advance the queue"
         );
 
         // Once promoted (a result track id is set), it plays the library track.

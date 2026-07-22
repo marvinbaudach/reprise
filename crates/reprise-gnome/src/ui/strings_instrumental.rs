@@ -13,6 +13,22 @@ pub const CONVERSION_SAVE: &str = N_!("Save");
 pub const CONVERSION_DISCARD: &str = N_!("Discard");
 pub const CONVERSION_PLAY: &str = N_!("Play");
 
+/// INST-4b: the fallback preview title when the source track can't be resolved.
+pub const INSTRUMENTAL_PREVIEW: &str = N_!("Instrumental preview");
+
+/// INST-4b: the marked now-playing title for an instrumental staging preview,
+/// e.g. "Song title (Instrumental preview)". A preview plays a not-yet-promoted
+/// render outside the queue; the marking keeps the bar / Now Playing / MPRIS from
+/// reading as ordinary library playback while it runs.
+pub fn instrumental_preview_title(source_title: &str) -> String {
+    let source_title = source_title.trim();
+    if source_title.is_empty() {
+        text(INSTRUMENTAL_PREVIEW)
+    } else {
+        format!("{source_title} ({})", text(INSTRUMENTAL_PREVIEW))
+    }
+}
+
 pub const STATE_QUEUED: &str = N_!("Queued");
 pub const STATE_PROCESSING: &str = N_!("Processing…");
 pub const STATE_READY_UNSAVED: &str = N_!("Ready — not saved");
