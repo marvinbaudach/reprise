@@ -538,7 +538,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   „Clear all ×" (Filter-Zeile), „Show all N tracks" (Ende-Zeile,
   Leerzustand) feuern dieselbe Action — zwei kontextgerechte Namen, ein
   Verhalten.
-- **FIL-7** [geplant] [gtk] — „Hide AI music" ist ein **opt-in**-Filter:
+- **FIL-7** [aktiv] [gtk] — „Hide AI music" ist ein **opt-in**-Filter:
   Default sichtbar (KI-Fassungen sind gewollte Bibliotheksbürger, INST-Sektion),
   auf Wunsch blendet er KI-manipulierte (und künftig -generierte) Titel aus. Er
   schlüsselt auf das **Provenance-Flag in der DB** (`track_provenance.ai`), nie
