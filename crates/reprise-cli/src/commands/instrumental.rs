@@ -55,7 +55,7 @@ impl SaveMode {
         }
     }
 
-    fn as_json(self) -> &'static str {
+    pub(crate) fn as_json(self) -> &'static str {
         match self {
             Self::Save => "save",
             Self::Stage => "stage",
@@ -63,34 +63,74 @@ impl SaveMode {
     }
 }
 
+/// `--wait`/`--wait-timeout` for `instrumental create`.
+#[derive(Debug, Clone, Copy)]
+pub struct WaitOptions {
+    wait: bool,
+    timeout_secs: u64,
+}
+
+impl WaitOptions {
+    pub fn new(wait: bool, timeout_secs: u64) -> Self {
+        Self { wait, timeout_secs }
+    }
+
+    pub(crate) fn timeout_secs(self) -> u64 {
+        self.timeout_secs
+    }
+}
+
 /// Registers instrumental jobs for `track_ids`. One id enqueues a single job;
-/// several form one batch. Existing work is referenced, not re-rendered.
+/// several form one batch. Existing work is referenced, not re-rendered. With
+/// `--wait`, blocks until each job reaches a terminal state (needs a running
+/// worker), promoting finished renders in save mode.
 pub fn create(
     conn: &mut Connection,
     staging_dir: Option<&PathBuf>,
     track_ids: &[i64],
     mode: SaveMode,
+    waiting: WaitOptions,
     json_output: bool,
 ) -> Result<(), CliError> {
     require_tracks_exist(conn, track_ids)?;
     let store = staging::resolve(staging_dir);
     let now = now_unix();
 
-    let outcome = enqueue(conn, &store, track_ids, now)?;
-    if json_output {
-        emit_json(&outcome, mode);
+    // In save + wait mode we will promote finished renders, so fail fast if
+    // there is nowhere to file them rather than after a long wait.
+    let config = if waiting.wait && mode == SaveMode::Save {
+        Some(promotion_config(conn)?)
     } else {
-        emit_text(&outcome, mode);
+        None
+    };
+
+    let outcome = enqueue(conn, &store, track_ids, now)?;
+
+    if !waiting.wait {
+        if json_output {
+            emit_json(&outcome, mode);
+        } else {
+            emit_text(&outcome, mode);
+        }
+        return Ok(());
     }
-    Ok(())
+    crate::commands::instrumental_wait::wait_for_jobs(
+        conn,
+        &store,
+        config.as_ref(),
+        &outcome,
+        mode,
+        waiting,
+        json_output,
+    )
 }
 
 /// A batch enqueue result in a shape uniform across the single- and multi-id
 /// paths: `batch_id` is `None` for a single job (the facade groups only
-/// multi-select batches).
-struct CreateOutcome {
-    batch_id: Option<String>,
-    jobs: Vec<(i64, EnqueueOutcome)>,
+/// multi-select batches). `pub(crate)` so `instrumental_wait` can read it.
+pub(crate) struct CreateOutcome {
+    pub(crate) batch_id: Option<String>,
+    pub(crate) jobs: Vec<(i64, EnqueueOutcome)>,
 }
 
 /// Enqueues one job (single id) or a batch (several ids), pairing each outcome
@@ -332,7 +372,7 @@ fn promotion_config(conn: &Connection) -> Result<PromotionConfig, CliError> {
 }
 
 /// Maps a core promotion failure onto the CLI's typed error/exit-code contract.
-fn map_promotion_error(error: PromotionError, job_id: i64) -> CliError {
+pub(crate) fn map_promotion_error(error: PromotionError, job_id: i64) -> CliError {
     match error {
         PromotionError::JobNotFound(id) => CliError::NotFound(format!("job {id}")),
         PromotionError::NotPromotable(id) => {

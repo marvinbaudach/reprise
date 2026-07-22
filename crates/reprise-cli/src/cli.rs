@@ -144,6 +144,15 @@ pub enum InstrumentalAction {
         /// `instrumental save`/`discard` decision instead of saving it.
         #[arg(long)]
         stage: bool,
+        /// Wait for each job to finish, reporting the outcome. Needs a running
+        /// worker (the app or `reprise-cli jobs work`); without `--wait` the
+        /// command returns as soon as the jobs are queued.
+        #[arg(long)]
+        wait: bool,
+        /// With `--wait`, give up after this many seconds if the jobs make no
+        /// progress (they stay queued for a worker to pick up later).
+        #[arg(long, value_name = "SECS", default_value_t = 3600)]
+        wait_timeout: u64,
     },
     /// Promote finished, staged renders into the library (the save decision).
     Save {

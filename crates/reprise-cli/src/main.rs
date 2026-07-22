@@ -83,9 +83,12 @@ fn run_instrumental(
             track_ids,
             save,
             stage,
+            wait,
+            wait_timeout,
         } => {
             let mode = SaveMode::from_flags(save, stage);
-            commands::instrumental::create(conn, staging_dir, &track_ids, mode, json)
+            let waiting = commands::instrumental::WaitOptions::new(wait, wait_timeout);
+            commands::instrumental::create(conn, staging_dir, &track_ids, mode, waiting, json)
         }
         InstrumentalAction::Save { job_ids } => {
             commands::instrumental::save(conn, staging_dir, &job_ids, json)

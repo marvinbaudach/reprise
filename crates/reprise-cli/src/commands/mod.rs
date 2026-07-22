@@ -3,6 +3,7 @@
 
 pub mod events;
 pub mod instrumental;
+pub mod instrumental_wait;
 pub mod jobs;
 pub mod library;
 pub mod playlist;
