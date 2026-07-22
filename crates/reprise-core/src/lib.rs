@@ -45,6 +45,7 @@ pub mod queue;
 pub mod related_artists;
 pub mod scrobbling;
 pub mod sound_profile;
+pub mod stem_separation;
 pub mod up_next;
 pub mod view_source;
 pub mod visuals;
