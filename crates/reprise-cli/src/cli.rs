@@ -145,6 +145,18 @@ pub enum InstrumentalAction {
         #[arg(long)]
         stage: bool,
     },
+    /// Promote finished, staged renders into the library (the save decision).
+    Save {
+        /// Job ids of finished, unsaved renders to promote.
+        #[arg(value_name = "JOB_ID", required = true)]
+        job_ids: Vec<i64>,
+    },
+    /// Discard finished, staged renders (deletes the staging file).
+    Discard {
+        /// Job ids of finished, unsaved renders to discard.
+        #[arg(value_name = "JOB_ID", required = true)]
+        job_ids: Vec<i64>,
+    },
 }
 
 #[derive(Subcommand, Debug)]

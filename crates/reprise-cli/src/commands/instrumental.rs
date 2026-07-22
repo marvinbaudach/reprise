@@ -9,7 +9,9 @@
 use std::path::PathBuf;
 
 use reprise_core::ai_jobs::{self, BatchOutcome, EnqueueOutcome};
+use reprise_core::ai_promotion::{self, PromotionConfig, PromotionError};
 use reprise_core::ai_staging::StagingStore;
+use reprise_core::library::settings;
 use reprise_core::queries;
 use rusqlite::Connection;
 use serde_json::{json, Value};
@@ -194,5 +196,161 @@ fn emit_text(outcome: &CreateOutcome, mode: SaveMode) {
                 "note: finished renders will wait in staging for `instrumental save`/`discard`"
             ),
         }
+    }
+}
+
+/// Promotes each finished, staged render into the library (the save decision).
+/// Requires a configured library root — promotion files live under
+/// `<root>/Reprise Instrumentals/…` behind the core path guard. Per-job outcomes
+/// are reported together and the process exits non-zero if any job fails, so a
+/// partial "save all" is never silently reported as success.
+pub fn save(
+    conn: &mut Connection,
+    staging_dir: Option<&PathBuf>,
+    job_ids: &[i64],
+    json_output: bool,
+) -> Result<(), CliError> {
+    let config = promotion_config(conn)?;
+    let store = staging::resolve(staging_dir);
+    let now = now_unix();
+    let mut rows = Vec::new();
+    let mut first_error: Option<CliError> = None;
+    for &job_id in job_ids {
+        match ai_promotion::promote(conn, &store, &config, job_id, now) {
+            Ok(outcome) => {
+                if json_output {
+                    rows.push(json!({
+                        "job_id": job_id,
+                        "status": "saved",
+                        "result_track_id": outcome.result_track_id,
+                        "path": outcome.path.to_string_lossy(),
+                    }));
+                } else {
+                    println!(
+                        "saved job {job_id} -> track {} ({})",
+                        outcome.result_track_id,
+                        outcome.path.display()
+                    );
+                }
+            }
+            Err(error) => {
+                let mapped = map_promotion_error(error, job_id);
+                record_failure(job_id, mapped, json_output, &mut rows, &mut first_error);
+            }
+        }
+    }
+    finish_per_job(&rows, json_output, first_error)
+}
+
+/// Discards each finished, staged render (deletes the staging file and drops the
+/// job out of the conversion view — Beschluss 15). A job that is not a finished,
+/// unsaved render is reported as an error for that id.
+pub fn discard(
+    conn: &mut Connection,
+    staging_dir: Option<&PathBuf>,
+    job_ids: &[i64],
+    json_output: bool,
+) -> Result<(), CliError> {
+    let store = staging::resolve(staging_dir);
+    let now = now_unix();
+    let mut rows = Vec::new();
+    let mut first_error: Option<CliError> = None;
+    for &job_id in job_ids {
+        let discarded = with_retry(
+            || ai_jobs::discard_staged(conn, &store, job_id, now),
+            rusqlite_is_busy,
+        );
+        match discarded {
+            Ok(true) => {
+                if json_output {
+                    rows.push(json!({ "job_id": job_id, "status": "discarded" }));
+                } else {
+                    println!("discarded job {job_id}");
+                }
+            }
+            Ok(false) => {
+                let error = CliError::NotFound(format!("staged render for job {job_id}"));
+                record_failure(job_id, error, json_output, &mut rows, &mut first_error);
+            }
+            Err(error) => {
+                let mapped = CliError::from(error);
+                record_failure(job_id, mapped, json_output, &mut rows, &mut first_error);
+            }
+        }
+    }
+    finish_per_job(&rows, json_output, first_error)
+}
+
+/// Records one failed per-job action: a JSON error row (json mode) or a stderr
+/// line (text mode), keeping the first error to drive the exit code.
+fn record_failure(
+    job_id: i64,
+    error: CliError,
+    json_output: bool,
+    rows: &mut Vec<Value>,
+    first_error: &mut Option<CliError>,
+) {
+    if json_output {
+        rows.push(json!({
+            "job_id": job_id,
+            "status": "error",
+            "error": error.to_string(),
+        }));
+    } else {
+        eprintln!("job {job_id}: {error}");
+    }
+    if first_error.is_none() {
+        *first_error = Some(error);
+    }
+}
+
+/// Emits the collected JSON rows (json mode) and turns the first per-job error,
+/// if any, into the command's exit code.
+fn finish_per_job(
+    rows: &[Value],
+    json_output: bool,
+    first_error: Option<CliError>,
+) -> Result<(), CliError> {
+    if json_output {
+        print_json(&Value::Array(rows.to_vec()));
+    }
+    match first_error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
+}
+
+/// Builds the promotion config from the configured library root, or a clear
+/// error when none is set (promotion has nowhere to file the result).
+fn promotion_config(conn: &Connection) -> Result<PromotionConfig, CliError> {
+    match settings::get_library_root(conn)? {
+        Some(root) => Ok(PromotionConfig::new(root)),
+        None => Err(CliError::InvalidInput(
+            "no library root configured — cannot save instrumentals".to_string(),
+        )),
+    }
+}
+
+/// Maps a core promotion failure onto the CLI's typed error/exit-code contract.
+fn map_promotion_error(error: PromotionError, job_id: i64) -> CliError {
+    match error {
+        PromotionError::JobNotFound(id) => CliError::NotFound(format!("job {id}")),
+        PromotionError::NotPromotable(id) => {
+            CliError::InvalidInput(format!("job {id} is not a finished, unsaved render"))
+        }
+        PromotionError::StagingMissing(id) => {
+            CliError::NotFound(format!("staged render for job {id}"))
+        }
+        PromotionError::PathGuard { attempted } => CliError::InvalidInput(format!(
+            "refusing to write outside the instrumentals folder: {attempted}"
+        )),
+        PromotionError::SourceMetadataUnavailable => {
+            CliError::Unavailable(format!("source metadata for job {job_id} is unavailable"))
+        }
+        PromotionError::Tag(message) | PromotionError::Registration(message) => {
+            CliError::Database(message)
+        }
+        PromotionError::Io(error) => CliError::Database(error.to_string()),
+        PromotionError::Db(error) => CliError::from(error),
     }
 }
