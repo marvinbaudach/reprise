@@ -38,6 +38,7 @@ impl MenuContext {
             | ViewSource::Missing
             | ViewSource::ImportErrors
             | ViewSource::MyStats
+            | ViewSource::Conversions
             | ViewSource::Device { .. } => Self::LibraryTracks,
         }
     }

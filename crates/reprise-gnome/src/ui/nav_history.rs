@@ -195,6 +195,7 @@ fn intent_for(place: &BrowserPlace) -> NavigationIntent {
         BrowserPlace::NewReleases => NavigationIntent::OpenNewReleases,
         BrowserPlace::ImportErrors => NavigationIntent::Sidebar(SidebarTarget::ImportErrors),
         BrowserPlace::MyStats => NavigationIntent::Sidebar(SidebarTarget::MyStats),
+        BrowserPlace::Conversions => NavigationIntent::Sidebar(SidebarTarget::Conversions),
         BrowserPlace::Device { serial } => {
             NavigationIntent::Sidebar(SidebarTarget::Device(serial.clone()))
         }

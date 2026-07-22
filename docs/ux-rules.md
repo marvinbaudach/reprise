@@ -1990,6 +1990,12 @@ Dateien.
   Default-Build/Flatpak gebündelt. In einem Build **ohne** das
   `stem-backend`-Feature zeigt die Ansicht einen ehrlichen, deaktivierten
   Platzhalter mit Hinweis statt eines funktionslosen Buttons. (Beschluss 11)
+- **INST-13** [aktiv] [gtk] — Erreichbarkeit: Die Konvertierungs-/Staging-Ansicht
+  ist über einen eigenen **Sidebar-Eintrag** (`ViewSource::Conversions`, Titel
+  „Instrumental conversions") erreichbar. Der Eintrag erscheint **nur, solange
+  der „Experimental features"-Schalter an ist** (INST-11) — dieselbe Gatung, die
+  auch die Inhaltsseite anlegt, sodass der Eintrag nie eine fehlende Seite
+  auswählt. (Plan 2.4/7, Paket F)
 
 ---
 

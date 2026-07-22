@@ -189,6 +189,10 @@ pub(in crate::ui) fn wire_source_routing(
         } else if matches!(source, ViewSource::MyStats) {
             stats_view.refresh(&conn);
             content_stack.set_visible_child_name("stats");
+        } else if matches!(source, ViewSource::Conversions) {
+            // INST-13: the conversion/staging view lives on its own page, added
+            // by conversion_wiring only while the experimental switch is on.
+            content_stack.set_visible_child_name("conversions");
         } else {
             content_stack.set_visible_child_name("library");
             track_list.set_source(source);
