@@ -1982,12 +1982,14 @@ Dateien.
   Filter (FIL-7) — ist **verborgen, solange der „Experimental features"-
   Schalter aus ist**. Der Schalter ist eine persistierte Einstellung; sein
   Zustand entscheidet allein über die Sichtbarkeit. (Beschluss 11)
-- **INST-12** [geplant] [gtk] — Modell-Bereitstellung: Hinter dem Schalter
-  liegt der First-Use-Download-Flow der ML-Runtime-Gewichte (mit Checksum +
-  Lizenznotiz, Muster Cover-Download-Modul). Gewichte werden **nicht** ins
-  Default-Build/Flatpak gebündelt. Bis das reale Backend verdrahtet ist,
-  zeigt die Ansicht einen ehrlichen Platzhalter-Zustand statt eines
-  funktionslosen Buttons. (Beschluss 11)
+- **INST-12** [aktiv] [gtk] — Modell-Bereitstellung: Hinter dem Schalter
+  liegt der First-Use-Download-Flow der ML-Runtime-Gewichte über die
+  Core-Fassade `ensure_weights` (Hintergrund-Thread mit Fortschritt,
+  SHA-256-Checksum, Lizenznotiz neben der Datei, klare Fehlerpfade inkl.
+  offline — Muster Cover-Download-Modul). Gewichte werden **nicht** ins
+  Default-Build/Flatpak gebündelt. In einem Build **ohne** das
+  `stem-backend`-Feature zeigt die Ansicht einen ehrlichen, deaktivierten
+  Platzhalter mit Hinweis statt eines funktionslosen Buttons. (Beschluss 11)
 
 ---
 
