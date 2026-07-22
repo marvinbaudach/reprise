@@ -148,7 +148,12 @@ fn wire_callbacks(view: &Rc<ConversionView>, staging: &StagingStore, deps: &Conv
         let conn = deps.conn.clone();
         let staging = staging.clone();
         let view_weak = Rc::downgrade(view);
+        let player = deps.player.as_ref().map(Rc::downgrade);
         view.set_on_discard(move |job_id| {
+            // FIX-6: if this render is the one currently previewing, stop the
+            // preview first — otherwise the discard deletes the file out from
+            // under the pipeline, leaving orphaned audio playing with no feedback.
+            stop_preview_if_previewing(player.as_ref(), &staging, job_id);
             let now = super::now_unix();
             let outcome = ai_jobs::discard_staged(&conn.borrow(), &staging, job_id, now);
             if let Err(error) = outcome {
@@ -191,14 +196,15 @@ fn wire_callbacks(view: &Rc<ConversionView>, staging: &StagingStore, deps: &Conv
         let staging = staging.clone();
         let view_weak = Rc::downgrade(view);
         let window = deps.window.clone();
+        let player = deps.player.as_ref().map(Rc::downgrade);
         view.set_on_clear(move || {
             let has_undecided = view_weak
                 .upgrade()
                 .is_some_and(|view| view.has_undecided_now());
             if has_undecided {
-                confirm_clear(&window, &conn, &staging, &view_weak);
+                confirm_clear(&window, &conn, &staging, &view_weak, player.as_ref());
             } else {
-                clear_undecided(&conn, &staging, &view_weak);
+                clear_undecided(&conn, &staging, &view_weak, player.as_ref());
             }
         });
     }
@@ -296,6 +302,31 @@ fn preview_labels(conn: &Rc<RefCell<Connection>>, job_id: i64) -> (String, Strin
         .unwrap_or_default()
 }
 
+/// Stops the live preview when `job_id`'s staging render is the one playing
+/// (FIX-6), so discarding it never orphans audio from a file about to be
+/// deleted. The correlation itself is the pure [`is_previewing_render`], so it
+/// stays testable without a player.
+fn stop_preview_if_previewing(
+    player: Option<&std::rc::Weak<PlayerController>>,
+    staging: &StagingStore,
+    job_id: i64,
+) {
+    let Some(player) = player.and_then(std::rc::Weak::upgrade) else {
+        return;
+    };
+    let render_path = staging.path_for_job(job_id);
+    if is_previewing_render(player.previewing_path().as_deref(), render_path.to_str()) {
+        player.stop_preview();
+    }
+}
+
+/// Whether the live preview (`previewing`) is exactly `render` — the pure FIX-6
+/// decision: a discard stops the preview only when it discards the very render
+/// being previewed, never an unrelated one (and never when nothing is playing).
+fn is_previewing_render(previewing: Option<&str>, render: Option<&str>) -> bool {
+    matches!((previewing, render), (Some(p), Some(r)) if p == r)
+}
+
 /// Reads the library root, builds the promotion config, and promotes one job.
 /// Returns a user-facing message on failure.
 fn promote_one(
@@ -343,7 +374,14 @@ fn clear_undecided(
     conn: &Rc<RefCell<Connection>>,
     staging: &StagingStore,
     view_weak: &std::rc::Weak<ConversionView>,
+    player: Option<&std::rc::Weak<PlayerController>>,
 ) {
+    // FIX-6: clearing discards every undecided render, which necessarily
+    // includes whichever one is being previewed — stop that preview first so no
+    // audio keeps playing from a file about to be deleted.
+    if let Some(player) = player.and_then(std::rc::Weak::upgrade) {
+        player.stop_preview();
+    }
     let now = super::now_unix();
     for job_id in undecided_job_ids(conn) {
         let _ = ai_jobs::discard_staged(&conn.borrow(), staging, job_id, now);
@@ -358,6 +396,7 @@ fn confirm_clear(
     conn: &Rc<RefCell<Connection>>,
     staging: &StagingStore,
     view_weak: &std::rc::Weak<ConversionView>,
+    player: Option<&std::rc::Weak<PlayerController>>,
 ) {
     let alert = adw::AlertDialog::builder()
         .heading(strings::text(strings::CONVERSION_CLEAR))
@@ -378,9 +417,10 @@ fn confirm_clear(
     let conn = conn.clone();
     let staging = staging.clone();
     let view_weak = view_weak.clone();
+    let player = player.cloned();
     alert.connect_response(None, move |_, response| {
         if response == CLEAR_RESPONSE_DISCARD {
-            clear_undecided(&conn, &staging, &view_weak);
+            clear_undecided(&conn, &staging, &view_weak, player.as_ref());
         }
     });
     alert.present(Some(window));
@@ -394,7 +434,7 @@ fn toast(overlay: &glib::WeakRef<adw::ToastOverlay>, message: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{play_target, PlayTarget};
+    use super::{is_previewing_render, play_target, PlayTarget};
     use reprise_core::ai_jobs;
     use reprise_core::ai_staging::StagingStore;
     use rusqlite::Connection;
@@ -487,6 +527,29 @@ mod tests {
             play_target(&conn, &staging, queued),
             None,
             "a queued row does not play"
+        );
+    }
+
+    // FIX-6: discarding a render stops the live preview ONLY when it is the very
+    // render being previewed — never an unrelated preview, and never when
+    // nothing is playing. (The pure correlation the discard/clear wiring uses.)
+    #[test]
+    fn discard_stops_only_the_render_currently_previewing() {
+        assert!(
+            is_previewing_render(Some("/staging/7.flac"), Some("/staging/7.flac")),
+            "discarding the render that is previewing stops the preview"
+        );
+        assert!(
+            !is_previewing_render(Some("/staging/7.flac"), Some("/staging/9.flac")),
+            "discarding a different render leaves an unrelated preview playing"
+        );
+        assert!(
+            !is_previewing_render(None, Some("/staging/7.flac")),
+            "nothing is previewing, so a discard stops nothing"
+        );
+        assert!(
+            !is_previewing_render(Some("/staging/7.flac"), None),
+            "a non-UTF-8 render path can't correlate to the preview"
         );
     }
 }
