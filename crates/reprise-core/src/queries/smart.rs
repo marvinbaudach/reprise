@@ -49,7 +49,8 @@ fn build_smart_window_query(
     let mut inner_sql = format!(
         "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
          duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
-         file_mtime, missing_since, missing_reason, untagged, file_size, device, inode \
+         file_mtime, missing_since, missing_reason, untagged, file_size, device, inode, \
+         EXISTS(SELECT 1 FROM track_provenance tp WHERE tp.track_id = tracks.id AND tp.ai = 1) AS is_ai \
          FROM tracks WHERE {PRESENT} AND ({rules_frag})"
     );
     if has_filter {

@@ -282,6 +282,7 @@ mod tests {
             device: None,
             inode: None,
             playlist_position: None,
+            is_ai: false,
         }
     }
 

@@ -24,6 +24,11 @@ pub fn conversion_aggregate(done: usize, total: usize, percent: u16) -> String {
     format!("{done} of {total} · {percent}%")
 }
 
+// AI badge on a promoted instrumental track row (INST-10). A compact "AI" pill
+// with the full provenance phrase as its tooltip.
+pub const AI_BADGE_LABEL: &str = N_!("AI");
+pub const AI_BADGE_TOOLTIP: &str = N_!("Instrumental · AI-manipulated");
+
 // "Hide AI music" library filter (FIL-7).
 pub const FILTER_HIDE_AI: &str = N_!("Hide AI music");
 

@@ -1972,7 +1972,7 @@ Dateien.
 - **INST-9** [aktiv] [gtk] — Drag eines **bereits konvertierten** Tracks in
   die Konvertierungs-Playlist erzeugt einen **Hinweis mit Verweis auf das
   Bestehende**, keinen Doppel-Job (Dedup-Skip der Core-Fassade). (Beschluss 16)
-- **INST-10** [geplant] [gtk] — Promotete Fassungen tragen ein sichtbares
+- **INST-10** [aktiv] [gtk] — Promotete Fassungen tragen ein sichtbares
   **KI-Badge** („Instrumental · KI-manipuliert") mit **Quellverweis**, sofern
   verknüpft. Die Provenienz ist DB-primär (`track_provenance`), die Tag-
   Referenz sekundär; das Badge schlüsselt auf das DB-Flag, nie auf den
