@@ -12,6 +12,7 @@
 //! implementations live in per-OS platform crates (Linux: GStreamer and
 //! MPRIS in `reprise-platform-linux`).
 
+pub mod ai_staging;
 pub mod artist_news;
 pub mod artist_portrait;
 pub mod audio_analysis;
