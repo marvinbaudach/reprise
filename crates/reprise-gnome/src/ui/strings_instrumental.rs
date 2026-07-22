@@ -21,3 +21,17 @@ pub const STATE_FAILED: &str = N_!("Failed");
 pub fn conversion_aggregate(done: usize, total: usize, percent: u16) -> String {
     format!("{done} of {total} · {percent}%")
 }
+
+// Experimental preferences page (INST-11/INST-12).
+pub const EXPERIMENTAL_PAGE_TITLE: &str = N_!("Experimental");
+pub const EXPERIMENTAL_GROUP_TITLE: &str = N_!("Experimental features");
+pub const EXPERIMENTAL_GROUP_DESCRIPTION: &str =
+    N_!("Unfinished features with rough edges, off by default.");
+pub const EXPERIMENTAL_TOGGLE_TITLE: &str = N_!("Enable experimental features");
+pub const EXPERIMENTAL_TOGGLE_SUBTITLE: &str =
+    N_!("Shows AI instrumental versions across the app: the context-menu trigger, the conversion view, badges, and the \"Hide AI music\" filter.");
+pub const MODEL_GROUP_TITLE: &str = N_!("Instrumental model");
+pub const MODEL_DOWNLOAD_TITLE: &str = N_!("Vocal-removal model");
+pub const MODEL_DOWNLOAD_SUBTITLE: &str =
+    N_!("Downloaded on first use, with a checksum and licence note. Not yet available.");
+pub const MODEL_DOWNLOAD_BUTTON: &str = N_!("Download");
