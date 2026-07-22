@@ -45,6 +45,30 @@ impl Harness {
             .expect("run reprise-cli")
     }
 
+    /// Spawns the CLI (with `--db` prepended) without waiting — for launching a
+    /// long-running worker the test kills or races against.
+    pub fn spawn(&self, args: &[&str]) -> std::process::Child {
+        Command::new(env!("CARGO_BIN_EXE_reprise-cli"))
+            .arg("--db")
+            .arg(&self.db)
+            .args(args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn reprise-cli")
+    }
+
+    /// Every `ai_job` lifecycle event as `(job_id, op)` pairs, via the core
+    /// change-log facade — the ground truth for "was this job claimed once".
+    pub fn ai_job_events(&self) -> Vec<(String, String)> {
+        reprise_core::events::read_since(&self.conn(), 0, None)
+            .expect("read change log")
+            .into_iter()
+            .filter(|change| change.entity == "ai_job")
+            .map(|change| (change.entity_id, change.operation))
+            .collect()
+    }
+
     /// Inserts `n` predictable tracks (`Song i` by `Artist i`) via direct SQL —
     /// deliberately *not* through an event-logging facade, so the change log
     /// stays empty until a command mutates it.
@@ -73,6 +97,57 @@ impl Harness {
         reprise_core::events::read_since(&self.conn(), 0, None)
             .expect("read change log")
             .len()
+    }
+
+    /// Seeds one track whose `path` is a real, readable FLAC copied into the
+    /// temp dir — needed wherever a worker's fake backend copies the source
+    /// through, or promotion reads its tags. Returns the on-disk path.
+    pub fn seed_track_with_file(&self, id: i64) -> PathBuf {
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
+        let path = self.dir.path().join(format!("track{id}.flac"));
+        std::fs::copy(&source, &path).expect("copy fixture");
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO tracks (id, path, title, artist, album, album_artist, genre, duration_ms, added_at, file_mtime, file_size) \
+             VALUES (?1, ?2, ?3, ?4, 'Test Album', ?4, 'Rock', 180000, 1000, 1, 1)",
+            rusqlite::params![id, path.to_string_lossy(), format!("Song {id}"), format!("Artist {id}")],
+        )
+        .expect("seed track with file");
+        path
+    }
+
+    /// Total number of rows in `ai_jobs` (all states) — direct SQL, allowed in
+    /// tests, so the dedup assertions can pin "exactly one job row".
+    pub fn ai_job_row_count(&self) -> i64 {
+        self.conn()
+            .query_row("SELECT COUNT(*) FROM ai_jobs", [], |row| row.get(0))
+            .expect("count ai_jobs")
+    }
+
+    /// The stored status string of one job (direct SQL).
+    pub fn ai_job_status(&self, job_id: i64) -> Option<String> {
+        self.conn()
+            .query_row(
+                "SELECT status FROM ai_jobs WHERE id = ?1",
+                [job_id],
+                |row| row.get(0),
+            )
+            .ok()
+    }
+
+    /// Marks a job `done` with an empty (unsaved) result and drops a real FLAC
+    /// render into the staging dir — the state promotion/discard act on, mirrored
+    /// from core's own `ai_promotion` tests. Returns the render path.
+    pub fn stage_done_render(&self, staging_dir: &std::path::Path, job_id: i64) -> PathBuf {
+        let store = reprise_core::ai_staging::StagingStore::new(staging_dir);
+        store.ensure_dir().expect("ensure staging dir");
+        let render = store.path_for_job(job_id);
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
+        std::fs::copy(&source, &render).expect("copy render");
+        self.conn()
+            .execute("UPDATE ai_jobs SET status = 'done' WHERE id = ?1", [job_id])
+            .expect("mark job done");
+        render
     }
 }
 
