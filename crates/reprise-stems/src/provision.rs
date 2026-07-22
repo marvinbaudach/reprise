@@ -214,27 +214,69 @@ pub fn onnxruntime_location() -> LibraryLocation {
     }
 }
 
+/// The memory cap for a model download — generous so a mispointed URL cannot
+/// exhaust RAM (htdemucs fp32 is ~316 MB).
+const MAX_DOWNLOAD_BYTES: u64 = 512 * 1024 * 1024;
+
+/// Reads `reader` to its end in 64 KiB chunks, reporting cumulative bytes read
+/// (and the server-declared total, when known) after each chunk and enforcing
+/// `max_bytes`. Pure over any [`Read`], so the progress accounting is unit-tested
+/// without touching the network.
+fn read_reporting(
+    mut reader: impl Read,
+    content_length: Option<u64>,
+    max_bytes: u64,
+    on_progress: &mut dyn FnMut(u64, Option<u64>),
+) -> Result<Vec<u8>, String> {
+    let capacity = content_length.unwrap_or(0).min(max_bytes) as usize;
+    let mut bytes = Vec::with_capacity(capacity);
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = reader
+            .read(&mut buffer)
+            .map_err(|e| format!("read failed: {e}"))?;
+        if read == 0 {
+            break;
+        }
+        if bytes.len() as u64 + read as u64 > max_bytes {
+            return Err("download exceeded the size cap".to_string());
+        }
+        bytes.extend_from_slice(&buffer[..read]);
+        on_progress(bytes.len() as u64, content_length);
+    }
+    Ok(bytes)
+}
+
 /// The real network fetcher (blocking `ureq`), compiled only with the `ort`
-/// feature. Enforces a generous size cap so a mispointed URL cannot exhaust
-/// memory. Tests never use this — they inject a local-bytes fetcher.
+/// feature, reporting progress through `on_progress` (cumulative bytes,
+/// optional server total) after every chunk. Enforces [`MAX_DOWNLOAD_BYTES`].
+/// Tests never use this — they inject a local-bytes fetcher.
 #[cfg(feature = "ort")]
-pub fn http_fetcher(url: &str) -> Result<Vec<u8>, String> {
-    // htdemucs fp32 is ~316 MB; cap comfortably above it.
-    const MAX_BYTES: u64 = 512 * 1024 * 1024;
+pub fn http_fetcher_with_progress(
+    url: &str,
+    on_progress: &mut dyn FnMut(u64, Option<u64>),
+) -> Result<Vec<u8>, String> {
     let response = ureq::get(url)
         .call()
         .map_err(|e| format!("request failed: {e}"))?;
-    let mut bytes = Vec::new();
-    response
+    let content_length = response
+        .headers()
+        .get("content-length")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|text| text.parse::<u64>().ok())
+        .filter(|len| *len <= MAX_DOWNLOAD_BYTES);
+    let reader = response
         .into_body()
         .into_reader()
-        .take(MAX_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|e| format!("read failed: {e}"))?;
-    if bytes.len() as u64 > MAX_BYTES {
-        return Err("download exceeded the size cap".to_string());
-    }
-    Ok(bytes)
+        .take(MAX_DOWNLOAD_BYTES + 1);
+    read_reporting(reader, content_length, MAX_DOWNLOAD_BYTES, on_progress)
+}
+
+/// The real network fetcher without progress — [`http_fetcher_with_progress`]
+/// with a no-op sink. Kept so existing callers stay unchanged.
+#[cfg(feature = "ort")]
+pub fn http_fetcher(url: &str) -> Result<Vec<u8>, String> {
+    http_fetcher_with_progress(url, &mut |_, _| {})
 }
 
 fn write_atomic(target: &Path, bytes: &[u8]) -> Result<(), ProvisionError> {
@@ -483,6 +525,46 @@ mod tests {
         assert_eq!(
             license_path(Path::new("/m"), &HTDEMUCS_FP32),
             Path::new("/m/htdemucs.onnx.LICENSE.txt")
+        );
+    }
+
+    #[test]
+    fn read_reporting_streams_all_bytes_and_reports_cumulative_progress() {
+        let data = vec![7u8; 200_000];
+        let mut seen: Vec<(u64, Option<u64>)> = Vec::new();
+        let out = read_reporting(
+            std::io::Cursor::new(data.clone()),
+            Some(data.len() as u64),
+            1024 * 1024,
+            &mut |read, total| seen.push((read, total)),
+        )
+        .unwrap();
+        assert_eq!(out, data, "every byte is streamed through");
+        assert!(!seen.is_empty(), "progress is reported at least once");
+        assert!(
+            seen.windows(2).all(|w| w[0].0 <= w[1].0),
+            "cumulative bytes are monotonic"
+        );
+        assert_eq!(
+            seen.last().unwrap().0,
+            data.len() as u64,
+            "the final report equals the full length"
+        );
+        assert!(
+            seen.iter()
+                .all(|(_, total)| *total == Some(data.len() as u64)),
+            "the known total is carried on every report"
+        );
+    }
+
+    #[test]
+    fn read_reporting_enforces_the_size_cap() {
+        let data = vec![0u8; 10_000];
+        let err =
+            read_reporting(std::io::Cursor::new(data), None, 4096, &mut |_, _| {}).unwrap_err();
+        assert!(
+            err.contains("size cap"),
+            "an oversized body is refused: {err}"
         );
     }
 }

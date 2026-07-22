@@ -42,6 +42,38 @@ pub const EXPERIMENTAL_TOGGLE_SUBTITLE: &str =
     N_!("Shows AI instrumental versions across the app: the context-menu trigger, the conversion view, badges, and the \"Hide AI music\" filter.");
 pub const MODEL_GROUP_TITLE: &str = N_!("Instrumental model");
 pub const MODEL_DOWNLOAD_TITLE: &str = N_!("Vocal-removal model");
-pub const MODEL_DOWNLOAD_SUBTITLE: &str =
-    N_!("Downloaded on first use, with a checksum and licence note. Not yet available.");
+pub const MODEL_DOWNLOAD_SUBTITLE: &str = N_!(
+    "Downloaded on first use (~316 MB), verified by checksum, with a licence note kept beside it."
+);
 pub const MODEL_DOWNLOAD_BUTTON: &str = N_!("Download");
+
+/// INST-12: shown in a build compiled without the `stem-backend` feature — an
+/// honest placeholder, never a functionless enabled button.
+pub const MODEL_UNAVAILABLE_SUBTITLE: &str =
+    N_!("This build has no stem-separation backend, so the model can't be downloaded here.");
+/// INST-12: the model is present and verified; instrumental rendering works.
+pub const MODEL_READY_SUBTITLE: &str = N_!("Model ready — instrumental rendering is available.");
+/// INST-12: the render is being verified/published after the bytes arrive. Only
+/// the `stem-backend` build reaches the download flow that shows it.
+#[cfg(feature = "stem-backend")]
+pub const MODEL_FINISHING: &str = N_!("Verifying…");
+
+/// INST-12 progress line while the weights download, e.g. "Downloading… 42%".
+/// Only the `stem-backend` build runs the download that shows it.
+#[cfg(feature = "stem-backend")]
+pub fn model_downloading(percent: u16) -> String {
+    format!("Downloading… {percent}%")
+}
+
+/// INST-12 indeterminate progress line when the server declares no size.
+#[cfg(feature = "stem-backend")]
+pub fn model_downloading_indeterminate() -> String {
+    "Downloading…".to_string()
+}
+
+/// INST-12 failure line, e.g. offline or a checksum mismatch. The detail is the
+/// core `ProvisionError` text.
+#[cfg(feature = "stem-backend")]
+pub fn model_download_failed(detail: &str) -> String {
+    format!("Download failed: {detail}")
+}
