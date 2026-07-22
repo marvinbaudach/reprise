@@ -102,6 +102,32 @@ fn worker_drains_the_queue_and_renders_every_job() {
     for id in job_ids {
         assert!(store.exists(id), "job {id} has a staging render");
     }
+
+    // The render is published to its canonical path via a rename; no
+    // claim-scoped `.partial` temp file may linger after a clean run.
+    let leftover: Vec<_> = std::fs::read_dir(&staging)
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .path()
+                .extension()
+                .is_some_and(|extension| extension == "partial")
+        })
+        .collect();
+    assert!(
+        leftover.is_empty(),
+        "no .partial temp renders should remain: {leftover:?}"
+    );
+}
+
+#[test]
+fn worker_rejects_a_zero_lease() {
+    let h = Harness::new();
+    // A zero (or negative) lease would make every claim instantly reclaimable
+    // and defeat the leasing model — clap must reject it up front.
+    let out = h.run(&["jobs", "work", "--once", "--fake-backend", "--lease", "0"]);
+    assert_eq!(code(&out), 2, "an out-of-range --lease is a usage error");
 }
 
 #[test]

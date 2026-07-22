@@ -117,18 +117,19 @@ fn read_now_playing(proxy: &zbus::blocking::Proxy<'static>) -> (Option<String>, 
     let Ok(metadata) = proxy.get_property::<HashMap<String, OwnedValue>>("Metadata") else {
         return (None, None);
     };
-    let title = metadata
-        .get("xesam:title")
-        .and_then(|value| String::try_from(value.try_clone().ok()?).ok());
-    let artist = metadata.get("xesam:artist").and_then(|value| {
-        // xesam:artist is an array of strings; fall back to a plain string.
-        let cloned = value.try_clone().ok()?;
-        Vec::<String>::try_from(cloned.try_clone().ok()?)
-            .map(|list| list.join(", "))
-            .ok()
-            .or_else(|| String::try_from(cloned).ok())
-    });
+    let title = metadata.get("xesam:title").and_then(owned_to_string);
+    let artist = metadata.get("xesam:artist").and_then(owned_to_string);
     (title, artist)
+}
+
+/// Best-effort text from an MPRIS metadata value: `xesam:artist` is an array of
+/// strings, `xesam:title` a plain string, so try both without letting one
+/// failure short-circuit the other.
+fn owned_to_string(value: &zbus::zvariant::OwnedValue) -> Option<String> {
+    if let Ok(list) = value.try_clone().and_then(Vec::<String>::try_from) {
+        return Some(list.join(", "));
+    }
+    value.try_clone().and_then(String::try_from).ok()
 }
 
 /// Maps a zbus error to a CLI error, recognising the "no player" case.

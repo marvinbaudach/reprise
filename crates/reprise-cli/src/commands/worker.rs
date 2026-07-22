@@ -67,12 +67,14 @@ pub struct WorkerArgs {
     #[arg(long, value_name = "N", default_value_t = 0)]
     pub max_jobs: u64,
     /// Seconds to sleep between polls when the queue is empty (ignored with
-    /// `--once`).
-    #[arg(long, value_name = "SECS", default_value_t = 2)]
+    /// `--once`). Must be at least 1 to avoid a busy loop.
+    #[arg(long, value_name = "SECS", default_value_t = 2, value_parser = clap::value_parser!(u64).range(1..=86_400))]
     pub poll_interval: u64,
     /// Lease length for a claimed job, in seconds. A crashed worker's job is
-    /// reclaimable by another worker after this elapses.
-    #[arg(long, value_name = "SECS", default_value_t = 60)]
+    /// reclaimable by another worker after this elapses. Must be at least 1 — a
+    /// zero/negative lease would make every claim instantly reclaimable and
+    /// defeat the leasing model.
+    #[arg(long, value_name = "SECS", default_value_t = 60, value_parser = clap::value_parser!(i64).range(1..=86_400))]
     pub lease: i64,
     /// Use the in-core Fake backend instead of the real (not-yet-wired)
     /// reprise-stems backend. Test/diagnostic aid.
@@ -82,7 +84,7 @@ pub struct WorkerArgs {
     /// backend runs, making concurrent contention and mid-render reclaim
     /// deterministic. Test/diagnostic aid; only meaningful with
     /// `--fake-backend`.
-    #[arg(long, hide = true, value_name = "MS", default_value_t = 0)]
+    #[arg(long, hide = true, value_name = "MS", default_value_t = 0, value_parser = clap::value_parser!(u64).range(0..=600_000))]
     pub simulate_render_ms: u64,
 }
 
@@ -147,41 +149,58 @@ pub fn run(
     let worker = worker_token();
     let shutdown = install_signal_flag()?;
 
+    // Run the loop with its own tally, then ALWAYS report — even when a mid-run
+    // infrastructure error aborts the loop, so a `--json` caller still gets a
+    // summary of the work already done and automation never sees empty output.
     let mut tally = Tally::default();
+    let outcome = work_loop(
+        conn,
+        &store,
+        backend.as_ref(),
+        worker,
+        args,
+        &shutdown,
+        &mut tally,
+    );
+    report(tally, json_output, outcome.is_err());
+    outcome
+}
+
+/// The claim/process loop. Returns the first infrastructure error that aborts
+/// it (individual failed renders are recorded on their jobs, not returned).
+fn work_loop(
+    conn: &Connection,
+    store: &StagingStore,
+    backend: &dyn StemSeparationBackend,
+    worker: i64,
+    args: &WorkerArgs,
+    shutdown: &AtomicBool,
+    tally: &mut Tally,
+) -> Result<(), CliError> {
     loop {
         if shutdown.load(Ordering::Relaxed) {
-            break;
+            return Ok(());
         }
         let claimed = retrying(|| ai_jobs::claim_next(conn, worker, now_unix(), args.lease))?;
         match claimed {
             Some(job) => {
-                let outcome = process_job(
-                    conn,
-                    &store,
-                    backend.as_ref(),
-                    &job,
-                    worker,
-                    args,
-                    &shutdown,
-                )?;
-                tally.record(outcome);
+                tally.record(process_job(
+                    conn, store, backend, &job, worker, args, shutdown,
+                )?);
                 if args.max_jobs != 0 && tally.total() >= args.max_jobs {
-                    break;
+                    return Ok(());
                 }
             }
             None => {
                 if args.once || shutdown.load(Ordering::Relaxed) {
-                    break;
+                    return Ok(());
                 }
                 // Interruptible so SIGINT is honored within a slice, not after a
                 // whole poll interval.
-                sleep_unless_shutdown(Duration::from_secs(args.poll_interval), &shutdown);
+                sleep_unless_shutdown(Duration::from_secs(args.poll_interval), shutdown);
             }
         }
     }
-
-    report(tally, json_output);
-    Ok(())
 }
 
 /// Chooses the stem-separation backend. Production would build the real
@@ -233,6 +252,12 @@ impl RunState<'_> {
                 self.stop.set(Some(StopReason::LostLease));
             }
         }
+        // Skip the progress write once we already know to stop (lost lease,
+        // cancel, or a heartbeat failure) — it would only waste a retry cycle
+        // against an already-known-bad state.
+        if self.stop.get().is_some() {
+            return;
+        }
         if self.should_write_progress(permille) {
             let written = with_retry(
                 || ai_jobs::set_progress(self.conn, self.job_id, self.worker, permille),
@@ -281,7 +306,14 @@ fn process_job(
         })?;
         return Ok(JobOutcome::Failed);
     };
-    let output_path = store.path_for_job(job.id);
+    // Render into a claim-scoped temp file, never the shared canonical path:
+    // the lease protects the DB row, but two workers can legitimately hold the
+    // *same* `path_for_job(id)` (a straggler whose lease expired mid-render and
+    // the reclaimer that finished it). Publishing via a rename that happens only
+    // AFTER an owned `mark_done` makes the winning owner the sole writer of the
+    // canonical file, so a straggler can never clobber the committed render.
+    let final_path = store.path_for_job(job.id);
+    let temp_path = temp_render_path(&final_path, worker);
 
     // Optional simulated occupancy (test aid): hold the claim without
     // heartbeating, so a short lease can expire and be reclaimed elsewhere.
@@ -301,31 +333,43 @@ fn process_job(
     };
     let result = backend.separate_instrumental(
         &source_path,
-        &output_path,
+        &temp_path,
         &mut |permille| state.on_progress(permille),
         &|| state.should_stop(),
     );
 
     if let Some(error) = state.infra_error.take() {
+        let _ = std::fs::remove_file(&temp_path);
         return Err(CliError::Database(error));
     }
     match result {
         Ok(()) => {
             // The owner-guarded facade returns `false` if we lost the lease
             // mid-render (another worker reclaimed): then this is not our job to
-            // count as done — report it abandoned instead of double-counting.
+            // count as done — report it abandoned and drop our temp so we never
+            // overwrite the owner's published render.
             let marked = retrying(|| ai_jobs::mark_done(conn, job.id, worker, now_unix()))?;
-            Ok(if marked {
-                JobOutcome::Done
+            if marked {
+                std::fs::rename(&temp_path, &final_path).map_err(|error| {
+                    CliError::Database(format!(
+                        "cannot finalize render for job {}: {error}",
+                        job.id
+                    ))
+                })?;
+                Ok(JobOutcome::Done)
             } else {
-                JobOutcome::Abandoned
-            })
+                let _ = std::fs::remove_file(&temp_path);
+                Ok(JobOutcome::Abandoned)
+            }
         }
         Err(StemError::Cancelled) => {
+            let _ = std::fs::remove_file(&temp_path);
             let reason = state.stop.get().unwrap_or(StopReason::Shutdown);
             abandon_or_cancel(conn, job.id, worker, reason)
         }
         Err(other) => {
+            // A backend error leaves no complete output, but drop any partial.
+            let _ = std::fs::remove_file(&temp_path);
             let kind = error_kind(&other);
             let marked = retrying(|| ai_jobs::mark_failed(conn, job.id, worker, kind, now_unix()))?;
             Ok(if marked {
@@ -335,6 +379,14 @@ fn process_job(
             })
         }
     }
+}
+
+/// The claim-scoped temp path a render is written to before an owned `mark_done`
+/// publishes it. It is a sibling of the canonical `job-<id>.flac`, tagged with
+/// the worker token and a `.partial` extension so the staging store's `.flac`
+/// listing ignores it and two workers on the same job never share a file.
+fn temp_render_path(final_path: &std::path::Path, worker: i64) -> PathBuf {
+    final_path.with_extension(format!("{worker:016x}.partial"))
 }
 
 /// A user cancel is acked (`-> cancelled`); a shutdown or lost lease leaves the
@@ -386,12 +438,18 @@ fn simulate_occupancy(args: &WorkerArgs, shutdown: &AtomicBool) -> Option<StopRe
 /// blocked worker reacts to SIGINT/SIGTERM within a slice, not after the whole
 /// duration (`std::thread::sleep` is not interrupted by a signal).
 fn sleep_unless_shutdown(total: Duration, shutdown: &AtomicBool) -> bool {
-    let deadline = Instant::now() + total;
+    // `checked_add` avoids the documented `Instant + Duration` overflow panic
+    // for a pathologically large duration (arg ranges already prevent it; this
+    // is defensive). A `None` deadline just keeps slicing until shutdown.
+    let deadline = Instant::now().checked_add(total);
     loop {
         if shutdown.load(Ordering::Relaxed) {
             return true;
         }
-        let remaining = deadline.saturating_duration_since(Instant::now());
+        let remaining = match deadline {
+            Some(deadline) => deadline.saturating_duration_since(Instant::now()),
+            None => SLEEP_SLICE,
+        };
         if remaining.is_zero() {
             return false;
         }
@@ -433,7 +491,10 @@ fn install_signal_flag() -> Result<Arc<AtomicBool>, CliError> {
     Ok(flag)
 }
 
-fn report(tally: Tally, json_output: bool) {
+/// Emits the run summary. `aborted` is true when an infrastructure error cut
+/// the loop short, so automation can tell a clean stop from a partial run even
+/// though the error text itself goes to stderr with a non-zero exit.
+fn report(tally: Tally, json_output: bool, aborted: bool) {
     if json_output {
         print_json(&json!({
             "processed": tally.total(),
@@ -441,10 +502,16 @@ fn report(tally: Tally, json_output: bool) {
             "failed": tally.failed,
             "cancelled": tally.cancelled,
             "abandoned": tally.abandoned,
+            "aborted": aborted,
         }));
     } else {
+        let status = if aborted {
+            "worker aborted"
+        } else {
+            "worker stopped"
+        };
         println!(
-            "worker stopped: {} processed (done {}, failed {}, cancelled {}, abandoned {})",
+            "{status}: {} processed (done {}, failed {}, cancelled {}, abandoned {})",
             tally.total(),
             tally.done,
             tally.failed,
