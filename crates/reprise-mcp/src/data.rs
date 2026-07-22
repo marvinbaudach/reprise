@@ -6,6 +6,9 @@
 
 use std::path::Path;
 
+use reprise_core::ai_conversion;
+use reprise_core::ai_jobs::{self, EnqueueOutcome};
+use reprise_core::ai_staging::StagingStore;
 use reprise_core::db::{self, DbError};
 use reprise_core::library::playlists;
 use reprise_core::models::Track;
@@ -16,20 +19,49 @@ use rusqlite::Connection;
 
 use crate::capability;
 use crate::dto::{
-    CreatePlaylistResult, LibrarySummary, PlaylistDto, PlaylistsResult, SearchTracksResult,
-    TrackDto,
+    BatchProgressDto, CreateInstrumentalResult, CreatePlaylistResult, InstrumentalJobDto,
+    JobStatusDto, JobStatusResult, LibrarySummary, PlaylistDto, PlaylistsResult,
+    SearchTracksResult, TrackDto,
 };
 
 /// Default page size when a search omits `limit`.
 pub const DEFAULT_SEARCH_LIMIT: i64 = 50;
 /// Hard ceiling on a search page (spec §6: MCP responses are hard-limited).
 pub const MAX_SEARCH_LIMIT: i64 = 200;
-/// Maximum explicit track ids accepted by `music_create_playlist` (spec limit).
-pub const MAX_PLAYLIST_TRACKS: usize = 500;
+/// Maximum explicit track ids accepted by a write tool (`music_create_playlist`
+/// and `music_create_instrumental` share the same spec limit).
+pub const MAX_TRACK_IDS: usize = 500;
 
 // Fixed sort for search — a stable, predictable order for a metadata lookup.
 const SEARCH_SORT_FIELD: &str = "title";
 const SEARCH_SORT_DIR: &str = "asc";
+
+/// Model id stamped on every instrumental job MCP enqueues — the dedup
+/// fingerprint and the `REPRISE_AI_MODEL` provenance tag (Beschluss 16, plan
+/// 2.4/5).
+///
+/// **Known gap:** `reprise-core` exposes no canonical "current instrumental
+/// model id" for the non-worker enqueuers (the app context menu, the CLI and
+/// this server) to share, and MCP must not link `reprise-stems` to read it from
+/// the backend. So this is a placeholder that matches the value the core
+/// promotion tests treat as canonical (the spike's htdemucs choice). Until core
+/// provides a shared source (a `stem_separation` constant, or a settings key
+/// written at model-download time), MCP-enqueued jobs only dedup against jobs
+/// enqueued with this same id. Routed through one function so that becomes a
+/// one-line change.
+const INSTRUMENTAL_MODEL_ID: &str = "htdemucs@4";
+
+fn instrumental_model_id() -> &'static str {
+    INSTRUMENTAL_MODEL_ID
+}
+
+/// Wall-clock seconds since the Unix epoch — the injected `now` the job facades
+/// take. A backwards clock degrades to 0 rather than panicking.
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs() as i64)
+}
 
 /// A failure while serving a request. The `error`/`server`-facing variants are
 /// logged and mapped to opaque protocol errors (never leaked); the
@@ -182,39 +214,13 @@ pub fn create_playlist(
             "playlist name must not be empty".to_string(),
         ));
     }
-    if track_ids.len() > MAX_PLAYLIST_TRACKS {
+    if track_ids.len() > MAX_TRACK_IDS {
         return Err(DataError::InvalidInput(format!(
-            "too many track ids: {} (maximum {MAX_PLAYLIST_TRACKS})",
+            "too many track ids: {} (maximum {MAX_TRACK_IDS})",
             track_ids.len()
         )));
     }
-
-    // Enforce PRESENT semantics before writing: reject ids that are not present
-    // in the library — either no row at all, or a row whose file is currently
-    // missing. A plain foreign-key check would let a missing row through. List
-    // the offending ids so the caller can correct its request.
-    if !track_ids.is_empty() {
-        let present: std::collections::HashSet<i64> = queries::filter_present(&conn, track_ids)
-            .map_err(DataError::Db)?
-            .into_iter()
-            .collect();
-        let mut seen = std::collections::HashSet::new();
-        let offending: Vec<i64> = track_ids
-            .iter()
-            .copied()
-            .filter(|id| !present.contains(id) && seen.insert(*id))
-            .collect();
-        if !offending.is_empty() {
-            let list = offending
-                .iter()
-                .map(i64::to_string)
-                .collect::<Vec<_>>()
-                .join(", ");
-            return Err(DataError::InvalidInput(format!(
-                "one or more track ids are not present in the library: {list}"
-            )));
-        }
-    }
+    reject_absent_track_ids(&conn, track_ids)?;
 
     let playlist_id =
         playlists::create_with_tracks(&mut conn, trimmed, track_ids).map_err(map_create_error)?;
@@ -223,6 +229,214 @@ pub fn create_playlist(
         playlist_id,
         name: trimmed.to_string(),
         track_count: track_ids.len(),
+    })
+}
+
+/// Enforces PRESENT semantics before a write: rejects ids that are not present
+/// in the library — either no row at all, or a row whose file is currently
+/// missing (a plain foreign-key check would let a missing row through). Lists
+/// the offending ids so the caller can correct its request. Shared by
+/// `music_create_playlist` and `music_create_instrumental`.
+fn reject_absent_track_ids(conn: &Connection, track_ids: &[i64]) -> Result<(), DataError> {
+    if track_ids.is_empty() {
+        return Ok(());
+    }
+    let present: std::collections::HashSet<i64> = queries::filter_present(conn, track_ids)
+        .map_err(DataError::Db)?
+        .into_iter()
+        .collect();
+    let mut seen = std::collections::HashSet::new();
+    let offending: Vec<i64> = track_ids
+        .iter()
+        .copied()
+        .filter(|id| !present.contains(id) && seen.insert(*id))
+        .collect();
+    if !offending.is_empty() {
+        let list = offending
+            .iter()
+            .map(i64::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(DataError::InvalidInput(format!(
+            "one or more track ids are not present in the library: {list}"
+        )));
+    }
+    Ok(())
+}
+
+/// Registers one instrumental (vocal-removal) job per source track and returns
+/// immediately with the job/batch ids — rendering happens later in a worker
+/// (plan 3.2). Capability is re-read here (immediate revocation) combined with
+/// the startup snapshot (a fresh grant needs a restart). Tracks already covered
+/// by an open, staged, or saved job are referenced, not re-rendered (Beschluss
+/// 16). `save` (default true) routes the batch: `true` enqueues directly (the
+/// automation wants the saved result), `false` also ensures the Conversion
+/// staging playlist exists so the render awaits an explicit save/discard
+/// decision (Beschluss 15). Either way the enqueue lands atomically with its
+/// `change_log` events, so a running app shows the new jobs live.
+pub fn create_instrumental(
+    db_path: &Path,
+    staging_path: &Path,
+    ai_granted_at_startup: bool,
+    track_ids: &[i64],
+    save: bool,
+) -> Result<CreateInstrumentalResult, DataError> {
+    let conn = open(db_path)?;
+
+    if !capability::ai_create_effective(&conn, ai_granted_at_startup).map_err(DataError::Db)? {
+        return Err(DataError::CapabilityDenied("ai:create"));
+    }
+    if track_ids.is_empty() {
+        return Err(DataError::InvalidInput(
+            "at least one track id is required".to_string(),
+        ));
+    }
+    if track_ids.len() > MAX_TRACK_IDS {
+        return Err(DataError::InvalidInput(format!(
+            "too many track ids: {} (maximum {MAX_TRACK_IDS})",
+            track_ids.len()
+        )));
+    }
+    reject_absent_track_ids(&conn, track_ids)?;
+
+    let staging = StagingStore::new(staging_path);
+    let model_id = instrumental_model_id();
+    let now = now_secs();
+    let batch = if save {
+        ai_jobs::enqueue_instrumental_batch(&conn, &staging, track_ids, model_id, now)
+            .map_err(DataError::Db)?
+    } else {
+        ai_conversion::add_batch_to_conversion(&conn, &staging, track_ids, model_id, now)
+            .map_err(DataError::Db)?
+    };
+
+    // `batch.jobs` is in input order, one per source track.
+    let jobs: Vec<InstrumentalJobDto> = track_ids
+        .iter()
+        .zip(batch.jobs.iter())
+        .map(|(&source_track_id, outcome)| match *outcome {
+            EnqueueOutcome::Created { job_id } => InstrumentalJobDto {
+                source_track_id,
+                job_id,
+                deduplicated: false,
+                existing_instrumental_track_id: None,
+            },
+            EnqueueOutcome::Deduplicated {
+                job_id,
+                result_track_id,
+            } => InstrumentalJobDto {
+                source_track_id,
+                job_id,
+                deduplicated: true,
+                existing_instrumental_track_id: result_track_id,
+            },
+        })
+        .collect();
+    let created = jobs.iter().filter(|job| !job.deduplicated).count();
+    let deduplicated = jobs.len() - created;
+
+    Ok(CreateInstrumentalResult {
+        batch_id: batch.batch_id,
+        save,
+        created,
+        deduplicated,
+        queued_hint: queued_hint(created, deduplicated, save),
+        jobs,
+    })
+}
+
+/// Builds the honest, path-free `queued_hint`: how many jobs are queued, that
+/// they stay queued until a worker (the running app or `reprise-cli jobs work`)
+/// renders them, and where the finished render lands given `save` (plan 3.2:
+/// "die MCP-Antwort sagt das ehrlich und nennt beide Abarbeitungswege").
+fn queued_hint(created: usize, deduplicated: usize, save: bool) -> String {
+    let mut hint = if created > 0 {
+        format!("Queued {created} instrumental job(s).")
+    } else {
+        "No new jobs were queued.".to_string()
+    };
+    if deduplicated > 0 {
+        hint.push_str(&format!(
+            " {deduplicated} track(s) already had an instrumental or a pending job \
+             and were referenced, not re-rendered."
+        ));
+    }
+    hint.push_str(
+        " Jobs stay queued until a worker renders them: the Reprise app while it \
+         is open, or `reprise-cli jobs work`.",
+    );
+    if save {
+        hint.push_str(
+            " Finished renders can then be saved to your library from the app or \
+             with `reprise-cli instrumental save`.",
+        );
+    } else {
+        hint.push_str(" Each finished render waits in the Conversion view to save or discard.");
+    }
+    hint
+}
+
+/// Reports the status of instrumental jobs by explicit ids and/or a batch id
+/// (plan 3.2). Read-only job metadata, so it needs only `library:read`. The
+/// response is strictly the D19 allow-list — states, progress, result track ids
+/// and timestamps, never a source/render path or a staging location.
+pub fn job_status(
+    db_path: &Path,
+    job_ids: &[i64],
+    batch_id: Option<&str>,
+) -> Result<JobStatusResult, DataError> {
+    let conn = open(db_path)?;
+    require_read(&conn)?;
+
+    if job_ids.is_empty() && batch_id.is_none() {
+        return Err(DataError::InvalidInput(
+            "provide job_ids or a batch_id".to_string(),
+        ));
+    }
+    if job_ids.len() > MAX_TRACK_IDS {
+        return Err(DataError::InvalidInput(format!(
+            "too many job ids: {} (maximum {MAX_TRACK_IDS})",
+            job_ids.len()
+        )));
+    }
+
+    // A BTreeMap keyed on job id gives a stable id-ordered result and folds the
+    // batch and the explicit ids into one set without duplicates.
+    let mut by_id: std::collections::BTreeMap<i64, JobStatusDto> =
+        std::collections::BTreeMap::new();
+
+    let batch = match batch_id {
+        Some(batch_id) => {
+            for job in ai_jobs::list_jobs_in_batch(&conn, batch_id).map_err(DataError::Db)? {
+                by_id.insert(job.id, JobStatusDto::from(&job));
+            }
+            let progress = ai_jobs::batch_progress(&conn, batch_id).map_err(DataError::Db)?;
+            Some(BatchProgressDto {
+                batch_id: batch_id.to_string(),
+                total: progress.total,
+                done: progress.done,
+                failed: progress.failed,
+                cancelled: progress.cancelled,
+                running: progress.running,
+                queued: progress.queued,
+                permille: progress.permille,
+            })
+        }
+        None => None,
+    };
+
+    for &id in job_ids {
+        if by_id.contains_key(&id) {
+            continue;
+        }
+        if let Some(job) = ai_jobs::get_job(&conn, id).map_err(DataError::Db)? {
+            by_id.insert(id, JobStatusDto::from(&job));
+        }
+    }
+
+    Ok(JobStatusResult {
+        jobs: by_id.into_values().collect(),
+        batch,
     })
 }
 

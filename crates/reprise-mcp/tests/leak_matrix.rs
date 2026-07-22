@@ -5,7 +5,9 @@
 
 mod common;
 
-use common::{assert_no_leaks, set_bool_setting, McpClient, SeedTrack};
+use common::{
+    assert_no_leaks, seed_real_flac_track, set_bool_setting, McpClient, SeedTrack, CAP_AI_CREATE,
+};
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
@@ -87,4 +89,74 @@ fn create_playlist_response_has_no_leaks() {
         json!({ "name": "Fresh Mix", "track_ids": ids }),
     );
     assert_no_leaks(&raw(&response));
+}
+
+#[test]
+fn create_instrumental_response_has_no_leaks() {
+    let dir = TempDir::new().unwrap();
+    let (path, ids) = revealing_db(&dir);
+    set_bool_setting(&path, CAP_AI_CREATE, true);
+    let mut client = McpClient::start(&path);
+    let response = client.call_tool("music_create_instrumental", json!({ "track_ids": ids }));
+    assert_no_leaks(&raw(&response));
+}
+
+#[test]
+fn create_instrumental_error_responses_have_no_leaks() {
+    let dir = TempDir::new().unwrap();
+    let (path, ids) = revealing_db(&dir);
+    // Capability off: a refusal error must not leak either.
+    let mut client = McpClient::start(&path);
+    let refused = client.call_tool("music_create_instrumental", json!({ "track_ids": ids }));
+    assert_no_leaks(&raw(&refused));
+
+    // Invalid input (absent id) while granted: still no leak.
+    set_bool_setting(&path, CAP_AI_CREATE, true);
+    let mut granted = McpClient::start(&path);
+    let bad = granted.call_tool(
+        "music_create_instrumental",
+        json!({ "track_ids": [999_999] }),
+    );
+    assert_no_leaks(&raw(&bad));
+}
+
+#[test]
+fn job_status_response_has_no_leaks_for_a_staged_render() {
+    let dir = TempDir::new().unwrap();
+    let db = dir.path().join("reprise.db");
+    let staging = dir.path().join("staging");
+    let music = dir.path().join("music");
+    std::fs::create_dir_all(&music).unwrap();
+    // A real FLAC on disk (its path carries `.flac`) rendered into staging (a
+    // `.flac` under a `staging/` dir): the status response must reveal neither.
+    let (source_id, _flac) = seed_real_flac_track(&db, &music, "Creep", "Radiohead");
+    set_bool_setting(&db, CAP_AI_CREATE, true);
+    let mut client = McpClient::start(&db);
+    let created = client.call_tool(
+        "music_create_instrumental",
+        json!({ "track_ids": [source_id] }),
+    );
+    let job_id = created["result"]["structuredContent"]["jobs"][0]["job_id"]
+        .as_i64()
+        .expect("job id");
+    common::run_worker_until_idle(&db, &staging);
+
+    let status = client.call_tool("music_get_job_status", json!({ "job_ids": [job_id] }));
+    assert_no_leaks(&raw(&status));
+}
+
+#[test]
+fn job_status_error_responses_have_no_leaks() {
+    let dir = TempDir::new().unwrap();
+    let (path, _ids) = revealing_db(&dir);
+    let mut client = McpClient::start(&path);
+    // Missing-argument error.
+    let empty = client.call_tool("music_get_job_status", json!({}));
+    assert_no_leaks(&raw(&empty));
+
+    // library:read revoked -> refusal error.
+    set_bool_setting(&path, "agent.capability.library:read", false);
+    let mut revoked = McpClient::start(&path);
+    let denied = revoked.call_tool("music_get_job_status", json!({ "job_ids": [1] }));
+    assert_no_leaks(&raw(&denied));
 }

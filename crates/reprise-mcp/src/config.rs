@@ -49,7 +49,25 @@ impl Config {
             .clone()
             .unwrap_or_else(reprise_core::db::default_path)
     }
+
+    /// Where finished-but-undecided renders live (Beschluss 15). Derived as
+    /// `<db parent>/staging`, so the default database
+    /// (`<data>/reprise/reprise.db`) yields `<data>/reprise/staging` — exactly
+    /// [`reprise_core::ai_staging::default_staging_dir`], the same directory the
+    /// app and CLI workers use. A test that points `--db` at a temp file gets an
+    /// isolated staging directory alongside it for free.
+    pub fn staging_path(&self) -> PathBuf {
+        let db = self.database_path();
+        db.parent().map_or_else(
+            || PathBuf::from(STAGING_SUBDIR),
+            |parent| parent.join(STAGING_SUBDIR),
+        )
+    }
 }
+
+/// The staging subdirectory name, kept in sync with the last path component of
+/// [`reprise_core::ai_staging::default_staging_dir`].
+const STAGING_SUBDIR: &str = "staging";
 
 #[cfg(test)]
 mod tests {
@@ -82,5 +100,24 @@ mod tests {
     #[test]
     fn rejects_unknown_argument() {
         assert!(Config::from_args(vec!["--http".to_string()]).is_err());
+    }
+
+    #[test]
+    fn default_staging_path_matches_core_default() {
+        let config = Config::from_args(Vec::<String>::new()).unwrap();
+        assert_eq!(
+            config.staging_path(),
+            reprise_core::ai_staging::default_staging_dir(),
+            "with no --db the staging dir must equal the core default the app/CLI use"
+        );
+    }
+
+    #[test]
+    fn staging_path_sits_beside_an_explicit_db() {
+        let config = Config::from_args(vec!["--db=/data/reprise/reprise.db".to_string()]).unwrap();
+        assert_eq!(
+            config.staging_path(),
+            PathBuf::from("/data/reprise/staging")
+        );
     }
 }

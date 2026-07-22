@@ -37,8 +37,9 @@ fn main() -> ExitCode {
     };
 
     let db_path = config.database_path();
-    let write_granted_at_startup = match startup::prepare(&db_path) {
-        Ok(granted) => granted,
+    let staging_path = config.staging_path();
+    let caps = match startup::prepare(&db_path) {
+        Ok(caps) => caps,
         Err(startup::StartupError::SchemaTooNew { found, supported }) => {
             eprintln!(
                 "reprise-mcp: database schema {found} is newer than this server \
@@ -67,11 +68,12 @@ fn main() -> ExitCode {
         }
     };
 
-    runtime.block_on(serve(db_path, write_granted_at_startup))
+    runtime.block_on(serve(db_path, staging_path, caps))
 }
 
-async fn serve(db_path: PathBuf, write_granted_at_startup: bool) -> ExitCode {
-    let handler = server::RepriseServer::new(db_path, write_granted_at_startup);
+async fn serve(db_path: PathBuf, staging_path: PathBuf, caps: startup::StartupCaps) -> ExitCode {
+    let handler =
+        server::RepriseServer::new(db_path, staging_path, caps.playlist_create, caps.ai_create);
     // Cap stdin per line so a hostile or newline-less client cannot OOM the
     // process through rmcp's unbounded `read_until` (see `stdin_cap`). `serve`
     // accepts an `(AsyncRead, AsyncWrite)` pair as its transport, so we swap the

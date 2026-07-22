@@ -1,6 +1,6 @@
 //! One-time startup: open and migrate the database — applying the fail-closed
 //! [`SchemaTooNew`](reprise_core::db::DbError::SchemaTooNew) guard (Beschluss 8)
-//! — and snapshot the `playlist:create` capability before the server serves.
+//! — and snapshot the write-class capabilities before the server serves.
 
 use std::path::Path;
 
@@ -21,9 +21,20 @@ pub enum StartupError {
     Query(rusqlite::Error),
 }
 
-/// Opens and migrates the database, then returns whether `playlist:create`
-/// was granted at startup (the restart-gated half of the D18 write gate).
-pub fn prepare(db_path: &Path) -> Result<bool, StartupError> {
+/// The write-class capability snapshot taken at startup — the restart-gated
+/// half of the D18 / Beschluss 7 gate (a fresh grant only takes effect after a
+/// restart; a revocation is caught live on every call).
+#[derive(Debug, Clone, Copy)]
+pub struct StartupCaps {
+    /// Whether `playlist:create` was granted at startup.
+    pub playlist_create: bool,
+    /// Whether `ai:create` was granted at startup.
+    pub ai_create: bool,
+}
+
+/// Opens and migrates the database, then snapshots the write-class capabilities
+/// (`playlist:create`, `ai:create`) as they stood at startup.
+pub fn prepare(db_path: &Path) -> Result<StartupCaps, StartupError> {
     let conn = match db::open_migrated(Some(db_path)) {
         Ok(conn) => conn,
         Err(DbError::SchemaTooNew { found, supported }) => {
@@ -31,5 +42,8 @@ pub fn prepare(db_path: &Path) -> Result<bool, StartupError> {
         }
         Err(other) => return Err(StartupError::Open(other)),
     };
-    capability::playlist_create_granted(&conn).map_err(StartupError::Query)
+    Ok(StartupCaps {
+        playlist_create: capability::playlist_create_granted(&conn).map_err(StartupError::Query)?,
+        ai_create: capability::ai_create_granted(&conn).map_err(StartupError::Query)?,
+    })
 }
