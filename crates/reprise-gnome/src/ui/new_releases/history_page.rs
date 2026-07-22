@@ -130,7 +130,9 @@ fn build_header(count: usize, on_back: Rc<dyn Fn()>) -> gtk4::Box {
     let back_button = release_row::action_button("go-previous-symbolic", &back_label);
     back_button.connect_clicked(move |_| on_back());
 
-    let title = gtk4::Label::new(Some(&strings::text(strings::HISTORY_HEADER)));
+    // #3: uppercase the string itself for consistency with the list page's
+    // header (Mockup 2a) — GTK CSS has no text-transform.
+    let title = gtk4::Label::new(Some(&strings::text(strings::HISTORY_HEADER).to_uppercase()));
     title.add_css_class("new-release-header");
     title.set_xalign(0.0);
     title.set_hexpand(true);
@@ -180,6 +182,9 @@ fn build_entry_row(
     let title = gtk4::Label::new(Some(&entry.title));
     title.set_xalign(0.0);
     title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    // #5: shares release_row.rs's title styling so both list types read the
+    // same typographic hierarchy.
+    title.add_css_class("new-release-title");
 
     let meta_text = format!("{} · {}", entry.artist_name, status_text(entry, today));
     let meta = gtk4::Label::new(Some(&meta_text));
