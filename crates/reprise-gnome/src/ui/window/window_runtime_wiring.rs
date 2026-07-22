@@ -552,6 +552,16 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         watcher_state,
     );
     start_external_changes_refresh(db_path, track_list, sidebar);
+    crate::ui::instrumental::conversion_wiring::install(
+        &crate::ui::instrumental::conversion_wiring::ConversionWiring {
+            conn,
+            db_path,
+            window,
+            content_stack,
+            toast_overlay,
+            track_list,
+        },
+    );
     super::mounts::install(&super::mounts::MountWiring {
         conn,
         db_path,

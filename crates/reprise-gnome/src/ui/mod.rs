@@ -39,6 +39,7 @@ pub mod first_run;
 mod help;
 pub mod import_errors_view;
 pub(crate) mod info_panel;
+mod instrumental;
 mod issues;
 mod library_doctor;
 mod library_views;
