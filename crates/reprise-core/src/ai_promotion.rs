@@ -229,6 +229,62 @@ pub fn complete_render(
     }
 }
 
+/// The worker completion path for a render written to a **claim-scoped temp
+/// file** — the owner-guarded, publish-safe superset of [`complete_render`].
+///
+/// The order is what makes it safe against the orphan-resurrection race: the
+/// owner-guarded `mark_done` runs **first**, and only the winner then renames
+/// `temp_path` to the job's canonical staging path. A straggler whose lease was
+/// reclaimed (or whose job has since gone terminal) fails the guard, so it never
+/// touches the canonical file; its worthless temp is deleted. This closes the
+/// window where a straggler could rename its temp over a staging path the winner
+/// had already promoted-and-discarded (or the user had discarded), resurrecting a
+/// permanent orphan that no listing shows and no sweep removes.
+///
+/// `config` is the promotion target, or `None` when no library root is set —
+/// then an intent-carrying render is published and simply left staged, waiting
+/// for a manual save or a rooted worker. With a root, a job's persisted
+/// save-intent is honored exactly as in [`complete_render`]. A promotion failure
+/// leaves the job `done` + unsaved with its render in staging and `error_kind`
+/// noted (retryable). The temp file is consumed either way: renamed on a win,
+/// deleted on a lost guard.
+pub fn complete_render_with_publish(
+    conn: &mut Connection,
+    staging: &StagingStore,
+    config: Option<&PromotionConfig>,
+    job_id: i64,
+    worker: i64,
+    temp_path: &Path,
+    now: i64,
+) -> Result<CompletionOutcome, PromotionError> {
+    // 1. Owner-guarded done transition FIRST — the ownership decision. A
+    //    straggler (reclaimed lease, or an already-terminal job) fails here and
+    //    must never reach the canonical staging path; drop its worthless temp.
+    if !ai_jobs::mark_done(conn, job_id, worker, now)? {
+        let _ = std::fs::remove_file(temp_path);
+        return Ok(CompletionOutcome::NotOwned);
+    }
+    // 2. We are the sole owner: publish the temp render into its canonical path
+    //    with one atomic rename. Only the winner ever writes this file.
+    std::fs::rename(temp_path, staging.path_for_job(job_id))?;
+    // 3. Honor the persisted save-intent when a library root is configured;
+    //    without one the render simply waits in staging.
+    let Some(config) = config else {
+        return Ok(CompletionOutcome::Staged);
+    };
+    if !ai_jobs::job_auto_promote(conn, job_id)? {
+        return Ok(CompletionOutcome::Staged);
+    }
+    match promote(conn, staging, config, job_id, now) {
+        Ok(outcome) => Ok(CompletionOutcome::Promoted(outcome)),
+        Err(error) => {
+            let message = error.to_string();
+            ai_jobs::note_promotion_error(conn, job_id, &message)?;
+            Ok(CompletionOutcome::PromotionDeferred { error: message })
+        }
+    }
+}
+
 /// Registers the copied file and records provenance + the job `save` event.
 fn register_and_record(
     conn: &mut Connection,
