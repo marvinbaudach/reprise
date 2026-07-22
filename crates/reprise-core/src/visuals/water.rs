@@ -112,12 +112,12 @@ impl WaterGrid {
     }
 
     /// One 60 Hz step. The central hot zone is position-driven: each cell's
-    /// height eases straight to the windowed spectrum target with [`DRIVE_EASE`]
-    /// (gated by [`DRIVE_GATE`]), so the ridge erupts sharply with the music —
-    /// per-column bands give it jagged spikes, [`hot_window`] fades it into flat
+    /// height eases straight to the windowed spectrum target with `DRIVE_EASE`
+    /// (gated by `DRIVE_GATE`), so the ridge erupts sharply with the music —
+    /// per-column bands give it jagged spikes, `hot_window` fades it into flat
     /// mesh. Every other cell is a free spring wave rippling out from the ridge:
-    /// [`SPRING`] coupling propagates it, [`RESTORING`] pulls back to flat, and
-    /// `exp(-DT·`[`DAMP_RATE`]`)` damps so the plane calms between hits. `h`
+    /// `SPRING` coupling propagates it, `RESTORING` pulls back to flat, and
+    /// `exp(-DT·``DAMP_RATE``)` damps so the plane calms between hits. `h`
     /// clamped to `-1.1..=3.0`.
     pub fn advance(&mut self, bands: &[f32; SPECTRUM_BAND_COUNT]) {
         for row in 0..WATER_ROWS {
