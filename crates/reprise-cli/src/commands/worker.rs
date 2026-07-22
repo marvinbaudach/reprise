@@ -52,9 +52,10 @@ fn retrying<T>(op: impl FnMut() -> Result<T, rusqlite::Error>) -> Result<T, CliE
 
 /// Minimum spacing between in-place progress writes (plan 2.2: ≤ 2 writes/s).
 const PROGRESS_WRITE_INTERVAL: Duration = Duration::from_millis(500);
-/// Slice length for the simulated-render sleep, so it stays responsive to
-/// SIGINT.
-const SIMULATE_SLICE: Duration = Duration::from_millis(20);
+/// Slice length for interruptible sleeps (empty-queue poll, simulated render),
+/// so SIGINT/SIGTERM is honored within a slice rather than after a whole poll
+/// interval.
+const SLEEP_SLICE: Duration = Duration::from_millis(50);
 
 /// Arguments for `jobs work`.
 #[derive(Args, Debug)]
@@ -172,7 +173,9 @@ pub fn run(
                 if args.once || shutdown.load(Ordering::Relaxed) {
                     break;
                 }
-                sleep(Duration::from_secs(args.poll_interval));
+                // Interruptible so SIGINT is honored within a slice, not after a
+                // whole poll interval.
+                sleep_unless_shutdown(Duration::from_secs(args.poll_interval), &shutdown);
             }
         }
     }
@@ -371,14 +374,29 @@ fn simulate_occupancy(args: &WorkerArgs, shutdown: &AtomicBool) -> Option<StopRe
     if args.simulate_render_ms == 0 {
         return None;
     }
-    let deadline = Instant::now() + Duration::from_millis(args.simulate_render_ms);
-    while Instant::now() < deadline {
-        if shutdown.load(Ordering::Relaxed) {
-            return Some(StopReason::Shutdown);
-        }
-        sleep(SIMULATE_SLICE);
+    if sleep_unless_shutdown(Duration::from_millis(args.simulate_render_ms), shutdown) {
+        Some(StopReason::Shutdown)
+    } else {
+        None
     }
-    None
+}
+
+/// Sleeps up to `total` in [`SLEEP_SLICE`] steps, returning early the moment the
+/// shutdown flag is set. Returns whether a shutdown cut the sleep short — so a
+/// blocked worker reacts to SIGINT/SIGTERM within a slice, not after the whole
+/// duration (`std::thread::sleep` is not interrupted by a signal).
+fn sleep_unless_shutdown(total: Duration, shutdown: &AtomicBool) -> bool {
+    let deadline = Instant::now() + total;
+    loop {
+        if shutdown.load(Ordering::Relaxed) {
+            return true;
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return false;
+        }
+        sleep(remaining.min(SLEEP_SLICE));
+    }
 }
 
 /// The diagnostic `error_kind` recorded for a failed render.
