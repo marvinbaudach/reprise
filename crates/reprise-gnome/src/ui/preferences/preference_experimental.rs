@@ -57,13 +57,10 @@ pub(in crate::ui) fn model_availability(
 fn model_present() -> bool {
     use reprise_stems::model::HTDEMUCS_FP32;
     use reprise_stems::provision::{default_model_dir, weights_path};
-    default_model_dir()
-        .map(|dir| {
-            std::fs::metadata(weights_path(&dir, &HTDEMUCS_FP32))
-                .map(|meta| meta.len() == HTDEMUCS_FP32.size_bytes)
-                .unwrap_or(false)
-        })
-        .unwrap_or(false)
+    default_model_dir().is_ok_and(|dir| {
+        std::fs::metadata(weights_path(&dir, &HTDEMUCS_FP32))
+            .is_ok_and(|meta| meta.len() == HTDEMUCS_FP32.size_bytes)
+    })
 }
 
 #[cfg(not(feature = "stem-backend"))]
