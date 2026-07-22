@@ -264,12 +264,8 @@ pub struct PlayerController {
     /// Queue view's named virtual context tail and NAV-9b's jump target.
     /// `None` before the first play and after a stop cleared the context.
     pub(in crate::ui) play_origin: RefCell<Option<super::play_origin::PlayOrigin>>,
-    /// The staging path of the instrumental render currently PREVIEWING (INST-
-    /// 4b), or `None` in ordinary queue playback. It is the single source of
-    /// truth for the preview playback mode (see `preview.rs`): while it is
-    /// `Some`, a `TrackFinished` stops instead of advancing the queue, and no
-    /// play is credited. `present_track`/`reset_to_stopped` clear it when
-    /// ordinary playback resumes or stops.
+    /// Staging path of the render currently PREVIEWING, else `None` — the single
+    /// source of truth for the preview mode (`preview.rs`, INST-4b).
     pub(in crate::ui) preview_path: RefCell<Option<String>>,
     /// See the module's `## Toast + track-list-reload seam` doc section.
     /// Empty (`WeakRef::new()`) until `set_toast_overlay` is called.
@@ -583,20 +579,17 @@ impl PlayerController {
 
     /// Resolves `id` via `queries::query_track_summary` and starts its
     /// playback — the one place that starts a QUEUE track through `Player::
-    /// play`, shared by `play_from_view` and every queue-stepping call site so
-    /// the "resolve, evaluate prior play tracking, start playback, handle
-    /// failure" sequence exists exactly once (DRY). The only other
-    /// controller-owned `Player::play` caller is `preview::play_preview` (a
-    /// one-off out-of-queue instrumental preview, INST-4b, which applies its own
-    /// disciplined preview-mode transitions); no code outside the controller
-    /// calls `Player::play` directly. Ends the previous
-    /// track's listening session first (`evaluate_play_tracking`) — a queue
-    /// step is still a track switch. On success, resets `consecutive_skips`
-    /// to 0 (a good track breaks any skip chain in progress). On a `Player::
-    /// play` failure, hands off to `playback_faults.rs`'s `handle_unplayable_
-    /// track` (diagnose missing-vs-corrupt, mark/toast, then auto-skip)
-    /// rather than resetting outright. A missing DB row or a query failure
-    /// has no title/path to toast from, so those cases just log and go
+    /// play` (the only other `Player::play` caller is `preview::play_preview`,
+    /// a one-off instrumental preview, INST-4b), shared by `play_from_view` and
+    /// every queue-stepping call site so the "resolve, evaluate prior play
+    /// tracking, start playback, handle failure" sequence exists exactly once
+    /// (DRY). Ends the previous track's listening session first
+    /// (`evaluate_play_tracking`) — a queue step is still a track switch. On
+    /// success, resets `consecutive_skips` to 0 (a good track breaks any skip
+    /// chain). On a `Player::play` failure, hands off to `playback_faults.rs`'s
+    /// `handle_unplayable_track` (diagnose missing-vs-corrupt, mark/toast, then
+    /// auto-skip) rather than resetting outright. A missing DB row or query
+    /// failure has no title/path to toast from, so those just log and go
     /// straight to `skip_after_failure`. `pub(in crate::ui)` so `mpris_mirror.rs`
     /// and `playback_faults.rs` can call it too.
     pub(in crate::ui) fn play_track_id(&self, id: i64) {
@@ -629,9 +622,7 @@ impl PlayerController {
     ) {
         self.evaluate_play_tracking();
         self.sync_lyrics_track(None);
-        // Ordinary queue playback leaves any instrumental-preview mode (INST-4b):
-        // from here on a `TrackFinished` advances the queue again and plays are
-        // credited normally. Hoisted into its own statement so no borrow is held.
+        // Ordinary queue playback leaves preview mode (INST-4b).
         *self.preview_path.borrow_mut() = None;
 
         let summary = {
