@@ -18,7 +18,9 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use reprise_core::ai_jobs::{self, ClaimedJob, HeartbeatOutcome};
+use reprise_core::ai_promotion::{self, CompletionOutcome, PromotionConfig};
 use reprise_core::ai_staging::StagingStore;
+use reprise_core::library::settings;
 use reprise_core::stem_separation::{StemError, StemSeparationBackend};
 use rusqlite::Connection;
 
@@ -75,10 +77,11 @@ fn error_kind(error: &StemError) -> &'static str {
 /// — the thread loop calls it repeatedly; tests call it directly.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::ui) fn run_next_job(
-    conn: &Connection,
+    conn: &mut Connection,
     backend: &dyn StemSeparationBackend,
     staging: &StagingStore,
     resolve: &SourceResolver,
+    config: Option<&PromotionConfig>,
     worker_id: i64,
     lease_secs: i64,
     clock: &dyn Fn() -> i64,
@@ -98,6 +101,7 @@ pub(in crate::ui) fn run_next_job(
         backend,
         staging,
         resolve,
+        config,
         worker_id,
         &claimed,
         lease_secs,
@@ -116,10 +120,11 @@ pub(in crate::ui) fn run_next_job(
 /// running→cancelled path deterministically.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::ui) fn run_claimed_job(
-    conn: &Connection,
+    conn: &mut Connection,
     backend: &dyn StemSeparationBackend,
     staging: &StagingStore,
     resolve: &SourceResolver,
+    config: Option<&PromotionConfig>,
     worker_id: i64,
     job: &ClaimedJob,
     lease_secs: i64,
@@ -127,30 +132,26 @@ pub(in crate::ui) fn run_claimed_job(
     on_progress: &mut dyn FnMut(),
 ) -> JobRun {
     let job_id = job.id;
-    let fail = |kind: &str| {
-        if let Err(error) = ai_jobs::mark_failed(conn, job_id, worker_id, kind, clock()) {
-            tracing::error!(%error, job_id, "instrumental worker: mark_failed failed");
-        }
-        JobRun {
-            job_id,
-            outcome: JobRunOutcome::Failed,
-        }
-    };
 
-    let Some(source) = job.source_track_id.and_then(|id| resolve(conn, id)) else {
+    let Some(source) = job.source_track_id.and_then(|id| resolve(&*conn, id)) else {
         tracing::warn!(job_id, "instrumental worker: source path unavailable");
-        return fail("source-unavailable");
+        return fail_run(conn, job_id, worker_id, "source-unavailable", clock);
     };
     if let Err(error) = staging.ensure_dir() {
         tracing::error!(%error, job_id, "instrumental worker: could not create staging dir");
-        return fail("io");
+        return fail_run(conn, job_id, worker_id, "io", clock);
     }
-    let output = staging.path_for_job(job_id);
+    // Render into a claim-scoped temp file, never the shared canonical path.
+    // `complete_render_with_publish` renames it onto the canonical staging path
+    // only after an owner-guarded `mark_done`, so a straggler whose lease was
+    // reclaimed can never clobber or resurrect the committed render.
+    let temp = staging.temp_path_for_job(job_id, worker_id);
 
-    // The progress/cancel closures borrow `conn` and `on_progress`; scoping
-    // them to this block releases those borrows before the terminal arms below
-    // tick the UI one final time.
+    // The progress/cancel closures borrow `conn` immutably; scoping them to this
+    // block releases that borrow before the completion below takes `conn` mutably
+    // (promotion needs `&mut Connection`).
     let result = {
+        let conn: &Connection = conn;
         // Progress: throttled DB write + a coalesced UI tick (plan §2.2).
         let last_write = std::cell::Cell::new(Option::<Instant>::None);
         let mut progress = |permille: u16| {
@@ -177,24 +178,24 @@ pub(in crate::ui) fn run_claimed_job(
                 });
             outcome.cancel_requested || !outcome.still_owner
         };
-        backend.separate_instrumental(&source, &output, &mut progress, &cancel)
+        backend.separate_instrumental(&source, &temp, &mut progress, &cancel)
     };
     match result {
-        Ok(()) => {
-            match ai_jobs::mark_done(conn, job_id, worker_id, clock()) {
-                Ok(true) => on_progress(),
-                Ok(false) => tracing::warn!(job_id, "instrumental worker: done lost ownership"),
-                Err(error) => tracing::error!(%error, job_id, "instrumental worker: mark_done"),
-            }
-            JobRun {
-                job_id,
-                outcome: JobRunOutcome::Completed,
-            }
-        }
+        Ok(()) => complete_published_run(
+            conn,
+            staging,
+            config,
+            job_id,
+            worker_id,
+            &temp,
+            clock,
+            on_progress,
+        ),
         Err(StemError::Cancelled) => {
-            // A cancelled run left no output. mark_cancelled is gated on a real
-            // pending cancel; if it did not apply, the lease was lost instead —
-            // leave the row for the reclaiming worker.
+            // A cancelled run's temp is worthless — drop it. mark_cancelled is
+            // gated on a real pending cancel; if it did not apply, the lease was
+            // lost instead — leave the row for the reclaiming worker.
+            let _ = std::fs::remove_file(&temp);
             match ai_jobs::mark_cancelled(conn, job_id, worker_id, clock()) {
                 Ok(true) => {
                     on_progress();
@@ -217,9 +218,88 @@ pub(in crate::ui) fn run_claimed_job(
             }
         }
         Err(error) => {
-            // A partial render is never valid output — drop it.
-            let _ = staging.discard(job_id);
-            fail(error_kind(&error))
+            // A partial render is never valid output — drop the temp.
+            let _ = std::fs::remove_file(&temp);
+            fail_run(conn, job_id, worker_id, error_kind(&error), clock)
+        }
+    }
+}
+
+/// Marks a running job `failed` with `kind` and returns the failed [`JobRun`].
+/// A free helper (not a closure) so it never holds a borrow on `conn` across the
+/// later `&mut Connection` completion.
+fn fail_run(
+    conn: &Connection,
+    job_id: i64,
+    worker_id: i64,
+    kind: &str,
+    clock: &dyn Fn() -> i64,
+) -> JobRun {
+    if let Err(error) = ai_jobs::mark_failed(conn, job_id, worker_id, kind, clock()) {
+        tracing::error!(%error, job_id, "instrumental worker: mark_failed failed");
+    }
+    JobRun {
+        job_id,
+        outcome: JobRunOutcome::Failed,
+    }
+}
+
+/// Completes a finished render through the core publish-safe path: the
+/// owner-guarded `mark_done` runs first, and only the winner publishes the temp
+/// onto the canonical staging path and honors the job's save-intent — promoting
+/// into the library when a root is configured, else leaving it staged. A failed
+/// auto-promotion degrades gracefully: the job stays `done` + unsaved with its
+/// render kept for a manual retry.
+#[allow(clippy::too_many_arguments)]
+fn complete_published_run(
+    conn: &mut Connection,
+    staging: &StagingStore,
+    config: Option<&PromotionConfig>,
+    job_id: i64,
+    worker_id: i64,
+    temp: &std::path::Path,
+    clock: &dyn Fn() -> i64,
+    on_progress: &mut dyn FnMut(),
+) -> JobRun {
+    match ai_promotion::complete_render_with_publish(
+        conn,
+        staging,
+        config,
+        job_id,
+        worker_id,
+        temp,
+        clock(),
+    ) {
+        Ok(CompletionOutcome::NotOwned) => {
+            tracing::warn!(job_id, "instrumental worker: completion lost ownership");
+            JobRun {
+                job_id,
+                outcome: JobRunOutcome::Abandoned,
+            }
+        }
+        Ok(outcome) => {
+            if let CompletionOutcome::PromotionDeferred { error } = &outcome {
+                tracing::warn!(
+                    job_id,
+                    %error,
+                    "instrumental worker: auto-promotion deferred; render kept for retry"
+                );
+            }
+            on_progress();
+            JobRun {
+                job_id,
+                outcome: JobRunOutcome::Completed,
+            }
+        }
+        Err(error) => {
+            // A DB/rename failure after (or during) the guarded mark_done. Leave
+            // the row for a reclaiming worker rather than fake a terminal state;
+            // the DB is the truth and the startup sweep reclaims any stray temp.
+            tracing::error!(%error, job_id, "instrumental worker: completion failed");
+            JobRun {
+                job_id,
+                outcome: JobRunOutcome::Abandoned,
+            }
         }
     }
 }
@@ -353,13 +433,26 @@ fn worker_loop(
     worker_id: i64,
     shared: &Arc<SharedState>,
 ) {
-    let conn = match reprise_core::db::open_migrated(Some(db_path)) {
+    let mut conn = match reprise_core::db::open_migrated(Some(db_path)) {
         Ok(conn) => conn,
         Err(error) => {
             tracing::error!(%error, "instrumental worker: could not open database");
             return;
         }
     };
+    // Clean up resurrectable staging orphans left by a prior run before working.
+    match staging.sweep_orphans(&conn) {
+        Ok(removed) if !removed.is_empty() => {
+            tracing::info!(
+                count = removed.len(),
+                "instrumental worker: swept staging orphans"
+            );
+        }
+        Ok(_) => {}
+        Err(error) => {
+            tracing::warn!(%error, "instrumental worker: staging orphan sweep failed");
+        }
+    }
     let clock = super::now_unix;
     let mut handled = 0u64;
     loop {
@@ -368,11 +461,26 @@ fn worker_loop(
             if shared.stopping.load(Ordering::SeqCst) {
                 return;
             }
+            // The promotion target, read fresh each pass so a mid-session
+            // library-root change is honored; `None` leaves finished renders
+            // staged (nothing to file), waiting for a manual save.
+            let config = settings::get_library_root(&conn)
+                .ok()
+                .flatten()
+                .map(PromotionConfig::new);
             let mut tick = || {
                 let _ = shared.progress_tx.try_send(());
             };
             match run_next_job(
-                &conn, backend, staging, resolve, worker_id, LEASE_SECS, &clock, &mut tick,
+                &mut conn,
+                backend,
+                staging,
+                resolve,
+                config.as_ref(),
+                worker_id,
+                LEASE_SECS,
+                &clock,
+                &mut tick,
             ) {
                 Some(_) => continue,
                 None => break,
