@@ -1,22 +1,5 @@
 use super::*;
 
-#[test]
-fn ac_11_f11_is_scoped_to_the_enabled_visual_tab() {
-    assert!(should_toggle_visual_fullscreen(
-        true,
-        true,
-        PanelTab::Visual,
-        gtk4::gdk::Key::F11,
-    ));
-    for unavailable in [
-        should_toggle_visual_fullscreen(false, true, PanelTab::Visual, gtk4::gdk::Key::F11),
-        should_toggle_visual_fullscreen(true, false, PanelTab::Visual, gtk4::gdk::Key::F11),
-        should_toggle_visual_fullscreen(true, true, PanelTab::Lyrics, gtk4::gdk::Key::F11),
-        should_toggle_visual_fullscreen(true, true, PanelTab::Visual, gtk4::gdk::Key::Escape),
-    ] {
-        assert!(!unavailable);
-    }
-}
 use libadwaita::prelude::AdwApplicationWindowExt;
 use std::time::Duration;
 
@@ -525,7 +508,7 @@ fn test_panel(application_id: &str) -> (adw::ApplicationWindow, Rc<NowPlayingPan
     app.register(None::<&gtk4::gio::Cancellable>).unwrap();
     let window = adw::ApplicationWindow::new(&app);
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    let panel = NowPlayingPanel::new(&content, &window, conn, runtime, cover_loader, None);
+    let panel = NowPlayingPanel::new(&content, conn, runtime, cover_loader, None);
     window.set_content(Some(panel.widget()));
     (window, panel)
 }
