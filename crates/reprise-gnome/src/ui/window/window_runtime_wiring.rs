@@ -560,6 +560,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             content_stack,
             toast_overlay,
             track_list,
+            player,
         },
     );
     super::mounts::install(&super::mounts::MountWiring {
