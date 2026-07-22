@@ -157,3 +157,21 @@ fn delete_missing_playlist_is_not_found_even_with_yes() {
     let out = h.run(&["playlist", "delete", "7", "--yes"]);
     assert_eq!(code(&out), 3);
 }
+
+#[test]
+fn list_text_strips_ansi_escapes_from_playlist_names() {
+    let h = Harness::new();
+    // A playlist name carrying a hostile escape (e.g. imported from a crafted
+    // M3U's #PLAYLIST directive).
+    {
+        let conn = h.conn();
+        reprise_core::library::playlists::create(&conn, "Evil\u{1b}[2JName").unwrap();
+    }
+    let out = h.run(&["playlist", "list"]);
+    assert_eq!(code(&out), 0);
+    assert!(
+        !out.stdout.contains(&0x1b),
+        "an ESC byte reached the terminal via a playlist name"
+    );
+    assert!(stdout(&out).contains("Name"));
+}
