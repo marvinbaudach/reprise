@@ -48,6 +48,7 @@ pub mod scrobbling;
 pub mod sound_profile;
 pub mod up_next;
 pub mod view_source;
+pub mod visuals;
 pub mod waveform;
 
 #[cfg(test)]

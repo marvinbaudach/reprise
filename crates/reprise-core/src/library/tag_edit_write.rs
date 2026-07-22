@@ -269,15 +269,18 @@ mod tests {
             &path,
         )
         .unwrap();
-        let mut conn = crate::db::open(None).unwrap();
+        let conn = crate::db::open(None).unwrap();
         crate::db::migrate(&conn).unwrap();
-        crate::library::scanner::scan_folder(&mut conn, &path).unwrap();
+        // Register the row directly instead of scanning: the scanner now
+        // auto-repairs damaged containers, which would fix this file before the
+        // test can exercise the editor's own repair path — keep it broken here.
         let path_text = path.to_string_lossy().to_string();
-        let id: i64 = conn
-            .query_row("SELECT id FROM tracks WHERE path=?1", [&path_text], |row| {
-                row.get(0)
-            })
-            .unwrap();
+        conn.execute(
+            "INSERT INTO tracks (path, title, untagged, added_at) VALUES (?1, ?2, 1, 0)",
+            rusqlite::params![path_text, name],
+        )
+        .unwrap();
+        let id = conn.last_insert_rowid();
         (conn, id, path)
     }
 
