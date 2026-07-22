@@ -19,6 +19,9 @@
 //! (`ai_jobs::batch_progress`, the row `progress_permille`) — the same numbers
 //! the CLI and MCP report (plan §2.2). Nothing reads backend-internal state.
 
+pub(in crate::ui) mod conversion_model;
+pub(in crate::ui) mod conversion_view;
+pub(in crate::ui) mod conversion_wiring;
 pub(in crate::ui) mod worker_host;
 
 use std::path::PathBuf;
@@ -90,6 +93,14 @@ pub(in crate::ui) fn app_backend() -> Box<dyn StemSeparationBackend + Send> {
 #[allow(dead_code)]
 pub(in crate::ui) fn app_model_id() -> String {
     FakeStemBackend::new().model_id()
+}
+
+/// Unix seconds — the clock every facade call (`enqueue`, `promote`, `discard`)
+/// on the UI thread feeds `ai_jobs`/`ai_promotion`.
+pub(in crate::ui) fn now_unix() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs() as i64)
 }
 
 /// The production source-path resolver. **TODO(P3b):** returns `None` until a

@@ -1918,7 +1918,7 @@ Dateien.
   → ein Batch mit gemeinsamer `batch_id` für Aggregat-Fortschritt) und ist bei
   reiner Missing-Auswahl inaktiv (eine fehlende Datei ist nicht separierbar).
   Ohne den Schalter erscheint der Eintrag nicht (INST-11). (Plan 2.4/1)
-- **INST-2** [geplant] [gtk] — Konvertierungs-Playlist = Staging-Bereich mit
+- **INST-2** [aktiv] [gtk] — Konvertierungs-Playlist = Staging-Bereich mit
   **genau einem Aggregat-Fortschrittsbalken** (fertig/gesamt + Prozent,
   gespeist aus den Job-Zeilen/Events, nicht aus Backend-internen Zahlen).
   **Weitere Fortschritts-UI gibt es nicht**: kein Sidebar-/Statusleisten-Slot
@@ -1929,15 +1929,31 @@ Dateien.
   saved / failed. Die Ansicht ist technisch eine Spezial-View über `ai_jobs` +
   Staging-Store (Wiedergabe per Dateipfad), kein Playlist-Row-Source — auch
   wenn sie sich als Playlist anfühlt. (Plan 2.4/7)
-- **INST-4** [geplant] [gtk] — Fertige Titel sind **sofort spielbar aus dem
-  Staging**, während andere Einträge noch verarbeiten; „Playlist abspielen"
-  spielt die fertigen. Der Staging-Render ist eine echte, abspielbare Datei
-  vor jeder Speicher-Entscheidung. (Beschluss 15, Plan 2.4/7)
-- **INST-5** [geplant] [gtk] — Warte-Regel: Ein Klick auf einen **noch
-  verarbeitenden** Eintrag blockiert den Start mit sichtbarem Render-
-  Fortschritt und beginnt erst nach Abschluss — **kein Original-Fallback,
-  kein Auto-Skip**. Progressiver Frühstart ist eine notierte spätere
-  Optimierung, nicht v1. (Beschluss, Plan 2.4/6)
+- **INST-4** [ersetzt durch INST-4a und INST-4b] — Die ursprüngliche Regel
+  bündelte die Sicht-Markierung und die tatsächliche Wiedergabe; sie wird in
+  die view-seitige Markierung (INST-4a) und die reale Staging-Wiedergabe
+  (INST-4b, P3b) geteilt.
+- **INST-4a** [aktiv] [gtk] — In der Konvertierungs-Ansicht ist ein fertiger,
+  im Staging vorhandener Render als **spielbar markiert** (Play aktiv), während
+  ein noch verarbeitender Eintrag es nicht ist (er zeigt Fortschritt). Der
+  Staging-Render ist eine echte Datei vor jeder Speicher-Entscheidung.
+  (Beschluss 15, Plan 2.4/7)
+- **INST-4b** [geplant] [gtk] — Das Aktivieren eines spielbaren Eintrags
+  spielt den Staging-Render (bzw. den promoteten Titel) **tatsächlich ab** —
+  Wiedergabe per Dateipfad. Bis der Player das kann, ist die Aktion ein
+  markierter Platzhalter (P3b).
+- **INST-5** [ersetzt durch INST-5a und INST-5b] — Die ursprüngliche Regel
+  bündelte die Klick-Entscheidung und die laufende Warte-Interaktion; sie wird
+  in die View-Model-Entscheidung (INST-5a) und die App-Interaktion (INST-5b,
+  P3b) geteilt.
+- **INST-5a** [aktiv] [gtk] — Warte-Regel (Entscheidung): Ein Klick auf einen
+  **noch verarbeitenden** Eintrag löst „Warten mit Fortschritt" aus — **nie
+  Play** (kein Original-Fallback), **nie Auto-Skip**. Die reine View-Model-
+  Entscheidung ist damit einklagbar, unabhängig von der Wiedergabe.
+- **INST-5b** [geplant] [gtk] — In der laufenden App blockiert der Klick auf
+  einen verarbeitenden Eintrag den Start mit sichtbarem Render-Fortschritt und
+  beginnt nach Abschluss (kein Fallback/Skip). Progressiver Frühstart ist eine
+  spätere Optimierung, nicht v1 (P3b).
 - **INST-6** [geplant] [gtk] — Speicher-Entscheidung pro Zeile
   (Speichern / Verwerfen) plus „Alle speichern" in der Kopfzeile. Speichern
   **promotet** über die Core-Fassade (Move in den dedizierten Ordner, finale

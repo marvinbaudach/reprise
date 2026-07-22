@@ -1,0 +1,349 @@
+//! The conversion/staging view (plan §2.4/7; docs/ux-rules Section AB) — a
+//! special view over `ai_jobs` + the staging store, **not** a real playlist
+//! row-source. It renders exactly one aggregate progress bar (INST-2), one row
+//! per active job with its state and affordances (INST-3), and enforces the
+//! play/wait split (INST-4/INST-5) through the pure `conversion_model`.
+//!
+//! Playback, save, discard, save-all and clear are injected callbacks so the
+//! widget stays testable without a player or a promotion; the window wires them
+//! to the real facades. All progress figures come from the job rows.
+
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+
+use gtk4::prelude::*;
+use reprise_core::ai_jobs::{self, AiJob};
+use reprise_core::ai_staging::StagingStore;
+use rusqlite::Connection;
+
+use super::conversion_model::{self, RowClickAction, RowState};
+use crate::ui::strings;
+
+type JobCallback = Rc<dyn Fn(i64)>;
+type VoidCallback = Rc<dyn Fn()>;
+
+/// Which per-row callback a job button fires.
+#[derive(Clone, Copy)]
+enum JobAction {
+    Play,
+    Save,
+    Discard,
+}
+
+/// Per-row widgets kept for the headless display-test accessors (read under
+/// `#[cfg(test)]`), so the tests can assert the *actual* widget state.
+#[allow(dead_code)]
+struct RowWidgets {
+    play: gtk4::Button,
+    progress: gtk4::ProgressBar,
+    state: RowState,
+}
+
+/// The conversion view. Cheap `Rc` handle; `refresh` reloads from the DB.
+pub(in crate::ui) struct ConversionView {
+    root: gtk4::Box,
+    aggregate: gtk4::ProgressBar,
+    save_all: gtk4::Button,
+    clear: gtk4::Button,
+    list: gtk4::ListBox,
+    empty: gtk4::Label,
+    conn: Rc<RefCell<Connection>>,
+    staging: StagingStore,
+    rows: RefCell<HashMap<i64, RowWidgets>>,
+    on_play: RefCell<Option<JobCallback>>,
+    on_save: RefCell<Option<JobCallback>>,
+    on_discard: RefCell<Option<JobCallback>>,
+    on_save_all: RefCell<Option<VoidCallback>>,
+    on_clear: RefCell<Option<VoidCallback>>,
+}
+
+impl ConversionView {
+    pub(in crate::ui) fn new(conn: Rc<RefCell<Connection>>, staging: StagingStore) -> Rc<Self> {
+        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
+        root.set_margin_top(12);
+        root.set_margin_bottom(12);
+        root.set_margin_start(12);
+        root.set_margin_end(12);
+
+        let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+        let title = gtk4::Label::new(Some(&strings::text(strings::CONVERSION_TITLE)));
+        title.add_css_class("title-4");
+        title.set_halign(gtk4::Align::Start);
+        title.set_hexpand(true);
+        let save_all = gtk4::Button::with_label(&strings::text(strings::CONVERSION_SAVE_ALL));
+        save_all.add_css_class("suggested-action");
+        let clear = gtk4::Button::with_label(&strings::text(strings::CONVERSION_CLEAR));
+        clear.add_css_class("flat");
+        header.append(&title);
+        header.append(&save_all);
+        header.append(&clear);
+
+        // INST-2: the single aggregate progress bar. No toast, no sidebar slot.
+        let aggregate = gtk4::ProgressBar::new();
+        aggregate.set_show_text(true);
+
+        let list = gtk4::ListBox::new();
+        list.add_css_class("boxed-list");
+        list.set_selection_mode(gtk4::SelectionMode::None);
+        let scrolled = gtk4::ScrolledWindow::new();
+        scrolled.set_vexpand(true);
+        scrolled.set_child(Some(&list));
+
+        let empty = gtk4::Label::new(Some(&strings::text(strings::CONVERSION_EMPTY)));
+        empty.add_css_class("dim-label");
+        empty.set_vexpand(true);
+
+        root.append(&header);
+        root.append(&aggregate);
+        root.append(&scrolled);
+        root.append(&empty);
+
+        let view = Rc::new(Self {
+            root,
+            aggregate,
+            save_all,
+            clear,
+            list,
+            empty,
+            conn,
+            staging,
+            rows: RefCell::new(HashMap::new()),
+            on_play: RefCell::new(None),
+            on_save: RefCell::new(None),
+            on_discard: RefCell::new(None),
+            on_save_all: RefCell::new(None),
+            on_clear: RefCell::new(None),
+        });
+        view.wire_header();
+        view.refresh();
+        view
+    }
+
+    pub(in crate::ui) fn widget(&self) -> &gtk4::Box {
+        &self.root
+    }
+
+    fn wire_header(self: &Rc<Self>) {
+        let weak = Rc::downgrade(self);
+        self.save_all.connect_clicked(move |_| {
+            if let Some(view) = weak.upgrade() {
+                let callback = view.on_save_all.borrow().clone();
+                if let Some(callback) = callback {
+                    callback();
+                }
+            }
+        });
+        let weak = Rc::downgrade(self);
+        // INST-7: "Clear playlist" warns on undecided renders. The warning
+        // itself is the callback's responsibility (it owns the window); the view
+        // hands it the fact via `has_undecided_now`.
+        self.clear.connect_clicked(move |_| {
+            if let Some(view) = weak.upgrade() {
+                let callback = view.on_clear.borrow().clone();
+                if let Some(callback) = callback {
+                    callback();
+                }
+            }
+        });
+    }
+
+    /// Reloads the rows and the aggregate bar from the job queue + staging. Cheap
+    /// to call on every worker tick — the active set is a handful of rows.
+    pub(in crate::ui) fn refresh(self: &Rc<Self>) {
+        let jobs = {
+            let conn = self.conn.borrow();
+            ai_jobs::list_active_jobs(&conn).unwrap_or_else(|error| {
+                tracing::error!(%error, "conversion view: could not list active jobs");
+                Vec::new()
+            })
+        };
+
+        let aggregate = conversion_model::aggregate(&jobs);
+        self.aggregate.set_fraction(aggregate.fraction());
+        self.aggregate.set_text(Some(&strings::conversion_aggregate(
+            aggregate.done,
+            aggregate.total,
+            aggregate.percent(),
+        )));
+
+        self.list.remove_all();
+        let mut rows = HashMap::with_capacity(jobs.len());
+        for job in &jobs {
+            let staged = self.staging.exists(job.id);
+            let state = conversion_model::row_state(job, staged);
+            let widgets = self.build_row(job, state);
+            rows.insert(job.id, widgets);
+        }
+        *self.rows.borrow_mut() = rows;
+
+        let empty = jobs.is_empty();
+        self.empty.set_visible(empty);
+        self.list.set_visible(!empty);
+        self.save_all
+            .set_sensitive(conversion_model::has_undecided(&jobs));
+    }
+
+    fn build_row(self: &Rc<Self>, job: &AiJob, state: RowState) -> RowWidgets {
+        let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+        row.set_margin_top(6);
+        row.set_margin_bottom(6);
+        row.set_margin_start(8);
+        row.set_margin_end(8);
+
+        let info = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+        info.set_hexpand(true);
+        info.set_halign(gtk4::Align::Start);
+        let title = gtk4::Label::new(Some(&row_title(job)));
+        title.set_halign(gtk4::Align::Start);
+        let state_label = gtk4::Label::new(Some(&state_text(state)));
+        state_label.add_css_class("dim-label");
+        state_label.add_css_class("caption");
+        state_label.set_halign(gtk4::Align::Start);
+        info.append(&title);
+        info.append(&state_label);
+
+        // INST-3: processing rows carry their own permille bar.
+        let progress = gtk4::ProgressBar::new();
+        progress.set_valign(gtk4::Align::Center);
+        progress.set_width_request(120);
+        match state {
+            RowState::Processing { permille } => {
+                progress.set_fraction(f64::from(permille) / 1000.0);
+                progress.set_visible(true);
+            }
+            _ => progress.set_visible(false),
+        }
+
+        // INST-4/INST-5: Play is enabled only when the click resolves to Play; a
+        // processing row waits-with-progress (not playable) and shows its bar.
+        let play = flat_button(strings::CONVERSION_PLAY);
+        play.set_sensitive(matches!(
+            conversion_model::click_action(state),
+            RowClickAction::Play
+        ));
+        self.wire_job_button(&play, job.id, JobAction::Play);
+
+        // INST-6: per-row Save/Discard on an undecided render only.
+        let undecided = matches!(state, RowState::DoneUnsaved { .. });
+        let save = flat_button(strings::CONVERSION_SAVE);
+        save.set_visible(undecided);
+        self.wire_job_button(&save, job.id, JobAction::Save);
+        let discard = flat_button(strings::CONVERSION_DISCARD);
+        discard.set_visible(undecided || matches!(state, RowState::Failed));
+        discard.add_css_class("destructive-action");
+        self.wire_job_button(&discard, job.id, JobAction::Discard);
+
+        row.append(&info);
+        row.append(&progress);
+        row.append(&play);
+        row.append(&save);
+        row.append(&discard);
+        self.list.append(&row);
+
+        RowWidgets {
+            play,
+            progress,
+            state,
+        }
+    }
+
+    fn wire_job_button(self: &Rc<Self>, button: &gtk4::Button, job_id: i64, action: JobAction) {
+        let weak = Rc::downgrade(self);
+        button.connect_clicked(move |_| {
+            let Some(view) = weak.upgrade() else {
+                return;
+            };
+            let slot = match action {
+                JobAction::Play => &view.on_play,
+                JobAction::Save => &view.on_save,
+                JobAction::Discard => &view.on_discard,
+            };
+            let callback = slot.borrow().clone();
+            if let Some(callback) = callback {
+                callback(job_id);
+            }
+        });
+    }
+
+    // --- Callback setters (wired by the window) ---
+
+    pub(in crate::ui) fn set_on_play(&self, callback: impl Fn(i64) + 'static) {
+        *self.on_play.borrow_mut() = Some(Rc::new(callback));
+    }
+    pub(in crate::ui) fn set_on_save(&self, callback: impl Fn(i64) + 'static) {
+        *self.on_save.borrow_mut() = Some(Rc::new(callback));
+    }
+    pub(in crate::ui) fn set_on_discard(&self, callback: impl Fn(i64) + 'static) {
+        *self.on_discard.borrow_mut() = Some(Rc::new(callback));
+    }
+    pub(in crate::ui) fn set_on_save_all(&self, callback: impl Fn() + 'static) {
+        *self.on_save_all.borrow_mut() = Some(Rc::new(callback));
+    }
+    pub(in crate::ui) fn set_on_clear(&self, callback: impl Fn() + 'static) {
+        *self.on_clear.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    /// Whether any row is a finished, undecided render — the fact the window's
+    /// "clear playlist" confirmation keys on (INST-7).
+    pub(in crate::ui) fn has_undecided_now(&self) -> bool {
+        let conn = self.conn.borrow();
+        ai_jobs::list_active_jobs(&conn).is_ok_and(|jobs| conversion_model::has_undecided(&jobs))
+    }
+}
+
+fn flat_button(label: &str) -> gtk4::Button {
+    let button = gtk4::Button::with_label(&strings::text(label));
+    button.add_css_class("flat");
+    button.set_valign(gtk4::Align::Center);
+    button
+}
+
+fn row_title(job: &AiJob) -> String {
+    match job.source_track_id {
+        Some(id) => format!("Conversion · source #{id}"),
+        None => format!("Conversion · job #{}", job.id),
+    }
+}
+
+fn state_text(state: RowState) -> String {
+    let key = match state {
+        RowState::Queued => strings::STATE_QUEUED,
+        RowState::Processing { .. } => strings::STATE_PROCESSING,
+        RowState::DoneUnsaved { .. } => strings::STATE_READY_UNSAVED,
+        RowState::Saved => strings::STATE_SAVED,
+        RowState::Failed => strings::STATE_FAILED,
+    };
+    strings::text(key)
+}
+
+#[cfg(test)]
+#[path = "conversion_view_tests.rs"]
+mod tests;
+
+#[cfg(test)]
+impl ConversionView {
+    pub(in crate::ui) fn aggregate_fraction(&self) -> f64 {
+        self.aggregate.fraction()
+    }
+    pub(in crate::ui) fn aggregate_text(&self) -> String {
+        self.aggregate
+            .text()
+            .map(|t| t.to_string())
+            .unwrap_or_default()
+    }
+    pub(in crate::ui) fn row_play_enabled(&self, job_id: i64) -> Option<bool> {
+        self.rows
+            .borrow()
+            .get(&job_id)
+            .map(|row| row.play.is_sensitive())
+    }
+    pub(in crate::ui) fn row_is_processing(&self, job_id: i64) -> Option<bool> {
+        self.rows.borrow().get(&job_id).map(|row| {
+            matches!(row.state, RowState::Processing { .. }) && row.progress.is_visible()
+        })
+    }
+    pub(in crate::ui) fn row_count(&self) -> usize {
+        self.rows.borrow().len()
+    }
+}
