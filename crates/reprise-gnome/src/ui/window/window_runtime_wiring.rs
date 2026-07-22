@@ -675,6 +675,13 @@ fn start_external_changes_refresh(
                     }
                 }
             }
+            if plan.conversion {
+                // An MCP/CLI process enqueued an instrumental job. The app-hosted
+                // worker idles until woken, so nudge it to claim and render the
+                // new job. A no-op when the experimental feature is off (no
+                // worker, no wake hook).
+                crate::ui::instrumental::wake_worker();
+            }
         }),
     );
 }
