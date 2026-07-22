@@ -11,7 +11,7 @@ pub(crate) fn scene(ctx: &ModeCtx) -> Vec<Shape> {
     let (w, h) = (ctx.width, ctx.height);
     let horizon = h * 0.30;
     let near_y = h * 0.94;
-    let amp = h * 0.26;
+    let amp = h * 0.32;
     // Project every water cell once.
     let mut rows: Vec<(Vec<(f32, f32)>, f32)> = Vec::with_capacity(WATER_ROWS); // (points, near)
     for row in 0..WATER_ROWS {

@@ -19,30 +19,73 @@ const DT: f32 = 1.0 / 60.0;
 /// Below this every cell reads as fully rested (`is_still`).
 const REST_EPSILON: f32 = 0.01;
 
-/// Fraction of the remaining distance the far row's *height* closes toward its
-/// band target each step. The row is a position-driven boundary, not a
-/// force-driven mass: easing the height directly (first order) tracks the music
-/// fast with no velocity overshoot, so it snaps to loud hits without the
-/// self-oscillating tremor a high force gain produces. ~0.5 ≈ reaches the
-/// target in a few frames.
-const DRIVE_EASE: f32 = 0.5;
-/// Height the far row aims for at full band energy (drive target = band·this).
-const DRIVE_AMPLITUDE: f32 = 2.2;
+/// Fraction of the remaining distance a driven cell's *height* closes toward
+/// its band target each step. The hot zone is position-driven, not
+/// force-driven: easing the height directly (first order) tracks the music fast
+/// with no velocity overshoot, so it snaps to loud hits without the
+/// self-oscillating tremor a high force gain produces. ~0.6 ≈ reaches the
+/// target in a couple of frames — sharp and reactive.
+const DRIVE_EASE: f32 = 0.6;
+/// Height a hot-zone cell aims for at full band energy (target = band·this·win).
+const DRIVE_AMPLITUDE: f32 = 2.6;
 /// Bands below this inject no drive at all — quiet, non-dominant frequencies
 /// leave the surface flat instead of trembling it. A noise gate, essentially.
-const DRIVE_GATE: f32 = 0.10;
+const DRIVE_GATE: f32 = 0.08;
 /// Neighbor spring coupling: how fast a disturbance propagates across the mesh
-/// toward the viewer. Kept lively so ripples travel rather than crawl.
-const SPRING: f32 = 60.0;
+/// away from the ridge. Kept lively so ripples travel rather than crawl.
+const SPRING: f32 = 55.0;
 /// Restoring pull back toward a flat surface.
 const RESTORING: f32 = 1.7;
-/// Velocity damping rate; `exp(-DT·this)` per step. Light, so waves linger.
-const DAMP_RATE: f32 = 1.0;
+/// Velocity damping rate; `exp(-DT·this)` per step. Light, so waves linger, but
+/// enough to keep the plane calm between hits.
+const DAMP_RATE: f32 = 1.2;
 
-/// Height (`h`) and velocity (`v`) field for every grid cell.
+/// The reactive "hot zone" — a localized central patch that erupts with the
+/// spectrum while the surrounding mesh stays a calm flat plane (the look of the
+/// wireframe-terrain music videos this mode is modeled on). Its center sits
+/// slightly back of mid-depth so the eruption reads mid-plane in perspective,
+/// with flat mesh both in front of and behind it.
+const HOT_ROW_CENTER: f32 = 0.42;
+/// Hot-zone half-extent in rows / columns; a raised-cosine window tapers the
+/// drive to zero at these radii, so the ridge fades smoothly into flat mesh.
+const HOT_ROW_RADIUS: f32 = 7.0;
+const HOT_COL_RADIUS: f32 = 15.0;
+/// Below this window weight a cell is treated as free (undriven) mesh.
+const HOT_THRESHOLD: f32 = 0.02;
+/// How much of the spectrum the ridge spans from its center out to the column
+/// radius: center column → bass (band 0), radius → this fraction up the bands.
+/// Kept in the bass/low-mid range so the ridge peaks in the middle and the
+/// per-column band variation reads as sharp spikes.
+const BAND_SPREAD: f32 = 0.55;
+
+/// Raised-cosine hot-zone weight for a cell, `0.0` outside the window. Static
+/// geometry, so [`WaterGrid::new`] bakes it into the `hot` field once.
+fn hot_window(row: usize, col: usize) -> f32 {
+    use std::f32::consts::PI;
+    let rc = HOT_ROW_CENTER * (WATER_ROWS - 1) as f32;
+    let cc = (WATER_COLS - 1) as f32 / 2.0;
+    let dr = (row as f32 - rc).abs() / HOT_ROW_RADIUS;
+    let dc = (col as f32 - cc).abs() / HOT_COL_RADIUS;
+    if dr >= 1.0 || dc >= 1.0 {
+        return 0.0;
+    }
+    0.25 * (1.0 + (PI * dr).cos()) * (1.0 + (PI * dc).cos())
+}
+
+/// Display band a hot-zone column samples: center column → bass (band 0),
+/// fanning out to [`BAND_SPREAD`] of the band range at the column radius.
+fn col_band(col: usize) -> usize {
+    let cc = (WATER_COLS - 1) as f32 / 2.0;
+    let f = ((col as f32 - cc).abs() / HOT_COL_RADIUS).min(1.0);
+    ((f * BAND_SPREAD * (SPECTRUM_BAND_COUNT - 1) as f32) as usize).min(SPECTRUM_BAND_COUNT - 1)
+}
+
+/// Height (`h`) and velocity (`v`) field for every grid cell, plus the static
+/// hot-zone window (`hot`) that marks which cells are spectrum-driven.
 pub struct WaterGrid {
     h: [f32; CELLS],
     v: [f32; CELLS],
+    hot: [f32; CELLS],
     rng: u32,
 }
 
@@ -54,40 +97,55 @@ impl Default for WaterGrid {
 
 impl WaterGrid {
     pub fn new() -> Self {
+        let mut hot = [0.0; CELLS];
+        for row in 0..WATER_ROWS {
+            for col in 0..WATER_COLS {
+                hot[row * WATER_COLS + col] = hot_window(row, col);
+            }
+        }
         Self {
             h: [0.0; CELLS],
             v: [0.0; CELLS],
+            hot,
             rng: 0xa511_e9b3,
         }
     }
 
-    /// One 60 Hz step. Row 0 is a position-driven boundary: its height eases
-    /// straight to the (gated) band target with [`DRIVE_EASE`], so it tracks
-    /// the music fast without the velocity overshoot that reads as a tremor,
-    /// and [`DRIVE_GATE`] keeps quiet bands from stirring it at all. The rows in
-    /// front of it are free waves — [`SPRING`] coupling carries the disturbance
-    /// toward the viewer, [`RESTORING`] pulls back to flat, and
-    /// `exp(-DT·`[`DAMP_RATE`]`)` damps so ripples travel and linger. `h`
+    /// One 60 Hz step. The central hot zone is position-driven: each cell's
+    /// height eases straight to the windowed spectrum target with [`DRIVE_EASE`]
+    /// (gated by [`DRIVE_GATE`]), so the ridge erupts sharply with the music —
+    /// per-column bands give it jagged spikes, [`hot_window`] fades it into flat
+    /// mesh. Every other cell is a free spring wave rippling out from the ridge:
+    /// [`SPRING`] coupling propagates it, [`RESTORING`] pulls back to flat, and
+    /// `exp(-DT·`[`DAMP_RATE`]`)` damps so the plane calms between hits. `h`
     /// clamped to `-1.1..=3.0`.
     pub fn advance(&mut self, bands: &[f32; SPECTRUM_BAND_COUNT]) {
-        let half = (WATER_COLS - 1) as f32 / 2.0;
-        for col in 0..WATER_COLS {
-            let f = (col as f32 - half).abs() / half;
-            let band = bands[((f * 0.775 * (SPECTRUM_BAND_COUNT - 1) as f32) as usize)
-                .min(SPECTRUM_BAND_COUNT - 1)];
-            let target = if band < DRIVE_GATE {
-                0.0
-            } else {
-                band * DRIVE_AMPLITUDE
-            };
-            self.h[col] += (target - self.h[col]) * DRIVE_EASE;
-            self.v[col] = 0.0;
-        }
-        let damp = (-DT * DAMP_RATE).exp();
-        for row in 1..WATER_ROWS {
+        for row in 0..WATER_ROWS {
             for col in 0..WATER_COLS {
                 let i = row * WATER_COLS + col;
-                let up = self.h[i - WATER_COLS];
+                let win = self.hot[i];
+                if win <= HOT_THRESHOLD {
+                    continue;
+                }
+                let band = bands[col_band(col)];
+                let drive = if band < DRIVE_GATE { 0.0 } else { band };
+                let target = drive * DRIVE_AMPLITUDE * win;
+                self.h[i] = (self.h[i] + (target - self.h[i]) * DRIVE_EASE).clamp(-1.1, 3.0);
+                self.v[i] = 0.0;
+            }
+        }
+        let damp = (-DT * DAMP_RATE).exp();
+        for row in 0..WATER_ROWS {
+            for col in 0..WATER_COLS {
+                let i = row * WATER_COLS + col;
+                if self.hot[i] > HOT_THRESHOLD {
+                    continue;
+                }
+                let up = if row > 0 {
+                    self.h[i - WATER_COLS]
+                } else {
+                    self.h[i]
+                };
                 let down = if row < WATER_ROWS - 1 {
                     self.h[i + WATER_COLS]
                 } else {
@@ -105,8 +163,14 @@ impl WaterGrid {
                 self.v[i] *= damp;
             }
         }
-        for i in WATER_COLS..CELLS {
-            self.h[i] = (self.h[i] + self.v[i] * DT).clamp(-1.1, 3.0);
+        for row in 0..WATER_ROWS {
+            for col in 0..WATER_COLS {
+                let i = row * WATER_COLS + col;
+                if self.hot[i] > HOT_THRESHOLD {
+                    continue;
+                }
+                self.h[i] = (self.h[i] + self.v[i] * DT).clamp(-1.1, 3.0);
+            }
         }
     }
 
