@@ -168,6 +168,7 @@ pub fn run(
     store
         .ensure_dir()
         .map_err(|error| CliError::Database(format!("cannot create staging dir: {error}")))?;
+    sweep_staging_orphans(&store, conn);
     let worker = worker_token();
     let shutdown = install_signal_flag()?;
     let config = library_promotion_config(conn)?;
@@ -195,6 +196,20 @@ pub fn run(
 /// there is nowhere to file a promotion regardless of a job's save-intent.
 fn library_promotion_config(conn: &Connection) -> Result<Option<PromotionConfig>, CliError> {
     Ok(settings::get_library_root(conn)?.map(PromotionConfig::new))
+}
+
+/// Removes resurrectable staging orphans (a saved/cancelled/vanished job's
+/// leftover render) before the worker starts. Best-effort: a sweep failure is a
+/// non-fatal housekeeping miss reported on stderr, never a reason to refuse to
+/// work. Diagnostics go to stderr so `--json` stdout stays a clean summary.
+fn sweep_staging_orphans(store: &StagingStore, conn: &Connection) {
+    match store.sweep_orphans(conn) {
+        Ok(removed) if !removed.is_empty() => {
+            eprintln!("worker: swept {} staging orphan(s)", removed.len());
+        }
+        Ok(_) => {}
+        Err(error) => eprintln!("worker: staging orphan sweep failed: {error}"),
+    }
 }
 
 /// The claim/process loop. Returns the first infrastructure error that aborts
@@ -336,11 +351,11 @@ fn process_job(
     // Render into a claim-scoped temp file, never the shared canonical path:
     // the lease protects the DB row, but two workers can legitimately hold the
     // *same* `path_for_job(id)` (a straggler whose lease expired mid-render and
-    // the reclaimer that finished it). Publishing via a rename gated on ownership
-    // makes the winning owner the sole writer of the canonical file, so a
-    // straggler can never clobber the committed render.
-    let final_path = ctx.store.path_for_job(job.id);
-    let temp_path = temp_render_path(&final_path, worker);
+    // the reclaimer that finished it). `complete_render_with_publish` renames
+    // temp -> canonical only after an owner-guarded `mark_done`, making the
+    // winning owner the sole writer of the canonical file, so a straggler can
+    // never clobber (or resurrect) the committed render.
+    let temp_path = ctx.store.temp_path_for_job(job.id, worker);
 
     // Optional simulated occupancy (test aid): hold the claim without
     // heartbeating, so a short lease can expire and be reclaimed elsewhere.
@@ -376,7 +391,7 @@ fn process_job(
         return Err(CliError::Database(error));
     }
     match result {
-        Ok(()) => complete_owned_render(conn, ctx, job, &temp_path, &final_path, stop),
+        Ok(()) => complete_owned_render(conn, ctx, job, &temp_path, stop),
         Err(StemError::Cancelled) => {
             let _ = std::fs::remove_file(&temp_path);
             let reason = stop.unwrap_or(StopReason::Shutdown);
@@ -396,80 +411,46 @@ fn process_job(
     }
 }
 
-/// Publishes a finished render and completes the job. With a library root
-/// configured, [`ai_promotion::complete_render`] marks the job `done`
-/// (owner-guarded) and honors its persisted save-intent — promoting an
-/// intent-carrying render into the library so no manual save is needed; without
-/// a root the render is marked `done` and left staged. The publish is one atomic
-/// rename, and core's `mark_done` stays the authority on whether we won the job.
-///
-/// A straggler that lost its lease mid-render never overwrites the committed
-/// render: with a root, a detected stop drops the temp before publishing; with
-/// no root, the owner-guarded `mark_done` gates the publish exactly as before.
+/// Completes an owned render through the core publish-safe path. The
+/// owner-guarded `mark_done` inside [`ai_promotion::complete_render_with_publish`]
+/// runs first, and only the winner then renames the claim-scoped temp onto the
+/// canonical staging path and honors the job's persisted save-intent (promoting
+/// into the library when a root is configured, else leaving it staged). A
+/// straggler that lost its lease fails the guard, never touches the canonical
+/// file, and has its temp deleted — no clobber, no resurrected orphan.
 fn complete_owned_render(
     conn: &mut Connection,
     ctx: &WorkerCtx<'_>,
     job: &ClaimedJob,
     temp_path: &Path,
-    final_path: &Path,
     stop: Option<StopReason>,
 ) -> Result<JobOutcome, CliError> {
-    let now = now_unix();
-    match ctx.config {
-        Some(config) => {
-            // We detected a lost lease or shutdown during the final heartbeat, so
-            // this job is no longer ours to publish — drop our temp so a straggler
-            // never overwrites the owner's render, and let the owner finish it.
-            if stop.is_some() {
-                let _ = std::fs::remove_file(temp_path);
-                return Ok(JobOutcome::Abandoned);
-            }
-            // Publish first: `complete_render` reads the render from its canonical
-            // staging path, and its owner-guarded `mark_done` decides ownership.
-            publish_render(temp_path, final_path, job.id)?;
-            let outcome =
-                ai_promotion::complete_render(conn, ctx.store, config, job.id, ctx.worker, now)
-                    .map_err(|error| map_promotion_error(error, job.id))?;
-            Ok(match outcome {
-                // The lease lapsed between our last heartbeat and now; the DB is
-                // the reclaiming worker's. Our published render is a harmless
-                // duplicate of theirs (or is overwritten) — report abandoned.
-                CompletionOutcome::NotOwned => JobOutcome::Abandoned,
-                CompletionOutcome::Staged
-                | CompletionOutcome::Promoted(_)
-                | CompletionOutcome::PromotionDeferred { .. } => JobOutcome::Done,
-            })
-        }
-        None => {
-            // No library root: nothing can be promoted. Mark done (owner-guarded),
-            // publishing only once we own the job — the same publish order that
-            // keeps a straggler from clobbering the committed render. An intent
-            // job then waits for a manual `instrumental save` or a rooted worker.
-            let marked = retrying(|| ai_jobs::mark_done(conn, job.id, ctx.worker, now))?;
-            if marked {
-                publish_render(temp_path, final_path, job.id)?;
-                Ok(JobOutcome::Done)
-            } else {
-                let _ = std::fs::remove_file(temp_path);
-                Ok(JobOutcome::Abandoned)
-            }
-        }
+    // If the final heartbeat already told us the lease was lost (or we are
+    // shutting down), this job is no longer ours — drop the temp and let the
+    // owner finish it. The core guard would catch it too; this just skips a
+    // futile DB round-trip.
+    if stop.is_some() {
+        let _ = std::fs::remove_file(temp_path);
+        return Ok(JobOutcome::Abandoned);
     }
-}
-
-/// Atomically publishes a claim-scoped temp render to its canonical staging path.
-fn publish_render(temp_path: &Path, final_path: &Path, job_id: i64) -> Result<(), CliError> {
-    std::fs::rename(temp_path, final_path).map_err(|error| {
-        CliError::Database(format!("cannot finalize render for job {job_id}: {error}"))
+    let outcome = ai_promotion::complete_render_with_publish(
+        conn,
+        ctx.store,
+        ctx.config,
+        job.id,
+        ctx.worker,
+        temp_path,
+        now_unix(),
+    )
+    .map_err(|error| map_promotion_error(error, job.id))?;
+    Ok(match outcome {
+        // The lease lapsed before our guarded mark_done; the reclaiming worker
+        // owns the DB row and the temp was dropped — report abandoned.
+        CompletionOutcome::NotOwned => JobOutcome::Abandoned,
+        CompletionOutcome::Staged
+        | CompletionOutcome::Promoted(_)
+        | CompletionOutcome::PromotionDeferred { .. } => JobOutcome::Done,
     })
-}
-
-/// The claim-scoped temp path a render is written to before an owned `mark_done`
-/// publishes it. It is a sibling of the canonical `job-<id>.flac`, tagged with
-/// the worker token and a `.partial` extension so the staging store's `.flac`
-/// listing ignores it and two workers on the same job never share a file.
-fn temp_render_path(final_path: &std::path::Path, worker: i64) -> PathBuf {
-    final_path.with_extension(format!("{worker:016x}.partial"))
 }
 
 /// A user cancel is acked (`-> cancelled`); a shutdown or lost lease leaves the
