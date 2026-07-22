@@ -9,7 +9,9 @@ use std::sync::Arc;
 use reprise_core::ai_jobs::{self, JobState};
 use reprise_core::ai_promotion::PromotionConfig;
 use reprise_core::ai_staging::StagingStore;
-use reprise_core::stem_separation::{FakeStemBackend, PROGRESS_COMPLETE};
+use reprise_core::stem_separation::{
+    FakeStemBackend, StemError, StemSeparationBackend, PROGRESS_COMPLETE,
+};
 use rusqlite::Connection;
 
 use super::*;
@@ -63,6 +65,26 @@ fn enqueue(h: &Harness) -> i64 {
     ai_jobs::enqueue_instrumental(&h.conn, &h.staging, 1, &h.model_id, NOW)
         .unwrap()
         .job_id()
+}
+
+/// A backend that panics mid-render — a stand-in for a decoder crashing on a
+/// crafted source (the reprise-stems `i % 0` class of bug).
+struct PanickingBackend;
+
+impl StemSeparationBackend for PanickingBackend {
+    fn separate_instrumental(
+        &self,
+        _source: &std::path::Path,
+        _output: &std::path::Path,
+        _progress: &mut dyn FnMut(u16),
+        _cancel: &dyn Fn() -> bool,
+    ) -> Result<(), StemError> {
+        panic!("simulated backend crash");
+    }
+
+    fn model_id(&self) -> String {
+        FakeStemBackend::new().model_id()
+    }
 }
 
 #[test]
@@ -323,4 +345,53 @@ fn worker_defers_a_failed_auto_promotion_and_keeps_the_render() {
         h.staging.exists(job_id),
         "the render is kept in staging for a manual retry"
     );
+}
+
+#[test]
+fn worker_survives_a_panicking_backend_and_continues_with_the_next_job() {
+    // A crafted source that makes the backend panic must not take the worker
+    // thread down: the job fails cleanly (error_kind "backend"), and the worker
+    // goes straight on to render the next job.
+    let mut h = harness();
+    let job1 = enqueue(&h);
+
+    let run1 = run_next_job(
+        &mut h.conn,
+        &PanickingBackend,
+        &h.staging,
+        &h.resolve,
+        None,
+        WORKER,
+        LEASE_SECS,
+        &clock,
+        &mut || {},
+    )
+    .unwrap();
+
+    assert_eq!(run1.outcome, JobRunOutcome::Failed);
+    let failed = ai_jobs::get_job(&h.conn, job1).unwrap().unwrap();
+    assert_eq!(failed.state, JobState::Failed);
+    assert_eq!(failed.error_kind.as_deref(), Some("backend"));
+    assert!(
+        !h.staging.exists(job1),
+        "a panicked render leaves no output"
+    );
+
+    // The worker is unharmed: the next job renders to completion.
+    let job2 = enqueue(&h);
+    let run2 = run_next_job(
+        &mut h.conn,
+        &FakeStemBackend::new(),
+        &h.staging,
+        &h.resolve,
+        None,
+        WORKER,
+        LEASE_SECS,
+        &clock,
+        &mut || {},
+    )
+    .unwrap();
+
+    assert_eq!(run2.outcome, JobRunOutcome::Completed);
+    assert!(h.staging.exists(job2));
 }
