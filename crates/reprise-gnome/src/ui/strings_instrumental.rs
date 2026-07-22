@@ -40,6 +40,13 @@ pub fn conversion_aggregate(done: usize, total: usize, percent: u16) -> String {
     format!("{done} of {total} · {percent}%")
 }
 
+/// INST-8: the aggregate disk cost of every kept (undecided) render — the
+/// "Summe" shown beside the per-row sizes, e.g. "5.0 MiB kept on disk". Only
+/// shown while at least one undecided render exists.
+pub fn conversion_disk_total(total: &str) -> String {
+    format!("{total} kept on disk")
+}
+
 // AI badge on a promoted instrumental track row (INST-10). A compact "AI" pill
 // with the full provenance phrase as its tooltip.
 pub const AI_BADGE_LABEL: &str = N_!("AI");

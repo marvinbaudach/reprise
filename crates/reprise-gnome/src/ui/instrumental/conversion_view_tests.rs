@@ -168,34 +168,53 @@ fn inst_6_save_and_discard_are_offered_only_on_undecided_renders() {
     );
 }
 
-// UX INST-8: an undecided render's disk cost is visible in the view — the row
-// shows its size, so hours of kept renders are never an invisible cost.
+// UX INST-8: an undecided render's disk cost is visible in the view — both the
+// per-row size AND the aggregate total ("Größe je Zeile / Summe"), so hours of
+// kept renders are never an invisible cost.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn inst_8_undecided_render_shows_its_disk_cost() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let dir = tempfile::tempdir().unwrap();
-    let conn = seeded_conn(&[1]);
+    let conn = seeded_conn(&[1, 2]);
     let staging = StagingStore::new(dir.path().join("staging"));
     staging.ensure_dir().unwrap();
 
+    // Two kept (undecided) renders of different sizes, in binary units (MiB,
+    // like the rest of the app's size readouts — FIX-5).
     let j1 = enqueue(&conn, &staging, 1);
     claim(&conn);
     ai_jobs::mark_done(&conn, j1, WORKER, NOW).unwrap();
-    // A 2 MiB render, so the row shows a MiB figure (binary units, like the rest
-    // of the app's size readouts — FIX-5).
-    std::fs::write(staging.path_for_job(j1), vec![0u8; 2 * 1024 * 1024]).unwrap();
+    std::fs::write(staging.path_for_job(j1), vec![0u8; 2 * 1024 * 1024]).unwrap(); // 2 MiB
+    let j2 = enqueue(&conn, &staging, 2);
+    claim(&conn);
+    ai_jobs::mark_done(&conn, j2, WORKER, NOW).unwrap();
+    std::fs::write(staging.path_for_job(j2), vec![0u8; 3 * 1024 * 1024]).unwrap(); // 3 MiB
 
     let view = ConversionView::new(Rc::new(RefCell::new(conn)), staging);
 
-    let caption = view.row_state_text(j1).expect("row exists");
+    // Per row: each undecided render shows its own size.
+    let c1 = view.row_state_text(j1).expect("row exists");
     assert!(
-        caption.contains("MiB"),
-        "the row shows its disk cost: {caption:?}"
+        c1.contains("2.0 MiB"),
+        "the first row shows its disk cost: {c1:?}"
     );
+    let c2 = view.row_state_text(j2).expect("row exists");
     assert!(
-        caption.contains("2.0"),
-        "a 2 MiB render reads as 2.0 MiB: {caption:?}"
+        c2.contains("3.0 MiB"),
+        "the second row shows its disk cost: {c2:?}"
+    );
+
+    // Total ("Summe"): the aggregate is the real sum of the kept renders, not a
+    // copy of any single row.
+    assert!(
+        view.disk_total_visible(),
+        "the kept-render total is shown while undecided renders exist"
+    );
+    let total = view.disk_total_text();
+    assert!(
+        total.contains("5.0 MiB"),
+        "the total sums both kept renders (2.0 + 3.0 MiB): {total:?}"
     );
 }
