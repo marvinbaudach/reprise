@@ -12,6 +12,15 @@ fn staging_dir(h: &Harness) -> PathBuf {
     h.dir.path().join("staging")
 }
 
+/// Configures a library root under the temp dir (promotions land under
+/// `<root>/Reprise Instrumentals/…`).
+fn set_library_root(h: &Harness) -> PathBuf {
+    let root = h.dir.path().join("library");
+    std::fs::create_dir_all(&root).unwrap();
+    reprise_core::library::settings::set_library_root(&h.conn(), root.to_str().unwrap()).unwrap();
+    root
+}
+
 /// Enqueues instrumental jobs (staged) for `ids` through the CLI, each backed by
 /// a real source file so the worker's fake backend can copy it through.
 fn enqueue_jobs(h: &Harness, staging: &Path, ids: &[i64]) -> Vec<i64> {
@@ -118,6 +127,70 @@ fn worker_drains_the_queue_and_renders_every_job() {
     assert!(
         leftover.is_empty(),
         "no .partial temp renders should remain: {leftover:?}"
+    );
+}
+
+#[test]
+fn save_intent_is_auto_promoted_by_the_worker() {
+    let h = Harness::new();
+    let staging = staging_dir(&h);
+    let root = set_library_root(&h);
+    h.seed_track_with_file(1);
+
+    // Default (save) create — no --stage — persists the auto-promote intent on
+    // the job (decision 15).
+    let created = parse_json(&h.run(&[
+        "--json",
+        "--staging-dir",
+        staging.to_str().unwrap(),
+        "instrumental",
+        "create",
+        "1",
+    ]));
+    assert_eq!(created["save"], "save");
+    let job_id = created["jobs"][0]["job_id"].as_i64().unwrap();
+
+    // A single worker pass renders the job and, honoring the persisted intent,
+    // promotes it in the same run — no manual `instrumental save` step.
+    let out = h.run(&[
+        "--json",
+        "--staging-dir",
+        staging.to_str().unwrap(),
+        "jobs",
+        "work",
+        "--once",
+        "--fake-backend",
+    ]);
+    assert_eq!(code(&out), 0);
+    assert_eq!(parse_json(&out)["done"], 1);
+
+    // The job is now saved: a result track is attached and its staging render is
+    // gone (promotion moved it into the library).
+    let status = parse_json(&h.run(&[
+        "--json",
+        "--staging-dir",
+        staging.to_str().unwrap(),
+        "jobs",
+        "status",
+    ]));
+    assert_eq!(status[0]["state"], "done");
+    let result_track = status[0]["result_track_id"].as_i64();
+    assert!(
+        result_track.is_some_and(|id| id >= 1),
+        "the render was auto-promoted to a library track without a manual save: {status}"
+    );
+    let store = reprise_core::ai_staging::StagingStore::new(&staging);
+    assert!(!store.exists(job_id), "the promoted render leaves staging");
+
+    // Filed under the dedicated subfolder with the "(Instrumental)" suffix.
+    let expected = root
+        .join("Reprise Instrumentals")
+        .join("Artist 1")
+        .join("Song 1 (Instrumental).flac");
+    assert!(
+        expected.is_file(),
+        "the promoted file exists at {}",
+        expected.display()
     );
 }
 
