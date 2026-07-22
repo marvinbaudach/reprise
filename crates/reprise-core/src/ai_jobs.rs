@@ -541,9 +541,6 @@ pub fn request_cancel(
 /// Attaches the promoted library track to a `done` job (staged -> saved),
 /// recording the `save` lifecycle event. Called inside the promotion
 /// transaction. Returns whether a `done` job was updated.
-// `allow(dead_code)`: the sole caller is `ai_promotion::promote` (next task);
-// tests already exercise it. Mirrors `playlists::rename`'s pre-consumer allow.
-#[allow(dead_code)]
 pub(crate) fn attach_result_track(
     conn: &Connection,
     job_id: i64,
