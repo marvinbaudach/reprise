@@ -62,7 +62,15 @@ pub fn separate_instrumental(
     let segment = geometry.segment;
     let starts = geometry.segment_starts(total_samples);
     let segment_count = starts.len();
-    let weights = fade_window(segment, geometry.overlap());
+    // Boundary-aware windows: the whole track's leading edge (first segment) and
+    // trailing edge (last segment) keep full weight, so the very first/last
+    // samples reconstruct exactly instead of being forced to zero. Interior
+    // seams keep the reference crossfade. At most three distinct windows.
+    let overlap = geometry.overlap();
+    let multi = segment_count > 1;
+    let first_window = fade_window(segment, overlap, false, multi);
+    let interior_window = fade_window(segment, overlap, true, true);
+    let last_window = fade_window(segment, overlap, multi, false);
 
     let mut accumulator = vec![vec![0.0f32; total_samples]; channels];
     let mut summed_weight = vec![0.0f32; total_samples];
@@ -88,11 +96,20 @@ pub fn separate_instrumental(
             )));
         }
 
+        // The first segment does not fade in and the last does not fade out;
+        // everything between uses the interior crossfade.
+        let weights = if index == 0 {
+            &first_window
+        } else if index == segment_count - 1 {
+            &last_window
+        } else {
+            &interior_window
+        };
         accumulate_instrumental(
             &mut accumulator,
             &mut summed_weight,
             &stems,
-            &weights,
+            weights,
             geometry,
             channels,
             segment,
@@ -190,8 +207,10 @@ mod tests {
     }
 
     fn stereo_ramp(total: usize) -> Vec<Vec<f32>> {
-        let left: Vec<f32> = (0..total).map(|i| (i as f32) * 0.001).collect();
-        let right: Vec<f32> = (0..total).map(|i| -(i as f32) * 0.002).collect();
+        // Offset from zero so sample 0 is non-trivial: a fade window that zeroed
+        // out[0] would otherwise reconstruct vacuously (0 ≈ 0).
+        let left: Vec<f32> = (0..total).map(|i| 0.5 + (i as f32) * 0.001).collect();
+        let right: Vec<f32> = (0..total).map(|i| -0.3 - (i as f32) * 0.002).collect();
         vec![left, right]
     }
 
@@ -226,6 +245,21 @@ mod tests {
                     "channel {channel} sample {i}: got {got}, want {want}"
                 );
             }
+            // The whole-track boundaries reconstruct exactly — the old window
+            // forced window[0] = 0, zeroing the very first output sample.
+            assert!(
+                (out[channel][0] - input[channel][0]).abs() < 1e-6,
+                "first sample must reconstruct: got {}, want {}",
+                out[channel][0],
+                input[channel][0]
+            );
+            let last = input[channel].len() - 1;
+            assert!(
+                (out[channel][last] - input[channel][last]).abs() < 1e-6,
+                "last sample must reconstruct: got {}, want {}",
+                out[channel][last],
+                input[channel][last]
+            );
         }
     }
 

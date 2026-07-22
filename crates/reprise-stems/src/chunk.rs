@@ -115,12 +115,13 @@ impl Geometry {
 }
 
 /// The overlap-add window for one segment: a **trapezoid** that is `1.0`
-/// across the middle with a linear fade-in over the first `overlap` samples
-/// and a mirrored fade-out over the last `overlap` samples.
+/// across the middle, with a linear fade-in over the first `overlap` samples
+/// (when `fade_in`) and a mirrored fade-out over the last `overlap` samples
+/// (when `fade_out`).
 ///
-/// This is a faithful port of the model's own reference `infer.py`
-/// (`StemSplitio/htdemucs-onnx`, MIT), whose parity-vs-PyTorch claim depends on
-/// exactly this window:
+/// The interior window (`fade_in && fade_out`) is a faithful port of the
+/// model's own reference `infer.py` (`StemSplitio/htdemucs-onnx`, MIT), whose
+/// parity-vs-PyTorch claim depends on exactly this crossfade at segment seams:
 ///
 /// ```python
 /// w = np.ones(n); fade = np.linspace(0, 1, overlap)
@@ -129,19 +130,32 @@ impl Geometry {
 ///
 /// Segments are accumulated weighted by this window and divided by the summed
 /// weight (`out /= max(weight, eps)`), so an interior sample covered by a
-/// single segment is reproduced exactly while shared spans cross-fade. As in
-/// the reference, `linspace(0, 1, overlap)[0] == 0`, so the very first window
-/// sample is `0` — a one-sample boundary quirk the reference shares.
-pub fn fade_window(segment: usize, overlap: usize) -> Vec<f32> {
+/// single segment is reproduced exactly while shared spans cross-fade.
+///
+/// **Boundary handling (deliberate deviation from the reference):** the caller
+/// disables the fade at the whole track's outer edges — `fade_in = false` for
+/// the first segment, `fade_out = false` for the last. In the reference,
+/// `linspace(0, 1, overlap)[0] == 0` forces `window[0] == 0`, which zeroes the
+/// very first output sample (and, on an exact segment boundary, the last),
+/// because that lone edge sample is covered by a single segment whose weight is
+/// `0`. Keeping full weight at the track boundaries makes those samples
+/// reconstruct exactly. This only touches the outermost single-coverage edges;
+/// every inter-segment seam still uses the reference crossfade, so seam parity
+/// is unchanged.
+pub fn fade_window(segment: usize, overlap: usize, fade_in: bool, fade_out: bool) -> Vec<f32> {
     debug_assert!(segment > 0);
     let mut window = vec![1.0f32; segment];
     let fade = linspace_0_1(overlap.min(segment));
-    for (i, &f) in fade.iter().enumerate() {
-        window[i] = f;
+    if fade_in {
+        for (i, &f) in fade.iter().enumerate() {
+            window[i] = f;
+        }
     }
-    for (i, &f) in fade.iter().enumerate() {
-        // Mirror onto the tail: window[segment-1-i] = fade[i].
-        window[segment - 1 - i] = f;
+    if fade_out {
+        for (i, &f) in fade.iter().enumerate() {
+            // Mirror onto the tail: window[segment-1-i] = fade[i].
+            window[segment - 1 - i] = f;
+        }
     }
     window
 }
@@ -228,7 +242,8 @@ mod tests {
     #[test]
     fn fade_window_is_a_trapezoid_of_the_right_length_and_range() {
         for (segment, overlap) in [(8usize, 2usize), (100, 25), (343_980, 85_995)] {
-            let w = fade_window(segment, overlap);
+            // The interior window (fade both edges) is the trapezoid.
+            let w = fade_window(segment, overlap, true, true);
             assert_eq!(w.len(), segment, "length must equal the segment");
             let max = w.iter().copied().fold(0.0f32, f32::max);
             assert!((max - 1.0).abs() < 1e-6, "plateau must reach 1.0");
@@ -240,18 +255,35 @@ mod tests {
 
     #[test]
     fn fade_window_matches_the_reference_fade_in_and_out() {
-        // overlap 2 -> fade = linspace(0,1,2) = [0, 1]; ones between.
-        let w = fade_window(8, 2);
+        // Interior segment (fade both): overlap 2 -> fade = linspace(0,1,2) =
+        // [0, 1]; ones between — exactly the reference crossfade at a seam.
+        let w = fade_window(8, 2, true, true);
         assert_eq!(w, vec![0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0]);
     }
 
     #[test]
-    fn fade_window_first_sample_is_zero_like_the_reference() {
-        // linspace(0,1,overlap)[0] == 0, so window[0] == 0 (reference quirk).
-        let w = fade_window(100, 25);
-        assert_eq!(w[0], 0.0);
-        assert_eq!(*w.last().unwrap(), 0.0);
-        assert!((w[25] - 1.0).abs() < 1e-6, "plateau begins after the fade");
+    fn fade_window_keeps_full_weight_at_disabled_edges() {
+        // First segment of a track: no fade-in, so the leading edge stays 1.0
+        // and the whole track's first sample is not zeroed.
+        assert_eq!(
+            fade_window(8, 2, false, true),
+            vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0]
+        );
+        // Last segment of a track: no fade-out, trailing edge stays 1.0.
+        assert_eq!(
+            fade_window(8, 2, true, false),
+            vec![0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+        );
+        // A single segment covering the whole track fades neither edge.
+        assert_eq!(fade_window(8, 2, false, false), vec![1.0; 8]);
+        // The interior fade sample is still 0 at position 0 when fade-in is on.
+        let interior = fade_window(100, 25, true, true);
+        assert_eq!(interior[0], 0.0);
+        assert_eq!(*interior.last().unwrap(), 0.0);
+        assert!(
+            (interior[25] - 1.0).abs() < 1e-6,
+            "plateau begins after fade"
+        );
     }
 
     #[test]
@@ -263,6 +295,6 @@ mod tests {
 
     #[test]
     fn zero_overlap_window_is_all_ones() {
-        assert_eq!(fade_window(4, 0), vec![1.0, 1.0, 1.0, 1.0]);
+        assert_eq!(fade_window(4, 0, true, true), vec![1.0, 1.0, 1.0, 1.0]);
     }
 }
