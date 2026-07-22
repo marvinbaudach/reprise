@@ -227,6 +227,61 @@ fn scanner_repairs_a_damaged_mp3_container_on_import() {
     assert_eq!(tags.album, "Some Album");
 }
 
+/// A DISMISSED `unreadable_tags` error must NOT keep an untagged row from
+/// being repaired on a later scan. Dismissing only silences the notification,
+/// and predates the auto-repair — the dismiss-skip fast path would otherwise
+/// strand such a file forever (its mtime never changes, so it is never
+/// re-read). Regression guard for the reported tracks that a rescan wouldn't
+/// touch because their import error had been dismissed.
+#[test]
+fn a_dismissed_import_error_does_not_block_repairing_an_untagged_track() {
+    let tmp = tempfile::tempdir().unwrap();
+    let album_dir = tmp.path().join("Some Album");
+    std::fs::create_dir(&album_dir).unwrap();
+    let path = album_dir.join("Broken Song.mp3");
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/broken-tags.mp3"),
+        &path,
+    )
+    .unwrap();
+    let path_str = path.to_string_lossy().to_string();
+    let meta = std::fs::metadata(&path).unwrap();
+    let mtime = file_mtime(&path);
+    let size = meta.len() as i64;
+
+    let mut conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    // Seed the exact reported state: an untagged row plus a DISMISSED
+    // unreadable-tags error whose mtime/size match the file on disk.
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, album, added_at, file_mtime, file_size, untagged) \
+         VALUES (?1, 'Broken Song', '', 'Some Album', 0, ?2, ?3, 1)",
+        rusqlite::params![path_str, mtime, size],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO import_errors \
+         (path, reason_kind, reason_detail, first_seen, last_seen, seen_count, \
+          dismissed_mtime, dismissed_size) \
+         VALUES (?1, 'unreadable_tags', 'x', 0, 0, 1, ?2, ?3)",
+        rusqlite::params![path_str, mtime, size],
+    )
+    .unwrap();
+
+    let report = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    assert_eq!(
+        report.skipped_unchanged, 0,
+        "a dismissed untagged row must not be fast-path skipped"
+    );
+
+    let (_, _, _, untagged) =
+        track_row(&conn, &path).expect("the seeded row must survive the rescan");
+    assert_eq!(
+        untagged, 0,
+        "the untagged track was repaired despite the dismissed error"
+    );
+}
+
 /// The repair PRESERVES a file's real metadata instead of discarding it. The
 /// overwhelmingly common "unreadable" case is an intact front ID3v2 sitting
 /// behind a damaged trailing APEv2 footer (lofty aborts with "invalid item
