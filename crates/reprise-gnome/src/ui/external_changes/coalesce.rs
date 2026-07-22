@@ -8,23 +8,26 @@
 
 use reprise_core::events::{Change, WriterToken};
 
-/// The coarse refreshes a batch of foreign changes asks for. Both fields map to
+/// The coarse refreshes a batch of foreign changes asks for. Each field maps to
 /// an existing, navigation-neutral refresh path: `sidebar` → `Sidebar::refresh`
 /// (rebuilds counts/rows and re-selects the current source), `track_list` →
 /// `TrackList::reload` (TAG-1: preserves selection and scroll, skips untouched
-/// lists). A plan is a *set* of views to refresh, never a list of operations to
-/// replay — which is what makes at-least-once delivery plus coalescing
-/// idempotent.
+/// lists), `conversion` → the instrumental package's own reaction (wake the
+/// app-hosted worker so it claims a job another process — the MCP or CLI —
+/// enqueued, since the worker otherwise idles until an in-app enqueue). A plan
+/// is a *set* of views to refresh, never a list of operations to replay — which
+/// is what makes at-least-once delivery plus coalescing idempotent.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(in crate::ui) struct RefreshPlan {
     pub(in crate::ui) sidebar: bool,
     pub(in crate::ui) track_list: bool,
+    pub(in crate::ui) conversion: bool,
 }
 
 impl RefreshPlan {
     /// Nothing to refresh — the runtime sends no command for an empty plan.
     pub(in crate::ui) const fn is_empty(self) -> bool {
-        !self.sidebar && !self.track_list
+        !self.sidebar && !self.track_list && !self.conversion
     }
 
     /// Union of two plans. Coalescing is repeated union, so it is idempotent
@@ -33,19 +36,23 @@ impl RefreshPlan {
         Self {
             sidebar: self.sidebar || other.sidebar,
             track_list: self.track_list || other.track_list,
+            conversion: self.conversion || other.conversion,
         }
     }
 }
 
 /// Which coarse views a single entity's change touches.
 ///
-/// The entities are exactly those the P0 facades record: `playlist`,
-/// `smart_playlist`, `settings`, `library`. `settings` maps to nothing — a
-/// coarse view reload cannot *apply* a foreign setting change, and external
-/// setting writes are out of scope for v1 (multi-frontend-core plan, 3.3). Any
-/// unknown entity — notably Track 2's future `ai_jobs`/`provenance` rows — also
-/// maps to nothing: this Track 1 runtime deliberately ignores entities it does
-/// not own, leaving them to their own package's runtime.
+/// The entities are those the facades record: `playlist`, `smart_playlist`,
+/// `settings`, `library`, and — from another process's instrumental work —
+/// `ai_job`. `settings` maps to nothing: a coarse view reload cannot *apply* a
+/// foreign setting change, and external setting writes are out of scope for v1
+/// (multi-frontend-core plan, 3.3). `ai_job` maps to `conversion`: the P3b
+/// wiring for the app-hosted worker — an MCP/CLI enqueue is an `ai_job`
+/// `enqueue` event, and the worker idles until woken, so this is how an
+/// externally-enqueued job starts rendering in the running app. `provenance`
+/// still maps to nothing — a promotion's own `library` scan event drives the
+/// track-list refresh.
 fn impact(entity: &str) -> RefreshPlan {
     match entity {
         // Playlists and smart playlists live in the sidebar (list + counts) and,
@@ -56,6 +63,13 @@ fn impact(entity: &str) -> RefreshPlan {
         "playlist" | "smart_playlist" | "library" => RefreshPlan {
             sidebar: true,
             track_list: true,
+            conversion: false,
+        },
+        // A foreign instrumental job (MCP/CLI enqueue): wake the app-hosted
+        // worker so it claims and renders it.
+        "ai_job" => RefreshPlan {
+            conversion: true,
+            ..RefreshPlan::default()
         },
         _ => RefreshPlan::default(),
     }
@@ -106,7 +120,8 @@ mod tests {
             impact("playlist"),
             RefreshPlan {
                 sidebar: true,
-                track_list: true
+                track_list: true,
+                conversion: false,
             }
         );
     }
@@ -117,7 +132,8 @@ mod tests {
             impact("smart_playlist"),
             RefreshPlan {
                 sidebar: true,
-                track_list: true
+                track_list: true,
+                conversion: false,
             }
         );
     }
@@ -128,7 +144,8 @@ mod tests {
             impact("library"),
             RefreshPlan {
                 sidebar: true,
-                track_list: true
+                track_list: true,
+                conversion: false,
             }
         );
     }
@@ -139,10 +156,35 @@ mod tests {
     }
 
     #[test]
-    fn impact_unknown_track_two_entities_request_no_refresh() {
-        // Track 2's future entities must not trip this Track 1 runtime.
-        assert!(impact("ai_jobs").is_empty());
+    fn impact_ai_job_wakes_the_conversion_worker_only() {
+        // A foreign instrumental enqueue wakes the app-hosted worker; it does
+        // not touch the sidebar or the track list directly (the promotion's own
+        // library scan does that).
+        assert_eq!(
+            impact("ai_job"),
+            RefreshPlan {
+                sidebar: false,
+                track_list: false,
+                conversion: true,
+            }
+        );
+    }
+
+    #[test]
+    fn impact_unknown_and_provenance_entities_request_no_refresh() {
         assert!(impact("provenance").is_empty());
+        assert!(impact("audiobook").is_empty());
+    }
+
+    #[test]
+    fn plan_for_a_foreign_ai_job_enqueue_requests_the_conversion_wake() {
+        assert_eq!(
+            plan_for(&[change("ai_job", "enqueue")], None),
+            RefreshPlan {
+                conversion: true,
+                ..RefreshPlan::default()
+            }
+        );
     }
 
     #[test]
@@ -157,7 +199,8 @@ mod tests {
             plan_for(&[change("playlist", "create")], None),
             RefreshPlan {
                 sidebar: true,
-                track_list: true
+                track_list: true,
+                conversion: false,
             }
         );
     }
@@ -180,7 +223,8 @@ mod tests {
             plan_for(&batch, None),
             RefreshPlan {
                 sidebar: true,
-                track_list: true
+                track_list: true,
+                conversion: false,
             }
         );
     }
@@ -193,7 +237,8 @@ mod tests {
             plan_for(&batch, None),
             RefreshPlan {
                 sidebar: true,
-                track_list: true
+                track_list: true,
+                conversion: false,
             }
         );
     }

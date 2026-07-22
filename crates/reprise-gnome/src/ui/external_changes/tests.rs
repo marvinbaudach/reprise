@@ -49,7 +49,8 @@ fn read_and_plan_surfaces_a_foreign_playlist_and_advances_the_cursor() {
         plan,
         RefreshPlan {
             sidebar: true,
-            track_list: true
+            track_list: true,
+            conversion: false,
         }
     );
 }
