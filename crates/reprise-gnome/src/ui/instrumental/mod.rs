@@ -3,15 +3,17 @@
 //! wait-state, and the "Experimental features" gate (docs/ux-rules.md
 //! Section AB; plan `docs/plans/multi-frontend-core.md` §2.4/3.2).
 //!
-//! ## Dependency boundary (HARD CONSTRAINT)
+//! ## Dependency boundary
 //!
-//! This module consumes only the **reprise-core** facades — `ai_jobs`,
-//! `ai_staging`, `ai_promotion`, `ai_conversion`, `provenance`,
-//! `stem_separation` (the trait + the deterministic `FakeStemBackend`). It
-//! never depends on `reprise-stems`: the worker host is generic over the
-//! `StemSeparationBackend` trait and, in this package, is instantiated with the
-//! Fake. The real backend is wired behind the experimental switch in a small
-//! P3b commit — see [`app_backend`]'s `TODO(P3b)`.
+//! This module consumes the **reprise-core** facades — `ai_jobs`, `ai_staging`,
+//! `ai_promotion`, `ai_conversion`, `provenance`, `stem_separation` (the trait +
+//! the deterministic `FakeStemBackend`). The worker host is generic over the
+//! `StemSeparationBackend` trait, so the **default build never links
+//! reprise-stems** and runs the Fake (the enforced architecture probe + CI
+//! check). P3b wires the real backend behind the **`stem-backend` cargo
+//! feature**: the GTK app is a sanctioned binary host for reprise-stems
+//! (LICENSING.md; `scripts/check-architecture.sh`), so under that feature
+//! [`app_backend`] returns the real, lazily-provisioned `OrtStemBackend`.
 //!
 //! ## Progress numbers
 //!
@@ -30,7 +32,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use reprise_core::library::settings;
-use reprise_core::stem_separation::{FakeStemBackend, StemSeparationBackend};
+use reprise_core::stem_separation::StemSeparationBackend;
 use rusqlite::Connection;
 
 /// The persisted settings key gating **all** instrumental UI (INST-11,
@@ -68,25 +70,32 @@ pub(in crate::ui) fn set_experimental_enabled(
 pub(in crate::ui) type SourceResolver =
     Arc<dyn Fn(&Connection, i64) -> Option<PathBuf> + Send + Sync>;
 
-/// The stem-separation backend this app build runs.
-///
-/// **TODO(P3b):** package F must not depend on `reprise-stems` (HARD
-/// CONSTRAINT), so the production worker is instantiated with the deterministic
-/// [`FakeStemBackend`] from reprise-core. P3b swaps in the real reprise-stems
-/// backend here (behind the experimental switch) in a small isolated commit.
-/// Because the worker host is generic over the trait, only this one
-/// constructor and [`app_model_id`] change.
+/// The stem-separation backend this app build runs. The default build uses the
+/// deterministic [`reprise_core::stem_separation::FakeStemBackend`]; the
+/// `stem-backend` feature swaps in the real, lazily-provisioned
+/// [`stem_backend::LazyOrtBackend`]. The worker host is generic over the trait,
+/// so only this constructor and [`app_model_id`] differ between builds.
+#[cfg(not(feature = "stem-backend"))]
 pub(in crate::ui) fn app_backend() -> Box<dyn StemSeparationBackend + Send> {
-    Box::new(FakeStemBackend::new())
+    Box::new(reprise_core::stem_separation::FakeStemBackend::new())
+}
+
+#[cfg(feature = "stem-backend")]
+pub(in crate::ui) fn app_backend() -> Box<dyn StemSeparationBackend + Send> {
+    Box::new(stem_backend::LazyOrtBackend::new())
 }
 
 /// The model id every enqueue stamps as the job's `params_fingerprint`. It must
 /// match the id of the backend [`app_backend`] produces output with, so dedup
 /// (Beschluss 16) and the `REPRISE_AI_MODEL` provenance tag stay consistent.
-///
-/// **TODO(P3b):** tracks the real backend's id once wired.
+#[cfg(not(feature = "stem-backend"))]
 pub(in crate::ui) fn app_model_id() -> String {
-    FakeStemBackend::new().model_id()
+    reprise_core::stem_separation::FakeStemBackend::new().model_id()
+}
+
+#[cfg(feature = "stem-backend")]
+pub(in crate::ui) fn app_model_id() -> String {
+    reprise_stems::model::HTDEMUCS_FP32.model_id.to_string()
 }
 
 thread_local! {
@@ -138,6 +147,69 @@ pub(in crate::ui) fn db_source_resolver() -> SourceResolver {
             }
         },
     )
+}
+
+/// The real stem-separation backend, behind the `stem-backend` feature so the
+/// default build never links reprise-stems.
+#[cfg(feature = "stem-backend")]
+mod stem_backend {
+    use std::cell::RefCell;
+    use std::path::Path;
+
+    use reprise_core::stem_separation::{ProgressPermille, StemError, StemSeparationBackend};
+    use reprise_stems::OrtStemBackend;
+
+    /// The real `OrtStemBackend`, constructed **lazily from a provisioned model
+    /// on first render** — it never downloads inline, so app launch never blocks
+    /// on a 316 MB fetch. Until the model is provisioned, each render fails with
+    /// a clear `StemError::Backend` (the job's normal failure path, and the
+    /// worker's panic/failure guard keeps the thread alive); the feature stays
+    /// usable and a render after the model is downloaded picks it up. A single
+    /// worker thread owns the backend and drives one job at a time, so a
+    /// `RefCell` (Send, not Sync — like `OrtStemBackend` itself) is enough.
+    pub(super) struct LazyOrtBackend {
+        inner: RefCell<Option<OrtStemBackend>>,
+    }
+
+    impl LazyOrtBackend {
+        pub(super) fn new() -> Self {
+            Self {
+                inner: RefCell::new(None),
+            }
+        }
+    }
+
+    impl StemSeparationBackend for LazyOrtBackend {
+        fn separate_instrumental(
+            &self,
+            source: &Path,
+            output: &Path,
+            progress: &mut dyn FnMut(ProgressPermille),
+            cancel: &dyn Fn() -> bool,
+        ) -> Result<(), StemError> {
+            if self.inner.borrow().is_none() {
+                match OrtStemBackend::from_provisioned_default()? {
+                    Some(backend) => *self.inner.borrow_mut() = Some(backend),
+                    None => {
+                        return Err(StemError::Backend(
+                            "the stem-separation model is not provisioned yet; \
+                             download it to enable instrumental rendering"
+                                .to_string(),
+                        ))
+                    }
+                }
+            }
+            let guard = self.inner.borrow();
+            guard
+                .as_ref()
+                .expect("constructed above")
+                .separate_instrumental(source, output, progress, cancel)
+        }
+
+        fn model_id(&self) -> String {
+            reprise_stems::model::HTDEMUCS_FP32.model_id.to_string()
+        }
+    }
 }
 
 #[cfg(test)]

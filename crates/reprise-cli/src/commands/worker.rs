@@ -17,11 +17,6 @@
 //! backend is constructed at startup here; tests drive the in-core
 //! [`FakeStemBackend`] via `--fake-backend`.
 
-// The removable ML backend crate. Package G will replace `select_backend`'s
-// "not wired yet" arm with a real `reprise_stems::…` construction; referencing
-// it here keeps the (feature-gated) dependency edge explicit and mechanical.
-use reprise_stems as _;
-
 use std::cell::Cell;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -248,19 +243,27 @@ fn work_loop(
     }
 }
 
-/// Chooses the stem-separation backend. Production would build the real
-/// reprise-stems backend here; it is still a stub (package G), so the honest
-/// answer without `--fake-backend` is a clear "not wired yet" — never a silent
-/// fake render in production.
+/// Chooses the stem-separation backend. Without `--fake-backend` it loads the
+/// real reprise-stems `OrtStemBackend` from a **provisioned** model — never a
+/// silent fake render in production. It never downloads inline: an unprovisioned
+/// model (or an unavailable onnxruntime) is a clear [`CliError::Unavailable`] so
+/// automation gets an honest error and the download flow stays a separate step.
 fn select_backend(args: &WorkerArgs) -> Result<Box<dyn StemSeparationBackend + Send>, CliError> {
     if args.fake_backend {
         return Ok(Box::new(FakeStemBackend::new()));
     }
-    Err(CliError::Unavailable(
-        "no stem-separation backend is built in yet — package G (reprise-stems) is still a stub. \
-         Re-run with --fake-backend to exercise the worker, or wait for the real backend."
-            .to_string(),
-    ))
+    match reprise_stems::OrtStemBackend::from_provisioned_default() {
+        Ok(Some(backend)) => Ok(Box::new(backend)),
+        Ok(None) => Err(CliError::Unavailable(
+            "the stem-separation model is not provisioned yet — download it first, \
+             or re-run with --fake-backend to exercise the worker."
+                .to_string(),
+        )),
+        Err(error) => Err(CliError::Unavailable(format!(
+            "the stem-separation backend is unavailable: {error}. \
+             Re-run with --fake-backend to exercise the worker."
+        ))),
+    }
 }
 
 /// Claims-scoped mutable state shared between the progress sink and the cancel

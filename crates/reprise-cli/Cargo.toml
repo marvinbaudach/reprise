@@ -18,16 +18,17 @@ path = "src/main.rs"
 # via `cargo tree`). The two sanctioned exceptions of Beschluss 3 are opt-in
 # cargo features so they never enter the default dependency tree:
 #   * `worker` — the standalone job worker host (`jobs work`); THE ONLY path
-#     that pulls `reprise-stems` (the removable ML backend) into the CLI. It
-#     also pulls `signal-hook` for a clean SIGINT shutdown of the long-running
-#     loop. The production backend comes from `reprise-stems` (package G); the
-#     Fake backend that lives in `reprise-core` drives every test.
+#     that pulls `reprise-stems` (the removable ML backend) into the CLI, with
+#     its `ort` feature so the real `OrtStemBackend` is available. It also pulls
+#     `signal-hook` for a clean SIGINT shutdown of the long-running loop. The
+#     real backend renders a provisioned model; the Fake backend that lives in
+#     `reprise-core` (`--fake-backend`) drives every test.
 #   * `mpris` — the `playback` transport subcommands, a thin MPRIS client that
 #     talks to the running app over the session bus via `zbus` DIRECTLY (the
 #     grilled gate exception — still no `reprise-platform-linux` dependency).
 #     Linux/D-Bus by nature.
 default = []
-worker = ["dep:reprise-stems", "dep:signal-hook"]
+worker = ["dep:reprise-stems", "reprise-stems/ort", "dep:signal-hook"]
 mpris = ["dep:zbus"]
 
 [dependencies]
