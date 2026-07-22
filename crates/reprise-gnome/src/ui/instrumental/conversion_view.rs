@@ -36,7 +36,10 @@ enum JobAction {
 #[allow(dead_code)]
 struct RowWidgets {
     play: gtk4::Button,
+    save: gtk4::Button,
+    discard: gtk4::Button,
     progress: gtk4::ProgressBar,
+    state_label: gtk4::Label,
     state: RowState,
 }
 
@@ -167,12 +170,22 @@ impl ConversionView {
             aggregate.percent(),
         )));
 
+        // INST-8: the disk cost of each staged render, keyed by job id so the
+        // row can show it (undecided renders are kept, so their size is real).
+        let sizes: HashMap<i64, u64> = self
+            .staging
+            .list()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|entry| (entry.job_id, entry.size_bytes))
+            .collect();
+
         self.list.remove_all();
         let mut rows = HashMap::with_capacity(jobs.len());
         for job in &jobs {
             let staged = self.staging.exists(job.id);
             let state = conversion_model::row_state(job, staged);
-            let widgets = self.build_row(job, state);
+            let widgets = self.build_row(job, state, sizes.get(&job.id).copied());
             rows.insert(job.id, widgets);
         }
         *self.rows.borrow_mut() = rows;
@@ -184,7 +197,7 @@ impl ConversionView {
             .set_sensitive(conversion_model::has_undecided(&jobs));
     }
 
-    fn build_row(self: &Rc<Self>, job: &AiJob, state: RowState) -> RowWidgets {
+    fn build_row(self: &Rc<Self>, job: &AiJob, state: RowState, size: Option<u64>) -> RowWidgets {
         let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
         row.set_margin_top(6);
         row.set_margin_bottom(6);
@@ -196,7 +209,7 @@ impl ConversionView {
         info.set_halign(gtk4::Align::Start);
         let title = gtk4::Label::new(Some(&row_title(job)));
         title.set_halign(gtk4::Align::Start);
-        let state_label = gtk4::Label::new(Some(&state_text(state)));
+        let state_label = gtk4::Label::new(Some(&row_state_caption(state, size)));
         state_label.add_css_class("dim-label");
         state_label.add_css_class("caption");
         state_label.set_halign(gtk4::Align::Start);
@@ -243,7 +256,10 @@ impl ConversionView {
 
         RowWidgets {
             play,
+            save,
+            discard,
             progress,
+            state_label,
             state,
         }
     }
@@ -317,6 +333,32 @@ fn state_text(state: RowState) -> String {
     strings::text(key)
 }
 
+/// The row's caption: its state, plus the render's disk cost for an undecided
+/// (kept, unsaved) render — INST-8's "disk cost is visible in the view".
+fn row_state_caption(state: RowState, size: Option<u64>) -> String {
+    let base = state_text(state);
+    match (state, size) {
+        (RowState::DoneUnsaved { .. }, Some(bytes)) => {
+            format!("{base} · {}", format_render_size(bytes))
+        }
+        _ => base,
+    }
+}
+
+/// A compact human size for a staging render (INST-8).
+fn format_render_size(bytes: u64) -> String {
+    const MIB: f64 = 1024.0 * 1024.0;
+    const KIB: f64 = 1024.0;
+    let bytes_f = bytes as f64;
+    if bytes_f >= MIB {
+        format!("{:.1} MB", bytes_f / MIB)
+    } else if bytes_f >= KIB {
+        format!("{:.0} KB", bytes_f / KIB)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
 #[cfg(test)]
 #[path = "conversion_view_tests.rs"]
 mod tests;
@@ -345,5 +387,26 @@ impl ConversionView {
     }
     pub(in crate::ui) fn row_count(&self) -> usize {
         self.rows.borrow().len()
+    }
+    pub(in crate::ui) fn save_all_sensitive(&self) -> bool {
+        self.save_all.is_sensitive()
+    }
+    pub(in crate::ui) fn row_state_text(&self, job_id: i64) -> Option<String> {
+        self.rows
+            .borrow()
+            .get(&job_id)
+            .map(|row| row.state_label.text().to_string())
+    }
+    pub(in crate::ui) fn row_save_visible(&self, job_id: i64) -> Option<bool> {
+        self.rows
+            .borrow()
+            .get(&job_id)
+            .map(|row| row.save.is_visible())
+    }
+    pub(in crate::ui) fn row_discard_visible(&self, job_id: i64) -> Option<bool> {
+        self.rows
+            .borrow()
+            .get(&job_id)
+            .map(|row| row.discard.is_visible())
     }
 }

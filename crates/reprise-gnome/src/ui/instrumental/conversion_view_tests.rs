@@ -116,3 +116,85 @@ fn inst_4a_done_row_marked_playable_while_a_sibling_processes() {
     );
     assert_eq!(view.row_is_processing(j2), Some(true));
 }
+
+// UX INST-6: per-row Save/Discard are offered only on a finished, undecided
+// render; a processing row offers neither, and "Save all" is enabled only while
+// an undecided render exists.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn inst_6_save_and_discard_are_offered_only_on_undecided_renders() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let conn = seeded_conn(&[1, 2]);
+    let staging = StagingStore::new(dir.path().join("staging"));
+    staging.ensure_dir().unwrap();
+
+    // j1: finished, staged, unsaved -> undecided (offers Save + Discard).
+    let j1 = enqueue(&conn, &staging, 1);
+    claim(&conn);
+    ai_jobs::mark_done(&conn, j1, WORKER, NOW).unwrap();
+    std::fs::write(staging.path_for_job(j1), b"render").unwrap();
+    // j2: still processing (offers neither).
+    let j2 = enqueue(&conn, &staging, 2);
+    claim(&conn);
+    ai_jobs::set_progress(&conn, j2, WORKER, 400).unwrap();
+
+    let view = ConversionView::new(Rc::new(RefCell::new(conn)), staging);
+
+    assert_eq!(
+        view.row_save_visible(j1),
+        Some(true),
+        "undecided offers Save"
+    );
+    assert_eq!(
+        view.row_discard_visible(j1),
+        Some(true),
+        "undecided offers Discard"
+    );
+    assert_eq!(
+        view.row_save_visible(j2),
+        Some(false),
+        "a processing row offers no Save"
+    );
+    assert_eq!(
+        view.row_discard_visible(j2),
+        Some(false),
+        "a processing row offers no Discard"
+    );
+    assert!(
+        view.save_all_sensitive(),
+        "Save all is enabled while an undecided render exists"
+    );
+}
+
+// UX INST-8: an undecided render's disk cost is visible in the view — the row
+// shows its size, so hours of kept renders are never an invisible cost.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn inst_8_undecided_render_shows_its_disk_cost() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let conn = seeded_conn(&[1]);
+    let staging = StagingStore::new(dir.path().join("staging"));
+    staging.ensure_dir().unwrap();
+
+    let j1 = enqueue(&conn, &staging, 1);
+    claim(&conn);
+    ai_jobs::mark_done(&conn, j1, WORKER, NOW).unwrap();
+    // A 2 MiB render, so the row shows a MB figure.
+    std::fs::write(staging.path_for_job(j1), vec![0u8; 2 * 1024 * 1024]).unwrap();
+
+    let view = ConversionView::new(Rc::new(RefCell::new(conn)), staging);
+
+    let caption = view.row_state_text(j1).expect("row exists");
+    assert!(
+        caption.contains("MB"),
+        "the row shows its disk cost: {caption:?}"
+    );
+    assert!(
+        caption.contains("2.0"),
+        "a 2 MiB render reads as 2.0 MB: {caption:?}"
+    );
+}
