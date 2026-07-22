@@ -68,6 +68,25 @@ pub(super) fn filter_clause(has_filter: bool, param_index: u8) -> String {
     }
 }
 
+/// The composable "hide AI-manipulated/-generated tracks" clause (plan 2.4/8,
+/// Beschluss 17). Empty when the filter is off, so it drops cleanly into any
+/// `tracks` query alongside [`PRESENT`], [`filter_clause`] and the browse
+/// clause. It keys on the **`track_provenance` flag, never on a path** — the
+/// dedicated folder is only layout, while the DB flag is the truth (files can
+/// move; embedded tags carry provenance across rescans). Carries **no bound
+/// parameter** (`ai = 1` is a literal), so appending it never shifts any
+/// caller's `?N` numbering — the property that makes it freely composable.
+/// The correlated `NOT EXISTS` references the outer `tracks.id`, so it only
+/// belongs in a query whose flat source table is `tracks`.
+pub(super) fn ai_exclude_clause(exclude_ai: bool) -> &'static str {
+    if exclude_ai {
+        " AND NOT EXISTS (SELECT 1 FROM track_provenance tp \
+          WHERE tp.track_id = tracks.id AND tp.ai = 1)"
+    } else {
+        ""
+    }
+}
+
 /// Builds the bound `%…%` LIKE pattern for a trimmed filter value — always
 /// through `library::playlists::escape_like` (Stage-3 close-out finding:
 /// this used to be a bare `format!("%{}%", filter.trim())` at every call
@@ -134,6 +153,7 @@ pub(super) fn build_track_query_base(
         sort_dir,
         has_filter,
         &BrowseFilter::default(),
+        false,
     )
 }
 
@@ -143,17 +163,19 @@ pub(super) fn build_track_query_base_browsed(
     sort_dir: &str,
     has_filter: bool,
     browse: &BrowseFilter,
+    exclude_ai: bool,
 ) -> String {
     let (order_expr, dir) = order_expr_and_dir(sort_field, sort_dir);
     let filter_clause = filter_clause(has_filter, 3);
     let browse_first_param = if has_filter { 4 } else { 3 };
     let (browse_clause, _) = browse_clause(browse, browse_first_param);
+    let ai_clause = ai_exclude_clause(exclude_ai);
     let presence = presence_clause(missing_flag);
     format!(
         "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
          duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
          file_mtime, missing_since, missing_reason, untagged, file_size, device, inode \
-         FROM tracks WHERE {presence}{filter_clause}{browse_clause} \
+         FROM tracks WHERE {presence}{filter_clause}{browse_clause}{ai_clause} \
          ORDER BY {order_expr} {dir} LIMIT ?1 OFFSET ?2"
     )
 }
@@ -169,8 +191,9 @@ pub(super) fn build_track_query_browsed(
     sort_dir: &str,
     has_filter: bool,
     browse: &BrowseFilter,
+    exclude_ai: bool,
 ) -> String {
-    build_track_query_base_browsed(0, sort_field, sort_dir, has_filter, browse)
+    build_track_query_base_browsed(0, sort_field, sort_dir, has_filter, browse, exclude_ai)
 }
 
 /// Builds the parameterized `SELECT id` for the queue seam
@@ -206,13 +229,15 @@ pub(super) fn build_track_ids_query_browsed(
     sort_dir: &str,
     has_filter: bool,
     browse: &BrowseFilter,
+    exclude_ai: bool,
 ) -> String {
     let (order_expr, dir) = order_expr_and_dir(sort_field, sort_dir);
     let filter_clause = filter_clause(has_filter, 1);
     let browse_first_param = if has_filter { 2 } else { 1 };
     let (browse_clause, _) = browse_clause(browse, browse_first_param);
+    let ai_clause = ai_exclude_clause(exclude_ai);
     format!(
-        "SELECT id FROM tracks WHERE {PRESENT}{filter_clause}{browse_clause} \
+        "SELECT id FROM tracks WHERE {PRESENT}{filter_clause}{browse_clause}{ai_clause} \
          ORDER BY {order_expr} {dir} LIMIT {QUEUE_LIMIT}"
     )
 }
@@ -277,5 +302,72 @@ mod tests {
             order_expr_and_dir("play_count", "desc"),
             ("play_count", "DESC")
         );
+    }
+
+    #[test]
+    fn ai_exclude_clause_is_empty_when_off_and_parameter_free_when_on() {
+        assert_eq!(ai_exclude_clause(false), "");
+        let clause = ai_exclude_clause(true);
+        assert!(clause.contains("NOT EXISTS"));
+        assert!(clause.contains("track_provenance"));
+        assert!(clause.contains("tp.ai = 1"));
+        // No bound parameter, so it never shifts a caller's ?N numbering.
+        assert!(!clause.contains('?'));
+        // Keyed on the DB flag via the track id — never on a path.
+        assert!(!clause.contains("path"));
+    }
+
+    #[test]
+    fn browse_builder_appends_the_ai_clause_only_when_excluding() {
+        let off = build_track_query_browsed("title", "asc", false, &BrowseFilter::default(), false);
+        assert!(!off.contains("track_provenance"));
+        let on = build_track_query_browsed("title", "asc", false, &BrowseFilter::default(), true);
+        assert!(on.contains("NOT EXISTS"));
+        // The clause sits inside the WHERE, before ORDER BY.
+        let where_start = on.find("WHERE").unwrap();
+        assert!(on.find("track_provenance").unwrap() > where_start);
+        assert!(on.find("track_provenance").unwrap() < on.find("ORDER BY").unwrap());
+    }
+
+    /// Seeds two present tracks — an original and an AI instrumental — plus a
+    /// *missing* AI track, then proves the filter's semantics and its
+    /// composition with `PRESENT`.
+    #[test]
+    fn ai_exclude_hides_ai_tracks_includes_originals_and_composes_with_present() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO tracks (id, path, title, artist, added_at, file_mtime, file_size) \
+               VALUES (1, '/a.flac', 'Original', 'A', 1, 1, 1);
+             INSERT INTO tracks (id, path, title, artist, added_at, file_mtime, file_size) \
+               VALUES (2, '/b.flac', 'Instrumental', 'A', 1, 1, 1);
+             INSERT INTO tracks (id, path, title, artist, added_at, file_mtime, file_size, missing_since) \
+               VALUES (3, '/c.flac', 'Missing AI', 'A', 1, 1, 1, 100);
+             INSERT INTO track_provenance (track_id, kind, ai, created_at) VALUES (2, 'vocals-removed', 1, 0);
+             INSERT INTO track_provenance (track_id, kind, ai, created_at) VALUES (3, 'vocals-removed', 1, 0);",
+        )
+        .unwrap();
+
+        let titles = |exclude_ai: bool| -> Vec<String> {
+            let sql = build_track_query_browsed(
+                "title",
+                "asc",
+                false,
+                &BrowseFilter::default(),
+                exclude_ai,
+            );
+            let mut stmt = conn.prepare(&sql).unwrap();
+            stmt.query_map([1000i64, 0i64], |row| row.get::<_, String>(2))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
+        };
+
+        // Filter off: both present tracks show (the missing one is already
+        // hidden by PRESENT).
+        assert_eq!(titles(false), ["Instrumental", "Original"]);
+        // Filter on: the present AI track is hidden, the original stays, and
+        // the missing AI track remains hidden (PRESENT still holds).
+        assert_eq!(titles(true), ["Original"]);
     }
 }
