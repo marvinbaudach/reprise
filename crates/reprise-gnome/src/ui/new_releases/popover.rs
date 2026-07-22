@@ -141,6 +141,7 @@ impl NewReleasesPopover {
     ) -> Rc<Self> {
         let (button, badge) = badge::build_button();
         let popover = gtk4::Popover::new();
+        popover.add_css_class("new-release-popover");
 
         let list = gtk4::ListBox::new();
         list.set_selection_mode(gtk4::SelectionMode::None);
@@ -669,7 +670,7 @@ fn build_footer() -> (
     fetch_content.append(&fetch_label);
     let fetch_button = gtk4::Button::builder()
         .child(&fetch_content)
-        .css_classes(["flat"])
+        .css_classes(["flat", "new-release-ghost"])
         .build();
     let updated = gtk4::Label::new(None);
     updated.add_css_class("dim-label");
