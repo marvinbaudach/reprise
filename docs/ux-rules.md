@@ -1912,7 +1912,7 @@ gesamte UI erscheint nur hinter dem „Experimental features"-Schalter; raue
 Kanten sind bewusst akzeptiert. Der Player spielt ausschließlich fertige
 Dateien.
 
-- **INST-1** [geplant] [gtk] — Auslösung per Track-Kontextmenü: Bei
+- **INST-1** [aktiv] [gtk] — Auslösung per Track-Kontextmenü: Bei
   aktivem Experimental-Schalter trägt das Track-Kontextmenü den Eintrag
   „Create instrumental"; er wirkt auf die **gesamte Auswahl** (Mehrfachauswahl
   → ein Batch mit gemeinsamer `batch_id` für Aggregat-Fortschritt) und ist bei

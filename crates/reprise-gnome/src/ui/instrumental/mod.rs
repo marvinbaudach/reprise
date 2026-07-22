@@ -24,7 +24,9 @@ pub(in crate::ui) mod conversion_view;
 pub(in crate::ui) mod conversion_wiring;
 pub(in crate::ui) mod worker_host;
 
+use std::cell::RefCell;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use reprise_core::library::settings;
@@ -89,10 +91,32 @@ pub(in crate::ui) fn app_backend() -> Box<dyn StemSeparationBackend + Send> {
 /// (Beschluss 16) and the `REPRISE_AI_MODEL` provenance tag stay consistent.
 ///
 /// **TODO(P3b):** tracks the real backend's id once wired.
-// Consumed by the "Create instrumental" enqueue path in a later package-F commit.
-#[allow(dead_code)]
 pub(in crate::ui) fn app_model_id() -> String {
     FakeStemBackend::new().model_id()
+}
+
+thread_local! {
+    /// The UI-thread hook that nudges the worker to re-poll the queue. The
+    /// conversion wiring registers it with the worker handle; the enqueue paths
+    /// (context menu) call [`wake_worker`] after creating jobs so a freshly
+    /// queued render starts without waiting for the next event. A thread-local
+    /// keeps the worker handle out of unrelated widgets' state — everything here
+    /// runs single-threaded on the UI thread.
+    static WAKE_HOOK: RefCell<Option<Rc<dyn Fn()>>> = const { RefCell::new(None) };
+}
+
+/// Registers the worker-wake hook (called once by the conversion wiring).
+pub(in crate::ui) fn set_wake_hook(hook: Rc<dyn Fn()>) {
+    WAKE_HOOK.with(|hook_cell| *hook_cell.borrow_mut() = Some(hook));
+}
+
+/// Nudges the worker to re-poll the queue, if one is running. A no-op when the
+/// experimental feature is off (no hook registered).
+pub(in crate::ui) fn wake_worker() {
+    let hook = WAKE_HOOK.with(|hook_cell| hook_cell.borrow().clone());
+    if let Some(hook) = hook {
+        hook();
+    }
 }
 
 /// Unix seconds — the clock every facade call (`enqueue`, `promote`, `discard`)

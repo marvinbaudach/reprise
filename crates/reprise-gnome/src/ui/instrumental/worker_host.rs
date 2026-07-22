@@ -91,7 +91,9 @@ pub(in crate::ui) fn run_next_job(
             return None;
         }
     };
-    Some(run_claimed_job(
+    // A job just went running — tick so the conversion view leaves `queued`.
+    on_progress();
+    let run = run_claimed_job(
         conn,
         backend,
         staging,
@@ -101,7 +103,11 @@ pub(in crate::ui) fn run_next_job(
         lease_secs,
         clock,
         on_progress,
-    ))
+    );
+    // ...and once it reaches a terminal state, so `done`/`failed` show even when
+    // that transition wrote no progress (mark_failed does not tick on its own).
+    on_progress();
+    Some(run)
 }
 
 /// Runs one already-claimed (`running`) job: resolves the source, renders into
@@ -304,8 +310,6 @@ impl InstrumentalWorker {
 
     /// Nudges the worker to re-poll the queue — call after enqueuing jobs so a
     /// newly queued render starts without waiting for the next event.
-    // Consumed by the "Create instrumental" enqueue path in a later package-F commit.
-    #[allow(dead_code)]
     pub(in crate::ui) fn wake(&self) {
         let mut state = self.inner.shared.state.lock().unwrap();
         state.revision = state.revision.wrapping_add(1);

@@ -197,29 +197,37 @@ fn worker_fails_a_job_whose_source_cannot_be_resolved() {
 
 #[test]
 fn worker_progress_writes_are_throttled_but_completion_is_exact() {
-    // The Fake fires four rapid progress steps; the 250 ms floor collapses the
-    // intermediate DB writes, yet mark_done still lands an exact 1000.
+    // The Fake fires ten rapid progress steps; the 250 ms floor collapses the
+    // intermediate writes to at most one, yet mark_done still lands an exact
+    // 1000. Driving run_claimed_job directly isolates the render's own ticks
+    // (throttled progress + the final done) from run_next_job's start/terminal
+    // ticks.
     let h = harness();
     let job_id = enqueue(&h);
-    let db_writes = Cell::new(0u32);
+    let claimed = ai_jobs::claim_next(&h.conn, WORKER, NOW, LEASE_SECS)
+        .unwrap()
+        .unwrap();
+    let ticks = Cell::new(0u32);
 
-    // Observe DB progress writes by ticking whenever set_progress ran: the tick
-    // fires from inside the throttled branch, so its count is the write count.
-    let mut on_tick = || db_writes.set(db_writes.get() + 1);
-    run_next_job(
+    let mut on_tick = || ticks.set(ticks.get() + 1);
+    run_claimed_job(
         &h.conn,
-        &FakeStemBackend::new().with_steps(4),
+        &FakeStemBackend::new().with_steps(10),
         &h.staging,
         &h.resolve,
         WORKER,
+        &claimed,
         LEASE_SECS,
         &clock,
         &mut on_tick,
-    )
-    .unwrap();
+    );
 
-    // At most one throttled progress write plus the final completion tick.
-    assert!(db_writes.get() <= 2, "progress writes are throttled");
+    // Ten rapid steps, at most one throttled progress write plus the done tick.
+    assert!(
+        ticks.get() <= 2,
+        "progress writes are throttled: {}",
+        ticks.get()
+    );
     assert_eq!(
         ai_jobs::get_job(&h.conn, job_id)
             .unwrap()
