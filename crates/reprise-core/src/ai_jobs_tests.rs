@@ -468,6 +468,88 @@ fn list_active_excludes_cancelled_jobs() {
 }
 
 #[test]
+fn concurrent_enqueue_and_claim_never_surface_a_raw_busy_error() {
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+
+    const THREADS: usize = 8;
+    const ROUNDS: usize = 80;
+    const SOURCES: i64 = 32;
+    // A lease far past every `now = 0` claim, so no job is ever reclaimed and
+    // each is therefore claimable exactly once.
+    const BIG_LEASE: i64 = 1_000_000;
+
+    let file = tempfile::NamedTempFile::new().unwrap();
+    let path = file.path().to_path_buf();
+    let setup = crate::db::open(Some(&path)).unwrap();
+    crate::db::migrate(&setup).unwrap();
+    for id in 1..=SOURCES {
+        seed_track(&setup, id);
+    }
+    drop(setup);
+
+    let barrier = Arc::new(Barrier::new(THREADS));
+    let mut handles = Vec::new();
+    for worker in 0..THREADS {
+        let path = path.clone();
+        let barrier = Arc::clone(&barrier);
+        handles.push(thread::spawn(
+            move || -> Result<Vec<i64>, rusqlite::Error> {
+                let conn = crate::db::open(Some(&path)).unwrap();
+                let staging = StagingStore::new("/unused");
+                let mut claimed = Vec::new();
+                barrier.wait();
+                for round in 0..ROUNDS {
+                    let source = ((worker + round) as i64 % SOURCES) + 1;
+                    // Interleave a write (enqueue) with a read-then-write (claim)
+                    // across connections, so another connection commits between
+                    // this one's snapshot read and its write — exactly the
+                    // SQLITE_BUSY_SNAPSHOT trigger a DEFERRED transaction hits and
+                    // busy_timeout never retries.
+                    enqueue_instrumental(&conn, &staging, source, "m@1", 0)?;
+                    if let Some(job) = claim_next(&conn, worker as i64 + 1, 0, BIG_LEASE)? {
+                        claimed.push(job.id);
+                    }
+                }
+                Ok(claimed)
+            },
+        ));
+    }
+
+    let mut all_claimed = Vec::new();
+    for handle in handles {
+        // A raw Busy / BusySnapshot (or the unique-index violation the same race
+        // produces) propagates here and fails the test: the documented behavior
+        // is dedup / next-candidate, never a raw error.
+        let claimed = handle
+            .join()
+            .unwrap()
+            .expect("no raw busy/snapshot error may surface under concurrency");
+        all_claimed.extend(claimed);
+    }
+
+    // Drain anything still queued, single-threaded.
+    let drain = crate::db::open(Some(&path)).unwrap();
+    while let Some(job) = claim_next(&drain, 99, 0, BIG_LEASE).unwrap() {
+        all_claimed.push(job.id);
+    }
+
+    let total_jobs: i64 = drain
+        .query_row("SELECT COUNT(*) FROM ai_jobs", [], |r| r.get(0))
+        .unwrap();
+    all_claimed.sort_unstable();
+    let mut unique = all_claimed.clone();
+    unique.dedup();
+    assert_eq!(all_claimed, unique, "no job was claimed by two workers");
+    assert_eq!(
+        all_claimed.len() as i64,
+        total_jobs,
+        "every job was claimed exactly once"
+    );
+    assert!(!all_claimed.is_empty(), "the run actually claimed work");
+}
+
+#[test]
 fn job_state_round_trips() {
     for state in [
         JobState::Queued,

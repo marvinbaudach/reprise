@@ -3,7 +3,7 @@
 use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, Transaction, TransactionBehavior};
 
 pub mod notifier;
 pub use notifier::{Handle, Notifier};
@@ -84,6 +84,36 @@ pub(crate) fn in_txn<T>(
 ) -> Result<T, rusqlite::Error> {
     if conn.is_autocommit() {
         let tx = conn.unchecked_transaction()?;
+        let value = body(&tx)?;
+        tx.commit()?;
+        Ok(value)
+    } else {
+        body(conn)
+    }
+}
+
+/// Like [`in_txn`], but a freshly-opened transaction uses `BEGIN IMMEDIATE`
+/// instead of the default `BEGIN DEFERRED`, taking the write lock upfront.
+///
+/// A facade that **reads then writes** (a dedup `SELECT` before its `INSERT`, a
+/// claim `SELECT` before its `UPDATE`) must use this. Under a DEFERRED
+/// transaction such a body first acquires a read snapshot, and if another
+/// connection commits before the write, the write-lock upgrade fails
+/// immediately with `SQLITE_BUSY` (`SQLITE_BUSY_SNAPSHOT`) — a snapshot
+/// conflict SQLite never routes through `busy_timeout`, so the raw error
+/// propagates instead of the facade's documented dedup / next-candidate
+/// behavior. Taking the write lock before the first read means the ordinary
+/// busy handler applies and the transaction simply waits its turn.
+///
+/// When the caller already holds a transaction, `body` joins it exactly like
+/// [`in_txn`] (SQLite forbids a nested `BEGIN`); the behavior is then whatever
+/// the outer transaction opened with.
+pub(crate) fn in_txn_immediate<T>(
+    conn: &Connection,
+    body: impl FnOnce(&Connection) -> Result<T, rusqlite::Error>,
+) -> Result<T, rusqlite::Error> {
+    if conn.is_autocommit() {
+        let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
         let value = body(&tx)?;
         tx.commit()?;
         Ok(value)

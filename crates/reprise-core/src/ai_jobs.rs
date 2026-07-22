@@ -14,6 +14,16 @@
 //!   caller throttles it (≤ 2 writes/s, plan 2.2); this facade just writes.
 //! * The **clock is injected** (`now: i64`) everywhere a timestamp or a lease
 //!   deadline is computed, so lease expiry/reclaim is testable without sleeps.
+//! * Every facade that **reads then writes** in one transaction — the enqueue
+//!   dedup probe, the `claim_next` candidate select, and the `finish_owned`
+//!   progress read — opens with `BEGIN IMMEDIATE` (via
+//!   [`crate::events::in_txn_immediate`], or directly in `claim_next`). Under
+//!   real concurrency a DEFERRED read-then-write takes a snapshot and then fails
+//!   its write-lock upgrade with a raw `SQLITE_BUSY`/`SQLITE_BUSY_SNAPSHOT` that
+//!   `busy_timeout` never retries; taking the write lock upfront makes a loser
+//!   wait its turn and see the deduplicated / next-candidate result the API
+//!   promises. Write-only transitions (cancel, discard, attach) stay ordinary,
+//!   since their first statement already takes the lock.
 //!
 //! ## Dedup (Beschluss 16) and the staging wrinkle
 //!
@@ -24,7 +34,7 @@
 //! the work be re-enqueued once that render is gone (discarded, or the
 //! promoted instrumental deleted — Beschluss 16).
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 
 use crate::ai_staging::StagingStore;
 use crate::events;
@@ -192,7 +202,10 @@ pub fn enqueue_instrumental(
     now: i64,
 ) -> Result<EnqueueOutcome, rusqlite::Error> {
     let (params_json, fingerprint) = instrumental_params(model_id);
-    events::in_txn(conn, |conn| {
+    // IMMEDIATE: this reads (dedup probe) then writes (INSERT). See
+    // `events::in_txn_immediate` for why a DEFERRED read-then-write races into a
+    // raw `SQLITE_BUSY` instead of deduplicating.
+    events::in_txn_immediate(conn, |conn| {
         enqueue_one(
             conn,
             staging,
@@ -217,7 +230,8 @@ pub fn enqueue_instrumental_batch(
 ) -> Result<BatchOutcome, rusqlite::Error> {
     let (params_json, fingerprint) = instrumental_params(model_id);
     let batch_id = new_batch_id();
-    let jobs = events::in_txn(conn, |conn| {
+    // IMMEDIATE: each `enqueue_one` reads (dedup probe) then writes.
+    let jobs = events::in_txn_immediate(conn, |conn| {
         let mut jobs = Vec::with_capacity(source_track_ids.len());
         for &source_track_id in source_track_ids {
             jobs.push(enqueue_one(
@@ -308,6 +322,12 @@ fn enqueue_one(
 /// `queued`, or `running` with an **expired** lease (reclaiming a crashed
 /// worker — plan 2.4/2). Exactly one worker wins a given job: the conditional
 /// `UPDATE` inside a transaction means a loser simply sees the next candidate.
+///
+/// The transaction is `BEGIN IMMEDIATE`: it reads a candidate, then writes the
+/// claim. A DEFERRED transaction would take a read snapshot first and, under
+/// concurrent claimers, fail the write-lock upgrade with a raw `SQLITE_BUSY`
+/// that `busy_timeout` never retries; taking the write lock upfront makes a
+/// loser wait its turn and then re-select, exactly as documented.
 pub fn claim_next(
     conn: &Connection,
     worker: i64,
@@ -315,7 +335,7 @@ pub fn claim_next(
     lease_secs: i64,
 ) -> Result<Option<ClaimedJob>, rusqlite::Error> {
     let lease_expires_at = now.saturating_add(lease_secs);
-    let tx = conn.unchecked_transaction()?;
+    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
     let claimed = loop {
         let candidate: Option<(i64, String)> = tx
             .query_row(
@@ -483,7 +503,10 @@ fn finish_owned(
     now: i64,
     op: &str,
 ) -> Result<bool, rusqlite::Error> {
-    events::in_txn(conn, |conn| {
+    // IMMEDIATE: the failed/other branch reads `progress_permille` before the
+    // terminal UPDATE, so it must take the write lock upfront (see
+    // `events::in_txn_immediate`).
+    events::in_txn_immediate(conn, |conn| {
         let progress = if status == "done" {
             i64::from(crate::stem_separation::PROGRESS_COMPLETE)
         } else {
