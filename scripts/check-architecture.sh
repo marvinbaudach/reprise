@@ -232,8 +232,11 @@ done
 # the "no SQL outside core" gate extended to reprise-cli/reprise-mcp (plan
 # §2.5). Uppercase statement keywords match real queries, not prose; test
 # fixtures (under tests/) may still use SQL to arrange and inspect their data.
+# `rg -U` (multiline) plus `\s+`/`[\s\S]` gaps catch keywords split across a
+# line break — e.g. `UPDATE` on one line and `foo SET …` on the next — which a
+# line-anchored pattern would miss.
 for headless_src in crates/reprise-cli/src crates/reprise-mcp/src; do
-  if rg --quiet '\b(SELECT |INSERT INTO|UPDATE .* SET |DELETE FROM|CREATE TABLE|CREATE INDEX|DROP TABLE|ALTER TABLE)' \
+  if rg --quiet -U '\b(SELECT|INSERT\s+INTO|UPDATE\b[\s\S]{0,200}?\bSET\b|DELETE\s+FROM|CREATE\s+TABLE|CREATE\s+INDEX|DROP\s+TABLE|ALTER\s+TABLE)\b' \
     "$headless_src" --glob '*.rs'; then
     echo "productive SQL is not allowed outside reprise-core: $headless_src" >&2
     exit 1
