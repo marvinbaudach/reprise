@@ -142,6 +142,30 @@ pub fn list(conn: &Connection) -> Result<Vec<PlaylistSummary>, rusqlite::Error> 
     Ok(result)
 }
 
+/// Looks up one manual playlist by id, or `Ok(None)` when it does not exist —
+/// the single-row companion to [`list`]. A caller that needs just one
+/// playlist's summary (a CLI header, a delete's expected-name lookup) uses this
+/// instead of scanning and filtering the whole `list`. `track_count` is
+/// computed exactly as in `list`, so the two always agree.
+pub fn get(conn: &Connection, id: i64) -> Result<Option<PlaylistSummary>, rusqlite::Error> {
+    conn.query_row(
+        "SELECT p.id, p.name, COALESCE(COUNT(pt.track_id), 0) as track_count \
+         FROM playlists p \
+         LEFT JOIN playlist_tracks pt ON p.id = pt.playlist_id \
+         WHERE p.id = ?1 \
+         GROUP BY p.id",
+        params![id],
+        |row| {
+            Ok(PlaylistSummary {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                track_count: row.get(2)?,
+            })
+        },
+    )
+    .optional()
+}
+
 /// Appends tracks to a playlist at the end (appends to the highest position).
 /// Positions are contiguous. Duplicates allowed (Rhythmbox behavior).
 /// All inserts happen in one transaction.

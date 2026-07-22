@@ -196,6 +196,21 @@ fn rename_playlist() {
 }
 
 #[test]
+fn get_returns_the_summary_or_none() {
+    let mut conn = seeded_conn();
+    let id = create(&conn, "Mix").unwrap();
+    add_tracks(&mut conn, id, &[1, 2]).unwrap();
+
+    let summary = get(&conn, id).unwrap().expect("playlist exists");
+    assert_eq!(summary.id, id);
+    assert_eq!(summary.name, "Mix");
+    assert_eq!(summary.track_count, 2);
+
+    // A missing id is Ok(None), not an error.
+    assert!(get(&conn, 9_999).unwrap().is_none());
+}
+
+#[test]
 fn list_playlists_ordered_by_position() {
     let conn = seeded_conn();
     let _ = create(&conn, "P1").unwrap();
