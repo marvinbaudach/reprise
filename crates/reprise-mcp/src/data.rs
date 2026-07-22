@@ -132,8 +132,8 @@ pub fn library_summary(path: &Path) -> Result<LibrarySummary, DataError> {
     require_read(&conn)?;
 
     let stats = queries::query_library_stats(&conn, "").map_err(DataError::Db)?;
-    let artist_count = queries::query_artists(&conn).map_err(DataError::Db)?.len() as i64;
-    let album_count = queries::query_albums(&conn).map_err(DataError::Db)?.len() as i64;
+    let artist_count = queries::query_artist_count(&conn).map_err(DataError::Db)?;
+    let album_count = queries::query_album_count(&conn).map_err(DataError::Db)?;
 
     let coverage = sound_profile::library_coverage(&conn, AnalysisVersions::current())
         .map_err(|error| DataError::Internal(format!("coverage query failed: {error}")))?;

@@ -114,6 +114,38 @@ pub fn query_artists(conn: &Connection) -> Result<Vec<ArtistSummary>, rusqlite::
     rows.collect()
 }
 
+/// Counts the distinct `(album, effective album artist)` groups — the length of
+/// [`query_albums`] without materializing every [`AlbumSummary`]. Same
+/// `PRESENT`/blank-album filter and same case-insensitive grouping keys, so the
+/// two always agree.
+pub fn query_album_count(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    conn.query_row(
+        &format!(
+            "SELECT COUNT(*) FROM ( \
+               SELECT 1 FROM tracks \
+               WHERE {PRESENT} AND TRIM(album) <> '' \
+               GROUP BY LOWER(TRIM(album)), LOWER({EFFECTIVE_ALBUM_ARTIST}) \
+             )"
+        ),
+        [],
+        |row| row.get(0),
+    )
+}
+
+/// Counts the distinct effective album artists — the length of [`query_artists`]
+/// without materializing every [`ArtistSummary`]. Same `PRESENT`/blank-artist
+/// filter and case-insensitive key as `query_artists`, so the two always agree.
+pub fn query_artist_count(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    conn.query_row(
+        &format!(
+            "SELECT COUNT(DISTINCT LOWER({EFFECTIVE_ALBUM_ARTIST})) FROM tracks \
+             WHERE {PRESENT} AND TRIM({EFFECTIVE_ALBUM_ARTIST}) <> ''"
+        ),
+        [],
+        |row| row.get(0),
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn query_album_track_window(
     conn: &mut Connection,
@@ -412,6 +444,25 @@ mod tests {
         )
         .unwrap();
         conn
+    }
+
+    #[test]
+    fn artist_and_album_counts_match_the_grouped_summaries() {
+        let conn = seeded_library();
+        // The counts are exactly the lengths of the grouped summaries — the
+        // point of the facade is to get that number without materializing them.
+        assert_eq!(
+            query_artist_count(&conn).unwrap(),
+            query_artists(&conn).unwrap().len() as i64
+        );
+        assert_eq!(
+            query_album_count(&conn).unwrap(),
+            query_albums(&conn).unwrap().len() as i64
+        );
+        // Nobody, Other Artist, Solo, Various Artists; the missing "Lost" and
+        // blank-album rows are excluded exactly as in the summaries.
+        assert_eq!(query_artist_count(&conn).unwrap(), 4);
+        assert_eq!(query_album_count(&conn).unwrap(), 3);
     }
 
     #[test]
