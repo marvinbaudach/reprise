@@ -11,8 +11,18 @@ pub use notifier::{Handle, Notifier};
 pub const MAX_RETAINED_CHANGES: usize = 10_000;
 pub const RETENTION_SECS: i64 = 7 * 24 * 60 * 60;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
 pub struct WriterToken(i64);
+
+impl WriterToken {
+    /// The raw per-process token value. Exposed so a frontend can surface it in
+    /// diagnostic output (e.g. `reprise-cli events tail --json`). It only
+    /// distinguishes which connection authored a change within one database's
+    /// lifetime — it carries no meaning across separate processes.
+    pub fn value(self) -> i64 {
+        self.0
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Change {

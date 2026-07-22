@@ -57,6 +57,14 @@ fn writer_token_is_stable_for_the_process() {
 }
 
 #[test]
+fn writer_token_exposes_its_value_and_serializes_as_a_bare_integer() {
+    let token = WriterToken(7);
+    assert_eq!(token.value(), 7);
+    // Serializes as the inner integer, ready to drop into a JSON object.
+    assert_eq!(serde_json::to_string(&token).unwrap(), "7");
+}
+
+#[test]
 fn record_uses_the_process_writer_token() {
     let conn = migrated_conn();
 
