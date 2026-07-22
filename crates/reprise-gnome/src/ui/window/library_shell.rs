@@ -278,7 +278,6 @@ pub(in crate::ui) fn build(
         .build();
     let info_panel = InfoPanel::new(
         content,
-        window,
         conn.clone(),
         runtime.clone(),
         track_list.shared_cover_loader(),
