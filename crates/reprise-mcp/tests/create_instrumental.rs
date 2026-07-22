@@ -8,8 +8,8 @@
 mod common;
 
 use common::{
-    promote_job, run_worker_until_idle, seed_real_flac_track, set_bool_setting, structured_ok,
-    tool_error_text, McpClient, SeedTrack, CAP_AI_CREATE,
+    run_worker_completing, run_worker_until_idle, seed_real_flac_track, set_bool_setting,
+    structured_ok, tool_error_text, McpClient, SeedTrack, CAP_AI_CREATE,
 };
 use serde_json::{json, Value};
 use tempfile::TempDir;
@@ -129,15 +129,15 @@ fn save_true_registers_a_job_that_promotes_end_to_end() {
     );
     let job_id = first_job_id(&structured);
 
-    // Drive a worker + save decision the way the app/CLI would — against the
-    // very same temp DB the server wrote to.
-    run_worker_until_idle(&db, &staging);
-    let result_track_id = promote_job(&db, &staging, &library, job_id);
+    // Drive the in-process worker the way the real CLI worker runs: it renders
+    // and, honoring the save=true intent, promotes the render in the same
+    // completion — no manual save step, against the same temp DB the server used.
+    run_worker_completing(&db, &staging, &library);
 
     // The MCP-registered job carried all the way to a saved library track.
     let (state, saved_track) = common::job_state(&db, job_id);
     assert_eq!(state, "done");
-    assert_eq!(saved_track, Some(result_track_id));
+    let result_track_id = saved_track.expect("save=true auto-promotes to a library track");
     assert_ne!(result_track_id, source_id, "a new track was created");
 
     let conn = reprise_core::db::open_migrated(Some(&db)).unwrap();

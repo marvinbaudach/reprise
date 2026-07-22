@@ -112,6 +112,10 @@ pub const CAP_AI_CREATE: &str = "agent.capability.ai:create";
 /// timestamp math is deterministic and needs no wall clock.
 const WORKER_NOW: i64 = 1_700_000_000;
 
+/// The in-process worker's claim token and lease — deterministic, no wall clock.
+const WORKER: i64 = 42_042;
+const LEASE_SECS: i64 = 300;
+
 /// Copies the bundled `sine.flac` into `dir` as `<title>.flac` and seeds a
 /// track row pointing at that real file, with the metadata the promotion path
 /// reads. Returns `(track_id, flac_path)`.
@@ -140,14 +144,40 @@ pub fn seed_real_flac_track(
     (conn.last_insert_rowid(), flac)
 }
 
-/// Claims and renders every queued job into `staging_dir` with the deterministic
-/// fake backend, leaving each `done` (staged, unsaved) — the in-process worker
-/// the plan lets the harness run.
-pub fn run_worker_until_idle(db_path: &Path, staging_dir: &Path) {
+/// Renders one claimed job into staging with the deterministic fake backend,
+/// posting progress — the shared body of the in-process worker helpers.
+fn render_claimed_job(
+    conn: &rusqlite::Connection,
+    staging: &reprise_core::ai_staging::StagingStore,
+    backend: &reprise_core::stem_separation::FakeStemBackend,
+    claimed: &reprise_core::ai_jobs::ClaimedJob,
+) {
     use reprise_core::stem_separation::StemSeparationBackend;
-    const WORKER: i64 = 42_042;
-    const LEASE_SECS: i64 = 300;
+    let source_id = claimed.source_track_id.expect("job has a source track");
+    let source: String = conn
+        .query_row(
+            "SELECT path FROM tracks WHERE id = ?1",
+            [source_id],
+            |row| row.get(0),
+        )
+        .expect("source path");
+    let output = staging.path_for_job(claimed.id);
+    backend
+        .separate_instrumental(
+            Path::new(&source),
+            &output,
+            &mut |permille| {
+                let _ = reprise_core::ai_jobs::set_progress(conn, claimed.id, WORKER, permille);
+            },
+            &|| false,
+        )
+        .expect("render instrumental");
+}
 
+/// Claims and renders every queued job into `staging_dir` with the deterministic
+/// fake backend, marking each `done` (staged, unsaved) via `mark_done` — the
+/// in-process worker for tests that then drive the save decision themselves.
+pub fn run_worker_until_idle(db_path: &Path, staging_dir: &Path) {
     let conn = reprise_core::db::open_migrated(Some(db_path)).expect("open fixture db");
     let staging = reprise_core::ai_staging::StagingStore::new(staging_dir);
     staging.ensure_dir().expect("ensure staging dir");
@@ -157,27 +187,31 @@ pub fn run_worker_until_idle(db_path: &Path, staging_dir: &Path) {
         reprise_core::ai_jobs::claim_next(&conn, WORKER, WORKER_NOW, LEASE_SECS)
             .expect("claim next job")
     {
-        let source_id = claimed.source_track_id.expect("job has a source track");
-        let source: String = conn
-            .query_row(
-                "SELECT path FROM tracks WHERE id = ?1",
-                [source_id],
-                |row| row.get(0),
-            )
-            .expect("source path");
-        let output = staging.path_for_job(claimed.id);
-        backend
-            .separate_instrumental(
-                Path::new(&source),
-                &output,
-                &mut |permille| {
-                    let _ =
-                        reprise_core::ai_jobs::set_progress(&conn, claimed.id, WORKER, permille);
-                },
-                &|| false,
-            )
-            .expect("render instrumental");
+        render_claimed_job(&conn, &staging, &backend, &claimed);
         reprise_core::ai_jobs::mark_done(&conn, claimed.id, WORKER, WORKER_NOW).expect("mark done");
+    }
+}
+
+/// Like [`run_worker_until_idle`] but completes each job through
+/// `ai_promotion::complete_render`, exactly as the real CLI worker does: a job
+/// carrying the auto-promote intent (`save=true`) is promoted into `library_root`
+/// on completion with no manual save step, while a no-intent job is left staged.
+pub fn run_worker_completing(db_path: &Path, staging_dir: &Path, library_root: &Path) {
+    let mut conn = reprise_core::db::open_migrated(Some(db_path)).expect("open fixture db");
+    let staging = reprise_core::ai_staging::StagingStore::new(staging_dir);
+    staging.ensure_dir().expect("ensure staging dir");
+    let config = reprise_core::ai_promotion::PromotionConfig::new(library_root);
+    let backend = reprise_core::stem_separation::FakeStemBackend::new();
+
+    while let Some(claimed) =
+        reprise_core::ai_jobs::claim_next(&conn, WORKER, WORKER_NOW, LEASE_SECS)
+            .expect("claim next job")
+    {
+        render_claimed_job(&conn, &staging, &backend, &claimed);
+        reprise_core::ai_promotion::complete_render(
+            &mut conn, &staging, &config, claimed.id, WORKER, WORKER_NOW,
+        )
+        .expect("complete render");
     }
 }
 
