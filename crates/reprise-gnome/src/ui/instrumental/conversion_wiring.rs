@@ -22,6 +22,7 @@ use rusqlite::Connection;
 
 use super::conversion_view::ConversionView;
 use super::worker_host::InstrumentalWorker;
+use crate::ui::player_controller::PlayerController;
 use crate::ui::strings;
 use crate::ui::track_list::TrackList;
 
@@ -42,6 +43,9 @@ pub(in crate::ui) struct ConversionWiring<'a> {
     pub content_stack: &'a gtk4::Stack,
     pub toast_overlay: &'a adw::ToastOverlay,
     pub track_list: &'a Rc<TrackList>,
+    /// The player, so a finished render can actually play by path (INST-4b).
+    /// `None` in headless builds without a player.
+    pub player: &'a Option<Rc<PlayerController>>,
 }
 
 /// Starts the worker host + conversion view when the experimental switch is on.
@@ -198,15 +202,68 @@ fn wire_callbacks(view: &Rc<ConversionView>, staging: &StagingStore, deps: &Conv
         });
     }
 
-    // Play (INST-4/INST-5): playing a staging render needs a play-by-path seam
-    // the player does not have yet. TODO(P3b): wire staging/library playback.
+    // Play (INST-4b/INST-5b): a finished, undecided render plays its staging
+    // file by path; a promoted render plays through the normal library path; a
+    // still-processing row does not play at all (wait-with-progress, INST-5b —
+    // its Play affordance is already disabled by the view, this is the backstop).
     {
+        let conn = deps.conn.clone();
+        let staging = staging.clone();
+        let player = deps.player.as_ref().map(Rc::downgrade);
         let overlay = overlay.clone();
         view.set_on_play(move |job_id| {
-            tracing::info!(job_id, "instrumental: play requested (not yet wired — P3b)");
-            toast(&overlay, &strings::text(strings::STATE_PROCESSING));
+            let Some(player) = player.as_ref().and_then(std::rc::Weak::upgrade) else {
+                return;
+            };
+            match play_target(&conn, &staging, job_id) {
+                Some(PlayTarget::LibraryTrack(track_id)) => player.play_track_id(track_id),
+                Some(PlayTarget::StagingPath(path)) => match path.to_str() {
+                    Some(path) => {
+                        if let Err(error) = player.play_path(path) {
+                            tracing::warn!(%error, job_id, "instrumental: staging playback failed");
+                            toast(&overlay, &strings::text(strings::STATE_FAILED));
+                        }
+                    }
+                    None => {
+                        tracing::warn!(job_id, "instrumental: staging path is not valid UTF-8");
+                    }
+                },
+                // Queued / processing / failed: no play (INST-5b wait-with-progress).
+                None => {}
+            }
         });
     }
+}
+
+/// What activating a conversion row plays (INST-4b). A saved render is a real
+/// library track; an undecided render is a staging file played by path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PlayTarget {
+    /// A promoted render: play the library track by id (full now-playing).
+    LibraryTrack(i64),
+    /// An undecided staging render: play the file by absolute path.
+    StagingPath(std::path::PathBuf),
+}
+
+/// Resolves what a conversion row should play, or `None` when it must not play
+/// (queued/processing/failed → wait-with-progress, INST-5b; done-but-discarded →
+/// nothing). Pure over the DB + staging store, so INST-4b/5b are testable
+/// without a player.
+fn play_target(
+    conn: &Rc<RefCell<Connection>>,
+    staging: &StagingStore,
+    job_id: i64,
+) -> Option<PlayTarget> {
+    let job = ai_jobs::get_job(&conn.borrow(), job_id).ok().flatten()?;
+    if job.state != ai_jobs::JobState::Done {
+        return None; // still queued/processing, or failed/cancelled — no play.
+    }
+    if let Some(track_id) = job.result_track_id {
+        return Some(PlayTarget::LibraryTrack(track_id)); // saved -> library track.
+    }
+    staging
+        .exists(job_id)
+        .then(|| PlayTarget::StagingPath(staging.path_for_job(job_id)))
 }
 
 /// Reads the library root, builds the promotion config, and promotes one job.
@@ -302,5 +359,95 @@ fn confirm_clear(
 fn toast(overlay: &glib::WeakRef<adw::ToastOverlay>, message: &str) {
     if let Some(overlay) = overlay.upgrade() {
         overlay.add_toast(adw::Toast::new(message));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{play_target, PlayTarget};
+    use reprise_core::ai_jobs;
+    use reprise_core::ai_staging::StagingStore;
+    use rusqlite::Connection;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    const WORKER: i64 = 7;
+    const NOW: i64 = 100;
+
+    fn setup() -> (Rc<RefCell<Connection>>, StagingStore, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = Connection::open_in_memory().unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (id, path, title, artist, added_at) \
+             VALUES (1, '/m/1.flac', 'S', 'A', 0)",
+            [],
+        )
+        .unwrap();
+        let staging = StagingStore::new(dir.path().join("staging"));
+        staging.ensure_dir().unwrap();
+        (Rc::new(RefCell::new(conn)), staging, dir)
+    }
+
+    fn enqueue(conn: &Rc<RefCell<Connection>>, staging: &StagingStore, model: &str) -> i64 {
+        ai_jobs::enqueue_instrumental(&conn.borrow(), staging, 1, model, NOW)
+            .unwrap()
+            .job_id()
+    }
+
+    // UX INST-4b: activating a finished render resolves to its file for playback —
+    // an undecided render plays its staging file, a saved render its library track.
+    #[test]
+    fn inst_4b_finished_render_resolves_to_its_file_for_playback() {
+        let (conn, staging, _dir) = setup();
+        let job = enqueue(&conn, &staging, "model@1");
+        ai_jobs::claim_next(&conn.borrow(), WORKER, NOW, 1000)
+            .unwrap()
+            .unwrap();
+        ai_jobs::mark_done(&conn.borrow(), job, WORKER, NOW).unwrap();
+        std::fs::write(staging.path_for_job(job), b"render").unwrap();
+
+        assert_eq!(
+            play_target(&conn, &staging, job),
+            Some(PlayTarget::StagingPath(staging.path_for_job(job))),
+            "an undecided render plays its staging file by path"
+        );
+
+        // Once promoted (a result track id is set), it plays the library track.
+        conn.borrow()
+            .execute(
+                "UPDATE ai_jobs SET result_track_id = 1 WHERE id = ?1",
+                [job],
+            )
+            .unwrap();
+        assert_eq!(
+            play_target(&conn, &staging, job),
+            Some(PlayTarget::LibraryTrack(1)),
+            "a saved render plays its promoted library track"
+        );
+    }
+
+    // UX INST-5b: a still-processing (or queued) row never resolves a play target
+    // — the wait-with-progress rule: no play, no original fallback, no skip.
+    #[test]
+    fn inst_5b_a_processing_or_queued_row_never_plays() {
+        let (conn, staging, _dir) = setup();
+        let running = enqueue(&conn, &staging, "model@1");
+        ai_jobs::claim_next(&conn.borrow(), WORKER, NOW, 1000)
+            .unwrap()
+            .unwrap();
+        ai_jobs::set_progress(&conn.borrow(), running, WORKER, 400).unwrap();
+        assert_eq!(
+            play_target(&conn, &staging, running),
+            None,
+            "a processing row does not play"
+        );
+
+        let queued = enqueue(&conn, &staging, "model@2");
+        assert_eq!(
+            play_target(&conn, &staging, queued),
+            None,
+            "a queued row does not play"
+        );
     }
 }

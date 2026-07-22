@@ -1938,7 +1938,7 @@ Dateien.
   ein noch verarbeitender Eintrag es nicht ist (er zeigt Fortschritt). Der
   Staging-Render ist eine echte Datei vor jeder Speicher-Entscheidung.
   (Beschluss 15, Plan 2.4/7)
-- **INST-4b** [geplant] [gtk] — Das Aktivieren eines spielbaren Eintrags
+- **INST-4b** [aktiv] [gtk] — Das Aktivieren eines spielbaren Eintrags
   spielt den Staging-Render (bzw. den promoteten Titel) **tatsächlich ab** —
   Wiedergabe per Dateipfad. Bis der Player das kann, ist die Aktion ein
   markierter Platzhalter (P3b).
@@ -1950,7 +1950,7 @@ Dateien.
   **noch verarbeitenden** Eintrag löst „Warten mit Fortschritt" aus — **nie
   Play** (kein Original-Fallback), **nie Auto-Skip**. Die reine View-Model-
   Entscheidung ist damit einklagbar, unabhängig von der Wiedergabe.
-- **INST-5b** [geplant] [gtk] — In der laufenden App blockiert der Klick auf
+- **INST-5b** [aktiv] [gtk] — In der laufenden App blockiert der Klick auf
   einen verarbeitenden Eintrag den Start mit sichtbarem Render-Fortschritt und
   beginnt nach Abschluss (kein Fallback/Skip). Progressiver Frühstart ist eine
   spätere Optimierung, nicht v1 (P3b).

@@ -587,6 +587,18 @@ impl PlayerController {
     /// has no title/path to toast from, so those cases just log and go
     /// straight to `skip_after_failure`. `pub(in crate::ui)` so `mpris_mirror.rs`
     /// and `playback_faults.rs` can call it too.
+    /// Plays an arbitrary file by absolute path, bypassing the queue and the
+    /// now-playing/MPRIS bookkeeping (INST-4b: an undecided staging render, which
+    /// is not a library track). A promoted render is a real library track and
+    /// plays through [`play_track_id`](Self::play_track_id) instead. Returns the
+    /// backend error so the caller can surface it.
+    pub(in crate::ui) fn play_path(
+        &self,
+        path: &str,
+    ) -> Result<(), reprise_core::playback::PlaybackError> {
+        self.player.play(path)
+    }
+
     pub(in crate::ui) fn play_track_id(&self, id: i64) {
         self.play_track_id_with_change(
             id,
