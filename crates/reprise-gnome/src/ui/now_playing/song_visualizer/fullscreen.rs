@@ -19,8 +19,8 @@ use crate::ui::strings;
 use crate::ui::style::buttons;
 
 use super::{
-    accent_rgb, glow_area, gpu_visuals_enabled, install_chrome_autohide, mode_controls,
-    register_area, render, FullscreenChrome, PlayerHooks, SongVisualizer, SEEK_SCALE_MAX,
+    accent_rgb, install_chrome_autohide, mode_controls, register_area, render, FullscreenChrome,
+    PlayerHooks, SongVisualizer, SEEK_SCALE_MAX,
 };
 
 const COVER_THUMB_SIZE: i32 = 84;
@@ -198,42 +198,33 @@ pub(super) fn build(visualizer: &SongVisualizer, parent: &adw::ApplicationWindow
     window
 }
 
-/// The fullscreen canvas: same engine-driven scene as the inline canvas. The
-/// moody backdrop is a static CSS radial gradient on the canvas
-/// (`.reprise-song-visual-fullscreen-canvas`), so the per-frame draw path only
-/// paints the live scene. Built as a GSK `glow_area::GlowArea` (real GPU blur)
-/// or the Cairo `DrawingArea` fallback per `gpu_visuals_enabled()` — mirrors
-/// `song_visualizer::build_canvas`, kept local to this module because the
-/// fullscreen canvas carries its own CSS class and accessibility label.
+/// The fullscreen Cairo `DrawingArea` canvas: same engine-driven scene as the
+/// inline canvas. The moody backdrop is a static CSS radial gradient on the
+/// canvas (`.reprise-song-visual-fullscreen-canvas`), rendered once by GTK, so
+/// the per-frame draw path only paints the live scene rather than re-filling
+/// screen-sized gradients every frame. Kept local to this module (rather than
+/// reusing `song_visualizer::build_canvas`) because the fullscreen canvas
+/// carries its own CSS class and accessibility label.
 fn fullscreen_canvas(engine: &Rc<RefCell<VisualEngine>>) -> gtk4::Widget {
     const CSS_CLASS: &str = "reprise-song-visual-fullscreen-canvas";
-    // The dark backdrop/vignette is a static CSS background on the canvas
-    // (rendered once by GTK, not recomputed per frame) — see the
-    // `.reprise-song-visual-fullscreen-canvas` rule. The draw path only paints
-    // the live scene, so a big fullscreen canvas isn't re-filling two
-    // screen-sized radial gradients every frame.
-    if gpu_visuals_enabled() {
-        glow_area::GlowArea::new(engine.clone(), -1, true, CSS_CLASS).upcast()
-    } else {
-        let area = gtk4::DrawingArea::builder()
-            .height_request(-1)
-            .hexpand(true)
-            .vexpand(true)
-            .accessible_role(gtk4::AccessibleRole::Img)
-            .build();
-        area.add_css_class(CSS_CLASS);
-        area.update_property(&[gtk4::accessible::Property::Label(&strings::text(
-            strings::SONG_VISUALS_ACCESSIBLE,
-        ))]);
-        let engine = engine.clone();
-        area.set_draw_func(move |area, cr, width, height| {
-            let accent = accent_rgb(area);
-            engine.borrow_mut().set_accent(accent);
-            let scene = engine.borrow().scene(width as f32, height as f32);
-            render::draw_scene(cr, &scene);
-        });
-        area.upcast()
-    }
+    let area = gtk4::DrawingArea::builder()
+        .height_request(-1)
+        .hexpand(true)
+        .vexpand(true)
+        .accessible_role(gtk4::AccessibleRole::Img)
+        .build();
+    area.add_css_class(CSS_CLASS);
+    area.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+        strings::SONG_VISUALS_ACCESSIBLE,
+    ))]);
+    let engine = engine.clone();
+    area.set_draw_func(move |area, cr, width, height| {
+        let accent = accent_rgb(area);
+        engine.borrow_mut().set_accent(accent);
+        let scene = engine.borrow().scene(width as f32, height as f32);
+        render::draw_scene(cr, &scene);
+    });
+    area.upcast()
 }
 
 /// Builds the header: timecode at the start, a centered state/title/meta
