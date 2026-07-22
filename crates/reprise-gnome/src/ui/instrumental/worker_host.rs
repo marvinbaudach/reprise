@@ -59,13 +59,6 @@ pub(in crate::ui) struct JobRun {
     pub outcome: JobRunOutcome,
 }
 
-/// Unix seconds — the real clock the threaded worker feeds `ai_jobs`.
-fn now_unix() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_secs() as i64)
-}
-
 /// A diagnostic `error_kind` for a failed render — stored on the job row, not
 /// user-facing.
 fn error_kind(error: &StemError) -> &'static str {
@@ -323,8 +316,6 @@ impl InstrumentalWorker {
     /// (bounded(1), so a slow UI collapses a burst into one). The conversion
     /// view drains it via `glib::spawn_future_local` and re-reads the job rows
     /// — progress is not a change_log event, so this is how the bar stays live.
-    // Consumed by the conversion/staging view in a later package-F commit.
-    #[allow(dead_code)]
     pub(in crate::ui) fn progress_receiver(&self) -> async_channel::Receiver<()> {
         self.progress_rx.clone()
     }
@@ -365,7 +356,7 @@ fn worker_loop(
             return;
         }
     };
-    let clock = now_unix;
+    let clock = super::now_unix;
     let mut handled = 0u64;
     loop {
         // Drain every runnable job, one at a time.
