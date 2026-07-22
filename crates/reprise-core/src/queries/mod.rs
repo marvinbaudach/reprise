@@ -158,8 +158,9 @@ pub use import_errors::{
 // `query_missing_groups` above.
 pub use import_errors::{count_import_errors_active, count_new_import_errors};
 pub use library_views::{
-    query_album_canonical_track_ids, query_album_track_ids, query_albums,
-    query_artist_detail_albums, query_artists, AlbumSummary, ArtistAlbum, ArtistSummary,
+    query_album_canonical_track_ids, query_album_count, query_album_track_ids, query_albums,
+    query_artist_count, query_artist_detail_albums, query_artists, AlbumSummary, ArtistAlbum,
+    ArtistSummary,
 };
 pub use maintenance::{
     exclude_tracks_matching_paths, mark_track_missing_if_current, purge_tombstones,
