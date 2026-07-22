@@ -109,6 +109,8 @@ fn run_jobs(
         JobsAction::Status { batch } => {
             commands::jobs::status(conn, staging_dir, batch.as_deref(), json)
         }
+        #[cfg(feature = "worker")]
+        JobsAction::Work(args) => commands::worker::run(conn, staging_dir, &args, json),
     }
 }
 
