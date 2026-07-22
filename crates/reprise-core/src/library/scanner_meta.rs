@@ -88,22 +88,15 @@ thread_local! {
     pub(super) static READ_META_CALLS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
 }
 
-/// Pass 1: the ordinary tag+properties read, lofty's own default
-/// `ParseOptions` (`BestAttempt`, tags included). Unchanged from before Task
-/// 1.8 — the only thing that changed is that a failure here no longer
-/// necessarily ends the import; see [`read_meta_with_fallback`].
-pub(crate) fn read_meta(path: &Path) -> Result<TrackMeta, ScanError> {
+/// Builds a [`TrackMeta`] from an already-parsed lofty file — the field
+/// extraction shared by [`read_meta`] (extension-based open) and
+/// [`read_meta_content_based`] (content-based open).
+fn meta_from_tagged(tagged: &lofty::file::TaggedFile) -> TrackMeta {
     use lofty::prelude::*;
-    #[cfg(test)]
-    READ_META_CALLS.with(|calls| calls.set(calls.get() + 1));
-    let tagged = lofty::read_from_path(path).map_err(|e| {
-        let (kind, detail) = import_errors::classify_lofty(&e);
-        ScanError::Import { kind, detail }
-    })?;
     let props = tagged.properties();
     let tag = tagged.primary_tag().or_else(|| tagged.first_tag());
     let get = |f: &dyn Fn(&lofty::tag::Tag) -> Option<String>| tag.and_then(f).unwrap_or_default();
-    Ok(TrackMeta {
+    TrackMeta {
         title: get(&|t| t.title().map(|s| s.to_string())),
         artist: get(&|t| t.artist().map(|s| s.to_string())),
         album: get(&|t| t.album().map(|s| s.to_string())),
@@ -126,7 +119,36 @@ pub(crate) fn read_meta(path: &Path) -> Result<TrackMeta, ScanError> {
         genre: get(&|t| t.genre().map(|s| s.to_string())),
         duration_ms: props.duration().as_millis() as i64,
         bitrate_kbps: props.audio_bitrate().map(|b| b as i32),
-    })
+    }
+}
+
+/// Pass 1: the ordinary tag+properties read, lofty's own default
+/// `ParseOptions` (`BestAttempt`, tags included). Unchanged from before Task
+/// 1.8 — the only thing that changed is that a failure here no longer
+/// necessarily ends the import; see [`read_meta_with_fallback`].
+pub(crate) fn read_meta(path: &Path) -> Result<TrackMeta, ScanError> {
+    #[cfg(test)]
+    READ_META_CALLS.with(|calls| calls.set(calls.get() + 1));
+    let tagged = lofty::read_from_path(path).map_err(|e| {
+        let (kind, detail) = import_errors::classify_lofty(&e);
+        ScanError::Import { kind, detail }
+    })?;
+    Ok(meta_from_tagged(&tagged))
+}
+
+/// Reads tags picking the parser from FILE CONTENT, not the extension — for the
+/// scanner's repair, which reads its stripped recovery from a temp file
+/// deliberately given a non-audio extension (so the walk never treats it as a
+/// track to import). Everything else matches [`read_meta`].
+pub(super) fn read_meta_content_based(path: &Path) -> Result<TrackMeta, ScanError> {
+    let classify = |e: lofty::error::LoftyError| {
+        let (kind, detail) = import_errors::classify_lofty(&e);
+        ScanError::Import { kind, detail }
+    };
+    let probe = lofty::probe::Probe::open(path).map_err(classify)?;
+    let probe = probe.guess_file_type().map_err(ScanError::Io)?;
+    let tagged = probe.read().map_err(classify)?;
+    Ok(meta_from_tagged(&tagged))
 }
 
 /// Pass 2 (Task 1.8): a tag-free, relaxed re-read of a file whose pass-1 tag
