@@ -104,16 +104,24 @@ fn create_playlist_row(conn: &Connection, name: &str) -> Result<i64, rusqlite::E
     Ok(id)
 }
 
-/// Renames a playlist by id.
+/// Renames a playlist by id, returning the number of rows changed — `0` when no
+/// playlist has that id. A no-op rename records **no** `change_log` event, so a
+/// stale or absent id can never fabricate a phantom "rename" change (the
+/// event-without-change bug class); this lets a caller drop any pre-check
+/// TOCTOU workaround and simply branch on the returned count.
 #[allow(dead_code)]
-pub fn rename(conn: &Connection, id: i64, name: &str) -> Result<(), rusqlite::Error> {
+pub fn rename(conn: &Connection, id: i64, name: &str) -> Result<usize, rusqlite::Error> {
     crate::events::in_txn(conn, |conn| {
-        conn.execute(
+        let changed = conn.execute(
             "UPDATE playlists SET name = ?1 WHERE id = ?2",
             params![name, id],
         )?;
-        crate::events::record(conn, "playlist", &id.to_string(), "rename")?;
-        Ok(())
+        // Only a real change is logged — mirrors the dedup posture of
+        // create_smart / set_setting / the stale-delete no-op.
+        if changed > 0 {
+            crate::events::record(conn, "playlist", &id.to_string(), "rename")?;
+        }
+        Ok(changed)
     })
 }
 

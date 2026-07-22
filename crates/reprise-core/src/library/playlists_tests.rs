@@ -183,7 +183,8 @@ fn create_playlist_trims_whitespace_name() {
 fn rename_playlist() {
     let conn = seeded_conn();
     let id = create(&conn, "Old Name").unwrap();
-    rename(&conn, id, "New Name").unwrap();
+    // A real rename reports one row changed.
+    assert_eq!(rename(&conn, id, "New Name").unwrap(), 1);
 
     let name: String = conn
         .query_row(
@@ -193,6 +194,9 @@ fn rename_playlist() {
         )
         .unwrap();
     assert_eq!(name, "New Name");
+
+    // A non-existent id matches nothing and changes zero rows.
+    assert_eq!(rename(&conn, 9_999, "Nope").unwrap(), 0);
 }
 
 #[test]
