@@ -45,6 +45,30 @@ impl Harness {
             .expect("run reprise-cli")
     }
 
+    /// Spawns the CLI (with `--db` prepended) without waiting — for launching a
+    /// long-running worker the test kills or races against.
+    pub fn spawn(&self, args: &[&str]) -> std::process::Child {
+        Command::new(env!("CARGO_BIN_EXE_reprise-cli"))
+            .arg("--db")
+            .arg(&self.db)
+            .args(args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn reprise-cli")
+    }
+
+    /// Every `ai_job` lifecycle event as `(job_id, op)` pairs, via the core
+    /// change-log facade — the ground truth for "was this job claimed once".
+    pub fn ai_job_events(&self) -> Vec<(String, String)> {
+        reprise_core::events::read_since(&self.conn(), 0, None)
+            .expect("read change log")
+            .into_iter()
+            .filter(|change| change.entity == "ai_job")
+            .map(|change| (change.entity_id, change.operation))
+            .collect()
+    }
+
     /// Inserts `n` predictable tracks (`Song i` by `Artist i`) via direct SQL —
     /// deliberately *not* through an event-logging facade, so the change log
     /// stays empty until a command mutates it.
