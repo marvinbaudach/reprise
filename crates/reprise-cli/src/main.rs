@@ -87,6 +87,12 @@ fn run_instrumental(
             let mode = SaveMode::from_flags(save, stage);
             commands::instrumental::create(conn, staging_dir, &track_ids, mode, json)
         }
+        InstrumentalAction::Save { job_ids } => {
+            commands::instrumental::save(conn, staging_dir, &job_ids, json)
+        }
+        InstrumentalAction::Discard { job_ids } => {
+            commands::instrumental::discard(conn, staging_dir, &job_ids, json)
+        }
     }
 }
 
