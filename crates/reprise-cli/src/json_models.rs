@@ -39,15 +39,17 @@ pub fn playlist_summary(summary: &PlaylistSummary) -> Value {
     })
 }
 
-/// One change-log row, as emitted by `events tail`. The per-process writer
-/// token is deliberately omitted: it carries no value across separate CLI
-/// invocations (each process has its own) and core exposes no accessor for it.
+/// One change-log row, as emitted by `events tail`. `writer` is the per-process
+/// token of the connection that authored the change — useful for telling apart
+/// which frontend wrote a row when several drive the same database; it is only
+/// meaningful within one database's lifetime, not across separate processes.
 pub fn change(change: &Change) -> Value {
     json!({
         "id": change.id,
         "entity": change.entity,
         "entity_id": change.entity_id,
         "op": change.operation,
+        "writer": change.writer.value(),
         "at": change.at,
     })
 }

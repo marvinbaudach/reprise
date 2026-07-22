@@ -38,6 +38,20 @@ fn tail_since_filters_older_rows() {
 }
 
 #[test]
+fn tail_json_includes_the_writer_token() {
+    let h = Harness::new();
+    h.run(&["playlist", "create", "A"]);
+    let rows = parse_json(&h.run(&["--json", "events", "tail"]));
+    let rows = rows.as_array().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert!(
+        rows[0]["writer"].is_i64(),
+        "writer token should be an integer: {}",
+        rows[0]
+    );
+}
+
+#[test]
 fn tail_text_on_empty_is_friendly() {
     let h = Harness::new();
     let out = h.run(&["events", "tail"]);
