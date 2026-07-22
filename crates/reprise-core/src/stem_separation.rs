@@ -31,6 +31,18 @@ pub type ProgressPermille = u16;
 /// The largest valid [`ProgressPermille`] — a completed job.
 pub const PROGRESS_COMPLETE: ProgressPermille = 1000;
 
+/// The canonical `"<name>@<version>"` model id for the v1 instrumental
+/// pipeline — the single source of truth every frontend stamps so dedup
+/// (`ai_jobs.params_fingerprint`) and provenance (`REPRISE_AI_MODEL`) line up
+/// across the app, CLI and MCP instead of each hardcoding its own literal.
+///
+/// The shipped [`StemSeparationBackend`] MUST report a **matching**
+/// [`StemSeparationBackend::model_id`]: this const names the weights a caller
+/// asks for, and the backend confirms the weights it actually ran with. A
+/// backend whose produced result would differ must report — and this const
+/// must then become — a different id, since the fingerprint gates re-renders.
+pub const CURRENT_MODEL_ID: &str = "htdemucs@4";
+
 /// Why a separation run ended without producing its output.
 #[derive(Debug, thiserror::Error)]
 pub enum StemError {
@@ -293,5 +305,14 @@ mod tests {
     fn model_id_is_stable_and_overridable() {
         assert_eq!(FakeStemBackend::new().model_id(), "fake-stems@1");
         assert_eq!(FakeStemBackend::new().with_model("x@2").model_id(), "x@2");
+    }
+
+    #[test]
+    fn current_model_id_is_a_name_at_version() {
+        assert!(!CURRENT_MODEL_ID.is_empty());
+        assert!(
+            CURRENT_MODEL_ID.contains('@'),
+            "the canonical model id is <name>@<version>"
+        );
     }
 }
