@@ -97,14 +97,9 @@ fn decode_native(path: &Path) -> Result<(Vec<Vec<f32>>, u32), StemError> {
         let spec = *decoded.spec();
         let channel_count = spec.channels.count();
         rate = spec.rate;
-        if channels.is_empty() {
-            channels = vec![Vec::new(); channel_count.max(1)];
-        }
         let mut buffer = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
         buffer.copy_interleaved_ref(decoded);
-        for (i, &sample) in buffer.samples().iter().enumerate() {
-            channels[i % channel_count].push(sample);
-        }
+        push_interleaved(&mut channels, buffer.samples(), channel_count)?;
     }
 
     if channels.is_empty() || channels[0].is_empty() {
@@ -113,6 +108,34 @@ fn decode_native(path: &Path) -> Result<(Vec<Vec<f32>>, u32), StemError> {
         ));
     }
     Ok((channels, rate))
+}
+
+/// Splits one decoded packet's interleaved samples into per-channel lanes,
+/// allocating the lanes on the first packet. A crafted or corrupt file can
+/// present a packet claiming **zero** channels; reject it as unreadable rather
+/// than dividing by zero (the old `i % 0`). Deriving the divisor `lanes` from
+/// the same `channel_count.max(1)` expression that sizes the lanes keeps the two
+/// provably identical, so the modulo can never divide by zero even if the guard
+/// above were relaxed. (A packet whose channel count differs from the first is
+/// left to the caller's backend-panic guard; real files never vary it.)
+fn push_interleaved(
+    channels: &mut Vec<Vec<f32>>,
+    samples: &[f32],
+    channel_count: usize,
+) -> Result<(), StemError> {
+    if channel_count == 0 {
+        return Err(StemError::SourceUnreadable(
+            "decoded audio reports zero channels".to_string(),
+        ));
+    }
+    let lanes = channel_count.max(1);
+    if channels.is_empty() {
+        *channels = vec![Vec::new(); lanes];
+    }
+    for (i, &sample) in samples.iter().enumerate() {
+        channels[i % lanes].push(sample);
+    }
+    Ok(())
 }
 
 /// Collapses arbitrary channel counts to stereo: mono is duplicated, stereo is
@@ -210,6 +233,25 @@ fn write_atomic(target: &Path, bytes: &[u8]) -> Result<(), StemError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn zero_channel_packet_is_rejected_not_a_panic() {
+        // The regression: a crafted/corrupt file whose decoded packet claims
+        // zero channels must yield a clean SourceUnreadable, never an `i % 0`
+        // panic that would take the worker process down.
+        let mut channels: Vec<Vec<f32>> = Vec::new();
+        let result = push_interleaved(&mut channels, &[0.1, 0.2, 0.3], 0);
+        assert!(matches!(result, Err(StemError::SourceUnreadable(_))));
+        assert!(channels.is_empty(), "a rejected packet allocates no lanes");
+    }
+
+    #[test]
+    fn interleaved_samples_are_split_into_channel_lanes() {
+        let mut channels: Vec<Vec<f32>> = Vec::new();
+        // Two channels: [L0, R0, L1, R1] -> L = [L0, L1], R = [R0, R1].
+        push_interleaved(&mut channels, &[1.0, -1.0, 2.0, -2.0], 2).unwrap();
+        assert_eq!(channels, vec![vec![1.0, 2.0], vec![-1.0, -2.0]]);
+    }
 
     #[test]
     fn mono_is_duplicated_to_stereo() {

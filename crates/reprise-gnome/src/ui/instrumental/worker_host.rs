@@ -178,7 +178,17 @@ pub(in crate::ui) fn run_claimed_job(
                 });
             outcome.cancel_requested || !outcome.still_owner
         };
-        backend.separate_instrumental(&source, &temp, &mut progress, &cancel)
+        // Catch a backend panic (a crafted source can make a decoder panic, e.g.
+        // dividing by a zero channel count) and map it to a normal backend
+        // failure, so one poisoned file never takes the worker thread down.
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            backend.separate_instrumental(&source, &temp, &mut progress, &cancel)
+        }))
+        .unwrap_or_else(|_| {
+            Err(StemError::Backend(
+                "backend panicked during separation".to_string(),
+            ))
+        })
     };
     match result {
         Ok(()) => complete_published_run(

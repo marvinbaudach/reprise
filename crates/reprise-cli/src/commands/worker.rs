@@ -377,7 +377,8 @@ fn process_job(
             last_write: Cell::new(None),
             infra_error: Cell::new(None),
         };
-        let result = ctx.backend.separate_instrumental(
+        let result = separate_catching_panics(
+            ctx.backend,
             &source_path,
             &temp_path,
             &mut |permille| state.on_progress(permille),
@@ -521,6 +522,28 @@ fn sleep_unless_shutdown(total: Duration, shutdown: &AtomicBool) -> bool {
     }
 }
 
+/// Runs the backend, catching a panic and mapping it to a normal backend
+/// failure. A crafted or corrupt source can make a decoder panic (e.g. dividing
+/// by a zero channel count); catching it here keeps one poisoned file from
+/// taking the whole worker process down mid-queue — the job fails with
+/// `error_kind` "backend" and the loop continues with the next job.
+fn separate_catching_panics(
+    backend: &dyn StemSeparationBackend,
+    source: &Path,
+    output: &Path,
+    progress: &mut dyn FnMut(ProgressPermille),
+    cancel: &dyn Fn() -> bool,
+) -> Result<(), StemError> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        backend.separate_instrumental(source, output, progress, cancel)
+    }))
+    .unwrap_or_else(|_| {
+        Err(StemError::Backend(
+            "backend panicked during separation".to_string(),
+        ))
+    })
+}
+
 /// The diagnostic `error_kind` recorded for a failed render.
 fn error_kind(error: &StemError) -> &'static str {
     match error {
@@ -582,5 +605,45 @@ fn report(tally: Tally, json_output: bool, aborted: bool) {
             tally.cancelled,
             tally.abandoned,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A backend that panics mid-render — a stand-in for a decoder crashing on a
+    /// crafted source (the reprise-stems `i % 0` class of bug).
+    struct PanickingBackend;
+
+    impl StemSeparationBackend for PanickingBackend {
+        fn separate_instrumental(
+            &self,
+            _source: &Path,
+            _output: &Path,
+            _progress: &mut dyn FnMut(ProgressPermille),
+            _cancel: &dyn Fn() -> bool,
+        ) -> Result<(), StemError> {
+            panic!("simulated backend crash");
+        }
+
+        fn model_id(&self) -> String {
+            "panic@0".to_string()
+        }
+    }
+
+    #[test]
+    fn a_backend_panic_becomes_a_backend_failure_not_a_process_abort() {
+        let result = separate_catching_panics(
+            &PanickingBackend,
+            Path::new("/nonexistent/source.flac"),
+            Path::new("/nonexistent/out.flac"),
+            &mut |_| {},
+            &|| false,
+        );
+        let error = result.expect_err("a panicking backend yields an error, not a panic");
+        assert!(matches!(error, StemError::Backend(_)));
+        // Recorded on the job through the normal per-job failure path.
+        assert_eq!(error_kind(&error), "backend");
     }
 }
