@@ -189,6 +189,33 @@ pub fn create_playlist(
         )));
     }
 
+    // Enforce PRESENT semantics before writing: reject ids that are not present
+    // in the library — either no row at all, or a row whose file is currently
+    // missing. A plain foreign-key check would let a missing row through. List
+    // the offending ids so the caller can correct its request.
+    if !track_ids.is_empty() {
+        let present: std::collections::HashSet<i64> = queries::filter_present(&conn, track_ids)
+            .map_err(DataError::Db)?
+            .into_iter()
+            .collect();
+        let mut seen = std::collections::HashSet::new();
+        let offending: Vec<i64> = track_ids
+            .iter()
+            .copied()
+            .filter(|id| !present.contains(id) && seen.insert(*id))
+            .collect();
+        if !offending.is_empty() {
+            let list = offending
+                .iter()
+                .map(i64::to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(DataError::InvalidInput(format!(
+                "one or more track ids are not present in the library: {list}"
+            )));
+        }
+    }
+
     let playlist_id =
         playlists::create_with_tracks(&mut conn, trimmed, track_ids).map_err(map_create_error)?;
 
@@ -199,11 +226,11 @@ pub fn create_playlist(
     })
 }
 
-// A `playlist_tracks.track_id` foreign-key violation means a supplied id does
-// not exist; surface it as caller-fixable input rather than an opaque internal
-// error. (Enforcing full PRESENT semantics — rejecting ids that exist but are
-// missing_since != NULL — needs a core facade that does not exist yet; see the
-// package-B report.)
+// PRESENT semantics are enforced up front via `queries::filter_present`, so by
+// the time `create_with_tracks` runs every id was present. A `playlist_tracks.
+// track_id` foreign-key violation here is therefore only a rare race (a track
+// hard-deleted between the check and the insert); surface it as caller-fixable
+// input rather than an opaque internal error.
 fn map_create_error(error: rusqlite::Error) -> DataError {
     if is_constraint_violation(&error) {
         DataError::InvalidInput("one or more track ids do not exist in the library".to_string())

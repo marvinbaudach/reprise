@@ -169,8 +169,45 @@ fn create_playlist_rejects_unknown_track_id() {
     );
     let text = tool_error_text(&response);
     assert!(
-        text.contains("do not exist"),
-        "should reject unknown ids: {text}"
+        text.contains("not present"),
+        "should reject ids that are not present: {text}"
+    );
+    assert!(
+        text.contains("999999"),
+        "should name the offending id: {text}"
+    );
+    assert_eq!(playlist_create_events(&path), 0);
+}
+
+#[test]
+fn create_playlist_rejects_a_present_but_missing_track_id() {
+    let dir = TempDir::new().unwrap();
+    let (path, ids) = db_with_tracks(&dir, 2);
+    set_bool_setting(&path, CAP_PLAYLIST_CREATE, true);
+    // Mark the first track missing (file gone) — the row still exists, so a
+    // plain foreign-key check would accept it; PRESENT semantics must reject it.
+    {
+        let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+        conn.execute(
+            "UPDATE tracks SET missing_since = 1 WHERE id = ?1",
+            [ids[0]],
+        )
+        .unwrap();
+    }
+    let mut client = McpClient::start(&path);
+
+    let response = client.call_tool(
+        "music_create_playlist",
+        json!({ "name": "Half", "track_ids": ids.clone() }),
+    );
+    let text = tool_error_text(&response);
+    assert!(
+        text.contains("not present"),
+        "should reject a present-but-missing id: {text}"
+    );
+    assert!(
+        text.contains(&ids[0].to_string()),
+        "should name the offending id: {text}"
     );
     assert_eq!(playlist_create_events(&path), 0);
 }

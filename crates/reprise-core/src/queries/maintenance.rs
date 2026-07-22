@@ -57,6 +57,40 @@ pub fn query_live_track_ids(conn: &Connection) -> Result<HashSet<i64>, rusqlite:
     Ok(ids)
 }
 
+/// Returns the subset of `ids` that are present (`PRESENT`: not missing, not
+/// removed), in input order with duplicates collapsed. Unlike a foreign-key
+/// check — which only rejects ids with no `tracks` row at all — this also
+/// rejects ids that exist but are currently missing (`missing_since` set), so a
+/// caller can list exactly which ids it must not accept. An empty input is an
+/// empty result with no query issued.
+pub fn filter_present(conn: &Connection, ids: &[i64]) -> Result<Vec<i64>, rusqlite::Error> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    // Chunk the IN-list so an arbitrarily long input can never exceed SQLite's
+    // bound-parameter limit; union the present ids into a set.
+    const CHUNK: usize = 500;
+    let mut present: HashSet<i64> = HashSet::new();
+    for chunk in ids.chunks(CHUNK) {
+        let placeholders = vec!["?"; chunk.len()].join(",");
+        let sql = format!("SELECT id FROM tracks WHERE {PRESENT} AND id IN ({placeholders})");
+        let mut statement = conn.prepare(&sql)?;
+        let rows = statement
+            .query_map(rusqlite::params_from_iter(chunk.iter()), |row| {
+                row.get::<_, i64>(0)
+            })?;
+        for id in rows {
+            present.insert(id?);
+        }
+    }
+    let mut seen = HashSet::new();
+    Ok(ids
+        .iter()
+        .copied()
+        .filter(|id| present.contains(id) && seen.insert(*id))
+        .collect())
+}
+
 /// IDs safe to retain across queue/session restoration. Present rows and
 /// unmounted/unknown missing rows stay because their files can return;
 /// proven-deleted and tombstoned rows do not. This is intentionally broader
