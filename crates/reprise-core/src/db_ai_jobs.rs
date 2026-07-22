@@ -34,6 +34,12 @@ use rusqlite::Connection;
 /// * `progress_permille` lives in the row (not the change log): the worker
 ///   rewrites it at a rate the caller throttles (plan 2.2), while the change
 ///   log only gets lifecycle transitions.
+/// * `auto_promote` persists the save-intent (decision 15: MCP/CLI
+///   create-instrumental saves by default) so the worker that later completes
+///   the render knows to promote it without the enqueuer still being around. It
+///   is deliberately **absent** from the dedup index — the intent does not
+///   change a job's identity, so re-enqueuing the same work with a different
+///   intent still deduplicates to the existing job.
 const SCHEMA_V27: &str = r#"
 CREATE TABLE ai_jobs (
   id                 INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,6 +55,7 @@ CREATE TABLE ai_jobs (
   claimed_by         INTEGER,
   lease_expires_at   INTEGER,
   cancel_requested   INTEGER NOT NULL DEFAULT 0 CHECK (cancel_requested IN (0, 1)),
+  auto_promote       INTEGER NOT NULL DEFAULT 0 CHECK (auto_promote IN (0, 1)),
   error_kind         TEXT,
   created_at         INTEGER NOT NULL,
   started_at         INTEGER,

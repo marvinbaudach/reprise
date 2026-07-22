@@ -369,3 +369,139 @@ fn a_custom_subfolder_is_honored() {
         PathBuf::from("/library/AI Renders")
     );
 }
+
+/// Enqueues one instrumental job (batch API) with the given save-intent, claims
+/// it as worker 5, and produces a real FLAC render in staging via the fake
+/// backend — leaving the job `running` and ready for `complete_render`.
+fn running_job_with_render(
+    conn: &Connection,
+    staging_dir: &Path,
+    staging: &StagingStore,
+    auto_promote: bool,
+) -> i64 {
+    staging.ensure_dir().unwrap();
+    conn.execute(
+        "INSERT INTO tracks (id, path, title, artist, album, album_artist, added_at, file_mtime, file_size) \
+         VALUES (1, '/music/creep.flac', 'Creep', 'Radiohead', 'Pablo Honey', 'Radiohead', 1, 1, 1)",
+        [],
+    )
+    .unwrap();
+    let job_id = ai_jobs::enqueue_instrumental_batch(
+        conn,
+        staging,
+        &[1],
+        crate::stem_separation::CURRENT_MODEL_ID,
+        auto_promote,
+        0,
+    )
+    .unwrap()
+    .jobs[0]
+        .job_id();
+    let claimed = ai_jobs::claim_next(conn, 5, 0, 60).unwrap().unwrap();
+    assert_eq!(claimed.id, job_id);
+    // The fake backend copies a real FLAC into the staging render path.
+    use crate::stem_separation::StemSeparationBackend;
+    let source = flac_fixture(staging_dir, "backend-src.flac");
+    crate::stem_separation::FakeStemBackend::new()
+        .separate_instrumental(&source, &staging.path_for_job(job_id), &mut |_| {}, &|| {
+            false
+        })
+        .unwrap();
+    job_id
+}
+
+#[test]
+fn complete_render_auto_promotes_when_the_intent_is_set() {
+    let library = tempfile::tempdir().unwrap();
+    let staging_dir = tempfile::tempdir().unwrap();
+    let mut conn = migrated();
+    let staging = StagingStore::new(staging_dir.path());
+    let config = PromotionConfig::new(library.path());
+    let job_id = running_job_with_render(&conn, staging_dir.path(), &staging, true);
+
+    let outcome = complete_render(&mut conn, &staging, &config, job_id, 5, 100).unwrap();
+
+    let promoted = match outcome {
+        CompletionOutcome::Promoted(promoted) => promoted,
+        other => panic!("expected Promoted, got {other:?}"),
+    };
+    assert!(promoted.path.is_file());
+    let provenance = crate::provenance::get_provenance(&conn, promoted.result_track_id)
+        .unwrap()
+        .unwrap();
+    assert!(provenance.ai);
+    assert_eq!(
+        provenance.model.as_deref(),
+        Some(crate::stem_separation::CURRENT_MODEL_ID)
+    );
+    let job = ai_jobs::get_job(&conn, job_id).unwrap().unwrap();
+    assert_eq!(job.state, ai_jobs::JobState::Done);
+    assert_eq!(job.result_track_id, Some(promoted.result_track_id));
+    assert!(
+        !staging.exists(job_id),
+        "the promoted render leaves staging"
+    );
+}
+
+#[test]
+fn complete_render_leaves_a_no_intent_job_staged() {
+    let library = tempfile::tempdir().unwrap();
+    let staging_dir = tempfile::tempdir().unwrap();
+    let mut conn = migrated();
+    let staging = StagingStore::new(staging_dir.path());
+    let config = PromotionConfig::new(library.path());
+    let job_id = running_job_with_render(&conn, staging_dir.path(), &staging, false);
+
+    let outcome = complete_render(&mut conn, &staging, &config, job_id, 5, 100).unwrap();
+
+    assert_eq!(outcome, CompletionOutcome::Staged);
+    let job = ai_jobs::get_job(&conn, job_id).unwrap().unwrap();
+    assert_eq!(job.state, ai_jobs::JobState::Done);
+    assert!(job.result_track_id.is_none(), "no intent => stays staged");
+    assert!(
+        staging.exists(job_id),
+        "the render waits in staging for a manual save"
+    );
+}
+
+#[test]
+fn complete_render_keeps_a_failed_auto_promotion_retryable() {
+    let library = tempfile::tempdir().unwrap();
+    let staging_dir = tempfile::tempdir().unwrap();
+    let mut conn = migrated();
+    let staging = StagingStore::new(staging_dir.path());
+    let config = PromotionConfig::new(library.path());
+    let job_id = running_job_with_render(&conn, staging_dir.path(), &staging, true);
+
+    // Force the auto-promotion's copy to fail with a directory at the target.
+    let destination = config
+        .instrumentals_root()
+        .join("Radiohead")
+        .join("Creep (Instrumental).flac");
+    std::fs::create_dir_all(&destination).unwrap();
+
+    let outcome = complete_render(&mut conn, &staging, &config, job_id, 5, 100).unwrap();
+    assert!(matches!(
+        outcome,
+        CompletionOutcome::PromotionDeferred { .. }
+    ));
+
+    let job = ai_jobs::get_job(&conn, job_id).unwrap().unwrap();
+    assert_eq!(job.state, ai_jobs::JobState::Done);
+    assert!(
+        job.result_track_id.is_none(),
+        "a failed promotion leaves the job unsaved"
+    );
+    assert!(job.error_kind.is_some(), "the promotion error is noted");
+    assert!(
+        staging.exists(job_id),
+        "the render stays in staging for a retry"
+    );
+
+    // Retryable: clear the blocker and promote directly.
+    std::fs::remove_dir_all(&destination).unwrap();
+    let retried = promote(&mut conn, &staging, &config, job_id, 200).unwrap();
+    assert!(retried.path.is_file());
+    let job = ai_jobs::get_job(&conn, job_id).unwrap().unwrap();
+    assert_eq!(job.result_track_id, Some(retried.result_track_id));
+}

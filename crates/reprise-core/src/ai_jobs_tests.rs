@@ -159,7 +159,7 @@ fn batch_enqueue_shares_a_batch_id_and_aggregates_progress() {
         seed_track(&conn, id);
     }
 
-    let batch = enqueue_instrumental_batch(&conn, &empty, &[1, 2, 3], "m@1", 0).unwrap();
+    let batch = enqueue_instrumental_batch(&conn, &empty, &[1, 2, 3], "m@1", false, 0).unwrap();
     assert_eq!(batch.jobs.len(), 3);
     assert!(batch
         .jobs
@@ -478,6 +478,12 @@ fn concurrent_enqueue_and_claim_never_surface_a_raw_busy_error() {
     // A lease far past every `now = 0` claim, so no job is ever reclaimed and
     // each is therefore claimable exactly once.
     const BIG_LEASE: i64 = 1_000_000;
+    // A generous busy_timeout so plain write-lock contention under a loaded
+    // full-suite run always waits instead of erroring. This does NOT mask the
+    // pre-fix bug: a DEFERRED read-then-write upgrade fails with SQLITE_BUSY
+    // *immediately*, without ever consulting busy_timeout — only the IMMEDIATE
+    // path this test guards benefits from the wait.
+    const BUSY_TIMEOUT_MS: i64 = 30_000;
 
     let file = tempfile::NamedTempFile::new().unwrap();
     let path = file.path().to_path_buf();
@@ -495,7 +501,7 @@ fn concurrent_enqueue_and_claim_never_surface_a_raw_busy_error() {
         let barrier = Arc::clone(&barrier);
         handles.push(thread::spawn(
             move || -> Result<Vec<i64>, rusqlite::Error> {
-                let conn = crate::db::open(Some(&path)).unwrap();
+                let conn = crate::db::open_with_options(Some(&path), BUSY_TIMEOUT_MS).unwrap();
                 let staging = StagingStore::new("/unused");
                 let mut claimed = Vec::new();
                 barrier.wait();
@@ -529,7 +535,7 @@ fn concurrent_enqueue_and_claim_never_surface_a_raw_busy_error() {
     }
 
     // Drain anything still queued, single-threaded.
-    let drain = crate::db::open(Some(&path)).unwrap();
+    let drain = crate::db::open_with_options(Some(&path), BUSY_TIMEOUT_MS).unwrap();
     while let Some(job) = claim_next(&drain, 99, 0, BIG_LEASE).unwrap() {
         all_claimed.push(job.id);
     }
@@ -547,6 +553,63 @@ fn concurrent_enqueue_and_claim_never_surface_a_raw_busy_error() {
         "every job was claimed exactly once"
     );
     assert!(!all_claimed.is_empty(), "the run actually claimed work");
+}
+
+/// Reads the persisted `auto_promote` flag for a job directly.
+fn auto_promote_flag(conn: &Connection, job_id: i64) -> i64 {
+    conn.query_row(
+        "SELECT auto_promote FROM ai_jobs WHERE id = ?1",
+        [job_id],
+        |r| r.get(0),
+    )
+    .unwrap()
+}
+
+#[test]
+fn enqueue_persists_the_auto_promote_intent() {
+    let conn = migrated();
+    let empty = StagingStore::new("/unused");
+    seed_track(&conn, 1);
+    seed_track(&conn, 2);
+
+    // The bare enqueue (conversion-playlist drop) never auto-promotes.
+    let bare = enqueue_instrumental(&conn, &empty, 1, "m@1", 0)
+        .unwrap()
+        .job_id();
+    assert_eq!(auto_promote_flag(&conn, bare), 0);
+
+    // The batch API (MCP/CLI) carries the caller's explicit intent.
+    let batch = enqueue_instrumental_batch(&conn, &empty, &[2], "m@1", true, 0).unwrap();
+    assert_eq!(auto_promote_flag(&conn, batch.jobs[0].job_id()), 1);
+}
+
+#[test]
+fn dedup_ignores_the_auto_promote_intent() {
+    let conn = migrated();
+    let empty = StagingStore::new("/unused");
+    seed_track(&conn, 1);
+
+    // A first job with intent=true.
+    let first = enqueue_instrumental_batch(&conn, &empty, &[1], "m@1", true, 0)
+        .unwrap()
+        .jobs[0]
+        .job_id();
+    // Re-enqueuing the same work with a *different* intent still deduplicates to
+    // the existing job — the flag is not part of a job's identity.
+    let second = enqueue_instrumental_batch(&conn, &empty, &[1], "m@1", false, 10).unwrap();
+    assert_eq!(
+        second.jobs[0],
+        EnqueueOutcome::Deduplicated {
+            job_id: first,
+            result_track_id: None,
+        }
+    );
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM ai_jobs", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 1, "no second row was created");
+    // The first job's persisted intent is untouched.
+    assert_eq!(auto_promote_flag(&conn, first), 1);
 }
 
 #[test]

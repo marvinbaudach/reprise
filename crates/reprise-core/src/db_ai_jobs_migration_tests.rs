@@ -122,6 +122,7 @@ fn ai_jobs_columns_match_the_plan() {
             "claimed_by",
             "lease_expires_at",
             "cancel_requested",
+            "auto_promote",
             "error_kind",
             "created_at",
             "started_at",
