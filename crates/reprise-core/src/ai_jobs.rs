@@ -209,10 +209,15 @@ pub fn enqueue_instrumental(
         enqueue_one(
             conn,
             staging,
-            Some(source_track_id),
-            &params_json,
-            &fingerprint,
-            None,
+            &NewJobSpec {
+                source_track_id: Some(source_track_id),
+                params_json: &params_json,
+                fingerprint: &fingerprint,
+                batch_id: None,
+                // The conversion-playlist drop path stages the render for a
+                // manual save decision; it never auto-promotes (decision 15).
+                auto_promote: false,
+            },
             now,
         )
     })
@@ -220,12 +225,16 @@ pub fn enqueue_instrumental(
 
 /// Enqueues one instrumental job per source track under a shared `batch_id`,
 /// deduping each independently. One transaction: the whole batch lands or none
-/// of it does.
+/// of it does. `auto_promote` records the save-intent on every freshly-created
+/// job (decision 15: the MCP/CLI batch path saves by default); it is persisted,
+/// not part of a job's dedup identity, and honored by the completion path
+/// [`crate::ai_promotion::complete_render`].
 pub fn enqueue_instrumental_batch(
     conn: &Connection,
     staging: &StagingStore,
     source_track_ids: &[i64],
     model_id: &str,
+    auto_promote: bool,
     now: i64,
 ) -> Result<BatchOutcome, rusqlite::Error> {
     let (params_json, fingerprint) = instrumental_params(model_id);
@@ -237,10 +246,13 @@ pub fn enqueue_instrumental_batch(
             jobs.push(enqueue_one(
                 conn,
                 staging,
-                Some(source_track_id),
-                &params_json,
-                &fingerprint,
-                Some(&batch_id),
+                &NewJobSpec {
+                    source_track_id: Some(source_track_id),
+                    params_json: &params_json,
+                    fingerprint: &fingerprint,
+                    batch_id: Some(&batch_id),
+                    auto_promote,
+                },
                 now,
             )?);
         }
@@ -249,14 +261,23 @@ pub fn enqueue_instrumental_batch(
     Ok(BatchOutcome { batch_id, jobs })
 }
 
+/// The immutable descriptor of a job to (maybe) create — everything
+/// [`enqueue_one`] needs beyond the connection, staging store, and clock.
+/// Bundled into one value so the shared body keeps a small, clear signature.
+struct NewJobSpec<'a> {
+    source_track_id: Option<i64>,
+    params_json: &'a str,
+    fingerprint: &'a str,
+    batch_id: Option<&'a str>,
+    /// The persisted save-intent (decision 15); not part of dedup identity.
+    auto_promote: bool,
+}
+
 /// The shared enqueue body — must run inside a transaction (`in_txn`).
 fn enqueue_one(
     conn: &Connection,
     staging: &StagingStore,
-    source_track_id: Option<i64>,
-    params_json: &str,
-    fingerprint: &str,
-    batch_id: Option<&str>,
+    spec: &NewJobSpec<'_>,
     now: i64,
 ) -> Result<EnqueueOutcome, rusqlite::Error> {
     // 1. An open job, or an already-saved one with a live result, wins outright.
@@ -267,7 +288,7 @@ fn enqueue_one(
                AND (status IN ('queued', 'running') \
                     OR (status = 'done' AND result_track_id IS NOT NULL)) \
              ORDER BY id LIMIT 1",
-            params![INSTRUMENTAL_KIND, source_track_id, fingerprint],
+            params![INSTRUMENTAL_KIND, spec.source_track_id, spec.fingerprint],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()?;
@@ -286,7 +307,7 @@ fn enqueue_one(
              WHERE kind = ?1 AND source_track_id IS ?2 AND params_fingerprint = ?3 \
                AND status = 'done' AND result_track_id IS NULL \
              ORDER BY id LIMIT 1",
-            params![INSTRUMENTAL_KIND, source_track_id, fingerprint],
+            params![INSTRUMENTAL_KIND, spec.source_track_id, spec.fingerprint],
             |row| row.get(0),
         )
         .optional()?;
@@ -301,14 +322,16 @@ fn enqueue_one(
     // 3. Genuinely new work.
     conn.execute(
         "INSERT INTO ai_jobs \
-           (kind, batch_id, source_track_id, params_json, params_fingerprint, status, created_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, 'queued', ?6)",
+           (kind, batch_id, source_track_id, params_json, params_fingerprint, status, \
+            auto_promote, created_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, 'queued', ?6, ?7)",
         params![
             INSTRUMENTAL_KIND,
-            batch_id,
-            source_track_id,
-            params_json,
-            fingerprint,
+            spec.batch_id,
+            spec.source_track_id,
+            spec.params_json,
+            spec.fingerprint,
+            i64::from(spec.auto_promote),
             now
         ],
     )?;
@@ -577,6 +600,39 @@ pub(crate) fn attach_result_track(
         events::record(conn, JOB_ENTITY, &job_id.to_string(), "save")?;
     }
     Ok(changed == 1)
+}
+
+/// Whether `job_id` was enqueued with the auto-promote save-intent (decision
+/// 15). Missing jobs read as `false`. Consulted by the completion path
+/// ([`crate::ai_promotion::complete_render`]) so a worker promotes a fresh
+/// render without the enqueuer still being around.
+pub(crate) fn job_auto_promote(conn: &Connection, job_id: i64) -> Result<bool, rusqlite::Error> {
+    let flag: Option<i64> = conn
+        .query_row(
+            "SELECT auto_promote FROM ai_jobs WHERE id = ?1",
+            [job_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(flag.unwrap_or(0) != 0)
+}
+
+/// Records a diagnostic on a still-staged `done` job whose auto-promotion
+/// failed, without changing its state: the job stays `done` + unsaved (its
+/// render is still in staging), so the promotion is retryable. Guarded on
+/// `status = 'done' AND result_track_id IS NULL` so it can never annotate a
+/// job that actually saved. Not a lifecycle transition, so it logs no event.
+pub(crate) fn note_promotion_error(
+    conn: &Connection,
+    job_id: i64,
+    error_kind: &str,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE ai_jobs SET error_kind = ?1 \
+         WHERE id = ?2 AND status = 'done' AND result_track_id IS NULL",
+        params![error_kind, job_id],
+    )?;
+    Ok(())
 }
 
 /// Discards a finished-but-unsaved render: deletes the staging file and moves

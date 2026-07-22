@@ -90,6 +90,23 @@ pub struct PromotionOutcome {
     pub path: PathBuf,
 }
 
+/// What completing a render via [`complete_render`] did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CompletionOutcome {
+    /// `mark_done` did not apply — the caller is not the owner, or the job is
+    /// not `running`. Nothing else ran.
+    NotOwned,
+    /// The render was marked `done` and left in staging for a manual save
+    /// (the job carried no auto-promote intent).
+    Staged,
+    /// The render was marked `done` and auto-promoted into the library.
+    Promoted(PromotionOutcome),
+    /// The render was marked `done`, but the requested auto-promotion failed.
+    /// The job stays `done` + unsaved with its render still in staging and
+    /// `error_kind` noted, so the promotion is retryable.
+    PromotionDeferred { error: String },
+}
+
 /// Why a promotion could not complete.
 #[derive(Debug, thiserror::Error)]
 pub enum PromotionError {
@@ -170,6 +187,44 @@ pub fn promote(
             // Roll back the filesystem side; staging stays for a retry.
             let _ = std::fs::remove_file(&destination);
             Err(error)
+        }
+    }
+}
+
+/// The worker completion path: marks `job_id`'s render `done` (owner-guarded,
+/// exactly [`ai_jobs::mark_done`]), then — when the job was enqueued with the
+/// auto-promote intent (decision 15: MCP/CLI create-instrumental saves by
+/// default) — promotes the fresh render in the same call, so a worker needs no
+/// promotion logic of its own.
+///
+/// A promotion failure never corrupts job state: the job is already `done`, and
+/// on a failed promotion it stays `done` + unsaved with its staging render
+/// intact and `error_kind` noted — exactly the retryable state a manual save
+/// resumes from. Only the owner's `running` job transitions; a non-owner or
+/// non-running call is [`CompletionOutcome::NotOwned`] and promotes nothing.
+pub fn complete_render(
+    conn: &mut Connection,
+    staging: &StagingStore,
+    config: &PromotionConfig,
+    job_id: i64,
+    worker: i64,
+    now: i64,
+) -> Result<CompletionOutcome, PromotionError> {
+    // The ordinary owner-guarded done transition — unchanged for every worker.
+    if !ai_jobs::mark_done(conn, job_id, worker, now)? {
+        return Ok(CompletionOutcome::NotOwned);
+    }
+    // Honor the persisted save-intent; without it the render waits in staging.
+    if !ai_jobs::job_auto_promote(conn, job_id)? {
+        return Ok(CompletionOutcome::Staged);
+    }
+    match promote(conn, staging, config, job_id, now) {
+        Ok(outcome) => Ok(CompletionOutcome::Promoted(outcome)),
+        Err(error) => {
+            // Keep the job done + unsaved (retryable), just note why it deferred.
+            let message = error.to_string();
+            ai_jobs::note_promotion_error(conn, job_id, &message)?;
+            Ok(CompletionOutcome::PromotionDeferred { error: message })
         }
     }
 }

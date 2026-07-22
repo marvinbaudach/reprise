@@ -54,16 +54,20 @@ pub fn add_to_conversion(
 }
 
 /// Adds several tracks (a multi-select drop) to the conversion playlist under
-/// one batch, deduping each. Ensures the playlist exists first.
+/// one batch, deduping each. Ensures the playlist exists first. `auto_promote`
+/// carries the caller's save-intent (decision 15: the MCP/CLI batch path saves
+/// by default, the GTK drop stages for a manual decision) onto every fresh job,
+/// where the completion path honors it.
 pub fn add_batch_to_conversion(
     conn: &Connection,
     staging: &StagingStore,
     track_ids: &[i64],
     model_id: &str,
+    auto_promote: bool,
     now: i64,
 ) -> Result<BatchOutcome, rusqlite::Error> {
     ensure_conversion_playlist(conn)?;
-    ai_jobs::enqueue_instrumental_batch(conn, staging, track_ids, model_id, now)
+    ai_jobs::enqueue_instrumental_batch(conn, staging, track_ids, model_id, auto_promote, now)
 }
 
 #[cfg(test)]
@@ -167,7 +171,7 @@ mod tests {
             seed_track(&conn, id);
         }
 
-        let batch = add_batch_to_conversion(&conn, &staging, &[1, 2, 3], "m@1", 0).unwrap();
+        let batch = add_batch_to_conversion(&conn, &staging, &[1, 2, 3], "m@1", false, 0).unwrap();
 
         assert_eq!(batch.jobs.len(), 3);
         assert!(conversion_playlist(&conn).unwrap().is_some());
