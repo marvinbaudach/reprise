@@ -163,7 +163,7 @@ pub use library_views::{
     ArtistSummary,
 };
 pub use maintenance::{
-    exclude_tracks_matching_paths, mark_track_missing_if_current, purge_tombstones,
+    exclude_tracks_matching_paths, filter_present, mark_track_missing_if_current, purge_tombstones,
     query_import_error_count, query_live_track_ids, query_live_track_paths,
     query_queue_purge_track_ids, query_queue_retained_track_ids, query_sync_tracks,
     query_track_album_artist, query_track_ids_by_title_desc, query_track_ids_by_titles,
