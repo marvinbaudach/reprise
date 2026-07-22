@@ -640,4 +640,6 @@ mod tests_queue;
 #[cfg(test)]
 mod tests_smart;
 #[cfg(test)]
+mod tests_source_path_ai;
+#[cfg(test)]
 mod tests_ux_feedback;
