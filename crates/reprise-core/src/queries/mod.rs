@@ -253,9 +253,33 @@ pub fn query_track_window_browsed(
     limit: i64,
     queue_ids: &[i64],
 ) -> Result<Vec<Track>, rusqlite::Error> {
+    query_track_window_browsed_ai(
+        conn, source, sort_field, sort_dir, filter, browse, offset, limit, queue_ids, false,
+    )
+}
+
+/// Like [`query_track_window_browsed`] but honoring the AI-exclude filter on
+/// the flat Library source (plan 2.4/8, Beschluss 17): when `exclude_ai` is
+/// set, tracks flagged in `track_provenance` are hidden. The default entry
+/// point above passes `false`; a frontend wires `exclude_ai` from its sticky
+/// filter-row state. Only `Library` honors it — that is where the browse
+/// filter row lives.
+#[allow(clippy::too_many_arguments)]
+pub fn query_track_window_browsed_ai(
+    conn: &mut Connection,
+    source: &ViewSource,
+    sort_field: &str,
+    sort_dir: &str,
+    filter: &str,
+    browse: &BrowseFilter,
+    offset: i64,
+    limit: i64,
+    queue_ids: &[i64],
+    exclude_ai: bool,
+) -> Result<Vec<Track>, rusqlite::Error> {
     match source {
         ViewSource::Library => library::query_track_window_library(
-            conn, sort_field, sort_dir, filter, offset, limit, browse,
+            conn, sort_field, sort_dir, filter, offset, limit, browse, exclude_ai,
         ),
         ViewSource::Missing => {
             library::query_track_window_missing(conn, sort_field, sort_dir, filter, offset, limit)
@@ -373,10 +397,31 @@ pub fn query_track_ids_browsed(
     browse: &BrowseFilter,
     queue_ids: &[i64],
 ) -> Result<Vec<i64>, rusqlite::Error> {
+    query_track_ids_browsed_ai(
+        conn, source, sort_field, sort_dir, filter, browse, queue_ids, false,
+    )
+}
+
+/// Like [`query_track_ids_browsed`] but honoring the AI-exclude filter on the
+/// flat Library source (plan 2.4/8, Beschluss 17): the queue seam "Play all"
+/// builds from hides AI-flagged tracks when `exclude_ai` is set, so
+/// at-queue-end refill follows the visible view. Only `Library` honors it.
+#[allow(clippy::too_many_arguments)]
+pub fn query_track_ids_browsed_ai(
+    conn: &Connection,
+    source: &ViewSource,
+    sort_field: &str,
+    sort_dir: &str,
+    filter: &str,
+    browse: &BrowseFilter,
+    queue_ids: &[i64],
+    exclude_ai: bool,
+) -> Result<Vec<i64>, rusqlite::Error> {
     match source {
         ViewSource::Library => {
             let has_filter = !filter.trim().is_empty();
-            let sql = build_track_ids_query_browsed(sort_field, sort_dir, has_filter, browse);
+            let sql =
+                build_track_ids_query_browsed(sort_field, sort_dir, has_filter, browse, exclude_ai);
             let mut stmt = conn.prepare(&sql)?;
             let mut params = Vec::new();
             if has_filter {

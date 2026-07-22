@@ -14,6 +14,7 @@ use super::{browse::browse_clause, BrowseFilter};
 use rusqlite::types::Value;
 use rusqlite::Connection;
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn query_track_window_library(
     conn: &mut Connection,
     sort_field: &str,
@@ -22,10 +23,11 @@ pub(super) fn query_track_window_library(
     offset: i64,
     limit: i64,
     browse: &BrowseFilter,
+    exclude_ai: bool,
 ) -> Result<Vec<Track>, rusqlite::Error> {
     let limit = limit.clamp(0, MAX_WINDOW_LIMIT);
     let has_filter = !filter.trim().is_empty();
-    let sql = build_track_query_browsed(sort_field, sort_dir, has_filter, browse);
+    let sql = build_track_query_browsed(sort_field, sort_dir, has_filter, browse, exclude_ai);
     let mut stmt = conn.prepare(&sql)?;
     let mut params = vec![Value::Integer(limit), Value::Integer(offset)];
     if has_filter {
