@@ -137,6 +137,18 @@ if [[ -n "$stray_stems_edge" ]]; then
   exit 1
 fi
 
+# The GTK app-hosted instrumental worker (package F) consumes the core
+# `stem_separation` trait, never reprise-stems directly. The DEFAULT build must
+# therefore not link reprise-stems. P3b wires the real backend behind a gnome
+# cargo feature (mirroring the CLI's `worker` feature), so this default-build
+# probe stays green — a feature-gated edge does not appear here.
+gnome_tree=$(run_dependency_probe "reprise-gnome default build" \
+  -p reprise-gnome -e normal --prefix none --target all) || exit 1
+if printf '%s\n' "$gnome_tree" | rg --quiet '^reprise-stems '; then
+  echo "reprise-gnome default build must not depend on reprise-stems (the worker consumes the core stem_separation trait)" >&2
+  exit 1
+fi
+
 if [[ -e crates/reprise-gnome/src/ui/compact/compact_player_state.rs ]]; then
   echo "orphan compact_player_state.rs must not be restored" >&2
   exit 1
