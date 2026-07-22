@@ -20,8 +20,10 @@ use super::scene::{Fill, Geom, Rgba, Scene, Shape};
 use super::water::WaterGrid;
 
 /// Bands rise fast (attack) and fall slowly (release): the asymmetry is what
-/// makes transients punch instead of averaging away.
-const BAND_ATTACK: f32 = 0.9;
+/// makes transients punch instead of averaging away. Not fully instant, so a
+/// single jittery frame is smoothed over a few steps rather than snapped to —
+/// beats still punch through the separate water splash on beat detection.
+const BAND_ATTACK: f32 = 0.72;
 /// Per-band release floor: band 0 (bass) lingers, high bands sparkle. Snappier
 /// than a gentle gauge so bands track fine musical detail instead of gliding
 /// smoothly between values.

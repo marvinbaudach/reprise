@@ -186,12 +186,18 @@ const BEAT_REFRACTORY_MS: f32 = 90.0;
 /// Flux overshoot above threshold that maps to full `strength`.
 const BEAT_STRENGTH_OVERSHOOT: f32 = 0.35;
 /// Per-band auto-gain: each display band slowly tracks its own recent maximum
-/// and is normalized against it, so every band uses the full visual range.
+/// and is normalized against it, so a band that is loud *relative to its own
+/// recent history* fills the visual range.
 const AGC_HALF_LIFE_MS: f32 = 8000.0;
-/// Auto-gain never amplifies below this reference (silence stays at rest).
-const AGC_FLOOR: f32 = 0.10;
-/// Contrast curve applied to the auto-gained display value.
-const DISPLAY_GAMMA: f32 = 1.4;
+/// Auto-gain never amplifies below this reference. Deliberately well above
+/// silence: bands whose energy stays under it are treated as quiet and read
+/// low instead of being boosted to full height, so dominant frequencies stand
+/// out and faint nuances don't flicker at full scale.
+const AGC_FLOOR: f32 = 0.26;
+/// Contrast curve applied to the auto-gained display value. `> 1` pushes small
+/// and mid values down while leaving peaks near `1`, so the picture reads as a
+/// few dominant features rather than a wall of equal-height detail.
+const DISPLAY_GAMMA: f32 = 2.0;
 
 fn ema_coeff(interval_ms: f32, tau_ms: f32) -> f32 {
     (1.0 - (-interval_ms / tau_ms).exp()).clamp(0.0, 1.0)
