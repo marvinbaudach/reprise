@@ -186,12 +186,31 @@ const BEAT_REFRACTORY_MS: f32 = 90.0;
 /// Flux overshoot above threshold that maps to full `strength`.
 const BEAT_STRENGTH_OVERSHOOT: f32 = 0.35;
 /// Per-band auto-gain: each display band slowly tracks its own recent maximum
-/// and is normalized against it, so every band uses the full visual range.
+/// and is normalized against it, so a band that is loud *relative to its own
+/// recent history* fills the visual range.
 const AGC_HALF_LIFE_MS: f32 = 8000.0;
-/// Auto-gain never amplifies below this reference (silence stays at rest).
-const AGC_FLOOR: f32 = 0.10;
-/// Contrast curve applied to the auto-gained display value.
-const DISPLAY_GAMMA: f32 = 1.4;
+/// Auto-gain never amplifies below this reference. Deliberately well above
+/// silence: bands whose energy stays under it are treated as quiet and read
+/// low instead of being boosted to full height, so dominant frequencies stand
+/// out and faint nuances don't flicker at full scale.
+const AGC_FLOOR: f32 = 0.26;
+/// Contrast curve applied to the auto-gained display value. `> 1` pushes small
+/// and mid values down while leaving peaks near `1`, so the picture reads as a
+/// few dominant features rather than a wall of equal-height detail.
+const DISPLAY_GAMMA: f32 = 2.0;
+/// Absolute-loudness gate. The per-band AGC normalizes each band to its own
+/// recent maximum, which throws away how loud the band actually is — so a
+/// faint, consistently-quiet band self-normalizes its own noise up to full
+/// scale, and the visuals shimmer even when nothing audible is happening. The
+/// AGC "shape" is therefore multiplied by an absolute-energy factor: a band
+/// whose raw level (normalized dB, `(dB+80)/80`) is below [`AUDIBLE_FLOOR`]
+/// reads silent, at or above [`AUDIBLE_KNEE`] reads at full strength, and ramps
+/// smoothly between. This is what holds the surface still through quiet
+/// passages and only moves it on genuinely audible energy — beats, breakdowns.
+/// `0.30` ≈ -56 dB, `0.55` ≈ -36 dB — low enough to stay reactive to most of
+/// the track, high enough to hold still through genuine quiet.
+const AUDIBLE_FLOOR: f32 = 0.30;
+const AUDIBLE_KNEE: f32 = 0.55;
 
 fn ema_coeff(interval_ms: f32, tau_ms: f32) -> f32 {
     (1.0 - (-interval_ms / tau_ms).exp()).clamp(0.0, 1.0)
@@ -297,9 +316,10 @@ impl SpectrumAnalyzer {
             self.agc[band] = (self.agc[band] * self.agc_decay)
                 .max(folded[band])
                 .max(AGC_FLOOR);
-            bands[band] = (folded[band] / self.agc[band])
-                .clamp(0.0, 1.0)
-                .powf(DISPLAY_GAMMA);
+            let shape = (folded[band] / self.agc[band]).clamp(0.0, 1.0);
+            let audible =
+                ((folded[band] - AUDIBLE_FLOOR) / (AUDIBLE_KNEE - AUDIBLE_FLOOR)).clamp(0.0, 1.0);
+            bands[band] = (shape * audible).powf(DISPLAY_GAMMA);
         }
         SpectrumFrame {
             bands,
@@ -469,17 +489,22 @@ mod spectrum_analyzer_tests {
     }
 
     #[test]
-    fn agc_preserves_contrast_when_the_music_gets_quieter() {
+    fn quieter_music_calms_the_visual() {
+        // The absolute-loudness gate means the display bands must fall when the
+        // music drops, not self-normalize back to full — motion tracks audible
+        // energy (beats, breakdowns), not the per-band AGC.
         let mut analyzer = SpectrumAnalyzer::new();
-        ingest_n(&mut analyzer, [-20.0; SPECTRUM_ANALYSIS_BAND_COUNT], 60);
-        let quiet = ingest_n(&mut analyzer, [-40.0; SPECTRUM_ANALYSIS_BAND_COUNT], 3);
+        let loud = ingest_n(&mut analyzer, [-16.0; SPECTRUM_ANALYSIS_BAND_COUNT], 60);
+        let quiet = ingest_n(&mut analyzer, [-46.0; SPECTRUM_ANALYSIS_BAND_COUNT], 6);
+        let loud_avg = loud.bands().iter().sum::<f32>() / SPECTRUM_BAND_COUNT as f32;
+        let quiet_avg = quiet.bands().iter().sum::<f32>() / SPECTRUM_BAND_COUNT as f32;
         assert!(
-            quiet
-                .bands()
-                .iter()
-                .all(|&band| (0.30..=0.75).contains(&band)),
-            "expected visible contrast, got {:?}",
-            &quiet.bands()[..4]
+            loud_avg > 0.9,
+            "loud section should drive near-full motion, got {loud_avg}"
+        );
+        assert!(
+            quiet_avg < 0.15,
+            "quiet section should calm to near-still, got {quiet_avg}"
         );
     }
 
