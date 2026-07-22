@@ -3,6 +3,7 @@ pub(in crate::ui) mod preference_audio_analysis;
 pub(in crate::ui) mod preference_choice_cards;
 pub(in crate::ui) mod preference_dependencies;
 pub(in crate::ui) mod preference_effects;
+pub(in crate::ui) mod preference_experimental;
 pub(in crate::ui) mod preference_lastfm;
 pub(in crate::ui) mod preference_layout;
 pub(in crate::ui) mod preference_library;

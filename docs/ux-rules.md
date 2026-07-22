@@ -1977,7 +1977,7 @@ Dateien.
   verknüpft. Die Provenienz ist DB-primär (`track_provenance`), die Tag-
   Referenz sekundär; das Badge schlüsselt auf das DB-Flag, nie auf den
   Ablageordner. (Beschluss 13/14)
-- **INST-11** [geplant] [gtk] — **Master-Gate:** Die gesamte Instrumental-UI
+- **INST-11** [aktiv] [gtk] — **Master-Gate:** Die gesamte Instrumental-UI
   — Kontextmenü-Eintrag, Konvertierungs-Ansicht, KI-Badges, „Hide AI music"-
   Filter (FIL-7) — ist **verborgen, solange der „Experimental features"-
   Schalter aus ist**. Der Schalter ist eine persistierte Einstellung; sein

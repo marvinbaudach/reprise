@@ -51,8 +51,6 @@ pub(in crate::ui) fn experimental_enabled(conn: &Connection) -> bool {
 
 /// Persists the master switch. Wrapping `settings::set_bool` keeps the key a
 /// single source of truth for both the preferences toggle and every reader.
-// Consumed by the preferences experimental toggle in a later package-F commit.
-#[allow(dead_code)]
 pub(in crate::ui) fn set_experimental_enabled(
     conn: &Connection,
     enabled: bool,
