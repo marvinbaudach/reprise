@@ -20,7 +20,9 @@ use rmcp::service::RequestContext;
 use rmcp::{tool, tool_handler, tool_router, ErrorData, RoleServer, ServerHandler};
 
 use crate::data;
-use crate::dto::{CreatePlaylistParams, SearchTracksParams};
+use crate::dto::{
+    CreateInstrumentalParams, CreatePlaylistParams, JobStatusParams, SearchTracksParams,
+};
 use crate::error;
 
 /// URI of the library-summary resource.
@@ -33,24 +35,38 @@ const RESOURCE_MIME_JSON: &str = "application/json";
 const SERVER_INSTRUCTIONS: &str = "Reprise local music library. Read-only tools \
     and resources expose track metadata (never file paths); \
     `music_create_playlist` creates a new manual playlist and requires the \
-    'playlist:create' capability, which is off by default.";
+    'playlist:create' capability, which is off by default. \
+    `music_create_instrumental` queues experimental vocal-removal renders of \
+    explicit tracks (requires the 'ai:create' capability, off by default) and \
+    returns immediately with job ids; `music_get_job_status` reports their \
+    state and progress. Both AI tools return ids only, never file paths.";
 
 /// The MCP server handler.
 #[derive(Clone)]
 pub struct RepriseServer {
     db_path: Arc<PathBuf>,
+    staging_path: Arc<PathBuf>,
     write_granted_at_startup: bool,
+    ai_create_granted_at_startup: bool,
     tool_router: ToolRouter<Self>,
 }
 
 impl RepriseServer {
-    /// Builds a handler bound to `db_path`. `write_granted_at_startup` is the
-    /// `playlist:create` snapshot taken during startup (the restart half of
-    /// the D18 write gate).
-    pub fn new(db_path: PathBuf, write_granted_at_startup: bool) -> Self {
+    /// Builds a handler bound to `db_path` (and `staging_path` for the AI job
+    /// queue). `write_granted_at_startup` / `ai_create_granted_at_startup` are
+    /// the `playlist:create` / `ai:create` snapshots taken during startup (the
+    /// restart half of the D18 / Beschluss 7 gate).
+    pub fn new(
+        db_path: PathBuf,
+        staging_path: PathBuf,
+        write_granted_at_startup: bool,
+        ai_create_granted_at_startup: bool,
+    ) -> Self {
         Self {
             db_path: Arc::new(db_path),
+            staging_path: Arc::new(staging_path),
             write_granted_at_startup,
+            ai_create_granted_at_startup,
             tool_router: Self::tool_router(),
         }
     }
@@ -113,6 +129,100 @@ impl RepriseServer {
                     "Created playlist '{}' (id {}) with {} track(s)",
                     result.name, result.playlist_id, result.track_count
                 );
+                error::structured_ok(&result, summary)
+            }
+            Err(err) => error::into_tool_outcome(err),
+        }
+    }
+
+    /// Queues one experimental vocal-removal render per explicit track and
+    /// returns immediately with job ids (plan 3.2). Never renders inline and
+    /// never returns a file path.
+    #[tool(
+        name = "music_create_instrumental",
+        description = "Queue experimental vocals-removed instrumental renders of \
+            explicit library tracks (at most 500). Registers one background job \
+            per track and returns immediately with job ids plus a batch id — \
+            rendering happens later in a worker (the running Reprise app or \
+            `reprise-cli jobs work`), so jobs stay queued until then. Tracks that \
+            already have an instrumental or a pending job are referenced, not \
+            re-rendered. `save` (default true) marks renders for the library; \
+            `save=false` leaves them in the Conversion staging view to save or \
+            discard. Requires the 'ai:create' capability, off by default. Returns \
+            ids only, never file paths."
+    )]
+    async fn music_create_instrumental(
+        &self,
+        Parameters(params): Parameters<CreateInstrumentalParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let db_path = self.db_path.clone();
+        let staging_path = self.staging_path.clone();
+        let granted = self.ai_create_granted_at_startup;
+        let outcome = tokio::task::spawn_blocking(move || {
+            data::create_instrumental(
+                db_path.as_path(),
+                staging_path.as_path(),
+                granted,
+                &params.track_ids,
+                params.save,
+            )
+        })
+        .await
+        .map_err(|error| error::join_error(&error))?;
+
+        match outcome {
+            Ok(result) => {
+                let summary = format!(
+                    "Queued {} instrumental job(s), {} referenced existing (batch {})",
+                    result.created, result.deduplicated, result.batch_id
+                );
+                error::structured_ok(&result, summary)
+            }
+            Err(err) => error::into_tool_outcome(err),
+        }
+    }
+
+    /// Reports the state and progress of instrumental jobs (read-only job
+    /// metadata; plan 3.2). Returns ids, states, progress and timestamps only —
+    /// never a file path or staging location.
+    #[tool(
+        name = "music_get_job_status",
+        description = "Report the state and progress of instrumental jobs by \
+            their ids (`job_ids`) and/or a `batch_id` (at least one required). \
+            Each job reports its state (queued/running/done/failed/cancelled), \
+            progress in permille, and the saved result track id once promoted; a \
+            queried batch also returns aggregate progress. Read-only job \
+            metadata, available under the 'library:read' capability. Never \
+            returns file paths or staging locations."
+    )]
+    async fn music_get_job_status(
+        &self,
+        Parameters(params): Parameters<JobStatusParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let db_path = self.db_path.clone();
+        let outcome = tokio::task::spawn_blocking(move || {
+            data::job_status(
+                db_path.as_path(),
+                &params.job_ids,
+                params.batch_id.as_deref(),
+            )
+        })
+        .await
+        .map_err(|error| error::join_error(&error))?;
+
+        match outcome {
+            Ok(result) => {
+                let summary = match &result.batch {
+                    Some(batch) => format!(
+                        "{} job(s); batch {} at {}permille ({}/{} done)",
+                        result.jobs.len(),
+                        batch.batch_id,
+                        batch.permille,
+                        batch.done,
+                        batch.total
+                    ),
+                    None => format!("{} job(s)", result.jobs.len()),
+                };
                 error::structured_ok(&result, summary)
             }
             Err(err) => error::into_tool_outcome(err),
