@@ -2,7 +2,7 @@
 slug: new-releases-rework
 worktree: /home/marvin/Projects/reprise/.worktrees/new-releases-rework
 branch: feat/new-releases-rework
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-07-21
 ---

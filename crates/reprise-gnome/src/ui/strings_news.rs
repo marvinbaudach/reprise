@@ -166,6 +166,13 @@ pub fn new_releases_show_history_count(count: usize) -> String {
     )
 }
 
+/// The parenthesized count fragment split out from the "Show history" row's
+/// label (#7) so it can render one opacity step quieter than the row text
+/// itself — see `SHOW_HISTORY`, which supplies the label part.
+pub fn new_releases_history_count_suffix(count: usize) -> String {
+    formatted(N_!("({count})"), &[("count", &count.to_string())])
+}
+
 /// Formats a release date already known to be released as-is (dates from
 /// `first_release_date` come pre-formatted from MusicBrainz, including the
 /// partial year/year-month forms `release_row::parse_release_date` accepts).
@@ -234,6 +241,11 @@ mod tests {
     #[test]
     fn new_releases_show_history_count_formats_count() {
         assert_eq!(new_releases_show_history_count(12), "Show history (12)");
+    }
+
+    #[test]
+    fn new_releases_history_count_suffix_formats_count() {
+        assert_eq!(new_releases_history_count_suffix(12), "(12)");
     }
 
     #[test]
