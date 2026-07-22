@@ -75,10 +75,9 @@ pub fn filter_present(conn: &Connection, ids: &[i64]) -> Result<Vec<i64>, rusqli
         let placeholders = vec!["?"; chunk.len()].join(",");
         let sql = format!("SELECT id FROM tracks WHERE {PRESENT} AND id IN ({placeholders})");
         let mut statement = conn.prepare(&sql)?;
-        let rows = statement
-            .query_map(rusqlite::params_from_iter(chunk.iter()), |row| {
-                row.get::<_, i64>(0)
-            })?;
+        let rows = statement.query_map(rusqlite::params_from_iter(chunk.iter()), |row| {
+            row.get::<_, i64>(0)
+        })?;
         for id in rows {
             present.insert(id?);
         }
