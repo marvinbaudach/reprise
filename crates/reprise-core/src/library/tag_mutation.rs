@@ -352,14 +352,18 @@ fn strip_tag_containers(mut data: Vec<u8>) -> Vec<u8> {
     strip_trailing_containers(data)
 }
 
-/// Strips only the trailing ID3v1/APEv2 containers of `path` in place, keeping
-/// any front ID3v2. This is the scanner's PREFERRED repair for a file lofty
-/// couldn't read: a damaged tail footer is usually the sole culprit, and
-/// removing just it lets the real ID3v2 metadata read again — unlike
-/// [`strip_and_rewrite_tag`], which discards every container.
-pub(super) fn strip_trailing_tag_containers(path: &Path) -> Result<(), TagEditError> {
-    let data = std::fs::read(path).map_err(lofty::error::LoftyError::from)?;
-    std::fs::write(path, strip_trailing_containers(data))
+/// Reads `src`, strips only its trailing ID3v1/APEv2 containers (keeping any
+/// front ID3v2), and writes the result to `dest` — leaving `src` UNTOUCHED.
+///
+/// This is the scanner's non-destructive repair seam: it recovers into a temp
+/// `dest`, and the caller only replaces the original with it once the temp
+/// actually reads back real tags. A file that does not recover is therefore
+/// never modified — unlike [`strip_and_rewrite_tag`], which discards every
+/// container and so must only be used when the caller is *supplying* new tags
+/// (a manual edit), never to guess at a repair.
+pub(super) fn write_tail_stripped(src: &Path, dest: &Path) -> Result<(), TagEditError> {
+    let data = std::fs::read(src).map_err(lofty::error::LoftyError::from)?;
+    std::fs::write(dest, strip_trailing_containers(data))
         .map_err(lofty::error::LoftyError::from)?;
     Ok(())
 }
