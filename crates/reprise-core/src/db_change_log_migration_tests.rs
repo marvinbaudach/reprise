@@ -17,23 +17,24 @@ fn change_log_schema(conn: &Connection) -> Vec<(String, String)> {
 }
 
 #[test]
-fn schema_v26_fresh_and_v25_upgrade_have_the_same_change_log_shape() {
+fn schema_v27_fresh_and_v26_upgrade_have_the_same_change_log_shape() {
     let fresh = open(None).unwrap();
     migrate(&fresh).unwrap();
     let expected = change_log_schema(&fresh);
 
     let upgraded = open(None).unwrap();
     migrate(&upgraded).unwrap();
-    // Roll back to just before change_log (v26). Every object created at v26+
+    // Roll back to just before change_log (v27). Every object created at v27+
     // must go, or re-migration's later steps collide with the survivors — the
-    // v27 AI-jobs shape (ai_jobs/track_provenance/playlists.role) included.
+    // v28 AI-jobs shape (ai_jobs/track_provenance/playlists.role) included. The
+    // v26 new_releases-history columns stay, so re-migration resumes at v26.
     upgraded
         .execute_batch(
             "DROP TABLE change_log;
              DROP TABLE ai_jobs;
              DROP TABLE track_provenance;
              ALTER TABLE playlists DROP COLUMN role;
-             PRAGMA user_version = 25;",
+             PRAGMA user_version = 26;",
         )
         .unwrap();
     migrate(&upgraded).unwrap();
@@ -48,7 +49,7 @@ fn schema_v26_fresh_and_v25_upgrade_have_the_same_change_log_shape() {
 }
 
 #[test]
-fn schema_v26_change_log_has_the_ordering_and_lookup_contract() {
+fn schema_v27_change_log_has_the_ordering_and_lookup_contract() {
     let conn = open(None).unwrap();
     migrate(&conn).unwrap();
 

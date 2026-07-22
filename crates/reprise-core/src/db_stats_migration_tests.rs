@@ -75,6 +75,9 @@ fn temporary_file_databases_migrate_from_fresh_and_v16_to_current() {
                  DROP TABLE track_provenance;
                  ALTER TABLE playlists DROP COLUMN role;
                  DROP INDEX idx_listen_events_track_played;
+                 ALTER TABLE new_releases DROP COLUMN first_seen;
+                 ALTER TABLE new_releases DROP COLUMN hidden_at;
+                 ALTER TABLE new_releases DROP COLUMN announce_url;
                  PRAGMA user_version = 16;",
             )
             .unwrap();

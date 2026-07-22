@@ -955,13 +955,22 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
 
 ## R. New Releases
 
-- **NR-1** [aktiv] [core] — Eine bibliotheksweite MusicBrainz-Pipeline ist
+- **NR-1** [ersetzt durch NR-1a] [core] — Eine bibliotheksweite
+  MusicBrainz-Pipeline ist die einzige Wahrheit für neue Releases und
+  spätere Artist-News-Ansichten. Artist-MBIDs kommen zuerst aus Tags, sonst
+  aus einer persistierten Namensauflösung inklusive negativer Ergebnisse;
+  Artists werden nach Play-Count priorisiert. Pro Artist bleiben höchstens
+  fünf reguläre Alben oder EPs der letzten 90 Tage sowie ausschließlich
+  zukünftige Singles; unvollständige Daten gelten nie als zukünftig,
+  Sekundärtypen bleiben draußen.
+- **NR-1a** [aktiv] [core] — Eine bibliotheksweite MusicBrainz-Pipeline ist
   die einzige Wahrheit für neue Releases und spätere Artist-News-Ansichten.
   Artist-MBIDs kommen zuerst aus Tags, sonst aus einer persistierten
   Namensauflösung inklusive negativer Ergebnisse; Artists werden nach
-  Play-Count priorisiert. Pro Artist bleiben höchstens fünf reguläre Alben
-  oder EPs der letzten 90 Tage sowie ausschließlich zukünftige Singles;
-  unvollständige Daten gelten nie als zukünftig, Sekundärtypen bleiben draußen.
+  Play-Count priorisiert. Pro Artist bleiben höchstens zwanzig reguläre
+  Alben oder EPs der letzten 90 Tage sowie ausschließlich zukünftige
+  Singles; unvollständige Daten gelten nie als zukünftig, Sekundärtypen
+  bleiben draußen.
 - **NR-2** [aktiv] [gtk] — Release-Cover laden lazy über Cover Art Archive
   (`/release-group/{mbid}/front-250`). Ein fehlendes Cover ist Normalzustand
   und zeigt sofort eine gleich große Kachel aus gespeicherter Artist-
@@ -970,14 +979,20 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   Einträgen und trägt einen Badge ausschließlich für `seen_at IS NULL`.
   Öffnen stempelt die gelistete Episode als gesehen; sie badgt nie erneut,
   erst ein später neu gefundener Eintrag erzeugt wieder einen Badge (FB-4).
-- **NR-4** [aktiv] [gtk] — „See all" öffnet einen echten Digest-Ort mit
-  Back/Forward-Historie, aber ohne Sidebar-Eintrag. Releases lassen sich dort
-  verbergen; vorhandene Hidden-Einträge halten „See all" erreichbar und die
-  Fußzeile „N hidden · Show" macht sie rückholbar. Ein künftiges „Remind me"
-  bleibt bis zu einem eigenen Scheduler ausdrücklich außerhalb dieser Regel.
-- **NR-5** [aktiv] [gtk] — Das Popover ist transient und verändert den
-  Navigations-Stack nie. Erst „See all" navigiert regulär in den Digest-Ort;
-  Schließen kehrt ohne Zustandsverlust zur aktuellen Ansicht zurück.
+- **NR-4** [ersetzt durch NR-12] [gtk] — „See all" öffnet einen echten
+  Digest-Ort mit Back/Forward-Historie, aber ohne Sidebar-Eintrag. Releases
+  lassen sich dort verbergen; vorhandene Hidden-Einträge halten „See all"
+  erreichbar und die Fußzeile „N hidden · Show" macht sie rückholbar. Ein
+  künftiges „Remind me" bleibt bis zu einem eigenen Scheduler ausdrücklich
+  außerhalb dieser Regel.
+- **NR-5** [ersetzt durch NR-5a] [gtk] — Das Popover ist transient und
+  verändert den Navigations-Stack nie. Erst „See all" navigiert regulär in
+  den Digest-Ort; Schließen kehrt ohne Zustandsverlust zur aktuellen Ansicht
+  zurück.
+- **NR-5a** [aktiv] [gtk] — Das Popover ist transient; Öffnen/Schließen
+  verändert den Navigations-Stack nie. Nur explizite Zeilen-Aktionen (Show in
+  library) navigieren regulär und schließen das Popover; der Verlauf ist eine
+  Popover-interne Unterseite ohne Navigation.
 - **NR-6** [aktiv] [gtk] — „Fetch now" ersetzt während des Abrufs sein
   Refresh-Icon durch einen Spinner und zeigt sonst das Alter der letzten
   Aktualisierung. Offline oder Fehler zeigen weiter den letzten Cache samt
@@ -1003,6 +1018,28 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   einen Start-Abruf gibt es nicht. NR-8 schließt diese Schleife, ohne NR-5 zu
   kippen. Datenschutzlich unverändert: Netzverkehr entsteht ausschließlich nach
   ausdrücklicher Aktivierung, nur sofort statt nie.
+- **NR-9** [aktiv] [gtk] — setzt auf NR-3 auf (NR-3 bleibt aktiv): Der Badge
+  aus NR-3 zeigt die **Anzahl** der Einträge mit `seen_at IS NULL`, ab 10 als
+  „9+", verschwindet mit dem Öffnen (alle gelisteten Einträge werden
+  gestempelt) und rendert bei 0 kein leeres Element.
+- **NR-10** [aktiv] [gtk] — Zeilen-Hover bzw. -Fokus blendet den
+  Status-Chip aus und die Zeilen-Aktionen ein; beim Verlassen kehrt der Chip
+  zurück. Tastaturparität: die Zeile ist fokussierbar, Fokus zeigt die
+  Aktionen, die Buttons sind per Tab/Enter erreichbar.
+- **NR-11** [aktiv] [gtk] — „Open announcement" öffnet eine URL nach
+  Priorität: MusicBrainz-URL-Relations der Release-Group (Bandcamp/Kauf/
+  Streaming vor offizieller Homepage/Discography) → Fallback
+  MusicBrainz-Release-Group-Seite. Geöffnet wird extern (Standardbrowser).
+- **NR-12** [aktiv] [gtk] — Der Verlauf ist eine persistente Historie
+  aller je gezeigten Meldungen als **Popover-Unterseite** (kein eigener
+  Navigations-Ort), gruppiert nach Zeitraum, ausgeblendete Einträge einzeln
+  rückholbar. Retention: 6 Monate **und** höchstens 200 Einträge (strengere
+  Grenze gewinnt), hartes Löschen, aber nie innerhalb des
+  90-Tage-Fetch-Fensters. Ersetzt NR-4.
+- **NR-13** [aktiv] [gtk] — Bereits in der Bibliothek vorhandene,
+  erschienene Releases werden markiert (nicht herausgefiltert) und bieten
+  die Aktion „Show in library" (Navigieren + Fokussieren, **kein** direkter
+  Play-Pfad).
 
 ## S. Flächen & Geometrie
 
