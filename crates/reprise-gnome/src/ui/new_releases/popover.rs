@@ -118,7 +118,9 @@ struct NewReleasesPopover {
     empty: gtk4::Label,
     new_tag: gtk4::Label,
     history_row: gtk4::Button,
-    history_row_label: gtk4::Label,
+    /// The count fragment only (#7) — the "Show history" text itself is set
+    /// once at construction and never changes, so it needs no field.
+    history_row_count: gtk4::Label,
     history_page: gtk4::Box,
     fetch_button: gtk4::Button,
     fetch_stack: gtk4::Stack,
@@ -158,7 +160,11 @@ impl NewReleasesPopover {
             .max_content_height(SCROLLER_MAX_HEIGHT)
             .build();
 
-        let header_label = gtk4::Label::new(Some(&strings::text(strings::NEW_RELEASES_HEADER)));
+        // #3: GTK CSS has no text-transform, so the uppercase look comes from
+        // uppercasing the string itself rather than relying on CSS alone.
+        let header_label = gtk4::Label::new(Some(
+            &strings::text(strings::NEW_RELEASES_HEADER).to_uppercase(),
+        ));
         header_label.add_css_class("new-release-header");
         header_label.set_xalign(0.0);
         header_label.set_hexpand(true);
@@ -172,14 +178,21 @@ impl NewReleasesPopover {
         let separator = gtk4::Separator::new(gtk4::Orientation::Horizontal);
         separator.add_css_class("new-release-separator");
 
-        let history_row_label = gtk4::Label::new(None);
-        history_row_label.set_xalign(0.0);
-        history_row_label.set_hexpand(true);
+        // #7: "Show history" is navigation, not a primary action — the label
+        // text is static and the count sits in its own, even quieter class.
+        let history_row_label = gtk4::Label::new(Some(&strings::text(strings::SHOW_HISTORY)));
+        history_row_label.add_css_class("new-release-history-label");
+        let history_row_count = gtk4::Label::new(None);
+        history_row_count.add_css_class("new-release-history-count");
+        let history_text = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
+        history_text.set_hexpand(true);
+        history_text.append(&history_row_label);
+        history_text.append(&history_row_count);
         let history_content = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
         history_content.append(&gtk4::Image::from_icon_name(
             "document-open-recent-symbolic",
         ));
-        history_content.append(&history_row_label);
+        history_content.append(&history_text);
         history_content.append(&gtk4::Image::from_icon_name("go-next-symbolic"));
         let history_row = gtk4::Button::builder()
             .child(&history_content)
@@ -232,7 +245,7 @@ impl NewReleasesPopover {
             empty,
             new_tag,
             history_row,
-            history_row_label,
+            history_row_count,
             history_page,
             fetch_button,
             fetch_stack,
@@ -442,8 +455,8 @@ impl NewReleasesPopover {
                     },
                     |entries| entries.len(),
                 );
-        self.history_row_label
-            .set_label(&strings::new_releases_show_history_count(history_count));
+        self.history_row_count
+            .set_label(&strings::new_releases_history_count_suffix(history_count));
         let latest = all_releases.iter().map(|release| release.fetched_at).max();
         let footer = footer_presentation(latest, chrono::Utc::now().timestamp(), failed);
         self.updated.set_label(&footer.updated);
