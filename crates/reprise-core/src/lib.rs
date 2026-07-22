@@ -42,6 +42,7 @@ pub mod models;
 pub mod modules;
 pub mod musicbrainz;
 pub mod playback;
+pub mod provenance;
 pub mod queries;
 pub mod queue;
 pub mod related_artists;
