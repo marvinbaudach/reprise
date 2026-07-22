@@ -189,6 +189,29 @@ impl super::Shared {
             Vec::new()
         })
     }
+
+    /// Refreshes just the row at `position` (drops its cached window so GTK
+    /// re-pulls it) while PINNING the viewport in place.
+    ///
+    /// NAV-10a follow-up: a bare `invalidate_window_at` is a one-row
+    /// `items_changed(pos, 1, 1)`. When that row is the one the user just
+    /// interacted with — a double-click to play, a star-rating click — GtkColumn
+    /// View replaces the row widget under the pointer and, in that state,
+    /// snaps the viewport back to the top. (A plain selection click, which
+    /// issues no `items_changed`, never does — matching the observed
+    /// "only double-click and rating jump" symptom.) The row's absolute scroll
+    /// offset is still valid across a 1→1 change, so it is captured and restored
+    /// around the refresh: synchronously, and once more on idle since GTK's
+    /// unwanted scroll can land a frame later.
+    pub(in crate::ui) fn refresh_row_pinning_viewport(&self, position: u32) {
+        let saved = gtk4::prelude::ScrollableExt::vadjustment(&self.column_view)
+            .map(|adjustment| (adjustment.clone(), adjustment.value()));
+        self.model.invalidate_window_at(position);
+        if let Some((adjustment, value)) = saved {
+            adjustment.set_value(value);
+            gtk4::glib::idle_add_local_once(move || adjustment.set_value(value));
+        }
+    }
 }
 
 impl TrackList {
@@ -226,7 +249,7 @@ impl TrackList {
                     .position(|candidate| *candidate == previous_id)
                     .and_then(|position| u32::try_from(position).ok())
                 {
-                    self.shared.model.invalidate_window_at(old_pos);
+                    self.shared.refresh_row_pinning_viewport(old_pos);
                 }
             }
         }
@@ -248,7 +271,7 @@ impl TrackList {
             .is_some_and(|last| last.elapsed() < USER_SCROLL_GRACE);
         match reveal_policy(change, user_scrolling) {
             TrackRevealPolicy::MarkerOnly => {
-                self.shared.model.invalidate_window_at(position);
+                self.shared.refresh_row_pinning_viewport(position);
                 tracing::info!(
                     track_id,
                     position,
@@ -303,7 +326,7 @@ impl TrackList {
                 .position(|candidate| *candidate == previous)
                 .and_then(|position| u32::try_from(position).ok())
             {
-                self.shared.model.invalidate_window_at(position);
+                self.shared.refresh_row_pinning_viewport(position);
             }
         }
     }
