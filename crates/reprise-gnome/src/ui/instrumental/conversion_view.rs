@@ -47,6 +47,9 @@ struct RowWidgets {
 pub(in crate::ui) struct ConversionView {
     root: gtk4::Box,
     aggregate: gtk4::ProgressBar,
+    /// INST-8 "Summe": the aggregate disk cost of all kept (undecided) renders,
+    /// beside the per-row sizes. Hidden while no undecided render exists.
+    disk_total: gtk4::Label,
     save_all: gtk4::Button,
     clear: gtk4::Button,
     list: gtk4::ListBox,
@@ -86,6 +89,15 @@ impl ConversionView {
         let aggregate = gtk4::ProgressBar::new();
         aggregate.set_show_text(true);
 
+        // INST-8: the "Summe" beside the per-row sizes — the total disk cost of
+        // all kept renders. A separate caption from the INST-2 progress bar, so
+        // job progress and disk cost stay distinct. Hidden until a render is kept.
+        let disk_total = gtk4::Label::new(None);
+        disk_total.add_css_class("dim-label");
+        disk_total.add_css_class("caption");
+        disk_total.set_halign(gtk4::Align::Start);
+        disk_total.set_visible(false);
+
         let list = gtk4::ListBox::new();
         list.add_css_class("boxed-list");
         list.set_selection_mode(gtk4::SelectionMode::None);
@@ -99,12 +111,14 @@ impl ConversionView {
 
         root.append(&header);
         root.append(&aggregate);
+        root.append(&disk_total);
         root.append(&scrolled);
         root.append(&empty);
 
         let view = Rc::new(Self {
             root,
             aggregate,
+            disk_total,
             save_all,
             clear,
             list,
@@ -182,13 +196,32 @@ impl ConversionView {
 
         self.list.remove_all();
         let mut rows = HashMap::with_capacity(jobs.len());
+        let mut kept_bytes: u64 = 0;
         for job in &jobs {
             let staged = self.staging.exists(job.id);
             let state = conversion_model::row_state(job, staged);
-            let widgets = self.build_row(job, state, sizes.get(&job.id).copied());
+            let size = sizes.get(&job.id).copied();
+            // INST-8 "Summe": the kept-render total is the sum of exactly the
+            // per-row sizes shown for undecided (kept, unsaved) renders.
+            if matches!(state, RowState::DoneUnsaved { .. }) {
+                kept_bytes = kept_bytes.saturating_add(size.unwrap_or(0));
+            }
+            let widgets = self.build_row(job, state, size);
             rows.insert(job.id, widgets);
         }
         *self.rows.borrow_mut() = rows;
+
+        // INST-8: show the aggregate disk cost of all kept renders, hidden when
+        // none are kept.
+        if kept_bytes > 0 {
+            self.disk_total
+                .set_text(&strings::conversion_disk_total(&format_render_size(
+                    kept_bytes,
+                )));
+            self.disk_total.set_visible(true);
+        } else {
+            self.disk_total.set_visible(false);
+        }
 
         let empty = jobs.is_empty();
         self.empty.set_visible(empty);
@@ -376,6 +409,12 @@ impl ConversionView {
             .text()
             .map(|t| t.to_string())
             .unwrap_or_default()
+    }
+    pub(in crate::ui) fn disk_total_text(&self) -> String {
+        self.disk_total.text().to_string()
+    }
+    pub(in crate::ui) fn disk_total_visible(&self) -> bool {
+        self.disk_total.is_visible()
     }
     pub(in crate::ui) fn row_play_enabled(&self, job_id: i64) -> Option<bool> {
         self.rows
