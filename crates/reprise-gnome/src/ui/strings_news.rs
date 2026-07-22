@@ -140,7 +140,6 @@ pub const IN_LIBRARY: &str = N_!("In library");
 pub const SHOW_HISTORY: &str = N_!("Show history");
 pub const SHOW_IN_LIBRARY: &str = N_!("Show in library");
 pub const OPEN_ANNOUNCEMENT: &str = N_!("Open announcement");
-pub const HIDE_RELEASE_ACTION: &str = N_!("Hide");
 pub const SHOW_AGAIN: &str = N_!("Show again");
 pub const ALL_CAUGHT_UP: &str = N_!("All caught up");
 pub const HISTORY_HEADER: &str = N_!("History");
