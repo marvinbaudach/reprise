@@ -697,6 +697,20 @@ pub fn list_active_jobs(conn: &Connection) -> Result<Vec<AiJob>, rusqlite::Error
     Ok(jobs)
 }
 
+/// The number of jobs whose render has been promoted into the library (a
+/// `result_track_id` is attached). The app-hosted worker auto-promotes on its
+/// own thread, whose writes carry the app's writer token and are therefore
+/// filtered out of the external-changes runtime; the conversion view watches
+/// this count instead, reloading the library the moment it grows so a
+/// worker-promoted instrumental appears without a manual refresh.
+pub fn count_saved(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM ai_jobs WHERE result_track_id IS NOT NULL",
+        [],
+        |row| row.get(0),
+    )
+}
+
 /// Aggregate progress for a batch's single bar (plan 2.4/7).
 pub fn batch_progress(conn: &Connection, batch_id: &str) -> Result<BatchProgress, rusqlite::Error> {
     conn.query_row(
