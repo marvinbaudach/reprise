@@ -57,7 +57,11 @@ pub fn open_with_options(
 pub fn open_migrated(path: Option<&Path>) -> Result<Connection, DbError> {
     let conn = open(path)?;
     migrate(&conn)?;
-    crate::events::prune(&conn)?;
+    // Non-blocking, skip-when-idle: this must never stall or fail because a
+    // concurrent writer (a running app's long scan transaction) holds the lock —
+    // see `events::prune_on_open`. The ~30 GTK `open_migrated(...).unwrap()`
+    // call sites and pure-CLI reads both depend on that guarantee.
+    crate::events::prune_on_open(&conn)?;
     Ok(conn)
 }
 

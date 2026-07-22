@@ -127,3 +127,65 @@ fn open_migrated_prunes_the_persisted_change_log() {
 
     assert_eq!(read_since(&reopened, 0, None).unwrap().len(), 10_000);
 }
+
+/// F1 regression (a): `open_migrated` must return a usable connection even while
+/// another connection holds an open write transaction — the prune skips rather
+/// than blocking out the 5s busy_timeout and panicking at the `.unwrap()` call
+/// sites. Before the fix this open blocked ~5s and then failed.
+#[test]
+fn open_migrated_succeeds_while_a_foreign_write_transaction_is_held() {
+    let database = tempfile::NamedTempFile::new().unwrap();
+    // Populate enough old rows that a prune is genuinely due, so the open path
+    // actually reaches the (now non-blocking) DELETE rather than the idle probe.
+    let conn = crate::db::open_migrated(Some(database.path())).unwrap();
+    for id in 0..=MAX_RETAINED_CHANGES {
+        record_at(&conn, "scan", &id.to_string(), "complete", WriterToken(1), 1).unwrap();
+    }
+    drop(conn);
+
+    // Hold an exclusive write transaction on a second connection.
+    let blocker = crate::db::open(Some(database.path())).unwrap();
+    blocker.execute_batch("BEGIN IMMEDIATE").unwrap();
+
+    let started = std::time::Instant::now();
+    let reopened = crate::db::open_migrated(Some(database.path())).unwrap();
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(4),
+        "open must not block waiting out the busy_timeout on the held write lock"
+    );
+    // The contended prune skipped, leaving the eligible row in place; the
+    // connection is fully usable regardless.
+    assert_eq!(read_since(&reopened, 0, None).unwrap().len(), 10_001);
+
+    blocker.execute_batch("ROLLBACK").unwrap();
+}
+
+/// F1 regression (b): opening a database with nothing to prune performs no
+/// write at all. Proven via `PRAGMA data_version`, which advances only when
+/// *another* connection commits — an independent observer must see it unchanged
+/// across the idle reopen.
+#[test]
+fn open_migrated_with_nothing_to_prune_performs_no_write() {
+    let database = tempfile::NamedTempFile::new().unwrap();
+    let conn = crate::db::open_migrated(Some(database.path())).unwrap();
+    // One recent row: below both retention floors, so nothing is ever eligible.
+    record(&conn, "playlist", "1", "create").unwrap();
+    drop(conn);
+
+    let observer = crate::db::open(Some(database.path())).unwrap();
+    let before: i64 = observer
+        .query_row("PRAGMA data_version", [], |row| row.get(0))
+        .unwrap();
+
+    let reopened = crate::db::open_migrated(Some(database.path())).unwrap();
+    // Read the counter while `reopened` is still alive: a would-be prune write
+    // happens during the open above, so it would already show here.
+    let after: i64 = observer
+        .query_row("PRAGMA data_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(
+        before, after,
+        "an idle reopen must not commit any change-log write"
+    );
+    drop(reopened);
+}
