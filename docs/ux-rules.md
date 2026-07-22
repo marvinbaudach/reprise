@@ -1924,7 +1924,7 @@ Dateien.
   **Weitere Fortschritts-UI gibt es nicht**: kein Sidebar-/Statusleisten-Slot
   (der android-sync-V2-Bottom-Slot wird nicht angefasst), **kein Toast**.
   (Beschluss 18)
-- **INST-3** [geplant] [gtk] — Je Zeile ein sichtbarer Zustand:
+- **INST-3** [aktiv] [gtk] — Je Zeile ein sichtbarer Zustand:
   queued / processing (mit Zeilen-Fortschritt) / done — ungespeichert /
   saved / failed. Die Ansicht ist technisch eine Spezial-View über `ai_jobs` +
   Staging-Store (Wiedergabe per Dateipfad), kein Playlist-Row-Source — auch
@@ -1954,22 +1954,22 @@ Dateien.
   einen verarbeitenden Eintrag den Start mit sichtbarem Render-Fortschritt und
   beginnt nach Abschluss (kein Fallback/Skip). Progressiver Frühstart ist eine
   spätere Optimierung, nicht v1 (P3b).
-- **INST-6** [geplant] [gtk] — Speicher-Entscheidung pro Zeile
+- **INST-6** [aktiv] [gtk] — Speicher-Entscheidung pro Zeile
   (Speichern / Verwerfen) plus „Alle speichern" in der Kopfzeile. Speichern
   **promotet** über die Core-Fassade (Move in den dedizierten Ordner, finale
   Tags inkl. KI-Provenienz, Registrierung — atomar, kein Re-Render); danach
   **wechselt die Zeile auf den promoteten Bibliothekstitel und bleibt**, bis
   der User aufräumt. Verwerfen löscht den Staging-Render; Unentschiedenes
   erscheint nie in der Library. (Beschluss 15/16)
-- **INST-7** [geplant] [gtk] — „Playlist leeren" **warnt**, wenn
+- **INST-7** [aktiv] [gtk] — „Playlist leeren" **warnt**, wenn
   unentschiedene (done-ungespeicherte) Einträge existieren — Stunden
   Rechenzeit verdampfen nicht unbestätigt. (Beschluss 15)
-- **INST-8** [geplant] [gtk] — Unentschiedene Renders **bleiben über
+- **INST-8** [aktiv] [gtk] — Unentschiedene Renders **bleiben über
   Neustarts erhalten**; ihre **Plattenkosten sind in der Ansicht sichtbar**
   (Größe je Zeile / Summe). Es gibt **keinen stillen Reaper** — nur die
   explizite Verwerfen-Aktion (oder Speichern) entfernt einen Render.
   (Beschluss 15)
-- **INST-9** [geplant] [gtk] — Drag eines **bereits konvertierten** Tracks in
+- **INST-9** [aktiv] [gtk] — Drag eines **bereits konvertierten** Tracks in
   die Konvertierungs-Playlist erzeugt einen **Hinweis mit Verweis auf das
   Bestehende**, keinen Doppel-Job (Dedup-Skip der Core-Fassade). (Beschluss 16)
 - **INST-10** [geplant] [gtk] — Promotete Fassungen tragen ein sichtbares

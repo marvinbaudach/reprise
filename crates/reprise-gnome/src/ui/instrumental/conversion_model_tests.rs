@@ -120,3 +120,107 @@ fn has_undecided_detects_a_finished_unsaved_render() {
     assert!(!has_undecided(&[job(1, JobState::Running, 500, None)]));
     assert!(!has_undecided(&[]));
 }
+
+// UX INST-3: every job row maps to exactly one visible state — queued /
+// processing / done-unsaved / saved / failed — and the five are mutually
+// distinct, so the view shows a distinct state per row.
+#[test]
+fn inst_3_each_job_row_maps_to_its_distinct_visible_state() {
+    assert_eq!(
+        row_state(&job(1, JobState::Queued, 0, None), false),
+        RowState::Queued
+    );
+    assert_eq!(
+        row_state(&job(2, JobState::Running, 300, None), false),
+        RowState::Processing { permille: 300 }
+    );
+    assert_eq!(
+        row_state(&job(3, JobState::Done, 1000, None), true),
+        RowState::DoneUnsaved { playable: true }
+    );
+    assert_eq!(
+        row_state(&job(4, JobState::Done, 1000, Some(9)), false),
+        RowState::Saved
+    );
+    assert_eq!(
+        row_state(&job(5, JobState::Failed, 250, None), false),
+        RowState::Failed
+    );
+    let states = [
+        RowState::Queued,
+        RowState::Processing { permille: 300 },
+        RowState::DoneUnsaved { playable: true },
+        RowState::Saved,
+        RowState::Failed,
+    ];
+    for (i, a) in states.iter().enumerate() {
+        for (j, b) in states.iter().enumerate() {
+            assert_eq!(
+                i == j,
+                a == b,
+                "the visible states must be mutually distinct"
+            );
+        }
+    }
+}
+
+// UX INST-7: "Clear playlist" warns exactly when an undecided (done, unsaved)
+// render exists — the predicate the confirmation dialog keys on so hours of
+// compute are never discarded unconfirmed.
+#[test]
+fn inst_7_clear_warns_exactly_when_an_undecided_render_exists() {
+    assert!(has_undecided(&[job(1, JobState::Done, 1000, None)]));
+    assert!(!has_undecided(&[job(1, JobState::Done, 1000, Some(3))]));
+    assert!(!has_undecided(&[job(1, JobState::Running, 500, None)]));
+    assert!(!has_undecided(&[job(1, JobState::Failed, 0, None)]));
+    assert!(!has_undecided(&[]));
+    // One undecided among saved/running still warns.
+    assert!(has_undecided(&[
+        job(1, JobState::Done, 1000, Some(3)),
+        job(2, JobState::Running, 500, None),
+        job(3, JobState::Done, 1000, None),
+    ]));
+}
+
+// UX INST-9: re-adding an already-converted track produces a dedup hint, not a
+// second job — the core facade deduplicates and the toast communicates the skip.
+#[test]
+fn inst_9_already_converted_track_yields_a_dedup_hint_not_a_double_job() {
+    use reprise_core::ai_jobs::EnqueueOutcome;
+    use reprise_core::ai_staging::StagingStore;
+
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    reprise_core::db::migrate(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO tracks (id, path, title, artist, album, added_at) \
+         VALUES (1, '/music/1.flac', 'Song', 'Artist', 'Album', 0)",
+        [],
+    )
+    .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let staging = StagingStore::new(dir.path().join("staging"));
+
+    let first =
+        reprise_core::ai_conversion::add_to_conversion(&conn, &staging, 1, "model@1", 0).unwrap();
+    assert!(
+        matches!(first, EnqueueOutcome::Created { .. }),
+        "the first add creates a job"
+    );
+    let second =
+        reprise_core::ai_conversion::add_to_conversion(&conn, &staging, 1, "model@1", 0).unwrap();
+    assert!(
+        matches!(second, EnqueueOutcome::Deduplicated { .. }),
+        "re-adding the same track deduplicates, it does not create a second job"
+    );
+
+    // The toast surfaces the skip as a hint (0 created, 1 already existing).
+    let hint = crate::ui::strings::create_instrumental_toast(0, 1);
+    assert!(
+        hint.contains("already exist"),
+        "the toast hints at the dedup: {hint:?}"
+    );
+    assert!(
+        !crate::ui::strings::create_instrumental_toast(1, 0).contains("already"),
+        "a pure create shows no false dedup hint"
+    );
+}
