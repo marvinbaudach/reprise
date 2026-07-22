@@ -26,7 +26,7 @@ fn migrating_a_v16_database_adds_the_listen_events_track_index() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 25);
+    assert_eq!(version, 26);
     let indexes = conn
         .prepare("PRAGMA index_list(listen_events)")
         .unwrap()
@@ -71,6 +71,9 @@ fn temporary_file_databases_migrate_from_fresh_and_v16_to_v25() {
                  DROP TABLE library_doctor_scans;
                  DROP TABLE track_audio_analysis;
                  DROP INDEX idx_listen_events_track_played;
+                 ALTER TABLE new_releases DROP COLUMN first_seen;
+                 ALTER TABLE new_releases DROP COLUMN hidden_at;
+                 ALTER TABLE new_releases DROP COLUMN announce_url;
                  PRAGMA user_version = 16;",
             )
             .unwrap();
@@ -88,7 +91,7 @@ fn temporary_file_databases_migrate_from_fresh_and_v16_to_v25() {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 25, "starting version {starting_version}");
+        assert_eq!(version, 26, "starting version {starting_version}");
         assert!(index_exists, "starting version {starting_version}");
     }
 }

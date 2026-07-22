@@ -9,20 +9,14 @@
 //! this module's private helpers (`drawing_area`, `mode_controls`, the
 //! [`FullscreenChrome`] live-update handles, …) as a descendant module. Both
 //! turn the engine's [`reprise_core::visuals::Scene`] into pixels via
-//! [`render`] — normally through a Cairo `DrawingArea`, or, when
-//! `gpu_visuals_enabled()` opts in, through `glow_area::GlowArea`, a GSK
-//! `Widget` subclass that swaps the Cairo path's fake bloom (a wide
-//! translucent under-stroke) for a real GPU-composited Gaussian blur. Both
-//! canvas kinds upcast to `gtk4::Widget` and are driven by the exact same
-//! tick loop and `queue_registered_areas` calls, so nothing else in this
-//! module or `fullscreen.rs` needs to know which one is live.
+//! [`render`], through a Cairo `DrawingArea` driven by the tick loop and
+//! `queue_registered_areas`.
 
 mod fullscreen;
-mod glow_area;
 mod render;
 mod song_visualizer_util;
 
-use song_visualizer_util::{backdrop_texture, downscale_cover_rgba, format_time, seek_fraction};
+use song_visualizer_util::{downscale_cover_rgba, format_time, seek_fraction};
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -42,11 +36,6 @@ const DRAW_HEIGHT: i32 = 220;
 /// hue/saturation sample.
 const COVER_PALETTE_EDGE: i32 = 32;
 const COVER_PALETTE_PIXELS: usize = (COVER_PALETTE_EDGE * COVER_PALETTE_EDGE) as usize;
-/// Width (px) the cover texture is rasterized down to for the fullscreen
-/// backdrop. Small enough that the `Picture`'s bilinear upscaling reads as a
-/// soft wash of the cover's dominant colors — a fast, GPU-independent
-/// "fake blur" — rather than a sharp thumbnail.
-const BACKDROP_WIDTH: i32 = 24;
 /// The fullscreen seek `Scale`'s range top; its value is always
 /// `fraction * SEEK_SCALE_MAX`.
 const SEEK_SCALE_MAX: f64 = 1000.0;
@@ -76,8 +65,7 @@ struct FullscreenChrome {
     state: gtk4::Label,
     track_pos: gtk4::Label,
     next_up: gtk4::Label,
-    cover_thumb: gtk4::Picture,
-    backdrop: gtk4::Picture,
+    cover_thumb: gtk4::Image,
     play_pause: gtk4::Button,
     time_cur: gtk4::Label,
     time_total: gtk4::Label,
@@ -137,16 +125,6 @@ impl FullscreenChrome {
                 self.cover_thumb.set_visible(false);
             }
         }
-        match texture.and_then(|texture| backdrop_texture(texture, BACKDROP_WIDTH)) {
-            Some(blurred) => {
-                self.backdrop.set_paintable(Some(&blurred));
-                self.backdrop.set_visible(true);
-            }
-            None => {
-                self.backdrop.set_paintable(gtk4::gdk::Paintable::NONE);
-                self.backdrop.set_visible(false);
-            }
-        }
     }
 
     fn apply_next_up(&self, line: Option<&str>) {
@@ -168,10 +146,9 @@ impl FullscreenChrome {
 #[derive(Clone)]
 pub(in crate::ui) struct SongVisualizer {
     root: gtk4::Box,
-    /// The inline canvas — a `DrawingArea` (Cairo) or `glow_area::GlowArea`
-    /// (GSK) depending on `gpu_visuals_enabled()`, upcast to `gtk4::Widget`
-    /// so callers don't need to know which. Used only as the tick loop's
-    /// `add_tick_callback` host; drawing itself goes through `areas`.
+    /// The inline Cairo `DrawingArea`, upcast to `gtk4::Widget`. Used only as
+    /// the tick loop's `add_tick_callback` host; drawing itself goes through
+    /// `areas`.
     area: gtk4::Widget,
     areas: Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::Widget>>>>,
     engine: Rc<RefCell<VisualEngine>>,
@@ -188,9 +165,8 @@ pub(in crate::ui) struct SongVisualizer {
     /// Latest position tick (`position_ms`, `duration_ms`), mirrored into the
     /// fullscreen seek row.
     position: Rc<Cell<(i64, i64)>>,
-    /// Latest cover texture, mirrored into the fullscreen backdrop and cover
-    /// thumbnail. Also drives the engine's secondary accent (see
-    /// `set_cover`).
+    /// Latest cover texture, mirrored into the fullscreen cover thumbnail.
+    /// Also drives the engine's secondary accent (see `set_cover`).
     cover: Rc<RefCell<Option<gtk4::gdk::Texture>>>,
     /// Pre-formatted "Up next: …" line, mirrored into the fullscreen queue
     /// strip.
@@ -263,8 +239,8 @@ impl SongVisualizer {
         }
     }
 
-    /// Mirrors the current cover into the fullscreen backdrop and cover
-    /// thumbnail AND feeds the engine's secondary accent: the texture is
+    /// Mirrors the current cover into the fullscreen cover thumbnail AND
+    /// feeds the engine's secondary accent: the texture is
     /// rasterized down to a small RGBA sample and handed to
     /// `VisualEngine::set_cover_pixels`, or cleared on `None`.
     pub(in crate::ui) fn set_cover(&self, texture: Option<gtk4::gdk::Texture>) {
@@ -412,12 +388,29 @@ impl SongVisualizer {
         let panel_active = self.panel_active.clone();
         let fullscreen_active = self.fullscreen_active.clone();
         let slot = self.tick_id.clone();
-        let id = self.area.add_tick_callback(move |_, _| {
+        // Decouple the sim's advance from the render frame rate: each engine
+        // tick is a fixed 1/60 s step, but the frame clock slows to the render
+        // rate when a big (fullscreen) canvas can't keep up — so at, say, 20
+        // fps we advance ~3 steps per frame to keep the animation at real-time
+        // speed instead of running in slow motion. Capped so a hitch never
+        // spirals into a burst of catch-up work.
+        let last_frame_us = Cell::new(0i64);
+        let id = self.area.add_tick_callback(move |_, frame_clock| {
             if (!panel_active.get() && !fullscreen_active.get()) || !motion::animations_enabled() {
                 *slot.borrow_mut() = None;
                 return gtk4::glib::ControlFlow::Break;
             }
-            let settled = engine.borrow_mut().tick();
+            let now = frame_clock.frame_time();
+            let previous = last_frame_us.replace(now);
+            let steps = if previous == 0 {
+                1
+            } else {
+                (((now - previous) as f64 / 16_667.0).round() as i32).clamp(1, 4)
+            };
+            let mut settled = true;
+            for _ in 0..steps {
+                settled = engine.borrow_mut().tick();
+            }
             queue_registered_areas(&areas);
             if settled {
                 *slot.borrow_mut() = None;
@@ -436,41 +429,21 @@ impl SongVisualizer {
     }
 }
 
-/// Env var toggling the GSK GPU-blur canvas (`glow_area::GlowArea`) on in
-/// place of the Cairo `DrawingArea` fallback. Truthy: `"1"` or `"true"`
-/// (case-insensitive); anything else, including unset, keeps the Cairo path.
-const GPU_VISUALS_ENV: &str = "REPRISE_GPU_VISUALS";
-
-/// Whether to build the GPU-blur canvas instead of the Cairo one. Read once
-/// per canvas construction (inline panel build, each fullscreen open) rather
-/// than cached, so flipping the env var and reopening the fullscreen view is
-/// enough to compare the two paths without restarting the app.
-fn gpu_visuals_enabled() -> bool {
-    std::env::var(GPU_VISUALS_ENV)
-        .is_ok_and(|value| value.eq_ignore_ascii_case("1") || value.eq_ignore_ascii_case("true"))
-}
-
-/// Builds the canvas widget shared by the inline panel and the fullscreen
-/// overlay: a GSK `glow_area::GlowArea` when `gpu_visuals_enabled()`, else
-/// the Cairo `DrawingArea` fallback (`drawing_area`). Both are upcast to
-/// `gtk4::Widget` so every other helper here (`register_area`, the tick
-/// loop's `add_tick_callback`) works identically regardless of which one a
-/// given call site got. `height_request`/`vexpand` mirror the caller's
-/// intended sizing: the inline canvas is fixed-height and non-expanding, the
-/// fullscreen canvas has no minimum and expands to fill its `Overlay`.
+/// Builds the Cairo `DrawingArea` canvas shared by the inline panel and the
+/// fullscreen overlay, upcast to `gtk4::Widget` so every other helper here
+/// (`register_area`, the tick loop's `add_tick_callback`) works uniformly.
+/// `height_request`/`vexpand` mirror the caller's intended sizing: the inline
+/// canvas is fixed-height and non-expanding, the fullscreen canvas has no
+/// minimum and expands to fill its `Overlay`.
 fn build_canvas(
     engine: &Rc<RefCell<VisualEngine>>,
     height_request: i32,
     vexpand: bool,
     css_class: &str,
 ) -> gtk4::Widget {
-    if gpu_visuals_enabled() {
-        glow_area::GlowArea::new(engine.clone(), height_request, vexpand, css_class).upcast()
-    } else {
-        let area = drawing_area(engine, height_request, css_class);
-        area.set_vexpand(vexpand);
-        area.upcast()
-    }
+    let area = drawing_area(engine, height_request, css_class);
+    area.set_vexpand(vexpand);
+    area.upcast()
 }
 
 fn drawing_area(
@@ -518,33 +491,21 @@ fn queue_registered_areas(areas: &Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::Widge
 
 /// Reads `widget`'s resolved CSS `color` (the app accent, via
 /// `@reprise_player_accent`) as an `(r, g, b)` triple the engine can use for
-/// its accent-driven fills. Generic over both canvas kinds — the Cairo
-/// `DrawingArea` and the GSK `glow_area::GlowArea` both resolve `color()`
-/// the same way since both are plain `gtk4::Widget`s with a CSS class.
+/// its accent-driven fills.
 fn accent_rgb(widget: &impl IsA<gtk4::Widget>) -> (f32, f32, f32) {
     let color = widget.color();
     (color.red(), color.green(), color.blue())
 }
 
-/// Rasterizes `texture` down to an `edge`×`edge` RGBA byte buffer for the
-/// engine's secondary-accent palette sample. Uses a `gtk4::Snapshot` →
-/// `gsk::RenderNode` → cairo surface round trip (GSK does the scaling while
-/// rasterizing) rather than `gdk_texture_download`'s full-resolution
-/// readback — cheap regardless of the source texture's size, and avoids the
-/// deprecated `gdk_pixbuf_get_from_texture`. `None` if rasterization fails
-/// (an unreadable/zero-size texture); callers fall back to clearing the
-/// engine's cover accent.
 /// The picker's user-facing label for one visual mode.
 fn mode_label(mode: VisualMode) -> &'static str {
     match mode {
         VisualMode::Grid => strings::SONG_VISUALS_MODE_GRID,
         VisualMode::Bars => strings::SONG_VISUALS_MODE_BARS,
-        VisualMode::Rings => strings::SONG_VISUALS_MODE_RINGS,
         VisualMode::Flow => strings::SONG_VISUALS_MODE_FLOW,
         VisualMode::Pulse => strings::SONG_VISUALS_MODE_PULSE,
         VisualMode::Particles => strings::SONG_VISUALS_MODE_PARTICLES,
         VisualMode::Neon => strings::SONG_VISUALS_MODE_NEON,
-        VisualMode::Tunnel => strings::SONG_VISUALS_MODE_TUNNEL,
     }
 }
 
@@ -714,9 +675,13 @@ pub(in crate::ui) fn css() -> String {
      .reprise-song-visual-chrome-hidden { opacity: 0; }\n\
      .reprise-song-visual-fullscreen-canvas {\
        color: @reprise_player_accent;\
-       background-image: radial-gradient(ellipse at center,\
-         alpha(@reprise_player_accent, 0.12) 0%,\
-         alpha(#090b0c, 0) 72%);\
+       background-image:\
+         radial-gradient(ellipse at center,\
+           alpha(#0f101c, 0) 42%,\
+           alpha(#0f101c, 0.62) 100%),\
+         radial-gradient(ellipse at center,\
+           alpha(@reprise_player_accent, 0.12) 0%,\
+           alpha(#090b0c, 0) 72%);\
      }\n\
      .reprise-fs-header-scrim {\
        background: linear-gradient(to bottom, alpha(#0b0c15, 0.55), alpha(#0b0c15, 0));\
@@ -733,14 +698,13 @@ pub(in crate::ui) fn css() -> String {
      }\n\
      .reprise-fs-title { font-size: 36px; font-weight: 600; color: #ffffff; }\n\
      .reprise-fs-meta { font-size: 16px; color: alpha(#ffffff, 0.7); }\n\
-     .reprise-fs-backdrop { opacity: 0.45; }\n\
      .reprise-fs-cover-thumb { border-radius: 14px; }\n\
      .reprise-fs-pill {\
        border-radius: 999px;\
-       background-color: alpha(#ffffff, 0.06);\
+       background-color: alpha(#0b0c15, 0.5);\
        border: 1px solid alpha(#ffffff, 0.14);\
-       color: alpha(#ffffff, 0.75);\
-       padding: 6px 14px;\
+       color: alpha(#ffffff, 0.78);\
+       padding: 8px 18px;\
      }\n\
      .reprise-fs-pill:checked {\
        border-color: alpha(@reprise_player_accent, 0.8);\
@@ -752,22 +716,22 @@ pub(in crate::ui) fn css() -> String {
      }\n\
      .reprise-song-visual-header-subtitle { font-size: 1.05rem; }\n\
      .reprise-song-visual-transport-btn {\
-       min-width: 46px; min-height: 46px;\
-       color: alpha(#ffffff, 0.82);\
-       background-color: alpha(#ffffff, 0.08);\
-       border: 1px solid alpha(#ffffff, 0.12);\
+       min-width: 44px; min-height: 44px;\
+       color: alpha(@reprise_player_accent, 0.85);\
+       background-color: transparent;\
+       border: 1px solid transparent;\
      }\n\
      .reprise-song-visual-transport-btn:hover {\
-       color: #ffffff; background-color: alpha(#ffffff, 0.16);\
+       color: #ffffff; background-color: alpha(#ffffff, 0.10);\
      }\n\
      .reprise-song-visual-transport-primary {\
-       min-width: 56px; min-height: 56px;\
-       color: #ffffff;\
-       background-color: alpha(@reprise_player_accent, 0.28);\
-       border-color: alpha(@reprise_player_accent, 0.85);\
+       min-width: 60px; min-height: 60px;\
+       color: @reprise_player_accent;\
+       background-color: transparent;\
+       border: 2px solid @reprise_player_accent;\
      }\n\
      .reprise-song-visual-transport-primary:hover {\
-       background-color: alpha(@reprise_player_accent, 0.42);\
+       background-color: alpha(@reprise_player_accent, 0.14);\
      }"
     .to_owned()
 }

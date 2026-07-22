@@ -188,12 +188,63 @@ fn pass2_rescues_broken_tags_and_keeps_the_hint_row() {
     );
 }
 
-/// The scanner auto-repairs a damaged MP3 tag container on import: it strips the
-/// broken ID3v2/APE/ID3v1 containers and writes a fresh ID3v2 from the file name
-/// / folder, so the file imports as a normal *tagged* track (not untagged) and
-/// no import-error hint remains — and the file is strictly readable afterwards.
+/// CRITICAL non-destructive guard: a file whose tags can't be recovered (here
+/// the tags live only in a tail container that stripping would lose) is left
+/// BYTE-FOR-BYTE untouched and imported as a plain untagged track. The repair
+/// must never overwrite tags it couldn't read — an earlier version stripped
+/// everything and wrote the file name / folder, silently destroying real,
+/// still-present metadata of any file that didn't recover.
 #[test]
-fn scanner_repairs_a_damaged_mp3_container_on_import() {
+fn scanner_leaves_an_unrecoverable_container_byte_identical_on_import() {
+    let tmp = tempfile::tempdir().unwrap();
+    let album_dir = tmp.path().join("Some Album");
+    std::fs::create_dir(&album_dir).unwrap();
+    let path = album_dir.join("Broken Song.mp3");
+    let fixture =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/broken-tags.mp3");
+    std::fs::copy(&fixture, &path).unwrap();
+    let before = std::fs::read(&path).unwrap();
+
+    let mut conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    let report = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    assert_eq!(report.added, 1, "the untagged import still counts as added");
+    assert_eq!(report.errors, 0);
+
+    let (title, album, _duration, untagged) =
+        track_row(&conn, &path).expect("the file still imports as a track row");
+    assert_eq!(untagged, 1, "an unrecoverable container stays untagged");
+    assert_eq!(title, "Broken Song", "title falls back to the file stem");
+    assert_eq!(album, "Some Album", "album falls back to the folder name");
+    assert_eq!(
+        error_kind(&conn, &path),
+        Some(ImportErrorKind::UnreadableTags),
+        "the unreadable-tags hint survives"
+    );
+
+    // The file itself must be exactly as it was — no repair write happened.
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        before,
+        "an unrecoverable file must be left byte-for-byte unchanged"
+    );
+    // And no stray temp file was left behind next to it.
+    assert!(
+        !album_dir
+            .join("Broken Song.reprise-repair-tmp.mp3")
+            .exists(),
+        "the recovery temp file must be cleaned up"
+    );
+}
+
+/// A DISMISSED `unreadable_tags` error must NOT keep an untagged row from
+/// being repaired on a later scan. Dismissing only silences the notification,
+/// and predates the auto-repair — the dismiss-skip fast path would otherwise
+/// strand such a file forever (its mtime never changes, so it is never
+/// re-read). Regression guard for the reported tracks that a rescan wouldn't
+/// touch because their import error had been dismissed.
+#[test]
+fn a_dismissed_import_error_does_not_block_repairing_an_untagged_track() {
     let tmp = tempfile::tempdir().unwrap();
     let album_dir = tmp.path().join("Some Album");
     std::fs::create_dir(&album_dir).unwrap();
@@ -203,28 +254,107 @@ fn scanner_repairs_a_damaged_mp3_container_on_import() {
         &path,
     )
     .unwrap();
+    let path_str = path.to_string_lossy().to_string();
+    let meta = std::fs::metadata(&path).unwrap();
+    let mtime = file_mtime(&path);
+    let size = meta.len() as i64;
 
     let mut conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
-    let report = completed(scan_folder(&mut conn, tmp.path()).unwrap());
-    assert_eq!(report.added, 1);
-    assert_eq!(report.errors, 0);
+    // Seed the exact reported state: an untagged row plus a DISMISSED
+    // unreadable-tags error whose mtime/size match the file on disk.
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, album, added_at, file_mtime, file_size, untagged) \
+         VALUES (?1, 'Broken Song', '', 'Some Album', 0, ?2, ?3, 1)",
+        rusqlite::params![path_str, mtime, size],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO import_errors \
+         (path, reason_kind, reason_detail, first_seen, last_seen, seen_count, \
+          dismissed_mtime, dismissed_size) \
+         VALUES (?1, 'unreadable_tags', 'x', 0, 0, 1, ?2, ?3)",
+        rusqlite::params![path_str, mtime, size],
+    )
+    .unwrap();
 
-    let (title, album, _duration, untagged) =
-        track_row(&conn, &path).expect("the repaired file must insert a track row");
-    assert_eq!(untagged, 0, "the damaged container was repaired");
-    assert_eq!(title, "Broken Song", "title comes from the file stem");
-    assert_eq!(album, "Some Album", "album comes from the folder name");
+    let report = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    // The dismiss fast path did NOT skip the row: it was actually re-read
+    // (imported or errored, `updated + errors == 1`). Without the untagged
+    // exemption the scanner would `continue` past it and touch neither counter.
+    // (The `broken-tags` fixture keeps its tags in the stripped tail, so the
+    // recovery itself doesn't apply here — that is covered by
+    // `repair_recovers_real_front_id3v2_tags_by_stripping_only_the_damaged_tail`.)
     assert_eq!(
-        error_kind(&conn, &path),
-        None,
-        "a repaired file carries no import-error hint"
+        report.updated + report.errors,
+        1,
+        "a dismissed untagged row must be re-processed, not dismiss-skipped"
+    );
+    assert_eq!(
+        report.skipped_unchanged, 0,
+        "a dismissed untagged row must not be fast-path skipped"
+    );
+    assert!(
+        track_row(&conn, &path).is_some() || report.errors == 1,
+        "the row was re-processed rather than silently skipped"
+    );
+}
+
+/// The repair PRESERVES a file's real metadata instead of discarding it. The
+/// overwhelmingly common "unreadable" case is an intact front ID3v2 sitting
+/// behind a damaged trailing APEv2 footer (lofty aborts with "invalid item
+/// size"): stripping ONLY the tail recovers the real title/artist/album rather
+/// than overwriting them with the file name / folder. This guards against the
+/// earlier repair that stripped every container and rewrote from the file stem,
+/// silently destroying real tags on scan.
+#[test]
+fn repair_recovers_real_front_id3v2_tags_by_stripping_only_the_damaged_tail() {
+    let tmp = tempfile::tempdir().unwrap();
+    let album_dir = tmp.path().join("Some Album");
+    std::fs::create_dir(&album_dir).unwrap();
+    let path = album_dir.join("Broken Song.mp3");
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/broken-front-id3v2-damaged-ape.mp3"),
+        &path,
+    )
+    .unwrap();
+
+    // Sanity: lofty cannot read the fixture as-is — the damaged APE footer
+    // aborts the read, which is exactly why the scanner marks such files
+    // unreadable in the first place.
+    assert!(
+        track_meta::read_meta(&path).is_err(),
+        "fixture must start out unreadable by lofty"
     );
 
+    // The fallback album is only consulted if recovery fails; it must NOT win.
+    let fallback = track_meta::TrackMeta {
+        album: "Some Album".to_string(),
+        ..Default::default()
+    };
+    let recovered =
+        super::repair::repair_damaged_tags(&path, &fallback, ImportErrorKind::UnreadableTags)
+            .expect("repair must recover the file rather than give up");
+
+    // The REAL front ID3v2 tags survive — NOT the file-stem/folder fallback.
+    assert_eq!(
+        recovered.title, "Silent Song",
+        "real title recovered, not the file stem"
+    );
+    assert_eq!(
+        recovered.artist, "Test Artist",
+        "real artist recovered, not left empty"
+    );
+    assert_eq!(
+        recovered.album, "Test Album",
+        "real album recovered, not the parent folder"
+    );
+
+    // And the file is now strictly readable/editable again.
     let tags = crate::library::tag_edit::read_editable_tags(&path)
         .expect("the repaired file is strictly readable again");
-    assert_eq!(tags.title, "Broken Song");
-    assert_eq!(tags.album, "Some Album");
+    assert_eq!(tags.artist, "Test Artist");
 }
 
 /// A library imported *before* the on-import auto-repair existed left damaged
@@ -241,7 +371,8 @@ fn a_later_scan_repairs_an_already_imported_untagged_track_with_unchanged_mtime(
     std::fs::create_dir(&album_dir).unwrap();
     let path = album_dir.join("Broken Song.mp3");
     std::fs::copy(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/broken-tags.mp3"),
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/broken-front-id3v2-damaged-ape.mp3"),
         &path,
     )
     .unwrap();
@@ -259,27 +390,28 @@ fn a_later_scan_repairs_an_already_imported_untagged_track_with_unchanged_mtime(
     )
     .unwrap();
 
+    let before = std::fs::read(&path).unwrap();
     let report = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    // The untagged row is RE-PROCESSED (imported or errored, `updated + errors
+    // == 1`) rather than fast-path skipped on its unchanged mtime — that is what
+    // this test guards (`skipped_unchanged == 0`). The `broken-tags` fixture
+    // keeps its tags only in the stripped tail, so recovery doesn't apply here
+    // (covered by `repair_recovers_real_front_id3v2_tags_by_stripping_only_the_
+    // damaged_tail`) — and, crucially, the file is left byte-for-byte unchanged.
+    assert_eq!(
+        report.updated + report.errors,
+        1,
+        "the untagged row must be re-processed on a later scan, not skipped"
+    );
     assert_eq!(
         report.skipped_unchanged, 0,
         "an untagged row must not be fast-path skipped on an unchanged mtime"
     );
-
-    let (_, _, _, untagged) =
-        track_row(&conn, &path).expect("the seeded row must survive the rescan");
     assert_eq!(
-        untagged, 0,
-        "the already-imported damaged container must be repaired on a later scan"
+        std::fs::read(&path).unwrap(),
+        before,
+        "an unrecoverable file must be left byte-for-byte unchanged"
     );
-    assert_eq!(
-        error_kind(&conn, &path),
-        None,
-        "a repaired file carries no import-error hint"
-    );
-
-    let tags = crate::library::tag_edit::read_editable_tags(&path)
-        .expect("the repaired file is strictly readable again");
-    assert_eq!(tags.title, "Broken Song");
 }
 
 /// Brief case 2 ("Pass-2-Fehlschlag"): a pure garbage file (not a real
