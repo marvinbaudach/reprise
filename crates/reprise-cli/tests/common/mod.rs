@@ -45,6 +45,18 @@ impl Harness {
             .expect("run reprise-cli")
     }
 
+    /// Like [`run`](Self::run) but with extra environment variables — used to
+    /// isolate `XDG_DATA_HOME` so the real backend's `default_model_dir` cannot
+    /// read (or find) the user's real provisioned model.
+    pub fn run_env(&self, envs: &[(&str, &str)], args: &[&str]) -> Output {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_reprise-cli"));
+        command.arg("--db").arg(&self.db).args(args);
+        for (key, value) in envs {
+            command.env(key, value);
+        }
+        command.output().expect("run reprise-cli")
+    }
+
     /// Spawns the CLI (with `--db` prepended) without waiting — for launching a
     /// long-running worker the test kills or races against.
     pub fn spawn(&self, args: &[&str]) -> std::process::Child {

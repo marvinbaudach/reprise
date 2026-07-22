@@ -49,21 +49,35 @@ fn enqueue_jobs(h: &Harness, staging: &Path, ids: &[i64]) -> Vec<i64> {
 }
 
 #[test]
-fn worker_without_fake_backend_reports_the_backend_is_not_wired() {
+fn worker_without_fake_backend_and_no_provisioned_model_is_unavailable() {
     let h = Harness::new();
     let staging = staging_dir(&h);
     enqueue_jobs(&h, &staging, &[1]);
-    // No real backend exists yet (reprise-stems is a stub): the worker must say
-    // so and change nothing, rather than silently faking a render.
-    let out = h.run(&[
-        "--staging-dir",
-        staging.to_str().unwrap(),
-        "jobs",
-        "work",
-        "--once",
-    ]);
-    assert_eq!(code(&out), 8, "no backend wired is an Unavailable exit");
-    assert!(stderr(&out).contains("reprise-stems"));
+    // Isolate XDG_DATA_HOME to an empty temp dir so the real backend's
+    // default_model_dir finds no provisioned model (and never reads the user's
+    // real one). The worker must report the model is not provisioned and change
+    // nothing, rather than downloading inline or silently faking a render.
+    let xdg = h.dir.path().join("xdg-empty");
+    let out = h.run_env(
+        &[("XDG_DATA_HOME", xdg.to_str().unwrap())],
+        &[
+            "--staging-dir",
+            staging.to_str().unwrap(),
+            "jobs",
+            "work",
+            "--once",
+        ],
+    );
+    assert_eq!(
+        code(&out),
+        8,
+        "no provisioned backend is an Unavailable exit"
+    );
+    assert!(
+        stderr(&out).contains("not provisioned"),
+        "stderr should explain the model is not provisioned: {}",
+        stderr(&out)
+    );
     assert_eq!(
         h.ai_job_status(1).as_deref(),
         Some("queued"),

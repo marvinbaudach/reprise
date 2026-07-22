@@ -55,6 +55,30 @@ impl OrtStemBackend {
         Self::from_model_file(&path, spec.model_id)
     }
 
+    /// Loads the default htdemucs backend **only if the model is already
+    /// provisioned** on disk — never downloads. `Ok(None)` means the model file
+    /// is absent, so a host can degrade gracefully with the download flow still
+    /// pending; `Err` is a genuine load failure (corrupt model, or onnxruntime
+    /// unavailable). This is the constructor the worker hosts use, so a normal
+    /// `jobs work` / app launch never blocks on a 316 MB network fetch and the
+    /// hermetic test suite never touches the network.
+    pub fn from_provisioned_default() -> Result<Option<Self>, StemError> {
+        let model_dir = provision::default_model_dir()
+            .map_err(|error| StemError::Backend(error.to_string()))?;
+        Self::from_provisioned_in(&model_dir)
+    }
+
+    /// [`from_provisioned_default`](Self::from_provisioned_default) with the
+    /// model directory injected, so the "not provisioned" path is unit-testable
+    /// without touching the real XDG data dir or the network.
+    pub fn from_provisioned_in(model_dir: &Path) -> Result<Option<Self>, StemError> {
+        let path = provision::weights_path(model_dir, &model::HTDEMUCS_FP32);
+        if !path.is_file() {
+            return Ok(None);
+        }
+        Self::from_model_file(&path, model::HTDEMUCS_FP32.model_id).map(Some)
+    }
+
     /// Loads a backend from an explicit local ONNX file with an explicit model
     /// identity — the entry point the end-to-end evidence run and any offline
     /// host use. onnxruntime is located via the load-dynamic strategy first, so
@@ -158,4 +182,19 @@ fn configure_onnxruntime() -> Result<(), StemError> {
 
 fn session_error(e: &ort::Error) -> StemError {
     StemError::Backend(format!("onnxruntime session: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_provisioned_in_is_none_when_the_model_is_absent() {
+        // Graceful "not provisioned yet": no model file in the dir yields None
+        // (download flow pending) — never a network fetch or a panic.
+        let dir = tempfile::tempdir().unwrap();
+        assert!(OrtStemBackend::from_provisioned_in(dir.path())
+            .unwrap()
+            .is_none());
+    }
 }
