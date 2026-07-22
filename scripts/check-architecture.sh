@@ -60,7 +60,11 @@ echo "== Multi-frontend core boundaries =="
 # `-e normal` scopes every probe to what actually links into the shipped
 # binary (dev- and build-dependencies are irrelevant to the boundary), and
 # `--prefix none` prints one `name vX.Y.Z (path)` line per crate so a workspace
-# edge is a simple line-anchored match.
+# edge is a simple line-anchored match. `--target all` widens every probe from
+# the host graph to every target's graph, so a Windows/Android-conditional edge
+# (e.g. a `cfg(windows)` dependency) cannot smuggle a banned family or a stray
+# workspace crate past a Linux-only run. It may list a crate once per target, so
+# the stray-edge probes pipe through `sort -u`.
 #
 # Every probe runs `cargo tree` exactly once through `run_dependency_probe`,
 # which captures the output and aborts the gate on a non-zero exit. Without
@@ -88,10 +92,11 @@ run_dependency_probe() {
 
 for surface in reprise-cli reprise-mcp; do
   surface_tree=$(run_dependency_probe "$surface default build" \
-    -p "$surface" -e normal --prefix none) || exit 1
+    -p "$surface" -e normal --prefix none --target all) || exit 1
   stray_workspace_edge=$(printf '%s\n' "$surface_tree" \
     | rg '^reprise-[a-z-]+ ' \
-    | rg -v "^(reprise-core|$surface) " || true)
+    | rg -v "^(reprise-core|$surface) " \
+    | sort -u || true)
   if [[ -n "$stray_workspace_edge" ]]; then
     echo "$surface default build may depend on reprise-core only; found:" >&2
     echo "$stray_workspace_edge" >&2
@@ -101,7 +106,7 @@ done
 
 for surface in reprise-cli reprise-mcp reprise-stems; do
   surface_tree=$(run_dependency_probe "$surface default build" \
-    -p "$surface" -e normal) || exit 1
+    -p "$surface" -e normal --target all) || exit 1
   if printf '%s\n' "$surface_tree" | rg --quiet "$banned_dependency_families"; then
     echo "$surface default build must not depend on GTK, libadwaita, GLib, GStreamer, or zbus" >&2
     exit 1
@@ -112,7 +117,7 @@ done
 # nor the MCP server may pull it in under ANY feature set.
 for stems_non_host in reprise-core reprise-mcp; do
   stems_host_tree=$(run_dependency_probe "$stems_non_host all features" \
-    -p "$stems_non_host" --all-features -e normal --prefix none) || exit 1
+    -p "$stems_non_host" --all-features -e normal --prefix none --target all) || exit 1
   if printf '%s\n' "$stems_host_tree" | rg --quiet '^reprise-stems '; then
     echo "$stems_non_host must never depend on reprise-stems (binary-host-only, removable backend)" >&2
     exit 1
@@ -121,10 +126,11 @@ done
 
 # reprise-stems itself links only the engine.
 stems_tree=$(run_dependency_probe "reprise-stems all features" \
-  -p reprise-stems --all-features -e normal --prefix none) || exit 1
+  -p reprise-stems --all-features -e normal --prefix none --target all) || exit 1
 stray_stems_edge=$(printf '%s\n' "$stems_tree" \
   | rg '^reprise-[a-z-]+ ' \
-  | rg -v '^(reprise-core|reprise-stems) ' || true)
+  | rg -v '^(reprise-core|reprise-stems) ' \
+  | sort -u || true)
 if [[ -n "$stray_stems_edge" ]]; then
   echo "reprise-stems may depend on reprise-core only; found:" >&2
   echo "$stray_stems_edge" >&2
