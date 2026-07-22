@@ -347,7 +347,11 @@ impl SpectrumAnalyzer {
             let windowed =
                 ((db - DISPLAY_DB_MIN) / (DISPLAY_DB_MAX - DISPLAY_DB_MIN)).clamp(0.0, 1.0);
             let shaped = windowed.powf(DISPLAY_GAMMA);
-            bands[band] = if shaped < DISPLAY_NOISE_GATE { 0.0 } else { shaped };
+            bands[band] = if shaped < DISPLAY_NOISE_GATE {
+                0.0
+            } else {
+                shaped
+            };
         }
         SpectrumFrame {
             bands,

@@ -91,3 +91,77 @@ pub(crate) fn scene(ctx: &ModeCtx) -> Vec<Shape> {
     }
     shapes
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::visuals::engine::{lively_engine, test_ctx};
+    use crate::visuals::scene::Scene;
+
+    const WIDTH: f32 = 548.0;
+    const HEIGHT: f32 = 300.0;
+
+    /// A lively engine ticked past initial frames so the bars sit at full range
+    /// and every band's peak-hold is seeded.
+    fn active_engine() -> crate::visuals::engine::VisualEngine {
+        let mut engine = lively_engine();
+        for _ in 0..30 {
+            engine.tick();
+        }
+        engine
+    }
+
+    #[test]
+    fn scene_is_nonempty_and_sane() {
+        let engine = active_engine();
+        let ctx = test_ctx(&engine, WIDTH, HEIGHT);
+        let shapes = scene(&ctx);
+        assert!(!shapes.is_empty(), "scene must not be empty");
+        assert!(
+            Scene {
+                shapes: shapes.clone()
+            }
+            .is_finite_and_sane(WIDTH, HEIGHT),
+            "all shapes must be finite and within bounds"
+        );
+    }
+
+    #[test]
+    fn draws_one_vertical_bar_per_display_band() {
+        let engine = active_engine();
+        let ctx = test_ctx(&engine, WIDTH, HEIGHT);
+        let shapes = scene(&ctx);
+        // Bars are the vertical 2-point polylines (both endpoints share x).
+        let bars = shapes
+            .iter()
+            .filter(|s| {
+                matches!(&s.geom, Geom::Polyline { points, .. }
+                    if points.len() == 2 && (points[0].0 - points[1].0).abs() < 1e-6)
+            })
+            .count();
+        assert_eq!(
+            bars, SPECTRUM_BAND_COUNT,
+            "expected one vertical bar per display band"
+        );
+    }
+
+    #[test]
+    fn peak_hold_caps_float_above_the_bars() {
+        // The lively fixture seeds every band's peak-hold high, so the bright
+        // horizontal cap markers must be drawn.
+        let engine = active_engine();
+        let ctx = test_ctx(&engine, WIDTH, HEIGHT);
+        let shapes = scene(&ctx);
+        let caps = shapes
+            .iter()
+            .filter(|s| {
+                let horizontal = matches!(&s.geom, Geom::Polyline { points, .. }
+                    if points.len() == 2 && (points[0].1 - points[1].1).abs() < 1e-6);
+                let bright = matches!(&s.fill, Fill::Solid(Rgba { r, g, b, .. })
+                    if (*r - 0.90).abs() < 1e-6 && (*g - 0.93).abs() < 1e-6 && (*b - 0.97).abs() < 1e-6);
+                horizontal && bright
+            })
+            .count();
+        assert!(caps > 0, "expected peak-hold cap markers, found {caps}");
+    }
+}
