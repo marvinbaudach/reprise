@@ -59,8 +59,8 @@ const FALLBACK_ACCENT2_HUE_SHIFT: f32 = 42.0;
 /// Which of the 8 visual treatments the engine currently renders.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum VisualMode {
-    Grid,
     #[default]
+    Grid,
     Bars,
     Flow,
     Pulse,
@@ -486,7 +486,8 @@ mod tests {
 
     #[test]
     fn engine_reacts_to_a_slam_with_full_bars_and_kick() {
-        let engine = lively_engine();
+        let mut engine = lively_engine();
+        engine.set_mode(VisualMode::Bars);
         let scene = engine.scene(548.0, 300.0);
         // Bars mode: with AGC + snap attack, a slam reaches large bar lengths.
         let max_len = scene
