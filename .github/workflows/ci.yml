@@ -93,7 +93,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends clang llvm lld
-          cargo install --locked cargo-xwin
+          cargo install --locked --version 0.23.0 cargo-xwin
 
       - name: cargo check reprise-core for x86_64-pc-windows-msvc
         run: cargo xwin check --locked -p reprise-core --target x86_64-pc-windows-msvc
