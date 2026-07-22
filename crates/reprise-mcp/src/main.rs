@@ -14,6 +14,7 @@ mod dto;
 mod error;
 mod server;
 mod startup;
+mod stdin_cap;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -71,7 +72,15 @@ fn main() -> ExitCode {
 
 async fn serve(db_path: PathBuf, write_granted_at_startup: bool) -> ExitCode {
     let handler = server::RepriseServer::new(db_path, write_granted_at_startup);
-    let service = match handler.serve(rmcp::transport::stdio()).await {
+    // Cap stdin per line so a hostile or newline-less client cannot OOM the
+    // process through rmcp's unbounded `read_until` (see `stdin_cap`). `serve`
+    // accepts an `(AsyncRead, AsyncWrite)` pair as its transport, so we swap the
+    // default `rmcp::transport::stdio()` reader for the capped one.
+    let transport = (
+        stdin_cap::LineCappedReader::new(tokio::io::stdin(), stdin_cap::MAX_LINE_BYTES),
+        tokio::io::stdout(),
+    );
+    let service = match handler.serve(transport).await {
         Ok(service) => service,
         Err(error) => {
             tracing::error!(error = ?error, "failed to start MCP server");

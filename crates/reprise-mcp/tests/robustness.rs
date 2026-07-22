@@ -4,9 +4,11 @@
 
 mod common;
 
+use std::io::Write;
 use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
-use common::{set_bool_setting, tool_error_text, McpClient, SeedTrack};
+use common::{set_bool_setting, structured_ok, tool_error_text, McpClient, SeedTrack};
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
@@ -164,6 +166,79 @@ fn schema_newer_than_supported_is_refused_at_startup() {
     assert!(
         stderr.contains("newer"),
         "stderr should explain the refusal: {stderr}"
+    );
+}
+
+#[test]
+fn a_large_request_under_the_line_cap_is_served() {
+    let dir = TempDir::new().unwrap();
+    let (path, _ids) = seeded_db(&dir);
+    set_bool_setting(&path, CAP_PLAYLIST_CREATE, true);
+    let mut client = McpClient::start(&path);
+
+    // A ~3 MiB request line — far larger than any real message, but under the
+    // 4 MiB per-line cap — must still be read and answered, proving the guard
+    // does not clip a legitimately large (if unusual) frame. A playlist name is
+    // used rather than a search query so no SQLite pattern-length limit is hit.
+    let big_name = "n".repeat(3 * 1024 * 1024);
+    let response = client.call_tool(
+        "music_create_playlist",
+        json!({ "name": big_name, "track_ids": [] }),
+    );
+    let structured = structured_ok(&response);
+    assert_eq!(
+        structured.get("track_count").and_then(Value::as_u64),
+        Some(0),
+        "the large-but-valid request is served, not clipped or rejected"
+    );
+}
+
+#[test]
+fn oversized_single_line_terminates_the_server_without_unbounded_growth() {
+    let dir = TempDir::new().unwrap();
+    let (path, _ids) = seeded_db(&dir);
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_reprise-mcp"))
+        .arg("--db")
+        .arg(&path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn reprise-mcp");
+
+    // Feed a single line far larger than the 4 MiB cap with no newline until the
+    // very end. The capped reader must yield a read error so the server shuts
+    // down instead of buffering the whole thing. The write happens on its own
+    // thread and tolerates a broken pipe: the server closes its read end the
+    // moment the cap trips, well before all 6 MiB are drained.
+    let mut stdin = child.stdin.take().expect("child stdin");
+    let writer = std::thread::spawn(move || {
+        let giant = vec![b'x'; 6 * 1024 * 1024];
+        let _ = stdin.write_all(&giant);
+        let _ = stdin.write_all(b"\n");
+        // Drop stdin -> EOF, regardless of how far the write got.
+    });
+
+    // The process must exit promptly (bounded memory), not hang or grow forever.
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let status = loop {
+        if let Some(status) = child.try_wait().expect("try_wait") {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = writer.join();
+            panic!("server did not exit after an oversized line — it likely buffered unboundedly");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    let _ = writer.join();
+    // A real exit code (not a signal) shows a graceful shutdown on the read
+    // error, not an OOM kill (which would surface as a signal, code() == None).
+    assert!(
+        status.code().is_some(),
+        "server should exit with a code (graceful), not be signal-killed: {status:?}"
     );
 }
 
