@@ -47,6 +47,24 @@ the `rmcp` license and notice in `reprise-mcp`'s acknowledgements. The SDK is
 pinned exactly (`=2.2.0`) and guarded by JSON-RPC fixtures, so a version bump is
 a deliberate, reviewed commit that re-checks this note.
 
+## Third-party dependency note — symphonia (MPL-2.0)
+`reprise-stems`, behind its `ort` feature, decodes arbitrary library formats
+with the pure-Rust `symphonia` codecs, which are **MPL-2.0**. MPL-2.0 is a
+**weak, file-level copyleft**: the copyleft attaches only to the MPL-covered
+source files themselves, so merely depending on `symphonia` — linking it,
+unmodified, into a larger work — places **no copyleft obligation on our own MIT
+or GPL code**. It permits redistribution and commercial use, is FSF-listed
+**GPL-compatible**, and links freely into a larger work, so it satisfies the
+audio-analysis/stem-separation gate below for both the GPL Linux client and the
+future proprietary frontends. The only obligation is the ordinary one: if we
+ever modify `symphonia`'s own files, those modified files stay MPL-2.0 and their
+source must be made available — which the first-use, unmodified dependency does
+not trigger. Keep the `symphonia` license notice in `reprise-stems`'
+acknowledgements. The remaining `ort`-feature codecs and runtime plumbing are
+permissive (`flacenc` Apache-2.0; `rubato`, `ndarray`, `ort` itself MIT or
+Apache-2.0), so they raise no additional copyleft; the `ort`/htdemucs runtime and
+weights are cleared separately in the stem-separation section below.
+
 ## Ownership / contributions
 Marvin Baudach is the sole copyright holder and may relicense his own code. **Before accepting
 external contributions, add a CLA or DCO** so the relicensing option (and the proprietary ports)
