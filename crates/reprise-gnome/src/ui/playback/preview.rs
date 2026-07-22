@@ -57,6 +57,23 @@ impl PlayerController {
         self.preview_path.borrow().is_some()
     }
 
+    /// The staging path of the render currently previewing, if any. Lets the
+    /// conversion wiring correlate a discard against the live preview (FIX-6).
+    pub(in crate::ui) fn previewing_path(&self) -> Option<String> {
+        self.preview_path.borrow().clone()
+    }
+
+    /// Stops the active preview, if one is playing, WITHOUT advancing or
+    /// destroying the queue (same minimal semantics as a natural preview end).
+    /// Idempotent: a no-op when nothing is previewing. Called when the render
+    /// being previewed is discarded out from under it (FIX-6), so the pipeline
+    /// never keeps playing audio from a file that is about to be deleted.
+    pub(in crate::ui) fn stop_preview(&self) {
+        if self.is_previewing() {
+            self.end_preview();
+        }
+    }
+
     /// Plays a staging render as a one-off PREVIEW, outside the queue (INST-4b),
     /// through the controller's single `Player::play` seam rather than a raw
     /// backend call. Ends and credits any prior listening session first, then
