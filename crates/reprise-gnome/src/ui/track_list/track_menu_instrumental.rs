@@ -69,7 +69,13 @@ fn handle(shared: &Rc<Shared>) {
     let now = crate::ui::instrumental::now_unix();
     let outcome = {
         let conn = shared.conn.borrow();
-        reprise_core::ai_conversion::add_batch_to_conversion(&conn, &staging, &ids, &model_id, now)
+        // `auto_promote = false`: the context-menu/drop path stages every render
+        // for a manual save decision and never auto-promotes (decision 15; see
+        // `ai_jobs::enqueue_instrumental`). Only the MCP/CLI batch path saves by
+        // default.
+        reprise_core::ai_conversion::add_batch_to_conversion(
+            &conn, &staging, &ids, &model_id, false, now,
+        )
     };
     match outcome {
         Ok(batch) => {
