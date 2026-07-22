@@ -11,6 +11,7 @@ use rusqlite::Connection;
 
 use super::browse_bar::BrowseBar;
 
+#[allow(clippy::too_many_arguments)]
 pub(in crate::ui) fn update(
     bar: &Rc<BrowseBar>,
     conn: &Rc<RefCell<Connection>>,
@@ -18,6 +19,7 @@ pub(in crate::ui) fn update(
     count: usize,
     search: &str,
     browse: &BrowseFilter,
+    exclude_ai: bool,
     queue_ids: &[i64],
 ) {
     bar.set_source_context(source);
@@ -26,7 +28,7 @@ pub(in crate::ui) fn update(
         bar.hide_result_count();
         return;
     }
-    let restricted = super::filter_restriction::is_restricted(search, browse);
+    let restricted = super::filter_restriction::is_restricted(search, browse, exclude_ai);
     let total = {
         let conn = conn.borrow();
         source_total(&conn, source, restricted, count, queue_ids)

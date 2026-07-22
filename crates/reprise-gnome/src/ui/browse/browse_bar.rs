@@ -19,6 +19,8 @@ use crate::ui::browse_filter_strings as filter_strings;
 use crate::ui::track_list::Shared;
 
 const SMOKE_ENV: &str = "REPRISE_SMOKE_BROWSE";
+/// FIL-7: the sticky settings key for the AI-exclude filter.
+const EXCLUDE_AI_KEY: &str = "filter.exclude_ai";
 const CHIP_CSS_CLASS: &str = "reprise-filter-chip";
 const POPOVER_CSS_CLASS: &str = "reprise-filter-popover";
 type OnChanged = Rc<dyn Fn(BrowseFilter)>;
@@ -198,6 +200,12 @@ pub struct BrowseBar {
     chooser_values: RefCell<Vec<BrowseValue>>,
     pub(super) visible_values: RefCell<Vec<String>>,
     filter: RefCell<BrowseFilter>,
+    /// FIL-7: sticky opt-in "Hide AI music" state (Library-only, gated on the
+    /// experimental switch).
+    exclude_ai: Cell<bool>,
+    /// The facet-chooser row index of the "Hide AI music" entry, when present —
+    /// so its activation is distinguished from a real facet.
+    chooser_ai_row_index: Cell<Option<usize>>,
     result_count: Cell<Option<(usize, usize)>>,
     conn: Rc<RefCell<Connection>>,
     on_changed: RefCell<Option<OnChanged>>,
@@ -267,6 +275,9 @@ impl BrowseBar {
         root.append(&result_label);
         root.append(&clear_all);
 
+        let initial_exclude_ai =
+            reprise_core::library::settings::get_bool(&conn.borrow(), EXCLUDE_AI_KEY, false)
+                .unwrap_or(false);
         let bar = Rc::new(Self {
             root,
             search: RefCell::new(String::new()),
@@ -288,6 +299,8 @@ impl BrowseBar {
             chooser_values: RefCell::new(Vec::new()),
             visible_values: RefCell::new(Vec::new()),
             filter: RefCell::new(BrowseFilter::default()),
+            exclude_ai: Cell::new(initial_exclude_ai),
+            chooser_ai_row_index: Cell::new(None),
             result_count: Cell::new(None),
             conn,
             on_changed: RefCell::new(None),
@@ -318,6 +331,52 @@ impl BrowseBar {
 
     pub fn filter(&self) -> BrowseFilter {
         self.filter.borrow().clone()
+    }
+
+    /// FIL-7: the sticky "Hide AI music" state. `run_query` re-reads this each
+    /// reload (and gates it on Library + the experimental switch itself).
+    pub(in crate::ui) fn exclude_ai(&self) -> bool {
+        self.exclude_ai.get()
+    }
+
+    /// Clears the AI-exclude state and persists it **without** triggering its
+    /// own reload — for "Clear all" (FIL-2), whose caller reloads once after
+    /// clearing search + facets + this together.
+    pub(in crate::ui) fn clear_exclude_ai(&self) {
+        self.exclude_ai.set(false);
+        if let Err(error) =
+            reprise_core::library::settings::set_bool(&self.conn.borrow(), EXCLUDE_AI_KEY, false)
+        {
+            tracing::warn!(%error, "could not clear the AI-exclude filter state");
+        }
+    }
+
+    /// Whether the "Hide AI music" filter is offered here: Library-only and
+    /// gated on the experimental switch (INST-11).
+    fn ai_filter_available(&self) -> bool {
+        self.is_library.get() && crate::ui::instrumental::experimental_enabled(&self.conn.borrow())
+    }
+
+    /// Toggles the sticky AI-exclude filter and reloads (via the browse-changed
+    /// callback, which `run_query` follows to re-read `exclude_ai`). No-op when
+    /// unchanged.
+    pub(in crate::ui) fn set_exclude_ai(self: &Rc<Self>, value: bool) {
+        if self.exclude_ai.get() == value {
+            return;
+        }
+        self.exclude_ai.set(value);
+        if let Err(error) =
+            reprise_core::library::settings::set_bool(&self.conn.borrow(), EXCLUDE_AI_KEY, value)
+        {
+            tracing::warn!(%error, "could not persist the AI-exclude filter state");
+        }
+        self.add_filter.popdown();
+        self.refresh();
+        self.sync_visibility();
+        let callback = self.on_changed.borrow().clone();
+        if let Some(callback) = callback {
+            callback(self.filter());
+        }
     }
 
     /// The browse filter as the reload path applies it: facets only act in
@@ -370,7 +429,8 @@ impl BrowseBar {
     fn sync_visibility(&self) {
         let search = self.search.borrow().clone();
         let filter = self.effective_filter();
-        let restricted = super::filter_restriction::is_restricted(&search, &filter);
+        let exclude_ai = self.exclude_ai.get() && self.ai_filter_available();
+        let restricted = super::filter_restriction::is_restricted(&search, &filter, exclude_ai);
         let visible = super::filter_restriction::row_visible(
             self.track_source.get(),
             restricted,
@@ -483,17 +543,41 @@ impl BrowseBar {
             });
             append_chip(&self.chips, &button);
         }
+        // FIL-7: the active "Hide AI music" filter shows as its own chip whose ×
+        // turns it off (FIL-1a).
+        if self.exclude_ai.get() && self.ai_filter_available() {
+            let button = gtk4::Button::with_label(&format!(
+                "{}  ×",
+                crate::ui::strings::text(crate::ui::strings::FILTER_HIDE_AI)
+            ));
+            button.add_css_class("flat");
+            button.add_css_class(CHIP_CSS_CLASS);
+            button.update_property(&[gtk4::accessible::Property::Label(
+                &crate::ui::strings::remove_hide_ai_filter(),
+            )]);
+            let weak = Rc::downgrade(self);
+            button.connect_clicked(move |_| {
+                if let Some(bar) = weak.upgrade() {
+                    bar.set_exclude_ai(false);
+                }
+            });
+            append_chip(&self.chips, &button);
+        }
         if self.is_library.get() {
             append_chip(&self.chips, &self.add_filter);
         }
+        let ai_addable = self.ai_filter_available() && !self.exclude_ai.get();
         self.add_filter
-            .set_sensitive(!available_facets(filter).is_empty());
+            .set_sensitive(!available_facets(filter).is_empty() || ai_addable);
     }
 
     pub(super) fn rebuild_facet_page(&self, filter: &BrowseFilter) {
         self.facet_list.remove_all();
         let facets = available_facets(filter);
-        if facets.is_empty() {
+        // FIL-7: "Hide AI music" is an addable boolean filter when the switch is
+        // on and it is not already active.
+        let ai_addable = self.ai_filter_available() && !self.exclude_ai.get();
+        if facets.is_empty() && !ai_addable {
             self.facet_list.append(&chooser_row(
                 &filter_strings::text(filter_strings::NO_FILTERS_AVAILABLE),
                 None,
@@ -504,8 +588,23 @@ impl BrowseBar {
                     .append(&chooser_row(&facet_label(*facet), None));
             }
         }
+        let facet_count = facets.len();
         *self.chooser_facets.borrow_mut() = facets;
+        if ai_addable {
+            self.facet_list.append(&chooser_row(
+                &crate::ui::strings::text(crate::ui::strings::FILTER_HIDE_AI),
+                None,
+            ));
+            self.chooser_ai_row_index.set(Some(facet_count));
+        } else {
+            self.chooser_ai_row_index.set(None);
+        }
         self.chooser_stack.set_visible_child_name(FACET_PAGE);
+    }
+
+    /// The facet-chooser row index of the "Hide AI music" entry, if present.
+    pub(super) fn chooser_ai_row_index(&self) -> Option<usize> {
+        self.chooser_ai_row_index.get()
     }
 
     pub(super) fn show_values(&self, facet: BrowseFacet) {

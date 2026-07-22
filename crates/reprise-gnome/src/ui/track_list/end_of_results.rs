@@ -43,7 +43,13 @@ fn recompute(
         reprise_core::queries::BrowseFilter::default()
     };
     let search = shared.filter.borrow().clone();
-    let restricted = crate::ui::browse::filter_restriction::is_restricted(&search, &browse);
+    // FIL-7: the AI-exclude filter also restricts; the `hidden == 0` guard below
+    // handles the experimental-off case (no rows are actually hidden then).
+    let restricted = crate::ui::browse::filter_restriction::is_restricted(
+        &search,
+        &browse,
+        shared.browse_bar.exclude_ai(),
+    );
     let counts = shared.browse_bar.result_count();
     let filtered = shared.model.n_items() as usize;
     let Some((_, total)) = counts.filter(|_| restricted && filtered >= 1) else {

@@ -2,6 +2,8 @@
 //! Section AB). This file grows as each surface (context menu, AI badge,
 //! preferences) lands; today it carries the conversion/staging view.
 
+use super::text;
+
 // Conversion/staging view (INST-2..8).
 pub const CONVERSION_TITLE: &str = N_!("Instrumental conversions");
 pub const CONVERSION_EMPTY: &str = N_!("No conversions yet");
@@ -20,6 +22,14 @@ pub const STATE_FAILED: &str = N_!("Failed");
 /// The conversion header's aggregate figure, e.g. "3 of 8 · 38%" (INST-2).
 pub fn conversion_aggregate(done: usize, total: usize, percent: u16) -> String {
     format!("{done} of {total} · {percent}%")
+}
+
+// "Hide AI music" library filter (FIL-7).
+pub const FILTER_HIDE_AI: &str = N_!("Hide AI music");
+
+/// The accessible label for the AI-filter chip's remove (×) affordance.
+pub fn remove_hide_ai_filter() -> String {
+    format!("Remove filter: {}", text(FILTER_HIDE_AI))
 }
 
 // Experimental preferences page (INST-11/INST-12).
