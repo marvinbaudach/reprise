@@ -552,6 +552,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         watcher_state,
     );
     start_external_changes_refresh(db_path, track_list, sidebar);
+    start_instrumental_worker(conn, db_path, window);
     super::mounts::install(&super::mounts::MountWiring {
         conn,
         db_path,
@@ -667,6 +668,38 @@ fn start_external_changes_refresh(
             }
         }),
     );
+}
+
+/// Starts the app-hosted instrumental worker (plan §2.4/2) when the
+/// "Experimental features" switch is on (INST-11). The switch is read at launch;
+/// toggling it mid-session takes effect on the next start — an accepted
+/// experimental rough edge. The close-request handler owns the sole handle, so
+/// the worker thread lives exactly as long as the window and is joined on close
+/// (its `Drop` is the belt-and-suspenders backstop).
+///
+/// TODO(P3b): the real reprise-stems backend and the by-id source-path resolver
+/// replace the Fake / `None` placeholders behind this same gate; the worker host
+/// is generic over the `StemSeparationBackend` trait, so only the two
+/// constructor arguments change.
+fn start_instrumental_worker(
+    conn: &Rc<RefCell<Connection>>,
+    db_path: &Path,
+    window: &adw::ApplicationWindow,
+) {
+    if !crate::ui::instrumental::experimental_enabled(&conn.borrow()) {
+        return;
+    }
+    let worker = crate::ui::instrumental::worker_host::InstrumentalWorker::new(
+        db_path.to_path_buf(),
+        crate::ui::instrumental::app_backend(),
+        reprise_core::ai_staging::StagingStore::with_default_dir(),
+        crate::ui::instrumental::db_source_resolver(),
+        std::process::id() as i64,
+    );
+    window.connect_close_request(move |_| {
+        worker.shutdown();
+        glib::Propagation::Proceed
+    });
 }
 
 fn arm_smoke_quit(window: &adw::ApplicationWindow) {
