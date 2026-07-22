@@ -28,9 +28,12 @@ use crate::ui::strings;
 use crate::ui::track_list::TrackList;
 
 /// The `content_stack` page name the conversion view is added under. The
-/// sidebar's `ViewSource::Conversions` row (INST-13, added under the same
-/// experimental gate) selects this page; the page is added here so the view is
-/// live and progress-refreshed. Must match `library_shell`'s Conversions branch.
+/// sidebar's `ViewSource::Conversions` row (INST-13) selects this page. The page
+/// is installed under the **same** experimental gate as the row — either up
+/// front by [`install`] (switch on at construction) or on demand by
+/// [`ensure_page_installed`] the moment the row is selected after a live
+/// toggle-on — so the row can never select a missing page. Must match
+/// `library_shell`'s Conversions branch.
 const CONVERSION_PAGE: &str = "conversions";
 
 const CLEAR_RESPONSE_DISCARD: &str = "discard-all";
@@ -49,8 +52,16 @@ pub(in crate::ui) struct ConversionWiring<'a> {
     pub player: &'a Option<Rc<PlayerController>>,
 }
 
-/// Starts the worker host + conversion view when the experimental switch is on.
+/// Starts the worker host + conversion view when the experimental switch is on,
+/// and always registers the on-demand page installer so a later toggle-on stays
+/// reachable (INST-13).
 pub(in crate::ui) fn install(deps: &ConversionWiring<'_>) {
+    // Register the router's page-ensure hook first, unconditionally: the switch
+    // may start off and be toggled on mid-session, at which point the sidebar
+    // row appears on the next rebuild and its selection must find a real page
+    // (INST-13). The hook installs it on demand under the same experimental gate.
+    register_ensure_hook(deps);
+
     if !super::experimental_enabled(&deps.conn.borrow()) {
         return;
     }
@@ -73,10 +84,12 @@ pub(in crate::ui) fn install(deps: &ConversionWiring<'_>) {
         Rc::new(move || worker.wake())
     });
 
-    let view = ConversionView::new(deps.conn.clone(), staging.clone());
-    deps.content_stack
-        .add_named(view.widget(), Some(CONVERSION_PAGE));
-
+    // Switch on at construction: install the page + callbacks now. Shares the
+    // idempotent installer with the on-demand hook, so the two paths can never
+    // add a duplicate page.
+    let Some(view) = install_conversions_page(deps.content_stack, deps.conn, &staging) else {
+        return;
+    };
     wire_callbacks(&view, &staging, deps);
 
     // Progress is not a change_log event (plan §2.2), so the worker's coalesced
@@ -113,6 +126,101 @@ pub(in crate::ui) fn install(deps: &ConversionWiring<'_>) {
         worker.shutdown();
         glib::Propagation::Proceed
     });
+}
+
+thread_local! {
+    /// INST-13 router seam: the idempotent hook that installs the conversions
+    /// content page on demand. Registered once by [`install`] — even when the
+    /// experimental switch starts off — so a later toggle-on + row selection
+    /// routes through [`ensure_page_installed`] and lands on a real page instead
+    /// of a missing one. The hook owns the lazily-created view, keeping it alive
+    /// for the window's life.
+    static ENSURE_PAGE_HOOK: RefCell<Option<Rc<dyn Fn()>>> = const { RefCell::new(None) };
+}
+
+/// Ensures the conversions content page exists before the sidebar router selects
+/// it (INST-13). Called by `library_shell`'s `ViewSource::Conversions` branch
+/// ahead of `set_visible_child_name`, so the reviewer's live sequence — switch
+/// on → sidebar rebuild shows the row → click — installs the page under the same
+/// experimental gate and never selects a missing one. Idempotent and gated; a
+/// no-op when the switch is off, the page already exists, or the window is gone.
+pub(in crate::ui) fn ensure_page_installed() {
+    let hook = ENSURE_PAGE_HOOK.with(|hook| hook.borrow().clone());
+    if let Some(hook) = hook {
+        hook();
+    }
+}
+
+/// Registers the [`ensure_page_installed`] hook with the deps it needs to build
+/// the page and wire its callbacks on demand. Captures weak handles (never
+/// keeping the window or player alive past their natural life; the one strong
+/// capture is the shared DB connection) plus a slot that keeps a lazily-created
+/// view alive.
+fn register_ensure_hook(deps: &ConversionWiring<'_>) {
+    let conn = deps.conn.clone();
+    let db_path = deps.db_path.to_path_buf();
+    let window = deps.window.downgrade();
+    let content_stack = deps.content_stack.downgrade();
+    let toast_overlay = deps.toast_overlay.downgrade();
+    let track_list = Rc::downgrade(deps.track_list);
+    let player = deps.player.as_ref().map(Rc::downgrade);
+    let kept_view: RefCell<Option<Rc<ConversionView>>> = RefCell::new(None);
+    let hook = Rc::new(move || {
+        let (Some(window), Some(content_stack), Some(toast_overlay), Some(track_list)) = (
+            window.upgrade(),
+            content_stack.upgrade(),
+            toast_overlay.upgrade(),
+            track_list.upgrade(),
+        ) else {
+            return; // the window is torn down: nothing to install into.
+        };
+        let staging = StagingStore::with_default_dir();
+        if let Err(error) = staging.ensure_dir() {
+            tracing::warn!(%error, "instrumental: could not create staging dir on demand");
+        }
+        let Some(view) = install_conversions_page(&content_stack, &conn, &staging) else {
+            return; // switch off, or the page is already installed.
+        };
+        // The on-demand page has no worker/progress future (the worker reads the
+        // switch at launch — an accepted rough edge), but its Save/Discard/Play/
+        // Clear callbacks act directly on the DB + staging, so persisted renders
+        // stay actionable. Rebuild the borrowable deps from the upgraded handles.
+        let player = player.as_ref().and_then(std::rc::Weak::upgrade);
+        let deps = ConversionWiring {
+            conn: &conn,
+            db_path: &db_path,
+            window: &window,
+            content_stack: &content_stack,
+            toast_overlay: &toast_overlay,
+            track_list: &track_list,
+            player: &player,
+        };
+        wire_callbacks(&view, &staging, &deps);
+        *kept_view.borrow_mut() = Some(view);
+    });
+    ENSURE_PAGE_HOOK.with(|cell| *cell.borrow_mut() = Some(hook));
+}
+
+/// Idempotently installs the conversions content page (INST-13), returning the
+/// view when it created one. Adds the [`ConversionView`] page under
+/// [`CONVERSION_PAGE`] only while the experimental switch is on — the **same**
+/// gate that reveals the sidebar row — and only when the page is absent, so
+/// neither the up-front nor the on-demand path can add a duplicate. `None` (a
+/// no-op) when the switch is off or the page already exists.
+fn install_conversions_page(
+    content_stack: &gtk4::Stack,
+    conn: &Rc<RefCell<Connection>>,
+    staging: &StagingStore,
+) -> Option<Rc<ConversionView>> {
+    if !super::experimental_enabled(&conn.borrow()) {
+        return None;
+    }
+    if content_stack.child_by_name(CONVERSION_PAGE).is_some() {
+        return None;
+    }
+    let view = ConversionView::new(conn.clone(), staging.clone());
+    content_stack.add_named(view.widget(), Some(CONVERSION_PAGE));
+    Some(view)
 }
 
 fn wire_callbacks(view: &Rc<ConversionView>, staging: &StagingStore, deps: &ConversionWiring<'_>) {
@@ -434,7 +542,9 @@ fn toast(overlay: &glib::WeakRef<adw::ToastOverlay>, message: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_previewing_render, play_target, PlayTarget};
+    use super::{
+        install_conversions_page, is_previewing_render, play_target, PlayTarget, CONVERSION_PAGE,
+    };
     use reprise_core::ai_jobs;
     use reprise_core::ai_staging::StagingStore;
     use rusqlite::Connection;
@@ -550,6 +660,62 @@ mod tests {
         assert!(
             !is_previewing_render(Some("/staging/7.flac"), None),
             "a non-UTF-8 render path can't correlate to the preview"
+        );
+    }
+
+    // UX INST-13: the conversions content page is installed under the SAME
+    // experimental gate as the sidebar row, on demand when the row is selected.
+    // Reproduces the reviewer's live sequence — switch starts off (no page),
+    // toggle on, then the router's ensure-before-select installs a real page —
+    // so the row never selects a missing page. Idempotent: no duplicate page.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn inst_13_toggle_on_installs_the_conversions_page_before_selection() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let conn = Connection::open_in_memory().unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        let conn = Rc::new(RefCell::new(conn));
+        let staging = StagingStore::new(dir.path().join("staging"));
+
+        let content_stack = gtk4::Stack::new();
+        content_stack.add_named(&gtk4::Label::new(Some("library")), Some("library"));
+        content_stack.set_visible_child_name("library");
+
+        // Switch off at construction: no page (the same gate as the row).
+        assert!(
+            install_conversions_page(&content_stack, &conn, &staging).is_none(),
+            "the page is not installed while the experimental switch is off"
+        );
+        assert!(
+            content_stack.child_by_name(CONVERSION_PAGE).is_none(),
+            "the conversions page is absent while experimental is off"
+        );
+
+        // Live toggle-on, then the router's ensure-before-select installs it.
+        crate::ui::instrumental::set_experimental_enabled(&conn.borrow(), true).unwrap();
+        assert!(
+            install_conversions_page(&content_stack, &conn, &staging).is_some(),
+            "toggling the switch on installs the page on demand (INST-13)"
+        );
+        assert!(
+            content_stack.child_by_name(CONVERSION_PAGE).is_some(),
+            "the row now selects a real page, never a missing one (INST-13)"
+        );
+
+        // The selection the router performs now lands on the real page.
+        content_stack.set_visible_child_name(CONVERSION_PAGE);
+        assert_eq!(
+            content_stack.visible_child_name().as_deref(),
+            Some(CONVERSION_PAGE),
+            "selecting the Conversions row switches the content to its page"
+        );
+
+        // Idempotent: a second ensure adds no duplicate page.
+        assert!(
+            install_conversions_page(&content_stack, &conn, &staging).is_none(),
+            "the page installer is idempotent once the page exists"
         );
     }
 }

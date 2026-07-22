@@ -190,8 +190,12 @@ pub(in crate::ui) fn wire_source_routing(
             stats_view.refresh(&conn);
             content_stack.set_visible_child_name("stats");
         } else if matches!(source, ViewSource::Conversions) {
-            // INST-13: the conversion/staging view lives on its own page, added
-            // by conversion_wiring only while the experimental switch is on.
+            // INST-13: the conversion/staging view lives on its own page. Ensure
+            // it is installed (under the same experimental gate as the sidebar
+            // row) BEFORE selecting it — the row can appear after a live
+            // toggle-on, so without this the selection would land on a missing
+            // page and the content would silently stay put.
+            crate::ui::instrumental::conversion_wiring::ensure_page_installed();
             content_stack.set_visible_child_name("conversions");
         } else {
             content_stack.set_visible_child_name("library");
