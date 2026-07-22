@@ -968,3 +968,13 @@ Task AUDIO-MIX-9: complete (commit `e2f2478b02`, prior PR head `2ada88d892`, mer
 Host CUA verification: complete against an isolated synthetic ten-track FLAC library, scratch XDG roots, private D-Bus/AT-SPI/Xvfb session, and fake audio. Snapshot-action-snapshot evidence confirmed two-track selection → `Create similar mix…` → Balanced builder → an eight-track preview with active Play, Add to Queue, and Save as Playlist actions; the retained PR screenshots live under `docs/images/similar-mix/`. No real database, music file, live desktop, or user profile was read or changed. Native Wayland styling, High Contrast, and real-library ranking quality remain manual checks.
 
 Research follow-up: `docs/research/song-similarity.md` records the recommended next quality spike: versioned local audio embeddings plus cosine retrieval and hybrid rank fusion, while retaining the current four-value profile for explanations, energy curves, and fallback. Persisted auto-updating Similar Mix rules as sidebar smart playlists, text-to-mood/MCP adapters, and generated audio remain separate future product stages rather than hidden additions to this repair.
+
+## New Releases popover rework (feat/new-releases-rework) — 2026-07-22
+
+Plan: docs/plans/new-releases-rework.md. Executed subagent-driven (Sonnet implementers + reviewers).
+
+- Core: NR-1a (cap 20, annotate-not-filter in-library), v26 migration (first_seen/hidden_at/announce_url), history+retention (6mo ∧ 200, fetch-window protection), url-rels announce URLs, staleness policy (artist_news_refresh), CAA negative marker. Digest view + BrowserPlace::NewReleases removed (lenient session deserializer).
+- UI: counter badge (NR-9), scrolling list + inner stack, row chips w/ hover actions Open-announcement/Hide/Show-in-library (NR-10/11/13, navigate not play), revealer hide-collapse, hourly staleness timer, history sub-page (NR-12), theme-accent CSS.
+- Fix: kept MenuButton-owned popover parented across opens (matches dev's SIGSEGV fix on 2nd open).
+- Verification: 1966 workspace tests green (--test-threads=1), all gates (fmt/clippy/traceability 171 rules/architecture/purity). Headless startup smoke: app boots isolated (Xvfb+dbus+fakesink), DB migrates to v26 with new columns, CSS loads, no crash.
+- Manual pass still owed (not headless-verifiable): hover haptics, pointer cursor, icon look per theme, popover shadow, cover-radius clipping, real open→close→open cycle, capped-list scroll feel. Full scripts/ptr-e2e artist-news AT-SPI flow not re-run (tests the info-panel Artist News view, not this headerbar popover; references no removed UI).
