@@ -13,6 +13,23 @@ license = "MIT"
 name = "reprise-cli"
 path = "src/main.rs"
 
+[features]
+# The default build stays core-only (enforced by scripts/check-architecture.sh
+# via `cargo tree`). The two sanctioned exceptions of Beschluss 3 are opt-in
+# cargo features so they never enter the default dependency tree:
+#   * `worker` — the standalone job worker host (`jobs work`); THE ONLY path
+#     that pulls `reprise-stems` (the removable ML backend) into the CLI. It
+#     also pulls `signal-hook` for a clean SIGINT shutdown of the long-running
+#     loop. The production backend comes from `reprise-stems` (package G); the
+#     Fake backend that lives in `reprise-core` drives every test.
+#   * `mpris` — the `playback` transport subcommands, a thin MPRIS client that
+#     talks to the running app over the session bus via `zbus` DIRECTLY (the
+#     grilled gate exception — still no `reprise-platform-linux` dependency).
+#     Linux/D-Bus by nature.
+default = []
+worker = ["dep:reprise-stems", "dep:signal-hook"]
+mpris = ["dep:zbus"]
+
 [dependencies]
 # Default build stays core-only plus the CLI's own presentation deps (clap +
 # serde_json), enforced by package I via `cargo tree`. `rusqlite` is the same
@@ -25,6 +42,20 @@ reprise-core = { path = "../reprise-core" }
 clap = { version = "4", features = ["derive"] }
 serde_json = "1.0"
 rusqlite = { version = "0.40", features = ["bundled"] }
+
+# --- Feature `worker` only (removable ML job host) --------------------------
+# `reprise-stems` is the removable stem-separation backend crate; it may only
+# enter a binary host, and in the CLI only behind `worker` — so the default
+# tree stays core-only and the feature stays surgically removable. `signal-hook`
+# gives the worker loop a safe (no `unsafe`) SIGINT flag for clean shutdown.
+reprise-stems = { path = "../reprise-stems", optional = true }
+signal-hook = { version = "0.3", optional = true }
+
+# --- Feature `mpris` only (Linux MPRIS transport client) --------------------
+# zbus DIRECTLY — the sanctioned Beschluss-3 exception. Never pulls
+# reprise-platform-linux; this is a standalone session-bus client. Matches the
+# workspace zbus major used by reprise-platform-linux's MPRIS server.
+zbus = { version = "5", optional = true }
 
 [dev-dependencies]
 # Integration tests run the built binary via CARGO_BIN_EXE and arrange/inspect
