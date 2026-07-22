@@ -48,7 +48,8 @@ impl OrtStemBackend {
 
     /// Provisions and loads a specific weights set (fp32 or fp16).
     pub fn with_provisioned_weights(spec: &WeightsSpec) -> Result<Self, StemError> {
-        let model_dir = provision::default_model_dir();
+        let model_dir =
+            provision::default_model_dir().map_err(|e| StemError::Backend(e.to_string()))?;
         let path = provision::ensure_weights(&model_dir, spec, &provision::http_fetcher)
             .map_err(|e| StemError::Backend(e.to_string()))?;
         Self::from_model_file(&path, spec.model_id)
@@ -132,8 +133,22 @@ fn run_segment(session: &mut Session, segment: usize, mix: &[f32]) -> Result<Vec
 /// missing library is a clear [`StemError::Backend`] naming where it looked.
 fn configure_onnxruntime() -> Result<(), StemError> {
     let location = provision::onnxruntime_location();
+    let unverified = location.expected_sha256.is_none();
     let library =
         provision::resolve_library(&location).map_err(|e| StemError::Backend(e.to_string()))?;
+    if unverified {
+        // load-dynamic dlopens native code into this process; without a pinned
+        // checksum a swapped/planted library would execute with full privileges.
+        // Loud, so a mis-packaged production build is caught. No tracing dep in
+        // this lean crate, so stderr is the loud channel.
+        eprintln!(
+            "WARNING: loading onnxruntime from {} WITHOUT checksum verification. \
+             Production packaging MUST set {} to the pinned SHA-256 of the shipped \
+             libonnxruntime.so so a swapped or planted library cannot execute in-process.",
+            library.display(),
+            provision::ORT_DYLIB_SHA256_ENV,
+        );
+    }
     // ort reads this env var to `dlopen` the runtime. Edition 2021: `set_var`
     // is safe; this runs during single-threaded backend construction, before
     // any session exists.
