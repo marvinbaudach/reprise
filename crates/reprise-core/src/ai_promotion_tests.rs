@@ -93,6 +93,73 @@ fn promote_files_tags_registers_and_records_provenance() {
     assert!(saved);
 }
 
+/// Seeds two DIFFERENT source tracks that share Artist + Title (a cover, a
+/// live version, or a duplicate import), each with its own finished-but-unsaved
+/// staged render. Both sanitise to the same base destination, so promoting both
+/// exercises the collision path. Returns `([job_a, job_b], staging_store)`.
+fn seed_identical_pair(conn: &Connection, staging_dir: &Path) -> (Vec<i64>, StagingStore) {
+    let staging = StagingStore::new(staging_dir);
+    staging.ensure_dir().unwrap();
+    let mut jobs = Vec::new();
+    for id in [1_i64, 2] {
+        conn.execute(
+            "INSERT INTO tracks (id, path, title, artist, album, album_artist, added_at, file_mtime, file_size) \
+             VALUES (?1, ?2, 'Creep', 'Radiohead', 'Pablo Honey', 'Radiohead', 1, 1, 1)",
+            rusqlite::params![id, format!("/music/creep-{id}.flac")],
+        )
+        .unwrap();
+        let job_id = ai_jobs::enqueue_instrumental(conn, &staging, id, "htdemucs@4", 0)
+            .unwrap()
+            .job_id();
+        conn.execute("UPDATE ai_jobs SET status = 'done' WHERE id = ?1", [job_id])
+            .unwrap();
+        std::fs::copy(
+            flac_fixture(staging_dir, &format!("seed-{id}.flac")),
+            staging.path_for_job(job_id),
+        )
+        .unwrap();
+        jobs.push(job_id);
+    }
+    (jobs, staging)
+}
+
+#[test]
+fn two_sources_with_the_same_name_get_distinct_files_and_provenance() {
+    let library = tempfile::tempdir().unwrap();
+    let staging_dir = tempfile::tempdir().unwrap();
+    let mut conn = migrated();
+    let (jobs, staging) = seed_identical_pair(&conn, staging_dir.path());
+    let config = PromotionConfig::new(library.path());
+
+    let out_a = promote(&mut conn, &staging, &config, jobs[0], 100).unwrap();
+    let out_b = promote(&mut conn, &staging, &config, jobs[1], 200).unwrap();
+
+    // Distinct files on disk — the second promotion must not clobber the first.
+    assert_ne!(out_a.path, out_b.path);
+    assert!(out_a.path.is_file() && out_b.path.is_file());
+    assert_eq!(
+        out_b.path.file_name().unwrap().to_string_lossy(),
+        "Creep (Instrumental) (2).flac",
+        "the colliding second file is deterministically suffixed"
+    );
+
+    // Distinct result tracks, each with its own provenance pointing at its own
+    // source — B's INSERT OR REPLACE must not have flipped A's row.
+    assert_ne!(out_a.result_track_id, out_b.result_track_id);
+    let prov_a = crate::provenance::get_provenance(&conn, out_a.result_track_id)
+        .unwrap()
+        .unwrap();
+    let prov_b = crate::provenance::get_provenance(&conn, out_b.result_track_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(prov_a.source_track_id, Some(1));
+    assert_eq!(prov_b.source_track_id, Some(2));
+
+    // Job A's binding is intact after B's promotion.
+    let job_a = ai_jobs::get_job(&conn, jobs[0]).unwrap().unwrap();
+    assert_eq!(job_a.result_track_id, Some(out_a.result_track_id));
+}
+
 #[test]
 fn promote_rejects_a_job_that_is_not_a_finished_unsaved_render() {
     let library = tempfile::tempdir().unwrap();
@@ -188,10 +255,8 @@ fn sanitize_component_neutralises_separators_and_dot_segments() {
     assert_ne!(sanitized, "..");
 }
 
-#[test]
-fn resolve_destination_builds_the_documented_layout() {
-    let config = PromotionConfig::new("/library");
-    let source = SourceMeta {
+fn creep_source() -> SourceMeta {
+    SourceMeta {
         title: "Creep".to_string(),
         artist: "Radiohead".to_string(),
         album: "Pablo Honey".to_string(),
@@ -199,10 +264,42 @@ fn resolve_destination_builds_the_documented_layout() {
         year: Some(1993),
         track_no: Some(2),
         genre: "Alt Rock".to_string(),
-    };
+    }
+}
+
+#[test]
+fn resolve_destination_builds_the_documented_layout() {
+    let conn = migrated();
+    let config = PromotionConfig::new("/library");
+    // No jobs exist, so nothing reserves the base name.
     assert_eq!(
-        resolve_destination(&config, &source).unwrap(),
+        resolve_destination(&conn, &config, 1, &creep_source()).unwrap(),
         PathBuf::from("/library/Reprise Instrumentals/Radiohead/Creep (Instrumental).flac")
+    );
+}
+
+#[test]
+fn resolve_destination_reuses_the_owning_job_and_bumps_a_foreign_one() {
+    let library = tempfile::tempdir().unwrap();
+    let staging_dir = tempfile::tempdir().unwrap();
+    let mut conn = migrated();
+    let (jobs, staging) = seed_identical_pair(&conn, staging_dir.path());
+    let config = PromotionConfig::new(library.path());
+
+    // Promote A: its saved result now sits at the base path.
+    let out_a = promote(&mut conn, &staging, &config, jobs[0], 100).unwrap();
+
+    // The owning job re-resolves to its own file — a retry reuses it, no suffix.
+    assert_eq!(
+        resolve_destination(&conn, &config, jobs[0], &creep_source()).unwrap(),
+        out_a.path
+    );
+    // A different job must not land on A's result; it is bumped deterministically.
+    let for_b = resolve_destination(&conn, &config, jobs[1], &creep_source()).unwrap();
+    assert_ne!(for_b, out_a.path);
+    assert_eq!(
+        for_b.file_name().unwrap().to_string_lossy(),
+        "Creep (Instrumental) (2).flac"
     );
 }
 

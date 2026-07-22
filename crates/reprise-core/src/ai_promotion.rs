@@ -25,7 +25,7 @@
 
 use std::path::{Component, Path, PathBuf};
 
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::ai_jobs::{self, JobState};
 use crate::ai_staging::StagingStore;
@@ -125,7 +125,7 @@ pub fn promote(
         return Err(PromotionError::StagingMissing(job_id));
     }
     let source = read_source_meta(conn, job.source_track_id, &staging_path)?;
-    let destination = resolve_destination(config, &source)?;
+    let destination = resolve_destination(conn, config, job_id, &source)?;
 
     write_final_tags(&staging_path, &source, &job.params_fingerprint)?;
 
@@ -295,23 +295,68 @@ fn write_final_tags(
 /// Builds the destination path and enforces the guard: the file must land at
 /// `<root>/<subfolder>/<Artist>/<Title> (Instrumental).flac`, strictly inside
 /// the instrumentals subtree.
+///
+/// Collision-aware: two different source tracks that sanitise to the same base
+/// name (a cover, a live version, a duplicate import — all sharing Artist +
+/// Title) must not resolve to the same file, or the second `fs::copy` would
+/// clobber the first render and the re-registration would resolve the *same*
+/// `result_track_id`, flipping its provenance. When the base name is already a
+/// *different* job's saved result, the name is uniquified deterministically by
+/// appending `" (2)"`, `" (3)"`, … before the extension. The suffix is stable
+/// across retries of the *same* job: a candidate that is free, or is this job's
+/// own earlier file, is not treated as a collision, so a retry reuses its own
+/// destination instead of allocating a fresh suffix.
 fn resolve_destination(
+    conn: &Connection,
     config: &PromotionConfig,
+    job_id: i64,
     source: &SourceMeta,
 ) -> Result<PathBuf, PromotionError> {
     let allowed_root = config.instrumentals_root();
-    let artist_dir = sanitize_component(&source.artist);
-    let file_name = format!(
-        "{}{INSTRUMENTAL_SUFFIX}.flac",
-        sanitize_component(&source.title)
-    );
-    let destination = allowed_root.join(&artist_dir).join(&file_name);
-    if !is_within(&allowed_root, &destination) {
-        return Err(PromotionError::PathGuard {
-            attempted: destination.to_string_lossy().into_owned(),
-        });
+    let directory = allowed_root.join(sanitize_component(&source.artist));
+    let stem = format!("{}{INSTRUMENTAL_SUFFIX}", sanitize_component(&source.title));
+
+    let mut attempt: u32 = 1;
+    loop {
+        let file_name = if attempt == 1 {
+            format!("{stem}.flac")
+        } else {
+            format!("{stem} ({attempt}).flac")
+        };
+        let candidate = directory.join(&file_name);
+        if !is_within(&allowed_root, &candidate) {
+            return Err(PromotionError::PathGuard {
+                attempted: candidate.to_string_lossy().into_owned(),
+            });
+        }
+        if !destination_reserved_by_other_job(conn, &candidate, job_id)? {
+            return Ok(candidate);
+        }
+        attempt += 1;
     }
-    Ok(destination)
+}
+
+/// Whether `candidate` is already the committed, saved result of a *different*
+/// job. Such a path is off-limits: copying onto it overwrites another
+/// promotion's render, and re-registering it resolves the *same* track id,
+/// which would flip that track's provenance to this source. A path that is free
+/// — or that belongs to *this* job (a retry over its own earlier file) — is not
+/// reserved, so a retry deterministically reuses its own destination.
+fn destination_reserved_by_other_job(
+    conn: &Connection,
+    candidate: &Path,
+    job_id: i64,
+) -> Result<bool, PromotionError> {
+    let taken: Option<i64> = conn
+        .query_row(
+            "SELECT j.id FROM ai_jobs j \
+             JOIN tracks t ON t.id = j.result_track_id \
+             WHERE t.path = ?1 AND j.id != ?2 LIMIT 1",
+            params![candidate.to_string_lossy(), job_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(taken.is_some())
 }
 
 /// Makes one tag value safe as a single path component: strips separators and
