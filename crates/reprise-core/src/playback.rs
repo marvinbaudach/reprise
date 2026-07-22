@@ -185,32 +185,42 @@ const BEAT_MIN_FLUX: f32 = 0.05;
 const BEAT_REFRACTORY_MS: f32 = 90.0;
 /// Flux overshoot above threshold that maps to full `strength`.
 const BEAT_STRENGTH_OVERSHOOT: f32 = 0.35;
-/// Per-band auto-gain: each display band slowly tracks its own recent maximum
-/// and is normalized against it, so a band that is loud *relative to its own
-/// recent history* fills the visual range.
-const AGC_HALF_LIFE_MS: f32 = 8000.0;
-/// Auto-gain never amplifies below this reference. Deliberately well above
-/// silence: bands whose energy stays under it are treated as quiet and read
-/// low instead of being boosted to full height, so dominant frequencies stand
-/// out and faint nuances don't flicker at full scale.
-const AGC_FLOOR: f32 = 0.26;
-/// Contrast curve applied to the auto-gained display value. `> 1` pushes small
-/// and mid values down while leaving peaks near `1`, so the picture reads as a
-/// few dominant features rather than a wall of equal-height detail.
-const DISPLAY_GAMMA: f32 = 2.0;
-/// Absolute-loudness gate. The per-band AGC normalizes each band to its own
-/// recent maximum, which throws away how loud the band actually is — so a
-/// faint, consistently-quiet band self-normalizes its own noise up to full
-/// scale, and the visuals shimmer even when nothing audible is happening. The
-/// AGC "shape" is therefore multiplied by an absolute-energy factor: a band
-/// whose raw level (normalized dB, `(dB+80)/80`) is below [`AUDIBLE_FLOOR`]
-/// reads silent, at or above [`AUDIBLE_KNEE`] reads at full strength, and ramps
-/// smoothly between. This is what holds the surface still through quiet
-/// passages and only moves it on genuinely audible energy — beats, breakdowns.
-/// `0.30` ≈ -56 dB, `0.55` ≈ -36 dB — low enough to stay reactive to most of
-/// the track, high enough to hold still through genuine quiet.
-const AUDIBLE_FLOOR: f32 = 0.30;
-const AUDIBLE_KNEE: f32 = 0.55;
+// --- Display-band mapping: honest to loudness, no per-band auto-gain ---------
+//
+// Each band's magnitude is mapped through a *fixed* decibel window so the
+// on-screen height tracks how loud the band actually is: quiet reads low, loud
+// reads full, and "hot" colors only trigger on genuine peaks. This is the
+// proven approach used by the Web Audio `AnalyserNode` (min/max dB window),
+// audioMotion-analyzer, and foobar2000 — as opposed to the earlier per-band
+// auto-gain, which normalized every band to its own recent maximum and so
+// decoupled the picture from real loudness (a faint band self-normalized up to
+// full height, painting "red" on tiny sounds).
+//
+/// Magnitude at or below [`DISPLAY_DB_MIN`] reads silent; at or above
+/// [`DISPLAY_DB_MAX`] reads full; linear in dB between. The window is tuned to
+/// the GStreamer -80 dB analysis floor so typical music uses the full visual
+/// range without quiet content saturating (cf. audioMotion -85/-25, the W3C
+/// AnalyserNode default -100/-30).
+const DISPLAY_DB_MIN: f32 = -62.0;
+const DISPLAY_DB_MAX: f32 = -10.0;
+/// Pink-noise spectral tilt: music carries far more energy in the bass than the
+/// treble, so uncorrected high bands read dead. A `+3 dB/octave` lift relative
+/// to [`PINK_TILT_REF_HZ`] is the standard "pink slope" that makes an even
+/// spectrum read even. Clamped so extreme lows/highs don't blow out or vanish.
+const PINK_TILT_DB_PER_OCT: f32 = 3.0;
+const PINK_TILT_REF_HZ: f32 = 1000.0;
+const PINK_TILT_MIN_DB: f32 = -12.0;
+const PINK_TILT_MAX_DB: f32 = 9.0;
+/// Nominal sample rate, used only to derive per-band centre frequencies for the
+/// tilt. Purely cosmetic, so the exact rate a track plays at doesn't matter.
+const NOMINAL_SAMPLE_RATE_HZ: f32 = 44_100.0;
+/// Mild contrast curve on the honest, windowed value. Stays near 1 because the
+/// dB window is already the perceptual mapping (the old auto-gain path needed
+/// 2.0 to fight its own flattening).
+const DISPLAY_GAMMA: f32 = 1.3;
+/// Sub-audible noise gate: windowed values below this read as zero so the noise
+/// floor never shimmers. Small — genuine quiet content still shows.
+const DISPLAY_NOISE_GATE: f32 = 0.04;
 
 fn ema_coeff(interval_ms: f32, tau_ms: f32) -> f32 {
     (1.0 - (-interval_ms / tau_ms).exp()).clamp(0.0, 1.0)
@@ -231,6 +241,22 @@ fn log_band_edges() -> [usize; SPECTRUM_BAND_COUNT + 1] {
     }
     edges[SPECTRUM_BAND_COUNT] = SPECTRUM_ANALYSIS_BAND_COUNT;
     edges
+}
+
+/// Per-band pink-noise tilt gain in dB: `+PINK_TILT_DB_PER_OCT` per octave above
+/// [`PINK_TILT_REF_HZ`], clamped to [`PINK_TILT_MIN_DB`]`..=`[`PINK_TILT_MAX_DB`].
+/// A band's centre frequency is derived from the raw FFT bins it folds (linear
+/// bins over `0..Nyquist` at [`NOMINAL_SAMPLE_RATE_HZ`]). Precomputed once.
+fn pink_tilt_db(edges: &[usize; SPECTRUM_BAND_COUNT + 1]) -> [f32; SPECTRUM_BAND_COUNT] {
+    let bin_hz = (NOMINAL_SAMPLE_RATE_HZ / 2.0) / SPECTRUM_ANALYSIS_BAND_COUNT as f32;
+    let mut tilt = [0.0_f32; SPECTRUM_BAND_COUNT];
+    for (band, slot) in tilt.iter_mut().enumerate() {
+        let centre_bin = (edges[band] + edges[band + 1]) as f32 / 2.0;
+        let freq = (centre_bin * bin_hz).max(bin_hz);
+        *slot = (PINK_TILT_DB_PER_OCT * (freq / PINK_TILT_REF_HZ).log2())
+            .clamp(PINK_TILT_MIN_DB, PINK_TILT_MAX_DB);
+    }
+    tilt
 }
 
 /// Stateful, pure-Rust reactivity extractor. Feed it successive raw-decibel
@@ -255,8 +281,8 @@ pub struct SpectrumAnalyzer {
     long_coeff: f32,
     refractory_frames: u32,
     edges: [usize; SPECTRUM_BAND_COUNT + 1],
-    agc: [f32; SPECTRUM_BAND_COUNT],
-    agc_decay: f32,
+    /// Precomputed per-band pink-tilt gain in dB (see [`pink_tilt_db`]).
+    tilt_db: [f32; SPECTRUM_BAND_COUNT],
 }
 
 impl Default for SpectrumAnalyzer {
@@ -269,6 +295,8 @@ impl SpectrumAnalyzer {
     pub fn new() -> Self {
         let dt = SPECTRUM_INTERVAL_MS as f32;
         let refractory_frames = (BEAT_REFRACTORY_MS / dt).ceil() as u32;
+        let edges = log_band_edges();
+        let tilt_db = pink_tilt_db(&edges);
         Self {
             prev_bands: [0.0; SPECTRUM_BAND_COUNT],
             level_env: 0.0,
@@ -285,9 +313,8 @@ impl SpectrumAnalyzer {
             short_coeff: ema_coeff(dt, DYN_SHORT_MS),
             long_coeff: ema_coeff(dt, DYN_LONG_MS),
             refractory_frames,
-            edges: log_band_edges(),
-            agc: [AGC_FLOOR; SPECTRUM_BAND_COUNT],
-            agc_decay: 0.5_f32.powf(SPECTRUM_INTERVAL_MS as f32 / AGC_HALF_LIFE_MS),
+            edges,
+            tilt_db,
         }
     }
 
@@ -313,13 +340,14 @@ impl SpectrumAnalyzer {
 
         let mut bands = [0.0_f32; SPECTRUM_BAND_COUNT];
         for band in 0..SPECTRUM_BAND_COUNT {
-            self.agc[band] = (self.agc[band] * self.agc_decay)
-                .max(folded[band])
-                .max(AGC_FLOOR);
-            let shape = (folded[band] / self.agc[band]).clamp(0.0, 1.0);
-            let audible =
-                ((folded[band] - AUDIBLE_FLOOR) / (AUDIBLE_KNEE - AUDIBLE_FLOOR)).clamp(0.0, 1.0);
-            bands[band] = (shape * audible).powf(DISPLAY_GAMMA);
+            // Reconstruct the band's decibels from the -80 dB-floored normalized
+            // value, add the pink tilt, then map through the fixed display
+            // window. No per-band auto-gain, so height tracks real loudness.
+            let db = folded[band] * -SPECTRUM_FLOOR_DB + SPECTRUM_FLOOR_DB + self.tilt_db[band];
+            let windowed =
+                ((db - DISPLAY_DB_MIN) / (DISPLAY_DB_MAX - DISPLAY_DB_MIN)).clamp(0.0, 1.0);
+            let shaped = windowed.powf(DISPLAY_GAMMA);
+            bands[band] = if shaped < DISPLAY_NOISE_GATE { 0.0 } else { shaped };
         }
         SpectrumFrame {
             bands,
@@ -472,40 +500,59 @@ mod spectrum_analyzer_tests {
     }
 
     #[test]
-    fn constant_input_settles_without_beats_and_tracks_level() {
+    fn moderate_input_reads_honestly_not_auto_gained_to_full() {
         let mut analyzer = SpectrumAnalyzer::new();
-        let moderate = [-20.0_f32; SPECTRUM_ANALYSIS_BAND_COUNT]; // pre-AGC 0.75
+        let moderate = [-20.0_f32; SPECTRUM_ANALYSIS_BAND_COUNT];
         let frame = ingest_n(&mut analyzer, moderate, 60);
         assert!(!frame.beat().fired);
+        // `level` still derives from the honest folded magnitudes, untouched by
+        // the display-band mapping.
         assert!(
             (frame.level() - 0.75).abs() < 0.05,
-            "level pre-AGC, got {}",
+            "level, got {}",
             frame.level()
         );
+        // Honest display: with per-band auto-gain gone, a moderate level must
+        // NOT pin every band to full scale the way the old AGC did.
+        let bass_avg =
+            frame.bands()[0..BASS_BAND_COUNT].iter().sum::<f32>() / BASS_BAND_COUNT as f32;
         assert!(
-            frame.bands().iter().all(|&band| band > 0.95),
-            "AGC → full range"
+            bass_avg < 0.85,
+            "moderate bass must read below full (auto-gain removed), got {bass_avg}"
+        );
+        assert!(
+            bass_avg > 0.1,
+            "moderate input must still register, got {bass_avg}"
         );
     }
 
     #[test]
-    fn quieter_music_calms_the_visual() {
-        // The absolute-loudness gate means the display bands must fall when the
-        // music drops, not self-normalize back to full — motion tracks audible
-        // energy (beats, breakdowns), not the per-band AGC.
+    fn quieter_music_reads_lower_than_louder() {
+        // Honest to loudness: a quiet section must read clearly below a loud one
+        // instead of self-normalizing back up (the old per-band AGC behaviour).
         let mut analyzer = SpectrumAnalyzer::new();
         let loud = ingest_n(&mut analyzer, [-16.0; SPECTRUM_ANALYSIS_BAND_COUNT], 60);
         let quiet = ingest_n(&mut analyzer, [-46.0; SPECTRUM_ANALYSIS_BAND_COUNT], 6);
         let loud_avg = loud.bands().iter().sum::<f32>() / SPECTRUM_BAND_COUNT as f32;
         let quiet_avg = quiet.bands().iter().sum::<f32>() / SPECTRUM_BAND_COUNT as f32;
         assert!(
-            loud_avg > 0.9,
-            "loud section should drive near-full motion, got {loud_avg}"
+            loud_avg > 0.6,
+            "loud section should drive strong motion, got {loud_avg}"
         );
         assert!(
-            quiet_avg < 0.15,
-            "quiet section should calm to near-still, got {quiet_avg}"
+            quiet_avg < loud_avg * 0.55,
+            "quiet section must read well below loud, got quiet={quiet_avg} loud={loud_avg}"
         );
+    }
+
+    #[test]
+    fn faint_tone_stays_near_still() {
+        // The "tiny sound" case: a faint, near-floor tone must read low, never
+        // drive full scale / hot colours.
+        let mut analyzer = SpectrumAnalyzer::new();
+        let faint = ingest_n(&mut analyzer, [-58.0; SPECTRUM_ANALYSIS_BAND_COUNT], 30);
+        let avg = faint.bands().iter().sum::<f32>() / SPECTRUM_BAND_COUNT as f32;
+        assert!(avg < 0.2, "faint tone must stay calm, got {avg}");
     }
 
     #[test]
