@@ -1,10 +1,11 @@
 //! Promotion — turning a finished, undecided staging render into a real,
 //! permanent, clearly-labelled library track (Beschluss 13/14; plan 2.4/3).
 //!
-//! The save decision runs this once per render: write the final tags (standard
-//! fields with a `" (Instrumental)"` title suffix, the album left unchanged,
-//! plus the AI-provenance scheme), copy the render into a dedicated subfolder
-//! **inside the library root**, register it through the existing scanner
+//! The save decision runs this once per render: copy the render into a
+//! dedicated subfolder **inside the library root**, write the final tags onto
+//! that copy (standard fields with a `" (Instrumental)"` title suffix, the
+//! album left unchanged, plus the AI-provenance scheme) — leaving the staging
+//! render pristine for a retry — register it through the existing scanner
 //! metadata path, and record provenance + the job's `save` event. **No
 //! re-render.**
 //!
@@ -39,6 +40,18 @@ pub const DEFAULT_INSTRUMENTAL_SUBFOLDER: &str = "Reprise Instrumentals";
 
 /// The suffix appended to the title tag and filename (Beschluss 14).
 const INSTRUMENTAL_SUFFIX: &str = " (Instrumental)";
+
+/// Appends [`INSTRUMENTAL_SUFFIX`] unless the base already ends with it. Making
+/// the suffix idempotent means a retry that re-reads an already-suffixed title
+/// (e.g. from the render's own tags once the original was deleted) never
+/// produces `"Title (Instrumental) (Instrumental)"`.
+fn with_instrumental_suffix(base: &str) -> String {
+    if base.ends_with(INSTRUMENTAL_SUFFIX) {
+        base.to_string()
+    } else {
+        format!("{base}{INSTRUMENTAL_SUFFIX}")
+    }
+}
 
 /// Where and how promoted instrumentals are filed.
 #[derive(Debug, Clone)]
@@ -127,16 +140,18 @@ pub fn promote(
     let source = read_source_meta(conn, job.source_track_id, &staging_path)?;
     let destination = resolve_destination(conn, config, job_id, &source)?;
 
-    write_final_tags(&staging_path, &source, &job.params_fingerprint)?;
-
-    // Copy (not move) into place, then register, then discard staging — so any
-    // failure leaves the staging original for a retry and removes the stray copy.
+    // Copy (not move) into place, tag the *copy*, register, then discard
+    // staging — so any failure leaves the staging original pristine for a retry
+    // and removes the stray destination copy. The final tags are written to the
+    // destination, never to the staging render, so a retry after a failure
+    // re-reads the original (un-suffixed) title instead of a mutated one.
     if let Some(parent) = destination.parent() {
         std::fs::create_dir_all(parent)?;
     }
     std::fs::copy(&staging_path, &destination)?;
 
-    let result = register_and_record(conn, &source, &job, &destination, now);
+    let result = write_final_tags(&destination, &source, &job.params_fingerprint)
+        .and_then(|()| register_and_record(conn, &source, &job, &destination, now));
     match result {
         Ok(result_track_id) => {
             // Success: the render now lives in the library; drop the staging copy.
@@ -260,16 +275,18 @@ fn read_source_meta(
     })
 }
 
-/// Writes the final tags onto the staging render: standard fields through the
-/// ordinary lofty path (title gains the suffix, album is untouched), then the
-/// AI-provenance scheme.
+/// Writes the final tags onto the promoted file — the destination copy, never
+/// the staging render: standard fields through the ordinary lofty path (title
+/// gains the suffix, album is untouched), then the AI-provenance scheme. Tagging
+/// the copy keeps staging's tags exactly as the worker wrote them, so a retry
+/// re-reads the original, un-suffixed title.
 fn write_final_tags(
-    staging_path: &Path,
+    path: &Path,
     source: &SourceMeta,
     model_id: &str,
 ) -> Result<(), PromotionError> {
     let patch = TagPatch {
-        title: Some(format!("{}{INSTRUMENTAL_SUFFIX}", source.title)),
+        title: Some(with_instrumental_suffix(&source.title)),
         artist: Some(source.artist.clone()),
         album: Some(source.album.clone()),
         album_artist: Some(source.album_artist.clone()),
@@ -277,10 +294,10 @@ fn write_final_tags(
         track_no: Some(source.track_no.map(|track| track.max(0) as u32)),
         genre: Some(source.genre.clone()),
     };
-    tag_edit::apply_patch_to_file(staging_path, &patch)
+    tag_edit::apply_patch_to_file(path, &patch)
         .map_err(|error| PromotionError::Tag(error.to_string()))?;
     provenance::write_ai_tags(
-        staging_path,
+        path,
         &AiTagSet {
             kind: KIND_VOCALS_REMOVED.to_string(),
             model: model_id.to_string(),
@@ -314,7 +331,7 @@ fn resolve_destination(
 ) -> Result<PathBuf, PromotionError> {
     let allowed_root = config.instrumentals_root();
     let directory = allowed_root.join(sanitize_component(&source.artist));
-    let stem = format!("{}{INSTRUMENTAL_SUFFIX}", sanitize_component(&source.title));
+    let stem = with_instrumental_suffix(&sanitize_component(&source.title));
 
     let mut attempt: u32 = 1;
     loop {

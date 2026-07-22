@@ -228,6 +228,63 @@ fn promote_falls_back_to_render_tags_when_the_original_is_gone() {
 }
 
 #[test]
+fn retry_after_a_failed_copy_does_not_double_the_instrumental_suffix() {
+    use lofty::prelude::*;
+    let library = tempfile::tempdir().unwrap();
+    let staging_dir = tempfile::tempdir().unwrap();
+    let mut conn = migrated();
+    let (job_id, staging) = staged_job(&conn, staging_dir.path());
+    let config = PromotionConfig::new(library.path());
+
+    // Give the render its own embedded title, so the post-delete fallback has a
+    // real value to read (the DB row seeds "Creep", but the fallback reads the
+    // file, not the DB).
+    crate::library::tag_edit::apply_patch_to_file(
+        &staging.path_for_job(job_id),
+        &crate::library::tag_edit::TagPatch {
+            title: Some("Creep".to_string()),
+            artist: Some("Radiohead".to_string()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    // Force the copy to fail: occupy the destination with a directory so
+    // `fs::copy` cannot write the file there.
+    let destination = library
+        .path()
+        .join("Reprise Instrumentals")
+        .join("Radiohead")
+        .join("Creep (Instrumental).flac");
+    std::fs::create_dir_all(&destination).unwrap();
+    assert!(promote(&mut conn, &staging, &config, job_id, 100).is_err());
+
+    // The original is deleted before the retry, so the retry must fall back to
+    // the render's own embedded tags. Those must still read "Creep" — the first
+    // attempt must not have mutated the staging render in place.
+    conn.execute("DELETE FROM tracks WHERE id = 1", []).unwrap();
+    std::fs::remove_dir_all(&destination).unwrap();
+
+    let outcome = promote(&mut conn, &staging, &config, job_id, 200).unwrap();
+    let tagged = lofty::read_from_path(&outcome.path).unwrap();
+    assert_eq!(
+        tagged.primary_tag().unwrap().title().as_deref(),
+        Some("Creep (Instrumental)"),
+        "exactly one instrumental suffix, never doubled"
+    );
+}
+
+#[test]
+fn instrumental_suffix_is_idempotent() {
+    assert_eq!(with_instrumental_suffix("Creep"), "Creep (Instrumental)");
+    // An already-suffixed title (e.g. re-read from a prior attempt) is left as-is.
+    assert_eq!(
+        with_instrumental_suffix("Creep (Instrumental)"),
+        "Creep (Instrumental)"
+    );
+}
+
+#[test]
 fn path_guard_contains_the_target_subtree() {
     let root = Path::new("/library/Reprise Instrumentals");
     assert!(is_within(root, &root.join("Artist/Song.flac")));
