@@ -75,6 +75,25 @@ fn record_uses_the_process_writer_token() {
 }
 
 #[test]
+fn latest_id_is_zero_when_empty_and_tracks_the_newest_row() {
+    let conn = migrated_conn();
+    assert_eq!(latest_id(&conn).unwrap(), 0);
+
+    record(&conn, "playlist", "1", "create").unwrap();
+    let first = latest_id(&conn).unwrap();
+    assert!(first > 0);
+
+    record(&conn, "playlist", "2", "create").unwrap();
+    let second = latest_id(&conn).unwrap();
+    assert_eq!(second, first + 1);
+    // Agrees with read_since's view of the last row's id.
+    assert_eq!(
+        second,
+        read_since(&conn, 0, None).unwrap().last().unwrap().id
+    );
+}
+
+#[test]
 fn prune_keeps_recent_rows_even_beyond_the_count_floor() {
     let conn = migrated_conn();
     for id in 0..=MAX_RETAINED_CHANGES {

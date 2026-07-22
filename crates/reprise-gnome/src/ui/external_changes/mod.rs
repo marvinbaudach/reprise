@@ -64,10 +64,11 @@ pub(in crate::ui) fn read_and_plan(
 
 /// The current highest `change_log` id — the cursor baseline at startup, so
 /// history already reflected in the freshly loaded UI is not replayed on the
-/// first wake.
+/// first wake. Uses the indexed `events::latest_id` (`MAX(id)`) instead of
+/// paging every row through `read_since(0, ..)` only to keep the last id.
 fn current_cursor(conn: &Connection) -> i64 {
-    match events::read_since(conn, 0, None) {
-        Ok(changes) => changes.last().map_or(0, |change| change.id),
+    match events::latest_id(conn) {
+        Ok(id) => id,
         Err(error) => {
             tracing::warn!(
                 %error,
