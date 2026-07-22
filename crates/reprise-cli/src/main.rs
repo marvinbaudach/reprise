@@ -48,10 +48,26 @@ fn main() -> std::process::ExitCode {
 
 fn run(cli: Cli) -> Result<(), CliError> {
     let json = cli.json;
-    let staging_dir = cli.staging_dir;
-    let mut conn = db_open::open(cli.db.as_ref())?;
 
     match cli.command {
+        // MPRIS playback is a pure session-bus client — it must not open (and
+        // possibly migrate) the database, so it is dispatched before that.
+        #[cfg(feature = "mpris")]
+        Command::Playback { action } => run_playback(action, json),
+        command => run_with_db(cli.db.as_ref(), cli.staging_dir.as_ref(), command, json),
+    }
+}
+
+/// Runs any command that operates on the library database, opening (and
+/// migrating) it once up front.
+fn run_with_db(
+    db: Option<&std::path::PathBuf>,
+    staging_dir: Option<&std::path::PathBuf>,
+    command: Command,
+    json: bool,
+) -> Result<(), CliError> {
+    let mut conn = db_open::open(db)?;
+    match command {
         Command::Playlist { action } => run_playlist(&mut conn, action, json),
         Command::Search {
             query,
@@ -65,11 +81,25 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::Events { action } => match action {
             EventsAction::Tail { since } => commands::events::tail(&conn, since, json),
         },
-        Command::Instrumental { action } => {
-            run_instrumental(&mut conn, staging_dir.as_ref(), action, json)
+        Command::Instrumental { action } => run_instrumental(&mut conn, staging_dir, action, json),
+        Command::Jobs { action } => run_jobs(&mut conn, staging_dir, action, json),
+        #[cfg(feature = "mpris")]
+        Command::Playback { .. } => {
+            unreachable!("playback is dispatched before opening the database")
         }
-        Command::Jobs { action } => run_jobs(&mut conn, staging_dir.as_ref(), action, json),
     }
+}
+
+#[cfg(feature = "mpris")]
+fn run_playback(action: cli::PlaybackAction, json: bool) -> Result<(), CliError> {
+    use commands::playback::Action;
+    let action = match action {
+        cli::PlaybackAction::PlayPause => Action::PlayPause,
+        cli::PlaybackAction::Next => Action::Next,
+        cli::PlaybackAction::Previous => Action::Previous,
+        cli::PlaybackAction::Status => Action::Status,
+    };
+    commands::playback::run(action, json)
 }
 
 fn run_instrumental(

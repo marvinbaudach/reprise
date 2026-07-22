@@ -6,6 +6,8 @@ pub mod instrumental;
 pub mod instrumental_wait;
 pub mod jobs;
 pub mod library;
+#[cfg(feature = "mpris")]
+pub mod playback;
 pub mod playlist;
 pub mod scan;
 pub mod search;

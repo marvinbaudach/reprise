@@ -72,6 +72,27 @@ pub enum Command {
         #[command(subcommand)]
         action: JobsAction,
     },
+    /// Control the running Reprise app's playback over MPRIS (Linux; requires
+    /// the `mpris` feature).
+    #[cfg(feature = "mpris")]
+    Playback {
+        #[command(subcommand)]
+        action: PlaybackAction,
+    },
+}
+
+/// Playback transport actions (MPRIS). Only compiled with the `mpris` feature.
+#[cfg(feature = "mpris")]
+#[derive(Subcommand, Debug, Clone, Copy)]
+pub enum PlaybackAction {
+    /// Toggle play/pause.
+    PlayPause,
+    /// Skip to the next track.
+    Next,
+    /// Return to the previous track.
+    Previous,
+    /// Show the current playback status and track.
+    Status,
 }
 
 #[derive(Subcommand, Debug)]
