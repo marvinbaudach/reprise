@@ -1,64 +1,98 @@
 [package]
 name = "reprise-stems"
-description = "Stem-separation backend (ML inference) for Reprise's instrumental jobs (built out in packages E/G)."
+description = "Production stem-separation backend (ort + htdemucs ONNX) for Reprise's instrumental jobs."
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-# MIT (runtime/model licences are checked at the package E gate before any
-# weights ship). Platform-neutral so the job pipeline stays portable.
+# MIT. The heavy ML runtime (onnxruntime, via `ort`) is MIT OR Apache-2.0 and
+# the htdemucs weights are MIT (Meta) — cleared against LICENSING.md by the
+# package E spike (docs/research/stem-separation-runtime.md). The pure-Rust
+# audio codecs are permissive too; see the module docs in `src/lib.rs`.
 license = "MIT"
 
 [dependencies]
-# Package E's spike picks the ML runtime (candle or ort); package G implements
-# the `StemSeparationBackend` contract that reprise-core (package D) will add.
+# The engine whose `StemSeparationBackend` contract this crate implements.
 reprise-core = { path = "../reprise-core" }
 
-# --- Package E SPIKE ONLY: everything below is optional and OFF by default. ---
-# The default build (`cargo check --workspace`, `cargo test --workspace`,
-# `cargo clippy --all-targets --workspace`) never compiles these; the spike
-# `examples/` carry `required-features`, so `--all-targets` skips them unless a
-# spike feature is explicitly enabled. Package G replaces this with the single
-# chosen runtime and drops the losing candidate.
-candle-core = { version = "0.11", optional = true }
-candle-nn = { version = "0.11", optional = true }
-ort = { version = "=2.0.0-rc.10", optional = true, default-features = false, features = [
-    # (rc.10 pinned deliberately: the ort 2.0 RC whose API this spike targets,
-    # with prebuilt linux-x64 binaries on pyke's CDN. The spike measures the
-    # runtime, not a specific RC; package G re-pins to current/stable then.)
-    "std",
-    "download-binaries",
-    "ndarray",
-] }
-ndarray = { version = "0.16", optional = true }
-rustfft = { version = "6", optional = true }
-hound = { version = "3.5", optional = true }
+# --- ALWAYS COMPILED (default build), no native libraries, Flatpak-offline OK.
+# Model provisioning (checksum + licence notice) and the pure DSP orchestration
+# (chunking, overlap-add stitching, PCM conversion) build and are unit-tested
+# WITHOUT onnxruntime, so `cargo test -p reprise-stems` needs no model, no
+# network and no native lib. All tiny pure-Rust crates.
+sha2 = "0.10"
+dirs = "6"
+thiserror = "2"
+
+# --- REAL BACKEND (behind the `ort` feature). onnxruntime is dlopened at
+# runtime (`load-dynamic`) from a checksummed, explicitly-located library, so
+# the DEFAULT build performs no build-time download and stays Flatpak-offline
+# buildable. Everything here is optional and off by default.
+[dependencies.ort]
+version = "=2.0.0-rc.10"
+optional = true
+default-features = false
+
+# Pure-Rust audio decode for arbitrary library formats (FLAC/MP3/AAC/ALAC/
+# Vorbis/WAV/AIFF). MPL-2.0: file-level copyleft that permits redistribution,
+# commercial use and linking from both the GPL Linux client and future
+# proprietary frontends (MPL is FSF-listed GPL-compatible and links freely into
+# larger works). Passes the LICENSING.md model/dependency gate.
+[dependencies.symphonia]
+version = "0.5"
+optional = true
+default-features = false
+features = ["flac", "mp3", "isomp4", "aac", "alac", "ogg", "vorbis", "wav", "pcm", "adpcm", "aiff"]
+
+# Pure-Rust FLAC encoder for the instrumental render. Apache-2.0.
+[dependencies.flacenc]
+version = "0.5"
+optional = true
+default-features = false
+
+# Pure-Rust sample-rate conversion to the model's native 44.1 kHz. MIT.
+[dependencies.rubato]
+version = "0.16"
+optional = true
+
+# ONNX tensor plumbing, matched to `ort`'s ndarray feature. MIT OR Apache-2.0.
+[dependencies.ndarray]
+version = "0.16"
+optional = true
+
+# Blocking, pure-Rust HTTPS (rustls) for the first-use model download. Same
+# crate/major the engine already uses. Only the real fetcher pulls it in; the
+# download function is otherwise tested through an injected fetcher.
+[dependencies.ureq]
+version = "3"
+optional = true
+
+[dev-dependencies]
+tempfile = "3"
 
 [features]
-# Candidate (a): candle, pure-Rust. Verifies the pure-Rust / binary-size claim.
-spike-candle = ["dep:candle-core", "dep:candle-nn"]
-# Candidate (b): ort (ONNX Runtime) running an MDX-class ONNX model.
-spike-ort = ["dep:ort", "dep:ndarray", "dep:rustfft", "dep:hound"]
-
-# `required-features` keeps these spike examples OUT of the default build:
-# `cargo check/test/clippy --all-targets` skips them unless the spike feature is
-# explicitly enabled, so the workspace gates stay green and no one else builds
-# candle/ort. Run them with `--features spike-<runtime> --example <name>`.
-[[example]]
-name = "candle_probe"
-required-features = ["spike-candle"]
-
-[[example]]
-name = "ort_probe"
-required-features = ["spike-ort"]
-
-[[example]]
-name = "ort_mdx_bench"
-required-features = ["spike-ort"]
-
-[[example]]
-name = "ort_demucs_bench"
-required-features = ["spike-ort"]
+default = []
+# The production backend: the real `OrtStemBackend`, audio IO and HTTP model
+# download. onnxruntime is loaded dynamically at runtime (`load-dynamic`), so
+# there is NO build-time download and the build stays Flatpak/offline
+# compatible — even `--all-features` never fetches onnxruntime. Binary hosts
+# (the GTK app; the CLI behind its own `worker` feature) enable this.
+#
+# For a throwaway LOCAL build that should link a prebuilt runtime instead of
+# providing a libonnxruntime.so, add ort's own `download-binaries` on the
+# command line, e.g. `--features ort -F ort/download-binaries` — a dev
+# convenience that must never be used for a Flatpak/offline build.
+ort = [
+    "dep:ort",
+    "ort/std",
+    "ort/ndarray",
+    "ort/load-dynamic",
+    "dep:symphonia",
+    "dep:flacenc",
+    "dep:rubato",
+    "dep:ndarray",
+    "dep:ureq",
+]
 
 [lints]
 workspace = true
