@@ -47,9 +47,9 @@ fn ac_10_visual_widget_exposes_a_labeled_canvas() {
 }
 
 /// End-to-end smoke test for the Task 9 fullscreen chrome: builds the whole
-/// overlay (backdrop, vignette-painted canvas, header, bottom bar with seek
-/// and volume scales, transport, mode pills) with a cover texture and
-/// player hooks installed, and confirms it constructs and tears down without
+/// overlay (canvas, header, bottom bar with seek and volume scales,
+/// transport, mode pills) with a cover texture and player hooks installed,
+/// and confirms it constructs and tears down without
 /// panicking — the unit tests above only exercise pure formatting/CSS
 /// helpers, not the widget tree itself.
 #[test]
@@ -289,8 +289,7 @@ fn ac_10_fullscreen_layout_is_corner_anchored_per_design() {
 
 /// A small solid-color premultiplied-BGRA texture standing in for a real
 /// album cover, so `apply_cover`'s texture (not `None`) path runs. Mirrors
-/// the byte layout `backdrop_texture` (above, in the parent module) already
-/// relies on for `gdk::MemoryTexture`.
+/// the premultiplied-`ARGB32` byte layout `downscale_cover_rgba` reads back.
 fn dummy_cover_texture(edge: i32) -> gtk4::gdk::Texture {
     let stride = (edge * 4) as usize;
     let mut data = vec![0u8; stride * edge as usize];

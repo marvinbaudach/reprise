@@ -14,6 +14,9 @@
 
 mod fullscreen;
 mod render;
+mod song_visualizer_util;
+
+use song_visualizer_util::{downscale_cover_rgba, format_time, seek_fraction};
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -162,9 +165,8 @@ pub(in crate::ui) struct SongVisualizer {
     /// Latest position tick (`position_ms`, `duration_ms`), mirrored into the
     /// fullscreen seek row.
     position: Rc<Cell<(i64, i64)>>,
-    /// Latest cover texture, mirrored into the fullscreen backdrop and cover
-    /// thumbnail. Also drives the engine's secondary accent (see
-    /// `set_cover`).
+    /// Latest cover texture, mirrored into the fullscreen cover thumbnail.
+    /// Also drives the engine's secondary accent (see `set_cover`).
     cover: Rc<RefCell<Option<gtk4::gdk::Texture>>>,
     /// Pre-formatted "Up next: …" line, mirrored into the fullscreen queue
     /// strip.
@@ -237,8 +239,8 @@ impl SongVisualizer {
         }
     }
 
-    /// Mirrors the current cover into the fullscreen backdrop and cover
-    /// thumbnail AND feeds the engine's secondary accent: the texture is
+    /// Mirrors the current cover into the fullscreen cover thumbnail AND
+    /// feeds the engine's secondary accent: the texture is
     /// rasterized down to a small RGBA sample and handed to
     /// `VisualEngine::set_cover_pixels`, or cleared on `None`.
     pub(in crate::ui) fn set_cover(&self, texture: Option<gtk4::gdk::Texture>) {
@@ -493,64 +495,6 @@ fn queue_registered_areas(areas: &Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::Widge
 fn accent_rgb(widget: &impl IsA<gtk4::Widget>) -> (f32, f32, f32) {
     let color = widget.color();
     (color.red(), color.green(), color.blue())
-}
-
-/// Rasterizes `texture` down to an `edge`×`edge` RGBA byte buffer for the
-/// engine's secondary-accent palette sample. Uses a `gtk4::Snapshot` →
-/// `gsk::RenderNode` → cairo surface round trip (GSK does the scaling while
-/// rasterizing) rather than `gdk_texture_download`'s full-resolution
-/// readback — cheap regardless of the source texture's size, and avoids the
-/// deprecated `gdk_pixbuf_get_from_texture`. `None` if rasterization fails
-/// (an unreadable/zero-size texture); callers fall back to clearing the
-/// engine's cover accent.
-fn downscale_cover_rgba(texture: &gtk4::gdk::Texture, edge: i32) -> Option<Vec<u8>> {
-    let snapshot = gtk4::Snapshot::new();
-    let bounds = gtk4::graphene::Rect::new(0.0, 0.0, edge as f32, edge as f32);
-    snapshot.append_texture(texture, &bounds);
-    let node = snapshot.to_node()?;
-
-    let mut surface =
-        gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, edge, edge).ok()?;
-    {
-        let cr = gtk4::cairo::Context::new(&surface).ok()?;
-        node.draw(&cr);
-    }
-    surface.flush();
-    let stride = surface.stride() as usize;
-    let data = surface.data().ok()?;
-
-    let edge = edge as usize;
-    let mut rgba = Vec::with_capacity(edge * edge * 4);
-    for y in 0..edge {
-        for x in 0..edge {
-            let o = y * stride + x * 4;
-            if o + 3 >= data.len() {
-                continue;
-            }
-            // Cairo's ARGB32 is premultiplied, native-endian — on the
-            // little-endian hosts this app targets that's byte order
-            // [B, G, R, A], same assumption `render_mode_gallery_ppm`
-            // (below, in tests) makes when writing PPM output.
-            rgba.push(data[o + 2]);
-            rgba.push(data[o + 1]);
-            rgba.push(data[o]);
-            rgba.push(data[o + 3]);
-        }
-    }
-    Some(rgba)
-}
-
-fn format_time(ms: i64) -> String {
-    let seconds = ms.max(0) / 1_000;
-    format!("{}:{:02}", seconds / 60, seconds % 60)
-}
-
-fn seek_fraction(position_ms: i64, duration_ms: i64) -> f64 {
-    if duration_ms <= 0 {
-        0.0
-    } else {
-        (position_ms as f64 / duration_ms as f64).clamp(0.0, 1.0)
-    }
 }
 
 /// The picker's user-facing label for one visual mode.

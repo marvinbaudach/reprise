@@ -236,7 +236,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_1_fetch_respects_rate_limit() {
+    fn nr_1a_fetch_respects_rate_limit() {
         let base = Instant::now();
         let elapsed = Cell::new(Duration::ZERO);
         let slept = Cell::new(Duration::ZERO);
@@ -307,6 +307,23 @@ mod tests {
         assert_eq!(
             fixture_get(url, directory.path()).unwrap(),
             r#"{"release-groups":[]}"#
+        );
+    }
+
+    #[test]
+    fn new_releases_url_rels_extension_keeps_the_fixture_route() {
+        // NR-11 [geplant]: `release_groups_url` now asks MusicBrainz for
+        // url-rels too. The fixture matcher keys off `type=album%7Cep%7C
+        // single`, which must survive the `inc=url-rels` addition or every
+        // fixture-backed New Releases test would silently fall back to the
+        // generic `ReleaseGroups` route.
+        let url = crate::artist_news::release_groups_url("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        assert!(url.contains("inc=url-rels"));
+        assert_eq!(
+            fixture_request(&url),
+            Some(FixtureRequest::NewReleases(
+                "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa".into()
+            ))
         );
     }
 

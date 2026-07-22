@@ -38,7 +38,6 @@ pub enum NavigationIntent {
         origin: Box<BrowserPlace>,
         track_id: i64,
     },
-    OpenNewReleases,
     Back,
     Forward,
 }
@@ -175,7 +174,6 @@ impl BrowserNavigation {
                 set_explicit_track_anchor(&mut target, track_id);
                 self.go_metadata_scope(target)
             }
-            NavigationIntent::OpenNewReleases => self.go_new(BrowserPlace::NewReleases),
         }
     }
 

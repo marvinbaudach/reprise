@@ -1,6 +1,6 @@
 //! Lazy release-group covers with an immediate, spinner-free fallback tile.
 
-#![allow(dead_code)] // Constructed by the popover and digest tasks that follow NR-2.
+#![allow(dead_code)] // Constructed by the popover that follows NR-2.
 
 use std::cell::Cell;
 use std::rc::Rc;
