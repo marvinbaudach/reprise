@@ -776,6 +776,29 @@ fn missing_ids_are_sorted_like_library() {
 }
 
 #[test]
+fn track_source_path_returns_the_absolute_path_or_none() {
+    // The focused by-id path lookup the instrumental worker resolves a job's
+    // source_track_id through (P3b).
+    let conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO tracks (id, path, title, artist, added_at, file_mtime, file_size) \
+         VALUES (1, '/music/song.flac', 'S', 'A', 1, 1, 1)",
+        [],
+    )
+    .unwrap();
+    assert_eq!(
+        track_source_path(&conn, 1).unwrap(),
+        Some(std::path::PathBuf::from("/music/song.flac"))
+    );
+    assert_eq!(
+        track_source_path(&conn, 999).unwrap(),
+        None,
+        "a missing row is None, not an error"
+    );
+}
+
+#[test]
 fn fil_7_count_browsed_ai_excludes_ai_tracks_via_count_star() {
     // The cheap COUNT(*) variant that replaces the QUEUE_LIMIT-capped
     // ids.len() fallback: with exclude_ai it counts only non-AI Library

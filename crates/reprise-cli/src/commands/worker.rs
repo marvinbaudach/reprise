@@ -476,13 +476,14 @@ fn abandon_or_cancel(
 }
 
 /// Resolves the claimed job's source track to an on-disk path, or `None` when
-/// the job has no source or the track row is gone.
+/// the job has no source or the track row is gone. Uses the focused
+/// [`queries::track_source_path`] facade — the same by-id path lookup the
+/// app-hosted worker resolves through.
 fn resolve_source(conn: &Connection, job: &ClaimedJob) -> Result<Option<PathBuf>, CliError> {
     let Some(source_track_id) = job.source_track_id else {
         return Ok(None);
     };
-    let summary = queries::query_track_summary(conn, source_track_id)?;
-    Ok(summary.map(|summary| PathBuf::from(summary.path)))
+    Ok(queries::track_source_path(conn, source_track_id)?)
 }
 
 /// Sleeps the configured simulated-render time in short slices, honoring

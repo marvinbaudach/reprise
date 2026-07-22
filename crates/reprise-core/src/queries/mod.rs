@@ -359,6 +359,23 @@ pub fn query_track_count_browsed(
     }
 }
 
+/// The absolute on-disk path of a track by id, or `None` if the row is gone.
+/// The focused lookup an instrumental worker uses to resolve a job's
+/// `source_track_id` to the file its backend reads (P3b) — cheaper than
+/// fetching a whole [`maintenance::query_track_summary`], and the seam that
+/// keeps productive frontend code out of assembling SQL.
+pub fn track_source_path(
+    conn: &Connection,
+    track_id: i64,
+) -> Result<Option<std::path::PathBuf>, rusqlite::Error> {
+    use rusqlite::OptionalExtension;
+    conn.query_row("SELECT path FROM tracks WHERE id = ?1", [track_id], |row| {
+        row.get::<_, String>(0)
+    })
+    .optional()
+    .map(|path| path.map(std::path::PathBuf::from))
+}
+
 /// Like [`query_track_count_browsed`] but honoring the FIL-7 AI-exclude filter
 /// (Beschluss 17), matching [`query_track_ids_browsed_ai`]: only `Library`
 /// honors `exclude_ai`, so every other source ignores it and delegates. This is
