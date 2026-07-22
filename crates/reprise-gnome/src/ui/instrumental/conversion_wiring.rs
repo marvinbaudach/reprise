@@ -61,6 +61,13 @@ pub(in crate::ui) fn install(deps: &ConversionWiring<'_>) {
         super::db_source_resolver(),
         std::process::id() as i64,
     );
+    // The enqueue paths (context menu) nudge the worker through this hook so a
+    // freshly queued render starts immediately rather than after the next event.
+    super::set_wake_hook({
+        let worker = worker.clone();
+        Rc::new(move || worker.wake())
+    });
+
     let view = ConversionView::new(deps.conn.clone(), staging.clone());
     deps.content_stack
         .add_named(view.widget(), Some(CONVERSION_PAGE));
