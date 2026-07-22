@@ -19,12 +19,13 @@ const DT: f32 = 1.0 / 60.0;
 /// Below this every cell reads as fully rested (`is_still`).
 const REST_EPSILON: f32 = 0.01;
 
-/// How hard the far row is pulled toward its band target each step. Low on
-/// purpose: a high gain makes the row overshoot every frame, and that
-/// self-oscillation reads as a constant tremor — a visual noise floor — rather
-/// than the music. At this gain the row *eases* toward the (already smoothed)
-/// bands, so the surface only moves when the sound actually does.
-const DRIVE_GAIN: f32 = 14.0;
+/// Fraction of the remaining distance the far row's *height* closes toward its
+/// band target each step. The row is a position-driven boundary, not a
+/// force-driven mass: easing the height directly (first order) tracks the music
+/// fast with no velocity overshoot, so it snaps to loud hits without the
+/// self-oscillating tremor a high force gain produces. ~0.5 ≈ reaches the
+/// target in a few frames.
+const DRIVE_EASE: f32 = 0.5;
 /// Height the far row aims for at full band energy (drive target = band·this).
 const DRIVE_AMPLITUDE: f32 = 2.2;
 /// Bands below this inject no drive at all — quiet, non-dominant frequencies
@@ -32,11 +33,11 @@ const DRIVE_AMPLITUDE: f32 = 2.2;
 const DRIVE_GATE: f32 = 0.10;
 /// Neighbor spring coupling: how fast a disturbance propagates across the mesh
 /// toward the viewer. Kept lively so ripples travel rather than crawl.
-const SPRING: f32 = 50.0;
+const SPRING: f32 = 60.0;
 /// Restoring pull back toward a flat surface.
 const RESTORING: f32 = 1.7;
 /// Velocity damping rate; `exp(-DT·this)` per step. Light, so waves linger.
-const DAMP_RATE: f32 = 1.1;
+const DAMP_RATE: f32 = 1.0;
 
 /// Height (`h`) and velocity (`v`) field for every grid cell.
 pub struct WaterGrid {
@@ -60,30 +61,33 @@ impl WaterGrid {
         }
     }
 
-    /// One 60 Hz step: the far row eases toward the mirrored display bands with
-    /// a low [`DRIVE_GAIN`] (so it tracks the music without self-oscillating
-    /// into a tremor) and a [`DRIVE_GATE`] that ignores quiet bands entirely;
-    /// [`SPRING`] coupling carries the disturbance toward the viewer,
-    /// [`RESTORING`] pulls back to flat, and `exp(-DT·`[`DAMP_RATE`]`)` damps
-    /// so ripples travel and linger. `h` clamped to `-1.1..=3.0`.
+    /// One 60 Hz step. Row 0 is a position-driven boundary: its height eases
+    /// straight to the (gated) band target with [`DRIVE_EASE`], so it tracks
+    /// the music fast without the velocity overshoot that reads as a tremor,
+    /// and [`DRIVE_GATE`] keeps quiet bands from stirring it at all. The rows in
+    /// front of it are free waves — [`SPRING`] coupling carries the disturbance
+    /// toward the viewer, [`RESTORING`] pulls back to flat, and
+    /// `exp(-DT·`[`DAMP_RATE`]`)` damps so ripples travel and linger. `h`
+    /// clamped to `-1.1..=3.0`.
     pub fn advance(&mut self, bands: &[f32; SPECTRUM_BAND_COUNT]) {
         let half = (WATER_COLS - 1) as f32 / 2.0;
-        for (col, drive_cell) in self.v.iter_mut().take(WATER_COLS).enumerate() {
+        for col in 0..WATER_COLS {
             let f = (col as f32 - half).abs() / half;
             let band = bands[((f * 0.775 * (SPECTRUM_BAND_COUNT - 1) as f32) as usize)
                 .min(SPECTRUM_BAND_COUNT - 1)];
-            let drive = if band < DRIVE_GATE { 0.0 } else { band };
-            *drive_cell += (drive * DRIVE_AMPLITUDE - self.h[col]) * DT * DRIVE_GAIN;
+            let target = if band < DRIVE_GATE {
+                0.0
+            } else {
+                band * DRIVE_AMPLITUDE
+            };
+            self.h[col] += (target - self.h[col]) * DRIVE_EASE;
+            self.v[col] = 0.0;
         }
         let damp = (-DT * DAMP_RATE).exp();
-        for row in 0..WATER_ROWS {
+        for row in 1..WATER_ROWS {
             for col in 0..WATER_COLS {
                 let i = row * WATER_COLS + col;
-                let up = if row > 0 {
-                    self.h[i - WATER_COLS]
-                } else {
-                    self.h[i]
-                };
+                let up = self.h[i - WATER_COLS];
                 let down = if row < WATER_ROWS - 1 {
                     self.h[i + WATER_COLS]
                 } else {
@@ -101,8 +105,8 @@ impl WaterGrid {
                 self.v[i] *= damp;
             }
         }
-        for (height, velocity) in self.h.iter_mut().zip(self.v.iter()) {
-            *height = (*height + velocity * DT).clamp(-1.1, 3.0);
+        for i in WATER_COLS..CELLS {
+            self.h[i] = (self.h[i] + self.v[i] * DT).clamp(-1.1, 3.0);
         }
     }
 

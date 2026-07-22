@@ -20,13 +20,11 @@ use super::scene::{Fill, Geom, Rgba, Scene, Shape};
 use super::water::WaterGrid;
 
 /// Bands rise fast (attack) and fall slowly (release): the asymmetry is what
-/// makes transients punch instead of averaging away. Deliberately eased rather
-/// than instant — this is the analogue of a Web Audio `smoothingTimeConstant`
-/// (attack `a` ≈ smoothing `1-a`), and music visualizers sit around `0.8`
-/// smoothing for a calm read. `0.4` keeps some punch while smoothing the
-/// single-frame jitter that otherwise looks like a noise floor; beats still
-/// hit hard through the separate water splash on beat detection.
-const BAND_ATTACK: f32 = 0.4;
+/// makes transients punch instead of averaging away. Fast so the visuals stay
+/// responsive; the noise-floor jitter is suppressed upstream (the analyzer's
+/// gamma + AGC floor squash faint bands) rather than by slowing the rise, so
+/// this can stay high without reintroducing flicker.
+const BAND_ATTACK: f32 = 0.75;
 /// Per-band release floor: band 0 (bass) lingers, high bands sparkle. Snappier
 /// than a gentle gauge so bands track fine musical detail instead of gliding
 /// smoothly between values.
