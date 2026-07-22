@@ -6,7 +6,8 @@
 use crate::models::Track;
 
 use super::clauses::{
-    filter_clause, like_pattern, order_expr_and_dir, row_to_id, row_to_playlist_track, PRESENT,
+    ai_projection, filter_clause, like_pattern, order_expr_and_dir, row_to_id,
+    row_to_playlist_track, PRESENT,
 };
 use super::queue::QUEUE_LIMIT;
 use super::MAX_WINDOW_LIMIT;
@@ -26,9 +27,15 @@ use rusqlite::Connection;
 /// remove_selected_from_playlist` can resolve a selected on-screen row back
 /// to the position `library::playlists::remove_positions` actually needs —
 /// see `Track::playlist_position`'s doc comment.
-fn build_playlist_track_query(sort_field: &str, sort_dir: &str, has_filter: bool) -> String {
+fn build_playlist_track_query(
+    sort_field: &str,
+    sort_dir: &str,
+    has_filter: bool,
+    project_ai: bool,
+) -> String {
     let (order_expr, dir) = order_expr_and_dir(sort_field, sort_dir);
     let filter_clause = filter_clause(has_filter, 4);
+    let is_ai = ai_projection(project_ai);
     format!(
         "SELECT tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album, \
          tracks.album_artist, tracks.year, tracks.track_no, tracks.genre, \
@@ -36,7 +43,7 @@ fn build_playlist_track_query(sort_field: &str, sort_dir: &str, has_filter: bool
          tracks.last_played_at, tracks.added_at, tracks.file_mtime, tracks.missing_since, \
          tracks.missing_reason, tracks.untagged, tracks.file_size, tracks.device, \
          tracks.inode, \
-         EXISTS(SELECT 1 FROM track_provenance tp WHERE tp.track_id = tracks.id AND tp.ai = 1) AS is_ai, \
+         {is_ai} AS is_ai, \
          pt.position \
          FROM tracks JOIN playlist_tracks pt ON pt.track_id = tracks.id \
          WHERE pt.playlist_id = ?3{filter_clause} \
@@ -52,10 +59,11 @@ pub(super) fn query_track_window_playlist(
     filter: &str,
     offset: i64,
     limit: i64,
+    project_ai: bool,
 ) -> Result<Vec<Track>, rusqlite::Error> {
     let limit = limit.clamp(0, MAX_WINDOW_LIMIT);
     let has_filter = !filter.trim().is_empty();
-    let sql = build_playlist_track_query(sort_field, sort_dir, has_filter);
+    let sql = build_playlist_track_query(sort_field, sort_dir, has_filter, project_ai);
     let mut stmt = conn.prepare(&sql)?;
     let like = like_pattern(filter.trim());
     let rows = if has_filter {
@@ -159,6 +167,10 @@ pub fn query_playlist_tracks_full(
     conn: &Connection,
     playlist_id: i64,
 ) -> Result<Vec<Track>, rusqlite::Error> {
+    // M3U export ignores `is_ai`, so project the cheap literal `0` (no
+    // per-row provenance subquery) while keeping the column at its fixed index
+    // for `row_to_playlist_track` (INST-10 / FIX-4).
+    let is_ai = ai_projection(false);
     let sql = format!(
         "SELECT tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album, \
          tracks.album_artist, tracks.year, tracks.track_no, tracks.genre, \
@@ -166,7 +178,7 @@ pub fn query_playlist_tracks_full(
          tracks.last_played_at, tracks.added_at, tracks.file_mtime, tracks.missing_since, \
          tracks.missing_reason, tracks.untagged, tracks.file_size, tracks.device, \
          tracks.inode, \
-         EXISTS(SELECT 1 FROM track_provenance tp WHERE tp.track_id = tracks.id AND tp.ai = 1) AS is_ai, \
+         {is_ai} AS is_ai, \
          pt.position \
          FROM tracks JOIN playlist_tracks pt ON pt.track_id = tracks.id \
          WHERE pt.playlist_id = ?1 AND {PRESENT} \
