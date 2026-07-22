@@ -94,5 +94,12 @@ ort = [
     "dep:ureq",
 ]
 
+# A production-path model provisioner (checksum + licence notice). Needs the
+# real HTTP fetcher, so it is gated on `ort` and never built by the default
+# `cargo build`/`--all-targets` probe.
+[[example]]
+name = "provision_model"
+required-features = ["ort"]
+
 [lints]
 workspace = true
