@@ -51,6 +51,7 @@ fn build_playlist_track_query(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn query_track_window_playlist(
     conn: &mut Connection,
     playlist_id: i64,
