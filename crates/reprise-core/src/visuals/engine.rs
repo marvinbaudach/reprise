@@ -270,7 +270,9 @@ impl VisualEngine {
         let beat = frame.beat();
         if beat.fired {
             self.impact.spawn_beat(beat.strength);
-            self.water.splash(frame.level());
+            // Scale the water eruption by how hard the beat landed, so big beats
+            // throw a real splash and soft ones barely ripple.
+            self.water.splash(beat.strength);
         }
         self.impact.spawn_drop(frame.dynamics());
     }

@@ -27,7 +27,19 @@ const REST_EPSILON: f32 = 0.01;
 /// target in a couple of frames — sharp and reactive.
 const DRIVE_EASE: f32 = 0.6;
 /// Height a hot-zone cell aims for at full band energy (target = band·this·win).
-const DRIVE_AMPLITUDE: f32 = 2.6;
+/// Tuned for the honest-loudness spectrum: a full band makes a strong ridge, a
+/// moderate band a modest one, so the surface tracks real loudness instead of
+/// erupting on tiny sounds.
+const DRIVE_AMPLITUDE: f32 = 1.5;
+/// Beat eruption: a strong beat lifts the whole ridge upward by up to
+/// `strength·`[`BEAT_LIFT`]; the lift then decays each step so the liquid falls
+/// back down. This is what makes big beats splash straight up and settle.
+const BEAT_LIFT: f32 = 2.0;
+/// Accumulated lift is capped here so a run of beats can't peg the ridge.
+const BEAT_LIFT_MAX: f32 = 2.6;
+/// Per-step decay of the beat lift (`exp`-like); ~0.88 ⇒ the jet falls back over
+/// roughly 150 ms, a splashy timescale.
+const BEAT_LIFT_DECAY: f32 = 0.88;
 /// Bands below this inject no drive at all — quiet, non-dominant frequencies
 /// leave the surface flat instead of trembling it. A noise gate, essentially.
 const DRIVE_GATE: f32 = 0.08;
@@ -87,6 +99,8 @@ pub struct WaterGrid {
     v: [f32; CELLS],
     hot: [f32; CELLS],
     rng: u32,
+    /// Decaying upward lift injected by beats (see [`BEAT_LIFT`]).
+    beat_lift: f32,
 }
 
 impl Default for WaterGrid {
@@ -108,6 +122,7 @@ impl WaterGrid {
             v: [0.0; CELLS],
             hot,
             rng: 0xa511_e9b3,
+            beat_lift: 0.0,
         }
     }
 
@@ -129,7 +144,7 @@ impl WaterGrid {
                 }
                 let band = bands[col_band(col)];
                 let drive = if band < DRIVE_GATE { 0.0 } else { band };
-                let target = drive * DRIVE_AMPLITUDE * win;
+                let target = (drive * DRIVE_AMPLITUDE + self.beat_lift) * win;
                 self.h[i] = (self.h[i] + (target - self.h[i]) * DRIVE_EASE).clamp(-1.1, 3.0);
                 self.v[i] = 0.0;
             }
@@ -172,15 +187,23 @@ impl WaterGrid {
                 self.h[i] = (self.h[i] + self.v[i] * DT).clamp(-1.1, 3.0);
             }
         }
+        self.beat_lift *= BEAT_LIFT_DECAY;
     }
 
-    /// Beat: 2–3 random Gaussian splashes, power `(3.5..6.5)·(0.45+level)`.
-    pub fn splash(&mut self, level: f32) {
+    /// Beat splash, scaled by `strength` (`0..=1`): a strong beat lifts the whole
+    /// central ridge upward (it eases back down as [`BEAT_LIFT`] decays) and
+    /// throws a couple of upward ripples into the surrounding free mesh, so the
+    /// liquid visibly erupts and settles. Soft beats barely move the surface.
+    pub fn splash(&mut self, strength: f32) {
+        let strength = strength.clamp(0.0, 1.0);
+        // Central eruption: raise the ridge target; `advance` decays it back.
+        self.beat_lift = (self.beat_lift + strength * BEAT_LIFT).min(BEAT_LIFT_MAX);
+        // Surrounding spray: upward ripples in the free (non-driven) mesh.
         let count = 2 + (xorshift(&mut self.rng) * 2.0) as usize;
         for _ in 0..count {
             let col = (WATER_COLS as f32 * (0.2 + xorshift(&mut self.rng) * 0.6)) as usize;
             let row = (WATER_ROWS as f32 * (0.25 + xorshift(&mut self.rng) * 0.55)) as usize;
-            let power = (3.5 + xorshift(&mut self.rng) * 3.0) * (0.45 + level);
+            let power = (2.5 + xorshift(&mut self.rng) * 3.0) * (0.35 + strength);
             for r in row.saturating_sub(3)..(row + 4).min(WATER_ROWS) {
                 for c in col.saturating_sub(3)..(col + 4).min(WATER_COLS) {
                     let dr = r as f32 - row as f32;
@@ -198,6 +221,7 @@ impl WaterGrid {
     pub fn reset(&mut self) {
         self.h = [0.0; CELLS];
         self.v = [0.0; CELLS];
+        self.beat_lift = 0.0;
     }
 
     /// All `|h|`, `|v|` below `REST_EPSILON` — the surface has settled.
