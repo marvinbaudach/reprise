@@ -618,7 +618,7 @@ fn on_rating_changed(
         Ok(()) => {
             let refresh = rating_refresh_for_sort(&shared.sort.borrow().field);
             match refresh {
-                RatingRefresh::Row => shared.model.invalidate_window_at(position),
+                RatingRefresh::Row => shared.refresh_row_pinning_viewport(position),
                 RatingRefresh::Query => reload(shared),
             }
         }
