@@ -176,4 +176,8 @@ pub enum JobsAction {
         #[arg(long, value_name = "BATCH_ID")]
         batch: Option<String>,
     },
+    /// Run a standalone worker that claims and renders queued jobs (requires
+    /// the `worker` feature).
+    #[cfg(feature = "worker")]
+    Work(crate::commands::worker::WorkerArgs),
 }

@@ -9,3 +9,5 @@ pub mod library;
 pub mod playlist;
 pub mod scan;
 pub mod search;
+#[cfg(feature = "worker")]
+pub mod worker;
