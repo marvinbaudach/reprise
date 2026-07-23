@@ -581,7 +581,6 @@ impl PlayerBar {
     /// to 0 and `pre_mute_volume` stores the prior level; when unmuted, the
     /// prior level is restored. `f` is called with the resulting effective
     /// volume after each toggle.
-    #[allow(dead_code)]
     pub fn connect_mute_toggled<F: Fn(f64) + 'static>(&self, f: F) {
         let volume_scale = self.volume_scale.clone();
         let muted = Rc::new(Cell::new(false));
