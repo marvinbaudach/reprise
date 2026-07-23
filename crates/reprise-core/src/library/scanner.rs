@@ -31,25 +31,43 @@ pub(crate) fn file_mtime(path: &Path) -> i64 {
         .map_or(0, |d| d.as_secs() as i64)
 }
 
-/// `(file_size, device, inode)` for the move-detection fingerprint. Linux-
-/// only (`std::os::unix::fs::MetadataExt`), matching the rest of this
-/// codebase's Linux-only scope. Returns `None` if `stat` fails (e.g. a race
-/// where the file vanished between `walkdir` listing it and this call) —
-/// Stage 3 Task 1: a file that can't be stat'd has no reliable filesystem
-/// identity to fingerprint, so `scan_folder` skips the move-detection step
-/// entirely for it (rather than the pre-Task-1 behavior of silently
-/// fingerprinting on placeholder zeros, which could have coincidentally
-/// matched an unrelated `(device, inode)` of `(0, 0)`) and stores `NULL`
-/// device/inode for the row, same as any pre-Stage-2 row that predates these
-/// columns. `file_size` still defaults to `0` in that case — unlike device/
-/// inode it is `NOT NULL DEFAULT 0` in the schema, matching every other
-/// tag-derived column's non-null convention, so `0` (rather than `NULL`) is
-/// the only representable "unknown" value for it anyway.
+/// `(file_size, device, inode)` for the move-detection fingerprint. The app
+/// runs on Linux and uses the Unix `(device, inode)` identity
+/// (`std::os::unix::fs::MetadataExt`); the Windows and other-platform arms
+/// exist only to keep `reprise-core` cross-checkable (spec I / cross-target CI)
+/// — on Windows the nearest equivalents (volume serial + 64-bit file index)
+/// stand in, and on any other platform identity degrades to `(0, 0)`. Returns
+/// `None` if `stat` fails (e.g. a race where the file vanished between
+/// `walkdir` listing it and this call) — Stage 3 Task 1: a file that can't be
+/// stat'd has no reliable filesystem identity to fingerprint, so `scan_folder`
+/// skips the move-detection step entirely for it (rather than the pre-Task-1
+/// behavior of silently fingerprinting on placeholder zeros, which could have
+/// coincidentally matched an unrelated `(device, inode)` of `(0, 0)`) and
+/// stores `NULL` device/inode for the row, same as any pre-Stage-2 row that
+/// predates these columns. `file_size` still defaults to `0` in that case —
+/// unlike device/inode it is `NOT NULL DEFAULT 0` in the schema, matching every
+/// other tag-derived column's non-null convention, so `0` (rather than `NULL`)
+/// is the only representable "unknown" value for it anyway.
 pub(crate) fn file_stat(path: &Path) -> Option<(u64, u64, u64)> {
-    use std::os::unix::fs::MetadataExt;
-    std::fs::metadata(path)
-        .ok()
-        .map(|m| (m.size(), m.dev(), m.ino()))
+    let metadata = std::fs::metadata(path).ok()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        Some((metadata.size(), metadata.dev(), metadata.ino()))
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        Some((
+            metadata.file_size(),
+            u64::from(metadata.volume_serial_number().unwrap_or(0)),
+            metadata.file_index().unwrap_or(0),
+        ))
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        Some((metadata.len(), 0, 0))
+    }
 }
 
 /// Return type for tag_param_values: (title, artist, album, album_artist,
