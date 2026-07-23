@@ -53,8 +53,22 @@ impl PlayerController {
                 }
             }
             PlayerEvent::TrackFinished => {
-                tracing::info!("track finished: advancing queue");
-                self.advance_playback(super::up_next_transport::AdvanceReason::Automatic);
+                // INST-4b/5b: a finished instrumental preview stops without
+                // advancing the queue (so a stale gapless pre-feed / queue
+                // snapshot can't start playing after it, and no play is credited
+                // to the wrong track); an ordinary queue track advances.
+                let mode = if self.is_previewing() {
+                    super::preview::PlaybackMode::Preview
+                } else {
+                    super::preview::PlaybackMode::Queue
+                };
+                if mode.advances_queue_on_finish() {
+                    tracing::info!("track finished: advancing queue");
+                    self.advance_playback(super::up_next_transport::AdvanceReason::Automatic);
+                } else {
+                    tracing::info!("instrumental preview finished: stopping without advancing");
+                    self.end_preview();
+                }
             }
             PlayerEvent::AdvancedToNext => {
                 // Gapless hand-off: the pre-fed next track is already playing.
@@ -104,6 +118,8 @@ impl PlayerController {
     /// mirror.rs` and `playback_faults.rs` can call it too.
     pub(in crate::ui) fn reset_to_stopped(&self) {
         self.evaluate_play_tracking();
+        // A hard stop also leaves any instrumental-preview mode (INST-4b).
+        *self.preview_path.borrow_mut() = None;
         self.consecutive_skips.set(0);
         self.failure_skip_limit.set(0);
         // QUE-3: the playback snapshot lives exactly as long as playback —

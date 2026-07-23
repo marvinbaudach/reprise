@@ -158,11 +158,12 @@ pub use import_errors::{
 // `query_missing_groups` above.
 pub use import_errors::{count_import_errors_active, count_new_import_errors};
 pub use library_views::{
-    query_album_canonical_track_ids, query_album_track_ids, query_albums,
-    query_artist_detail_albums, query_artists, AlbumSummary, ArtistAlbum, ArtistSummary,
+    query_album_canonical_track_ids, query_album_count, query_album_track_ids, query_albums,
+    query_artist_count, query_artist_detail_albums, query_artists, AlbumSummary, ArtistAlbum,
+    ArtistSummary,
 };
 pub use maintenance::{
-    exclude_tracks_matching_paths, mark_track_missing_if_current, purge_tombstones,
+    exclude_tracks_matching_paths, filter_present, mark_track_missing_if_current, purge_tombstones,
     query_import_error_count, query_live_track_ids, query_live_track_paths,
     query_queue_purge_track_ids, query_queue_retained_track_ids, query_sync_tracks,
     query_track_album_artist, query_track_ids_by_title_desc, query_track_ids_by_titles,
@@ -252,18 +253,52 @@ pub fn query_track_window_browsed(
     limit: i64,
     queue_ids: &[i64],
 ) -> Result<Vec<Track>, rusqlite::Error> {
+    query_track_window_browsed_ai(
+        conn, source, sort_field, sort_dir, filter, browse, offset, limit, queue_ids, false, true,
+    )
+}
+
+/// Like [`query_track_window_browsed`] but honoring two AI concerns:
+///
+/// - `exclude_ai` (plan 2.4/8, Beschluss 17): when set, tracks flagged in
+///   `track_provenance` are hidden. Only `Library` honors it — that is where
+///   the browse filter row lives.
+/// - `project_ai` (INST-10 / FIX-4): whether to project the real `is_ai` column
+///   (the correlated provenance `EXISTS`) or a literal `0`. The AI badge only
+///   renders while the experimental switch is on, so the GTK layer passes
+///   `experimental_on` here; when off, every source's window carries no per-row
+///   provenance subquery. Honored by **all** sources (the badge can appear on
+///   any track row). The default entry points above pass `false`/`true`.
+#[allow(clippy::too_many_arguments)]
+pub fn query_track_window_browsed_ai(
+    conn: &mut Connection,
+    source: &ViewSource,
+    sort_field: &str,
+    sort_dir: &str,
+    filter: &str,
+    browse: &BrowseFilter,
+    offset: i64,
+    limit: i64,
+    queue_ids: &[i64],
+    exclude_ai: bool,
+    project_ai: bool,
+) -> Result<Vec<Track>, rusqlite::Error> {
     match source {
         ViewSource::Library => library::query_track_window_library(
-            conn, sort_field, sort_dir, filter, offset, limit, browse,
+            conn, sort_field, sort_dir, filter, offset, limit, browse, exclude_ai, project_ai,
         ),
-        ViewSource::Missing => {
-            library::query_track_window_missing(conn, sort_field, sort_dir, filter, offset, limit)
-        }
+        ViewSource::Missing => library::query_track_window_missing(
+            conn, sort_field, sort_dir, filter, offset, limit, project_ai,
+        ),
         ViewSource::Playlist(id) => playlist::query_track_window_playlist(
-            conn, *id, sort_field, sort_dir, filter, offset, limit,
+            conn, *id, sort_field, sort_dir, filter, offset, limit, project_ai,
         ),
-        ViewSource::Smart(id) => smart::query_track_window_smart(conn, *id, filter, offset, limit),
-        ViewSource::Queue => queue::query_track_window_queue(conn, queue_ids, offset, limit),
+        ViewSource::Smart(id) => {
+            smart::query_track_window_smart(conn, *id, filter, offset, limit, project_ai)
+        }
+        ViewSource::Queue => {
+            queue::query_track_window_queue(conn, queue_ids, offset, limit, project_ai)
+        }
         ViewSource::Album {
             album,
             album_artist,
@@ -277,13 +312,15 @@ pub fn query_track_window_browsed(
             browse,
             offset,
             limit,
+            project_ai,
         ),
         ViewSource::Artist(artist) => library_views::query_artist_track_window(
-            conn, artist, sort_field, sort_dir, filter, browse, offset, limit,
+            conn, artist, sort_field, sort_dir, filter, browse, offset, limit, project_ai,
         ),
-        ViewSource::ImportErrors | ViewSource::MyStats | ViewSource::Device { .. } => {
-            Ok(Vec::new())
-        }
+        ViewSource::ImportErrors
+        | ViewSource::MyStats
+        | ViewSource::Conversions
+        | ViewSource::Device { .. } => Ok(Vec::new()),
     }
 }
 
@@ -330,7 +367,48 @@ pub fn query_track_count_browsed(
         ViewSource::Artist(artist) => {
             library_views::query_artist_track_count(conn, artist, filter, browse)
         }
-        ViewSource::ImportErrors | ViewSource::MyStats | ViewSource::Device { .. } => Ok(0),
+        ViewSource::ImportErrors
+        | ViewSource::MyStats
+        | ViewSource::Conversions
+        | ViewSource::Device { .. } => Ok(0),
+    }
+}
+
+/// The absolute on-disk path of a track by id, or `None` if the row is gone.
+/// The focused lookup an instrumental worker uses to resolve a job's
+/// `source_track_id` to the file its backend reads (P3b) — cheaper than
+/// fetching a whole [`maintenance::query_track_summary`], and the seam that
+/// keeps productive frontend code out of assembling SQL.
+pub fn track_source_path(
+    conn: &Connection,
+    track_id: i64,
+) -> Result<Option<std::path::PathBuf>, rusqlite::Error> {
+    use rusqlite::OptionalExtension;
+    conn.query_row("SELECT path FROM tracks WHERE id = ?1", [track_id], |row| {
+        row.get::<_, String>(0)
+    })
+    .optional()
+    .map(|path| path.map(std::path::PathBuf::from))
+}
+
+/// Like [`query_track_count_browsed`] but honoring the FIL-7 AI-exclude filter
+/// (Beschluss 17), matching [`query_track_ids_browsed_ai`]: only `Library`
+/// honors `exclude_ai`, so every other source ignores it and delegates. This is
+/// the cheap `COUNT(*)` the AI-filtered view uses for its total instead of an
+/// id-list length, which would silently cap at `QUEUE_LIMIT`.
+pub fn query_track_count_browsed_ai(
+    conn: &Connection,
+    source: &ViewSource,
+    filter: &str,
+    browse: &BrowseFilter,
+    queue_ids: &[i64],
+    exclude_ai: bool,
+) -> Result<i64, rusqlite::Error> {
+    match source {
+        ViewSource::Library => {
+            library::query_track_count_library_ai(conn, filter, browse, exclude_ai)
+        }
+        _ => query_track_count_browsed(conn, source, filter, browse, queue_ids),
     }
 }
 
@@ -372,10 +450,31 @@ pub fn query_track_ids_browsed(
     browse: &BrowseFilter,
     queue_ids: &[i64],
 ) -> Result<Vec<i64>, rusqlite::Error> {
+    query_track_ids_browsed_ai(
+        conn, source, sort_field, sort_dir, filter, browse, queue_ids, false,
+    )
+}
+
+/// Like [`query_track_ids_browsed`] but honoring the AI-exclude filter on the
+/// flat Library source (plan 2.4/8, Beschluss 17): the queue seam "Play all"
+/// builds from hides AI-flagged tracks when `exclude_ai` is set, so
+/// at-queue-end refill follows the visible view. Only `Library` honors it.
+#[allow(clippy::too_many_arguments)]
+pub fn query_track_ids_browsed_ai(
+    conn: &Connection,
+    source: &ViewSource,
+    sort_field: &str,
+    sort_dir: &str,
+    filter: &str,
+    browse: &BrowseFilter,
+    queue_ids: &[i64],
+    exclude_ai: bool,
+) -> Result<Vec<i64>, rusqlite::Error> {
     match source {
         ViewSource::Library => {
             let has_filter = !filter.trim().is_empty();
-            let sql = build_track_ids_query_browsed(sort_field, sort_dir, has_filter, browse);
+            let sql =
+                build_track_ids_query_browsed(sort_field, sort_dir, has_filter, browse, exclude_ai);
             let mut stmt = conn.prepare(&sql)?;
             let mut params = Vec::new();
             if has_filter {
@@ -416,9 +515,10 @@ pub fn query_track_ids_browsed(
         ViewSource::Artist(artist) => library_views::query_artist_track_ids(
             conn, artist, sort_field, sort_dir, filter, browse,
         ),
-        ViewSource::ImportErrors | ViewSource::MyStats | ViewSource::Device { .. } => {
-            Ok(Vec::new())
-        }
+        ViewSource::ImportErrors
+        | ViewSource::MyStats
+        | ViewSource::Conversions
+        | ViewSource::Device { .. } => Ok(Vec::new()),
     }
 }
 
@@ -555,5 +655,7 @@ mod tests_playlist;
 mod tests_queue;
 #[cfg(test)]
 mod tests_smart;
+#[cfg(test)]
+mod tests_source_path_ai;
 #[cfg(test)]
 mod tests_ux_feedback;

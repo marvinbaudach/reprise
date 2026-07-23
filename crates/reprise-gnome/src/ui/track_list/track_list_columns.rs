@@ -249,6 +249,10 @@ pub(in crate::ui) fn append_title_column(
 ) -> gtk4::ColumnViewColumn {
     let factory = gtk4::SignalListItemFactory::new();
 
+    // INST-10/INST-11: the AI badge is instrumental UI, so it appears only while
+    // the experimental switch is on. Read once at column build — the switch
+    // takes effect for running surfaces on the next launch (accepted rough edge).
+    let experimental_on = crate::ui::instrumental::experimental_enabled(&shared.conn.borrow());
     let shared_for_bind = shared.clone();
     let shared = shared.clone();
     let column_view_for_setup = column_view.clone();
@@ -267,6 +271,13 @@ pub(in crate::ui) fn append_title_column(
         label.set_hexpand(true);
         row.append(&eq);
         row.append(&label);
+        // INST-10: a compact "AI" badge after the title, hidden until a bound
+        // row is AI-manipulated. `stats-badge` is the shared accent-pill style.
+        let ai_badge = gtk4::Label::new(Some(&strings::text(strings::AI_BADGE_LABEL)));
+        ai_badge.add_css_class("stats-badge");
+        ai_badge.set_tooltip_text(Some(&strings::text(strings::AI_BADGE_TOOLTIP)));
+        ai_badge.set_visible(false);
+        row.append(&ai_badge);
         track_list_context_menu::wire_context_menu_gesture(
             &row,
             item,
@@ -332,6 +343,11 @@ pub(in crate::ui) fn append_title_column(
         let playing = apply_now_playing(&row, track.id, &shared_for_bind, false);
         eq.set_visible(playing);
         toggle_class(&label, NOW_PLAYING_TITLE_CLASS, playing);
+        // INST-10: the AI badge (the label's trailing sibling) follows the row's
+        // provenance flag, gated on the experimental switch (INST-11).
+        if let Some(ai_badge) = label.next_sibling() {
+            ai_badge.set_visible(ai_badge_visible(experimental_on, track.is_ai));
+        }
     });
 
     let column = gtk4::ColumnViewColumn::builder()
@@ -629,6 +645,13 @@ fn on_rating_changed(
     }
 }
 
+/// INST-10 + INST-11: the AI badge shows only for an AI-manipulated track and
+/// only while the experimental switch is on (the badge is instrumental UI). A
+/// pure decision so the rule is testable without realising a ColumnView cell.
+fn ai_badge_visible(experimental_on: bool, is_ai: bool) -> bool {
+    experimental_on && is_ai
+}
+
 #[cfg(test)]
 mod rating_refresh_tests {
     use super::*;
@@ -666,5 +689,30 @@ mod missing_track_tests {
         let css = crate::ui::track_list_row_interaction::css();
         assert!(css.contains(".missing-track-title"));
         assert!(css.contains("opacity: 0.5"));
+    }
+}
+
+#[cfg(test)]
+mod ai_badge_tests {
+    use super::ai_badge_visible;
+
+    // UX INST-10: the AI badge renders for AI-manipulated tracks, and (INST-11)
+    // only while the experimental switch is on — never on a plain track, never
+    // when the switch is off.
+    #[test]
+    fn inst_10_ai_badge_shows_only_for_ai_tracks_with_experimental_on() {
+        assert!(
+            ai_badge_visible(true, true),
+            "an AI track with experimental on shows the badge"
+        );
+        assert!(
+            !ai_badge_visible(true, false),
+            "a plain track shows no badge"
+        );
+        assert!(
+            !ai_badge_visible(false, true),
+            "experimental off hides the badge (INST-11 master gate)"
+        );
+        assert!(!ai_badge_visible(false, false));
     }
 }

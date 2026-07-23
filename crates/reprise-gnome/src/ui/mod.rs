@@ -33,11 +33,13 @@ mod device_view;
 pub mod dialogs;
 pub(crate) mod ellipsis_tooltip;
 pub(crate) mod eq_bars;
+mod external_changes;
 pub(crate) mod file_open;
 pub mod first_run;
 mod help;
 pub mod import_errors_view;
 pub(crate) mod info_panel;
+mod instrumental;
 mod issues;
 mod library_doctor;
 mod library_views;
@@ -131,11 +133,10 @@ pub(crate) use playlists::playlist_io;
 use playlists::{playlist_import_navigation, playlist_io_names};
 #[allow(unused_imports)]
 use preferences::{
-    preference_appearance, preference_choice_cards,
-    preference_dependencies, preference_effects, preference_lastfm, preference_layout,
-    preference_library, preference_listenbrainz, preference_playback, preference_plugins,
-    preference_rhythmbox, preference_sync, preference_visual_strings,
-    preference_window_decorations, preferences_window,
+    preference_appearance, preference_choice_cards, preference_dependencies, preference_effects,
+    preference_lastfm, preference_layout, preference_library, preference_listenbrainz,
+    preference_playback, preference_plugins, preference_rhythmbox, preference_sync,
+    preference_visual_strings, preference_window_decorations, preferences_window,
 };
 #[allow(unused_imports)]
 pub(crate) use scan::{scan_card_css, scan_flow};

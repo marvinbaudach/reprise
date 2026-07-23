@@ -183,7 +183,8 @@ fn create_playlist_trims_whitespace_name() {
 fn rename_playlist() {
     let conn = seeded_conn();
     let id = create(&conn, "Old Name").unwrap();
-    rename(&conn, id, "New Name").unwrap();
+    // A real rename reports one row changed.
+    assert_eq!(rename(&conn, id, "New Name").unwrap(), 1);
 
     let name: String = conn
         .query_row(
@@ -193,6 +194,24 @@ fn rename_playlist() {
         )
         .unwrap();
     assert_eq!(name, "New Name");
+
+    // A non-existent id matches nothing and changes zero rows.
+    assert_eq!(rename(&conn, 9_999, "Nope").unwrap(), 0);
+}
+
+#[test]
+fn get_returns_the_summary_or_none() {
+    let mut conn = seeded_conn();
+    let id = create(&conn, "Mix").unwrap();
+    add_tracks(&mut conn, id, &[1, 2]).unwrap();
+
+    let summary = get(&conn, id).unwrap().expect("playlist exists");
+    assert_eq!(summary.id, id);
+    assert_eq!(summary.name, "Mix");
+    assert_eq!(summary.track_count, 2);
+
+    // A missing id is Ok(None), not an error.
+    assert!(get(&conn, 9_999).unwrap().is_none());
 }
 
 #[test]
@@ -721,4 +740,30 @@ fn list_smart_recently_added_seed() {
     assert_eq!(recently_added.sort_field, "added_at");
     assert_eq!(recently_added.sort_dir, "desc");
     assert_eq!(recently_added.limit_count, Some(50));
+}
+
+#[test]
+fn ensure_role_playlist_creates_once_and_finds_by_role() {
+    let conn = seeded_conn();
+    let first = ensure_role_playlist(&conn, "Conversion", "conversion").unwrap();
+    let again = ensure_role_playlist(&conn, "Conversion", "conversion").unwrap();
+    assert_eq!(first, again, "role playlists are singletons");
+    assert_eq!(
+        find_role_playlist(&conn, "conversion").unwrap(),
+        Some(first)
+    );
+    assert_eq!(find_role_playlist(&conn, "other").unwrap(), None);
+}
+
+#[test]
+fn playlist_role_is_none_for_a_user_playlist_and_a_missing_id() {
+    let conn = seeded_conn();
+    let user = create(&conn, "My Mix").unwrap();
+    assert_eq!(playlist_role(&conn, user).unwrap(), None);
+    assert_eq!(playlist_role(&conn, 999_999).unwrap(), None);
+    let role = ensure_role_playlist(&conn, "Conversion", "conversion").unwrap();
+    assert_eq!(
+        playlist_role(&conn, role).unwrap().as_deref(),
+        Some("conversion")
+    );
 }

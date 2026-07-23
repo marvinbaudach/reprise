@@ -26,7 +26,7 @@ fn migrating_a_v16_database_adds_the_listen_events_track_index() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 27);
+    assert_eq!(version, SUPPORTED_SCHEMA_VERSION);
     let indexes = conn
         .prepare("PRAGMA index_list(listen_events)")
         .unwrap()
@@ -40,7 +40,7 @@ fn migrating_a_v16_database_adds_the_listen_events_track_index() {
 }
 
 #[test]
-fn temporary_file_databases_migrate_from_fresh_and_v16_to_v25() {
+fn temporary_file_databases_migrate_from_fresh_and_v16_to_current() {
     let cover_cache = tempfile::tempdir().unwrap();
     let portrait_cache = tempfile::tempdir().unwrap();
 
@@ -54,7 +54,8 @@ fn temporary_file_databases_migrate_from_fresh_and_v16_to_v25() {
         migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
         if starting_version == 16 {
             conn.execute_batch(
-                "DROP TABLE library_exclusions;
+                "DROP TABLE change_log;
+                 DROP TABLE library_exclusions;
                  DROP TABLE library_doctor_remote_cache;
                  DROP TRIGGER tag_write_journal_identity_immutable;
                  DROP TABLE tag_write_journal;
@@ -67,6 +68,9 @@ fn temporary_file_databases_migrate_from_fresh_and_v16_to_v25() {
                  DROP TABLE library_doctor_proposals;
                  DROP TABLE library_doctor_scan_tracks;
                  DROP TABLE library_doctor_scans;
+                 DROP TABLE ai_jobs;
+                 DROP TABLE track_provenance;
+                 ALTER TABLE playlists DROP COLUMN role;
                  DROP INDEX idx_listen_events_track_played;
                  ALTER TABLE new_releases DROP COLUMN first_seen;
                  ALTER TABLE new_releases DROP COLUMN hidden_at;
@@ -88,7 +92,10 @@ fn temporary_file_databases_migrate_from_fresh_and_v16_to_v25() {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 27, "starting version {starting_version}");
+        assert_eq!(
+            version, SUPPORTED_SCHEMA_VERSION,
+            "starting version {starting_version}"
+        );
         assert!(index_exists, "starting version {starting_version}");
     }
 }

@@ -12,6 +12,10 @@
 //! implementations live in per-OS platform crates (Linux: GStreamer and
 //! MPRIS in `reprise-platform-linux`).
 
+pub mod ai_conversion;
+pub mod ai_jobs;
+pub mod ai_promotion;
+pub mod ai_staging;
 pub mod artist_news;
 pub mod artist_news_history;
 pub mod artist_news_links;
@@ -21,15 +25,19 @@ pub mod browser;
 pub mod cover;
 pub mod cover_download;
 pub mod db;
+mod db_ai_jobs;
+mod db_change_log;
+mod db_drop_audio_analysis_mix;
+mod db_grandfather;
 mod db_library_doctor;
 mod db_library_doctor_remote;
-mod db_drop_audio_analysis_mix;
 mod db_library_exclusions;
 mod db_listen_history;
 mod db_mix_planner;
 mod db_new_releases_history;
 mod db_tag_write_jobs;
 pub mod device_sync;
+pub mod events;
 pub mod fingerprint;
 pub mod format;
 pub mod library;
@@ -40,9 +48,11 @@ pub mod models;
 pub mod modules;
 pub mod musicbrainz;
 pub mod playback;
+pub mod provenance;
 pub mod queries;
 pub mod queue;
 pub mod scrobbling;
+pub mod stem_separation;
 pub mod up_next;
 pub mod view_source;
 pub mod visuals;

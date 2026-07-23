@@ -20,6 +20,7 @@ pub enum SidebarTarget {
     Missing,
     ImportErrors,
     MyStats,
+    Conversions,
     Device(String),
 }
 
@@ -186,6 +187,7 @@ impl BrowserNavigation {
             SidebarTarget::Missing => fresh_tracks(TrackCollection::Missing),
             SidebarTarget::ImportErrors => BrowserPlace::ImportErrors,
             SidebarTarget::MyStats => BrowserPlace::MyStats,
+            SidebarTarget::Conversions => BrowserPlace::Conversions,
             SidebarTarget::Device(serial) if !serial.trim().is_empty() => BrowserPlace::Device {
                 serial: serial.trim().to_owned(),
             },

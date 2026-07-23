@@ -4,6 +4,9 @@ members = [
     "crates/reprise-core",
     "crates/reprise-platform-linux",
     "crates/reprise-gnome",
+    "crates/reprise-cli",
+    "crates/reprise-mcp",
+    "crates/reprise-stems",
 ]
 default-members = ["crates/reprise-gnome"]
 

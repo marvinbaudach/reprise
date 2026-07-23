@@ -51,6 +51,28 @@ fn seeded_conn_with_tracks(count: i64) -> Connection {
 }
 
 #[test]
+fn filter_present_keeps_present_ids_in_order_and_drops_missing_and_unknown() {
+    let conn = crate::db::open_migrated(None).unwrap();
+    for (id, missing_since) in [(1, None::<i64>), (2, Some(1)), (3, None)] {
+        conn.execute(
+            "INSERT INTO tracks (id, path, title, artist, added_at, missing_since) \
+             VALUES (?1, ?2, '', '', 0, ?3)",
+            rusqlite::params![id, format!("/x/{id}.flac"), missing_since],
+        )
+        .unwrap();
+    }
+    // Input mixes a present id, a missing id (row exists, missing_since set), an
+    // unknown id, a duplicate present id, and another present id — out of order.
+    let result = filter_present(&conn, &[3, 2, 999, 1, 1]).unwrap();
+    // Only present ids survive (2 is missing, 999 unknown), input order kept and
+    // the duplicate 1 collapsed.
+    assert_eq!(result, vec![3, 1]);
+
+    // Empty input short-circuits with no query.
+    assert!(filter_present(&conn, &[]).unwrap().is_empty());
+}
+
+#[test]
 fn feature_queries_filter_and_order_tracks_for_their_consumers() {
     let conn = crate::db::open_migrated(None).unwrap();
     for (id, path, title, missing_since) in [

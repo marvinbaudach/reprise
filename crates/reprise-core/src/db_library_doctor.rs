@@ -112,7 +112,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 27);
+        assert_eq!(version, crate::db::SUPPORTED_SCHEMA_VERSION);
         assert_eq!(table_count, 8);
     }
 

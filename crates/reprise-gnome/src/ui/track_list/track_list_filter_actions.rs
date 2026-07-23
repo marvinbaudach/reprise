@@ -13,6 +13,8 @@ impl TrackList {
         let empty = BrowseFilter::default();
         *self.shared.browse_filter.borrow_mut() = empty.clone();
         self.shared.browse_bar.restore_filter(&empty);
+        // FIL-7: Clear all also drops the AI-exclude filter (one reload below).
+        self.shared.browse_bar.clear_exclude_ai();
         set_filter_and_reload(&self.shared, "");
     }
 
@@ -30,6 +32,7 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
+    use gtk4::gio::prelude::*;
     use gtk4::glib;
     use rusqlite::Connection;
 
@@ -73,5 +76,76 @@ mod tests {
             BrowseFilter::default()
         );
         assert_eq!(track_list.shared.browse_bar.result_count(), Some((2, 2)));
+    }
+
+    // UX FIL-7: with the experimental switch on, the "Hide AI music" filter
+    // hides AI-flagged tracks and the filter row counts "X of Y" (FIL-2).
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn fil_7_hide_ai_music_filter_hides_ai_tracks_and_counts() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let conn = Connection::open_in_memory().unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO tracks (id,path,title,artist,album,added_at) VALUES
+               (1,'/a.flac','A','X','Al',0),(2,'/b.flac','B','X','Al',0),
+               (3,'/c.flac','C','X','Al',0),
+               (4,'/d.flac','D (Instrumental)','X','Al',0),
+               (5,'/e.flac','E (Instrumental)','X','Al',0);",
+        )
+        .unwrap();
+        for id in [4, 5] {
+            reprise_core::provenance::insert_provenance(
+                &conn,
+                id,
+                &reprise_core::provenance::ProvenanceInput {
+                    kind: reprise_core::provenance::KIND_VOCALS_REMOVED.to_string(),
+                    ai: true,
+                    source_track_id: None,
+                    source_text: None,
+                    source_mbid: None,
+                    model: Some("m@1".into()),
+                },
+                0,
+            )
+            .unwrap();
+        }
+        // The AI-exclude filter only applies when the experimental switch is on.
+        crate::ui::instrumental::set_experimental_enabled(&conn, true).unwrap();
+
+        let track_list = TrackList::new(
+            Rc::new(RefCell::new(conn)),
+            Box::new(|_, _, _, _| {}),
+            |_, _, _, _| {},
+            super::super::queue_sections::QueueViewModel::default,
+            crate::ui::cover_download_worker::setup_for_test(),
+        );
+        let context = glib::MainContext::default();
+        track_list.reload();
+        while context.pending() {
+            context.iteration(false);
+        }
+        assert_eq!(
+            track_list.shared.model.n_items(),
+            5,
+            "AI tracks are visible by default (opt-in filter)"
+        );
+
+        track_list.shared.browse_bar.set_exclude_ai(true);
+        track_list.reload();
+        while context.pending() {
+            context.iteration(false);
+        }
+        assert_eq!(
+            track_list.shared.model.n_items(),
+            3,
+            "the two AI-flagged tracks are hidden"
+        );
+        assert_eq!(
+            track_list.shared.browse_bar.result_count(),
+            Some((3, 5)),
+            "FIL-2: 3 of 5 tracks"
+        );
     }
 }

@@ -30,6 +30,7 @@ pub fn delete(conn: &Connection, id: i64, expected_name: &str) -> Result<bool, r
         "UPDATE playlists SET position = position - 1 WHERE position > ?1",
         params![position],
     )?;
+    crate::events::record(&tx, "playlist", &id.to_string(), "delete")?;
     tx.commit()?;
     Ok(true)
 }

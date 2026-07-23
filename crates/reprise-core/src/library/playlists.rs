@@ -62,7 +62,11 @@ struct Rule {
 /// Positions are assigned sequentially (new playlist gets `max(position) + 1`).
 /// Empty or whitespace-only name is accepted (backend is dumb; UI validates).
 pub fn create(conn: &Connection, name: &str) -> Result<i64, rusqlite::Error> {
-    create_playlist_row(conn, name)
+    crate::events::in_txn(conn, |conn| {
+        let id = create_playlist_row(conn, name)?;
+        crate::events::record(conn, "playlist", &id.to_string(), "create")?;
+        Ok(id)
+    })
 }
 
 /// Shared insert logic behind [`create`] and [`create_with_tracks`] — takes a
@@ -100,23 +104,39 @@ fn create_playlist_row(conn: &Connection, name: &str) -> Result<i64, rusqlite::E
     Ok(id)
 }
 
-/// Renames a playlist by id.
+/// Renames a playlist by id, returning the number of rows changed — `0` when no
+/// playlist has that id. A no-op rename records **no** `change_log` event, so a
+/// stale or absent id can never fabricate a phantom "rename" change (the
+/// event-without-change bug class); this lets a caller drop any pre-check
+/// TOCTOU workaround and simply branch on the returned count.
 #[allow(dead_code)]
-pub fn rename(conn: &Connection, id: i64, name: &str) -> Result<(), rusqlite::Error> {
-    conn.execute(
-        "UPDATE playlists SET name = ?1 WHERE id = ?2",
-        params![name, id],
-    )?;
-    Ok(())
+pub fn rename(conn: &Connection, id: i64, name: &str) -> Result<usize, rusqlite::Error> {
+    crate::events::in_txn(conn, |conn| {
+        let changed = conn.execute(
+            "UPDATE playlists SET name = ?1 WHERE id = ?2",
+            params![name, id],
+        )?;
+        // Only a real change is logged — mirrors the dedup posture of
+        // create_smart / set_setting / the stale-delete no-op.
+        if changed > 0 {
+            crate::events::record(conn, "playlist", &id.to_string(), "rename")?;
+        }
+        Ok(changed)
+    })
 }
 
-/// Lists all manual playlists, ordered by position (ascending).
-/// Includes track count for each (0 if empty).
+/// Lists all *user* manual playlists, ordered by position (ascending).
+/// Includes track count for each (0 if empty). System playlists carrying a
+/// `role` (schema v27 — e.g. the conversion drop playlist) are excluded: they
+/// are surfaced by their own role-specific view, never in the ordinary
+/// playlist list. Pre-v27 rows all have `role IS NULL`, so this filter is a
+/// no-op for every existing playlist.
 pub fn list(conn: &Connection) -> Result<Vec<PlaylistSummary>, rusqlite::Error> {
     let mut stmt = conn.prepare(
         "SELECT p.id, p.name, COALESCE(COUNT(pt.track_id), 0) as track_count \
          FROM playlists p \
          LEFT JOIN playlist_tracks pt ON p.id = pt.playlist_id \
+         WHERE p.role IS NULL \
          GROUP BY p.id \
          ORDER BY p.position ASC",
     )?;
@@ -135,6 +155,30 @@ pub fn list(conn: &Connection) -> Result<Vec<PlaylistSummary>, rusqlite::Error> 
     Ok(result)
 }
 
+/// Looks up one manual playlist by id, or `Ok(None)` when it does not exist —
+/// the single-row companion to [`list`]. A caller that needs just one
+/// playlist's summary (a CLI header, a delete's expected-name lookup) uses this
+/// instead of scanning and filtering the whole `list`. `track_count` is
+/// computed exactly as in `list`, so the two always agree.
+pub fn get(conn: &Connection, id: i64) -> Result<Option<PlaylistSummary>, rusqlite::Error> {
+    conn.query_row(
+        "SELECT p.id, p.name, COALESCE(COUNT(pt.track_id), 0) as track_count \
+         FROM playlists p \
+         LEFT JOIN playlist_tracks pt ON p.id = pt.playlist_id \
+         WHERE p.id = ?1 \
+         GROUP BY p.id",
+        params![id],
+        |row| {
+            Ok(PlaylistSummary {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                track_count: row.get(2)?,
+            })
+        },
+    )
+    .optional()
+}
+
 /// Appends tracks to a playlist at the end (appends to the highest position).
 /// Positions are contiguous. Duplicates allowed (Rhythmbox behavior).
 /// All inserts happen in one transaction.
@@ -150,6 +194,9 @@ pub fn add_tracks(
 
     let tx = conn.transaction()?;
     let inserted = append_tracks_rows(&tx, playlist_id, track_ids)?;
+    if inserted > 0 {
+        crate::events::record(&tx, "playlist", &playlist_id.to_string(), "add")?;
+    }
     tx.commit()?;
     Ok(inserted)
 }
@@ -204,6 +251,7 @@ pub fn create_with_tracks(
 ) -> Result<i64, rusqlite::Error> {
     let tx = conn.transaction()?;
     let playlist_id = create_with_tracks_in(&tx, name, track_ids)?;
+    crate::events::record(&tx, "playlist", &playlist_id.to_string(), "create")?;
     tx.commit()?;
     Ok(playlist_id)
 }
@@ -218,6 +266,62 @@ pub(crate) fn create_with_tracks_in(
         append_tracks_rows(conn, playlist_id, track_ids)?;
     }
     Ok(playlist_id)
+}
+
+/// Finds the single playlist carrying `role`, or `None`. Roles are unique by
+/// convention (there is at most one conversion playlist); the lowest id wins
+/// if a database somehow holds two.
+pub fn find_role_playlist(conn: &Connection, role: &str) -> Result<Option<i64>, rusqlite::Error> {
+    conn.query_row(
+        "SELECT id FROM playlists WHERE role = ?1 ORDER BY id LIMIT 1",
+        params![role],
+        |row| row.get(0),
+    )
+    .optional()
+}
+
+/// Gets, or creates, the system playlist carrying `role` — idempotent, so a
+/// caller can ensure the conversion drop playlist exists on every startup or
+/// first drop without piling up duplicates. Returns its id. A freshly created
+/// role playlist logs one `create` change-log event; an existing one logs
+/// nothing (mirrors `create_smart`'s dedup posture).
+pub fn ensure_role_playlist(
+    conn: &Connection,
+    name: &str,
+    role: &str,
+) -> Result<i64, rusqlite::Error> {
+    crate::events::in_txn(conn, |conn| {
+        if let Some(id) = find_role_playlist(conn, role)? {
+            return Ok(id);
+        }
+        let trimmed = name.trim();
+        let insert_name = if trimmed.is_empty() { name } else { trimmed };
+        let max_position: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(position), -1) FROM playlists",
+            [],
+            |row| row.get(0),
+        )?;
+        conn.execute(
+            "INSERT INTO playlists (name, position, role) VALUES (?1, ?2, ?3)",
+            params![insert_name, max_position + 1, role],
+        )?;
+        let id = conn.last_insert_rowid();
+        crate::events::record(conn, "playlist", &id.to_string(), "create")?;
+        Ok(id)
+    })
+}
+
+/// The role of a playlist, or `None` when it is an ordinary user playlist (or
+/// does not exist). Lets a frontend tell the conversion drop playlist apart
+/// from user playlists without hardcoding an id.
+pub fn playlist_role(conn: &Connection, id: i64) -> Result<Option<String>, rusqlite::Error> {
+    conn.query_row(
+        "SELECT role FROM playlists WHERE id = ?1",
+        params![id],
+        |row| row.get::<_, Option<String>>(0),
+    )
+    .optional()
+    .map(Option::flatten)
 }
 
 /// Removes tracks at the specified positions and renumbers the remaining
@@ -250,6 +354,9 @@ pub fn remove_positions(
 
     renumber_positions(&tx, playlist_id)?;
 
+    if deleted > 0 {
+        crate::events::record(&tx, "playlist", &playlist_id.to_string(), "remove")?;
+    }
     tx.commit()?;
     Ok(deleted)
 }
@@ -381,6 +488,7 @@ pub fn move_position(
         )?;
     }
 
+    crate::events::record(&tx, "playlist", &playlist_id.to_string(), "move")?;
     tx.commit()?;
     Ok(())
 }
@@ -545,26 +653,31 @@ pub fn create_smart(
 ) -> Result<i64, rusqlite::Error> {
     smart_rules_to_sql(rules_json)
         .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
-    let existing = conn
-        .query_row(
-            "SELECT id FROM smart_playlists \
-             WHERE name = ?1 AND rules_json = ?2 AND sort_field = ?3 \
-               AND sort_dir = ?4 AND limit_count IS ?5 \
-             ORDER BY id LIMIT 1",
+    crate::events::in_txn(conn, |conn| {
+        let existing = conn
+            .query_row(
+                "SELECT id FROM smart_playlists \
+                 WHERE name = ?1 AND rules_json = ?2 AND sort_field = ?3 \
+                   AND sort_dir = ?4 AND limit_count IS ?5 \
+                 ORDER BY id LIMIT 1",
+                params![name, rules_json, sort_field, sort_dir, limit_count],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?;
+        // A dedup hit persists nothing, so it must log nothing.
+        if let Some(id) = existing {
+            return Ok(id);
+        }
+        conn.execute(
+            "INSERT INTO smart_playlists \
+             (name, rules_json, sort_field, sort_dir, limit_count) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
             params![name, rules_json, sort_field, sort_dir, limit_count],
-            |row| row.get::<_, i64>(0),
-        )
-        .optional()?;
-    if let Some(id) = existing {
-        return Ok(id);
-    }
-    conn.execute(
-        "INSERT INTO smart_playlists \
-         (name, rules_json, sort_field, sort_dir, limit_count) \
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![name, rules_json, sort_field, sort_dir, limit_count],
-    )?;
-    Ok(conn.last_insert_rowid())
+        )?;
+        let id = conn.last_insert_rowid();
+        crate::events::record(conn, "smart_playlist", &id.to_string(), "create")?;
+        Ok(id)
+    })
 }
 
 /// Lists all smart playlists.

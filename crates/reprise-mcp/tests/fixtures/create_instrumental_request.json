@@ -1,0 +1,12 @@
+{
+  "jsonrpc": "2.0",
+  "id": 43,
+  "method": "tools/call",
+  "params": {
+    "name": "music_create_instrumental",
+    "arguments": {
+      "track_ids": [1],
+      "save": true
+    }
+  }
+}

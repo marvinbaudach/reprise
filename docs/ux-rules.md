@@ -538,6 +538,20 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   „Clear all ×" (Filter-Zeile), „Show all N tracks" (Ende-Zeile,
   Leerzustand) feuern dieselbe Action — zwei kontextgerechte Namen, ein
   Verhalten.
+- **FIL-7** [aktiv] [gtk] — „Hide AI music" ist ein **opt-in**-Filter:
+  Default sichtbar (KI-Fassungen sind gewollte Bibliotheksbürger, INST-Sektion),
+  auf Wunsch blendet er KI-manipulierte (und künftig -generierte) Titel aus. Er
+  schlüsselt auf das **Provenance-Flag in der DB** (`track_provenance.ai`), nie
+  auf Ordnerpfade — der Ordner ist Ablage-Layout, das Flag die Wahrheit. Aktiv
+  fügt er sich als sichtbare Einschränkung in die Filter-Zeile nach **FIL-1a**
+  (eigener Chip mit ×-Klickziel) und in die Zählung nach **FIL-2** ein
+  („15 of 1,664 tracks", Force-show); er ist wie die Facetten-Chips
+  **Library-only** und wird als Query-Klausel im Core umgesetzt
+  (`queries::query_track_window_browsed_ai`). Der Filterzustand ist **sticky
+  über Sessions** wie andere View-Zustände. **Keine Shuffle-/Auto-Queue-
+  Sonderregel** in v1: das Queue-Nachfüllen folgt der sichtbaren Ansicht — bei
+  aktivem Filter sind KI-Titel nicht sichtbar und werden nicht nachgefüllt. Nur
+  verfügbar, solange der Experimental-Schalter an ist (INST-11). (Beschluss 17)
 ## L. Tag-Editor
 
 - **TAG-1** [aktiv] [gtk] — Save ist navigationsneutral: Speichern ändert
@@ -1875,6 +1889,150 @@ deterministisch und hoch-konfident, nie „ohne Review".
   Löschserie bleiben überlebende ausgewählte Zeilen fokussiert; andernfalls
   fällt Auswahl und Fokus auf die nächste, am Listenende auf die vorherige
   Zeile und bei leerer Liste auf den stabilen Content-Container.
+
+## AA. Externe Änderungen (Live-Refresh von CLI/MCP)
+
+<!-- Sektionsbuchstabe: A–Z sind auf main bereits vergeben (T doppelt); die
+     nächste freie Marke jenseits von Z ist AA. Die Buchstabenlage wurde beim
+     Einfügen gegen den main-Stand verifiziert. Diese Sektion verankert
+     Beschluss 6 des multi-frontend-core-Plans (Live-Sichtbarkeit fremd
+     erzeugter Änderungen) und serialisiert vor Paket F, das sie später um die
+     Instrumental-/Filter-Regeln ergänzt (Track 2). -->
+
+Ein zweiter Prozess (CLI, MCP; künftig weitere Oberflächen) schreibt über
+denselben Core-Pfad in dieselbe Datenbank. Die laufende App macht solche
+fremden Änderungen sichtbar — ohne Neustart, als **Hintergrundereignis** und
+damit nach P-1/P-4/MOT-2: leise, ohne Layout-Diebstahl, ohne eigene
+Ankündigung. Die App refresht ihre *eigenen* Schreibaktionen weiterhin selbst
+(Writer-Token-Filter); diese Sektion regelt ausschließlich den Fremd-Write.
+
+- **EXT-1a** [aktiv] [gtk] — Fremd erzeugte Inhalte erscheinen ohne
+  Neustart: eine von einem anderen Prozess über dieselbe Datenbank angelegte
+  Playlist — allgemein jede fremde Änderung an Playlists, Smart-Playlists oder
+  Katalog — wird in der laufenden App sichtbar; die betroffenen Ansichten
+  (Sidebar, aktuelle Track-Liste) aktualisieren sich von selbst. Das
+  Sichtbarkeitsbudget ist großzügig und degradiert bewusst (Notifier-Weckruf,
+  bei nicht armierbarem Datei-Watch Polling); geprüft wird das *Was* (die
+  Playlist erscheint), nicht das *Wie-schnell*.
+- **EXT-1b** [geplant] [manuell] — Der Fremd-Refresh ist still: kein Toast,
+  kein Badge, kein Indikator, keine Fokus-Wanderung als Ankündigung. Ein
+  Hintergrundereignis bedient nie die Ankündigungs-Rolle (P-1); die
+  Aktualisierung geschieht geräuschlos an Ort und Stelle.
+- **EXT-2** [geplant] [gtk] — Selektion und Scrollposition überstehen den
+  Fremd-Refresh: ein extern ausgelöster Reload setzt weder Auswahl noch
+  Scrollposition zurück (navigations-neutraler Reload nach TAG-1). Eine
+  unberührte Liste zahlt nichts — kein Anker, kein Sprung.
+- **EXT-3** [geplant] [gtk] — Kein Fokus-Diebstahl: ein Hintergrund-Refresh
+  entzieht der aktuellen Eingabe nichts, grabt keinen Fokus und zieht keine
+  View in den Vordergrund. Der Nutzer bemerkt die Aktualisierung nur an neuen
+  Inhalten, nie an springendem Fokus (P-3/P-4 in der Live-Refresh-Lesart).
+- **EXT-4** [geplant] [core] — Laufende Wiedergabe und Queue bleiben
+  unberührt: fremde Änderungen aktualisieren ausschließlich Ansichten. Die
+  Wiedergabe-Queue ist ein Snapshot (`queue::snapshot`); ein Fremd-Write an
+  der Bibliothek ändert weder die laufende Wiedergabe noch die Reihenfolge der
+  bereits eingereihten Titel.
+
+## AB. Instrumental-Fassungen (experimentell)
+
+<!-- Sektionsbuchstabe: A–Z sind vergeben (T doppelt), AA ist Externe
+     Änderungen; die nächste freie Marke ist AB. Die Buchstabenlage wurde beim
+     Einfügen gegen den main-Stand verifiziert (AA kündigt diese Sektion in
+     ihrem Kopfkommentar an). Diese Sektion verankert die GTK-UX der
+     Instrumental-Fassungen des multi-frontend-core-Plans (Abschnitt 2.4/3.2,
+     Beschlüsse 11/13–19). Alle Fortschrittszahlen stammen ausschließlich aus
+     den `ai_jobs`-Zeilen/Events — dieselben Zahlen wie CLI/MCP (Plan 2.2). -->
+
+Eine Instrumental-Fassung ist ein **explizit beauftragter, dauerhafter,
+klar als KI-manipuliert gekennzeichneter** Titel (CONTEXT.md), kein flüchtiger
+Abspiel-Effekt. Das Feature ist **experimentell** (Beschluss 11): seine
+gesamte UI erscheint nur hinter dem „Experimental features"-Schalter; raue
+Kanten sind bewusst akzeptiert. Der Player spielt ausschließlich fertige
+Dateien.
+
+- **INST-1** [aktiv] [gtk] — Auslösung per Track-Kontextmenü: Bei
+  aktivem Experimental-Schalter trägt das Track-Kontextmenü den Eintrag
+  „Create instrumental"; er wirkt auf die **gesamte Auswahl** (Mehrfachauswahl
+  → ein Batch mit gemeinsamer `batch_id` für Aggregat-Fortschritt) und ist bei
+  reiner Missing-Auswahl inaktiv (eine fehlende Datei ist nicht separierbar).
+  Ohne den Schalter erscheint der Eintrag nicht (INST-11). (Plan 2.4/1)
+- **INST-2** [aktiv] [gtk] — Konvertierungs-Playlist = Staging-Bereich mit
+  **genau einem Aggregat-Fortschrittsbalken** (fertig/gesamt + Prozent,
+  gespeist aus den Job-Zeilen/Events, nicht aus Backend-internen Zahlen).
+  **Weitere Fortschritts-UI gibt es nicht**: kein Sidebar-/Statusleisten-Slot
+  (der android-sync-V2-Bottom-Slot wird nicht angefasst), **kein Toast**.
+  (Beschluss 18)
+- **INST-3** [aktiv] [gtk] — Je Zeile ein sichtbarer Zustand:
+  queued / processing (mit Zeilen-Fortschritt) / done — ungespeichert /
+  saved / failed. Die Ansicht ist technisch eine Spezial-View über `ai_jobs` +
+  Staging-Store (Wiedergabe per Dateipfad), kein Playlist-Row-Source — auch
+  wenn sie sich als Playlist anfühlt. (Plan 2.4/7)
+- **INST-4** [ersetzt durch INST-4a und INST-4b] — Die ursprüngliche Regel
+  bündelte die Sicht-Markierung und die tatsächliche Wiedergabe; sie wird in
+  die view-seitige Markierung (INST-4a) und die reale Staging-Wiedergabe
+  (INST-4b, P3b) geteilt.
+- **INST-4a** [aktiv] [gtk] — In der Konvertierungs-Ansicht ist ein fertiger,
+  im Staging vorhandener Render als **spielbar markiert** (Play aktiv), während
+  ein noch verarbeitender Eintrag es nicht ist (er zeigt Fortschritt). Der
+  Staging-Render ist eine echte Datei vor jeder Speicher-Entscheidung.
+  (Beschluss 15, Plan 2.4/7)
+- **INST-4b** [aktiv] [gtk] — Das Aktivieren eines spielbaren Eintrags
+  spielt den Staging-Render (bzw. den promoteten Titel) **tatsächlich ab** —
+  Wiedergabe per Dateipfad. Bis der Player das kann, ist die Aktion ein
+  markierter Platzhalter (P3b).
+- **INST-5** [ersetzt durch INST-5a und INST-5b] — Die ursprüngliche Regel
+  bündelte die Klick-Entscheidung und die laufende Warte-Interaktion; sie wird
+  in die View-Model-Entscheidung (INST-5a) und die App-Interaktion (INST-5b,
+  P3b) geteilt.
+- **INST-5a** [aktiv] [gtk] — Warte-Regel (Entscheidung): Ein Klick auf einen
+  **noch verarbeitenden** Eintrag löst „Warten mit Fortschritt" aus — **nie
+  Play** (kein Original-Fallback), **nie Auto-Skip**. Die reine View-Model-
+  Entscheidung ist damit einklagbar, unabhängig von der Wiedergabe.
+- **INST-5b** [aktiv] [gtk] — In der laufenden App blockiert der Klick auf
+  einen verarbeitenden Eintrag den Start mit sichtbarem Render-Fortschritt und
+  beginnt nach Abschluss (kein Fallback/Skip). Progressiver Frühstart ist eine
+  spätere Optimierung, nicht v1 (P3b).
+- **INST-6** [aktiv] [gtk] — Speicher-Entscheidung pro Zeile
+  (Speichern / Verwerfen) plus „Alle speichern" in der Kopfzeile. Speichern
+  **promotet** über die Core-Fassade (Move in den dedizierten Ordner, finale
+  Tags inkl. KI-Provenienz, Registrierung — atomar, kein Re-Render); danach
+  **wechselt die Zeile auf den promoteten Bibliothekstitel und bleibt**, bis
+  der User aufräumt. Verwerfen löscht den Staging-Render; Unentschiedenes
+  erscheint nie in der Library. (Beschluss 15/16)
+- **INST-7** [aktiv] [gtk] — „Playlist leeren" **warnt**, wenn
+  unentschiedene (done-ungespeicherte) Einträge existieren — Stunden
+  Rechenzeit verdampfen nicht unbestätigt. (Beschluss 15)
+- **INST-8** [aktiv] [gtk] — Unentschiedene Renders **bleiben über
+  Neustarts erhalten**; ihre **Plattenkosten sind in der Ansicht sichtbar**
+  (Größe je Zeile / Summe). Es gibt **keinen stillen Reaper** — nur die
+  explizite Verwerfen-Aktion (oder Speichern) entfernt einen Render.
+  (Beschluss 15)
+- **INST-9** [aktiv] [gtk] — Drag eines **bereits konvertierten** Tracks in
+  die Konvertierungs-Playlist erzeugt einen **Hinweis mit Verweis auf das
+  Bestehende**, keinen Doppel-Job (Dedup-Skip der Core-Fassade). (Beschluss 16)
+- **INST-10** [aktiv] [gtk] — Promotete Fassungen tragen ein sichtbares
+  **KI-Badge** („Instrumental · KI-manipuliert") mit **Quellverweis**, sofern
+  verknüpft. Die Provenienz ist DB-primär (`track_provenance`), die Tag-
+  Referenz sekundär; das Badge schlüsselt auf das DB-Flag, nie auf den
+  Ablageordner. (Beschluss 13/14)
+- **INST-11** [aktiv] [gtk] — **Master-Gate:** Die gesamte Instrumental-UI
+  — Kontextmenü-Eintrag, Konvertierungs-Ansicht, KI-Badges, „Hide AI music"-
+  Filter (FIL-7) — ist **verborgen, solange der „Experimental features"-
+  Schalter aus ist**. Der Schalter ist eine persistierte Einstellung; sein
+  Zustand entscheidet allein über die Sichtbarkeit. (Beschluss 11)
+- **INST-12** [aktiv] [gtk] — Modell-Bereitstellung: Hinter dem Schalter
+  liegt der First-Use-Download-Flow der ML-Runtime-Gewichte über die
+  Core-Fassade `ensure_weights` (Hintergrund-Thread mit Fortschritt,
+  SHA-256-Checksum, Lizenznotiz neben der Datei, klare Fehlerpfade inkl.
+  offline — Muster Cover-Download-Modul). Gewichte werden **nicht** ins
+  Default-Build/Flatpak gebündelt. In einem Build **ohne** das
+  `stem-backend`-Feature zeigt die Ansicht einen ehrlichen, deaktivierten
+  Platzhalter mit Hinweis statt eines funktionslosen Buttons. (Beschluss 11)
+- **INST-13** [aktiv] [gtk] — Erreichbarkeit: Die Konvertierungs-/Staging-Ansicht
+  ist über einen eigenen **Sidebar-Eintrag** (`ViewSource::Conversions`, Titel
+  „Instrumental conversions") erreichbar. Der Eintrag erscheint **nur, solange
+  der „Experimental features"-Schalter an ist** (INST-11) — dieselbe Gatung, die
+  auch die Inhaltsseite anlegt, sodass der Eintrag nie eine fehlende Seite
+  auswählt. (Plan 2.4/7, Paket F)
 
 ---
 
