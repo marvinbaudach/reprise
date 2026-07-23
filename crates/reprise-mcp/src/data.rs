@@ -432,18 +432,26 @@ pub fn job_status(
     })
 }
 
+/// Whether playback control is currently permitted (the live
+/// `playback:control` setting, no startup snapshot — starting/stopping audio
+/// destroys no data, so a fresh grant applies immediately, unlike the
+/// write-class capabilities gated by [`capability::write_effective`]/
+/// [`capability::ai_create_effective`]). Only the `mpris`-gated playback tools
+/// call this, so it is gated the same way.
+#[cfg(feature = "mpris")]
+pub fn playback_allowed(path: &Path) -> Result<bool, DataError> {
+    let conn = open(path)?;
+    capability::playback_control_enabled(&conn).map_err(DataError::Db)
+}
+
 /// Resolves a `music_play` request to an ordered id list. Exactly one of
 /// `track_ids`/`playlist_id` must be set; a playlist is resolved to its tracks
 /// via `playlists::track_ids` (in playlist order); an empty/absent result is
 /// invalid input (nothing to play). Read-only (`library:read`), like
 /// `search_tracks`/`list_playlists` — `music_play` itself, not this
-/// resolution step, is what the running app actually plays.
-///
-/// Exercised only by its own unit test until Task 9 wires `music_play` to it,
-/// hence the narrow `#[cfg_attr(not(test), allow(dead_code))]` — the same
-/// idiom `reprise-gnome/src/ui/nav_history.rs` and `playback.rs`'s
-/// `TransportAction` use for code that already has coverage but no caller yet.
-#[cfg_attr(not(test), allow(dead_code))] // TODO(Task 9): remove once music_play calls this.
+/// resolution step, is what the running app actually plays. Only the
+/// `mpris`-gated `music_play` tool calls this, so it is gated the same way.
+#[cfg(feature = "mpris")]
 pub fn resolve_play_ids(
     path: &Path,
     params: &crate::dto::PlayParams,
@@ -490,7 +498,7 @@ fn is_constraint_violation(error: &rusqlite::Error) -> bool {
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "mpris"))]
 mod tests {
     use super::*;
     use crate::dto::PlayParams;
