@@ -1,3 +1,4 @@
+use crate::db_grandfather::grandfather_network_features;
 use rusqlite::Connection;
 use std::path::Path;
 
@@ -7,9 +8,32 @@ pub enum DbError {
     Sqlite(#[from] rusqlite::Error),
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("database schema {found} is newer than supported schema {supported}")]
+    SchemaTooNew { found: i64, supported: i64 },
 }
 
+pub const SUPPORTED_SCHEMA_VERSION: i64 = 29;
+
+/// Default SQLite `busy_timeout` (milliseconds) every [`open`] connection is
+/// configured with: wait up to this long for a write lock instead of failing
+/// immediately with `SQLITE_BUSY` — cheap insurance for a concurrent writer
+/// (e.g. a scan worker thread's own `Connection` writing while the UI thread
+/// reads). Exposed as a named constant so a caller that temporarily overrides
+/// the timeout (the change-log prune's non-blocking probe in [`open_migrated`])
+/// can restore exactly this value afterwards.
+pub const DEFAULT_BUSY_TIMEOUT_MS: i64 = 5000;
+
 pub fn open(path: Option<&Path>) -> Result<Connection, DbError> {
+    open_with_options(path, DEFAULT_BUSY_TIMEOUT_MS)
+}
+
+/// Opens a connection like [`open`] but with an explicit `busy_timeout` in
+/// milliseconds. [`DEFAULT_BUSY_TIMEOUT_MS`] is the value every existing call
+/// site keeps (that is exactly what [`open`] passes); a value of `0` makes lock
+/// contention fail immediately with `SQLITE_BUSY` rather than block — the
+/// non-blocking posture [`open_migrated`]'s prune uses so a fresh open never
+/// stalls behind a long foreign write transaction.
+pub fn open_with_options(path: Option<&Path>, busy_timeout_ms: i64) -> Result<Connection, DbError> {
     let conn = match path {
         Some(p) => {
             if let Some(dir) = p.parent() {
@@ -21,10 +45,7 @@ pub fn open(path: Option<&Path>) -> Result<Connection, DbError> {
     };
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
-    // Cheap insurance for future concurrent writers (e.g. a scan worker
-    // thread's own `Connection` writing while the UI thread reads): wait up
-    // to 5s for a lock instead of failing immediately with `SQLITE_BUSY`.
-    conn.pragma_update(None, "busy_timeout", 5000)?;
+    conn.pragma_update(None, "busy_timeout", busy_timeout_ms)?;
     Ok(conn)
 }
 
@@ -34,6 +55,11 @@ pub fn open(path: Option<&Path>) -> Result<Connection, DbError> {
 pub fn open_migrated(path: Option<&Path>) -> Result<Connection, DbError> {
     let conn = open(path)?;
     migrate(&conn)?;
+    // Non-blocking, skip-when-idle: this must never stall or fail because a
+    // concurrent writer (a running app's long scan transaction) holds the lock —
+    // see `events::prune_on_open`. The ~30 GTK `open_migrated(...).unwrap()`
+    // call sites and pure-CLI reads both depend on that guarantee.
+    crate::events::prune_on_open(&conn)?;
     Ok(conn)
 }
 
@@ -476,6 +502,12 @@ pub(crate) fn migrate_with_cache_dirs(
     portrait_cache: &Path,
 ) -> Result<(), DbError> {
     let initial_version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if initial_version > SUPPORTED_SCHEMA_VERSION {
+        return Err(DbError::SchemaTooNew {
+            found: initial_version,
+            supported: SUPPORTED_SCHEMA_VERSION,
+        });
+    }
     let version = initial_version;
     if version < 1 {
         let tx = conn.unchecked_transaction()?;
@@ -638,65 +670,11 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
     crate::db_mix_planner::migrate_v23(conn)?;
     crate::db_listen_history::migrate_v24(conn)?;
     crate::db_library_exclusions::migrate_v25(conn)?;
+    crate::db_new_releases_history::migrate_v26(conn)?;
+    crate::db_drop_audio_analysis_mix::migrate_v27(conn)?;
+    crate::db_change_log::migrate_v28(conn)?;
+    crate::db_ai_jobs::migrate_v29(conn)?;
     Ok(())
-}
-
-fn grandfather_network_features(
-    tx: &rusqlite::Transaction<'_>,
-    existing_database: bool,
-    cover_cache: &Path,
-    portrait_cache: &Path,
-) -> Result<(), rusqlite::Error> {
-    if existing_database {
-        enable_module_if_unset(tx, &crate::modules::ONLINE_LYRICS_MODULE)?;
-        tx.execute(
-            "INSERT OR IGNORE INTO settings (key, value) \
-             SELECT ?1, '1' \
-             FROM settings \
-             WHERE key = ?2 AND value = '1'",
-            rusqlite::params![
-                crate::modules::enabled_key(&crate::modules::NEW_RELEASES_MODULE),
-                "module.artist_news.enabled"
-            ],
-        )?;
-    }
-    if existing_database && cache_contains_image(cover_cache, crate::cover_download::IMAGE_EXTS) {
-        enable_module_if_unset(tx, &crate::modules::COVER_DOWNLOAD_MODULE)?;
-    }
-    if existing_database
-        && cache_contains_image(portrait_cache, crate::artist_portrait::cache::IMAGE_EXTS)
-    {
-        enable_module_if_unset(tx, &crate::modules::ARTIST_PORTRAITS_MODULE)?;
-    }
-    Ok(())
-}
-
-fn enable_module_if_unset(
-    tx: &rusqlite::Transaction<'_>,
-    module: &crate::modules::ModuleDescriptor,
-) -> Result<(), rusqlite::Error> {
-    tx.execute(
-        "INSERT OR IGNORE INTO settings (key, value) VALUES (?1, '1')",
-        [crate::modules::enabled_key(module)],
-    )?;
-    Ok(())
-}
-
-fn cache_contains_image(directory: &Path, extensions: &[&str]) -> bool {
-    std::fs::read_dir(directory).is_ok_and(|entries| {
-        entries.filter_map(Result::ok).any(|entry| {
-            entry.file_type().is_ok_and(|kind| kind.is_file())
-                && entry
-                    .path()
-                    .extension()
-                    .and_then(|extension| extension.to_str())
-                    .is_some_and(|extension| {
-                        extensions
-                            .iter()
-                            .any(|candidate| extension.eq_ignore_ascii_case(candidate))
-                    })
-        })
-    })
 }
 
 /// Stores pre-computed waveform peaks for a track.
@@ -750,9 +728,13 @@ mod network_migration_tests;
 mod stats_migration_tests;
 
 #[cfg(test)]
-#[path = "db_audio_analysis_migration_tests.rs"]
-mod audio_analysis_migration_tests;
-
-#[cfg(test)]
 #[path = "db_migration_repair_tests.rs"]
 mod migration_repair_tests;
+
+#[cfg(test)]
+#[path = "db_change_log_migration_tests.rs"]
+mod change_log_migration_tests;
+
+#[cfg(test)]
+#[path = "db_ai_jobs_migration_tests.rs"]
+mod ai_jobs_migration_tests;

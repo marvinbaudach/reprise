@@ -5,7 +5,8 @@ use rusqlite::types::Value;
 use rusqlite::Connection;
 
 use super::clauses::{
-    filter_clause, like_pattern, order_expr_and_dir, row_to_id, row_to_track, PRESENT,
+    ai_projection, filter_clause, like_pattern, order_expr_and_dir, row_to_id, row_to_track,
+    PRESENT,
 };
 use super::queue::QUEUE_LIMIT;
 use super::{browse::browse_clause, BrowseFilter, MAX_WINDOW_LIMIT};
@@ -114,6 +115,38 @@ pub fn query_artists(conn: &Connection) -> Result<Vec<ArtistSummary>, rusqlite::
     rows.collect()
 }
 
+/// Counts the distinct `(album, effective album artist)` groups — the length of
+/// [`query_albums`] without materializing every [`AlbumSummary`]. Same
+/// `PRESENT`/blank-album filter and same case-insensitive grouping keys, so the
+/// two always agree.
+pub fn query_album_count(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    conn.query_row(
+        &format!(
+            "SELECT COUNT(*) FROM ( \
+               SELECT 1 FROM tracks \
+               WHERE {PRESENT} AND TRIM(album) <> '' \
+               GROUP BY LOWER(TRIM(album)), LOWER({EFFECTIVE_ALBUM_ARTIST}) \
+             )"
+        ),
+        [],
+        |row| row.get(0),
+    )
+}
+
+/// Counts the distinct effective album artists — the length of [`query_artists`]
+/// without materializing every [`ArtistSummary`]. Same `PRESENT`/blank-artist
+/// filter and case-insensitive key as `query_artists`, so the two always agree.
+pub fn query_artist_count(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    conn.query_row(
+        &format!(
+            "SELECT COUNT(DISTINCT LOWER({EFFECTIVE_ALBUM_ARTIST})) FROM tracks \
+             WHERE {PRESENT} AND TRIM({EFFECTIVE_ALBUM_ARTIST}) <> ''"
+        ),
+        [],
+        |row| row.get(0),
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn query_album_track_window(
     conn: &mut Connection,
@@ -125,6 +158,7 @@ pub(super) fn query_album_track_window(
     browse: &BrowseFilter,
     offset: i64,
     limit: i64,
+    project_ai: bool,
 ) -> Result<Vec<Track>, rusqlite::Error> {
     let limit = limit.clamp(0, MAX_WINDOW_LIMIT);
     let has_filter = !filter.trim().is_empty();
@@ -132,10 +166,12 @@ pub(super) fn query_album_track_window(
     let filter_sql = filter_clause(has_filter, 5);
     let browse_first_param = if has_filter { 6 } else { 5 };
     let (browse_sql, browse_values) = browse_clause(browse, browse_first_param);
+    let is_ai = ai_projection(project_ai);
     let sql = format!(
         "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
          duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
-         file_mtime, missing_since, missing_reason, untagged, file_size, device, inode \
+         file_mtime, missing_since, missing_reason, untagged, file_size, device, inode, \
+         {is_ai} AS is_ai \
          FROM tracks WHERE {PRESENT} \
          AND TRIM(album) = ?3 COLLATE NOCASE \
          AND {EFFECTIVE_ALBUM_ARTIST} = ?4 COLLATE NOCASE{filter_sql}{browse_sql} \
@@ -311,6 +347,7 @@ pub(super) fn query_artist_track_window(
     browse: &BrowseFilter,
     offset: i64,
     limit: i64,
+    project_ai: bool,
 ) -> Result<Vec<Track>, rusqlite::Error> {
     let limit = limit.clamp(0, MAX_WINDOW_LIMIT);
     let has_filter = !filter.trim().is_empty();
@@ -318,10 +355,12 @@ pub(super) fn query_artist_track_window(
     let filter_sql = filter_clause(has_filter, 4);
     let browse_first_param = if has_filter { 5 } else { 4 };
     let (browse_sql, browse_values) = browse_clause(browse, browse_first_param);
+    let is_ai = ai_projection(project_ai);
     let sql = format!(
         "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
          duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
-         file_mtime, missing_since, missing_reason, untagged, file_size, device, inode \
+         file_mtime, missing_since, missing_reason, untagged, file_size, device, inode, \
+         {is_ai} AS is_ai \
          FROM tracks WHERE {PRESENT} \
          AND {EFFECTIVE_ALBUM_ARTIST} = ?3 COLLATE NOCASE{filter_sql}{browse_sql} \
          ORDER BY {order} {direction} LIMIT ?1 OFFSET ?2"
@@ -412,6 +451,25 @@ mod tests {
         )
         .unwrap();
         conn
+    }
+
+    #[test]
+    fn artist_and_album_counts_match_the_grouped_summaries() {
+        let conn = seeded_library();
+        // The counts are exactly the lengths of the grouped summaries — the
+        // point of the facade is to get that number without materializing them.
+        assert_eq!(
+            query_artist_count(&conn).unwrap(),
+            query_artists(&conn).unwrap().len() as i64
+        );
+        assert_eq!(
+            query_album_count(&conn).unwrap(),
+            query_albums(&conn).unwrap().len() as i64
+        );
+        // Nobody, Other Artist, Solo, Various Artists; the missing "Lost" and
+        // blank-album rows are excluded exactly as in the summaries.
+        assert_eq!(query_artist_count(&conn).unwrap(), 4);
+        assert_eq!(query_album_count(&conn).unwrap(), 3);
     }
 
     #[test]

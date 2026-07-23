@@ -2,9 +2,6 @@
 
 use std::rc::Rc;
 
-use gtk4::prelude::*;
-use libadwaita as adw;
-
 use crate::ui::now_playing::NowPlayingPanel;
 use crate::ui::player_controller::PlayerController;
 
@@ -14,7 +11,6 @@ pub(in crate::ui) fn install(
     player: &Rc<PlayerController>,
     panel: &Rc<NowPlayingPanel>,
     queue_model: &SharedQueueModel,
-    window: &adw::ApplicationWindow,
 ) {
     let panel_weak = Rc::downgrade(panel);
     player.set_on_now_playing_panel_track_changed(move |track| {
@@ -33,15 +29,6 @@ pub(in crate::ui) fn install(
         if let Some(panel) = panel_weak.upgrade() {
             panel.set_spectrum(frame);
         }
-    });
-
-    let panel_weak = Rc::downgrade(panel);
-    let window_weak = window.downgrade();
-    player.connect_analysis_clicked(move || {
-        let (Some(panel), Some(window)) = (panel_weak.upgrade(), window_weak.upgrade()) else {
-            return;
-        };
-        panel.present_audio_character(&window);
     });
 
     let refresh = {

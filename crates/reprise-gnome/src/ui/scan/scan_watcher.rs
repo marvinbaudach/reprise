@@ -71,7 +71,6 @@ pub(in crate::ui) fn start_or_restart_watcher(
                 Some(sidebar) => sidebar.refresh("watcher reconcile"),
                 None => tracing::warn!("watcher: sidebar refresh skipped: sidebar is gone"),
             }
-            controls.wake_audio_analysis();
         }
         tracing::debug!("watcher: event receiver closed; exiting UI drain loop");
     });

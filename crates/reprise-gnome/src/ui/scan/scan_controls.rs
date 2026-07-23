@@ -9,7 +9,6 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use reprise_core::library::scanner::ScanProgress;
 
-use super::audio_analysis_runtime::AudioAnalysisRuntime;
 use super::scan_progress::{
     EmptyScanIndicator, ScanProgressView, WeakEmptyScanIndicator, WeakScanProgressView,
 };
@@ -67,7 +66,6 @@ pub(in crate::ui) struct ScanControls {
     empty_indicator: Rc<RefCell<Option<WeakEmptyScanIndicator>>>,
     sidebar_toggle: Rc<RefCell<Option<glib::WeakRef<gtk4::ToggleButton>>>>,
     library_root_unavailable: Rc<Cell<bool>>,
-    audio_analysis: Rc<RefCell<Option<AudioAnalysisRuntime>>>,
 }
 
 impl ScanControls {
@@ -83,7 +81,6 @@ impl ScanControls {
             empty_indicator: Rc::new(RefCell::new(None)),
             sidebar_toggle: Rc::new(RefCell::new(None)),
             library_root_unavailable: Rc::new(Cell::new(false)),
-            audio_analysis: Rc::new(RefCell::new(None)),
         }
     }
 
@@ -119,17 +116,6 @@ impl ScanControls {
 
     pub(in crate::ui) fn is_cancel_requested(&self) -> bool {
         self.cancellation.is_requested()
-    }
-
-    pub(in crate::ui) fn set_audio_analysis(&self, runtime: &AudioAnalysisRuntime) {
-        self.audio_analysis.borrow_mut().replace(runtime.clone());
-    }
-
-    pub(in crate::ui) fn wake_audio_analysis(&self) {
-        let runtime = self.audio_analysis.borrow().clone();
-        if let Some(runtime) = runtime {
-            runtime.wake();
-        }
     }
 
     pub(in crate::ui) fn set_on_scan_state_changed(&self, callback: impl Fn(bool) + 'static) {

@@ -1,0 +1,105 @@
+[package]
+name = "reprise-stems"
+description = "Production stem-separation backend (ort + htdemucs ONNX) for Reprise's instrumental jobs."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+# MIT. The heavy ML runtime (onnxruntime, via `ort`) is MIT OR Apache-2.0 and
+# the htdemucs weights are MIT (Meta) — cleared against LICENSING.md by the
+# package E spike (docs/research/stem-separation-runtime.md). The pure-Rust
+# audio codecs are permissive too; see the module docs in `src/lib.rs`.
+license = "MIT"
+
+[dependencies]
+# The engine whose `StemSeparationBackend` contract this crate implements.
+reprise-core = { path = "../reprise-core" }
+
+# --- ALWAYS COMPILED (default build), no native libraries, Flatpak-offline OK.
+# Model provisioning (checksum + licence notice) and the pure DSP orchestration
+# (chunking, overlap-add stitching, PCM conversion) build and are unit-tested
+# WITHOUT onnxruntime, so `cargo test -p reprise-stems` needs no model, no
+# network and no native lib. All tiny pure-Rust crates.
+sha2 = "0.10"
+dirs = "6"
+thiserror = "2"
+
+# --- REAL BACKEND (behind the `ort` feature). onnxruntime is dlopened at
+# runtime (`load-dynamic`) from a checksummed, explicitly-located library, so
+# the DEFAULT build performs no build-time download and stays Flatpak-offline
+# buildable. Everything here is optional and off by default.
+[dependencies.ort]
+version = "=2.0.0-rc.10"
+optional = true
+default-features = false
+
+# Pure-Rust audio decode for arbitrary library formats (FLAC/MP3/AAC/ALAC/
+# Vorbis/WAV/AIFF). MPL-2.0: file-level copyleft that permits redistribution,
+# commercial use and linking from both the GPL Linux client and future
+# proprietary frontends (MPL is FSF-listed GPL-compatible and links freely into
+# larger works). Passes the LICENSING.md model/dependency gate.
+[dependencies.symphonia]
+version = "0.5"
+optional = true
+default-features = false
+features = ["flac", "mp3", "isomp4", "aac", "alac", "ogg", "vorbis", "wav", "pcm", "adpcm", "aiff"]
+
+# Pure-Rust FLAC encoder for the instrumental render. Apache-2.0.
+[dependencies.flacenc]
+version = "0.5"
+optional = true
+default-features = false
+
+# Pure-Rust sample-rate conversion to the model's native 44.1 kHz. MIT.
+[dependencies.rubato]
+version = "0.16"
+optional = true
+
+# ONNX tensor plumbing, matched to `ort`'s ndarray feature. MIT OR Apache-2.0.
+[dependencies.ndarray]
+version = "0.16"
+optional = true
+
+# Blocking, pure-Rust HTTPS (rustls) for the first-use model download. Same
+# crate/major the engine already uses. Only the real fetcher pulls it in; the
+# download function is otherwise tested through an injected fetcher.
+[dependencies.ureq]
+version = "3"
+optional = true
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+default = []
+# The production backend: the real `OrtStemBackend`, audio IO and HTTP model
+# download. onnxruntime is loaded dynamically at runtime (`load-dynamic`), so
+# there is NO build-time download and the build stays Flatpak/offline
+# compatible — even `--all-features` never fetches onnxruntime. Binary hosts
+# (the GTK app; the CLI behind its own `worker` feature) enable this.
+#
+# For a throwaway LOCAL build that should link a prebuilt runtime instead of
+# providing a libonnxruntime.so, add ort's own `download-binaries` on the
+# command line, e.g. `--features ort -F ort/download-binaries` — a dev
+# convenience that must never be used for a Flatpak/offline build.
+ort = [
+    "dep:ort",
+    "ort/std",
+    "ort/ndarray",
+    "ort/load-dynamic",
+    "dep:symphonia",
+    "dep:flacenc",
+    "dep:rubato",
+    "dep:ndarray",
+    "dep:ureq",
+]
+
+# A production-path model provisioner (checksum + licence notice). Needs the
+# real HTTP fetcher, so it is gated on `ort` and never built by the default
+# `cargo build`/`--all-targets` probe.
+[[example]]
+name = "provision_model"
+required-features = ["ort"]
+
+[lints]
+workspace = true

@@ -80,6 +80,20 @@ pub(in crate::ui) fn wire_bar_controls(controller: &Rc<PlayerController>) {
         controller.update_mpris_volume(volume);
     });
 
+    // Clicking the volume icon mutes/unmutes: the toggle drives the scale to 0
+    // (or back to the pre-mute level) under `updating_volume`, so it reaches
+    // the audio through this callback rather than `connect_volume_changed`.
+    let weak = Rc::downgrade(controller);
+    controller.bar.connect_mute_toggled(move |volume| {
+        let Some(controller) = weak.upgrade() else {
+            return;
+        };
+        controller.player.set_volume(volume);
+        controller.sync_volume_indicator(volume);
+        controller.volume.set(volume);
+        controller.update_mpris_volume(volume);
+    });
+
     let weak = Rc::downgrade(controller);
     controller.bar.connect_previous(move || {
         let Some(controller) = weak.upgrade() else {

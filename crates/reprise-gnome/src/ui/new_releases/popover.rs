@@ -10,11 +10,23 @@ use libadwaita as adw;
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::{one_shot_task, strings};
 
-use super::release_cover::{fallback_accent_for_artist, LazyReleaseCover};
+use super::badge;
+use super::history_page;
+use super::release_cover::fallback_accent_for_artist;
+use super::release_row;
 
-const POPOVER_LIMIT: usize = 5;
-const HERO_COVER_EDGE: i32 = 56;
-const ROW_COVER_EDGE: i32 = 34;
+/// Popover content width (NR-9 compact layout).
+const POPOVER_WIDTH: i32 = 336;
+/// Caps the scrolling release list's natural height before it scrolls.
+/// Shared with `history_page.rs` (C1) so both pages scroll at the same
+/// height.
+pub(in crate::ui) const SCROLLER_MAX_HEIGHT: i32 = 288;
+pub(in crate::ui) const LIST_PAGE: &str = "list";
+pub(in crate::ui) const HISTORY_PAGE: &str = "history";
+/// How often the background timer re-checks staleness while the module is
+/// enabled (Beschluss 8). Deliberately coarse: `refresh_due`'s own 6 h+jitter
+/// window is the real gate, this just samples it periodically.
+const REFRESH_TIMER_SECONDS: u32 = 3600;
 
 #[derive(Debug, PartialEq, Eq)]
 struct OpeningEffect {
@@ -22,11 +34,13 @@ struct OpeningEffect {
     navigates: bool,
 }
 
+/// Every listed (already-filtered, non-hidden) release is stamped seen on
+/// open — the list scrolls now instead of capping at a handful of rows, so
+/// nothing should stay unseen just because it rendered below a fold.
 fn opening_effect(releases: &[reprise_core::artist_news::StoredRelease]) -> OpeningEffect {
     OpeningEffect {
         seen_ids: releases
             .iter()
-            .take(POPOVER_LIMIT)
             .map(|release| release.release_group_mbid.clone())
             .collect(),
         navigates: false,
@@ -47,10 +61,6 @@ fn footer_presentation(latest: Option<i64>, now: i64, failed: bool) -> FooterPre
         ),
         show_cached_failure: failed,
     }
-}
-
-fn see_all_visible(total: usize, visible: usize, hidden: usize) -> bool {
-    total > visible || hidden > 0
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -89,53 +99,133 @@ fn module_effect(
     }
 }
 
+/// Whether a background (non-user-initiated) fetch should run right now:
+/// shared by the popover's open path (`trigger_staleness_refresh`) and the
+/// hourly timer (`maybe_background_refresh`), so the two never drift apart
+/// with their own copy of the same condition.
+fn periodic_fetch_due(enabled: bool, fetching: bool, refresh_due: bool) -> bool {
+    enabled && !fetching && refresh_due
+}
+
 struct NewReleasesPopover {
     conn: Rc<RefCell<rusqlite::Connection>>,
     database_path: PathBuf,
     button: gtk4::MenuButton,
     badge: gtk4::Label,
     popover: gtk4::Popover,
-    rows: gtk4::Box,
+    stack: gtk4::Stack,
+    list: gtk4::ListBox,
     empty: gtk4::Label,
-    see_all: gtk4::Button,
+    new_tag: gtk4::Label,
+    history_row: gtk4::Button,
+    /// The count fragment only (#7) — the "Show history" text itself is set
+    /// once at construction and never changes, so it needs no field.
+    history_row_count: gtk4::Label,
+    history_page: gtk4::Box,
     fetch_button: gtk4::Button,
     fetch_stack: gtk4::Stack,
     spinner: gtk4::Spinner,
     updated: gtk4::Label,
     failure: gtk4::Label,
     fetching: Cell<bool>,
-    on_see_all: Rc<dyn Fn()>,
+    /// The hourly background staleness timer (Beschluss 8), running only
+    /// while the module is enabled. `SourceId` is move-only, so `Cell::take`
+    /// is how `stop_refresh_timer` retrieves it to call `remove()`.
+    refresh_timer: Cell<Option<gtk4::glib::SourceId>>,
+    on_show_album: release_row::OnShowAlbum,
 }
 
 impl NewReleasesPopover {
     fn new(
         conn: Rc<RefCell<rusqlite::Connection>>,
         database_path: PathBuf,
-        on_see_all: Rc<dyn Fn()>,
+        on_show_album: release_row::OnShowAlbum,
     ) -> Rc<Self> {
-        let (button, badge) = build_button();
+        let (button, badge) = badge::build_button();
         let popover = gtk4::Popover::new();
-        let rows = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
+        popover.add_css_class("new-release-popover");
+
+        let list = gtk4::ListBox::new();
+        list.set_selection_mode(gtk4::SelectionMode::None);
         let empty = gtk4::Label::new(None);
         empty.set_wrap(true);
         empty.set_justify(gtk4::Justification::Center);
         empty.set_margin_top(12);
         empty.set_margin_bottom(12);
-        let see_all = gtk4::Button::with_label(&strings::text(strings::SEE_ALL_RELEASES));
-        see_all.add_css_class("flat");
-        see_all.add_css_class("pill");
-        see_all.set_halign(gtk4::Align::Center);
-        see_all.set_visible(false);
+        let scroller = gtk4::ScrolledWindow::builder()
+            .child(&list)
+            .hscrollbar_policy(gtk4::PolicyType::Never)
+            .vscrollbar_policy(gtk4::PolicyType::Automatic)
+            .propagate_natural_height(true)
+            .max_content_height(SCROLLER_MAX_HEIGHT)
+            .build();
+
+        // #3: GTK CSS has no text-transform, so the uppercase look comes from
+        // uppercasing the string itself rather than relying on CSS alone.
+        let header_label = gtk4::Label::new(Some(
+            &strings::text(strings::NEW_RELEASES_HEADER).to_uppercase(),
+        ));
+        header_label.add_css_class("new-release-header");
+        header_label.set_xalign(0.0);
+        header_label.set_hexpand(true);
+        let new_tag = gtk4::Label::new(None);
+        new_tag.add_css_class("new-release-tag");
+        new_tag.set_visible(false);
+        let header_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+        header_row.append(&header_label);
+        header_row.append(&new_tag);
+
+        let separator = gtk4::Separator::new(gtk4::Orientation::Horizontal);
+        separator.add_css_class("new-release-separator");
+
+        // #7: "Show history" is navigation, not a primary action — the label
+        // text is static and the count sits in its own, even quieter class.
+        let history_row_label = gtk4::Label::new(Some(&strings::text(strings::SHOW_HISTORY)));
+        history_row_label.add_css_class("new-release-history-label");
+        let history_row_count = gtk4::Label::new(None);
+        history_row_count.add_css_class("new-release-history-count");
+        let history_text = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
+        history_text.set_hexpand(true);
+        history_text.append(&history_row_label);
+        history_text.append(&history_row_count);
+        let history_content = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+        history_content.append(&gtk4::Image::from_icon_name(
+            "document-open-recent-symbolic",
+        ));
+        history_content.append(&history_text);
+        history_content.append(&gtk4::Image::from_icon_name("go-next-symbolic"));
+        let history_row = gtk4::Button::builder()
+            .child(&history_content)
+            .css_classes(["flat", "new-release-history-row"])
+            .build();
+
         let (footer, fetch_button, fetch_stack, spinner, updated, failure) = build_footer();
-        let content = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
+
+        let list_page = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
+        list_page.append(&header_row);
+        list_page.append(&scroller);
+        list_page.append(&separator);
+        list_page.append(&history_row);
+        list_page.append(&footer);
+
+        // `show_history` fills this fresh from `history_page::build` every
+        // time it navigates here, rather than keeping one instance alive.
+        let history_page = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
+
+        let stack = gtk4::Stack::new();
+        stack.set_transition_type(gtk4::StackTransitionType::SlideLeftRight);
+        stack.set_transition_duration(crate::ui::motion::STANDARD_MS);
+        stack.add_named(&list_page, Some(LIST_PAGE));
+        stack.add_named(&history_page, Some(HISTORY_PAGE));
+        stack.set_visible_child_name(LIST_PAGE);
+
+        let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        content.set_size_request(POPOVER_WIDTH, -1);
         content.set_margin_top(10);
         content.set_margin_bottom(10);
         content.set_margin_start(10);
         content.set_margin_end(10);
-        content.append(&rows);
-        content.append(&see_all);
-        content.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
-        content.append(&footer);
+        content.append(&stack);
         popover.set_child(Some(&content));
         // The MenuButton owns and parents this popover for its whole lifetime
         // (set_popover). It must NOT be unparented on close — unlike the
@@ -150,16 +240,21 @@ impl NewReleasesPopover {
             button,
             badge,
             popover,
-            rows,
+            stack,
+            list,
             empty,
-            see_all,
+            new_tag,
+            history_row,
+            history_row_count,
+            history_page,
             fetch_button,
             fetch_stack,
             spinner,
             updated,
             failure,
             fetching: Cell::new(false),
-            on_see_all,
+            refresh_timer: Cell::new(None),
+            on_show_album,
         });
         state.wire();
         state.render(false, false);
@@ -178,6 +273,7 @@ impl NewReleasesPopover {
         self.popover.connect_show(move |_| {
             if let Some(state) = weak.upgrade() {
                 state.render(true, false);
+                state.trigger_staleness_refresh();
             }
         });
 
@@ -189,12 +285,62 @@ impl NewReleasesPopover {
         });
 
         let weak = Rc::downgrade(self);
-        self.see_all.connect_clicked(move |_| {
+        self.history_row.connect_clicked(move |_| {
             if let Some(state) = weak.upgrade() {
-                state.popover.popdown();
-                (state.on_see_all)();
+                state.show_history();
             }
         });
+    }
+
+    /// Builds the history sub-page fresh from the latest `query_history`
+    /// snapshot and navigates the stack to it. Rebuilt every time (rather
+    /// than once and kept around) so a restore or the passage of time is
+    /// always reflected without extra invalidation bookkeeping.
+    fn show_history(self: &Rc<Self>) {
+        let today = chrono::Local::now().date_naive();
+        let entries = reprise_core::artist_news_history::query_history(&self.conn.borrow(), today)
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, "could not query New Releases history");
+                Vec::new()
+            });
+
+        while let Some(child) = self.history_page.first_child() {
+            self.history_page.remove(&child);
+        }
+
+        let on_back: Rc<dyn Fn()> = {
+            let stack = self.stack.clone();
+            Rc::new(move || stack.set_visible_child_name(LIST_PAGE))
+        };
+        let on_restore: Rc<dyn Fn(&str)> = {
+            let weak = Rc::downgrade(self);
+            Rc::new(move |mbid: &str| {
+                let Some(state) = weak.upgrade() else { return };
+                if let Err(error) =
+                    reprise_core::artist_news_history::restore_release(&state.conn.borrow(), mbid)
+                {
+                    tracing::warn!(%error, release_group_mbid = mbid, "could not restore New Release");
+                    return;
+                }
+                state.render(false, false);
+                state.show_history();
+            })
+        };
+        let close_popover: Rc<dyn Fn()> = {
+            let popover = self.popover.clone();
+            Rc::new(move || popover.popdown())
+        };
+
+        let page = history_page::build(
+            entries,
+            today,
+            on_back,
+            &self.on_show_album,
+            &on_restore,
+            &close_popover,
+        );
+        self.history_page.append(&page);
+        self.stack.set_visible_child_name(HISTORY_PAGE);
     }
 
     fn render(self: &Rc<Self>, mark_seen: bool, failed: bool) {
@@ -223,7 +369,6 @@ impl NewReleasesPopover {
             .filter(|release| !release.hidden)
             .cloned()
             .collect::<Vec<_>>();
-        let hidden = all_releases.iter().filter(|release| release.hidden).count();
         let fetch_completed = self.fetch_completed();
         let effect = module_effect(
             enabled,
@@ -232,18 +377,18 @@ impl NewReleasesPopover {
             self.fetching.get(),
         );
         self.button.set_visible(effect.button_visible);
-        clear_box(&self.rows);
+        self.list.remove_all();
         match effect.empty {
             EmptyPresentation::Hidden => {}
             EmptyPresentation::Checking => {
                 self.empty
                     .set_label(&strings::text(strings::NEW_RELEASES_CHECKING));
-                self.rows.append(&self.empty);
+                self.list.append(&self.empty);
             }
             EmptyPresentation::NoReleases => {
                 self.empty
                     .set_label(&strings::text(strings::NEW_RELEASES_NONE));
-                self.rows.append(&self.empty);
+                self.list.append(&self.empty);
             }
         }
         let on_hide: Rc<dyn Fn(&str)> = {
@@ -259,14 +404,19 @@ impl NewReleasesPopover {
                 state.render(false, false);
             })
         };
-        for (index, release) in releases.iter().take(POPOVER_LIMIT).enumerate() {
-            self.rows
-                .append(&build_release_row(release, index == 0, &on_hide));
+        let close_popover: Rc<dyn Fn()> = {
+            let popover = self.popover.clone();
+            Rc::new(move || popover.popdown())
+        };
+        for release in &releases {
+            self.list.append(&release_row::build(
+                release,
+                today,
+                &on_hide,
+                &self.on_show_album,
+                &close_popover,
+            ));
         }
-        let visible = releases.len().min(POPOVER_LIMIT);
-        self.see_all
-            .set_visible(see_all_visible(releases.len(), visible, hidden));
-
         if mark_seen {
             let effect = opening_effect(&releases);
             if !effect.seen_ids.is_empty() {
@@ -282,12 +432,108 @@ impl NewReleasesPopover {
         }
         let unseen = reprise_core::artist_news::unseen_release_count(&self.conn.borrow())
             .unwrap_or_default();
-        self.badge.set_visible(effect.badge_allowed && unseen > 0);
+        match badge::badge_presentation(unseen) {
+            Some(text) if effect.badge_allowed => {
+                self.badge.set_label(&text);
+                self.badge.set_visible(true);
+            }
+            _ => self.badge.set_visible(false),
+        }
+        if unseen > 0 {
+            self.new_tag
+                .set_label(&strings::new_releases_new_count(unseen));
+            self.new_tag.set_visible(true);
+        } else {
+            self.new_tag.set_visible(false);
+        }
+        let history_count =
+            reprise_core::artist_news_history::query_history(&self.conn.borrow(), today)
+                .map_or_else(
+                    |error| {
+                        tracing::warn!(%error, "could not query New Releases history");
+                        0
+                    },
+                    |entries| entries.len(),
+                );
+        self.history_row_count
+            .set_label(&strings::new_releases_history_count_suffix(history_count));
         let latest = all_releases.iter().map(|release| release.fetched_at).max();
         let footer = footer_presentation(latest, chrono::Utc::now().timestamp(), failed);
         self.updated.set_label(&footer.updated);
         self.updated.set_visible(latest.is_some());
         self.failure.set_visible(footer.show_cached_failure);
+    }
+
+    /// A5's staleness policy: opening the popover is a natural moment to
+    /// check whether a background refresh is due, without blocking the
+    /// synchronous render above. B5 adds the hourly timer as a second entry
+    /// point into the exact same check, so both share `maybe_background_refresh`
+    /// instead of drifting apart with their own copy of the condition.
+    fn trigger_staleness_refresh(self: &Rc<Self>) {
+        self.maybe_background_refresh();
+    }
+
+    /// The shared background-refresh check behind both the popover's open
+    /// path and the hourly timer (Beschluss 8). Skips while a fetch is
+    /// already running or the module is disabled, so this never fights
+    /// `fetch_now`'s own guard and never touches the network while the
+    /// module is off.
+    fn maybe_background_refresh(self: &Rc<Self>) {
+        let enabled = reprise_core::modules::is_enabled(
+            &self.conn.borrow(),
+            &reprise_core::modules::NEW_RELEASES_MODULE,
+        )
+        .unwrap_or(false);
+        let latest = reprise_core::artist_news::latest_fetched_at(&self.conn.borrow())
+            .ok()
+            .flatten();
+        let now = chrono::Utc::now().timestamp();
+        let jitter =
+            reprise_core::artist_news::jitter_seconds(&self.database_path.to_string_lossy());
+        let due = reprise_core::artist_news::refresh_due(latest, now, jitter);
+        if periodic_fetch_due(enabled, self.fetching.get(), due) {
+            self.fetch_now();
+        }
+    }
+
+    /// Starts the hourly background staleness timer if it is not already
+    /// running. Coupled to `enabled_changed` so it only ever runs while the
+    /// module is enabled — no timer, no network, while the module is off.
+    fn start_refresh_timer(self: &Rc<Self>) {
+        // `Cell<Option<SourceId>>` has no `Copy`-friendly peek, so `take` it
+        // out to check, then put it straight back if one was already running.
+        let existing = self.refresh_timer.take();
+        if existing.is_some() {
+            self.refresh_timer.set(existing);
+            return;
+        }
+        let weak = Rc::downgrade(self);
+        let id = gtk4::glib::timeout_add_seconds_local(REFRESH_TIMER_SECONDS, move || {
+            let Some(state) = weak.upgrade() else {
+                return gtk4::glib::ControlFlow::Break; // Popover gone: stop the timer.
+            };
+            state.maybe_background_refresh();
+            gtk4::glib::ControlFlow::Continue
+        });
+        self.refresh_timer.set(Some(id));
+    }
+
+    /// Stops the hourly timer, if one is running. Called whenever the module
+    /// is disabled so a disabled module never keeps a background timer alive.
+    fn stop_refresh_timer(&self) {
+        if let Some(id) = self.refresh_timer.take() {
+            id.remove();
+        }
+    }
+
+    /// Test-only peek at the timer field without consuming the `SourceId`
+    /// (it is move-only, so a plain `Cell::get` is not available).
+    #[cfg(test)]
+    fn has_active_timer(&self) -> bool {
+        let existing = self.refresh_timer.take();
+        let active = existing.is_some();
+        self.refresh_timer.set(existing);
+        active
     }
 
     fn fetch_completed(&self) -> bool {
@@ -302,9 +548,15 @@ impl NewReleasesPopover {
     }
 
     fn enabled_changed(self: &Rc<Self>, enabled: bool) {
-        if enabled && !self.fetch_completed() {
-            self.fetch_now();
+        if enabled {
+            self.start_refresh_timer();
+            if !self.fetch_completed() {
+                self.fetch_now();
+            } else {
+                self.render(false, false);
+            }
         } else {
+            self.stop_refresh_timer();
             self.render(false, false);
         }
     }
@@ -390,10 +642,10 @@ pub(in crate::ui) fn install(
     window: &adw::ApplicationWindow,
     conn: &Rc<RefCell<rusqlite::Connection>>,
     database_path: &Path,
-    on_see_all: Rc<dyn Fn()>,
     runtime: &Rc<ArtistNewsRuntime>,
+    on_show_album: release_row::OnShowAlbum,
 ) {
-    let state = NewReleasesPopover::new(conn.clone(), database_path.to_path_buf(), on_see_all);
+    let state = NewReleasesPopover::new(conn.clone(), database_path.to_path_buf(), on_show_album);
     header.pack_end(&state.button);
     bind_runtime(&state, runtime);
     state.retain_for_window(window);
@@ -413,29 +665,6 @@ fn fetch_from_database(
     let scope = reprise_core::artist_news::configured_fetch_scope(&conn, today)
         .map_err(|error| reprise_core::artist_news::NewsError::Database(error.to_string()))?;
     reprise_core::artist_news::refresh(&conn, today, scope, true, fallback_accent_for_artist)
-}
-
-fn build_button() -> (gtk4::MenuButton, gtk4::Label) {
-    let glyph = gtk4::Label::new(Some("✦"));
-    glyph.add_css_class("title-3");
-    let badge = gtk4::Label::new(Some("•"));
-    badge.add_css_class("accent");
-    badge.set_halign(gtk4::Align::End);
-    badge.set_valign(gtk4::Align::Start);
-    badge.set_visible(false);
-    let overlay = gtk4::Overlay::new();
-    overlay.set_child(Some(&glyph));
-    overlay.add_overlay(&badge);
-    let button = gtk4::MenuButton::builder()
-        .child(&overlay)
-        .tooltip_text(strings::text(strings::NEW_RELEASES))
-        .css_classes(["flat"])
-        .visible(false)
-        .build();
-    button.update_property(&[gtk4::accessible::Property::Label(&strings::text(
-        strings::NEW_RELEASES,
-    ))]);
-    (button, badge)
 }
 
 fn build_footer() -> (
@@ -458,7 +687,7 @@ fn build_footer() -> (
     fetch_content.append(&fetch_label);
     let fetch_button = gtk4::Button::builder()
         .child(&fetch_content)
-        .css_classes(["flat"])
+        .css_classes(["flat", "new-release-ghost"])
         .build();
     let updated = gtk4::Label::new(None);
     updated.add_css_class("dim-label");
@@ -474,61 +703,6 @@ fn build_footer() -> (
     footer.append(&fetch_button);
     footer.append(&status);
     (footer, fetch_button, stack, spinner, updated, failure)
-}
-
-/// One popover entry. `on_hide` is what keeps NR-4 reachable: hiding used to
-/// live only in the digest view, which is itself only reachable through
-/// "See all" — and that button appears only when the list overflows or
-/// something is already hidden. A user with a short list could therefore
-/// never hide anything, and the digest's "N hidden · Show" footer could never
-/// appear for them. The action belongs where the entries are.
-fn build_release_row(
-    release: &reprise_core::artist_news::StoredRelease,
-    hero: bool,
-    on_hide: &Rc<dyn Fn(&str)>,
-) -> gtk4::Box {
-    let cover = LazyReleaseCover::new(
-        &release.release_group_mbid,
-        &release.artist_name,
-        &release.fallback_accent,
-        if hero {
-            HERO_COVER_EDGE
-        } else {
-            ROW_COVER_EDGE
-        },
-    );
-    let title = gtk4::Label::new(Some(&release.title));
-    title.set_xalign(0.0);
-    title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-    let meta = gtk4::Label::new(Some(&format!(
-        "{} · {}",
-        release.artist_name, release.first_release_date
-    )));
-    meta.set_xalign(0.0);
-    meta.add_css_class("dim-label");
-    let text = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-    text.set_hexpand(true);
-    text.append(&title);
-    text.append(&meta);
-    let hide = gtk4::Button::with_label(&strings::text(strings::HIDE_RELEASE));
-    hide.add_css_class("flat");
-    hide.add_css_class("pill");
-    hide.set_valign(gtk4::Align::Center);
-    let on_hide = on_hide.clone();
-    let mbid = release.release_group_mbid.clone();
-    hide.connect_clicked(move |_| on_hide(&mbid));
-
-    let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-    row.append(cover.widget());
-    row.append(&text);
-    row.append(&hide);
-    row
-}
-
-fn clear_box(container: &gtk4::Box) {
-    while let Some(child) = container.first_child() {
-        container.remove(&child);
-    }
 }
 
 #[cfg(test)]

@@ -34,9 +34,9 @@ pub(super) fn plural(
 mod artist;
 pub use artist::*;
 
-#[path = "strings_audio_analysis.rs"]
-mod audio_analysis;
-pub use audio_analysis::*;
+#[path = "strings_song_visuals.rs"]
+mod song_visuals;
+pub use song_visuals::*;
 
 #[path = "strings_issues.rs"]
 mod issues;
@@ -72,9 +72,9 @@ pub use tag_edit::*;
 mod track_menu;
 pub use track_menu::*;
 
-#[path = "strings_mix_builder.rs"]
-mod mix_builder;
-pub use mix_builder::*;
+#[path = "strings_instrumental.rs"]
+mod instrumental;
+pub use instrumental::*;
 
 #[path = "strings_stats.rs"]
 mod stats;

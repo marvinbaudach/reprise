@@ -35,10 +35,6 @@ impl NavPlace {
     pub(in crate::ui) fn browser_place(&self) -> &BrowserPlace {
         &self.browser
     }
-
-    pub(in crate::ui) fn is_new_releases(&self) -> bool {
-        self.browser == BrowserPlace::NewReleases
-    }
 }
 
 #[derive(Default)]
@@ -95,23 +91,6 @@ impl NavHistory {
         Some(NavPlace {
             browser: transition.to,
         })
-    }
-
-    pub(in crate::ui) fn record_new_releases(&self) -> Option<NavPlace> {
-        let mut navigation = self.navigation.borrow_mut();
-        let router = navigation.as_mut()?;
-        let transition = router.navigate(NavigationIntent::OpenNewReleases)?;
-        Some(NavPlace {
-            browser: transition.to,
-        })
-    }
-
-    pub(in crate::ui) fn record_new_releases_from(
-        &self,
-        current: BrowserPlace,
-    ) -> Option<NavPlace> {
-        self.replace_current(current);
-        self.record_new_releases()
     }
 
     pub(in crate::ui) fn go_back(&self) -> Option<NavPlace> {
@@ -192,9 +171,9 @@ fn intent_for(place: &BrowserPlace) -> NavigationIntent {
                 NavigationIntent::Sidebar(SidebarTarget::Missing)
             }
         },
-        BrowserPlace::NewReleases => NavigationIntent::OpenNewReleases,
         BrowserPlace::ImportErrors => NavigationIntent::Sidebar(SidebarTarget::ImportErrors),
         BrowserPlace::MyStats => NavigationIntent::Sidebar(SidebarTarget::MyStats),
+        BrowserPlace::Conversions => NavigationIntent::Sidebar(SidebarTarget::Conversions),
         BrowserPlace::Device { serial } => {
             NavigationIntent::Sidebar(SidebarTarget::Device(serial.clone()))
         }
@@ -248,20 +227,6 @@ mod tests {
         nav.record_route(&place(ViewSource::Missing));
 
         assert_eq!(nav.go_forward(), None);
-    }
-
-    #[test]
-    fn new_releases_is_a_regular_back_forward_place() {
-        let nav = NavHistory::default();
-        nav.record_route(&place(ViewSource::Library));
-
-        let digest = nav.record_new_releases().unwrap();
-        assert!(digest.is_new_releases());
-        assert_eq!(
-            simulate(&nav, nav.go_back()),
-            Some(place(ViewSource::Library))
-        );
-        assert_eq!(simulate(&nav, nav.go_forward()), Some(digest));
     }
 
     #[test]

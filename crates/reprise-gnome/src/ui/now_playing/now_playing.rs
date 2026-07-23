@@ -3,12 +3,10 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
-use libadwaita::prelude::{AnimationExt, BreakpointBinExt};
-use reprise_core::cover::ThumbnailSize;
+use libadwaita::prelude::BreakpointBinExt;
 use reprise_core::playback::{PlaybackState, SpectrumFrame};
 use rusqlite::Connection;
 
-use super::audio_character_view::{self, AudioCharacterDialog};
 use super::cover_loader::CoverLoader;
 use super::lyrics_strings;
 use super::now_playing_column::NowPlayingColumn;
@@ -21,19 +19,12 @@ use super::up_next_panel::UpNextPanel;
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::lyrics_view::LyricsView;
 use crate::ui::player_controller::NowPlaying;
-use crate::ui::scan::audio_analysis_runtime::AudioAnalysisRuntime;
 use crate::ui::style::tokens;
 
 type OnVoid = Rc<dyn Fn()>;
 
-fn should_toggle_visual_fullscreen(
-    enabled: bool,
-    panel_visible: bool,
-    selected_tab: PanelTab,
-    key: gtk4::gdk::Key,
-) -> bool {
-    enabled && panel_visible && selected_tab == PanelTab::Visual && key == gtk4::gdk::Key::F11
-}
+#[path = "now_playing_effects.rs"]
+mod now_playing_effects;
 
 struct PanelWidgets {
     column: NowPlayingColumn,
@@ -41,7 +32,6 @@ struct PanelWidgets {
     track_content: gtk4::Box,
     lyrics: Rc<LyricsView>,
     up_next: Rc<UpNextPanel>,
-    audio_character: AudioCharacterDialog,
     visualizer: SongVisualizer,
     visual_page: adw::ViewStackPage,
     cover: gtk4::Image,
@@ -126,7 +116,6 @@ fn build_widgets_for_session(
 
     let lyrics = LyricsView::new();
     let up_next = UpNextPanel::new(conn, cover_loader);
-    let audio_character = AudioCharacterDialog::new();
     let visualizer = SongVisualizer::new();
     let tab_stack = adw::ViewStack::builder().vexpand(true).build();
     tab_stack.add_titled_with_icon(
@@ -248,7 +237,6 @@ fn build_widgets_for_session(
         track_content,
         lyrics,
         up_next,
-        audio_character,
         visualizer,
         visual_page,
         cover,
@@ -276,7 +264,6 @@ pub(in crate::ui) struct NowPlayingPanel {
     on_up_next_refresh: RefCell<Option<OnVoid>>,
     track_animation: RefCell<Option<adw::TimedAnimation>>,
     track_animation_generation: Cell<u64>,
-    audio_character_generation: Cell<u64>,
     on_track_reveal: crate::ui::link_activation::ActivationSlot,
     song_visuals_enabled: Cell<bool>,
     on_album_reveal: crate::ui::link_activation::ActivationSlot,
@@ -284,14 +271,11 @@ pub(in crate::ui) struct NowPlayingPanel {
 }
 
 impl NowPlayingPanel {
-    #[allow(clippy::too_many_arguments)]
     pub(in crate::ui) fn new(
         content: &impl IsA<gtk4::Widget>,
-        window: &adw::ApplicationWindow,
         conn: Rc<RefCell<Connection>>,
         _runtime: Rc<ArtistNewsRuntime>,
         cover_loader: Rc<CoverLoader>,
-        audio_analysis: Option<&AudioAnalysisRuntime>,
     ) -> Rc<Self> {
         let visible = reprise_core::library::settings::get_info_panel_visible(&conn.borrow());
         let song_visuals_enabled = reprise_core::modules::is_enabled(
@@ -316,7 +300,6 @@ impl NowPlayingPanel {
             on_up_next_refresh: RefCell::new(None),
             track_animation: RefCell::new(None),
             track_animation_generation: Cell::new(0),
-            audio_character_generation: Cell::new(0),
             on_track_reveal: Rc::new(RefCell::new(None)),
             song_visuals_enabled: Cell::new(song_visuals_enabled),
             on_album_reveal: Rc::new(RefCell::new(None)),
@@ -344,11 +327,8 @@ impl NowPlayingPanel {
         );
         panel.set_song_visuals_enabled(song_visuals_enabled);
         panel.wire();
-        panel.install_visual_fullscreen_shortcut(window);
         panel.sync_visual_activity();
         panel.render_track();
-        panel.queue_audio_character_refresh();
-        panel.install_audio_character_updates(audio_analysis);
         panel
     }
 
@@ -379,19 +359,24 @@ impl NowPlayingPanel {
     }
 
     pub(in crate::ui) fn set_loaded_track(self: &Rc<Self>, track: Option<NowPlaying>) {
-        let changed = {
+        let (changed, id_changed) = {
             let current = self.loaded_track.borrow();
             match (current.as_ref(), track.as_ref()) {
-                (Some(current), Some(next)) => current.id != next.id || current.path != next.path,
-                (None, None) => false,
-                _ => true,
+                (Some(current), Some(next)) => (
+                    current.id != next.id || current.path != next.path,
+                    current.id != next.id,
+                ),
+                (None, None) => (false, false),
+                _ => (true, true),
             }
         };
         *self.loaded_track.borrow_mut() = track;
-        if changed {
-            self.render_audio_character(&audio_character_view::AudioCharacterPresentation::Empty);
+        if id_changed {
+            // A new track started: reset the visual engine's clock, water
+            // surface, and impact overlay so ripples/sparks from the
+            // previous track don't bleed into the new one.
+            self.widgets.visualizer.note_track_changed();
         }
-        self.queue_audio_character_refresh();
         if !changed {
             if self.track_animation.borrow().is_none() {
                 self.render_track();
@@ -423,31 +408,11 @@ impl NowPlayingPanel {
         self.widgets.visual_page.set_visible(enabled);
         if !enabled {
             self.widgets.visualizer.set_active(false);
-            self.widgets.visualizer.close_fullscreen();
             if self.widgets.session.selected.get() == PanelTab::Visual {
                 self.widgets.tab_stack.set_visible_child_name(UP_NEXT_PAGE);
             }
         }
-        let footer = if enabled {
-            strings::text(strings::SONG_VISUALS_FULLSCREEN_HINT)
-        } else {
-            String::new()
-        };
-        self.widgets.footers.borrow_mut().visual = footer.clone();
-        if self.widgets.session.selected.get() == PanelTab::Visual {
-            self.widgets.footer.set_label(&footer);
-        }
         self.sync_visual_activity();
-    }
-
-    pub(in crate::ui) fn present_audio_character(&self, parent: &adw::ApplicationWindow) {
-        let current_track = self.loaded_track.borrow().as_ref().map(|track| track.id);
-        let presentation = {
-            let conn = self.conn.borrow();
-            audio_character_view::load_presentation(&conn, current_track)
-        };
-        self.render_audio_character(&presentation);
-        self.widgets.audio_character.present(parent);
     }
 
     pub(in crate::ui) fn set_up_next_model(
@@ -572,32 +537,6 @@ impl NowPlayingPanel {
         );
     }
 
-    fn install_visual_fullscreen_shortcut(self: &Rc<Self>, window: &adw::ApplicationWindow) {
-        let key = gtk4::EventControllerKey::new();
-        key.set_propagation_phase(gtk4::PropagationPhase::Capture);
-        let panel = Rc::downgrade(self);
-        let parent = window.downgrade();
-        key.connect_key_pressed(move |_, key, _, _| {
-            let Some(panel) = panel.upgrade() else {
-                return gtk4::glib::Propagation::Proceed;
-            };
-            if !should_toggle_visual_fullscreen(
-                panel.song_visuals_enabled.get(),
-                panel.widgets.column.is_visible(),
-                panel.widgets.session.selected.get(),
-                key,
-            ) {
-                return gtk4::glib::Propagation::Proceed;
-            }
-            let Some(parent) = parent.upgrade() else {
-                return gtk4::glib::Propagation::Proceed;
-            };
-            panel.widgets.visualizer.toggle_fullscreen(&parent);
-            gtk4::glib::Propagation::Stop
-        });
-        window.add_controller(key);
-    }
-
     fn request_up_next_refresh_if_visible(&self) {
         if !self.is_up_next_visible() {
             return;
@@ -606,159 +545,6 @@ impl NowPlayingPanel {
         if let Some(callback) = callback {
             callback();
         }
-    }
-
-    fn install_audio_character_updates(self: &Rc<Self>, runtime: Option<&AudioAnalysisRuntime>) {
-        let Some(runtime) = runtime else {
-            return;
-        };
-        let receiver = runtime.progress_receiver();
-        let panel = Rc::downgrade(self);
-        gtk4::glib::spawn_future_local(async move {
-            while receiver.recv().await.is_ok() {
-                let Some(panel) = panel.upgrade() else {
-                    return;
-                };
-                panel.queue_audio_character_refresh();
-            }
-        });
-    }
-
-    fn queue_audio_character_refresh(self: &Rc<Self>) {
-        let generation = self.audio_character_generation.get().wrapping_add(1);
-        self.audio_character_generation.set(generation);
-        let requested_track = self.loaded_track.borrow().as_ref().map(|track| track.id);
-        let panel = Rc::downgrade(self);
-        gtk4::glib::idle_add_local_once(move || {
-            let Some(panel) = panel.upgrade() else {
-                return;
-            };
-            let current_track = panel.loaded_track.borrow().as_ref().map(|track| track.id);
-            if !audio_character_view::result_is_current(
-                generation,
-                panel.audio_character_generation.get(),
-                requested_track,
-                current_track,
-            ) {
-                return;
-            }
-            let presentation = {
-                let conn = panel.conn.borrow();
-                audio_character_view::load_presentation(&conn, current_track)
-            };
-            panel.render_audio_character(&presentation);
-        });
-    }
-
-    fn render_audio_character(
-        &self,
-        presentation: &audio_character_view::AudioCharacterPresentation,
-    ) {
-        if let Some(profile) = audio_character_view::visual_profile(presentation) {
-            self.widgets.visualizer.set_profile(&profile);
-        } else {
-            self.widgets.visualizer.clear_profile();
-        }
-        self.widgets.audio_character.render(presentation);
-    }
-
-    fn render_track(&self) {
-        let track = self.loaded_track.borrow().clone();
-        let presentation = panel_presentation(track.as_ref(), self.playback_state.get());
-        self.widgets.title.set_label(&presentation.title);
-        let (artist, album) = track.as_ref().map_or(("", ""), |track| {
-            (track.artist.as_str(), track.album.as_str())
-        });
-        self.widgets.artist.set_label(artist);
-        self.widgets.album.set_label(album);
-        self.widgets.artist.set_visible(!artist.trim().is_empty());
-        self.widgets.album.set_visible(!album.trim().is_empty());
-        if presentation.idle {
-            self.widgets.stage.add_css_class("reprise-now-playing-idle");
-        } else {
-            self.widgets
-                .stage
-                .remove_css_class("reprise-now-playing-idle");
-        }
-        let generation = self.cover_generation.get().wrapping_add(1);
-        self.cover_generation.set(generation);
-        CoverLoader::set_placeholder(&self.widgets.cover);
-        if let Some(track) = track {
-            self.cover_loader.load_into(
-                &self.widgets.cover,
-                &track.path,
-                ThumbnailSize::Full,
-                generation,
-                &self.cover_generation,
-            );
-        }
-    }
-
-    fn animate_track_change(self: &Rc<Self>) {
-        self.cancel_track_animation();
-        let generation = self.track_animation_generation.get().wrapping_add(1);
-        self.track_animation_generation.set(generation);
-        let target = adw::CallbackAnimationTarget::new({
-            let content = self.widgets.track_content.clone();
-            move |value| content.set_opacity(value)
-        });
-        let fade_out = crate::ui::motion::timed(
-            &self.widgets.track_content,
-            self.widgets.track_content.opacity(),
-            0.0,
-            crate::ui::motion::STANDARD,
-            target,
-        );
-        fade_out.set_duration(crate::ui::motion::half(crate::ui::motion::STANDARD));
-        let panel = Rc::downgrade(self);
-        fade_out.connect_done(move |_| {
-            let Some(panel) = panel.upgrade() else {
-                return;
-            };
-            if panel.track_animation_generation.get() != generation {
-                return;
-            }
-            panel.render_track();
-            let target = adw::CallbackAnimationTarget::new({
-                let content = panel.widgets.track_content.clone();
-                move |value| content.set_opacity(value)
-            });
-            let fade_in = crate::ui::motion::timed(
-                &panel.widgets.track_content,
-                0.0,
-                1.0,
-                crate::ui::motion::STANDARD,
-                target,
-            );
-            fade_in.set_duration(crate::ui::motion::half(crate::ui::motion::STANDARD));
-            let panel_for_done = Rc::downgrade(&panel);
-            fade_in.connect_done(move |_| {
-                let Some(panel) = panel_for_done.upgrade() else {
-                    return;
-                };
-                if panel.track_animation_generation.get() == generation {
-                    panel.track_animation.borrow_mut().take();
-                    panel.widgets.track_content.set_opacity(1.0);
-                }
-            });
-            *panel.track_animation.borrow_mut() = Some(fade_in.clone());
-            fade_in.play();
-        });
-        *self.track_animation.borrow_mut() = Some(fade_out.clone());
-        fade_out.play();
-    }
-
-    fn cancel_track_animation(&self) {
-        self.track_animation_generation
-            .set(self.track_animation_generation.get().wrapping_add(1));
-        if let Some(animation) = self.track_animation.borrow_mut().take() {
-            animation.pause();
-        }
-    }
-
-    #[cfg(test)]
-    fn has_track_animation(&self) -> bool {
-        self.track_animation.borrow().is_some()
     }
 }
 

@@ -20,6 +20,7 @@ pub enum SidebarTarget {
     Missing,
     ImportErrors,
     MyStats,
+    Conversions,
     Device(String),
 }
 
@@ -38,7 +39,6 @@ pub enum NavigationIntent {
         origin: Box<BrowserPlace>,
         track_id: i64,
     },
-    OpenNewReleases,
     Back,
     Forward,
 }
@@ -175,7 +175,6 @@ impl BrowserNavigation {
                 set_explicit_track_anchor(&mut target, track_id);
                 self.go_metadata_scope(target)
             }
-            NavigationIntent::OpenNewReleases => self.go_new(BrowserPlace::NewReleases),
         }
     }
 
@@ -188,6 +187,7 @@ impl BrowserNavigation {
             SidebarTarget::Missing => fresh_tracks(TrackCollection::Missing),
             SidebarTarget::ImportErrors => BrowserPlace::ImportErrors,
             SidebarTarget::MyStats => BrowserPlace::MyStats,
+            SidebarTarget::Conversions => BrowserPlace::Conversions,
             SidebarTarget::Device(serial) if !serial.trim().is_empty() => BrowserPlace::Device {
                 serial: serial.trim().to_owned(),
             },

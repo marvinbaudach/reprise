@@ -29,6 +29,7 @@ pub(in crate::ui) enum NavIcon {
     ImportErrors,
     Missing,
     MyStats,
+    Conversions,
 }
 
 impl NavIcon {
@@ -47,6 +48,8 @@ impl NavIcon {
             // not a theme symbolic (so it never collides with `TopRated`'s
             // star). Kept only to satisfy the exhaustive match.
             Self::MyStats => "starred-symbolic",
+            // INST-13: the experimental instrumental-conversions view.
+            Self::Conversions => "applications-science-symbolic",
         }
     }
 }

@@ -538,6 +538,20 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   „Clear all ×" (Filter-Zeile), „Show all N tracks" (Ende-Zeile,
   Leerzustand) feuern dieselbe Action — zwei kontextgerechte Namen, ein
   Verhalten.
+- **FIL-7** [aktiv] [gtk] — „Hide AI music" ist ein **opt-in**-Filter:
+  Default sichtbar (KI-Fassungen sind gewollte Bibliotheksbürger, INST-Sektion),
+  auf Wunsch blendet er KI-manipulierte (und künftig -generierte) Titel aus. Er
+  schlüsselt auf das **Provenance-Flag in der DB** (`track_provenance.ai`), nie
+  auf Ordnerpfade — der Ordner ist Ablage-Layout, das Flag die Wahrheit. Aktiv
+  fügt er sich als sichtbare Einschränkung in die Filter-Zeile nach **FIL-1a**
+  (eigener Chip mit ×-Klickziel) und in die Zählung nach **FIL-2** ein
+  („15 of 1,664 tracks", Force-show); er ist wie die Facetten-Chips
+  **Library-only** und wird als Query-Klausel im Core umgesetzt
+  (`queries::query_track_window_browsed_ai`). Der Filterzustand ist **sticky
+  über Sessions** wie andere View-Zustände. **Keine Shuffle-/Auto-Queue-
+  Sonderregel** in v1: das Queue-Nachfüllen folgt der sichtbaren Ansicht — bei
+  aktivem Filter sind KI-Titel nicht sichtbar und werden nicht nachgefüllt. Nur
+  verfügbar, solange der Experimental-Schalter an ist (INST-11). (Beschluss 17)
 ## L. Tag-Editor
 
 - **TAG-1** [aktiv] [gtk] — Save ist navigationsneutral: Speichern ändert
@@ -941,13 +955,22 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
 
 ## R. New Releases
 
-- **NR-1** [aktiv] [core] — Eine bibliotheksweite MusicBrainz-Pipeline ist
+- **NR-1** [ersetzt durch NR-1a] [core] — Eine bibliotheksweite
+  MusicBrainz-Pipeline ist die einzige Wahrheit für neue Releases und
+  spätere Artist-News-Ansichten. Artist-MBIDs kommen zuerst aus Tags, sonst
+  aus einer persistierten Namensauflösung inklusive negativer Ergebnisse;
+  Artists werden nach Play-Count priorisiert. Pro Artist bleiben höchstens
+  fünf reguläre Alben oder EPs der letzten 90 Tage sowie ausschließlich
+  zukünftige Singles; unvollständige Daten gelten nie als zukünftig,
+  Sekundärtypen bleiben draußen.
+- **NR-1a** [aktiv] [core] — Eine bibliotheksweite MusicBrainz-Pipeline ist
   die einzige Wahrheit für neue Releases und spätere Artist-News-Ansichten.
   Artist-MBIDs kommen zuerst aus Tags, sonst aus einer persistierten
   Namensauflösung inklusive negativer Ergebnisse; Artists werden nach
-  Play-Count priorisiert. Pro Artist bleiben höchstens fünf reguläre Alben
-  oder EPs der letzten 90 Tage sowie ausschließlich zukünftige Singles;
-  unvollständige Daten gelten nie als zukünftig, Sekundärtypen bleiben draußen.
+  Play-Count priorisiert. Pro Artist bleiben höchstens zwanzig reguläre
+  Alben oder EPs der letzten 90 Tage sowie ausschließlich zukünftige
+  Singles; unvollständige Daten gelten nie als zukünftig, Sekundärtypen
+  bleiben draußen.
 - **NR-2** [aktiv] [gtk] — Release-Cover laden lazy über Cover Art Archive
   (`/release-group/{mbid}/front-250`). Ein fehlendes Cover ist Normalzustand
   und zeigt sofort eine gleich große Kachel aus gespeicherter Artist-
@@ -956,14 +979,20 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   Einträgen und trägt einen Badge ausschließlich für `seen_at IS NULL`.
   Öffnen stempelt die gelistete Episode als gesehen; sie badgt nie erneut,
   erst ein später neu gefundener Eintrag erzeugt wieder einen Badge (FB-4).
-- **NR-4** [aktiv] [gtk] — „See all" öffnet einen echten Digest-Ort mit
-  Back/Forward-Historie, aber ohne Sidebar-Eintrag. Releases lassen sich dort
-  verbergen; vorhandene Hidden-Einträge halten „See all" erreichbar und die
-  Fußzeile „N hidden · Show" macht sie rückholbar. Ein künftiges „Remind me"
-  bleibt bis zu einem eigenen Scheduler ausdrücklich außerhalb dieser Regel.
-- **NR-5** [aktiv] [gtk] — Das Popover ist transient und verändert den
-  Navigations-Stack nie. Erst „See all" navigiert regulär in den Digest-Ort;
-  Schließen kehrt ohne Zustandsverlust zur aktuellen Ansicht zurück.
+- **NR-4** [ersetzt durch NR-12] [gtk] — „See all" öffnet einen echten
+  Digest-Ort mit Back/Forward-Historie, aber ohne Sidebar-Eintrag. Releases
+  lassen sich dort verbergen; vorhandene Hidden-Einträge halten „See all"
+  erreichbar und die Fußzeile „N hidden · Show" macht sie rückholbar. Ein
+  künftiges „Remind me" bleibt bis zu einem eigenen Scheduler ausdrücklich
+  außerhalb dieser Regel.
+- **NR-5** [ersetzt durch NR-5a] [gtk] — Das Popover ist transient und
+  verändert den Navigations-Stack nie. Erst „See all" navigiert regulär in
+  den Digest-Ort; Schließen kehrt ohne Zustandsverlust zur aktuellen Ansicht
+  zurück.
+- **NR-5a** [aktiv] [gtk] — Das Popover ist transient; Öffnen/Schließen
+  verändert den Navigations-Stack nie. Nur explizite Zeilen-Aktionen (Show in
+  library) navigieren regulär und schließen das Popover; der Verlauf ist eine
+  Popover-interne Unterseite ohne Navigation.
 - **NR-6** [aktiv] [gtk] — „Fetch now" ersetzt während des Abrufs sein
   Refresh-Icon durch einen Spinner und zeigt sonst das Alter der letzten
   Aktualisierung. Offline oder Fehler zeigen weiter den letzten Cache samt
@@ -989,6 +1018,28 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   einen Start-Abruf gibt es nicht. NR-8 schließt diese Schleife, ohne NR-5 zu
   kippen. Datenschutzlich unverändert: Netzverkehr entsteht ausschließlich nach
   ausdrücklicher Aktivierung, nur sofort statt nie.
+- **NR-9** [aktiv] [gtk] — setzt auf NR-3 auf (NR-3 bleibt aktiv): Der Badge
+  aus NR-3 zeigt die **Anzahl** der Einträge mit `seen_at IS NULL`, ab 10 als
+  „9+", verschwindet mit dem Öffnen (alle gelisteten Einträge werden
+  gestempelt) und rendert bei 0 kein leeres Element.
+- **NR-10** [aktiv] [gtk] — Zeilen-Hover bzw. -Fokus blendet den
+  Status-Chip aus und die Zeilen-Aktionen ein; beim Verlassen kehrt der Chip
+  zurück. Tastaturparität: die Zeile ist fokussierbar, Fokus zeigt die
+  Aktionen, die Buttons sind per Tab/Enter erreichbar.
+- **NR-11** [aktiv] [gtk] — „Open announcement" öffnet eine URL nach
+  Priorität: MusicBrainz-URL-Relations der Release-Group (Bandcamp/Kauf/
+  Streaming vor offizieller Homepage/Discography) → Fallback
+  MusicBrainz-Release-Group-Seite. Geöffnet wird extern (Standardbrowser).
+- **NR-12** [aktiv] [gtk] — Der Verlauf ist eine persistente Historie
+  aller je gezeigten Meldungen als **Popover-Unterseite** (kein eigener
+  Navigations-Ort), gruppiert nach Zeitraum, ausgeblendete Einträge einzeln
+  rückholbar. Retention: 6 Monate **und** höchstens 200 Einträge (strengere
+  Grenze gewinnt), hartes Löschen, aber nie innerhalb des
+  90-Tage-Fetch-Fensters. Ersetzt NR-4.
+- **NR-13** [aktiv] [gtk] — Bereits in der Bibliothek vorhandene,
+  erschienene Releases werden markiert (nicht herausgefiltert) und bieten
+  die Aktion „Show in library" (Navigieren + Fokussieren, **kein** direkter
+  Play-Pfad).
 
 ## S. Flächen & Geometrie
 
@@ -1443,93 +1494,31 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
        nur `transform` in `:active` — ein statischer Zustandsstil, kein
        Übergang. Den neutralisiert der Provider in `style/reduced_motion.rs`. -->
 
-## X. Lokales Klangprofil
+## X. Song Visuals
 
-- **AC-1** [ersetzt durch AC-18]
-- **AC-2** [aktiv] [core] — Ein Klangprofil behauptet keine Emotion. Es
-  projiziert versionierte Audio-Evidenz ausschließlich auf Intensity,
-  Brightness, Dynamicity und Rhythmicity im Bereich 0–1; Tempo bleibt optional
-  und trägt eine eigene Konfidenz. Veraltete oder nicht endliche Werte gelten
-  nie als aktuelles Profil.
-- **AC-3** [aktiv] [gtk] — Aktivierte Analyse läuft mit genau einem
-  Hintergrund-Worker und zeigt fertig/gesamt/fehlgeschlagen. Pause, Fortsetzen,
-  Abbrechen und „Retry failed" sind erreichbar; ein Neustart setzt offene
-  Arbeit fort. Ausschalten startet keine neue Profil-Arbeit, verhindert aber
-  niemals den bestehenden Waveform-Backfill.
-- **AC-4** [ersetzt durch AC-9]
-- **AC-5** [aktiv] [gtk] — Ready zeigt die vier benannten Dimensionen und
-  optional BPM samt Unsicherheit. Farbe ist nie der einzige Informationsträger;
-  Screenreader erhalten Dimension und Wert. Dateipfade, interne Versionen und
-  objektive Mood-Aussagen erscheinen nicht.
-- **AC-6** [aktiv] [gtk] — Analyseabdeckung nennt immer Zähler und Nenner
-  aktueller, geeigneter Bibliothekstitel. Leere, laufende, pausierte,
-  fehlgeschlagene und vollständige Zustände bleiben unterscheidbar; „Reanalyze
-  library" verlangt wegen der Rechenlast eine Bestätigung.
+<!-- Historie: Diese Sektion hieß „Lokales Klangprofil" und trug die Regeln der
+     Song-Analyse (Audio Character), Create Similar Mix und Related Artist
+     Discovery. Diese Features wurden entfernt (chore eda0edaebb); ihre Regeln
+     AC-1..AC-6, AC-9 und AC-12..AC-18 sind hier gelöscht (git bewahrt die
+     Historie). Es bleiben die noch aktiven Song-Visuals-Regeln. Das AC-Präfix
+     bleibt als stabile Regel-ID der Visuals-Regeln erhalten. -->
+
 - **AC-7** [ersetzt durch AC-10]
 - **AC-8** [ersetzt durch AC-11]
-- **AC-9** [aktiv] [gtk] — Das rechte Now-Playing-Panel enthält keine
-  Audioanalyse, sondern genau „Up Next", „Lyrics" und — bei aktiviertem
-  Plugin — „Visual". Der permanente Info-Button in der Playerleiste öffnet
-  „Audio Character" für den geladenen Track als schließbaren Dialog. Er
-  unterscheidet Disabled, Pending, Failed, Stale und Ready; Trackwechsel zeigen
-  nie Werte oder ein statisches Klangprofil des vorherigen Tracks. Beim
-  Schließen per Escape, Strg+W oder Dialogsteuerung kehrt der Tastaturfokus zum
-  auslösenden Button zurück.
 - **AC-10** [aktiv] [core] [gtk] — „Song Visuals" ist ein standardmäßig
   ausgeschaltetes, live anwendbares Plugin. Eingeschaltet visualisiert der
   dritte Panel-Tab „Visual" ausschließlich lokal berechnete, auf 16 Bänder und
-  den Bereich 0–1 begrenzte Spektraldaten als die drei tastaturbedienbaren Modi
-  Rings, Flow und Pulse. Canvas, Auswahlzustand und Vollbild übernehmen den
+  den Bereich 0–1 begrenzte Spektraldaten als die vier tastaturbedienbaren Modi
+  Grid, Bars, Flow und Pulse. Canvas und Auswahlzustand übernehmen den
   aktuellen Cover-Akzent über denselben globalen Ambient-Crossfade wie die
   Playerleiste; nur ohne brauchbare Coverfarbe gilt der Theme-Akzent. Farbe
   bleibt durch benannte Modi und eine Screenreader-Beschriftung redundant.
 - **AC-11** [aktiv] [gtk] — Dauerbewegung existiert ausschließlich während
-  laufender Wiedergabe und nur bei sichtbarem Visual-Tab oder dessen
-  Vollbildansicht. Pause und Stop klingen auf das statische Klangprofil aus;
-  `gtk-enable-animations=false` zeigt dieses Profil ohne Tick-Callback. Bei
-  aktiviertem Plugin öffnet F11 aus dem sichtbaren Visual-Tab die
-  Vollbildansicht; F11 und Escape schließen sie. Das ist die in MOT-2 erlaubte,
-  audiofunktionale Ausnahme für Dauerbewegung.
+  laufender Wiedergabe und nur bei sichtbarem Visual-Tab. Pause und Stop klingen
+  auf das statische Bild aus; `gtk-enable-animations=false` zeigt dieses ohne
+  Tick-Callback. Das ist die in MOT-2 erlaubte, audiofunktionale Ausnahme für
+  Dauerbewegung.
 
-- **AC-12** [aktiv] [gtk] — „Create similar mix…" ist eine Selektionsaktion im
-  gemeinsamen Track-Kontextmenü. Sie erscheint für mindestens einen
-  abspielbaren Titel, übernimmt ausschließlich die abspielbare sichtbare
-  Selektion als benannte Seeds und öffnet vor jeder Queue-, Wiedergabe- oder
-  Playliständerung den nativen Mix Builder.
-- **AC-13** [aktiv] [core] — Der Mix Builder trennt Kriterien ausdrücklich:
-  Klangprofil, Genre, ähnliche Artists oder eine gewichtete Balance. Nicht
-  analysierte Titel werden nie still als Klangprofil-Treffer ausgegeben;
-  fehlende Genre- oder Artist-Evidenz wird als Coverage-Diagnostic sichtbar.
-- **AC-14** [aktiv] [gtk] — Jede Control-Änderung macht den bisherigen
-  Mix-Entwurf ungültig. Die neue Preview zeigt die exakte Reihenfolge,
-  Gesamtdauer, Coverage, Diagnostics und kurze strukturierte Auswahlgründe;
-  Play, Add to Queue und Save as Playlist verwenden ausschließlich genau
-  diese sichtbare Draft-ID und planen nicht heimlich neu.
-- **AC-15** [aktiv] [core] — Gleiche Mix-Absicht, Seeds, Kandidaten- und
-  Quellsnapshots erzeugen denselben diversen Mix. Harte Bedingungen werden
-  vor dem Scoring angewandt, maximal 500 Kandidaten gelangen in die
-  Auswahlphase, und unspielbare, entfernte oder ausgeschlossene Titel werden
-  nie ergänzt.
-- **AC-16** [aktiv] [gtk] — Artist-Empfehlungen außerhalb der Bibliothek
-  bleiben von der abspielbaren Preview getrennt. Sie nennen Seed-Bezug,
-  Quelle und Grund, enthalten ausschließlich Artists, die nach kanonischer
-  MBID- oder normalisierter Namensidentität nicht in der Sammlung vorkommen,
-  und lassen sich öffnen, ausblenden und in einer eigenen Übersicht wieder
-  einblenden.
-- **AC-17** [aktiv] [core] — Ähnliche-Artist-Evidenz ist ein eigenes,
-  standardmäßig ausgeschaltetes Netzmodul. Ein Abruf startet nur nach einer
-  ausdrücklichen Mix-/Discovery-Aktion, verwendet begrenzte gecachte
-  Provider-Ergebnisse und verändert weder Musikdateien noch Wiedergabe,
-  Queue oder Playlists. Ohne Provider bleibt der lokale Mix vollständig
-  nutzbar; KI-generierte Audiodateien gehören nicht zu dieser Funktion.
-- **AC-18** [aktiv] [core] [gtk] — Die ausschließlich lokale Audioanalyse ist
-  bei neuen Installationen aktiv und verarbeitet jeden geeigneten neuen,
-  fehlenden oder durch Datei-/Versionsänderung veralteten Titel genau über den
-  fingerprint-geprüften Hintergrund-Worker; aktuelle Profile werden nicht
-  erneut dekodiert. „Analyze audio locally" bleibt unter Library abschaltbar,
-  nennt ausdrücklich die rein lokale Verarbeitung und behält vorhandene
-  Profile. Der ausgewogene Mix bleibt bei Teilabdeckung nutzbar, behandelt
-  fehlende Profile nie als Klangtreffer und nennt die Lücke als Diagnostic.
 
 ## Y. Library Doctor / Tag Cleanup
 
@@ -1838,6 +1827,202 @@ deterministisch und hoch-konfident, nie „ohne Review".
   Löschserie bleiben überlebende ausgewählte Zeilen fokussiert; andernfalls
   fällt Auswahl und Fokus auf die nächste, am Listenende auf die vorherige
   Zeile und bei leerer Liste auf den stabilen Content-Container.
+
+## AA. Externe Änderungen (Live-Refresh von CLI/MCP)
+
+<!-- Sektionsbuchstabe: A–Z sind auf main bereits vergeben (T doppelt); die
+     nächste freie Marke jenseits von Z ist AA. Die Buchstabenlage wurde beim
+     Einfügen gegen den main-Stand verifiziert. Diese Sektion verankert
+     Beschluss 6 des multi-frontend-core-Plans (Live-Sichtbarkeit fremd
+     erzeugter Änderungen) und serialisiert vor Paket F, das sie später um die
+     Instrumental-/Filter-Regeln ergänzt (Track 2). -->
+
+Ein zweiter Prozess (CLI, MCP; künftig weitere Oberflächen) schreibt über
+denselben Core-Pfad in dieselbe Datenbank. Die laufende App macht solche
+fremden Änderungen sichtbar — ohne Neustart, als **Hintergrundereignis** und
+damit nach P-1/P-4/MOT-2: leise, ohne Layout-Diebstahl, ohne eigene
+Ankündigung. Die App refresht ihre *eigenen* Schreibaktionen weiterhin selbst
+(Writer-Token-Filter); diese Sektion regelt ausschließlich den Fremd-Write.
+
+- **EXT-1a** [aktiv] [gtk] — Fremd erzeugte Inhalte erscheinen ohne
+  Neustart: eine von einem anderen Prozess über dieselbe Datenbank angelegte
+  Playlist — allgemein jede fremde Änderung an Playlists, Smart-Playlists oder
+  Katalog — wird in der laufenden App sichtbar; die betroffenen Ansichten
+  (Sidebar, aktuelle Track-Liste) aktualisieren sich von selbst. Das
+  Sichtbarkeitsbudget ist großzügig und degradiert bewusst (Notifier-Weckruf,
+  bei nicht armierbarem Datei-Watch Polling); geprüft wird das *Was* (die
+  Playlist erscheint), nicht das *Wie-schnell*.
+- **EXT-1b** [geplant] [manuell] — Der Fremd-Refresh ist still: kein Toast,
+  kein Badge, kein Indikator, keine Fokus-Wanderung als Ankündigung. Ein
+  Hintergrundereignis bedient nie die Ankündigungs-Rolle (P-1); die
+  Aktualisierung geschieht geräuschlos an Ort und Stelle.
+- **EXT-2** [geplant] [gtk] — Selektion und Scrollposition überstehen den
+  Fremd-Refresh: ein extern ausgelöster Reload setzt weder Auswahl noch
+  Scrollposition zurück (navigations-neutraler Reload nach TAG-1). Eine
+  unberührte Liste zahlt nichts — kein Anker, kein Sprung.
+- **EXT-3** [geplant] [gtk] — Kein Fokus-Diebstahl: ein Hintergrund-Refresh
+  entzieht der aktuellen Eingabe nichts, grabt keinen Fokus und zieht keine
+  View in den Vordergrund. Der Nutzer bemerkt die Aktualisierung nur an neuen
+  Inhalten, nie an springendem Fokus (P-3/P-4 in der Live-Refresh-Lesart).
+- **EXT-4** [geplant] [core] — Laufende Wiedergabe und Queue bleiben
+  unberührt: fremde Änderungen aktualisieren ausschließlich Ansichten. Die
+  Wiedergabe-Queue ist ein Snapshot (`queue::snapshot`); ein Fremd-Write an
+  der Bibliothek ändert weder die laufende Wiedergabe noch die Reihenfolge der
+  bereits eingereihten Titel.
+
+## AB. Instrumental-Fassungen (experimentell)
+
+<!-- Sektionsbuchstabe: A–Z sind vergeben (T doppelt), AA ist Externe
+     Änderungen; die nächste freie Marke ist AB. Die Buchstabenlage wurde beim
+     Einfügen gegen den main-Stand verifiziert (AA kündigt diese Sektion in
+     ihrem Kopfkommentar an). Diese Sektion verankert die GTK-UX der
+     Instrumental-Fassungen des multi-frontend-core-Plans (Abschnitt 2.4/3.2,
+     Beschlüsse 11/13–19). Alle Fortschrittszahlen stammen ausschließlich aus
+     den `ai_jobs`-Zeilen/Events — dieselben Zahlen wie CLI/MCP (Plan 2.2). -->
+
+Eine Instrumental-Fassung ist ein **explizit beauftragter, dauerhafter,
+klar als KI-manipuliert gekennzeichneter** Titel (CONTEXT.md), kein flüchtiger
+Abspiel-Effekt. Das Feature ist **experimentell** (Beschluss 11): seine
+gesamte UI erscheint nur hinter dem „Experimental features"-Schalter; raue
+Kanten sind bewusst akzeptiert. Der Player spielt ausschließlich fertige
+Dateien.
+
+- **INST-1** [aktiv] [gtk] — Auslösung per Track-Kontextmenü: Bei
+  aktivem Experimental-Schalter trägt das Track-Kontextmenü den Eintrag
+  „Create instrumental"; er wirkt auf die **gesamte Auswahl** (Mehrfachauswahl
+  → ein Batch mit gemeinsamer `batch_id` für Aggregat-Fortschritt) und ist bei
+  reiner Missing-Auswahl inaktiv (eine fehlende Datei ist nicht separierbar).
+  Ohne den Schalter erscheint der Eintrag nicht (INST-11). (Plan 2.4/1)
+- **INST-2** [aktiv] [gtk] — Konvertierungs-Playlist = Staging-Bereich mit
+  **genau einem Aggregat-Fortschrittsbalken** (fertig/gesamt + Prozent,
+  gespeist aus den Job-Zeilen/Events, nicht aus Backend-internen Zahlen).
+  **Weitere Fortschritts-UI gibt es nicht**: kein Sidebar-/Statusleisten-Slot
+  (der android-sync-V2-Bottom-Slot wird nicht angefasst), **kein Toast**.
+  (Beschluss 18)
+- **INST-3** [aktiv] [gtk] — Je Zeile ein sichtbarer Zustand:
+  queued / processing (mit Zeilen-Fortschritt) / done — ungespeichert /
+  saved / failed. Die Ansicht ist technisch eine Spezial-View über `ai_jobs` +
+  Staging-Store (Wiedergabe per Dateipfad), kein Playlist-Row-Source — auch
+  wenn sie sich als Playlist anfühlt. (Plan 2.4/7)
+- **INST-4** [ersetzt durch INST-4a und INST-4b] — Die ursprüngliche Regel
+  bündelte die Sicht-Markierung und die tatsächliche Wiedergabe; sie wird in
+  die view-seitige Markierung (INST-4a) und die reale Staging-Wiedergabe
+  (INST-4b, P3b) geteilt.
+- **INST-4a** [aktiv] [gtk] — In der Konvertierungs-Ansicht ist ein fertiger,
+  im Staging vorhandener Render als **spielbar markiert** (Play aktiv), während
+  ein noch verarbeitender Eintrag es nicht ist (er zeigt Fortschritt). Der
+  Staging-Render ist eine echte Datei vor jeder Speicher-Entscheidung.
+  (Beschluss 15, Plan 2.4/7)
+- **INST-4b** [aktiv] [gtk] — Das Aktivieren eines spielbaren Eintrags
+  spielt den Staging-Render (bzw. den promoteten Titel) **tatsächlich ab** —
+  Wiedergabe per Dateipfad. Bis der Player das kann, ist die Aktion ein
+  markierter Platzhalter (P3b).
+- **INST-5** [ersetzt durch INST-5a und INST-5b] — Die ursprüngliche Regel
+  bündelte die Klick-Entscheidung und die laufende Warte-Interaktion; sie wird
+  in die View-Model-Entscheidung (INST-5a) und die App-Interaktion (INST-5b,
+  P3b) geteilt.
+- **INST-5a** [aktiv] [gtk] — Warte-Regel (Entscheidung): Ein Klick auf einen
+  **noch verarbeitenden** Eintrag löst „Warten mit Fortschritt" aus — **nie
+  Play** (kein Original-Fallback), **nie Auto-Skip**. Die reine View-Model-
+  Entscheidung ist damit einklagbar, unabhängig von der Wiedergabe.
+- **INST-5b** [aktiv] [gtk] — In der laufenden App blockiert der Klick auf
+  einen verarbeitenden Eintrag den Start mit sichtbarem Render-Fortschritt und
+  beginnt nach Abschluss (kein Fallback/Skip). Progressiver Frühstart ist eine
+  spätere Optimierung, nicht v1 (P3b).
+- **INST-6** [aktiv] [gtk] — Speicher-Entscheidung pro Zeile
+  (Speichern / Verwerfen) plus „Alle speichern" in der Kopfzeile. Speichern
+  **promotet** über die Core-Fassade (Move in den dedizierten Ordner, finale
+  Tags inkl. KI-Provenienz, Registrierung — atomar, kein Re-Render); danach
+  **wechselt die Zeile auf den promoteten Bibliothekstitel und bleibt**, bis
+  der User aufräumt. Verwerfen löscht den Staging-Render; Unentschiedenes
+  erscheint nie in der Library. (Beschluss 15/16)
+- **INST-7** [aktiv] [gtk] — „Playlist leeren" **warnt**, wenn
+  unentschiedene (done-ungespeicherte) Einträge existieren — Stunden
+  Rechenzeit verdampfen nicht unbestätigt. (Beschluss 15)
+- **INST-8** [aktiv] [gtk] — Unentschiedene Renders **bleiben über
+  Neustarts erhalten**; ihre **Plattenkosten sind in der Ansicht sichtbar**
+  (Größe je Zeile / Summe). Es gibt **keinen stillen Reaper** — nur die
+  explizite Verwerfen-Aktion (oder Speichern) entfernt einen Render.
+  (Beschluss 15)
+- **INST-9** [aktiv] [gtk] — Drag eines **bereits konvertierten** Tracks in
+  die Konvertierungs-Playlist erzeugt einen **Hinweis mit Verweis auf das
+  Bestehende**, keinen Doppel-Job (Dedup-Skip der Core-Fassade). (Beschluss 16)
+- **INST-10** [aktiv] [gtk] — Promotete Fassungen tragen ein sichtbares
+  **KI-Badge** („Instrumental · KI-manipuliert") mit **Quellverweis**, sofern
+  verknüpft. Die Provenienz ist DB-primär (`track_provenance`), die Tag-
+  Referenz sekundär; das Badge schlüsselt auf das DB-Flag, nie auf den
+  Ablageordner. (Beschluss 13/14)
+- **INST-11** [aktiv] [gtk] — **Master-Gate:** Die gesamte Instrumental-UI
+  — Kontextmenü-Eintrag, Konvertierungs-Ansicht, KI-Badges, „Hide AI music"-
+  Filter (FIL-7) — ist **verborgen, solange der „Experimental features"-
+  Schalter aus ist**. Der Schalter ist eine persistierte Einstellung; sein
+  Zustand entscheidet allein über die Sichtbarkeit. (Beschluss 11)
+- **INST-12** [aktiv] [gtk] — Modell-Bereitstellung: Hinter dem Schalter
+  liegt der First-Use-Download-Flow der ML-Runtime-Gewichte über die
+  Core-Fassade `ensure_weights` (Hintergrund-Thread mit Fortschritt,
+  SHA-256-Checksum, Lizenznotiz neben der Datei, klare Fehlerpfade inkl.
+  offline — Muster Cover-Download-Modul). Gewichte werden **nicht** ins
+  Default-Build/Flatpak gebündelt. In einem Build **ohne** das
+  `stem-backend`-Feature zeigt die Ansicht einen ehrlichen, deaktivierten
+  Platzhalter mit Hinweis statt eines funktionslosen Buttons. (Beschluss 11)
+- **INST-13** [aktiv] [gtk] — Erreichbarkeit: Die Konvertierungs-/Staging-Ansicht
+  ist über einen eigenen **Sidebar-Eintrag** (`ViewSource::Conversions`, Titel
+  „Instrumental conversions") erreichbar. Der Eintrag erscheint **nur, solange
+  der „Experimental features"-Schalter an ist** (INST-11) — dieselbe Gatung, die
+  auch die Inhaltsseite anlegt, sodass der Eintrag nie eine fehlende Seite
+  auswählt. (Plan 2.4/7, Paket F)
+## AD. Kompaktmodus / Mini-Player
+
+<!-- Sektionsbuchstabe: Z (Einteiliger Track-Browser) ist die letzte
+     einbuchstabige Sektion; A–Z sind vergeben (T doppelt belegt — Altlast),
+     AA (Externe Änderungen) und AB (Instrumental) sind vergeben; AC ist das
+     Regelpräfix des „Lokalen Klangprofils" (Sektion X), daher setzt der
+     Compact-Mode mit AD fort. Die Regeln
+     beschreiben ein bereits implementiertes und getestetes Feature: sie
+     starten direkt [aktiv] mit vorhandenen mini_*-Tests als Nachweis.
+     Referenz-Frames aus dem Redesign-Mockup: 1e (Ruhe), 9b (Hover),
+     9c (Kontextmenü). -->
+
+- **MINI-1** [aktiv] [gtk] — **Der Mini-Player ist das Fenster.** Ctrl+M
+  togglet zwischen Voll- und Compact-Ansicht (auch über den ⋮-Eintrag
+  „Compact Mode") — beide Richtungen, dieselbe Wiedergabe-Session, nichts wird
+  neu aufgebaut; der Voll-Zustand bleibt unangetastet (BROWSE-2) und Ctrl+M
+  zurück landet exakt dort. Es ist dasselbe, undekorierte Fenster; die Karte
+  IST die Fläche: 430×76, Radius 16, Tint rgba(34,34,34,0.92), 1 px Hairline,
+  opak — kein Live-Blur (STYLE-1); das Fenster selbst ist transparent (CSS),
+  damit nur die Karte mit Schatten schwebt — die Fenstergröße ist Karte plus
+  Rand-Marge ringsum, nicht die Kartengröße. Layout nach Frame 1e: Cover 52/Radius 10
+  mit Inset-Hairline; Titel 13 px bold und Artist 11,5 px auf einer
+  ellipsierenden Baseline-Zeile (Titel priorisiert, Artist-Kontrast ≥ 4,5:1
+  auf dem Tint); darunter die Mini-Waveform (46 gleichbreite Bars, gespielter
+  Teil im Playback-Akzent, Rest weiß ~18 %, Klick = Seek, Drag = Scrub);
+  Play/Pause 38 px im Akzent. Kein Volume-, Prev- oder Next-Button sichtbar —
+  bewusste Reduktion. Die Compact-Geometrie ist von der Vollfenster-Größe
+  isoliert.
+
+- **MINI-2** [aktiv] [gtk] — **Hover-Chrome: ⤢ stellt her, ✕ beendet.** Hover
+  (oder Tastaturfokus) über der Karte blendet oben rechts zwei
+  26-px-Kreisbuttons ein (Fade). ⤢ „Restore full window (Ctrl+M)" kehrt zum
+  Vollfenster zurück; ✕ „Quit Reprise (Ctrl+Q)" beendet die App
+  (Standard-Fenster-Semantik, kein Hintergrund-Daemon in v1). Die Tooltips
+  machen den destruktiven Unterschied explizit — wer nur das große Fenster
+  will, nutzt ⤢/Ctrl+M. Die ganze Karte ist Drag-Fläche (GtkWindowHandle),
+  außer Play-Button, Waveform und den Hover-Buttons.
+
+- **MINI-3** [aktiv] [gtk] — **Rechtsklick-Menü mit fester Reihenfolge.**
+  Rechtsklick, Menütaste oder Shift+F10 öffnet: Restore Full Window (Ctrl+M) ·
+  Trenner · Pause/Play (Space; Label folgt dem Zustand) · Next (Ctrl+→) ·
+  Previous (Ctrl+←) · Trenner · Always on Top (Toggle) · Trenner · Preferences
+  (Ctrl+,) · Quit (Ctrl+Q). „Always on Top" ist X11-only (GTK4 kennt kein
+  keep-above); wo es nicht unterstützt wird — Wayland — verschwindet der
+  Eintrag ganz, statt tot als deaktivierte Zeile dazustehen.
+
+- **MINI-4** [aktiv] [gtk] — **Tastatur identisch zum Vollfenster.** Space =
+  Play/Pause, Ctrl+←/→ = Previous/Next, Ctrl+M = Restore, Ctrl+Q = Quit — keine
+  Mini-Sonderbelegung. Ctrl+←/→ wirken als echte Tasten auf der Karte
+  (Capture-Phase, damit die Pfeil-Seek der Waveform die modifizierten Pfeile
+  nicht schluckt) und decken sich mit den im Kontextmenü gezeigten
+  Acceleratoren.
 
 ---
 

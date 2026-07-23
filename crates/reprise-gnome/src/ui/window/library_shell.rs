@@ -14,7 +14,6 @@ use super::device_view::DeviceViewPage;
 use super::info_panel::InfoPanel;
 use super::now_playing_wiring;
 use super::player_controller::PlayerController;
-use super::scan::audio_analysis_runtime::AudioAnalysisRuntime;
 use super::sidebar::Sidebar;
 use super::stats_view::StatsView;
 use super::strings;
@@ -189,6 +188,14 @@ pub(in crate::ui) fn wire_source_routing(
         } else if matches!(source, ViewSource::MyStats) {
             stats_view.refresh(&conn);
             content_stack.set_visible_child_name("stats");
+        } else if matches!(source, ViewSource::Conversions) {
+            // INST-13: the conversion/staging view lives on its own page. Ensure
+            // it is installed (under the same experimental gate as the sidebar
+            // row) BEFORE selecting it — the row can appear after a live
+            // toggle-on, so without this the selection would land on a missing
+            // page and the content would silently stay put.
+            crate::ui::instrumental::conversion_wiring::ensure_page_installed();
+            content_stack.set_visible_child_name("conversions");
         } else {
             content_stack.set_visible_child_name("library");
             track_list.set_source(source);
@@ -240,20 +247,6 @@ pub(in crate::ui) fn route_to_place(
         reason,
         "history nav: routing to place"
     );
-    if place.is_new_releases() {
-        content_stack.set_visible_child_name("new-releases");
-        let content_stack = content_stack.downgrade();
-        gtk4::glib::idle_add_local_once(move || {
-            let granted = content_stack
-                .upgrade()
-                .and_then(|stack| stack.visible_child())
-                .is_some_and(|child| child.child_focus(gtk4::DirectionType::TabForward));
-            if !granted {
-                tracing::debug!("history nav: New Releases digest did not take focus");
-            }
-        });
-        return;
-    }
     let source = place.view_source();
     match &source {
         ViewSource::Album { .. } | ViewSource::Artist(_) => {
@@ -284,7 +277,6 @@ pub(in crate::ui) fn build(
     track_list: &Rc<TrackList>,
     player: Option<&Rc<PlayerController>>,
     runtime: &Rc<ArtistNewsRuntime>,
-    audio_analysis: Option<&AudioAnalysisRuntime>,
 ) -> LibraryShell {
     let sidebar_page = adw::NavigationPage::builder()
         .title(strings::text(strings::APP_NAME))
@@ -292,11 +284,9 @@ pub(in crate::ui) fn build(
         .build();
     let info_panel = InfoPanel::new(
         content,
-        window,
         conn.clone(),
         runtime.clone(),
         track_list.shared_cover_loader(),
-        audio_analysis,
     );
     if let Some(player) = player {
         player.set_lyrics_view(&info_panel.lyrics_view());

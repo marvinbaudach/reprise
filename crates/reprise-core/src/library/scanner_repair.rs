@@ -9,31 +9,66 @@ use crate::models::ImportErrorKind;
 
 use super::track_meta;
 
-/// Strips the damaged ID3v2/APE/ID3v1 containers of `path` and writes a fresh
-/// ID3v2 carrying the file name as title and the parent folder as album, then
-/// re-reads it as a normal tagged import. Returns `None` when the repair
-/// doesn't apply (only `UnreadableTags` is repairable this way) or fails (e.g.
-/// a read-only file), so the caller keeps the plain untagged import rather than
-/// aborting the scan.
+/// Repairs a file whose tag container lofty couldn't parse — NON-DESTRUCTIVELY.
+///
+/// The overwhelmingly common cause of an "unreadable" MP3 is a damaged trailing
+/// APEv2/ID3v1 footer that aborts lofty's read ("invalid item size") while the
+/// ID3v2 up front — carrying the real title/artist/album/… — is perfectly
+/// intact. So the repair strips ONLY that tail into a TEMP copy and re-reads
+/// the copy. Only if the copy comes back with real tags does it atomically
+/// replace the original; otherwise the temp is discarded and the **original is
+/// left exactly as it was**, imported as untagged.
+///
+/// This never overwrites tags it could not read: a file whose real metadata
+/// lofty simply can't parse (e.g. the front container itself is at fault) keeps
+/// every byte it had. An earlier version fell back to stripping *everything*
+/// and writing the file name / folder as tags — which silently destroyed the
+/// real, still-present ID3v2 of any file that didn't recover. That fallback is
+/// gone: guessing tags is never worth clobbering real ones.
+///
+/// Returns `None` when the repair doesn't apply (only `UnreadableTags` is
+/// repairable) or the recovery didn't yield real tags, so the caller keeps the
+/// plain untagged import rather than aborting the scan.
 pub(super) fn repair_damaged_tags(
     path: &Path,
-    meta: &track_meta::TrackMeta,
+    _meta: &track_meta::TrackMeta,
     kind: ImportErrorKind,
 ) -> Option<track_meta::TrackMeta> {
     if kind != ImportErrorKind::UnreadableTags {
         return None;
     }
-    let title = path.file_stem().and_then(|stem| stem.to_str())?;
-    if title.is_empty() {
+
+    // Recover into a sibling temp file so the original is untouched unless the
+    // recovery succeeds. Same directory ⇒ the final `rename` is atomic. The
+    // temp gets a NON-audio extension (`.reprise-repair-tmp`) so the walk in
+    // progress never mistakes it for a track to import — it is read back by
+    // CONTENT (`read_meta_content_based`), not by extension.
+    let temp = path.with_extension("reprise-repair-tmp");
+    if crate::library::tag_mutation::write_tail_stripped(path, &temp).is_err() {
+        let _ = std::fs::remove_file(&temp);
         return None;
     }
-    let patch = crate::library::tag_edit::TagPatch {
-        title: Some(title.to_string()),
-        album: Some(meta.album.clone()),
-        ..crate::library::tag_edit::TagPatch::default()
+
+    // Accept only a recovery that actually produced real tags. If the tags
+    // lived solely in the stripped tail (or the front container is also
+    // unreadable), the temp reads empty/erroring — discard it and leave the
+    // original file as-is.
+    let recovered = match track_meta::read_meta_content_based(&temp) {
+        Ok(meta) if !meta.title.is_empty() || !meta.artist.is_empty() || !meta.album.is_empty() => {
+            meta
+        }
+        _ => {
+            let _ = std::fs::remove_file(&temp);
+            return None;
+        }
     };
-    // Suppress the watcher for the write we are about to make.
+
+    // Commit: suppress the watcher for the replacement write, then swap the
+    // recovered copy in atomically.
     crate::library::watcher::ignore_path(path, crate::library::tag_mutation::IGNORE_DURATION);
-    crate::library::tag_mutation::strip_and_rewrite_tag(path, &patch).ok()?;
-    track_meta::read_meta(path).ok()
+    if std::fs::rename(&temp, path).is_err() {
+        let _ = std::fs::remove_file(&temp);
+        return None;
+    }
+    Some(recovered)
 }

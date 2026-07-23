@@ -255,6 +255,43 @@ fn widget_projects_removable_chips_without_a_redundant_reset_button() {
     );
 }
 
+// UX FIL-7: the "Hide AI music" filter state is sticky across sessions — it
+// persists to settings and a freshly-built bar reads it back, like other view
+// state (Beschluss 17). Verifies decision 17's stickiness.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn fil_7_hide_ai_filter_state_is_sticky_across_sessions() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    if gtk4::init().is_err() {
+        return;
+    }
+    let conn = Rc::new(RefCell::new(Connection::open_in_memory().unwrap()));
+    reprise_core::db::migrate(&conn.borrow()).unwrap();
+
+    // A fresh bar defaults to off — the filter is opt-in (AI tracks visible).
+    let bar = BrowseBar::new(conn.clone());
+    assert!(!bar.exclude_ai(), "the filter is opt-in: off by default");
+
+    // Turning it on persists it to settings.
+    bar.set_exclude_ai(true);
+    assert!(bar.exclude_ai());
+    assert!(
+        reprise_core::library::settings::get_bool(&conn.borrow(), EXCLUDE_AI_KEY, false).unwrap(),
+        "the on state is written to settings"
+    );
+
+    // A new session (a freshly-built bar on the same DB) reads it back on.
+    let next_session = BrowseBar::new(conn.clone());
+    assert!(
+        next_session.exclude_ai(),
+        "the sticky state survives into the next session"
+    );
+
+    // Clearing it persists off again, and the following session reads off.
+    next_session.clear_exclude_ai();
+    assert!(!BrowseBar::new(conn.clone()).exclude_ai());
+}
+
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn rebuilding_chips_reparents_the_persistent_filter_button() {

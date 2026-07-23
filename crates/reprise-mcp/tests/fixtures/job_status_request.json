@@ -1,0 +1,11 @@
+{
+  "jsonrpc": "2.0",
+  "id": 44,
+  "method": "tools/call",
+  "params": {
+    "name": "music_get_job_status",
+    "arguments": {
+      "job_ids": [1]
+    }
+  }
+}

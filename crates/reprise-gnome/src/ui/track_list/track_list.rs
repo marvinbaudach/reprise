@@ -78,10 +78,10 @@ use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
 
 pub(in crate::ui) use super::track_list_callbacks::{
-    OnActivate, OnGoToAlbum, OnGoToArtist, OnLibraryMutated, OnPlayMix, OnQueueActivate,
-    OnQueueMoveToTop, OnQueueRemove, OnQueueReorder, OnQueueSelected, OnReload,
-    OnScanQueuePurgeIds, OnSearchRestored, OnShowMissing, OnShowMissingFiles,
-    OnSidebarPlaylistDrop, OnSidebarQueueDrop, OnTagsMutated,
+    OnActivate, OnGoToAlbum, OnGoToArtist, OnLibraryMutated, OnQueueActivate, OnQueueMoveToTop,
+    OnQueueRemove, OnQueueReorder, OnQueueSelected, OnReload, OnScanQueuePurgeIds,
+    OnSearchRestored, OnShowMissing, OnShowMissingFiles, OnSidebarPlaylistDrop, OnSidebarQueueDrop,
+    OnTagsMutated,
 };
 pub(in crate::ui) use super::track_list_toast::show_toast;
 
@@ -119,6 +119,14 @@ pub(in crate::ui) struct Shared {
     /// moves without rebuilding the list. A `Cell` (not `RefCell`) because the
     /// payload is a `Copy` `Option<i64>` read on every bind.
     pub(in crate::ui) playing_track_id: Cell<Option<i64>>,
+    /// Per-cell now-playing marker re-appliers, keyed by their bound
+    /// `ListItem` (see `now_playing_marker`). A playback change runs all of
+    /// them so the marker moves to the new row (and off the old one) by
+    /// mutating the already-realised cell widgets IN PLACE — replacing the
+    /// former `items_changed(pos, 1, 1)` marker refresh, whose fake
+    /// remove+insert snapped the viewport to the top on a double-click-to-play.
+    pub(in crate::ui) now_playing_markers:
+        RefCell<Vec<super::now_playing_marker::NowPlayingMarker>>,
     pub(in crate::ui) last_scroll_activity: Cell<Option<std::time::Instant>>,
     /// View position an in-app single-row reorder drag started from — set at
     /// drag-prepare, cleared on drag end/cancel. `None` while no reorder-
@@ -205,8 +213,6 @@ pub(in crate::ui) struct Shared {
     /// `TrackList::set_on_queue_selected` — wraps `PlayerController::
     /// append_to_queue`.
     pub(in crate::ui) on_queue_selected: RefCell<Option<OnQueueSelected>>,
-    /// Mix Builder playback seam; receives the exact visible draft order.
-    pub(in crate::ui) on_play_mix: RefCell<Option<OnPlayMix>>,
     /// Context-menu "Play next" (QUE-3): same shape as `on_queue_selected`,
     /// but the ids jump the manual line instead of appending to it.
     pub(in crate::ui) on_play_next_selected: RefCell<Option<OnQueueSelected>>,

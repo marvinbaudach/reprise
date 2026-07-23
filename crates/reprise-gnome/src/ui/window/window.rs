@@ -104,12 +104,8 @@ pub fn build(
         .width_request(MIN_WIDTH)
         .height_request(MIN_HEIGHT)
         .build();
-    let audio_analysis_enabled = {
-        let conn = conn.borrow();
-        reprise_core::library::settings::get_audio_analysis_enabled(&conn)
-    };
-    let (waveform_backend, audio_analysis) =
-        super::window_audio_analysis::setup(db_path, &window, audio_analysis_enabled);
+    let waveform_backend: Arc<dyn WaveformBackend> =
+        Arc::new(reprise_platform_linux::waveform::GstreamerWaveformBackend);
     super::focus_evidence::install(&window);
     super::session_restore::apply_initial_geometry(&window, &session_state);
     // Headerbar title follows the currently selected `ViewSource` (Stage 3
@@ -308,9 +304,6 @@ pub fn build(
     }
     let scan_progress = ScanProgressView::new();
     let scan_controls = super::scan_flow::ScanControls::new(&scan_button, &scan_progress);
-    if let Some(runtime) = &audio_analysis {
-        scan_controls.set_audio_analysis(runtime);
-    }
     scan_controls.set_sidebar_toggle(&sidebar_toggle);
     scan_progress.set_on_cancel({
         let scan_controls = scan_controls.clone();
@@ -327,7 +320,6 @@ pub fn build(
     let stats_view = super::stats_view::StatsView::new(track_list.shared_cover_loader());
     stats_view.wire_year_selector(conn);
     let device_view = super::device_view::DeviceViewPage::new(&device_sync);
-    let new_releases_digest = crate::ui::new_releases::digest::NewReleasesDigest::new(conn.clone());
     let content_stack = gtk4::Stack::new();
     // Size to the visible page (see the library stack's `set_hhomogeneous`):
     // Stats/Device pages must not inherit the library's minimum width, nor vice
@@ -338,7 +330,6 @@ pub fn build(
     content_stack.add_named(&track_content, Some("library"));
     content_stack.add_named(stats_view.widget(), Some("stats"));
     content_stack.add_named(device_view.widget(), Some("device"));
-    content_stack.add_named(new_releases_digest.widget(), Some("new-releases"));
     content_stack.set_visible_child_name("library");
     toolbar_view.set_content(Some(&content_stack));
 
@@ -381,7 +372,6 @@ pub fn build(
         &track_list,
         player.as_ref(),
         &artist_news,
-        audio_analysis.as_ref(),
     );
     let sidebar_page = library_shell.sidebar_page;
     let split_view = library_shell.split_view;
@@ -390,7 +380,7 @@ pub fn build(
     super::device_sync_feedback::install(&header, &split_view, &toast_overlay, &device_sync);
     info_panel.retain_for_window(&window);
     if let Some(player) = &player {
-        super::window_now_playing_wiring::install(player, &info_panel, &queue_model, &window);
+        super::window_now_playing_wiring::install(player, &info_panel, &queue_model);
     }
     let player_bar_widget = player
         .as_ref()
@@ -404,19 +394,19 @@ pub fn build(
     toast_overlay.set_child(Some(library_player_bar.widget()));
     let library_chrome =
         super::library_chrome::build(&header, &toast_overlay, &search_entry, &window);
-    let open_new_releases = {
-        let digest = new_releases_digest.clone();
-        let nav_history = nav_history.clone();
-        let content_stack = content_stack.clone();
-        let track_list = track_list.clone();
-        Rc::new(move || {
-            let Some(_place) = nav_history.record_new_releases_from(track_list.browser_place())
-            else {
-                tracing::warn!("cannot open New Releases before navigation is initialized");
-                return;
-            };
-            digest.refresh();
-            content_stack.set_visible_child_name("new-releases");
+    // New Releases' "Show in library" (NR-13) navigates and focuses through
+    // the same edge every other metadata link uses; the popover module
+    // itself stays navigation-agnostic behind this closure.
+    let on_show_album: crate::ui::new_releases::release_row::OnShowAlbum = {
+        let navigator = metadata_navigator.clone();
+        Rc::new(move |album: &str, artist: &str| {
+            navigator.navigate(
+                reprise_core::browser::navigation::NavigationIntent::OpenAlbum {
+                    album: reprise_core::browser::AlbumKey::new(album, artist),
+                    anchor_track_id: None,
+                },
+                "new releases",
+            );
         })
     };
     crate::ui::new_releases::popover::install(
@@ -424,8 +414,8 @@ pub fn build(
         &window,
         conn,
         db_path,
-        open_new_releases,
         &artist_news,
+        on_show_album,
     );
     let compact_root = player
         .as_ref()
@@ -470,7 +460,6 @@ pub fn build(
         &info_panel,
         &scan_button,
         &scan_controls,
-        audio_analysis.as_ref(),
         player.as_ref(),
         &listenbrainz,
         &lastfm,

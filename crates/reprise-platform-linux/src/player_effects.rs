@@ -4,7 +4,7 @@ use gstreamer::prelude::*;
 use reprise_core::playback::{AudioEffects, PlaybackError};
 
 const SPECTRUM_ELEMENT_NAME: &str = "reprise-spectrum";
-const SPECTRUM_INTERVAL_NS: u64 = 50_000_000;
+const SPECTRUM_INTERVAL_NS: u64 = reprise_core::playback::SPECTRUM_INTERVAL_MS * 1_000_000;
 const SPECTRUM_THRESHOLD_DB: i32 = -80;
 
 pub(super) fn build_audio_filter(
@@ -34,8 +34,8 @@ pub(super) fn build_audio_filter(
         .name(SPECTRUM_ELEMENT_NAME)
         .property(
             "bands",
-            u32::try_from(reprise_core::playback::SPECTRUM_BAND_COUNT)
-                .expect("the fixed visual spectrum band count fits u32"),
+            u32::try_from(reprise_core::playback::SPECTRUM_ANALYSIS_BAND_COUNT)
+                .expect("the fixed analysis spectrum band count fits u32"),
         )
         .property("threshold", SPECTRUM_THRESHOLD_DB)
         .property("interval", SPECTRUM_INTERVAL_NS)
