@@ -1876,6 +1876,55 @@ deterministisch und hoch-konfident, nie „ohne Review".
   fällt Auswahl und Fokus auf die nächste, am Listenende auf die vorherige
   Zeile und bei leerer Liste auf den stabilen Content-Container.
 
+## AA. Kompaktmodus / Mini-Player
+
+<!-- Sektionsbuchstabe: Z (Einteiliger Track-Browser) ist die letzte
+     einbuchstabige Sektion; A–Z sind vergeben (T doppelt belegt — Altlast),
+     daher setzt der Compact-Mode zweibuchstabig mit AA fort. Die Regeln
+     beschreiben ein bereits implementiertes und getestetes Feature: sie
+     starten direkt [aktiv] mit vorhandenen mini_*-Tests als Nachweis.
+     Referenz-Frames aus dem Redesign-Mockup: 1e (Ruhe), 9b (Hover),
+     9c (Kontextmenü). -->
+
+- **MINI-1** [aktiv] [gtk] — **Der Mini-Player ist das Fenster.** Ctrl+M
+  togglet zwischen Voll- und Compact-Ansicht (auch über den ⋮-Eintrag
+  „Compact Mode") — beide Richtungen, dieselbe Wiedergabe-Session, nichts wird
+  neu aufgebaut; der Voll-Zustand bleibt unangetastet (BROWSE-2) und Ctrl+M
+  zurück landet exakt dort. Es ist dasselbe, undekorierte Fenster; die Karte
+  IST die Fläche: 430×76, Radius 16, Tint rgba(34,34,34,0.92), 1 px Hairline,
+  opak — kein Live-Blur (STYLE-1). Layout nach Frame 1e: Cover 52/Radius 10
+  mit Inset-Hairline; Titel 13 px bold und Artist 11,5 px auf einer
+  ellipsierenden Baseline-Zeile (Titel priorisiert, Artist-Kontrast ≥ 4,5:1
+  auf dem Tint); darunter die Mini-Waveform (46 gleichbreite Bars, gespielter
+  Teil im Playback-Akzent, Rest weiß ~18 %, Klick = Seek, Drag = Scrub);
+  Play/Pause 38 px im Akzent. Kein Volume-, Prev- oder Next-Button sichtbar —
+  bewusste Reduktion. Die Compact-Geometrie ist von der Vollfenster-Größe
+  isoliert.
+
+- **MINI-2** [aktiv] [gtk] — **Hover-Chrome: ⤢ stellt her, ✕ beendet.** Hover
+  (oder Tastaturfokus) über der Karte blendet oben rechts zwei
+  26-px-Kreisbuttons ein (Fade). ⤢ „Restore full window (Ctrl+M)" kehrt zum
+  Vollfenster zurück; ✕ „Quit Reprise (Ctrl+Q)" beendet die App
+  (Standard-Fenster-Semantik, kein Hintergrund-Daemon in v1). Die Tooltips
+  machen den destruktiven Unterschied explizit — wer nur das große Fenster
+  will, nutzt ⤢/Ctrl+M. Die ganze Karte ist Drag-Fläche (GtkWindowHandle),
+  außer Play-Button, Waveform und den Hover-Buttons.
+
+- **MINI-3** [aktiv] [gtk] — **Rechtsklick-Menü mit fester Reihenfolge.**
+  Rechtsklick, Menütaste oder Shift+F10 öffnet: Restore Full Window (Ctrl+M) ·
+  Trenner · Pause/Play (Space; Label folgt dem Zustand) · Next (Ctrl+→) ·
+  Previous (Ctrl+←) · Trenner · Always on Top (Toggle) · Trenner · Preferences
+  (Ctrl+,) · Quit (Ctrl+Q). „Always on Top" ist X11-only (GTK4 kennt kein
+  keep-above); wo es nicht unterstützt wird — Wayland — verschwindet der
+  Eintrag ganz, statt tot als deaktivierte Zeile dazustehen.
+
+- **MINI-4** [aktiv] [gtk] — **Tastatur identisch zum Vollfenster.** Space =
+  Play/Pause, Ctrl+←/→ = Previous/Next, Ctrl+M = Restore, Ctrl+Q = Quit — keine
+  Mini-Sonderbelegung. Ctrl+←/→ wirken als echte Tasten auf der Karte
+  (Capture-Phase, damit die Pfeil-Seek der Waveform die modifizierten Pfeile
+  nicht schluckt) und decken sich mit den im Kontextmenü gezeigten
+  Acceleratoren.
+
 ---
 
 Wenn beim Testen ein Fall auftaucht, den keine Regel deckt: Regel ergänzen

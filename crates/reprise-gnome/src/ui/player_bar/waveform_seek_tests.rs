@@ -1,4 +1,5 @@
 use super::*;
+use crate::ui::player_bar::waveform_primitives::compute_bar_count;
 use libadwaita::prelude::AnimationExt;
 
 impl WaveformSeek {
@@ -279,6 +280,8 @@ fn ensure_resampled_clears_display_peaks_when_raw_empty() {
         desaturation_target: 0.0,
         min_bar_height: MIN_BAR_HEIGHT,
         max_bar_height: MAX_BAR_HEIGHT,
+        bar_count_override: None,
+        fill_bars: false,
         duration_ms: 0,
     };
     ensure_resampled(&mut state, 200);
@@ -306,6 +309,8 @@ fn ensure_resampled_populates_on_width_change() {
         desaturation_target: 0.0,
         min_bar_height: MIN_BAR_HEIGHT,
         max_bar_height: MAX_BAR_HEIGHT,
+        bar_count_override: None,
+        fill_bars: false,
         duration_ms: 0,
     };
     ensure_resampled(&mut state, 600);

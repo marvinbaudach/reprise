@@ -16,8 +16,9 @@ use libadwaita::prelude::AnimationExt;
 #[cfg(test)]
 use super::waveform_primitives::BAR_GAP;
 use super::waveform_primitives::{
-    bar_played, compute_bar_count, fraction_at, interpolation_step, keyboard_seek_target,
-    rounded_bar, update_accessible_value, BAR_RADIUS, BAR_WIDTH,
+    bar_played, bar_slot_width, fraction_at, interpolation_step, keyboard_seek_target,
+    resolve_bar_count, rounded_bar, update_accessible_value, BAR_RADIUS, MINI_BAR_COUNT,
+    MINI_BAR_GAP, MINI_BAR_RADIUS,
 };
 #[cfg(test)]
 use super::waveform_shape::{aggregate_rms, smooth_neighbors};
@@ -55,8 +56,9 @@ const BAR_STAGGER_S: f64 = 0.002;
 const FALLBACK_BAR_HEIGHT: f64 = 4.0;
 
 const MINI_CONTENT_HEIGHT: i32 = 16;
-const MINI_MAX_BAR_HEIGHT: f64 = 13.0;
-const MINI_MIN_BAR_HEIGHT: f64 = 2.0;
+/// Mini bars span 3px..15px inside the 16px row (frame 1e), vertically centred.
+const MINI_MAX_BAR_HEIGHT: f64 = 15.0;
+const MINI_MIN_BAR_HEIGHT: f64 = 3.0;
 const MINI_FALLBACK_BAR_HEIGHT: f64 = 3.0;
 
 /// Ensure `state.display_peaks` is up to date for the given `width`.
@@ -76,7 +78,7 @@ fn ensure_resampled(state: &mut State, width: i32) {
         return;
     }
     if state.last_display_width != width || state.display_peaks.is_empty() {
-        let count = compute_bar_count(width);
+        let count = resolve_bar_count(state.bar_count_override, width);
         state.display_peaks = shape_display_peaks(&state.raw_peaks, count);
         state.last_display_width = width;
     }
@@ -108,6 +110,10 @@ struct State {
     desaturation_target: f64,
     min_bar_height: f64,
     max_bar_height: f64,
+    /// Fixed bar count for the mini player (frame 1e); `None` = width-derived.
+    bar_count_override: Option<usize>,
+    /// Fill-width equal bars (mini) vs fixed-width bars (full waveform).
+    fill_bars: bool,
     // Duration of the current track (ms), for formatted tooltip display.
     duration_ms: i64,
 }
@@ -158,6 +164,8 @@ impl WaveformSeek {
             MAX_BAR_HEIGHT,
             MIN_BAR_HEIGHT,
             FALLBACK_BAR_HEIGHT,
+            None,
+            false,
         )
     }
 
@@ -167,10 +175,19 @@ impl WaveformSeek {
             MINI_MAX_BAR_HEIGHT,
             MINI_MIN_BAR_HEIGHT,
             MINI_FALLBACK_BAR_HEIGHT,
+            Some(MINI_BAR_COUNT),
+            true,
         )
     }
 
-    fn new_with_heights(content_height: i32, max_h: f64, min_h: f64, _fallback_h: f64) -> Self {
+    fn new_with_heights(
+        content_height: i32,
+        max_h: f64,
+        min_h: f64,
+        _fallback_h: f64,
+        bar_count_override: Option<usize>,
+        fill_bars: bool,
+    ) -> Self {
         let area = gtk4::DrawingArea::new();
         area.add_css_class(WAVEFORM_CSS_CLASS);
         area.set_hexpand(true);
@@ -208,6 +225,8 @@ impl WaveformSeek {
             desaturation_target: 0.0,
             min_bar_height: min_h,
             max_bar_height: max_h,
+            bar_count_override,
+            fill_bars,
             duration_ms: 0,
         }));
         let on_seek: SeekCallback = Rc::new(RefCell::new(None));
@@ -678,10 +697,12 @@ fn draw_bars(
     if count == 0 {
         return;
     }
-    // Slots fill the full width so the seek mapping stays linear; when the
-    // bar-count cap kicks in the gaps simply widen (bars stay 3 px).
+    // Slots fill the full width so the seek mapping stays linear. Full
+    // waveform: fixed 3px bars, gaps widen when the count caps. Mini player
+    // (fill mode): equal-width bars minus a small gap, tiling the width.
     let slot = w / count as f64;
-    let bar_w = BAR_WIDTH.min(slot.max(1.0));
+    let bar_w = bar_slot_width(slot, state.fill_bars, MINI_BAR_GAP);
+    let bar_radius = if state.fill_bars { MINI_BAR_RADIUS } else { BAR_RADIUS };
 
     for (index, &bar) in bars.iter().enumerate() {
         // Staggered build-up: each bar has a small time offset so they rise
@@ -739,7 +760,7 @@ fn draw_bars(
         } else {
             cr.set_source_rgba(1.0, 1.0, 1.0, UNPLAYED_ALPHA * style.opacity);
         }
-        rounded_bar(cr, x, y, bar_w, bar_h, BAR_RADIUS);
+        rounded_bar(cr, x, y, bar_w, bar_h, bar_radius);
         let _ = cr.fill();
     }
 }
@@ -753,12 +774,13 @@ fn draw_fallback(
     h: f64,
     state: &State,
 ) {
-    let count = compute_bar_count(w as i32);
+    let count = resolve_bar_count(state.bar_count_override, w as i32);
     if count == 0 {
         return;
     }
     let slot = w / count as f64;
-    let bar_w = BAR_WIDTH.min(slot.max(1.0));
+    let bar_w = bar_slot_width(slot, state.fill_bars, MINI_BAR_GAP);
+    let bar_radius = if state.fill_bars { MINI_BAR_RADIUS } else { BAR_RADIUS };
 
     let color = area.color();
     let color = (
@@ -783,7 +805,7 @@ fn draw_fallback(
         } else {
             cr.set_source_rgba(1.0, 1.0, 1.0, UNPLAYED_ALPHA * 0.6);
         }
-        rounded_bar(cr, x, y, bar_w, bar_h, BAR_RADIUS);
+        rounded_bar(cr, x, y, bar_w, bar_h, bar_radius);
         let _ = cr.fill();
     }
 }
