@@ -9,19 +9,6 @@ fn apply_fill(cr: &gtk4::cairo::Context, fill: &Fill, alpha_scale: f64) {
             f64::from(c.b),
             (f64::from(c.a) * alpha_scale).clamp(0.0, 1.0),
         ),
-        Fill::HGradient { x0, x1, stops } => {
-            let grad = gtk4::cairo::LinearGradient::new(f64::from(*x0), 0.0, f64::from(*x1), 0.0);
-            for (off, c) in stops {
-                grad.add_color_stop_rgba(
-                    f64::from(*off),
-                    f64::from(c.r),
-                    f64::from(c.g),
-                    f64::from(c.b),
-                    (f64::from(c.a) * alpha_scale).clamp(0.0, 1.0),
-                );
-            }
-            let _ = cr.set_source(&grad);
-        }
     }
 }
 
@@ -64,19 +51,21 @@ fn draw_shape(cr: &gtk4::cairo::Context, shape: &Shape, alpha_scale: f64) {
     use std::f64::consts::TAU;
     if let Geom::RadialGlow { cx, cy, r } = shape.geom {
         let (cx, cy, r) = (f64::from(cx), f64::from(cy), f64::from(r).max(1.0));
-        if let Fill::Solid(c) = shape.fill {
-            let grad = gtk4::cairo::RadialGradient::new(cx, cy, 0.0, cx, cy, r);
-            grad.add_color_stop_rgba(
-                0.0,
-                f64::from(c.r),
-                f64::from(c.g),
-                f64::from(c.b),
-                (f64::from(c.a) * alpha_scale).clamp(0.0, 1.0),
-            );
-            grad.add_color_stop_rgba(1.0, f64::from(c.r), f64::from(c.g), f64::from(c.b), 0.0);
-            if cr.set_source(&grad).is_ok() {
-                cr.arc(cx, cy, r, 0.0, TAU);
-                let _ = cr.fill();
+        match shape.fill {
+            Fill::Solid(c) => {
+                let grad = gtk4::cairo::RadialGradient::new(cx, cy, 0.0, cx, cy, r);
+                grad.add_color_stop_rgba(
+                    0.0,
+                    f64::from(c.r),
+                    f64::from(c.g),
+                    f64::from(c.b),
+                    (f64::from(c.a) * alpha_scale).clamp(0.0, 1.0),
+                );
+                grad.add_color_stop_rgba(1.0, f64::from(c.r), f64::from(c.g), f64::from(c.b), 0.0);
+                if cr.set_source(&grad).is_ok() {
+                    cr.arc(cx, cy, r, 0.0, TAU);
+                    let _ = cr.fill();
+                }
             }
         }
         return;
