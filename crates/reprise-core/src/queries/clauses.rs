@@ -209,7 +209,7 @@ pub(super) fn build_track_query_base_browsed(
 /// Builds the parameterized SELECT for a library window (`PRESENT`).
 /// See `build_track_query_base`'s doc comment for the whitelist guarantee.
 /// Projects the real `is_ai` column (`project_ai = true`); the AI-gated hot
-/// path uses [`build_track_query_browsed`] to opt out. Its only callers are this
+/// path uses `build_track_query_browsed` to opt out. Its only callers are this
 /// module's tests.
 pub fn build_track_query(sort_field: &str, sort_dir: &str, has_filter: bool) -> String {
     build_track_query_base(0, sort_field, sort_dir, has_filter, true)

@@ -8,7 +8,7 @@
 //! — cancel honoured *between* chunks, monotonic per-chunk progress,
 //! deterministic stitching, source reduction, shape validation — is unit-tested
 //! in the default build with a synthetic `infer`, no model and no native lib.
-//! [`crate::ort_backend`] supplies the real `infer` that runs the ONNX session.
+//! `crate::ort_backend` supplies the real `infer` that runs the ONNX session.
 
 use reprise_core::stem_separation::{ProgressPermille, StemError, PROGRESS_COMPLETE};
 

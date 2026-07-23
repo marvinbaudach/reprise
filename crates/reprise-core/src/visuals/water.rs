@@ -191,7 +191,7 @@ impl WaterGrid {
     }
 
     /// Beat splash, scaled by `strength` (`0..=1`): a strong beat lifts the whole
-    /// central ridge upward (it eases back down as [`BEAT_LIFT`] decays) and
+    /// central ridge upward (it eases back down as `BEAT_LIFT` decays) and
     /// throws a couple of upward ripples into the surrounding free mesh, so the
     /// liquid visibly erupts and settles. Soft beats barely move the surface.
     pub fn splash(&mut self, strength: f32) {
