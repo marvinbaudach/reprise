@@ -609,7 +609,9 @@ impl Queue {
             self.move_item(position, dest);
         }
         self.pos = Some(dest);
-        self.order.get(dest).and_then(|&idx| self.ids.get(idx).copied())
+        self.order
+            .get(dest)
+            .and_then(|&idx| self.ids.get(idx).copied())
     }
 
     /// Every queued track id in current play order — reflecting shuffle, if
