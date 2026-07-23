@@ -48,6 +48,10 @@ pub fn serialize_resource<T: Serialize>(value: &T) -> Result<String, ErrorData> 
 /// Maps a [`DataError`] to a tool-call outcome (`music_*` tools).
 pub fn into_tool_outcome(error: DataError) -> Result<CallToolResult, ErrorData> {
     match error {
+        // `playback:control` is read live (see `playback_denied`'s doc comment)
+        // so it gets its own restart-free message rather than the generic
+        // write-cap one below.
+        DataError::CapabilityDenied("playback:control") => Ok(playback_denied()),
         DataError::CapabilityDenied(cap) => Ok(tool_error(format!(
             "Permission denied: the '{cap}' capability is not granted. \
              Enable it in Reprise and restart the MCP server."
@@ -78,6 +82,22 @@ pub fn resource_error(error: DataError) -> ErrorData {
 
 pub fn tool_error(message: String) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(message)])
+}
+
+/// The shared `playback:control` denial message, used verbatim by both
+/// `music_playback_control` (denies inline) and `music_play` (denies via
+/// [`into_tool_outcome`]). Deliberately does *not* tell the caller to restart
+/// the MCP server: unlike the write-class caps (`playlist:create`,
+/// `ai:create`), which are captured in an immutable startup snapshot,
+/// `playback:control` is read live on every call — a re-grant takes effect on
+/// the very next tool call. Not `#[cfg(feature = "mpris")]`: it is reached
+/// through [`into_tool_outcome`], which compiles regardless of that feature.
+pub fn playback_denied() -> CallToolResult {
+    tool_error(
+        "Permission denied: the 'playback:control' capability is not granted. \
+         Enable it in Reprise."
+            .to_owned(),
+    )
 }
 
 /// Builds a successful tool result carrying only a short text summary — the
