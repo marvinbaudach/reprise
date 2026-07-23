@@ -483,8 +483,6 @@ fn mode_label(mode: VisualMode) -> &'static str {
         VisualMode::Bars => strings::SONG_VISUALS_MODE_BARS,
         VisualMode::Flow => strings::SONG_VISUALS_MODE_FLOW,
         VisualMode::Pulse => strings::SONG_VISUALS_MODE_PULSE,
-        VisualMode::Particles => strings::SONG_VISUALS_MODE_PARTICLES,
-        VisualMode::Neon => strings::SONG_VISUALS_MODE_NEON,
     }
 }
 
