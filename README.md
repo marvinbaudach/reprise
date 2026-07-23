@@ -94,6 +94,18 @@ Meson builds compile the experimental stem-separation backend by default
 (`-Dstem_backend=true`); pass `-Dstem_backend=false` for a core-only binary,
 while the plain `cargo build` above always stays core-only.
 
+`reprise-mcp` (the agent-facing MCP server) is not part of the Meson desktop
+build above; it is built directly with Cargo, ad hoc. Its playback-control
+tools (`music_playback_control`, `music_play`) live behind the opt-in `mpris`
+feature, the same pattern as the CLI's `mpris`/`worker` exceptions:
+
+```sh
+cargo build --locked -p reprise-mcp --release --features mpris
+```
+
+The default `cargo build -p reprise-mcp` (no extra features) stays
+D-Bus-free and simply omits the playback tools.
+
 The Flatpak manifest targets GNOME 50 and resolves Cargo dependencies from
 pinned checksums. See [flatpak/README.md](flatpak/README.md).
 
