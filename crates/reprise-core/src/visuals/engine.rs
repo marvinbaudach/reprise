@@ -471,9 +471,28 @@ mod tests {
         );
     }
 
+    /// AC-11: continuous motion exists only during playback. A playing engine
+    /// fed a fresh impact off silence is still animating (`tick` reports "not
+    /// settled"); once stopped it decays to rest within a bounded number of
+    /// ticks — the pause/stop "ausklingen" onto the static picture, with no
+    /// perpetual tick.
     #[test]
-    fn stopped_engine_settles() {
-        let mut engine = lively_engine();
+    fn ac_11_continuous_motion_ceases_when_playback_stops() {
+        use crate::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
+
+        let mut engine = VisualEngine::new();
+        engine.set_playing(true);
+        engine.set_accent((0.2, 0.7, 0.7));
+        let mut analyzer = SpectrumAnalyzer::new();
+        // A full-scale impact off silence makes every band jump toward its
+        // target while the current level lags — the playing engine is
+        // unambiguously mid-animation.
+        engine.ingest(&analyzer.ingest([0.0; SPECTRUM_ANALYSIS_BAND_COUNT]));
+        assert!(
+            !engine.tick(),
+            "a playing engine fed a fresh impact must still be animating"
+        );
+
         engine.set_playing(false);
         engine.clear_static_profile();
         let mut settled = false;
