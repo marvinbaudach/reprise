@@ -16,6 +16,8 @@ fn integrated_chrome_visible(mode: WindowDecorationMode) -> bool {
 pub(in crate::ui) struct WindowContentHost {
     root: adw::ToolbarView,
     separate_titlebar: gtk4::HeaderBar,
+    titlebar_wanted: Rc<Cell<bool>>,
+    compact: Rc<Cell<bool>>,
 }
 
 impl WindowContentHost {
@@ -32,6 +34,8 @@ impl WindowContentHost {
         Self {
             root,
             separate_titlebar,
+            titlebar_wanted: Rc::new(Cell::new(false)),
+            compact: Rc::new(Cell::new(false)),
         }
     }
 
@@ -55,7 +59,20 @@ impl WindowContentHost {
     }
 
     fn set_separate_titlebar_visible(&self, visible: bool) {
-        self.separate_titlebar.set_visible(visible);
+        self.titlebar_wanted.set(visible);
+        self.sync_titlebar();
+    }
+
+    /// Hides the separate titlebar while the compact mini-player is shown — it
+    /// is a chromeless floating card, never a titled window (MINI-1).
+    pub(in crate::ui) fn set_compact(&self, compact: bool) {
+        self.compact.set(compact);
+        self.sync_titlebar();
+    }
+
+    fn sync_titlebar(&self) {
+        self.separate_titlebar
+            .set_visible(self.titlebar_wanted.get() && !self.compact.get());
     }
 }
 
