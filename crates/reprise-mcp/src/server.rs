@@ -276,12 +276,7 @@ impl RepriseServer {
             .await
             .map_err(|error| error::join_error(&error))?;
         match allowed {
-            Ok(false) => {
-                return Ok(error::tool_error(
-                    "Permission denied: the 'playback:control' capability is not granted."
-                        .to_owned(),
-                ))
-            }
+            Ok(false) => return Ok(error::playback_denied()),
             Err(err) => return error::into_tool_outcome(err),
             Ok(true) => {}
         }
