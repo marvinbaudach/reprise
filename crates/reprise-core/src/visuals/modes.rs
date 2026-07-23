@@ -10,8 +10,6 @@ use super::scene::Shape;
 mod bars;
 mod flow;
 mod grid;
-mod neon;
-mod particles;
 mod pulse;
 
 pub(crate) fn build_scene(mode: VisualMode, ctx: &ModeCtx) -> Vec<Shape> {
@@ -20,7 +18,5 @@ pub(crate) fn build_scene(mode: VisualMode, ctx: &ModeCtx) -> Vec<Shape> {
         VisualMode::Bars => bars::scene(ctx),
         VisualMode::Flow => flow::scene(ctx),
         VisualMode::Pulse => pulse::scene(ctx),
-        VisualMode::Particles => particles::scene(ctx),
-        VisualMode::Neon => neon::scene(ctx),
     }
 }
