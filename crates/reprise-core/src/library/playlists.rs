@@ -179,6 +179,18 @@ pub fn get(conn: &Connection, id: i64) -> Result<Option<PlaylistSummary>, rusqli
     .optional()
 }
 
+/// The playlist's track ids in stored (`position`) order. Empty for an empty
+/// or non-existent playlist — callers treat "no playable tracks" as invalid
+/// input at their boundary.
+pub fn track_ids(conn: &Connection, playlist_id: i64) -> Result<Vec<i64>, rusqlite::Error> {
+    let mut stmt = conn
+        .prepare("SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position")?;
+    let ids = stmt
+        .query_map(params![playlist_id], |row| row.get::<_, i64>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(ids)
+}
+
 /// Appends tracks to a playlist at the end (appends to the highest position).
 /// Positions are contiguous. Duplicates allowed (Rhythmbox behavior).
 /// All inserts happen in one transaction.
