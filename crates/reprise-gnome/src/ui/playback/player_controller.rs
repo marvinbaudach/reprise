@@ -296,12 +296,6 @@ pub struct PlayerController {
     /// separately delivered loaded-track snapshot.
     pub(in crate::ui) now_playing_panel_state_changed:
         RefCell<Option<OnNowPlayingPanelStateChanged>>,
-    /// Position-tick feed for the right panel's fullscreen visualizer (seek
-    /// slider + elapsed/remaining labels) — same seam shape as `now_playing_
-    /// panel_state_changed`, fired from `player_event_handling.rs`'s
-    /// `PlayerEvent::Position` arm.
-    pub(in crate::ui) now_playing_panel_position_changed:
-        RefCell<Option<OnNowPlayingPanelPositionChanged>>,
     /// Bounded live-spectrum feed for the optional Now Playing visualizer.
     pub(in crate::ui) song_visual_spectrum_changed: RefCell<Option<OnSongVisualSpectrumChanged>>,
     /// Supplies the current view's ids when an exhausted queue needs refill.
@@ -404,7 +398,6 @@ pub(in crate::ui) struct NowPlaying {
 
 type OnNowPlayingPanelTrackChanged = Rc<dyn Fn(Option<NowPlaying>)>;
 type OnNowPlayingPanelStateChanged = Rc<dyn Fn(PlaybackState)>;
-type OnNowPlayingPanelPositionChanged = Rc<dyn Fn(i64, i64)>;
 type OnSongVisualSpectrumChanged = Rc<dyn Fn(SpectrumFrame)>;
 
 impl PlayerController {
@@ -471,7 +464,6 @@ impl PlayerController {
             playback_state_changed: RefCell::new(None),
             now_playing_panel_track_changed: RefCell::new(None),
             now_playing_panel_state_changed: RefCell::new(None),
-            now_playing_panel_position_changed: RefCell::new(None),
             song_visual_spectrum_changed: RefCell::new(None),
             view_refill_ids: RefCell::new(None),
             consecutive_skips: Cell::new(0),

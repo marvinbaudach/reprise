@@ -107,6 +107,7 @@ impl CompactPlayer {
         wire_double_click(&inner);
         wire_right_click(&inner);
         wire_keyboard_menu(&inner);
+        wire_shortcuts(&inner);
         wire_chrome_buttons(&inner);
 
         Self(inner)
@@ -225,9 +226,10 @@ impl CompactPlayer {
         self.0.menu.set_on_always_on_top(callback);
     }
 
-    /// Disables the always-on-top action (grays out the menu item).
-    pub(in crate::ui) fn set_always_on_top_enabled(&self, enabled: bool) {
-        self.0.menu.always_on_top_action.set_enabled(enabled);
+    /// Shows or hides the always-on-top menu item (MINI-3). Hidden on Wayland,
+    /// where GTK4 exposes no keep-above.
+    pub(in crate::ui) fn set_always_on_top_available(&self, available: bool) {
+        self.0.menu.set_always_on_top_available(available);
     }
 
     /// Sets the always-on-top action state (check mark in the menu).
@@ -351,7 +353,9 @@ fn wire_chrome_buttons(inner: &Rc<Inner>) {
         }
     });
     inner.widgets.close_button.connect_clicked(move |_| {
-        ag.activate_action("restore", None);
+        // MINI-2: ✕ quits the app (no background daemon in v1); ⤢ / Ctrl+M is
+        // the path back to the full window.
+        ag.activate_action("quit", None);
     });
 }
 
@@ -396,6 +400,39 @@ fn wire_keyboard_menu(inner: &Rc<Inner>) {
             || (keyval == gdk::Key::F10 && modifier.contains(gdk::ModifierType::SHIFT_MASK));
         if dominated {
             compact_player_menu::popup_at(&popover, anchor.upcast_ref(), None);
+            gtk4::glib::Propagation::Stop
+        } else {
+            gtk4::glib::Propagation::Proceed
+        }
+    });
+    inner.widgets.card.add_controller(key_controller);
+}
+
+/// Maps a key press on the mini card to a compact action name (MINI-4).
+/// Only Ctrl+Left/Right are handled; everything else proceeds so the
+/// waveform's arrow-seek and the global Space binding keep working.
+fn compact_key_action(keyval: gdk::Key, modifier: gdk::ModifierType) -> Option<&'static str> {
+    if !modifier.contains(gdk::ModifierType::CONTROL_MASK) {
+        return None;
+    }
+    match keyval {
+        gdk::Key::Left => Some("previous"),
+        gdk::Key::Right => Some("next"),
+        _ => None,
+    }
+}
+
+/// Binds Ctrl+←/→ to previous/next on the card (MINI-4). A capture-phase key
+/// controller so the waveform's own arrow-seek never swallows the modified
+/// arrows; scoped to the card, so nothing leaks into the full window (whose
+/// content tree never contains the card).
+fn wire_shortcuts(inner: &Rc<Inner>) {
+    let key_controller = gtk4::EventControllerKey::new();
+    key_controller.set_propagation_phase(gtk4::PropagationPhase::Capture);
+    let action_group = inner.menu.action_group.clone();
+    key_controller.connect_key_pressed(move |_, keyval, _, modifier| {
+        if let Some(action) = compact_key_action(keyval, modifier) {
+            action_group.activate_action(action, None);
             gtk4::glib::Propagation::Stop
         } else {
             gtk4::glib::Propagation::Proceed
@@ -565,6 +602,75 @@ mod tests {
         assert_eq!(
             player.0.widgets.waveform.desaturation_target_for_test(),
             1.0
+        );
+    }
+
+    #[test]
+    fn mini_4_ctrl_arrows_map_to_prev_next() {
+        use gtk4::gdk::{Key, ModifierType};
+        assert_eq!(
+            compact_key_action(Key::Right, ModifierType::CONTROL_MASK),
+            Some("next")
+        );
+        assert_eq!(
+            compact_key_action(Key::Left, ModifierType::CONTROL_MASK),
+            Some("previous")
+        );
+        // Plain arrows fall through so the waveform can seek.
+        assert_eq!(compact_key_action(Key::Right, ModifierType::empty()), None);
+        assert_eq!(compact_key_action(Key::Left, ModifierType::empty()), None);
+        // Other Ctrl combos are not ours to claim.
+        assert_eq!(
+            compact_key_action(Key::Up, ModifierType::CONTROL_MASK),
+            None
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn mini_4_next_previous_actions_fire_callbacks() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let player = CompactPlayer::new();
+        let seen = Rc::new(RefCell::new(Vec::<&'static str>::new()));
+        let s1 = seen.clone();
+        player.connect_next(move || s1.borrow_mut().push("next"));
+        let s2 = seen.clone();
+        player.connect_previous(move || s2.borrow_mut().push("previous"));
+        player.0.menu.action_group.activate_action("next", None);
+        player.0.menu.action_group.activate_action("previous", None);
+        assert_eq!(*seen.borrow(), vec!["next", "previous"]);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn mini_2_close_button_quits_the_app() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let player = CompactPlayer::new();
+        let quit = Rc::new(Cell::new(false));
+        let q = quit.clone();
+        player.set_on_quit(Rc::new(move || q.set(true)));
+        player.0.widgets.close_button.emit_clicked();
+        assert!(quit.get(), "the close button must quit the app (MINI-2)");
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn mini_2_restore_button_restores_full_window() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let player = CompactPlayer::new();
+        let restored = Rc::new(Cell::new(false));
+        let r = restored.clone();
+        player.set_on_restore(Rc::new(move || r.set(true)));
+        player.0.widgets.restore_button.emit_clicked();
+        assert!(
+            restored.get(),
+            "the restore button must reopen the full window (MINI-2)"
         );
     }
 }

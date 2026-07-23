@@ -189,29 +189,6 @@ impl super::Shared {
             Vec::new()
         })
     }
-
-    /// Refreshes just the row at `position` (drops its cached window so GTK
-    /// re-pulls it) while PINNING the viewport in place.
-    ///
-    /// NAV-10a follow-up: a bare `invalidate_window_at` is a one-row
-    /// `items_changed(pos, 1, 1)`. When that row is the one the user just
-    /// interacted with — a double-click to play, a star-rating click — GtkColumn
-    /// View replaces the row widget under the pointer and, in that state,
-    /// snaps the viewport back to the top. (A plain selection click, which
-    /// issues no `items_changed`, never does — matching the observed
-    /// "only double-click and rating jump" symptom.) The row's absolute scroll
-    /// offset is still valid across a 1→1 change, so it is captured and restored
-    /// around the refresh: synchronously, and once more on idle since GTK's
-    /// unwanted scroll can land a frame later.
-    pub(in crate::ui) fn refresh_row_pinning_viewport(&self, position: u32) {
-        let saved = gtk4::prelude::ScrollableExt::vadjustment(&self.column_view)
-            .map(|adjustment| (adjustment.clone(), adjustment.value()));
-        self.model.invalidate_window_at(position);
-        if let Some((adjustment, value)) = saved {
-            adjustment.set_value(value);
-            gtk4::glib::idle_add_local_once(move || adjustment.set_value(value));
-        }
-    }
 }
 
 impl TrackList {
@@ -242,17 +219,14 @@ impl TrackList {
                 | CurrentTrackChange::AutomaticAdvance
                 | CurrentTrackChange::ExplicitTransport
         ) {
-            let previous_id = self.shared.playing_track_id.replace(Some(track_id));
-            if let Some(previous_id) = previous_id.filter(|id| *id != track_id) {
-                if let Some(old_pos) = ids
-                    .iter()
-                    .position(|candidate| *candidate == previous_id)
-                    .and_then(|position| u32::try_from(position).ok())
-                {
-                    self.shared.refresh_row_pinning_viewport(old_pos);
-                }
-            }
+            self.shared.playing_track_id.set(Some(track_id));
         }
+        // Move the marker on every currently-visible row in place — off the old
+        // playing row, onto the new one — by re-running each cell's registered
+        // applier (see `now_playing_marker`). No `items_changed`, so
+        // GtkColumnView never replaces a row widget and the viewport stays put:
+        // a double-click-to-play no longer snaps the table to the top.
+        self.shared.reapply_now_playing_markers();
 
         let Some(position) =
             visible_position_for_track_in_source(&ids, track_id, queue_position, is_queue)
@@ -271,7 +245,6 @@ impl TrackList {
             .is_some_and(|last| last.elapsed() < USER_SCROLL_GRACE);
         match reveal_policy(change, user_scrolling) {
             TrackRevealPolicy::MarkerOnly => {
-                self.shared.refresh_row_pinning_viewport(position);
                 tracing::info!(
                     track_id,
                     position,
@@ -279,7 +252,6 @@ impl TrackList {
                 );
             }
             TrackRevealPolicy::Center => {
-                self.shared.model.invalidate_window_at(position);
                 if change == CurrentTrackChange::AutomaticAdvance {
                     reveal_automatic_track_position(&self.shared, position, 8);
                 } else {
@@ -318,17 +290,9 @@ impl TrackList {
     /// Clears the now-playing marker (on stop) and rebinds the row that
     /// carried it so its `.now-playing` class drops.
     fn clear_now_playing(&self) {
-        let previous = self.shared.playing_track_id.replace(None);
-        if let Some(previous) = previous {
-            let ids = self.shared.current_view_ids();
-            if let Some(position) = ids
-                .iter()
-                .position(|candidate| *candidate == previous)
-                .and_then(|position| u32::try_from(position).ok())
-            {
-                self.shared.refresh_row_pinning_viewport(position);
-            }
-        }
+        self.shared.playing_track_id.set(None);
+        // Drop the marker from whatever visible row still carries it, in place.
+        self.shared.reapply_now_playing_markers();
     }
 }
 
@@ -498,6 +462,93 @@ mod tests {
         while gtk4::glib::MainContext::default().iteration(false) {}
         assert!(track_list.shared.selection.is_selected(10));
         assert!(!track_list.shared.selection.is_selected(position));
+
+        window.close();
+    }
+
+    /// Counts the widgets in `widget`'s subtree carrying the `.now-playing`
+    /// marker class — the visible footprint of the now-playing row's cells.
+    fn count_now_playing(widget: &gtk4::Widget) -> usize {
+        let mut count = usize::from(widget.has_css_class("now-playing"));
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            count += count_now_playing(&current);
+            child = current.next_sibling();
+        }
+        count
+    }
+
+    /// The now-playing marker must be applied to (and cleared from) the already-
+    /// realised cell widgets IN PLACE — the mechanism that replaced the former
+    /// `items_changed(pos, 1, 1)` refresh (whose fake remove+insert snapped the
+    /// viewport to the top). Proves the registered re-appliers actually toggle
+    /// real widgets, and that the reapply path never panics (RefCell re-entry).
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn now_playing_marker_toggles_visible_cells_in_place() {
+        gtk4::init().unwrap();
+        let mut conn = Connection::open_in_memory().unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        let tx = conn.transaction().unwrap();
+        for id in 1..=100 {
+            tx.execute(
+                "INSERT INTO tracks (id, path, title, artist, added_at) \
+                 VALUES (?1, ?2, ?3, 'Synthetic Artist', 0)",
+                (
+                    id,
+                    format!("/synthetic/{id:03}.flac"),
+                    format!("Track {id:03}"),
+                ),
+            )
+            .unwrap();
+        }
+        tx.commit().unwrap();
+        let track_list = TrackList::new(
+            Rc::new(RefCell::new(conn)),
+            Box::new(|_, _, _, _| {}),
+            |_, _, _, _| {},
+            super::super::queue_sections::QueueViewModel::default,
+            crate::ui::cover_download_worker::setup_for_test(),
+        );
+        let window = gtk4::Window::builder()
+            .default_width(900)
+            .default_height(320)
+            .child(track_list.widget())
+            .build();
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        let column_view: gtk4::Widget = track_list.shared.column_view.clone().upcast();
+
+        // No track playing yet: no cell carries the marker.
+        assert_eq!(count_now_playing(&column_view), 0);
+
+        // Start playback on a row visible at the top (no scroll involved): the
+        // marker appears on that row's realised cells with no model signal.
+        let first_id = track_list.shared.model.track_at(0).unwrap().id;
+        track_list.update_current_track(first_id, None, CurrentTrackChange::PlaybackStarted);
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        assert!(
+            count_now_playing(&column_view) > 0,
+            "playing row's cells must gain the marker in place"
+        );
+
+        // Advancing to another visible row moves the marker; the footprint
+        // stays that of a single row (no stale marker left behind).
+        let footprint = count_now_playing(&column_view);
+        let second_id = track_list.shared.model.track_at(1).unwrap().id;
+        track_list.update_current_track(second_id, None, CurrentTrackChange::PlaybackStarted);
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        assert_eq!(
+            count_now_playing(&column_view),
+            footprint,
+            "marker must move, not accumulate on the previous row"
+        );
+
+        // Stopping clears the marker from every cell.
+        track_list.on_playback_state(PlaybackState::Stopped);
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        assert_eq!(count_now_playing(&column_view), 0);
 
         window.close();
     }

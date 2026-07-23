@@ -47,10 +47,6 @@ impl PlayerController {
                 // `update_mpris_mirror` rebuilds — see `update_mpris_
                 // position`'s doc comment.
                 self.update_mpris_position(position_ms);
-                let callback = self.now_playing_panel_position_changed.borrow().clone();
-                if let Some(callback) = callback {
-                    callback(position_ms, duration_ms);
-                }
             }
             PlayerEvent::TrackFinished => {
                 // INST-4b/5b: a finished instrumental preview stops without
