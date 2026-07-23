@@ -1892,7 +1892,9 @@ deterministisch und hoch-konfident, nie „ohne Review".
   neu aufgebaut; der Voll-Zustand bleibt unangetastet (BROWSE-2) und Ctrl+M
   zurück landet exakt dort. Es ist dasselbe, undekorierte Fenster; die Karte
   IST die Fläche: 430×76, Radius 16, Tint rgba(34,34,34,0.92), 1 px Hairline,
-  opak — kein Live-Blur (STYLE-1). Layout nach Frame 1e: Cover 52/Radius 10
+  opak — kein Live-Blur (STYLE-1); das Fenster selbst ist transparent (CSS),
+  damit nur die Karte mit Schatten schwebt — die Fenstergröße ist Karte plus
+  Rand-Marge ringsum, nicht die Kartengröße. Layout nach Frame 1e: Cover 52/Radius 10
   mit Inset-Hairline; Titel 13 px bold und Artist 11,5 px auf einer
   ellipsierenden Baseline-Zeile (Titel priorisiert, Artist-Kontrast ≥ 4,5:1
   auf dem Tint); darunter die Mini-Waveform (46 gleichbreite Bars, gespielter
