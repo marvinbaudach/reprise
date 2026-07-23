@@ -26,15 +26,6 @@ type OnVoid = Rc<dyn Fn()>;
 #[path = "now_playing_effects.rs"]
 mod now_playing_effects;
 
-fn should_toggle_visual_fullscreen(
-    enabled: bool,
-    panel_visible: bool,
-    selected_tab: PanelTab,
-    key: gtk4::gdk::Key,
-) -> bool {
-    enabled && panel_visible && selected_tab == PanelTab::Visual && key == gtk4::gdk::Key::F11
-}
-
 struct PanelWidgets {
     column: NowPlayingColumn,
     stage: gtk4::Box,
@@ -280,10 +271,8 @@ pub(in crate::ui) struct NowPlayingPanel {
 }
 
 impl NowPlayingPanel {
-    #[allow(clippy::too_many_arguments)]
     pub(in crate::ui) fn new(
         content: &impl IsA<gtk4::Widget>,
-        window: &adw::ApplicationWindow,
         conn: Rc<RefCell<Connection>>,
         _runtime: Rc<ArtistNewsRuntime>,
         cover_loader: Rc<CoverLoader>,
@@ -338,7 +327,6 @@ impl NowPlayingPanel {
         );
         panel.set_song_visuals_enabled(song_visuals_enabled);
         panel.wire();
-        panel.install_visual_fullscreen_shortcut(window);
         panel.sync_visual_activity();
         panel.render_track();
         panel
@@ -420,19 +408,9 @@ impl NowPlayingPanel {
         self.widgets.visual_page.set_visible(enabled);
         if !enabled {
             self.widgets.visualizer.set_active(false);
-            self.widgets.visualizer.close_fullscreen();
             if self.widgets.session.selected.get() == PanelTab::Visual {
                 self.widgets.tab_stack.set_visible_child_name(UP_NEXT_PAGE);
             }
-        }
-        let footer = if enabled {
-            strings::text(strings::SONG_VISUALS_FULLSCREEN_HINT)
-        } else {
-            String::new()
-        };
-        self.widgets.footers.borrow_mut().visual = footer.clone();
-        if self.widgets.session.selected.get() == PanelTab::Visual {
-            self.widgets.footer.set_label(&footer);
         }
         self.sync_visual_activity();
     }
@@ -446,46 +424,6 @@ impl NowPlayingPanel {
         if self.widgets.session.selected.get() == PanelTab::UpNext {
             self.widgets.footer.set_label(&text);
         }
-        self.sync_visual_queue_position(model);
-    }
-
-    /// Feeds the fullscreen visualizer's "TRACK i / n" + "Up next: …" state
-    /// from the same composite queue model the Up Next tab renders: current
-    /// index is the loaded track's position within `model.ids`, and the
-    /// next-up title is a direct ad hoc single-row lookup on the panel's own
-    /// `conn`.
-    fn sync_visual_queue_position(
-        &self,
-        model: &crate::ui::track_list::queue_sections::QueueViewModel,
-    ) {
-        let total = model.ids.len();
-        let current_id = self.loaded_track.borrow().as_ref().map(|track| track.id);
-        let index =
-            current_id.and_then(|id| model.ids.iter().position(|candidate| *candidate == id));
-        self.widgets
-            .visualizer
-            .set_queue_position(index.unwrap_or(0), total);
-        let next_up_title = index
-            .and_then(|index| model.ids.get(index + 1))
-            .and_then(|id| self.track_title(*id));
-        self.widgets.visualizer.set_next_up(
-            next_up_title.map(|title| {
-                strings::formatted(strings::SONG_VISUALS_NEXT_UP, &[("title", &title)])
-            }),
-        );
-    }
-
-    /// Best-effort track title lookup for the next-up preview. `None` on any
-    /// error (missing row, closed connection) rather than surfacing a DB
-    /// failure in the fullscreen chrome.
-    fn track_title(&self, track_id: i64) -> Option<String> {
-        let conn = self.conn.borrow();
-        conn.query_row(
-            "SELECT title FROM tracks WHERE id = ?1",
-            [track_id],
-            |row| row.get(0),
-        )
-        .ok()
     }
 
     pub(in crate::ui) fn set_on_up_next_jump(
@@ -515,19 +453,6 @@ impl NowPlayingPanel {
     pub(in crate::ui) fn set_on_up_next_refresh(&self, callback: impl Fn() + 'static) {
         *self.on_up_next_refresh.borrow_mut() = Some(Rc::new(callback));
         self.request_up_next_refresh_if_visible();
-    }
-
-    /// Wires the fullscreen visualizer's transport, seek, and volume actions
-    /// to the player. Replaces the narrower `set_visual_transport`.
-    pub(in crate::ui) fn set_visual_player_hooks(&self, hooks: super::PlayerHooks) {
-        self.widgets.visualizer.set_player_hooks(hooks);
-    }
-
-    /// Forwards a live playback-position tick to the fullscreen visualizer.
-    pub(in crate::ui) fn set_position(&self, position_ms: i64, duration_ms: i64) {
-        self.widgets
-            .visualizer
-            .set_position(position_ms, duration_ms);
     }
 
     pub(in crate::ui) fn is_up_next_visible(&self) -> bool {
@@ -610,32 +535,6 @@ impl NowPlayingPanel {
                 && self.widgets.column.is_visible()
                 && self.widgets.session.selected.get() == PanelTab::Visual,
         );
-    }
-
-    fn install_visual_fullscreen_shortcut(self: &Rc<Self>, window: &adw::ApplicationWindow) {
-        let key = gtk4::EventControllerKey::new();
-        key.set_propagation_phase(gtk4::PropagationPhase::Capture);
-        let panel = Rc::downgrade(self);
-        let parent = window.downgrade();
-        key.connect_key_pressed(move |_, key, _, _| {
-            let Some(panel) = panel.upgrade() else {
-                return gtk4::glib::Propagation::Proceed;
-            };
-            if !should_toggle_visual_fullscreen(
-                panel.song_visuals_enabled.get(),
-                panel.widgets.column.is_visible(),
-                panel.widgets.session.selected.get(),
-                key,
-            ) {
-                return gtk4::glib::Propagation::Proceed;
-            }
-            let Some(parent) = parent.upgrade() else {
-                return gtk4::glib::Propagation::Proceed;
-            };
-            panel.widgets.visualizer.toggle_fullscreen(&parent);
-            gtk4::glib::Propagation::Stop
-        });
-        window.add_controller(key);
     }
 
     fn request_up_next_refresh_if_visible(&self) {

@@ -47,7 +47,7 @@ pub(in crate::ui) fn build_mode(
 }
 
 /// Returns `true` if the current GDK display is X11 (always-on-top is
-/// supported). On Wayland the menu item is grayed out.
+/// supported). On Wayland the menu item is hidden.
 fn is_x11() -> bool {
     gtk4::gdk::Display::default()
         .and_then(|d| d.downcast::<gdk4_x11::X11Display>().ok())
@@ -128,10 +128,11 @@ pub(in crate::ui) fn install(
         }));
         compact.set_on_preferences(on_preferences);
 
-        // Always-on-Top: X11 only; disable the menu item on Wayland.
+        // Always-on-Top: X11 only; hide the menu item entirely on Wayland
+        // (MINI-3) rather than leaving a dead, grayed-out entry.
         let x11_available = is_x11();
         if !x11_available {
-            compact.set_always_on_top_enabled(false);
+            compact.set_always_on_top_available(false);
         }
 
         // Restore persisted state.

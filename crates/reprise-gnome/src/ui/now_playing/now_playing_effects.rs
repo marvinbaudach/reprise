@@ -27,14 +27,6 @@ impl super::NowPlayingPanel {
         self.widgets.album.set_label(album);
         self.widgets.artist.set_visible(!artist.trim().is_empty());
         self.widgets.album.set_visible(!album.trim().is_empty());
-        self.widgets.visualizer.set_track_meta(
-            &presentation.title,
-            if presentation.idle {
-                ""
-            } else {
-                &presentation.subtitle
-            },
-        );
         if presentation.idle {
             self.widgets.stage.add_css_class("reprise-now-playing-idle");
         } else {
@@ -70,7 +62,7 @@ impl super::NowPlayingPanel {
                         .paintable()
                         .and_downcast::<gtk4::gdk::Texture>()
                         .or_else(|| gtk4::gdk::Texture::from_filename(&resolved_path).ok());
-                    visualizer.set_cover(texture);
+                    visualizer.set_cover(texture.as_ref());
                 },
             );
         }

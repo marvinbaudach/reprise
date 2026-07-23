@@ -119,6 +119,14 @@ pub(in crate::ui) struct Shared {
     /// moves without rebuilding the list. A `Cell` (not `RefCell`) because the
     /// payload is a `Copy` `Option<i64>` read on every bind.
     pub(in crate::ui) playing_track_id: Cell<Option<i64>>,
+    /// Per-cell now-playing marker re-appliers, keyed by their bound
+    /// `ListItem` (see `now_playing_marker`). A playback change runs all of
+    /// them so the marker moves to the new row (and off the old one) by
+    /// mutating the already-realised cell widgets IN PLACE — replacing the
+    /// former `items_changed(pos, 1, 1)` marker refresh, whose fake
+    /// remove+insert snapped the viewport to the top on a double-click-to-play.
+    pub(in crate::ui) now_playing_markers:
+        RefCell<Vec<super::now_playing_marker::NowPlayingMarker>>,
     pub(in crate::ui) last_scroll_activity: Cell<Option<std::time::Instant>>,
     /// View position an in-app single-row reorder drag started from — set at
     /// drag-prepare, cleared on drag end/cancel. `None` while no reorder-

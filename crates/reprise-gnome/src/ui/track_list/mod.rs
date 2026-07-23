@@ -6,6 +6,7 @@ pub(in crate::ui) mod current_track_selection;
 pub(in crate::ui) mod end_of_results;
 pub(in crate::ui) mod list_density;
 pub(in crate::ui) mod match_highlight;
+pub(in crate::ui) mod now_playing_marker;
 mod playlist_reorder_guard;
 pub(crate) mod queue_row_mapping;
 pub(crate) mod queue_sections;
