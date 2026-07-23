@@ -6,6 +6,12 @@ impl WaveformSeek {
     pub(in crate::ui) fn desaturation_target_for_test(&self) -> f64 {
         self.state.borrow().desaturation_target
     }
+
+    /// True once real precomputed peaks have been handed in via `set_peaks`,
+    /// i.e. the widget draws the actual shape instead of the skeleton fallback.
+    pub(in crate::ui) fn has_raw_peaks_for_test(&self) -> bool {
+        !self.state.borrow().raw_peaks.is_empty()
+    }
 }
 
 #[test]

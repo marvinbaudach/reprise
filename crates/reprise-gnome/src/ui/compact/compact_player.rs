@@ -8,8 +8,8 @@
 //! ## Callback discipline
 //! Restore/preferences/always-on-top/quit callbacks are routed through the
 //! `CompactMenu` action group so they fire identically whether triggered by
-//! the overlay button, the right-click menu, or a keyboard shortcut. This
-//! also keeps `activate_restore_for_test` working at no extra cost.
+//! the right-click menu, a keyboard shortcut, or double-clicking the card.
+//! This also keeps `activate_restore_for_test` working at no extra cost.
 //!
 //! ## RefCell discipline
 //! No `Ref`/`RefMut` is held across a GTK call; every borrow is cloned out
@@ -39,8 +39,6 @@ const ICON_PAUSE: &str = "media-playback-pause-symbolic";
 
 /// How long the volume feedback bar stays visible after a scroll event.
 const VOL_BAR_LINGER_MS: u64 = 800;
-/// Delay before the hover overlay fades out after the pointer leaves.
-const HOVER_HIDE_DELAY_MS: u64 = 1000;
 
 // ── Inner state ─────────────────────────────────────────────────────────────
 
@@ -54,8 +52,6 @@ struct Inner {
     current_volume: Cell<f64>,
     /// Pending hide-timer handle for the volume bar.
     vol_bar_hide_source: RefCell<Option<gtk4::glib::SourceId>>,
-    /// Pending hide-timer handle for the hover overlay.
-    hover_hide_source: RefCell<Option<gtk4::glib::SourceId>>,
     /// The active title/artist crossfade half, replaced with skip semantics.
     current_track_animation: Rc<RefCell<Option<adw::TimedAnimation>>>,
     track_animation_generation: Rc<Cell<u64>>,
@@ -98,17 +94,14 @@ impl CompactPlayer {
             current_duration_ms: Cell::new(0),
             current_volume: Cell::new(1.0),
             vol_bar_hide_source: RefCell::new(None),
-            hover_hide_source: RefCell::new(None),
             current_track_animation: Rc::new(RefCell::new(None)),
             track_animation_generation: Rc::new(Cell::new(0)),
         });
 
-        wire_hover(&inner);
         wire_double_click(&inner);
         wire_right_click(&inner);
         wire_keyboard_menu(&inner);
         wire_shortcuts(&inner);
-        wire_chrome_buttons(&inner);
 
         Self(inner)
     }
@@ -169,7 +162,6 @@ impl CompactPlayer {
             } else {
                 strings::TOOLTIP_PLAY
             })));
-        self.0.menu.set_playing(is_playing);
     }
 
     /// Advances the waveform seek bar. Stores `duration_ms` for seek-fraction
@@ -184,6 +176,14 @@ impl CompactPlayer {
             0.0
         };
         self.0.widgets.waveform.set_fraction_smooth(fraction);
+    }
+
+    /// Feeds the mini waveform the same precomputed peaks as the full player
+    /// bar, so the compact view draws the real track shape with progress — not
+    /// the pseudo-random skeleton fallback. Played bars take the cover accent
+    /// via the `.waveform-seek` CSS `color` binding (MINI-1, frame 1e).
+    pub(in crate::ui) fn set_peaks(&self, peaks: Vec<u8>) {
+        self.0.widgets.waveform.set_peaks(peaks);
     }
 
     /// Enables or disables the play/pause button.
@@ -211,9 +211,8 @@ impl CompactPlayer {
 //    `player_controller_wiring`) ──────────────────────────────────────────────
 
 impl CompactPlayer {
-    /// Replaces the callback fired by "Restore Full Window" — the overlay
-    /// button, the X button, the menu action, and double-clicking the cover
-    /// or title all route through this.
+    /// Replaces the callback fired by "Restore Full Window" — the menu action,
+    /// Ctrl+M, and double-clicking the cover or title all route through this.
     pub(in crate::ui) fn set_on_restore(&self, callback: Rc<dyn Fn()>) {
         self.0.menu.set_on_restore(callback);
     }
@@ -304,60 +303,6 @@ impl CompactPlayer {
 }
 
 // ── Private wiring helpers ────────────────────────────────────────────────────
-
-/// Installs a motion controller on the card that shows/hides the hover overlay
-/// (restore + close buttons). The hide is deferred by `HOVER_HIDE_DELAY_MS`
-/// so a slow pointer move does not flicker.
-fn wire_hover(inner: &Rc<Inner>) {
-    let motion = gtk4::EventControllerMotion::new();
-
-    motion.connect_enter({
-        let inner = Rc::clone(inner);
-        move |_, _, _| {
-            // Cancel a pending hide so the overlay stays visible.
-            if let Some(id) = inner.hover_hide_source.borrow_mut().take() {
-                id.remove();
-            }
-            inner.widgets.hover_revealer.set_reveal_child(true);
-            inner.widgets.hover_revealer.set_can_target(true);
-        }
-    });
-
-    motion.connect_leave({
-        let inner = Rc::clone(inner);
-        move |_| {
-            let inner2 = Rc::clone(&inner);
-            let id = gtk4::glib::timeout_add_local_once(
-                Duration::from_millis(HOVER_HIDE_DELAY_MS),
-                move || {
-                    inner2.widgets.hover_revealer.set_reveal_child(false);
-                    inner2.widgets.hover_revealer.set_can_target(false);
-                    *inner2.hover_hide_source.borrow_mut() = None;
-                },
-            );
-            *inner.hover_hide_source.borrow_mut() = Some(id);
-        }
-    });
-
-    inner.widgets.card.add_controller(motion);
-}
-
-/// Wires the overlay restore/close buttons to the "compact.restore" action,
-/// so they fire the same callback as the menu item and keyboard shortcut.
-fn wire_chrome_buttons(inner: &Rc<Inner>) {
-    let ag = inner.menu.action_group.clone();
-    inner.widgets.restore_button.connect_clicked({
-        let ag = ag.clone();
-        move |_| {
-            ag.activate_action("restore", None);
-        }
-    });
-    inner.widgets.close_button.connect_clicked(move |_| {
-        // MINI-2: ✕ quits the app (no background daemon in v1); ⤢ / Ctrl+M is
-        // the path back to the full window.
-        ag.activate_action("quit", None);
-    });
-}
 
 /// Double-clicking the cover image or the title label triggers restore.
 fn wire_double_click(inner: &Rc<Inner>) {
@@ -531,7 +476,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn restore_action_fires_callback() {
+    fn mini_2_restore_action_reopens_full_window() {
         if gtk4::init().is_err() {
             return;
         }
@@ -645,32 +590,38 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn mini_2_close_button_quits_the_app() {
+    fn mini_2_quit_action_quits_the_app() {
         if gtk4::init().is_err() {
             return;
         }
+        // The card carries no ✕: Quit is reachable from the context menu
+        // (MINI-3) and Ctrl+Q (MINI-4); both route through the "quit" action.
         let player = CompactPlayer::new();
         let quit = Rc::new(Cell::new(false));
         let q = quit.clone();
         player.set_on_quit(Rc::new(move || q.set(true)));
-        player.0.widgets.close_button.emit_clicked();
-        assert!(quit.get(), "the close button must quit the app (MINI-2)");
+        player.0.menu.action_group.activate_action("quit", None);
+        assert!(quit.get(), "the quit action must quit the app (MINI-2)");
     }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn mini_2_restore_button_restores_full_window() {
+    fn mini_waveform_progress_uses_playback_accent() {
         if gtk4::init().is_err() {
             return;
         }
         let player = CompactPlayer::new();
-        let restored = Rc::new(Cell::new(false));
-        let r = restored.clone();
-        player.set_on_restore(Rc::new(move || r.set(true)));
-        player.0.widgets.restore_button.emit_clicked();
+        // Real peaks + a mid-track position: the mini waveform draws the true
+        // shape with progress, not the pseudo-random skeleton fallback.
+        player.set_peaks(vec![80u8, 200, 40, 255, 120, 60, 180, 30]);
+        player.set_position(30_000, 60_000);
         assert!(
-            restored.get(),
-            "the restore button must reopen the full window (MINI-2)"
+            player.0.widgets.waveform.has_raw_peaks_for_test(),
+            "compact set_peaks must reach the mini waveform"
         );
+        // Played bars take the cover accent (the same @reprise_player_accent as
+        // the play button); unplayed bars stay dim white (frame 1e).
+        let css = crate::ui::compact::compact_player_layouts::mini_css();
+        assert!(css.contains(".waveform-seek { color: @reprise_player_accent; }"));
     }
 }
