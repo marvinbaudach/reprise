@@ -23,33 +23,6 @@ pub(crate) fn is_audio_file(path: &Path) -> bool {
         .is_some_and(|extension| AUDIO_EXTENSIONS.contains(&extension.as_str()))
 }
 
-fn count_audio_files(root: &Path) -> u64 {
-    walkdir::WalkDir::new(root)
-        .follow_links(false)
-        .into_iter()
-        .filter_map(Result::ok)
-        .filter(|entry| entry.file_type().is_file() && is_audio_file(entry.path()))
-        .count() as u64
-}
-
-struct ScanProgressReporter<'a> {
-    callback: &'a mut dyn FnMut(ScanProgress),
-    processed: u64,
-    total: u64,
-}
-
-impl ScanProgressReporter<'_> {
-    fn advance(&mut self, path: &Path) {
-        self.processed += 1;
-        self.total = self.total.max(self.processed);
-        (self.callback)(ScanProgress::Scanning {
-            processed: self.processed,
-            total: self.total,
-            current_path: path.to_path_buf(),
-        });
-    }
-}
-
 pub(crate) fn file_mtime(path: &Path) -> i64 {
     std::fs::metadata(path)
         .and_then(|m| m.modified())
@@ -142,12 +115,8 @@ pub fn scan_folder_with_progress(
     mut on_progress: impl FnMut(ScanProgress),
 ) -> Result<ScanOutcome, ScanError> {
     on_progress(ScanProgress::Discovering);
-    let total = count_audio_files(root);
-    let reporter = ScanProgressReporter {
-        callback: &mut on_progress,
-        processed: 0,
-        total,
-    };
+    let total = scan_progress::count_audio_files(root);
+    let reporter = scan_progress::ScanProgressReporter::new(&mut on_progress, total);
     scan_folder_inner(conn, root, Some(reporter))
 }
 
@@ -250,7 +219,7 @@ pub fn scan_folder_with_progress(
 fn scan_folder_inner(
     conn: &mut Connection,
     root: &Path,
-    mut progress: Option<ScanProgressReporter<'_>>,
+    mut progress: Option<scan_progress::ScanProgressReporter<'_>>,
 ) -> Result<ScanOutcome, ScanError> {
     debug_assert!(
         root.is_absolute(),
@@ -617,16 +586,45 @@ fn scan_folder_inner(
         }
     } else {
         report.vanished = vanish::mark_vanished(&tx, candidates)?;
+        // T0.3: one collective change-log row per scan that actually touched
+        // the catalog (never per track, never for a no-op reconcile), inside
+        // the same transaction as the walk so the event and the rows it
+        // announces commit together. Foreign scanners (`reprise-cli scan`)
+        // wake the running app through this; the app's own scans carry its
+        // writer token and are filtered out by its own consumer.
+        if scan_touched_library(&report) {
+            crate::events::record(&tx, "library", "", "scan")?;
+        }
         ScanOutcome::Completed(report)
     };
     tx.commit()?;
     Ok(outcome)
 }
 
+/// Whether a completed scan changed anything a consumer's view reflects — any
+/// catalog upsert/move/vanish/exclusion or an import-error row added or healed.
+/// A scan that only skipped unchanged files leaves every view identical and so
+/// logs no event.
+fn scan_touched_library(report: &ScanReport) -> bool {
+    report.added
+        + report.updated
+        + report.moved
+        + report.vanished
+        + report.excluded
+        + report.healed
+        + report.errors
+        > 0
+}
+
 // Task 1.5: the vanish-mark phase `scan_folder_inner` folds in above lives in
 // its own file purely to keep this one under the project's 800-line rule —
 // see `scanner_vanish.rs`'s own module doc comment. Not `#[cfg(test)]`: this
 // is production code, always compiled.
+// Scan progress counting/reporting lives in its own file for the same
+// 800-line reason — see `scanner_progress.rs`'s own module doc comment.
+#[path = "scanner_progress.rs"]
+mod scan_progress;
+
 #[path = "scanner_vanish.rs"]
 mod vanish;
 

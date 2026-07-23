@@ -78,10 +78,10 @@ use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
 
 pub(in crate::ui) use super::track_list_callbacks::{
-    OnActivate, OnGoToAlbum, OnGoToArtist, OnLibraryMutated, OnQueueActivate,
-    OnQueueMoveToTop, OnQueueRemove, OnQueueReorder, OnQueueSelected, OnReload,
-    OnScanQueuePurgeIds, OnSearchRestored, OnShowMissing, OnShowMissingFiles,
-    OnSidebarPlaylistDrop, OnSidebarQueueDrop, OnTagsMutated,
+    OnActivate, OnGoToAlbum, OnGoToArtist, OnLibraryMutated, OnQueueActivate, OnQueueMoveToTop,
+    OnQueueRemove, OnQueueReorder, OnQueueSelected, OnReload, OnScanQueuePurgeIds,
+    OnSearchRestored, OnShowMissing, OnShowMissingFiles, OnSidebarPlaylistDrop, OnSidebarQueueDrop,
+    OnTagsMutated,
 };
 pub(in crate::ui) use super::track_list_toast::show_toast;
 

@@ -287,7 +287,9 @@ mod tests {
             .collect::<Vec<_>>();
         write_wav(&path, &samples);
 
-        let peaks = GstreamerWaveformBackend.extract_peaks(&path, 1_000).unwrap();
+        let peaks = GstreamerWaveformBackend
+            .extract_peaks(&path, 1_000)
+            .unwrap();
         assert_eq!(peaks.len(), 1_000);
         assert!(peaks.iter().any(|peak| *peak > 0));
     }

@@ -72,6 +72,10 @@ pub use tag_edit::*;
 mod track_menu;
 pub use track_menu::*;
 
+#[path = "strings_instrumental.rs"]
+mod instrumental;
+pub use instrumental::*;
+
 #[path = "strings_stats.rs"]
 mod stats;
 pub use stats::*;

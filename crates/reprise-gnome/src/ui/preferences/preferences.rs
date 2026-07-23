@@ -255,6 +255,7 @@ impl PreferencesContext {
                     super::preference_sync::build_page(&self.device_sync, &self.track_list)
                 }
                 PageId::Plugins => self.plugins_page(),
+                PageId::Experimental => super::preference_experimental::build_page(&self.conn),
             };
             (id, page)
         });

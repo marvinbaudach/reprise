@@ -140,6 +140,75 @@ Negative timing and memory deltas are improvements. Compare the same build and
 host conditions; these values are diagnostic evidence, not portable CI timing
 thresholds.
 
+## Cross-process tests (CLI and MCP)
+
+The `reprise-cli` and `reprise-mcp` surfaces are separate processes over the
+same SQLite file, so their integration tests exercise the real binaries rather
+than in-process calls. This is the display-free cross-process layer of the
+multi-frontend-core test strategy; it is deterministic and part of the default
+`cargo test --workspace` run.
+
+### CARGO_BIN_EXE against temporary databases
+
+Each integration test runs the built binary through Cargo's
+`CARGO_BIN_EXE_reprise-cli` / `CARGO_BIN_EXE_reprise-mcp` env var against a
+throwaway database in a `TempDir`. The CLI always receives `--db <temp>` and
+the MCP server is spawned with `--db <temp>`, so automation can never reach the
+maintainer's real library at `~/.local/share/reprise/reprise.db`. Tests
+arrange and inspect that temp database through the same `reprise-core` facades
+the surfaces use; test-fixture SQL is explicitly permitted by
+`scripts/check-architecture.sh` (the no-SQL-outside-core gate covers productive
+`src/` only). A shared harness owns the temp dir (keeping the `-wal`/`-shm`
+siblings alive), exposes a core-opened connection for assertions, and reads the
+change log through `events::read_since`, so each command's mutation can be
+proven to append exactly one change-log row.
+
+### Busy-retry under a held foreign write transaction
+
+WAL allows many readers but one writer at a time, so the surfaces must wait out
+a briefly held foreign write rather than fail busy. A test spawns a helper
+thread that opens its own connection, takes the single WAL writer slot with
+`BEGIN IMMEDIATE` plus a write, and holds it for a named interval while the real
+binary contends for the same database from another process/thread. The CLI's
+facade retry plus SQLite's `busy_timeout` must let the contended command land
+with exit 0; a companion test runs four concurrent CLI processes and asserts
+all four succeed and log exactly one change-log row each. Timeouts are generous
+named constants so a genuine deadlock still fails the test instead of hanging.
+
+### MCP stdio JSON-RPC fixtures
+
+The MCP tests speak newline-delimited JSON-RPC over the spawned server's stdio —
+the same wire an agent client uses — and complete the real `initialize` /
+`notifications/initialized` handshake. A background thread drains stdout into a
+channel so every read has a generous timeout (long enough to absorb a full 5 s
+`busy_timeout`, short enough that a true hang fails), and stderr is collected
+separately to prove logging never contaminates stdout: every stdout line must
+parse as JSON, keeping the protocol stream pure. Canonical request/response
+frames live under `tests/fixtures/` and are replayed against the live server,
+so a bump of the pinned `rmcp` SDK or an accidental change to a tool's shape
+surfaces as a failing fixture rather than silent drift; the negotiated protocol
+revision is pinned as a fixture for the same reason. Capability keys
+(`agent.capability.*`) are set fail-closed through the core facade, and a leak
+matrix asserts responses never carry file paths, XDG markers, lyrics,
+credentials, or serial numbers (spec D19).
+
+### Notifier polling-degradation caveat
+
+`core::events::Notifier::start` returns `Option<Handle>` and never fails
+fatally. It arms a filesystem watch on the database directory and, after a
+250 ms debounce, checks `PRAGMA data_version` — which advances only when
+another connection commits, making a same-process second connection an exact
+stand-in for a foreign writer in tests (a test seam starts the degraded path
+directly, so it can be exercised headlessly). When the watch cannot be armed —
+a network filesystem, or **a host whose inotify watch limit is exhausted** — the
+Notifier degrades to plain 2-second polling instead of giving up. Cross-process
+visibility therefore still works on such a host, but at the fallback cadence
+(the plan's ≤ 1 s armed / ≤ 3 s fallback visibility budget), so a test that
+asserts sub-second live refresh must either force the armed path or tolerate the
+2 s fallback window. On CI or developer machines running many watchers, raise
+`fs.inotify.max_user_watches` if live-refresh display tests look slow rather
+than broken.
+
 ## Required merge gates
 
 Every branch intended for `main` must pass `scripts/check-merge-readiness.sh`.

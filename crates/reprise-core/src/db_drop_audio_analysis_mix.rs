@@ -40,14 +40,14 @@ mod tests {
     }
 
     #[test]
-    fn fresh_migrate_drops_retired_tables_and_reaches_v27() {
+    fn fresh_migrate_drops_retired_tables_and_reaches_current_schema() {
         let conn = crate::db::open(None).unwrap();
         crate::db::migrate(&conn).unwrap();
 
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 27);
+        assert_eq!(version, crate::db::SUPPORTED_SCHEMA_VERSION);
         assert!(!table_exists(&conn, "track_audio_analysis"));
         assert!(!table_exists(&conn, "mix_drafts"));
         assert!(!table_exists(&conn, "mix_draft_tracks"));
@@ -61,6 +61,6 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 27);
+        assert_eq!(version, crate::db::SUPPORTED_SCHEMA_VERSION);
     }
 }

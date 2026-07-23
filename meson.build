@@ -21,6 +21,7 @@ custom_target(
     meson.project_build_root(),
     '@OUTPUT@',
     localedir,
+    get_option('stem_backend').to_string(),
   ],
   env: {'MESON_BUILD_PROFILE': get_option('profile')},
   build_by_default: true,

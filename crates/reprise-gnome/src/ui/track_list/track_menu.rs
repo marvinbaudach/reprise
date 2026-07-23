@@ -38,6 +38,7 @@ impl MenuContext {
             | ViewSource::Missing
             | ViewSource::ImportErrors
             | ViewSource::MyStats
+            | ViewSource::Conversions
             | ViewSource::Device { .. } => Self::LibraryTracks,
         }
     }
@@ -275,6 +276,7 @@ mod tests {
             device: None,
             inode: None,
             playlist_position: None,
+            is_ai: false,
         }
     }
 

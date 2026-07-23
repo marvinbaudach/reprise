@@ -320,6 +320,13 @@ Credential-Werte, Tagschreiboperation, Library-Löschung, Papierkorbaktion,
 Queue-Mutation oder Playback-Steuerung. Prompts werden zunächst nicht
 exponiert; Agenten können die JSON-Schemas unmittelbar verwenden.
 
+> **Ergänzung (2026-07-21, multi-frontend-core-Plan):** Direktes
+> `music_create_playlist` (Name plus explizite Track-IDs) ist jetzt unter
+> derselben Capability `playlist:create` erlaubt; der hier beschriebene
+> Draft-Weg (`music_create_playlist_from_draft`) bleibt ein später
+> koexistierender Pfad. Überschreiben und Löschen via Agent bleiben
+> ausgeschlossen.
+
 ### D18 — Capabilities sind fail-closed
 
 Der MCP-Server startet standardmäßig mit `library:read` und `mix:plan`.

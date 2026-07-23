@@ -67,6 +67,15 @@ mod imp {
         pub sort_dir: String,
         pub filter: String,
         pub browse: BrowseFilter,
+        /// FIL-7: hide AI-flagged tracks (only honored on the flat Library
+        /// source, where the browse filter row lives).
+        pub exclude_ai: bool,
+        /// INST-10 / FIX-4: whether the windowed query projects the real `is_ai`
+        /// column (the correlated provenance `EXISTS`) or a cheap literal `0`.
+        /// Set to `experimental_enabled` when the query is (re)set — the AI badge
+        /// only renders while the experimental switch is on, so with it off the
+        /// hot windowed query pays no per-row provenance subquery.
+        pub project_ai: bool,
         /// Only meaningful when `source == ViewSource::Queue` — see
         /// `TrackListModel::set_query`'s doc comment. Empty (and ignored)
         /// for every other source.
@@ -252,6 +261,29 @@ impl TrackListModel {
         browse: &BrowseFilter,
         queue_ids: &[i64],
     ) {
+        self.set_query_browsed_ai(
+            source, sort_field, sort_dir, filter, browse, queue_ids, false,
+        );
+    }
+
+    /// Like [`set_query_browsed`](Self::set_query_browsed) but honoring the
+    /// FIL-7 AI-exclude filter. When `exclude_ai` is set the window uses the
+    /// core `*_ai` query and the row **count** uses the cheap core
+    /// `query_track_count_browsed_ai` (a `COUNT(*)`), so the total is exact even
+    /// for very large libraries — no longer the `QUEUE_LIMIT`-capped id-list
+    /// length. When that count reaches the cap the view's "play all" queue will
+    /// be truncated, so it logs the conventional `is_queue_capped` warning.
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_query_browsed_ai(
+        &self,
+        source: &ViewSource,
+        sort_field: &str,
+        sort_dir: &str,
+        filter: &str,
+        browse: &BrowseFilter,
+        queue_ids: &[i64],
+        exclude_ai: bool,
+    ) {
         let old_total = self.imp().state.borrow().total;
 
         let Some(conn) = self.imp().conn.borrow().clone() else {
@@ -259,16 +291,47 @@ impl TrackListModel {
             return;
         };
 
-        let new_total = {
+        let new_total = if exclude_ai {
             let conn_ref = conn.borrow();
-            match queries::query_track_count_browsed(&conn_ref, source, filter, browse, queue_ids) {
-                Ok(n) => n.max(0) as u32,
-                Err(error) => {
-                    tracing::error!(%error, source = %source.label(), sort_field, sort_dir, filter, "failed to count tracks for query");
+            queries::query_track_count_browsed_ai(
+                &conn_ref, source, filter, browse, queue_ids, true,
+            )
+            .map_or_else(
+                |error| {
+                    tracing::error!(%error, "failed to count non-AI tracks for query");
                     0
-                }
-            }
+                },
+                |count| {
+                    let total = count.max(0) as u32;
+                    // The count is exact now, but the "play all" queue this view
+                    // feeds still caps at QUEUE_LIMIT — warn per convention when
+                    // the view is that large, so the truncation is not silent.
+                    if queries::is_queue_capped(total as usize) {
+                        tracing::warn!(
+                            limit = queries::QUEUE_LIMIT,
+                            "AI-filtered view queue capped at {} tracks",
+                            queries::QUEUE_LIMIT
+                        );
+                    }
+                    total
+                },
+            )
+        } else {
+            let conn_ref = conn.borrow();
+            queries::query_track_count_browsed(&conn_ref, source, filter, browse, queue_ids)
+                .map_or_else(
+                    |error| {
+                        tracing::error!(%error, source = %source.label(), "failed to count tracks for query");
+                        0
+                    },
+                    |n| n.max(0) as u32,
+                )
         };
+
+        // INST-10 / FIX-4: the AI badge (and so the `is_ai` column) is needed
+        // only while the experimental switch is on. Cache that here so the hot
+        // windowed query pays the correlated provenance subquery only then.
+        let project_ai = crate::ui::instrumental::experimental_enabled(&conn.borrow());
 
         {
             let mut state = self.imp().state.borrow_mut();
@@ -277,6 +340,8 @@ impl TrackListModel {
             state.sort_dir = sort_dir.to_string();
             state.filter = filter.to_string();
             state.browse = browse.clone();
+            state.exclude_ai = exclude_ai;
+            state.project_ai = project_ai;
             state.queue_ids = queue_ids.to_vec();
             state.virtual_queue = None;
             state.total = new_total;
@@ -289,6 +354,7 @@ impl TrackListModel {
             sort_field,
             sort_dir,
             filter,
+            exclude_ai,
             "model query set"
         );
 
@@ -324,7 +390,17 @@ impl TrackListModel {
             return None;
         };
 
-        let (source, sort_field, sort_dir, filter, browse, queue_ids, virtual_queue) = {
+        let (
+            source,
+            sort_field,
+            sort_dir,
+            filter,
+            browse,
+            exclude_ai,
+            project_ai,
+            queue_ids,
+            virtual_queue,
+        ) = {
             let state = self.imp().state.borrow();
             (
                 state.source.clone(),
@@ -332,6 +408,8 @@ impl TrackListModel {
                 state.sort_dir.clone(),
                 state.filter.clone(),
                 state.browse.clone(),
+                state.exclude_ai,
+                state.project_ai,
                 state.queue_ids.clone(),
                 state.virtual_queue.clone(),
             )
@@ -352,7 +430,7 @@ impl TrackListModel {
 
         let rows = {
             let mut conn = conn.borrow_mut();
-            queries::query_track_window_browsed(
+            queries::query_track_window_browsed_ai(
                 &mut conn,
                 &source,
                 &sort_field,
@@ -362,6 +440,8 @@ impl TrackListModel {
                 query_offset,
                 i64::from(WINDOW_SIZE),
                 &queue_ids,
+                exclude_ai,
+                project_ai,
             )
         };
 

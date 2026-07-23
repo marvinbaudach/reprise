@@ -534,3 +534,29 @@ fn restored_source_reuses_the_vanished_source_fallback() {
         ViewSource::Queue
     );
 }
+
+// UX INST-13: the instrumental conversions view is reachable from the sidebar
+// only while the experimental switch is on (INST-11) — the row appears when the
+// switch is on and is absent when it is off.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn inst_13_experimental_switch_reveals_the_conversions_sidebar_row() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let shared = test_shared();
+
+    // Off by default: no conversions row.
+    rebuild(&shared, None, "test build");
+    assert!(
+        find_row(&shared, &ViewSource::Conversions).is_none(),
+        "the conversions row is hidden while experimental is off"
+    );
+
+    // On: the row appears after a rebuild.
+    crate::ui::instrumental::set_experimental_enabled(&shared.conn.borrow(), true).unwrap();
+    rebuild(&shared, None, "experimental enabled");
+    assert!(
+        find_row(&shared, &ViewSource::Conversions).is_some(),
+        "the conversions row appears once experimental is on (INST-13)"
+    );
+}

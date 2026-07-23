@@ -647,7 +647,6 @@ impl NowPlayingPanel {
             callback();
         }
     }
-
 }
 
 pub(in crate::ui) fn css() -> String {

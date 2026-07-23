@@ -1,0 +1,18 @@
+{
+  "jobs": [
+    {
+      "job_id": 1,
+      "kind": "instrumental",
+      "state": "queued",
+      "progress_permille": 0,
+      "batch_id": null,
+      "source_track_id": 1,
+      "result_track_id": null,
+      "cancel_requested": false,
+      "error_kind": null,
+      "created_at": 1000,
+      "finished_at": null
+    }
+  ],
+  "batch": null
+}
