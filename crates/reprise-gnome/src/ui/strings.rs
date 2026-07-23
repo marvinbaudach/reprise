@@ -349,8 +349,6 @@ pub const COLUMN_PLAY_COUNT: &str = N_!("Plays");
 // tooltip (src/ui/rating.rs) are the same word, so one const serves both.
 
 // Player bar (src/ui/player_bar.rs).
-pub const PLAY: &str = N_!("Play");
-pub const PAUSE: &str = N_!("Pause");
 pub const PLAYBACK_POSITION: &str = N_!("Playback position");
 pub const VOLUME: &str = N_!("Volume");
 pub const SHUFFLE: &str = N_!("Shuffle");

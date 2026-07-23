@@ -1990,8 +1990,9 @@ Dateien.
   zurück landet exakt dort. Es ist dasselbe, undekorierte Fenster; die Karte
   IST die Fläche: 430×76, Radius 16, Tint rgba(34,34,34,0.92), 1 px Hairline,
   opak — kein Live-Blur (STYLE-1); das Fenster selbst ist transparent (CSS),
-  damit nur die Karte mit Schatten schwebt — die Fenstergröße ist Karte plus
-  Rand-Marge ringsum, nicht die Kartengröße. Layout nach Frame 1e: Cover 52/Radius 10
+  sodass nur die Karte schwebt — die Fenstergröße IST die Kartengröße (430×76),
+  die Karte füllt das transparente Fenster randlos (jede positive Marge ließe die
+  opake Adwaita-Fläche als „Rückenplatte" durchscheinen). Layout nach Frame 1e: Cover 52/Radius 10
   mit Inset-Hairline; Titel 13 px bold und Artist 11,5 px auf einer
   ellipsierenden Baseline-Zeile (Titel priorisiert, Artist-Kontrast ≥ 4,5:1
   auf dem Tint); darunter die Mini-Waveform (46 gleichbreite Bars, gespielter
@@ -2000,14 +2001,13 @@ Dateien.
   bewusste Reduktion. Die Compact-Geometrie ist von der Vollfenster-Größe
   isoliert.
 
-- **MINI-2** [aktiv] [gtk] — **Hover-Chrome: ⤢ stellt her, ✕ beendet.** Hover
-  (oder Tastaturfokus) über der Karte blendet oben rechts zwei
-  26-px-Kreisbuttons ein (Fade). ⤢ „Restore full window (Ctrl+M)" kehrt zum
-  Vollfenster zurück; ✕ „Quit Reprise (Ctrl+Q)" beendet die App
-  (Standard-Fenster-Semantik, kein Hintergrund-Daemon in v1). Die Tooltips
-  machen den destruktiven Unterschied explizit — wer nur das große Fenster
-  will, nutzt ⤢/Ctrl+M. Die ganze Karte ist Drag-Fläche (GtkWindowHandle),
-  außer Play-Button, Waveform und den Hover-Buttons.
+- **MINI-2** [aktiv] [gtk] — **Chromelose Karte — keine Hover-Buttons.** Die
+  Karte trägt sichtbar nur den Play/Pause-Button; es gibt keine eingeblendete
+  ⤢/✕-Chrome. Restore und Quit sind bewusst nur über das Rechtsklick-Menü
+  (MINI-3), die Tastatur (Ctrl+M zurück ins Vollfenster, Ctrl+Q beendet) und
+  einen Doppelklick auf Cover/Titel (= Restore) erreichbar. So schwebt die Karte
+  ungestört und ein Play-Klick kann nie versehentlich ein ✕ (Quit) treffen. Die
+  ganze Karte ist Drag-Fläche (GtkWindowHandle), außer Play-Button und Waveform.
 
 - **MINI-3** [aktiv] [gtk] — **Rechtsklick-Menü mit fester Reihenfolge.**
   Rechtsklick, Menütaste oder Shift+F10 öffnet: Restore Full Window (Ctrl+M) ·

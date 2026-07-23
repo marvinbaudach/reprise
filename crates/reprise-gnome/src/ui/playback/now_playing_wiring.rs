@@ -302,6 +302,7 @@ impl PlayerController {
         let waveform_generation = self.waveform_generation.clone();
         let waveform_backend = self.waveform_backend.clone();
         let waveform = self.bar.waveform_handle();
+        let compact_player = self.compact_player.clone();
         let db_path = reprise_core::db::default_path();
         let track_path = std::path::PathBuf::from(path);
         let Ok(receiver) = one_shot_task::spawn("reprise-waveform", move || {
@@ -328,6 +329,9 @@ impl PlayerController {
         glib::spawn_future_local(async move {
             if let Ok(Some(peaks)) = receiver.recv().await {
                 if waveform_generation.get() == generation {
+                    // Same peaks feed both players so the mini waveform (frame
+                    // 1e) shows the real shape + progress, not the skeleton.
+                    compact_player.set_peaks(peaks.clone());
                     waveform.set_peaks(peaks);
                 }
             }
