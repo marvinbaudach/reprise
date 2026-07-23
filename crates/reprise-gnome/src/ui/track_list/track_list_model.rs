@@ -394,13 +394,20 @@ impl TrackListModel {
     /// Invalidates the cached window covering `position` and fires
     /// `items_changed(position, 1, 1)` so anything bound to the model
     /// (`GtkColumnView`/`NoSelection`) re-pulls that exact row via `item()`.
-    /// Used after a rating write (`track_list.rs`): the database now holds
-    /// the new value, but the model's cache still holds the `Track` clone
-    /// from before the write, and dropping the *whole* cache (as
-    /// `set_query` does) would be a much heavier hammer for a one-row
-    /// change. Out-of-range positions are logged and ignored rather than
-    /// panicking, matching every other fallible path on this type.
-    pub fn invalidate_window_at(&self, position: u32) {
+    /// Out-of-range positions are logged and ignored rather than panicking,
+    /// matching every other fallible path on this type.
+    ///
+    /// CAUTION: that one-row `items_changed` is a *fake* remove+insert, which
+    /// makes GtkColumnView replace the row widget under the pointer/focus and
+    /// snap the viewport to the TOP — the "double-click / rating jumps to the
+    /// top" bug. Do NOT use this to reflect a change on a row the user just
+    /// interacted with. For a rating write use [`Self::set_cached_rating`] (the
+    /// star widget already shows the value; only the cache needs patching), and
+    /// for the now-playing marker use `now_playing_marker`'s in-place
+    /// re-appliers — both update visible cells with no signal and no jump. This
+    /// remains only for a genuine row-content change that is NOT under the
+    /// pointer (currently none in the UI, hence `pub(in crate::ui)`).
+    pub(in crate::ui) fn invalidate_window_at(&self, position: u32) {
         let total = self.imp().state.borrow().total;
         if position >= total {
             tracing::warn!(
@@ -415,6 +422,30 @@ impl TrackListModel {
         self.imp().state.borrow_mut().cache.remove(&window_start);
 
         self.items_changed(position, 1, 1);
+    }
+
+    /// Patches the cached `Track`'s rating at `position` IN PLACE, emitting no
+    /// model signal. Counterpart to [`Self::invalidate_window_at`] for the one
+    /// case where the visible cell is already correct: a star-rating click runs
+    /// `RatingWidget::set_rating` before this, so only the model's cached clone
+    /// is stale. `invalidate_window_at`'s `items_changed(pos, 1, 1)` would fix
+    /// that clone too, but its fake remove+insert makes GtkColumnView replace
+    /// the row widget under the pointer and snap the viewport back to the top —
+    /// the long-standing "rating click jumps to the top" bug. Patching the
+    /// cached value directly keeps a later scroll-away/back correct WITHOUT any
+    /// signal. If the covering window is not cached there is nothing to patch:
+    /// the next `track_at` re-reads the (already-updated) row from SQL.
+    pub fn set_cached_rating(&self, position: u32, rating: i32) {
+        let window_start = (position / WINDOW_SIZE) * WINDOW_SIZE;
+        let offset_in_window = (position - window_start) as usize;
+        let mut state = self.imp().state.borrow_mut();
+        if let Some(track) = state
+            .cache
+            .get_mut(&window_start)
+            .and_then(|window| window.get_mut(offset_in_window))
+        {
+            track.rating = rating;
+        }
     }
 
     /// Test-only accessor exposing the set of currently cached window-start
@@ -606,6 +637,41 @@ mod tests {
         model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
         // Must not panic.
         model.invalidate_window_at(5);
+    }
+
+    #[test]
+    fn set_cached_rating_patches_the_cache_without_a_model_signal() {
+        let model = seeded_model(&[("Zulu", "AAA"), ("Alpha", "BBB")]);
+        model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
+        // Prime the cache for the window covering rows 0..2.
+        assert_eq!(model.track_at(0).unwrap().rating, 0);
+
+        // `items_changed` is the fake remove+insert that snaps the ColumnView
+        // viewport to the top on a rating click; the in-place path must emit
+        // none.
+        let signals = Rc::new(std::cell::Cell::new(0u32));
+        let signals_for_cb = signals.clone();
+        model.connect_items_changed(move |_, _, _, _| {
+            signals_for_cb.set(signals_for_cb.get() + 1);
+        });
+
+        model.set_cached_rating(0, 5);
+
+        // The cached clone the model hands back on a later scroll-away/back now
+        // carries the new rating...
+        assert_eq!(model.track_at(0).unwrap().rating, 5);
+        // ...and no remove+insert was emitted.
+        assert_eq!(signals.get(), 0);
+    }
+
+    #[test]
+    fn set_cached_rating_on_an_uncached_window_is_a_no_op() {
+        let model = seeded_model(&[("Alpha", "BBB")]);
+        model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
+        // Nothing cached for any window yet; must not panic, and the next read
+        // pulls fresh from SQL (unchanged there in this test).
+        model.set_cached_rating(0, 3);
+        assert_eq!(model.track_at(0).unwrap().rating, 0);
     }
 
     /// Regression test: eviction (`MAX_CACHED_WINDOWS` = 8, drop the
