@@ -85,8 +85,6 @@ pub struct PlayerBar {
     position_label: gtk4::Label,
     duration_label: gtk4::Label,
     waveform: WaveformSeek,
-    #[cfg(test)]
-    analysis_info_button: gtk4::Button,
     /// Inline volume slider (replaces the old `ScaleButton`).
     volume_scale: gtk4::Scale,
     /// Volume icon button — click toggles mute.
@@ -119,7 +117,6 @@ pub struct PlayerBar {
     /// Callback fired when the user clicks the artist label — navigates to
     /// the artist view (spec 1.5).
     on_artist_click: crate::ui::link_activation::ActivationSlot,
-    on_analysis_click: crate::ui::link_activation::ActivationSlot,
     /// The currently-running track-change cross-fade animation (Task 9).
     /// Held here to prevent GC between ticks; replaced on each new fade.
     current_track_animation: Rc<RefCell<Option<libadwaita::TimedAnimation>>>,
@@ -152,7 +149,6 @@ impl PlayerBar {
             position_label,
             duration_label,
             waveform,
-            analysis_info_button,
             volume_icon,
             volume_scale,
             ..
@@ -213,17 +209,6 @@ impl PlayerBar {
         });
         artist_label.add_controller(artist_motion);
 
-        let on_analysis_click: crate::ui::link_activation::ActivationSlot =
-            Rc::new(RefCell::new(None));
-        let analysis_click_cb = on_analysis_click.clone();
-        analysis_info_button.connect_clicked(move |button| {
-            button.grab_focus();
-            let callback = analysis_click_cb.borrow().clone();
-            if let Some(callback) = callback {
-                callback();
-            }
-        });
-
         let bar = Self {
             root,
             cover,
@@ -241,8 +226,6 @@ impl PlayerBar {
             position_label,
             duration_label,
             waveform,
-            #[cfg(test)]
-            analysis_info_button,
             volume_scale,
             volume_icon,
             duration_ms: Rc::new(Cell::new(0)),
@@ -255,7 +238,6 @@ impl PlayerBar {
             on_title_click,
             on_cover_click,
             on_artist_click,
-            on_analysis_click,
             current_track_animation: Rc::new(RefCell::new(None)),
             track_animation_generation: Rc::new(Cell::new(0)),
             current_icon_animation: Rc::new(RefCell::new(None)),
@@ -298,10 +280,6 @@ impl PlayerBar {
     /// should navigate to the artist view (spec 1.5).
     pub fn connect_artist_clicked<F: Fn() + 'static>(&self, f: F) {
         *self.on_artist_click.borrow_mut() = Some(Rc::new(f));
-    }
-
-    pub fn connect_analysis_clicked<F: Fn() + 'static>(&self, f: F) {
-        *self.on_analysis_click.borrow_mut() = Some(Rc::new(f));
     }
 
     /// Shows `title`/`artist` in the left-hand labels. Called on row

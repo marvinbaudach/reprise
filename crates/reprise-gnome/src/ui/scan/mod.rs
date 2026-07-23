@@ -1,4 +1,3 @@
-pub(in crate::ui) mod audio_analysis_runtime;
 pub(crate) mod scan_card_css;
 pub(in crate::ui) mod scan_controls;
 pub(crate) mod scan_flow;
