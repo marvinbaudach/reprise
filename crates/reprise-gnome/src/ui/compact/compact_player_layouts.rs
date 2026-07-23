@@ -16,8 +16,15 @@ const COVER_SIZE: i32 = 52;
 const PLAY_SIZE: i32 = 38;
 const CARD_RADIUS: i32 = 16;
 const COVER_RADIUS: i32 = 10;
-const PADDING: i32 = 12;
+/// Transparent breathing room around the card inside the borderless window —
+/// the room the drop shadow renders into. The compact window is sized to
+/// MINI_WIDTH/HEIGHT plus this margin on every side (MINI-1).
+pub(in crate::ui) const CARD_MARGIN: i32 = 12;
 const INNER_SPACING: i32 = 13;
+
+/// Applied to the toplevel while compact so the borderless card floats on a
+/// transparent window instead of a second opaque, rounded adwaita surface.
+pub(in crate::ui) const CSS_WINDOW_CLASS: &str = "reprise-mini-window";
 
 const CSS_CARD: &str = "mini-player-card";
 const CSS_COVER: &str = "mini-player-cover";
@@ -100,10 +107,10 @@ pub(in crate::ui) fn build_mini() -> MiniWidgets {
 
     // — Card (cover | text | play) —
     let card = gtk4::Box::new(gtk4::Orientation::Horizontal, INNER_SPACING);
-    card.set_margin_start(PADDING);
-    card.set_margin_end(PADDING);
-    card.set_margin_top(PADDING);
-    card.set_margin_bottom(PADDING);
+    card.set_margin_start(CARD_MARGIN);
+    card.set_margin_end(CARD_MARGIN);
+    card.set_margin_top(CARD_MARGIN);
+    card.set_margin_bottom(CARD_MARGIN);
     card.append(&cover);
     card.append(&text_col);
     card.append(&play_pause_button);
@@ -214,7 +221,10 @@ pub(in crate::ui) fn mini_css() -> String {
          .{CSS_ICON_BTN}:hover {{ background-color: alpha(@window_bg_color, 0.95); }}\n\
          .{CSS_VOL_BAR} {{ background-color: @reprise_player_accent; \
            border-radius: 0 {CARD_RADIUS}px 0 {CARD_RADIUS}px; }}\n\
-         .waveform-seek {{ color: @reprise_player_accent; }}"
+         .waveform-seek {{ color: @reprise_player_accent; }}\n\
+         window.{CSS_WINDOW_CLASS} {{ background-color: transparent; box-shadow: none; }}\n\
+         window.{CSS_WINDOW_CLASS} .background {{ \
+           background-color: transparent; box-shadow: none; }}"
     )
 }
 
@@ -235,6 +245,9 @@ mod tests {
         assert!(css.contains("@reprise_player_accent"));
         assert!(css.contains("rgba(34, 34, 34, 0.92)"));
         assert!(css.contains("border-radius: 16px"));
+        // The window floats the card on a transparent toplevel (MINI-1).
+        assert!(css.contains(CSS_WINDOW_CLASS));
+        assert!(css.contains("background-color: transparent"));
     }
 
     #[test]
