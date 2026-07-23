@@ -27,10 +27,7 @@ fn mode_labels_match_visual_mode_order() {
         .map(|&mode| strings::text(mode_label(mode)))
         .collect();
     let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
-    assert_eq!(
-        labels,
-        ["Grid", "Bars", "Flow", "Pulse", "Particles", "Neon"]
-    );
+    assert_eq!(labels, ["Grid", "Bars", "Flow", "Pulse"]);
 }
 
 #[test]
@@ -93,26 +90,18 @@ fn ac_10_fullscreen_chrome_builds_and_tears_down_without_panicking() {
     assert!(visualizer.fullscreen_chrome.borrow().is_none());
 }
 
-/// Builds an engine that has just been hammered by a beat-then-drop: playing,
-/// accented, 20 silent frames (settles the envelopes at rest), one
+/// Builds an engine that has just been hammered by a beat-then-sustain:
+/// playing, accented, 20 silent frames (settles the envelopes at rest), one
 /// full-spectrum impact frame (fires the beat/kick off the silence-to-loud
 /// flux jump — a real kick is broadband for an instant), then 9 frames of a
-/// realistic bass-heavy sustain.
+/// realistic bass-heavy, treble-light sustain.
 ///
-/// The sustain is intentionally *not* fed from silence directly: the
-/// engine's per-band auto-gain (`SpectrumAnalyzer::ingest`, `playback.rs`)
-/// tracks each band's own recent peak and snaps its ratio to `1.0` the
-/// instant a band first exceeds that peak, so any spectrum shape held
-/// constant over several frames converges to a uniform wall regardless of
-/// its per-bin variation — which is exactly what made the Bars mode render
-/// as a flat maxed-out slab instead of a spectrum silhouette. Leading with
-/// one loud broadband frame seeds every band's auto-gain ceiling near 1.0;
-/// the following bass-heavy, treble-light sustain then reads back as
-/// genuine relative contrast (bass stays pinned near its ceiling, treble
-/// reads well under its still-decaying one), which is what a real
-/// kick-into-sustain transient looks like. Mirrors
-/// `reprise_core::visuals::engine::lively_engine`, which is test-only and
-/// not exported across the crate boundary.
+/// With the honest-loudness spectrum mapping (`SpectrumAnalyzer::ingest`,
+/// `playback.rs`), each band's height reflects its actual level, so the
+/// bass-heavy sustain reads back as a genuine spectrum silhouette (loud bass
+/// tapering to quiet treble) rather than a flat maxed-out wall. Mirrors
+/// `reprise_core::visuals::engine::lively_engine`, which is test-only and not
+/// exported across the crate boundary.
 fn lively_engine() -> VisualEngine {
     use reprise_core::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
 
@@ -179,6 +168,65 @@ fn render_mode_gallery_ppm() {
         let path = format!("{out}/visualizer-{}.ppm", mode.id());
         std::fs::write(&path, ppm).unwrap();
         println!("wrote {path}");
+    }
+}
+
+/// Renders a Grid beat-splash sequence (a strong beat off silence, then quiet)
+/// so the eruption can be eyeballed rising and falling back. Frames written as
+/// `grid-beat-NN.ppm` into `REPRISE_VIS_OUT`.
+#[test]
+#[ignore = "visual: renders the Grid beat splash frames to REPRISE_VIS_OUT"]
+fn render_grid_beat_sequence() {
+    use reprise_core::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
+    let out = std::env::var("REPRISE_VIS_OUT").unwrap_or_else(|_| "/tmp".to_owned());
+    let (w, h) = (548.0_f32, 300.0_f32);
+
+    let mut engine = VisualEngine::new();
+    engine.set_playing(true);
+    engine.set_accent((0.22, 0.78, 0.74));
+    engine.set_mode(VisualMode::Grid);
+    let mut analyzer = SpectrumAnalyzer::new();
+    for _ in 0..25 {
+        engine.ingest(&analyzer.ingest([-80.0; SPECTRUM_ANALYSIS_BAND_COUNT]));
+        engine.tick();
+    }
+    // One full-scale broadband frame fires a strong beat → splash eruption.
+    engine.ingest(&analyzer.ingest([0.0; SPECTRUM_ANALYSIS_BAND_COUNT]));
+    engine.tick();
+
+    let capture = [0usize, 2, 4, 7, 11, 16];
+    let mut next = 0usize;
+    for step in 0..=16usize {
+        if capture.get(next) == Some(&step) {
+            let scene = engine.scene(w, h);
+            let mut surface =
+                gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, w as i32, h as i32)
+                    .unwrap();
+            {
+                let cr = gtk4::cairo::Context::new(&surface).unwrap();
+                cr.set_source_rgb(0.078, 0.094, 0.102);
+                let _ = cr.paint();
+                render::draw_scene(&cr, &scene);
+            }
+            let (iw, ih) = (w as usize, h as usize);
+            let stride = surface.stride() as usize;
+            let data = surface.data().unwrap();
+            let mut ppm = format!("P6\n{iw} {ih}\n255\n").into_bytes();
+            for y in 0..ih {
+                for x in 0..iw {
+                    let o = y * stride + x * 4;
+                    ppm.extend_from_slice(&[data[o + 2], data[o + 1], data[o]]);
+                }
+            }
+            drop(data);
+            let path = format!("{out}/grid-beat-{step:02}.ppm");
+            std::fs::write(&path, ppm).unwrap();
+            println!("wrote {path}");
+            next += 1;
+        }
+        // Quiet after the beat: isolate the eruption rising and falling back.
+        engine.ingest(&analyzer.ingest([-80.0; SPECTRUM_ANALYSIS_BAND_COUNT]));
+        engine.tick();
     }
 }
 
