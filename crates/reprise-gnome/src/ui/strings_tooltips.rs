@@ -8,7 +8,7 @@ use super::{formatted, text};
 
 pub const SHORTCUT_SEARCH: &str = N_!("Ctrl+F");
 pub const SHORTCUT_MAIN_MENU: &str = N_!("F10");
-pub const SHORTCUT_COMPACT_MODE: &str = N_!("Ctrl+M");
+pub const SHORTCUT_QUIT: &str = N_!("Ctrl+Q");
 
 pub fn shortcut_tooltip(message: &str, shortcut: &str) -> String {
     append_shortcut(&text(message), &text(shortcut))
@@ -27,7 +27,6 @@ pub const TOOLTIP_NEXT: &str = N_!("Play next track");
 
 /// Mini-player hover-overlay buttons (icon-only, TIP-1a/1b).
 pub const TOOLTIP_RESTORE_FULL_WINDOW: &str = N_!("Restore full window (Ctrl+M)");
-pub const TOOLTIP_CLOSE_MINI_PLAYER: &str = N_!("Close mini-player");
 
 // Scan sidebar-toggle and card tooltips (dynamic values allowed per TIP-5).
 
@@ -83,7 +82,7 @@ mod tests {
             (
                 "mini-player close",
                 include_str!("compact/compact_player_layouts.rs"),
-                "close_button.set_tooltip_text(Some(&strings::shortcut_tooltip(strings::TOOLTIP_CLOSE_MINI_PLAYER,strings::SHORTCUT_COMPACT_MODE,)))",
+                "close_button.set_tooltip_text(Some(&strings::shortcut_tooltip(strings::QUIT_REPRISE,strings::SHORTCUT_QUIT,)))",
             ),
         ];
 
