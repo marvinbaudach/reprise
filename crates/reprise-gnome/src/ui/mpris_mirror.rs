@@ -326,6 +326,18 @@ impl PlayerController {
             MprisCommand::SetShuffle(on) => self.mpris_set_shuffle(on),
             MprisCommand::SetLoop(repeat) => self.mpris_set_loop(repeat),
             MprisCommand::SetVolume(volume) => self.mpris_set_volume(volume),
+            // Placeholder arm only — keeps this exhaustive match (and the
+            // whole workspace) compiling now that the plan's Task 1 added
+            // the variant to `MprisCommand`. Real routing to `PlayerController
+            // ::play_from_view` lands in Task 4; until then this is
+            // unreachable (nothing dispatches `PlayTrackIds` yet — the
+            // `org.reprise.Player1` D-Bus method is Task 3).
+            MprisCommand::PlayTrackIds(ids) => {
+                tracing::warn!(
+                    count = ids.len(),
+                    "MPRIS: PlayTrackIds received before its handler is wired up (Task 4); ignoring"
+                );
+            }
         }
     }
 
