@@ -12,6 +12,8 @@ mod config;
 mod data;
 mod dto;
 mod error;
+#[cfg(feature = "mpris")]
+mod playback;
 mod server;
 mod startup;
 mod stdin_cap;
