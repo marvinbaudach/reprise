@@ -9,7 +9,7 @@ use reprise_core::library::settings::{self, CompactLayout, WindowViewMode};
 use rusqlite::Connection;
 
 use super::compact_player::CompactPlayer;
-use super::compact_player_layouts::{MINI_HEIGHT, MINI_WIDTH};
+use super::compact_player_layouts::{CARD_MARGIN, CSS_WINDOW_CLASS, MINI_HEIGHT, MINI_WIDTH};
 use super::first_run::FirstRunDecision;
 use super::strings;
 use super::window_decorations::WindowContentHost;
@@ -226,6 +226,7 @@ impl MinimalView {
         self.window.set_width_request(-1);
         self.window.set_height_request(-1);
         self.content_host.set_content(compact_root);
+        self.window.add_css_class(CSS_WINDOW_CLASS);
         self.apply_compact_metrics();
     }
 
@@ -234,6 +235,7 @@ impl MinimalView {
         // geometry. Resizing first lets the compositor draw one intermediate
         // frame with the Compact tree stretched to Library dimensions.
         self.content_host.set_content(&self.full_root);
+        self.window.remove_css_class(CSS_WINDOW_CLASS);
         self.window.set_width_request(FULL_MIN_WIDTH);
         self.window.set_height_request(FULL_MIN_HEIGHT);
         self.window.set_resizable(true);
@@ -246,11 +248,15 @@ impl MinimalView {
     }
 
     fn apply_compact_metrics(&self) {
-        let height = MINI_HEIGHT + self.content_host.additional_height();
+        // The window is the card plus its shadow-room margin on every side, so
+        // the card renders at full size with room for the drop shadow instead
+        // of overflowing a too-small toplevel (MINI-1).
+        let width = MINI_WIDTH + 2 * CARD_MARGIN;
+        let height = MINI_HEIGHT + 2 * CARD_MARGIN + self.content_host.additional_height();
         self.window.set_resizable(true);
-        self.window.set_width_request(MINI_WIDTH);
+        self.window.set_width_request(width);
         self.window.set_height_request(height);
-        self.window.set_default_size(MINI_WIDTH, height);
+        self.window.set_default_size(width, height);
         self.window.set_resizable(false);
     }
 
