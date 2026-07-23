@@ -7,17 +7,6 @@ fn migrated_conn() -> Connection {
 }
 
 #[test]
-fn ac_18_audio_analysis_defaults_on_and_round_trips() {
-    let conn = migrated_conn();
-
-    assert!(get_audio_analysis_enabled(&conn));
-    set_audio_analysis_enabled(&conn, false).unwrap();
-    assert!(!get_audio_analysis_enabled(&conn));
-    set_audio_analysis_enabled(&conn, true).unwrap();
-    assert!(get_audio_analysis_enabled(&conn));
-}
-
-#[test]
 fn compact_view_settings_default_to_library_and_card() {
     let conn = migrated_conn();
 

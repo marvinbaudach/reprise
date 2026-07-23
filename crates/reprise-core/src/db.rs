@@ -639,6 +639,7 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
     crate::db_listen_history::migrate_v24(conn)?;
     crate::db_library_exclusions::migrate_v25(conn)?;
     crate::db_new_releases_history::migrate_v26(conn)?;
+    crate::db_drop_audio_analysis_mix::migrate_v27(conn)?;
     Ok(())
 }
 
@@ -749,10 +750,6 @@ mod network_migration_tests;
 #[cfg(test)]
 #[path = "db_stats_migration_tests.rs"]
 mod stats_migration_tests;
-
-#[cfg(test)]
-#[path = "db_audio_analysis_migration_tests.rs"]
-mod audio_analysis_migration_tests;
 
 #[cfg(test)]
 #[path = "db_migration_repair_tests.rs"]

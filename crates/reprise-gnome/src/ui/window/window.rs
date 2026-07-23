@@ -104,12 +104,8 @@ pub fn build(
         .width_request(MIN_WIDTH)
         .height_request(MIN_HEIGHT)
         .build();
-    let audio_analysis_enabled = {
-        let conn = conn.borrow();
-        reprise_core::library::settings::get_audio_analysis_enabled(&conn)
-    };
-    let (waveform_backend, audio_analysis) =
-        super::window_audio_analysis::setup(db_path, &window, audio_analysis_enabled);
+    let waveform_backend: Arc<dyn WaveformBackend> =
+        Arc::new(reprise_platform_linux::waveform::GstreamerWaveformBackend);
     super::focus_evidence::install(&window);
     super::session_restore::apply_initial_geometry(&window, &session_state);
     // Headerbar title follows the currently selected `ViewSource` (Stage 3
@@ -308,9 +304,6 @@ pub fn build(
     }
     let scan_progress = ScanProgressView::new();
     let scan_controls = super::scan_flow::ScanControls::new(&scan_button, &scan_progress);
-    if let Some(runtime) = &audio_analysis {
-        scan_controls.set_audio_analysis(runtime);
-    }
     scan_controls.set_sidebar_toggle(&sidebar_toggle);
     scan_progress.set_on_cancel({
         let scan_controls = scan_controls.clone();
@@ -379,7 +372,6 @@ pub fn build(
         &track_list,
         player.as_ref(),
         &artist_news,
-        audio_analysis.as_ref(),
     );
     let sidebar_page = library_shell.sidebar_page;
     let split_view = library_shell.split_view;
@@ -388,7 +380,7 @@ pub fn build(
     super::device_sync_feedback::install(&header, &split_view, &toast_overlay, &device_sync);
     info_panel.retain_for_window(&window);
     if let Some(player) = &player {
-        super::window_now_playing_wiring::install(player, &info_panel, &queue_model, &window);
+        super::window_now_playing_wiring::install(player, &info_panel, &queue_model);
     }
     let player_bar_widget = player
         .as_ref()
@@ -468,7 +460,6 @@ pub fn build(
         &info_panel,
         &scan_button,
         &scan_controls,
-        audio_analysis.as_ref(),
         player.as_ref(),
         &listenbrainz,
         &lastfm,
