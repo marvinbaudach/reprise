@@ -69,12 +69,34 @@ use crate::models::MissingReason;
 /// from that same root, so this isn't separately enforced here — see
 /// [`classify_missing`]'s `debug_assert!`, the one real caller wired in by
 /// Task 1.5, for where that assumption is actually checked.
+/// The filesystem device id used for mount-point grouping: Unix `st_dev`. The
+/// app runs on Linux; the non-Unix arms exist only to keep `reprise-core`
+/// cross-checkable (spec I / cross-target CI). On Windows the NTFS volume
+/// serial number stands in; any other platform has no device notion and
+/// collapses to `0`, which makes the mount-point walk below a harmless no-op.
+fn device_id(meta: &std::fs::Metadata) -> u64 {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        meta.dev()
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        u64::from(meta.volume_serial_number().unwrap_or(0))
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = meta;
+        0
+    }
+}
+
 fn nearest_existing_ancestor(path: &Path) -> Option<(PathBuf, u64)> {
-    use std::os::unix::fs::MetadataExt;
     path.ancestors().find_map(|ancestor| {
         std::fs::symlink_metadata(ancestor)
             .ok()
-            .map(|meta| (ancestor.to_path_buf(), meta.dev()))
+            .map(|meta| (ancestor.to_path_buf(), device_id(&meta)))
     })
 }
 
@@ -105,14 +127,15 @@ pub(crate) fn nearest_existing_ancestor_dev(path: &Path) -> Option<u64> {
 /// because the only use of the result is grouping "what disappears
 /// together".
 pub(crate) fn mount_point_of(path: &Path) -> Option<PathBuf> {
-    use std::os::unix::fs::MetadataExt;
     let (mut mount_point, device) = nearest_existing_ancestor(path)?;
     loop {
         let Some(parent) = mount_point.parent() else {
             // Reached "/" — nothing above it to compare against.
             return Some(mount_point);
         };
-        let parent_device = std::fs::symlink_metadata(parent).ok().map(|m| m.dev());
+        let parent_device = std::fs::symlink_metadata(parent)
+            .ok()
+            .map(|m| device_id(&m));
         if parent_device != Some(device) {
             return Some(mount_point);
         }
