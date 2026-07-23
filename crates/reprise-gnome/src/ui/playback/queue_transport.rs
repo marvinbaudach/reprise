@@ -484,10 +484,12 @@ impl PlayerController {
         moved
     }
 
-    /// QUE-3 double-click on a queue row: move the playhead there — no
-    /// context rebuild. A Play Next row drains the manual line through it
-    /// (`play_up_next_at`); an Up Next row jumps the snapshot playhead; the
-    /// Now Playing row restarts itself.
+    /// QUE-3 double-click on a queue row: start that track now — no context
+    /// rebuild. A Play Next row drains the manual line through it
+    /// (`play_up_next_at`); an Up Next row *promotes* the track to play now
+    /// while keeping every track it passed upcoming, in order
+    /// (`Queue::play_order_position_now`) — so a click never drops the rest of
+    /// the queue out of view; the Now Playing row restarts itself.
     pub(in crate::ui) fn jump_to_queue_row(
         &self,
         row: crate::ui::track_list::queue_row_mapping::QueueRow,
@@ -500,7 +502,13 @@ impl PlayerController {
                 let target = {
                     let mut queue = self.queue.borrow_mut();
                     match queue.current_order_position() {
-                        Some(base) => queue.jump_to_order_position(base + 1 + offset),
+                        // QUE double-click keeps the rest of the queue: the
+                        // clicked track jumps the line to play now, every track
+                        // it passed stays upcoming in order (see
+                        // `Queue::play_order_position_now`) — NOT
+                        // `jump_to_order_position`, which fast-forwards past
+                        // them and drops them out of the forward tail.
+                        Some(base) => queue.play_order_position_now(base + 1 + offset),
                         None => None,
                     }
                 };

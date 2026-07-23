@@ -752,3 +752,42 @@ fn jump_to_order_position_moves_the_playhead_without_rebuilding() {
     assert_eq!(q.advance_auto(), Some(40));
     assert_eq!(q.jump_to_order_position(9), None);
 }
+
+#[test]
+fn play_order_position_now_promotes_the_target_and_keeps_the_rest_upcoming() {
+    let mut q = Queue::new();
+    q.set_tracks(vec![10, 20, 30, 40, 50], 0); // current 10 (pos 0)
+
+    // Double-click the 4th upcoming track (id 40, order position 3): it jumps
+    // the line to play now, and the tracks it passed stay queued in order.
+    assert_eq!(q.play_order_position_now(3), Some(40));
+    assert_eq!(q.current(), Some(40));
+    // After 40 comes 20, 30 (the passed tracks), then 50 — nothing skipped.
+    assert_eq!(q.remaining_after_current(), vec![20, 30, 50]);
+    // The full queue still holds every track (10 is now behind the playhead).
+    assert_eq!(q.ids_in_order(), vec![10, 40, 20, 30, 50]);
+    assert_eq!(q.len(), 5);
+}
+
+#[test]
+fn play_order_position_now_on_the_immediate_next_needs_no_reorder() {
+    let mut q = Queue::new();
+    q.set_tracks(vec![10, 20, 30], 0); // current 10
+    assert_eq!(q.play_order_position_now(1), Some(20)); // 20 is already next
+    assert_eq!(q.current(), Some(20));
+    assert_eq!(q.remaining_after_current(), vec![30]);
+    assert_eq!(q.ids_in_order(), vec![10, 20, 30]); // order unchanged
+}
+
+#[test]
+fn play_order_position_now_out_of_range_or_at_end_is_a_noop() {
+    let mut q = Queue::new();
+    q.set_tracks(vec![10, 20], 0);
+    assert_eq!(q.play_order_position_now(9), None);
+    assert_eq!(q.current(), Some(10)); // unchanged
+    assert_eq!(q.ids_in_order(), vec![10, 20]);
+    // Current track is the last one: no room after it to promote into.
+    q.set_tracks(vec![10, 20], 1);
+    assert_eq!(q.play_order_position_now(1), None);
+    assert_eq!(q.current(), Some(20));
+}
