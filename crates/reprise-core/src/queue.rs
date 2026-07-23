@@ -581,6 +581,37 @@ impl Queue {
         Some(id)
     }
 
+    /// Promotes the track at play-order `position` to play *now*: moves it to
+    /// the slot right after the current playhead and makes it current, so it
+    /// starts immediately while every track it passed stays queued, in order,
+    /// right behind it. Nothing is skipped or dropped. Returns the id now
+    /// current, or `None` (no mutation) for an out-of-range `position` or an
+    /// exhausted queue (`pos == None`).
+    ///
+    /// This is the Queue view's double-click behaviour. Contrast with
+    /// [`Self::jump_to_order_position`], which fast-forwards the playhead onto
+    /// the target and so leaves the passed tracks *behind* it — dropping them
+    /// out of the Queue view's forward tail, which reads as "the whole list
+    /// changed / my upcoming songs vanished". Here the click merely lets one
+    /// track jump the line: the forward tail keeps every other track.
+    pub fn play_order_position_now(&mut self, position: usize) -> Option<i64> {
+        let base = self.pos?;
+        // The target must exist, and there must be room after the current
+        // track for it to land in; both make this a clean no-op otherwise.
+        self.order.get(position)?;
+        let dest = base + 1;
+        if dest >= self.order.len() {
+            return None;
+        }
+        if position > dest {
+            // `move_item` preserves the *current* track, so `base`/`dest` still
+            // address the same slots afterwards; the target lands at `dest`.
+            self.move_item(position, dest);
+        }
+        self.pos = Some(dest);
+        self.order.get(dest).and_then(|&idx| self.ids.get(idx).copied())
+    }
+
     /// Every queued track id in current play order — reflecting shuffle, if
     /// active — used by `ViewSource::Queue` (Stage 3 Task 3): `ui::
     /// player_controller::queue_ids_snapshot` clones this out so the "Queue"
