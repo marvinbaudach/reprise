@@ -69,6 +69,14 @@ use crate::models::MissingReason;
 /// from that same root, so this isn't separately enforced here — see
 /// [`classify_missing`]'s `debug_assert!`, the one real caller wired in by
 /// Task 1.5, for where that assumption is actually checked.
+fn nearest_existing_ancestor(path: &Path) -> Option<(PathBuf, u64)> {
+    path.ancestors().find_map(|ancestor| {
+        std::fs::symlink_metadata(ancestor)
+            .ok()
+            .map(|meta| (ancestor.to_path_buf(), device_id(&meta)))
+    })
+}
+
 /// The filesystem device id used for mount-point grouping: Unix `st_dev`. The
 /// app runs on Linux; the non-Unix arms exist only to keep `reprise-core`
 /// cross-checkable (spec I / cross-target CI). On Windows the NTFS volume
@@ -90,14 +98,6 @@ fn device_id(meta: &std::fs::Metadata) -> u64 {
         let _ = meta;
         0
     }
-}
-
-fn nearest_existing_ancestor(path: &Path) -> Option<(PathBuf, u64)> {
-    path.ancestors().find_map(|ancestor| {
-        std::fs::symlink_metadata(ancestor)
-            .ok()
-            .map(|meta| (ancestor.to_path_buf(), device_id(&meta)))
-    })
 }
 
 /// `st_dev` of the nearest ancestor of `path` that currently exists,
