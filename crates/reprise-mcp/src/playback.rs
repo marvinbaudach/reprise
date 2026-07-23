@@ -7,39 +7,21 @@
 //! on reprise-core only" rule). Every call here is blocking and MUST be run
 //! inside `tokio::task::spawn_blocking` by the caller.
 //!
-//! `transport`/`play_track_ids` are wired to `music_playback_control`/
-//! `music_play` tools in a later task of this plan; until then almost
-//! everything here is dead code by design — the D-Bus round trip needs a
-//! live app and is deliberately NOT unit-tested (same boundary reprise-cli
-//! draws). Only `TransportAction`/`from_str` have a test in this file, so
-//! that pair carries the narrow `#[cfg_attr(not(test), allow(dead_code))]`
-//! idiom (see `reprise-gnome/src/ui/nav_history.rs`); everything else carries
-//! a plain, unconditional `#[allow(dead_code)]` since it stays unused even
-//! under `cfg(test)`. Task 9 must remove every one of these markers when it
-//! wires the tools up.
+//! `transport`/`play_track_ids` are wired to the `music_playback_control`/
+//! `music_play` tools in `server.rs`. The D-Bus round trip itself needs a live
+//! app and is deliberately NOT unit-tested (same boundary reprise-cli draws);
+//! only `TransportAction`/`from_str` have a test in this file.
 
 /// The app's MPRIS well-known name (mirrors `reprise-platform-linux`'s server).
-///
-/// Only reachable through the D-Bus client functions below, which have no
-/// test coverage of their own (the round trip needs a live app — see the
-/// module doc); `#[allow(dead_code)]` here is unconditional (not the usual
-/// `cfg_attr(not(test), ...)`) because these constants stay unused even under
-/// `cfg(test)`. Task 9 wires `transport`/`play_track_ids` into tools, at which
-/// point every `allow(dead_code)` in this file should be removed.
-#[allow(dead_code)]
 const BUS_NAME: &str = "org.mpris.MediaPlayer2.reprise";
 /// The standard MPRIS object path and player interface.
-#[allow(dead_code)]
 const OBJECT_PATH: &str = "/org/mpris/MediaPlayer2";
-#[allow(dead_code)]
 const PLAYER_INTERFACE: &str = "org.mpris.MediaPlayer2.Player";
 /// The Reprise-specific interface carrying `PlayTrackIds`.
-#[allow(dead_code)]
 const REPRISE_INTERFACE: &str = "org.reprise.Player1";
 
 /// A transport action recognised by the `music_playback_control` tool.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(not(test), allow(dead_code))]
 pub enum TransportAction {
     Play,
     Pause,
@@ -51,7 +33,6 @@ pub enum TransportAction {
 impl TransportAction {
     /// Parses a tool-facing verb into an action; unrecognised strings are
     /// `None` so the caller can report a clear invalid-input error.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn from_str(value: &str) -> Option<Self> {
         match value {
             "play" => Some(Self::Play),
@@ -64,9 +45,6 @@ impl TransportAction {
     }
 
     /// The MPRIS `org.mpris.MediaPlayer2.Player` method this action invokes.
-    /// Only called from `transport` (untested until Task 9 wires it up), so
-    /// the `allow` is unconditional — see the constants above.
-    #[allow(dead_code)]
     fn method(self) -> &'static str {
         match self {
             Self::Play => "Play",
@@ -78,11 +56,10 @@ impl TransportAction {
     }
 }
 
-/// A playback client failure. Mapped to a tool outcome by `server.rs` in a
-/// later task, exactly like [`crate::data::DataError`] is today — that
-/// mapping is deliberately not added to `crate::error` yet.
+/// A playback client failure. Mapped to a tool outcome by
+/// `error::playback_outcome`, exactly like [`crate::data::DataError`] is
+/// mapped by `error::into_tool_outcome`.
 #[derive(Debug)]
-#[allow(dead_code)]
 pub enum PlaybackError {
     /// No MPRIS player is registered under our bus name — the app is not
     /// running.
@@ -94,7 +71,6 @@ pub enum PlaybackError {
 /// D-Bus error names that mean no MPRIS player is registered under our name —
 /// i.e. the Reprise app is not running. Anything else is a genuine fault.
 /// Mirrors `reprise-cli`'s `commands::playback::is_absent_player` exactly.
-#[allow(dead_code)]
 fn is_absent_player(error_name: &str) -> bool {
     matches!(
         error_name,
@@ -105,7 +81,6 @@ fn is_absent_player(error_name: &str) -> bool {
 /// Opens the session bus and a proxy to the app on the given interface. A
 /// missing session bus is a `Bus` error; an absent player is classified by
 /// `map_zbus_error`, mirroring `reprise-cli`'s `connect`.
-#[allow(dead_code)]
 fn connect(interface: &'static str) -> Result<zbus::blocking::Proxy<'static>, PlaybackError> {
     let connection = zbus::blocking::Connection::session()
         .map_err(|error| PlaybackError::Bus(format!("no D-Bus session bus available: {error}")))?;
@@ -116,7 +91,6 @@ fn connect(interface: &'static str) -> Result<zbus::blocking::Proxy<'static>, Pl
 /// Maps a zbus error to a playback error, recognising the "no player" case.
 /// Mirrors `reprise-cli`'s `commands::playback::map_zbus_error` exactly (same
 /// `MethodError` destructuring, same absent-player classification).
-#[allow(dead_code)]
 fn map_zbus_error(error: &zbus::Error) -> PlaybackError {
     if let zbus::Error::MethodError(name, _, _) = error {
         if is_absent_player(name.as_str()) {
@@ -128,7 +102,6 @@ fn map_zbus_error(error: &zbus::Error) -> PlaybackError {
 
 /// Sends a transport action (play/pause/stop/next/previous) to the app's
 /// MPRIS player.
-#[allow(dead_code)]
 pub fn transport(action: TransportAction) -> Result<(), PlaybackError> {
     let proxy = connect(PLAYER_INTERFACE)?;
     let _reply: () = proxy
@@ -139,7 +112,6 @@ pub fn transport(action: TransportAction) -> Result<(), PlaybackError> {
 
 /// Starts playback at a specific set of track ids via the Reprise-specific
 /// `org.reprise.Player1.PlayTrackIds` method.
-#[allow(dead_code)]
 pub fn play_track_ids(ids: Vec<i64>) -> Result<(), PlaybackError> {
     let proxy = connect(REPRISE_INTERFACE)?;
     let _reply: () = proxy

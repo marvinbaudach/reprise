@@ -53,16 +53,19 @@ fn tool_discovery_lists_the_expected_tools() {
 
     // `music_create_instrumental` is listed even though `ai:create` is off by
     // default: tools stay listed-but-refused (Beschluss 7). No rename/delete
-    // surface exists in the MCP (Beschluss 2).
-    assert_eq!(
-        names,
-        [
-            "music_create_instrumental",
-            "music_create_playlist",
-            "music_get_job_status",
-            "music_search_tracks",
-        ]
-    );
+    // surface exists in the MCP (Beschluss 2). The playback tools only exist
+    // under the `mpris` feature.
+    let mut expected = vec![
+        "music_create_instrumental",
+        "music_create_playlist",
+        "music_get_job_status",
+        "music_search_tracks",
+    ];
+    if cfg!(feature = "mpris") {
+        expected.extend(["music_play", "music_playback_control"]);
+    }
+    expected.sort_unstable();
+    assert_eq!(names, expected);
     for tool in tools {
         let schema = tool.get("inputSchema");
         assert!(

@@ -253,11 +253,9 @@ pub struct CreateInstrumentalResult {
 }
 
 /// Parameters for `music_playback_control` (transport-only: play/pause/stop/
-/// next/previous, no target). Task 9 wires this into the tool; until then the
-/// struct is fully unused (not even by a test), hence the unconditional
-/// `#[allow(dead_code)]` below — the same idiom `playback.rs` uses for its
-/// still-unwired D-Bus surface.
-#[allow(dead_code)] // TODO(Task 9): remove once music_playback_control is wired to this type.
+/// next/previous, no target). Only the `mpris`-gated `music_playback_control`
+/// tool uses this, so it is gated the same way.
+#[cfg(feature = "mpris")]
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct PlaybackControlParams {
     /// One of: "play", "pause", "stop", "next", "previous".
@@ -266,7 +264,10 @@ pub struct PlaybackControlParams {
 
 /// Parameters for `music_play`. Exactly one of `track_ids`/`playlist_id` must
 /// be set — enforced by `data::resolve_play_ids`, not by the schema (rmcp/
-/// schemars has no "exactly one of" combinator).
+/// schemars has no "exactly one of" combinator). Only the `mpris`-gated
+/// `music_play` tool (and `data::resolve_play_ids`) uses this, so it is gated
+/// the same way.
+#[cfg(feature = "mpris")]
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct PlayParams {
     /// An explicit ordered list of track ids to play. Mutually exclusive with `playlist_id`.

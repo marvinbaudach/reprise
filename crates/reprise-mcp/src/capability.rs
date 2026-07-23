@@ -18,9 +18,10 @@ pub const CAP_PLAYLIST_CREATE: &str = "agent.capability.playlist:create";
 /// Settings key granting instrumental (AI) creation (Beschluss 7).
 pub const CAP_AI_CREATE: &str = "agent.capability.ai:create";
 /// Settings key granting playback control (transport + targeted play).
-// Consumed by the `music_playback_control`/`music_play` tools added in a later
-// task of this plan; only exercised by this file's own test until then.
-#[cfg_attr(not(test), allow(dead_code))]
+/// Consumed by the `music_playback_control`/`music_play` tools, which only
+/// exist under the `mpris` feature — gated to match, so a plain (non-`mpris`)
+/// build carries no unreachable playback-only surface.
+#[cfg(feature = "mpris")]
 pub const CAP_PLAYBACK_CONTROL: &str = "agent.capability.playback:control";
 
 // D18: reads are on by default; a user may still revoke them explicitly.
@@ -32,7 +33,7 @@ const PLAYLIST_CREATE_DEFAULT: bool = false;
 const AI_CREATE_DEFAULT: bool = false;
 // Playback control starts audio but destroys no data — on by default, like the
 // read surface, and revocable live.
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(feature = "mpris")]
 const PLAYBACK_CONTROL_DEFAULT: bool = true;
 
 /// Whether the read surface is currently granted.
@@ -51,7 +52,7 @@ pub fn ai_create_granted(conn: &Connection) -> Result<bool, rusqlite::Error> {
 }
 
 /// Whether playback control is currently granted (live setting value).
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(feature = "mpris")]
 pub fn playback_control_enabled(conn: &Connection) -> Result<bool, rusqlite::Error> {
     settings::get_bool(conn, CAP_PLAYBACK_CONTROL, PLAYBACK_CONTROL_DEFAULT)
 }
@@ -90,7 +91,7 @@ pub fn ai_create_effective(
     Ok(effective(granted_at_startup, ai_create_granted(conn)?))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "mpris"))]
 mod tests {
     use super::*;
 

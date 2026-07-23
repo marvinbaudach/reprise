@@ -76,6 +76,38 @@ pub fn resource_error(error: DataError) -> ErrorData {
     }
 }
 
-fn tool_error(message: String) -> CallToolResult {
+pub fn tool_error(message: String) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(message)])
+}
+
+/// Builds a successful tool result carrying only a short text summary — the
+/// plain-text counterpart to [`structured_ok`] for tools with no structured
+/// body worth reporting (the playback tools: there is nothing to serialize
+/// beyond a human-readable confirmation).
+#[cfg(feature = "mpris")]
+fn tool_text(summary: String) -> CallToolResult {
+    CallToolResult::success(vec![ContentBlock::text(summary)])
+}
+
+/// Maps a [`crate::playback::PlaybackError`] to a tool-call outcome
+/// (`music_playback_control`/`music_play`). A missing player is caller-fixable
+/// (start the app) so it becomes a clear tool error; a genuine bus fault is
+/// logged and returned as an opaque protocol error, matching
+/// [`into_tool_outcome`]'s split between caller-fixable and internal failures.
+#[cfg(feature = "mpris")]
+pub fn playback_outcome(
+    result: Result<(), crate::playback::PlaybackError>,
+    ok_summary: String,
+) -> Result<CallToolResult, ErrorData> {
+    use crate::playback::PlaybackError;
+    match result {
+        Ok(()) => Ok(tool_text(ok_summary)),
+        Err(PlaybackError::NoPlayer) => Ok(tool_error(
+            "no running Reprise app on the session bus — start the app first".to_owned(),
+        )),
+        Err(PlaybackError::Bus(message)) => {
+            tracing::error!(message, "playback bus error");
+            Err(ErrorData::internal_error("internal server error", None))
+        }
+    }
 }

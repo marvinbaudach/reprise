@@ -242,6 +242,16 @@ pub fn job_state(db_path: &Path, job_id: i64) -> (String, Option<i64>) {
     (job.state.as_str().to_string(), job.result_track_id)
 }
 
+/// Whether `dbus-run-session` can be spawned to give a test a private,
+/// player-less D-Bus session bus. Mirrors `reprise-cli`'s own check
+/// (`tests/playback.rs`).
+pub fn private_bus_available() -> bool {
+    Command::new("dbus-run-session")
+        .arg("--help")
+        .output()
+        .is_ok()
+}
+
 /// A live client speaking JSON-RPC to a spawned `reprise-mcp` process.
 pub struct McpClient {
     child: Child,
@@ -264,8 +274,31 @@ impl McpClient {
 
     /// Spawns the server without performing the handshake (for handshake tests).
     pub fn spawn(db_path: &Path) -> Self {
-        let exe = env!("CARGO_BIN_EXE_reprise-mcp");
-        let mut child = Command::new(exe)
+        Self::spawn_command(Command::new(env!("CARGO_BIN_EXE_reprise-mcp")), db_path)
+    }
+
+    /// Spawns the server against `db_path` under `dbus-run-session` — a
+    /// private, deterministic, player-less D-Bus session bus — and completes
+    /// the handshake. Returns `None` when `dbus-run-session` is unavailable in
+    /// this environment (the caller should then skip, documenting itself as
+    /// environment-limited rather than faking a bus). Mirrors `reprise-cli`'s
+    /// own `dbus-run-session` pattern (`tests/playback.rs`): playback tools
+    /// that reach the real bus need a guaranteed-empty one so "no running
+    /// Reprise app" is the deterministic outcome, independent of whatever the
+    /// ambient session bus happens to hold.
+    pub fn start_under_private_bus(db_path: &Path) -> Option<Self> {
+        if !private_bus_available() {
+            return None;
+        }
+        let mut command = Command::new("dbus-run-session");
+        command.arg("--").arg(env!("CARGO_BIN_EXE_reprise-mcp"));
+        let mut client = Self::spawn_command(command, db_path);
+        client.handshake();
+        Some(client)
+    }
+
+    fn spawn_command(mut command: Command, db_path: &Path) -> Self {
+        let mut child = command
             .arg("--db")
             .arg(db_path)
             .env("REPRISE_LOG", "info")
