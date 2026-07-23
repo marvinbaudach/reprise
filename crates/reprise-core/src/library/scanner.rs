@@ -33,10 +33,11 @@ pub(crate) fn file_mtime(path: &Path) -> i64 {
 
 /// `(file_size, device, inode)` for the move-detection fingerprint. The app
 /// runs on Linux and uses the Unix `(device, inode)` identity
-/// (`std::os::unix::fs::MetadataExt`); the Windows and other-platform arms
-/// exist only to keep `reprise-core` cross-checkable (spec I / cross-target CI)
-/// — on Windows the nearest equivalents (volume serial + 64-bit file index)
-/// stand in, and on any other platform identity degrades to `(0, 0)`. Returns
+/// (`std::os::unix::fs::MetadataExt`); the non-Unix arm exists only to keep
+/// `reprise-core` cross-checkable (spec I / cross-target CI). There is no
+/// stable portable device/inode (`std::os::windows::fs::MetadataExt`'s
+/// equivalents are still behind the unstable `windows_by_handle` feature), so
+/// off Unix identity degrades to `(0, 0)` — never reached at runtime. Returns
 /// `None` if `stat` fails (e.g. a race where the file vanished between
 /// `walkdir` listing it and this call) — Stage 3 Task 1: a file that can't be
 /// stat'd has no reliable filesystem identity to fingerprint, so `scan_folder`
@@ -55,16 +56,7 @@ pub(crate) fn file_stat(path: &Path) -> Option<(u64, u64, u64)> {
         use std::os::unix::fs::MetadataExt;
         Some((metadata.size(), metadata.dev(), metadata.ino()))
     }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        Some((
-            metadata.file_size(),
-            u64::from(metadata.volume_serial_number().unwrap_or(0)),
-            metadata.file_index().unwrap_or(0),
-        ))
-    }
-    #[cfg(not(any(unix, windows)))]
+    #[cfg(not(unix))]
     {
         Some((metadata.len(), 0, 0))
     }

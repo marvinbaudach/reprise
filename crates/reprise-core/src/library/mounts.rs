@@ -78,22 +78,18 @@ fn nearest_existing_ancestor(path: &Path) -> Option<(PathBuf, u64)> {
 }
 
 /// The filesystem device id used for mount-point grouping: Unix `st_dev`. The
-/// app runs on Linux; the non-Unix arms exist only to keep `reprise-core`
-/// cross-checkable (spec I / cross-target CI). On Windows the NTFS volume
-/// serial number stands in; any other platform has no device notion and
-/// collapses to `0`, which makes the mount-point walk below a harmless no-op.
+/// app runs on Linux; the non-Unix arm exists only to keep `reprise-core`
+/// cross-checkable (spec I / cross-target CI). There is no stable portable
+/// device id, so off Unix it collapses to `0` — every path then shares one
+/// "device" and the mount-point walk below becomes a harmless no-op (never
+/// reached at runtime).
 fn device_id(meta: &std::fs::Metadata) -> u64 {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
         meta.dev()
     }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        u64::from(meta.volume_serial_number().unwrap_or(0))
-    }
-    #[cfg(not(any(unix, windows)))]
+    #[cfg(not(unix))]
     {
         let _ = meta;
         0
