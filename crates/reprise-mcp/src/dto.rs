@@ -251,3 +251,28 @@ pub struct CreateInstrumentalResult {
     /// where the finished render lands.
     pub queued_hint: String,
 }
+
+/// Parameters for `music_playback_control` (transport-only: play/pause/stop/
+/// next/previous, no target). Task 9 wires this into the tool; until then the
+/// struct is fully unused (not even by a test), hence the unconditional
+/// `#[allow(dead_code)]` below — the same idiom `playback.rs` uses for its
+/// still-unwired D-Bus surface.
+#[allow(dead_code)] // TODO(Task 9): remove once music_playback_control is wired to this type.
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+pub struct PlaybackControlParams {
+    /// One of: "play", "pause", "stop", "next", "previous".
+    pub action: String,
+}
+
+/// Parameters for `music_play`. Exactly one of `track_ids`/`playlist_id` must
+/// be set — enforced by `data::resolve_play_ids`, not by the schema (rmcp/
+/// schemars has no "exactly one of" combinator).
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+pub struct PlayParams {
+    /// An explicit ordered list of track ids to play. Mutually exclusive with `playlist_id`.
+    #[serde(default)]
+    pub track_ids: Option<Vec<i64>>,
+    /// A playlist id to play (resolved to its tracks). Mutually exclusive with `track_ids`.
+    #[serde(default)]
+    pub playlist_id: Option<i64>,
+}
