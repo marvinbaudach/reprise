@@ -93,15 +93,6 @@ pub const SONG_VISUALS_MODULE: ModuleDescriptor = ModuleDescriptor {
     applies_live: true,
 };
 
-pub const RELATED_ARTISTS_MODULE: ModuleDescriptor = ModuleDescriptor {
-    id: "related_artists",
-    name: "Related Artist Discovery",
-    description:
-        "Suggest artists outside your library using ListenBrainz (network; off by default)",
-    default_enabled: false,
-    applies_live: true,
-};
-
 /// Every optional integration the app currently exposes, in Plugins-page order.
 pub const ALL_MODULES: &[&ModuleDescriptor] = &[
     &SONG_VISUALS_MODULE,
@@ -110,7 +101,6 @@ pub const ALL_MODULES: &[&ModuleDescriptor] = &[
     &COVER_DOWNLOAD_MODULE,
     &ARTIST_PORTRAITS_MODULE,
     &ONLINE_LYRICS_MODULE,
-    &RELATED_ARTISTS_MODULE,
     &LISTENBRAINZ_MODULE,
     &LASTFM_MODULE,
 ];

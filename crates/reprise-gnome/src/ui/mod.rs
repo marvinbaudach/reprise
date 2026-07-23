@@ -81,7 +81,6 @@ pub(crate) mod track_list;
 mod transient_focus;
 pub mod view_session;
 pub(crate) mod window;
-mod window_audio_analysis;
 
 // Compatibility surface for the existing frontend. The ownership of every
 // implementation module now lives with its feature directory; these explicit
@@ -132,7 +131,7 @@ pub(crate) use playlists::playlist_io;
 use playlists::{playlist_import_navigation, playlist_io_names};
 #[allow(unused_imports)]
 use preferences::{
-    preference_appearance, preference_audio_analysis, preference_choice_cards,
+    preference_appearance, preference_choice_cards,
     preference_dependencies, preference_effects, preference_lastfm, preference_layout,
     preference_library, preference_listenbrainz, preference_playback, preference_plugins,
     preference_rhythmbox, preference_sync, preference_visual_strings,

@@ -163,7 +163,6 @@ fn reconcile_outcome(
                     Rc::downgrade(sidebar),
                 );
             }
-            controls.wake_audio_analysis();
             controls.notify_complete();
         }
         // `scan_folder` ran but had no evidence that the persisted root was

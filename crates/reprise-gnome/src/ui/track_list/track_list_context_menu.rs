@@ -71,7 +71,6 @@ use reprise_core::view_source::ViewSource;
 /// menu item labels themselves).
 const ACTION_PLAY: &str = "play";
 const ACTION_ADD_TO_QUEUE: &str = "add-to-queue";
-const ACTION_CREATE_SIMILAR_MIX: &str = "create-similar-mix";
 pub(in crate::ui) const ACTION_PLAY_NEXT: &str = "play-next";
 const ACTION_MOVE_TO_TOP: &str = "move-to-top";
 const ACTION_MOVE_UP: &str = "move-up";
@@ -250,7 +249,6 @@ fn update_menu_action_states(
     for (name, enabled) in [
         (ACTION_PLAY_NEXT, enqueue_enabled),
         (ACTION_ADD_TO_QUEUE, enqueue_enabled),
-        (ACTION_CREATE_SIMILAR_MIX, states.similar_mix),
         (ACTION_MOVE_UP, move_up),
         (ACTION_MOVE_DOWN, move_down),
         (ACTION_MOVE_TO_TOP, move_to_top),
@@ -313,19 +311,6 @@ pub(in crate::ui) fn wire_context_menu_actions(
         });
     }
     action_group.add_action(&queue_action);
-
-    let similar_mix_action = gio::SimpleAction::new(ACTION_CREATE_SIMILAR_MIX, None);
-    {
-        let shared = shared.clone();
-        similar_mix_action.connect_activate(move |_, _| {
-            let seeds: Vec<_> = current_selection_tracks(&shared)
-                .into_iter()
-                .filter(|track| !track.is_missing())
-                .collect();
-            super::mix_builder::present(&shared, &seeds);
-        });
-    }
-    action_group.add_action(&similar_mix_action);
 
     for (name, direction) in [
         (

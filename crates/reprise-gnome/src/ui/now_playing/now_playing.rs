@@ -7,7 +7,6 @@ use libadwaita::prelude::BreakpointBinExt;
 use reprise_core::playback::{PlaybackState, SpectrumFrame};
 use rusqlite::Connection;
 
-use super::audio_character_view::{self, AudioCharacterDialog};
 use super::cover_loader::CoverLoader;
 use super::lyrics_strings;
 use super::now_playing_column::NowPlayingColumn;
@@ -20,7 +19,6 @@ use super::up_next_panel::UpNextPanel;
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::lyrics_view::LyricsView;
 use crate::ui::player_controller::NowPlaying;
-use crate::ui::scan::audio_analysis_runtime::AudioAnalysisRuntime;
 use crate::ui::style::tokens;
 
 type OnVoid = Rc<dyn Fn()>;
@@ -43,7 +41,6 @@ struct PanelWidgets {
     track_content: gtk4::Box,
     lyrics: Rc<LyricsView>,
     up_next: Rc<UpNextPanel>,
-    audio_character: AudioCharacterDialog,
     visualizer: SongVisualizer,
     visual_page: adw::ViewStackPage,
     cover: gtk4::Image,
@@ -128,7 +125,6 @@ fn build_widgets_for_session(
 
     let lyrics = LyricsView::new();
     let up_next = UpNextPanel::new(conn, cover_loader);
-    let audio_character = AudioCharacterDialog::new();
     let visualizer = SongVisualizer::new();
     let tab_stack = adw::ViewStack::builder().vexpand(true).build();
     tab_stack.add_titled_with_icon(
@@ -250,7 +246,6 @@ fn build_widgets_for_session(
         track_content,
         lyrics,
         up_next,
-        audio_character,
         visualizer,
         visual_page,
         cover,
@@ -278,7 +273,6 @@ pub(in crate::ui) struct NowPlayingPanel {
     on_up_next_refresh: RefCell<Option<OnVoid>>,
     track_animation: RefCell<Option<adw::TimedAnimation>>,
     track_animation_generation: Cell<u64>,
-    audio_character_generation: Cell<u64>,
     on_track_reveal: crate::ui::link_activation::ActivationSlot,
     song_visuals_enabled: Cell<bool>,
     on_album_reveal: crate::ui::link_activation::ActivationSlot,
@@ -293,7 +287,6 @@ impl NowPlayingPanel {
         conn: Rc<RefCell<Connection>>,
         _runtime: Rc<ArtistNewsRuntime>,
         cover_loader: Rc<CoverLoader>,
-        audio_analysis: Option<&AudioAnalysisRuntime>,
     ) -> Rc<Self> {
         let visible = reprise_core::library::settings::get_info_panel_visible(&conn.borrow());
         let song_visuals_enabled = reprise_core::modules::is_enabled(
@@ -318,7 +311,6 @@ impl NowPlayingPanel {
             on_up_next_refresh: RefCell::new(None),
             track_animation: RefCell::new(None),
             track_animation_generation: Cell::new(0),
-            audio_character_generation: Cell::new(0),
             on_track_reveal: Rc::new(RefCell::new(None)),
             song_visuals_enabled: Cell::new(song_visuals_enabled),
             on_album_reveal: Rc::new(RefCell::new(None)),
@@ -349,8 +341,6 @@ impl NowPlayingPanel {
         panel.install_visual_fullscreen_shortcut(window);
         panel.sync_visual_activity();
         panel.render_track();
-        panel.queue_audio_character_refresh();
-        panel.install_audio_character_updates(audio_analysis);
         panel
     }
 
@@ -399,10 +389,6 @@ impl NowPlayingPanel {
             // previous track don't bleed into the new one.
             self.widgets.visualizer.note_track_changed();
         }
-        if changed {
-            self.render_audio_character(&audio_character_view::AudioCharacterPresentation::Empty);
-        }
-        self.queue_audio_character_refresh();
         if !changed {
             if self.track_animation.borrow().is_none() {
                 self.render_track();
@@ -451,16 +437,6 @@ impl NowPlayingPanel {
         self.sync_visual_activity();
     }
 
-    pub(in crate::ui) fn present_audio_character(&self, parent: &adw::ApplicationWindow) {
-        let current_track = self.loaded_track.borrow().as_ref().map(|track| track.id);
-        let presentation = {
-            let conn = self.conn.borrow();
-            audio_character_view::load_presentation(&conn, current_track)
-        };
-        self.render_audio_character(&presentation);
-        self.widgets.audio_character.present(parent);
-    }
-
     pub(in crate::ui) fn set_up_next_model(
         &self,
         model: &crate::ui::track_list::queue_sections::QueueViewModel,
@@ -476,9 +452,8 @@ impl NowPlayingPanel {
     /// Feeds the fullscreen visualizer's "TRACK i / n" + "Up next: …" state
     /// from the same composite queue model the Up Next tab renders: current
     /// index is the loaded track's position within `model.ids`, and the
-    /// next-up title is a direct lookup on the panel's own `conn` (same
-    /// ad hoc single-row-read shape `queue_audio_character_refresh` already
-    /// uses off that connection).
+    /// next-up title is a direct ad hoc single-row lookup on the panel's own
+    /// `conn`.
     fn sync_visual_queue_position(
         &self,
         model: &crate::ui::track_list::queue_sections::QueueViewModel,
@@ -673,59 +648,6 @@ impl NowPlayingPanel {
         }
     }
 
-    fn install_audio_character_updates(self: &Rc<Self>, runtime: Option<&AudioAnalysisRuntime>) {
-        let Some(runtime) = runtime else {
-            return;
-        };
-        let receiver = runtime.progress_receiver();
-        let panel = Rc::downgrade(self);
-        gtk4::glib::spawn_future_local(async move {
-            while receiver.recv().await.is_ok() {
-                let Some(panel) = panel.upgrade() else {
-                    return;
-                };
-                panel.queue_audio_character_refresh();
-            }
-        });
-    }
-
-    fn queue_audio_character_refresh(self: &Rc<Self>) {
-        let generation = self.audio_character_generation.get().wrapping_add(1);
-        self.audio_character_generation.set(generation);
-        let requested_track = self.loaded_track.borrow().as_ref().map(|track| track.id);
-        let panel = Rc::downgrade(self);
-        gtk4::glib::idle_add_local_once(move || {
-            let Some(panel) = panel.upgrade() else {
-                return;
-            };
-            let current_track = panel.loaded_track.borrow().as_ref().map(|track| track.id);
-            if !audio_character_view::result_is_current(
-                generation,
-                panel.audio_character_generation.get(),
-                requested_track,
-                current_track,
-            ) {
-                return;
-            }
-            let presentation = {
-                let conn = panel.conn.borrow();
-                audio_character_view::load_presentation(&conn, current_track)
-            };
-            panel.render_audio_character(&presentation);
-        });
-    }
-
-    fn render_audio_character(
-        &self,
-        presentation: &audio_character_view::AudioCharacterPresentation,
-    ) {
-        if let Some(profile) = audio_character_view::visual_profile(presentation) {
-            self.widgets.visualizer.set_profile(&profile);
-        } else {
-            self.widgets.visualizer.clear_profile();
-        }
-        self.widgets.audio_character.render(presentation);
-    }
 }
 
 pub(in crate::ui) fn css() -> String {
