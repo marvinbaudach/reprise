@@ -18,8 +18,6 @@ use crate::ui::library_player_bar::LibraryPlayerBarShell;
 use crate::ui::now_playing::NowPlayingPanel;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::preference_playback::build_equalizer_surface;
-use crate::ui::preferences::preference_audio_analysis::AudioAnalysisPreferences;
-use crate::ui::scan::audio_analysis_runtime::AudioAnalysisRuntime;
 use crate::ui::scan_flow::ScanControls;
 use crate::ui::scan_progress::ScanProgressView;
 use crate::ui::scrobble_runtime::ScrobbleRuntime;
@@ -104,7 +102,6 @@ pub(in crate::ui) struct PreferencesContext {
     pub(in crate::ui) info_panel: Rc<NowPlayingPanel>,
     pub(in crate::ui) scan_button: gtk4::Button,
     scan_controls: ScanControls,
-    pub(in crate::ui) audio_analysis: AudioAnalysisPreferences,
     pub(in crate::ui) library_folder_rows: RefCell<Vec<glib::WeakRef<adw::ActionRow>>>,
     pub(in crate::ui) player: Option<Rc<PlayerController>>,
     pub(in crate::ui) syncing_effect_controls: Cell<bool>,
@@ -145,7 +142,6 @@ impl PreferencesContext {
         info_panel: &Rc<NowPlayingPanel>,
         scan_button: &gtk4::Button,
         scan_controls: &ScanControls,
-        audio_analysis: Option<&AudioAnalysisRuntime>,
         player: Option<&Rc<PlayerController>>,
         listenbrainz: &Rc<ScrobbleRuntime>,
         lastfm: &Rc<ScrobbleRuntime>,
@@ -167,7 +163,6 @@ impl PreferencesContext {
             info_panel: info_panel.clone(),
             scan_button: scan_button.clone(),
             scan_controls: scan_controls.clone(),
-            audio_analysis: AudioAnalysisPreferences::new(conn, audio_analysis),
             library_folder_rows: RefCell::new(Vec::new()),
             player: player.cloned(),
             syncing_effect_controls: Cell::new(false),
@@ -260,6 +255,7 @@ impl PreferencesContext {
                     super::preference_sync::build_page(&self.device_sync, &self.track_list)
                 }
                 PageId::Plugins => self.plugins_page(),
+                PageId::Experimental => super::preference_experimental::build_page(&self.conn),
             };
             (id, page)
         });

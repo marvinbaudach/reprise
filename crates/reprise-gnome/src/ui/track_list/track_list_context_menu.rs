@@ -64,6 +64,7 @@ use crate::ui::track_actions;
 use crate::ui::track_list::{reload, show_toast, Shared};
 use crate::ui::track_list_queue_menu;
 use reprise_core::library::playlists;
+use reprise_core::models::Track;
 use reprise_core::view_source::ViewSource;
 
 /// Bare `gio::SimpleAction` names in the `"tracklist"` action group —
@@ -71,7 +72,6 @@ use reprise_core::view_source::ViewSource;
 /// menu item labels themselves).
 const ACTION_PLAY: &str = "play";
 const ACTION_ADD_TO_QUEUE: &str = "add-to-queue";
-const ACTION_CREATE_SIMILAR_MIX: &str = "create-similar-mix";
 pub(in crate::ui) const ACTION_PLAY_NEXT: &str = "play-next";
 const ACTION_MOVE_TO_TOP: &str = "move-to-top";
 const ACTION_MOVE_UP: &str = "move-up";
@@ -163,7 +163,7 @@ fn current_playable_selection(shared: &Rc<Shared>) -> PlayableSelection {
     track_playback_selection::selected_playable_tracks(&positions, &shared.model)
 }
 
-fn current_selection_tracks(shared: &Rc<Shared>) -> Vec<reprise_core::models::Track> {
+pub(in crate::ui) fn current_selection_tracks(shared: &Rc<Shared>) -> Vec<Track> {
     current_selection_positions(shared)
         .into_iter()
         .filter_map(|position| shared.model.track_at(position))
@@ -216,6 +216,7 @@ pub(in crate::ui) fn build_context_menu_model(shared: &Rc<Shared>) -> gio::Menu 
         }
         menu.append_section(None, &reorder);
     }
+    super::track_menu_instrumental::append_section(&menu, shared, &summary);
     menu
 }
 
@@ -250,7 +251,6 @@ fn update_menu_action_states(
     for (name, enabled) in [
         (ACTION_PLAY_NEXT, enqueue_enabled),
         (ACTION_ADD_TO_QUEUE, enqueue_enabled),
-        (ACTION_CREATE_SIMILAR_MIX, states.similar_mix),
         (ACTION_MOVE_UP, move_up),
         (ACTION_MOVE_DOWN, move_down),
         (ACTION_MOVE_TO_TOP, move_to_top),
@@ -314,18 +314,7 @@ pub(in crate::ui) fn wire_context_menu_actions(
     }
     action_group.add_action(&queue_action);
 
-    let similar_mix_action = gio::SimpleAction::new(ACTION_CREATE_SIMILAR_MIX, None);
-    {
-        let shared = shared.clone();
-        similar_mix_action.connect_activate(move |_, _| {
-            let seeds: Vec<_> = current_selection_tracks(&shared)
-                .into_iter()
-                .filter(|track| !track.is_missing())
-                .collect();
-            super::mix_builder::present(&shared, &seeds);
-        });
-    }
-    action_group.add_action(&similar_mix_action);
+    super::track_menu_instrumental::wire_action(&action_group, shared);
 
     for (name, direction) in [
         (

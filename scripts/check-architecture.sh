@@ -40,6 +40,118 @@ if cargo tree -p reprise-core | rg --quiet '(^| )(gtk4|libadwaita|gstreamer|zbus
   exit 1
 fi
 
+echo "== Multi-frontend core boundaries =="
+
+# The headless surfaces (reprise-cli, reprise-mcp) and the removable stem-
+# separation backend (reprise-stems) build on the MIT engine only. These gates
+# make the multi-frontend-core dependency contract (docs/plans/multi-frontend-
+# core.md §2.5) mechanical:
+#   * among workspace crates, the DEFAULT builds of reprise-cli and reprise-mcp
+#     pull in reprise-core and nothing else. The CLI's `mpris` (zbus) and
+#     `worker` (reprise-stems) exceptions are feature-gated, so the default
+#     tree must stay core-only — exactly what the plan pins as the enforced
+#     probe;
+#   * reprise-stems depends only on reprise-core, and only binary hosts (the
+#     GTK app; the CLI behind `worker`) may depend on it — the MCP server and
+#     the engine never may, so the feature stays removable;
+#   * no GTK/libadwaita/GLib/GStreamer/zbus family crate links into the default
+#     dependency tree of any of the three.
+#
+# `-e normal` scopes every probe to what actually links into the shipped
+# binary (dev- and build-dependencies are irrelevant to the boundary), and
+# `--prefix none` prints one `name vX.Y.Z (path)` line per crate so a workspace
+# edge is a simple line-anchored match. `--target all` widens every probe from
+# the host graph to every target's graph, so a Windows/Android-conditional edge
+# (e.g. a `cfg(windows)` dependency) cannot smuggle a banned family or a stray
+# workspace crate past a Linux-only run. It may list a crate once per target, so
+# the stray-edge probes pipe through `sort -u`.
+#
+# Every probe runs `cargo tree` exactly once through `run_dependency_probe`,
+# which captures the output and aborts the gate on a non-zero exit. Without
+# that guard a failing `cargo tree` (unresolved package, broken manifest)
+# prints nothing, and an empty result is indistinguishable from "no violation"
+# — the gate would fail OPEN. Here a cargo-tree failure fails the gate CLOSED
+# and loud instead.
+banned_dependency_families='(^| )(gtk4|libadwaita|glib|gstreamer|zbus)( |$| v)'
+
+# Run one `cargo tree` invocation with fail-closed handling. `return 1` (never
+# `exit`, which would only leave the command-substitution subshell) lets each
+# caller abort the whole script via `|| exit 1`. On success the captured
+# stdout is echoed for the follow-up grep.
+run_dependency_probe() {
+  local label=$1
+  shift
+  local out
+  if ! out=$(cargo tree "$@" 2>&1); then
+    echo "cargo tree failed for $label; dependency boundaries cannot be verified:" >&2
+    echo "$out" >&2
+    return 1
+  fi
+  printf '%s\n' "$out"
+}
+
+for surface in reprise-cli reprise-mcp; do
+  surface_tree=$(run_dependency_probe "$surface default build" \
+    -p "$surface" -e normal --prefix none --target all) || exit 1
+  stray_workspace_edge=$(printf '%s\n' "$surface_tree" \
+    | rg '^reprise-[a-z-]+ ' \
+    | rg -v "^(reprise-core|$surface) " \
+    | sort -u || true)
+  if [[ -n "$stray_workspace_edge" ]]; then
+    echo "$surface default build may depend on reprise-core only; found:" >&2
+    echo "$stray_workspace_edge" >&2
+    exit 1
+  fi
+done
+
+for surface in reprise-cli reprise-mcp reprise-stems; do
+  surface_tree=$(run_dependency_probe "$surface default build" \
+    -p "$surface" -e normal --target all) || exit 1
+  if printf '%s\n' "$surface_tree" | rg --quiet "$banned_dependency_families"; then
+    echo "$surface default build must not depend on GTK, libadwaita, GLib, GStreamer, or zbus" >&2
+    exit 1
+  fi
+done
+
+# reprise-stems stays a removable, binary-host-only backend: neither the engine
+# nor the MCP server may pull it in under ANY feature set.
+for stems_non_host in reprise-core reprise-mcp; do
+  stems_host_tree=$(run_dependency_probe "$stems_non_host all features" \
+    -p "$stems_non_host" --all-features -e normal --prefix none --target all) || exit 1
+  if printf '%s\n' "$stems_host_tree" | rg --quiet '^reprise-stems '; then
+    echo "$stems_non_host must never depend on reprise-stems (binary-host-only, removable backend)" >&2
+    exit 1
+  fi
+done
+
+# reprise-stems itself links only the engine.
+stems_tree=$(run_dependency_probe "reprise-stems all features" \
+  -p reprise-stems --all-features -e normal --prefix none --target all) || exit 1
+stray_stems_edge=$(printf '%s\n' "$stems_tree" \
+  | rg '^reprise-[a-z-]+ ' \
+  | rg -v '^(reprise-core|reprise-stems) ' \
+  | sort -u || true)
+if [[ -n "$stray_stems_edge" ]]; then
+  echo "reprise-stems may depend on reprise-core only; found:" >&2
+  echo "$stray_stems_edge" >&2
+  exit 1
+fi
+
+# The GTK app-hosted instrumental worker consumes the core `stem_separation`
+# trait, never reprise-stems directly. The DEFAULT build must therefore not link
+# reprise-stems. P3b wired the real backend behind the gnome `stem-backend` cargo
+# feature (mirroring the CLI's `worker` feature): the GTK app is a sanctioned
+# binary host for reprise-stems (see the §"binary hosts" note above), but the
+# edge is feature-gated so this default-build probe stays green — a feature-gated
+# edge does not appear in the default `-e normal` tree. Build with
+# `--features stem-backend` for the real render.
+gnome_tree=$(run_dependency_probe "reprise-gnome default build" \
+  -p reprise-gnome -e normal --prefix none --target all) || exit 1
+if printf '%s\n' "$gnome_tree" | rg --quiet '^reprise-stems '; then
+  echo "reprise-gnome default build must not depend on reprise-stems (the worker consumes the core stem_separation trait)" >&2
+  exit 1
+fi
+
 if [[ -e crates/reprise-gnome/src/ui/compact/compact_player_state.rs ]]; then
   echo "orphan compact_player_state.rs must not be restored" >&2
   exit 1
@@ -125,6 +237,23 @@ for frontend_sql in \
   'SELECT id FROM tracks ORDER BY title DESC'; do
   if rg --fixed-strings --quiet "$frontend_sql" crates/reprise-gnome/src --glob '*.rs'; then
     echo "productive GNOME code must use core database facades: $frontend_sql" >&2
+    exit 1
+  fi
+done
+
+# The headless surfaces route every database operation through named core
+# facades too. They hold a rusqlite Connection only to open the migrated
+# database and to read busy/lock error codes — never to assemble SQL. This is
+# the "no SQL outside core" gate extended to reprise-cli/reprise-mcp (plan
+# §2.5). Uppercase statement keywords match real queries, not prose; test
+# fixtures (under tests/) may still use SQL to arrange and inspect their data.
+# `rg -U` (multiline) plus `\s+`/`[\s\S]` gaps catch keywords split across a
+# line break — e.g. `UPDATE` on one line and `foo SET …` on the next — which a
+# line-anchored pattern would miss.
+for headless_src in crates/reprise-cli/src crates/reprise-mcp/src; do
+  if rg --quiet -U '\b(SELECT|INSERT\s+INTO|UPDATE\b[\s\S]{0,200}?\bSET\b|DELETE\s+FROM|CREATE\s+TABLE|CREATE\s+INDEX|DROP\s+TABLE|ALTER\s+TABLE)\b' \
+    "$headless_src" --glob '*.rs'; then
+    echo "productive SQL is not allowed outside reprise-core: $headless_src" >&2
     exit 1
   fi
 done

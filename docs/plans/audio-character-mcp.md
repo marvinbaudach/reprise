@@ -427,6 +427,11 @@ nicht.
 
 ### M1 — Separates stdio-Crate und read-only Resources
 
+> **superseded by multi-frontend-core** (2026-07-21): `crates/reprise-mcp` wird
+> dort gegründet (Paket B), das dieses M1 vorzieht und die Tool-Domäne
+> erweitert. Nur dieser M1-Absatz ist abgelöst; M2–M5 und Stufe 1B bleiben
+> unberührt.
+
 **Commit:** `feat(mcp): expose local read-only library resources`
 
 **Failing Tests:** Workspace-/Lizenzgrenze, JSON-RPC-Handshake,

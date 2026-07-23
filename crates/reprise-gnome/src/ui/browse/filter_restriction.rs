@@ -6,14 +6,17 @@
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
 
-pub(in crate::ui) fn is_restricted(search: &str, browse: &BrowseFilter) -> bool {
-    !search.trim().is_empty() || !browse.is_empty()
+pub(in crate::ui) fn is_restricted(search: &str, browse: &BrowseFilter, exclude_ai: bool) -> bool {
+    !search.trim().is_empty() || !browse.is_empty() || exclude_ai
 }
 
 pub(in crate::ui) fn is_track_source(source: &ViewSource) -> bool {
     !matches!(
         source,
-        ViewSource::ImportErrors | ViewSource::MyStats | ViewSource::Device { .. }
+        ViewSource::ImportErrors
+            | ViewSource::MyStats
+            | ViewSource::Conversions
+            | ViewSource::Device { .. }
     )
 }
 
@@ -67,12 +70,21 @@ mod tests {
     // trim in reload's has_filter).
     #[test]
     fn fil_2_whitespace_search_does_not_restrict() {
-        assert!(!is_restricted("   ", &BrowseFilter::default()));
-        assert!(is_restricted("falling", &BrowseFilter::default()));
+        assert!(!is_restricted("   ", &BrowseFilter::default(), false));
+        assert!(is_restricted("falling", &BrowseFilter::default(), false));
         let browse = BrowseFilter {
             genre: Some("Metal".into()),
             ..BrowseFilter::default()
         };
-        assert!(is_restricted("", &browse));
+        assert!(is_restricted("", &browse, false));
+    }
+
+    // UX FIL-7: the AI-exclude filter is a restriction on its own — the row
+    // force-shows and the count switches to "X of Y" (FIL-2) even with an empty
+    // search and no facet.
+    #[test]
+    fn fil_7_exclude_ai_restricts_on_its_own() {
+        assert!(is_restricted("", &BrowseFilter::default(), true));
+        assert!(!is_restricted("", &BrowseFilter::default(), false));
     }
 }

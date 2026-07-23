@@ -28,9 +28,15 @@ auf einen GUI-freien Core und explizite Linux-Plattformverträge.
 | `reprise-core` | Bibliothek, SQLite-Queries, Queue-Semantik, Scanner, Playlists, Settings und Plattformverträge | Abhängigkeiten zu GTK, libadwaita, GStreamer, zbus oder GLib |
 | `reprise-platform-linux` | GStreamer-Wiedergabe und -Analyse, MPRIS/D-Bus, MTP, Papierkorb und weitere Linux-Adapter | Produkt-UI oder duplizierte Fachregeln |
 | `reprise-gnome` | GTK4-/libadwaita-Präsentation, Interaktionszustand, Accessibility und Desktop-Komposition | Produktives SQL, blockierendes HTTP oder direkte GStreamer-Orchestrierung |
+| `reprise-cli` | Headless-CLI über Core-Fassaden: Playlists, Suche, Library-Summary, Scan und Instrumental-Jobs | Andere Workspace-Crates als reprise-core (ausser den feature-gegateten mpris-/worker-Ausnahmen) oder produktives SQL |
+| `reprise-mcp` | Lokaler stdio-MCP-Server: read-only Library-Resources und capability-gegatete Create-Tools für Agenten | Andere Workspace-Crates als reprise-core, produktives SQL oder Playback-/Queue-/Tag-/Delete-Tools |
+| `reprise-stems` | Portables Stem-Separation-Backend (ML-Inferenz) für die experimentellen Instrumental-Jobs | Andere Workspace-Crates als reprise-core oder GUI-/Engine-Kopplung |
 
 Die gemeinsame Engine besitzt Verhalten und Daten; Plattform-Crates
-implementieren schmale Verträge, während jedes Frontend nativ bleibt.
+implementieren schmale Verträge, während jedes Frontend nativ bleibt. Die
+`reprise-cli`- und `reprise-mcp`-Frontends laufen als eigene Prozesse über
+dieselbe Datenbank, und ein Change-Log-Notifier lässt ihre Änderungen in einer
+laufenden GTK-App live erscheinen — ohne Neustart.
 `scripts/check-architecture.sh` erzwingt Abhängigkeitsrichtung, Core Purity,
 Dateigrössen und bekannte Kopplungsgrenzen der Präsentationsschicht.
 

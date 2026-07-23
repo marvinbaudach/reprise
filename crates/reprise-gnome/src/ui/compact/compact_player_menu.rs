@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use super::strings;
@@ -42,6 +42,7 @@ pub(in crate::ui) struct CompactMenu {
     on_preferences: VoidCallback,
     on_quit: VoidCallback,
     is_playing: RefCell<bool>,
+    always_on_top_available: Cell<bool>,
 }
 
 impl CompactMenu {
@@ -101,7 +102,7 @@ impl CompactMenu {
             .all(|action| action_group.has_action(action)));
 
         let playback_section = gio::Menu::new();
-        let menu_model = menu_model(&playback_section, false);
+        let menu_model = menu_model(&playback_section, false, true);
         let popover = gtk4::PopoverMenu::from_model(Some(&menu_model));
         popover.set_has_arrow(false);
 
@@ -118,6 +119,7 @@ impl CompactMenu {
             on_preferences,
             on_quit,
             is_playing: RefCell::new(false),
+            always_on_top_available: Cell::new(true),
         }
     }
 
@@ -128,6 +130,18 @@ impl CompactMenu {
         }
         *current = playing;
         rebuild_playback_section(&self.playback_section, playing);
+    }
+
+    /// Shows or hides the "Always on Top" section (MINI-3). Rebuilds the
+    /// popover model, reusing the same playback section so the play/pause
+    /// label stays in sync.
+    pub(in crate::ui) fn set_always_on_top_available(&self, available: bool) {
+        if self.always_on_top_available.get() == available {
+            return;
+        }
+        self.always_on_top_available.set(available);
+        let model = menu_model(&self.playback_section, *self.is_playing.borrow(), available);
+        self.popover.set_menu_model(Some(&model));
     }
 
     pub(in crate::ui) fn set_on_restore(&self, callback: Rc<dyn Fn()>) {
@@ -165,7 +179,11 @@ impl CompactMenu {
 /// 2. Pause / Next / Previous (Space, Ctrl+→, Ctrl+←)
 /// 3. Always on Top (toggle)
 /// 4. Preferences (Ctrl+,) / Quit (Ctrl+Q)
-fn menu_model(playback_section: &gio::Menu, is_playing: bool) -> gio::Menu {
+fn menu_model(
+    playback_section: &gio::Menu,
+    is_playing: bool,
+    always_on_top_available: bool,
+) -> gio::Menu {
     let restore = gio::Menu::new();
     restore.append_item(&item_with_accel(
         &strings::text(strings::RESTORE_FULL_WINDOW),
@@ -196,7 +214,9 @@ fn menu_model(playback_section: &gio::Menu, is_playing: bool) -> gio::Menu {
     let menu = gio::Menu::new();
     menu.append_section(None, &restore);
     menu.append_section(None, playback_section);
-    menu.append_section(None, &window);
+    if always_on_top_available {
+        menu.append_section(None, &window);
+    }
     menu.append_section(None, &footer);
     menu
 }
@@ -271,15 +291,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn context_menu_is_limited_to_non_interactive_regions() {
+    fn mini_3_context_menu_skips_interactive_regions() {
         assert!(accepts_context_menu(false));
         assert!(!accepts_context_menu(true));
     }
 
     #[test]
-    fn menu_model_has_four_sections() {
+    fn mini_3_context_menu_has_four_sections() {
         let playback = gio::Menu::new();
-        let model = menu_model(&playback, false);
+        let model = menu_model(&playback, false, true);
         let mut section_count = 0;
         for i in 0..model.n_items() {
             if model.item_link(i, "section").is_some() {
@@ -290,7 +310,7 @@ mod tests {
     }
 
     #[test]
-    fn playback_label_reflects_playing_state() {
+    fn mini_3_context_menu_playback_label_reflects_state() {
         let section = gio::Menu::new();
         rebuild_playback_section(&section, true);
         let label = section
@@ -306,10 +326,10 @@ mod tests {
     }
 
     #[test]
-    fn menu_has_only_the_supported_native_actions() {
+    fn mini_3_context_menu_actions_match_contract() {
         let mut actions = BTreeSet::new();
         let playback = gio::Menu::new();
-        let model = menu_model(&playback, false);
+        let model = menu_model(&playback, false, true);
         assert!(!collect_model_contract(model.upcast_ref(), &mut actions));
         assert_eq!(
             actions,
@@ -325,6 +345,25 @@ mod tests {
             .into_iter()
             .collect()
         );
+    }
+
+    #[test]
+    fn mini_3_context_menu_hides_always_on_top_on_wayland() {
+        let playback = gio::Menu::new();
+        let with = menu_model(&playback, false, true);
+        let without = menu_model(&playback, false, false);
+
+        let count_sections = |model: &gio::Menu| {
+            (0..model.n_items())
+                .filter(|i| model.item_link(*i, "section").is_some())
+                .count()
+        };
+        assert_eq!(count_sections(&with), 4);
+        assert_eq!(count_sections(&without), 3);
+
+        let mut actions = BTreeSet::new();
+        collect_model_contract(without.upcast_ref(), &mut actions);
+        assert!(!actions.contains("compact.always-on-top"));
     }
 
     fn collect_model_contract(model: &gio::MenuModel, actions: &mut BTreeSet<String>) -> bool {

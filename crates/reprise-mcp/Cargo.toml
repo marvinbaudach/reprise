@@ -1,0 +1,56 @@
+[package]
+name = "reprise-mcp"
+description = "Local stdio MCP server exposing the Reprise library to agents (built out in package B)."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+# MIT, like reprise-core: the MCP server is a first-party frontend over the
+# MIT engine.
+license = "MIT"
+
+[[bin]]
+name = "reprise-mcp"
+path = "src/main.rs"
+
+[dependencies]
+# The seam back to the library is core-only (enforced by
+# scripts/check-architecture.sh, extended in package I). `rusqlite` is a direct
+# dependency only because the core facades surface `rusqlite::Error` in their
+# signatures — it is an external crate, not a second workspace edge.
+reprise-core = { path = "../reprise-core" }
+rusqlite = { version = "0.40", features = ["bundled"] }
+# Official MCP Rust SDK (Tier 2). Pinned exactly (`=`) and additionally guarded
+# by the JSON-RPC fixtures under `tests/` so an SDK bump is a deliberate,
+# reviewed single commit — see docs/plans/multi-frontend-core.md (§2.5, risk
+# "MCP-SDK-Churn"). Minimal feature set: a stdio server with the tool macros.
+rmcp = { version = "=2.2.0", default-features = false, features = [
+    "server",
+    "macros",
+    "transport-io",
+] }
+# tokio lives ONLY in this crate (the SDK forces it); stdio needs no socket
+# reactor, so the "net" feature is deliberately omitted. `enable_all()` still
+# enables whatever IO/time drivers are compiled in, keeping runtime
+# construction robust.
+tokio = { version = "1", default-features = false, features = [
+    "rt-multi-thread",
+    "io-std",
+    "time",
+] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+# The integration tests spawn the real binary and speak JSON-RPC over its
+# stdio; they arrange throwaway temp databases directly (test-fixture SQL is
+# explicitly allowed by scripts/check-architecture.sh).
+reprise-core = { path = "../reprise-core" }
+rusqlite = { version = "0.40", features = ["bundled"] }
+serde_json = "1"
+tempfile = "3"
+
+[lints]
+workspace = true

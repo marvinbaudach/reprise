@@ -57,7 +57,6 @@ pub(in crate::ui) struct PlayerBarWidgets {
     pub(in crate::ui) position_label: gtk4::Label,
     pub(in crate::ui) duration_label: gtk4::Label,
     pub(in crate::ui) waveform: super::waveform_seek::WaveformSeek,
-    pub(in crate::ui) analysis_info_button: gtk4::Button,
     pub(in crate::ui) volume_icon: gtk4::Button,
     pub(in crate::ui) volume_scale: gtk4::Scale,
 }
@@ -219,21 +218,12 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     });
     volume_scale.add_controller(knob_motion);
 
-    let analysis_info_button = gtk4::Button::from_icon_name("dialog-information-symbolic");
-    analysis_info_button.set_tooltip_text(Some(&strings::text(strings::SONG_ANALYSIS)));
-    analysis_info_button.update_property(&[gtk4::accessible::Property::Label(&strings::text(
-        strings::SONG_ANALYSIS,
-    ))]);
-    analysis_info_button.set_valign(gtk4::Align::Center);
-    buttons::arm(&analysis_info_button, buttons::ICON_CLASS);
-
     let volume_icon = gtk4::Button::from_icon_name(ICON_VOLUME_HIGH);
     volume_icon.set_tooltip_text(Some(&strings::text(strings::VOLUME)));
     volume_icon.set_valign(gtk4::Align::Center);
     volume_icon.add_css_class("flat");
 
     let end_zone = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
-    end_zone.append(&analysis_info_button);
     end_zone.append(&volume_icon);
     end_zone.append(&volume_scale);
     end_zone.set_valign(gtk4::Align::Center);
@@ -273,7 +263,6 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         position_label,
         duration_label,
         waveform,
-        analysis_info_button,
         volume_icon,
         volume_scale,
     }

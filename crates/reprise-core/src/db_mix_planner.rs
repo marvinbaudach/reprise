@@ -21,6 +21,9 @@ CREATE TABLE IF NOT EXISTS mix_draft_tracks (
 CREATE INDEX IF NOT EXISTS idx_mix_drafts_expiry ON mix_drafts(status, expires_at);
 "#;
 
+// Retained as immutable schema history: the Create Similar Mix feature was
+// removed and its tables are dropped by v27 (see
+// `db_drop_audio_analysis_mix`), but every database still walks this v23 step.
 pub(crate) fn migrate_v23(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version < 23 {
@@ -30,34 +33,4 @@ pub(crate) fn migrate_v23(conn: &Connection) -> Result<(), rusqlite::Error> {
         tx.commit()?;
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn migration_v22_to_v23_preserves_library_and_cascades_draft_positions() {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
-        conn.execute(
-            "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (1, '/fixture/a', 'A', 'Artist', 1)",
-            [],
-        )
-        .unwrap();
-        conn.execute_batch(
-            "DROP TABLE mix_draft_tracks; DROP TABLE mix_drafts; PRAGMA user_version = 22;",
-        )
-        .unwrap();
-        super::migrate_v23(&conn).unwrap();
-        let version: i64 = conn
-            .query_row("PRAGMA user_version", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(version, 23);
-        let title: String = conn
-            .query_row("SELECT title FROM tracks WHERE id = 1", [], |row| {
-                row.get(0)
-            })
-            .unwrap();
-        assert_eq!(title, "A");
-        super::migrate_v23(&conn).unwrap();
-    }
 }

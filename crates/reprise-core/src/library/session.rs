@@ -39,10 +39,10 @@ pub struct SessionState {
     pub sort_dir: String,
     /// The one browser destination restored at startup. Back/Forward stacks
     /// are deliberately not serialized.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_optional_browser_place")]
     pub browser_place: Option<BrowserPlace>,
     /// The remembered unscoped Music place, including its local refinements.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_optional_browser_place")]
     pub library_root: Option<BrowserPlace>,
     pub queue: QueueSnapshot,
     #[serde(default, deserialize_with = "deserialize_up_next")]
@@ -60,7 +60,7 @@ pub struct SessionState {
     #[serde(default, deserialize_with = "deserialize_play_origin_label")]
     pub play_origin_label: Option<String>,
     /// Complete immutable playback origin for scoped Album/Artist reveals.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_optional_browser_place")]
     pub play_origin_place: Option<BrowserPlace>,
 }
 
@@ -299,6 +299,22 @@ where
     Ok(serde_json::from_value(value).unwrap_or_default())
 }
 
+/// Tolerates a removed `BrowserPlace` enum variant in old session JSON: an
+/// unrecognized value degrades to `None` for that field instead of failing
+/// the whole `SessionState` deserialization (which would otherwise discard
+/// the complete session — geometry and queue included — over one stale
+/// nav place). `normalize`/`resolve_persisted_places` then fall back to the
+/// remembered library root, same as any other unresolvable place.
+fn deserialize_optional_browser_place<'de, D>(
+    deserializer: D,
+) -> Result<Option<BrowserPlace>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
+}
+
 fn deserialize_play_origin<'de, D>(deserializer: D) -> Result<Option<SessionSource>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -425,6 +441,44 @@ mod tests {
         value["version"] = serde_json::json!(99);
         crate::library::settings::set_setting(&conn, SESSION_KEY, &value.to_string()).unwrap();
         assert_eq!(load(&conn), SessionState::default());
+    }
+
+    #[test]
+    fn session_with_removed_place_variant_falls_back_to_library_root() {
+        let conn = conn();
+        let mut state = full_state();
+        state.play_origin_place = Some(BrowserPlace::from(ViewSource::Library));
+        save(&conn, &state).unwrap();
+
+        // Frozen legacy shape: `BrowserPlace` has no serde tag attribute, so
+        // a unit variant serializes as a bare string (verified against the
+        // still-live enum before it was removed). A session saved before
+        // `BrowserPlace::NewReleases` was removed therefore looks exactly
+        // like this on disk.
+        let mut value = serde_json::to_value(&state).unwrap();
+        value["browser_place"] = serde_json::json!("NewReleases");
+        value["library_root"] = serde_json::json!("NewReleases");
+        value["play_origin_place"] = serde_json::json!("NewReleases");
+        crate::library::settings::set_setting(&conn, SESSION_KEY, &value.to_string()).unwrap();
+
+        let restored = load(&conn);
+
+        // The unknown variant must degrade to `None` per field instead of
+        // failing the whole `SessionState` deserialization — otherwise the
+        // entire session (geometry, queue) is discarded, not just the place.
+        assert_eq!(
+            restored.browser_place,
+            Some(BrowserPlace::from(ViewSource::Library))
+        );
+        assert!(restored
+            .library_root
+            .as_ref()
+            .is_some_and(BrowserPlace::is_library_root));
+        assert_eq!(restored.play_origin_place, None);
+        assert_eq!(restored.window_width, state.window_width);
+        assert_eq!(restored.window_height, state.window_height);
+        assert_eq!(restored.maximized, state.maximized);
+        assert_eq!(restored.queue, state.queue);
     }
 
     #[test]

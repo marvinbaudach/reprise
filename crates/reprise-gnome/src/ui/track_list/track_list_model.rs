@@ -67,6 +67,15 @@ mod imp {
         pub sort_dir: String,
         pub filter: String,
         pub browse: BrowseFilter,
+        /// FIL-7: hide AI-flagged tracks (only honored on the flat Library
+        /// source, where the browse filter row lives).
+        pub exclude_ai: bool,
+        /// INST-10 / FIX-4: whether the windowed query projects the real `is_ai`
+        /// column (the correlated provenance `EXISTS`) or a cheap literal `0`.
+        /// Set to `experimental_enabled` when the query is (re)set — the AI badge
+        /// only renders while the experimental switch is on, so with it off the
+        /// hot windowed query pays no per-row provenance subquery.
+        pub project_ai: bool,
         /// Only meaningful when `source == ViewSource::Queue` — see
         /// `TrackListModel::set_query`'s doc comment. Empty (and ignored)
         /// for every other source.
@@ -252,6 +261,29 @@ impl TrackListModel {
         browse: &BrowseFilter,
         queue_ids: &[i64],
     ) {
+        self.set_query_browsed_ai(
+            source, sort_field, sort_dir, filter, browse, queue_ids, false,
+        );
+    }
+
+    /// Like [`set_query_browsed`](Self::set_query_browsed) but honoring the
+    /// FIL-7 AI-exclude filter. When `exclude_ai` is set the window uses the
+    /// core `*_ai` query and the row **count** uses the cheap core
+    /// `query_track_count_browsed_ai` (a `COUNT(*)`), so the total is exact even
+    /// for very large libraries — no longer the `QUEUE_LIMIT`-capped id-list
+    /// length. When that count reaches the cap the view's "play all" queue will
+    /// be truncated, so it logs the conventional `is_queue_capped` warning.
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_query_browsed_ai(
+        &self,
+        source: &ViewSource,
+        sort_field: &str,
+        sort_dir: &str,
+        filter: &str,
+        browse: &BrowseFilter,
+        queue_ids: &[i64],
+        exclude_ai: bool,
+    ) {
         let old_total = self.imp().state.borrow().total;
 
         let Some(conn) = self.imp().conn.borrow().clone() else {
@@ -259,16 +291,47 @@ impl TrackListModel {
             return;
         };
 
-        let new_total = {
+        let new_total = if exclude_ai {
             let conn_ref = conn.borrow();
-            match queries::query_track_count_browsed(&conn_ref, source, filter, browse, queue_ids) {
-                Ok(n) => n.max(0) as u32,
-                Err(error) => {
-                    tracing::error!(%error, source = %source.label(), sort_field, sort_dir, filter, "failed to count tracks for query");
+            queries::query_track_count_browsed_ai(
+                &conn_ref, source, filter, browse, queue_ids, true,
+            )
+            .map_or_else(
+                |error| {
+                    tracing::error!(%error, "failed to count non-AI tracks for query");
                     0
-                }
-            }
+                },
+                |count| {
+                    let total = count.max(0) as u32;
+                    // The count is exact now, but the "play all" queue this view
+                    // feeds still caps at QUEUE_LIMIT — warn per convention when
+                    // the view is that large, so the truncation is not silent.
+                    if queries::is_queue_capped(total as usize) {
+                        tracing::warn!(
+                            limit = queries::QUEUE_LIMIT,
+                            "AI-filtered view queue capped at {} tracks",
+                            queries::QUEUE_LIMIT
+                        );
+                    }
+                    total
+                },
+            )
+        } else {
+            let conn_ref = conn.borrow();
+            queries::query_track_count_browsed(&conn_ref, source, filter, browse, queue_ids)
+                .map_or_else(
+                    |error| {
+                        tracing::error!(%error, source = %source.label(), "failed to count tracks for query");
+                        0
+                    },
+                    |n| n.max(0) as u32,
+                )
         };
+
+        // INST-10 / FIX-4: the AI badge (and so the `is_ai` column) is needed
+        // only while the experimental switch is on. Cache that here so the hot
+        // windowed query pays the correlated provenance subquery only then.
+        let project_ai = crate::ui::instrumental::experimental_enabled(&conn.borrow());
 
         {
             let mut state = self.imp().state.borrow_mut();
@@ -277,6 +340,8 @@ impl TrackListModel {
             state.sort_dir = sort_dir.to_string();
             state.filter = filter.to_string();
             state.browse = browse.clone();
+            state.exclude_ai = exclude_ai;
+            state.project_ai = project_ai;
             state.queue_ids = queue_ids.to_vec();
             state.virtual_queue = None;
             state.total = new_total;
@@ -289,6 +354,7 @@ impl TrackListModel {
             sort_field,
             sort_dir,
             filter,
+            exclude_ai,
             "model query set"
         );
 
@@ -324,7 +390,17 @@ impl TrackListModel {
             return None;
         };
 
-        let (source, sort_field, sort_dir, filter, browse, queue_ids, virtual_queue) = {
+        let (
+            source,
+            sort_field,
+            sort_dir,
+            filter,
+            browse,
+            exclude_ai,
+            project_ai,
+            queue_ids,
+            virtual_queue,
+        ) = {
             let state = self.imp().state.borrow();
             (
                 state.source.clone(),
@@ -332,6 +408,8 @@ impl TrackListModel {
                 state.sort_dir.clone(),
                 state.filter.clone(),
                 state.browse.clone(),
+                state.exclude_ai,
+                state.project_ai,
                 state.queue_ids.clone(),
                 state.virtual_queue.clone(),
             )
@@ -352,7 +430,7 @@ impl TrackListModel {
 
         let rows = {
             let mut conn = conn.borrow_mut();
-            queries::query_track_window_browsed(
+            queries::query_track_window_browsed_ai(
                 &mut conn,
                 &source,
                 &sort_field,
@@ -362,6 +440,8 @@ impl TrackListModel {
                 query_offset,
                 i64::from(WINDOW_SIZE),
                 &queue_ids,
+                exclude_ai,
+                project_ai,
             )
         };
 
@@ -394,13 +474,25 @@ impl TrackListModel {
     /// Invalidates the cached window covering `position` and fires
     /// `items_changed(position, 1, 1)` so anything bound to the model
     /// (`GtkColumnView`/`NoSelection`) re-pulls that exact row via `item()`.
-    /// Used after a rating write (`track_list.rs`): the database now holds
-    /// the new value, but the model's cache still holds the `Track` clone
-    /// from before the write, and dropping the *whole* cache (as
-    /// `set_query` does) would be a much heavier hammer for a one-row
-    /// change. Out-of-range positions are logged and ignored rather than
-    /// panicking, matching every other fallible path on this type.
-    pub fn invalidate_window_at(&self, position: u32) {
+    /// Out-of-range positions are logged and ignored rather than panicking,
+    /// matching every other fallible path on this type.
+    ///
+    /// CAUTION: that one-row `items_changed` is a *fake* remove+insert, which
+    /// makes GtkColumnView replace the row widget under the pointer/focus and
+    /// snap the viewport to the TOP — the "double-click / rating jumps to the
+    /// top" bug. Do NOT use this to reflect a change on a row the user just
+    /// interacted with. For a rating write use [`Self::set_cached_rating`] (the
+    /// star widget already shows the value; only the cache needs patching), and
+    /// for the now-playing marker use `now_playing_marker`'s in-place
+    /// re-appliers — both update visible cells with no signal and no jump. This
+    /// remains only for a genuine row-content change that is NOT under the
+    /// pointer (currently none in the UI, hence `pub(in crate::ui)`).
+    // Deliberately retained but currently UI-unused: the scroll-jump fix
+    // (now-playing marker via `now_playing_marker`, rating via
+    // `set_cached_rating`) removed its last caller, but it stays as the tested,
+    // documented escape hatch for a future non-pointer row-content change.
+    #[allow(dead_code)]
+    pub(in crate::ui) fn invalidate_window_at(&self, position: u32) {
         let total = self.imp().state.borrow().total;
         if position >= total {
             tracing::warn!(
@@ -415,6 +507,30 @@ impl TrackListModel {
         self.imp().state.borrow_mut().cache.remove(&window_start);
 
         self.items_changed(position, 1, 1);
+    }
+
+    /// Patches the cached `Track`'s rating at `position` IN PLACE, emitting no
+    /// model signal. Counterpart to [`Self::invalidate_window_at`] for the one
+    /// case where the visible cell is already correct: a star-rating click runs
+    /// `RatingWidget::set_rating` before this, so only the model's cached clone
+    /// is stale. `invalidate_window_at`'s `items_changed(pos, 1, 1)` would fix
+    /// that clone too, but its fake remove+insert makes GtkColumnView replace
+    /// the row widget under the pointer and snap the viewport back to the top —
+    /// the long-standing "rating click jumps to the top" bug. Patching the
+    /// cached value directly keeps a later scroll-away/back correct WITHOUT any
+    /// signal. If the covering window is not cached there is nothing to patch:
+    /// the next `track_at` re-reads the (already-updated) row from SQL.
+    pub fn set_cached_rating(&self, position: u32, rating: i32) {
+        let window_start = (position / WINDOW_SIZE) * WINDOW_SIZE;
+        let offset_in_window = (position - window_start) as usize;
+        let mut state = self.imp().state.borrow_mut();
+        if let Some(track) = state
+            .cache
+            .get_mut(&window_start)
+            .and_then(|window| window.get_mut(offset_in_window))
+        {
+            track.rating = rating;
+        }
     }
 
     /// Test-only accessor exposing the set of currently cached window-start
@@ -436,262 +552,8 @@ impl TrackListModel {
 }
 
 #[cfg(test)]
-mod tests {
-
-    #[test]
-    fn section_for_answers_ranges_and_full_model_fallback() {
-        let ranges = [(0u32, 1u32), (1, 3), (3, 6)];
-        assert_eq!(super::imp::section_for(&ranges, 6, 0), (0, 1));
-        assert_eq!(super::imp::section_for(&ranges, 6, 2), (1, 3));
-        assert_eq!(super::imp::section_for(&ranges, 6, 5), (3, 6));
-        // Past the declared ranges (transient sections/total mismatch): the
-        // answer must be a NON-overlapping tail section, never one starting
-        // at 0 — an answer overlapping an already-matched header is exactly
-        // what GTK's gtk_list_item_manager_ensure_items asserts on (seen
-        // live: abort on switching to the Queue view from a deep-scrolled
-        // larger view).
-        assert_eq!(super::imp::section_for(&ranges, 6, 9), (6, 10));
-        // The live crash shape: a 2-row queue's ranges against a still-500-
-        // row model, viewport tracking position 499.
-        assert_eq!(
-            super::imp::section_for(&[(0, 1), (1, 2)], 500, 499),
-            (2, 500)
-        );
-        // No sections declared: the whole model stays one section.
-        assert_eq!(super::imp::section_for(&[], 42, 7), (0, 42));
-    }
-    use super::*;
-
-    fn seeded_model(rows: &[(&str, &str)]) -> TrackListModel {
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        for (t, a) in rows {
-            conn.execute(
-                "INSERT INTO tracks (path, title, artist, added_at) VALUES (?1, ?2, ?3, 0)",
-                rusqlite::params![format!("/x/{t}.flac"), t, a],
-            )
-            .unwrap();
-        }
-        TrackListModel::new(Rc::new(RefCell::new(conn)))
-    }
-
-    /// Sortable, zero-padded title for row `i` (e.g. `track-00042`), used by
-    /// the bulk-seeding tests below so the expected sort order is a trivial
-    /// function of the row index.
-    fn bulk_title(i: u32) -> String {
-        format!("track-{i:05}")
-    }
-
-    /// Seeds `count` rows in a single transaction (fast even for thousands
-    /// of rows) with titles from `bulk_title`, so ascending title sort order
-    /// matches ascending insertion/index order.
-    fn seeded_model_bulk(count: u32) -> TrackListModel {
-        let mut conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        {
-            let tx = conn.transaction().unwrap();
-            for i in 0..count {
-                let title = bulk_title(i);
-                tx.execute(
-                    "INSERT INTO tracks (path, title, artist, added_at) VALUES (?1, ?2, ?3, 0)",
-                    rusqlite::params![format!("/x/{i:05}.flac"), title, "Bulk Artist"],
-                )
-                .unwrap();
-            }
-            tx.commit().unwrap();
-        }
-        TrackListModel::new(Rc::new(RefCell::new(conn)))
-    }
-
-    #[test]
-    fn set_query_updates_n_items_from_count() {
-        let model = seeded_model(&[("Zulu", "AAA"), ("Alpha", "BBB"), ("Mid", "CCC")]);
-        assert_eq!(model.n_items(), 0);
-        model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
-        assert_eq!(model.n_items(), 3);
-    }
-
-    #[test]
-    fn queue_snapshot_defers_metadata_until_a_row_is_requested() {
-        let model = seeded_model(&[("One", "A"), ("Two", "B"), ("Three", "C")]);
-
-        let queue = super::super::queue_sections::compose(None, &[3, 1], &[], None);
-        model.set_queue_snapshot(&queue, vec![(0, 2)]);
-
-        assert_eq!(model.n_items(), 2);
-        assert!(model.cached_windows().is_empty());
-        assert_eq!(model.track_at(0).unwrap().id, 3);
-        assert_eq!(model.track_at(1).unwrap().id, 1);
-        assert_eq!(model.cached_windows(), vec![0]);
-    }
-
-    #[test]
-    fn set_query_applies_filter_to_count_and_rows() {
-        let model = seeded_model(&[("Zulu", "AAA"), ("Alpha", "BBB"), ("Mid", "CCC")]);
-        model.set_query(&ViewSource::Library, "title", "asc", "zu", &[]);
-        assert_eq!(model.n_items(), 1);
-        assert_eq!(model.track_at(0).unwrap().title, "Zulu");
-    }
-
-    #[test]
-    fn track_at_loads_in_sorted_order() {
-        let model = seeded_model(&[("Zulu", "AAA"), ("Alpha", "BBB"), ("Mid", "CCC")]);
-        model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
-        assert_eq!(model.track_at(0).unwrap().title, "Alpha");
-        assert_eq!(model.track_at(1).unwrap().title, "Mid");
-        assert_eq!(model.track_at(2).unwrap().title, "Zulu");
-    }
-
-    #[test]
-    fn track_at_out_of_range_returns_none() {
-        let model = seeded_model(&[("Alpha", "BBB")]);
-        model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
-        assert!(model.track_at(5).is_none());
-    }
-
-    #[test]
-    fn set_query_clears_stale_cache_between_queries() {
-        let model = seeded_model(&[("Zulu", "AAA"), ("Alpha", "BBB")]);
-        model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
-        assert_eq!(model.track_at(0).unwrap().title, "Alpha");
-        model.set_query(&ViewSource::Library, "title", "desc", "", &[]);
-        assert_eq!(model.track_at(0).unwrap().title, "Zulu");
-    }
-
-    /// Regression test: all prior tests seeded <=3 rows, so every `track_at`
-    /// call stayed inside window 0 and never exercised the window-boundary
-    /// math (`window_start`/`offset_in_window`) for a second or later
-    /// window. Seed >200 rows (WINDOW_SIZE) so position 200 falls in window
-    /// 1 and position 449 falls in window 2, and check both land on the
-    /// title the sort order predicts.
-    #[test]
-    fn track_at_spans_multiple_windows_in_sorted_order() {
-        const ROW_COUNT: u32 = 450;
-        let model = seeded_model_bulk(ROW_COUNT);
-        model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
-        assert_eq!(model.n_items(), ROW_COUNT);
-
-        assert_eq!(model.track_at(0).unwrap().title, bulk_title(0));
-        assert_eq!(model.track_at(200).unwrap().title, bulk_title(200));
-        assert_eq!(model.track_at(449).unwrap().title, bulk_title(449));
-
-        assert!(model.track_at(ROW_COUNT).is_none());
-    }
-
-    #[test]
-    fn invalidate_window_at_forces_a_fresh_read_of_that_row() {
-        let model = seeded_model(&[("Zulu", "AAA"), ("Alpha", "BBB")]);
-        model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
-        assert_eq!(model.track_at(0).unwrap().rating, 0);
-
-        // Mutate the underlying row directly (simulating a rating write
-        // elsewhere), bypassing the model entirely.
-        {
-            let conn = model.imp().conn.borrow().clone().unwrap();
-            conn.borrow()
-                .execute("UPDATE tracks SET rating = 4 WHERE title = 'Alpha'", [])
-                .unwrap();
-        }
-
-        // Without invalidation the cached clone is still stale.
-        assert_eq!(model.track_at(0).unwrap().rating, 0);
-
-        model.invalidate_window_at(0);
-        assert_eq!(model.track_at(0).unwrap().rating, 4);
-    }
-
-    #[test]
-    fn invalidate_window_at_out_of_range_is_a_no_op() {
-        let model = seeded_model(&[("Alpha", "BBB")]);
-        model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
-        // Must not panic.
-        model.invalidate_window_at(5);
-    }
-
-    /// Regression test: eviction (`MAX_CACHED_WINDOWS` = 8, drop the
-    /// lowest-indexed cached window) was never exercised because no test
-    /// touched more than one window. Seed 1700 rows (9 windows) and touch
-    /// one position per window in ascending order so the 9th touch forces
-    /// an eviction; assert the cache holds exactly 8 windows, window 0 was
-    /// evicted, and the just-loaded window 8 is present.
-    #[test]
-    fn track_at_evicts_lowest_window_past_cache_capacity() {
-        const ROW_COUNT: u32 = 1700;
-        const WINDOW_COUNT: u32 = 9;
-        let model = seeded_model_bulk(ROW_COUNT);
-        model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
-
-        for window in 0..WINDOW_COUNT {
-            let position = window * WINDOW_SIZE;
-            assert_eq!(
-                model.track_at(position).unwrap().title,
-                bulk_title(position)
-            );
-        }
-
-        let mut cached = model.cached_windows();
-        cached.sort_unstable();
-        assert_eq!(cached.len(), MAX_CACHED_WINDOWS);
-        assert_eq!(cached, vec![200, 400, 600, 800, 1000, 1200, 1400, 1600]);
-        assert!(!cached.contains(&0), "window 0 should have been evicted");
-        assert!(
-            cached.contains(&(8 * WINDOW_SIZE)),
-            "just-loaded window 8 should be present"
-        );
-    }
-
-    /// Stage 3 Task 3: `set_query`/`track_at` must plumb a non-Library
-    /// `ViewSource` through to `queries::query_track_window`/`query_track_
-    /// count` unchanged — exercised here end-to-end through the model
-    /// (`queries.rs`'s own test module covers each source's SQL directly).
-    #[test]
-    fn set_query_with_missing_source_shows_only_missing_rows() {
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        for (t, missing_since) in [("Alpha", None), ("Beta", Some(1))] {
-            conn.execute(
-                "INSERT INTO tracks (path, title, artist, added_at, missing_since) \
-                 VALUES (?1, ?2, '', 0, ?3)",
-                rusqlite::params![format!("/x/{t}.flac"), t, missing_since],
-            )
-            .unwrap();
-        }
-        let model = TrackListModel::new(Rc::new(RefCell::new(conn)));
-
-        model.set_query(&ViewSource::Missing, "title", "asc", "", &[]);
-        assert_eq!(model.n_items(), 1);
-        assert_eq!(model.track_at(0).unwrap().title, "Beta");
-    }
-
-    /// `ViewSource::Queue` reads its rows from the `queue_ids` param, not
-    /// from any `WHERE` clause — this pins that `set_query`/`track_at`
-    /// actually thread that slice through to `queries::query_track_window`
-    /// and preserve its order.
-    #[test]
-    fn set_query_with_queue_source_follows_queue_ids_order() {
-        let model = seeded_model(&[("Zulu", "AAA"), ("Alpha", "BBB"), ("Mid", "CCC")]);
-        let ids: Vec<i64> = {
-            let conn = model.imp().conn.borrow().clone().unwrap();
-            let conn = conn.borrow();
-            let mut stmt = conn
-                .prepare("SELECT id FROM tracks ORDER BY title")
-                .unwrap();
-            stmt.query_map([], |r| r.get(0))
-                .unwrap()
-                .collect::<Result<_, _>>()
-                .unwrap()
-        };
-        // ids sorted by title are [Alpha, Mid, Zulu]; reverse them so the
-        // Queue order is the opposite of any column sort.
-        let queue_ids: Vec<i64> = ids.into_iter().rev().collect();
-
-        model.set_query(&ViewSource::Queue, "ignored", "ignored", "", &queue_ids);
-        assert_eq!(model.n_items(), 3);
-        assert_eq!(model.track_at(0).unwrap().title, "Zulu");
-        assert_eq!(model.track_at(1).unwrap().title, "Mid");
-        assert_eq!(model.track_at(2).unwrap().title, "Alpha");
-    }
-}
+#[path = "track_list_model_tests.rs"]
+mod tests;
 
 #[cfg(test)]
 #[path = "track_list_model_scalability_tests.rs"]

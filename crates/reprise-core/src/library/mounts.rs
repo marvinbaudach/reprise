@@ -70,12 +70,30 @@ use crate::models::MissingReason;
 /// [`classify_missing`]'s `debug_assert!`, the one real caller wired in by
 /// Task 1.5, for where that assumption is actually checked.
 fn nearest_existing_ancestor(path: &Path) -> Option<(PathBuf, u64)> {
-    use std::os::unix::fs::MetadataExt;
     path.ancestors().find_map(|ancestor| {
         std::fs::symlink_metadata(ancestor)
             .ok()
-            .map(|meta| (ancestor.to_path_buf(), meta.dev()))
+            .map(|meta| (ancestor.to_path_buf(), device_id(&meta)))
     })
+}
+
+/// The filesystem device id used for mount-point grouping: Unix `st_dev`. The
+/// app runs on Linux; the non-Unix arm exists only to keep `reprise-core`
+/// cross-checkable (spec I / cross-target CI). There is no stable portable
+/// device id, so off Unix it collapses to `0` — every path then shares one
+/// "device" and the mount-point walk below becomes a harmless no-op (never
+/// reached at runtime).
+fn device_id(meta: &std::fs::Metadata) -> u64 {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        meta.dev()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = meta;
+        0
+    }
 }
 
 /// `st_dev` of the nearest ancestor of `path` that currently exists,
@@ -105,14 +123,15 @@ pub(crate) fn nearest_existing_ancestor_dev(path: &Path) -> Option<u64> {
 /// because the only use of the result is grouping "what disappears
 /// together".
 pub(crate) fn mount_point_of(path: &Path) -> Option<PathBuf> {
-    use std::os::unix::fs::MetadataExt;
     let (mut mount_point, device) = nearest_existing_ancestor(path)?;
     loop {
         let Some(parent) = mount_point.parent() else {
             // Reached "/" — nothing above it to compare against.
             return Some(mount_point);
         };
-        let parent_device = std::fs::symlink_metadata(parent).ok().map(|m| m.dev());
+        let parent_device = std::fs::symlink_metadata(parent)
+            .ok()
+            .map(|m| device_id(&m));
         if parent_device != Some(device) {
             return Some(mount_point);
         }

@@ -37,7 +37,7 @@ fn migrate_version_step_is_atomic_a_rollback_leaves_no_partial_schema() {
     let version_after: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version_after, 25);
+    assert_eq!(version_after, SUPPORTED_SCHEMA_VERSION);
 }
 
 #[test]
@@ -52,7 +52,7 @@ fn migrate_creates_tracks_table_and_is_idempotent() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 25);
+    assert_eq!(version, SUPPORTED_SCHEMA_VERSION);
 }
 
 /// Builds a v1 DB by hand (SCHEMA_V1 + `user_version = 1`, exactly what a
@@ -77,7 +77,7 @@ fn migrate_v1_to_v2_adds_columns_preserves_data_and_is_idempotent() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 25); // Now goes to the current schema (v25)
+    assert_eq!(version, SUPPORTED_SCHEMA_VERSION); // Now goes to the current schema
 
     let (title, rating, play_count, added_at, file_size, device, inode): (
         String,
@@ -119,7 +119,7 @@ fn migrate_v1_to_v2_adds_columns_preserves_data_and_is_idempotent() {
     let version_after_second_run: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version_after_second_run, 25); // Current schema
+    assert_eq!(version_after_second_run, SUPPORTED_SCHEMA_VERSION); // Current schema
 }
 
 #[test]
@@ -128,7 +128,24 @@ fn open_sets_busy_timeout() {
     let busy_timeout_ms: i64 = conn
         .query_row("PRAGMA busy_timeout", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(busy_timeout_ms, 5000);
+    assert_eq!(busy_timeout_ms, DEFAULT_BUSY_TIMEOUT_MS);
+}
+
+#[test]
+fn open_with_options_applies_the_requested_busy_timeout() {
+    // The non-blocking posture the prune probe relies on: 0 means "fail
+    // immediately on lock contention", not the 5s default.
+    let conn = open_with_options(None, 0).unwrap();
+    let busy_timeout_ms: i64 = conn
+        .query_row("PRAGMA busy_timeout", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(busy_timeout_ms, 0);
+
+    let conn = open_with_options(None, 1234).unwrap();
+    let busy_timeout_ms: i64 = conn
+        .query_row("PRAGMA busy_timeout", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(busy_timeout_ms, 1234);
 }
 
 /// v2→v3 migration: playlists tables created, smart playlists seeded
@@ -151,7 +168,7 @@ fn migrate_v2_to_v3_creates_playlist_tables_and_seeds_smart_playlists() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 25); // walks all the way to the current schema version (v25)
+    assert_eq!(version, SUPPORTED_SCHEMA_VERSION); // walks all the way to the current schema
 
     // Verify tables exist.
     let playlists_exist: bool = conn
@@ -306,7 +323,7 @@ fn migrate_v3_to_v4_creates_settings_table_preserves_data_and_is_idempotent() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 25);
+    assert_eq!(version, SUPPORTED_SCHEMA_VERSION);
 
     let settings_exist: bool = conn
         .query_row(
@@ -337,7 +354,7 @@ fn migrate_v3_to_v4_creates_settings_table_preserves_data_and_is_idempotent() {
     let version_after_second_run: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version_after_second_run, 25);
+    assert_eq!(version_after_second_run, SUPPORTED_SCHEMA_VERSION);
 }
 
 #[test]
@@ -359,7 +376,7 @@ fn migrate_v4_to_v5_creates_listenbrainz_queue_and_preserves_settings() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 25);
+    assert_eq!(version, SUPPORTED_SCHEMA_VERSION);
     let setting: String = conn
         .query_row("SELECT value FROM settings WHERE key = 'keep'", [], |row| {
             row.get(0)
@@ -398,7 +415,7 @@ fn migrate_v6_to_v7_creates_listen_events_and_preserves_tracks() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 25);
+    assert_eq!(version, SUPPORTED_SCHEMA_VERSION);
 
     let listen_events_exist: bool = conn
             .query_row(
@@ -429,7 +446,7 @@ fn migrate_v6_to_v7_creates_listen_events_and_preserves_tracks() {
     let version_after: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version_after, 25);
+    assert_eq!(version_after, SUPPORTED_SCHEMA_VERSION);
 }
 
 /// Schema v23 makes local listens durable historical facts: deleting the
@@ -483,7 +500,7 @@ fn migrate_v5_to_v6_creates_lastfm_queue_and_preserves_listenbrainz_rows() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 25);
+    assert_eq!(version, SUPPORTED_SCHEMA_VERSION);
     let lastfm_exists: bool = conn
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='lastfm_queue')",
@@ -508,7 +525,7 @@ fn migrate_v7_to_v8_adds_waveform_peaks_column() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 25);
+    assert_eq!(version, SUPPORTED_SCHEMA_VERSION);
     // Column exists and is nullable
     conn.execute(
         "INSERT INTO tracks (path, title, artist, added_at) VALUES ('/test.flac', 'T', 'A', 0)",
@@ -561,7 +578,7 @@ fn open_migrated_returns_a_ready_to_use_database() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 25);
+    assert_eq!(version, SUPPORTED_SCHEMA_VERSION);
     conn.execute(
         "INSERT INTO tracks (path, title, added_at) VALUES ('/ready.flac', 'Ready', 0)",
         [],

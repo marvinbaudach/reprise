@@ -134,7 +134,59 @@ pub fn new_releases_hidden(count: usize) -> String {
     formatted(N_!("{count} hidden · Show"), &[("count", &count)])
 }
 
-fn news_timestamp_date(timestamp: i64) -> String {
+pub const NEW_RELEASES_HEADER: &str = N_!("New Releases");
+pub const RELEASED: &str = N_!("released");
+pub const IN_LIBRARY: &str = N_!("In library");
+pub const SHOW_HISTORY: &str = N_!("Show history");
+pub const SHOW_IN_LIBRARY: &str = N_!("Show in library");
+pub const OPEN_ANNOUNCEMENT: &str = N_!("Open announcement");
+pub const SHOW_AGAIN: &str = N_!("Show again");
+pub const ALL_CAUGHT_UP: &str = N_!("All caught up");
+pub const HISTORY_HEADER: &str = N_!("History");
+pub const RETENTION_SIX_MONTHS: &str = N_!("Retention: 6 months");
+
+/// „in N d" for a release that is still `days` days out. Only meant for
+/// `days > 0`; whether `days <= 0` reads as „today" or „released" is a UI
+/// decision made by the caller, not by this formatter.
+pub fn new_releases_days_until(days: i64) -> String {
+    formatted(N_!("in {days} d"), &[("days", &days.to_string())])
+}
+
+/// „N new" count pill for the New Releases badge/header. „new" does not
+/// change with the count, so no plural form is needed.
+pub fn new_releases_new_count(count: i64) -> String {
+    formatted(N_!("{count} new"), &[("count", &count.to_string())])
+}
+
+/// „Show history (N)" row label at the foot of the New Releases list page.
+pub fn new_releases_show_history_count(count: usize) -> String {
+    formatted(
+        N_!("Show history ({count})"),
+        &[("count", &count.to_string())],
+    )
+}
+
+/// The parenthesized count fragment split out from the "Show history" row's
+/// label (#7) so it can render one opacity step quieter than the row text
+/// itself — see `SHOW_HISTORY`, which supplies the label part.
+pub fn new_releases_history_count_suffix(count: usize) -> String {
+    formatted(N_!("({count})"), &[("count", &count.to_string())])
+}
+
+/// Formats a release date already known to be released as-is (dates from
+/// `first_release_date` come pre-formatted from MusicBrainz, including the
+/// partial year/year-month forms `release_row::parse_release_date` accepts).
+pub fn new_releases_released_on(date: &str) -> String {
+    formatted(N_!("released on {date}"), &[("date", date)])
+}
+
+/// Formats a history entry's hidden date, already resolved from its
+/// `hidden_at` Unix timestamp via `news_timestamp_date`.
+pub fn new_releases_hidden_on(date: &str) -> String {
+    formatted(N_!("hidden on {date}"), &[("date", date)])
+}
+
+pub fn news_timestamp_date(timestamp: i64) -> String {
     chrono::DateTime::from_timestamp(timestamp, 0).map_or_else(
         || text(N_!("unknown date")),
         |value| {
@@ -168,4 +220,44 @@ pub fn cover_download_progress(
             ("unavailable", &unavailable),
         ],
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_releases_days_until_formats_positive_days() {
+        let copy = new_releases_days_until(25);
+        assert!(copy.contains("25"));
+        assert!(copy.contains('d'));
+    }
+
+    #[test]
+    fn new_releases_new_count_formats_count() {
+        assert_eq!(new_releases_new_count(3), "3 new");
+    }
+
+    #[test]
+    fn new_releases_show_history_count_formats_count() {
+        assert_eq!(new_releases_show_history_count(12), "Show history (12)");
+    }
+
+    #[test]
+    fn new_releases_history_count_suffix_formats_count() {
+        assert_eq!(new_releases_history_count_suffix(12), "(12)");
+    }
+
+    #[test]
+    fn new_releases_released_on_formats_the_given_date() {
+        assert_eq!(
+            new_releases_released_on("2026-07-01"),
+            "released on 2026-07-01"
+        );
+    }
+
+    #[test]
+    fn new_releases_hidden_on_formats_the_given_date() {
+        assert_eq!(new_releases_hidden_on("2026-07-01"), "hidden on 2026-07-01");
+    }
 }

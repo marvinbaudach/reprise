@@ -6,15 +6,12 @@ pub(in crate::ui) mod current_track_selection;
 pub(in crate::ui) mod end_of_results;
 pub(in crate::ui) mod list_density;
 pub(in crate::ui) mod match_highlight;
-pub(in crate::ui) mod mix_builder;
-pub(in crate::ui) mod mix_builder_discovery;
+pub(in crate::ui) mod now_playing_marker;
 mod playlist_reorder_guard;
 pub(crate) mod queue_row_mapping;
 pub(crate) mod queue_sections;
 pub(crate) mod rating;
 pub(in crate::ui) mod reload_restore;
-#[cfg(test)]
-mod similar_mix_menu_tests;
 #[path = "track_list.rs"]
 mod surface;
 pub(in crate::ui) mod tag_mutation_refresh;
@@ -47,6 +44,7 @@ pub(crate) mod track_list_smoke;
 pub(crate) mod track_list_sort;
 mod track_list_toast;
 pub(in crate::ui) mod track_menu;
+pub(in crate::ui) mod track_menu_instrumental;
 pub(crate) mod track_playback_selection;
 pub(in crate::ui) mod view_state_memory;
 

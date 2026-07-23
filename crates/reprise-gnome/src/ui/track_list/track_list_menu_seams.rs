@@ -13,18 +13,6 @@ use super::queue_row_mapping::QueueRow;
 use super::TrackList;
 
 impl TrackList {
-    pub(in crate::ui) fn open_mix_builder_for_target(
-        &self,
-        target: reprise_core::mix_planner::ProfileTarget,
-    ) {
-        super::mix_builder::present_target(&self.shared, target);
-    }
-
-    /// Injects playback for the exact visible Mix Builder draft order.
-    pub fn set_on_play_mix(&self, callback: impl Fn(Vec<i64>) + 'static) {
-        *self.shared.on_play_mix.borrow_mut() = Some(Rc::new(callback));
-    }
-
     /// Injects the Queue "Move to top" callback (CTX-3/N) — `window.rs` wires
     /// this to `PlayerController::move_queue_rows_to_top`. Returns the number
     /// of rows actually moved to the front of Play Next.

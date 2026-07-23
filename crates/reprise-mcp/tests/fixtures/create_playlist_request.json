@@ -1,0 +1,12 @@
+{
+  "jsonrpc": "2.0",
+  "id": 42,
+  "method": "tools/call",
+  "params": {
+    "name": "music_create_playlist",
+    "arguments": {
+      "name": "Mix Tape",
+      "track_ids": [1, 2]
+    }
+  }
+}

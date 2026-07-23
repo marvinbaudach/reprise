@@ -10,6 +10,13 @@ pub(super) const BAR_RADIUS: f64 = BAR_WIDTH / 2.0;
 pub(super) const BAR_GAP: f64 = 2.0;
 const MAX_BAR_COUNT: usize = 160;
 
+/// Mini-player waveform (redesign frame 1e / MINI-1): a fixed, reduced bar
+/// count whose bars fill the width (equal-width) instead of the dense
+/// fixed-3px-bar look of the full waveform.
+pub(super) const MINI_BAR_COUNT: usize = 46;
+pub(super) const MINI_BAR_GAP: f64 = 1.5;
+pub(super) const MINI_BAR_RADIUS: f64 = 1.0;
+
 /// Advances the smooth-fill interpolation by one frame: `fraction` moves by
 /// `velocity * dt_us` but never past `target` — the interpolation chases the
 /// most recent position tick, so overshooting it is always wrong. This bound
@@ -81,6 +88,26 @@ pub(super) fn compute_bar_count(width: i32) -> usize {
     ((f64::from(width) / (BAR_WIDTH + BAR_GAP)).floor() as usize).clamp(1, MAX_BAR_COUNT)
 }
 
+/// Resolves the number of display bars: a fixed `override_count` (mini player)
+/// wins over the width-derived dynamic count (full waveform). Never zero.
+pub(super) fn resolve_bar_count(override_count: Option<usize>, width: i32) -> usize {
+    match override_count {
+        Some(count) => count.max(1),
+        None => compute_bar_count(width),
+    }
+}
+
+/// Width of a single bar within its `slot`. In `fill` mode (mini player) the
+/// bar spans the slot minus `gap`, so equal-width bars tile the whole width;
+/// otherwise a fixed `BAR_WIDTH` bar sits centred in the slot.
+pub(super) fn bar_slot_width(slot: f64, fill: bool, gap: f64) -> f64 {
+    if fill {
+        (slot - gap).max(1.0)
+    } else {
+        BAR_WIDTH.min(slot.max(1.0))
+    }
+}
+
 pub(super) fn update_accessible_value(area: &gtk4::DrawingArea, fraction: f64, duration_ms: i64) {
     let fraction = fraction.clamp(0.0, 1.0);
     let value_text = if duration_ms > 0 {
@@ -117,4 +144,30 @@ pub(super) fn rounded_bar(
     cr.arc(x + radius, y + height - radius, radius, FRAC_PI_2, PI);
     cr.arc(x + radius, y + radius, radius, PI, 3.0 * FRAC_PI_2);
     cr.close_path();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_bar_count_prefers_override() {
+        // Mini player: a fixed 46-bar count regardless of width (frame 1e).
+        assert_eq!(resolve_bar_count(Some(MINI_BAR_COUNT), 300), 46);
+        assert_eq!(resolve_bar_count(Some(MINI_BAR_COUNT), 800), 46);
+        // Never collapses to zero even with a degenerate override.
+        assert_eq!(resolve_bar_count(Some(0), 300), 1);
+        // Full waveform: falls back to the width-derived dynamic count.
+        assert_eq!(resolve_bar_count(None, 300), compute_bar_count(300));
+    }
+
+    #[test]
+    fn fill_bars_span_the_slot_minus_gap() {
+        let slot = 6.4;
+        assert!((bar_slot_width(slot, true, MINI_BAR_GAP) - (slot - MINI_BAR_GAP)).abs() < 1e-9);
+        // A slot narrower than the gap still yields a visible (>=1px) bar.
+        assert_eq!(bar_slot_width(1.0, true, MINI_BAR_GAP), 1.0);
+        // Non-fill (full waveform) keeps the fixed bar width.
+        assert_eq!(bar_slot_width(slot, false, 0.0), BAR_WIDTH);
+    }
 }

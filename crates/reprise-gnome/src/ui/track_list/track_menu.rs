@@ -38,6 +38,7 @@ impl MenuContext {
             | ViewSource::Missing
             | ViewSource::ImportErrors
             | ViewSource::MyStats
+            | ViewSource::Conversions
             | ViewSource::Device { .. } => Self::LibraryTracks,
         }
     }
@@ -84,7 +85,6 @@ pub(in crate::ui) fn playlist_entries(
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::ui) struct ActionStates {
     pub enqueue: bool,
-    pub similar_mix: bool,
     pub go_to_album: bool,
     pub go_to_artist: bool,
     pub show_in_files: bool,
@@ -138,7 +138,6 @@ pub(in crate::ui) fn action_states(
 ) -> ActionStates {
     ActionStates {
         enqueue: selection.count > 0 && !selection.any_missing,
-        similar_mix: selection.count > 0 && !selection.all_missing,
         go_to_album: selection.count > 0 && selection.same_album,
         go_to_artist: selection.count > 0 && selection.same_artist,
         show_in_files: selection.count > 0 && !selection.any_missing && selection.same_folder,
@@ -164,11 +163,6 @@ pub(in crate::ui) fn build_track_menu(inputs: &MenuInputs<'_>) -> gio::Menu {
     menu.append_section(None, &primary);
 
     let selection_actions = gio::Menu::new();
-    append_action(
-        &selection_actions,
-        strings::CONTEXT_MENU_CREATE_SIMILAR_MIX,
-        "create-similar-mix",
-    );
     let playlist_submenu = gio::Menu::new();
     for playlist in inputs.playlists {
         let item = gio::MenuItem::new(Some(&playlist.name), None);
@@ -282,6 +276,7 @@ mod tests {
             device: None,
             inode: None,
             playlist_position: None,
+            is_ai: false,
         }
     }
 

@@ -17,7 +17,6 @@ pub const LIBRARY_ROOT_KEY: &str = "library_root";
 pub const ONBOARDING_COMPLETED_KEY: &str = "onboarding.completed";
 pub const NEW_RELEASES_FETCH_COMPLETED_KEY: &str = "new_releases.fetch_completed";
 pub const LAST_SCAN_RELINKED_KEY: &str = "last_scan_relinked";
-pub const AUDIO_ANALYSIS_ENABLED_KEY: &str = "audio_analysis.enabled";
 
 /// Reads `key`'s current value, if any has ever been set. `Ok(None)` — not
 /// an error — for a key that has never been written, matching every other
@@ -36,12 +35,36 @@ pub fn get_setting(conn: &Connection, key: &str) -> Result<Option<String>, rusql
 /// `ON CONFLICT`, not a delete-then-insert (keeps this a single statement,
 /// no transaction needed).
 pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<(), rusqlite::Error> {
-    conn.execute(
-        "INSERT INTO settings (key, value) VALUES (?1, ?2) \
-         ON CONFLICT(key) DO UPDATE SET value = ?2",
-        rusqlite::params![key, value],
-    )?;
-    Ok(())
+    // Every settings write funnels through here, so a single change-log append
+    // covers both plain settings and module toggles (which persist under the
+    // `module.<id>.enabled` key via `modules::set_enabled`) — exactly one event
+    // per write, keyed by the setting key. `in_txn` keeps the row and the event
+    // atomic without a nested `BEGIN` when a caller already holds one.
+    crate::events::in_txn(conn, |conn| {
+        // Dedup (mirrors `create_smart`): an identical stored value is a
+        // genuine no-op, so it must neither rewrite the row nor append a
+        // `change_log` event — otherwise every idempotent settings write (e.g.
+        // re-persisting an unchanged layout) would wake every other frontend
+        // for nothing. Reading inside the same transaction keeps the
+        // check-then-write atomic against a concurrent writer.
+        let current: Option<String> = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?1",
+                rusqlite::params![key],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if current.as_deref() == Some(value) {
+            return Ok(());
+        }
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2) \
+             ON CONFLICT(key) DO UPDATE SET value = ?2",
+            rusqlite::params![key, value],
+        )?;
+        crate::events::record(conn, "settings", key, "set")?;
+        Ok(())
+    })
 }
 
 /// Canonical stored forms for boolean settings. `get_bool` additionally
@@ -71,21 +94,6 @@ pub fn get_bool(conn: &Connection, key: &str, default: bool) -> Result<bool, rus
 
 pub fn set_bool(conn: &Connection, key: &str, value: bool) -> Result<(), rusqlite::Error> {
     set_setting(conn, key, if value { BOOL_TRUE } else { BOOL_FALSE })
-}
-
-/// Whether Reprise may read local audio to build Audio Character profiles.
-/// Fresh installations analyze locally by default. Users can disable the
-/// background worker; current file fingerprints and analysis versions keep
-/// already-current tracks from being decoded again.
-pub fn get_audio_analysis_enabled(conn: &Connection) -> bool {
-    get_bool(conn, AUDIO_ANALYSIS_ENABLED_KEY, true).unwrap_or_else(|error| {
-        tracing::warn!(%error, "could not read audio-analysis setting; using on");
-        true
-    })
-}
-
-pub fn set_audio_analysis_enabled(conn: &Connection, enabled: bool) -> Result<(), rusqlite::Error> {
-    set_bool(conn, AUDIO_ANALYSIS_ENABLED_KEY, enabled)
 }
 
 const STATS_CLOCK_KEY: &str = "stats.section.clock";
