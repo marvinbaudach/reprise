@@ -529,7 +529,16 @@ fn local_gio_backend_runs_two_jobs_in_order_with_monotone_progress_and_m3u8() {
         runtime
             .enqueue(super::device_sync_smoke::DEVICE_ID, "Road", &[3])
             .unwrap();
-        settle().await;
+        // Wait for the runtime to actually finish both jobs (files copied,
+        // m3u8 written) rather than a fixed timeout — a plain `settle()` raced
+        // the real gio copies under CI load and left the last file unwritten
+        // when the assertions ran. Mirrors the sibling cancel test's wait.
+        settle_until(
+            &runtime,
+            super::device_sync_smoke::DEVICE_ID,
+            SyncPhase::Complete,
+        )
+        .await;
 
         for id in 1..=3 {
             assert!(device_root
