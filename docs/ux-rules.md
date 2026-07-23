@@ -1494,93 +1494,31 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
        nur `transform` in `:active` — ein statischer Zustandsstil, kein
        Übergang. Den neutralisiert der Provider in `style/reduced_motion.rs`. -->
 
-## X. Lokales Klangprofil
+## X. Song Visuals
 
-- **AC-1** [ersetzt durch AC-18]
-- **AC-2** [aktiv] [core] — Ein Klangprofil behauptet keine Emotion. Es
-  projiziert versionierte Audio-Evidenz ausschließlich auf Intensity,
-  Brightness, Dynamicity und Rhythmicity im Bereich 0–1; Tempo bleibt optional
-  und trägt eine eigene Konfidenz. Veraltete oder nicht endliche Werte gelten
-  nie als aktuelles Profil.
-- **AC-3** [aktiv] [gtk] — Aktivierte Analyse läuft mit genau einem
-  Hintergrund-Worker und zeigt fertig/gesamt/fehlgeschlagen. Pause, Fortsetzen,
-  Abbrechen und „Retry failed" sind erreichbar; ein Neustart setzt offene
-  Arbeit fort. Ausschalten startet keine neue Profil-Arbeit, verhindert aber
-  niemals den bestehenden Waveform-Backfill.
-- **AC-4** [ersetzt durch AC-9]
-- **AC-5** [aktiv] [gtk] — Ready zeigt die vier benannten Dimensionen und
-  optional BPM samt Unsicherheit. Farbe ist nie der einzige Informationsträger;
-  Screenreader erhalten Dimension und Wert. Dateipfade, interne Versionen und
-  objektive Mood-Aussagen erscheinen nicht.
-- **AC-6** [aktiv] [gtk] — Analyseabdeckung nennt immer Zähler und Nenner
-  aktueller, geeigneter Bibliothekstitel. Leere, laufende, pausierte,
-  fehlgeschlagene und vollständige Zustände bleiben unterscheidbar; „Reanalyze
-  library" verlangt wegen der Rechenlast eine Bestätigung.
+<!-- Historie: Diese Sektion hieß „Lokales Klangprofil" und trug die Regeln der
+     Song-Analyse (Audio Character), Create Similar Mix und Related Artist
+     Discovery. Diese Features wurden entfernt (chore eda0edaebb); ihre Regeln
+     AC-1..AC-6, AC-9 und AC-12..AC-18 sind hier gelöscht (git bewahrt die
+     Historie). Es bleiben die noch aktiven Song-Visuals-Regeln. Das AC-Präfix
+     bleibt als stabile Regel-ID der Visuals-Regeln erhalten. -->
+
 - **AC-7** [ersetzt durch AC-10]
 - **AC-8** [ersetzt durch AC-11]
-- **AC-9** [aktiv] [gtk] — Das rechte Now-Playing-Panel enthält keine
-  Audioanalyse, sondern genau „Up Next", „Lyrics" und — bei aktiviertem
-  Plugin — „Visual". Der permanente Info-Button in der Playerleiste öffnet
-  „Audio Character" für den geladenen Track als schließbaren Dialog. Er
-  unterscheidet Disabled, Pending, Failed, Stale und Ready; Trackwechsel zeigen
-  nie Werte oder ein statisches Klangprofil des vorherigen Tracks. Beim
-  Schließen per Escape, Strg+W oder Dialogsteuerung kehrt der Tastaturfokus zum
-  auslösenden Button zurück.
 - **AC-10** [aktiv] [core] [gtk] — „Song Visuals" ist ein standardmäßig
   ausgeschaltetes, live anwendbares Plugin. Eingeschaltet visualisiert der
   dritte Panel-Tab „Visual" ausschließlich lokal berechnete, auf 16 Bänder und
-  den Bereich 0–1 begrenzte Spektraldaten als die drei tastaturbedienbaren Modi
-  Rings, Flow und Pulse. Canvas, Auswahlzustand und Vollbild übernehmen den
+  den Bereich 0–1 begrenzte Spektraldaten als die vier tastaturbedienbaren Modi
+  Grid, Bars, Flow und Pulse. Canvas und Auswahlzustand übernehmen den
   aktuellen Cover-Akzent über denselben globalen Ambient-Crossfade wie die
   Playerleiste; nur ohne brauchbare Coverfarbe gilt der Theme-Akzent. Farbe
   bleibt durch benannte Modi und eine Screenreader-Beschriftung redundant.
 - **AC-11** [aktiv] [gtk] — Dauerbewegung existiert ausschließlich während
-  laufender Wiedergabe und nur bei sichtbarem Visual-Tab oder dessen
-  Vollbildansicht. Pause und Stop klingen auf das statische Klangprofil aus;
-  `gtk-enable-animations=false` zeigt dieses Profil ohne Tick-Callback. Bei
-  aktiviertem Plugin öffnet F11 aus dem sichtbaren Visual-Tab die
-  Vollbildansicht; F11 und Escape schließen sie. Das ist die in MOT-2 erlaubte,
-  audiofunktionale Ausnahme für Dauerbewegung.
+  laufender Wiedergabe und nur bei sichtbarem Visual-Tab. Pause und Stop klingen
+  auf das statische Bild aus; `gtk-enable-animations=false` zeigt dieses ohne
+  Tick-Callback. Das ist die in MOT-2 erlaubte, audiofunktionale Ausnahme für
+  Dauerbewegung.
 
-- **AC-12** [aktiv] [gtk] — „Create similar mix…" ist eine Selektionsaktion im
-  gemeinsamen Track-Kontextmenü. Sie erscheint für mindestens einen
-  abspielbaren Titel, übernimmt ausschließlich die abspielbare sichtbare
-  Selektion als benannte Seeds und öffnet vor jeder Queue-, Wiedergabe- oder
-  Playliständerung den nativen Mix Builder.
-- **AC-13** [aktiv] [core] — Der Mix Builder trennt Kriterien ausdrücklich:
-  Klangprofil, Genre, ähnliche Artists oder eine gewichtete Balance. Nicht
-  analysierte Titel werden nie still als Klangprofil-Treffer ausgegeben;
-  fehlende Genre- oder Artist-Evidenz wird als Coverage-Diagnostic sichtbar.
-- **AC-14** [aktiv] [gtk] — Jede Control-Änderung macht den bisherigen
-  Mix-Entwurf ungültig. Die neue Preview zeigt die exakte Reihenfolge,
-  Gesamtdauer, Coverage, Diagnostics und kurze strukturierte Auswahlgründe;
-  Play, Add to Queue und Save as Playlist verwenden ausschließlich genau
-  diese sichtbare Draft-ID und planen nicht heimlich neu.
-- **AC-15** [aktiv] [core] — Gleiche Mix-Absicht, Seeds, Kandidaten- und
-  Quellsnapshots erzeugen denselben diversen Mix. Harte Bedingungen werden
-  vor dem Scoring angewandt, maximal 500 Kandidaten gelangen in die
-  Auswahlphase, und unspielbare, entfernte oder ausgeschlossene Titel werden
-  nie ergänzt.
-- **AC-16** [aktiv] [gtk] — Artist-Empfehlungen außerhalb der Bibliothek
-  bleiben von der abspielbaren Preview getrennt. Sie nennen Seed-Bezug,
-  Quelle und Grund, enthalten ausschließlich Artists, die nach kanonischer
-  MBID- oder normalisierter Namensidentität nicht in der Sammlung vorkommen,
-  und lassen sich öffnen, ausblenden und in einer eigenen Übersicht wieder
-  einblenden.
-- **AC-17** [aktiv] [core] — Ähnliche-Artist-Evidenz ist ein eigenes,
-  standardmäßig ausgeschaltetes Netzmodul. Ein Abruf startet nur nach einer
-  ausdrücklichen Mix-/Discovery-Aktion, verwendet begrenzte gecachte
-  Provider-Ergebnisse und verändert weder Musikdateien noch Wiedergabe,
-  Queue oder Playlists. Ohne Provider bleibt der lokale Mix vollständig
-  nutzbar; KI-generierte Audiodateien gehören nicht zu dieser Funktion.
-- **AC-18** [aktiv] [core] [gtk] — Die ausschließlich lokale Audioanalyse ist
-  bei neuen Installationen aktiv und verarbeitet jeden geeigneten neuen,
-  fehlenden oder durch Datei-/Versionsänderung veralteten Titel genau über den
-  fingerprint-geprüften Hintergrund-Worker; aktuelle Profile werden nicht
-  erneut dekodiert. „Analyze audio locally" bleibt unter Library abschaltbar,
-  nennt ausdrücklich die rein lokale Verarbeitung und behält vorhandene
-  Profile. Der ausgewogene Mix bleibt bei Teilabdeckung nutzbar, behandelt
-  fehlende Profile nie als Klangtreffer und nennt die Lücke als Diagnostic.
 
 ## Y. Library Doctor / Tag Cleanup
 
