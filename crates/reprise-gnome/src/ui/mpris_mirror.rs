@@ -312,7 +312,8 @@ impl PlayerController {
     /// (trackid-matched, µs→ms converted, clamped) by `mpris.rs`'s `set_
     /// position` before it ever reaches here, so it goes straight to `seek`
     /// — the same method `Seek` (via `mpris_seek_relative`) and the bar's
-    /// seek scale all funnel through.
+    /// seek scale all funnel through. `PlayTrackIds` goes straight to
+    /// `play_from_view` — see that arm's own comment below.
     pub(super) fn handle_mpris_command(&self, command: MprisCommand) {
         match command {
             MprisCommand::Play => self.mpris_play(),
@@ -326,18 +327,18 @@ impl PlayerController {
             MprisCommand::SetShuffle(on) => self.mpris_set_shuffle(on),
             MprisCommand::SetLoop(repeat) => self.mpris_set_loop(repeat),
             MprisCommand::SetVolume(volume) => self.mpris_set_volume(volume),
-            // Placeholder arm only — keeps this exhaustive match (and the
-            // whole workspace) compiling now that the plan's Task 1 added
-            // the variant to `MprisCommand`. Real routing to `PlayerController
-            // ::play_from_view` lands in Task 4; until then this is
-            // unreachable (nothing dispatches `PlayTrackIds` yet — the
-            // `org.reprise.Player1` D-Bus method is Task 3).
-            MprisCommand::PlayTrackIds(ids) => {
-                tracing::warn!(
-                    count = ids.len(),
-                    "MPRIS: PlayTrackIds received before its handler is wired up (Task 4); ignoring"
-                );
-            }
+            // Seeds the queue from `ids` and starts playback at index 0 —
+            // the same `play_from_view` primitive the sidebar/track-list/
+            // file-open call sites use (see that method's doc comment).
+            // Origin is always `library()`: an MCP/D-Bus-issued play has no
+            // browser view to attribute the context to, so it collapses to
+            // the same fallback `file_open.rs`'s desktop-association path
+            // uses for the same reason.
+            MprisCommand::PlayTrackIds(ids) => self.play_from_view(
+                ids,
+                0,
+                crate::ui::playback::play_origin::PlayOrigin::library(),
+            ),
         }
     }
 
