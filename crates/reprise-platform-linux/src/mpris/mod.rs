@@ -430,8 +430,15 @@ impl MprisPlayer {
     /// separate, asynchronous concern — the same non-blocking `try_send`
     /// shape `player_controller.rs` already uses for `PlayerEvent`).
     fn dispatch(&self, command: MprisCommand) {
+        // `MprisCommand` is no longer `Copy` (see its doc comment), so
+        // `command` is genuinely moved into `try_send` here rather than
+        // copied — on failure, `TrySendError::into_inner` hands the
+        // never-sent value straight back for the log line below instead of
+        // cloning it up front.
         if let Err(error) = self.commands.try_send(command) {
-            tracing::warn!(%error, ?command, "MPRIS command dropped: controller receiver is gone");
+            let message = error.to_string();
+            let command = error.into_inner();
+            tracing::warn!(error = %message, ?command, "MPRIS command dropped: controller receiver is gone");
         }
     }
 }
