@@ -83,7 +83,7 @@ impl StagingStore {
     }
 
     /// A claim-scoped temporary render path for `job_id`, tagged with the
-    /// `worker` token and a [`TEMP_EXTENSION`] suffix. A worker renders here
+    /// `worker` token and a `TEMP_EXTENSION` suffix. A worker renders here
     /// first, then publishes the finished file to its canonical
     /// [`path_for_job`](Self::path_for_job) only after an owner-guarded
     /// completion — so two workers legitimately holding the same job (a

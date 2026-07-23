@@ -8,7 +8,7 @@
 //!
 //! ## What the backend does
 //!
-//! [`OrtStemBackend::separate_instrumental`] (behind the `ort` feature) decodes
+//! `OrtStemBackend::separate_instrumental` (behind the `ort` feature) decodes
 //! the source to 44.1 kHz stereo f32, runs htdemucs **segment by segment** with
 //! the Demucs overlap-add window, sums the non-vocal sources (drums + bass +
 //! other) into the instrumental, and encodes it to FLAC at the caller's output
@@ -27,7 +27,7 @@
 //!   and [`provision`] (checksummed download + licence notice + onnxruntime
 //!   library resolution, the network fetch injected). Dependencies: `sha2`,
 //!   `dirs` — both tiny and pure-Rust.
-//! * **`ort`**: the real [`OrtStemBackend`], audio decode/resample/encode, and
+//! * **`ort`**: the real `OrtStemBackend`, audio decode/resample/encode, and
 //!   the `ureq` model fetcher. Pulls `ort`, `symphonia` (MPL-2.0), `flacenc`
 //!   (Apache-2.0), `rubato` (MIT), `ndarray` and `ureq`. Binary hosts (the GTK
 //!   app; the CLI behind its own `worker` feature) enable this.

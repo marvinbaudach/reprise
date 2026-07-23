@@ -7,7 +7,7 @@
 //!
 //! * **change_log** gets **lifecycle transitions only** — `enqueue`, `start`,
 //!   `done`, `save`, `fail`, `cancel` — each appended in the *same*
-//!   transaction as the mutation via [`crate::events::in_txn`], so a job event
+//!   transaction as the mutation via `crate::events::in_txn`, so a job event
 //!   never lands without the state change and vice versa. Progress is **not**
 //!   a lifecycle event.
 //! * **`progress_permille`** lives in the row and is rewritten in place. The
@@ -17,7 +17,7 @@
 //! * Every facade that **reads then writes** in one transaction — the enqueue
 //!   dedup probe, the `claim_next` candidate select, and the `finish_owned`
 //!   progress read — opens with `BEGIN IMMEDIATE` (via
-//!   [`crate::events::in_txn_immediate`], or directly in `claim_next`). Under
+//!   `crate::events::in_txn_immediate`, or directly in `claim_next`). Under
 //!   real concurrency a DEFERRED read-then-write takes a snapshot and then fails
 //!   its write-lock upgrade with a raw `SQLITE_BUSY`/`SQLITE_BUSY_SNAPSHOT` that
 //!   `busy_timeout` never retries; taking the write lock upfront makes a loser

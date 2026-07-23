@@ -73,7 +73,7 @@ pub(in crate::ui) type SourceResolver =
 /// The stem-separation backend this app build runs. The default build uses the
 /// deterministic [`reprise_core::stem_separation::FakeStemBackend`]; the
 /// `stem-backend` feature swaps in the real, lazily-provisioned
-/// [`stem_backend::LazyOrtBackend`]. The worker host is generic over the trait,
+/// `stem_backend::LazyOrtBackend`. The worker host is generic over the trait,
 /// so only this constructor and [`app_model_id`] differ between builds.
 #[cfg(not(feature = "stem-backend"))]
 pub(in crate::ui) fn app_backend() -> Box<dyn StemSeparationBackend + Send> {

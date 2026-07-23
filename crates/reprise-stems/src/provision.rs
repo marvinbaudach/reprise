@@ -6,7 +6,7 @@
 //! 1. **Weights** ([`ensure_weights`]): download-on-first-use with SHA-256
 //!    verification and a licence notice written beside the file (plan 2.4.9).
 //!    The network fetch is injected, so tests drive it from local bytes; the
-//!    real `ureq` fetcher ([`http_fetcher`]) is compiled only with the `ort`
+//!    real `ureq` fetcher (`http_fetcher`) is compiled only with the `ort`
 //!    feature. A tampered download is rejected and never written.
 //! 2. **onnxruntime library** ([`resolve_library`]): the default build loads
 //!    onnxruntime dynamically (`load-dynamic`), so at runtime a
