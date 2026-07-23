@@ -14,7 +14,6 @@ use super::device_view::DeviceViewPage;
 use super::info_panel::InfoPanel;
 use super::now_playing_wiring;
 use super::player_controller::PlayerController;
-use super::scan::audio_analysis_runtime::AudioAnalysisRuntime;
 use super::sidebar::Sidebar;
 use super::stats_view::StatsView;
 use super::strings;
@@ -270,7 +269,6 @@ pub(in crate::ui) fn build(
     track_list: &Rc<TrackList>,
     player: Option<&Rc<PlayerController>>,
     runtime: &Rc<ArtistNewsRuntime>,
-    audio_analysis: Option<&AudioAnalysisRuntime>,
 ) -> LibraryShell {
     let sidebar_page = adw::NavigationPage::builder()
         .title(strings::text(strings::APP_NAME))
@@ -282,7 +280,6 @@ pub(in crate::ui) fn build(
         conn.clone(),
         runtime.clone(),
         track_list.shared_cover_loader(),
-        audio_analysis,
     );
     if let Some(player) = player {
         player.set_lyrics_view(&info_panel.lyrics_view());

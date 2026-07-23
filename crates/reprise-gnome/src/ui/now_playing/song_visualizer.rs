@@ -287,16 +287,6 @@ impl SongVisualizer {
         queue_registered_areas(&self.areas);
     }
 
-    pub(in crate::ui) fn set_profile(&self, dimensions: &[u8; 4]) {
-        self.engine.borrow_mut().set_static_profile(dimensions);
-        self.settle_or_animate();
-    }
-
-    pub(in crate::ui) fn clear_profile(&self) {
-        self.engine.borrow_mut().clear_static_profile();
-        self.settle_or_animate();
-    }
-
     pub(in crate::ui) fn set_spectrum(&self, frame: SpectrumFrame) {
         if !motion::animations_enabled() || self.playback.get() != PlaybackState::Playing {
             return;
@@ -366,17 +356,6 @@ impl SongVisualizer {
 
     fn is_active(&self) -> bool {
         self.panel_active.get() || self.fullscreen_active.get()
-    }
-
-    /// After a static-profile change: ease toward it over the tick loop when
-    /// motion is allowed, otherwise snap straight to rest and repaint once.
-    fn settle_or_animate(&self) {
-        if motion::animations_enabled() {
-            self.ensure_tick();
-        } else {
-            self.engine.borrow_mut().snap_to_static();
-            queue_registered_areas(&self.areas);
-        }
     }
 
     fn ensure_tick(&self) {

@@ -17,13 +17,13 @@ pub mod artist_news_history;
 pub mod artist_news_links;
 pub mod artist_news_refresh;
 pub mod artist_portrait;
-pub mod audio_analysis;
 pub mod browser;
 pub mod cover;
 pub mod cover_download;
 pub mod db;
 mod db_library_doctor;
 mod db_library_doctor_remote;
+mod db_drop_audio_analysis_mix;
 mod db_library_exclusions;
 mod db_listen_history;
 mod db_mix_planner;
@@ -36,23 +36,17 @@ pub mod library;
 pub use library::library_doctor;
 pub mod lyrics;
 pub mod media_integration;
-pub mod mix_planner;
 pub mod models;
 pub mod modules;
 pub mod musicbrainz;
 pub mod playback;
 pub mod queries;
 pub mod queue;
-pub mod related_artists;
 pub mod scrobbling;
-pub mod sound_profile;
 pub mod up_next;
 pub mod view_source;
 pub mod visuals;
 pub mod waveform;
-
-#[cfg(test)]
-mod mix_planner_tests;
 
 #[cfg(test)]
 mod artist_news_tests;
