@@ -104,9 +104,19 @@ fn start_stub_player(bus: &PrivateBus) -> (zbus::blocking::Connection, Calls) {
         .expect("valid bus address")
         .name(BUS_NAME)
         .expect("request bus name")
-        .serve_at(OBJECT_PATH, PlayerStub { calls: calls.clone() })
+        .serve_at(
+            OBJECT_PATH,
+            PlayerStub {
+                calls: calls.clone(),
+            },
+        )
         .expect("serve Player interface")
-        .serve_at(OBJECT_PATH, RepriseStub { calls: calls.clone() })
+        .serve_at(
+            OBJECT_PATH,
+            RepriseStub {
+                calls: calls.clone(),
+            },
+        )
         .expect("serve Player1 interface")
         .build()
         .expect("build stub player connection");

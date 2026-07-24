@@ -283,14 +283,10 @@ mod tests {
         }
         // build_mini() does not install the stylesheet (CompactPlayer::new
         // does, via style::install); load it so the card padding — the whole
-        // point of this test — actually applies.
-        let provider = gtk4::CssProvider::new();
-        provider.load_from_string(&mini_css());
-        gtk4::style_context_add_provider_for_display(
-            &gtk4::gdk::Display::default().expect("display"),
-            &provider,
-            gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
-        );
+        // point of this test — actually applies. Constructing a CssProvider is
+        // confined to the style module (frontend-lint allowlist), so go through
+        // its test-only installer rather than building one here.
+        crate::ui::style::install_css_string_for_test(&mini_css());
         let w = build_mini();
         let win = gtk4::Window::new();
         win.set_child(Some(&w.root));
@@ -334,7 +330,10 @@ mod tests {
         // spacer eats the surplus and keeps the pair left-packed.
         let meta_row = w.title_label.parent().expect("meta row");
         let spacer = meta_row.last_child().expect("trailing spacer");
-        assert!(spacer.hexpands(), "meta row needs a trailing expanding spacer");
+        assert!(
+            spacer.hexpands(),
+            "meta row needs a trailing expanding spacer"
+        );
         assert!(
             !spacer.is::<gtk4::Label>(),
             "the trailing child is the spacer, not the artist label"

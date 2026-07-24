@@ -145,29 +145,31 @@ pub(in crate::ui) fn build(
         // check) otherwise.
         let debug_scroll = std::env::var("REPRISE_DEBUG_SCROLL").is_ok();
         let previous_value = Cell::new(0.0f64);
-        scrolled.vadjustment().connect_value_changed(move |adjustment| {
-            if debug_scroll {
-                let value = adjustment.value();
-                let previous = previous_value.replace(value);
-                if previous - value > 80.0 {
-                    tracing::error!(
-                        from = previous,
-                        to = value,
-                        upper = adjustment.upper(),
-                        page = adjustment.page_size(),
-                        "SCROLL JUMP-TO-TOP\n{}",
-                        std::backtrace::Backtrace::force_capture()
-                    );
-                } else {
-                    tracing::debug!(value, previous, "SCROLL");
+        scrolled
+            .vadjustment()
+            .connect_value_changed(move |adjustment| {
+                if debug_scroll {
+                    let value = adjustment.value();
+                    let previous = previous_value.replace(value);
+                    if previous - value > 80.0 {
+                        tracing::error!(
+                            from = previous,
+                            to = value,
+                            upper = adjustment.upper(),
+                            page = adjustment.page_size(),
+                            "SCROLL JUMP-TO-TOP\n{}",
+                            std::backtrace::Backtrace::force_capture()
+                        );
+                    } else {
+                        tracing::debug!(value, previous, "SCROLL");
+                    }
                 }
-            }
-            if let Some(shared) = shared_weak.upgrade() {
-                shared
-                    .last_scroll_activity
-                    .set(Some(std::time::Instant::now()));
-            }
-        });
+                if let Some(shared) = shared_weak.upgrade() {
+                    shared
+                        .last_scroll_activity
+                        .set(Some(std::time::Instant::now()));
+                }
+            });
     }
 
     {
