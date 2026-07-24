@@ -432,6 +432,51 @@ pub fn job_status(
     })
 }
 
+/// Whether playback control is currently permitted (the live
+/// `playback:control` setting, no startup snapshot — starting/stopping audio
+/// destroys no data, so a fresh grant applies immediately, unlike the
+/// write-class capabilities gated by [`capability::write_effective`]/
+/// [`capability::ai_create_effective`]). Only the `mpris`-gated playback tools
+/// call this, so it is gated the same way.
+#[cfg(feature = "mpris")]
+pub fn playback_allowed(path: &Path) -> Result<bool, DataError> {
+    let conn = open(path)?;
+    capability::playback_control_enabled(&conn).map_err(DataError::Db)
+}
+
+/// Resolves a `music_play` request to an ordered id list. Exactly one of
+/// `track_ids`/`playlist_id` must be set; a playlist is resolved to its tracks
+/// via `playlists::track_ids` (in playlist order); an empty/absent result is
+/// invalid input (nothing to play). Read-only (`library:read`), like
+/// `search_tracks`/`list_playlists` — `music_play` itself, not this
+/// resolution step, is what the running app actually plays. Only the
+/// `mpris`-gated `music_play` tool calls this, so it is gated the same way.
+#[cfg(feature = "mpris")]
+pub fn resolve_play_ids(
+    path: &Path,
+    params: &crate::dto::PlayParams,
+) -> Result<Vec<i64>, DataError> {
+    let ids = match (&params.track_ids, params.playlist_id) {
+        (Some(_), Some(_)) | (None, None) => {
+            return Err(DataError::InvalidInput(
+                "provide exactly one of track_ids or playlist_id".to_owned(),
+            ));
+        }
+        (Some(track_ids), None) => track_ids.clone(),
+        (None, Some(playlist_id)) => {
+            let conn = open(path)?;
+            require_read(&conn)?;
+            playlists::track_ids(&conn, playlist_id).map_err(DataError::Db)?
+        }
+    };
+    if ids.is_empty() {
+        return Err(DataError::InvalidInput(
+            "no playable tracks to play".to_owned(),
+        ));
+    }
+    Ok(ids)
+}
+
 // PRESENT semantics are enforced up front via `queries::filter_present`, so by
 // the time `create_with_tracks` runs every id was present. A `playlist_tracks.
 // track_id` foreign-key violation here is therefore only a rare race (a track
@@ -451,4 +496,106 @@ fn is_constraint_violation(error: &rusqlite::Error) -> bool {
         rusqlite::Error::SqliteFailure(failure, _)
             if failure.code == rusqlite::ErrorCode::ConstraintViolation
     )
+}
+
+#[cfg(all(test, feature = "mpris"))]
+mod tests {
+    use super::*;
+    use crate::dto::PlayParams;
+
+    /// Seeds one real track row via the actual scanner (`reprise_core::
+    /// library::scanner::scan_folder`) over a temp copy of the shared
+    /// `sine.flac` fixture, then reads its assigned id back through the
+    /// existing `queries::query_track_window` facade — never a raw SQL
+    /// literal. `resolve_play_ids`'s playlist path needs a track that is
+    /// genuinely present in `tracks` (the `playlist_tracks.track_id` foreign
+    /// key is enforced, per `db::open`'s `PRAGMA foreign_keys = ON`), and
+    /// `scripts/check-architecture.sh`'s "no SQL outside reprise-core" gate
+    /// scans all of `crates/reprise-mcp/src` verbatim — `#[cfg(test)]` blocks
+    /// included, unlike the `tests/` integration fixtures it explicitly
+    /// exempts — so a hand-written literal `tracks`-table insert here would
+    /// trip it even though it never ships in the binary.
+    fn scan_one_track(db_path: &Path) -> i64 {
+        let mut conn = reprise_core::db::open_migrated(Some(db_path)).unwrap();
+
+        let library_root = tempfile::tempdir().unwrap();
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
+        std::fs::copy(&fixture, library_root.path().join("sine.flac")).unwrap();
+        reprise_core::library::scanner::scan_folder(&mut conn, library_root.path()).unwrap();
+
+        let source = ViewSource::Library;
+        let tracks =
+            queries::query_track_window(&mut conn, &source, "title", "asc", "", 0, 10, &[])
+                .unwrap();
+        assert_eq!(tracks.len(), 1, "expected exactly one scanned track");
+        tracks[0].id
+    }
+
+    #[test]
+    fn resolve_play_ids_enforces_exactly_one_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.db");
+        let track_id = scan_one_track(&path);
+
+        let mut conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+        let pid = playlists::create(&conn, "P").unwrap();
+        playlists::add_tracks(&mut conn, pid, &[track_id]).unwrap();
+        drop(conn);
+
+        // playlist path
+        let ids = resolve_play_ids(
+            &path,
+            &PlayParams {
+                track_ids: None,
+                playlist_id: Some(pid),
+            },
+        )
+        .unwrap();
+        assert_eq!(ids, vec![track_id]);
+        // explicit ids path
+        let ids = resolve_play_ids(
+            &path,
+            &PlayParams {
+                track_ids: Some(vec![track_id]),
+                playlist_id: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(ids, vec![track_id]);
+        // neither
+        assert!(matches!(
+            resolve_play_ids(
+                &path,
+                &PlayParams {
+                    track_ids: None,
+                    playlist_id: None,
+                }
+            ),
+            Err(DataError::InvalidInput(_))
+        ));
+        // both
+        assert!(matches!(
+            resolve_play_ids(
+                &path,
+                &PlayParams {
+                    track_ids: Some(vec![track_id]),
+                    playlist_id: Some(pid),
+                }
+            ),
+            Err(DataError::InvalidInput(_))
+        ));
+        // empty playlist
+        let empty =
+            playlists::create(&reprise_core::db::open_migrated(Some(&path)).unwrap(), "E").unwrap();
+        assert!(matches!(
+            resolve_play_ids(
+                &path,
+                &PlayParams {
+                    track_ids: None,
+                    playlist_id: Some(empty),
+                }
+            ),
+            Err(DataError::InvalidInput(_))
+        ));
+    }
 }
