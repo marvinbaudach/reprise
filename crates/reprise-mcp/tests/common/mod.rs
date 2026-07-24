@@ -252,6 +252,59 @@ pub fn private_bus_available() -> bool {
         .is_ok()
 }
 
+/// A private D-Bus **session** bus that outlives multiple processes, so one
+/// test can register a stub player on it AND point a spawned `reprise-mcp` at
+/// the same bus. `start_under_private_bus` (via `dbus-run-session`) gives the
+/// MCP process its own throwaway bus but no way to share it; here we run
+/// `dbus-daemon` ourselves, capture the address it prints, and hand it to both
+/// sides. The daemon is killed on drop.
+pub struct PrivateBus {
+    child: Child,
+    address: String,
+}
+
+impl PrivateBus {
+    /// Spawns `dbus-daemon --session --nofork --print-address` and reads the one
+    /// address line it prints. The read blocks until that line arrives, so no
+    /// sleep/poll is needed. Returns `None` when `dbus-daemon` cannot be spawned
+    /// or prints no address — the caller then skips, documenting itself as
+    /// environment-limited rather than faking a bus (mirrors the sibling
+    /// `dbus-run-session` tests).
+    pub fn start() -> Option<Self> {
+        let mut child = Command::new("dbus-daemon")
+            .args(["--session", "--nofork", "--print-address"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .ok()?;
+        let stdout = child.stdout.take()?;
+        let mut address = String::new();
+        let read = BufReader::new(stdout).read_line(&mut address);
+        if read.is_err() || address.trim().is_empty() {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
+        Some(Self {
+            child,
+            address: address.trim().to_owned(),
+        })
+    }
+
+    /// The `unix:path=…,guid=…` address a connection or spawned process uses to
+    /// join this bus.
+    pub fn address(&self) -> &str {
+        &self.address
+    }
+}
+
+impl Drop for PrivateBus {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
 /// A live client speaking JSON-RPC to a spawned `reprise-mcp` process.
 pub struct McpClient {
     child: Child,
@@ -295,6 +348,19 @@ impl McpClient {
         let mut client = Self::spawn_command(command, db_path);
         client.handshake();
         Some(client)
+    }
+
+    /// Spawns the server against `db_path` on the given private session bus
+    /// (via `DBUS_SESSION_BUS_ADDRESS`) and completes the handshake — so a stub
+    /// player registered on the same [`PrivateBus`] receives the MCP's real
+    /// D-Bus calls. Unlike [`Self::start_under_private_bus`] (a throwaway,
+    /// player-less bus), this shares an already-running bus with the test.
+    pub fn start_on_bus(db_path: &Path, bus: &PrivateBus) -> Self {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_reprise-mcp"));
+        command.env("DBUS_SESSION_BUS_ADDRESS", bus.address());
+        let mut client = Self::spawn_command(command, db_path);
+        client.handshake();
+        client
     }
 
     fn spawn_command(mut command: Command, db_path: &Path) -> Self {
@@ -517,6 +583,32 @@ pub fn structured_ok(response: &Value) -> Value {
         .get("structuredContent")
         .cloned()
         .unwrap_or_else(|| panic!("expected structuredContent: {response}"))
+}
+
+/// Asserts a `tools/call` response is a success (not `isError`) and returns its
+/// concatenated text content — the plain-text counterpart to [`structured_ok`]
+/// for tools whose success payload is a human-readable summary (the playback
+/// tools).
+pub fn tool_success_text(response: &Value) -> String {
+    let result = response
+        .get("result")
+        .unwrap_or_else(|| panic!("expected result, got: {response}"));
+    let is_error = result
+        .get("isError")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    assert!(!is_error, "expected success, got tool error: {response}");
+    result
+        .get("content")
+        .and_then(Value::as_array)
+        .map(|blocks| {
+            blocks
+                .iter()
+                .filter_map(|block| block.get("text").and_then(Value::as_str))
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .unwrap_or_default()
 }
 
 /// Asserts a `tools/call` response is a caller-visible tool error and returns
