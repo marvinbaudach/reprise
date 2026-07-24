@@ -70,6 +70,28 @@ The performance figures originate from the accepted same-host release pair on
 `feat/performance-optimizations`: baseline `ddaa3f3`, index implementation
 `bf8394d`, and comparison contract `b3644cc`.
 
+## Current source size
+
+Regenerated 2026-07-24 at commit `0481e34` from committed files only, via
+`git ls-files 'crates/*.rs' | xargs wc -l` (raw lines, including blanks and
+comments). Regenerate before every reuse; never quote these figures from
+memory.
+
+| Crate | `src/` lines | `tests/` lines |
+|---|---:|---:|
+| `reprise-core` | 63,730 | — |
+| `reprise-gnome` | 90,961 | — |
+| `reprise-platform-linux` | 5,500 | — |
+| `reprise-cli` | 2,977 | 1,987 |
+| `reprise-mcp` | 2,082 | 2,770 |
+| `reprise-stems` | 2,190 | 187 |
+| **Workspace total** | **167,440** | **4,944** |
+
+Examples and build scripts add 1,140 lines, for 173,524 committed Rust lines
+across 631 files. Most test code lives inline: roughly 36,100 of the `src/`
+lines are `#[cfg(test)]` modules (331 files; measured from each file's first
+marker to its end, so treat the split as an estimate, not a counted figure).
+
 ## Verified engineering detail map
 
 Use this map when deeper portfolio copy is needed. Re-check live repository
