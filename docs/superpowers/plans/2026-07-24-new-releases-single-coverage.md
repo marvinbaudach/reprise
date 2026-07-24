@@ -937,7 +937,7 @@ Der Kern des Vorab-Single-Falls.
 - Produces:
   - `const OWNED_ALBUM_MIN_TRACKS: i64 = 2`
   - `local_albums` liefert weiterhin `Vec<String>`, enthält aber nur Alben mit `>= OWNED_ALBUM_MIN_TRACKS` Tracks.
-  - `pub fn parse_release_groups(json: &str, local_albums: &[String], today: NaiveDate) -> Vec<AlbumNews>` — Signatur unverändert (der Singles-Schalter kommt erst in Task 8 dazu).
+  - `pub fn parse_release_groups(json: &str, local_albums: &[String], today: NaiveDate) -> Vec<AlbumNews>` — Signatur unverändert (der Singles-Schalter kommt erst in Task 7 dazu).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1116,7 +1116,11 @@ git commit -m "fix: Vorab-Single unterdrückt nicht mehr das angekündigte Album
 
 ---
 
-### Task 6: Präsenz als Drei-Zustand im Core
+### Task 6: Präsenz als Drei-Zustand — Core und UI in einem Commit
+
+> Core- und UI-Teil gehören in **einen** Commit: Sobald `StoredRelease.in_library` verschwindet, kompiliert `reprise-gnome` erst wieder, wenn `release_row.rs` und `history_page.rs` nachgezogen sind. Getrennt committen hieße einen nicht baubaren Zwischenstand in der Historie.
+
+#### Teil A — Core
 
 **Files:**
 - Modify: `crates/reprise-core/src/artist_news.rs:46-60` (`StoredRelease`), `:439-456` (`local_album_set`), `:458-495` (`query_releases`)
@@ -1307,20 +1311,15 @@ Expected: PASS, 2 Tests.
 - [ ] **Step 7: Run the core suite**
 
 Run: `cargo test -p reprise-core`
-Expected: PASS. Testfixtures, die `in_library: false` oder `in_library = true` setzen, auf `presence: LibraryPresence::Absent` bzw. `LibraryPresence::Complete` umstellen. `reprise-gnome` kompiliert an dieser Stelle noch nicht — das ist Task 7.
+Expected: PASS. Testfixtures, die `in_library: false` oder `in_library = true` setzen, auf `presence: LibraryPresence::Absent` bzw. `LibraryPresence::Complete` umstellen. `reprise-gnome` kompiliert an dieser Stelle noch nicht — das kommt in Teil B. **Hier noch nicht committen.**
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 8: Noch nicht committen — weiter mit Teil B**
 
-```bash
-git add crates/reprise-core/src/artist_news.rs \
-        crates/reprise-core/src/artist_news_history.rs \
-        crates/reprise-core/src/artist_news_tests.rs
-git commit -m "feat: LibraryPresence als Drei-Zustand statt in_library-Bool"
-```
+Der Core-Teil allein hinterlässt ein nicht baubares `reprise-gnome`. Erst nach Teil B wird committed, in einem gemeinsamen Commit.
 
 ---
 
-### Task 7: Teilbesitz in der UI zeigen
+#### Teil B — UI
 
 **Files:**
 - Modify: `crates/reprise-gnome/src/ui/new_releases/release_row.rs:30-42` (Enums), `:105-133` (`chip_presentation`, `primary_action`), `:290-310` (Chip-Rendering)
@@ -1329,7 +1328,7 @@ git commit -m "feat: LibraryPresence als Drei-Zustand statt in_library-Bool"
 - Modify: `crates/reprise-gnome/src/ui/new_releases/css.rs`
 
 **Interfaces:**
-- Consumes: `reprise_core::artist_news::LibraryPresence` aus Task 6.
+- Consumes: `LibraryPresence` aus Teil A dieses Tasks.
 - Produces: `ChipPresentation::PartiallyOwned` als neue Variante neben `Upcoming`, `Released`, `InLibrary`.
 
 - [ ] **Step 1: Write the failing test**
@@ -1515,17 +1514,22 @@ Expected: PASS über beide Crates. Fixtures in `history_page.rs`, die `in_librar
 
 - [ ] **Step 9: Commit**
 
+Ein gemeinsamer Commit für Teil A und Teil B — der Core-Umbau allein wäre nicht baubar.
+
 ```bash
-git add crates/reprise-gnome/src/ui/new_releases/release_row.rs \
+git add crates/reprise-core/src/artist_news.rs \
+        crates/reprise-core/src/artist_news_history.rs \
+        crates/reprise-core/src/artist_news_tests.rs \
+        crates/reprise-gnome/src/ui/new_releases/release_row.rs \
         crates/reprise-gnome/src/ui/new_releases/history_page.rs \
         crates/reprise-gnome/src/ui/new_releases/css.rs \
         crates/reprise-gnome/src/ui/strings_news.rs
-git commit -m "feat: Teilbesitz als eigener Chip statt als 'In Bibliothek'"
+git commit -m "feat: LibraryPresence als Drei-Zustand statt in_library-Bool"
 ```
 
 ---
 
-### Task 8: Singles-Schalter
+### Task 7: Singles-Schalter
 
 **Files:**
 - Modify: `crates/reprise-core/src/artist_news.rs:19` (Setting-Key), `:178-205` (`parse_release_groups`), `:228-271` (`refresh_with`), `:659-696` (`parse_release_group`)
@@ -1734,7 +1738,7 @@ git commit -m "feat: Schalter für erschienene Singles in den New Releases"
 
 ---
 
-### Task 9: Abschluss — Lint, Übersetzungen, manuelle Prüfung
+### Task 8: Abschluss — Lint, Übersetzungen, manuelle Prüfung
 
 **Files:**
 - Modify: `po/` (nur falls das Projekt eine Template-Regeneration vorsieht)
@@ -1806,9 +1810,9 @@ git commit -m "chore: Lint- und Formatierungsnachlauf für die New-Releases-Abde
 | A — Frischeprüfung, Reihenfolge, `latest_fetched_at` | 3 |
 | B — Rotation, `FetchScope`, `REST_ARTISTS_PER_RUN` | 4 |
 | D — Upcoming-Ausnahme und Besitz-Schwelle | 5 |
-| D2 — `LibraryPresence` im Core | 6 |
-| D2 — Chip und Primäraktion in der UI | 7 |
-| E — Singles-Schalter | 8 |
+| D2 — `LibraryPresence` im Core | 6, Teil A |
+| D2 — Chip und Primäraktion in der UI | 6, Teil B |
+| E — Singles-Schalter | 7 |
 | Migration inkl. Vorbefüllung | 1 |
 | Fehlerbehandlung (`failed` im Ledger, TTL, kein Backoff) | 3 |
 | Tests | in jedem Task |
