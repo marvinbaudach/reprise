@@ -9,7 +9,9 @@ use reprise_core::library::settings::{self, CompactLayout, WindowViewMode};
 use rusqlite::Connection;
 
 use super::compact_player::CompactPlayer;
-use super::compact_player_layouts::{CARD_MARGIN, CSS_WINDOW_CLASS, MINI_HEIGHT, MINI_WIDTH};
+use super::compact_player_layouts::{
+    CARD_MARGIN, CSS_PASSTHROUGH, CSS_WINDOW_CLASS, MINI_HEIGHT, MINI_WIDTH,
+};
 use super::first_run::FirstRunDecision;
 use super::strings;
 use super::window_decorations::WindowContentHost;
@@ -102,6 +104,40 @@ pub(in crate::ui) struct MinimalView {
     full_maximized: Cell<bool>,
     geometry_suppressed: Rc<Cell<bool>>,
     toast: Rc<dyn Fn(&str)>,
+}
+
+/// Tags (or clears) every container between the transparent compact window and
+/// the card with [`CSS_PASSTHROUGH`], so no opaque container edge shows past the
+/// card's rounded corners (MINI-1). Walks the live ancestor chain from the toast
+/// overlay up to the window, so it never depends on libadwaita's internal CSS
+/// node names — a node-name miss was what still leaked a background edge.
+fn set_container_passthrough(
+    compact_root: &adw::ToastOverlay,
+    window: &adw::ApplicationWindow,
+    on: bool,
+) {
+    let apply = |widget: &gtk4::Widget| {
+        if on {
+            widget.add_css_class(CSS_PASSTHROUGH);
+        } else {
+            widget.remove_css_class(CSS_PASSTHROUGH);
+        }
+    };
+    // The toast overlay's child is the mini-player's WindowHandle.
+    if let Some(child) = compact_root.child() {
+        apply(&child);
+    }
+    // Every ancestor up to (not including) the window — its own transparency
+    // comes from the `window.<class>` rule.
+    let window = window.clone().upcast::<gtk4::Widget>();
+    let mut node: Option<gtk4::Widget> = Some(compact_root.clone().upcast());
+    while let Some(widget) = node {
+        if widget == window {
+            break;
+        }
+        apply(&widget);
+        node = widget.parent();
+    }
 }
 
 impl MinimalView {
@@ -226,15 +262,23 @@ impl MinimalView {
         self.window.set_width_request(-1);
         self.window.set_height_request(-1);
         self.content_host.set_content(compact_root);
+        self.content_host.set_compact(true);
         self.window.add_css_class(CSS_WINDOW_CLASS);
+        set_container_passthrough(compact_root, &self.window, true);
         self.apply_compact_metrics();
     }
 
     fn restore_library(&self) {
+        // Drop the compact passthrough tags before remounting, so the shared
+        // containers are opaque again for the full Library view.
+        if let Some(compact_root) = &self.compact_root {
+            set_container_passthrough(compact_root, &self.window, false);
+        }
         // Mount the full Library tree before requesting its much larger
         // geometry. Resizing first lets the compositor draw one intermediate
         // frame with the Compact tree stretched to Library dimensions.
         self.content_host.set_content(&self.full_root);
+        self.content_host.set_compact(false);
         self.window.remove_css_class(CSS_WINDOW_CLASS);
         self.window.set_width_request(FULL_MIN_WIDTH);
         self.window.set_height_request(FULL_MIN_HEIGHT);

@@ -94,6 +94,26 @@ pub(in crate::ui) fn css_parse_errors(css: &str) -> Vec<String> {
         .into_inner()
 }
 
+/// Test-only: install an arbitrary stylesheet string on the default display at
+/// application priority, so a display-gated layout test can apply the CSS its
+/// production entry point installs via [`install`]. A no-op without a default
+/// display. Lives here because this module is the only one the frontend-lint
+/// allowlist permits to construct a `CssProvider`; layout tests call this
+/// instead of building their own.
+#[cfg(test)]
+pub(in crate::ui) fn install_css_string_for_test(css: &str) {
+    let Some(display) = gtk4::gdk::Display::default() else {
+        return;
+    };
+    let provider = gtk4::CssProvider::new();
+    provider.load_from_string(css);
+    gtk4::style_context_add_provider_for_display(
+        &display,
+        &provider,
+        gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
+}
+
 /// The OverlaySplitView positions children with GPU transforms without
 /// clipping the content pane. Clip the internal wrapper widgets so resized
 /// columns cannot paint behind the info-panel sidebar.

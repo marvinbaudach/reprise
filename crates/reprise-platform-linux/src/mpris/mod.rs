@@ -181,13 +181,15 @@ fn run(
 ) {
     let player_iface = MprisPlayer {
         state: state.clone(),
-        commands,
+        commands: commands.clone(),
     };
+    let reprise_control = RepriseControl { commands };
 
     let connection = connection::Builder::session()
         .and_then(|builder| builder.name(BUS_NAME))
         .and_then(|builder| builder.serve_at(OBJECT_PATH, MprisRoot { desktop_entry }))
         .and_then(|builder| builder.serve_at(OBJECT_PATH, player_iface))
+        .and_then(|builder| builder.serve_at(OBJECT_PATH, reprise_control))
         .and_then(connection::Builder::build);
     let connection = match connection {
         Ok(connection) => connection,
@@ -430,8 +432,15 @@ impl MprisPlayer {
     /// separate, asynchronous concern — the same non-blocking `try_send`
     /// shape `player_controller.rs` already uses for `PlayerEvent`).
     fn dispatch(&self, command: MprisCommand) {
+        // `MprisCommand` is no longer `Copy` (see its doc comment), so
+        // `command` is genuinely moved into `try_send` here rather than
+        // copied — on failure, `TrySendError::into_inner` hands the
+        // never-sent value straight back for the log line below instead of
+        // cloning it up front.
         if let Err(error) = self.commands.try_send(command) {
-            tracing::warn!(%error, ?command, "MPRIS command dropped: controller receiver is gone");
+            let message = error.to_string();
+            let command = error.into_inner();
+            tracing::warn!(error = %message, ?command, "MPRIS command dropped: controller receiver is gone");
         }
     }
 }
@@ -691,4 +700,58 @@ impl MprisPlayer {
     /// jumps.
     #[zbus(signal)]
     async fn seeked(emitter: &SignalEmitter<'_>, position: i64) -> zbus::Result<()>;
+}
+
+/// Reprise-specific control surface, served on the same object alongside
+/// MPRIS, for commands MPRIS has no vocabulary for. Today: play an explicit
+/// ordered list of library track ids (a single track = one id; a playlist =
+/// its ids, resolved by the caller). Kept minimal on purpose — the app stays
+/// a dumb command sink; callers own any library resolution.
+struct RepriseControl {
+    commands: async_channel::Sender<MprisCommand>,
+}
+
+#[interface(name = "org.reprise.Player1")]
+impl RepriseControl {
+    /// Seed the queue from `ids` (in order) and start playing. An empty list
+    /// is a no-op (never clears the current queue).
+    ///
+    /// Send idiom matches `MprisPlayer::dispatch` exactly (see its doc
+    /// comment): `MprisCommand` isn't `Copy`, so `try_send` genuinely moves
+    /// `ids` in; on failure `TrySendError::into_inner` hands the never-sent
+    /// value back for the log line instead of cloning it up front.
+    fn play_track_ids(&self, ids: Vec<i64>) {
+        if ids.is_empty() {
+            return;
+        }
+        if let Err(error) = self.commands.try_send(MprisCommand::PlayTrackIds(ids)) {
+            let message = error.to_string();
+            let command = error.into_inner();
+            tracing::warn!(error = %message, ?command, "MPRIS command dropped: controller receiver is gone");
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reprise_control_play_track_ids_dispatches_the_command() {
+        let (sender, receiver) = async_channel::unbounded::<MprisCommand>();
+        let control = RepriseControl { commands: sender };
+        control.play_track_ids(vec![3, 1, 2]);
+        assert_eq!(
+            receiver.try_recv().unwrap(),
+            MprisCommand::PlayTrackIds(vec![3, 1, 2])
+        );
+    }
+
+    #[test]
+    fn reprise_control_play_track_ids_empty_list_is_a_no_op() {
+        let (sender, receiver) = async_channel::unbounded::<MprisCommand>();
+        let control = RepriseControl { commands: sender };
+        control.play_track_ids(vec![]);
+        assert!(receiver.try_recv().is_err());
+    }
 }
