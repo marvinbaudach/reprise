@@ -95,4 +95,35 @@ impl Shared {
             apply();
         }
     }
+
+    /// Re-applies the now-playing markers viewport-neutrally: it runs on the
+    /// next idle tick (out of the row-activation handler) and pins the scroll
+    /// offset across the update.
+    ///
+    /// Applying the marker mutates the visible now-playing cell (equaliser
+    /// shown, bold title). In the release build's timing some GtkColumnView
+    /// states re-anchor the viewport when that mutation happens *inside* the
+    /// double-click activation — the "double-click-to-play jumps the table to
+    /// the top and snaps back" report. Deferring the mutation out of the
+    /// activation handler, and restoring the captured scroll value afterwards
+    /// (synchronously and once more on idle, since GTK's re-anchor can land a
+    /// frame later), keeps the marker from ever moving the list. The
+    /// intentional center-on-track reveal (explicit transport / auto-advance)
+    /// keeps the plain, synchronous `reapply_now_playing_markers` — it owns the
+    /// viewport itself and must not be pinned.
+    pub(in crate::ui) fn reapply_now_playing_markers_pinned(self: &Rc<Self>) {
+        let weak = Rc::downgrade(self);
+        gtk4::glib::idle_add_local_once(move || {
+            let Some(shared) = weak.upgrade() else {
+                return;
+            };
+            let saved = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view)
+                .map(|adjustment| (adjustment.clone(), adjustment.value()));
+            shared.reapply_now_playing_markers();
+            if let Some((adjustment, value)) = saved {
+                adjustment.set_value(value);
+                gtk4::glib::idle_add_local_once(move || adjustment.set_value(value));
+            }
+        });
+    }
 }
