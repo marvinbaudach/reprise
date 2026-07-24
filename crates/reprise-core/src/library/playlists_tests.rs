@@ -215,6 +215,23 @@ fn get_returns_the_summary_or_none() {
 }
 
 #[test]
+fn track_ids_returns_playlist_members_in_order() {
+    let mut conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    for id in [10_i64, 11, 12] {
+        conn.execute(
+            "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (?1, ?2, 'T', 'A', 0)",
+            rusqlite::params![id, format!("/m/{id}.flac")],
+        )
+        .unwrap();
+    }
+    let pid = create(&conn, "Road").unwrap();
+    add_tracks(&mut conn, pid, &[12, 10, 11]).unwrap();
+    assert_eq!(track_ids(&conn, pid).unwrap(), vec![12, 10, 11]);
+    assert_eq!(track_ids(&conn, 9999).unwrap(), Vec::<i64>::new());
+}
+
+#[test]
 fn list_playlists_ordered_by_position() {
     let conn = seeded_conn();
     let _ = create(&conn, "P1").unwrap();

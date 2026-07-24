@@ -46,7 +46,7 @@ pub const DEFAULT_VOLUME: f64 = 1.0;
 ///
 /// Not `Eq` (only `PartialEq`): `SetVolume`'s `f64` payload doesn't
 /// implement `Eq`.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum MprisCommand {
     Play,
     Pause,
@@ -59,6 +59,9 @@ pub enum MprisCommand {
     SetShuffle(bool),
     SetLoop(Repeat),
     SetVolume(f64),
+    /// Seed the queue from this ordered id list and start playing (empty =
+    /// no-op). Carries a `Vec`, so the enum is no longer `Copy`.
+    PlayTrackIds(Vec<i64>),
 }
 
 /// Coarse playback status mirrored for MPRIS. Deliberately a separate type
@@ -478,5 +481,14 @@ mod tests {
     #[test]
     fn micros_to_ms_truncates_sub_millisecond_precision() {
         assert_eq!(micros_to_ms(1_999), 1);
+    }
+
+    #[test]
+    fn play_track_ids_carries_the_ordered_ids() {
+        let command = MprisCommand::PlayTrackIds(vec![7, 1, 4]);
+        match command {
+            MprisCommand::PlayTrackIds(ids) => assert_eq!(ids, vec![7, 1, 4]),
+            other => panic!("unexpected variant: {other:?}"),
+        }
     }
 }

@@ -23,6 +23,8 @@ use crate::data;
 use crate::dto::{
     CreateInstrumentalParams, CreatePlaylistParams, JobStatusParams, SearchTracksParams,
 };
+#[cfg(feature = "mpris")]
+use crate::dto::{PlayParams, PlaybackControlParams};
 use crate::error;
 
 /// URI of the library-summary resource.
@@ -67,8 +69,25 @@ impl RepriseServer {
             staging_path: Arc::new(staging_path),
             write_granted_at_startup,
             ai_create_granted_at_startup,
-            tool_router: Self::tool_router(),
+            tool_router: Self::build_tool_router(),
         }
+    }
+
+    /// Combines the always-on tool router with the `mpris`-gated playback
+    /// router when the feature is compiled in. `#[tool_router]` (see
+    /// `tool_router.rs` in the rmcp-macros source) scans an impl block's
+    /// methods for the `#[tool]` attribute purely syntactically and cannot
+    /// see per-method `#[cfg(...)]` gates, so the two playback tools live in
+    /// their own `#[cfg(feature = "mpris")]` impl block with a separate named
+    /// router (`playback_tool_router`) merged in only for that build.
+    #[cfg(feature = "mpris")]
+    fn build_tool_router() -> ToolRouter<Self> {
+        Self::tool_router() + Self::playback_tool_router()
+    }
+
+    #[cfg(not(feature = "mpris"))]
+    fn build_tool_router() -> ToolRouter<Self> {
+        Self::tool_router()
     }
 }
 
@@ -227,6 +246,83 @@ impl RepriseServer {
             }
             Err(err) => error::into_tool_outcome(err),
         }
+    }
+}
+
+// The two playback tools live in their own `#[tool_router]`-decorated impl
+// block, gated on the `mpris` feature, rather than as individually
+// `#[cfg(...)]`-gated methods inside the block above: `#[tool_router]`
+// collects its routes by scanning for the `#[tool]` attribute token
+// syntactically (see rmcp-macros' `tool_router.rs`) and has no visibility into
+// per-method `#[cfg]` gates, so a mixed block would still reference these
+// methods' generated `_tool_attr` helpers even when `mpris` is off. The two
+// routers are combined in `RepriseServer::build_tool_router`.
+#[cfg(feature = "mpris")]
+#[tool_router(router = playback_tool_router)]
+impl RepriseServer {
+    /// Sends a transport action to the running app's MPRIS player.
+    #[tool(
+        name = "music_playback_control",
+        description = "Control the running Reprise app's playback: action is one of \
+            'play', 'pause', 'stop', 'next', 'previous'. Requires the app to be \
+            running and the 'playback:control' capability (on by default)."
+    )]
+    async fn music_playback_control(
+        &self,
+        Parameters(params): Parameters<PlaybackControlParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let path = self.db_path.clone();
+        let allowed = tokio::task::spawn_blocking(move || data::playback_allowed(path.as_path()))
+            .await
+            .map_err(|error| error::join_error(&error))?;
+        match allowed {
+            Ok(false) => return Ok(error::playback_denied()),
+            Err(err) => return error::into_tool_outcome(err),
+            Ok(true) => {}
+        }
+        let Some(action) = crate::playback::TransportAction::from_str(&params.action) else {
+            return Ok(error::tool_error(format!(
+                "unknown action '{}'",
+                params.action
+            )));
+        };
+        let result = tokio::task::spawn_blocking(move || crate::playback::transport(action))
+            .await
+            .map_err(|error| error::join_error(&error))?;
+        error::playback_outcome(result, format!("Playback: {}", params.action))
+    }
+
+    /// Starts playing an explicit list of tracks or a whole playlist in the
+    /// running app.
+    #[tool(
+        name = "music_play",
+        description = "Start playing an explicit list of tracks or a whole playlist \
+            in the running Reprise app. Provide exactly one of track_ids or \
+            playlist_id. Requires the app running and the 'playback:control' \
+            capability (on by default)."
+    )]
+    async fn music_play(
+        &self,
+        Parameters(params): Parameters<PlayParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let path = self.db_path.clone();
+        let outcome = tokio::task::spawn_blocking(move || {
+            if !data::playback_allowed(path.as_path())? {
+                return Err(data::DataError::CapabilityDenied("playback:control"));
+            }
+            data::resolve_play_ids(path.as_path(), &params)
+        })
+        .await
+        .map_err(|error| error::join_error(&error))?;
+        let ids = match outcome {
+            Ok(ids) => ids,
+            Err(err) => return error::into_tool_outcome(err),
+        };
+        let count = ids.len();
+        let result = tokio::task::spawn_blocking(move || crate::playback::play_track_ids(ids))
+            .await
+            .map_err(|error| error::join_error(&error))?;
+        error::playback_outcome(result, format!("Playing {count} track(s)"))
     }
 }
 

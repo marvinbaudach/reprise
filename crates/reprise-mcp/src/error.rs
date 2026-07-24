@@ -48,6 +48,10 @@ pub fn serialize_resource<T: Serialize>(value: &T) -> Result<String, ErrorData> 
 /// Maps a [`DataError`] to a tool-call outcome (`music_*` tools).
 pub fn into_tool_outcome(error: DataError) -> Result<CallToolResult, ErrorData> {
     match error {
+        // `playback:control` is read live (see `playback_denied`'s doc comment)
+        // so it gets its own restart-free message rather than the generic
+        // write-cap one below.
+        DataError::CapabilityDenied("playback:control") => Ok(playback_denied()),
         DataError::CapabilityDenied(cap) => Ok(tool_error(format!(
             "Permission denied: the '{cap}' capability is not granted. \
              Enable it in Reprise and restart the MCP server."
@@ -76,6 +80,54 @@ pub fn resource_error(error: DataError) -> ErrorData {
     }
 }
 
-fn tool_error(message: String) -> CallToolResult {
+pub fn tool_error(message: String) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(message)])
+}
+
+/// The shared `playback:control` denial message, used verbatim by both
+/// `music_playback_control` (denies inline) and `music_play` (denies via
+/// [`into_tool_outcome`]). Deliberately does *not* tell the caller to restart
+/// the MCP server: unlike the write-class caps (`playlist:create`,
+/// `ai:create`), which are captured in an immutable startup snapshot,
+/// `playback:control` is read live on every call — a re-grant takes effect on
+/// the very next tool call. Not `#[cfg(feature = "mpris")]`: it is reached
+/// through [`into_tool_outcome`], which compiles regardless of that feature.
+pub fn playback_denied() -> CallToolResult {
+    tool_error(
+        "Permission denied: the 'playback:control' capability is not granted. \
+         Enable it in Reprise."
+            .to_owned(),
+    )
+}
+
+/// Builds a successful tool result carrying only a short text summary — the
+/// plain-text counterpart to [`structured_ok`] for tools with no structured
+/// body worth reporting (the playback tools: there is nothing to serialize
+/// beyond a human-readable confirmation).
+#[cfg(feature = "mpris")]
+fn tool_text(summary: String) -> CallToolResult {
+    CallToolResult::success(vec![ContentBlock::text(summary)])
+}
+
+/// Maps a [`crate::playback::PlaybackError`] to a tool-call outcome
+/// (`music_playback_control`/`music_play`). A missing player is caller-fixable
+/// (start the app) so it becomes a clear tool error; a genuine bus fault is
+/// logged and returned as an opaque protocol error, matching
+/// [`into_tool_outcome`]'s split between caller-fixable and internal failures.
+#[cfg(feature = "mpris")]
+pub fn playback_outcome(
+    result: Result<(), crate::playback::PlaybackError>,
+    ok_summary: String,
+) -> Result<CallToolResult, ErrorData> {
+    use crate::playback::PlaybackError;
+    match result {
+        Ok(()) => Ok(tool_text(ok_summary)),
+        Err(PlaybackError::NoPlayer) => Ok(tool_error(
+            "no running Reprise app on the session bus — start the app first".to_owned(),
+        )),
+        Err(PlaybackError::Bus(message)) => {
+            tracing::error!(message, "playback bus error");
+            Err(ErrorData::internal_error("internal server error", None))
+        }
+    }
 }
