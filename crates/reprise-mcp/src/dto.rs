@@ -251,3 +251,29 @@ pub struct CreateInstrumentalResult {
     /// where the finished render lands.
     pub queued_hint: String,
 }
+
+/// Parameters for `music_playback_control` (transport-only: play/pause/stop/
+/// next/previous, no target). Only the `mpris`-gated `music_playback_control`
+/// tool uses this, so it is gated the same way.
+#[cfg(feature = "mpris")]
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+pub struct PlaybackControlParams {
+    /// One of: "play", "pause", "stop", "next", "previous".
+    pub action: String,
+}
+
+/// Parameters for `music_play`. Exactly one of `track_ids`/`playlist_id` must
+/// be set — enforced by `data::resolve_play_ids`, not by the schema (rmcp/
+/// schemars has no "exactly one of" combinator). Only the `mpris`-gated
+/// `music_play` tool (and `data::resolve_play_ids`) uses this, so it is gated
+/// the same way.
+#[cfg(feature = "mpris")]
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+pub struct PlayParams {
+    /// An explicit ordered list of track ids to play. Mutually exclusive with `playlist_id`.
+    #[serde(default)]
+    pub track_ids: Option<Vec<i64>>,
+    /// A playlist id to play (resolved to its tracks). Mutually exclusive with `track_ids`.
+    #[serde(default)]
+    pub playlist_id: Option<i64>,
+}
