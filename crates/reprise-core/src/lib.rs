@@ -18,6 +18,7 @@ pub mod ai_promotion;
 pub mod ai_staging;
 pub mod artist_news;
 pub mod artist_news_history;
+mod artist_news_ledger;
 pub mod artist_news_links;
 pub mod artist_news_refresh;
 pub mod artist_portrait;
