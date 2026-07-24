@@ -8,7 +8,6 @@ use super::{formatted, text};
 
 pub const SHORTCUT_SEARCH: &str = N_!("Ctrl+F");
 pub const SHORTCUT_MAIN_MENU: &str = N_!("F10");
-pub const SHORTCUT_QUIT: &str = N_!("Ctrl+Q");
 
 pub fn shortcut_tooltip(message: &str, shortcut: &str) -> String {
     append_shortcut(&text(message), &text(shortcut))
@@ -24,9 +23,6 @@ pub const TOOLTIP_PLAY: &str = N_!("Play (Space)");
 pub const TOOLTIP_PAUSE: &str = N_!("Pause (Space)");
 pub const TOOLTIP_PREVIOUS: &str = N_!("Play previous track");
 pub const TOOLTIP_NEXT: &str = N_!("Play next track");
-
-/// Mini-player hover-overlay buttons (icon-only, TIP-1a/1b).
-pub const TOOLTIP_RESTORE_FULL_WINDOW: &str = N_!("Restore full window (Ctrl+M)");
 
 // Scan sidebar-toggle and card tooltips (dynamic values allowed per TIP-5).
 
@@ -49,7 +45,7 @@ pub fn scan_tooltip_progress(pct: u32) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{append_shortcut, TOOLTIP_PAUSE, TOOLTIP_PLAY, TOOLTIP_RESTORE_FULL_WINDOW};
+    use super::{append_shortcut, TOOLTIP_PAUSE, TOOLTIP_PLAY};
 
     #[test]
     fn tip_6_controls_show_only_their_existing_action_shortcuts() {
@@ -57,11 +53,7 @@ mod tests {
             append_shortcut("Search all fields", "Ctrl+F"),
             "Search all fields (Ctrl+F)"
         );
-        for (tooltip, shortcut) in [
-            (TOOLTIP_PLAY, "Space"),
-            (TOOLTIP_PAUSE, "Space"),
-            (TOOLTIP_RESTORE_FULL_WINDOW, "Ctrl+M"),
-        ] {
+        for (tooltip, shortcut) in [(TOOLTIP_PLAY, "Space"), (TOOLTIP_PAUSE, "Space")] {
             assert!(
                 tooltip.ends_with(&format!("({shortcut})")),
                 "`{tooltip}` must expose `{shortcut}`"
@@ -78,11 +70,6 @@ mod tests {
                 "primary menu",
                 include_str!("primary_menu.rs"),
                 "strings::shortcut_tooltip(strings::MAIN_MENU,strings::SHORTCUT_MAIN_MENU,)",
-            ),
-            (
-                "mini-player close",
-                include_str!("compact/compact_player_layouts.rs"),
-                "close_button.set_tooltip_text(Some(&strings::shortcut_tooltip(strings::QUIT_REPRISE,strings::SHORTCUT_QUIT,)))",
             ),
         ];
 

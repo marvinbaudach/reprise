@@ -41,7 +41,6 @@ pub(in crate::ui) struct CompactMenu {
     on_always_on_top: BoolCallback,
     on_preferences: VoidCallback,
     on_quit: VoidCallback,
-    is_playing: RefCell<bool>,
     always_on_top_available: Cell<bool>,
 }
 
@@ -102,7 +101,7 @@ impl CompactMenu {
             .all(|action| action_group.has_action(action)));
 
         let playback_section = gio::Menu::new();
-        let menu_model = menu_model(&playback_section, false, true);
+        let menu_model = menu_model(&playback_section, true);
         let popover = gtk4::PopoverMenu::from_model(Some(&menu_model));
         popover.set_has_arrow(false);
 
@@ -118,29 +117,18 @@ impl CompactMenu {
             on_always_on_top,
             on_preferences,
             on_quit,
-            is_playing: RefCell::new(false),
             always_on_top_available: Cell::new(true),
         }
     }
 
-    pub(in crate::ui) fn set_playing(&self, playing: bool) {
-        let mut current = self.is_playing.borrow_mut();
-        if *current == playing {
-            return;
-        }
-        *current = playing;
-        rebuild_playback_section(&self.playback_section, playing);
-    }
-
-    /// Shows or hides the "Always on Top" section (MINI-3). Rebuilds the
-    /// popover model, reusing the same playback section so the play/pause
-    /// label stays in sync.
+    /// Shows or hides the "Always on Top" section (MINI-3). Rebuilds the popover
+    /// model, reusing the same (static) Next/Previous playback section.
     pub(in crate::ui) fn set_always_on_top_available(&self, available: bool) {
         if self.always_on_top_available.get() == available {
             return;
         }
         self.always_on_top_available.set(available);
-        let model = menu_model(&self.playback_section, *self.is_playing.borrow(), available);
+        let model = menu_model(&self.playback_section, available);
         self.popover.set_menu_model(Some(&model));
     }
 
@@ -173,17 +161,14 @@ impl CompactMenu {
     }
 }
 
-/// Builds the four-section menu matching the compact player design:
+/// Builds the four-section menu:
 ///
 /// 1. Restore Full Window (Ctrl+M)
-/// 2. Pause / Next / Previous (Space, Ctrl+→, Ctrl+←)
+/// 2. Next / Previous (Ctrl+→, Ctrl+←) — no Play/Pause; the card button + Space
+///    own it (user request, diverges from frame 9c)
 /// 3. Always on Top (toggle)
 /// 4. Preferences (Ctrl+,) / Quit (Ctrl+Q)
-fn menu_model(
-    playback_section: &gio::Menu,
-    is_playing: bool,
-    always_on_top_available: bool,
-) -> gio::Menu {
+fn menu_model(playback_section: &gio::Menu, always_on_top_available: bool) -> gio::Menu {
     let restore = gio::Menu::new();
     restore.append_item(&item_with_accel(
         &strings::text(strings::RESTORE_FULL_WINDOW),
@@ -191,7 +176,7 @@ fn menu_model(
         "<Control>m",
     ));
 
-    rebuild_playback_section(playback_section, is_playing);
+    rebuild_playback_section(playback_section);
 
     let window = gio::Menu::new();
     window.append(
@@ -221,14 +206,10 @@ fn menu_model(
     menu
 }
 
-fn rebuild_playback_section(section: &gio::Menu, is_playing: bool) {
+fn rebuild_playback_section(section: &gio::Menu) {
+    // No Play/Pause — the card's play button (and Space) already toggle it; the
+    // menu carries only Next/Previous, which have no on-card control.
     section.remove_all();
-    let label = if is_playing {
-        strings::text(strings::PAUSE)
-    } else {
-        strings::text(strings::PLAY)
-    };
-    section.append_item(&item_with_accel(&label, "compact.play-pause", "space"));
     section.append_item(&item_with_accel(
         &strings::text(strings::NEXT),
         "compact.next",
@@ -299,7 +280,7 @@ mod tests {
     #[test]
     fn mini_3_context_menu_has_four_sections() {
         let playback = gio::Menu::new();
-        let model = menu_model(&playback, false, true);
+        let model = menu_model(&playback, true);
         let mut section_count = 0;
         for i in 0..model.n_items() {
             if model.item_link(i, "section").is_some() {
@@ -310,33 +291,16 @@ mod tests {
     }
 
     #[test]
-    fn mini_3_context_menu_playback_label_reflects_state() {
-        let section = gio::Menu::new();
-        rebuild_playback_section(&section, true);
-        let label = section
-            .item_attribute_value(0, "label", Some(glib::VariantTy::STRING))
-            .and_then(|v| v.get::<String>());
-        assert_eq!(label.as_deref(), Some("Pause"));
-
-        rebuild_playback_section(&section, false);
-        let label = section
-            .item_attribute_value(0, "label", Some(glib::VariantTy::STRING))
-            .and_then(|v| v.get::<String>());
-        assert_eq!(label.as_deref(), Some("Play"));
-    }
-
-    #[test]
     fn mini_3_context_menu_actions_match_contract() {
         let mut actions = BTreeSet::new();
         let playback = gio::Menu::new();
-        let model = menu_model(&playback, false, true);
+        let model = menu_model(&playback, true);
         assert!(!collect_model_contract(model.upcast_ref(), &mut actions));
         assert_eq!(
             actions,
             [
                 "compact.always-on-top".to_string(),
                 "compact.next".to_string(),
-                "compact.play-pause".to_string(),
                 "compact.preferences".to_string(),
                 "compact.previous".to_string(),
                 "compact.quit".to_string(),
@@ -350,8 +314,8 @@ mod tests {
     #[test]
     fn mini_3_context_menu_hides_always_on_top_on_wayland() {
         let playback = gio::Menu::new();
-        let with = menu_model(&playback, false, true);
-        let without = menu_model(&playback, false, false);
+        let with = menu_model(&playback, true);
+        let without = menu_model(&playback, false);
 
         let count_sections = |model: &gio::Menu| {
             (0..model.n_items())

@@ -221,16 +221,13 @@ impl TrackList {
         ) {
             self.shared.playing_track_id.set(Some(track_id));
         }
-        // Move the marker on every currently-visible row in place — off the old
-        // playing row, onto the new one — by re-running each cell's registered
-        // applier (see `now_playing_marker`). No `items_changed`, so
-        // GtkColumnView never replaces a row widget and the viewport stays put:
-        // a double-click-to-play no longer snaps the table to the top.
-        self.shared.reapply_now_playing_markers();
-
         let Some(position) =
             visible_position_for_track_in_source(&ids, track_id, queue_position, is_queue)
         else {
+            // The new track is not in the current view, but the old playing
+            // row (if visible) still needs its marker cleared — do it
+            // viewport-neutrally so it never nudges the list.
+            self.shared.reapply_now_playing_markers_pinned();
             tracing::debug!(
                 track_id,
                 "current track is not visible in the active table query"
@@ -245,6 +242,11 @@ impl TrackList {
             .is_some_and(|last| last.elapsed() < USER_SCROLL_GRACE);
         match reveal_policy(change, user_scrolling) {
             TrackRevealPolicy::MarkerOnly => {
+                // No reveal: the viewport must stay exactly where it is, so the
+                // marker update is deferred out of the activation handler and
+                // pinned (see `reapply_now_playing_markers_pinned`) — this is
+                // the double-click-to-play path that was snapping to the top.
+                self.shared.reapply_now_playing_markers_pinned();
                 tracing::info!(
                     track_id,
                     position,
@@ -252,6 +254,9 @@ impl TrackList {
                 );
             }
             TrackRevealPolicy::Center => {
+                // The reveal owns the viewport, so apply the marker plainly and
+                // then scroll to center the track.
+                self.shared.reapply_now_playing_markers();
                 if change == CurrentTrackChange::AutomaticAdvance {
                     reveal_automatic_track_position(&self.shared, position, 8);
                 } else {
@@ -291,8 +296,9 @@ impl TrackList {
     /// carried it so its `.now-playing` class drops.
     fn clear_now_playing(&self) {
         self.shared.playing_track_id.set(None);
-        // Drop the marker from whatever visible row still carries it, in place.
-        self.shared.reapply_now_playing_markers();
+        // Drop the marker from whatever visible row still carries it, without
+        // nudging the viewport (same reasoning as the double-click path).
+        self.shared.reapply_now_playing_markers_pinned();
     }
 }
 

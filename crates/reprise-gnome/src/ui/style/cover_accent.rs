@@ -117,9 +117,17 @@ pub(in crate::ui) fn scale_chroma(r: f64, g: f64, b: f64, factor: f64) -> (f64, 
 // OKLCH clamping
 // ---------------------------------------------------------------------------
 
-/// Converts `color` to OKLCH, clamps L to [0.55, 0.75] and C to ≤ 0.13,
-/// and returns the result as `Rgb`. Returns `None` if chroma < 0.03 (near-
-/// gray — use the theme fallback instead).
+/// Chroma is clamped into this band. The floor lifts washed-out or dark covers
+/// (e.g. a dark red album sleeve) to a saturated accent instead of a muted
+/// near-gray tan; the ceiling keeps vivid covers from glaring. A cover whose
+/// dominant chroma is below the near-gray gate (0.03) gets no accent at all —
+/// the theme fallback applies instead.
+const CHROMA_FLOOR: f64 = 0.08;
+const CHROMA_CEIL: f64 = 0.13;
+
+/// Converts `color` to OKLCH, clamps L to [0.55, 0.75] and C into
+/// `[CHROMA_FLOOR, CHROMA_CEIL]`, and returns the result as `Rgb`. Returns
+/// `None` if chroma < 0.03 (near-gray — use the theme fallback instead).
 pub(super) fn oklch_clamp(color: Rgb) -> Option<Rgb> {
     let lr = to_linear(color.r);
     let lg = to_linear(color.g);
@@ -134,9 +142,10 @@ pub(super) fn oklch_clamp(color: Rgb) -> Option<Rgb> {
         return None; // near-gray
     }
 
-    // Clamp L and C
+    // Clamp L into the readable band; clamp C into [floor, ceil] so even a
+    // washed-out or dark cover yields a punchy — not muted — accent.
     let l_clamped = l.clamp(0.55, 0.75);
-    let c_clamped = c.min(0.13);
+    let c_clamped = c.clamp(CHROMA_FLOOR, CHROMA_CEIL);
 
     // Back to Lab
     let a_out = c_clamped * h.cos();
@@ -438,6 +447,33 @@ mod tests {
         pixels.extend(solid(220, 40, 40, 10));
         let accent = dominant_accent(&pixels, 3).expect("red cluster");
         assert!(accent.r > 180, "expected red-dominant, got {accent:?}");
+    }
+
+    #[test]
+    fn oklch_clamp_lifts_low_chroma_to_the_floor() {
+        let chroma_of = |c: Rgb| {
+            let (_, a, b) = linear_rgb_to_oklab(to_linear(c.r), to_linear(c.g), to_linear(c.b));
+            (a * a + b * b).sqrt()
+        };
+        // A washed-out warm tone at C≈0.05: above the near-gray gate but below
+        // the saturation floor — a dark/muted cover's dominant bucket.
+        let (lr, lg, lb) = oklab_to_linear_rgb(0.65, 0.05 * 0.707, 0.05 * 0.707);
+        let muted = Rgb {
+            r: from_linear(lr),
+            g: from_linear(lg),
+            b: from_linear(lb),
+        };
+        let c_in = chroma_of(muted);
+        assert!(
+            (0.03..CHROMA_FLOOR).contains(&c_in),
+            "test input chroma {c_in} is not in the boost band"
+        );
+        let out = oklch_clamp(muted).expect("usable, not near-gray");
+        assert!(
+            chroma_of(out) >= CHROMA_FLOOR - 0.005,
+            "low chroma {} was not lifted to the {CHROMA_FLOOR} floor",
+            chroma_of(out)
+        );
     }
 
     #[test]
