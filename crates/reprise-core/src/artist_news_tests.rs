@@ -673,3 +673,123 @@ fn insert_release(conn: &rusqlite::Connection, mbid: &str, seen_at: Option<i64>)
     )
     .unwrap();
 }
+
+#[test]
+fn ledger_marks_artist_without_news_fresh_and_second_run_skips_it() {
+    let conn = migrated_conn();
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, artist_mbid, album, play_count, added_at) \
+         VALUES ('/music/one.flac', 'One', 'Pink Floyd', ?1, 'Local Album', 20, 0)",
+        [ARTIST_ID],
+    )
+    .unwrap();
+    // No release groups at all — the artist has nothing to report.
+    let empty = r#"{"release-groups":[]}"#;
+    // A `Cell` rather than a plain counter: the closure only needs a shared
+    // reference to bump it, so `calls.get()` can be read between the two
+    // `refresh_with` calls without conflicting with the still-live `fetch`.
+    let calls = std::cell::Cell::new(0);
+    let mut fetch = |_url: &str| {
+        calls.set(calls.get() + 1);
+        Ok(empty.to_string())
+    };
+
+    let first = refresh_with(
+        &conn,
+        date(),
+        1_000,
+        FetchScope::TopArtists,
+        false,
+        &mut fetch,
+        &mut no_accent,
+    )
+    .unwrap();
+    assert_eq!(first.artists_fetched, 1);
+    let after_first = calls.get();
+    assert!(after_first > 0, "first run must hit the network");
+
+    let second = refresh_with(
+        &conn,
+        date(),
+        2_000, // well inside FETCH_TTL_SECONDS
+        FetchScope::TopArtists,
+        false,
+        &mut fetch,
+        &mut no_accent,
+    )
+    .unwrap();
+    assert_eq!(
+        second.artists_fetched, 0,
+        "artist with no news must count as fresh, not be re-fetched"
+    );
+    assert_eq!(calls.get(), after_first, "second run must issue no requests");
+}
+
+#[test]
+fn ledger_records_unmatched_artist_and_skips_it_while_fresh() {
+    let conn = migrated_conn();
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+         VALUES ('/music/two.flac', 'Two', 'Nobody At All', 'Local Album', 5, 0)",
+        [],
+    )
+    .unwrap();
+    let calls = std::cell::Cell::new(0);
+    let mut fetch = |_url: &str| {
+        calls.set(calls.get() + 1);
+        Ok(r#"{"artists":[]}"#.to_string())
+    };
+
+    let first = refresh_with(
+        &conn,
+        date(),
+        1_000,
+        FetchScope::TopArtists,
+        false,
+        &mut fetch,
+        &mut no_accent,
+    )
+    .unwrap();
+    assert_eq!(first.unmatched, 1);
+    let after_first = calls.get();
+
+    refresh_with(
+        &conn,
+        date(),
+        2_000,
+        FetchScope::TopArtists,
+        false,
+        &mut fetch,
+        &mut no_accent,
+    )
+    .unwrap();
+    assert_eq!(
+        calls.get(),
+        after_first,
+        "an unmatched artist must not be searched again while fresh"
+    );
+}
+
+#[test]
+fn latest_fetched_at_reads_the_ledger_not_found_releases() {
+    let conn = migrated_conn();
+    assert_eq!(
+        crate::artist_news::latest_fetched_at(&conn).unwrap(),
+        None,
+        "empty ledger means never fetched"
+    );
+    crate::artist_news_ledger::record_attempt(
+        &conn,
+        "pink floyd",
+        None,
+        4_242,
+        crate::artist_news_ledger::FetchOutcome::Ok,
+        0,
+    )
+    .unwrap();
+    assert_eq!(
+        crate::artist_news::latest_fetched_at(&conn).unwrap(),
+        Some(4_242),
+        "an attempt without any found release must still count"
+    );
+}

@@ -244,17 +244,41 @@ where
         ..RefreshReport::default()
     };
     for candidate in candidates {
-        let mbid = match resolve_artist_mbid(conn, &candidate, fetch, &mut report)? {
-            Some(mbid) => mbid,
-            None => continue,
-        };
-        if !force && artist_cache_is_fresh(conn, &mbid, now).map_err(database_error)? {
+        let artist_key = normalize(&candidate.name);
+        // Checked before resolving the MBID: a fresh artist must cost zero
+        // requests, and the search request would otherwise be spent before
+        // we ever consult the cache.
+        if !force && artist_cache_is_fresh(conn, &artist_key, now).map_err(database_error)? {
             continue;
         }
+        let mbid = match resolve_artist_mbid(conn, &candidate, fetch, &mut report)? {
+            Some(mbid) => mbid,
+            None => {
+                crate::artist_news_ledger::record_attempt(
+                    conn,
+                    &artist_key,
+                    None,
+                    now,
+                    crate::artist_news_ledger::FetchOutcome::Unmatched,
+                    0,
+                )
+                .map_err(database_error)?;
+                continue;
+            }
+        };
         let body = match fetch(&release_groups_url(&mbid)) {
             Ok(body) if release_payload_valid(&body) => body,
             Ok(_) | Err(_) => {
                 report.failed += 1;
+                crate::artist_news_ledger::record_attempt(
+                    conn,
+                    &artist_key,
+                    Some(&mbid),
+                    now,
+                    crate::artist_news_ledger::FetchOutcome::Failed,
+                    0,
+                )
+                .map_err(database_error)?;
                 continue;
             }
         };
@@ -263,6 +287,15 @@ where
         let accent = normalize_fallback_accent(fallback_accent(conn, &candidate.name));
         upsert_releases(conn, &candidate.name, &mbid, now, &accent, &items)
             .map_err(database_error)?;
+        crate::artist_news_ledger::record_attempt(
+            conn,
+            &artist_key,
+            Some(&mbid),
+            now,
+            crate::artist_news_ledger::FetchOutcome::Ok,
+            items.len(),
+        )
+        .map_err(database_error)?;
         report.artists_fetched += 1;
         report.releases_upserted += items.len();
     }
@@ -359,18 +392,17 @@ fn persist_artist_match(
     Ok(())
 }
 
+/// Freshness is judged by the last *attempt* recorded in the ledger, not by
+/// the newest release we happened to store. An artist with nothing to report
+/// stores no release — judging by releases meant re-fetching them forever.
 fn artist_cache_is_fresh(
     conn: &Connection,
-    artist_mbid: &str,
+    artist_key: &str,
     now: i64,
 ) -> Result<bool, rusqlite::Error> {
-    let fetched_at = conn.query_row(
-        "SELECT MAX(fetched_at) FROM new_releases WHERE artist_mbid = ?1",
-        [artist_mbid],
-        |row| row.get::<_, Option<i64>>(0),
-    )?;
-    Ok(fetched_at
-        .is_some_and(|fetched_at| now.saturating_sub(fetched_at).max(0) <= FETCH_TTL_SECONDS))
+    let last_attempt = crate::artist_news_ledger::last_attempt_at(conn, artist_key)?;
+    Ok(last_attempt
+        .is_some_and(|attempt| now.saturating_sub(attempt).max(0) <= FETCH_TTL_SECONDS))
 }
 
 fn local_albums(conn: &Connection, artist: &str) -> Result<Vec<String>, rusqlite::Error> {
