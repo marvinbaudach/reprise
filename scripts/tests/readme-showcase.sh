@@ -84,8 +84,8 @@ for value in \
   require_fixed "$value" "$german"
 done
 
-require_fixed 'Choose your seam' "$english"
-require_fixed 'Wähle deine Naht' "$german"
+require_fixed 'Pick your entry point' "$english"
+require_fixed 'Such dir deinen Einstieg' "$german"
 
 for path in "$english" "$german"; do
   for crate in reprise-core reprise-platform-linux reprise-gnome; do

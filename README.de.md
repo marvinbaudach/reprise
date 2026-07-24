@@ -2,22 +2,25 @@
 
 [English](README.md) · [Deutsch](README.de.md)
 
-Reprise ist für Menschen, die ihre Musik noch selbst besitzen — und für Devs,
-die native Desktop-UX, portables Domänendesign und messbare Systemarbeit in
-einer Rust-Codebase verbinden wollen. Eine GTK4-/libadwaita-App für GNOME trifft
-auf einen GUI-freien Core und explizite Linux-Plattformverträge.
+Reprise ist ein Musikplayer für Menschen, die ihre Musik noch als eigene
+Dateien besitzen — und für Entwickler, die sehen wollen, wie native
+Desktop-UX, ein portabler Core und messbare Systemarbeit in einer
+Rust-Codebase zusammenkommen. Eine GTK4-/libadwaita-App für GNOME sitzt auf
+einem GUI-freien Core; alles Linux-Spezifische bleibt hinter klaren Verträgen.
 
 > **Status:** aktive Alpha. Reprise ist noch kein öffentliches Release.
 
 ## Warum Reprise
 
-- **Local-first mit Tiefe.** Scans grosser Bibliotheken, Metadaten, Suche,
-  Playlists, Hörverlauf, Android-Sync und Dateisicherheit funktionieren ohne
-  Cloudkonto für die Musiksammlung.
-- **Nativ per Design.** GTK4/libadwaita besitzt das GNOME-Erlebnis; GStreamer,
-  MPRIS, MTP, Keyring und Papierkorb bleiben am Linux-Rand.
-- **Gebaut zum Nachvollziehen.** Architektur, UX, Accessibility, Performance
-  und Delivery sind ausführbare Verträge statt README-Versprechen.
+- **Alles funktioniert lokal.** Scans grosser Bibliotheken, Metadaten, Suche,
+  Playlists, Hörverlauf, Android-Sync und Dateisicherheit — nichts davon macht
+  aus deiner Musiksammlung ein Cloudkonto.
+- **Nativ, kein Web-View.** GTK4/libadwaita prägt das GNOME-Erlebnis;
+  GStreamer, MPRIS, MTP, Keyring und Papierkorb liegen in einer eigenen
+  Linux-Schicht.
+- **Geprüft statt versprochen.** Architektur, UX, Accessibility, Performance
+  und Delivery werden von Skripten und Tests erzwungen — nicht nur im README
+  beschrieben.
 
 ## Architektur
 
@@ -32,46 +35,50 @@ auf einen GUI-freien Core und explizite Linux-Plattformverträge.
 | `reprise-mcp` | Lokaler stdio-MCP-Server: read-only Library-Resources und capability-gegatete Create-Tools für Agenten | Andere Workspace-Crates als reprise-core, produktives SQL oder Playback-/Queue-/Tag-/Delete-Tools |
 | `reprise-stems` | Portables Stem-Separation-Backend (ML-Inferenz) für die experimentellen Instrumental-Jobs | Andere Workspace-Crates als reprise-core oder GUI-/Engine-Kopplung |
 
-Die gemeinsame Engine besitzt Verhalten und Daten; Plattform-Crates
-implementieren schmale Verträge, während jedes Frontend nativ bleibt. Die
-`reprise-cli`- und `reprise-mcp`-Frontends laufen als eigene Prozesse über
-dieselbe Datenbank, und ein Change-Log-Notifier lässt ihre Änderungen in einer
-laufenden GTK-App live erscheinen — ohne Neustart.
-`scripts/check-architecture.sh` erzwingt Abhängigkeitsrichtung, Core Purity,
-Dateigrössen und bekannte Kopplungsgrenzen der Präsentationsschicht.
+Die gesamte Anwendungslogik und alle Daten liegen in der gemeinsamen Engine;
+die Plattform-Crates implementieren nur die schmalen Verträge, die der Core
+vorgibt, und jedes Frontend bleibt nativ. Die `reprise-cli`- und
+`reprise-mcp`-Frontends laufen als eigene Prozesse auf derselben Datenbank,
+und ein Change-Log-Notifier zeigt ihre Änderungen live in einer laufenden
+GTK-App an — ohne Neustart. `scripts/check-architecture.sh` erzwingt die
+Abhängigkeitsrichtung, die Reinheit des Cores, Dateigrössen-Limits und bekannte
+Kopplungsfallen der Präsentationsschicht.
 
 ## Engineering-Verträge
 
-- **Verhalten ist spezifiziert.** Das verbindliche
-  [UX-Regelwerk](docs/ux-rules.md) ordnet jeder aktiven Regel einen benannten
-  Rust- oder CUA-Test zu, einschliesslich Tastatur, Fokus, Accessibility,
+- **Jede UX-Regel hat einen Test.** Das verbindliche
+  [UX-Regelwerk](docs/ux-rules.md) ordnet jeder aktiven Regel einen nach ihr
+  benannten Rust- oder CUA-Test zu — inklusive Tastatur, Fokus, Accessibility,
   Feedback und Reduced Motion.
-- **Grosse Bibliotheken bleiben begrenzt.** Das Trackmodell kombiniert
-  GTK-Widget-Virtualisierung mit lazy geladenen 200-Zeilen-SQLite-Fenstern und
-  einem festen Cache-Budget. Akzeptierte Vergleiche nutzen generierte Profile
-  mit 10.000 und 100.000 Tracks.
-- **Asynchrone UI-Arbeit bleibt identitätssicher.** Recycelte Zeilen und lange
-  Worker nutzen Generation Tokens, damit veraltete Cover-, Metadaten-, Lyrics-
-  oder Fortschrittsergebnisse kein anderes sichtbares Element übermalen.
-- **Riskante Ränder sind explizit.** Netzwerkmodule sind Opt-in, Credentials
-  liegen im System-Keyring, Dateimutationen verlangen eine Benutzeraktion und
-  automatisierte Prüfungen nutzen isolierte Profile statt einer echten
-  Musiksammlung.
+- **Grosse Bibliotheken bleiben schnell und sparsam.** Das Trackmodell
+  kombiniert GTK-Widget-Virtualisierung mit lazy geladenen
+  200-Zeilen-SQLite-Fenstern und einem festen Cache-Budget. Akzeptierte
+  Vergleiche laufen auf generierten Profilen mit 10.000 und 100.000 Tracks.
+- **Veraltete Async-Ergebnisse treffen nie die falsche Zeile.** Recycelte
+  Zeilen und langlaufende Worker tragen Generation Tokens; verspätete Cover,
+  Metadaten, Lyrics oder Fortschrittswerte können kein anderes sichtbares
+  Element übermalen.
+- **Alles Riskante ist Opt-in.** Netzwerkmodule sind standardmässig aus,
+  Credentials liegen im System-Keyring, Dateien ändern sich nur nach einer
+  Benutzeraktion, und automatische Prüfungen laufen auf isolierten Profilen
+  statt auf einer echten Musiksammlung.
 
-Benchmarkmethoden, Einschränkungen und akzeptierte Evidenz stehen in
-[TESTING.md](TESTING.md) und im [Engineering-Showcase](docs/showcase.md), nicht
-als schnell veraltende Summen in diesem technischen Einstiegspunkt.
+Benchmarkmethoden, ihre Grenzen und die akzeptierten Ergebnisse stehen in
+[TESTING.md](TESTING.md) und im [Engineering-Showcase](docs/showcase.md) —
+dieses README verzichtet bewusst auf Zahlen, die schnell veralten.
 
 ## Mitentwickeln
 
-**Wähle deine Naht:** reine Bibliotheks-, Scanner-, Queue- oder Playlistlogik
-in `reprise-core`; native Interaktion und Accessibility in `reprise-gnome`;
-oder Audio-, Desktop- und Geräteadapter in `reprise-platform-linux`.
+**Such dir deinen Einstieg:** reine Bibliotheks-, Scanner-, Queue- oder
+Playlist-Logik in `reprise-core`; native Interaktion und Accessibility in
+`reprise-gnome`; oder Audio-, Desktop- und Geräteadapter in
+`reprise-platform-linux`.
 
 Starte mit [AGENTS.md](AGENTS.md) und dem [UX-Regelwerk](docs/ux-rules.md).
-Änderungen beginnen mit einem fehlschlagenden Test, halten die Core-Grenze ein
-und laufen per Pull Request durch `feature → dev → main`. Ziel ist nicht mehr
-Code, sondern ein besserer Musikplayer mit Evidenz für seine Korrektheit.
+Jede Änderung beginnt mit einem fehlschlagenden Test, respektiert die
+Core-Grenze und landet per Pull Request über `feature → dev → main`. Das Ziel
+ist nicht mehr Code, sondern ein besserer Musikplayer — mit Belegen, dass jede
+Änderung korrekt ist.
 
 ## Bauen und starten
 
@@ -100,7 +107,7 @@ gepinnten Checksums auf. Details stehen in [flatpak/README.md](flatpak/README.md
 
 ## Verifikation
 
-Die fokussierte lokale Basis:
+Der schnelle lokale Check:
 
 ```sh
 cargo fmt --check
@@ -110,9 +117,9 @@ scripts/check-architecture.sh
 scripts/check-ux-traceability.sh
 ```
 
-Ein sauberer Merge-Kandidat durchläuft das vollständige Pull-Request-Gate mit
-warnungsfreiem Rustdoc, Dependency Audit, isolierten GTK-Display-Suites sowie
-den Accessibility- und Input-Verträgen:
+Vor einem Merge durchläuft ein Kandidat das vollständige Pull-Request-Gate —
+warnungsfreies Rustdoc, Dependency-Audit, isolierte GTK-Display-Suites sowie
+die Accessibility- und Eingabe-Verträge:
 
 ```sh
 MERGE_READINESS_BASE_REF=origin/dev scripts/check-merge-readiness.sh --no-fetch
@@ -122,9 +129,9 @@ Release-Kandidaten validieren über `scripts/check-release.sh` zusätzlich
 Desktop-Metadaten, Flatpak-Quellen, Übersetzungen und einen optimierten
 Meson-Install.
 
-Display-Tests brechen geschlossen ab, wenn private D-Bus-/Xvfb-/AT-SPI-Dienste
-nicht verfügbar sind; sie fallen nie auf Live-Desktop oder Benutzerprofil
-zurück.
+Display-Tests schlagen schlicht fehl, wenn ihre privaten
+D-Bus-/Xvfb-/AT-SPI-Dienste fehlen — sie greifen nie auf den laufenden Desktop
+oder dein Benutzerprofil zurück.
 
 ## Dokumentation
 
