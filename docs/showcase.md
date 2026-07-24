@@ -11,6 +11,11 @@ It records communication and visual decisions, not product behavior.
   implementation detail before the reader understands why the project matters.
 - Use calm, precise language. Prefer a small number of defensible claims over
   broad marketing superlatives.
+- Write plain, natural sentences instead of compressed jargon headlines
+  (avoid the style of "Where behavior lives" or "Risky edges are explicit").
+  A reader should understand each heading without decoding it. German copy is
+  written as natural German, never as a literal calque of the English
+  (a phrase like "Wähle deine Naht" must not come back).
 - Publish the showroom in English and German only. Additional translations add
   maintenance and review cost without serving the intended audience.
 - Keep future architecture goals to thin native frontends that reuse the
