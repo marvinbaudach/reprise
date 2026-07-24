@@ -54,6 +54,13 @@ fn is_x11() -> bool {
         .is_some()
 }
 
+/// Whether the "Always on Top" menu item is offered at all — it maps directly
+/// to X11 support: on X11 the item appears (MINI-3), on Wayland (no GTK4
+/// keep-above) it is hidden entirely rather than shown dead/disabled.
+const fn always_on_top_available(is_x11: bool) -> bool {
+    is_x11
+}
+
 /// Sets or clears the always-on-top window state. On X11 this sends the
 /// `_NET_WM_STATE_ABOVE` hint via the X11 backend; on non-X11 displays
 /// this is a no-op (the menu item is already disabled).
@@ -131,9 +138,7 @@ pub(in crate::ui) fn install(
         // Always-on-Top: X11 only; hide the menu item entirely on Wayland
         // (MINI-3) rather than leaving a dead, grayed-out entry.
         let x11_available = is_x11();
-        if !x11_available {
-            compact.set_always_on_top_available(false);
-        }
+        compact.set_always_on_top_available(always_on_top_available(x11_available));
 
         // Restore persisted state.
         if x11_available {
@@ -186,6 +191,14 @@ mod tests {
 
     use super::*;
     use crate::ui::minimal_view::ViewTransition;
+
+    #[test]
+    fn mini_always_on_top_hidden_wayland_visible_x11() {
+        // X11 supports _NET_WM_STATE_ABOVE → the item is offered (MINI-3).
+        assert!(always_on_top_available(true));
+        // Wayland exposes no keep-above → hidden entirely, not shown disabled.
+        assert!(!always_on_top_available(false));
+    }
 
     fn has_button_with_tooltip(root: &impl IsA<gtk4::Widget>, tooltip: &str) -> bool {
         let mut child = root.first_child();
