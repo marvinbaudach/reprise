@@ -135,7 +135,10 @@ pub(in crate::ui) fn css() -> String {
            color: alpha(@window_fg_color, 0.58); }}\n\
          .stats-genre-card {{ padding: 8px; }}\n\
          .stats-genre-bar {{ border-radius: 999px; }}\n\
-         .stats-genre-segment {{ padding: 0; min-height: 0; }}\n\
+         .stats-genre-segment {{ padding: 0; min-height: 0; border: none; \
+           box-shadow: none; background-image: none; }}\
+         .stats-genre-segment:focus-visible {{ outline: 2px solid @accent_color; \
+           outline-offset: -2px; }}\n\
          .stats-genre-link {{ padding: 0; }}\n\
          .stats-genre-rank-0 {{ background-color: shade(@accent_bg_color, 1.15); }}\n\
          .stats-genre-rank-1 {{ background-color: shade(@accent_bg_color, 1.0); }}\n\

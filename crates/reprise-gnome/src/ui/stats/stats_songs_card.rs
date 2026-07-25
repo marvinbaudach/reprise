@@ -637,6 +637,7 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn stats_14_hover_play_targets_exactly_one_track() {
         gtk4::init().unwrap();
+        crate::ui::style::install_css_string_for_test(&crate::ui::stats::stats_css::css());
         let metadata: MetadataCallback = Rc::new(RefCell::new(None));
         let (card, snapshot) = card_and_snapshot(metadata);
         let played = Rc::new(RefCell::new(Vec::new()));
@@ -687,6 +688,17 @@ mod tests {
         assert_eq!(card.full_rows.observe_children().n_items(), 6);
         card.plays_sort.set_active(true);
         assert_eq!(card.sort_by.get(), SortBy::Plays);
+        // The sort toggle rebuilds the rows after the initial layout pass.
+        // A non-blocking pump does not tick a frame, so the fresh widgets
+        // would still report an unallocated 0 — run a real main loop briefly.
+        {
+            let main_loop = gtk4::glib::MainLoop::new(None, false);
+            let quit = main_loop.clone();
+            gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(150), move || {
+                quit.quit();
+            });
+            main_loop.run();
+        }
         let row = card.full_rows.first_child().unwrap();
         let rank = row.first_child().unwrap();
         let cover = rank.next_sibling().unwrap();
