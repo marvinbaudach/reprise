@@ -219,6 +219,9 @@ fn stats_12_short_week_history_is_compact_and_omits_the_redundant_since_label() 
     };
 
     ribbon.set_data(&period, &[3_600_000, 7_200_000], None);
+    // The card's 160px target is its 128px plot plus the stylesheet's padding
+    // and border — without the sheet this measures bare theme defaults.
+    crate::ui::style::install_css_string_for_test(&super::super::stats_css::css());
     let card = super::super::stats_view_widgets::card(ribbon.widget());
     let window = gtk4::Window::new();
     window.set_default_size(440, -1);
@@ -230,10 +233,13 @@ fn stats_12_short_week_history_is_compact_and_omits_the_redundant_since_label() 
     assert!(data.sparse_weeks);
     assert_eq!(data.since_label, None);
     assert_eq!(ribbon.area.height(), SPARSE_RIBBON_HEIGHT);
+    // The card's own height requirement is the design property; the test
+    // window's allocation is not. Measuring the requirement keeps this honest
+    // whatever the surrounding window does.
+    let requested = card.measure(gtk4::Orientation::Vertical, -1).0;
     assert!(
-        (158..=164).contains(&card.height()),
-        "thin-history card should be about 160 px tall, got {}",
-        card.height()
+        (158..=164).contains(&requested),
+        "thin-history card should request about 160 px, got {requested}"
     );
     drop(data);
     window.close();
