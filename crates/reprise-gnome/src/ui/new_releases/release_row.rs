@@ -1,8 +1,14 @@
 //! One New Releases list row: cover, title/meta, and a chip<->actions
 //! `GtkStack` that reveals a primary action plus Hide on row hover or
-//! keyboard focus (NR-10). The primary action either opens the release's
-//! announcement externally (NR-11) or, for releases already in the
-//! library, navigates to and focuses the album — never a play path (NR-13).
+//! keyboard focus (NR-10). Library ownership is three-state
+//! (`LibraryPresence`: `Absent`, `Partial`, `Complete`), not a boolean —
+//! owning only the lead single off an album is `Partial`, distinct from
+//! owning nothing (`Absent`) or the whole thing (`Complete`). The primary
+//! action reflects that split: only a released, `Complete` match navigates
+//! to and focuses the album (never a play path, NR-13); both `Absent` and
+//! `Partial` open the release's announcement externally instead (NR-11),
+//! because owning just the single means the user wants the rest of the
+//! album, not a trip back to the one track they already have.
 
 use std::cell::Cell;
 use std::rc::Rc;
