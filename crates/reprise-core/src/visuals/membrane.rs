@@ -1,9 +1,10 @@
 //! The Grid visual's thin membrane — a spring-mesh height field driven from
 //! its center like a bass loudspeaker. Low-band energy moves one underdamped
-//! central driver and beat impulses kick its velocity; a radially symmetric
-//! coupling transfers that motion into the cloth and the mesh propagates it
-//! outward. Signed heights let the surface rise toward the viewer and then
-//! fall into depth before damping back to rest.
+//! central driver and beat impulses lift the same radial speaker cone while
+//! kicking its velocity. The immediate lift keeps the visible impact aligned
+//! with the analyzer; the underdamped driver and mesh propagate the following
+//! motion outward. Signed heights let the surface rise toward the viewer and
+//! then fall into depth before damping back to rest.
 
 use crate::playback::SPECTRUM_BAND_COUNT;
 
@@ -25,34 +26,38 @@ const BASS_BANDS: usize = 8;
 /// the membrane perfectly still.
 const DRIVE_GATE: f32 = 0.08;
 /// Full-scale bass target of the scalar central driver.
-const DRIVER_TARGET_AMPLITUDE: f32 = 0.95;
+const DRIVER_TARGET_AMPLITUDE: f32 = 0.28;
 /// Driver oscillator coefficients. The damping is deliberately below critical
 /// (`2*sqrt(DRIVER_SPRING)`), so a beat rises and then falls below the resting
 /// plane instead of easing monotonically back to zero.
-const DRIVER_SPRING: f32 = 145.0;
-const DRIVER_DAMPING: f32 = 7.5;
+const DRIVER_SPRING: f32 = 165.0;
+const DRIVER_DAMPING: f32 = 11.0;
 /// Velocity kick applied by a full-strength detected beat.
-const BEAT_IMPULSE: f32 = 16.0;
+const BEAT_IMPULSE: f32 = 8.0;
+/// Immediate visible lift applied with the beat impulse. This bypasses the
+/// former driver→cloth integration delay while preserving the subsequent
+/// speaker-cone fall and radial waves.
+const BEAT_LIFT: f32 = 1.45;
 const DRIVER_POSITION_LIMIT: f32 = 1.8;
 const DRIVER_VELOCITY_LIMIT: f32 = 28.0;
 /// Gaussian radius of the central loudspeaker, in normalized membrane space
 /// (`x` and `y` each span `-1..=1`).
 const DRIVER_RADIUS: f32 = 0.22;
 /// How tightly the cloth follows the scalar driver inside that Gaussian.
-const DRIVER_COUPLING: f32 = 185.0;
+const DRIVER_COUPLING: f32 = 195.0;
 /// Neighbor spring coupling: how fast a disturbance propagates radially across
 /// the mesh away from the driver.
-const SPRING: f32 = 72.0;
+const SPRING: f32 = 70.0;
 /// Horizontal cells are denser than depth cells on the rectangular physics
 /// lattice. Weight their second derivative by the squared spacing ratio so a
 /// wave travels the same normalized distance in every direction.
 const CELL_SPACING_RATIO: f32 = (MEMBRANE_COLS - 1) as f32 / (MEMBRANE_ROWS - 1) as f32;
 const COL_SPRING_SCALE: f32 = CELL_SPACING_RATIO * CELL_SPACING_RATIO;
 /// Restoring pull back toward a flat surface.
-const RESTORING: f32 = 2.2;
+const RESTORING: f32 = 4.0;
 /// Velocity damping rate; light enough for cloth-like rings to travel, strong
 /// enough for AC-11 to reach a genuinely static stopped frame.
-const DAMP_RATE: f32 = 1.65;
+const DAMP_RATE: f32 = 2.8;
 const HEIGHT_MIN: f32 = -1.35;
 const HEIGHT_MAX: f32 = 2.0;
 
@@ -141,14 +146,21 @@ impl Membrane {
         }
     }
 
-    /// Beat impulse, scaled by `strength` (`0..=1`), applied only to the
-    /// central driver. The circular coupling makes the resulting vibration
-    /// uniform around the center; no random cells or asymmetric splashes are
-    /// introduced.
+    /// Beat impact, scaled by `strength` (`0..=1`), applied as an immediate
+    /// radial lift plus a velocity kick to the central driver. Both use the
+    /// same circular speaker profile, so the vibration stays uniform around
+    /// the center; no random cells or asymmetric splashes are introduced.
     pub fn splash(&mut self, strength: f32) {
         let strength = strength.clamp(0.0, 1.0);
         self.driver_velocity =
             (self.driver_velocity + strength * BEAT_IMPULSE).min(DRIVER_VELOCITY_LIMIT);
+        for row in 0..MEMBRANE_ROWS {
+            for col in 0..MEMBRANE_COLS {
+                let index = row * MEMBRANE_COLS + col;
+                self.h[index] = (self.h[index] + driver_weight(row, col) * strength * BEAT_LIFT)
+                    .clamp(HEIGHT_MIN, HEIGHT_MAX);
+            }
+        }
     }
 
     pub fn height(&self, row: usize, col: usize) -> f32 {
@@ -175,10 +187,11 @@ impl Membrane {
     }
 
     /// Positive normalized loudspeaker push for the renderer (`0..=1`).
-    /// Negative cone travel is deliberately zero so the bass glow illuminates
-    /// only the outward pressure phase, not the membrane's fall into depth.
+    /// This follows the visible cloth center rather than the hidden scalar
+    /// driver so the glow lands in the same frame as the rendered hit and
+    /// turns off as soon as the membrane falls into depth.
     pub fn pressure(&self) -> f32 {
-        (self.driver_position.max(0.0) / DRIVER_POSITION_LIMIT).clamp(0.0, 1.0)
+        (self.sample(0.5, 0.5).max(0.0) / HEIGHT_MAX).clamp(0.0, 1.0)
     }
 
     pub fn reset(&mut self) {
@@ -324,8 +337,8 @@ mod tests {
             "equal radial offsets must move together: row {row_offset}, col {col_offset}"
         );
         assert!(
-            center > row_offset + 0.05,
-            "the bass driver must be centered: center {center}, ring {row_offset}"
+            center > row_offset + 0.02,
+            "the broad speaker dome must remain centered: center {center}, ring {row_offset}"
         );
     }
 

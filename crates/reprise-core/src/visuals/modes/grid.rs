@@ -9,7 +9,7 @@ use super::super::scene::{Fill, Geom, Rgba, Shape};
 /// Membrane height at which a crest starts to show (secondary accent). Set high so
 /// the "hot" crest only rides genuine peaks and beat eruptions, not the modest
 /// ripples of ordinary playback.
-const CREST_THRESHOLD: f32 = 0.85;
+const CREST_THRESHOLD: f32 = 0.78;
 /// Height at which a crest reads full-intensity. Between the threshold and this
 /// the crest fades in, so the hot colour grows with the peak instead of snapping
 /// on all at once.
@@ -171,16 +171,11 @@ mod tests {
     const WIDTH: f32 = 548.0;
     const HEIGHT: f32 = 300.0;
 
-    /// A lively engine, ticked well past the initial beat/slam so the membrane
-    /// has time to rise past the crest threshold in multiple cells (the
-    /// crest invariant needs cells above [`CREST_THRESHOLD`], and the central
-    /// driver climbs there within a few frames of sustained loud input).
+    /// A lively engine captured at the beat peak. The synchronized membrane
+    /// lifts immediately, so waiting dozens of frames here would inspect the
+    /// intentionally damped tail rather than the hot crest.
     fn crested_engine() -> crate::visuals::engine::VisualEngine {
-        let mut engine = lively_engine();
-        for _ in 0..40 {
-            engine.tick();
-        }
-        engine
+        lively_engine()
     }
 
     #[test]
