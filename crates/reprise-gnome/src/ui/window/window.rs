@@ -343,7 +343,7 @@ pub fn build(
         content_stack.clone(),
         active_content_focus.clone(),
     );
-    let on_show_album: crate::ui::new_releases::release_row::OnShowAlbum = {
+    let on_show_album: crate::ui::updates::release_row::OnShowAlbum = {
         let navigator = metadata_navigator.clone();
         Rc::new(move |album: &str, artist: &str| {
             navigator.navigate(
@@ -450,7 +450,7 @@ pub fn build(
     toast_overlay.set_child(Some(library_player_bar.widget()));
     let library_chrome =
         super::library_chrome::build(&header, &toast_overlay, &search_entry, &window);
-    crate::ui::new_releases::popover::install(
+    crate::ui::updates::popover::install(
         &header,
         &window,
         conn,
