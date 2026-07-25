@@ -17,11 +17,9 @@ use super::PreferencesContext;
 
 const RHYTHMDB_PATH_ENV: &str = "REPRISE_RHYTHMDB_PATH";
 const PLAYLISTS_PATH_ENV: &str = "REPRISE_RHYTHMBOX_PLAYLISTS_PATH";
-const SMOKE_IMPORT_ENV: &str = "REPRISE_SMOKE_RHYTHMDB_IMPORT";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RhythmboxOption {
-    ColumnLayout,
     Ratings,
     PlayCountsAndLastPlayed,
     DateAdded,
@@ -34,12 +32,8 @@ struct ImportOptionSpec {
     selected: bool,
 }
 
-fn import_option_specs() -> [ImportOptionSpec; 5] {
+fn import_option_specs() -> [ImportOptionSpec; 4] {
     [
-        ImportOptionSpec {
-            id: RhythmboxOption::ColumnLayout,
-            selected: false,
-        },
         ImportOptionSpec {
             id: RhythmboxOption::Ratings,
             selected: true,
@@ -61,7 +55,6 @@ fn import_option_specs() -> [ImportOptionSpec; 5] {
 
 fn option_title(option: RhythmboxOption) -> String {
     strings::text(match option {
-        RhythmboxOption::ColumnLayout => strings::ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT,
         RhythmboxOption::Ratings => strings::RHYTHMBOX_IMPORT_RATINGS,
         RhythmboxOption::PlayCountsAndLastPlayed => strings::RHYTHMBOX_PLAY_COUNTS_AND_LAST_PLAYED,
         RhythmboxOption::DateAdded => strings::RHYTHMBOX_IMPORT_DATE_ADDED,
@@ -80,6 +73,10 @@ fn rhythmbox_data_available(rhythmdb_path: &Path) -> bool {
     rhythmdb_path.is_file()
 }
 
+pub(in crate::ui) fn rhythmbox_import_available() -> bool {
+    rhythmbox_data_available(&default_rhythmdb_path())
+}
+
 fn default_playlists_path(rhythmdb_path: &std::path::Path) -> PathBuf {
     std::env::var_os(PLAYLISTS_PATH_ENV).map_or_else(
         || rhythmdb_path.with_file_name("playlists.xml"),
@@ -90,48 +87,6 @@ fn default_playlists_path(rhythmdb_path: &std::path::Path) -> PathBuf {
 struct ParsedImport {
     tracks: Option<Vec<RhythmboxTrackStats>>,
     playlists: Option<Result<Vec<RhythmboxPlaylist>, String>>,
-}
-
-struct ImportRowSurface {
-    row: adw::ActionRow,
-}
-
-fn build_import_row(rhythmdb_path: &Path) -> Option<ImportRowSurface> {
-    if !rhythmbox_data_available(rhythmdb_path) {
-        return None;
-    }
-    let row = adw::ActionRow::builder()
-        .title(strings::text(strings::ONBOARDING_IMPORT_FROM_RHYTHMBOX))
-        .subtitle(strings::text(strings::RHYTHMBOX_IMPORT_DESCRIPTION))
-        .activatable(true)
-        .build();
-    row.add_suffix(&gtk4::Image::from_icon_name("go-next-symbolic"));
-    Some(ImportRowSurface { row })
-}
-
-pub(in crate::ui) fn add_rhythmbox_import_row(
-    context: &Rc<PreferencesContext>,
-    group: &adw::PreferencesGroup,
-) {
-    let Some(surface) = build_import_row(&default_rhythmdb_path()) else {
-        return;
-    };
-    let ImportRowSurface { row } = surface;
-    let weak = Rc::downgrade(context);
-    row.connect_activated(move |_| {
-        if let Some(context) = weak.upgrade() {
-            context.open_rhythmbox_import();
-        }
-    });
-    group.add(&row);
-    if std::env::var(SMOKE_IMPORT_ENV).is_ok() {
-        let weak = Rc::downgrade(context);
-        glib::idle_add_local_once(move || {
-            if let Some(context) = weak.upgrade() {
-                context.present_rhythmbox_import_dialog();
-            }
-        });
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -173,11 +128,11 @@ fn build_import_dialog() -> ImportDialogWidgets {
     let info_title = gtk4::Label::new(Some(&strings::text(strings::RHYTHMBOX_LIBRARY_FOUND)));
     info_title.add_css_class("heading");
     let info_subtitle = gtk4::Label::new(None);
-    info_subtitle.add_css_class("dim-label");
+    info_subtitle.add_css_class("reprise-text-secondary");
     info_subtitle.set_wrap(true);
     info_subtitle.set_xalign(0.0);
     let match_label = gtk4::Label::new(None);
-    match_label.add_css_class("dim-label");
+    match_label.add_css_class("reprise-text-secondary");
     match_label.set_xalign(0.0);
 
     let info_text = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
@@ -192,7 +147,7 @@ fn build_import_dialog() -> ImportDialogWidgets {
     let body_label = gtk4::Label::new(Some(&strings::text(strings::RHYTHMBOX_IMPORT_BODY_RICH)));
     body_label.set_wrap(true);
     body_label.set_xalign(0.0);
-    body_label.add_css_class("dim-label");
+    body_label.add_css_class("reprise-text-secondary");
     body_label.set_margin_bottom(12);
 
     let options_group = adw::PreferencesGroup::new();
@@ -203,7 +158,9 @@ fn build_import_dialog() -> ImportDialogWidgets {
             let row = adw::SwitchRow::builder()
                 .title(option_title(spec.id))
                 .active(spec.selected)
+                .use_markup(false)
                 .build();
+            row.add_css_class("reprise-rhythmbox-import-option");
             options_group.add(&row);
             row
         })
@@ -263,17 +220,21 @@ fn build_import_dialog() -> ImportDialogWidgets {
     let results_group = adw::PreferencesGroup::new();
     let ratings_result = adw::ActionRow::builder()
         .title(strings::text(strings::RHYTHMBOX_IMPORT_RATINGS))
+        .use_markup(false)
         .build();
     let play_counts_result = adw::ActionRow::builder()
         .title(strings::text(
             strings::RHYTHMBOX_PLAY_COUNTS_AND_LAST_PLAYED,
         ))
+        .use_markup(false)
         .build();
     let dates_result = adw::ActionRow::builder()
         .title(strings::text(strings::RHYTHMBOX_IMPORT_DATE_ADDED))
+        .use_markup(false)
         .build();
     let playlists_result = adw::ActionRow::builder()
         .title(strings::text(strings::RHYTHMBOX_IMPORT_PLAYLISTS))
+        .use_markup(false)
         .build();
     results_group.add(&ratings_result);
     results_group.add(&play_counts_result);
@@ -478,13 +439,13 @@ impl PreferencesContext {
                 match_label.set_label(&strings::rhythmbox_match_count(result.matched));
 
                 // Set subtitles on rows based on prescan
-                if rows.len() >= 5 {
-                    rows[1].set_subtitle(&strings::rhythmbox_rated_subtitle(result.rated_tracks));
-                    rows[2].set_subtitle(&strings::rhythmbox_history_subtitle(
+                if rows.len() >= 4 {
+                    rows[0].set_subtitle(&strings::rhythmbox_rated_subtitle(result.rated_tracks));
+                    rows[1].set_subtitle(&strings::rhythmbox_history_subtitle(
                         result.tracks_with_history,
                     ));
-                    rows[3].set_subtitle(&strings::rhythmbox_date_added_subtitle());
-                    rows[4].set_subtitle(&strings::rhythmbox_playlists_subtitle(
+                    rows[2].set_subtitle(&strings::rhythmbox_date_added_subtitle());
+                    rows[3].set_subtitle(&strings::rhythmbox_playlists_subtitle(
                         result.playlist_count,
                         result.playlist_track_count,
                     ));
@@ -531,13 +492,12 @@ impl PreferencesContext {
             stack.set_visible_child_name("progress");
             progress_bar.grab_focus();
 
-            let column_layout = rows_for_import[0].is_active();
             let choices = RhythmboxImportChoices {
-                ratings: rows_for_import[1].is_active(),
-                play_counts_and_last_played: rows_for_import[2].is_active(),
-                added_at: rows_for_import[3].is_active(),
+                ratings: rows_for_import[0].is_active(),
+                play_counts_and_last_played: rows_for_import[1].is_active(),
+                added_at: rows_for_import[2].is_active(),
             };
-            let import_playlists = rows_for_import[4].is_active();
+            let import_playlists = rows_for_import[3].is_active();
             let any_stats =
                 choices.ratings || choices.play_counts_and_last_played || choices.added_at;
 
@@ -630,9 +590,6 @@ impl PreferencesContext {
                     total_tracks,
                 ));
 
-                if column_layout {
-                    context_c.import_rhythmbox_column_layout();
-                }
                 if summary.is_some() {
                     context_c.track_list.reload();
                 }
@@ -730,18 +687,6 @@ impl PreferencesContext {
             focus_guard.bind_closable_dialog(&widgets.dialog, initial_focus);
         }
         widgets.dialog.present(Some(&parent));
-    }
-
-    fn import_rhythmbox_column_layout(&self) {
-        match super::column_layout::read_rhythmbox_visible_columns() {
-            Ok(tokens) => {
-                let layout = super::column_layout::import_rhythmbox_tokens(&tokens);
-                if let Err(error) = self.track_list.apply_column_layout(&layout) {
-                    tracing::warn!(%error, "could not persist imported Rhythmbox column layout");
-                }
-            }
-            Err(error) => tracing::warn!(%error, "could not read Rhythmbox visible columns"),
-        }
     }
 }
 
