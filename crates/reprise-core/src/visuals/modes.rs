@@ -6,6 +6,8 @@ use super::scene::Shape;
 mod bars;
 mod grid;
 
+pub(crate) use bars::{BarsEnvelope, BAR_COUNT};
+
 pub(crate) fn build_scene(mode: VisualMode, ctx: &ModeCtx) -> Vec<Shape> {
     match mode {
         VisualMode::Grid => grid::scene(ctx),

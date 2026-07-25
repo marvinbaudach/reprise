@@ -16,7 +16,7 @@ use crate::playback::{SpectrumFrame, SPECTRUM_BAND_COUNT};
 use super::color::{hue_shift, secondary_accent};
 use super::impact::ImpactState;
 use super::membrane::Membrane;
-use super::modes;
+use super::modes::{self, BarsEnvelope};
 use super::scene::{Fill, Geom, Rgba, Scene, Shape};
 
 /// Bands rise fast (attack) and fall slowly (release): the asymmetry is what
@@ -36,8 +36,9 @@ const PEAK_DECAY: f32 = 0.018;
 const SCALAR_ATTACK: f32 = 0.9;
 const SCALAR_RELEASE: f32 = 0.22;
 /// Same-frame beat ornament for Bars. The hit is installed during `ingest`
-/// and then loses roughly 70% of its energy within four display frames.
-const BEAT_PULSE_DECAY: f32 = 0.72;
+/// and releases over several display frames so segmented columns visibly
+/// travel back down instead of dropping whole blocks between two frames.
+const BEAT_PULSE_DECAY: f32 = 0.85;
 /// Below this an eased value reads as "arrived" for settle detection.
 const SETTLE_EPSILON: f32 = 0.002;
 /// Resting band profile. Zero (not a faint idle shimmer): the membrane is
@@ -72,6 +73,7 @@ impl VisualMode {
 pub struct ModeCtx<'a> {
     pub bands: &'a [f32; SPECTRUM_BAND_COUNT],
     pub peaks: &'a [f32; SPECTRUM_BAND_COUNT],
+    pub bars: &'a [f32; modes::BAR_COUNT],
     pub beat: f32,
     pub accent: (f32, f32, f32),
     pub accent2: (f32, f32, f32),
@@ -105,6 +107,7 @@ pub struct VisualEngine {
     level_current: f32,
     level_target: f32,
     beat_pulse: f32,
+    bars: BarsEnvelope,
     playing: bool,
     membrane: Membrane,
     impact: ImpactState,
@@ -128,6 +131,7 @@ impl VisualEngine {
             level_current: 0.0,
             level_target: 0.0,
             beat_pulse: 0.0,
+            bars: BarsEnvelope::new(),
             playing: false,
             membrane: Membrane::new(),
             impact: ImpactState::new(),
@@ -175,6 +179,7 @@ impl VisualEngine {
     pub fn note_track_changed(&mut self) {
         self.bands_peaks = [0.0; SPECTRUM_BAND_COUNT];
         self.beat_pulse = 0.0;
+        self.bars.reset();
         self.membrane = Membrane::new();
         self.impact = ImpactState::new();
     }
@@ -234,10 +239,12 @@ impl VisualEngine {
         if self.beat_pulse < SETTLE_EPSILON {
             self.beat_pulse = 0.0;
         }
+        let bars_settled = self.bars.advance(&self.bands_current, self.beat_pulse);
 
         bands_settled
             && peaks_settled
             && level_settled
+            && bars_settled
             && self.beat_pulse == 0.0
             && self.impact.is_idle()
             && self.membrane.is_still()
@@ -251,6 +258,7 @@ impl VisualEngine {
         self.bands_peaks = self.bands_current;
         self.level_current = self.level_target;
         self.beat_pulse = 0.0;
+        self.bars.snap(&self.bands_current, self.beat_pulse);
         self.membrane.reset();
         self.impact = ImpactState::new();
     }
@@ -266,6 +274,7 @@ impl VisualEngine {
         ModeCtx {
             bands: &self.bands_current,
             peaks: &self.bands_peaks,
+            bars: self.bars.values(),
             beat: self.beat_pulse,
             accent: self.accent,
             accent2: self.accent2(),
