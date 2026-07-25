@@ -8,8 +8,34 @@ if [[ ! -x "$runner" ]]; then
   echo "$runner must exist and be executable" >&2
   exit 1
 fi
+sort_scenario="$repo_root/scripts/cua-e2e/track_sort.sh"
+helper_library="$repo_root/scripts/cua-e2e/lib.sh"
+if [[ ! -f "$sort_scenario" ]]; then
+  echo "$sort_scenario must exist" >&2
+  exit 1
+fi
+for pattern in \
+  'run_track_sort_playing_marker_scenario' \
+  'TRACK_SORT_TOGGLE_COUNT=24' \
+  'cua_click_window_point' \
+  'assert_snapshot_contains "$ascending_path" "Playing Sentinel"' \
+  'assert_snapshot_contains "$descending_path" "Sort Track 24"'
+do
+  if ! rg --quiet --fixed-strings "$pattern" "$sort_scenario"; then
+    echo "$sort_scenario must contain sort-regression contract: $pattern" >&2
+    exit 1
+  fi
+done
+window_point_helper=$(sed -n '/^cua_click_window_point() {/,/^}/p' "$helper_library")
+if ! rg --quiet --fixed-strings 'delivery_mode: "foreground"' \
+  <<<"$window_point_helper"; then
+  echo "window-point clicks must use foreground delivery for non-actionable headers" >&2
+  exit 1
+fi
 for pattern in \
   'dbus-run-session' \
+  '-u GNOME_KEYRING_CONTROL' \
+  '-u GNOME_KEYRING_PID' \
   'XDG_DATA_HOME=' \
   'XDG_CACHE_HOME=' \
   'GDK_BACKEND=x11' \
@@ -48,9 +74,11 @@ for pattern in \
   'run_tag_3_multi_dialog_structure_scenario' \
   'run_library_doctor_scenario' \
   'run_song_visuals_scenario' \
-  'Song analysis' \
   'Audio-reactive song visual' \
-  'color follows the cover accent' \
+  '"Grid"' \
+  '"Bars"' \
+  '"Flow"' \
+  '"Pulse"' \
   'cua_activate_main_menu_item' \
   'Enable Library Doctor' \
   'safe_change_count' \
@@ -58,8 +86,17 @@ for pattern in \
   'nav-7-rescan-progress' \
   'Revert Last Cleanup'
 do
-  if ! rg --quiet "$pattern" "$runner"; then
+  if ! rg --quiet -- "$pattern" "$runner"; then
     echo "$runner must contain isolation/coverage pattern: $pattern" >&2
+    exit 1
+  fi
+done
+for obsolete_song_visuals_contract in \
+  '"Rings"' \
+  '"F11 Fullscreen · color follows the cover accent"' \
+  '"Song analysis"'; do
+  if rg --quiet --fixed-strings "$obsolete_song_visuals_contract" "$runner"; then
+    echo "$runner must not retain removed Song Visuals contract: $obsolete_song_visuals_contract" >&2
     exit 1
   fi
 done
@@ -85,6 +122,12 @@ if rg --quiet 'wait_for_label .*"Library Doctor" .*menu' "$runner"; then
 fi
 if ! rg --quiet --fixed-strings 'safe_change_count=$((fixture_count * 3))' "$runner"; then
   echo "$runner must derive the Library Doctor safe-review label from its fixture" >&2
+  exit 1
+fi
+if ! rg --quiet --fixed-strings \
+  '"$APP_PID" "$WINDOW_ID" 110 115 browse-3-sidebar-escapes-doctor' \
+  "$runner"; then
+  echo "$runner must use window-local screenshot coordinates for the Music row" >&2
   exit 1
 fi
 if rg --quiet --fixed-strings '"Review Safe Fixes"' "$runner"; then
@@ -155,6 +198,10 @@ if ! rg --quiet --fixed-strings 'library-doctor)' "$runner"; then
 fi
 if ! rg --quiet --fixed-strings 'song-visuals)' "$runner"; then
   echo "$runner must support isolated scenario: song-visuals)" >&2
+  exit 1
+fi
+if ! rg --quiet --fixed-strings 'track-sort-playing-marker)' "$runner"; then
+  echo "$runner must support isolated scenario: track-sort-playing-marker)" >&2
   exit 1
 fi
 if ! rg --quiet --fixed-strings 'cargo build --locked -p reprise-gnome' "$runner"; then
