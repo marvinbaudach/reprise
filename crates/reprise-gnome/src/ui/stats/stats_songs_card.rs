@@ -1,4 +1,4 @@
-//! Five-track songs card and its expandable sortable full ranking.
+//! Six-track songs card and its expandable sortable full ranking.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -17,7 +17,7 @@ use crate::ui::cover_loader::CoverLoader;
 use crate::ui::motion_slide::SlideBin;
 use crate::ui::strings;
 
-const SONG_ROW_LIMIT: usize = 5;
+const SONG_ROW_LIMIT: usize = 6;
 const FULL_TRACK_LIMIT: usize = 10;
 
 type IdCallback = Rc<RefCell<Option<Rc<dyn Fn(i64)>>>>;
@@ -39,9 +39,26 @@ impl CoverGenerations {
 }
 
 #[derive(Clone)]
+struct SummaryRenderer {
+    rows: gtk4::Box,
+    play_buttons: Rc<RefCell<Vec<gtk4::Button>>>,
+    bars: Rc<RefCell<Vec<gtk4::LevelBar>>>,
+    row_clicks: Rc<RefCell<Vec<gtk4::GestureClick>>>,
+    cover_loader: Rc<CoverLoader>,
+    generations: CoverGenerations,
+    metadata: MetadataCallback,
+    on_play_track: IdCallback,
+    on_play_next: IdCallback,
+    on_add_to_queue: IdCallback,
+    context_actions: Rc<RefCell<Vec<gio::SimpleActionGroup>>>,
+}
+
+#[derive(Clone)]
 pub(in crate::ui) struct StatsSongsCard {
     root: gtk4::Box,
-    rows: gtk4::Box,
+    #[cfg_attr(not(test), allow(dead_code))]
+    header: gtk4::Box,
+    summary: SummaryRenderer,
     #[cfg_attr(not(test), allow(dead_code))]
     revealer: gtk4::Revealer,
     #[cfg_attr(not(test), allow(dead_code))]
@@ -51,19 +68,8 @@ pub(in crate::ui) struct StatsSongsCard {
     plays_sort: gtk4::ToggleButton,
     #[cfg_attr(not(test), allow(dead_code))]
     time_sort: gtk4::ToggleButton,
-    play_buttons: Rc<RefCell<Vec<gtk4::Button>>>,
-    summary_bars: Rc<RefCell<Vec<gtk4::LevelBar>>>,
-    row_clicks: Rc<RefCell<Vec<gtk4::GestureClick>>>,
     snapshot: Rc<RefCell<Option<StatsSnapshot>>>,
     sort_by: Rc<Cell<SortBy>>,
-    cover_loader: Rc<CoverLoader>,
-    cover_generations: CoverGenerations,
-    metadata: MetadataCallback,
-    on_play_track: IdCallback,
-    on_play_next: IdCallback,
-    on_add_to_queue: IdCallback,
-    #[cfg_attr(not(test), allow(dead_code))]
-    context_actions: Rc<RefCell<Vec<gio::SimpleActionGroup>>>,
 }
 
 impl StatsSongsCard {
@@ -71,7 +77,19 @@ impl StatsSongsCard {
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 10);
         root.add_css_class("stats-songs-card");
         let kicker = label("MOST PLAYED SONGS", "stats-eyebrow");
-        root.append(&kicker);
+        let plays_sort = gtk4::ToggleButton::with_label("by plays");
+        let time_sort = gtk4::ToggleButton::with_label("by time");
+        time_sort.set_group(Some(&plays_sort));
+        plays_sort.set_active(true);
+        let controls = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+        controls.set_halign(gtk4::Align::End);
+        controls.append(&plays_sort);
+        controls.append(&time_sort);
+        let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+        kicker.set_hexpand(true);
+        header.append(&kicker);
+        header.append(&controls);
+        root.append(&header);
 
         let rows = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
         root.append(&rows);
@@ -83,16 +101,7 @@ impl StatsSongsCard {
         root.append(&reveal_button);
 
         let full_rows = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
-        let plays_sort = gtk4::ToggleButton::with_label("by plays");
-        let time_sort = gtk4::ToggleButton::with_label("by time");
-        time_sort.set_group(Some(&plays_sort));
-        plays_sort.set_active(true);
-        let controls = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-        controls.set_halign(gtk4::Align::End);
-        controls.append(&plays_sort);
-        controls.append(&time_sort);
         let expanded_content = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
-        expanded_content.append(&controls);
         expanded_content.append(&full_rows);
         let expanded = card(&expanded_content);
         expanded.set_hexpand(true);
@@ -110,6 +119,19 @@ impl StatsSongsCard {
         let play_buttons = Rc::new(RefCell::new(Vec::new()));
         let summary_bars = Rc::new(RefCell::new(Vec::new()));
         let row_clicks = Rc::new(RefCell::new(Vec::new()));
+        let summary = SummaryRenderer {
+            rows,
+            play_buttons,
+            bars: summary_bars,
+            row_clicks,
+            cover_loader,
+            generations: cover_generations,
+            metadata,
+            on_play_track,
+            on_play_next,
+            on_add_to_queue,
+            context_actions,
+        };
 
         reveal_button.connect_clicked(glib::clone!(
             #[weak]
@@ -130,22 +152,22 @@ impl StatsSongsCard {
                 let full_rows = full_rows.clone();
                 let snapshot = snapshot.clone();
                 let sort_by = sort_by.clone();
-                let cover_loader = cover_loader.clone();
-                let cover_generations = cover_generations.clone();
-                let metadata = metadata.clone();
+                let summary = summary.clone();
                 move |button| {
                     if !button.is_active() {
                         return;
                     }
                     sort_by.set(value);
-                    if let Some(snapshot) = snapshot.borrow().as_ref() {
+                    let snapshot = snapshot.borrow().clone();
+                    if let Some(snapshot) = snapshot {
+                        summary.render(&snapshot, value);
                         render_full_rows(
                             &full_rows,
-                            snapshot,
+                            &snapshot,
                             value,
-                            &cover_loader,
-                            &cover_generations,
-                            &metadata,
+                            &summary.cover_loader,
+                            &summary.generations,
+                            &summary.metadata,
                         );
                     }
                 }
@@ -154,24 +176,15 @@ impl StatsSongsCard {
 
         Self {
             root,
-            rows,
+            header,
+            summary,
             revealer,
             reveal_button,
             full_rows,
             plays_sort,
             time_sort,
-            play_buttons,
-            summary_bars,
-            row_clicks,
             snapshot,
             sort_by,
-            cover_loader,
-            cover_generations,
-            metadata,
-            on_play_track,
-            on_play_next,
-            on_add_to_queue,
-            context_actions,
         }
     }
 
@@ -189,33 +202,35 @@ impl StatsSongsCard {
             self.reveal_button.set_label("Show all top tracks");
         }
         *self.snapshot.borrow_mut() = Some(snapshot.clone());
-        self.render_summary(snapshot);
+        self.summary.render(snapshot, self.sort_by.get());
         render_full_rows(
             &self.full_rows,
             snapshot,
             self.sort_by.get(),
-            &self.cover_loader,
-            &self.cover_generations,
-            &self.metadata,
+            &self.summary.cover_loader,
+            &self.summary.generations,
+            &self.summary.metadata,
         );
     }
+}
 
-    fn render_summary(&self, snapshot: &StatsSnapshot) {
+impl SummaryRenderer {
+    fn render(&self, snapshot: &StatsSnapshot, sort_by: SortBy) {
         clear(&self.rows);
         self.context_actions.borrow_mut().clear();
         self.play_buttons.borrow_mut().clear();
-        self.summary_bars.borrow_mut().clear();
+        self.bars.borrow_mut().clear();
         self.row_clicks.borrow_mut().clear();
-        let tracks = snapshot.top_tracks_sorted(SortBy::Plays);
-        let leader = tracks.first().map_or(0, |track| track.play_count);
-        let token = self.cover_generations.next_summary();
+        let tracks = snapshot.top_tracks_sorted(sort_by);
+        let leader = tracks.first().map_or(0, |track| metric(track, sort_by));
+        let token = self.generations.next_summary();
         for track in tracks.iter().take(SONG_ROW_LIMIT) {
-            let row = self.song_row(track, leader, token);
+            let row = self.song_row(track, leader, sort_by, token);
             self.rows.append(&row);
         }
     }
 
-    fn song_row(&self, track: &TopTrack, leader: i64, token: u64) -> gtk4::Box {
+    fn song_row(&self, track: &TopTrack, leader: i64, sort_by: SortBy, token: u64) -> gtk4::Box {
         let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
         row.add_css_class("stats-song-row");
         row.set_hexpand(true);
@@ -235,7 +250,7 @@ impl StatsSongsCard {
             &track.track_path,
             ThumbnailSize::List,
             token,
-            &self.cover_generations.summary,
+            &self.generations.summary,
         );
         cover_overlay.set_child(Some(&cover));
         let play = gtk4::Button::from_icon_name("media-playback-start-symbolic");
@@ -263,11 +278,11 @@ impl StatsSongsCard {
         bar.add_css_class("stats-song-bar");
         bar.set_min_value(0.0);
         bar.set_max_value(1.0);
-        bar.set_value(relative_value(track.play_count, leader));
+        bar.set_value(relative_value(metric(track, sort_by), leader));
         bar.set_width_request(110);
         bar.set_height_request(8);
         bar.set_valign(gtk4::Align::Center);
-        self.summary_bars.borrow_mut().push(bar.clone());
+        self.bars.borrow_mut().push(bar.clone());
         body.append(&SlideBin::new(&bar));
         let plays = label(
             &format!("{} plays", format_thousands(track.play_count)),
@@ -370,21 +385,23 @@ impl StatsSongsCard {
         row.add_controller(keys);
         self.context_actions.borrow_mut().push(actions);
     }
+}
 
+impl StatsSongsCard {
     pub(in crate::ui) fn set_on_play_track(&self, callback: impl Fn(i64) + 'static) {
-        *self.on_play_track.borrow_mut() = Some(Rc::new(callback));
+        *self.summary.on_play_track.borrow_mut() = Some(Rc::new(callback));
     }
 
     pub(in crate::ui) fn set_on_play_next(&self, callback: impl Fn(i64) + 'static) {
-        *self.on_play_next.borrow_mut() = Some(Rc::new(callback));
+        *self.summary.on_play_next.borrow_mut() = Some(Rc::new(callback));
     }
 
     pub(in crate::ui) fn set_on_add_to_queue(&self, callback: impl Fn(i64) + 'static) {
-        *self.on_add_to_queue.borrow_mut() = Some(Rc::new(callback));
+        *self.summary.on_add_to_queue.borrow_mut() = Some(Rc::new(callback));
     }
 
     pub(super) fn summary_bars(&self) -> Vec<gtk4::LevelBar> {
-        self.summary_bars.borrow().clone()
+        self.summary.bars.borrow().clone()
     }
 }
 
@@ -561,230 +578,5 @@ fn relative_value(value: i64, leader: i64) -> f64 {
 }
 
 #[cfg(test)]
-mod tests {
-    use chrono::Datelike;
-    use reprise_core::library::stats_period::StatsPeriod;
-    use reprise_core::library::stats_snapshot;
-
-    use super::*;
-
-    #[test]
-    fn summary_cover_generation_survives_rendering_the_full_ranking() {
-        let generations = CoverGenerations::default();
-        let summary_token = generations.next_summary();
-
-        generations.next_full();
-
-        assert_eq!(generations.summary.get(), summary_token);
-    }
-
-    fn card_and_snapshot(metadata: MetadataCallback) -> (StatsSongsCard, StatsSnapshot) {
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
-        for id in 1..=6_i64 {
-            conn.execute(
-                "INSERT INTO tracks \
-                 (id, path, title, artist, album, album_artist, genre, duration_ms, added_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, '', 'Rock', 300000, 0)",
-                rusqlite::params![
-                    id,
-                    format!("/music/{id}.flac"),
-                    format!("Track {id}"),
-                    format!("Artist {id}"),
-                    format!("Album {id}")
-                ],
-            )
-            .unwrap();
-            for play in 0..=(6 - id) {
-                conn.execute(
-                    "INSERT INTO listen_events (track_id, played_at, ms_played) \
-                     VALUES (?1, ?2, ?3)",
-                    rusqlite::params![id, now - play, id * 60_000],
-                )
-                .unwrap();
-            }
-        }
-        let snapshot = stats_snapshot::compute(
-            &conn,
-            StatsPeriod::YearToDate(chrono::Local::now().year()),
-            now,
-            &chrono::Local,
-        )
-        .unwrap();
-        let loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
-        (StatsSongsCard::new(loader, metadata), snapshot)
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn stats_14_song_row_focuses_track_in_artist_scope() {
-        gtk4::init().unwrap();
-        let target = Rc::new(RefCell::new(None));
-        let metadata: MetadataCallback = Rc::new(RefCell::new(Some({
-            let target = target.clone();
-            Rc::new(move |value| *target.borrow_mut() = Some(value))
-        })));
-        let (card, snapshot) = card_and_snapshot(metadata);
-        card.set_data(&snapshot);
-
-        card.row_clicks.borrow()[0].emit_by_name::<()>("released", &[&1_i32, &0.0_f64, &0.0_f64]);
-
-        assert!(matches!(
-            target.borrow().as_ref(),
-            Some(StatsMetadataTarget::Artist {
-                track_id: 1,
-                artist
-            }) if artist == "Artist 1"
-        ));
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn stats_14_hover_play_targets_exactly_one_track() {
-        gtk4::init().unwrap();
-        crate::ui::style::install_css_string_for_test(&crate::ui::stats::stats_css::css());
-        let metadata: MetadataCallback = Rc::new(RefCell::new(None));
-        let (card, snapshot) = card_and_snapshot(metadata);
-        let played = Rc::new(RefCell::new(Vec::new()));
-        card.set_on_play_track({
-            let played = played.clone();
-            move |id| played.borrow_mut().push(id)
-        });
-        card.set_data(&snapshot);
-
-        card.play_buttons.borrow()[2].emit_clicked();
-
-        assert_eq!(*played.borrow(), vec![3]);
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn stats_14_show_all_reveals_the_sortable_list() {
-        gtk4::init().unwrap();
-        let metadata: MetadataCallback = Rc::new(RefCell::new(None));
-        let (card, snapshot) = card_and_snapshot(metadata);
-        card.set_data(&snapshot);
-
-        assert!(!card.revealer.reveals_child());
-        assert!(
-            card.revealer.parent().is_none(),
-            "the expanded ranking must not live inside the songs card"
-        );
-        let stage = gtk4::Box::new(gtk4::Orientation::Vertical, 20);
-        stage.append(card.widget());
-        stage.append(card.expanded_widget());
-        let window = gtk4::Window::builder()
-            .default_width(960)
-            .child(&stage)
-            .build();
-        window.present();
-        card.revealer
-            .set_transition_type(gtk4::RevealerTransitionType::None);
-        assert_eq!(
-            card.reveal_button.label().as_deref(),
-            Some("Show all top tracks")
-        );
-        assert_eq!(card.rows.observe_children().n_items(), 5);
-        card.reveal_button.emit_clicked();
-        while gtk4::glib::MainContext::default().iteration(false) {}
-        assert!(card.revealer.reveals_child());
-        card.time_sort.set_active(true);
-        assert_eq!(card.sort_by.get(), SortBy::Time);
-        assert_eq!(card.full_rows.observe_children().n_items(), 6);
-        card.plays_sort.set_active(true);
-        assert_eq!(card.sort_by.get(), SortBy::Plays);
-        // The sort toggle rebuilds the rows after the initial layout pass.
-        // A non-blocking pump does not tick a frame, so the fresh widgets
-        // would still report an unallocated 0 — run a real main loop briefly.
-        {
-            let main_loop = gtk4::glib::MainLoop::new(None, false);
-            let quit = main_loop.clone();
-            gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(150), move || {
-                quit.quit();
-            });
-            main_loop.run();
-        }
-        let row = card.full_rows.first_child().unwrap();
-        let rank = row.first_child().unwrap();
-        let cover = rank.next_sibling().unwrap();
-        let text = cover.next_sibling().unwrap();
-        let bar = text.next_sibling().unwrap();
-        assert_eq!(row.height_request(), 56);
-        assert!(
-            row.height() <= 64,
-            "expanded row was {} px tall",
-            row.height()
-        );
-        assert_eq!(rank.width(), 24);
-        assert_eq!((cover.width(), cover.height()), (42, 42));
-        assert_eq!(bar.height(), 8);
-        window.close();
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn stats_14_context_actions_target_the_same_track() {
-        gtk4::init().unwrap();
-        let opened = Rc::new(RefCell::new(None));
-        let metadata: MetadataCallback = Rc::new(RefCell::new(Some({
-            let opened = opened.clone();
-            Rc::new(move |value| *opened.borrow_mut() = Some(value))
-        })));
-        let (card, snapshot) = card_and_snapshot(metadata);
-        let next = Rc::new(RefCell::new(Vec::new()));
-        let queued = Rc::new(RefCell::new(Vec::new()));
-        card.set_on_play_next({
-            let next = next.clone();
-            move |id| next.borrow_mut().push(id)
-        });
-        card.set_on_add_to_queue({
-            let queued = queued.clone();
-            move |id| queued.borrow_mut().push(id)
-        });
-        card.set_data(&snapshot);
-
-        let actions = &card.context_actions.borrow()[1];
-        actions.lookup_action("play-next").unwrap().activate(None);
-        actions
-            .lookup_action("add-to-queue")
-            .unwrap()
-            .activate(None);
-        actions.lookup_action("open-album").unwrap().activate(None);
-
-        assert_eq!(*next.borrow(), vec![2]);
-        assert_eq!(*queued.borrow(), vec![2]);
-        assert!(matches!(
-            opened.borrow().as_ref(),
-            Some(StatsMetadataTarget::Album { track_id: 2, .. })
-        ));
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn discarded_song_rows_release_their_context_widgets() {
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        gtk4::init().unwrap();
-        let metadata: MetadataCallback = Rc::new(RefCell::new(None));
-        let (card, snapshot) = card_and_snapshot(metadata);
-        card.set_data(&snapshot);
-        let old_row = card.rows.first_child().unwrap();
-        let old_row = old_row.downcast::<gtk4::Box>().unwrap();
-        let weak_row = old_row.downgrade();
-        drop(old_row);
-
-        card.set_data(&snapshot);
-        let context = glib::MainContext::default();
-        while context.pending() {
-            context.iteration(false);
-        }
-
-        assert!(
-            weak_row.upgrade().is_none(),
-            "a discarded row must not be retained by its input controllers"
-        );
-    }
-}
+#[path = "stats_songs_card_tests.rs"]
+mod tests;
