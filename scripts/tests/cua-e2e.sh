@@ -32,7 +32,13 @@ if ! rg --quiet --fixed-strings 'delivery_mode: "foreground"' \
   echo "window-point clicks must use foreground delivery for non-actionable headers" >&2
   exit 1
 fi
+scrobbling_runner="$repo_root/scripts/cua-e2e/scrobbling.sh"
+if [[ ! -f "$scrobbling_runner" ]]; then
+  echo "$scrobbling_runner must exist" >&2
+  exit 1
+fi
 for pattern in \
+  'source "\$repo_root/scripts/cua-e2e/scrobbling.sh"' \
   'dbus-run-session' \
   '-u GNOME_KEYRING_CONTROL' \
   '-u GNOME_KEYRING_PID' \
@@ -54,7 +60,7 @@ for pattern in \
   'run_private_scenario_group' \
   'CUA_E2E_PRIVATE_GROUP=' \
   'for scenario_group in' \
-  'dbus-run-session ffmpeg jq rg timeout wmctrl' \
+  'dbus-run-session ffmpeg gdbus gnome-keyring-daemon jq python3 rg timeout wmctrl' \
   'CUA_DRIVER_SOCKET=' \
   'CUA_DRIVER_RS_UPDATE_CHECK=0' \
   'CUA_E2E_DRIVER_TIMEOUT_SECS=' \
@@ -74,6 +80,7 @@ for pattern in \
   'run_tag_3_multi_dialog_structure_scenario' \
   'run_library_doctor_scenario' \
   'run_song_visuals_scenario' \
+  'run_scrobbling_scenario' \
   'Audio-reactive song visual' \
   '"Grid"' \
   '"Bars"' \
@@ -100,6 +107,24 @@ for obsolete_song_visuals_contract in \
     exit 1
   fi
 done
+for pattern in \
+  'start_scrobbling_keyring' \
+  'start_scrobbling_api' \
+  'REPRISE_SMOKE_LISTENBRAINZ_API_ROOT=' \
+  'REPRISE_SMOKE_LASTFM_API_ROOT=' \
+  'REPRISE_SMOKE_LASTFM_AUTH_ROOT=' \
+  'ListenBrainz connected after restart' \
+  'Last.fm connected after restart' \
+  'Reprise Smoke Track' \
+  'Reprise Last.fm Smoke Track' \
+  'ListenBrainz disconnected after restart' \
+  'Last.fm disconnected after restart'; do
+  if ! rg --quiet --fixed-strings "$pattern" "$scrobbling_runner"; then
+    echo "$scrobbling_runner must cover the provider lifecycle: $pattern" >&2
+    exit 1
+  fi
+done
+python3 "$repo_root/scripts/cua-e2e/scrobbling_api.py" --self-test
 if rg --quiet 'cua_click_label .*"Main menu"' "$runner"; then
   echo "$runner must open the main menu through its F10 keyboard contract" >&2
   exit 1
@@ -162,12 +187,12 @@ for pattern in \
 done
 doctor_scenario=$(sed -n '/^run_library_doctor_scenario() {/,/^}/p' "$runner")
 for pattern in \
-  'doctor-disable' \
-  'doctor-disabled-close' \
-  'doctor-disabled-entry' \
+  'doctor-plugin-no-toggle' \
+  'doctor-tool-close' \
+  'doctor-tool-entry' \
   'doctor-revert-available'; do
   if ! rg --quiet --fixed-strings "$pattern" <<<"$doctor_scenario"; then
-    echo "the disabled Library Doctor path must reopen its expanding entry: $pattern" >&2
+    echo "the always-available Library Doctor path must reopen its tool page: $pattern" >&2
     exit 1
   fi
 done
@@ -175,12 +200,12 @@ line_for_doctor_step() {
   rg --line-number --max-count 1 --fixed-strings "$1" <<<"$doctor_scenario" \
     | sed 's/:.*//'
 }
-disable_line=$(line_for_doctor_step doctor-disable)
-close_line=$(line_for_doctor_step doctor-disabled-close)
-entry_line=$(line_for_doctor_step doctor-disabled-entry)
+no_toggle_line=$(line_for_doctor_step doctor-plugin-no-toggle)
+close_line=$(line_for_doctor_step doctor-tool-close)
+entry_line=$(line_for_doctor_step doctor-tool-entry)
 revert_line=$(line_for_doctor_step doctor-revert-available)
-if ! ((disable_line < close_line && close_line < entry_line && entry_line < revert_line)); then
-  echo "the disabled Library Doctor path must close, reopen, then expose Revert" >&2
+if ! ((no_toggle_line < close_line && close_line < entry_line && entry_line < revert_line)); then
+  echo "the Library Doctor path must verify no toggle, close, reopen, then expose Revert" >&2
   exit 1
 fi
 for scenario_case in \
@@ -202,6 +227,10 @@ if ! rg --quiet --fixed-strings 'song-visuals)' "$runner"; then
 fi
 if ! rg --quiet --fixed-strings 'track-sort-playing-marker)' "$runner"; then
   echo "$runner must support isolated scenario: track-sort-playing-marker)" >&2
+  exit 1
+fi
+if ! rg --quiet --fixed-strings 'scrobbling)' "$runner"; then
+  echo "$runner must support isolated scenario: scrobbling)" >&2
   exit 1
 fi
 if ! rg --quiet --fixed-strings 'cargo build --locked -p reprise-gnome' "$runner"; then

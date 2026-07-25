@@ -14,6 +14,8 @@ use serde::Serialize;
 
 pub mod lastfm;
 pub use lastfm::{LastFmClient, LastFmSession, BUNDLED_API_KEY, BUNDLED_SHARED_SECRET};
+mod eligibility;
+pub use eligibility::{should_scrobble, should_scrobble_for};
 mod queue;
 pub use queue::{
     acknowledge_for, clear_pending_for, enqueue_for, pending_count_for, pending_for,
@@ -21,7 +23,6 @@ pub use queue::{
 };
 
 const LISTENBRAINZ_API_ROOT: &str = "https://api.listenbrainz.org";
-const FOUR_MINUTES_MS: i64 = 4 * 60 * 1_000;
 const MAX_LISTENS_PER_REQUEST: usize = 1_000;
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_RESPONSE_BYTES: u64 = 64 * 1024;
@@ -264,17 +265,6 @@ pub trait ScrobblerTransport: Send + 'static {
     fn validate_token(&self, token: &str) -> Result<String, TransportError>;
     fn playing_now(&self, token: &str, track: &TrackMetadata) -> Result<(), TransportError>;
     fn submit(&self, token: &str, listens: &[Listen]) -> Result<(), TransportError>;
-}
-
-/// ListenBrainz's documented threshold: half the track or four minutes,
-/// whichever comes first.
-pub fn should_scrobble(position_ms: i64, duration_ms: i64) -> bool {
-    if duration_ms <= 0 {
-        return false;
-    }
-    let half_duration = duration_ms / 2 + duration_ms % 2;
-    let threshold = half_duration.min(FOUR_MINUTES_MS);
-    position_ms >= threshold
 }
 
 /// Adds one completed playback session to the durable FIFO. The caller may
@@ -581,26 +571,6 @@ mod tests {
             listened_at: 1_700_000_000,
             track: track(),
         }
-    }
-
-    #[test]
-    fn short_track_scrobbles_at_exactly_half_but_not_before() {
-        assert!(!should_scrobble(89_999, 180_000));
-        assert!(should_scrobble(90_000, 180_000));
-    }
-
-    #[test]
-    fn long_track_scrobbles_at_four_minutes() {
-        assert!(!should_scrobble(239_999, 600_000));
-        assert!(should_scrobble(240_000, 600_000));
-    }
-
-    #[test]
-    fn non_positive_duration_never_scrobbles() {
-        assert!(!should_scrobble(1_000, 0));
-        assert!(!should_scrobble(1_000, -1));
-        assert!(!should_scrobble(0, 1));
-        assert!(should_scrobble(1, 1));
     }
 
     #[test]

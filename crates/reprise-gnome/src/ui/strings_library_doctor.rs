@@ -82,9 +82,6 @@ pub const DOCTOR_CLEANUP_STATUS: &str = N_!("Cleanup Status");
 pub const DOCTOR_REVERT_STATUS: &str = N_!("Revert Status");
 pub const DOCTOR_LOCAL_ALWAYS_INCLUDED: &str = N_!("Local fixes always included · no network");
 pub const DOCTOR_REVERT_LAST_CLEANUP: &str = N_!("Revert Last Cleanup");
-pub const DOCTOR_REVERT_AVAILABLE_DISABLED: &str =
-    N_!("Available even when Library Doctor is disabled");
-pub const DOCTOR_ENABLE_MODULE: &str = N_!("Enable Library Doctor");
 pub const DOCTOR_JOB_PAGE_DESCRIPTION: &str =
     N_!("This job continues in the background. Progress and Cancel stay in the sidebar.");
 pub const DOCTOR_JOB_FAILED: &str = N_!("Library Doctor Job Failed");
