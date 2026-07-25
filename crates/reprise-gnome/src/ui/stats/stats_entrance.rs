@@ -120,19 +120,13 @@ impl StatsEntrance {
     ) {
         ribbon.prepare_entrance();
         if ribbon.is_sparse() {
+            let best_index = ribbon.best_week_index();
             for index in 0..ribbon.bar_count() {
                 let delay = motion::STATS_ENTRANCE_DELAY_MS
                     .saturating_add(motion::STATS_CHART_STAGGER_MS.saturating_mul(index as u32));
-                self.animate_ribbon_bar_at(ribbon, index, delay);
+                self.animate_ribbon_bar_at(ribbon, index, delay, Some(index) == best_index);
             }
-            if let Some(best_index) = ribbon.best_week_index() {
-                let delay = motion::STATS_ENTRANCE_DELAY_MS
-                    .saturating_add(
-                        motion::STATS_CHART_STAGGER_MS.saturating_mul(best_index as u32),
-                    )
-                    .saturating_add(motion::STATS_CHART_BAR_MS);
-                self.animate_best_week_label_at(ribbon, delay);
-            } else {
+            if best_index.is_none() {
                 ribbon.set_best_week_label_opacity(1.0);
             }
         }
@@ -182,31 +176,49 @@ impl StatsEntrance {
         self.animate_genre_shares(genres, &from, genre_targets);
     }
 
-    fn animate_ribbon_bar_at(&self, ribbon: &StatsRibbon, index: usize, delay_ms: u32) {
+    fn animate_ribbon_bar_at(
+        &self,
+        ribbon: &StatsRibbon,
+        index: usize,
+        delay_ms: u32,
+        reveal_label_on_done: bool,
+    ) {
         let ribbon = ribbon.clone();
         let animations = self.animations.clone();
+        let generation = self.generation.get();
+        let live_generation = self.generation.clone();
         self.schedule(delay_ms, move || {
             let target_ribbon = ribbon.clone();
-            play_and_keep(
-                &animations,
+            let animation =
                 motion::stats_timed(ribbon.widget(), motion::STATS_CHART_BAR, move |progress| {
                     target_ribbon.set_bar_fraction(index, progress);
-                }),
-            );
-        });
-    }
-
-    fn animate_best_week_label_at(&self, ribbon: &StatsRibbon, delay_ms: u32) {
-        let ribbon = ribbon.clone();
-        let animations = self.animations.clone();
-        self.schedule(delay_ms, move || {
-            let target_ribbon = ribbon.clone();
-            play_and_keep(
-                &animations,
-                motion::stats_timed(ribbon.widget(), motion::STATS_LABEL, move |progress| {
-                    target_ribbon.set_best_week_label_opacity(progress);
-                }),
-            );
+                });
+            if reveal_label_on_done {
+                let label_ribbon = ribbon.clone();
+                let label_animations = Rc::downgrade(&animations);
+                let live_generation = live_generation.clone();
+                animation.connect_done(move |_| {
+                    if live_generation.get() != generation {
+                        return;
+                    }
+                    let Some(label_animations) = label_animations.upgrade() else {
+                        return;
+                    };
+                    label_ribbon.set_best_week_label_opacity(0.0);
+                    let target_ribbon = label_ribbon.clone();
+                    play_and_keep(
+                        &label_animations,
+                        motion::stats_timed(
+                            label_ribbon.widget(),
+                            motion::STATS_LABEL,
+                            move |progress| {
+                                target_ribbon.set_best_week_label_opacity(progress);
+                            },
+                        ),
+                    );
+                });
+            }
+            play_and_keep(&animations, animation);
         });
     }
 
