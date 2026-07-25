@@ -1074,7 +1074,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   again" rückholbar. Retention bleibt: sechs Monate UND höchstens 200
   Einträge, hartes Löschen, nie innerhalb des 90-Tage-Fetch-Fensters.
   <!-- REVIEW: Regelvorschlag -->
-- **NR-14** [geplant] [gtk] — Die Releases-Vollansicht ist eine Tabelle
+- **NR-14** [aktiv] [gtk] — Die Releases-Vollansicht ist eine Tabelle
   `Date · Title · Artist · Type · Status`, standardmäßig nach Datum
   absteigend. Status ist `In library`, sonst `upcoming` oder `released`.
   Aktivierung führt immer die Dreiweg-Primäraktion aus: Hidden → Show again;
@@ -1082,7 +1082,6 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   announcement. Die permanente Filterzeile bietet sticky Chips für Not in
   library, Type und Hidden samt „X of Y releases", „Clear all" und genau
   einem „Show all"-Schritt bei null Treffern.
-  <!-- REVIEW: Regelvorschlag -->
 - **NR-15** [geplant] [gtk] — „Releases" ist ein Sidebar-Ort in SMART, vor
   Concerts und nur bei aktivem `new_releases`-Modul. Sein Badge entspricht
   exakt der Anzahl der nach persistenten Filtern beim Öffnen sichtbaren
