@@ -3,11 +3,16 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+use chrono::{NaiveDate, TimeZone};
 use gtk4::glib;
 use gtk4::prelude::*;
-use reprise_core::library::stats_period::PeriodRange;
+use reprise_core::library::stats_period::{Granularity, PeriodRange};
+use reprise_core::library::stats_snapshot::BestWeek;
 
-use super::stats_ribbon_math::{bucket_at_x, ribbon_layout, Point, RibbonLayout};
+use super::stats_ribbon_math::{
+    best_week_bucket_index, bucket_at_x, month_ticks, reveal_clip_width, ribbon_layout, Point,
+    RibbonLayout,
+};
 
 pub(in crate::ui) const RIBBON_CSS_CLASS: &str = "stats-ribbon";
 /// The secondary caption tone the axis labels borrow (CONTRAST: the accent
@@ -17,11 +22,28 @@ const RIBBON_HEIGHT: i32 = 150;
 const LABEL_HEIGHT: f64 = 24.0;
 const MARKER_RADIUS: f64 = 4.0;
 
-#[derive(Default)]
 struct RibbonData {
     labels: Vec<String>,
+    bucket_starts: Vec<NaiveDate>,
     values: Vec<i64>,
+    granularity: Granularity,
     open_index: Option<usize>,
+    best_week: Option<BestWeek>,
+    reveal_fraction: f64,
+}
+
+impl Default for RibbonData {
+    fn default() -> Self {
+        Self {
+            labels: Vec::new(),
+            bucket_starts: Vec::new(),
+            values: Vec::new(),
+            granularity: Granularity::Day,
+            open_index: None,
+            best_week: None,
+            reveal_fraction: 1.0,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -88,7 +110,12 @@ impl StatsRibbon {
                     hovered.set(index);
                     index.and_then(|index| {
                         Some(format!(
-                            "{}: {}",
+                            "{}{} · {}",
+                            if data.granularity == Granularity::Week {
+                                "Week of "
+                            } else {
+                                ""
+                            },
                             data.labels.get(index)?,
                             format_duration(*data.values.get(index)?)
                         ))
@@ -123,7 +150,12 @@ impl StatsRibbon {
         &self.root
     }
 
-    pub(in crate::ui) fn set_data(&self, period: &PeriodRange, values: &[i64]) {
+    pub(in crate::ui) fn set_data(
+        &self,
+        period: &PeriodRange,
+        values: &[i64],
+        best_week: Option<&BestWeek>,
+    ) {
         let values = period
             .buckets
             .iter()
@@ -136,9 +168,27 @@ impl StatsRibbon {
                 .iter()
                 .map(|bucket| bucket.label.clone())
                 .collect(),
+            bucket_starts: period
+                .buckets
+                .iter()
+                .filter_map(|bucket| {
+                    chrono::Local
+                        .timestamp_opt(bucket.start_unix, 0)
+                        .earliest()
+                        .map(|date| date.date_naive())
+                })
+                .collect(),
             values,
+            granularity: period.granularity,
             open_index: period.buckets.iter().position(|bucket| bucket.open),
+            best_week: best_week.cloned(),
+            reveal_fraction: 1.0,
         };
+        self.set_reveal_fraction(1.0);
+    }
+
+    pub(in crate::ui) fn set_reveal_fraction(&self, fraction: f64) {
+        self.data.borrow_mut().reveal_fraction = fraction.clamp(0.0, 1.0);
         self.area.queue_draw();
     }
 }
@@ -168,6 +218,14 @@ fn draw(
         f64::from(color.alpha()),
     );
 
+    let _ = context.save();
+    context.rectangle(
+        0.0,
+        0.0,
+        reveal_clip_width(width, data.reveal_fraction),
+        plot_height,
+    );
+    context.clip();
     draw_fill(
         context,
         &layout,
@@ -179,7 +237,19 @@ fn draw(
         alpha,
     );
     draw_line(context, &layout, red, green, blue, alpha);
-    draw_markers(context, &layout, red, green, blue, alpha);
+    draw_best_week_marker(
+        context,
+        &layout,
+        data,
+        width,
+        plot_height,
+        red,
+        green,
+        blue,
+        alpha,
+    );
+    draw_open_marker(context, &layout, red, green, blue, alpha);
+    let _ = context.restore();
     draw_labels(context, data, width, f64::from(height), axis_color);
 }
 
@@ -204,8 +274,8 @@ fn draw_fill(
     context.line_to(width, baseline);
     context.close_path();
     let gradient = gtk4::cairo::LinearGradient::new(0.0, 0.0, 0.0, baseline);
-    gradient.add_color_stop_rgba(0.0, red, green, blue, alpha * 0.48);
-    gradient.add_color_stop_rgba(1.0, red, green, blue, alpha * 0.04);
+    gradient.add_color_stop_rgba(0.0, red, green, blue, alpha * 0.30);
+    gradient.add_color_stop_rgba(1.0, red, green, blue, 0.0);
     let _ = context.set_source(&gradient);
     let _ = context.fill();
 }
@@ -224,27 +294,49 @@ fn draw_line(
     context.set_source_rgba(red, green, blue, alpha);
     context.set_line_width(2.0);
     context.move_to(first.x, first.y);
-    let solid_end = layout
-        .open_index
-        .filter(|index| *index > 0)
-        .map_or(layout.points.len() - 1, |index| index - 1);
-    for point in layout.points.iter().take(solid_end + 1).skip(1) {
+    for point in layout.points.iter().skip(1) {
         context.line_to(point.x, point.y);
     }
     let _ = context.stroke();
+}
 
-    if let Some(open_index) = layout.open_index.filter(|index| *index > 0) {
-        let start = layout.points[open_index - 1];
-        let end = layout.points[open_index];
-        context.set_dash(&[5.0, 4.0], 0.0);
-        context.move_to(start.x, start.y);
-        context.line_to(end.x, end.y);
-        let _ = context.stroke();
-        context.set_dash(&[], 0.0);
+#[allow(clippy::too_many_arguments)]
+fn draw_best_week_marker(
+    context: &gtk4::cairo::Context,
+    layout: &RibbonLayout,
+    data: &RibbonData,
+    plot_width: f64,
+    plot_height: f64,
+    red: f64,
+    green: f64,
+    blue: f64,
+    alpha: f64,
+) {
+    let index = best_week_bucket_index(
+        &data.bucket_starts,
+        data.granularity,
+        data.best_week.as_ref().map(|week| week.start),
+    );
+    let Some(point) = marker(layout, index) else {
+        return;
+    };
+    context.set_source_rgba(red, green, blue, alpha);
+    context.set_line_width(1.0);
+    context.set_dash(&[4.0, 4.0], 0.0);
+    context.move_to(point.x, 0.0);
+    context.line_to(point.x, plot_height);
+    let _ = context.stroke();
+    context.set_dash(&[], 0.0);
+    if let Some(best_week) = &data.best_week {
+        context.move_to((point.x + 5.0).min((plot_width - 110.0).max(0.0)), 12.0);
+        let _ = context.show_text(&format!(
+            "best week · {}",
+            format_duration(best_week.total_ms)
+        ));
     }
 }
 
-fn draw_markers(
+fn draw_open_marker(
     context: &gtk4::cairo::Context,
     layout: &RibbonLayout,
     red: f64,
@@ -252,11 +344,6 @@ fn draw_markers(
     blue: f64,
     alpha: f64,
 ) {
-    if let Some(point) = marker(layout, layout.peak_index) {
-        context.set_source_rgba(red, green, blue, alpha);
-        context.arc(point.x, point.y, MARKER_RADIUS, 0.0, std::f64::consts::TAU);
-        let _ = context.fill();
-    }
     if let Some(point) = marker(layout, layout.open_index) {
         context.set_source_rgba(red, green, blue, alpha);
         context.set_line_width(2.0);
@@ -272,8 +359,7 @@ fn draw_labels(
     height: f64,
     color: gtk4::gdk::RGBA,
 ) {
-    let count = data.labels.len();
-    let stride = count.div_ceil(8).max(1);
+    let count = data.bucket_starts.len();
     context.set_source_rgba(
         f64::from(color.red()),
         f64::from(color.green()),
@@ -281,17 +367,14 @@ fn draw_labels(
         f64::from(color.alpha()),
     );
     context.set_font_size(9.0);
-    for (index, label) in data.labels.iter().enumerate() {
-        if index % stride != 0 && index + 1 != count {
-            continue;
-        }
+    for tick in month_ticks(&data.bucket_starts) {
         let x = if count <= 1 {
             0.0
         } else {
-            index as f64 * width / (count - 1) as f64
+            tick.index as f64 * width / (count - 1) as f64
         };
         context.move_to(x.min(width - 24.0).max(0.0), height - 5.0);
-        let _ = context.show_text(label);
+        let _ = context.show_text(&tick.label);
     }
 }
 

@@ -1452,7 +1452,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   War die Vergleichszeit effektiv null (unter einer Minute), erscheint statt
   des KPI das Badge „New this year" in der Kopfzeile — nie „∞ %" und nie
   „×0". Der KPI ellipsiert nicht.
-- **STATS-12** [geplant] [core] — Das Chart zeigt die Hörzeit je lokaler
+- **STATS-12** [aktiv] [core] — Das Chart zeigt die Hörzeit je lokaler
   Kalenderwoche als Flächenverlauf: Achse exakt der gewählte Zeitraum,
   Monatslabels darunter, Linie und Fläche in Abstufungen der Akzentfarbe.
   Die beste Woche trägt eine gestrichelte Markerlinie mit Label
