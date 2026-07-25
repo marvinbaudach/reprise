@@ -1,9 +1,70 @@
 //! Player-event application and stopped-state recovery for PlayerController.
 
+use std::rc::Rc;
+
 use crate::ui::mpris_mirror::mpris_status_from_playback_state;
 use crate::ui::player_controller::PlayerController;
 use reprise_core::media_integration::MprisPlaybackStatus;
-use reprise_core::playback::{PlaybackState, PlayerEvent};
+use reprise_core::playback::{PlaybackState, PlayerEvent, SpectrumFrame};
+
+/// Prevent one busy drain iteration from starving the rest of GTK's main loop.
+const MAX_PLAYER_EVENT_BURST: usize = 64;
+
+/// Collapses consecutive analyzer frames without moving them across semantic
+/// playback events. This keeps transport/state ordering exact while making
+/// spectrum delivery latest-wins under GTK render load.
+pub(super) fn coalesce_player_event_burst(
+    events: impl IntoIterator<Item = PlayerEvent>,
+) -> Vec<PlayerEvent> {
+    let mut coalesced = Vec::new();
+    let mut pending_spectrum: Option<SpectrumFrame> = None;
+
+    for event in events {
+        match event {
+            PlayerEvent::Spectrum(frame) => {
+                pending_spectrum = Some(match pending_spectrum {
+                    Some(previous) => previous.coalesce_latest(frame),
+                    None => frame,
+                });
+            }
+            event => {
+                if let Some(frame) = pending_spectrum.take() {
+                    coalesced.push(PlayerEvent::Spectrum(frame));
+                }
+                coalesced.push(event);
+            }
+        }
+    }
+    if let Some(frame) = pending_spectrum {
+        coalesced.push(PlayerEvent::Spectrum(frame));
+    }
+    coalesced
+}
+
+pub(super) fn spawn_event_drain(
+    controller: &Rc<PlayerController>,
+    receiver: async_channel::Receiver<PlayerEvent>,
+) {
+    let weak = Rc::downgrade(controller);
+    gtk4::glib::spawn_future_local(async move {
+        while let Ok(first_event) = receiver.recv().await {
+            let Some(controller) = weak.upgrade() else {
+                break;
+            };
+            let mut burst = Vec::with_capacity(MAX_PLAYER_EVENT_BURST);
+            burst.push(first_event);
+            while burst.len() < MAX_PLAYER_EVENT_BURST {
+                let Ok(event) = receiver.try_recv() else {
+                    break;
+                };
+                burst.push(event);
+            }
+            for event in coalesce_player_event_burst(burst) {
+                controller.apply_event(event);
+            }
+        }
+    });
+}
 
 impl PlayerController {
     /// Applies one marshalled `PlayerEvent` to the bar. Runs on the GTK main
@@ -161,5 +222,49 @@ impl PlayerController {
                 self.sync_clear_track();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod spectrum_coalescing_tests {
+    use super::*;
+    use reprise_core::playback::{SpectrumFrame, SPECTRUM_BAND_COUNT};
+
+    fn spectrum(db: f32) -> PlayerEvent {
+        PlayerEvent::Spectrum(SpectrumFrame::from_decibels([db; SPECTRUM_BAND_COUNT]))
+    }
+
+    #[test]
+    fn ac_20_spectrum_burst_keeps_only_the_freshest_frame() {
+        let events =
+            coalesce_player_event_burst([spectrum(-60.0), spectrum(-40.0), spectrum(-20.0)]);
+        assert_eq!(events.len(), 1);
+        let PlayerEvent::Spectrum(frame) = &events[0] else {
+            panic!("expected the coalesced spectrum");
+        };
+        assert_eq!(
+            frame.bands(),
+            SpectrumFrame::from_decibels([-20.0; SPECTRUM_BAND_COUNT]).bands()
+        );
+    }
+
+    #[test]
+    fn non_spectrum_events_keep_order_and_bound_coalescing_windows() {
+        let events = coalesce_player_event_burst([
+            spectrum(-60.0),
+            spectrum(-40.0),
+            PlayerEvent::StateChanged(PlaybackState::Paused),
+            spectrum(-20.0),
+            spectrum(0.0),
+            PlayerEvent::TrackFinished,
+        ]);
+        assert_eq!(events.len(), 4);
+        assert!(matches!(events[0], PlayerEvent::Spectrum(_)));
+        assert!(matches!(
+            events[1],
+            PlayerEvent::StateChanged(PlaybackState::Paused)
+        ));
+        assert!(matches!(events[2], PlayerEvent::Spectrum(_)));
+        assert!(matches!(events[3], PlayerEvent::TrackFinished));
     }
 }

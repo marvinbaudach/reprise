@@ -194,3 +194,66 @@ fn render_grid_membrane_phase_sequence() {
         engine.tick();
     }
 }
+
+#[test]
+#[ignore = "diagnostic: measures the complete scene-build and Cairo-render frame budget"]
+fn grid_and_bars_fullscreen_render_budget_diagnostic() {
+    use reprise_core::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
+    use std::time::Instant;
+
+    const FRAMES: usize = 240;
+    const FRAME_BUDGET_MS: f64 = 16.0;
+
+    let mut over_budget = Vec::new();
+    for (width, height) in [(548, 300), (960, 540), (1920, 1080)] {
+        for mode in [VisualMode::Grid, VisualMode::Bars] {
+            let mut analyzer = SpectrumAnalyzer::new();
+            let mut engine = VisualEngine::new();
+            engine.set_mode(mode);
+            engine.set_playing(true);
+            let surface =
+                gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, width, height)
+                    .unwrap();
+            let mut renderer = render::SceneRenderer::default();
+            let mut timings = Vec::with_capacity(FRAMES);
+
+            for frame in 0..FRAMES {
+                let mut input = [-42.0_f32; SPECTRUM_ANALYSIS_BAND_COUNT];
+                if frame % 10 == 0 {
+                    input[..96].fill(-2.0);
+                    input[96..].fill(-12.0);
+                }
+                engine.ingest(&analyzer.ingest(input));
+
+                let started = Instant::now();
+                engine.tick();
+                let scene_size = render::capped_scene_size(width, height);
+                let scene = engine.scene(scene_size.0 as f32, scene_size.1 as f32);
+                let cr = gtk4::cairo::Context::new(&surface).unwrap();
+                cr.set_source_rgb(0.02, 0.025, 0.03);
+                let _ = cr.paint();
+                renderer.draw(&cr, &scene, width, height);
+                surface.flush();
+                timings.push(started.elapsed().as_secs_f64() * 1000.0);
+            }
+
+            timings.sort_by(f64::total_cmp);
+            let percentile = |fraction: f64| {
+                let index = ((timings.len() - 1) as f64 * fraction).round() as usize;
+                timings[index]
+            };
+            let p50 = percentile(0.50);
+            let p95 = percentile(0.95);
+            let p99 = percentile(0.99);
+            println!("{mode:?} {width}x{height}: p50={p50:.3} ms p95={p95:.3} ms p99={p99:.3} ms");
+            if p95 > FRAME_BUDGET_MS {
+                over_budget.push(format!("{mode:?} {width}x{height} p95={p95:.3} ms"));
+            }
+        }
+    }
+    assert!(
+        over_budget.is_empty(),
+        "modes miss the 60 Hz frame budget: {}",
+        over_budget.join(", ")
+    );
+}
