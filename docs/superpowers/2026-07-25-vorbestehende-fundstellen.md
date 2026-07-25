@@ -47,6 +47,18 @@ während des Umbaus aufgetreten, beide Male beim Wiederholen grün. Sollte
 entweder deterministisch gemacht oder als `#[ignore]` mit Begründung markiert
 werden, statt still zu flackern.
 
+**Zwei Display-Tests im Waveform-Crossfade flackern ebenfalls:**
+`ui::player_bar::waveform_seek::tests::mot_5_waveform_crossfades_to_the_new_track_instead_of_rebuilding`
+und `…::mot_5_waveform_crossfade_survives_a_second_set_peaks_without_a_draw`,
+die Zusicherung sitzt bei `waveform_seek_tests.rs:405`.
+
+Belegt isoliert am 25.07.2026: in einem eigenen Worktree auf **unverändertem
+`origin/dev`** fielen 2 von 4 Einzelläufen durch. Es liegt also am Test selbst,
+nicht an dahinterliegender Arbeit — wer diesen Fehlschlag in einem Review sieht,
+muss ihn nicht auf seine eigene Änderung zurückführen. Die Tests schalten
+`gtk_enable_animations` scharf und hängen damit an echtem Zeitverhalten; das ist
+die naheliegende Ursache.
+
 ## Architektur
 
 **Fünf Dateien liegen unmittelbar unter dem 800-Zeilen-Limit** aus
