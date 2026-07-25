@@ -167,6 +167,36 @@ impl StatsEntrance {
         self.animate_ribbon_at(ribbon, motion::STATS_CHART_DELAY_MS);
         self.animate_marker_at(ribbon, motion::STATS_MARKER_DELAY_MS);
 
+        self.prepare_cards_after_layout(cards, viewport, scroll_content, targets);
+    }
+
+    fn prepare_cards_after_layout(
+        &self,
+        cards: &[EntranceCard],
+        viewport: &gtk4::ScrolledWindow,
+        scroll_content: &gtk4::Widget,
+        targets: &[f64],
+    ) {
+        let entrance = self.clone();
+        let cards = cards.to_vec();
+        let viewport = viewport.clone();
+        let targets = targets.to_vec();
+        let generation = self.generation.get();
+        scroll_content.add_tick_callback(move |scroll_content, _| {
+            if entrance.generation.get() == generation {
+                entrance.prepare_cards(&cards, &viewport, scroll_content, &targets);
+            }
+            glib::ControlFlow::Break
+        });
+    }
+
+    fn prepare_cards(
+        &self,
+        cards: &[EntranceCard],
+        viewport: &gtk4::ScrolledWindow,
+        scroll_content: &gtk4::Widget,
+        targets: &[f64],
+    ) {
         let mut target_index: usize = 0;
         for (card_index, card) in cards.iter().enumerate() {
             let next_target_index = target_index.saturating_add(card.bars.len());
