@@ -1,5 +1,7 @@
 use super::*;
 
+const MEMBRANE_PHASE_STEPS: [usize; 9] = [0, 4, 8, 12, 16, 22, 30, 40, 56];
+
 #[test]
 fn ac_19_visual_chrome_is_a_single_grid_canvas_without_mode_controls() {
     let css = css();
@@ -67,6 +69,32 @@ fn lively_engine() -> VisualEngine {
 }
 
 #[test]
+fn membrane_phase_gallery_steps_cover_both_dome_and_depth() {
+    use reprise_core::playback::SPECTRUM_BAND_COUNT;
+    use reprise_core::visuals::Membrane;
+
+    let mut membrane = Membrane::new();
+    let silent = [0.0_f32; SPECTRUM_BAND_COUNT];
+    membrane.splash(1.0);
+    membrane.advance(&silent);
+
+    let mut captured = Vec::new();
+    for step in 0..=*MEMBRANE_PHASE_STEPS.last().unwrap() {
+        if MEMBRANE_PHASE_STEPS.contains(&step) {
+            captured.push(membrane.sample(0.5, 0.5));
+        }
+        membrane.advance(&silent);
+    }
+    let peak = captured.iter().copied().fold(0.0_f32, f32::max);
+    let trough = captured.iter().copied().fold(0.0_f32, f32::min);
+    assert!(peak > 0.35, "gallery must capture the dome, peak {peak}");
+    assert!(
+        trough < -0.05,
+        "gallery must capture the depth phase, trough {trough}"
+    );
+}
+
+#[test]
 #[ignore = "visual gallery: renders the Grid scene to REPRISE_VIS_OUT for eyeballing"]
 fn render_grid_gallery_ppm() {
     let out = std::env::var("REPRISE_VIS_OUT").unwrap_or_else(|_| "/tmp".to_owned());
@@ -99,12 +127,12 @@ fn render_grid_gallery_ppm() {
     println!("wrote {path}");
 }
 
-/// Renders a Grid beat-splash sequence (a strong beat off silence, then quiet)
-/// so the eruption can be eyeballed rising and falling back. Frames written as
-/// `grid-beat-NN.ppm` into `REPRISE_VIS_OUT`.
+/// Renders a radial membrane phase sequence (one strong beat off silence,
+/// followed by quiet) so the dome, glow, depth trough and settling rings can
+/// be inspected. Frames are written as `grid-phase-NN.ppm`.
 #[test]
-#[ignore = "visual: renders the Grid beat splash frames to REPRISE_VIS_OUT"]
-fn render_grid_beat_sequence() {
+#[ignore = "visual: renders the Grid membrane phases to REPRISE_VIS_OUT"]
+fn render_grid_membrane_phase_sequence() {
     use reprise_core::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
     let out = std::env::var("REPRISE_VIS_OUT").unwrap_or_else(|_| "/tmp".to_owned());
     let (w, h) = (548.0_f32, 300.0_f32);
@@ -117,14 +145,13 @@ fn render_grid_beat_sequence() {
         engine.ingest(&analyzer.ingest([-80.0; SPECTRUM_ANALYSIS_BAND_COUNT]));
         engine.tick();
     }
-    // One full-scale broadband frame fires a strong beat → splash eruption.
+    // One full-scale broadband frame fires a strong central cone impulse.
     engine.ingest(&analyzer.ingest([0.0; SPECTRUM_ANALYSIS_BAND_COUNT]));
     engine.tick();
 
-    let capture = [0usize, 2, 4, 7, 11, 16];
     let mut next = 0usize;
-    for step in 0..=16usize {
-        if capture.get(next) == Some(&step) {
+    for step in 0..=*MEMBRANE_PHASE_STEPS.last().unwrap() {
+        if MEMBRANE_PHASE_STEPS.get(next) == Some(&step) {
             let scene = engine.scene(w, h);
             let mut surface =
                 gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, w as i32, h as i32)
@@ -146,12 +173,12 @@ fn render_grid_beat_sequence() {
                 }
             }
             drop(data);
-            let path = format!("{out}/grid-beat-{step:02}.ppm");
+            let path = format!("{out}/grid-phase-{step:02}.ppm");
             std::fs::write(&path, ppm).unwrap();
             println!("wrote {path}");
             next += 1;
         }
-        // Quiet after the beat: isolate the eruption rising and falling back.
+        // Quiet after the beat: isolate the cloth's underdamped response.
         engine.ingest(&analyzer.ingest([-80.0; SPECTRUM_ANALYSIS_BAND_COUNT]));
         engine.tick();
     }
