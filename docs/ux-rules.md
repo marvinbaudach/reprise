@@ -1438,9 +1438,11 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
 - **STATS-10** [aktiv] [gtk] — My Stats erzählt in fester Reihenfolge von
   oben nach unten: Kopfzeile (Titel, optionales „New this year"-Badge,
   Zeitraumwahl) · Hero (Gesamtzahl, Subline, KPI-Reihe) · Wochen-Chart ·
-  zweispaltige Reihe aus Band-Karte und Songs-Karte · Genre-Karte. Mehr
-  Sektionen gibt es nicht: keine Listening Clock, keine Highlight-Kacheln,
-  kein Customize-Menü — die Seite ist kuratiert und nicht konfigurierbar.
+  zweispaltige Reihe aus Band-Karte und Songs-Karte · optional die
+  aufgeklappte Top-Track-Liste als eigene Sektion in voller Breite ·
+  Genre-Karte. Mehr Sektionen gibt es nicht: keine Listening Clock, keine
+  Highlight-Kacheln, kein Customize-Menü — die Seite ist kuratiert und nicht
+  konfigurierbar.
   Im schmalen Fenster stapelt die zweispaltige Reihe, ohne die Reihenfolge zu
   ändern. Die Zeitraumwahl bleibt gemäß STATS-8 der einzige Ansichts-Regler.
 - **STATS-11** [aktiv] [core] — Der Hero zeigt die Gesamt-Hörzeit riesig
@@ -1489,9 +1491,10 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Zeile öffnet die Library gefiltert auf den Interpreten mit fokussiertem
   Track; Hover oder Fokus zeigt am Cover einen Play-Button, der genau diesen
   Track sofort abspielt; das Kontextmenü bietet „Play next", „Add to queue"
-  und „Go to album". Der Ghost-Button „Show all top tracks" klappt darunter
-  die nummerierte Top-10-Liste mit dem Sort-Toggle „by plays / by time"
-  auf; deren Balken bleibt relativ zum Spitzenreiter der Liste.
+  und „Go to album". Der Ghost-Button „Show all top tracks" klappt unter der
+  zweispaltigen Reihe die nummerierte Top-10-Liste als eigene Sektion in
+  voller Breite mit dem Sort-Toggle „by plays / by time" auf; die Genre-Karte
+  folgt darunter und der Balken bleibt relativ zum Spitzenreiter der Liste.
 - **STATS-15** [aktiv] [core] — Die Genre-Karte besteht aus einem
   gestapelten Balken (Segmentbreite = Anteil, Akzent-Abstufungen nach Rang,
   letztes Segment neutral, Tooltip „<Genre> · N % · N h") und bis zu vier

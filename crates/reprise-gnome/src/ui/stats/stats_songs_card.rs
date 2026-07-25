@@ -12,7 +12,7 @@ use reprise_core::library::stats_screen::TopTrack;
 use reprise_core::library::stats_snapshot::{SortBy, StatsSnapshot};
 
 use super::stats_metadata_links::{self, MetadataCallback, StatsMetadataTarget};
-use super::stats_view_widgets::{clear, label};
+use super::stats_view_widgets::{card, clear, label};
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::strings;
 
@@ -90,13 +90,14 @@ impl StatsSongsCard {
         controls.set_halign(gtk4::Align::End);
         controls.append(&plays_sort);
         controls.append(&time_sort);
-        let expanded = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
-        expanded.append(&controls);
-        expanded.append(&full_rows);
+        let expanded_content = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
+        expanded_content.append(&controls);
+        expanded_content.append(&full_rows);
+        let expanded = card(&expanded_content);
+        expanded.set_hexpand(true);
         let revealer = gtk4::Revealer::new();
         revealer.set_reveal_child(false);
         revealer.set_child(Some(&expanded));
-        root.append(&revealer);
 
         let snapshot = Rc::new(RefCell::new(None::<StatsSnapshot>));
         let sort_by = Rc::new(Cell::new(SortBy::Plays));
@@ -177,7 +178,15 @@ impl StatsSongsCard {
         &self.root
     }
 
+    pub(in crate::ui) fn expanded_widget(&self) -> &gtk4::Revealer {
+        &self.revealer
+    }
+
     pub(in crate::ui) fn set_data(&self, snapshot: &StatsSnapshot) {
+        if snapshot.top_tracks.is_empty() {
+            self.revealer.set_reveal_child(false);
+            self.reveal_button.set_label("Show all top tracks");
+        }
         *self.snapshot.borrow_mut() = Some(snapshot.clone());
         self.render_summary(snapshot);
         render_full_rows(
@@ -648,6 +657,10 @@ mod tests {
             Some("Show all top tracks")
         );
         assert_eq!(card.rows.observe_children().n_items(), 5);
+        assert!(
+            card.revealer.parent().is_none(),
+            "the expanded ranking must not live inside the songs card"
+        );
         card.reveal_button.emit_clicked();
         assert!(card.revealer.reveals_child());
         card.time_sort.set_active(true);

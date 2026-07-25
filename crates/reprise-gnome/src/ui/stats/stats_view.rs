@@ -35,7 +35,14 @@ const MIN_PLAYS_FOR_TREND: i64 = 10;
 /// The fixed editorial order of the page's sections (STATS-10). The test reads
 /// the real widget tree and compares against this.
 #[cfg(test)]
-const SECTION_ORDER: [&str; 5] = ["header", "hero", "chart", "band-songs", "genres"];
+const SECTION_ORDER: [&str; 6] = [
+    "header",
+    "hero",
+    "chart",
+    "band-songs",
+    "top-tracks",
+    "genres",
+];
 
 type StringCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
 type IdsCallback = Rc<RefCell<Option<Rc<dyn Fn(Vec<i64>)>>>>;
@@ -112,6 +119,7 @@ impl StatsView {
         trend_stack.set_visible_child_name("chart");
         sections.append(&trend_stack);
         sections.append(&story_row);
+        sections.append(songs_card.expanded_widget());
         sections.append(&genres_section);
 
         let empty = adw::StatusPage::builder()
@@ -187,6 +195,7 @@ impl StatsView {
             trend_stack: trend_stack.clone(),
             band_section: band_section.clone(),
             songs_section: songs_section.clone(),
+            top_tracks_section: songs_card.expanded_widget().clone(),
             genres_section: genres_section.clone(),
             entrance,
         });
@@ -383,6 +392,14 @@ impl StatsView {
                 && self.render.songs_section.is_ancestor(&widget)
             {
                 order.push("band-songs");
+            } else if widget
+                == self
+                    .render
+                    .top_tracks_section
+                    .clone()
+                    .upcast::<gtk4::Widget>()
+            {
+                order.push("top-tracks");
             } else if self
                 .render
                 .genres_section_data
@@ -410,6 +427,8 @@ struct RenderParts {
     trend_stack: gtk4::Stack,
     band_section: gtk4::Box,
     songs_section: gtk4::Box,
+    #[cfg_attr(not(test), allow(dead_code))]
+    top_tracks_section: gtk4::Revealer,
     genres_section: gtk4::Box,
     entrance: StatsEntrance,
 }
