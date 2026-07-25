@@ -10,8 +10,8 @@ use reprise_core::library::stats_period::{Granularity, PeriodRange};
 use reprise_core::library::stats_snapshot::BestWeek;
 
 use super::stats_ribbon_math::{
-    axis_ticks, bar_layout, best_week_bucket_index, bucket_at_x, reveal_clip_width, ribbon_layout,
-    Point, RibbonLayout,
+    axis_ticks, bar_layout, bar_width, best_week_bucket_index, bucket_at_x, reveal_clip_width,
+    ribbon_layout, Point, RibbonLayout,
 };
 use crate::ui::strings;
 
@@ -423,7 +423,7 @@ fn draw_bars(
         return;
     }
     let slot_width = plot_width / layout.points.len() as f64;
-    let bar_width = (slot_width * 0.62).clamp(2.0, 28.0).min(slot_width);
+    let bar_width = bar_width(slot_width);
     set_source_color(context, colors.baseline, 1.0);
     context.set_line_width(1.0);
     context.move_to(0.0, baseline - 0.5);
@@ -534,7 +534,7 @@ fn best_week_label_x(
 }
 
 fn best_week_label_y(bar_top: f64) -> f64 {
-    (bar_top - 2.0).max(10.0)
+    (bar_top - 8.0).max(10.0)
 }
 
 fn draw_open_marker(

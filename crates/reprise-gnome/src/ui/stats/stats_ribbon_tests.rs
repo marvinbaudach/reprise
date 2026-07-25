@@ -142,7 +142,7 @@ fn best_week_label_is_centered_above_its_bar_with_edge_clearance() {
     let label_center = x + extents.x_bearing() + extents.width() / 2.0;
     assert!((label_center - marker_x).abs() < 0.01);
     assert_eq!(best_week_label_y(11.0), 10.0);
-    assert!(best_week_label_y(30.0) < 30.0);
+    assert_eq!(best_week_label_y(30.0), 22.0);
 }
 
 #[test]

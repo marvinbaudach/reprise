@@ -75,6 +75,10 @@ pub(in crate::ui) fn bar_layout(
     }
 }
 
+pub(in crate::ui) fn bar_width(slot_width: f64) -> f64 {
+    (slot_width * 0.40).clamp(2.0, 48.0).min(slot_width)
+}
+
 fn point_y(value: i64, maximum: i64, height: f64) -> f64 {
     let magnitude = if maximum == 0 {
         0.0
@@ -199,6 +203,12 @@ mod tests {
         assert_eq!(layout.points[2].x, 250.0);
         assert!((layout.points[1].y - 10.714).abs() < 0.01);
         assert_eq!(layout.open_index, Some(2));
+    }
+
+    #[test]
+    fn sparse_week_bars_use_forty_percent_of_each_slot_up_to_forty_eight_pixels() {
+        assert_eq!(bar_width(100.0), 40.0);
+        assert_eq!(bar_width(200.0), 48.0);
     }
 
     #[test]
