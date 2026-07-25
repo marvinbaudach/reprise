@@ -2,6 +2,7 @@
 
 use std::rc::Rc;
 
+use libadwaita as adw;
 use reprise_core::browser::navigation::NavigationIntent;
 
 use super::library_shell::{self, ActiveContentFocus};
@@ -41,6 +42,7 @@ pub(in crate::ui) struct MetadataNavigator {
     sidebar: Rc<Sidebar>,
     track_list: Rc<TrackList>,
     content_stack: gtk4::Stack,
+    source_title: adw::WindowTitle,
     active_content_focus: ActiveContentFocus,
 }
 
@@ -50,6 +52,7 @@ impl MetadataNavigator {
         sidebar: Rc<Sidebar>,
         track_list: Rc<TrackList>,
         content_stack: gtk4::Stack,
+        source_title: adw::WindowTitle,
         active_content_focus: ActiveContentFocus,
     ) -> Self {
         Self {
@@ -57,6 +60,7 @@ impl MetadataNavigator {
             sidebar,
             track_list,
             content_stack,
+            source_title,
             active_content_focus,
         }
     }
@@ -84,6 +88,7 @@ impl MetadataNavigator {
             &self.sidebar,
             &self.track_list,
             &self.content_stack,
+            &self.source_title,
             &self.active_content_focus,
             reason,
         );
@@ -92,6 +97,9 @@ impl MetadataNavigator {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+
+    use libadwaita::prelude::*;
     use reprise_core::browser::{AlbumKey, ArtistKey, BrowserPlace};
     use reprise_core::view_source::ViewSource;
 
@@ -136,5 +144,51 @@ mod tests {
                 anchor_track_id: None,
             }
         );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn nav_title_follows_scope_navigation() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
+        reprise_core::db::migrate(&conn.borrow()).unwrap();
+        let app = adw::Application::builder()
+            .application_id("org.reprise.Reprise.ScopeTitleTest")
+            .build();
+        app.register(None::<&gtk4::gio::Cancellable>).unwrap();
+        let window = adw::ApplicationWindow::new(&app);
+        let sidebar = Rc::new(Sidebar::new(conn.clone(), &window, || 0));
+        let track_list = Rc::new(TrackList::new(
+            conn,
+            Box::new(|_, _, _, _| {}),
+            |_, _, _, _| {},
+            crate::ui::track_list::queue_sections::QueueViewModel::default,
+            crate::ui::cover_download_worker::setup_for_test(),
+        ));
+        let content_stack = gtk4::Stack::new();
+        content_stack.add_named(&gtk4::Box::default(), Some("library"));
+        let source_title = adw::WindowTitle::new("My Stats", "");
+        let history = Rc::new(NavHistory::default());
+        let library = BrowserPlace::from(ViewSource::Library);
+        history.restore(library.clone(), library);
+        let navigator = MetadataNavigator::new(
+            history,
+            sidebar,
+            track_list.clone(),
+            content_stack.clone(),
+            source_title.clone(),
+            ActiveContentFocus::new(&content_stack, &track_list),
+        );
+
+        navigator.navigate(
+            NavigationIntent::OpenArtist {
+                artist: ArtistKey::new("Lorna Shore"),
+                anchor_track_id: None,
+            },
+            "test artist navigation",
+        );
+
+        assert_eq!(source_title.title(), "Lorna Shore");
     }
 }

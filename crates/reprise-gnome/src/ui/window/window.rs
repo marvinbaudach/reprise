@@ -340,6 +340,7 @@ pub fn build(
         sidebar.clone(),
         track_list.clone(),
         content_stack.clone(),
+        window_title.clone(),
         active_content_focus.clone(),
     );
 
