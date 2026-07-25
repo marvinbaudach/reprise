@@ -222,6 +222,20 @@ impl StatsGenreCard {
     pub(super) fn segment_slides(&self) -> Vec<SlideBin> {
         self.segment_slides.borrow().clone()
     }
+
+    #[cfg(test)]
+    fn segment_buttons(&self) -> Vec<gtk4::Button> {
+        self.segment_slides
+            .borrow()
+            .iter()
+            .map(|slide| {
+                slide
+                    .first_child()
+                    .and_downcast::<gtk4::Button>()
+                    .expect("every genre segment slide must wrap its button")
+            })
+            .collect()
+    }
 }
 
 fn has_genre_tile(segment: &GenreSegment) -> bool {
@@ -319,9 +333,9 @@ mod tests {
 
         assert_eq!(card.widget().spacing(), 12);
         assert_eq!(
-            card.segments
-                .first_child()
-                .unwrap()
+            card.segment_buttons()
+                .first()
+                .expect("the fixture must render a genre segment")
                 .tooltip_text()
                 .as_deref(),
             Some("Metalcore · 55 % · 6 h 58")
