@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use chrono::{NaiveDate, TimeZone};
+use chrono::{Datelike, NaiveDate, TimeZone};
 use rusqlite::Connection;
 
 use super::group_key::KeyResolver;
@@ -61,6 +61,8 @@ pub struct HeroSection {
     pub plays: i64,
     pub average_ms_per_day: i64,
     pub artists: i64,
+    pub previous_ms: Option<i64>,
+    pub pace_projection_ms: Option<i64>,
     pub comparison_percent: Option<i64>,
     pub comparison_presentation: Option<ComparisonPresentation>,
 }
@@ -200,11 +202,25 @@ pub fn compute<Tz: TimeZone>(
     let comparison_percent = previous_ms
         .filter(|value| *value >= COMPARISON_EFFECTIVELY_ZERO_MS)
         .and_then(|value| comparison_percent(total_ms, value));
+    let elapsed_days = elapsed_days(tz, &range).max(1);
+    let pace_projection_ms = match period {
+        StatsPeriod::YearToDate(year)
+            if tz
+                .timestamp_opt(now_unix, 0)
+                .earliest()
+                .is_some_and(|now| now.year() == year) =>
+        {
+            days_in_year(year).map(|days| (total_ms / elapsed_days).saturating_mul(days))
+        }
+        _ => None,
+    };
     let hero = HeroSection {
         total_ms,
         plays: listen_rows.len() as i64,
-        average_ms_per_day: total_ms / elapsed_days(tz, &range).max(1),
+        average_ms_per_day: total_ms / elapsed_days,
         artists: top_artists.len() as i64,
+        previous_ms,
+        pace_projection_ms,
         comparison_percent,
         comparison_presentation: previous_ms
             .and_then(|value| comparison_presentation(total_ms, value, comparison_percent)),
@@ -520,6 +536,12 @@ fn elapsed_days<Tz: TimeZone>(tz: &Tz, range: &PeriodRange) -> i64 {
     (end - start).num_days().saturating_add(1)
 }
 
+fn days_in_year(year: i32) -> Option<i64> {
+    let start = NaiveDate::from_ymd_opt(year, 1, 1)?;
+    let end = NaiveDate::from_ymd_opt(year.checked_add(1)?, 1, 1)?;
+    Some((end - start).num_days())
+}
+
 fn percent(value: i64, total: i64) -> i64 {
     if total <= 0 {
         0
@@ -535,3 +557,7 @@ mod tests;
 #[cfg(test)]
 #[path = "stats_comparison_tests.rs"]
 mod comparison_tests;
+
+#[cfg(test)]
+#[path = "stats_snapshot_hero_tests.rs"]
+mod hero_tests;
