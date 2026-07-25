@@ -52,6 +52,9 @@ pub const DISMISS: &str = N_!("Dismiss");
 pub const NEW_RELEASES_ARTISTS: &str = N_!("Artists");
 pub const TOP_ARTISTS_ONLY: &str = N_!("Top artists only");
 pub const ALL_ARTISTS: &str = N_!("All artists");
+pub const NEW_RELEASES_INCLUDE_SINGLES: &str = N_!("Include Singles");
+pub const NEW_RELEASES_INCLUDE_SINGLES_DESCRIPTION: &str =
+    N_!("Also report singles that have already been released");
 pub const FETCH_NOW: &str = N_!("Fetch now");
 pub const FETCH_FAILED_INLINE: &str = N_!("Refresh failed · showing saved releases");
 pub const NEW_RELEASES_CHECKING: &str = N_!("Checking for new releases…");
