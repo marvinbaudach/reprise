@@ -29,7 +29,7 @@ fn nr_5a_opening_the_popover_never_requests_navigation() {
 /// capped row list. The list now scrolls instead of capping, so opening it
 /// must stamp every listed release as seen, not just the first few.
 #[test]
-fn nr_9_opening_stamps_every_listed_release_seen() {
+fn nr_9a_opening_stamps_every_listed_release_seen() {
     let releases: Vec<_> = (1..=7).map(|n| release(&format!("release-{n}"))).collect();
 
     let effect = opening_effect(&releases);
@@ -52,11 +52,38 @@ fn nr_6_failure_keeps_updated_age_with_an_inline_cached_hint() {
     assert!(presentation.show_cached_failure);
 }
 
+#[test]
+fn shared_footer_uses_the_oldest_active_feed_and_names_failures() {
+    assert_eq!(
+        oldest_active_feed_timestamp(true, Some(200), true, Some(100)),
+        Some(100)
+    );
+    assert_eq!(
+        oldest_active_feed_timestamp(true, Some(200), true, None),
+        None
+    );
+    assert_eq!(
+        oldest_active_feed_timestamp(true, Some(200), false, None),
+        Some(200)
+    );
+    assert!(fetch_failure_text(false, true).contains("Concerts"));
+    let both = fetch_failure_text(true, true);
+    assert!(both.contains("saved releases") && both.contains("Concerts"));
+}
+
 /// A no-op stand-in for the window-supplied navigation callback: these
 /// tests exercise fetch/render/badge behavior, not NR-13 navigation (that
 /// lives in `release_row.rs`'s own tests).
 fn noop_show_album() -> release_row::OnShowAlbum {
     Rc::new(|_, _| {})
+}
+
+fn test_popover(
+    conn: Rc<RefCell<rusqlite::Connection>>,
+    database_path: PathBuf,
+) -> Rc<NewReleasesPopover> {
+    let concerts_runtime = ConcertsRuntime::setup(&conn.borrow());
+    NewReleasesPopover::new(conn, database_path, concerts_runtime, noop_show_album())
 }
 
 #[test]
@@ -151,20 +178,19 @@ fn nr_7_header_button_stays_hidden_with_cached_releases_while_disabled() {
     .unwrap();
     let conn = Rc::new(RefCell::new(conn));
 
-    let state = NewReleasesPopover::new(conn, PathBuf::from("unused.db"), noop_show_album());
+    let state = test_popover(conn, PathBuf::from("unused.db"));
 
     assert!(!state.button.is_visible());
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn nr_3_header_button_is_visible_only_when_releases_exist_after_first_fetch() {
+fn nr_3a_header_button_is_visible_only_when_releases_exist_after_first_fetch() {
     gtk4::init().unwrap();
     let conn = reprise_core::db::open(None).unwrap();
     reprise_core::db::migrate(&conn).unwrap();
     let conn = Rc::new(RefCell::new(conn));
-    let state =
-        NewReleasesPopover::new(conn.clone(), PathBuf::from("unused.db"), noop_show_album());
+    let state = test_popover(conn.clone(), PathBuf::from("unused.db"));
     assert!(!state.button.is_visible());
 
     reprise_core::library::settings::set_new_releases_fetch_completed(&conn.borrow(), true)
@@ -205,8 +231,7 @@ fn nr_8_enabling_the_module_reaches_a_fetch() {
     let conn = reprise_core::db::open(None).unwrap();
     reprise_core::db::migrate(&conn).unwrap();
     let conn = Rc::new(RefCell::new(conn));
-    let state =
-        NewReleasesPopover::new(conn.clone(), PathBuf::from("unused.db"), noop_show_album());
+    let state = test_popover(conn.clone(), PathBuf::from("unused.db"));
     let runtime = ArtistNewsRuntime::setup(&conn.borrow());
     bind_runtime(&state, &runtime);
 
@@ -236,7 +261,7 @@ fn nr_8_enabling_the_module_reaches_a_fetch() {
 /// exercises the same production code path the real signal would.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn nr_9_opening_the_popover_clears_the_badge() {
+fn nr_9a_opening_the_popover_clears_the_badge() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     if gtk4::init().is_err() {
         return;
@@ -259,7 +284,7 @@ fn nr_9_opening_the_popover_clears_the_badge() {
         .unwrap();
     }
     let conn = Rc::new(RefCell::new(conn));
-    let state = NewReleasesPopover::new(conn, PathBuf::from("unused.db"), noop_show_album());
+    let state = test_popover(conn, PathBuf::from("unused.db"));
 
     assert!(
         state.badge.is_visible(),
@@ -292,7 +317,7 @@ fn enabling_starts_the_refresh_timer_and_disabling_stops_it() {
         .unwrap();
     reprise_core::library::settings::set_new_releases_fetch_completed(&conn, true).unwrap();
     let conn = Rc::new(RefCell::new(conn));
-    let state = NewReleasesPopover::new(conn, PathBuf::from("unused.db"), noop_show_album());
+    let state = test_popover(conn, PathBuf::from("unused.db"));
 
     assert!(
         !state.has_active_timer(),
@@ -356,7 +381,7 @@ fn nr_12_show_history_switches_the_stack_and_back_returns_to_the_list() {
     let conn = reprise_core::db::open(None).unwrap();
     reprise_core::db::migrate(&conn).unwrap();
     let conn = Rc::new(RefCell::new(conn));
-    let state = NewReleasesPopover::new(conn, PathBuf::from("unused.db"), noop_show_album());
+    let state = test_popover(conn, PathBuf::from("unused.db"));
 
     assert_eq!(state.stack.visible_child_name().as_deref(), Some(LIST_PAGE));
 
@@ -404,8 +429,7 @@ fn nr_12_restoring_from_the_history_page_unhides_the_release() {
     .unwrap();
     reprise_core::artist_news::set_release_hidden(&conn, "release", true).unwrap();
     let conn = Rc::new(RefCell::new(conn));
-    let state =
-        NewReleasesPopover::new(conn.clone(), PathBuf::from("unused.db"), noop_show_album());
+    let state = test_popover(conn.clone(), PathBuf::from("unused.db"));
 
     state.show_history();
 

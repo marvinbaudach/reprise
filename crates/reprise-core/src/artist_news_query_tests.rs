@@ -75,7 +75,7 @@ fn nr_9a_unseen_badge_excludes_complete_albums_but_keeps_partial_ones() {
 }
 
 #[test]
-fn nr_3_opening_marks_seen_clears_badge() {
+fn nr_3a_opening_marks_seen_clears_badge() {
     let conn = migrated_conn();
     insert_release(&conn, "one", None);
     insert_release(&conn, "two", None);

@@ -986,7 +986,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   (`/release-group/{mbid}/front-250`). Ein fehlendes Cover ist Normalzustand
   und zeigt sofort eine gleich große Kachel aus gespeicherter Artist-
   Akzentfarbe plus Initialen — niemals ein Loch oder einen Dauer-Spinner.
-- **NR-3** [aktiv] [gtk] — Die Header-Lupe ✦ erscheint nur bei vorhandenen
+- **NR-3** [ersetzt durch NR-3a] [gtk] — Die Header-Lupe ✦ erscheint nur bei vorhandenen
   Einträgen und trägt einen Badge ausschließlich für `seen_at IS NULL`.
   Öffnen stempelt die gelistete Episode als gesehen; sie badgt nie erneut,
   erst ein später neu gefundener Eintrag erzeugt wieder einen Badge (FB-4).
@@ -1029,7 +1029,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   einen Start-Abruf gibt es nicht. NR-8 schließt diese Schleife, ohne NR-5 zu
   kippen. Datenschutzlich unverändert: Netzverkehr entsteht ausschließlich nach
   ausdrücklicher Aktivierung, nur sofort statt nie.
-- **NR-9** [aktiv] [gtk] — setzt auf NR-3 auf (NR-3 bleibt aktiv): Der Badge
+- **NR-9** [ersetzt durch NR-9a] [gtk] — setzt auf NR-3 auf: Der Badge
   aus NR-3 zeigt die **Anzahl** der Einträge mit `seen_at IS NULL`, ab 10 als
   „9+", verschwindet mit dem Öffnen (alle gelisteten Einträge werden
   gestempelt) und rendert bei 0 kein leeres Element.
@@ -1051,23 +1051,21 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   erschienene Releases werden markiert (nicht herausgefiltert) und bieten
   die Aktion „Show in library" (Navigieren + Fokussieren, **kein** direkter
   Play-Pfad).
-- **NR-3a** [geplant] [gtk] — Der Header-Auslöser öffnet „Updates" und ist
+- **NR-3a** [aktiv] [gtk] — Der Header-Auslöser öffnet „Updates" und ist
   sichtbar, sobald mindestens ein aktiver Feed Einträge oder einen
   Erstlauf-Zustand nach NR-8 hat. Sein Badge zählt ausschließlich ungesehene
   Einträge aller aktiven, fetch-bereiten Feeds.
-  <!-- REVIEW: Regelvorschlag -->
 - **NR-5b** [geplant] [gtk] — Das Popover ist transient; Öffnen/Schließen
   verändert den Navigations-Stack nie. Explizite Zeilen-Aktionen und die
   Sprungzeilen „Show all releases/concerts →" navigieren regulär und
   schließen das Popover. Das Popover hat keine internen Unterseiten; der
   Verlauf lebt in der Releases-Vollansicht (NR-12a).
   <!-- REVIEW: Regelvorschlag -->
-- **NR-9a** [geplant] [gtk] — Das Badge zeigt die Summe ungesehener Releases
+- **NR-9a** [aktiv] [gtk] — Das Badge zeigt die Summe ungesehener Releases
   und Konzerte, ab 10 als „9+", und rendert bei 0 nichts. Öffnen stempelt die
   gesamte Delta-Menge beider Sektionen im aktuellen Scope. Vollständig in der
   Bibliothek vorhandene Releases werden gelistet und gestempelt, zählen aber
   nie in den Unseen-Badge.
-  <!-- REVIEW: Regelvorschlag -->
 - **NR-12a** [geplant] [gtk] — Die persistente Historie aller je gezeigten
   Meldungen lebt in der Releases-Vollansicht als eigenem Sidebar-Ort.
   Ausgeblendete Einträge sind dort über den Hidden-Filter einzeln mit „Show
