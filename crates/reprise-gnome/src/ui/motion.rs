@@ -18,6 +18,12 @@ use libadwaita::prelude::AnimationExt;
 pub(in crate::ui) const MICRO_MS: u32 = 150;
 pub(in crate::ui) const STANDARD_MS: u32 = 250;
 pub(in crate::ui) const AMBIENT_MS: u32 = 400;
+// My Stats entrance choreography (design variant 2a).
+pub(in crate::ui) const STATS_COUNT_MS: u32 = 600;
+pub(in crate::ui) const STATS_REVEAL_MS: u32 = 500;
+pub(in crate::ui) const STATS_BAR_MS: u32 = 350;
+pub(in crate::ui) const STATS_TWEEN_MS: u32 = 200;
+pub(in crate::ui) const STATS_STAGGER_MS: u32 = 70;
 
 pub(in crate::ui) const MICRO_EASING: adw::Easing = adw::Easing::EaseOutQuad;
 pub(in crate::ui) const STANDARD_EASING: adw::Easing = adw::Easing::EaseOutCubic;
@@ -48,6 +54,22 @@ pub(in crate::ui) const STANDARD: MotionToken = MotionToken {
 pub(in crate::ui) const AMBIENT: MotionToken = MotionToken {
     duration_ms: AMBIENT_MS,
     easing: AMBIENT_EASING,
+};
+pub(in crate::ui) const STATS_COUNT: MotionToken = MotionToken {
+    duration_ms: STATS_COUNT_MS,
+    easing: STANDARD_EASING,
+};
+pub(in crate::ui) const STATS_REVEAL: MotionToken = MotionToken {
+    duration_ms: STATS_REVEAL_MS,
+    easing: STANDARD_EASING,
+};
+pub(in crate::ui) const STATS_BAR: MotionToken = MotionToken {
+    duration_ms: STATS_BAR_MS,
+    easing: STANDARD_EASING,
+};
+pub(in crate::ui) const STATS_TWEEN: MotionToken = MotionToken {
+    duration_ms: STATS_TWEEN_MS,
+    easing: STANDARD_EASING,
 };
 
 pub(in crate::ui) const fn half(token: MotionToken) -> u32 {
@@ -92,6 +114,11 @@ mod tests {
         assert_eq!(MICRO_MS, 150);
         assert_eq!(STANDARD_MS, 250);
         assert_eq!(AMBIENT_MS, 400);
+        assert_eq!(STATS_COUNT_MS, 600);
+        assert_eq!(STATS_REVEAL_MS, 500);
+        assert_eq!(STATS_BAR_MS, 350);
+        assert_eq!(STATS_TWEEN_MS, 200);
+        assert_eq!(STATS_STAGGER_MS, 70);
         assert_eq!(half(MICRO), 75);
         assert_eq!(half(STANDARD), 125);
         assert_eq!(half(AMBIENT), 200);
@@ -105,6 +132,10 @@ mod tests {
         assert_eq!(MICRO.easing, MICRO_EASING);
         assert_eq!(STANDARD.easing, STANDARD_EASING);
         assert_eq!(AMBIENT.easing, AMBIENT_EASING);
+        assert_eq!(STATS_COUNT.easing, STANDARD_EASING);
+        assert_eq!(STATS_REVEAL.easing, STANDARD_EASING);
+        assert_eq!(STATS_BAR.easing, STANDARD_EASING);
+        assert_eq!(STATS_TWEEN.easing, STANDARD_EASING);
         assert_eq!(MICRO_CSS_EASING, "ease-out");
         assert_eq!(STANDARD_CSS_EASING, "cubic-bezier(0.16, 1, 0.3, 1)");
         assert_eq!(AMBIENT_CSS_EASING, STANDARD_CSS_EASING);

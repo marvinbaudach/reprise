@@ -191,6 +191,11 @@ impl StatsRibbon {
         self.data.borrow_mut().reveal_fraction = fraction.clamp(0.0, 1.0);
         self.area.queue_draw();
     }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn reveal_fraction(&self) -> f64 {
+        self.data.borrow().reveal_fraction
+    }
 }
 
 fn draw(

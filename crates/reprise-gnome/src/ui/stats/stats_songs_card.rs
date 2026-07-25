@@ -34,6 +34,7 @@ pub(in crate::ui) struct StatsSongsCard {
     #[cfg_attr(not(test), allow(dead_code))]
     time_sort: gtk4::ToggleButton,
     play_buttons: Rc<RefCell<Vec<gtk4::Button>>>,
+    summary_bars: Rc<RefCell<Vec<gtk4::LevelBar>>>,
     row_clicks: Rc<RefCell<Vec<gtk4::GestureClick>>>,
     snapshot: Rc<RefCell<Option<StatsSnapshot>>>,
     sort_by: Rc<Cell<SortBy>>,
@@ -88,6 +89,7 @@ impl StatsSongsCard {
         let on_add_to_queue: IdCallback = Rc::new(RefCell::new(None));
         let context_actions = Rc::new(RefCell::new(Vec::new()));
         let play_buttons = Rc::new(RefCell::new(Vec::new()));
+        let summary_bars = Rc::new(RefCell::new(Vec::new()));
         let row_clicks = Rc::new(RefCell::new(Vec::new()));
 
         reveal_button.connect_clicked(glib::clone!(
@@ -140,6 +142,7 @@ impl StatsSongsCard {
             plays_sort,
             time_sort,
             play_buttons,
+            summary_bars,
             row_clicks,
             snapshot,
             sort_by,
@@ -174,6 +177,7 @@ impl StatsSongsCard {
         clear(&self.rows);
         self.context_actions.borrow_mut().clear();
         self.play_buttons.borrow_mut().clear();
+        self.summary_bars.borrow_mut().clear();
         self.row_clicks.borrow_mut().clear();
         let tracks = snapshot.top_tracks_sorted(SortBy::Plays);
         let leader = tracks.first().map_or(0, |track| track.play_count);
@@ -234,6 +238,7 @@ impl StatsSongsCard {
         bar.set_max_value(1.0);
         bar.set_value(relative_value(track.play_count, leader));
         bar.set_width_request(110);
+        self.summary_bars.borrow_mut().push(bar.clone());
         body.append(&bar);
         let plays = label(
             &format!("{} plays", format_thousands(track.play_count)),
@@ -334,6 +339,10 @@ impl StatsSongsCard {
 
     pub(in crate::ui) fn set_on_add_to_queue(&self, callback: impl Fn(i64) + 'static) {
         *self.on_add_to_queue.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(super) fn summary_bars(&self) -> Vec<gtk4::LevelBar> {
+        self.summary_bars.borrow().clone()
     }
 }
 
