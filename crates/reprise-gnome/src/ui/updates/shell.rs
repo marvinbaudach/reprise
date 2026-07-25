@@ -5,7 +5,8 @@ use gtk4::prelude::*;
 use crate::ui::strings;
 
 use super::badge;
-use super::popover::{HISTORY_PAGE, LIST_PAGE, SCROLLER_MAX_HEIGHT};
+use super::concerts_section::ConcertsSection;
+use super::popover::SCROLLER_MAX_HEIGHT;
 
 const POPOVER_WIDTH: i32 = 336;
 
@@ -13,14 +14,15 @@ pub(super) struct UpdatesShell {
     pub button: gtk4::MenuButton,
     pub badge: gtk4::Label,
     pub popover: gtk4::Popover,
-    pub stack: gtk4::Stack,
     pub news_section: gtk4::Box,
+    pub concerts_section: ConcertsSection,
     pub list: gtk4::ListBox,
     pub empty: gtk4::Label,
     pub new_tag: gtk4::Label,
-    pub history_row: gtk4::Button,
-    pub history_row_count: gtk4::Label,
-    pub history_page: gtk4::Box,
+    pub releases_jump: gtk4::Button,
+    pub releases_jump_label: gtk4::Label,
+    pub concerts_jump: gtk4::Button,
+    pub concerts_jump_label: gtk4::Label,
     pub fetch_button: gtk4::Button,
     pub fetch_stack: gtk4::Stack,
     pub spinner: gtk4::Spinner,
@@ -65,41 +67,21 @@ pub(super) fn build() -> UpdatesShell {
     news_section.append(&header_row);
     news_section.append(&scroller);
 
+    let concerts_section = ConcertsSection::new();
     let separator = gtk4::Separator::new(gtk4::Orientation::Horizontal);
     separator.add_css_class("new-release-separator");
-    let history_row_label = gtk4::Label::new(Some(&strings::text(strings::SHOW_HISTORY)));
-    history_row_label.add_css_class("new-release-history-label");
-    let history_row_count = gtk4::Label::new(None);
-    history_row_count.add_css_class("new-release-history-count");
-    let history_text = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
-    history_text.set_hexpand(true);
-    history_text.append(&history_row_label);
-    history_text.append(&history_row_count);
-    let history_content = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-    history_content.append(&gtk4::Image::from_icon_name(
-        "document-open-recent-symbolic",
-    ));
-    history_content.append(&history_text);
-    history_content.append(&gtk4::Image::from_icon_name("go-next-symbolic"));
-    let history_row = gtk4::Button::builder()
-        .child(&history_content)
-        .css_classes(["flat", "new-release-history-row"])
-        .build();
+    let (releases_jump, releases_jump_label) = build_jump_row();
+    let (concerts_jump, concerts_jump_label) = build_jump_row();
 
     let (footer, fetch_button, fetch_stack, spinner, updated, failure) = build_footer();
     let list_page = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
     list_page.append(&updates_header);
     list_page.append(&news_section);
+    list_page.append(concerts_section.root());
     list_page.append(&separator);
-    list_page.append(&history_row);
+    list_page.append(&releases_jump);
+    list_page.append(&concerts_jump);
     list_page.append(&footer);
-    let history_page = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
-    let stack = gtk4::Stack::new();
-    stack.set_transition_type(gtk4::StackTransitionType::SlideLeftRight);
-    stack.set_transition_duration(crate::ui::motion::STANDARD_MS);
-    stack.add_named(&list_page, Some(LIST_PAGE));
-    stack.add_named(&history_page, Some(HISTORY_PAGE));
-    stack.set_visible_child_name(LIST_PAGE);
 
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     content.set_size_request(POPOVER_WIDTH, -1);
@@ -107,7 +89,7 @@ pub(super) fn build() -> UpdatesShell {
     content.set_margin_bottom(10);
     content.set_margin_start(10);
     content.set_margin_end(10);
-    content.append(&stack);
+    content.append(&list_page);
     popover.set_child(Some(&content));
     button.set_popover(Some(&popover));
 
@@ -115,20 +97,35 @@ pub(super) fn build() -> UpdatesShell {
         button,
         badge,
         popover,
-        stack,
         news_section,
+        concerts_section,
         list,
         empty,
         new_tag,
-        history_row,
-        history_row_count,
-        history_page,
+        releases_jump,
+        releases_jump_label,
+        concerts_jump,
+        concerts_jump_label,
         fetch_button,
         fetch_stack,
         spinner,
         updated,
         failure,
     }
+}
+
+fn build_jump_row() -> (gtk4::Button, gtk4::Label) {
+    let label = gtk4::Label::new(None);
+    label.set_xalign(0.0);
+    label.set_hexpand(true);
+    label.add_css_class("new-release-history-label");
+    let content = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    content.append(&label);
+    let button = gtk4::Button::builder()
+        .child(&content)
+        .css_classes(["flat", "new-release-history-row"])
+        .build();
+    (button, label)
 }
 
 fn build_footer() -> (

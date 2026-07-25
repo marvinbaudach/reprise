@@ -2,7 +2,7 @@
 //! live theme accent (`@accent_bg_color`/`@accent_color`), never a hardcoded
 //! blurple — a theme switch must recolor this popover along with everything
 //! else. Styles exactly the `new-release-*` classes B1–C actually attach to
-//! widgets (see `release_row.rs`, `history_page.rs`, `popover.rs`,
+//! widgets (see `release_row.rs`, `concerts_section.rs`, `popover.rs`,
 //! `badge.rs`, `release_cover.rs`).
 //!
 //! GTK CSS has no `text-transform`, so `.new-release-header` leans on
@@ -146,9 +146,7 @@ pub(in crate::ui) fn css() -> String {
     .new-release-cover {\
         border-radius: 4px;\
     }\
-    /* Dimmed hidden rows in the history page. `history_page.rs` also sets \
-       widget opacity imperatively (`row_opacity`) for the same value; this \
-       keeps the class meaningful as a CSS hook too. */\
+    /* Shared dimming hook retained for release-history surfaces. */\
     .new-release-hidden {\
         opacity: 0.55;\
     }\

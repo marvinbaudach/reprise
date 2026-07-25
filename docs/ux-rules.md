@@ -1000,7 +1000,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   verändert den Navigations-Stack nie. Erst „See all" navigiert regulär in
   den Digest-Ort; Schließen kehrt ohne Zustandsverlust zur aktuellen Ansicht
   zurück.
-- **NR-5a** [aktiv] [gtk] — Das Popover ist transient; Öffnen/Schließen
+- **NR-5a** [ersetzt durch NR-5b] [gtk] — Das Popover ist transient; Öffnen/Schließen
   verändert den Navigations-Stack nie. Nur explizite Zeilen-Aktionen (Show in
   library) navigieren regulär und schließen das Popover; der Verlauf ist eine
   Popover-interne Unterseite ohne Navigation.
@@ -1041,7 +1041,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   Priorität: MusicBrainz-URL-Relations der Release-Group (Bandcamp/Kauf/
   Streaming vor offizieller Homepage/Discography) → Fallback
   MusicBrainz-Release-Group-Seite. Geöffnet wird extern (Standardbrowser).
-- **NR-12** [aktiv] [gtk] — Der Verlauf ist eine persistente Historie
+- **NR-12** [ersetzt durch NR-12a] [gtk] — Der Verlauf ist eine persistente Historie
   aller je gezeigten Meldungen als **Popover-Unterseite** (kein eigener
   Navigations-Ort), gruppiert nach Zeitraum, ausgeblendete Einträge einzeln
   rückholbar. Retention: 6 Monate **und** höchstens 200 Einträge (strengere
@@ -1055,23 +1055,21 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   sichtbar, sobald mindestens ein aktiver Feed Einträge oder einen
   Erstlauf-Zustand nach NR-8 hat. Sein Badge zählt ausschließlich ungesehene
   Einträge aller aktiven, fetch-bereiten Feeds.
-- **NR-5b** [geplant] [gtk] — Das Popover ist transient; Öffnen/Schließen
+- **NR-5b** [aktiv] [gtk] — Das Popover ist transient; Öffnen/Schließen
   verändert den Navigations-Stack nie. Explizite Zeilen-Aktionen und die
   Sprungzeilen „Show all releases/concerts →" navigieren regulär und
   schließen das Popover. Das Popover hat keine internen Unterseiten; der
   Verlauf lebt in der Releases-Vollansicht (NR-12a).
-  <!-- REVIEW: Regelvorschlag -->
 - **NR-9a** [aktiv] [gtk] — Das Badge zeigt die Summe ungesehener Releases
   und Konzerte, ab 10 als „9+", und rendert bei 0 nichts. Öffnen stempelt die
   gesamte Delta-Menge beider Sektionen im aktuellen Scope. Vollständig in der
   Bibliothek vorhandene Releases werden gelistet und gestempelt, zählen aber
   nie in den Unseen-Badge.
-- **NR-12a** [geplant] [gtk] — Die persistente Historie aller je gezeigten
+- **NR-12a** [aktiv] [gtk] — Die persistente Historie aller je gezeigten
   Meldungen lebt in der Releases-Vollansicht als eigenem Sidebar-Ort.
   Ausgeblendete Einträge sind dort über den Hidden-Filter einzeln mit „Show
   again" rückholbar. Retention bleibt: sechs Monate UND höchstens 200
   Einträge, hartes Löschen, nie innerhalb des 90-Tage-Fetch-Fensters.
-  <!-- REVIEW: Regelvorschlag -->
 - **NR-14** [aktiv] [gtk] — Die Releases-Vollansicht ist eine Tabelle
   `Date · Title · Artist · Type · Status`, standardmäßig nach Datum
   absteigend. Status ist `In library`, sonst `upcoming` oder `released`.
@@ -2134,12 +2132,11 @@ Dateien.
 - **CONC-6** [aktiv] [gtk] — Similar-Zeilen tragen dimm „similar to
   {seed}" und verschwinden mit „Library artists only". Die Source-Pill ist
   sichtbar, sobald Similar aktiviert ist oder Similar-Zeilen existieren.
-- **CONC-7** [geplant] [gtk] — Das Updates-Popover zeigt die Concerts-Sektion
+- **CONC-7** [aktiv] [gtk] — Das Updates-Popover zeigt die Concerts-Sektion
   nur bei aktivem Modul, höchstens drei ungesehene Einträge des persistenten
   Filter-Scopes und „Show all concerts (N) →". Öffnen stempelt die gesamte
   Delta-Menge beider Sektionen. Das Header-Badge summiert ungesehene Einträge
   aller aktiven, fetch-bereiten Feeds nach dem `badge_presentation`-Idiom.
-  <!-- REVIEW: Regelvorschlag -->
 
 ---
 

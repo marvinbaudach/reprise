@@ -355,6 +355,15 @@ pub fn build(
             );
         })
     };
+    let on_open_updates_view: crate::ui::updates::popover::OnOpenView = {
+        let navigator = metadata_navigator.clone();
+        Rc::new(move |target| {
+            navigator.navigate(
+                reprise_core::browser::navigation::NavigationIntent::Sidebar(target),
+                "updates jump",
+            );
+        })
+    };
     let concerts_view = Rc::new(crate::ui::concerts::install(
         conn.clone(),
         &concerts_runtime,
@@ -457,7 +466,10 @@ pub fn build(
         db_path,
         &artist_news,
         &concerts_runtime,
-        on_show_album,
+        crate::ui::updates::popover::UpdatesCallbacks {
+            on_show_album,
+            on_open_view: on_open_updates_view,
+        },
     );
     let compact_root = player
         .as_ref()

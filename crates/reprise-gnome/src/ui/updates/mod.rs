@@ -1,6 +1,7 @@
 pub(in crate::ui) mod badge;
+mod concerts_section;
 pub(in crate::ui) mod css;
-pub(in crate::ui) mod history_page;
+mod feed_snapshot;
 pub(in crate::ui) mod popover;
 pub(in crate::ui) mod release_cover;
 pub(in crate::ui) mod release_row;
