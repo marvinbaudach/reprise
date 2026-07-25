@@ -94,7 +94,7 @@ impl Shared {
 
     /// Removes the registry entry for `item` (and prunes any dead entries),
     /// releasing the cell widgets that entry's re-applier captured. See
-    /// [`now_playing_marker::unregister_cell`] for why this must run on unbind.
+    /// [`unregister_cell`] for why this must run on unbind.
     pub(in crate::ui) fn unregister_now_playing_marker(&self, item: &gtk4::ListItem) {
         let target = item.as_ptr();
         self.now_playing_markers.borrow_mut().retain(|marker| {
