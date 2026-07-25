@@ -25,6 +25,7 @@ mod artist_news_parsing;
 mod artist_news_pipeline;
 mod artist_news_query;
 pub mod artist_news_refresh;
+mod artist_news_view;
 pub mod artist_portrait;
 pub mod browser;
 pub mod concerts;
@@ -74,6 +75,8 @@ mod artist_news_parsing_tests;
 mod artist_news_pipeline_tests;
 #[cfg(test)]
 mod artist_news_query_tests;
+#[cfg(test)]
+mod artist_news_view_tests;
 #[cfg(test)]
 mod fingerprint_tests;
 #[cfg(test)]

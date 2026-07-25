@@ -6,7 +6,7 @@
 use chrono::NaiveDate;
 use rusqlite::Connection;
 
-use crate::artist_news::{include_singles, normalize, AlbumNews, OWNED_ALBUM_MIN_TRACKS};
+use crate::artist_news::{include_singles, normalize, AlbumNews};
 use crate::artist_news_candidates::{artists_for_fetch, ArtistCandidate, FetchScope};
 use crate::artist_news_parsing::{
     artist_payload_valid, artist_search_url, parse_artist_mbid, parse_release_groups,
@@ -161,8 +161,7 @@ where
                 continue;
             }
         };
-        let local_albums = local_albums(conn, &candidate.name).map_err(database_error)?;
-        let items = parse_release_groups(&body, &local_albums, today, include_singles);
+        let items = parse_release_groups(&body, today, include_singles);
         let accent = normalize_fallback_accent(fallback_accent(conn, &candidate.name));
         upsert_releases(conn, &candidate.name, &mbid, now, &accent, &items)
             .map_err(database_error)?;
@@ -240,47 +239,6 @@ fn artist_cache_is_fresh(
 ) -> Result<bool, rusqlite::Error> {
     let last_attempt = crate::artist_news_ledger::last_attempt_at(conn, artist_key)?;
     Ok(last_attempt.is_some_and(|attempt| now.saturating_sub(attempt).max(0) <= FETCH_TTL_SECONDS))
-}
-
-fn local_albums(conn: &Connection, artist: &str) -> Result<Vec<String>, rusqlite::Error> {
-    let mut statement = conn.prepare(
-        "SELECT album FROM tracks
-         WHERE lower(trim(artist)) = lower(trim(?1)) AND trim(album) <> ''
-           AND removed_at IS NULL AND missing_since IS NULL",
-    )?;
-    let albums = statement
-        .query_map([artist], |row| row.get::<_, String>(0))?
-        .collect::<Result<Vec<_>, _>>()?;
-
-    // Aggregate in Rust under `normalize()`, not in SQL, for the same reason
-    // `local_album_track_counts` does (see its comment): SQL's
-    // `lower(trim(x))` only lowercases and trims the ends, while `normalize()`
-    // also collapses internal whitespace runs — grouping in SQL would split a
-    // single album's tracks across separate groups whenever a tagging
-    // inconsistency differs only by internal whitespace, undercounting it
-    // below `OWNED_ALBUM_MIN_TRACKS`. One representative (first-seen) raw
-    // album string is kept per group so the caller still gets displayable
-    // titles rather than normalized keys.
-    let mut grouped: std::collections::HashMap<String, (String, i64)> =
-        std::collections::HashMap::new();
-    for album in albums {
-        let key = normalize(&album);
-        let entry = grouped.entry(key).or_insert_with(|| (album, 0));
-        entry.1 += 1;
-    }
-    Ok(grouped
-        .into_values()
-        .filter(|(_, count)| *count >= OWNED_ALBUM_MIN_TRACKS)
-        .map(|(album, _)| album)
-        .collect())
-}
-
-#[cfg(test)]
-pub(crate) fn local_albums_for_test(
-    conn: &Connection,
-    artist: &str,
-) -> Result<Vec<String>, rusqlite::Error> {
-    local_albums(conn, artist)
 }
 
 fn upsert_releases(
