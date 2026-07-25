@@ -482,7 +482,7 @@ msgstr "शीर्षक"
 
 #: crates/reprise-gnome/src/ui/strings.rs:339
 msgid "Cover"
-msgstr "आवरण"
+msgstr "कवर"
 
 #: crates/reprise-gnome/src/ui/strings.rs:340
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:162
@@ -3533,7 +3533,7 @@ msgstr ""
 #~ msgstr "चमकीलापन"
 
 #~ msgid "Albums"
-#~ msgstr "एलबम"
+#~ msgstr "एल्बम"
 
 #~ msgid "Unknown Artist"
 #~ msgstr "अज्ञात कलाकार"

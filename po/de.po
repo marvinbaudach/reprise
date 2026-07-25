@@ -472,7 +472,7 @@ msgstr "Musikdateien werden gesucht…"
 #: crates/reprise-gnome/src/ui/strings.rs:317
 #, rust-format
 msgid "{processed} of {total} files scanned"
-msgstr "{processed} von {total} Dateien gescannt"
+msgstr "{processed} von {total} Dateien eingelesen"
 
 #: crates/reprise-gnome/src/ui/strings.rs:323
 msgid "Scan failed: "
@@ -1437,7 +1437,7 @@ msgid ""
 "duration. File paths, filenames, library roots, ratings, listening history, "
 "playlists, and device data are never sent."
 msgstr ""
-"Reprise sendet nur vorhandene Titel-, Künstler-, Album- und Album-Künstler-"
+"Reprise sendet nur vorhandene Titel-, Interpreten-, Album- und Albuminterpreten-"
 "Angaben, MusicBrainz-IDs und die Dauer an MusicBrainz. AcoustID erhält nur "
 "einen Fingerprint und die Dauer. Dateipfade, Dateinamen, Bibliothekswurzeln,"
 " Bewertungen, Hörverlauf, Wiedergabelisten und Gerätedaten werden niemals "
@@ -1946,7 +1946,7 @@ msgstr "Neue Veröffentlichungen"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:38
 msgid "Show upcoming and newly released albums · contacts MusicBrainz"
-msgstr "Kommende und neu erschienene Alben anzeigen · kontaktiert MusicBrainz"
+msgstr "Kommende und neu veröffentlichte Alben anzeigen · kontaktiert MusicBrainz"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:39
 msgid "Album Covers"
@@ -2224,7 +2224,7 @@ msgstr "Cover & Songtexte: {remaining} in der Warteschlange"
 #: crates/reprise-gnome/src/ui/strings_tooltips.rs:43
 #, rust-format
 msgid "Scanning · {pct}%"
-msgstr "Scanne · {pct} %"
+msgstr "Einlesen · {pct} %"
 
 #: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:12
 msgid ""
@@ -3631,12 +3631,12 @@ msgstr "In den Einstellungen aktivieren"
 
 #: crates/reprise-gnome/src/ui/track_list/track_list_queue_menu.rs:18
 msgid "Removed one track from Queue"
-msgstr "Einen Titel aus der Queue entfernt"
+msgstr "Einen Titel aus der Warteschlange entfernt"
 
 #: crates/reprise-gnome/src/ui/track_list/track_list_queue_menu.rs:19
 #, rust-format
 msgid "Removed {count} tracks from Queue"
-msgstr "{count} Titel aus der Queue entfernt"
+msgstr "{count} Titel aus der Warteschlange entfernt"
 
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:14
 msgid "Window Decorations"

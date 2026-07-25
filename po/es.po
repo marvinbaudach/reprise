@@ -501,7 +501,7 @@ msgstr "Título"
 
 #: crates/reprise-gnome/src/ui/strings.rs:339
 msgid "Cover"
-msgstr "Cubierta"
+msgstr "Carátula"
 
 #: crates/reprise-gnome/src/ui/strings.rs:340
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:162
@@ -566,7 +566,7 @@ msgstr "Repetir"
 #: crates/reprise-gnome/src/ui/strings.rs:362
 #: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:23
 msgid "Rating"
-msgstr "Calificación"
+msgstr "Valoración"
 
 #: crates/reprise-gnome/src/ui/strings.rs:370
 #, rust-format
@@ -1468,7 +1468,7 @@ msgstr "Selección"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:24
 msgid "Scan Options"
-msgstr "Opciones de escaneado"
+msgstr "Opciones de análisis"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:25
 msgid "Run Scan Now"
@@ -3687,7 +3687,7 @@ msgstr "Barra de título independiente"
 #~ msgstr "Anillos"
 
 #~ msgid "F11 Fullscreen · color follows the cover accent"
-#~ msgstr "F11 Pantalla completa · el color sigue el acento de la portada"
+#~ msgstr "F11 Pantalla completa · el color sigue el acento de la carátula"
 
 #~ msgid "Analyze audio locally"
 #~ msgstr "Analizar el audio localmente"

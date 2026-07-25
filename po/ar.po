@@ -491,7 +491,7 @@ msgstr "العنوان"
 
 #: crates/reprise-gnome/src/ui/strings.rs:339
 msgid "Cover"
-msgstr "تغطية"
+msgstr "الغلاف"
 
 #: crates/reprise-gnome/src/ui/strings.rs:340
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:162
@@ -507,7 +507,7 @@ msgstr "الألبوم"
 
 #: crates/reprise-gnome/src/ui/strings.rs:342
 msgid "Track"
-msgstr "المقطوعة"
+msgstr "المقطع"
 
 #: crates/reprise-gnome/src/ui/strings.rs:343
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:167
@@ -3549,4 +3549,4 @@ msgstr ""
 #~ msgstr "الألبومات"
 
 #~ msgid "Unknown Artist"
-#~ msgstr "مؤدٍ مجهول"
+#~ msgstr "فنان غير معروف"
