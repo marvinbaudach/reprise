@@ -171,6 +171,8 @@ pub enum BrowserPlace {
     Tracks(Box<TrackPlace>),
     ImportErrors,
     MyStats,
+    Releases,
+    Concerts,
     Conversions,
     Device { serial: String },
 }
@@ -193,7 +195,12 @@ impl BrowserPlace {
     pub fn collection(&self) -> Option<&TrackCollection> {
         match self {
             Self::Tracks(place) => Some(&place.collection),
-            Self::ImportErrors | Self::MyStats | Self::Conversions | Self::Device { .. } => None,
+            Self::ImportErrors
+            | Self::MyStats
+            | Self::Releases
+            | Self::Concerts
+            | Self::Conversions
+            | Self::Device { .. } => None,
         }
     }
 
@@ -206,7 +213,12 @@ impl BrowserPlace {
     pub fn track_state(&self) -> Option<&TrackViewState> {
         match self {
             Self::Tracks(place) => Some(&place.state),
-            Self::ImportErrors | Self::MyStats | Self::Conversions | Self::Device { .. } => None,
+            Self::ImportErrors
+            | Self::MyStats
+            | Self::Releases
+            | Self::Concerts
+            | Self::Conversions
+            | Self::Device { .. } => None,
         }
     }
 
@@ -214,7 +226,12 @@ impl BrowserPlace {
     pub fn track_state_mut(&mut self) -> Option<&mut TrackViewState> {
         match self {
             Self::Tracks(place) => Some(&mut place.state),
-            Self::ImportErrors | Self::MyStats | Self::Conversions | Self::Device { .. } => None,
+            Self::ImportErrors
+            | Self::MyStats
+            | Self::Releases
+            | Self::Concerts
+            | Self::Conversions
+            | Self::Device { .. } => None,
         }
     }
 
@@ -237,6 +254,8 @@ impl BrowserPlace {
             },
             Self::ImportErrors => ViewSource::ImportErrors,
             Self::MyStats => ViewSource::MyStats,
+            Self::Releases => ViewSource::Releases,
+            Self::Concerts => ViewSource::Concerts,
             Self::Conversions => ViewSource::Conversions,
             Self::Device { serial } => ViewSource::Device {
                 serial: serial.clone(),
@@ -262,6 +281,8 @@ impl From<ViewSource> for BrowserPlace {
                 TrackCollection::Library(LibraryScope::Artist(ArtistKey::new(artist)))
             }
             ViewSource::MyStats => return Self::MyStats,
+            ViewSource::Releases => return Self::Releases,
+            ViewSource::Concerts => return Self::Concerts,
             ViewSource::Conversions => return Self::Conversions,
             ViewSource::Device { serial } => return Self::Device { serial },
         };
@@ -334,6 +355,8 @@ mod tests {
                 album_artist: "Joni Mitchell".into(),
             },
             ViewSource::Artist("Björk".into()),
+            ViewSource::Releases,
+            ViewSource::Concerts,
             ViewSource::MyStats,
             ViewSource::Device {
                 serial: "pixel-8".into(),

@@ -27,6 +27,7 @@ mod artist_news_query;
 pub mod artist_news_refresh;
 pub mod artist_portrait;
 pub mod browser;
+pub mod concerts;
 pub mod cover;
 pub mod cover_download;
 pub mod db;

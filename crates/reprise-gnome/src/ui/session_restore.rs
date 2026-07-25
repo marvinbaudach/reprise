@@ -213,6 +213,8 @@ fn apply_view_snapshot(state: &mut SessionState, view: TrackViewSnapshot) {
         ViewSource::Missing => SessionSource::Missing,
         ViewSource::ImportErrors => SessionSource::ImportErrors,
         ViewSource::MyStats
+        | ViewSource::Releases
+        | ViewSource::Concerts
         | ViewSource::Conversions
         | ViewSource::Album { .. }
         | ViewSource::Artist(_)

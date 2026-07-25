@@ -173,6 +173,8 @@ fn intent_for(place: &BrowserPlace) -> NavigationIntent {
         },
         BrowserPlace::ImportErrors => NavigationIntent::Sidebar(SidebarTarget::ImportErrors),
         BrowserPlace::MyStats => NavigationIntent::Sidebar(SidebarTarget::MyStats),
+        BrowserPlace::Releases => NavigationIntent::Sidebar(SidebarTarget::Releases),
+        BrowserPlace::Concerts => NavigationIntent::Sidebar(SidebarTarget::Concerts),
         BrowserPlace::Conversions => NavigationIntent::Sidebar(SidebarTarget::Conversions),
         BrowserPlace::Device { serial } => {
             NavigationIntent::Sidebar(SidebarTarget::Device(serial.clone()))
@@ -215,6 +217,23 @@ mod tests {
             Some(place(ViewSource::Library))
         );
         assert_eq!(simulate(&nav, nav.go_forward()), Some(album));
+    }
+
+    #[test]
+    fn updates_full_views_round_trip_through_navigation_history() {
+        let nav = NavHistory::default();
+        nav.record_route(&place(ViewSource::Library));
+        nav.record_route(&place(ViewSource::Releases));
+        nav.record_route(&place(ViewSource::Concerts));
+
+        assert_eq!(
+            simulate(&nav, nav.go_back()),
+            Some(place(ViewSource::Releases))
+        );
+        assert_eq!(
+            simulate(&nav, nav.go_forward()),
+            Some(place(ViewSource::Concerts))
+        );
     }
 
     #[test]

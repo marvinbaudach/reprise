@@ -139,7 +139,11 @@ fn default_sort_for_source(source: &ViewSource) -> Option<SortState> {
         | ViewSource::Album { .. }
         | ViewSource::Artist(_)
         | ViewSource::Device { .. } => None,
-        ViewSource::ImportErrors | ViewSource::MyStats | ViewSource::Conversions => None,
+        ViewSource::ImportErrors
+        | ViewSource::MyStats
+        | ViewSource::Releases
+        | ViewSource::Concerts
+        | ViewSource::Conversions => None,
     }
 }
 

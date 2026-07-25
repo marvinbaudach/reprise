@@ -57,6 +57,10 @@ pub enum ViewSource {
     /// sidebar routes to it; the content area shows the stats view widget
     /// instead of the `ColumnView`.
     MyStats,
+    /// The full releases table backed by the New Releases cache.
+    Releases,
+    /// The full upcoming-concerts table backed by the Concerts cache.
+    Concerts,
     /// The instrumental conversion/staging view (experimental) — a dedicated
     /// view backed by `ai_jobs` + the staging store rather than the shared
     /// track list. The sidebar routes to it only while the experimental switch
@@ -86,6 +90,8 @@ impl ViewSource {
             } => format!("album:{album}:{album_artist}"),
             Self::Artist(artist) => format!("artist:{artist}"),
             Self::MyStats => "my_stats".to_string(),
+            Self::Releases => "releases".to_string(),
+            Self::Concerts => "concerts".to_string(),
             Self::Conversions => "conversions".to_string(),
             Self::Device { serial } => format!("device:{serial}"),
         }
@@ -109,6 +115,8 @@ mod tests {
         assert_eq!(ViewSource::Queue.label(), "queue");
         assert_eq!(ViewSource::Missing.label(), "missing");
         assert_eq!(ViewSource::ImportErrors.label(), "import_errors");
+        assert_eq!(ViewSource::Releases.label(), "releases");
+        assert_eq!(ViewSource::Concerts.label(), "concerts");
         assert_eq!(ViewSource::MyStats.label(), "my_stats");
         assert_eq!(ViewSource::Conversions.label(), "conversions");
         assert_eq!(
