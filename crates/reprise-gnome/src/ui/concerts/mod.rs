@@ -11,11 +11,16 @@ mod concerts_filter_bar;
 mod concerts_model;
 mod concerts_presentation;
 mod concerts_view;
+mod concerts_worker;
 pub(super) mod css;
 
 pub(in crate::ui) use concerts_view::ConcertsView;
+pub(in crate::ui) use concerts_worker::ConcertsRuntime;
 
 #[allow(dead_code)]
-pub(in crate::ui) fn install(conn: Rc<RefCell<Connection>>) -> ConcertsView {
-    ConcertsView::new(conn)
+pub(in crate::ui) fn install(
+    conn: Rc<RefCell<Connection>>,
+    runtime: &Rc<ConcertsRuntime>,
+) -> ConcertsView {
+    ConcertsView::new(conn, runtime)
 }
