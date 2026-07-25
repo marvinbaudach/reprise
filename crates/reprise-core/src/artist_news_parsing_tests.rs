@@ -152,6 +152,24 @@ fn nr_1a_singles_require_a_complete_future_date() {
 }
 
 #[test]
+fn nr_1a_singles_window_starts_ninety_days_ago() {
+    // Same boundary as `nr_1a_album_and_ep_window_starts_ninety_days_ago`,
+    // pinned for the singles path: with `include_singles` on, a released
+    // single follows the same `NEWS_WINDOW_DAYS` window as albums and EPs.
+    let json = r#"{"release-groups":[
+      {"id":"single-edge","title":"Single Edge","first-release-date":"2026-04-14","primary-type":"Single"},
+      {"id":"too-old","title":"Too Old Single","first-release-date":"2026-04-13","primary-type":"Single"}
+    ]}"#;
+
+    let titles = parse_release_groups(json, &[], date(), true)
+        .into_iter()
+        .map(|item| item.title)
+        .collect::<Vec<_>>();
+
+    assert_eq!(titles, ["Single Edge"]);
+}
+
+#[test]
 fn nr_1a_secondary_types_are_excluded_before_the_twenty_item_cap() {
     let mut groups = vec![
         r#"{"id":"live","title":"Live","first-release-date":"2026-08-01","primary-type":"Album","secondary-types":["Live"]}"#
