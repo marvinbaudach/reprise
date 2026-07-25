@@ -306,23 +306,28 @@ impl StatsSongsCard {
 
         let popover = gtk4::PopoverMenu::from_model(Some(&menu));
         popover.set_parent(row);
+        crate::ui::popover_lifecycle::unparent_after_actions(popover.upcast_ref());
         let click = gtk4::GestureClick::new();
         click.set_button(3);
         click.connect_pressed({
-            let popover = popover.clone();
-            move |_, _, x, y| popup(&popover, x, y)
+            let popover = popover.downgrade();
+            move |_, _, x, y| {
+                let Some(popover) = popover.upgrade() else {
+                    return;
+                };
+                popup(&popover, x, y);
+            }
         });
         row.add_controller(click);
         let keys = gtk4::EventControllerKey::new();
         keys.connect_key_pressed({
-            let popover = popover.clone();
-            let row = row.clone();
+            let popover = popover.downgrade();
             let metadata = self.metadata.clone();
             let artist_target = StatsMetadataTarget::Artist {
                 track_id: track.track_id,
                 artist: track.effective_artist.clone(),
             };
-            move |_, key, _, modifiers| {
+            move |controller, key, _, modifiers| {
                 if key == gtk4::gdk::Key::Return || key == gtk4::gdk::Key::KP_Enter {
                     invoke_metadata(&metadata, artist_target.clone());
                     return glib::Propagation::Stop;
@@ -332,6 +337,12 @@ impl StatsSongsCard {
                 ) {
                     return glib::Propagation::Proceed;
                 }
+                let Some(popover) = popover.upgrade() else {
+                    return glib::Propagation::Proceed;
+                };
+                let Some(row) = controller.widget() else {
+                    return glib::Propagation::Proceed;
+                };
                 popup(
                     &popover,
                     f64::from(row.width()) / 2.0,
@@ -675,5 +686,30 @@ mod tests {
             opened.borrow().as_ref(),
             Some(StatsMetadataTarget::Album { track_id: 2, .. })
         ));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn discarded_song_rows_release_their_context_widgets() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let metadata: MetadataCallback = Rc::new(RefCell::new(None));
+        let (card, snapshot) = card_and_snapshot(metadata);
+        card.set_data(&snapshot);
+        let old_row = card.rows.first_child().unwrap();
+        let old_row = old_row.downcast::<gtk4::Box>().unwrap();
+        let weak_row = old_row.downgrade();
+        drop(old_row);
+
+        card.set_data(&snapshot);
+        let context = glib::MainContext::default();
+        while context.pending() {
+            context.iteration(false);
+        }
+
+        assert!(
+            weak_row.upgrade().is_none(),
+            "a discarded row must not be retained by its input controllers"
+        );
     }
 }
