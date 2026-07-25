@@ -24,7 +24,7 @@ const MARKER_RADIUS: f64 = 4.0;
 
 struct RibbonData {
     labels: Vec<String>,
-    bucket_starts: Vec<NaiveDate>,
+    bucket_starts: Vec<Option<NaiveDate>>,
     values: Vec<i64>,
     granularity: Granularity,
     open_index: Option<usize>,
@@ -171,7 +171,7 @@ impl StatsRibbon {
             bucket_starts: period
                 .buckets
                 .iter()
-                .filter_map(|bucket| {
+                .map(|bucket| {
                     chrono::Local
                         .timestamp_opt(bucket.start_unix, 0)
                         .earliest()
@@ -378,7 +378,7 @@ fn draw_labels(
     height: f64,
     color: gtk4::gdk::RGBA,
 ) {
-    let count = data.bucket_starts.len();
+    let count = data.values.len();
     context.set_source_rgba(
         f64::from(color.red()),
         f64::from(color.green()),
