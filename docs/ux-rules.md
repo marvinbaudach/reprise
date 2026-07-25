@@ -1516,13 +1516,18 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
   auf das statische Bild aus; `gtk-enable-animations=false` zeigt dieses ohne
   Tick-Callback. Das ist die in MOT-2 erlaubte, audiofunktionale Ausnahme für
   Dauerbewegung.
-- **AC-19** [aktiv] [core] [gtk] — „Song Visuals" ist ein standardmäßig
+- **AC-19** [ersetzt durch AC-20]
+- **AC-20** [aktiv] [core] [gtk] — „Song Visuals" ist ein standardmäßig
   ausgeschaltetes, live anwendbares Plugin. Eingeschaltet visualisiert der
-  dritte Panel-Tab „Visual" ausschließlich lokal berechnete, auf 16 Bänder und
-  den Bereich 0–1 begrenzte Spektraldaten als ein einzelnes Grid ohne
-  Modusauswahl. Der beschriftete Canvas übernimmt den aktuellen Cover-Akzent
-  über denselben globalen Ambient-Crossfade wie die Playerleiste; nur ohne
-  brauchbare Coverfarbe gilt der Theme-Akzent.
+  dritte Panel-Tab „Visual" ausschließlich lokal berechnete, aus 256 FFT-Bins
+  auf 64 logarithmische Anzeigebänder gefaltete und auf den Bereich 0–1
+  begrenzte Spektraldaten wahlweise als „Grid" oder „Bars".
+  „Grid" bleibt die Standardauswahl; „Bars" zeigt zwanzig fein segmentierte,
+  frequenzabhängige Säulen und reagiert auf denselben lokalen Beat-Impuls.
+  Flow, Pulse und weitere Modi existieren nicht. Der beschriftete Canvas
+  übernimmt den aktuellen Cover-Akzent über denselben globalen
+  Ambient-Crossfade wie die Playerleiste; nur ohne brauchbare Coverfarbe gilt
+  der Theme-Akzent.
 
 
 ## Y. Library Doctor / Tag Cleanup

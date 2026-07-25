@@ -3,20 +3,27 @@ use super::*;
 const MEMBRANE_PHASE_STEPS: [usize; 9] = [0, 4, 8, 12, 16, 22, 30, 40, 56];
 
 #[test]
-fn ac_19_visual_chrome_is_a_single_grid_canvas_without_mode_controls() {
+fn ac_20_visual_chrome_offers_only_grid_and_bars() {
     let css = css();
     assert!(css.contains("color: @reprise_player_accent"));
     assert!(css.contains(".reprise-song-visual-canvas"));
-    assert!(!css.contains(".reprise-song-visual-modes"));
+    assert!(css.contains(".reprise-song-visual-modes"));
+
+    let labels: Vec<String> = VisualMode::ALL
+        .iter()
+        .map(|&mode| strings::text(mode_label(mode)))
+        .collect();
+    let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
+    assert_eq!(labels, ["Grid", "Bars"]);
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_19_visual_widget_exposes_only_one_labeled_canvas() {
+fn ac_20_visual_widget_exposes_a_labeled_canvas_and_mode_row() {
     gtk4::init().unwrap();
     let visualizer = SongVisualizer::new();
 
-    assert_eq!(visualizer.root.observe_children().n_items(), 1);
+    assert_eq!(visualizer.root.observe_children().n_items(), 2);
     assert_eq!(visualizer.area.accessible_role(), gtk4::AccessibleRole::Img);
     assert!(gtk4::test_accessible_has_property(
         &visualizer.area,
@@ -95,36 +102,40 @@ fn membrane_phase_gallery_steps_cover_both_dome_and_depth() {
 }
 
 #[test]
-#[ignore = "visual gallery: renders the Grid scene to REPRISE_VIS_OUT for eyeballing"]
-fn render_grid_gallery_ppm() {
+#[ignore = "visual gallery: renders both mode scenes to REPRISE_VIS_OUT for eyeballing"]
+fn render_mode_gallery_ppm() {
     let out = std::env::var("REPRISE_VIS_OUT").unwrap_or_else(|_| "/tmp".to_owned());
     let (w, h) = (548.0_f32, 300.0_f32);
 
-    let engine = lively_engine();
-    let scene = engine.scene(w, h);
+    for mode in VisualMode::ALL {
+        let mut engine = lively_engine();
+        engine.set_mode(mode);
+        let scene = engine.scene(w, h);
 
-    let mut surface =
-        gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, w as i32, h as i32).unwrap();
-    {
-        let cr = gtk4::cairo::Context::new(&surface).unwrap();
-        cr.set_source_rgb(0.078, 0.094, 0.102); // dark panel
-        let _ = cr.paint();
-        render::draw_scene(&cr, &scene);
-    }
-    let (iw, ih) = (w as usize, h as usize);
-    let stride = surface.stride() as usize;
-    let data = surface.data().unwrap();
-    let mut ppm = format!("P6\n{iw} {ih}\n255\n").into_bytes();
-    for y in 0..ih {
-        for x in 0..iw {
-            let o = y * stride + x * 4;
-            ppm.extend_from_slice(&[data[o + 2], data[o + 1], data[o]]);
+        let mut surface =
+            gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, w as i32, h as i32)
+                .unwrap();
+        {
+            let cr = gtk4::cairo::Context::new(&surface).unwrap();
+            cr.set_source_rgb(0.078, 0.094, 0.102);
+            let _ = cr.paint();
+            render::draw_scene(&cr, &scene);
         }
+        let (iw, ih) = (w as usize, h as usize);
+        let stride = surface.stride() as usize;
+        let data = surface.data().unwrap();
+        let mut ppm = format!("P6\n{iw} {ih}\n255\n").into_bytes();
+        for y in 0..ih {
+            for x in 0..iw {
+                let o = y * stride + x * 4;
+                ppm.extend_from_slice(&[data[o + 2], data[o + 1], data[o]]);
+            }
+        }
+        drop(data);
+        let path = format!("{out}/visualizer-{}.ppm", mode.id());
+        std::fs::write(&path, ppm).unwrap();
+        println!("wrote {path}");
     }
-    drop(data);
-    let path = format!("{out}/visualizer-grid.ppm");
-    std::fs::write(&path, ppm).unwrap();
-    println!("wrote {path}");
 }
 
 /// Renders a radial membrane phase sequence (one strong beat off silence,

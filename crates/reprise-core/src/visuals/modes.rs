@@ -1,13 +1,14 @@
-//! Grid scene builder. It translates the shared reactive state in
-//! [`GridCtx`] into resolution-independent shapes. The engine wraps the
-//! result with the accent wash and flash overlay (see
-//! [`super::engine::VisualEngine::scene`]).
+//! Scene dispatch for the deliberately small Grid/Bars mode set.
 
-use super::engine::GridCtx;
+use super::engine::{ModeCtx, VisualMode};
 use super::scene::Shape;
 
+mod bars;
 mod grid;
 
-pub(crate) fn build_scene(ctx: &GridCtx) -> Vec<Shape> {
-    grid::scene(ctx)
+pub(crate) fn build_scene(mode: VisualMode, ctx: &ModeCtx) -> Vec<Shape> {
+    match mode {
+        VisualMode::Grid => grid::scene(ctx),
+        VisualMode::Bars => bars::scene(ctx),
+    }
 }

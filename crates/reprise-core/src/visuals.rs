@@ -9,26 +9,32 @@ pub mod scene;
 
 // Re-export public types
 pub use color::{hsla_to_rgb, hue_shift, rgb_hue, secondary_accent};
-pub use engine::{GridCtx, VisualEngine};
+pub use engine::{ModeCtx, VisualEngine, VisualMode};
 pub use membrane::{Membrane, MEMBRANE_COLS, MEMBRANE_ROWS};
 pub use scene::{Fill, Geom, Rgba, Scene, Shape};
 
 #[cfg(test)]
-mod grid_only_source_tests {
+mod visual_mode_source_tests {
+    use super::engine::VisualMode;
+
     #[test]
-    fn grid_only_core_has_no_removed_mode_state_or_geometry() {
+    fn ac_20_exports_exactly_grid_and_bars() {
+        assert_eq!(VisualMode::ALL, [VisualMode::Grid, VisualMode::Bars]);
+        assert_eq!(VisualMode::default(), VisualMode::Grid);
+        assert_eq!(VisualMode::Grid.id(), "grid");
+        assert_eq!(VisualMode::Bars.id(), "bars");
+    }
+
+    #[test]
+    fn removed_visual_modes_leave_no_state_or_geometry() {
         let engine = include_str!("visuals/engine.rs");
         for removed in [
-            "bands_peaks",
-            "PEAK_DECAY",
             "MID_HIGH_RELEASE",
             "MID_RANGE",
             "HIGH_RANGE",
             "PROFILE_GROUP",
             "static_profile",
             "set_static_profile",
-            "pub bands:",
-            "pub peaks:",
             "pub bass:",
             "pub mid:",
             "pub high:",
@@ -58,8 +64,21 @@ mod grid_only_source_tests {
             );
         }
 
+        let modes = include_str!("visuals/modes.rs");
+        for removed in [
+            "mod flow",
+            "mod pulse",
+            "VisualMode::Flow",
+            "VisualMode::Pulse",
+        ] {
+            assert!(
+                !modes.contains(removed),
+                "removed visual mode dispatcher marker remains: {removed}"
+            );
+        }
+
         let scene = include_str!("visuals/scene.rs");
-        for removed in ["Arc {", "Disc {", "Rect {"] {
+        for removed in ["Arc {", "Disc {"] {
             assert!(
                 !scene.contains(removed),
                 "removed visual modes left scene geometry {removed}"
