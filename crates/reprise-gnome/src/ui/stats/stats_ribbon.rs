@@ -386,7 +386,7 @@ fn draw_labels(
         f64::from(color.alpha()),
     );
     context.set_font_size(9.0);
-    for tick in month_ticks(&data.bucket_starts) {
+    for tick in month_ticks(&data.bucket_starts, data.granularity) {
         let x = if count <= 1 {
             0.0
         } else {

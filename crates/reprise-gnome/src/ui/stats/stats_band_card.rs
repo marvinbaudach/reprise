@@ -8,6 +8,7 @@ use reprise_core::cover::ThumbnailSize;
 use reprise_core::format::format_thousands;
 use reprise_core::library::stats_snapshot::SpotlightSection;
 
+use super::stats_view_widgets::label;
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::strings;
 
@@ -108,6 +109,7 @@ impl StatsBandCard {
             }
         });
         let card_click = gtk4::GestureClick::new();
+        card_click.set_button(gtk4::gdk::BUTTON_PRIMARY);
         card_click.connect_released({
             let current_artist = current_artist.clone();
             let callback = on_open_artist.clone();
@@ -164,7 +166,7 @@ impl StatsBandCard {
         self.summary.set_label(&format!(
             "{} plays · {} · {}% of your artist listening",
             format_thousands(leader.plays),
-            format_duration(leader.ms),
+            strings::hero_listening_time(leader.ms),
             section.share_percent
         ));
         self.render_ranks(section);
@@ -258,6 +260,21 @@ impl StatsBandCard {
         *self.cover_loader.borrow_mut() = Some(loader);
     }
 
+    pub(in crate::ui) fn clear_data(&self) {
+        self.cover_generation
+            .set(self.cover_generation.get().wrapping_add(1));
+        self.picture.set_paintable(gtk4::gdk::Paintable::NONE);
+        self.picture.set_visible(false);
+        self.fallback.set_label("");
+        self.name_button.set_label("");
+        self.summary.set_label("");
+        clear(&self.ranks);
+        self.rank_bars.borrow_mut().clear();
+        self.set_unify_hint(0);
+        self.current_artist.borrow_mut().clear();
+        self.current_key.borrow_mut().clear();
+    }
+
     pub(in crate::ui) fn set_on_open_artist(&self, callback: impl Fn(String) + 'static) {
         *self.on_open_artist.borrow_mut() = Some(Rc::new(callback));
     }
@@ -274,13 +291,6 @@ impl StatsBandCard {
     pub(super) fn bars(&self) -> Vec<gtk4::LevelBar> {
         self.rank_bars.borrow().clone()
     }
-}
-
-fn label(text: &str, class: &str) -> gtk4::Label {
-    let label = gtk4::Label::new(Some(text));
-    label.add_css_class(class);
-    label.set_xalign(0.0);
-    label
 }
 
 fn clear(container: &gtk4::Box) {
@@ -316,10 +326,6 @@ fn relative_value(value: i64, leader: i64) -> f64 {
     } else {
         value.max(0) as f64 / leader as f64
     }
-}
-
-fn format_duration(milliseconds: i64) -> String {
-    format!("{} h", milliseconds.max(0) / 3_600_000)
 }
 
 #[cfg(test)]
@@ -412,6 +418,7 @@ mod tests {
         });
         card.set_data(&fixture(1));
 
+        assert_eq!(card.card_click.button(), gtk4::gdk::BUTTON_PRIMARY);
         card.card_click
             .emit_by_name::<()>("released", &[&1_i32, &0.0_f64, &0.0_f64]);
 

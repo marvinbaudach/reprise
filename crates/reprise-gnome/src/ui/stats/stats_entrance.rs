@@ -168,13 +168,13 @@ impl StatsEntrance {
         }
     }
 
-    fn next_generation(&self) -> u64 {
+    fn next_generation(&self) {
         let generation = self.generation.get().wrapping_add(1);
         self.generation.set(generation);
-        for animation in self.animations.borrow_mut().drain(..) {
+        let animations = self.animations.borrow_mut().drain(..).collect::<Vec<_>>();
+        for animation in animations {
             animation.skip();
         }
-        generation
     }
 
     #[cfg(test)]

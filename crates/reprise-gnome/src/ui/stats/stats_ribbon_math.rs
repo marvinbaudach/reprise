@@ -66,15 +66,38 @@ pub(in crate::ui) fn best_week_bucket_index(
     })
 }
 
-pub(in crate::ui) fn month_ticks(bucket_starts: &[Option<NaiveDate>]) -> Vec<MonthTick> {
+pub(in crate::ui) fn month_ticks(
+    bucket_starts: &[Option<NaiveDate>],
+    granularity: Granularity,
+) -> Vec<MonthTick> {
+    let mut dated = bucket_starts.iter().flatten();
+    let first_year = dated.next().map(NaiveDate::year);
+    let last_year = bucket_starts
+        .iter()
+        .rev()
+        .flatten()
+        .next()
+        .map(NaiveDate::year);
+    let spans_years = first_year != last_year;
     let mut previous = None;
     let mut ticks = Vec::new();
     for (index, date) in bucket_starts.iter().enumerate() {
         let Some(date) = date else { continue };
-        if previous.is_none_or(|previous: NaiveDate| previous.month() != date.month()) {
+        let starts_month = previous.is_none_or(|previous: NaiveDate| {
+            previous.month() != date.month() || previous.year() != date.year()
+        });
+        let should_draw = if granularity == Granularity::Month {
+            ticks.is_empty() || date.month() == 1
+        } else {
+            starts_month
+        };
+        if should_draw {
             ticks.push(MonthTick {
                 index,
-                label: date.format("%b").to_string().to_uppercase(),
+                label: date
+                    .format(if spans_years { "%b %Y" } else { "%b" })
+                    .to_string()
+                    .to_uppercase(),
             });
         }
         previous = Some(*date);
@@ -176,7 +199,7 @@ mod tests {
         ];
 
         assert_eq!(
-            month_ticks(&starts),
+            month_ticks(&starts, Granularity::Week),
             vec![
                 MonthTick {
                     index: 0,
@@ -203,7 +226,7 @@ mod tests {
         ];
 
         assert_eq!(
-            month_ticks(&starts),
+            month_ticks(&starts, Granularity::Week),
             vec![
                 MonthTick {
                     index: 0,
@@ -213,6 +236,39 @@ mod tests {
                     index: 2,
                     label: "FEB".into()
                 }
+            ]
+        );
+    }
+
+    #[test]
+    fn monthly_buckets_draw_one_year_labeled_tick_per_year() {
+        let starts = (2021..=2025)
+            .flat_map(|year| (1..=12).map(move |month| NaiveDate::from_ymd_opt(year, month, 1)))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            month_ticks(&starts, Granularity::Month),
+            vec![
+                MonthTick {
+                    index: 0,
+                    label: "JAN 2021".into()
+                },
+                MonthTick {
+                    index: 12,
+                    label: "JAN 2022".into()
+                },
+                MonthTick {
+                    index: 24,
+                    label: "JAN 2023".into()
+                },
+                MonthTick {
+                    index: 36,
+                    label: "JAN 2024".into()
+                },
+                MonthTick {
+                    index: 48,
+                    label: "JAN 2025".into()
+                },
             ]
         );
     }
