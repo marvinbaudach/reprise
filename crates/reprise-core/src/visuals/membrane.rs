@@ -155,6 +155,25 @@ impl Membrane {
         self.h[row * MEMBRANE_COLS + col]
     }
 
+    /// Bilinear height at normalized membrane coordinates (`0..=1`). This
+    /// keeps the physics lattice modest while letting renderers draw a much
+    /// denser wire mesh without adding simulation work.
+    pub fn sample(&self, depth: f32, across: f32) -> f32 {
+        let row = depth.clamp(0.0, 1.0) * (MEMBRANE_ROWS - 1) as f32;
+        let col = across.clamp(0.0, 1.0) * (MEMBRANE_COLS - 1) as f32;
+        let row0 = row.floor() as usize;
+        let col0 = col.floor() as usize;
+        let row1 = (row0 + 1).min(MEMBRANE_ROWS - 1);
+        let col1 = (col0 + 1).min(MEMBRANE_COLS - 1);
+        let row_mix = row - row0 as f32;
+        let col_mix = col - col0 as f32;
+        let top =
+            self.height(row0, col0) + (self.height(row0, col1) - self.height(row0, col0)) * col_mix;
+        let bottom =
+            self.height(row1, col0) + (self.height(row1, col1) - self.height(row1, col0)) * col_mix;
+        top + (bottom - top) * row_mix
+    }
+
     /// Positive normalized loudspeaker push for the renderer (`0..=1`).
     /// Negative cone travel is deliberately zero so the bass glow illuminates
     /// only the outward pressure phase, not the membrane's fall into depth.
@@ -215,6 +234,26 @@ mod tests {
                 assert!(
                     delta < 1.0e-5,
                     "radial impulse diverged at ({row}, {col}) by {delta}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn normalized_sampling_matches_every_exact_physics_cell() {
+        let mut membrane = Membrane::new();
+        membrane.splash(1.0);
+        let silent = [0.0_f32; SPECTRUM_BAND_COUNT];
+        for _ in 0..18 {
+            membrane.advance(&silent);
+        }
+
+        for row in [0, MEMBRANE_ROWS / 2, MEMBRANE_ROWS - 1] {
+            for col in [0, MEMBRANE_COLS / 2, MEMBRANE_COLS - 1] {
+                let depth = row as f32 / (MEMBRANE_ROWS - 1) as f32;
+                let across = col as f32 / (MEMBRANE_COLS - 1) as f32;
+                assert!(
+                    (membrane.sample(depth, across) - membrane.height(row, col)).abs() < 1.0e-5
                 );
             }
         }
