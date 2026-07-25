@@ -1,0 +1,252 @@
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::Path;
+use std::sync::{Mutex, MutexGuard};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use url::Url;
+
+use super::ProviderError;
+
+const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
+const MIN_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
+const FIXTURE_DIR_ENV: &str = "REPRISE_CONCERTS_FIXTURE_DIR";
+const FIXTURE_LOG_ENV: &str = "REPRISE_CONCERTS_FIXTURE_LOG";
+
+static LAST_REQUEST: Mutex<Option<Instant>> = Mutex::new(None);
+
+pub fn user_agent() -> String {
+    format!(
+        "Reprise/{} ( {} )",
+        env!("CARGO_PKG_VERSION"),
+        crate::musicbrainz::CONTACT_URL
+    )
+}
+
+pub fn get(url: &str) -> Result<String, ProviderError> {
+    let _ = wait_for_request_slot(&mut || false);
+    if let Ok(directory) = std::env::var(FIXTURE_DIR_ENV) {
+        return fixture_get(url, Path::new(&directory));
+    }
+    let response = ureq::Agent::config_builder()
+        .timeout_global(Some(HTTP_TIMEOUT))
+        .user_agent(user_agent())
+        .http_status_as_error(false)
+        .build()
+        .new_agent()
+        .get(url)
+        .call()
+        .map_err(classify_transport)?;
+    let status = response.status().as_u16();
+    if status == 429 {
+        let retry_after = response
+            .headers()
+            .get("Retry-After")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.trim().parse().ok());
+        return Err(ProviderError::RateLimited { retry_after });
+    }
+    if !(200..300).contains(&status) {
+        return Err(ProviderError::HttpStatus(status));
+    }
+    response
+        .into_body()
+        .read_to_string()
+        .map_err(|_| ProviderError::Body)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum FixtureRequest {
+    BandsintownArtist(String),
+    BandsintownEvents(String),
+    TicketmasterAttractions(String),
+    TicketmasterEvents(String),
+    Nominatim(String),
+    ListenBrainzSimilar(String),
+    LastfmSimilar(String),
+}
+
+impl FixtureRequest {
+    fn filename(&self) -> String {
+        let (prefix, value) = match self {
+            Self::BandsintownArtist(value) => ("bandsintown-artist", value),
+            Self::BandsintownEvents(value) => ("bandsintown-events", value),
+            Self::TicketmasterAttractions(value) => ("ticketmaster-attractions", value),
+            Self::TicketmasterEvents(value) => ("ticketmaster-events", value),
+            Self::Nominatim(value) => ("nominatim", value),
+            Self::ListenBrainzSimilar(value) => ("listenbrainz-similar", value),
+            Self::LastfmSimilar(value) => ("lastfm-similar", value),
+        };
+        format!("{prefix}-{}.json", fixture_component(value))
+    }
+}
+
+fn fixture_request(value: &str) -> Option<FixtureRequest> {
+    let url = Url::parse(value).ok()?;
+    let query = |name: &str| {
+        url.query_pairs()
+            .find_map(|(key, value)| (key == name).then(|| value.into_owned()))
+    };
+    let segments = url.path_segments()?.collect::<Vec<_>>();
+    match url.host_str()? {
+        "rest.bandsintown.com" => {
+            let artist = segments.get(1).map(|value| percent_decode(value))?;
+            if segments.get(2).is_some_and(|segment| *segment == "events") {
+                Some(FixtureRequest::BandsintownEvents(artist))
+            } else {
+                Some(FixtureRequest::BandsintownArtist(artist))
+            }
+        }
+        "app.ticketmaster.com" if segments.last() == Some(&"attractions.json") => {
+            Some(FixtureRequest::TicketmasterAttractions(query("keyword")?))
+        }
+        "app.ticketmaster.com" if segments.last() == Some(&"events.json") => {
+            Some(FixtureRequest::TicketmasterEvents(query("attractionId")?))
+        }
+        "nominatim.openstreetmap.org" => Some(FixtureRequest::Nominatim(query("q")?)),
+        "labs.api.listenbrainz.org" => {
+            Some(FixtureRequest::ListenBrainzSimilar(query("artist_mbids")?))
+        }
+        "ws.audioscrobbler.com" => Some(FixtureRequest::LastfmSimilar(query("artist")?)),
+        _ => None,
+    }
+}
+
+fn fixture_get(url: &str, directory: &Path) -> Result<String, ProviderError> {
+    let request = fixture_request(url).ok_or(ProviderError::Transport)?;
+    append_fixture_log(&request)?;
+    std::fs::read_to_string(directory.join(request.filename()))
+        .map_err(|_| ProviderError::Transport)
+}
+
+fn append_fixture_log(request: &FixtureRequest) -> Result<(), ProviderError> {
+    let Ok(path) = std::env::var(FIXTURE_LOG_ENV) else {
+        return Ok(());
+    };
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|_| ProviderError::Transport)?;
+    writeln!(file, "{timestamp}\t{}", request.filename()).map_err(|_| ProviderError::Transport)
+}
+
+pub(crate) fn wait_for_request_slot(cancelled: &mut dyn FnMut() -> bool) -> bool {
+    const SLICE: Duration = Duration::from_millis(50);
+    let mut previous = lock_unpoisoned(&LAST_REQUEST);
+    let mut delay = previous.map_or(Duration::ZERO, |instant| {
+        MIN_REQUEST_INTERVAL.saturating_sub(instant.elapsed())
+    });
+    while !delay.is_zero() {
+        if cancelled() {
+            return false;
+        }
+        let slice = delay.min(SLICE);
+        std::thread::sleep(slice);
+        delay = delay.saturating_sub(slice);
+    }
+    if cancelled() {
+        return false;
+    }
+    *previous = Some(Instant::now());
+    true
+}
+
+fn classify_transport(error: ureq::Error) -> ProviderError {
+    match error {
+        ureq::Error::Timeout(_) => ProviderError::Timeout,
+        other if other.to_string().to_ascii_lowercase().contains("timeout") => {
+            ProviderError::Timeout
+        }
+        _ => ProviderError::Transport,
+    }
+}
+
+fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+fn fixture_component(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.') {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn percent_decode(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' && index + 2 < bytes.len() {
+            if let Ok(byte) = u8::from_str_radix(&value[index + 1..index + 3], 16) {
+                decoded.push(byte);
+                index += 3;
+                continue;
+            }
+        }
+        decoded.push(bytes[index]);
+        index += 1;
+    }
+    String::from_utf8_lossy(&decoded).into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fixture_routes_cover_every_concerts_http_consumer() {
+        for (url, filename) in [
+            (
+                "https://rest.bandsintown.com/artists/Lorna%20Shore?app_id=x",
+                "bandsintown-artist-Lorna_Shore.json",
+            ),
+            (
+                "https://rest.bandsintown.com/artists/Lorna%20Shore/events?app_id=x",
+                "bandsintown-events-Lorna_Shore.json",
+            ),
+            (
+                "https://app.ticketmaster.com/discovery/v2/attractions.json?keyword=Lorna%20Shore&apikey=x",
+                "ticketmaster-attractions-Lorna_Shore.json",
+            ),
+            (
+                "https://app.ticketmaster.com/discovery/v2/events.json?attractionId=abc&apikey=x",
+                "ticketmaster-events-abc.json",
+            ),
+            (
+                "https://nominatim.openstreetmap.org/search?q=Munich&format=json&limit=1",
+                "nominatim-Munich.json",
+            ),
+            (
+                "https://labs.api.listenbrainz.org/similar-artists/json?artist_mbids=abc",
+                "listenbrainz-similar-abc.json",
+            ),
+            (
+                "https://ws.audioscrobbler.com/2.0/?method=artist.getsimilar&artist=Lorna%20Shore",
+                "lastfm-similar-Lorna_Shore.json",
+            ),
+        ] {
+            assert_eq!(fixture_request(url).unwrap().filename(), filename);
+        }
+    }
+
+    #[test]
+    fn user_agent_identifies_reprise_and_the_contact_url() {
+        let value = user_agent();
+        assert!(value.contains(env!("CARGO_PKG_VERSION")));
+        assert!(value.contains(crate::musicbrainz::CONTACT_URL));
+    }
+}

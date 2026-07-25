@@ -6,6 +6,21 @@
 
 use serde::{Deserialize, Serialize};
 
+mod backoff;
+mod bandsintown;
+mod dedupe;
+pub mod http;
+mod provider;
+mod ticketmaster;
+
+pub use backoff::backoff_delay;
+pub use bandsintown::BandsintownProvider;
+pub use dedupe::{dedupe_key, merge, normalize_component, ticket_source_label};
+pub use provider::{
+    ArtistRef, EventProvider, ProviderError, ProviderEvent, ProviderKind, Resolution,
+};
+pub use ticketmaster::TicketmasterProvider;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DateHorizon {
