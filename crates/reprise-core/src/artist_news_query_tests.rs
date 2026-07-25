@@ -31,6 +31,49 @@ fn insert_release(conn: &rusqlite::Connection, mbid: &str, seen_at: Option<i64>)
     .unwrap();
 }
 
+fn insert_named_release(
+    conn: &rusqlite::Connection,
+    mbid: &str,
+    title: &str,
+    seen_at: Option<i64>,
+) {
+    conn.execute(
+        "INSERT INTO new_releases (
+           release_group_mbid, artist_name, artist_mbid, title, release_type,
+           first_release_date, fetched_at, seen_at, fallback_accent
+         ) VALUES (?1, 'Artist', 'artist-id', ?2, 'Album', '2026-08-01', 1, ?3, '#123456')",
+        rusqlite::params![mbid, title, seen_at],
+    )
+    .unwrap();
+}
+
+#[test]
+fn nr_9a_unseen_badge_excludes_complete_albums_but_keeps_partial_ones() {
+    let conn = migrated_conn();
+    insert_named_release(&conn, "owned", "Owned Album", None);
+    insert_named_release(&conn, "partial", "Partial Album", None);
+    insert_named_release(&conn, "absent", "Absent Album", None);
+    insert_named_release(&conn, "seen", "Seen Album", Some(20));
+    for (path, title, album) in [
+        ("/music/owned-one.flac", "Owned One", "Owned Album"),
+        ("/music/owned-two.flac", "Owned Two", "Owned Album"),
+        ("/music/partial.flac", "Partial", "Partial Album"),
+    ] {
+        conn.execute(
+            "INSERT INTO tracks (path, title, artist, album, play_count, added_at)
+             VALUES (?1, ?2, 'Artist', ?3, 0, 0)",
+            rusqlite::params![path, title, album],
+        )
+        .unwrap();
+    }
+
+    assert_eq!(
+        unseen_release_count(&conn).unwrap(),
+        2,
+        "only absent and partial unseen releases contribute to the badge"
+    );
+}
+
 #[test]
 fn nr_3_opening_marks_seen_clears_badge() {
     let conn = migrated_conn();
