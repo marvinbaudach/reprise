@@ -21,6 +21,19 @@ wäre, die Invokation an eine Stelle zu ziehen, die beide benutzen.
 inhaltlich zu einem Rhythmbox-Import gehört und nicht zur msgid passt. Vermutlich
 ein verrutschter Eintrag aus einer früheren Katalogpflege.
 
+**`format_total_duration` in `crates/reprise-core/src/format.rs:41` ist nicht
+übersetzbar.** Die Einheitenwörter und die Konjunktion sind dort hart englisch
+verdrahtet, weshalb die Statuszeile auch bei `LANG=de_DE` „1.654 Titel · 4 days,
+3 hours and 46 minutes" zeigt — die vordere Hälfte übersetzt, die hintere nicht.
+Visuell belegt in einem Xvfb-Start mit deutschem Katalog am 25.07.2026.
+
+Das ist nicht durch einen `POTFILES.in`-Eintrag zu heilen: `reprise-core` bindet
+gar keine gettext-Domain, das Makro `N_!` und `strings::text` leben
+ausschließlich in `reprise-gnome`. Entweder wandert die Formatierung in die
+UI-Schicht, oder die Funktion gibt strukturierte Werte zurück, die die UI
+zusammensetzt. Letzteres wäre das Sauberere, weil Pluralformen und Wortstellung
+ohnehin sprachabhängig sind und `format!` sie nicht abbilden kann.
+
 **`create_instrumental_toast` in `strings_track_menu.rs`** legt beide
 Plural-Literale einzeln in `N_!`, statt ein echtes Plural-Paar zu bilden.
 `xgettext` extrahiert daher zwei flache Strings. Funktioniert, aber Sprachen mit
