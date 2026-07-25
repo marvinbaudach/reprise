@@ -18,7 +18,7 @@ use rusqlite::Connection;
 use super::hourly_chart::HourlyChart;
 use super::stats_band_card::StatsBandCard;
 use super::stats_customize::StatsCustomize;
-use super::stats_genre_bar::StatsGenreBar;
+use super::stats_genre_card::StatsGenreCard;
 use super::stats_header::StatsHeader;
 use super::stats_hero::StatsHero;
 use super::stats_highlights::{StatsHighlights, TopGenre};
@@ -94,11 +94,11 @@ impl StatsView {
         let ribbon = StatsRibbon::new();
         let band_card = StatsBandCard::new();
         band_card.set_cover_loader(cover_loader.clone());
-        let genres = StatsGenreBar::new();
+        let genres = StatsGenreCard::new(cover_loader.clone());
         let clock = HourlyChart::new();
         let highlights = StatsHighlights::new();
 
-        let genres_section = section("GENRE SPECTRUM", genres.widget());
+        let genres_section = card(genres.widget());
         let clock_section = section("LISTENING CLOCK", clock.widget());
         let highlights_section = section("HIGHLIGHTS", highlights.widget());
         clock_section.set_hexpand(true);
@@ -362,6 +362,13 @@ impl StatsView {
         self.render.songs_card.set_on_add_to_queue(callback);
     }
 
+    #[allow(dead_code)]
+    pub(in crate::ui) fn set_on_genre_album(&self, callback: impl Fn(String) + 'static) {
+        self.render
+            .genres_section_data
+            .set_on_open_album_path(callback);
+    }
+
     /// The sections in the order the page actually stacks them, read off the
     /// live widget tree — not off a constant that nothing binds to it.
     #[cfg(test)]
@@ -411,7 +418,7 @@ struct RenderParts {
     hero: StatsHero,
     ribbon: StatsRibbon,
     band_card: StatsBandCard,
-    genres_section_data: StatsGenreBar,
+    genres_section_data: StatsGenreCard,
     clock_section_data: HourlyChart,
     highlights_section_data: StatsHighlights,
     songs_card: StatsSongsCard,
@@ -493,7 +500,7 @@ fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot) {
 
 fn wire_unify(
     band_card: &StatsBandCard,
-    genres: &StatsGenreBar,
+    genres: &StatsGenreCard,
     connection: &Rc<RefCell<Option<Rc<RefCell<Connection>>>>>,
     callback: &IdsCallback,
 ) {

@@ -1331,7 +1331,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   „Go to artist" (regulärer NAV-Push mit Back-Historie). Hinter dem Cover liegt
   ein dezenter Cover-Akzent-Glow — der Cover-Akzent bleibt Playback-Elementen
   vorbehalten. Darunter nennt eine Ghost-Zeile die Ränge 2–5.
-- **STATS-3** [aktiv] [core] — Das Genre-Spektrum ist **eine** horizontale
+- **STATS-3** [ersetzt durch STATS-15] [core] — Das Genre-Spektrum ist **eine** horizontale
   Segment-Leiste in Teal-Abstufungen mit Legende (Punkt · Name · %), gespeist
   aus den Genre-Tags der Bibliothek. Die fünf stärksten Genres bilden eigene
   Segmente, der Rest wird zu „Other" gebündelt; Tracks ohne Genre zählen weder
@@ -1480,7 +1480,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   und „Go to album". Der Ghost-Button „Show all top tracks" klappt darunter
   die vollständige nummerierte Liste mit dem Sort-Toggle „by plays / by time"
   auf; deren Balken bleibt relativ zum Spitzenreiter der Liste.
-- **STATS-15** [geplant] [core] — Die Genre-Karte besteht aus einem
+- **STATS-15** [aktiv] [core] — Die Genre-Karte besteht aus einem
   gestapelten Balken (Segmentbreite = Anteil, Akzent-Abstufungen nach Rang,
   letztes Segment neutral, Tooltip „<Genre> · N % · N h") und bis zu vier
   Kacheln der stärksten Genres: Cover des meistgehörten Albums im Genre,
