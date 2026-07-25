@@ -14,12 +14,13 @@ use reprise_core::library::group_key::GroupKind;
 use reprise_core::library::settings::{self, StatsLayout};
 use reprise_core::library::stats_period::StatsPeriod;
 use reprise_core::library::stats_screen::{group_track_ids, TopTrack};
-use reprise_core::library::stats_snapshot::{self, ComparisonPresentation, SortBy, StatsSnapshot};
+use reprise_core::library::stats_snapshot::{self, SortBy, StatsSnapshot};
 use rusqlite::Connection;
 
 use super::hourly_chart::HourlyChart;
 use super::stats_customize::StatsCustomize;
 use super::stats_genre_bar::StatsGenreBar;
+use super::stats_header::StatsHeader;
 use super::stats_hero::StatsHero;
 use super::stats_highlights::{StatsHighlights, TopGenre};
 use super::stats_metadata_links::{self, MetadataCallback, StatsMetadataTarget};
@@ -72,7 +73,7 @@ pub(in crate::ui) struct StatsView {
     #[cfg_attr(not(test), allow(dead_code))]
     hero_row: glib::WeakRef<adw::WrapBox>,
     #[cfg_attr(not(test), allow(dead_code))]
-    hero_time_row: glib::WeakRef<adw::WrapBox>,
+    hero_time_row: glib::WeakRef<gtk4::Box>,
     current_snapshot: Rc<RefCell<Option<StatsSnapshot>>>,
     /// Built once and shared: the period dropdown's handler holds it weakly,
     /// which is what keeps the handler from owning the page it lives in.
@@ -87,12 +88,10 @@ pub(in crate::ui) struct StatsView {
 impl StatsView {
     pub(in crate::ui) fn new(cover_loader: Rc<CoverLoader>) -> Self {
         let customize = StatsCustomize::new();
-        let hero = StatsHero::new(&customize);
-        let hero_time = hero.time.clone();
-        let comparison_pill = hero.comparison.clone();
-        let hero_subline = hero.subline.clone();
-        let period_dropdown = hero.period_dropdown.clone();
-        let period_model = hero.period_model.clone();
+        let header = StatsHeader::new(&customize);
+        let hero = StatsHero::new();
+        let period_dropdown = header.period_dropdown.clone();
+        let period_model = header.period_model.clone();
 
         let ribbon = StatsRibbon::new();
         let spotlight = StatsSpotlight::new();
@@ -172,6 +171,7 @@ impl StatsView {
         page.set_margin_bottom(32);
         page.set_margin_start(24);
         page.set_margin_end(24);
+        page.append(&header.root);
         page.append(&hero.root);
         page.append(&page_stack);
         let clamp = adw::Clamp::builder()
@@ -246,9 +246,8 @@ impl StatsView {
         ));
 
         let render = Rc::new(RenderParts {
-            hero_time: hero_time.clone(),
-            comparison_pill: comparison_pill.clone(),
-            hero_subline: hero_subline.clone(),
+            header: header.clone(),
+            hero: hero.clone(),
             ribbon: ribbon.clone(),
             spotlight_section: spotlight.clone(),
             genres_section_data: genres.clone(),
@@ -275,8 +274,8 @@ impl StatsView {
             connection,
             page: page.downgrade(),
             asymmetric_row: asymmetric_row.downgrade(),
-            hero_row: hero.row.downgrade(),
-            hero_time_row: hero.time_row.downgrade(),
+            hero_row: hero.root.downgrade(),
+            hero_time_row: hero.time_block.downgrade(),
             current_snapshot,
             render,
             on_spotlight_play,
@@ -426,9 +425,8 @@ impl StatsView {
 
 #[derive(Clone)]
 struct RenderParts {
-    hero_time: gtk4::Label,
-    comparison_pill: gtk4::Label,
-    hero_subline: gtk4::Label,
+    header: StatsHeader,
+    hero: StatsHero,
     ribbon: StatsRibbon,
     spotlight_section: StatsSpotlight,
     genres_section_data: StatsGenreBar,
@@ -468,7 +466,7 @@ fn refresh_parts(
                 &render.highlights_section,
             );
             render.customize.set_layout(layout);
-            render_hero(render, &snapshot, period);
+            render.hero.set_data(&snapshot, period, &render.header);
             // The stack decides what is on screen; hiding sections inside the
             // page it just switched away from changes nothing.
             if snapshot.is_empty() {
@@ -516,35 +514,6 @@ fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot) {
         &render.top_track_generation,
         &render.on_metadata_activate,
     );
-}
-
-fn render_hero(render: &RenderParts, snapshot: &StatsSnapshot, period: StatsPeriod) {
-    render
-        .hero_time
-        .set_label(&strings::hero_listening_time(snapshot.hero.total_ms));
-    render_comparison(render, snapshot.hero.comparison_presentation, period);
-    render.hero_subline.set_label(&format!(
-        "{} plays \u{00b7} \u{00d8} {} min/day \u{00b7} {} artists",
-        format_thousands(snapshot.hero.plays),
-        snapshot.hero.average_ms_per_day / 60_000,
-        format_thousands(snapshot.hero.artists)
-    ));
-}
-
-fn render_comparison(
-    render: &RenderParts,
-    presentation: Option<ComparisonPresentation>,
-    period: StatsPeriod,
-) {
-    let copy = presentation.and_then(|value| strings::comparison_copy(value, period));
-    if let Some(copy) = copy {
-        render.comparison_pill.set_label(&copy.pill);
-        render.comparison_pill.set_tooltip_text(Some(&copy.tooltip));
-        render.comparison_pill.set_visible(true);
-    } else {
-        render.comparison_pill.set_visible(false);
-        render.comparison_pill.set_tooltip_text(None);
-    }
 }
 
 fn build_sort_controls(

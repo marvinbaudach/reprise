@@ -16,6 +16,26 @@ pub(in crate::ui) fn css() -> String {
            font-weight: 800; \
            letter-spacing: -0.02em; }}\n\
          \
+         .stats-header-title {{ \
+           font-size: 19px; \
+           font-weight: 700; }}\n\
+         .stats-hero-number {{ \
+           font-size: 84px; \
+           font-weight: 500; \
+           letter-spacing: -0.03em; }}\n\
+         .stats-kpi-label {{ \
+           font-size: 10px; \
+           font-weight: 700; \
+           letter-spacing: 0.06em; \
+           color: alpha(@window_fg_color, 0.55); }}\n\
+         .stats-kpi-value {{ \
+           font-size: 17px; \
+           font-weight: 700; }}\n\
+         .stats-kpi-reference {{ \
+           font-size: 11px; \
+           color: alpha(@window_fg_color, 0.55); }}\n\
+         .stats-kpi-trend-icon {{ color: @accent_color; }}\n\
+         \
          .stats-headline-subtitle {{ \
            font-size: 14px; \
            color: alpha(@window_fg_color, 0.6); }}\n\
@@ -123,6 +143,8 @@ mod tests {
         let css = super::css();
         assert!(css.contains(".stats-chart"));
         assert!(css.contains(".stats-headline-hours"));
+        assert!(css.contains(".stats-hero-number"));
+        assert!(css.contains(".stats-kpi-label"));
         assert!(css.contains(".stats-section-title"));
         assert!(css.contains(".stats-card"));
         assert!(css.contains(".stats-badge"));

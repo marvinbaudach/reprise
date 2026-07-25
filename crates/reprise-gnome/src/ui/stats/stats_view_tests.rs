@@ -1,7 +1,7 @@
 //! Display tests for the My Stats composer.
 
 use super::*;
-use reprise_core::library::stats_snapshot::{ComparisonDirection, ComparisonFactor};
+use reprise_core::library::stats_snapshot::ComparisonPresentation;
 use std::sync::{Arc, Mutex};
 
 fn view_and_conn() -> (StatsView, Rc<RefCell<Connection>>) {
@@ -178,7 +178,8 @@ fn stats_6c_empty_state_disappears_when_real_events_exist() {
     );
     assert!(view
         .render
-        .hero_subline
+        .hero
+        .subline
         .label()
         .starts_with("5 plays \u{00b7}"));
     let snapshot = view.current_snapshot.borrow();
@@ -236,6 +237,14 @@ fn wait_for_layout() {
 /// allocated, and an unallocated row cannot prove responsive wrapping.
 fn seed_one_play(conn: &Connection) {
     seed_play_at(conn, now_unix());
+}
+
+fn seed_previous_year_play(conn: &Connection) {
+    conn.execute(
+        "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, 100000)",
+        rusqlite::params![now_unix() - 365 * 24 * 60 * 60],
+    )
+    .unwrap();
 }
 
 fn seed_play_at(conn: &Connection, played_at: i64) {
@@ -366,12 +375,9 @@ fn stats_view_present_refresh_and_teardown_emit_no_criticals() {
     assert!(criticals.is_empty(), "GTK criticals: {criticals:?}");
 }
 
-/// STATS-1: the pill names the compared span, and that span is seasonally
-/// congruent. "2026 so far" is measured against Jan–Jul 2025, so the pill has
-/// to say so instead of naming an equally long stretch ("previous 200 days")
-/// that reaches back into the previous winter.
+/// STATS-11: the trend tooltip names the seasonally congruent compared span.
 #[test]
-fn stats_1_pill_names_the_seasonally_congruent_compared_span() {
+fn stats_11_trend_tooltip_names_the_seasonally_congruent_compared_span() {
     let tooltip = |period| {
         strings::comparison_copy(ComparisonPresentation::Percentage(12), period)
             .unwrap()
@@ -431,22 +437,17 @@ fn stats_view_narrow_width_stacks_the_asymmetric_row() {
     window.close();
 }
 
-/// STATS-1: a realistic Stats-pane allocation (the center column of a
-/// 1200-pixel app window with both side columns present) must reflow controls
-/// before either the hours anchor or the named comparison period ellipsizes.
+/// STATS-11: a realistic Stats-pane allocation must reflow the KPI row before
+/// the listening-time anchor or trend reference ellipsizes.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_1_realistic_width_keeps_the_hero_copy_unellipsized() {
+fn stats_11_realistic_width_keeps_the_hero_copy_unellipsized() {
     gtk4::init().unwrap();
     crate::ui::style::install();
     let (view, conn) = view_and_conn();
     seed_one_play(&conn.borrow());
+    seed_previous_year_play(&conn.borrow());
     view.wire_year_selector(&conn);
-    view.render.hero_time.set_label("34 hours");
-    view.render
-        .comparison_pill
-        .set_label("\u{25b2} 955% vs same period 2025");
-    view.render.comparison_pill.set_visible(true);
 
     let window = adw::Window::builder()
         .default_width(600)
@@ -458,7 +459,6 @@ fn stats_1_realistic_width_keeps_the_hero_copy_unellipsized() {
     wait_for_layout();
 
     let hero_row = view.hero_row.upgrade().unwrap();
-    let hero_time_row = view.hero_time_row.upgrade().unwrap();
     let first = hero_row.first_child().unwrap();
     let last = hero_row.last_child().unwrap();
     assert_ne!(
@@ -466,55 +466,32 @@ fn stats_1_realistic_width_keeps_the_hero_copy_unellipsized() {
         last.compute_bounds(&hero_row).unwrap().y(),
         "hero controls must wrap below the copy at a realistic width"
     );
-    assert_eq!(
-        view.render
-            .hero_time
-            .compute_bounds(&hero_time_row)
-            .unwrap()
-            .y(),
-        view.render
-            .comparison_pill
-            .compute_bounds(&hero_time_row)
-            .unwrap()
-            .y(),
-        "the hours and compact pill still fit on one line"
-    );
-    assert!(view.render.hero_time.is_mapped());
-    assert!(view.render.comparison_pill.is_mapped());
+    assert!(view.render.hero.time.is_mapped());
+    assert!(view.render.hero.kpis.trend.root.is_mapped());
     assert!(
-        !view.render.hero_time.layout().is_ellipsized(),
+        !view.render.hero.time.layout().is_ellipsized(),
         "hours anchor was ellipsized at {} px",
-        view.render.hero_time.width()
+        view.render.hero.time.width()
     );
     assert!(
-        !view.render.comparison_pill.layout().is_ellipsized(),
+        !view.render.hero.kpis.trend.value.layout().is_ellipsized(),
         "comparison reference was ellipsized at {} px",
-        view.render.comparison_pill.width()
+        view.render.hero.kpis.trend.value.width()
     );
 
     window.close();
 }
 
-/// STATS-1a: the pill owns compact copy and the tooltip owns the fully named
-/// seasonal reference. At a realistic center-pane width the compact label is
-/// allocated in full; ellipsization is never an accepted fallback.
+/// STATS-11a: a zero baseline moves the new-history message into the header
+/// badge and never leaves a meaningless delta in the KPI row.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_1a_comparison_pill_is_not_ellipsized_at_a_realistic_width() {
+fn stats_11a_new_badge_is_not_ellipsized_at_a_realistic_width() {
     gtk4::init().unwrap();
     crate::ui::style::install();
     let (view, conn) = view_and_conn();
     seed_one_play(&conn.borrow());
     view.wire_year_selector(&conn);
-    view.render.hero_time.set_label("34 hours");
-    render_comparison(
-        &view.render,
-        Some(ComparisonPresentation::Factor {
-            direction: ComparisonDirection::Up,
-            value: ComparisonFactor::Whole(11),
-        }),
-        StatsPeriod::YearToDate(2026),
-    );
 
     let window = adw::Window::builder()
         .default_width(600)
@@ -525,25 +502,63 @@ fn stats_1a_comparison_pill_is_not_ellipsized_at_a_realistic_width() {
     window.present();
     wait_for_layout();
 
+    assert_eq!(view.render.header.new_badge.label(), "New this year");
     assert_eq!(
-        view.render.comparison_pill.label(),
-        "\u{25b2} \u{00d7}11 vs 2025"
-    );
-    assert_eq!(
-        view.render.comparison_pill.tooltip_text().as_deref(),
-        Some("\u{25b2} \u{00d7}11 vs same period 2025")
-    );
-    assert_eq!(
-        view.render.comparison_pill.ellipsize(),
+        view.render.header.new_badge.ellipsize(),
         gtk4::pango::EllipsizeMode::None
     );
     assert!(
-        !view.render.comparison_pill.layout().is_ellipsized(),
-        "comparison pill was ellipsized at {} px",
-        view.render.comparison_pill.width()
+        !view.render.header.new_badge.layout().is_ellipsized(),
+        "new badge was ellipsized at {} px",
+        view.render.header.new_badge.width()
     );
+    assert!(!view.render.hero.kpis.trend.root.is_visible());
 
     window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_11_hero_renders_kpi_pairs_without_placeholders() {
+    gtk4::init().unwrap();
+    let (view, conn) = view_and_conn();
+    seed_one_play(&conn.borrow());
+    seed_previous_year_play(&conn.borrow());
+    view.wire_year_selector(&conn);
+
+    assert!(view.render.hero.kpis.per_day.root.is_visible());
+    assert!(view.render.hero.kpis.trend.root.is_visible());
+    assert!(view.render.hero.kpis.pace.root.is_visible());
+    assert!(view.render.hero.kpis.best_week.root.is_visible());
+    assert!(view.render.hero.subline.label().contains("plays"));
+    assert!(view.render.hero.subline.label().contains("artists"));
+
+    let all_time = view
+        .periods
+        .borrow()
+        .iter()
+        .position(|period| *period == StatsPeriod::AllTime)
+        .unwrap() as u32;
+    view.period_dropdown.set_selected(all_time);
+    while glib::MainContext::default().iteration(false) {}
+
+    assert!(!view.render.hero.kpis.trend.root.is_visible());
+    assert!(!view.render.hero.kpis.pace.root.is_visible());
+    assert!(view.render.hero.kpis.per_day.root.is_visible());
+    assert!(view.render.hero.kpis.best_week.root.is_visible());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_11a_zero_baseline_shows_new_badge_not_a_delta() {
+    gtk4::init().unwrap();
+    let (view, conn) = view_and_conn();
+    seed_one_play(&conn.borrow());
+    view.wire_year_selector(&conn);
+
+    assert!(view.render.header.new_badge.is_visible());
+    assert_eq!(view.render.header.new_badge.label(), "New this year");
+    assert!(!view.render.hero.kpis.trend.root.is_visible());
 }
 
 #[test]

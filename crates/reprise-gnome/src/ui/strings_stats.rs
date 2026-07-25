@@ -2,6 +2,9 @@
 //! empty/failure states. The rest of the page's text is English-only chrome
 //! built in `ui::stats`; everything a user reads as a sentence lives here.
 
+use chrono::{Datelike, NaiveDate};
+use reprise_core::format::format_thousands;
+
 use super::{formatted, plural, text};
 use reprise_core::library::stats_period::{StatsPeriod, ROLLING_WINDOW_DAYS};
 use reprise_core::library::stats_snapshot::{
@@ -12,6 +15,13 @@ const HERO_HOURS_ONE: &str = N_!("1 hour");
 const HERO_HOURS: &str = N_!("{count} hours");
 const HERO_MINUTES_ONE: &str = N_!("1 minute");
 const HERO_MINUTES: &str = N_!("{count} minutes");
+const STATS_HERO_SUBLINE: &str = N_!("{plays} plays · {artists} artists");
+const STATS_PER_DAY: &str = N_!("{count} min");
+const STATS_PACE: &str = N_!("PACE FOR {year}");
+const STATS_BEST_WEEK: &str = N_!("{date} · {time}");
+const STATS_TREND_DELTA: &str = N_!("{sign}{count} h");
+const STATS_VS_YEAR: &str = N_!("vs {year}");
+const STATS_VS_PREVIOUS_DAYS: &str = N_!("vs previous {count} days");
 const COMPARISON_UP: &str = N_!("\u{25b2} {percent}% vs {period}");
 const COMPARISON_DOWN: &str = N_!("\u{25bc} {percent}% vs {period}");
 const COMPARISON_FACTOR_UP: &str = N_!("\u{25b2} \u{00d7}{factor} vs {period}");
@@ -55,6 +65,66 @@ pub fn hero_listening_time(milliseconds: i64) -> String {
         hours as usize,
         &[("count", &hours.to_string())],
     )
+}
+
+pub fn stats_hero_subline(plays: i64, artists: i64) -> String {
+    formatted(
+        STATS_HERO_SUBLINE,
+        &[
+            ("plays", &format_thousands(plays)),
+            ("artists", &format_thousands(artists)),
+        ],
+    )
+}
+
+pub fn stats_per_day(milliseconds: i64) -> String {
+    formatted(
+        STATS_PER_DAY,
+        &[("count", &(milliseconds.max(0) / 60_000).to_string())],
+    )
+}
+
+pub fn stats_pace_label(year: i32) -> String {
+    formatted(STATS_PACE, &[("year", &year.to_string())])
+}
+
+pub fn stats_best_week(start: NaiveDate, milliseconds: i64) -> String {
+    formatted(
+        STATS_BEST_WEEK,
+        &[
+            ("date", &format!("{} {}", start.format("%b"), start.day())),
+            ("time", &hero_listening_time(milliseconds)),
+        ],
+    )
+}
+
+pub fn stats_trend_delta(milliseconds: i64) -> String {
+    let hours = milliseconds.abs() / 3_600_000;
+    formatted(
+        STATS_TREND_DELTA,
+        &[
+            ("sign", if milliseconds >= 0 { "+" } else { "−" }),
+            ("count", &hours.to_string()),
+        ],
+    )
+}
+
+pub fn stats_trend_reference(period: StatsPeriod) -> Option<String> {
+    match period {
+        StatsPeriod::YearToDate(year) | StatsPeriod::Year(year) => Some(formatted(
+            STATS_VS_YEAR,
+            &[("year", &year.saturating_sub(1).to_string())],
+        )),
+        StatsPeriod::Last30Days => Some(formatted(
+            STATS_VS_PREVIOUS_DAYS,
+            &[("count", &ROLLING_WINDOW_DAYS.to_string())],
+        )),
+        StatsPeriod::AllTime => None,
+    }
+}
+
+pub fn stats_new_badge() -> String {
+    text(NEW_THIS_YEAR)
 }
 
 /// The comparison pill. `period` names the span that was compared against —
@@ -249,7 +319,7 @@ mod tests {
     }
 
     #[test]
-    fn stats_1a_comparison_copy_renders_every_presentation_without_decimal_noise() {
+    fn stats_11a_comparison_copy_renders_every_presentation_without_decimal_noise() {
         let copy =
             |presentation| comparison_copy(presentation, StatsPeriod::YearToDate(2026)).unwrap();
 
