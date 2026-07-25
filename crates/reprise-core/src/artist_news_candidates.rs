@@ -86,10 +86,13 @@ pub(crate) fn artists_for_fetch(
         }
         FetchScope::AllArtists => {
             let mut rest = candidates.split_off(TOP_ARTIST_COUNT);
+            // One query for every artist's last attempt instead of one point
+            // query per rest candidate — most of which are immediately
+            // discarded by the `take(REST_ARTISTS_PER_RUN)` below.
+            let last_attempts = crate::artist_news_ledger::all_last_attempts(conn)?;
             let mut keyed = Vec::with_capacity(rest.len());
             for candidate in rest.drain(..) {
-                let last_attempt =
-                    crate::artist_news_ledger::last_attempt_at(conn, &normalize(&candidate.name))?;
+                let last_attempt = last_attempts.get(&normalize(&candidate.name)).copied();
                 keyed.push((last_attempt, candidate));
             }
             // `None` sorts before `Some` — never-checked artists come first.
