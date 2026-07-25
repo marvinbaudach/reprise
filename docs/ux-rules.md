@@ -1051,6 +1051,43 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   erschienene Releases werden markiert (nicht herausgefiltert) und bieten
   die Aktion „Show in library" (Navigieren + Fokussieren, **kein** direkter
   Play-Pfad).
+- **NR-3a** [geplant] [gtk] — Der Header-Auslöser öffnet „Updates" und ist
+  sichtbar, sobald mindestens ein aktiver Feed Einträge oder einen
+  Erstlauf-Zustand nach NR-8 hat. Sein Badge zählt ausschließlich ungesehene
+  Einträge aller aktiven, fetch-bereiten Feeds.
+  <!-- REVIEW: Regelvorschlag -->
+- **NR-5b** [geplant] [gtk] — Das Popover ist transient; Öffnen/Schließen
+  verändert den Navigations-Stack nie. Explizite Zeilen-Aktionen und die
+  Sprungzeilen „Show all releases/concerts →" navigieren regulär und
+  schließen das Popover. Das Popover hat keine internen Unterseiten; der
+  Verlauf lebt in der Releases-Vollansicht (NR-12a).
+  <!-- REVIEW: Regelvorschlag -->
+- **NR-9a** [geplant] [gtk] — Das Badge zeigt die Summe ungesehener Releases
+  und Konzerte, ab 10 als „9+", und rendert bei 0 nichts. Öffnen stempelt die
+  gesamte Delta-Menge beider Sektionen im aktuellen Scope. Vollständig in der
+  Bibliothek vorhandene Releases werden gelistet und gestempelt, zählen aber
+  nie in den Unseen-Badge.
+  <!-- REVIEW: Regelvorschlag -->
+- **NR-12a** [geplant] [gtk] — Die persistente Historie aller je gezeigten
+  Meldungen lebt in der Releases-Vollansicht als eigenem Sidebar-Ort.
+  Ausgeblendete Einträge sind dort über den Hidden-Filter einzeln mit „Show
+  again" rückholbar. Retention bleibt: sechs Monate UND höchstens 200
+  Einträge, hartes Löschen, nie innerhalb des 90-Tage-Fetch-Fensters.
+  <!-- REVIEW: Regelvorschlag -->
+- **NR-14** [geplant] [gtk] — Die Releases-Vollansicht ist eine Tabelle
+  `Date · Title · Artist · Type · Status`, standardmäßig nach Datum
+  absteigend. Status ist `In library`, sonst `upcoming` oder `released`.
+  Aktivierung führt immer die Dreiweg-Primäraktion aus: Hidden → Show again;
+  vollständig vorhanden und erschienen → Show in library; sonst Open
+  announcement. Die permanente Filterzeile bietet sticky Chips für Not in
+  library, Type und Hidden samt „X of Y releases", „Clear all" und genau
+  einem „Show all"-Schritt bei null Treffern.
+  <!-- REVIEW: Regelvorschlag -->
+- **NR-15** [geplant] [gtk] — „Releases" ist ein Sidebar-Ort in SMART, vor
+  Concerts und nur bei aktivem `new_releases`-Modul. Sein Badge entspricht
+  exakt der Anzahl der nach persistenten Filtern beim Öffnen sichtbaren
+  Zeilen; 0 rendert keinen Badge.
+  <!-- REVIEW: Regelvorschlag -->
 
 ## S. Flächen & Geometrie
 
@@ -2069,6 +2106,50 @@ Dateien.
   (Capture-Phase, damit die Pfeil-Seek der Waveform die modifizierten Pfeile
   nicht schluckt) und decken sich mit den im Kontextmenü gezeigten
   Acceleratoren.
+
+## AE. Concerts
+
+<!-- Sektionsbuchstabe: AD (Kompaktmodus) ist die letzte vergebene Sektion;
+     Concerts setzt mit AE fort. Die Regeln starten als Entwürfe und werden
+     jeweils zusammen mit Verhalten und regelbenanntem Test aktiviert. -->
+
+- **CONC-1** [geplant] [gtk] — Concerts ist ein Sidebar-Ort in SMART und nur
+  bei aktivem Modul sichtbar. Sein Badge entspricht exakt den kommenden,
+  nach persistenten Filtern beim Öffnen sichtbaren Konzerten; 0 rendert
+  keinen Badge.
+  <!-- REVIEW: Regelvorschlag -->
+- **CONC-2** [geplant] [gtk] — Die Filterzeile ist ein permanenter Header.
+  Idle zeigt sie leise Gesamtzahl und „+ Add filter"; jede aktive
+  Einschränkung ist ein Chip mit eigenem ×-Ziel von mindestens 20 px.
+  Aktiv zeigt sie „X of Y concerts" und „Clear all". Ohne Location ist
+  Radius deaktiviert und trägt den Tooltip „Set a location in Preferences".
+  <!-- REVIEW: Regelvorschlag -->
+- **CONC-3** [geplant] [gtk] — Doppelklick/Enter auf eine Zeile und die
+  Ticket-Zelle öffnen dasselbe externe Ziel: Offer-URL, sonst Event-Seite.
+  Ohne beides ist die Zelle leer und Aktivierung ein No-op mit Tooltip. Es
+  gibt keinen Play-Pfad.
+  <!-- REVIEW: Regelvorschlag -->
+- **CONC-4** [geplant] [gtk] — Ohne Credential zeigt Concerts eine
+  StatusPage mit Preferences-Deep-Link und startet keinen Fetch. Nie
+  gefetcht bietet genau „Fetch now"; null Treffer mit Filtern genau „Show
+  all". Offline oder Fehler lassen Cache und „Updated X ago" sichtbar und
+  melden den Fehler ausschließlich inline im Footer.
+  <!-- REVIEW: Regelvorschlag -->
+- **CONC-5** [geplant] [core] — Netz läuft ausschließlich im Worker. Trigger
+  sind View-Open-Staleness (24 h plus Jitter), der stündliche Due-Check und
+  „Fetch now". Track-Wechsel und Navigation lesen nur Cache; Ergebnisse
+  werden nach MOT-2 ohne Einblendanimation eingespielt.
+  <!-- REVIEW: Regelvorschlag -->
+- **CONC-6** [geplant] [gtk] — Similar-Zeilen tragen dimm „similar to
+  {seed}" und verschwinden mit „Library artists only". Die Source-Pill ist
+  sichtbar, sobald Similar aktiviert ist oder Similar-Zeilen existieren.
+  <!-- REVIEW: Regelvorschlag -->
+- **CONC-7** [geplant] [gtk] — Das Updates-Popover zeigt die Concerts-Sektion
+  nur bei aktivem Modul, höchstens drei ungesehene Einträge des persistenten
+  Filter-Scopes und „Show all concerts (N) →". Öffnen stempelt die gesamte
+  Delta-Menge beider Sektionen. Das Header-Badge summiert ungesehene Einträge
+  aller aktiven, fetch-bereiten Feeds nach dem `badge_presentation`-Idiom.
+  <!-- REVIEW: Regelvorschlag -->
 
 ---
 
