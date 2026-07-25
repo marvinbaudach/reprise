@@ -21,7 +21,8 @@ use rmcp::{tool, tool_handler, tool_router, ErrorData, RoleServer, ServerHandler
 
 use crate::data;
 use crate::dto::{
-    CreateInstrumentalParams, CreatePlaylistParams, JobStatusParams, SearchTracksParams,
+    BrowseLibraryParams, CreateInstrumentalParams, CreatePlaylistParams, GetPlaylistParams,
+    JobStatusParams, SearchTracksParams,
 };
 #[cfg(feature = "mpris")]
 use crate::dto::{PlayParams, PlaybackControlParams};
@@ -117,6 +118,95 @@ impl RepriseServer {
                 let summary = format!("{} of {} matching track(s)", result.returned, result.total);
                 error::structured_ok(&result, summary)
             }
+            Err(err) => error::into_tool_outcome(err),
+        }
+    }
+
+    /// Paginated, path-free artist discovery.
+    #[tool(
+        name = "music_search_artists",
+        description = "Search artists in the present library by case-insensitive \
+            substring. Returns artist name, track count, album count and total \
+            plays — never file paths. Paginate with limit and offset."
+    )]
+    async fn music_search_artists(
+        &self,
+        Parameters(params): Parameters<BrowseLibraryParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let path = self.db_path.clone();
+        let outcome = tokio::task::spawn_blocking(move || {
+            data::search_artists(path.as_path(), &params.query, params.limit, params.offset)
+        })
+        .await
+        .map_err(|error| error::join_error(&error))?;
+
+        match outcome {
+            Ok(result) => error::structured_ok(
+                &result,
+                format!("{} of {} matching artist(s)", result.returned, result.total),
+            ),
+            Err(err) => error::into_tool_outcome(err),
+        }
+    }
+
+    /// Paginated, path-free album discovery.
+    #[tool(
+        name = "music_search_albums",
+        description = "Search albums and album artists in the present library \
+            by case-insensitive substring. Returns display metadata and counts \
+            — never file paths. Paginate with limit and offset."
+    )]
+    async fn music_search_albums(
+        &self,
+        Parameters(params): Parameters<BrowseLibraryParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let path = self.db_path.clone();
+        let outcome = tokio::task::spawn_blocking(move || {
+            data::search_albums(path.as_path(), &params.query, params.limit, params.offset)
+        })
+        .await
+        .map_err(|error| error::join_error(&error))?;
+
+        match outcome {
+            Ok(result) => error::structured_ok(
+                &result,
+                format!("{} of {} matching album(s)", result.returned, result.total),
+            ),
+            Err(err) => error::into_tool_outcome(err),
+        }
+    }
+
+    /// Reads one manual playlist's membership in durable order.
+    #[tool(
+        name = "music_get_playlist",
+        description = "Read one manual playlist by id, including a paginated \
+            page of track display metadata in playlist order. Read-only and \
+            never returns file paths."
+    )]
+    async fn music_get_playlist(
+        &self,
+        Parameters(params): Parameters<GetPlaylistParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let path = self.db_path.clone();
+        let outcome = tokio::task::spawn_blocking(move || {
+            data::playlist_contents(
+                path.as_path(),
+                params.playlist_id,
+                params.limit,
+                params.offset,
+            )
+        })
+        .await
+        .map_err(|error| error::join_error(&error))?;
+
+        match outcome {
+            Ok(result) => error::structured_ok(
+                &result,
+                format!(
+                    "{} of {} track(s) in playlist '{}'",
+                    result.returned, result.total, result.playlist.name
+                ),
+            ),
             Err(err) => error::into_tool_outcome(err),
         }
     }

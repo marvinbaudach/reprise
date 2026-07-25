@@ -18,9 +18,10 @@ use rusqlite::Connection;
 
 use crate::capability;
 use crate::dto::{
-    BatchProgressDto, CreateInstrumentalResult, CreatePlaylistResult, InstrumentalJobDto,
-    JobStatusDto, JobStatusResult, LibrarySummary, PlaylistDto, PlaylistsResult,
-    SearchTracksResult, TrackDto,
+    AlbumDto, ArtistDto, BatchProgressDto, CreateInstrumentalResult, CreatePlaylistResult,
+    InstrumentalJobDto, JobStatusDto, JobStatusResult, LibrarySummary, PlaylistContentsResult,
+    PlaylistDto, PlaylistsResult, SearchAlbumsResult, SearchArtistsResult, SearchTracksResult,
+    TrackDto,
 };
 
 /// Default page size when a search omits `limit`.
@@ -148,6 +149,87 @@ pub fn search_tracks(
     })
 }
 
+/// Paginated artist discovery using the same effective-album-artist grouping
+/// as the native Artists view.
+pub fn search_artists(
+    path: &Path,
+    query: &str,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> Result<SearchArtistsResult, DataError> {
+    let conn = open(path)?;
+    require_read(&conn)?;
+
+    let needle = query.trim().to_lowercase();
+    let matching: Vec<_> = queries::query_artists(&conn)
+        .map_err(DataError::Db)?
+        .into_iter()
+        .filter(|artist| artist.artist.to_lowercase().contains(&needle))
+        .collect();
+    let total = matching.len();
+    let limit = resolve_limit(limit);
+    let offset = i64::from(offset.unwrap_or(0));
+    let artists: Vec<ArtistDto> = matching
+        .iter()
+        .skip(offset as usize)
+        .take(limit as usize)
+        .map(ArtistDto::from)
+        .collect();
+    let returned = artists.len();
+    let has_more = offset.saturating_add(returned as i64) < total as i64;
+
+    Ok(SearchArtistsResult {
+        artists,
+        total,
+        offset,
+        limit,
+        returned,
+        has_more,
+    })
+}
+
+/// Paginated album discovery using the native Albums view's grouping and
+/// stable ordering.
+pub fn search_albums(
+    path: &Path,
+    query: &str,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> Result<SearchAlbumsResult, DataError> {
+    let conn = open(path)?;
+    require_read(&conn)?;
+
+    let needle = query.trim().to_lowercase();
+    let matching: Vec<_> = queries::query_albums(&conn)
+        .map_err(DataError::Db)?
+        .into_iter()
+        .filter(|album| {
+            album.album.to_lowercase().contains(&needle)
+                || album.album_artist.to_lowercase().contains(&needle)
+        })
+        .collect();
+    let total = matching.len();
+    let limit = resolve_limit(limit);
+    let offset = i64::from(offset.unwrap_or(0));
+    let albums: Vec<AlbumDto> = matching
+        .iter()
+        .skip(offset as usize)
+        .take(limit as usize)
+        .map(AlbumDto::from)
+        .collect();
+    let returned = albums.len();
+    let has_more = offset.saturating_add(returned as i64) < total as i64;
+
+    Ok(SearchAlbumsResult {
+        albums,
+        total,
+        offset,
+        limit,
+        returned,
+        has_more,
+    })
+}
+
 /// Library-wide summary for the `reprise://library/summary` resource.
 pub fn library_summary(path: &Path) -> Result<LibrarySummary, DataError> {
     let conn = open(path)?;
@@ -173,6 +255,51 @@ pub fn list_playlists(path: &Path) -> Result<PlaylistsResult, DataError> {
     let summaries = playlists::list(&conn).map_err(DataError::Db)?;
     let playlists = summaries.iter().map(PlaylistDto::from).collect();
     Ok(PlaylistsResult { playlists })
+}
+
+/// Reads a page of one manual playlist in durable playlist order. Membership
+/// rows are returned even when their files are currently unavailable, matching
+/// the native playlist view.
+pub fn playlist_contents(
+    path: &Path,
+    playlist_id: i64,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> Result<PlaylistContentsResult, DataError> {
+    let mut conn = open(path)?;
+    require_read(&conn)?;
+
+    let summary = playlists::get(&conn, playlist_id)
+        .map_err(DataError::Db)?
+        .ok_or_else(|| DataError::InvalidInput("playlist does not exist".to_owned()))?;
+    let source = ViewSource::Playlist(playlist_id);
+    let total = queries::query_track_count(&conn, &source, "", &[]).map_err(DataError::Db)?;
+    let limit = resolve_limit(limit);
+    let offset = i64::from(offset.unwrap_or(0));
+    let tracks = queries::query_track_window(
+        &mut conn,
+        &source,
+        "playlist_order",
+        "asc",
+        "",
+        offset,
+        limit,
+        &[],
+    )
+    .map_err(DataError::Db)?;
+    let tracks: Vec<TrackDto> = tracks.iter().map(TrackDto::from).collect();
+    let returned = tracks.len();
+    let has_more = offset.saturating_add(returned as i64) < total;
+
+    Ok(PlaylistContentsResult {
+        playlist: PlaylistDto::from(&summary),
+        tracks,
+        total,
+        offset,
+        limit,
+        returned,
+        has_more,
+    })
 }
 
 /// Creates a new manual playlist from explicit track ids.
