@@ -2132,11 +2132,10 @@ Dateien.
   gefetcht bietet genau „Fetch now"; null Treffer mit Filtern genau „Show
   all". Offline oder Fehler lassen Cache und „Updated X ago" sichtbar und
   melden den Fehler ausschließlich inline im Footer.
-- **CONC-5** [geplant] [core] — Netz läuft ausschließlich im Worker. Trigger
+- **CONC-5** [aktiv] [core] — Netz läuft ausschließlich im Worker. Trigger
   sind View-Open-Staleness (24 h plus Jitter), der stündliche Due-Check und
   „Fetch now". Track-Wechsel und Navigation lesen nur Cache; Ergebnisse
   werden nach MOT-2 ohne Einblendanimation eingespielt.
-  <!-- REVIEW: Regelvorschlag -->
 - **CONC-6** [aktiv] [gtk] — Similar-Zeilen tragen dimm „similar to
   {seed}" und verschwinden mit „Library artists only". Die Source-Pill ist
   sichtbar, sobald Similar aktiviert ist oder Similar-Zeilen existieren.
