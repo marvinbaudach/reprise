@@ -641,7 +641,7 @@ fn dedup_does_not_mutate_tags() {
 /// equally long stretch that ends where the selection starts. A November 2025
 /// binge lies in that stretch and must not move the percentage.
 #[test]
-fn stats_1_comparison_uses_the_same_span_of_the_previous_year() {
+fn stats_11_comparison_uses_the_same_span_of_the_previous_year() {
     let conn = migrated_conn();
     insert_track(&conn, 1, "Track", "Artist", "", "Rock", 1_000_000, 0, None);
     insert_event(&conn, 1, timestamp(2026, 3, 1, 12, 0), 200_000);
@@ -656,7 +656,7 @@ fn stats_1_comparison_uses_the_same_span_of_the_previous_year() {
 
 /// A period without a compared span keeps the pill hidden.
 #[test]
-fn stats_1_all_time_reports_no_comparison() {
+fn stats_11_all_time_reports_no_comparison() {
     let conn = migrated_conn();
     insert_track(&conn, 1, "Track", "Artist", "", "Rock", 1_000_000, 0, None);
     insert_event(&conn, 1, timestamp(2026, 3, 1, 12, 0), 200_000);

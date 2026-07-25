@@ -1285,7 +1285,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Ereignis einzeln durch sie hindurch, damit Sommer-/Winterzeit-Wechsel keine
   Grenze verschieben. Alles ist lokal: kein Netz, keine Cloud, keine
   Fremdquelle wird eingemischt.
-- **STATS-1** [aktiv] [core] — Der Kopf zeigt die Gesamt-Hörzeit groß in vollen
+- **STATS-1** [ersetzt durch STATS-11/STATS-12] [core] — Der Kopf zeigt die Gesamt-Hörzeit groß in vollen
   Stunden („68 hours"; unter einer Stunde in Minuten, nie „0 hours"), eine
   Vergleichs-Pill „▲ N % vs <Vorperiode>" im teal App-Akzent (nie im
   Cover-Akzent) und die Subzeile „N plays · Ø X min/day · N artists" auf
@@ -1308,7 +1308,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   wiedererkennbare Kalenderentsprechung ein Jahr zurück. Der 29. Februar klemmt
   im Vorjahr auf den 28. „All time" hat keine Vorperiode und trägt nie eine
   Pill.
-- **STATS-1a** [aktiv] [core] — Die Vergleichs-Pill bleibt bei jedem Verhältnis
+- **STATS-1a** [ersetzt durch STATS-11a] [core] — Die Vergleichs-Pill bleibt bei jedem Verhältnis
   lesbar: Anstiege unter +1000 % erscheinen weiter als ganze Prozentzahl, ab
   +1000 % als gerundeter Faktor („▲ ×11 vs 2025"). Eine sinnvolle
   Nachkommastelle bleibt erhalten („×11,5"), eine bedeutungslose Null entfällt
@@ -1434,7 +1434,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   kein Customize-Menü — die Seite ist kuratiert und nicht konfigurierbar.
   Im schmalen Fenster stapelt die zweispaltige Reihe, ohne die Reihenfolge zu
   ändern. Die Zeitraumwahl bleibt gemäß STATS-8 der einzige Ansichts-Regler.
-- **STATS-11** [geplant] [core] — Der Hero zeigt die Gesamt-Hörzeit riesig
+- **STATS-11** [aktiv] [core] — Der Hero zeigt die Gesamt-Hörzeit riesig
   (volle Stunden, unter einer Stunde Minuten, nie „0 hours"), darunter die
   Subline „N plays · N artists", rechts an der Grundlinie vier KPI-Paare:
   „Per day" (Ø min/Tag) · Trend (absolutes Stunden-Delta zur Vergleichsspanne
@@ -1445,7 +1445,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   dieselbe Spanne des Vorjahrs, ein volles Jahr gegen das Vorjahr, das
   30-Tage-Fenster gegen die 30 Tage davor; „All time" hat keinen Trend-KPI.
   KPIs ohne Wert entfallen ersatzlos statt Platzhalter zu zeigen.
-- **STATS-11a** [geplant] [core] — Der Trend bleibt bei jedem Verhältnis
+- **STATS-11a** [aktiv] [core] — Der Trend bleibt bei jedem Verhältnis
   ehrlich lesbar: Der KPI nennt das absolute Delta und die kurze Referenz
   („vs 2025"); der Tooltip trägt die vollständige Semantik samt Prozentwert,
   ab ×10-Verhältnissen als gerundeter Faktor nach den bisherigen Formregeln.

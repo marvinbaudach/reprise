@@ -5,7 +5,7 @@ use super::{week_start, Granularity, StatsPeriod};
 const NOW_2026_07_19: i64 = 1_784_424_000;
 
 #[test]
-fn stats_1_ribbon_axis_matches_period() {
+fn stats_12_axis_matches_period() {
     let year_to_date = StatsPeriod::YearToDate(2026).resolve(
         NOW_2026_07_19,
         &Utc,
@@ -97,7 +97,7 @@ fn resolve_never_panics_on_an_out_of_calendar_year() {
 /// 2025 — comparing it against Jun–Dec 2025 would pit summer against winter,
 /// and listening time is seasonal.
 #[test]
-fn stats_1_year_to_date_compares_the_same_span_of_the_previous_year() {
+fn stats_11_year_to_date_compares_the_same_span_of_the_previous_year() {
     let (start, end) = StatsPeriod::YearToDate(2026)
         .previous_range(NOW_2026_07_19, &Utc)
         .expect("a year to date has a comparison span");
@@ -119,7 +119,7 @@ fn stats_1_year_to_date_compares_the_same_span_of_the_previous_year() {
 
 /// A selected full calendar year is compared against the whole year before it.
 #[test]
-fn stats_1_full_year_compares_against_the_whole_previous_year() {
+fn stats_11_full_year_compares_against_the_whole_previous_year() {
     let (start, end) = StatsPeriod::Year(2025)
         .previous_range(NOW_2026_07_19, &Utc)
         .expect("a full year has a comparison span");
@@ -131,7 +131,7 @@ fn stats_1_full_year_compares_against_the_whole_previous_year() {
 /// A rolling window has no seasonal counterpart a year back that a reader
 /// would recognise, so it keeps the stretch immediately before it.
 #[test]
-fn stats_1_last_30_days_compares_against_the_30_days_before() {
+fn stats_11_last_30_days_compares_against_the_30_days_before() {
     let (start, end) = StatsPeriod::Last30Days
         .previous_range(NOW_2026_07_19, &Utc)
         .expect("a rolling window has a comparison span");
@@ -146,7 +146,7 @@ fn stats_1_last_30_days_compares_against_the_30_days_before() {
 /// All time has nothing before it to compare against, so the hero pill stays
 /// hidden.
 #[test]
-fn stats_1_all_time_has_no_compared_span() {
+fn stats_11_all_time_has_no_compared_span() {
     assert_eq!(
         StatsPeriod::AllTime.previous_range(NOW_2026_07_19, &Utc),
         None
@@ -157,7 +157,7 @@ fn stats_1_all_time_has_no_compared_span() {
 /// to the last day the previous February actually has rather than panicking or
 /// silently sliding into March.
 #[test]
-fn stats_1_leap_day_clamps_the_compared_span_to_february() {
+fn stats_11_leap_day_clamps_the_compared_span_to_february() {
     let leap_day = timestamp(2028, 2, 29, 10, 0);
     let (start, end) = StatsPeriod::YearToDate(2028)
         .previous_range(leap_day, &Utc)
