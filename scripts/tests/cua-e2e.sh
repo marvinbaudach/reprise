@@ -162,12 +162,12 @@ for pattern in \
 done
 doctor_scenario=$(sed -n '/^run_library_doctor_scenario() {/,/^}/p' "$runner")
 for pattern in \
-  'doctor-disable' \
-  'doctor-disabled-close' \
-  'doctor-disabled-entry' \
+  'doctor-plugin-no-toggle' \
+  'doctor-tool-close' \
+  'doctor-tool-entry' \
   'doctor-revert-available'; do
   if ! rg --quiet --fixed-strings "$pattern" <<<"$doctor_scenario"; then
-    echo "the disabled Library Doctor path must reopen its expanding entry: $pattern" >&2
+    echo "the always-available Library Doctor path must reopen its tool page: $pattern" >&2
     exit 1
   fi
 done
@@ -175,12 +175,12 @@ line_for_doctor_step() {
   rg --line-number --max-count 1 --fixed-strings "$1" <<<"$doctor_scenario" \
     | sed 's/:.*//'
 }
-disable_line=$(line_for_doctor_step doctor-disable)
-close_line=$(line_for_doctor_step doctor-disabled-close)
-entry_line=$(line_for_doctor_step doctor-disabled-entry)
+no_toggle_line=$(line_for_doctor_step doctor-plugin-no-toggle)
+close_line=$(line_for_doctor_step doctor-tool-close)
+entry_line=$(line_for_doctor_step doctor-tool-entry)
 revert_line=$(line_for_doctor_step doctor-revert-available)
-if ! ((disable_line < close_line && close_line < entry_line && entry_line < revert_line)); then
-  echo "the disabled Library Doctor path must close, reopen, then expose Revert" >&2
+if ! ((no_toggle_line < close_line && close_line < entry_line && entry_line < revert_line)); then
+  echo "the Library Doctor path must verify no toggle, close, reopen, then expose Revert" >&2
   exit 1
 fi
 for scenario_case in \

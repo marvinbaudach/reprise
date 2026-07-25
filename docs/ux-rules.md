@@ -1590,7 +1590,7 @@ deterministisch und hoch-konfident, nie „ohne Review".
   auch während Backoff; lokaler Scan und vollständige Einzelergebnisse bleiben
   dabei gültig.
 
-- **DOC-1d** [aktiv] [gtk] — **Lokale Aktivierung ist keine
+- **DOC-1d** [ersetzt durch DOC-7a] [gtk] — **Lokale Aktivierung ist keine
   Netzfreigabe.** Library Doctor ist standardmäßig aus. Sein Hauptschalter
   aktiviert ausschließlich lokale Checks und zeigt keine Netzfrage. Der
   getrennte, standardmäßig ausgeschaltete Schalter „MusicBrainz/AcoustID
@@ -1739,7 +1739,7 @@ deterministisch und hoch-konfident, nie „ohne Review".
   können erneut reviewed werden; ein neuer vollständiger Scan ersetzt das
   Scan-Ergebnis unabhängig vom weiterhin gültigen Undo-Journal.
 
-- **DOC-6a** [aktiv] [gtk] — **Library Doctor ist eine
+- **DOC-6a** [ersetzt durch DOC-7b] [gtk] — **Library Doctor ist eine
   Hauptfenster-Navigation.** 26a lebt als Root-Page im bestehenden
   `content_nav`, 26b wird darauf gepusht; Back kehrt mit unveränderter
   In-Session-Auswahl zu 26a zurück. Es gibt keinen Doctor-Dialog und keinen
@@ -1763,9 +1763,39 @@ deterministisch und hoch-konfident, nie „ohne Review".
   Scan/Apply/Revert laufen nicht parallel, und alle Tag-Writes sind global
   serialisiert; Playback, Navigation und lesender Device-Sync bleiben
   benutzbar. Ein erneuter Doctor-Einstieg während eines laufenden Jobs
-  navigiert zu diesem Job statt einen zweiten zu starten. Haupt- und
-  Remote-Toggle sind während des Jobs gesperrt und erklären den laufenden
-  Job; Cancel lebt ausschließlich an dessen Fortschrittsoberfläche.
+  navigiert zu diesem Job statt einen zweiten zu starten. Scope,
+  Remote-Toggle und Scan-Aktion sind während des Jobs gesperrt und erklären
+  den laufenden Job; Cancel lebt ausschließlich an dessen
+  Fortschrittsoberfläche.
+
+- **DOC-7a** [aktiv] [gtk] — **Lokale Checks sind ein verfügbares
+  Werkzeug; Netzwerk bleibt Opt-in.** Library Doctor hat keinen
+  Hauptschalter und seine lokalen, rein lesenden Checks sind jederzeit
+  manuell startbar. Das ist keine Netzfreigabe. Der getrennte, standardmäßig
+  ausgeschaltete Schalter „MusicBrainz/AcoustID suggestions" zeigt beim
+  ersten Einschalten eine kurze, versionierte Bestätigung mit der
+  Daten-Allowlist aus DOC-1c; Abbrechen lässt ihn aus. Plugin-Zeile und
+  Ergebnisansicht binden denselben persistenten Schalter. Ausschalten stoppt
+  künftige Remote-Anfragen, versteckt Remote-Zeilen und entfernt deren
+  Auswahl; erneutes Einschalten zeigt vorhandene oder neu geladene
+  Remote-Vorschläge ungeprüft. Fehlende Fingerprint-Capability wird sichtbar
+  als „AcoustID unavailable" erklärt, während Local und reine
+  MusicBrainz-Auflösung weiter funktionieren.
+
+- **DOC-7b** [aktiv] [gtk] — **Library Doctor ist eine direkt verfügbare
+  Hauptfenster-Navigation.** 26a lebt als Root-Page im bestehenden
+  `content_nav`, 26b wird darauf gepusht; Back kehrt mit unveränderter
+  In-Session-Auswahl zu 26a zurück. Es gibt keinen Doctor-Dialog und keinen
+  zusätzlichen Apply-Bestätigungsdialog. Einstiege sind die Plugins-Seite
+  mit Privacy-Untertitel „contacts MusicBrainz / AcoustID", das ⋮-Menü der
+  Library und der STATS-DEDUP-Hinweis; jeder Einstieg führt direkt zur
+  Doctor-Seite. Der Scope ist kein persistentes Plugin-Setting: Default Whole
+  Library, aus gefilterter View Current View vorgeschlagen, aus
+  Auswahlkontext Selection. Die aufgeklappte Plugin-Zeile zeigt ohne
+  Hauptschalter Scope, Remote-Schalter, den Hinweis „local fixes always
+  included · no network", „Run scan now" und „Revert last cleanup". Revert
+  bleibt über eine minimale Doctor-Jobseite verfügbar und aktiviert kein
+  Netzwerk.
 
 - **DOC-6c** [geplant] [manuell] — **Die sichtbare Abnahme entspricht den
   Frames 26a, 26b und 27.** Auf einem echten GNOME-Display werden breite und

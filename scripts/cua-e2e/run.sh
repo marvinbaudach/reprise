@@ -426,7 +426,7 @@ run_library_doctor_scenario() {
   # Each fixture produces one whitespace, missing-album-artist, and genre fix.
   safe_change_count=$((fixture_count * 3))
 
-  echo "[cua-e2e] library-doctor: opt in -> review -> apply -> disabled revert"
+  echo "[cua-e2e] library-doctor: scan -> review -> apply -> reopen -> revert"
   mkdir -p "$fixture_dir"
   ffmpeg -hide_banner -loglevel error -y \
     -f lavfi -i sine=frequency=440:duration=2 \
@@ -446,17 +446,6 @@ run_library_doctor_scenario() {
 
   cua_activate_main_menu_item \
     "$APP_PID" "$WINDOW_ID" "Library Doctor" doctor-entry
-  wait_for_label "$APP_PID" "$WINDOW_ID" "Enable Library Doctor" doctor-plugin >/dev/null
-  cua_click_label "$APP_PID" "$WINDOW_ID" "Enable Library Doctor" doctor-enable
-  wait_for_label "$APP_PID" "$WINDOW_ID" "Run Scan Now" doctor-run-ready >/dev/null
-
-  # Enabling the module happens in the modal Preferences window. Close that
-  # transient and enter the real Doctor utility page before proving that the
-  # already-selected Music row remains an absolute navigation target.
-  cua_hotkey "$APP_PID" "$WINDOW_ID" doctor-enable-close ctrl w
-  wait_for_label "$APP_PID" "$WINDOW_ID" "Search all fields" doctor-enable-closed >/dev/null
-  cua_activate_main_menu_item \
-    "$APP_PID" "$WINDOW_ID" "Library Doctor" doctor-page-entry
   wait_for_label "$APP_PID" "$WINDOW_ID" "Run Scan Now" doctor-page-ready >/dev/null
 
   echo "[cua-e2e] browse-3-sidebar-escapes-doctor: active Music is an absolute target"
@@ -506,17 +495,18 @@ run_library_doctor_scenario() {
   cua_focus_label_via_key "$APP_PID" "$WINDOW_ID" "Plugins" down doctor-plugins-focus \
     >/dev/null
   cua_press_key_window "$APP_PID" "$WINDOW_ID" enter doctor-plugins-enter
-  wait_for_label "$APP_PID" "$WINDOW_ID" "Enable Library Doctor" doctor-plugin-enabled >/dev/null
-  cua_click_label "$APP_PID" "$WINDOW_ID" "Enable Library Doctor" doctor-disable
-  cua_hotkey "$APP_PID" "$WINDOW_ID" doctor-disabled-close ctrl w
+  wait_for_label "$APP_PID" "$WINDOW_ID" "Run Scan Now" doctor-plugin-tool >/dev/null
   wait_for_label_absent \
-    "$APP_PID" "$WINDOW_ID" "Preferences" doctor-disabled-close-complete >/dev/null
+    "$APP_PID" "$WINDOW_ID" "Enable Library Doctor" doctor-plugin-no-toggle >/dev/null
+  cua_hotkey "$APP_PID" "$WINDOW_ID" doctor-tool-close ctrl w
+  wait_for_label_absent \
+    "$APP_PID" "$WINDOW_ID" "Preferences" doctor-tool-close-complete >/dev/null
   cua_activate_main_menu_item \
-    "$APP_PID" "$WINDOW_ID" "Library Doctor" doctor-disabled-entry
+    "$APP_PID" "$WINDOW_ID" "Library Doctor" doctor-tool-entry
   wait_for_label \
     "$APP_PID" "$WINDOW_ID" "Revert Last Cleanup" doctor-revert-available >/dev/null
   cua_click_label \
-    "$APP_PID" "$WINDOW_ID" "Revert Last Cleanup" doctor-revert-disabled
+    "$APP_PID" "$WINDOW_ID" "Revert Last Cleanup" doctor-revert
   wait_for_label \
     "$APP_PID" "$WINDOW_ID" "Tags reverted · $fixture_count tracks" doctor-reverted \
     >/dev/null
