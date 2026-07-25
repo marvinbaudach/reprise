@@ -169,7 +169,8 @@ impl StatsView {
         band_card.set_on_open_artist({
             let callback = on_go_to_artist.clone();
             move |artist| {
-                if let Some(callback) = callback.borrow().clone() {
+                let callback = callback.borrow().clone();
+                if let Some(callback) = callback {
                     callback(artist);
                 }
             }
@@ -528,10 +529,14 @@ fn resolve_unify(
 ) {
     let connection = connection.borrow().clone();
     let Some(connection) = connection else { return };
-    let ids = group_track_ids(&connection.borrow(), kind, key);
+    let ids = {
+        let connection = connection.borrow();
+        group_track_ids(&connection, kind, key)
+    };
     match ids {
         Ok(ids) if !ids.is_empty() => {
-            if let Some(callback) = callback.borrow().clone() {
+            let callback = callback.borrow().clone();
+            if let Some(callback) = callback {
                 callback(ids);
             }
         }

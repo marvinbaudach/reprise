@@ -34,7 +34,8 @@ pub(super) fn button(
     button.add_css_class(css_class);
     let callback = callback.clone();
     button.connect_clicked(move |_| {
-        if let Some(callback) = callback.borrow().clone() {
+        let callback = callback.borrow().clone();
+        if let Some(callback) = callback {
             callback(target.clone());
         }
     });

@@ -102,19 +102,28 @@ impl StatsBandCard {
         name_button.connect_clicked({
             let current_artist = current_artist.clone();
             let callback = on_open_artist.clone();
-            move |_| invoke(&callback, current_artist.borrow().clone())
+            move |_| {
+                let artist = current_artist.borrow().clone();
+                invoke(&callback, artist);
+            }
         });
         let card_click = gtk4::GestureClick::new();
         card_click.connect_released({
             let current_artist = current_artist.clone();
             let callback = on_open_artist.clone();
-            move |_, _, _, _| invoke(&callback, current_artist.borrow().clone())
+            move |_, _, _, _| {
+                let artist = current_artist.borrow().clone();
+                invoke(&callback, artist);
+            }
         });
         root.add_controller(card_click.clone());
         unify_hint.connect_clicked({
             let current_key = current_key.clone();
             let callback = on_unify.clone();
-            move |_| invoke(&callback, current_key.borrow().clone())
+            move |_| {
+                let key = current_key.borrow().clone();
+                invoke(&callback, key);
+            }
         });
 
         Self {
@@ -402,5 +411,21 @@ mod tests {
             .emit_by_name::<()>("released", &[&1_i32, &0.0_f64, &0.0_f64]);
 
         assert_eq!(opened.borrow().as_deref(), Some("Lorna Shore"));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn band_navigation_callback_may_refresh_current_artist() {
+        gtk4::init().unwrap();
+        let card = StatsBandCard::new();
+        *card.current_artist.borrow_mut() = "Current artist".into();
+        card.set_on_open_artist({
+            let current_artist = card.current_artist.clone();
+            move |_| *current_artist.borrow_mut() = "Refreshed artist".into()
+        });
+
+        card.name_button.emit_clicked();
+
+        assert_eq!(&*card.current_artist.borrow(), "Refreshed artist");
     }
 }
