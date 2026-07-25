@@ -1,6 +1,6 @@
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -15,6 +15,13 @@ const FIXTURE_LOG_ENV: &str = "REPRISE_CONCERTS_FIXTURE_LOG";
 
 static LAST_REQUEST: Mutex<Option<Instant>> = Mutex::new(None);
 
+#[cfg(test)]
+thread_local! {
+    static TEST_FIXTURE_DIR: std::cell::RefCell<Option<PathBuf>> = const {
+        std::cell::RefCell::new(None)
+    };
+}
+
 pub fn user_agent() -> String {
     format!(
         "Reprise/{} ( {} )",
@@ -25,8 +32,8 @@ pub fn user_agent() -> String {
 
 pub fn get(url: &str) -> Result<String, ProviderError> {
     let _ = wait_for_request_slot(&mut || false);
-    if let Ok(directory) = std::env::var(FIXTURE_DIR_ENV) {
-        return fixture_get(url, Path::new(&directory));
+    if let Some(directory) = fixture_directory() {
+        return fixture_get(url, &directory);
     }
     let response = ureq::Agent::config_builder()
         .timeout_global(Some(HTTP_TIMEOUT))
@@ -53,6 +60,27 @@ pub fn get(url: &str) -> Result<String, ProviderError> {
         .into_body()
         .read_to_string()
         .map_err(|_| ProviderError::Body)
+}
+
+fn fixture_directory() -> Option<PathBuf> {
+    #[cfg(test)]
+    if let Some(directory) = TEST_FIXTURE_DIR.with(|slot| slot.borrow().clone()) {
+        return Some(directory);
+    }
+    std::env::var(FIXTURE_DIR_ENV).ok().map(PathBuf::from)
+}
+
+#[cfg(test)]
+pub(crate) fn with_fixture_dir<T>(directory: &Path, operation: impl FnOnce() -> T) -> T {
+    struct Reset(Option<PathBuf>);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            TEST_FIXTURE_DIR.with(|slot| *slot.borrow_mut() = self.0.take());
+        }
+    }
+    let previous = TEST_FIXTURE_DIR.with(|slot| slot.borrow_mut().replace(directory.to_path_buf()));
+    let _reset = Reset(previous);
+    operation()
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
