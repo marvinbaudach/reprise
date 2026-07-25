@@ -25,6 +25,85 @@ fn city_tooltip(row: &ConcertRow) -> Option<String> {
     (!details.is_empty()).then(|| details.join(" · "))
 }
 
+fn similar_caption(row: &ConcertRow) -> Option<String> {
+    row.is_similar
+        .then_some(row.similar_to.as_deref())
+        .flatten()
+        .filter(|seed| !seed.trim().is_empty())
+        .map(strings::concert_similar_caption)
+}
+
+fn artist_column(view: &gtk4::ColumnView) {
+    let factory = gtk4::SignalListItemFactory::new();
+    factory.connect_setup(move |_, object| {
+        let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
+            return;
+        };
+        let cell = gtk4::Box::new(gtk4::Orientation::Vertical, 1);
+        let artist = gtk4::Label::builder()
+            .xalign(0.0)
+            .hexpand(true)
+            .ellipsize(gtk4::pango::EllipsizeMode::End)
+            .build();
+        let caption = gtk4::Label::builder()
+            .xalign(0.0)
+            .hexpand(true)
+            .ellipsize(gtk4::pango::EllipsizeMode::End)
+            .build();
+        caption.add_css_class("dim-label");
+        caption.add_css_class("caption");
+        cell.append(&artist);
+        cell.append(&caption);
+        item.set_child(Some(&cell));
+    });
+    factory.connect_bind(move |_, object| {
+        let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
+            return;
+        };
+        let Some(cell) = item.child().and_downcast::<gtk4::Box>() else {
+            return;
+        };
+        let Some(artist) = cell.first_child().and_downcast::<gtk4::Label>() else {
+            return;
+        };
+        let Some(caption) = artist.next_sibling().and_downcast::<gtk4::Label>() else {
+            return;
+        };
+        let Some(object) = item.item().and_downcast::<ConcertObject>() else {
+            return;
+        };
+        let row = object.row();
+        artist.set_text(&row.artist_name);
+        let text = similar_caption(&row);
+        caption.set_text(text.as_deref().unwrap_or_default());
+        caption.set_visible(text.is_some());
+    });
+    factory.connect_unbind(move |_, object| {
+        let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
+            return;
+        };
+        let Some(cell) = item.child().and_downcast::<gtk4::Box>() else {
+            return;
+        };
+        let Some(artist) = cell.first_child().and_downcast::<gtk4::Label>() else {
+            return;
+        };
+        let Some(caption) = artist.next_sibling().and_downcast::<gtk4::Label>() else {
+            return;
+        };
+        artist.set_text("");
+        caption.set_text("");
+        caption.set_visible(false);
+    });
+    let column = gtk4::ColumnViewColumn::builder()
+        .title(strings::text(strings::CONCERTS_ARTIST))
+        .factory(&factory)
+        .resizable(true)
+        .expand(true)
+        .build();
+    view.append_column(&column);
+}
+
 fn text_column(
     view: &gtk4::ColumnView,
     title: &str,
@@ -175,14 +254,7 @@ pub(super) fn append_columns(view: &gtk4::ColumnView, on_open: &OnOpenTarget) ->
         |row| format_event_date(&row.date_key, Local::now().date_naive()),
         |_| None,
     );
-    text_column(
-        view,
-        &strings::text(strings::CONCERTS_ARTIST),
-        None,
-        false,
-        |row| row.artist_name.clone(),
-        |_| None,
-    );
+    artist_column(view);
     text_column(
         view,
         &strings::text(strings::CONCERTS_CITY),
@@ -252,5 +324,18 @@ mod tests {
     #[test]
     fn city_tooltip_joins_only_available_location_context() {
         assert_eq!(city_tooltip(&row(None, None)).as_deref(), Some("BY · DE"));
+    }
+
+    #[test]
+    fn conc_6_similar_rows_carry_seed_caption() {
+        let mut event = row(None, None);
+        event.is_similar = true;
+        event.similar_to = Some("Bring Me the Horizon".into());
+        assert_eq!(
+            similar_caption(&event).as_deref(),
+            Some("similar to Bring Me the Horizon")
+        );
+        event.is_similar = false;
+        assert_eq!(similar_caption(&event), None);
     }
 }

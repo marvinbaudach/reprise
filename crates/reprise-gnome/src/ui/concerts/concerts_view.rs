@@ -12,6 +12,7 @@ use rusqlite::Connection;
 
 use super::concerts_columns::{self, OnOpenTarget};
 use super::concerts_empty_state::{concerts_empty_state_for, ConcertsEmptyState};
+use super::concerts_filter_bar::ConcertsFilterBar;
 use super::concerts_model::{ConcertObject, ConcertsModel};
 use super::concerts_presentation::{sort_rows, ConcertSortKey, SortDirection};
 use crate::ui::strings;
@@ -25,6 +26,7 @@ type ErrorCallback = Rc<dyn Fn(String)>;
 struct Shared {
     conn: Rc<RefCell<Connection>>,
     model: Rc<ConcertsModel>,
+    filter_bar: Rc<ConcertsFilterBar>,
     rows: RefCell<Vec<ConcertRow>>,
     stack: gtk4::Stack,
     status: adw::StatusPage,
@@ -44,6 +46,7 @@ pub(in crate::ui) struct ConcertsView {
 impl ConcertsView {
     pub(in crate::ui) fn new(conn: Rc<RefCell<Connection>>) -> Self {
         let model = Rc::new(ConcertsModel::new());
+        let filter_bar = ConcertsFilterBar::new(conn.clone());
         let column_view = gtk4::ColumnView::builder()
             .model(model.selection())
             .show_row_separators(false)
@@ -94,11 +97,13 @@ impl ConcertsView {
 
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         root.add_css_class("reprise-concerts-view");
+        root.append(filter_bar.widget());
         root.append(&stack);
 
         let shared = Rc::new(Shared {
             conn,
             model,
+            filter_bar: filter_bar.clone(),
             rows: RefCell::new(Vec::new()),
             stack,
             status,
@@ -109,6 +114,22 @@ impl ConcertsView {
             on_open_preferences: RefCell::new(None),
             on_launch_error: launch_error,
         });
+        {
+            let shared = Rc::downgrade(&shared);
+            filter_bar.set_on_changed(move |_| {
+                if let Some(shared) = shared.upgrade() {
+                    if let Err(error) = refresh(&shared) {
+                        tracing::warn!(%error, "could not apply concerts filter");
+                    }
+                }
+            });
+        }
+        {
+            let filter_bar = filter_bar.clone();
+            *shared.on_clear_filters.borrow_mut() = Some(Rc::new(move || {
+                filter_bar.clear_all();
+            }));
+        }
 
         {
             let shared = shared.clone();
@@ -183,9 +204,15 @@ impl ConcertsView {
 fn refresh(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
     let today = Local::now().date_naive();
     let conn = shared.conn.borrow();
-    let filter = concerts::config::persisted_filter(&conn)?;
+    let filter = shared.filter_bar.filter();
     let location = concerts::config::location(&conn)?;
     let credentials = concerts::config::credentials(&conn)?;
+    let similar_enabled = concerts::config::similar_config(&conn)?.enabled;
+    let has_similar_rows = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM concert_events WHERE is_similar = 1)",
+        [],
+        |row| row.get::<_, bool>(0),
+    )?;
     let rows = concerts::query_events(&conn, &filter, location.as_ref(), today)?;
     let total = if filter == ConcertFilter::default() {
         rows.len()
@@ -196,6 +223,10 @@ fn refresh(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
     let never_fetched = concerts::latest_fetch_at(&conn)?.is_none();
     drop(conn);
 
+    shared
+        .filter_bar
+        .set_context(location.is_some(), similar_enabled, has_similar_rows);
+    shared.filter_bar.set_counts(rows.len(), total);
     shared.rows.replace(rows.clone());
     shared.model.replace(rows.clone());
     let state = concerts_empty_state_for(
@@ -296,7 +327,11 @@ mod tests {
         reprise_core::db::migrate(&conn.borrow()).unwrap();
         let view = ConcertsView::new(conn);
         let root = view.root().clone().downcast::<gtk4::Box>().unwrap();
-        let stack = root.first_child().and_downcast::<gtk4::Stack>().unwrap();
+        let stack = root
+            .first_child()
+            .and_then(|child| child.next_sibling())
+            .and_downcast::<gtk4::Stack>()
+            .unwrap();
         let scrolled = stack
             .child_by_name(LIST_PAGE)
             .and_downcast::<gtk4::ScrolledWindow>()
