@@ -131,3 +131,27 @@ pub fn playback_outcome(
         }
     }
 }
+
+/// Maps a playback result carrying structured, path-free state to an MCP
+/// outcome while preserving the same absent-player and opaque-bus behavior as
+/// [`playback_outcome`].
+#[cfg(feature = "mpris")]
+pub fn playback_structured_outcome<T: serde::Serialize>(
+    result: Result<T, crate::playback::PlaybackError>,
+    ok_summary: impl FnOnce(&T) -> String,
+) -> Result<CallToolResult, ErrorData> {
+    use crate::playback::PlaybackError;
+    match result {
+        Ok(value) => {
+            let summary = ok_summary(&value);
+            structured_ok(&value, summary)
+        }
+        Err(PlaybackError::NoPlayer) => Ok(tool_error(
+            "no running Reprise app on the session bus — start the app first".to_owned(),
+        )),
+        Err(PlaybackError::Bus(message)) => {
+            tracing::error!(message, "playback bus error");
+            Err(ErrorData::internal_error("internal server error", None))
+        }
+    }
+}
