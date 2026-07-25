@@ -81,13 +81,6 @@ pub struct ListenEventSnapshot {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HourlyListens {
-    pub hour: i32,
-    pub listens: i64,
-    pub total_ms: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RankedGroup {
     pub group: Group,
     pub representative_track_path: String,
@@ -385,22 +378,6 @@ pub(crate) fn track_rows(
         })?
         .collect();
     rows
-}
-
-pub(crate) fn discovered_count(
-    conn: &Connection,
-    start_unix: i64,
-    end_unix: i64,
-) -> Result<i64, rusqlite::Error> {
-    conn.query_row(
-        "SELECT COUNT(*) FROM ( \
-           SELECT track_id, MIN(played_at) AS first_played_at \
-           FROM listen_events GROUP BY track_id \
-           HAVING first_played_at >= ?1 AND first_played_at < ?2 \
-         )",
-        params![start_unix, end_unix],
-        |row| row.get(0),
-    )
 }
 
 /// Track ids belonging to an exact runtime metadata group.

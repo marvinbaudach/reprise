@@ -1,4 +1,4 @@
-use chrono::{FixedOffset, MappedLocalTime, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use chrono::{FixedOffset, NaiveDate, TimeZone, Utc};
 use rusqlite::{params, Connection};
 
 use super::{compute, SortBy};
@@ -29,6 +29,10 @@ fn stats_0_play_definition_consistent_time_and_count() {
             .map(|track| track.play_count)
             .sum::<i64>(),
         snapshot.hero.plays
+    );
+    assert_eq!(
+        snapshot.best_week.as_ref().map(|week| week.total_ms),
+        Some(snapshot.hero.total_ms)
     );
 }
 
@@ -234,22 +238,6 @@ fn stats_15_genre_card_buckets_other() {
 }
 
 #[test]
-fn legacy_highlights_streak_and_discovered() {
-    let conn = migrated_conn();
-    insert_track(&conn, 1, "Known", "Artist", "", "Rock", 60_000, 0, None);
-    insert_track(&conn, 2, "New", "Artist", "", "Rock", 60_000, 0, None);
-    insert_event(&conn, 1, timestamp(2025, 12, 1, 12, 0), 30_000);
-    insert_event(&conn, 1, timestamp(2026, 1, 1, 23, 30), 30_000);
-    insert_event(&conn, 2, timestamp(2026, 1, 2, 23, 30), 30_000);
-    let zone = FixedOffset::east_opt(3_600).unwrap();
-
-    let snapshot = compute(&conn, StatsPeriod::Year(2026), NOW_2026_07_19, &zone).unwrap();
-
-    assert_eq!(snapshot.highlights.streak_days, 2);
-    assert_eq!(snapshot.highlights.discovered_tracks, 1);
-}
-
-#[test]
 fn stats_14_top_tracks_sort_toggle_orders_by_time() {
     let conn = migrated_conn();
     insert_track(&conn, 1, "Frequent", "Artist", "", "Rock", 10_000, 0, None);
@@ -266,39 +254,6 @@ fn stats_14_top_tracks_sort_toggle_orders_by_time() {
         "Frequent"
     );
     assert_eq!(snapshot.top_tracks_sorted(SortBy::Time)[0].title, "Long");
-}
-
-#[test]
-fn stats_streak_survives_dst_change() {
-    let conn = migrated_conn();
-    insert_track(&conn, 1, "DST", "Artist", "", "Rock", 60_000, 0, None);
-    for played_at in [
-        1_774_567_800,
-        1_774_654_200,
-        1_774_740_600,
-        1_774_823_400,
-        1_774_909_800,
-    ] {
-        insert_event(&conn, 1, played_at, 30_000);
-    }
-
-    let dst = compute(
-        &conn,
-        StatsPeriod::Year(2026),
-        timestamp(2026, 4, 1, 0, 0),
-        &DstZone,
-    )
-    .unwrap();
-    let utc = compute(
-        &conn,
-        StatsPeriod::Year(2026),
-        timestamp(2026, 4, 1, 0, 0),
-        &Utc,
-    )
-    .unwrap();
-
-    assert_eq!(dst.highlights.streak_days, 5);
-    assert_eq!(utc.highlights.streak_days, 5);
 }
 
 #[test]
@@ -572,41 +527,6 @@ fn stats_9_album_titles_fold_like_artist_names() {
     assert_eq!(snapshot.top_albums[0].plays, 3);
 }
 
-/// A single peak hour is not a span, and scattered peaks are not one either.
-#[test]
-fn legacy_peak_caption_never_invents_a_span() {
-    let single = migrated_conn();
-    insert_track(&single, 1, "Solo", "Artist", "", "Rock", 100_000, 0, None);
-    insert_event(&single, 1, timestamp(2026, 6, 1, 15, 0), 100_000);
-    let snapshot = compute(&single, StatsPeriod::Year(2026), NOW_2026_07_19, &Utc).unwrap();
-    assert_eq!(
-        snapshot.clock.caption,
-        "Peak 3 PM \u{00b7} afternoon listener"
-    );
-
-    let scattered = migrated_conn();
-    insert_track(
-        &scattered, 1, "Solo", "Artist", "", "Rock", 100_000, 0, None,
-    );
-    insert_event(&scattered, 1, timestamp(2026, 6, 1, 1, 0), 100_000);
-    insert_event(&scattered, 1, timestamp(2026, 6, 1, 23, 0), 100_000);
-    let snapshot = compute(&scattered, StatsPeriod::Year(2026), NOW_2026_07_19, &Utc).unwrap();
-    assert_eq!(
-        snapshot.clock.caption,
-        "Peak 1 AM, 11 PM \u{00b7} night owl"
-    );
-
-    let run = migrated_conn();
-    insert_track(&run, 1, "Solo", "Artist", "", "Rock", 100_000, 0, None);
-    insert_event(&run, 1, timestamp(2026, 6, 1, 13, 0), 100_000);
-    insert_event(&run, 1, timestamp(2026, 6, 1, 14, 0), 100_000);
-    let snapshot = compute(&run, StatsPeriod::Year(2026), NOW_2026_07_19, &Utc).unwrap();
-    assert_eq!(
-        snapshot.clock.caption,
-        "Peak 1 PM\u{2013}2 PM \u{00b7} afternoon listener"
-    );
-}
-
 #[test]
 fn dedup_does_not_mutate_tags() {
     let conn = migrated_conn();
@@ -755,45 +675,4 @@ fn timestamp(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> i64 {
         .single()
         .unwrap()
         .timestamp()
-}
-
-/// Test-only European spring-forward transition without `chrono-tz`.
-#[derive(Clone, Copy)]
-struct DstZone;
-
-impl DstZone {
-    const SWITCH_UNIX: i64 = 1_774_746_000;
-
-    fn offset_at(utc: &NaiveDateTime) -> FixedOffset {
-        let seconds = if utc.and_utc().timestamp() < Self::SWITCH_UNIX {
-            3_600
-        } else {
-            7_200
-        };
-        FixedOffset::east_opt(seconds).expect("valid fixed offset")
-    }
-}
-
-impl TimeZone for DstZone {
-    type Offset = FixedOffset;
-
-    fn from_offset(_: &FixedOffset) -> Self {
-        DstZone
-    }
-
-    fn offset_from_local_date(&self, date: &NaiveDate) -> MappedLocalTime<FixedOffset> {
-        MappedLocalTime::Single(Self::offset_at(&date.and_hms_opt(0, 0, 0).unwrap()))
-    }
-
-    fn offset_from_local_datetime(&self, datetime: &NaiveDateTime) -> MappedLocalTime<FixedOffset> {
-        MappedLocalTime::Single(Self::offset_at(datetime))
-    }
-
-    fn offset_from_utc_date(&self, date: &NaiveDate) -> FixedOffset {
-        Self::offset_at(&date.and_hms_opt(0, 0, 0).unwrap())
-    }
-
-    fn offset_from_utc_datetime(&self, datetime: &NaiveDateTime) -> FixedOffset {
-        Self::offset_at(datetime)
-    }
 }
