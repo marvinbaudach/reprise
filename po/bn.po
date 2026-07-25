@@ -142,7 +142,7 @@ msgstr "প্লাগইনসমূহ"
 
 #: crates/reprise-gnome/src/ui/strings.rs:128
 msgid "Playback"
-msgstr "প্লে-ব্যাক"
+msgstr "প্লেব্যাক"
 
 #: crates/reprise-gnome/src/ui/strings.rs:129
 msgid "Equalizer"
@@ -482,7 +482,7 @@ msgstr "শিরোনাম"
 
 #: crates/reprise-gnome/src/ui/strings.rs:339
 msgid "Cover"
-msgstr "ঢাকনা"
+msgstr "প্রচ্ছদ"
 
 #: crates/reprise-gnome/src/ui/strings.rs:340
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:162
@@ -494,7 +494,7 @@ msgstr "শিল্পী"
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:163
 #: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:21
 msgid "Album"
-msgstr "সংকলন"
+msgstr "অ্যালবাম"
 
 #: crates/reprise-gnome/src/ui/strings.rs:342
 msgid "Track"
@@ -3533,7 +3533,7 @@ msgstr ""
 #~ msgstr "উজ্জ্বলতা"
 
 #~ msgid "Albums"
-#~ msgstr "সংকলন"
+#~ msgstr "অ্যালবাম"
 
 #~ msgid "Unknown Artist"
 #~ msgstr "অজানা শিল্পী"

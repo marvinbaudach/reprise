@@ -135,7 +135,7 @@ msgstr "小型相机"
 
 #: crates/reprise-gnome/src/ui/strings.rs:126
 msgid "Library"
-msgstr "媒体库"
+msgstr "音乐库"
 
 #: crates/reprise-gnome/src/ui/strings.rs:127
 msgid "Plugins"
@@ -217,7 +217,7 @@ msgstr "同一专辑的曲目之间没有静音"
 
 #: crates/reprise-gnome/src/ui/strings.rs:147
 msgid "Inactive while Crossfade is enabled"
-msgstr "启用交叉淡化时不可用"
+msgstr "启用淡入淡出时不可用"
 
 #: crates/reprise-gnome/src/ui/strings.rs:148
 msgid "Could not apply audio effects"
@@ -481,13 +481,13 @@ msgstr "标题"
 
 #: crates/reprise-gnome/src/ui/strings.rs:339
 msgid "Cover"
-msgstr "上盖"
+msgstr "封面"
 
 #: crates/reprise-gnome/src/ui/strings.rs:340
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:162
 #: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:20
 msgid "Artist"
-msgstr "艺术家"
+msgstr "艺人"
 
 #: crates/reprise-gnome/src/ui/strings.rs:341
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:163
@@ -541,7 +541,7 @@ msgstr "下一项"
 
 #: crates/reprise-gnome/src/ui/strings.rs:357
 msgid "Repeat"
-msgstr "反复"
+msgstr "重复"
 
 #: crates/reprise-gnome/src/ui/strings.rs:362
 #: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:23
@@ -3537,7 +3537,7 @@ msgstr ""
 #~ msgstr "专辑"
 
 #~ msgid "Unknown Artist"
-#~ msgstr "未知艺术家"
+#~ msgstr "未知艺人"
 
 #~ msgid "Top tracks"
 #~ msgstr "顶级曲目"
