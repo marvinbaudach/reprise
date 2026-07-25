@@ -456,6 +456,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn nr_14_filter_header_is_permanent_and_reserves_its_height() {
+        gtk4::init().unwrap();
         let conn = Rc::new(RefCell::new(Connection::open_in_memory().unwrap()));
         reprise_core::db::migrate(&conn.borrow()).unwrap();
         let bar = ReleasesFilterBar::new(conn);

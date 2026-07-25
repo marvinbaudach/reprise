@@ -450,6 +450,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn nr_14_releases_view_exposes_filters_five_columns_and_footer() {
+        gtk4::init().unwrap();
         let conn = Rc::new(RefCell::new(Connection::open_in_memory().unwrap()));
         reprise_core::db::migrate(&conn.borrow()).unwrap();
         let view = ReleasesView::new(conn, PathBuf::new(), Rc::new(|_, _| {}));

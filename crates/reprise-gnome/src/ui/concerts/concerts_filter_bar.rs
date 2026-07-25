@@ -560,6 +560,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn conc_2_filter_header_has_fixed_height_and_disabled_radius_hint() {
+        gtk4::init().unwrap();
         let conn = Rc::new(RefCell::new(Connection::open_in_memory().unwrap()));
         reprise_core::db::migrate(&conn.borrow()).unwrap();
         let bar = ConcertsFilterBar::new(conn);
