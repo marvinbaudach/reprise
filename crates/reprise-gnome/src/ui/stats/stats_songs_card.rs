@@ -6,6 +6,7 @@ use std::rc::Rc;
 use gtk4::gio;
 use gtk4::glib;
 use gtk4::prelude::*;
+use libadwaita as adw;
 use reprise_core::cover::ThumbnailSize;
 use reprise_core::format::format_thousands;
 use reprise_core::library::stats_screen::TopTrack;
@@ -56,8 +57,6 @@ struct SummaryRenderer {
 #[derive(Clone)]
 pub(in crate::ui) struct StatsSongsCard {
     root: gtk4::Box,
-    #[cfg_attr(not(test), allow(dead_code))]
-    header: gtk4::Box,
     summary: SummaryRenderer,
     #[cfg_attr(not(test), allow(dead_code))]
     revealer: gtk4::Revealer,
@@ -65,9 +64,7 @@ pub(in crate::ui) struct StatsSongsCard {
     reveal_button: gtk4::Button,
     full_rows: gtk4::Box,
     #[cfg_attr(not(test), allow(dead_code))]
-    plays_sort: gtk4::ToggleButton,
-    #[cfg_attr(not(test), allow(dead_code))]
-    time_sort: gtk4::ToggleButton,
+    sort_toggle: adw::ToggleGroup,
     snapshot: Rc<RefCell<Option<StatsSnapshot>>>,
     sort_by: Rc<Cell<SortBy>>,
 }
@@ -77,18 +74,25 @@ impl StatsSongsCard {
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 10);
         root.add_css_class("stats-songs-card");
         let kicker = label("MOST PLAYED SONGS", "stats-eyebrow");
-        let plays_sort = gtk4::ToggleButton::with_label("by plays");
-        let time_sort = gtk4::ToggleButton::with_label("by time");
-        time_sort.set_group(Some(&plays_sort));
-        plays_sort.set_active(true);
-        let controls = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-        controls.set_halign(gtk4::Align::End);
-        controls.append(&plays_sort);
-        controls.append(&time_sort);
+        let plays_sort = adw::Toggle::builder()
+            .name("plays")
+            .label("by plays")
+            .build();
+        let time_sort = adw::Toggle::builder().name("time").label("by time").build();
+        let sort_toggle = adw::ToggleGroup::new();
+        sort_toggle.add(plays_sort);
+        sort_toggle.add(time_sort);
+        sort_toggle.set_active_name(Some("plays"));
+        sort_toggle.set_halign(gtk4::Align::End);
+        // a11y-semantics: role=group name=sort-top-tracks state=one-selected action=arrow-keys
+        sort_toggle.update_property(&[gtk4::accessible::Property::Label("Sort top tracks")]);
+        // input-parity: ACC-8 keyboard=sort-toggle-arrows
+        // AdwToggleGroup owns the focusable pill buttons and native arrow-key
+        // selection, with one selected item exposed through its group label.
         let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
         kicker.set_hexpand(true);
         header.append(&kicker);
-        header.append(&controls);
+        header.append(&sort_toggle);
         root.append(&header);
 
         let rows = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
@@ -108,6 +112,12 @@ impl StatsSongsCard {
         let revealer = gtk4::Revealer::new();
         revealer.set_reveal_child(false);
         revealer.set_child(Some(&expanded));
+        revealer.set_visible(false);
+        revealer.connect_child_revealed_notify(|revealer| {
+            if !revealer.is_child_revealed() && !revealer.reveals_child() {
+                revealer.set_visible(false);
+            }
+        });
 
         let snapshot = Rc::new(RefCell::new(None::<StatsSnapshot>));
         let sort_by = Rc::new(Cell::new(SortBy::Plays));
@@ -138,7 +148,15 @@ impl StatsSongsCard {
             revealer,
             move |button| {
                 let reveal = !revealer.reveals_child();
-                revealer.set_reveal_child(reveal);
+                if reveal {
+                    // A hidden revealer cannot animate. Join the section flow
+                    // before starting the transition; collapse removes it only
+                    // from `child-revealed` after the animation finishes.
+                    revealer.set_visible(true);
+                    revealer.set_reveal_child(true);
+                } else {
+                    revealer.set_reveal_child(false);
+                }
                 button.set_label(if reveal {
                     "Hide top tracks"
                 } else {
@@ -147,42 +165,37 @@ impl StatsSongsCard {
             }
         ));
 
-        for (button, value) in [(&plays_sort, SortBy::Plays), (&time_sort, SortBy::Time)] {
-            button.connect_toggled({
-                let full_rows = full_rows.clone();
-                let snapshot = snapshot.clone();
-                let sort_by = sort_by.clone();
-                let summary = summary.clone();
-                move |button| {
-                    if !button.is_active() {
-                        return;
-                    }
-                    sort_by.set(value);
-                    let snapshot = snapshot.borrow().clone();
-                    if let Some(snapshot) = snapshot {
-                        summary.render(&snapshot, value);
-                        render_full_rows(
-                            &full_rows,
-                            &snapshot,
-                            value,
-                            &summary.cover_loader,
-                            &summary.generations,
-                            &summary.metadata,
-                        );
-                    }
+        sort_toggle.connect_active_name_notify({
+            let full_rows = full_rows.clone();
+            let snapshot = snapshot.clone();
+            let sort_by = sort_by.clone();
+            let summary = summary.clone();
+            move |toggle| {
+                let active_name = toggle.active_name();
+                let value = sort_for_toggle_name(active_name.as_deref());
+                sort_by.set(value);
+                let snapshot = snapshot.borrow().clone();
+                if let Some(snapshot) = snapshot {
+                    summary.render(&snapshot, value);
+                    render_full_rows(
+                        &full_rows,
+                        &snapshot,
+                        value,
+                        &summary.cover_loader,
+                        &summary.generations,
+                        &summary.metadata,
+                    );
                 }
-            });
-        }
+            }
+        });
 
         Self {
             root,
-            header,
             summary,
             revealer,
             reveal_button,
             full_rows,
-            plays_sort,
-            time_sort,
+            sort_toggle,
             snapshot,
             sort_by,
         }
@@ -211,6 +224,14 @@ impl StatsSongsCard {
             &self.summary.generations,
             &self.summary.metadata,
         );
+    }
+}
+
+fn sort_for_toggle_name(name: Option<&str>) -> SortBy {
+    if name == Some("time") {
+        SortBy::Time
+    } else {
+        SortBy::Plays
     }
 }
 

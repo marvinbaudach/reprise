@@ -23,6 +23,11 @@ fn stats_10_page_orders_header_hero_chart_row_genres() {
 }
 
 #[test]
+fn section_spacing_stays_in_the_compact_design_range() {
+    assert!((16..=24).contains(&SECTION_SPACING));
+}
+
+#[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn stats_10_no_clock_highlights_or_customize_widgets() {
     gtk4::init().unwrap();
@@ -641,4 +646,76 @@ fn stats_10_wide_window_keeps_band_and_songs_side_by_side() {
         "wide story cards must remain side by side"
     );
     window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_10_section_gaps_stay_equal_when_top_tracks_expand_and_collapse() {
+    gtk4::init().unwrap();
+    crate::ui::style::install_css_string_for_test(&super::super::stats_css::css());
+    let (view, window) = presented(1_000);
+    let sections = view
+        .page_stack
+        .child_by_name("sections")
+        .unwrap()
+        .downcast::<gtk4::Box>()
+        .unwrap();
+
+    assert!(!view.render.top_tracks_section.is_visible());
+    assert_eq!(occupied_section_gaps(&sections), vec![20, 20]);
+
+    let reveal = descendant_button(
+        view.render.songs_card.widget().upcast_ref(),
+        "Show all top tracks",
+    );
+    reveal.emit_clicked();
+    wait_for(400);
+
+    assert!(view.render.top_tracks_section.is_visible());
+    assert!(view.render.top_tracks_section.is_child_revealed());
+    assert_eq!(occupied_section_gaps(&sections), vec![20, 20, 20]);
+
+    reveal.emit_clicked();
+    wait_for(400);
+
+    assert!(!view.render.top_tracks_section.is_visible());
+    assert_eq!(occupied_section_gaps(&sections), vec![20, 20]);
+    window.close();
+}
+
+fn occupied_section_gaps(sections: &gtk4::Box) -> Vec<i32> {
+    let mut bounds = Vec::new();
+    let mut child = sections.first_child();
+    while let Some(widget) = child {
+        let widget_bounds = widget.compute_bounds(sections).unwrap();
+        if widget.is_visible() && widget_bounds.height() > 0.0 {
+            bounds.push(widget_bounds);
+        }
+        child = widget.next_sibling();
+    }
+    bounds
+        .windows(2)
+        .map(|pair| (pair[1].y() - pair[0].y() - pair[0].height()).round() as i32)
+        .collect()
+}
+
+fn descendant_button(root: &gtk4::Widget, label: &str) -> gtk4::Button {
+    descendant_button_or_none(root, label)
+        .unwrap_or_else(|| panic!("missing button labeled {label}"))
+}
+
+fn descendant_button_or_none(root: &gtk4::Widget, label: &str) -> Option<gtk4::Button> {
+    let mut child = root.first_child();
+    while let Some(widget) = child {
+        if let Some(button) = widget.downcast_ref::<gtk4::Button>() {
+            if button.label().as_deref() == Some(label) {
+                return Some(button.clone());
+            }
+        }
+        if let Some(button) = descendant_button_or_none(&widget, label) {
+            return Some(button);
+        }
+        child = widget.next_sibling();
+    }
+    None
 }

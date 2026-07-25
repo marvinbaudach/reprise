@@ -28,7 +28,7 @@ use crate::ui::motion_slide::SlideBin;
 use crate::ui::strings;
 
 const CONTENT_MAX_WIDTH: i32 = 1120;
-const SECTION_SPACING: i32 = 28;
+const SECTION_SPACING: i32 = 20;
 const STORY_NATURAL_LINE_LENGTH: i32 = 960;
 const STORY_SPACING: i32 = 20;
 const SONGS_WIDTH: i32 = 490;
