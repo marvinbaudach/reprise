@@ -2124,17 +2124,15 @@ Dateien.
   Aktiv zeigt sie „X of Y concerts" und „Clear all". Ohne Location ist
   Radius deaktiviert und trägt den Tooltip „Set a location in Preferences".
   <!-- REVIEW: Regelvorschlag -->
-- **CONC-3** [geplant] [gtk] — Doppelklick/Enter auf eine Zeile und die
+- **CONC-3** [aktiv] [gtk] — Doppelklick/Enter auf eine Zeile und die
   Ticket-Zelle öffnen dasselbe externe Ziel: Offer-URL, sonst Event-Seite.
   Ohne beides ist die Zelle leer und Aktivierung ein No-op mit Tooltip. Es
   gibt keinen Play-Pfad.
-  <!-- REVIEW: Regelvorschlag -->
-- **CONC-4** [geplant] [gtk] — Ohne Credential zeigt Concerts eine
+- **CONC-4** [aktiv] [gtk] — Ohne Credential zeigt Concerts eine
   StatusPage mit Preferences-Deep-Link und startet keinen Fetch. Nie
   gefetcht bietet genau „Fetch now"; null Treffer mit Filtern genau „Show
   all". Offline oder Fehler lassen Cache und „Updated X ago" sichtbar und
   melden den Fehler ausschließlich inline im Footer.
-  <!-- REVIEW: Regelvorschlag -->
 - **CONC-5** [geplant] [core] — Netz läuft ausschließlich im Worker. Trigger
   sind View-Open-Staleness (24 h plus Jitter), der stündliche Due-Check und
   „Fetch now". Track-Wechsel und Navigation lesen nur Cache; Ergebnisse
