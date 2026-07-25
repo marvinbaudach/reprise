@@ -47,6 +47,17 @@ pub struct ArtistNews {
     pub stale: bool,
 }
 
+/// How much of a release the local library already holds. A `bool` cannot
+/// express the case this feature exists for: you own the lead single, so the
+/// album is *relevant* to you — but calling that "in library" would send you
+/// to the library instead of to the announcement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LibraryPresence {
+    Absent,
+    Partial,
+    Complete,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredRelease {
     pub release_group_mbid: String,
@@ -59,7 +70,7 @@ pub struct StoredRelease {
     pub seen_at: Option<i64>,
     pub hidden: bool,
     pub fallback_accent: String,
-    pub in_library: bool,
+    pub presence: LibraryPresence,
     pub announce_url: Option<String>,
 }
 
@@ -515,23 +526,49 @@ fn normalize_fallback_accent(accent: Option<String>) -> String {
         )
 }
 
-/// The set of `(normalized artist, normalized album)` pairs already present
-/// in the local library. Shared by `query_releases`'s in-library annotation
-/// and `query_history`'s (A2) identical need.
-pub(crate) fn local_album_set(
+/// `(normalized artist, normalized album) → track count` for the local
+/// library. Shared by `query_releases`' presence annotation and
+/// `query_history`'s identical need. Deliberately threshold-free: this
+/// describes the library, it does not filter — the threshold lives in
+/// `presence_for`.
+pub(crate) fn local_album_track_counts(
     conn: &Connection,
-) -> Result<std::collections::HashSet<(String, String)>, rusqlite::Error> {
+) -> Result<std::collections::HashMap<(String, String), i64>, rusqlite::Error> {
     let mut statement = conn.prepare(
-        "SELECT artist, album FROM tracks
-         WHERE removed_at IS NULL AND missing_since IS NULL AND trim(album) <> ''",
+        "SELECT artist, album, COUNT(*) FROM tracks
+         WHERE removed_at IS NULL AND missing_since IS NULL AND trim(album) <> ''
+         GROUP BY lower(trim(artist)), lower(trim(album))",
     )?;
-    let local_albums = statement
+    let counts = statement
         .query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
         })?
-        .map(|row| row.map(|(artist, album)| (normalize(&artist), normalize(&album))))
-        .collect::<Result<std::collections::HashSet<_>, _>>()?;
-    Ok(local_albums)
+        .map(|row| row.map(|(artist, album, count)| ((normalize(&artist), normalize(&album)), count)))
+        .collect::<Result<std::collections::HashMap<_, _>, _>>()?;
+    Ok(counts)
+}
+
+/// Maps a track count onto the presence states. `OWNED_ALBUM_MIN_TRACKS` is
+/// the same threshold `local_albums` filters by, so "counts as owned" means
+/// the same thing on both sides.
+pub(crate) fn presence_for(
+    counts: &std::collections::HashMap<(String, String), i64>,
+    artist: &str,
+    title: &str,
+) -> LibraryPresence {
+    match counts
+        .get(&(normalize(artist), normalize(title)))
+        .copied()
+        .unwrap_or(0)
+    {
+        0 => LibraryPresence::Absent,
+        count if count < OWNED_ALBUM_MIN_TRACKS => LibraryPresence::Partial,
+        _ => LibraryPresence::Complete,
+    }
 }
 
 pub fn query_releases(
@@ -560,14 +597,13 @@ pub fn query_releases(
                 hidden: row.get::<_, i64>(8)? != 0,
                 fallback_accent: row.get(9)?,
                 announce_url: row.get(10)?,
-                in_library: false,
+                presence: LibraryPresence::Absent,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    let local_albums = local_album_set(conn)?;
+    let counts = local_album_track_counts(conn)?;
     for release in &mut releases {
-        release.in_library =
-            local_albums.contains(&(normalize(&release.artist_name), normalize(&release.title)));
+        release.presence = presence_for(&counts, &release.artist_name, &release.title);
     }
     releases.sort_by(|left, right| compare_stored_releases(left, right, today));
     Ok(releases)

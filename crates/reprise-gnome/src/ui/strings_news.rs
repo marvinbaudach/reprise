@@ -137,6 +137,7 @@ pub fn new_releases_hidden(count: usize) -> String {
 pub const NEW_RELEASES_HEADER: &str = N_!("New Releases");
 pub const RELEASED: &str = N_!("released");
 pub const IN_LIBRARY: &str = N_!("In library");
+pub const NEW_RELEASES_PARTIALLY_OWNED: &str = N_!("Single in library");
 pub const SHOW_HISTORY: &str = N_!("Show history");
 pub const SHOW_IN_LIBRARY: &str = N_!("Show in library");
 pub const OPEN_ANNOUNCEMENT: &str = N_!("Open announcement");

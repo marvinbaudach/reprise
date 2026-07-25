@@ -240,6 +240,12 @@ fn nr_1a_tag_mbid_skips_search_and_persists_releases() {
         [ARTIST_ID],
     )
     .unwrap();
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, artist_mbid, album, added_at) \
+         VALUES ('/music/three.flac', 'Three', 'Pink Floyd', ?1, 'Future Album', 0)",
+        [ARTIST_ID],
+    )
+    .unwrap();
     let after_import = query_releases(&conn, true, date()).unwrap();
     assert_eq!(
         after_import.len(),
@@ -250,17 +256,19 @@ fn nr_1a_tag_mbid_skips_search_and_persists_releases() {
         .iter()
         .find(|release| release.title == "Future Album")
         .unwrap();
-    assert!(
-        future_album.in_library,
-        "the newly imported album is marked in_library"
+    assert_eq!(
+        future_album.presence,
+        crate::artist_news::LibraryPresence::Complete,
+        "the newly imported album (two local tracks) is marked fully owned"
     );
     let recent_ep = after_import
         .iter()
         .find(|release| release.title == "Recent EP")
         .unwrap();
-    assert!(
-        !recent_ep.in_library,
-        "an album with no local match stays not in_library"
+    assert_eq!(
+        recent_ep.presence,
+        crate::artist_news::LibraryPresence::Absent,
+        "an album with no local match stays absent"
     );
 }
 
@@ -567,6 +575,12 @@ fn nr_13_query_marks_local_albums_instead_of_dropping_them() {
         [],
     )
     .unwrap();
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+         VALUES ('/music/local2.flac', 'Track Two', 'Pink Floyd', 'Local Album', 5, 0)",
+        [],
+    )
+    .unwrap();
 
     let releases = query_releases(&conn, true, date()).unwrap();
 
@@ -575,17 +589,19 @@ fn nr_13_query_marks_local_albums_instead_of_dropping_them() {
         .iter()
         .find(|release| release.release_group_mbid == "owned")
         .unwrap();
-    assert!(
-        owned.in_library,
-        "matching local album is marked in_library"
+    assert_eq!(
+        owned.presence,
+        crate::artist_news::LibraryPresence::Complete,
+        "matching local album (two tracks) is marked fully owned"
     );
     let brand_new = releases
         .iter()
         .find(|release| release.release_group_mbid == "new")
         .unwrap();
-    assert!(
-        !brand_new.in_library,
-        "release with no local match stays not in_library"
+    assert_eq!(
+        brand_new.presence,
+        crate::artist_news::LibraryPresence::Absent,
+        "release with no local match stays absent"
     );
 }
 
@@ -1048,4 +1064,52 @@ fn upcoming_album_bypasses_the_owned_threshold_even_when_two_local_tracks_match(
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].title, "Eclipse");
     assert_eq!(items[0].kind, NewsKind::Upcoming);
+}
+
+#[test]
+fn presence_distinguishes_absent_partial_and_complete() {
+    use crate::artist_news::{presence_for, LibraryPresence};
+
+    let mut counts = std::collections::HashMap::new();
+    counts.insert(("pink floyd".to_string(), "owned album".to_string()), 2);
+    counts.insert(("pink floyd".to_string(), "just a single".to_string()), 1);
+
+    assert_eq!(
+        presence_for(&counts, "Pink Floyd", "Owned Album"),
+        LibraryPresence::Complete
+    );
+    assert_eq!(
+        presence_for(&counts, " PINK   FLOYD ", " just a single "),
+        LibraryPresence::Partial,
+        "normalization must match query_releases' own"
+    );
+    assert_eq!(
+        presence_for(&counts, "Pink Floyd", "Never Heard Of It"),
+        LibraryPresence::Absent
+    );
+}
+
+#[test]
+fn query_releases_reports_partial_ownership_for_a_single_track() {
+    use crate::artist_news::LibraryPresence;
+
+    let conn = migrated_conn();
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+         VALUES ('/music/lead.flac', 'Lead Single', 'Pink Floyd', 'Eclipse', 1, 0)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO new_releases (release_group_mbid, artist_name, artist_mbid, title, \
+         release_type, first_release_date, fetched_at, fallback_accent, first_seen) \
+         VALUES ('rg-1', 'Pink Floyd', 'mbid-1', 'Eclipse', 'Album', '2026-09-01', 100, \
+         '#3584E4', 100)",
+        [],
+    )
+    .unwrap();
+
+    let releases = query_releases(&conn, false, date()).unwrap();
+    assert_eq!(releases.len(), 1);
+    assert_eq!(releases[0].presence, LibraryPresence::Partial);
 }
