@@ -266,6 +266,11 @@ impl StatsBandCard {
         *self.on_unify.borrow_mut() = Some(Rc::new(callback));
     }
 
+    #[cfg(test)]
+    pub(super) fn emit_unify(&self, key: &str) {
+        invoke(&self.on_unify, key.to_string());
+    }
+
     pub(super) fn bars(&self) -> Vec<gtk4::LevelBar> {
         self.rank_bars.borrow().clone()
     }

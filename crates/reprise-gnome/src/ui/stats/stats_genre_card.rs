@@ -159,6 +159,11 @@ impl StatsGenreCard {
         *self.on_unify.borrow_mut() = Some(Rc::new(callback));
     }
 
+    #[cfg(test)]
+    pub(super) fn emit_unify(&self, key: &str) {
+        invoke(&self.on_unify, key.to_string());
+    }
+
     pub(in crate::ui) fn set_on_open_album_path(&self, callback: impl Fn(String) + 'static) {
         *self.on_open_album_path.borrow_mut() = Some(Rc::new(callback));
     }
