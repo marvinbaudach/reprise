@@ -479,13 +479,13 @@ fn render_full_rows(
         row.append(&cover);
         let text = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
         text.set_hexpand(true);
-        text.append(&stats_metadata_links::button(
+        text.append(&stats_metadata_links::link(
             &track.title,
             "stats-item-title",
             StatsMetadataTarget::Track(track.track_id),
             metadata,
         ));
-        text.append(&stats_metadata_links::button(
+        text.append(&stats_metadata_links::link(
             &track.artist,
             "stats-item-subtitle",
             StatsMetadataTarget::Artist {
@@ -495,14 +495,18 @@ fn render_full_rows(
             metadata,
         ));
         row.append(&text);
-        let bar = gtk4::LevelBar::new();
-        bar.add_css_class("stats-song-bar");
-        bar.set_min_value(0.0);
-        bar.set_max_value(1.0);
-        bar.set_value(relative_value(metric(track, sort_by), leader));
-        bar.set_width_request(120);
-        bar.set_height_request(8);
+        let bar = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        bar.add_css_class("stats-compact-song-bar");
+        bar.set_size_request(120, 8);
         bar.set_valign(gtk4::Align::Center);
+        bar.set_accessible_role(gtk4::AccessibleRole::Presentation);
+        let fill = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        fill.add_css_class("stats-compact-song-bar-fill");
+        fill.set_size_request(
+            (120.0 * relative_value(metric(track, sort_by), leader)).round() as i32,
+            8,
+        );
+        bar.append(&fill);
         row.append(&bar);
         row.append(&label(
             &format!(
