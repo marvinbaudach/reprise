@@ -1,6 +1,6 @@
 # Releasing Reprise
 
-This checklist prepares Reprise 0.1.0 for distribution without publishing or
+This checklist prepares Reprise 0.1.1 for distribution without publishing or
 modifying user data. The repository currently has no public remote, and this
 workflow must not push, tag, upload, or submit anything automatically.
 
@@ -157,9 +157,10 @@ Do not point development hooks at the maintainer's real library.
 
 - Confirm first-run copy/layout, Skip, Set Up Library, and the portal folder
   chooser. The copy must disclose automatic cover lookup without showing a
-  disable switch. A detected Rhythmbox installation must show a clearly
-  default-off `Column layout` choice in the one-time import section; no false
-  offer appears without it and no later menu/Preferences entry exists.
+  disable switch. A detected `rhythmdb.xml` must show a clearly default-off,
+  one-time Rhythmbox data-import choice; after the initial library scan it must
+  offer ratings, play history, dates, and playlists, but no column-layout
+  import. No false offer or later menu/Preferences entry may exist.
 - Check English and German UI for clipping, untranslated text, natural plurals,
   keyboard mnemonics, narrow-window adaptation, touch/pointer interaction, and
   light/dark appearance.
@@ -205,9 +206,9 @@ Do not point development hooks at the maintainer's real library.
 - Verify MPRIS quick settings, media keys, notifications, lock screen, metadata,
   cover art, shuffle/repeat writes, and clean shutdown on a real GNOME session.
 - Exercise browse facets, search, the column-layout editor (switches, buttons,
-  whole-row drag, insertion lines, reset and restart persistence), a real read-only
-  first-run Rhythmbox column import plus second-start suppression, playlists, M3U
-  import/export, and drag/reorder gestures.
+  whole-row drag, insertion lines, reset and restart persistence), a real
+  read-only first-run Rhythmbox data import plus second-start suppression,
+  playlists, M3U import/export, and drag/reorder gestures.
 - With a disposable Android device unlocked in File transfer/MTP mode, verify
   detection, device music browsing, phone-playlist creation, drag-to-copy,
   per-file/overall progress, same-device FIFO ordering, cancellation, and safe
@@ -263,7 +264,7 @@ populated test library; do not fabricate them from headless output.
 Two external prerequisites remain and cannot be inferred or manufactured:
 
 1. Publish the source through a maintainer-controlled public remote and create an
-   immutable 0.1.0 archive/tag with a verified SHA-256 checksum.
+   immutable 0.1.1 archive/tag with a verified SHA-256 checksum.
 2. Establish a verifiable project identity appropriate for the existing
    `org.reprise.Reprise` application ID.
 

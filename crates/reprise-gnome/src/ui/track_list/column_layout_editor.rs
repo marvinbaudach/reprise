@@ -341,7 +341,7 @@ fn build_surface(
 }
 
 pub(in crate::ui) fn build_navigation_page(track_list: &Rc<TrackList>) -> adw::NavigationPage {
-    let title = strings::text(strings::ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT);
+    let title = strings::text(strings::COLUMN_LAYOUT);
     let surface = build_surface(track_list, &title, true);
     let serialized = column_layout::serialize_layout(&surface.state.layout.borrow());
     tracing::info!(layout = %serialized, "column layout editor opened in preferences");
@@ -618,10 +618,7 @@ mod tests {
 
         let page = build_navigation_page(&track_list);
 
-        assert_eq!(
-            page.title(),
-            strings::text(strings::ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT)
-        );
+        assert_eq!(page.title(), strings::text(strings::COLUMN_LAYOUT));
         assert!(page.can_pop());
         assert!(page
             .child()

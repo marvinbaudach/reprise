@@ -84,6 +84,18 @@ pub(in crate::ui) fn css() -> String {
         padding: 2px 8px;\
         font-size: 11px;\
     }\
+    /* Partial-ownership chip: you hold the lead single, not the album. \
+       Sits between the neutral \"released\" chip and the accent \"upcoming\" \
+       one — a dimmed accent outline says \"related to you\" without \
+       claiming the album is yours. */\
+    .new-release-chip-partial {\
+        border: 1px solid alpha(@accent_bg_color, 0.30);\
+        color: alpha(@accent_color, 0.85);\
+        background-color: transparent;\
+        border-radius: 999px;\
+        padding: 2px 8px;\
+        font-size: 11px;\
+    }\
     .new-release-meta {\
         font-size: 12px;\
         opacity: 0.55;\
@@ -158,6 +170,7 @@ mod tests {
             ".new-release-title",
             ".new-release-chip",
             ".new-release-chip-neutral",
+            ".new-release-chip-partial",
             ".new-release-meta",
             ".new-release-separator",
             ".new-release-history-row",

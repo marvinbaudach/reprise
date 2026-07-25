@@ -45,7 +45,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn doc_1d_remote_opt_in_is_versioned_persistent_and_independent() {
+    fn doc_7a_remote_opt_in_is_versioned_persistent_and_independent() {
         let conn = crate::db::open(None).unwrap();
         crate::db::migrate(&conn).unwrap();
 

@@ -48,12 +48,12 @@ fn fnv1a_64(bytes: &[u8]) -> u64 {
     })
 }
 
-/// The most recent `fetched_at` across all `new_releases` rows, or `None` if
-/// the table is empty.
+/// The most recent attempt across all artists, or `None` if no artist has
+/// ever been attempted. Reads the ledger rather than `new_releases`: a
+/// library whose artists simply have no news would otherwise look like it
+/// had never refreshed, and `refresh_due` would fire on every timer tick.
 pub fn latest_fetched_at(conn: &Connection) -> Result<Option<i64>, rusqlite::Error> {
-    conn.query_row("SELECT MAX(fetched_at) FROM new_releases", [], |row| {
-        row.get(0)
-    })
+    crate::artist_news_ledger::latest_attempt(conn)
 }
 
 #[cfg(test)]
@@ -66,13 +66,14 @@ mod tests {
         conn
     }
 
-    fn insert_release_fetched_at(conn: &rusqlite::Connection, mbid: &str, fetched_at: i64) {
-        conn.execute(
-            "INSERT INTO new_releases (
-               release_group_mbid, artist_name, artist_mbid, title, release_type,
-               first_release_date, fetched_at, fallback_accent
-             ) VALUES (?1, 'Artist', 'artist-id', 'Release', 'Album', '2026-08-01', ?2, '#123456')",
-            rusqlite::params![mbid, fetched_at],
+    fn record_ledger_attempt(conn: &rusqlite::Connection, artist_key: &str, attempted_at: i64) {
+        crate::artist_news_ledger::record_attempt(
+            conn,
+            artist_key,
+            None,
+            attempted_at,
+            crate::artist_news_ledger::FetchOutcome::Ok,
+            0,
         )
         .unwrap();
     }
@@ -129,10 +130,15 @@ mod tests {
 
     #[test]
     fn latest_fetched_at_returns_the_maximum_across_rows() {
+        // `latest_fetched_at` now delegates to the ledger (Task 3), so this
+        // must drive attempts through it rather than inserting into
+        // `new_releases` directly — an artist ledger entry with no release
+        // found is exactly the case the old `new_releases`-based query got
+        // wrong.
         let conn = migrated_conn();
-        insert_release_fetched_at(&conn, "1", 1_000);
-        insert_release_fetched_at(&conn, "2", 5_000);
-        insert_release_fetched_at(&conn, "3", 2_500);
+        record_ledger_attempt(&conn, "artist one", 1_000);
+        record_ledger_attempt(&conn, "artist two", 5_000);
+        record_ledger_attempt(&conn, "artist three", 2_500);
         assert_eq!(latest_fetched_at(&conn).unwrap(), Some(5_000));
     }
 }
