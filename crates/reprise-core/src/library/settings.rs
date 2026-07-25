@@ -448,9 +448,9 @@ pub fn set_status_visible(conn: &Connection, value: bool) -> Result<(), rusqlite
 }
 
 pub fn get_info_panel_visible(conn: &Connection) -> bool {
-    get_bool(conn, INFO_PANEL_VISIBLE_KEY, true).unwrap_or_else(|error| {
-        tracing::warn!(%error, "could not read information panel visibility; using visible");
-        true
+    get_bool(conn, INFO_PANEL_VISIBLE_KEY, false).unwrap_or_else(|error| {
+        tracing::warn!(%error, "could not read information panel visibility; using hidden");
+        false
     })
 }
 

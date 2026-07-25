@@ -247,13 +247,13 @@ fn layout_preferences_round_trip() {
 }
 
 #[test]
-fn information_panel_defaults_visible_and_round_trips() {
+fn information_panel_defaults_hidden_and_round_trips() {
     let conn = migrated_conn();
-    assert!(get_info_panel_visible(&conn));
-    set_info_panel_visible(&conn, false).unwrap();
     assert!(!get_info_panel_visible(&conn));
     set_info_panel_visible(&conn, true).unwrap();
     assert!(get_info_panel_visible(&conn));
+    set_info_panel_visible(&conn, false).unwrap();
+    assert!(!get_info_panel_visible(&conn));
 }
 
 #[test]

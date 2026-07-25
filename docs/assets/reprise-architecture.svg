@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title description">
-  <title id="title">Where behavior lives in the Reprise three-crate workspace</title>
+  <title id="title">All application logic lives in one core: the Reprise three-crate workspace</title>
   <desc id="description">The GTK frontend sends commands and queries to the portable core and renders returned state. The Linux adapter implements playback, media, device, and analysis contracts owned by the core. GTK, libadwaita, GStreamer, and zbus are mechanically forbidden in the core.</desc>
 
   <defs>
@@ -60,8 +60,8 @@
     <text x="142" y="84" class="eyebrow" fill="#8fbff5">REPRISE</text>
     <text x="142" y="108" class="small" fill="#94a3b8">CURRENT THREE-CRATE WORKSPACE</text>
 
-    <text x="76" y="174" class="title" fill="#f8fafc">Where behavior lives.</text>
-    <text x="76" y="208" class="subtitle" fill="#aab6c8">One domain authority, with native presentation and replaceable host implementations.</text>
+    <text x="76" y="174" class="title" fill="#f8fafc">All the logic lives in one core.</text>
+    <text x="76" y="208" class="subtitle" fill="#aab6c8">The core makes the decisions; the frontend stays native, and the Linux layer can be swapped.</text>
 
     <!-- Native frontend -->
     <g filter="url(#shadow)">
@@ -134,6 +134,6 @@
     <text x="764" y="770" class="card-title" fill="#f8fafc">Mechanically enforced</text>
     <text x="764" y="797" class="body mono" fill="#aebdd0">check-architecture.sh + cargo tree</text>
 
-    <text x="76" y="861" class="small" fill="#94a3b8">Result: domain tests run without GTK or host services; native edges can change without moving product rules.</text>
+    <text x="76" y="861" class="small" fill="#94a3b8">Result: domain tests run without GTK or host services, and the UI or Linux layer can change without touching product rules.</text>
   </g>
 </svg>
