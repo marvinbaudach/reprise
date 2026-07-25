@@ -18,7 +18,7 @@ fn release(id: &str) -> reprise_core::artist_news::StoredRelease {
 }
 
 #[test]
-fn nr_5a_opening_the_popover_never_requests_navigation() {
+fn nr_5b_opening_the_popover_never_requests_navigation() {
     let effect = opening_effect(&[release("one"), release("two")]);
 
     assert_eq!(effect.seen_ids, ["one", "two"]);
@@ -83,7 +83,13 @@ fn test_popover(
     database_path: PathBuf,
 ) -> Rc<NewReleasesPopover> {
     let concerts_runtime = ConcertsRuntime::setup(&conn.borrow());
-    NewReleasesPopover::new(conn, database_path, concerts_runtime, noop_show_album())
+    NewReleasesPopover::new(
+        conn,
+        database_path,
+        concerts_runtime,
+        noop_show_album(),
+        Rc::new(|_| {}),
+    )
 }
 
 #[test]
@@ -343,37 +349,9 @@ fn enabling_starts_the_refresh_timer_and_disabling_stops_it() {
     );
 }
 
-fn find_button(widget: &gtk4::Widget) -> Option<gtk4::Button> {
-    if let Ok(button) = widget.clone().downcast::<gtk4::Button>() {
-        return Some(button);
-    }
-    let mut child = widget.first_child();
-    while let Some(current) = child {
-        if let Some(button) = find_button(&current) {
-            return Some(button);
-        }
-        child = current.next_sibling();
-    }
-    None
-}
-
-fn find_all_buttons(widget: &gtk4::Widget, out: &mut Vec<gtk4::Button>) {
-    if let Ok(button) = widget.clone().downcast::<gtk4::Button>() {
-        out.push(button);
-    }
-    let mut child = widget.first_child();
-    while let Some(current) = child {
-        find_all_buttons(&current, out);
-        child = current.next_sibling();
-    }
-}
-
-/// C1: "Show history" navigates the stack to `HISTORY_PAGE`, and the history
-/// page's back button (built fresh by `show_history` on every navigation)
-/// returns it to `LIST_PAGE` — the list<->history navigation B2 stubbed out.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn nr_12_show_history_switches_the_stack_and_back_returns_to_the_list() {
+fn nr_5b_jump_rows_route_to_full_views_without_an_internal_page() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     if gtk4::init().is_err() {
         return;
@@ -381,70 +359,28 @@ fn nr_12_show_history_switches_the_stack_and_back_returns_to_the_list() {
     let conn = reprise_core::db::open(None).unwrap();
     reprise_core::db::migrate(&conn).unwrap();
     let conn = Rc::new(RefCell::new(conn));
-    let state = test_popover(conn, PathBuf::from("unused.db"));
+    let routed = Rc::new(RefCell::new(Vec::new()));
+    let on_open_view: OnOpenView = {
+        let routed = routed.clone();
+        Rc::new(move |target| routed.borrow_mut().push(target))
+    };
+    let runtime = ConcertsRuntime::setup(&conn.borrow());
+    let state = NewReleasesPopover::new(
+        conn,
+        PathBuf::from("unused.db"),
+        runtime,
+        noop_show_album(),
+        on_open_view,
+    );
 
-    assert_eq!(state.stack.visible_child_name().as_deref(), Some(LIST_PAGE));
-
-    state.show_history();
+    state.releases_jump.emit_clicked();
+    state.concerts_jump.emit_clicked();
 
     assert_eq!(
-        state.stack.visible_child_name().as_deref(),
-        Some(HISTORY_PAGE),
-        "Show history must switch the stack to the history page"
+        routed.borrow().as_slice(),
+        [
+            reprise_core::browser::navigation::SidebarTarget::Releases,
+            reprise_core::browser::navigation::SidebarTarget::Concerts,
+        ]
     );
-
-    let back_button = find_button(state.history_page.upcast_ref::<gtk4::Widget>())
-        .expect("the history page exposes a back button");
-    back_button.emit_clicked();
-
-    assert_eq!(
-        state.stack.visible_child_name().as_deref(),
-        Some(LIST_PAGE),
-        "the history page's back button must return to the list page"
-    );
-}
-
-/// C1: clicking "Restore" on a hidden entry in the history page must
-/// actually un-hide it in the database (via `restore_release`) and rebuild
-/// the history page — exercising the real `on_restore` wiring `show_history`
-/// builds, not just the pure `history_action` mapping already covered in
-/// `history_page.rs`.
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn nr_12_restoring_from_the_history_page_unhides_the_release() {
-    let _main_context = crate::ui::test_main_context::lock_main_context();
-    if gtk4::init().is_err() {
-        return;
-    }
-    let conn = reprise_core::db::open(None).unwrap();
-    reprise_core::db::migrate(&conn).unwrap();
-    conn.execute(
-        "INSERT INTO new_releases (
-           release_group_mbid, artist_name, artist_mbid, title, release_type,
-           first_release_date, fetched_at, fallback_accent
-         ) VALUES ('release', 'Artist', 'artist', 'Release', 'Album',
-                   '2026-01-01', 1, '#123456')",
-        [],
-    )
-    .unwrap();
-    reprise_core::artist_news::set_release_hidden(&conn, "release", true).unwrap();
-    let conn = Rc::new(RefCell::new(conn));
-    let state = test_popover(conn.clone(), PathBuf::from("unused.db"));
-
-    state.show_history();
-
-    let mut buttons = Vec::new();
-    find_all_buttons(
-        state.history_page.upcast_ref::<gtk4::Widget>(),
-        &mut buttons,
-    );
-    let restore_button = buttons
-        .into_iter()
-        .find(|button| button.icon_name().as_deref() == Some("view-reveal-symbolic"))
-        .expect("the only (hidden) entry offers a Restore action");
-
-    restore_button.emit_clicked();
-
-    let hidden = reprise_core::artist_news::hidden_release_count(&conn.borrow()).unwrap();
-    assert_eq!(hidden, 0, "clicking Restore must un-hide the release");
 }

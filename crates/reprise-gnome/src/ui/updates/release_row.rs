@@ -50,8 +50,7 @@ pub(in crate::ui) enum PrimaryAction {
 /// `reprise_core::artist_news::parse_partial_date` is `pub(crate)` to that
 /// crate, and reprise-gnome is a different crate — so this mirrors its
 /// year / year-month / full-date fallback rather than reaching for it.
-/// Shared with `history_page.rs` (C1), which needs the same fallback to
-/// tell an upcoming history entry from an already-released one.
+/// Kept local to this module because the core date parser is crate-private.
 pub(in crate::ui) fn parse_release_date(value: &str) -> Option<NaiveDate> {
     match value.len() {
         10 => NaiveDate::parse_from_str(value, "%Y-%m-%d").ok(),
@@ -150,8 +149,7 @@ pub(in crate::ui) fn stack_target(hovered: bool, focused: bool) -> &'static str 
     }
 }
 
-/// Shared with `history_page.rs` (C1) so both rows fall back the same way
-/// when the running icon theme lacks a symbolic icon.
+/// Selects a fallback when the running icon theme lacks the preferred icon.
 pub(in crate::ui) fn icon_with_fallback(
     primary: &'static str,
     fallback: &'static str,
@@ -166,8 +164,7 @@ pub(in crate::ui) fn icon_with_fallback(
     }
 }
 
-/// Shared with `history_page.rs` (C1): both build a flat icon button with a
-/// tooltip and an accessible label from the same two arguments.
+/// Builds a flat icon button with matching tooltip and accessible label.
 pub(in crate::ui) fn action_button(icon_name: &str, label: &str) -> gtk4::Button {
     let button = gtk4::Button::from_icon_name(icon_name);
     button.add_css_class("flat");
@@ -177,8 +174,7 @@ pub(in crate::ui) fn action_button(icon_name: &str, label: &str) -> gtk4::Button
     button
 }
 
-/// Shared with `history_page.rs` (C1): opening an announcement URL is the
-/// same "launch externally, log and swallow any failure" action either way.
+/// Opens an announcement or ticket URL externally and logs any failure.
 pub(in crate::ui) fn launch_uri(url: &str) {
     gtk4::UriLauncher::new(url).launch(
         None::<&gtk4::Window>,

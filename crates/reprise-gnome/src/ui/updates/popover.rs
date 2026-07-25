@@ -12,17 +12,14 @@ use crate::ui::concerts::{ConcertsRequest, ConcertsRuntime};
 use crate::ui::{one_shot_task, strings};
 
 use super::badge::{self, FeedBadgeInput};
-use super::history_page;
+use super::concerts_section::ConcertsSection;
+use super::feed_snapshot;
 use super::release_cover::fallback_accent_for_artist;
 use super::release_row;
 use super::shell;
 
 /// Caps the scrolling release list's natural height before it scrolls.
-/// Shared with `history_page.rs` (C1) so both pages scroll at the same
-/// height.
 pub(in crate::ui) const SCROLLER_MAX_HEIGHT: i32 = 288;
-pub(in crate::ui) const LIST_PAGE: &str = "list";
-pub(in crate::ui) const HISTORY_PAGE: &str = "history";
 /// How often the background timer re-checks staleness while the module is
 /// enabled (Beschluss 8). Deliberately coarse: `refresh_due`'s own 6 h+jitter
 /// window is the real gate, this just samples it periodically.
@@ -140,6 +137,13 @@ enum FeedKind {
     Concerts,
 }
 
+pub(in crate::ui) type OnOpenView = Rc<dyn Fn(reprise_core::browser::navigation::SidebarTarget)>;
+
+pub(in crate::ui) struct UpdatesCallbacks {
+    pub on_show_album: release_row::OnShowAlbum,
+    pub on_open_view: OnOpenView,
+}
+
 struct NewReleasesPopover {
     conn: Rc<RefCell<rusqlite::Connection>>,
     database_path: PathBuf,
@@ -147,16 +151,15 @@ struct NewReleasesPopover {
     button: gtk4::MenuButton,
     badge: gtk4::Label,
     popover: gtk4::Popover,
-    stack: gtk4::Stack,
     news_section: gtk4::Box,
+    concerts_section: ConcertsSection,
     list: gtk4::ListBox,
     empty: gtk4::Label,
     new_tag: gtk4::Label,
-    history_row: gtk4::Button,
-    /// The count fragment only (#7) — the "Show history" text itself is set
-    /// once at construction and never changes, so it needs no field.
-    history_row_count: gtk4::Label,
-    history_page: gtk4::Box,
+    releases_jump: gtk4::Button,
+    releases_jump_label: gtk4::Label,
+    concerts_jump: gtk4::Button,
+    concerts_jump_label: gtk4::Label,
     fetch_button: gtk4::Button,
     fetch_stack: gtk4::Stack,
     spinner: gtk4::Spinner,
@@ -172,6 +175,7 @@ struct NewReleasesPopover {
     /// is how `stop_refresh_timer` retrieves it to call `remove()`.
     refresh_timer: Cell<Option<gtk4::glib::SourceId>>,
     on_show_album: release_row::OnShowAlbum,
+    on_open_view: OnOpenView,
 }
 
 impl NewReleasesPopover {
@@ -180,19 +184,21 @@ impl NewReleasesPopover {
         database_path: PathBuf,
         concerts_runtime: Rc<ConcertsRuntime>,
         on_show_album: release_row::OnShowAlbum,
+        on_open_view: OnOpenView,
     ) -> Rc<Self> {
         let shell::UpdatesShell {
             button,
             badge,
             popover,
-            stack,
             news_section,
+            concerts_section,
             list,
             empty,
             new_tag,
-            history_row,
-            history_row_count,
-            history_page,
+            releases_jump,
+            releases_jump_label,
+            concerts_jump,
+            concerts_jump_label,
             fetch_button,
             fetch_stack,
             spinner,
@@ -207,14 +213,15 @@ impl NewReleasesPopover {
             button,
             badge,
             popover,
-            stack,
             news_section,
+            concerts_section,
             list,
             empty,
             new_tag,
-            history_row,
-            history_row_count,
-            history_page,
+            releases_jump,
+            releases_jump_label,
+            concerts_jump,
+            concerts_jump_label,
             fetch_button,
             fetch_stack,
             spinner,
@@ -227,7 +234,17 @@ impl NewReleasesPopover {
             generation: Cell::new(0),
             refresh_timer: Cell::new(None),
             on_show_album,
+            on_open_view,
         });
+        {
+            let weak = Rc::downgrade(&state);
+            state.concerts_section.set_on_open_url(Rc::new(move |url| {
+                if let Some(state) = weak.upgrade() {
+                    state.popover.popdown();
+                }
+                release_row::launch_uri(&url);
+            }));
+        }
         state.wire();
         state.render(false, false);
         state
@@ -256,63 +273,28 @@ impl NewReleasesPopover {
             }
         });
 
-        let weak = Rc::downgrade(self);
-        self.history_row.connect_clicked(move |_| {
-            if let Some(state) = weak.upgrade() {
-                state.show_history();
-            }
-        });
+        self.wire_jump(
+            &self.releases_jump,
+            reprise_core::browser::navigation::SidebarTarget::Releases,
+        );
+        self.wire_jump(
+            &self.concerts_jump,
+            reprise_core::browser::navigation::SidebarTarget::Concerts,
+        );
     }
 
-    /// Builds the history sub-page fresh from the latest `query_history`
-    /// snapshot and navigates the stack to it. Rebuilt every time (rather
-    /// than once and kept around) so a restore or the passage of time is
-    /// always reflected without extra invalidation bookkeeping.
-    fn show_history(self: &Rc<Self>) {
-        let today = chrono::Local::now().date_naive();
-        let entries = reprise_core::artist_news_history::query_history(&self.conn.borrow(), today)
-            .unwrap_or_else(|error| {
-                tracing::warn!(%error, "could not query New Releases history");
-                Vec::new()
-            });
-
-        while let Some(child) = self.history_page.first_child() {
-            self.history_page.remove(&child);
-        }
-
-        let on_back: Rc<dyn Fn()> = {
-            let stack = self.stack.clone();
-            Rc::new(move || stack.set_visible_child_name(LIST_PAGE))
-        };
-        let on_restore: Rc<dyn Fn(&str)> = {
-            let weak = Rc::downgrade(self);
-            Rc::new(move |mbid: &str| {
-                let Some(state) = weak.upgrade() else { return };
-                if let Err(error) =
-                    reprise_core::artist_news_history::restore_release(&state.conn.borrow(), mbid)
-                {
-                    tracing::warn!(%error, release_group_mbid = mbid, "could not restore New Release");
-                    return;
-                }
-                state.render(false, false);
-                state.show_history();
-            })
-        };
-        let close_popover: Rc<dyn Fn()> = {
-            let popover = self.popover.clone();
-            Rc::new(move || popover.popdown())
-        };
-
-        let page = history_page::build(
-            entries,
-            today,
-            on_back,
-            &self.on_show_album,
-            &on_restore,
-            &close_popover,
-        );
-        self.history_page.append(&page);
-        self.stack.set_visible_child_name(HISTORY_PAGE);
+    fn wire_jump(
+        self: &Rc<Self>,
+        button: &gtk4::Button,
+        target: reprise_core::browser::navigation::SidebarTarget,
+    ) {
+        let weak = Rc::downgrade(self);
+        button.connect_clicked(move |_| {
+            if let Some(state) = weak.upgrade() {
+                state.popover.popdown();
+                (state.on_open_view)(target.clone());
+            }
+        });
     }
 
     fn render(self: &Rc<Self>, mark_seen: bool, failed: bool) {
@@ -353,7 +335,6 @@ impl NewReleasesPopover {
         self.button
             .set_visible(effect.button_visible || concerts_enabled);
         self.news_section.set_visible(news_enabled);
-        self.history_row.set_visible(news_enabled);
         self.list.remove_all();
         match effect.empty {
             EmptyPresentation::Hidden => {}
@@ -394,6 +375,21 @@ impl NewReleasesPopover {
                 &close_popover,
             ));
         }
+        let concerts = feed_snapshot::concerts(&self.conn.borrow(), concerts_enabled, today);
+        self.concerts_section.render(
+            concerts_enabled,
+            concerts.credentials,
+            concerts.filter.radius_km.is_some(),
+            &concerts.unseen,
+            today,
+        );
+        self.concerts_jump.set_visible(concerts_enabled);
+        self.concerts_jump_label
+            .set_label(&strings::updates_show_all_concerts(concerts.count));
+        let releases_count = feed_snapshot::releases_count(&self.conn.borrow(), today);
+        self.releases_jump.set_visible(news_enabled);
+        self.releases_jump_label
+            .set_label(&strings::updates_show_all_releases(releases_count));
         if mark_seen {
             let effect = opening_effect(&releases);
             if !effect.seen_ids.is_empty() {
@@ -430,7 +426,7 @@ impl NewReleasesPopover {
         }
         let unseen_releases = reprise_core::artist_news::unseen_release_count(&self.conn.borrow())
             .unwrap_or_default();
-        let (concerts_credentials, concerts_ready, unseen_concerts, latest_concerts) =
+        let (_, concerts_ready, unseen_concerts, latest_concerts) =
             self.concerts_badge_state(today);
         match badge::updates_badge(
             FeedBadgeInput {
@@ -457,24 +453,13 @@ impl NewReleasesPopover {
         } else {
             self.new_tag.set_visible(false);
         }
-        let history_count =
-            reprise_core::artist_news_history::query_history(&self.conn.borrow(), today)
-                .map_or_else(
-                    |error| {
-                        tracing::warn!(%error, "could not query New Releases history");
-                        0
-                    },
-                    |entries| entries.len(),
-                );
-        self.history_row_count
-            .set_label(&strings::new_releases_history_count_suffix(history_count));
         let latest_news = reprise_core::artist_news::latest_fetched_at(&self.conn.borrow())
             .ok()
             .flatten();
         let latest = oldest_active_feed_timestamp(
             news_enabled,
             latest_news,
-            concerts_enabled && concerts_credentials,
+            concerts_enabled && concerts.credentials,
             latest_concerts,
         );
         let footer = footer_presentation(latest, chrono::Utc::now().timestamp(), failed);
@@ -758,13 +743,14 @@ pub(in crate::ui) fn install(
     database_path: &Path,
     runtime: &Rc<ArtistNewsRuntime>,
     concerts_runtime: &Rc<ConcertsRuntime>,
-    on_show_album: release_row::OnShowAlbum,
+    callbacks: UpdatesCallbacks,
 ) {
     let state = NewReleasesPopover::new(
         conn.clone(),
         database_path.to_path_buf(),
         concerts_runtime.clone(),
-        on_show_album,
+        callbacks.on_show_album,
+        callbacks.on_open_view,
     );
     header.pack_end(&state.button);
     bind_runtime(&state, runtime);
