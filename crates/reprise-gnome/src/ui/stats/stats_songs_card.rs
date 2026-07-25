@@ -467,6 +467,7 @@ fn render_full_rows(
             .pixel_size(42)
             .width_request(42)
             .height_request(42)
+            .valign(gtk4::Align::Center)
             .build();
         CoverLoader::set_placeholder(&cover);
         cover_loader.load_into(
