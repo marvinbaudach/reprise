@@ -1,4 +1,4 @@
-use chrono::{Datelike, NaiveDate};
+use chrono::{Datelike, NaiveDate, Weekday};
 use reprise_core::library::stats_period::Granularity;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -63,7 +63,7 @@ pub(in crate::ui) fn best_week_bucket_index(
     let best_week_start = best_week_start?;
     bucket_starts
         .iter()
-        .position(|start| *start == best_week_start)
+        .position(|start| start.week(Weekday::Mon).first_day() == best_week_start)
 }
 
 pub(in crate::ui) fn month_ticks(bucket_starts: &[NaiveDate]) -> Vec<MonthTick> {
@@ -148,6 +148,22 @@ mod tests {
         assert_eq!(
             best_week_bucket_index(&starts, Granularity::Day, Some(starts[1])),
             None
+        );
+    }
+
+    #[test]
+    fn stats_12_marker_matches_a_week_clipped_by_the_period_start() {
+        let clipped_period_start = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+        let next_week = NaiveDate::from_ymd_opt(2026, 1, 5).unwrap();
+        let aligned_best_week = NaiveDate::from_ymd_opt(2025, 12, 29).unwrap();
+
+        assert_eq!(
+            best_week_bucket_index(
+                &[clipped_period_start, next_week],
+                Granularity::Week,
+                Some(aligned_best_week)
+            ),
+            Some(0)
         );
     }
 

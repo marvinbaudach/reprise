@@ -241,7 +241,7 @@ fn draw(
         blue,
         alpha,
     );
-    draw_line(context, &layout, red, green, blue, alpha);
+    draw_line(context, &layout, width, red, green, blue, alpha);
     draw_best_week_marker(
         context,
         &layout,
@@ -272,9 +272,15 @@ fn draw_fill(
     let Some(first) = layout.points.first() else {
         return;
     };
-    context.move_to(first.x, baseline);
-    for point in &layout.points {
-        context.line_to(point.x, point.y);
+    if layout.points.len() == 1 {
+        context.move_to(0.0, baseline);
+        context.line_to(0.0, first.y);
+        context.line_to(width, first.y);
+    } else {
+        context.move_to(first.x, baseline);
+        for point in &layout.points {
+            context.line_to(point.x, point.y);
+        }
     }
     context.line_to(width, baseline);
     context.close_path();
@@ -288,6 +294,7 @@ fn draw_fill(
 fn draw_line(
     context: &gtk4::cairo::Context,
     layout: &RibbonLayout,
+    width: f64,
     red: f64,
     green: f64,
     blue: f64,
@@ -298,9 +305,14 @@ fn draw_line(
     };
     context.set_source_rgba(red, green, blue, alpha);
     context.set_line_width(2.0);
-    context.move_to(first.x, first.y);
-    for point in layout.points.iter().skip(1) {
-        context.line_to(point.x, point.y);
+    if layout.points.len() == 1 {
+        context.move_to(0.0, first.y);
+        context.line_to(width, first.y);
+    } else {
+        context.move_to(first.x, first.y);
+        for point in layout.points.iter().skip(1) {
+            context.line_to(point.x, point.y);
+        }
     }
     let _ = context.stroke();
 }
@@ -338,6 +350,7 @@ fn draw_best_week_marker(
             "best week · {}",
             format_duration(best_week.total_ms)
         ));
+        context.new_path();
     }
 }
 
@@ -350,6 +363,7 @@ fn draw_open_marker(
     alpha: f64,
 ) {
     if let Some(point) = marker(layout, layout.open_index) {
+        context.new_path();
         context.set_source_rgba(red, green, blue, alpha);
         context.set_line_width(2.0);
         context.arc(point.x, point.y, MARKER_RADIUS, 0.0, std::f64::consts::TAU);
@@ -380,6 +394,7 @@ fn draw_labels(
         };
         context.move_to(x.min(width - 24.0).max(0.0), height - 5.0);
         let _ = context.show_text(&tick.label);
+        context.new_path();
     }
 }
 
@@ -394,9 +409,65 @@ fn format_duration(milliseconds: i64) -> String {
 
 #[cfg(test)]
 mod tests {
+    use gtk4::cairo::{Format, ImageSurface};
     use gtk4::prelude::*;
 
     use super::*;
+
+    fn pixel_has_ink(surface: &mut ImageSurface, x: i32, y: i32) -> bool {
+        surface.flush();
+        let stride = surface.stride() as usize;
+        let data = surface.data().unwrap();
+        let offset = y as usize * stride + x as usize * 4;
+        u32::from_ne_bytes(data[offset..offset + 4].try_into().unwrap()) >> 24 != 0
+    }
+
+    #[test]
+    fn open_marker_starts_a_fresh_cairo_path() {
+        let mut surface = ImageSurface::create(Format::ARgb32, 100, 100).unwrap();
+        {
+            let context = gtk4::cairo::Context::new(&surface).unwrap();
+            context.move_to(0.0, 0.0);
+            let layout = RibbonLayout {
+                points: vec![Point { x: 80.0, y: 80.0 }],
+                open_index: Some(0),
+            };
+
+            draw_open_marker(&context, &layout, 1.0, 1.0, 1.0, 1.0);
+        }
+
+        assert!(
+            !(38..=42).any(|x| (38..=42).any(|y| pixel_has_ink(&mut surface, x, y))),
+            "the marker must not stroke a line from Cairo's previous current point"
+        );
+    }
+
+    #[test]
+    fn one_bucket_draws_a_full_width_fill_and_line() {
+        let layout = RibbonLayout {
+            points: vec![Point { x: 50.0, y: 25.0 }],
+            open_index: None,
+        };
+        let mut fill_surface = ImageSurface::create(Format::ARgb32, 100, 100).unwrap();
+        {
+            let context = gtk4::cairo::Context::new(&fill_surface).unwrap();
+            draw_fill(&context, &layout, 100.0, 90.0, 1.0, 1.0, 1.0, 1.0);
+        }
+        let mut line_surface = ImageSurface::create(Format::ARgb32, 100, 100).unwrap();
+        {
+            let context = gtk4::cairo::Context::new(&line_surface).unwrap();
+            draw_line(&context, &layout, 100.0, 1.0, 1.0, 1.0, 1.0);
+        }
+
+        assert!(
+            pixel_has_ink(&mut fill_surface, 10, 50),
+            "the fill must extend left of the sole bucket point"
+        );
+        assert!(
+            pixel_has_ink(&mut line_surface, 10, 25),
+            "the sole bucket must render as a line, not an invisible move-to"
+        );
+    }
 
     /// CONTRAST: the accent belongs to the data. The axis descriptions take the
     /// same secondary tone as every other caption, not the teal of the ribbon.
