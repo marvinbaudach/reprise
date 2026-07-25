@@ -619,7 +619,22 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         nav_history,
     );
     super::session_restore::arm_seed_close(window);
-    super::first_run::run(window, scan_button, conn, first_run_decision);
+    let present_rhythmbox_import = {
+        let preferences = Rc::downgrade(preferences);
+        Rc::new(move || {
+            if let Some(preferences) = preferences.upgrade() {
+                preferences.present_rhythmbox_import_dialog();
+            }
+        }) as Rc<dyn Fn()>
+    };
+    super::first_run::run(
+        window,
+        scan_button,
+        scan_controls,
+        conn,
+        first_run_decision,
+        &present_rhythmbox_import,
+    );
     active_content_focus.focus_later_if_unset(window);
     minimal_view.apply_initial();
     arm_smoke_quit(window);

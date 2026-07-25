@@ -5,8 +5,10 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 
 # shellcheck source=lib.sh
 source "$repo_root/scripts/cua-e2e/lib.sh"
-# shellcheck source=navigation_playback.sh
-source "$repo_root/scripts/cua-e2e/navigation_playback.sh"
+# shellcheck source=track_sort.sh
+source "$repo_root/scripts/cua-e2e/track_sort.sh"
+# shellcheck source=scrobbling.sh
+source "$repo_root/scripts/cua-e2e/scrobbling.sh"
 
 APP_ID=org.reprise.Reprise
 WINDOW_CLASS_MATCH=reprise
@@ -304,9 +306,9 @@ run_populated_library_secondary_scenario() {
 run_song_visuals_scenario() {
   local fixture_dir="$CUA_E2E_SCRATCH_ROOT/song-visuals-fixture-music"
   local cover_path="$CUA_E2E_SCRATCH_ROOT/song-visuals-cover.png"
-  local initial_path panel_path visual_path dialog_path closed_path
+  local initial_path panel_path visual_path
 
-  echo "[cua-e2e] ac-9/ac-10/ac-11: player info dialog and album-accent visuals"
+  echo "[cua-e2e] ac-10/ac-11: album-accent song visuals"
   mkdir -p "$fixture_dir"
   ffmpeg -hide_banner -loglevel error -y \
     -f lavfi -i color=c=0xd86a45:s=600x600 -frames:v 1 "$cover_path"
@@ -352,20 +354,11 @@ run_song_visuals_scenario() {
   cua_click_label "$APP_PID" "$WINDOW_ID" "Visual" song-visuals-select-visual
   visual_path=$(wait_for_label \
     "$APP_PID" "$WINDOW_ID" "Audio-reactive song visual" song-visuals-visible)
-  assert_snapshot_contains "$visual_path" "Rings"
+  assert_snapshot_contains "$visual_path" "Grid"
+  assert_snapshot_contains "$visual_path" "Bars"
   assert_snapshot_contains "$visual_path" "Flow"
   assert_snapshot_contains "$visual_path" "Pulse"
-  assert_snapshot_contains "$visual_path" "F11 Fullscreen · color follows the cover accent"
   assert_snapshot_absent "$visual_path" "Audio Character"
-
-  cua_click_label "$APP_PID" "$WINDOW_ID" "Song analysis" song-analysis-open
-  dialog_path=$(wait_for_label \
-    "$APP_PID" "$WINDOW_ID" "Audio Character" song-analysis-dialog)
-  assert_snapshot_contains "$dialog_path" "Local audio analysis is disabled"
-  cua_press_key_window "$APP_PID" "$WINDOW_ID" escape song-analysis-close
-  closed_path=$(wait_for_label_absent \
-    "$APP_PID" "$WINDOW_ID" "Audio Character" song-analysis-closed)
-  assert_focus_evidence_label "$closed_path" "Song analysis"
 
   finish_scenario song-visuals \
     "dev scan complete" \
@@ -435,7 +428,7 @@ run_library_doctor_scenario() {
   # Each fixture produces one whitespace, missing-album-artist, and genre fix.
   safe_change_count=$((fixture_count * 3))
 
-  echo "[cua-e2e] library-doctor: opt in -> review -> apply -> disabled revert"
+  echo "[cua-e2e] library-doctor: scan -> review -> apply -> reopen -> revert"
   mkdir -p "$fixture_dir"
   ffmpeg -hide_banner -loglevel error -y \
     -f lavfi -i sine=frequency=440:duration=2 \
@@ -455,26 +448,15 @@ run_library_doctor_scenario() {
 
   cua_activate_main_menu_item \
     "$APP_PID" "$WINDOW_ID" "Library Doctor" doctor-entry
-  wait_for_label "$APP_PID" "$WINDOW_ID" "Enable Library Doctor" doctor-plugin >/dev/null
-  cua_click_label "$APP_PID" "$WINDOW_ID" "Enable Library Doctor" doctor-enable
-  wait_for_label "$APP_PID" "$WINDOW_ID" "Run Scan Now" doctor-run-ready >/dev/null
-
-  # Enabling the module happens in the modal Preferences window. Close that
-  # transient and enter the real Doctor utility page before proving that the
-  # already-selected Music row remains an absolute navigation target.
-  cua_hotkey "$APP_PID" "$WINDOW_ID" doctor-enable-close ctrl w
-  wait_for_label "$APP_PID" "$WINDOW_ID" "Search all fields" doctor-enable-closed >/dev/null
-  cua_activate_main_menu_item \
-    "$APP_PID" "$WINDOW_ID" "Library Doctor" doctor-page-entry
   wait_for_label "$APP_PID" "$WINDOW_ID" "Run Scan Now" doctor-page-ready >/dev/null
 
   echo "[cua-e2e] browse-3-sidebar-escapes-doctor: active Music is an absolute target"
   # cua-driver currently reports every descendant of this nested utility
   # page at the native window's screen origin (200,50). The runner fixes the
-  # window at 1200x800, so the Music-row centre at local (110,115) is the
-  # deterministic screen point (310,165).
-  cua_click_screen_point \
-    "$APP_PID" "$WINDOW_ID" 310 165 browse-3-sidebar-escapes-doctor
+  # window at 1200x800, so the Music-row centre at local screenshot point
+  # (110,115) is deterministic.
+  cua_click_window_point \
+    "$APP_PID" "$WINDOW_ID" 110 115 browse-3-sidebar-escapes-doctor
   root_path=$(wait_for_label \
     "$APP_PID" "$WINDOW_ID" "Search all fields" browse-3-library-restored)
   assert_snapshot_absent "$root_path" "Run Scan Now"
@@ -515,17 +497,18 @@ run_library_doctor_scenario() {
   cua_focus_label_via_key "$APP_PID" "$WINDOW_ID" "Plugins" down doctor-plugins-focus \
     >/dev/null
   cua_press_key_window "$APP_PID" "$WINDOW_ID" enter doctor-plugins-enter
-  wait_for_label "$APP_PID" "$WINDOW_ID" "Enable Library Doctor" doctor-plugin-enabled >/dev/null
-  cua_click_label "$APP_PID" "$WINDOW_ID" "Enable Library Doctor" doctor-disable
-  cua_hotkey "$APP_PID" "$WINDOW_ID" doctor-disabled-close ctrl w
+  wait_for_label "$APP_PID" "$WINDOW_ID" "Run Scan Now" doctor-plugin-tool >/dev/null
   wait_for_label_absent \
-    "$APP_PID" "$WINDOW_ID" "Preferences" doctor-disabled-close-complete >/dev/null
+    "$APP_PID" "$WINDOW_ID" "Enable Library Doctor" doctor-plugin-no-toggle >/dev/null
+  cua_hotkey "$APP_PID" "$WINDOW_ID" doctor-tool-close ctrl w
+  wait_for_label_absent \
+    "$APP_PID" "$WINDOW_ID" "Preferences" doctor-tool-close-complete >/dev/null
   cua_activate_main_menu_item \
-    "$APP_PID" "$WINDOW_ID" "Library Doctor" doctor-disabled-entry
+    "$APP_PID" "$WINDOW_ID" "Library Doctor" doctor-tool-entry
   wait_for_label \
     "$APP_PID" "$WINDOW_ID" "Revert Last Cleanup" doctor-revert-available >/dev/null
   cua_click_label \
-    "$APP_PID" "$WINDOW_ID" "Revert Last Cleanup" doctor-revert-disabled
+    "$APP_PID" "$WINDOW_ID" "Revert Last Cleanup" doctor-revert
   wait_for_label \
     "$APP_PID" "$WINDOW_ID" "Tags reverted · $fixture_count tracks" doctor-reverted \
     >/dev/null
@@ -538,6 +521,7 @@ run_library_doctor_scenario() {
 private_session_cleanup() {
   local exit_code=$?
   stop_app_on_failure
+  stop_scrobbling_services
   cua_driver end_session \
     "$(jq -nc --arg session "$CUA_E2E_SESSION" '{session: $session}')" \
     >/dev/null 2>&1 || true
@@ -614,6 +598,12 @@ run_private_session() {
     song-visuals)
       run_song_visuals_scenario
       ;;
+    track-sort-playing-marker)
+      run_track_sort_playing_marker_scenario
+      ;;
+    scrobbling)
+      run_scrobbling_scenario
+      ;;
     *)
       echo "unknown private CUA scenario group: $private_group" >&2
       return 2
@@ -627,7 +617,7 @@ if [[ "${1:-}" == "--private-session" ]]; then
   exit 0
 fi
 
-for command in "$CUA_DRIVER_BIN" Xvfb openbox cargo dbus-run-session ffmpeg jq rg timeout wmctrl; do
+for command in "$CUA_DRIVER_BIN" Xvfb openbox cargo dbus-run-session ffmpeg gdbus gnome-keyring-daemon jq python3 rg timeout wmctrl; do
   required_command "$command"
 done
 if [[ ! -x /usr/lib/at-spi-bus-launcher ]]; then
@@ -715,6 +705,8 @@ run_private_scenario_group() {
   mkdir -m 700 "$runtime_dir"
   mkdir -p "$root_profile/data" "$root_profile/cache" "$root_profile/config"
   dbus-run-session -- env \
+    -u GNOME_KEYRING_CONTROL \
+    -u GNOME_KEYRING_PID \
     XDG_RUNTIME_DIR="$runtime_dir" \
     XDG_DATA_HOME="$root_profile/data" \
     XDG_CACHE_HOME="$root_profile/cache" \
@@ -746,13 +738,16 @@ case "${CUA_E2E_ONLY:-all}" in
       tag-3-multi-dialog-structure
       library-doctor
       song-visuals
+      track-sort-playing-marker
+      scrobbling
     )
     ;;
   populated-library)
     scenario_groups=(populated-library populated-library-secondary)
     ;;
   fresh-install | populated-library-secondary | tag-1-no-jump-after-save \
-    | tag-3-multi-dialog-structure | library-doctor | song-visuals)
+    | tag-3-multi-dialog-structure | library-doctor | song-visuals \
+    | track-sort-playing-marker | scrobbling)
     scenario_groups=("$CUA_E2E_ONLY")
     ;;
   *)

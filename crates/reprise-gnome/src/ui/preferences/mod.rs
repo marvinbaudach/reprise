@@ -12,6 +12,7 @@ pub(in crate::ui) mod preference_new_releases;
 pub(in crate::ui) mod preference_playback;
 pub(in crate::ui) mod preference_plugins;
 pub(in crate::ui) mod preference_rhythmbox;
+pub(in crate::ui) mod preference_scrobbling;
 pub(in crate::ui) mod preference_sync;
 pub(in crate::ui) mod preference_visual_strings;
 pub(in crate::ui) mod preference_window_decorations;

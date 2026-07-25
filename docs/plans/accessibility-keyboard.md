@@ -178,7 +178,7 @@ erreicht, bedient und wieder verlassen.
 | Player/Now Playing | Transport, Shuffle/Repeat, Volume, Queue, Cover/Titel/Artist, Panel-Tabs, Up Next, Lyrics, Waveform |
 | Issues/Import | Gruppen, Collapse, Row-Auswahl, Pills/Menüs, Locate, Remove/Undo, Retry/Dismiss/Export |
 | Device/Sync | Filterchips, Trackliste, Sync/Cancel, Settings, Eject, Add-to-playlist-Drop-Alternative |
-| Preferences | Seitennavigation, alle Switch/Combo/Scale/Entry-Flächen, Scrobbler, Sync, Column-Editor, Rhythmbox-Import |
+| Preferences | Seitennavigation, alle Switch/Combo/Scale/Entry-Flächen, Scrobbler, Sync, Column-Editor |
 | Modale | First Run, Tag-Editor, Confirm/Discard/Delete/Locate, Import-Fortschritt, FileDialog, About/Shortcuts |
 | Stats | Jahresauswahl, Scrollen, nicht-interaktive Charts/Listen ohne falsche Fokus-Stops |
 | Compact/Minimal | Restore, Transport, Volume, Menü, Always-on-top, Preferences, Quit, Escape/Ctrl+W |

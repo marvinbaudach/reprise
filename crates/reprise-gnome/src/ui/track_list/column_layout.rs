@@ -5,10 +5,8 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::time::Duration;
 
-use gtk4::gio;
 use gtk4::gio::prelude::*;
 use gtk4::glib;
-use thiserror::Error;
 
 use reprise_core::library::settings::{self, COLUMN_WIDTHS_KEY};
 
@@ -252,30 +250,6 @@ pub fn load_layout(conn: &rusqlite::Connection) -> ColumnLayout {
     layout
 }
 
-pub fn import_rhythmbox_tokens(tokens: &[String]) -> ColumnLayout {
-    // Rhythmbox has no Cover/Title columns in this list; a fresh import always
-    // leads with our artwork + title columns, then the mapped Rhythmbox tokens.
-    let mut order = vec![ColumnId::Cover, ColumnId::Title];
-    let mut visible = HashSet::from([ColumnId::Cover, ColumnId::Title]);
-    for token in tokens {
-        let id = match token.as_str() {
-            "track-number" => ColumnId::TrackNumber,
-            "artist" => ColumnId::Artist,
-            "album" => ColumnId::Album,
-            "genre" => ColumnId::Genre,
-            "duration" => ColumnId::Duration,
-            "date" => ColumnId::Year,
-            "rating" => ColumnId::Rating,
-            "play-count" => ColumnId::PlayCount,
-            _ => continue,
-        };
-        if visible.insert(id) {
-            order.push(id);
-        }
-    }
-    normalize(order, visible)
-}
-
 pub fn set_column_visible(layout: &ColumnLayout, id: ColumnId, visible: bool) -> ColumnLayout {
     let mut next = layout.clone();
     if visible {
@@ -313,40 +287,6 @@ fn move_column_relative(
     };
     order.insert(target_index + usize::from(after), id);
     normalize(order, layout.visible.clone())
-}
-
-const RHYTHMBOX_SCHEMA: &str = "org.gnome.rhythmbox.sources";
-const RHYTHMBOX_VISIBLE_COLUMNS_KEY: &str = "visible-columns";
-
-#[derive(Debug, Error)]
-pub enum ImportError {
-    #[error("the system GSettings schema source is unavailable")]
-    SchemaSourceUnavailable,
-    #[error("Rhythmbox GSettings schema is not installed")]
-    SchemaMissing,
-    #[error("Rhythmbox visible-columns setting is unavailable")]
-    KeyMissing,
-}
-
-pub fn read_rhythmbox_visible_columns() -> Result<Vec<String>, ImportError> {
-    let source =
-        gio::SettingsSchemaSource::default().ok_or(ImportError::SchemaSourceUnavailable)?;
-    let schema = source
-        .lookup(RHYTHMBOX_SCHEMA, true)
-        .ok_or(ImportError::SchemaMissing)?;
-    if !schema.has_key(RHYTHMBOX_VISIBLE_COLUMNS_KEY) {
-        return Err(ImportError::KeyMissing);
-    }
-    let settings = gio::Settings::new_full(&schema, gio::SettingsBackend::NONE, None);
-    Ok(settings
-        .strv(RHYTHMBOX_VISIBLE_COLUMNS_KEY)
-        .iter()
-        .map(ToString::to_string)
-        .collect())
-}
-
-pub fn should_offer_rhythmbox_import(available: bool) -> bool {
-    available
 }
 
 fn parse_ids(value: &str) -> Option<Vec<ColumnId>> {

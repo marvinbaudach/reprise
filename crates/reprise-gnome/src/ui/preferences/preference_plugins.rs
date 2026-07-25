@@ -12,6 +12,25 @@ use super::{strings, PreferencesContext};
 const TARGET_CLASS: &str = "reprise-plugin-target";
 pub(in crate::ui) const ONLINE_LYRICS_TARGETS: &[&str] = &["online_lyrics"];
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PluginGroup {
+    Local,
+    Online,
+    Connected,
+}
+
+fn plugin_group(descriptor: &ModuleDescriptor) -> PluginGroup {
+    match descriptor.id {
+        "song_visuals" | "library_doctor" => PluginGroup::Local,
+        "listenbrainz" | "lastfm" => PluginGroup::Connected,
+        _ => PluginGroup::Online,
+    }
+}
+
+fn creates_scrobbling_entry(descriptor: &ModuleDescriptor) -> bool {
+    descriptor.id == "listenbrainz"
+}
+
 pub(in crate::ui) fn network_descriptors() -> [&'static ModuleDescriptor; 5] {
     [
         &reprise_core::modules::LIBRARY_DOCTOR_MODULE,
@@ -79,17 +98,28 @@ impl PreferencesContext {
             .title(strings::text(strings::PREFERENCES_PLUGINS))
             .icon_name("application-x-addon-symbolic")
             .build();
-        let group = adw::PreferencesGroup::new();
+        let local_group = adw::PreferencesGroup::builder()
+            .title(strings::text(strings::LOCAL_FEATURES))
+            .build();
+        let online_group = adw::PreferencesGroup::builder()
+            .title(strings::text(strings::ONLINE_CONTENT))
+            .build();
+        let connected_group = adw::PreferencesGroup::builder()
+            .title(strings::text(strings::CONNECTED_SERVICES))
+            .build();
         for descriptor in reprise_core::modules::ALL_MODULES {
-            // Scrobbling services use inline ExpanderRows instead of SwitchRows.
-            if descriptor.id == "listenbrainz" {
-                group.add(&self.build_listenbrainz_row());
+            // Scrobbling has one entry; provider controls live on its detail page.
+            if plugin_group(descriptor) == PluginGroup::Connected {
+                if creates_scrobbling_entry(descriptor) {
+                    connected_group.add(&super::preference_scrobbling::build(self));
+                }
                 continue;
             }
-            if descriptor.id == "lastfm" {
-                group.add(&self.build_lastfm_row());
-                continue;
-            }
+            let group = match plugin_group(descriptor) {
+                PluginGroup::Local => &local_group,
+                PluginGroup::Online => &online_group,
+                PluginGroup::Connected => &connected_group,
+            };
             if descriptor.id == "library_doctor" {
                 group.add(&super::preference_library_doctor::plugin_row(self));
                 continue;
@@ -123,11 +153,14 @@ impl PreferencesContext {
             }
             let scope_row = (descriptor.id == "new_releases")
                 .then(|| super::preference_new_releases::scope_row(&self.conn, active));
+            let singles_row = (descriptor.id == "new_releases")
+                .then(|| super::preference_new_releases::singles_row(&self.conn, active));
             let syncing = Rc::new(Cell::new(false));
             let weak = Rc::downgrade(self);
             let descriptor = *descriptor;
             let syncing_notify = syncing.clone();
             let scope_notify = scope_row.clone();
+            let singles_notify = singles_row.clone();
             row.connect_active_notify(move |row| {
                 let Some(context) = weak.upgrade() else {
                     return;
@@ -197,6 +230,9 @@ impl PreferencesContext {
                 if let Some(scope) = &scope_notify {
                     scope.set_sensitive(active);
                 }
+                if let Some(singles) = &singles_notify {
+                    singles.set_sensitive(active);
+                }
             });
             if descriptor.id == "new_releases" {
                 let alive = glib::WeakRef::new();
@@ -205,6 +241,11 @@ impl PreferencesContext {
                 let scope_target = scope_row.as_ref().map(|scope| {
                     let target = glib::WeakRef::new();
                     target.set(Some(scope));
+                    target
+                });
+                let singles_target = singles_row.as_ref().map(|singles| {
+                    let target = glib::WeakRef::new();
+                    target.set(Some(singles));
                     target
                 });
                 let syncing = syncing.clone();
@@ -219,6 +260,11 @@ impl PreferencesContext {
                         {
                             scope.set_sensitive(enabled);
                         }
+                        if let Some(singles) =
+                            singles_target.as_ref().and_then(glib::WeakRef::upgrade)
+                        {
+                            singles.set_sensitive(enabled);
+                        }
                     },
                 );
             }
@@ -226,8 +272,13 @@ impl PreferencesContext {
             if let Some(scope) = scope_row {
                 group.add(&scope);
             }
+            if let Some(singles) = singles_row {
+                group.add(&singles);
+            }
         }
-        page.add(&group);
+        page.add(&local_group);
+        page.add(&online_group);
+        page.add(&connected_group);
         page
     }
 
@@ -304,22 +355,53 @@ mod tests {
     }
 
     #[test]
+    fn set_6a_plugins_are_grouped_by_user_intent_with_one_scrobbling_entry() {
+        assert_eq!(
+            plugin_group(&reprise_core::modules::SONG_VISUALS_MODULE),
+            PluginGroup::Local
+        );
+        assert_eq!(
+            plugin_group(&reprise_core::modules::LIBRARY_DOCTOR_MODULE),
+            PluginGroup::Local
+        );
+        for descriptor in [
+            &reprise_core::modules::NEW_RELEASES_MODULE,
+            &reprise_core::modules::COVER_DOWNLOAD_MODULE,
+            &reprise_core::modules::ARTIST_PORTRAITS_MODULE,
+            &reprise_core::modules::ONLINE_LYRICS_MODULE,
+        ] {
+            assert_eq!(plugin_group(descriptor), PluginGroup::Online);
+        }
+        for descriptor in [
+            &reprise_core::modules::LISTENBRAINZ_MODULE,
+            &reprise_core::modules::LASTFM_MODULE,
+        ] {
+            assert_eq!(plugin_group(descriptor), PluginGroup::Connected);
+        }
+        assert_eq!(
+            reprise_core::modules::ALL_MODULES
+                .iter()
+                .filter(|descriptor| creates_scrobbling_entry(descriptor))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
     fn doc_6b_library_doctor_controls_explain_job_locking() {
-        let idle = super::super::preference_library_doctor::control_state(true, false);
-        assert!(idle.module_sensitive);
+        let idle = super::super::preference_library_doctor::control_state(false);
         assert!(idle.remote_sensitive);
         assert!(!idle.subtitle.contains("running"));
 
-        let running = super::super::preference_library_doctor::control_state(true, true);
-        assert!(!running.module_sensitive);
+        let running = super::super::preference_library_doctor::control_state(true);
         assert!(!running.remote_sensitive);
         assert!(running.subtitle.contains("running"));
     }
 
     #[test]
-    fn doc_6a_revert_stays_available_while_the_module_is_disabled() {
-        let disabled = super::super::preference_library_doctor::control_state(false, false);
-        assert!(!disabled.remote_sensitive);
-        assert!(disabled.revert_sensitive);
+    fn doc_7b_library_doctor_is_available_without_an_activation_state() {
+        let idle = super::super::preference_library_doctor::control_state(false);
+        assert!(idle.remote_sensitive);
+        assert!(idle.revert_sensitive);
     }
 }

@@ -17,8 +17,13 @@ pub mod ai_jobs;
 pub mod ai_promotion;
 pub mod ai_staging;
 pub mod artist_news;
+mod artist_news_candidates;
 pub mod artist_news_history;
+mod artist_news_ledger;
 pub mod artist_news_links;
+mod artist_news_parsing;
+mod artist_news_pipeline;
+mod artist_news_query;
 pub mod artist_news_refresh;
 pub mod artist_portrait;
 pub mod browser;
@@ -26,6 +31,7 @@ pub mod cover;
 pub mod cover_download;
 pub mod db;
 mod db_ai_jobs;
+mod db_artist_news_fetch;
 mod db_change_log;
 mod db_drop_audio_analysis_mix;
 mod db_grandfather;
@@ -59,7 +65,13 @@ pub mod visuals;
 pub mod waveform;
 
 #[cfg(test)]
-mod artist_news_tests;
+mod artist_news_candidates_tests;
+#[cfg(test)]
+mod artist_news_parsing_tests;
+#[cfg(test)]
+mod artist_news_pipeline_tests;
+#[cfg(test)]
+mod artist_news_query_tests;
 #[cfg(test)]
 mod fingerprint_tests;
 #[cfg(test)]
