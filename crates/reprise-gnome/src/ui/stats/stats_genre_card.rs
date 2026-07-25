@@ -67,7 +67,7 @@ impl StatsGenreCard {
         for (index, segment) in section
             .segments
             .iter()
-            .filter(|segment| segment.label != "Other")
+            .filter(|segment| has_genre_tile(segment))
             .take(4)
             .enumerate()
         {
@@ -78,15 +78,10 @@ impl StatsGenreCard {
 
     fn render_segments(&self, section: &GenreSection) {
         let mut column = 0;
-        let last = section.segments.len().saturating_sub(1);
         for (index, segment) in section.segments.iter().enumerate() {
             let bar = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
             bar.add_css_class("stats-genre-segment");
-            if index == last {
-                bar.add_css_class("stats-genre-segment-last");
-            } else {
-                bar.add_css_class(&format!("stats-genre-rank-{}", index.min(4)));
-            }
+            bar.add_css_class(&segment_css_class(segment, index));
             bar.set_hexpand(true);
             bar.set_tooltip_text(Some(&format!(
                 "{} · {} % · {}",
@@ -169,6 +164,18 @@ impl StatsGenreCard {
     }
 }
 
+fn has_genre_tile(segment: &GenreSegment) -> bool {
+    segment.key != "other"
+}
+
+fn segment_css_class(segment: &GenreSegment, index: usize) -> String {
+    if segment.key == "other" {
+        "stats-genre-segment-last".into()
+    } else {
+        format!("stats-genre-rank-{}", index.min(4))
+    }
+}
+
 fn label(text: &str, class: &str) -> gtk4::Label {
     let label = gtk4::Label::new(Some(text));
     label.add_css_class(class);
@@ -236,6 +243,19 @@ mod tests {
         StatsGenreCard::new(CoverLoader::new(
             crate::ui::cover_download_worker::setup_for_test(),
         ))
+    }
+
+    #[test]
+    fn genre_style_and_tile_eligibility_follow_the_semantic_key() {
+        let mut genre = fixture().segments.remove(0);
+        genre.label = "Other".into();
+        assert_eq!(segment_css_class(&genre, 0), "stats-genre-rank-0");
+        assert!(has_genre_tile(&genre));
+
+        genre.key = "other".into();
+        genre.label = "Weitere".into();
+        assert_eq!(segment_css_class(&genre, 0), "stats-genre-segment-last");
+        assert!(!has_genre_tile(&genre));
     }
 
     #[test]
