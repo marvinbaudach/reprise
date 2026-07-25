@@ -204,7 +204,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn fil_1c_scope_chip_x_returns_to_the_library() {
+    fn fil_1c_genre_scope_chip_x_returns_to_the_library_with_history() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
@@ -241,19 +241,18 @@ mod tests {
             move || navigator.leave_scope()
         });
         navigator.navigate(
-            NavigationIntent::OpenArtist {
-                artist: ArtistKey::new("Lorna Shore"),
-                anchor_track_id: None,
+            NavigationIntent::OpenGenre {
+                genre: "Metalcore".into(),
             },
-            "test artist navigation",
+            "test genre navigation",
         );
         let scope_chip = track_list.shared.browse_bar.scope_button().unwrap();
         assert!(scope_chip
             .label()
-            .is_some_and(|label| label.contains("Lorna Shore")));
+            .is_some_and(|label| label.contains("Metalcore")));
         assert!(scope_chip
             .tooltip_text()
-            .is_some_and(|tooltip| tooltip.contains("Lorna Shore")));
+            .is_some_and(|tooltip| tooltip.contains("Metalcore")));
         assert!(scope_chip.width_request() >= 20);
 
         scope_chip.emit_clicked();
@@ -264,7 +263,7 @@ mod tests {
             .expect("leaving the scope must push it onto Back history");
         assert_eq!(
             previous.view_source(),
-            ViewSource::Artist("Lorna Shore".into())
+            ViewSource::Genre("Metalcore".into())
         );
     }
 }

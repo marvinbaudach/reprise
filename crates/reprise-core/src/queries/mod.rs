@@ -317,6 +317,12 @@ pub fn query_track_window_browsed_ai(
         ViewSource::Artist(artist) => library_views::query_artist_track_window(
             conn, artist, sort_field, sort_dir, filter, browse, offset, limit, project_ai,
         ),
+        ViewSource::Genre(genre) => {
+            let browse = genre_browse(genre, browse);
+            library::query_track_window_library(
+                conn, sort_field, sort_dir, filter, offset, limit, &browse, exclude_ai, project_ai,
+            )
+        }
         ViewSource::ImportErrors
         | ViewSource::MyStats
         | ViewSource::Conversions
@@ -367,6 +373,9 @@ pub fn query_track_count_browsed(
         ViewSource::Artist(artist) => {
             library_views::query_artist_track_count(conn, artist, filter, browse)
         }
+        ViewSource::Genre(genre) => {
+            library::query_track_count_library(conn, filter, &genre_browse(genre, browse))
+        }
         ViewSource::ImportErrors
         | ViewSource::MyStats
         | ViewSource::Conversions
@@ -408,6 +417,12 @@ pub fn query_track_count_browsed_ai(
         ViewSource::Library => {
             library::query_track_count_library_ai(conn, filter, browse, exclude_ai)
         }
+        ViewSource::Genre(genre) => library::query_track_count_library_ai(
+            conn,
+            filter,
+            &genre_browse(genre, browse),
+            exclude_ai,
+        ),
         _ => query_track_count_browsed(conn, source, filter, browse, queue_ids),
     }
 }
@@ -515,11 +530,33 @@ pub fn query_track_ids_browsed_ai(
         ViewSource::Artist(artist) => library_views::query_artist_track_ids(
             conn, artist, sort_field, sort_dir, filter, browse,
         ),
+        ViewSource::Genre(genre) => {
+            let browse = genre_browse(genre, browse);
+            let has_filter = !filter.trim().is_empty();
+            let sql = build_track_ids_query_browsed(
+                sort_field, sort_dir, has_filter, &browse, exclude_ai,
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let mut params = Vec::new();
+            if has_filter {
+                params.push(Value::Text(like_pattern(filter.trim())));
+            }
+            let (_, browse_values) = browse::browse_clause(&browse, params.len() + 1);
+            params.extend(browse_values.into_iter().map(Value::Text));
+            let rows = stmt.query_map(rusqlite::params_from_iter(params), row_to_id)?;
+            rows.collect()
+        }
         ViewSource::ImportErrors
         | ViewSource::MyStats
         | ViewSource::Conversions
         | ViewSource::Device { .. } => Ok(Vec::new()),
     }
+}
+
+fn genre_browse(genre: &str, browse: &BrowseFilter) -> BrowseFilter {
+    let mut scoped = browse.clone();
+    scoped.genre = Some(genre.trim().to_owned());
+    scoped
 }
 
 /// Returns the ids represented by the current visible view. This differs
@@ -639,6 +676,8 @@ pub fn query_library_stats_browsed(
 mod tests;
 #[cfg(test)]
 mod tests_auto_clean;
+#[cfg(test)]
+mod tests_genre_scope;
 #[cfg(test)]
 mod tests_import_errors;
 #[cfg(test)]

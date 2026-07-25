@@ -233,7 +233,7 @@ fn build_split_view(
 /// NAV-2/NAV-9b: routes to a remembered place — the re-entrant twin of
 /// `wire_source_routing`'s `on_select` body, used by Back, Forward, and
 /// the now-playing jump. Row-backed sources go through the sidebar to keep
-/// highlight/title/adaptive navigation in sync. Album and Artist scopes have
+/// highlight/title/adaptive navigation in sync. Album, Artist, and Genre scopes have
 /// no sidebar row, so they route directly into the same TrackList.
 pub(in crate::ui) fn route_to_place(
     place: &NavPlace,
@@ -251,7 +251,7 @@ pub(in crate::ui) fn route_to_place(
     );
     let source = place.view_source();
     match &source {
-        ViewSource::Album { .. } | ViewSource::Artist(_) => {
+        ViewSource::Album { .. } | ViewSource::Artist(_) | ViewSource::Genre(_) => {
             content_stack.set_visible_child_name("library");
             let _ = track_list.restore_browser_place(place.browser_place());
             crate::ui::sidebar_session::sync_current_source(&sidebar.shared, &source);

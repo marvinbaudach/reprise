@@ -130,6 +130,8 @@ pub(in crate::ui) fn css() -> String {
            color: alpha(@window_fg_color, 0.58); }}\n\
          .stats-genre-card {{ padding: 8px; }}\n\
          .stats-genre-bar {{ border-radius: 999px; }}\n\
+         .stats-genre-segment {{ padding: 0; min-height: 0; }}\n\
+         .stats-genre-link {{ padding: 0; }}\n\
          .stats-genre-rank-0 {{ background-color: shade(@accent_bg_color, 1.15); }}\n\
          .stats-genre-rank-1 {{ background-color: shade(@accent_bg_color, 1.0); }}\n\
          .stats-genre-rank-2 {{ background-color: shade(@accent_bg_color, 0.85); }}\n\

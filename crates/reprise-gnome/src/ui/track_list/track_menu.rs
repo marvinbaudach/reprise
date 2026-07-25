@@ -39,6 +39,7 @@ impl MenuContext {
             | ViewSource::ImportErrors
             | ViewSource::MyStats
             | ViewSource::Conversions
+            | ViewSource::Genre(_)
             | ViewSource::Device { .. } => Self::LibraryTracks,
         }
     }

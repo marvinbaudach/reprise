@@ -348,6 +348,10 @@ impl StatsView {
             .set_on_open_album_path(callback);
     }
 
+    pub(in crate::ui) fn set_on_go_to_genre(&self, callback: impl Fn(String) + 'static) {
+        self.render.genres_section_data.set_on_open_genre(callback);
+    }
+
     /// The sections in the order the page actually stacks them, read off the
     /// live widget tree — not off a constant that nothing binds to it.
     #[cfg(test)]
