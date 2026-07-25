@@ -123,11 +123,14 @@ impl PreferencesContext {
             }
             let scope_row = (descriptor.id == "new_releases")
                 .then(|| super::preference_new_releases::scope_row(&self.conn, active));
+            let singles_row = (descriptor.id == "new_releases")
+                .then(|| super::preference_new_releases::singles_row(&self.conn, active));
             let syncing = Rc::new(Cell::new(false));
             let weak = Rc::downgrade(self);
             let descriptor = *descriptor;
             let syncing_notify = syncing.clone();
             let scope_notify = scope_row.clone();
+            let singles_notify = singles_row.clone();
             row.connect_active_notify(move |row| {
                 let Some(context) = weak.upgrade() else {
                     return;
@@ -197,6 +200,9 @@ impl PreferencesContext {
                 if let Some(scope) = &scope_notify {
                     scope.set_sensitive(active);
                 }
+                if let Some(singles) = &singles_notify {
+                    singles.set_sensitive(active);
+                }
             });
             if descriptor.id == "new_releases" {
                 let alive = glib::WeakRef::new();
@@ -205,6 +211,11 @@ impl PreferencesContext {
                 let scope_target = scope_row.as_ref().map(|scope| {
                     let target = glib::WeakRef::new();
                     target.set(Some(scope));
+                    target
+                });
+                let singles_target = singles_row.as_ref().map(|singles| {
+                    let target = glib::WeakRef::new();
+                    target.set(Some(singles));
                     target
                 });
                 let syncing = syncing.clone();
@@ -219,12 +230,20 @@ impl PreferencesContext {
                         {
                             scope.set_sensitive(enabled);
                         }
+                        if let Some(singles) =
+                            singles_target.as_ref().and_then(glib::WeakRef::upgrade)
+                        {
+                            singles.set_sensitive(enabled);
+                        }
                     },
                 );
             }
             group.add(&row);
             if let Some(scope) = scope_row {
                 group.add(&scope);
+            }
+            if let Some(singles) = singles_row {
+                group.add(&singles);
             }
         }
         page.add(&group);

@@ -34,6 +34,7 @@ impl NowPlayingColumn {
             .collapsed(false)
             .min_sidebar_width(f64::from(PANEL_WIDTH))
             .max_sidebar_width(f64::from(PANEL_WIDTH))
+            .sidebar_width_unit(adw::LengthUnit::Px)
             .build();
 
         Self { split }

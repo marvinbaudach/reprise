@@ -1,5 +1,4 @@
 crates/reprise-gnome/src/ui/strings.rs
-crates/reprise-gnome/src/ui/strings_audio_analysis.rs
 crates/reprise-gnome/src/ui/strings_app_shell.rs
 crates/reprise-gnome/src/ui/strings_artist.rs
 crates/reprise-gnome/src/ui/strings_issues.rs
@@ -9,6 +8,13 @@ crates/reprise-gnome/src/ui/strings_tooltips.rs
 crates/reprise-gnome/src/ui/strings_rhythmbox.rs
 crates/reprise-gnome/src/ui/strings_scrobbling.rs
 crates/reprise-gnome/src/ui/strings_stats.rs
+crates/reprise-gnome/src/ui/strings_autocomplete.rs
+crates/reprise-gnome/src/ui/strings_filter.rs
+crates/reprise-gnome/src/ui/strings_instrumental.rs
+crates/reprise-gnome/src/ui/strings_scan.rs
+crates/reprise-gnome/src/ui/strings_song_visuals.rs
+crates/reprise-gnome/src/ui/strings_tag_edit.rs
+crates/reprise-gnome/src/ui/strings_track_menu.rs
 crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
 crates/reprise-gnome/src/ui/sidebar/sidebar_issue_strings.rs
 crates/reprise-gnome/src/ui/preferences/preference_visual_strings.rs
