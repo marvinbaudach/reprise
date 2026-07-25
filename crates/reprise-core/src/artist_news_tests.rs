@@ -726,7 +726,7 @@ fn ledger_marks_artist_without_news_fresh_and_second_run_skips_it() {
 }
 
 #[test]
-fn ledger_records_unmatched_artist_and_skips_it_while_fresh() {
+fn ledger_records_unmatched_outcome_and_negative_match_excludes_future_search() {
     let conn = migrated_conn();
     conn.execute(
         "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
@@ -753,6 +753,30 @@ fn ledger_records_unmatched_artist_and_skips_it_while_fresh() {
     assert_eq!(first.unmatched, 1);
     let after_first = calls.get();
 
+    // Assert directly against the ledger — this is the actual requirement
+    // under test. `normalize("Nobody At All")` is "nobody at all".
+    let artist_key = "nobody at all";
+    assert_eq!(
+        crate::artist_news_ledger::last_attempt_at(&conn, artist_key).unwrap(),
+        Some(1_000),
+        "an unmatched artist must still get a ledger entry for its attempt"
+    );
+    let outcome: String = conn
+        .query_row(
+            "SELECT last_outcome FROM artist_news_fetch WHERE artist_key = ?1",
+            [artist_key],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(outcome, "unmatched");
+
+    // This second call does NOT exercise the ledger's TTL-based freshness
+    // check at all: `persist_artist_match` already set
+    // `artist_mbid_negative = 1` on the first run, and
+    // `artists_for_fetch`'s `HAVING` clause excludes that artist from the
+    // candidate list outright. So this only proves a negatively-matched
+    // artist stops costing search requests forever, once the ledger
+    // assertions above have already pinned the actual requirement.
     refresh_with(
         &conn,
         date(),
@@ -766,7 +790,75 @@ fn ledger_records_unmatched_artist_and_skips_it_while_fresh() {
     assert_eq!(
         calls.get(),
         after_first,
-        "an unmatched artist must not be searched again while fresh"
+        "a negatively-matched artist must not be searched again"
+    );
+}
+
+#[test]
+fn ledger_records_failed_fetch_and_ttl_prevents_a_retry_within_the_window() {
+    let conn = migrated_conn();
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, artist_mbid, play_count, added_at) \
+         VALUES ('/music/one.flac', 'One', 'Pink Floyd', ?1, 20, 0)",
+        [ARTIST_ID],
+    )
+    .unwrap();
+    let calls = std::cell::Cell::new(0);
+    let mut fetch = |_url: &str| {
+        calls.set(calls.get() + 1);
+        Err(crate::musicbrainz::FetchError::Transport)
+    };
+
+    let first = refresh_with(
+        &conn,
+        date(),
+        1_000,
+        FetchScope::TopArtists,
+        false,
+        &mut fetch,
+        &mut no_accent,
+    )
+    .unwrap();
+    assert_eq!(first.failed, 1);
+    let after_first = calls.get();
+    assert_eq!(
+        after_first, 1,
+        "a known MBID must skip the search request and hit only release-groups"
+    );
+
+    let artist_key = "pink floyd";
+    assert_eq!(
+        crate::artist_news_ledger::last_attempt_at(&conn, artist_key).unwrap(),
+        Some(1_000),
+        "a failed fetch must still be recorded in the ledger"
+    );
+    let outcome: String = conn
+        .query_row(
+            "SELECT last_outcome FROM artist_news_fetch WHERE artist_key = ?1",
+            [artist_key],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(outcome, "failed");
+
+    let second = refresh_with(
+        &conn,
+        date(),
+        2_000, // well inside FETCH_TTL_SECONDS: no separate failure backoff exists
+        FetchScope::TopArtists,
+        false,
+        &mut fetch,
+        &mut no_accent,
+    )
+    .unwrap();
+    assert_eq!(
+        second.failed, 0,
+        "a permanently-failing artist must count as fresh inside the TTL window"
+    );
+    assert_eq!(
+        calls.get(),
+        after_first,
+        "no further requests may be issued for it within the TTL window"
     );
 }
 

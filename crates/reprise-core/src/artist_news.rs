@@ -244,6 +244,22 @@ where
         ..RefreshReport::default()
     };
     for candidate in candidates {
+        // `normalize()` is the authoritative form of the ledger key: every
+        // runtime read and write (`record_attempt`, `last_attempt_at`,
+        // `artist_cache_is_fresh`) goes through it, and it collapses *inner*
+        // whitespace runs via `split_whitespace` in addition to trimming and
+        // lowercasing. The migration's SQL backfill
+        // (`db_artist_news_fetch.rs`) seeded the same table with
+        // `lower(trim(artist_name))` instead, which SQLite cannot make
+        // collapse inner runs generically. So "Pink   Floyd" backfills as
+        // "pink   floyd" but normalizes here to "pink floyd" — the keys
+        // differ and the backfilled row is never matched. The practical
+        // effect is that such an artist is treated as "never checked" once,
+        // costs one extra fetch, and then the runtime key is what every
+        // later run reads and writes, so the mismatch cannot recur. That
+        // one-time, self-healing cost for a rare edge case (multiple inner
+        // spaces in an artist name) is why this divergence is accepted
+        // rather than chasing exact parity in raw SQL.
         let artist_key = normalize(&candidate.name);
         // Checked before resolving the MBID: a fresh artist must cost zero
         // requests, and the search request would otherwise be spent before
