@@ -489,6 +489,7 @@ fn npp_10_track_change_uses_one_shared_crossfade() {
 
     let (window, panel) = test_panel("org.reprise.Reprise.NowPlayingCrossfadeTest");
     panel.retain_for_window(&window);
+    panel.widgets.column.set_visible(true);
     window.present();
     while gtk4::glib::MainContext::default().iteration(false) {}
     assert!(panel.widgets.track_content.is_mapped());
