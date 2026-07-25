@@ -10,6 +10,8 @@ pub(in crate::ui) fn css() -> String {
     format!(
         // Cairo charts pick up `color` from these selectors.
         ".stats-chart, .stats-ribbon {{ color: @accent_color; }}\n\
+         .stats-ribbon-best {{ color: shade(@accent_color, 1.25); }}\n\
+         .stats-ribbon-baseline {{ color: alpha(@window_fg_color, 0.12); }}\n\
          \
          .stats-headline-hours {{ \
            font-size: 52px; \
@@ -198,6 +200,8 @@ mod tests {
     fn stats_css_defines_the_ribbon_pill_and_band_classes() {
         let css = super::css();
         assert!(css.contains(".stats-ribbon"));
+        assert!(css.contains(".stats-ribbon-best { color: shade(@accent_color, 1.25); }"));
+        assert!(css.contains(".stats-ribbon-baseline { color: alpha(@window_fg_color, 0.12); }"));
         assert!(css.contains(".stats-pill"));
         assert!(css.contains(".stats-band-card"));
         assert!(css.contains("@card_bg_color"));

@@ -137,6 +137,25 @@ pub(in crate::ui) fn month_ticks(
     ticks
 }
 
+pub(in crate::ui) fn axis_ticks(
+    bucket_starts: &[Option<NaiveDate>],
+    granularity: Granularity,
+) -> Vec<MonthTick> {
+    if granularity == Granularity::Week && bucket_starts.len() < 10 {
+        return bucket_starts
+            .iter()
+            .enumerate()
+            .filter_map(|(index, date)| {
+                date.map(|date| MonthTick {
+                    index,
+                    label: format!("W{}", date.iso_week().week()),
+                })
+            })
+            .collect();
+    }
+    month_ticks(bucket_starts, granularity)
+}
+
 pub(in crate::ui) fn reveal_clip_width(width: f64, reveal_fraction: f64) -> f64 {
     width.max(0.0) * reveal_fraction.clamp(0.0, 1.0)
 }
@@ -258,6 +277,38 @@ mod tests {
                     index: 3,
                     label: "MAR".into()
                 }
+            ]
+        );
+    }
+
+    #[test]
+    fn short_week_axis_labels_every_equal_slot() {
+        let starts = [
+            Some(NaiveDate::from_ymd_opt(2026, 6, 29).unwrap()),
+            Some(NaiveDate::from_ymd_opt(2026, 7, 6).unwrap()),
+            Some(NaiveDate::from_ymd_opt(2026, 7, 13).unwrap()),
+            Some(NaiveDate::from_ymd_opt(2026, 7, 20).unwrap()),
+        ];
+
+        assert_eq!(
+            axis_ticks(&starts, Granularity::Week),
+            vec![
+                MonthTick {
+                    index: 0,
+                    label: "W27".into()
+                },
+                MonthTick {
+                    index: 1,
+                    label: "W28".into()
+                },
+                MonthTick {
+                    index: 2,
+                    label: "W29".into()
+                },
+                MonthTick {
+                    index: 3,
+                    label: "W30".into()
+                },
             ]
         );
     }
