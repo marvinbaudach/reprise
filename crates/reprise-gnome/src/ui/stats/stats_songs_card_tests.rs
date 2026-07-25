@@ -10,6 +10,12 @@ fn compact_card_fills_six_song_rows() {
 }
 
 #[test]
+fn compact_sort_toggle_names_map_to_the_shared_ranking_order() {
+    assert_eq!(sort_for_toggle_name(Some("plays")), SortBy::Plays);
+    assert_eq!(sort_for_toggle_name(Some("time")), SortBy::Time);
+}
+
+#[test]
 fn summary_cover_generation_survives_rendering_the_full_ranking() {
     let generations = CoverGenerations::default();
     let summary_token = generations.next_summary();
@@ -129,16 +135,22 @@ fn stats_14_compact_toggle_sorts_six_rows_and_show_all_reveals_the_full_list() {
         .set_transition_type(gtk4::RevealerTransitionType::None);
     run_main_loop_for_layout();
 
+    assert_eq!(card.sort_toggle.n_toggles(), 2);
     assert_eq!(
-        descendant_labels(card.header.upcast_ref()),
-        vec!["MOST PLAYED SONGS", "by plays", "by time"]
+        card.sort_toggle.toggle(0).unwrap().label().as_deref(),
+        Some("by plays")
     );
+    assert_eq!(
+        card.sort_toggle.toggle(1).unwrap().label().as_deref(),
+        Some("by time")
+    );
+    assert_eq!(card.sort_toggle.active_name().as_deref(), Some("plays"));
     assert_eq!(
         card.reveal_button.label().as_deref(),
         Some("Show all top tracks")
     );
     assert_eq!(card.summary.rows.observe_children().n_items(), 6);
-    card.time_sort.set_active(true);
+    card.sort_toggle.set_active_name(Some("time"));
     assert_eq!(card.sort_by.get(), SortBy::Time);
     assert_eq!(
         descendant_labels(&card.summary.rows.first_child().unwrap())[0],
@@ -148,7 +160,7 @@ fn stats_14_compact_toggle_sorts_six_rows_and_show_all_reveals_the_full_list() {
     card.reveal_button.emit_clicked();
     assert!(card.revealer.reveals_child());
     assert_eq!(card.full_rows.observe_children().n_items(), 6);
-    card.plays_sort.set_active(true);
+    card.sort_toggle.set_active_name(Some("plays"));
     assert_eq!(card.sort_by.get(), SortBy::Plays);
     run_main_loop_for_layout();
 
