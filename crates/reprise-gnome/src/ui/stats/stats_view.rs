@@ -144,8 +144,13 @@ impl StatsView {
         page.append(&header.root);
         page.append(&hero.root);
         page.append(&page_stack);
+        // Tighten only at the maximum width. Adw::Clamp otherwise starts
+        // squeezing at its 400px default threshold, which costs the story row
+        // enough width to wrap band and songs onto separate lines in a window
+        // that is plainly wide enough for both.
         let clamp = adw::Clamp::builder()
             .maximum_size(CONTENT_MAX_WIDTH)
+            .tightening_threshold(CONTENT_MAX_WIDTH)
             .child(&page)
             .build();
         let root = gtk4::ScrolledWindow::builder()
