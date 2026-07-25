@@ -2,13 +2,6 @@
 
 use gtk4::prelude::*;
 
-pub(super) fn section(title: &str, content: &impl IsA<gtk4::Widget>) -> gtk4::Box {
-    let root = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
-    root.append(&label(title, "stats-section-title"));
-    root.append(content);
-    root
-}
-
 pub(super) fn card(content: &impl IsA<gtk4::Widget>) -> gtk4::Box {
     let card = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     card.add_css_class("stats-card");

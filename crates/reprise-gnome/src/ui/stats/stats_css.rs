@@ -77,6 +77,9 @@ pub(in crate::ui) fn css() -> String {
            border-radius: {radius}; \
            border: 1px solid alpha(@window_fg_color, {border_alpha}); \
            padding: 16px; }}\n\
+         .stats-thin-history {{ \
+           padding: 12px; \
+           color: alpha(@window_fg_color, 0.68); }}\n\
          \
          .stats-badge {{ \
            font-size: 9px; \
@@ -180,6 +183,7 @@ mod tests {
         assert!(css.contains(".stats-kpi-label"));
         assert!(css.contains(".stats-section-title"));
         assert!(css.contains(".stats-card"));
+        assert!(css.contains(".stats-thin-history"));
         assert!(css.contains(".stats-badge"));
         assert!(css.contains(".stats-cover-thumb"));
         assert!(css.contains(".stats-period-dropdown"));

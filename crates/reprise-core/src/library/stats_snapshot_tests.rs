@@ -234,7 +234,7 @@ fn stats_15_genre_card_buckets_other() {
 }
 
 #[test]
-fn stats_4_highlights_streak_and_discovered() {
+fn legacy_highlights_streak_and_discovered() {
     let conn = migrated_conn();
     insert_track(&conn, 1, "Known", "Artist", "", "Rock", 60_000, 0, None);
     insert_track(&conn, 2, "New", "Artist", "", "Rock", 60_000, 0, None);
@@ -574,7 +574,7 @@ fn stats_9_album_titles_fold_like_artist_names() {
 
 /// A single peak hour is not a span, and scattered peaks are not one either.
 #[test]
-fn stats_4_peak_caption_never_invents_a_span() {
+fn legacy_peak_caption_never_invents_a_span() {
     let single = migrated_conn();
     insert_track(&single, 1, "Solo", "Artist", "", "Rock", 100_000, 0, None);
     insert_event(&single, 1, timestamp(2026, 6, 1, 15, 0), 100_000);

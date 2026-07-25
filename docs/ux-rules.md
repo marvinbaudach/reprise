@@ -1337,7 +1337,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Segmente, der Rest wird zu „Other" gebündelt; Tracks ohne Genre zählen weder
   als Segment noch als „Other". Die Leiste ist reine Anzeige und keine
   Navigation: Segmente und Legende sind nicht klickbar.
-- **STATS-4** [aktiv] [core] — Unter dem Spektrum steht eine asymmetrische
+- **STATS-4** [ersetzt durch STATS-10] [core] — Unter dem Spektrum steht eine asymmetrische
   Reihe (1.35fr / 1fr): links die Listening Clock als 24-Stunden-Histogramm aus
   den Timestamps mit teal hervorgehobenen Peak-Stunden und Caption
   („Peak 11 PM–1 AM · night owl"), rechts vier Highlight-Kacheln — Streak
@@ -1381,7 +1381,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   noch eine Sondermeldung. Ist ein verfügbarer Zeitraum leer, bleibt der
   reguläre Leerzustand sichtbar; Hero und Zeitraum-Dropdown bleiben darüber
   bedienbar, damit die Auswahl nie zur Sackgasse wird.
-- **STATS-7** [aktiv] [gtk] — My Stats ist kuratiert, nicht frei editierbar:
+- **STATS-7** [ersetzt durch STATS-10] [gtk] — My Stats ist kuratiert, nicht frei editierbar:
   kein Drag-and-Drop-Widget-Board. Ein ⋮-Menü „Customize" blendet die Sektionen
   Clock, Genres und Highlights per CheckButton ein und aus; die Auswahl bleibt
   über Sitzungen erhalten. Mehr enthält das Menü nicht — das Spotlight ist
@@ -1426,7 +1426,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Listeneintrag darauf hin und führt in den Mehrfach-Tag-Editor der betroffenen
   Tracks; das Vereinheitlichen bleibt eine Einladung, nie ein automatischer
   Schreibvorgang.
-- **STATS-10** [geplant] [gtk] — My Stats erzählt in fester Reihenfolge von
+- **STATS-10** [aktiv] [gtk] — My Stats erzählt in fester Reihenfolge von
   oben nach unten: Kopfzeile (Titel, optionales „New this year"-Badge,
   Zeitraumwahl) · Hero (Gesamtzahl, Subline, KPI-Reihe) · Wochen-Chart ·
   zweispaltige Reihe aus Band-Karte und Songs-Karte · Genre-Karte. Mehr
@@ -1489,7 +1489,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Gruppierungen (STATS-9). Klick auf das Kachel-Cover öffnet die Library
   gefiltert auf das Album; Segmente und Genre-Namen sind keine Navigation.
   Tracks ohne Genre zählen weiterhin weder als Segment noch als „Other".
-- **STATS-16** [geplant] [gtk] — Unter zehn Plays im gewählten Zeitraum ist
+- **STATS-16** [aktiv] [gtk] — Unter zehn Plays im gewählten Zeitraum ist
   die Datenlage zu dünn für einen Trend: Statt des Charts erscheint der
   Hinweis „Keep listening — stats grow with you"; Hero-Zahlen bleiben echt,
   und nur Karten mit Daten werden gerendert — nie Platzhalterkarten. Ohne

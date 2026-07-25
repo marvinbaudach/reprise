@@ -39,12 +39,11 @@ const NEAR_ZERO_PREVIOUS_DAYS: &str = N_!("Less than one minute in the previous 
 const SPELLINGS_MERGED_ONE: &str = N_!("1 spelling merged \u{2014} unify it in the tag editor?");
 const SPELLINGS_MERGED: &str =
     N_!("{count} spellings merged \u{2014} unify them in the tag editor?");
-const MIX_FROM_GENRE: &str = N_!("Mix from {genre} \u{00b7} Create");
-pub const MIX_FROM_TOP_GENRE: &str = N_!("Mix from your top genre \u{00b7} Create");
 pub const STATS_EMPTY: &str = N_!("Start listening to see your stats");
 pub const STATS_UNAVAILABLE: &str = N_!("Your stats could not be read");
 pub const STATS_UNAVAILABLE_DESCRIPTION: &str =
     N_!("Reading the listening history failed. Nothing is missing from it — this view just could not load it.");
+pub const STATS_THIN_HISTORY: &str = N_!("Keep listening — stats grow with you");
 
 /// The hero figure, rounded to whole hours as the editorial layout calls for.
 /// Below an hour it names minutes rather than claiming "0 hours".
@@ -274,14 +273,6 @@ pub fn spellings_merged_hint(count: usize) -> String {
     )
 }
 
-pub fn mix_from_genre(genre: &str) -> String {
-    formatted(MIX_FROM_GENRE, &[("genre", genre)])
-}
-
-pub fn mix_from_top_genre() -> String {
-    text(MIX_FROM_TOP_GENRE)
-}
-
 pub fn stats_empty_title() -> String {
     text(STATS_EMPTY)
 }
@@ -292,6 +283,10 @@ pub fn stats_unavailable_title() -> String {
 
 pub fn stats_unavailable_description() -> String {
     text(STATS_UNAVAILABLE_DESCRIPTION)
+}
+
+pub fn stats_thin_history_hint() -> String {
+    text(STATS_THIN_HISTORY)
 }
 
 #[cfg(test)]

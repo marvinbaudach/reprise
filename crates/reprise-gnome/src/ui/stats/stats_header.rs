@@ -3,8 +3,6 @@
 use gtk4::prelude::*;
 use libadwaita as adw;
 
-use super::stats_customize::StatsCustomize;
-
 const HEADER_NATURAL_LINE_LENGTH: i32 = 720;
 
 #[derive(Clone)]
@@ -16,7 +14,7 @@ pub(super) struct StatsHeader {
 }
 
 impl StatsHeader {
-    pub(super) fn new(customize: &StatsCustomize) -> Self {
+    pub(super) fn new() -> Self {
         let title = gtk4::Label::new(Some("My Stats"));
         title.add_css_class("stats-header-title");
         title.set_xalign(0.0);
@@ -38,7 +36,6 @@ impl StatsHeader {
         let controls = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
         controls.set_valign(gtk4::Align::Center);
         controls.append(&period_dropdown);
-        controls.append(customize.widget());
 
         let root = adw::WrapBox::new();
         root.set_child_spacing(18);
