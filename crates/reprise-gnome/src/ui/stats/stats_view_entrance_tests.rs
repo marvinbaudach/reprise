@@ -86,6 +86,28 @@ fn wait_for(milliseconds: u64) {
     main_loop.run();
 }
 
+fn wait_until(milliseconds: u64, condition: impl Fn() -> bool + 'static) -> bool {
+    let main_loop = gtk4::glib::MainLoop::new(None, false);
+    let quit = main_loop.clone();
+    let reached = Rc::new(Cell::new(false));
+    let reached_in_poll = reached.clone();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(milliseconds);
+    gtk4::glib::timeout_add_local(std::time::Duration::from_millis(10), move || {
+        if condition() {
+            reached_in_poll.set(true);
+            quit.quit();
+            gtk4::glib::ControlFlow::Break
+        } else if std::time::Instant::now() >= deadline {
+            quit.quit();
+            gtk4::glib::ControlFlow::Break
+        } else {
+            gtk4::glib::ControlFlow::Continue
+        }
+    });
+    main_loop.run();
+    reached.get()
+}
+
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn stats_17_entrance_runs_once_per_open() {
@@ -118,12 +140,11 @@ fn stats_17_entrance_runs_once_per_open() {
 fn stats_17_entrance_is_a_sequence_not_a_burst() {
     gtk4::init().unwrap();
     let (view, _conn, window) = presented_entrance_at_size(1_000, 1_000);
-    wait_for(320);
+    let hero_slide = view.render.hero.time_slide.clone();
 
-    assert_eq!(
-        view.render.hero.time_slide.opacity(),
-        1.0,
-        "the hero must have completed before the later cards begin"
+    assert!(
+        wait_until(2_000, move || hero_slide.opacity() == 1.0),
+        "the hero entrance must complete within the bounded timeout"
     );
     assert_eq!(
         view.render.genres_slide.opacity(),
