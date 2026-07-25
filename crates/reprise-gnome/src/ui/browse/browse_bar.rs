@@ -21,7 +21,7 @@ use crate::ui::track_list::Shared;
 const SMOKE_ENV: &str = "REPRISE_SMOKE_BROWSE";
 /// FIL-7: the sticky settings key for the AI-exclude filter.
 const EXCLUDE_AI_KEY: &str = "filter.exclude_ai";
-const CHIP_CSS_CLASS: &str = "reprise-filter-chip";
+pub(in crate::ui) const CHIP_CSS_CLASS: &str = "reprise-filter-chip";
 const POPOVER_CSS_CLASS: &str = "reprise-filter-popover";
 type OnChanged = Rc<dyn Fn(BrowseFilter)>;
 type OnVoid = Rc<dyn Fn()>;
