@@ -383,6 +383,7 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn stats_13_band_card_shows_ranks_relative_to_leader() {
         gtk4::init().unwrap();
+        crate::ui::style::install_css_string_for_test(&crate::ui::stats::stats_css::css());
         let card = StatsBandCard::new();
         card.set_data(&fixture(1));
         let window = gtk4::Window::builder()
@@ -390,7 +391,7 @@ mod tests {
             .child(card.widget())
             .build();
         window.present();
-        while gtk4::glib::MainContext::default().iteration(false) {}
+        run_main_loop_for_layout();
 
         let values = card
             .rank_bars
@@ -406,7 +407,25 @@ mod tests {
             .map(|bar| bar.compute_bounds(card.widget()).unwrap().x())
             .collect::<Vec<_>>();
         assert!(starts.iter().all(|start| *start == starts[0]));
-        assert!(card.rank_bars.borrow().iter().all(|bar| bar.width() > 0));
+        let widths = card
+            .rank_bars
+            .borrow()
+            .iter()
+            .map(gtk4::prelude::WidgetExt::width)
+            .collect::<Vec<_>>();
+        assert!(
+            widths[0] >= 100,
+            "the leading runner-up track collapsed to {} px",
+            widths[0]
+        );
+        assert!(
+            widths.iter().all(|width| *width == widths[0]),
+            "rank tracks must share the remaining row width: {widths:?}"
+        );
+        assert!(
+            values.windows(2).all(|pair| pair[0] > pair[1]),
+            "rank fills must remain ordered by listening time: {values:?}"
+        );
         window.close();
     }
 
@@ -466,5 +485,14 @@ mod tests {
         card.name_button.emit_clicked();
 
         assert_eq!(&*card.current_artist.borrow(), "Refreshed artist");
+    }
+
+    fn run_main_loop_for_layout() {
+        let main_loop = gtk4::glib::MainLoop::new(None, false);
+        let quit = main_loop.clone();
+        gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(50), move || {
+            quit.quit();
+        });
+        main_loop.run();
     }
 }
