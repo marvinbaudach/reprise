@@ -98,13 +98,48 @@ fn stats_6_sparse_uses_finer_granularity() {
     }
     let dense_snapshot =
         compute(&dense, StatsPeriod::YearToDate(2026), NOW_2026_07_19, &Utc).unwrap();
-    assert_eq!(dense_snapshot.period.granularity, Granularity::Month);
+    assert_eq!(dense_snapshot.period.granularity, Granularity::Week);
 
     let empty = migrated_conn();
     let empty_snapshot =
         compute(&empty, StatsPeriod::YearToDate(2026), NOW_2026_07_19, &Utc).unwrap();
     assert!(empty_snapshot.is_empty());
     assert!(empty_snapshot.period.buckets.is_empty());
+}
+
+#[test]
+fn stats_12_best_week_is_zone_aware() {
+    let conn = migrated_conn();
+    insert_track(
+        &conn, 1, "Boundary", "Artist", "", "Rock", 1_000_000, 0, None,
+    );
+    insert_event(&conn, 1, timestamp(2026, 3, 1, 21, 30), 100_000);
+    insert_event(&conn, 1, timestamp(2026, 3, 1, 22, 30), 200_000);
+    insert_event(&conn, 1, timestamp(2026, 3, 3, 12, 0), 300_000);
+    let zone = FixedOffset::east_opt(7_200).unwrap();
+
+    let snapshot = compute(&conn, StatsPeriod::Year(2026), NOW_2026_07_19, &zone).unwrap();
+
+    assert_eq!(
+        snapshot.best_week,
+        Some(super::BestWeek {
+            start: NaiveDate::from_ymd_opt(2026, 3, 2).unwrap(),
+            total_ms: 500_000,
+        })
+    );
+}
+
+#[test]
+fn best_week_is_none_for_an_empty_period() {
+    let snapshot = compute(
+        &migrated_conn(),
+        StatsPeriod::Year(2026),
+        NOW_2026_07_19,
+        &Utc,
+    )
+    .unwrap();
+
+    assert_eq!(snapshot.best_week, None);
 }
 
 #[test]

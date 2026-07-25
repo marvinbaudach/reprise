@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Timelike};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Timelike, Weekday};
 use rusqlite::Connection;
 
 /// Length of the rolling window behind [`StatsPeriod::Last30Days`], counted in
@@ -213,7 +213,7 @@ impl StatsPeriod {
 pub fn granularity_for(span_days: i64, distinct_active_days: i64) -> Granularity {
     if span_days <= 45 || distinct_active_days < 8 {
         Granularity::Day
-    } else if span_days <= 120 || distinct_active_days < 24 {
+    } else if span_days <= 730 || distinct_active_days < 24 {
         Granularity::Week
     } else {
         Granularity::Month
@@ -225,6 +225,11 @@ pub fn local_parts<Tz: TimeZone>(tz: &Tz, unix: i64) -> Option<(NaiveDate, u32)>
     tz.timestamp_opt(unix, 0)
         .earliest()
         .map(|value| (value.date_naive(), value.hour()))
+}
+
+/// Monday that begins the local calendar week containing `unix`.
+pub fn week_start<Tz: TimeZone>(tz: &Tz, unix: i64) -> Option<NaiveDate> {
+    local_parts(tz, unix).map(|(date, _)| date.week(Weekday::Mon).first_day())
 }
 
 pub(crate) fn apply_activity_granularity<Tz: TimeZone>(
@@ -310,13 +315,19 @@ fn build_buckets<Tz: TimeZone>(
     let Some((mut cursor_date, _)) = local_parts(tz, start_unix) else {
         return Vec::new();
     };
-    if granularity == Granularity::Month {
-        let Some(first_of_month) =
-            NaiveDate::from_ymd_opt(cursor_date.year(), cursor_date.month(), 1)
-        else {
-            return Vec::new();
-        };
-        cursor_date = first_of_month;
+    match granularity {
+        Granularity::Week => {
+            cursor_date = cursor_date.week(Weekday::Mon).first_day();
+        }
+        Granularity::Month => {
+            let Some(first_of_month) =
+                NaiveDate::from_ymd_opt(cursor_date.year(), cursor_date.month(), 1)
+            else {
+                return Vec::new();
+            };
+            cursor_date = first_of_month;
+        }
+        Granularity::Day => {}
     }
 
     let mut buckets = Vec::new();
