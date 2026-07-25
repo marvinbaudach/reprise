@@ -35,8 +35,6 @@ use progress_card::{DoctorJobKind, DoctorProgressCard};
 use review_page::LibraryDoctorReviewPage;
 use summary_page::LibraryDoctorPage;
 
-const PLUGIN_TARGETS: &[&str] = &["library_doctor"];
-
 pub(in crate::ui) struct LibraryDoctorCoordinator {
     conn: Rc<RefCell<Connection>>,
     db_path: PathBuf,
@@ -204,13 +202,7 @@ impl LibraryDoctorCoordinator {
         self.selection_override.borrow_mut().take();
         let view = current_view_snapshot(&self.track_list);
         self.page.set_selected_scope(suggested_scope(&view));
-        if !self.module_enabled() {
-            if let Some(preferences) = self.preferences.upgrade() {
-                preferences.present_plugins(PLUGIN_TARGETS);
-            }
-            return;
-        }
-        self.open_enabled();
+        self.open_available();
     }
 
     pub(in crate::ui) fn open_for_selection(&self, ids: Vec<i64>) {
@@ -220,22 +212,10 @@ impl LibraryDoctorCoordinator {
         }
         self.selection_override.borrow_mut().replace(ids);
         self.page.set_selected_scope(2);
-        if !self.module_enabled() {
-            if let Some(preferences) = self.preferences.upgrade() {
-                preferences.present_plugins(PLUGIN_TARGETS);
-            }
-            return;
-        }
-        self.open_enabled();
+        self.open_available();
     }
 
-    fn module_enabled(&self) -> bool {
-        let conn = self.conn.borrow();
-        reprise_core::modules::is_enabled(&conn, &reprise_core::modules::LIBRARY_DOCTOR_MODULE)
-            .unwrap_or(false)
-    }
-
-    fn open_enabled(&self) {
+    fn open_available(&self) {
         {
             let conn = self.conn.borrow();
             self.page.sync_remote_preference(&conn);
@@ -256,10 +236,7 @@ impl LibraryDoctorCoordinator {
             self.selection_override.borrow_mut().take();
         }
         self.page.set_selected_scope(scope);
-        if !self.module_enabled() {
-            return;
-        }
-        self.open_enabled();
+        self.open_available();
         self.start_scan();
     }
 
