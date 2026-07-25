@@ -1271,6 +1271,11 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Fenster adaptiv zu einer unteren `AdwViewSwitcherBar` oder einem
   icons-only `AdwInlineViewSwitcher` per `AdwBreakpoint`. Umsetzung in Batch
   B; siehe Beschlussdokument.
+- **NPP-12** [aktiv] [gtk] — Ohne gespeicherte Präferenz startet das rechte
+  Now-Playing-Panel geschlossen. Sobald der Nutzer es über den Header-Toggle
+  öffnet oder schließt, gewinnt dieser persistierte Zustand bei allen
+  folgenden Starts (NPP-4); der neue Default überschreibt keine bestehende
+  Präferenz.
 
 ## V. My Stats
 
