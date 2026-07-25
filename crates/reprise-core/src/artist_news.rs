@@ -384,10 +384,8 @@ pub(crate) fn artists_for_fetch(
             let mut rest = candidates.split_off(TOP_ARTIST_COUNT);
             let mut keyed = Vec::with_capacity(rest.len());
             for candidate in rest.drain(..) {
-                let last_attempt = crate::artist_news_ledger::last_attempt_at(
-                    conn,
-                    &normalize(&candidate.name),
-                )?;
+                let last_attempt =
+                    crate::artist_news_ledger::last_attempt_at(conn, &normalize(&candidate.name))?;
                 keyed.push((last_attempt, candidate));
             }
             // `None` sorts before `Some` — never-checked artists come first.
@@ -460,8 +458,7 @@ fn artist_cache_is_fresh(
     now: i64,
 ) -> Result<bool, rusqlite::Error> {
     let last_attempt = crate::artist_news_ledger::last_attempt_at(conn, artist_key)?;
-    Ok(last_attempt
-        .is_some_and(|attempt| now.saturating_sub(attempt).max(0) <= FETCH_TTL_SECONDS))
+    Ok(last_attempt.is_some_and(|attempt| now.saturating_sub(attempt).max(0) <= FETCH_TTL_SECONDS))
 }
 
 fn local_albums(conn: &Connection, artist: &str) -> Result<Vec<String>, rusqlite::Error> {

@@ -29,7 +29,8 @@ fn v30_creates_ledger_and_backfills_from_new_releases() {
     )
     .unwrap();
     conn.pragma_update(None, "user_version", 29).unwrap();
-    conn.execute("DROP TABLE IF EXISTS artist_news_fetch", []).unwrap();
+    conn.execute("DROP TABLE IF EXISTS artist_news_fetch", [])
+        .unwrap();
 
     crate::db_artist_news_fetch::migrate_v30(&conn).unwrap();
 

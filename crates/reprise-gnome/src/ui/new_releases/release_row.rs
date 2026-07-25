@@ -717,7 +717,10 @@ mod tests {
             chip_presentation(&release, today()),
             ChipPresentation::InLibrary
         );
-        assert_eq!(primary_action(&release, today()), PrimaryAction::ShowInLibrary);
+        assert_eq!(
+            primary_action(&release, today()),
+            PrimaryAction::ShowInLibrary
+        );
     }
 
     #[test]
