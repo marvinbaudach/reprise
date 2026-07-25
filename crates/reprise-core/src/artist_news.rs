@@ -21,6 +21,7 @@ const TOP_ARTIST_COUNT: usize = 20;
 const REST_ARTISTS_PER_RUN: usize = 30;
 const DEFAULT_FALLBACK_ACCENT: &str = "#3584E4";
 const FETCH_ALL_ARTISTS_KEY: &str = "module.new_releases.all_artists";
+const INCLUDE_SINGLES_KEY: &str = "module.new_releases.include_singles";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NewsKind {
@@ -90,6 +91,17 @@ pub fn configured_fetch_scope(conn: &Connection) -> Result<FetchScope, rusqlite:
 
 pub fn set_fetch_all_artists(conn: &Connection, all_artists: bool) -> Result<(), rusqlite::Error> {
     crate::library::settings::set_bool(conn, FETCH_ALL_ARTISTS_KEY, all_artists)
+}
+
+/// Whether already-released singles count as news. Off by default: singles
+/// are the most common release type, so switching this on noticeably
+/// increases how much the badge reports.
+pub fn include_singles(conn: &Connection) -> Result<bool, rusqlite::Error> {
+    crate::library::settings::get_bool(conn, INCLUDE_SINGLES_KEY, false)
+}
+
+pub fn set_include_singles(conn: &Connection, include: bool) -> Result<(), rusqlite::Error> {
+    crate::library::settings::set_bool(conn, INCLUDE_SINGLES_KEY, include)
 }
 
 /// Staleness policy (when a refresh is due, the per-install jitter, and the
@@ -189,6 +201,7 @@ pub fn parse_release_groups(
     json: &str,
     local_albums: &[String],
     today: NaiveDate,
+    include_singles: bool,
 ) -> Vec<AlbumNews> {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
         return Vec::new();
@@ -205,7 +218,7 @@ pub fn parse_release_groups(
         .collect::<std::collections::HashSet<_>>();
     let mut items = groups
         .iter()
-        .filter_map(|group| parse_release_group(group, &local, today))
+        .filter_map(|group| parse_release_group(group, &local, today, include_singles))
         .collect::<Vec<_>>();
     items.sort_by(|(left, left_date), (right, right_date)| {
         compare_news(left, *left_date, right, *right_date)
@@ -253,6 +266,7 @@ where
         artists_queued: candidates.len(),
         ..RefreshReport::default()
     };
+    let include_singles = include_singles(conn).map_err(database_error)?;
     for candidate in candidates {
         // `normalize()` is the authoritative form of the ledger key: every
         // runtime read and write (`record_attempt`, `last_attempt_at`,
@@ -309,7 +323,7 @@ where
             }
         };
         let local_albums = local_albums(conn, &candidate.name).map_err(database_error)?;
-        let items = parse_release_groups(&body, &local_albums, today);
+        let items = parse_release_groups(&body, &local_albums, today, include_singles);
         let accent = normalize_fallback_accent(fallback_accent(conn, &candidate.name));
         upsert_releases(conn, &candidate.name, &mbid, now, &accent, &items)
             .map_err(database_error)?;
@@ -780,6 +794,7 @@ fn parse_release_group(
     group: &serde_json::Value,
     local: &std::collections::HashSet<String>,
     today: NaiveDate,
+    include_singles: bool,
 ) -> Option<(AlbumNews, NaiveDate)> {
     let mbid = group.get("id")?.as_str()?.to_string();
     let title = group.get("title")?.as_str()?.trim().to_string();
@@ -795,7 +810,12 @@ fn parse_release_group(
     }
     let delta = release_date.signed_duration_since(today).num_days();
     let kind = match primary_type_normalized.as_str() {
+        // An announced single needs an exact date to be trustworthy; that
+        // rule predates the switch and stays on unconditionally, so turning
+        // the switch off never shows *less* than before.
         "single" if date_text.len() == 10 && delta > 0 => NewsKind::Upcoming,
+        "single" if !include_singles => return None,
+        "single" if delta >= -NEWS_WINDOW_DAYS => NewsKind::New,
         "single" => return None,
         _ if delta >= 0 => NewsKind::Upcoming,
         _ if delta >= -NEWS_WINDOW_DAYS => NewsKind::New,

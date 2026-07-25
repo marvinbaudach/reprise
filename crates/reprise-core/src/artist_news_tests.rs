@@ -65,7 +65,7 @@ fn artist_match_rejects_ambiguous_exact_candidates_and_bad_json() {
 
 #[test]
 fn release_parser_keeps_regular_albums_and_eps_but_not_local_albums() {
-    let items = parse_release_groups(RELEASES, &[" recent   ep ".into()], date());
+    let items = parse_release_groups(RELEASES, &[" recent   ep ".into()], date(), false);
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].title, "Future Album");
     assert_eq!(items[0].kind, NewsKind::Upcoming);
@@ -79,7 +79,7 @@ fn release_parser_excludes_secondary_and_non_album_types() {
       {"id":"3","title":"Single","first-release-date":"2026-07-01","primary-type":"Single","secondary-types":[]},
       {"id":"4","title":"Regular","first-release-date":"2026-07-01","primary-type":"Album","secondary-types":[]}
     ]}"#;
-    let items = parse_release_groups(json, &[], date());
+    let items = parse_release_groups(json, &[], date(), false);
     assert_eq!(
         items
             .iter()
@@ -98,7 +98,7 @@ fn date_filter_keeps_current_albums_and_ignores_missing_dates() {
       {"id":"too-old","title":"Too Old","first-release-date":"2026-04-13","primary-type":"Album"},
       {"id":"unknown","title":"Unknown","primary-type":"Album"}
     ]}"#;
-    let items = parse_release_groups(json, &[], date());
+    let items = parse_release_groups(json, &[], date(), false);
     assert_eq!(items.len(), 3);
     assert!(items
         .iter()
@@ -116,7 +116,7 @@ fn nr_1a_album_and_ep_window_starts_ninety_days_ago() {
       {"id":"future","title":"Distant Future","first-release-date":"2028-01-01","primary-type":"Album"}
     ]}"#;
 
-    let titles = parse_release_groups(json, &[], date())
+    let titles = parse_release_groups(json, &[], date(), false)
         .into_iter()
         .map(|item| item.title)
         .collect::<Vec<_>>();
@@ -134,7 +134,7 @@ fn nr_1a_singles_require_a_complete_future_date() {
       {"id":"year","title":"Year Single","first-release-date":"2027","primary-type":"Single"}
     ]}"#;
 
-    let titles = parse_release_groups(json, &[], date())
+    let titles = parse_release_groups(json, &[], date(), false)
         .into_iter()
         .map(|item| item.title)
         .collect::<Vec<_>>();
@@ -157,7 +157,7 @@ fn nr_1a_secondary_types_are_excluded_before_the_twenty_item_cap() {
     }
     let json = format!(r#"{{"release-groups":[{}]}}"#, groups.join(","));
 
-    let items = parse_release_groups(&json, &[], date());
+    let items = parse_release_groups(&json, &[], date(), false);
 
     assert_eq!(items.len(), 20);
     assert!(items.iter().all(|item| item.title != "Live"));
@@ -176,7 +176,7 @@ fn releases_sort_upcoming_ascending_then_new_descending() {
       {"id":"u2","title":"Upcoming 2","first-release-date":"2026-09-01","primary-type":"Album"},
       {"id":"n2","title":"New 2","first-release-date":"2026-05-01","primary-type":"Album"}
     ]}"#;
-    let titles = parse_release_groups(json, &[], date())
+    let titles = parse_release_groups(json, &[], date(), false)
         .into_iter()
         .map(|item| item.title)
         .collect::<Vec<_>>();
@@ -988,7 +988,7 @@ fn upcoming_album_survives_a_local_title_match() {
     let json = r#"{"release-groups":[
       {"id":"1","title":"Eclipse","first-release-date":"2026-09-01","primary-type":"Album","secondary-types":[]}
     ]}"#;
-    let items = parse_release_groups(json, &["Eclipse".into()], date());
+    let items = parse_release_groups(json, &["Eclipse".into()], date(), false);
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].title, "Eclipse");
     assert_eq!(items[0].kind, NewsKind::Upcoming);
@@ -1025,7 +1025,7 @@ fn released_album_is_filtered_only_when_the_local_album_is_really_owned() {
       {"id":"1","title":"Owned Album","first-release-date":"2026-07-01","primary-type":"Album","secondary-types":[]},
       {"id":"2","title":"Single Only","first-release-date":"2026-07-01","primary-type":"Album","secondary-types":[]}
     ]}"#;
-    let items = parse_release_groups(json, &owned, date());
+    let items = parse_release_groups(json, &owned, date(), false);
     let titles = items
         .iter()
         .map(|item| item.title.as_str())
@@ -1059,7 +1059,7 @@ fn upcoming_album_bypasses_the_owned_threshold_even_when_two_local_tracks_match(
     let json = r#"{"release-groups":[
       {"id":"1","title":"Eclipse","first-release-date":"2026-09-01","primary-type":"Album","secondary-types":[]}
     ]}"#;
-    let items = parse_release_groups(json, &owned, date());
+    let items = parse_release_groups(json, &owned, date(), false);
 
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].title, "Eclipse");
@@ -1143,4 +1143,49 @@ fn track_counts_survive_internal_whitespace_tagging_drift() {
         LibraryPresence::Complete,
         "two tracks tagged with an internal-whitespace-only artist variant must still count as one owned album"
     );
+}
+
+const SINGLES: &str = r#"{"release-groups":[
+  {"id":"1","title":"Released Single","first-release-date":"2026-07-01","primary-type":"Single","secondary-types":[]},
+  {"id":"2","title":"Announced Single","first-release-date":"2026-08-20","primary-type":"Single","secondary-types":[]},
+  {"id":"3","title":"Old Single","first-release-date":"2025-01-01","primary-type":"Single","secondary-types":[]}
+]}"#;
+
+#[test]
+fn released_singles_are_dropped_while_the_switch_is_off() {
+    let items = parse_release_groups(SINGLES, &[], date(), false);
+    let titles = items
+        .iter()
+        .map(|item| item.title.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        titles,
+        ["Announced Single"],
+        "an announced single with an exact date passes regardless of the switch"
+    );
+}
+
+#[test]
+fn released_singles_pass_within_the_window_while_the_switch_is_on() {
+    let items = parse_release_groups(SINGLES, &[], date(), true);
+    let mut titles = items
+        .iter()
+        .map(|item| item.title.as_str())
+        .collect::<Vec<_>>();
+    titles.sort_unstable();
+    assert_eq!(
+        titles,
+        ["Announced Single", "Released Single"],
+        "'Old Single' is outside NEWS_WINDOW_DAYS and stays out"
+    );
+}
+
+#[test]
+fn include_singles_setting_defaults_to_off_and_round_trips() {
+    let conn = migrated_conn();
+    assert!(!crate::artist_news::include_singles(&conn).unwrap());
+    crate::artist_news::set_include_singles(&conn, true).unwrap();
+    assert!(crate::artist_news::include_singles(&conn).unwrap());
+    crate::artist_news::set_include_singles(&conn, false).unwrap();
+    assert!(!crate::artist_news::include_singles(&conn).unwrap());
 }

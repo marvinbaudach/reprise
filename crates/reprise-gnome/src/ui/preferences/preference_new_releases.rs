@@ -39,3 +39,22 @@ pub(in crate::ui) fn scope_row(conn: &Rc<RefCell<Connection>>, enabled: bool) ->
     });
     row
 }
+
+pub(in crate::ui) fn singles_row(conn: &Rc<RefCell<Connection>>, enabled: bool) -> adw::SwitchRow {
+    let active = reprise_core::artist_news::include_singles(&conn.borrow()).unwrap_or(false);
+    let row = adw::SwitchRow::builder()
+        .title(strings::text(strings::NEW_RELEASES_INCLUDE_SINGLES))
+        .subtitle(strings::text(strings::NEW_RELEASES_INCLUDE_SINGLES_DESCRIPTION))
+        .active(active)
+        .sensitive(enabled)
+        .build();
+    let conn = conn.clone();
+    row.connect_active_notify(move |row| {
+        if let Err(error) =
+            reprise_core::artist_news::set_include_singles(&conn.borrow(), row.is_active())
+        {
+            tracing::warn!(%error, "could not save New Releases singles setting");
+        }
+    });
+    row
+}
