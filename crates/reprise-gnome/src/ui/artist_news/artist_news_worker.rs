@@ -9,7 +9,6 @@ use reprise_core::artist_news::{ArtistNews, NewsError};
 pub(in crate::ui) struct ArtistNewsRequest {
     pub generation: u64,
     pub artist: String,
-    pub local_albums: Vec<String>,
     pub force: bool,
     pub response: async_channel::Sender<ArtistNewsResponse>,
 }
