@@ -181,7 +181,7 @@ fn spawn(database_path: Option<PathBuf>) -> async_channel::Sender<ArtistNewsRequ
                 let today = chrono::Local::now().date_naive();
                 let result = match connection.as_ref() {
                     Some(Ok(conn)) => {
-                        reprise_core::artist_news::configured_fetch_scope(conn, today)
+                        reprise_core::artist_news::configured_fetch_scope(conn)
                             .map_err(|error| NewsError::Database(error.to_string()))
                             .and_then(|scope| {
                                 reprise_core::artist_news::refresh(

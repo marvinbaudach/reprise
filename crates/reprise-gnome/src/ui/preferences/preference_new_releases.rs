@@ -10,13 +10,12 @@ use rusqlite::Connection;
 use super::strings;
 
 pub(in crate::ui) fn scope_row(conn: &Rc<RefCell<Connection>>, enabled: bool) -> adw::ComboRow {
-    let today = chrono::Local::now().date_naive();
-    let selected = reprise_core::artist_news::configured_fetch_scope(&conn.borrow(), today).map_or(
+    let selected = reprise_core::artist_news::configured_fetch_scope(&conn.borrow()).map_or(
         0,
         |scope| {
             u32::from(matches!(
                 scope,
-                reprise_core::artist_news::FetchScope::AllArtists { .. }
+                reprise_core::artist_news::FetchScope::AllArtists
             ))
         },
     );

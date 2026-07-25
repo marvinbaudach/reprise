@@ -319,7 +319,7 @@ fn nr_1a_name_resolution_persists_positive_and_negative_results() {
 }
 
 #[test]
-fn nr_1a_fetch_queue_prioritizes_top_artists_and_rotates_the_rest_by_day() {
+fn nr_1a_fetch_queue_prioritizes_top_artists_and_includes_the_never_checked_rest() {
     let conn = migrated_conn();
     for index in 0..27 {
         conn.execute(
@@ -335,16 +335,18 @@ fn nr_1a_fetch_queue_prioritizes_top_artists_and_rotates_the_rest_by_day() {
     }
 
     let top = artists_for_fetch(&conn, FetchScope::TopArtists).unwrap();
-    let day_zero = artists_for_fetch(&conn, FetchScope::AllArtists { day_index: 0 }).unwrap();
-    let day_one = artists_for_fetch(&conn, FetchScope::AllArtists { day_index: 1 }).unwrap();
+    let all = artists_for_fetch(&conn, FetchScope::AllArtists).unwrap();
 
     assert_eq!(top.len(), 20);
     assert_eq!(top[0].name, "Artist 00");
     assert_eq!(top[19].name, "Artist 19");
-    assert_eq!(day_zero.len(), 25);
-    assert_eq!(day_zero[20].name, "Artist 20");
-    assert_eq!(day_one.len(), 22);
-    assert_eq!(day_one[20].name, "Artist 25");
+    assert_eq!(
+        all.len(),
+        27,
+        "the 7-artist rest group fits well within REST_ARTISTS_PER_RUN"
+    );
+    assert_eq!(all[20].name, "Artist 20");
+    assert_eq!(all[26].name, "Artist 26");
 }
 
 #[test]
@@ -651,16 +653,16 @@ fn first_seen_is_set_on_insert_and_preserved_across_upsert() {
 fn nr_7_fetch_scope_defaults_to_top_and_round_trips_all_artists() {
     let conn = migrated_conn();
     assert_eq!(
-        configured_fetch_scope(&conn, date()).unwrap(),
+        configured_fetch_scope(&conn).unwrap(),
         FetchScope::TopArtists
     );
 
     set_fetch_all_artists(&conn, true).unwrap();
 
-    assert!(matches!(
-        configured_fetch_scope(&conn, date()).unwrap(),
-        FetchScope::AllArtists { .. }
-    ));
+    assert_eq!(
+        configured_fetch_scope(&conn).unwrap(),
+        FetchScope::AllArtists
+    );
 }
 
 fn insert_release(conn: &rusqlite::Connection, mbid: &str, seen_at: Option<i64>) {
@@ -883,5 +885,81 @@ fn latest_fetched_at_reads_the_ledger_not_found_releases() {
         crate::artist_news::latest_fetched_at(&conn).unwrap(),
         Some(4_242),
         "an attempt without any found release must still count"
+    );
+}
+
+#[test]
+fn rotation_prefers_never_checked_artists_over_play_count() {
+    let conn = migrated_conn();
+    // 22 artists so the rest group is non-empty (TOP_ARTIST_COUNT = 20).
+    // Play counts descend, so "artist-21" and "artist-22" are the tail.
+    for index in 1..=22 {
+        conn.execute(
+            "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+             VALUES (?1, 'T', ?2, 'Album', ?3, 0)",
+            rusqlite::params![
+                format!("/music/{index}.flac"),
+                format!("artist-{index:02}"),
+                100 - index,
+            ],
+        )
+        .unwrap();
+    }
+    // The very last artist by plays was checked long ago; the second-to-last
+    // was checked just now. Only the stale one may come up.
+    crate::artist_news_ledger::record_attempt(
+        &conn,
+        "artist-21",
+        None,
+        9_000,
+        crate::artist_news_ledger::FetchOutcome::Ok,
+        0,
+    )
+    .unwrap();
+
+    let candidates = artists_for_fetch(&conn, FetchScope::AllArtists).unwrap();
+    let names = candidates
+        .iter()
+        .map(|candidate| candidate.name.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(names.len(), 22, "top 20 plus the rest group");
+    assert_eq!(
+        names[20], "artist-22",
+        "never-checked artist must come before a recently checked one"
+    );
+    assert_eq!(names[21], "artist-21");
+}
+
+#[test]
+fn top_artists_scope_ignores_the_rest_group_entirely() {
+    let conn = migrated_conn();
+    for index in 1..=22 {
+        conn.execute(
+            "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+             VALUES (?1, 'T', ?2, 'Album', ?3, 0)",
+            rusqlite::params![
+                format!("/music/{index}.flac"),
+                format!("artist-{index:02}"),
+                100 - index,
+            ],
+        )
+        .unwrap();
+    }
+    let candidates = artists_for_fetch(&conn, FetchScope::TopArtists).unwrap();
+    assert_eq!(candidates.len(), 20);
+}
+
+#[test]
+fn configured_scope_round_trips_without_a_date() {
+    let conn = migrated_conn();
+    assert_eq!(
+        configured_fetch_scope(&conn).unwrap(),
+        FetchScope::TopArtists
+    );
+    set_fetch_all_artists(&conn, true).unwrap();
+    assert_eq!(
+        configured_fetch_scope(&conn).unwrap(),
+        FetchScope::AllArtists
     );
 }
