@@ -112,6 +112,19 @@ pub(in crate::ui) fn css() -> String {
          .stats-band-rank-bar block.empty {{ \
            background-color: alpha(@window_fg_color, 0.06); \
            min-height: 4px; }}\n\
+         .stats-songs-card {{ padding: 8px; }}\n\
+         .stats-song-row {{ padding: 5px; }}\n\
+         .stats-song-row:hover {{ background-color: alpha(@window_fg_color, 0.05); }}\n\
+         .stats-song-row:focus-visible {{ outline: 2px solid @accent_color; }}\n\
+         .stats-song-play {{ background-color: alpha(@card_bg_color, 0.88); }}\n\
+         .stats-song-bar block.filled {{ \
+           background-image: linear-gradient(to right, \
+             shade(@accent_bg_color, 0.7), shade(@accent_bg_color, 1.15)); \
+           min-height: 5px; }}\n\
+         .stats-song-bar block.empty {{ \
+           background-color: alpha(@window_fg_color, 0.06); \
+           min-height: 5px; }}\n\
+         .stats-songs-reveal {{ color: @accent_color; }}\n\
          .stats-eyebrow {{ \
            font-size: 11px; \
            font-weight: 700; \

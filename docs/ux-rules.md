@@ -1357,7 +1357,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   ist so bemessen, dass ihre beiden Mindestbreiten zusammen unter dem
   Breakpoint bleiben — sonst gäbe es Fensterbreiten, in denen sie noch
   nebeneinander steht, aber schmaler ist als sie braucht.
-- **STATS-5** [aktiv] [core] — Top Tracks steht über die volle Breite:
+- **STATS-5** [ersetzt durch STATS-14] [core] — Top Tracks steht über die volle Breite:
   nummerierte Liste mit Cover, Titel und Artist, relativem Play-Balken und
   Play-Count, mit Sort-Toggle „by plays / by time". Der Balken ist relativ zum
   Spitzenreiter der Liste, nie zu einem absoluten Maximum.
@@ -1471,7 +1471,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Library gefiltert auf den Interpreten (regulärer History-Push). Fasst eine
   Gruppe mehrere Schreibweisen zusammen, bleibt der Vereinheitlichungs-Hinweis
   aus STATS-9 erhalten.
-- **STATS-14** [geplant] [gtk] — Die Songs-Karte zeigt die fünf meistgespielten
+- **STATS-14** [aktiv] [gtk] — Die Songs-Karte zeigt die fünf meistgespielten
   Tracks: Cover, Titel und Interpret zweizeilig, horizontaler Balken relativ
   zu Platz 1 in einem Akzent-Verlauf, rechts die Play-Zahl. Klick auf die
   Zeile öffnet die Library gefiltert auf den Interpreten mit fokussiertem

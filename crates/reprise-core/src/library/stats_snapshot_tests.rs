@@ -250,7 +250,7 @@ fn stats_4_highlights_streak_and_discovered() {
 }
 
 #[test]
-fn stats_5_top_tracks_sort_toggle_orders_by_time() {
+fn stats_14_top_tracks_sort_toggle_orders_by_time() {
     let conn = migrated_conn();
     insert_track(&conn, 1, "Frequent", "Artist", "", "Rock", 10_000, 0, None);
     insert_track(&conn, 2, "Long", "Artist", "", "Rock", 1_000_000, 0, None);
