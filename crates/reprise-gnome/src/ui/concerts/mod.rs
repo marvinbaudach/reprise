@@ -7,6 +7,7 @@ use rusqlite::Connection;
 
 mod concerts_columns;
 mod concerts_empty_state;
+mod concerts_filter_bar;
 mod concerts_model;
 mod concerts_presentation;
 mod concerts_view;

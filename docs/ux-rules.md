@@ -2118,12 +2118,11 @@ Dateien.
   nach persistenten Filtern beim Öffnen sichtbaren Konzerten; 0 rendert
   keinen Badge.
   <!-- REVIEW: Regelvorschlag -->
-- **CONC-2** [geplant] [gtk] — Die Filterzeile ist ein permanenter Header.
+- **CONC-2** [aktiv] [gtk] — Die Filterzeile ist ein permanenter Header.
   Idle zeigt sie leise Gesamtzahl und „+ Add filter"; jede aktive
   Einschränkung ist ein Chip mit eigenem ×-Ziel von mindestens 20 px.
   Aktiv zeigt sie „X of Y concerts" und „Clear all". Ohne Location ist
   Radius deaktiviert und trägt den Tooltip „Set a location in Preferences".
-  <!-- REVIEW: Regelvorschlag -->
 - **CONC-3** [aktiv] [gtk] — Doppelklick/Enter auf eine Zeile und die
   Ticket-Zelle öffnen dasselbe externe Ziel: Offer-URL, sonst Event-Seite.
   Ohne beides ist die Zelle leer und Aktivierung ein No-op mit Tooltip. Es
@@ -2138,10 +2137,9 @@ Dateien.
   „Fetch now". Track-Wechsel und Navigation lesen nur Cache; Ergebnisse
   werden nach MOT-2 ohne Einblendanimation eingespielt.
   <!-- REVIEW: Regelvorschlag -->
-- **CONC-6** [geplant] [gtk] — Similar-Zeilen tragen dimm „similar to
+- **CONC-6** [aktiv] [gtk] — Similar-Zeilen tragen dimm „similar to
   {seed}" und verschwinden mit „Library artists only". Die Source-Pill ist
   sichtbar, sobald Similar aktiviert ist oder Similar-Zeilen existieren.
-  <!-- REVIEW: Regelvorschlag -->
 - **CONC-7** [geplant] [gtk] — Das Updates-Popover zeigt die Concerts-Sektion
   nur bei aktivem Modul, höchstens drei ungesehene Einträge des persistenten
   Filter-Scopes und „Show all concerts (N) →". Öffnen stempelt die gesamte
