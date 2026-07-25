@@ -227,6 +227,32 @@ pub struct CreatePlaylistParams {
     pub track_ids: Vec<i64>,
 }
 
+/// Parameters for one non-destructive playlist update. This is deliberately a
+/// root object (rather than a serde-tagged enum) because MCP requires every
+/// tool input schema to have root `type: object`.
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+pub struct UpdatePlaylistParams {
+    /// `rename` or `add_tracks`.
+    pub action: String,
+    pub playlist_id: i64,
+    /// Required only for `rename`.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Required and non-empty only for `add_tracks`.
+    #[serde(default)]
+    pub track_ids: Vec<i64>,
+}
+
+/// Result of one non-destructive playlist update.
+#[derive(Debug, Clone, Serialize)]
+pub struct UpdatePlaylistResult {
+    pub playlist_id: i64,
+    pub name: String,
+    pub track_count: i64,
+    pub action: String,
+    pub affected: usize,
+}
+
 /// Serde default for [`CreateInstrumentalParams::save`] — Beschluss 15 defaults
 /// the save intent to `true`.
 pub fn default_true() -> bool {

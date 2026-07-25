@@ -22,7 +22,7 @@ use rmcp::{tool, tool_handler, tool_router, ErrorData, RoleServer, ServerHandler
 use crate::data;
 use crate::dto::{
     BrowseLibraryParams, CreateInstrumentalParams, CreatePlaylistParams, GetPlaylistParams,
-    JobStatusParams, SearchTracksParams,
+    JobStatusParams, SearchTracksParams, UpdatePlaylistParams,
 };
 #[cfg(feature = "mpris")]
 use crate::dto::{PlayParams, PlaybackControlParams};
@@ -50,25 +50,28 @@ pub struct RepriseServer {
     db_path: Arc<PathBuf>,
     staging_path: Arc<PathBuf>,
     write_granted_at_startup: bool,
+    playlist_manage_granted_at_startup: bool,
     ai_create_granted_at_startup: bool,
     tool_router: ToolRouter<Self>,
 }
 
 impl RepriseServer {
     /// Builds a handler bound to `db_path` (and `staging_path` for the AI job
-    /// queue). `write_granted_at_startup` / `ai_create_granted_at_startup` are
-    /// the `playlist:create` / `ai:create` snapshots taken during startup (the
-    /// restart half of the D18 / Beschluss 7 gate).
+    /// queue). The three booleans are startup snapshots for the write-class
+    /// capabilities (`playlist:create`, `playlist:manage`, `ai:create`) — the
+    /// restart half of the D18 / Beschluss 7 gate.
     pub fn new(
         db_path: PathBuf,
         staging_path: PathBuf,
         write_granted_at_startup: bool,
+        playlist_manage_granted_at_startup: bool,
         ai_create_granted_at_startup: bool,
     ) -> Self {
         Self {
             db_path: Arc::new(db_path),
             staging_path: Arc::new(staging_path),
             write_granted_at_startup,
+            playlist_manage_granted_at_startup,
             ai_create_granted_at_startup,
             tool_router: Self::build_tool_router(),
         }
@@ -240,6 +243,39 @@ impl RepriseServer {
                 );
                 error::structured_ok(&result, summary)
             }
+            Err(err) => error::into_tool_outcome(err),
+        }
+    }
+
+    /// Applies one non-destructive update to an existing manual playlist.
+    #[tool(
+        name = "music_update_playlist",
+        description = "Update an existing manual playlist without deleting \
+            anything. Supported actions: rename, or add_tracks (ordered append; \
+            duplicates allowed; at most 500 ids). Requires the separate \
+            'playlist:manage' capability, which is off by default. Removing \
+            tracks and deleting playlists are intentionally not supported."
+    )]
+    async fn music_update_playlist(
+        &self,
+        Parameters(params): Parameters<UpdatePlaylistParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let path = self.db_path.clone();
+        let granted = self.playlist_manage_granted_at_startup;
+        let outcome = tokio::task::spawn_blocking(move || {
+            crate::playlist_update::update(path.as_path(), granted, &params)
+        })
+        .await
+        .map_err(|error| error::join_error(&error))?;
+
+        match outcome {
+            Ok(result) => error::structured_ok(
+                &result,
+                format!(
+                    "Updated playlist '{}' (id {}): {} affected",
+                    result.name, result.playlist_id, result.affected
+                ),
+            ),
             Err(err) => error::into_tool_outcome(err),
         }
     }

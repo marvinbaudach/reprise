@@ -85,7 +85,7 @@ impl std::fmt::Display for DataError {
     }
 }
 
-fn open(path: &Path) -> Result<Connection, DataError> {
+pub(crate) fn open(path: &Path) -> Result<Connection, DataError> {
     // The database was migrated once at startup; per call we open a plain
     // connection (WAL, `busy_timeout`, `foreign_keys` all set by `db::open`)
     // without re-running migrations or the change-log prune, so a read stays a
@@ -349,7 +349,10 @@ pub fn create_playlist(
 /// missing (a plain foreign-key check would let a missing row through). Lists
 /// the offending ids so the caller can correct its request. Shared by
 /// `music_create_playlist` and `music_create_instrumental`.
-fn reject_absent_track_ids(conn: &Connection, track_ids: &[i64]) -> Result<(), DataError> {
+pub(crate) fn reject_absent_track_ids(
+    conn: &Connection,
+    track_ids: &[i64],
+) -> Result<(), DataError> {
     if track_ids.is_empty() {
         return Ok(());
     }
