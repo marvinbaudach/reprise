@@ -552,3 +552,6 @@ fn now_unix() -> i64 {
 #[cfg(test)]
 #[path = "stats_view_tests.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "stats_view_unify_tests.rs"]
+mod unify_tests;
