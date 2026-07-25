@@ -13,7 +13,6 @@ fn apply_fill(cr: &gtk4::cairo::Context, fill: &Fill, alpha_scale: f64) {
 }
 
 fn trace(cr: &gtk4::cairo::Context, geom: &Geom) {
-    use std::f64::consts::TAU;
     match geom {
         Geom::Polyline { points, closed } => {
             let Some(first) = points.first() else {
@@ -26,16 +25,6 @@ fn trace(cr: &gtk4::cairo::Context, geom: &Geom) {
             if *closed {
                 cr.close_path();
             }
-        }
-        Geom::Arc { cx, cy, r, a0, a1 } => cr.arc(
-            f64::from(*cx),
-            f64::from(*cy),
-            f64::from(*r),
-            f64::from(*a0),
-            f64::from(*a1),
-        ),
-        Geom::Disc { cx, cy, r } => {
-            cr.arc(f64::from(*cx), f64::from(*cy), f64::from(*r), 0.0, TAU);
         }
         Geom::Rect { x, y, w, h } => {
             cr.rectangle(f64::from(*x), f64::from(*y), f64::from(*w), f64::from(*h));
