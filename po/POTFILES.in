@@ -1,5 +1,4 @@
 crates/reprise-gnome/src/ui/strings.rs
-crates/reprise-gnome/src/ui/strings_audio_analysis.rs
 crates/reprise-gnome/src/ui/strings_app_shell.rs
 crates/reprise-gnome/src/ui/strings_artist.rs
 crates/reprise-gnome/src/ui/strings_issues.rs
