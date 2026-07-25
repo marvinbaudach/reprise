@@ -92,7 +92,8 @@ fn stats_6_sparse_uses_finer_granularity() {
     }
     let sparse_snapshot =
         compute(&sparse, StatsPeriod::YearToDate(2026), NOW_2026_07_19, &Utc).unwrap();
-    assert_eq!(sparse_snapshot.period.granularity, Granularity::Day);
+    assert_eq!(sparse_snapshot.period.granularity, Granularity::Week);
+    assert!(sparse_snapshot.period.sparse_weeks);
 
     let dense = migrated_conn();
     insert_track(&dense, 1, "Dense", "Artist", "", "Rock", 60_000, 0, None);
@@ -109,6 +110,56 @@ fn stats_6_sparse_uses_finer_granularity() {
         compute(&empty, StatsPeriod::YearToDate(2026), NOW_2026_07_19, &Utc).unwrap();
     assert!(empty_snapshot.is_empty());
     assert!(empty_snapshot.period.buckets.is_empty());
+}
+
+#[test]
+fn stats_12_sparse_year_axis_starts_at_first_play_week_but_eight_weeks_keep_the_year() {
+    let sparse = migrated_conn();
+    insert_track(&sparse, 1, "Sparse", "Artist", "", "Rock", 60_000, 0, None);
+    for day in [1, 8, 15, 22] {
+        insert_event(&sparse, 1, timestamp(2026, 7, day, 12, 0), 30_000);
+    }
+    let sparse_snapshot =
+        compute(&sparse, StatsPeriod::YearToDate(2026), NOW_2026_07_19, &Utc).unwrap();
+    assert_eq!(sparse_snapshot.period.granularity, Granularity::Week);
+    assert_eq!(
+        sparse_snapshot.period.buckets[0].start_unix,
+        timestamp(2026, 7, 1, 12, 0)
+    );
+    assert_eq!(sparse_snapshot.period.buckets[0].label, "Week of Jun 29");
+
+    let threshold = migrated_conn();
+    insert_track(
+        &threshold,
+        1,
+        "Threshold",
+        "Artist",
+        "",
+        "Rock",
+        60_000,
+        0,
+        None,
+    );
+    for week in 0..8 {
+        insert_event(
+            &threshold,
+            1,
+            timestamp(2026, 5, 4, 12, 0) + week * 7 * 86_400,
+            30_000,
+        );
+    }
+    let threshold_snapshot = compute(
+        &threshold,
+        StatsPeriod::YearToDate(2026),
+        NOW_2026_07_19,
+        &Utc,
+    )
+    .unwrap();
+    assert_eq!(
+        threshold_snapshot.period.buckets[0].start_unix,
+        timestamp(2026, 1, 1, 0, 0)
+    );
+    assert!(!threshold_snapshot.period.sparse_weeks);
 }
 
 #[test]

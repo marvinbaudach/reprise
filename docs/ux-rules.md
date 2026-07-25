@@ -1462,9 +1462,12 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   des KPI das Badge „New this year" in der Kopfzeile — nie „∞ %" und nie
   „×0". Der KPI ellipsiert nicht.
 - **STATS-12** [aktiv] [core] — Das Chart zeigt die Hörzeit je lokaler
-  Kalenderwoche als Flächenverlauf: Achse exakt der gewählte Zeitraum,
-  Monatslabels darunter, Linie und Fläche in Abstufungen der Akzentfarbe.
-  Die beste Woche trägt eine gestrichelte Markerlinie mit Label
+  Kalenderwoche. Ab acht Wochen mit Plays gilt der Flächenverlauf über den
+  exakt gewählten Zeitraum; bei weniger Wochen beginnt die Achse mit der
+  ersten Play-Woche, nennt klein „since <Monat> <Jahr>" und zeigt einzelne
+  Wochenbalken. Beide Varianten lassen 10–15 % Luft über dem Maximum und
+  tragen Monatslabels darunter. Die beste Woche trägt eine gestrichelte
+  Markerlinie, deren gemessenes Label links davon steht
   („best week · 4 h 12"); die laufende Woche endet in einem offenen Punkt.
   Hover nennt Woche und exakten Wert. Marker und Punkte sind reine Anzeige.
   Nur wenn der Zeitraum zu kurz für Wochen ist, fällt die Achse auf Tage

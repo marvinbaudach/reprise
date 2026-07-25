@@ -1,6 +1,8 @@
 use chrono::{Datelike, NaiveDate, Weekday};
 use reprise_core::library::stats_period::Granularity;
 
+const HEADROOM_FACTOR: f64 = 1.12;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(in crate::ui) struct Point {
     pub x: f64,
@@ -35,14 +37,9 @@ pub(in crate::ui) fn ribbon_layout(
             } else {
                 index as f64 * width / (values.len() - 1) as f64
             };
-            let magnitude = if maximum == 0 {
-                0.0
-            } else {
-                (*value).max(0) as f64 / maximum as f64
-            };
             Point {
                 x,
-                y: height - magnitude * height,
+                y: point_y(*value, maximum, height),
             }
         })
         .collect();
@@ -50,6 +47,41 @@ pub(in crate::ui) fn ribbon_layout(
         points,
         open_index: open_index.filter(|index| *index < values.len()),
     }
+}
+
+pub(in crate::ui) fn bar_layout(
+    values: &[i64],
+    width: f64,
+    height: f64,
+    open_index: Option<usize>,
+) -> RibbonLayout {
+    let maximum = values.iter().copied().max().unwrap_or(0).max(0);
+    let slot_width = if values.is_empty() {
+        0.0
+    } else {
+        width / values.len() as f64
+    };
+    let points = values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| Point {
+            x: (index as f64 + 0.5) * slot_width,
+            y: point_y(*value, maximum, height),
+        })
+        .collect();
+    RibbonLayout {
+        points,
+        open_index: open_index.filter(|index| *index < values.len()),
+    }
+}
+
+fn point_y(value: i64, maximum: i64, height: f64) -> f64 {
+    let magnitude = if maximum == 0 {
+        0.0
+    } else {
+        value.max(0) as f64 / (maximum as f64 * HEADROOM_FACTOR)
+    };
+    height - magnitude * height
 }
 
 pub(in crate::ui) fn best_week_bucket_index(
@@ -134,6 +166,19 @@ mod tests {
     fn ribbon_marks_the_open_bucket_and_the_peak() {
         let layout = ribbon_layout(&[10, 30, 20], 300.0, 100.0, Some(2));
 
+        assert_eq!(layout.open_index, Some(2));
+        assert!((layout.points[1].y - 10.714).abs() < 0.01);
+    }
+
+    #[test]
+    fn sparse_week_bars_are_centered_in_equal_slots_with_headroom() {
+        let layout = bar_layout(&[10, 30, 20], 300.0, 100.0, Some(2));
+
+        assert_eq!(layout.points.len(), 3);
+        assert_eq!(layout.points[0].x, 50.0);
+        assert_eq!(layout.points[1].x, 150.0);
+        assert_eq!(layout.points[2].x, 250.0);
+        assert!((layout.points[1].y - 10.714).abs() < 0.01);
         assert_eq!(layout.open_index, Some(2));
     }
 
