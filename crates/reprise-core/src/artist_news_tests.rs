@@ -740,7 +740,11 @@ fn ledger_marks_artist_without_news_fresh_and_second_run_skips_it() {
         second.artists_fetched, 0,
         "artist with no news must count as fresh, not be re-fetched"
     );
-    assert_eq!(calls.get(), after_first, "second run must issue no requests");
+    assert_eq!(
+        calls.get(),
+        after_first,
+        "second run must issue no requests"
+    );
 }
 
 #[test]

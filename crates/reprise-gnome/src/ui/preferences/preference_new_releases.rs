@@ -10,15 +10,13 @@ use rusqlite::Connection;
 use super::strings;
 
 pub(in crate::ui) fn scope_row(conn: &Rc<RefCell<Connection>>, enabled: bool) -> adw::ComboRow {
-    let selected = reprise_core::artist_news::configured_fetch_scope(&conn.borrow()).map_or(
-        0,
-        |scope| {
+    let selected =
+        reprise_core::artist_news::configured_fetch_scope(&conn.borrow()).map_or(0, |scope| {
             u32::from(matches!(
                 scope,
                 reprise_core::artist_news::FetchScope::AllArtists
             ))
-        },
-    );
+        });
     let model = gtk4::StringList::new(&[
         &strings::text(strings::TOP_ARTISTS_ONLY),
         &strings::text(strings::ALL_ARTISTS),
@@ -44,7 +42,9 @@ pub(in crate::ui) fn singles_row(conn: &Rc<RefCell<Connection>>, enabled: bool) 
     let active = reprise_core::artist_news::include_singles(&conn.borrow()).unwrap_or(false);
     let row = adw::SwitchRow::builder()
         .title(strings::text(strings::NEW_RELEASES_INCLUDE_SINGLES))
-        .subtitle(strings::text(strings::NEW_RELEASES_INCLUDE_SINGLES_DESCRIPTION))
+        .subtitle(strings::text(
+            strings::NEW_RELEASES_INCLUDE_SINGLES_DESCRIPTION,
+        ))
         .active(active)
         .sensitive(enabled)
         .build();
