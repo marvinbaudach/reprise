@@ -100,7 +100,7 @@ impl StatsGenreCard {
                 "{} · {} % · {}",
                 segment.label,
                 segment.share_percent,
-                format_duration(segment.total_ms)
+                strings::stats_duration(segment.total_ms)
             )));
             if has_genre_tile(segment) {
                 bar.connect_clicked({
@@ -161,7 +161,7 @@ impl StatsGenreCard {
         copy.append(&label(
             &format!(
                 "{} · top: {}",
-                strings::hero_listening_time(segment.total_ms),
+                strings::stats_duration(segment.total_ms),
                 segment.top_artist.as_deref().unwrap_or("Unknown artist")
             ),
             "stats-item-subtitle",
@@ -241,11 +241,6 @@ fn invoke(callback: &StringCallback, value: String) {
     }
 }
 
-fn format_duration(milliseconds: i64) -> String {
-    let minutes = milliseconds.max(0) / 60_000;
-    format!("{} h {}", minutes / 60, minutes % 60)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -299,7 +294,7 @@ mod tests {
 
     #[test]
     fn genre_duration_uses_the_compact_hour_minute_format() {
-        assert_eq!(format_duration(25_080_000), "6 h 58");
+        assert_eq!(strings::stats_duration(25_080_000), "6 h 58");
     }
 
     #[test]

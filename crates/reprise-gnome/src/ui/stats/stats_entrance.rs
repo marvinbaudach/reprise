@@ -53,7 +53,7 @@ impl StatsEntrance {
         } else if was_initialized {
             #[cfg(test)]
             self.tween_runs.set(self.tween_runs.get().saturating_add(1));
-            hero_number.set_label(&strings::hero_listening_time(previous_total_ms));
+            hero_number.set_label(&strings::stats_duration(previous_total_ms));
             self.animate_count(
                 previous_total_ms,
                 total_ms,
@@ -80,7 +80,7 @@ impl StatsEntrance {
         targets: &[f64],
     ) {
         let generation = self.generation.get();
-        hero_number.set_label(&strings::hero_listening_time(0));
+        hero_number.set_label(&strings::stats_duration(0));
         self.animate_count(0, total_ms, hero_number, motion::STATS_COUNT);
 
         ribbon.set_reveal_fraction(0.0);
@@ -135,7 +135,7 @@ impl StatsEntrance {
         let label = label.clone();
         let target_label = label.clone();
         let target = adw::CallbackAnimationTarget::new(move |value| {
-            target_label.set_label(&strings::hero_listening_time(value.round() as i64));
+            target_label.set_label(&strings::stats_duration(value.round() as i64));
         });
         play_and_keep(
             &self.animations,
@@ -196,7 +196,7 @@ fn land_in_end_state(
     bars: &[gtk4::LevelBar],
     targets: &[f64],
 ) {
-    hero_number.set_label(&strings::hero_listening_time(total_ms));
+    hero_number.set_label(&strings::stats_duration(total_ms));
     ribbon.set_reveal_fraction(1.0);
     for card in cards {
         card.set_opacity(1.0);

@@ -113,13 +113,18 @@ pub(in crate::ui) fn css() -> String {
          .stats-song-row:hover {{ background-color: alpha(@window_fg_color, 0.05); }}\n\
          .stats-song-row:focus-visible {{ outline: 2px solid @accent_color; }}\n\
          .stats-song-play {{ background-color: alpha(@card_bg_color, 0.88); }}\n\
+         .stats-song-bar {{ min-height: 8px; border-radius: 99px; }}\n\
          .stats-song-bar block.filled {{ \
            background-image: linear-gradient(to right, \
              shade(@accent_bg_color, 0.7), shade(@accent_bg_color, 1.15)); \
-           min-height: 5px; }}\n\
+           min-height: 8px; border-radius: 99px; }}\n\
          .stats-song-bar block.empty {{ \
            background-color: alpha(@window_fg_color, 0.06); \
-           min-height: 5px; }}\n\
+           min-height: 8px; border-radius: 99px; }}\n\
+         .stats-metadata-link {{ color: @window_fg_color; padding: 0; }}\n\
+         .stats-metadata-link > label {{ text-decoration: none; }}\n\
+         .stats-metadata-link:hover {{ color: @accent_color; }}\n\
+         .stats-metadata-link:hover > label {{ text-decoration: underline; }}\n\
          .stats-songs-reveal {{ color: @accent_color; }}\n\
          .stats-eyebrow {{ \
            font-size: 11px; \
@@ -215,5 +220,13 @@ mod tests {
         ] {
             assert!(css.contains(rule), "missing hover rule: {rule}");
         }
+    }
+
+    #[test]
+    fn expanded_tracks_use_compact_bars_and_hover_only_links() {
+        let css = super::css();
+        assert!(css.contains(".stats-song-bar { min-height: 8px; border-radius: 99px; }"));
+        assert!(css.contains(".stats-metadata-link > label { text-decoration: none; }"));
+        assert!(css.contains(".stats-metadata-link:hover > label { text-decoration: underline; }"));
     }
 }

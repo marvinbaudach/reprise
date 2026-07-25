@@ -30,7 +30,7 @@ pub(super) fn button(
     let button = gtk4::Button::with_label(text);
     button.set_halign(gtk4::Align::Start);
     button.add_css_class("flat");
-    button.add_css_class("link");
+    button.add_css_class("stats-metadata-link");
     button.add_css_class(css_class);
     let callback = callback.clone();
     button.connect_clicked(move |_| {
@@ -40,4 +40,26 @@ pub(super) fn button(
         }
     });
     button
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn stats_14_metadata_links_are_plain_until_hover() {
+        gtk4::init().unwrap();
+        let callback: MetadataCallback = Rc::new(RefCell::new(None));
+        let button = button(
+            "Track",
+            "stats-item-title",
+            StatsMetadataTarget::Track(1),
+            &callback,
+        );
+
+        assert!(button.has_css_class("stats-metadata-link"));
+        assert!(!button.has_css_class("link"));
+        assert!(button.is_focusable());
+    }
 }

@@ -1445,13 +1445,14 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   konfigurierbar.
   Im schmalen Fenster stapelt die zweispaltige Reihe, ohne die Reihenfolge zu
   ändern. Die Zeitraumwahl bleibt gemäß STATS-8 der einzige Ansichts-Regler.
-- **STATS-11** [aktiv] [core] — Der Hero zeigt die Gesamt-Hörzeit riesig
-  (volle Stunden, unter einer Stunde Minuten, nie „0 hours"), darunter die
+- **STATS-11** [aktiv] [core] — Der Hero zeigt die Gesamt-Hörzeit riesig im
+  seitenweit einheitlichen Kompaktformat „N h M", darunter die
   Subline „N plays · N artists", rechts an der Grundlinie vier KPI-Paare:
-  „Per day" (Ø min/Tag) · Trend (absolutes Stunden-Delta zur Vergleichsspanne
-  mit Richtungs-Icon in Akzentfarbe) · „Pace for <Jahr>" (lineare
+  „Per day" (Ø Hörzeit/Tag) · Trend (absolutes Hörzeit-Delta zur
+  Vergleichsspanne mit Richtungs-Icon in Akzentfarbe) · „Pace for <Jahr>" (lineare
   Jahres-Hochrechnung, nur im laufenden Jahr) · „Best week" (Startdatum und
-  Hörzeit der stärksten lokalen Kalenderwoche). Die Vergleichsspanne ist
+  Hörzeit der stärksten lokalen Kalenderwoche). Alle KPI-Dauern nutzen
+  ebenfalls „N h M". Die Vergleichsspanne ist
   unverändert die saisonal deckungsgleiche Vorperiode: „<Jahr> so far" gegen
   dieselbe Spanne des Vorjahrs, ein volles Jahr gegen das Vorjahr, das
   30-Tage-Fenster gegen die 30 Tage davor; „All time" hat keinen Trend-KPI.
@@ -1480,7 +1481,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   füllt die Karte und blendet nach unten in den Kartengrund aus; fehlt ein
   Cover, steht eine Initialen-Kachel an seiner Stelle — nie eine leere
   Fläche. Darüber Kicker „MOST PLAYED BAND", Name und die Zeile „N plays ·
-  N h · N % of your artist listening". Darunter die Ränge 2–5 mit dünnem
+  N h M · N % of your artist listening". Darunter die Ränge 2–5 mit dünnem
   Balken relativ zu Platz 1. Klick auf Karte oder Rangzeile öffnet die
   Library gefiltert auf den Interpreten (regulärer History-Push). Fasst eine
   Gruppe mehrere Schreibweisen zusammen, bleibt der Vereinheitlichungs-Hinweis
@@ -1495,11 +1496,13 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   zweispaltigen Reihe die nummerierte Top-10-Liste als eigene Sektion in
   voller Breite mit dem Sort-Toggle „by plays / by time" auf; die Genre-Karte
   folgt darunter und der Balken bleibt relativ zum Spitzenreiter der Liste.
+  Die Liste zeigt Dauern als „N h M"; ihre Titel und Interpreten erhalten
+  Linkfarbe und Unterstreichung erst bei Hover, der Fokus-Ring bleibt sichtbar.
 - **STATS-15** [aktiv] [core] — Die Genre-Karte besteht aus einem
   gestapelten Balken (Segmentbreite = Anteil, Akzent-Abstufungen nach Rang,
-  letztes Segment neutral, Tooltip „<Genre> · N % · N h") und bis zu vier
+  letztes Segment neutral, Tooltip „<Genre> · N % · N h M") und bis zu vier
   Kacheln der stärksten Genres: Cover des meistgespielten Tracks im Genre,
-  „<Genre> · N %", darunter „N h · top: <Interpret>". Top-Interpret und
+  „<Genre> · N %", darunter „N h M · top: <Interpret>". Top-Interpret und
   Cover je Genre entstehen über dieselbe Schlüsselauflösung wie alle
   Gruppierungen (STATS-9). Klick auf das Kachel-Cover öffnet die Library
   gefiltert auf das Album; Klick auf ein Segment oder die übrige Kachelfläche
