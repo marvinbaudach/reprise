@@ -1637,14 +1637,6 @@ msgstr ""
 msgid "Revert Last Cleanup"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:86
-msgid "Available even when Library Doctor is disabled"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:87
-msgid "Enable Library Doctor"
-msgstr ""
-
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:89
 msgid ""
 "This job continues in the background. Progress and Cancel stay in the "

@@ -1696,14 +1696,6 @@ msgstr "Las correcciones locales siempre se incluyen · sin red"
 msgid "Revert Last Cleanup"
 msgstr "Revertir la última limpieza"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:86
-msgid "Available even when Library Doctor is disabled"
-msgstr "Disponible incluso cuando el Doctor de la biblioteca está desactivado"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:87
-msgid "Enable Library Doctor"
-msgstr "Activar el Doctor de la biblioteca"
-
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:89
 msgid ""
 "This job continues in the background. Progress and Cancel stay in the "

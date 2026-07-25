@@ -269,7 +269,7 @@ mod tests {
     }
 
     #[test]
-    fn doc_1d_hiding_remote_restores_local_fallback_and_removes_remote_rows() {
+    fn doc_7a_hiding_remote_restores_local_fallback_and_removes_remote_rows() {
         let scan = remote_scan();
 
         let projected = project_scan(&scan, false);

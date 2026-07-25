@@ -389,21 +389,19 @@ mod tests {
 
     #[test]
     fn doc_6b_library_doctor_controls_explain_job_locking() {
-        let idle = super::super::preference_library_doctor::control_state(true, false);
-        assert!(idle.module_sensitive);
+        let idle = super::super::preference_library_doctor::control_state(false);
         assert!(idle.remote_sensitive);
         assert!(!idle.subtitle.contains("running"));
 
-        let running = super::super::preference_library_doctor::control_state(true, true);
-        assert!(!running.module_sensitive);
+        let running = super::super::preference_library_doctor::control_state(true);
         assert!(!running.remote_sensitive);
         assert!(running.subtitle.contains("running"));
     }
 
     #[test]
-    fn doc_6a_revert_stays_available_while_the_module_is_disabled() {
-        let disabled = super::super::preference_library_doctor::control_state(false, false);
-        assert!(!disabled.remote_sensitive);
-        assert!(disabled.revert_sensitive);
+    fn doc_7b_library_doctor_is_available_without_an_activation_state() {
+        let idle = super::super::preference_library_doctor::control_state(false);
+        assert!(idle.remote_sensitive);
+        assert!(idle.revert_sensitive);
     }
 }

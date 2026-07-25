@@ -57,7 +57,7 @@ pub const LIBRARY_DOCTOR_MODULE: ModuleDescriptor = ModuleDescriptor {
     id: "library_doctor",
     name: "Library Doctor",
     description: "Review local tag cleanup suggestions; optional remote suggestions; contacts MusicBrainz / AcoustID",
-    default_enabled: false,
+    default_enabled: true,
     applies_live: true,
 };
 
@@ -209,7 +209,7 @@ mod tests {
     }
 
     #[test]
-    fn doc_1d_library_doctor_is_live_local_only_and_default_off() {
+    fn doc_7a_library_doctor_is_live_local_only_and_always_available() {
         let conn = migrated_conn();
         let descriptor = ALL_MODULES
             .iter()
@@ -219,8 +219,8 @@ mod tests {
 
         assert_eq!(descriptor.name, "Library Doctor");
         assert!(descriptor.applies_live);
-        assert!(!descriptor.default_enabled);
-        assert!(!is_enabled(&conn, descriptor).unwrap());
+        assert!(descriptor.default_enabled);
+        assert!(is_enabled(&conn, descriptor).unwrap());
         assert!(!settings::get_bool(&conn, "library_doctor.remote.enabled", false).unwrap());
 
         set_enabled(&conn, descriptor, true).unwrap();
