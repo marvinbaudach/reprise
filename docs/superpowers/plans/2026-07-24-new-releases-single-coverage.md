@@ -18,7 +18,7 @@
 - `OWNED_ALBUM_MIN_TRACKS = 2` — neue Konstante, ein Album gilt erst ab zwei vorhandenen Tracks als besessen.
 - `REST_ARTISTS_PER_RUN = 30` — ersetzt `DAILY_REST_COUNT = 5`, gilt **pro Lauf** und **nur für die Rest-Gruppe**.
 - Setting-Key für Singles: exakt `module.new_releases.include_singles`, Default `false`.
-- `artist_key` ist überall `lower(trim(artist))` — dieselbe Normalisierung, die `artists_for_fetch` schon für `GROUP BY` benutzt.
+- `artist_key` wird zur Laufzeit von `artist_news::normalize()` erzeugt. **Achtung, das ist nicht identisch mit SQL `lower(trim(x))`:** `normalize` kollabiert zusätzlich innere Whitespace-Folgen (`"Pink   Floyd"` → `"pink floyd"`, SQL liefert `"pink   floyd"`). Der Migrations-Backfill in Task 1 benutzt die SQL-Form, weil SQLite keine generische Whitespace-Kollabierung kann. Die Abweichung ist bewusst in Kauf genommen und selbstheilend: Bei einem Artist mit mehrfachen inneren Leerzeichen findet die Laufzeit den Backfill-Eintrag nicht und legt einen neuen an — Kosten: ein einmaliger Extra-Fetch. Maßgeblich für alle Laufzeit-Zugriffe ist `normalize()`; das muss dort dokumentiert sein, wo der Key gebildet wird.
 - `has_excluded_secondary_type` wird nicht angefasst.
 - Der ✦-Badge und `badge.rs` werden nicht angefasst.
 - Alle neuen UI-Strings über das `N_!`-Makro in `strings_news.rs`, damit sie übersetzbar bleiben.
