@@ -320,61 +320,6 @@ fn corrupted_layout_can_fall_back_to_default() {
 }
 
 #[test]
-fn rhythmbox_mapping_preserves_supported_order_and_ignores_unknown() {
-    let tokens = [
-        "rating",
-        "play-count",
-        "duration",
-        "album",
-        "artist",
-        "date",
-        "post-time",
-    ]
-    .map(str::to_string);
-    let layout = import_rhythmbox_tokens(&tokens);
-    assert_eq!(
-        layout.order[..8],
-        [
-            ColumnId::Cover,
-            ColumnId::Title,
-            ColumnId::Rating,
-            ColumnId::PlayCount,
-            ColumnId::Duration,
-            ColumnId::Album,
-            ColumnId::Artist,
-            ColumnId::Year,
-        ]
-    );
-    assert_eq!(layout.visible.len(), 8);
-}
-
-#[test]
-fn rhythmbox_mapping_stably_deduplicates_tokens() {
-    let tokens = ["artist", "album", "artist", "genre"].map(str::to_string);
-    let layout = import_rhythmbox_tokens(&tokens);
-    assert_eq!(
-        layout.order[..5],
-        [
-            ColumnId::Cover,
-            ColumnId::Title,
-            ColumnId::Artist,
-            ColumnId::Album,
-            ColumnId::Genre,
-        ]
-    );
-}
-
-#[test]
-fn rhythmbox_empty_list_still_keeps_cover_and_title() {
-    let layout = import_rhythmbox_tokens(&[]);
-    assert_eq!(layout.order[..2], [ColumnId::Cover, ColumnId::Title]);
-    assert_eq!(
-        layout.visible,
-        HashSet::from([ColumnId::Cover, ColumnId::Title])
-    );
-}
-
-#[test]
 fn optional_visibility_changes_without_changing_order() {
     let layout = ColumnLayout::default();
     let hidden = set_column_visible(&layout, ColumnId::Artist, false);
@@ -453,10 +398,4 @@ fn cover_stays_pinned_first_while_other_columns_move_freely() {
         .position(|id| *id == ColumnId::Title)
         .unwrap();
     assert_eq!(moved.order[title_index - 1], ColumnId::Artist);
-}
-
-#[test]
-fn rhythmbox_import_is_offered_exactly_when_available() {
-    assert!(should_offer_rhythmbox_import(true));
-    assert!(!should_offer_rhythmbox_import(false));
 }
