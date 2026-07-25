@@ -264,7 +264,7 @@ pub(in crate::ui) fn arm_smoke_sort_column(
             field,
             "{SMOKE_SORT_COLUMN_ENV_VAR} set: applying programmatic column sort"
         );
-        column_view.sort_by_column(Some(&column), gtk4::SortType::Ascending);
+        super::track_list_sort::sort_by_column(&column_view, &column, gtk4::SortType::Ascending);
     });
 }
 

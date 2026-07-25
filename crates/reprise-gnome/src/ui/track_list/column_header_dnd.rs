@@ -358,7 +358,7 @@ fn activate_sort_click(view: &gtk4::ColumnView, column: &gtk4::ColumnViewColumn)
     };
     let is_primary = cv_sorter.primary_sort_column().as_ref() == Some(column);
     let next_order = next_sort_order(is_primary, cv_sorter.primary_sort_order());
-    view.sort_by_column(Some(column), next_order);
+    super::track_list_sort::sort_by_column(view, column, next_order);
 }
 
 /// The (widget, css-class) an insertion slot should mark, given whether it
