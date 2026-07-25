@@ -196,7 +196,7 @@ fn stats_13_band_card_data_reports_share_and_ranked_artists() {
 }
 
 #[test]
-fn stats_3_genre_spectrum_buckets_other() {
+fn stats_15_genre_card_buckets_other() {
     let conn = migrated_conn();
     for (index, genre) in ["Rock", "Jazz", "Folk", "Pop", "Metal", "Soul", "Punk"]
         .into_iter()

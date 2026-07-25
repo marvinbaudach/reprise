@@ -163,7 +163,7 @@ Do not point development hooks at the maintainer's real library.
 - Check English and German UI for clipping, untranslated text, natural plurals,
   keyboard mnemonics, narrow-window adaptation, touch/pointer interaction, and
   light/dark appearance.
-- My Stats editorial pass (UX STATS-11, STATS-11a, STATS-12, STATS-13, STATS-3,
+- My Stats editorial pass (UX STATS-11, STATS-11a, STATS-12, STATS-13, STATS-15,
   STATS-4): open My Stats
   on a populated library. Hero time and play count must agree with the top-track
   list; the ribbon axis must match the selected period with the running bucket

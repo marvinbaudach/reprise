@@ -139,13 +139,16 @@ pub(in crate::ui) fn css() -> String {
            background-color: alpha(@window_fg_color, 0.08); }}\n\
          .stats-ghost-rank, .stats-unify-hint {{ \
            color: alpha(@window_fg_color, 0.58); }}\n\
+         .stats-genre-card {{ padding: 8px; }}\n\
          .stats-genre-bar {{ border-radius: 999px; }}\n\
-         .stats-genre-segment-0 {{ background-color: alpha(@accent_bg_color, 1.0); }}\n\
-         .stats-genre-segment-1 {{ background-color: alpha(@accent_bg_color, 0.82); }}\n\
-         .stats-genre-segment-2 {{ background-color: alpha(@accent_bg_color, 0.68); }}\n\
-         .stats-genre-segment-3 {{ background-color: alpha(@accent_bg_color, 0.54); }}\n\
-         .stats-genre-segment-4 {{ background-color: alpha(@accent_bg_color, 0.40); }}\n\
-         .stats-genre-segment-5 {{ background-color: alpha(@accent_bg_color, 0.26); }}\n\
+         .stats-genre-rank-0 {{ background-color: shade(@accent_bg_color, 1.15); }}\n\
+         .stats-genre-rank-1 {{ background-color: shade(@accent_bg_color, 1.0); }}\n\
+         .stats-genre-rank-2 {{ background-color: shade(@accent_bg_color, 0.85); }}\n\
+         .stats-genre-rank-3 {{ background-color: shade(@accent_bg_color, 0.70); }}\n\
+         .stats-genre-rank-4 {{ background-color: shade(@accent_bg_color, 0.55); }}\n\
+         .stats-genre-segment-last {{ background-color: alpha(@window_fg_color, 0.25); }}\n\
+         .stats-genre-tile {{ padding: 4px; }}\n\
+         .stats-genre-cover:focus-visible {{ outline: 2px solid @accent_color; }}\n\
          .stats-highlight-tile {{ \
            padding: 12px; \
            border-radius: {radius}; \
