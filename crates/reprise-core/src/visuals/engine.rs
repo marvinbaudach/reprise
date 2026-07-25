@@ -253,10 +253,11 @@ impl VisualEngine {
 }
 
 /// Builds an engine that has just been hammered by a beat-then-slam: playing,
-/// accented, 20 silent frames (settles the envelopes at rest) followed by 10
-/// full-scale frames (fires a beat and pins the bands high). Shared
-/// by Grid tests so they can exercise a "lively" scene without re-deriving
-/// this fixture.
+/// accented, 20 silent frames (settles the envelopes at rest) followed by one
+/// full-scale frame. The synchronized membrane peaks on that detected hit, so
+/// this fixture deliberately captures the same frame rather than waiting for
+/// the old delayed build-up. Shared by Grid tests so they can exercise a
+/// "lively" scene without re-deriving this fixture.
 #[cfg(test)]
 pub(crate) fn lively_engine() -> VisualEngine {
     use crate::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
@@ -269,10 +270,8 @@ pub(crate) fn lively_engine() -> VisualEngine {
         engine.ingest(&analyzer.ingest([-80.0; SPECTRUM_ANALYSIS_BAND_COUNT]));
         engine.tick();
     }
-    for _ in 0..10 {
-        engine.ingest(&analyzer.ingest([0.0; SPECTRUM_ANALYSIS_BAND_COUNT]));
-        engine.tick();
-    }
+    engine.ingest(&analyzer.ingest([0.0; SPECTRUM_ANALYSIS_BAND_COUNT]));
+    engine.tick();
     engine
 }
 
@@ -347,5 +346,51 @@ mod tests {
         let ctx = test_ctx(&engine, 548.0, 300.0);
         assert_eq!((ctx.width, ctx.height), (548.0, 300.0));
         assert_eq!(ctx.accent, engine.accent);
+    }
+
+    #[test]
+    fn detected_hit_moves_the_visible_membrane_in_the_same_frame() {
+        use crate::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
+
+        let silence = [-80.0; SPECTRUM_ANALYSIS_BAND_COUNT];
+        let hit = [0.0; SPECTRUM_ANALYSIS_BAND_COUNT];
+        let mut analyzer = SpectrumAnalyzer::new();
+        let mut engine = VisualEngine::new();
+        engine.set_playing(true);
+
+        for _ in 0..20 {
+            engine.ingest(&analyzer.ingest(silence));
+            engine.tick();
+        }
+
+        let hit_frame = analyzer.ingest(hit);
+        assert!(
+            hit_frame.beat().fired,
+            "fixture must exercise the detected-beat path"
+        );
+        engine.ingest(&hit_frame);
+        engine.tick();
+        let first_frame = engine.membrane.sample(0.5, 0.5).max(0.0);
+
+        let mut peak = first_frame;
+        let mut peak_frame = 0;
+        for frame in 1..=12 {
+            engine.ingest(&analyzer.ingest(silence));
+            engine.tick();
+            let height = engine.membrane.sample(0.5, 0.5).max(0.0);
+            if height > peak {
+                peak = height;
+                peak_frame = frame;
+            }
+        }
+
+        assert!(
+            first_frame >= peak * 0.35,
+            "the hit must be visibly present immediately: first={first_frame}, peak={peak} at frame {peak_frame}"
+        );
+        assert!(
+            peak_frame <= 2,
+            "the visible peak must stay within 33 ms of the detected hit, arrived at frame {peak_frame}"
+        );
     }
 }
