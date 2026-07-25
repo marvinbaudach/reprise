@@ -15,7 +15,10 @@ pub(in crate::ui) fn filters_restrict(
 }
 
 pub(in crate::ui) fn scope_restricts(source: &ViewSource) -> bool {
-    matches!(source, ViewSource::Artist(_) | ViewSource::Album { .. })
+    matches!(
+        source,
+        ViewSource::Artist(_) | ViewSource::Album { .. } | ViewSource::Genre(_)
+    )
 }
 
 pub(in crate::ui) fn is_restricted(
@@ -30,6 +33,7 @@ pub(in crate::ui) fn is_restricted(
 pub(in crate::ui) fn scope_chip_label(source: &ViewSource) -> Option<String> {
     match source {
         ViewSource::Artist(artist) => Some(artist.clone()),
+        ViewSource::Genre(genre) => Some(genre.clone()),
         ViewSource::Album {
             album,
             album_artist,
@@ -154,6 +158,15 @@ mod tests {
             .as_deref(),
             Some("Pain Remains — Lorna Shore")
         );
+    }
+
+    #[test]
+    fn fil_1c_genre_scope_restricts_and_renders_its_own_chip() {
+        let source = ViewSource::Genre("Metalcore".into());
+
+        assert!(scope_restricts(&source));
+        assert_eq!(scope_chip_label(&source).as_deref(), Some("Metalcore"));
+        assert!(is_restricted("", &BrowseFilter::default(), false, &source));
     }
 
     #[test]

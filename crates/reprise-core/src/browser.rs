@@ -1,6 +1,6 @@
 //! Pure browser vocabulary shared by every frontend.
 //!
-//! A [`BrowserPlace`] is a navigable place. Album and artist are scopes of
+//! A [`BrowserPlace`] is a navigable place. Album, artist, and genre are scopes of
 //! the Library collection, never parallel presentation modes. Each track
 //! place owns its refinements and stable view bookmarks so history entries
 //! cannot leak filters, selection, or scroll state into one another.
@@ -69,6 +69,7 @@ pub enum LibraryScope {
     All,
     Album(AlbumKey),
     Artist(ArtistKey),
+    Genre(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -230,6 +231,9 @@ impl BrowserPlace {
                 TrackCollection::Library(LibraryScope::Artist(key)) => {
                     ViewSource::Artist(key.artist.clone())
                 }
+                TrackCollection::Library(LibraryScope::Genre(genre)) => {
+                    ViewSource::Genre(genre.clone())
+                }
                 TrackCollection::Playlist(id) => ViewSource::Playlist(*id),
                 TrackCollection::Smart(id) => ViewSource::Smart(*id),
                 TrackCollection::Queue => ViewSource::Queue,
@@ -260,6 +264,9 @@ impl From<ViewSource> for BrowserPlace {
             } => TrackCollection::Library(LibraryScope::Album(AlbumKey::new(album, album_artist))),
             ViewSource::Artist(artist) => {
                 TrackCollection::Library(LibraryScope::Artist(ArtistKey::new(artist)))
+            }
+            ViewSource::Genre(genre) => {
+                TrackCollection::Library(LibraryScope::Genre(genre.trim().to_owned()))
             }
             ViewSource::MyStats => return Self::MyStats,
             ViewSource::Conversions => return Self::Conversions,
@@ -334,6 +341,7 @@ mod tests {
                 album_artist: "Joni Mitchell".into(),
             },
             ViewSource::Artist("Björk".into()),
+            ViewSource::Genre("Metalcore".into()),
             ViewSource::MyStats,
             ViewSource::Device {
                 serial: "pixel-8".into(),
@@ -370,6 +378,10 @@ mod tests {
             AlbumKey::new("blue", "joni mitchell")
         );
         assert_eq!(ArtistKey::new(" BJÖRK "), ArtistKey::new("björk"));
+        assert_eq!(
+            BrowserPlace::from(ViewSource::Genre(" METALCORE ".into())).view_source(),
+            ViewSource::Genre("METALCORE".into())
+        );
     }
 
     #[test]

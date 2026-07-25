@@ -229,7 +229,10 @@ fn run_query(shared: &Rc<Shared>) {
     let source = shared.source.borrow().clone();
     let browse = if matches!(
         source,
-        ViewSource::Library | ViewSource::Album { .. } | ViewSource::Artist(_)
+        ViewSource::Library
+            | ViewSource::Album { .. }
+            | ViewSource::Artist(_)
+            | ViewSource::Genre(_)
     ) {
         shared.browse_filter.borrow().clone()
     } else {

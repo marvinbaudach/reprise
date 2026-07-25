@@ -237,6 +237,12 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
             }
         });
     }
+    {
+        let navigator = metadata_navigator.clone();
+        stats_view.set_on_go_to_genre(move |genre| {
+            navigator.navigate(NavigationIntent::OpenGenre { genre }, "stats genre link");
+        });
+    }
     // Stage 3 Task 5: context menu action wiring. `track_list` stays
     // decoupled from `PlayerController`/`Sidebar` themselves (same
     // decoupling-via-closure seam as `on_activate`/`queue_ids_provider`

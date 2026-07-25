@@ -499,10 +499,10 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   wirkt dort bereits (Grid-Filterung); dieselbe Chip-Zeile inkl. Zählung und
   „Clear all" folgt dort nach dem Muster von FIL-1a/FIL-2. Bis dahin ist die
   Lücke hier benannt statt still gebrochen.
-- **FIL-1c** [aktiv] [gtk] — Artist- und Album-Scopes der Track-Liste tragen
+- **FIL-1c** [aktiv] [gtk] — Artist-, Album- und Genre-Scopes der Track-Liste tragen
   in der Filter-Zeile eine eigene Scope-Chip-Klasse neben Such- und
-  Facetten-Chips: „<Interpret>" beziehungsweise „<Album> — <Interpret>" mit
-  eigenem ×-Klickziel von mindestens 20 px. Das × verlässt den Scope per
+  Facetten-Chips: „<Interpret>", „<Album> — <Interpret>" beziehungsweise
+  „<Genre>" mit eigenem ×-Klickziel von mindestens 20 px. Das × verlässt den Scope per
   regulärem NAV-2-History-Push zur Library; dort werden deren gemerkte Suche
   und Facetten wiederhergestellt. Die Zählung folgt FIL-2 und setzt die
   Scope-Treffer ins Verhältnis zur ganzen Library. Playlist, Smart, Queue,
@@ -1496,7 +1496,8 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   „<Genre> · N %", darunter „N h · top: <Interpret>". Top-Interpret und
   Cover je Genre entstehen über dieselbe Schlüsselauflösung wie alle
   Gruppierungen (STATS-9). Klick auf das Kachel-Cover öffnet die Library
-  gefiltert auf das Album; Segmente und Genre-Namen sind keine Navigation.
+  gefiltert auf das Album; Klick auf ein Segment oder die übrige Kachelfläche
+  öffnet die Library im Scope des jeweiligen Genres.
   Tracks ohne Genre zählen weiterhin weder als Segment noch als „Other".
 - **STATS-16** [aktiv] [gtk] — Unter zehn Plays im gewählten Zeitraum ist
   die Datenlage zu dünn für einen Trend: Statt des Charts erscheint der

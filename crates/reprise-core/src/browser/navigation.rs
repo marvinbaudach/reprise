@@ -35,6 +35,9 @@ pub enum NavigationIntent {
         artist: ArtistKey,
         anchor_track_id: Option<i64>,
     },
+    OpenGenre {
+        genre: String,
+    },
     RevealTrack {
         origin: Box<BrowserPlace>,
         track_id: i64,
@@ -161,6 +164,16 @@ impl BrowserNavigation {
                 self.go_metadata_scope(BrowserPlace::tracks(
                     TrackCollection::Library(LibraryScope::Artist(artist)),
                     fresh_target_state(anchor_track_id),
+                ))
+            }
+            NavigationIntent::OpenGenre { genre } => {
+                let genre = genre.trim();
+                if genre.is_empty() {
+                    return None;
+                }
+                self.go_metadata_scope(BrowserPlace::tracks(
+                    TrackCollection::Library(LibraryScope::Genre(genre.to_owned())),
+                    TrackViewState::default(),
                 ))
             }
             NavigationIntent::RevealTrack { origin, track_id } => {
@@ -433,6 +446,32 @@ mod tests {
             )))
         );
         assert_eq!(artist.track_state(), Some(&TrackViewState::default()));
+    }
+
+    #[test]
+    fn fil_1c_genre_scope_uses_the_same_history_path_as_other_library_scopes() {
+        let mut navigation = BrowserNavigation::new(library());
+        let genre = navigation
+            .navigate(NavigationIntent::OpenGenre {
+                genre: "  Metalcore  ".into(),
+            })
+            .unwrap()
+            .to;
+
+        assert_eq!(
+            genre.collection(),
+            Some(&TrackCollection::Library(LibraryScope::Genre(
+                "Metalcore".into()
+            )))
+        );
+        assert_eq!(
+            navigation.navigate(NavigationIntent::Back).unwrap().to,
+            library()
+        );
+        assert_eq!(
+            navigation.navigate(NavigationIntent::Forward).unwrap().to,
+            genre
+        );
     }
 
     #[test]

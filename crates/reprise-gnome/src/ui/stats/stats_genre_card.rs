@@ -22,8 +22,11 @@ pub(in crate::ui) struct StatsGenreCard {
     cover_generation: Rc<Cell<u64>>,
     on_unify: StringCallback,
     on_open_album_path: StringCallback,
+    on_open_genre: StringCallback,
     #[cfg_attr(not(test), allow(dead_code))]
     cover_buttons: Rc<RefCell<Vec<gtk4::Button>>>,
+    #[cfg_attr(not(test), allow(dead_code))]
+    genre_buttons: Rc<RefCell<Vec<gtk4::Button>>>,
 }
 
 impl StatsGenreCard {
@@ -50,7 +53,9 @@ impl StatsGenreCard {
             cover_generation: Rc::new(Cell::new(0)),
             on_unify: Rc::new(RefCell::new(None)),
             on_open_album_path: Rc::new(RefCell::new(None)),
+            on_open_genre: Rc::new(RefCell::new(None)),
             cover_buttons: Rc::new(RefCell::new(Vec::new())),
+            genre_buttons: Rc::new(RefCell::new(Vec::new())),
         }
     }
 
@@ -62,6 +67,7 @@ impl StatsGenreCard {
         clear_grid(&self.segments);
         clear_grid(&self.tiles);
         self.cover_buttons.borrow_mut().clear();
+        self.genre_buttons.borrow_mut().clear();
         let token = self.cover_generation.get().wrapping_add(1);
         self.cover_generation.set(token);
         self.render_segments(section);
@@ -80,17 +86,32 @@ impl StatsGenreCard {
     fn render_segments(&self, section: &GenreSection) {
         let mut column = 0;
         for (index, segment) in section.segments.iter().enumerate() {
-            let bar = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+            let bar = gtk4::Button::new();
+            bar.add_css_class("flat");
             bar.add_css_class("stats-genre-segment");
             bar.add_css_class(&segment_css_class(segment, index));
             bar.set_hexpand(true);
             bar.set_height_request(22);
+            bar.update_property(&[gtk4::accessible::Property::Label(&format!(
+                "Open {} in the Library",
+                segment.label
+            ))]);
             bar.set_tooltip_text(Some(&format!(
                 "{} · {} % · {}",
                 segment.label,
                 segment.share_percent,
                 format_duration(segment.total_ms)
             )));
+            if has_genre_tile(segment) {
+                bar.connect_clicked({
+                    let callback = self.on_open_genre.clone();
+                    let genre = segment.label.clone();
+                    move |_| invoke(&callback, genre.clone())
+                });
+                self.genre_buttons.borrow_mut().push(bar.clone());
+            } else {
+                bar.set_can_target(false);
+            }
             let width = segment.share_percent.max(1) as i32;
             self.segments.attach(&bar, column, 0, width, 1);
             column += width;
@@ -130,8 +151,9 @@ impl StatsGenreCard {
             tile.append(&cover_button);
         }
 
+        let right = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+        right.set_hexpand(true);
         let copy = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-        copy.set_hexpand(true);
         copy.append(&label(
             &format!("{} · {} %", segment.label, segment.share_percent),
             "stats-item-title",
@@ -144,6 +166,19 @@ impl StatsGenreCard {
             ),
             "stats-item-subtitle",
         ));
+        let genre_button = gtk4::Button::new();
+        genre_button.add_css_class("flat");
+        genre_button.add_css_class("stats-genre-link");
+        genre_button.set_hexpand(true);
+        genre_button.set_child(Some(&copy));
+        genre_button.set_tooltip_text(Some(&format!("Open {} in the Library", segment.label)));
+        genre_button.connect_clicked({
+            let callback = self.on_open_genre.clone();
+            let genre = segment.label.clone();
+            move |_| invoke(&callback, genre.clone())
+        });
+        self.genre_buttons.borrow_mut().push(genre_button.clone());
+        right.append(&genre_button);
         if segment.variant_count >= 2 {
             let hint = gtk4::Button::with_label("Tag spellings");
             hint.add_css_class("flat");
@@ -155,9 +190,9 @@ impl StatsGenreCard {
                 let key = segment.key.clone();
                 move |_| invoke(&callback, key.clone())
             });
-            copy.append(&hint);
+            right.append(&hint);
         }
-        tile.append(&copy);
+        tile.append(&right);
         tile
     }
 
@@ -172,6 +207,10 @@ impl StatsGenreCard {
 
     pub(in crate::ui) fn set_on_open_album_path(&self, callback: impl Fn(String) + 'static) {
         *self.on_open_album_path.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(in crate::ui) fn set_on_open_genre(&self, callback: impl Fn(String) + 'static) {
+        *self.on_open_genre.borrow_mut() = Some(Rc::new(callback));
     }
 }
 
@@ -325,18 +364,23 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn stats_15_segment_carries_no_click_controller() {
+    fn stats_15_segment_and_tile_request_the_genre_scope() {
         gtk4::init().unwrap();
         let card = card();
+        let opened = Rc::new(RefCell::new(Vec::new()));
+        card.set_on_open_genre({
+            let opened = opened.clone();
+            move |genre| opened.borrow_mut().push(genre)
+        });
         card.set_data(&fixture());
-        let segment = card.segments.first_child().unwrap();
-        let controllers = segment.observe_controllers();
 
-        assert!((0..controllers.n_items()).all(|index| {
-            !controllers
-                .item(index)
-                .is_some_and(|item| item.is::<gtk4::GestureClick>())
-        }));
+        card.genre_buttons.borrow()[0].emit_clicked();
+        card.genre_buttons.borrow()[1].emit_clicked();
+
+        assert_eq!(
+            *opened.borrow(),
+            vec!["Metalcore".to_string(), "Metalcore".to_string()]
+        );
     }
 
     #[test]
@@ -345,15 +389,21 @@ mod tests {
         gtk4::init().unwrap();
         let card = card();
         let opened = Rc::new(RefCell::new(None));
+        let opened_genres = Rc::new(RefCell::new(Vec::new()));
         card.set_on_open_album_path({
             let opened = opened.clone();
             move |path| *opened.borrow_mut() = Some(path)
+        });
+        card.set_on_open_genre({
+            let opened_genres = opened_genres.clone();
+            move |genre| opened_genres.borrow_mut().push(genre)
         });
         card.set_data(&fixture());
 
         card.cover_buttons.borrow()[0].emit_clicked();
 
         assert_eq!(opened.borrow().as_deref(), Some("/music/track.flac"));
+        assert!(opened_genres.borrow().is_empty());
     }
 
     #[test]

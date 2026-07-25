@@ -82,6 +82,52 @@ mod tests {
         assert_eq!(track_list.shared.browse_bar.result_count(), Some((2, 2)));
     }
 
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn fil_1c_clear_all_keeps_the_genre_scope_and_counts_against_the_library() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let conn = Connection::open_in_memory().unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO tracks (path,title,artist,album,genre,year,added_at) VALUES
+               ('/a.flac','A','X','One','Metalcore',2026,0),
+               ('/b.flac','B','Y','Two','Metalcore',2025,0),
+               ('/c.flac','C','Z','Three','Jazz',2026,0);",
+        )
+        .unwrap();
+        let track_list = TrackList::new(
+            Rc::new(RefCell::new(conn)),
+            Box::new(|_, _, _, _| {}),
+            |_, _, _, _| {},
+            super::super::queue_sections::QueueViewModel::default,
+            crate::ui::cover_download_worker::setup_for_test(),
+        );
+        assert!(
+            track_list.restore_browser_place(&reprise_core::browser::BrowserPlace::from(
+                reprise_core::view_source::ViewSource::Genre("Metalcore".into())
+            ))
+        );
+        *track_list.shared.browse_filter.borrow_mut() = BrowseFilter {
+            year: Some("2026".into()),
+            ..BrowseFilter::default()
+        };
+        track_list.reload();
+
+        track_list.clear_all_restrictions();
+        let context = glib::MainContext::default();
+        while context.pending() {
+            context.iteration(false);
+        }
+
+        assert_eq!(
+            track_list.current_source(),
+            reprise_core::view_source::ViewSource::Genre("Metalcore".into())
+        );
+        assert_eq!(track_list.shared.model.n_items(), 2);
+        assert_eq!(track_list.shared.browse_bar.result_count(), Some((2, 3)));
+    }
+
     // UX FIL-7: with the experimental switch on, the "Hide AI music" filter
     // hides AI-flagged tracks and the filter row counts "X of Y" (FIL-2).
     #[test]
