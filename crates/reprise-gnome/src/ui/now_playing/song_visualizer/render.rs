@@ -26,6 +26,9 @@ fn trace(cr: &gtk4::cairo::Context, geom: &Geom) {
                 cr.close_path();
             }
         }
+        Geom::Rect { x, y, w, h } => {
+            cr.rectangle(f64::from(*x), f64::from(*y), f64::from(*w), f64::from(*h));
+        }
         Geom::RadialGlow { .. } => {}
     }
 }

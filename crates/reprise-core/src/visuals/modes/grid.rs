@@ -3,7 +3,7 @@
 //! without multiplying simulation work. A secondary-accent crest and a soft
 //! pressure glow illuminate the central bass push.
 
-use super::super::engine::GridCtx;
+use super::super::engine::ModeCtx;
 use super::super::scene::{Fill, Geom, Rgba, Shape};
 
 /// Membrane height at which a crest starts to show (secondary accent). Set high so
@@ -33,7 +33,7 @@ fn perspective(depth: f32) -> f32 {
     depth.powf(PERSPECTIVE_POWER)
 }
 
-fn project(ctx: &GridCtx, near: f32, across: f32, height: f32) -> (f32, f32) {
+fn project(ctx: &ModeCtx, near: f32, across: f32, height: f32) -> (f32, f32) {
     let baseline = ctx.height * (HORIZON_Y + near * (NEAR_Y - HORIZON_Y));
     let half_width = ctx.width * (FAR_HALF_WIDTH + near * (NEAR_HALF_WIDTH - FAR_HALF_WIDTH));
     let vertical_scale = ctx.height * HEIGHT_SCALE * (0.28 + 0.72 * near);
@@ -42,7 +42,7 @@ fn project(ctx: &GridCtx, near: f32, across: f32, height: f32) -> (f32, f32) {
     (x, y)
 }
 
-pub(crate) fn scene(ctx: &GridCtx) -> Vec<Shape> {
+pub(crate) fn scene(ctx: &ModeCtx) -> Vec<Shape> {
     let mut rows = Vec::with_capacity(RENDER_ROWS);
     for row in 0..RENDER_ROWS {
         let depth = row as f32 / (RENDER_ROWS - 1) as f32;
@@ -147,7 +147,7 @@ pub(crate) fn scene(ctx: &GridCtx) -> Vec<Shape> {
     shapes
 }
 
-fn crest(points: Vec<(f32, f32)>, peak: f32, near: f32, ctx: &GridCtx) -> Shape {
+fn crest(points: Vec<(f32, f32)>, peak: f32, near: f32, ctx: &ModeCtx) -> Shape {
     let intensity = ((peak - CREST_THRESHOLD) / (CREST_FULL - CREST_THRESHOLD)).clamp(0.0, 1.0);
     Shape {
         geom: Geom::Polyline {

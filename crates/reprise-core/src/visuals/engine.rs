@@ -1,8 +1,9 @@
 //! The portable visual engine: owns every piece of reactive state a
-//! visualizer needs (eased bands, level envelope, membrane, drop flash,
-//! accent palette) and turns [`SpectrumFrame`]s into a resolution-independent
-//! [`Scene`] a frontend can draw however it likes. No frontend ever touches
-//! easing constants or Grid geometry directly — it only feeds frames in
+//! visualizer needs (eased bands, peak hold, beat pulse, membrane, drop
+//! flash, accent palette) and turns [`SpectrumFrame`]s into a
+//! resolution-independent [`Scene`] a frontend can draw however it likes.
+//! No frontend ever touches easing constants or mode geometry directly — it
+//! only feeds frames in
 //! via [`VisualEngine::ingest`], advances via [`VisualEngine::tick`],
 //! and reads a [`Scene`] back out via [`VisualEngine::scene`].
 //!
@@ -29,8 +30,14 @@ const BAND_ATTACK: f32 = 0.75;
 /// smoothly between values.
 const BAND_RELEASE_MIN: f32 = 0.13;
 const BAND_RELEASE_SPAN: f32 = 0.15;
+/// Classic analyzer peak caps fall slowly enough to remain legible but never
+/// keep stale song energy around for more than about one second.
+const PEAK_DECAY: f32 = 0.018;
 const SCALAR_ATTACK: f32 = 0.9;
 const SCALAR_RELEASE: f32 = 0.22;
+/// Same-frame beat ornament for Bars. The hit is installed during `ingest`
+/// and then loses roughly 70% of its energy within four display frames.
+const BEAT_PULSE_DECAY: f32 = 0.72;
 /// Below this an eased value reads as "arrived" for settle detection.
 const SETTLE_EPSILON: f32 = 0.002;
 /// Resting band profile. Zero (not a faint idle shimmer): the membrane is
@@ -41,10 +48,31 @@ const NEUTRAL_PROFILE: [f32; SPECTRUM_BAND_COUNT] = [0.0; SPECTRUM_BAND_COUNT];
 /// Secondary accent hue offset when no cover-derived accent is available.
 const FALLBACK_ACCENT2_HUE_SHIFT: f32 = 42.0;
 
-/// The per-frame render inputs the Grid scene builder needs. Borrowed from
-/// the engine for the lifetime of one [`VisualEngine::scene`] call — the
-/// renderer never owns or mutates engine state, it only reads it.
-pub struct GridCtx<'a> {
+/// The two deliberately supported visual treatments.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum VisualMode {
+    #[default]
+    Grid,
+    Bars,
+}
+
+impl VisualMode {
+    pub const ALL: [Self; 2] = [Self::Grid, Self::Bars];
+
+    /// Stable lowercase identifier used by the GTK toggle widgets.
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Grid => "grid",
+            Self::Bars => "bars",
+        }
+    }
+}
+
+/// Borrowed per-frame render inputs shared by both mode scene builders.
+pub struct ModeCtx<'a> {
+    pub bands: &'a [f32; SPECTRUM_BAND_COUNT],
+    pub peaks: &'a [f32; SPECTRUM_BAND_COUNT],
+    pub beat: f32,
     pub accent: (f32, f32, f32),
     pub accent2: (f32, f32, f32),
     pub membrane: &'a Membrane,
@@ -52,7 +80,7 @@ pub struct GridCtx<'a> {
     pub height: f32,
 }
 
-impl GridCtx<'_> {
+impl ModeCtx<'_> {
     /// Solid fill in the primary (app cover) accent color.
     pub fn accent_fill(&self, alpha: f32) -> Fill {
         let (r, g, b) = self.accent;
@@ -66,16 +94,17 @@ impl GridCtx<'_> {
     }
 }
 
-/// Owns every piece of state Grid needs across frames: eased spectrum bands,
-/// the level envelope, membrane surface, drop flash, and accent palette. Frontends
-/// drive it with [`ingest`](Self::ingest)/[`tick`](Self::tick) and
-/// read a [`Scene`] back with [`scene`](Self::scene) — no frontend ever
-/// touches easing constants or Grid geometry directly.
+/// Owns every piece of state Grid and Bars need across frames. Frontends drive
+/// it with [`ingest`](Self::ingest)/[`tick`](Self::tick) and read a
+/// [`Scene`] back with [`scene`](Self::scene).
 pub struct VisualEngine {
+    mode: VisualMode,
     bands_current: [f32; SPECTRUM_BAND_COUNT],
     bands_target: [f32; SPECTRUM_BAND_COUNT],
+    bands_peaks: [f32; SPECTRUM_BAND_COUNT],
     level_current: f32,
     level_target: f32,
+    beat_pulse: f32,
     playing: bool,
     membrane: Membrane,
     impact: ImpactState,
@@ -92,16 +121,27 @@ impl Default for VisualEngine {
 impl VisualEngine {
     pub fn new() -> Self {
         Self {
+            mode: VisualMode::default(),
             bands_current: [0.0; SPECTRUM_BAND_COUNT],
             bands_target: [0.0; SPECTRUM_BAND_COUNT],
+            bands_peaks: [0.0; SPECTRUM_BAND_COUNT],
             level_current: 0.0,
             level_target: 0.0,
+            beat_pulse: 0.0,
             playing: false,
             membrane: Membrane::new(),
             impact: ImpactState::new(),
             accent: (0.5, 0.5, 0.5),
             cover_accent2: None,
         }
+    }
+
+    pub fn set_mode(&mut self, mode: VisualMode) {
+        self.mode = mode;
+    }
+
+    pub fn mode(&self) -> VisualMode {
+        self.mode
     }
 
     /// Pauses drift (the tick loop stops feeding fresh frames in) and
@@ -133,6 +173,8 @@ impl VisualEngine {
     /// Track switched: reset the membrane and drop flash so leftover motion
     /// from the previous track does not bleed in.
     pub fn note_track_changed(&mut self) {
+        self.bands_peaks = [0.0; SPECTRUM_BAND_COUNT];
+        self.beat_pulse = 0.0;
         self.membrane = Membrane::new();
         self.impact = ImpactState::new();
     }
@@ -144,6 +186,7 @@ impl VisualEngine {
         self.level_target = frame.level();
         let beat = frame.beat();
         if beat.fired {
+            self.beat_pulse = self.beat_pulse.max(beat.strength);
             // Scale the cone impulse by how hard the beat landed, so big beats
             // push the cloth deeply and soft ones barely vibrate.
             self.membrane.splash(beat.strength);
@@ -156,11 +199,13 @@ impl VisualEngine {
     /// playback is stopped — the frontend may stop ticking at that point.
     pub fn tick(&mut self) -> bool {
         let mut bands_settled = true;
+        let mut peaks_settled = true;
         let last = (SPECTRUM_BAND_COUNT - 1) as f32;
-        for (index, (current, &target)) in self
+        for (index, ((current, &target), peak)) in self
             .bands_current
             .iter_mut()
             .zip(self.bands_target.iter())
+            .zip(self.bands_peaks.iter_mut())
             .enumerate()
         {
             let delta = target - *current;
@@ -169,6 +214,9 @@ impl VisualEngine {
             let next = *current + delta * coeff;
             bands_settled &= (target - next).abs() < SETTLE_EPSILON;
             *current = next;
+            let next_peak = (*peak - PEAK_DECAY).max(next);
+            peaks_settled &= (next_peak - next).abs() < SETTLE_EPSILON;
+            *peak = next_peak;
         }
 
         let level_delta = self.level_target - self.level_current;
@@ -182,9 +230,15 @@ impl VisualEngine {
 
         self.impact.advance();
         self.membrane.advance(&self.bands_current);
+        self.beat_pulse *= BEAT_PULSE_DECAY;
+        if self.beat_pulse < SETTLE_EPSILON {
+            self.beat_pulse = 0.0;
+        }
 
         bands_settled
+            && peaks_settled
             && level_settled
+            && self.beat_pulse == 0.0
             && self.impact.is_idle()
             && self.membrane.is_still()
             && !self.playing
@@ -194,7 +248,9 @@ impl VisualEngine {
     /// frontends: no interpolation, no lingering membrane/impact ornaments.
     pub fn snap_to_static(&mut self) {
         self.bands_current = self.bands_target;
+        self.bands_peaks = self.bands_current;
         self.level_current = self.level_target;
+        self.beat_pulse = 0.0;
         self.membrane.reset();
         self.impact = ImpactState::new();
     }
@@ -206,8 +262,11 @@ impl VisualEngine {
             .unwrap_or_else(|| hue_shift(self.accent, FALLBACK_ACCENT2_HUE_SHIFT))
     }
 
-    fn make_ctx(&self, width: f32, height: f32) -> GridCtx<'_> {
-        GridCtx {
+    fn make_ctx(&self, width: f32, height: f32) -> ModeCtx<'_> {
+        ModeCtx {
+            bands: &self.bands_current,
+            peaks: &self.bands_peaks,
+            beat: self.beat_pulse,
             accent: self.accent,
             accent2: self.accent2(),
             membrane: &self.membrane,
@@ -217,7 +276,7 @@ impl VisualEngine {
     }
 
     /// Builds the resolution-independent scene for this instant: an accent
-    /// wash first, then the Grid shapes, then a soft flash overlay while a
+    /// wash first, then the selected mode, then a soft flash overlay while a
     /// drop/slam is still decaying.
     pub fn scene(&self, width: f32, height: f32) -> Scene {
         let ctx = self.make_ctx(width, height);
@@ -233,7 +292,7 @@ impl VisualEngine {
             glow: 0.0,
             dash: None,
         });
-        shapes.extend(modes::build_scene(&ctx));
+        shapes.extend(modes::build_scene(self.mode, &ctx));
         let flash = self.impact.flash();
         if flash > 0.0 {
             shapes.push(Shape {
@@ -254,9 +313,9 @@ impl VisualEngine {
 
 /// Builds an engine that has just been hammered by a beat-then-slam: playing,
 /// accented, 20 silent frames (settles the envelopes at rest) followed by one
-/// full-scale frame. The synchronized membrane peaks on that detected hit, so
+/// full-scale frame. The synchronized visuals peak on that detected hit, so
 /// this fixture deliberately captures the same frame rather than waiting for
-/// the old delayed build-up. Shared by Grid tests so they can exercise a
+/// the old delayed build-up. Shared by mode tests so they can exercise a
 /// "lively" scene without re-deriving this fixture.
 #[cfg(test)]
 pub(crate) fn lively_engine() -> VisualEngine {
@@ -275,10 +334,9 @@ pub(crate) fn lively_engine() -> VisualEngine {
     engine
 }
 
-/// Borrows a [`GridCtx`] out of an engine for direct Grid testing, without
-/// going through the full [`VisualEngine::scene`] wash + flash wrapping.
+/// Borrows a [`ModeCtx`] out of an engine for direct mode testing.
 #[cfg(test)]
-pub(crate) fn test_ctx(engine: &VisualEngine, width: f32, height: f32) -> GridCtx<'_> {
+pub(crate) fn test_ctx(engine: &VisualEngine, width: f32, height: f32) -> ModeCtx<'_> {
     engine.make_ctx(width, height)
 }
 
@@ -288,11 +346,14 @@ mod tests {
     use crate::visuals::color;
 
     #[test]
-    fn grid_builds_a_finite_sane_nonempty_scene() {
-        let engine = lively_engine();
-        let scene = engine.scene(548.0, 300.0);
-        assert!(scene.shapes.len() > 1, "Grid must draw beyond the wash");
-        assert!(scene.is_finite_and_sane(548.0, 300.0));
+    fn every_mode_builds_a_finite_sane_nonempty_scene() {
+        let mut engine = lively_engine();
+        for mode in VisualMode::ALL {
+            engine.set_mode(mode);
+            let scene = engine.scene(548.0, 300.0);
+            assert!(scene.shapes.len() > 1, "{mode:?} must draw beyond the wash");
+            assert!(scene.is_finite_and_sane(548.0, 300.0), "{mode:?}");
+        }
     }
 
     /// AC-11: continuous motion exists only during playback. A playing engine
@@ -338,13 +399,13 @@ mod tests {
         assert!(delta < 3.0);
     }
 
-    /// Exercises the `test_ctx` helper Grid tests reuse to build a `GridCtx`
-    /// directly, without going through `scene`'s wash and flash wrapping.
+    /// Exercises the `test_ctx` helper mode tests reuse.
     #[test]
-    fn test_ctx_borrows_a_matching_grid_ctx() {
+    fn test_ctx_borrows_a_matching_mode_ctx() {
         let engine = lively_engine();
         let ctx = test_ctx(&engine, 548.0, 300.0);
         assert_eq!((ctx.width, ctx.height), (548.0, 300.0));
+        assert_eq!(ctx.bands.len(), SPECTRUM_BAND_COUNT);
         assert_eq!(ctx.accent, engine.accent);
     }
 
@@ -391,6 +452,30 @@ mod tests {
         assert!(
             peak_frame <= 2,
             "the visible peak must stay within 33 ms of the detected hit, arrived at frame {peak_frame}"
+        );
+    }
+
+    #[test]
+    fn detected_hit_lifts_bars_in_the_same_frame() {
+        use crate::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
+
+        let mut analyzer = SpectrumAnalyzer::new();
+        let mut engine = VisualEngine::new();
+        engine.set_mode(VisualMode::Bars);
+        engine.set_playing(true);
+        for _ in 0..20 {
+            engine.ingest(&analyzer.ingest([-80.0; SPECTRUM_ANALYSIS_BAND_COUNT]));
+            engine.tick();
+        }
+
+        let hit = analyzer.ingest([0.0; SPECTRUM_ANALYSIS_BAND_COUNT]);
+        assert!(hit.beat().fired);
+        engine.ingest(&hit);
+        engine.tick();
+
+        assert!(
+            engine.make_ctx(548.0, 300.0).beat > 0.5,
+            "Bars must receive a strong same-frame beat pulse"
         );
     }
 }

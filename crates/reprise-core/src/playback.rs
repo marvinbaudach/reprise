@@ -464,7 +464,7 @@ mod song_visual_tests {
     use super::*;
 
     #[test]
-    fn ac_19_spectrum_frame_normalizes_decibels_and_rejects_non_finite_input() {
+    fn ac_20_spectrum_frame_normalizes_decibels_and_rejects_non_finite_input() {
         let mut decibels = [-80.0_f32; SPECTRUM_BAND_COUNT];
         decibels[..16].copy_from_slice(&[
             -80.0,

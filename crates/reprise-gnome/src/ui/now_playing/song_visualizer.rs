@@ -1,10 +1,10 @@
-//! Audio-reactive Grid visual for the Now Playing Visual page.
+//! Audio-reactive Grid and Bars visuals for the Now Playing Visual page.
 //!
 //! All reactive state (eased spectrum bands, membrane, impact overlay,
-//! accent palette) and the Grid geometry live in
+//! accent palette) and both mode geometries live in
 //! `reprise_core::visuals::VisualEngine` — a portable core the GUI never has
-//! to reimplement. This module owns the inline canvas embedded in the Now
-//! Playing panel. It turns the engine's
+//! to reimplement. This module owns the inline canvas and two-way mode picker
+//! embedded in the Now Playing panel. It turns the engine's
 //! [`reprise_core::visuals::Scene`] into pixels via [`render`], through a
 //! Cairo `DrawingArea` driven by the tick loop and `queue_registered_areas`.
 
@@ -18,8 +18,9 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use reprise_core::playback::{PlaybackState, SpectrumFrame};
-use reprise_core::visuals::VisualEngine;
+use reprise_core::visuals::{VisualEngine, VisualMode};
 
+use crate::ui::style::buttons;
 use crate::ui::{motion, strings};
 
 const DRAW_HEIGHT: i32 = 220;
@@ -55,6 +56,7 @@ impl SongVisualizer {
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 10);
         root.add_css_class("reprise-song-visuals");
         root.append(&area);
+        root.append(&mode_controls(&engine, &areas));
         Self {
             root,
             area,
@@ -237,6 +239,53 @@ fn accent_rgb(widget: &impl IsA<gtk4::Widget>) -> (f32, f32, f32) {
     (color.red(), color.green(), color.blue())
 }
 
+fn mode_label(mode: VisualMode) -> &'static str {
+    match mode {
+        VisualMode::Grid => strings::SONG_VISUALS_MODE_GRID,
+        VisualMode::Bars => strings::SONG_VISUALS_MODE_BARS,
+    }
+}
+
+fn mode_controls(
+    engine: &Rc<RefCell<VisualEngine>>,
+    areas: &Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::Widget>>>>,
+) -> gtk4::FlowBox {
+    let flow = gtk4::FlowBox::builder()
+        .selection_mode(gtk4::SelectionMode::None)
+        .max_children_per_line(2)
+        .column_spacing(6)
+        .halign(gtk4::Align::Center)
+        .build();
+    flow.add_css_class("reprise-song-visual-modes");
+
+    let current_mode = engine.borrow().mode();
+    let mut group_leader: Option<gtk4::ToggleButton> = None;
+    for mode in VisualMode::ALL {
+        let button = gtk4::ToggleButton::builder()
+            .label(strings::text(mode_label(mode)))
+            .active(mode == current_mode)
+            .build();
+        button.set_widget_name(mode.id());
+        button.add_css_class("flat");
+        buttons::arm(&button, buttons::TOGGLE_CLASS);
+        match &group_leader {
+            Some(leader) => button.set_group(Some(leader)),
+            None => group_leader = Some(button.clone()),
+        }
+
+        let engine = engine.clone();
+        let areas = areas.clone();
+        button.connect_toggled(move |button| {
+            if button.is_active() {
+                engine.borrow_mut().set_mode(mode);
+                queue_registered_areas(&areas);
+            }
+        });
+        flow.append(&button);
+    }
+    flow
+}
+
 pub(in crate::ui) fn css() -> String {
     ".reprise-song-visuals { margin: 0 18px 12px; }\n\
      .reprise-song-visual-canvas {\
@@ -244,8 +293,9 @@ pub(in crate::ui) fn css() -> String {
        background-color: alpha(#ffffff, 0.025);\
        border: 1px solid alpha(@reprise_player_accent, 0.14);\
        border-radius: 24px;\
-     }"
-    .to_owned()
+     }\n\
+     .reprise-song-visual-modes { margin-top: 2px; }"
+        .to_owned()
 }
 
 #[cfg(test)]
