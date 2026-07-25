@@ -91,10 +91,27 @@ pub(in crate::ui) fn css() -> String {
            border-radius: 4px; }}\n\
          \
          .stats-period-dropdown {{ min-width: 140px; }}\n\
-         .stats-spotlight {{ padding: 8px; }}\n\
-         .stats-spotlight-cover {{ \
+         .stats-band-card {{ \
            border-radius: {radius}; \
-           background-color: alpha(@reprise_player_accent, 0.12); }}\n\
+           background-color: @card_bg_color; \
+           overflow: hidden; }}\n\
+         .stats-band-fade {{ \
+           background-image: linear-gradient(to top, @card_bg_color 8%, \
+             alpha(@card_bg_color, 0) 55%); }}\n\
+         .stats-band-content {{ padding: 20px; }}\n\
+         .stats-band-initials {{ \
+           font-size: 64px; \
+           font-weight: 700; \
+           color: @accent_color; \
+           background-color: alpha(@accent_bg_color, 0.18); }}\n\
+         .stats-band-name {{ font-size: 28px; font-weight: 800; }}\n\
+         .stats-band-rank {{ padding: 2px 0; }}\n\
+         .stats-band-rank-bar block.filled {{ \
+           background-color: @accent_bg_color; \
+           min-height: 4px; }}\n\
+         .stats-band-rank-bar block.empty {{ \
+           background-color: alpha(@window_fg_color, 0.06); \
+           min-height: 4px; }}\n\
          .stats-eyebrow {{ \
            font-size: 11px; \
            font-weight: 700; \
@@ -103,7 +120,6 @@ pub(in crate::ui) fn css() -> String {
          .stats-rank-badge {{ \
            font-weight: 800; \
            color: @accent_color; }}\n\
-         .stats-spotlight-name {{ font-size: 28px; font-weight: 800; }}\n\
          .stats-track-chip {{ \
            padding: 4px 8px; \
            border-radius: 999px; \
@@ -131,11 +147,12 @@ pub(in crate::ui) fn css() -> String {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn stats_css_defines_the_ribbon_pill_and_spotlight_classes() {
+    fn stats_css_defines_the_ribbon_pill_and_band_classes() {
         let css = super::css();
         assert!(css.contains(".stats-ribbon"));
         assert!(css.contains(".stats-pill"));
-        assert!(css.contains(".stats-spotlight"));
+        assert!(css.contains(".stats-band-card"));
+        assert!(css.contains("@card_bg_color"));
     }
 
     #[test]

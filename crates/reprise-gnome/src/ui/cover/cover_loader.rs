@@ -51,6 +51,16 @@ impl CoverTarget for gtk4::Image {
     }
 }
 
+impl CoverTarget for gtk4::Picture {
+    fn show_placeholder(&self) {
+        self.set_paintable(gtk4::gdk::Paintable::NONE);
+    }
+
+    fn show_texture(&self, texture: &gdk::Texture) {
+        self.set_paintable(Some(texture));
+    }
+}
+
 impl CoverTarget for TrackCover {
     fn show_placeholder(&self) {
         self.set_placeholder();
@@ -115,6 +125,20 @@ impl CoverLoader {
         current: &Rc<Cell<u64>>,
     ) {
         self.load_target(image, track_path, size, token, current, |_| {});
+    }
+
+    pub fn load_into_picture(
+        self: &Rc<Self>,
+        picture: &gtk4::Picture,
+        track_path: &str,
+        size: ThumbnailSize,
+        token: u64,
+        current: &Rc<Cell<u64>>,
+        on_loaded: impl Fn(bool) + 'static,
+    ) {
+        self.load_target(picture, track_path, size, token, current, move |path| {
+            on_loaded(path.is_some());
+        });
     }
 
     pub fn load_into_track_cover(
