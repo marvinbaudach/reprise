@@ -118,6 +118,20 @@ fn build_lastfm_expander(is_enabled: bool, connected: bool, status: &str) -> Las
         .activatable_widget(&open_browser)
         .build();
     browser_row.add_suffix(&open_browser);
+    let credentials_section = adw::ExpanderRow::builder()
+        .title(strings::text(strings::LASTFM_ADVANCED_SETUP))
+        .subtitle(strings::text(strings::LASTFM_ADVANCED_SETUP_DESCRIPTION))
+        .show_enable_switch(false)
+        .expanded(false)
+        .build();
+    credentials_section.add_row(&api_key);
+    credentials_section.add_row(&shared_secret);
+    let hint = adw::ActionRow::builder()
+        .subtitle(strings::text(strings::LASTFM_DIALOG_BODY))
+        .build();
+    hint.add_css_class("property");
+    credentials_section.add_row(&hint);
+    credentials_section.add_row(&browser_row);
 
     let sign_in: Option<gtk4::Button>;
     let mut sens: Vec<gtk4::glib::WeakRef<gtk4::Widget>> = Vec::new();
@@ -143,32 +157,12 @@ fn build_lastfm_expander(is_enabled: bool, connected: bool, status: &str) -> Las
         expander.add_row(&sign_in_row);
         sens.push(sign_in_row.upcast_ref::<gtk4::Widget>().downgrade());
 
-        let byo_section = adw::ExpanderRow::builder()
-            .title(strings::text(strings::LASTFM_BYO_KEY))
-            .show_enable_switch(false)
-            .enable_expansion(false)
-            .build();
-        byo_section.add_row(&api_key);
-        byo_section.add_row(&shared_secret);
-        byo_section.add_row(&browser_row);
-        expander.add_row(&byo_section);
-        sens.push(byo_section.upcast_ref::<gtk4::Widget>().downgrade());
         sign_in = Some(btn);
     } else {
-        expander.add_row(&api_key);
-        expander.add_row(&shared_secret);
-        let hint = adw::ActionRow::builder()
-            .subtitle(strings::text(strings::LASTFM_DIALOG_BODY))
-            .build();
-        hint.add_css_class("property");
-        expander.add_row(&hint);
-        sens.push(hint.upcast_ref::<gtk4::Widget>().downgrade());
-        sens.push(api_key.upcast_ref::<gtk4::Widget>().downgrade());
-        sens.push(shared_secret.upcast_ref::<gtk4::Widget>().downgrade());
-        expander.add_row(&browser_row);
-        sens.push(browser_row.upcast_ref::<gtk4::Widget>().downgrade());
         sign_in = None;
     }
+    expander.add_row(&credentials_section);
+    sens.push(credentials_section.upcast_ref::<gtk4::Widget>().downgrade());
 
     let test_connection = crate::ui::preference_dependencies::TestConnectionRow::new();
     test_connection.row.set_visible(connected);

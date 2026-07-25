@@ -354,6 +354,17 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   mit dem kompakten Standardabstand direkt unter dem Inhalts-Header. Kurze
   Seiten werden nicht vertikal zentriert; ungenutzter Raum bleibt unter der
   letzten Gruppe.
+- **SET-6a** [aktiv] [gtk] — Die Plugins-Seite gruppiert nach Nutzerabsicht:
+  „Local Features", „Online Content" und „Connected Services". Scrobbling
+  erscheint dort genau einmal als Navigationseintrag und öffnet eine
+  Navigation-Page im selben Preferences-Fenster mit ‹-Back. Es gibt keinen
+  globalen Scrobbling-Schalter.
+- **SET-6b** [aktiv] [gtk] — Die Scrobbling-Unterseite führt ListenBrainz und
+  Last.fm als unabhängige Anbieter; beide dürfen gleichzeitig aktiv sein.
+  Aktivierung, Konto, Status, Fehler und Warteschlange bleiben
+  anbieterspezifisch. Mit gebündelten App-Zugangsdaten bietet Last.fm den
+  normalen Browser-Login direkt an; eigene API-Zugangsdaten liegen
+  eingeklappt unter „Advanced setup".
 
 ## G. Feedback-Vokabular
 
