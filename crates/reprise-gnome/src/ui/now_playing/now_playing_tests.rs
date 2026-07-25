@@ -82,9 +82,13 @@ fn ac_10_visual_is_the_third_panel_tab() {
 }
 
 #[test]
-fn now_playing_panel_visibility_round_trips_through_settings() {
+fn npp_12_panel_defaults_hidden_and_visibility_round_trips() {
     let conn = reprise_core::db::open(None).unwrap();
     reprise_core::db::migrate(&conn).unwrap();
+    assert!(!reprise_core::library::settings::get_info_panel_visible(
+        &conn
+    ));
+    reprise_core::library::settings::set_info_panel_visible(&conn, true).unwrap();
     assert!(reprise_core::library::settings::get_info_panel_visible(
         &conn
     ));
@@ -104,6 +108,38 @@ fn que_6_closed_panel_does_not_render() {
 #[test]
 fn now_playing_panel_has_the_fixed_npp_width() {
     assert_eq!(PANEL_WIDTH, 300);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn npp_1_panel_remains_300_px_when_text_is_scaled() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let settings = gtk4::Settings::default().unwrap();
+    let previous_dpi = settings.property::<i32>("gtk-xft-dpi");
+    settings.set_property("gtk-xft-dpi", 144 * 1024);
+
+    let (window, panel) = test_panel("org.reprise.Reprise.NowPlayingScaledWidthTest");
+    panel.retain_for_window(&window);
+    panel.widgets.column.set_visible(true);
+    window.set_default_size(1200, 800);
+    window.present();
+    wait_for_layout(100);
+
+    let width_unit = panel.widgets.column.widget().sidebar_width_unit();
+    let allocated_width = panel.widgets.stage.width();
+    window.close();
+    settings.set_property("gtk-xft-dpi", previous_dpi);
+
+    assert_eq!(
+        width_unit,
+        adw::LengthUnit::Px,
+        "the NPP-1 width is a pixel contract, not a text-scaled sp value"
+    );
+    assert_eq!(
+        allocated_width, PANEL_WIDTH,
+        "enlarged text must not widen and partially clip the Now Playing panel"
+    );
 }
 
 #[test]
