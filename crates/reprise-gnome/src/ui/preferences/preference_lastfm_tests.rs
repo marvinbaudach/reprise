@@ -59,3 +59,25 @@ fn expander_row_has_enable_switch_credentials_and_action_buttons() {
         .parent()
         .is_some_and(|p| p.is_visible()));
 }
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn set_6b_lastfm_application_credentials_are_hidden_in_advanced_setup() {
+    gtk4::init().unwrap();
+    let surface = build_lastfm_expander(true, false, "Not connected");
+    let credentials_section = surface
+        .api_key
+        .ancestor(adw::ExpanderRow::static_type())
+        .and_downcast::<adw::ExpanderRow>()
+        .expect("API key must live in an advanced expander");
+
+    assert_eq!(
+        credentials_section.title(),
+        strings::text(strings::LASTFM_ADVANCED_SETUP)
+    );
+    assert!(!credentials_section.is_expanded());
+    assert!(credentials_section.enables_expansion());
+    assert!(surface.api_key.is_ancestor(&credentials_section));
+    assert!(surface.shared_secret.is_ancestor(&credentials_section));
+    assert_ne!(credentials_section, surface.expander);
+}

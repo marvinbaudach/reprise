@@ -12,6 +12,25 @@ use super::{strings, PreferencesContext};
 const TARGET_CLASS: &str = "reprise-plugin-target";
 pub(in crate::ui) const ONLINE_LYRICS_TARGETS: &[&str] = &["online_lyrics"];
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PluginGroup {
+    Local,
+    Online,
+    Connected,
+}
+
+fn plugin_group(descriptor: &ModuleDescriptor) -> PluginGroup {
+    match descriptor.id {
+        "song_visuals" | "library_doctor" => PluginGroup::Local,
+        "listenbrainz" | "lastfm" => PluginGroup::Connected,
+        _ => PluginGroup::Online,
+    }
+}
+
+fn creates_scrobbling_entry(descriptor: &ModuleDescriptor) -> bool {
+    descriptor.id == "listenbrainz"
+}
+
 pub(in crate::ui) fn network_descriptors() -> [&'static ModuleDescriptor; 5] {
     [
         &reprise_core::modules::LIBRARY_DOCTOR_MODULE,
@@ -79,17 +98,28 @@ impl PreferencesContext {
             .title(strings::text(strings::PREFERENCES_PLUGINS))
             .icon_name("application-x-addon-symbolic")
             .build();
-        let group = adw::PreferencesGroup::new();
+        let local_group = adw::PreferencesGroup::builder()
+            .title(strings::text(strings::LOCAL_FEATURES))
+            .build();
+        let online_group = adw::PreferencesGroup::builder()
+            .title(strings::text(strings::ONLINE_CONTENT))
+            .build();
+        let connected_group = adw::PreferencesGroup::builder()
+            .title(strings::text(strings::CONNECTED_SERVICES))
+            .build();
         for descriptor in reprise_core::modules::ALL_MODULES {
-            // Scrobbling services use inline ExpanderRows instead of SwitchRows.
-            if descriptor.id == "listenbrainz" {
-                group.add(&self.build_listenbrainz_row());
+            // Scrobbling has one entry; provider controls live on its detail page.
+            if plugin_group(descriptor) == PluginGroup::Connected {
+                if creates_scrobbling_entry(descriptor) {
+                    connected_group.add(&super::preference_scrobbling::build(self));
+                }
                 continue;
             }
-            if descriptor.id == "lastfm" {
-                group.add(&self.build_lastfm_row());
-                continue;
-            }
+            let group = match plugin_group(descriptor) {
+                PluginGroup::Local => &local_group,
+                PluginGroup::Online => &online_group,
+                PluginGroup::Connected => &connected_group,
+            };
             if descriptor.id == "library_doctor" {
                 group.add(&super::preference_library_doctor::plugin_row(self));
                 continue;
@@ -246,7 +276,9 @@ impl PreferencesContext {
                 group.add(&singles);
             }
         }
-        page.add(&group);
+        page.add(&local_group);
+        page.add(&online_group);
+        page.add(&connected_group);
         page
     }
 
@@ -320,6 +352,39 @@ mod tests {
             assert!(plugin_applies_live(descriptor));
             assert!(plugin_description(descriptor).contains("contacts"));
         }
+    }
+
+    #[test]
+    fn set_6a_plugins_are_grouped_by_user_intent_with_one_scrobbling_entry() {
+        assert_eq!(
+            plugin_group(&reprise_core::modules::SONG_VISUALS_MODULE),
+            PluginGroup::Local
+        );
+        assert_eq!(
+            plugin_group(&reprise_core::modules::LIBRARY_DOCTOR_MODULE),
+            PluginGroup::Local
+        );
+        for descriptor in [
+            &reprise_core::modules::NEW_RELEASES_MODULE,
+            &reprise_core::modules::COVER_DOWNLOAD_MODULE,
+            &reprise_core::modules::ARTIST_PORTRAITS_MODULE,
+            &reprise_core::modules::ONLINE_LYRICS_MODULE,
+        ] {
+            assert_eq!(plugin_group(descriptor), PluginGroup::Online);
+        }
+        for descriptor in [
+            &reprise_core::modules::LISTENBRAINZ_MODULE,
+            &reprise_core::modules::LASTFM_MODULE,
+        ] {
+            assert_eq!(plugin_group(descriptor), PluginGroup::Connected);
+        }
+        assert_eq!(
+            reprise_core::modules::ALL_MODULES
+                .iter()
+                .filter(|descriptor| creates_scrobbling_entry(descriptor))
+                .count(),
+            1
+        );
     }
 
     #[test]
