@@ -106,6 +106,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn release_model_replaces_the_bounded_history_snapshot() {
+        gtk4::init().unwrap();
         let model = ReleasesModel::new();
         model.replace(vec![entry("one"), entry("two")]);
         assert_eq!(model.store().n_items(), 2);
@@ -124,6 +125,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn release_model_uses_single_selection_for_one_primary_action() {
+        gtk4::init().unwrap();
         let model = ReleasesModel::new();
         assert_eq!(model.selection().model().unwrap(), model.store().clone());
     }

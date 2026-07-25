@@ -109,6 +109,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn model_replaces_the_complete_small_result_set() {
+        gtk4::init().unwrap();
         let model = ConcertsModel::new();
         model.replace(vec![row(1), row(2)]);
         assert_eq!(model.store().n_items(), 2);
@@ -138,6 +139,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn model_uses_single_selection_for_a_single_row_primary_action() {
+        gtk4::init().unwrap();
         let model = ConcertsModel::new();
         assert_eq!(model.selection().model().unwrap(), model.store().clone());
     }
