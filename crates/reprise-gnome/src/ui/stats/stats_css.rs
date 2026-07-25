@@ -149,16 +149,16 @@ pub(in crate::ui) fn css() -> String {
          .stats-genre-segment:focus-visible {{ outline: 2px solid @accent_color; \
            outline-offset: -2px; }}\n\
          .stats-genre-link {{ padding: 0; }}\n\
-         .stats-genre-rank-0 {{ background-color: shade(@accent_bg_color, 1.15); }}\n\
+         .stats-genre-rank-0 {{ background-color: shade(@accent_bg_color, 1.30); }}\n\
          .stats-genre-rank-1 {{ background-color: shade(@accent_bg_color, 1.0); }}\n\
-         .stats-genre-rank-2 {{ background-color: shade(@accent_bg_color, 0.85); }}\n\
-         .stats-genre-rank-3 {{ background-color: shade(@accent_bg_color, 0.70); }}\n\
-         .stats-genre-rank-4 {{ background-color: shade(@accent_bg_color, 0.55); }}\n\
-         .stats-genre-rank-0:hover {{ background-color: shade(@accent_bg_color, 1.29); }}\n\
-         .stats-genre-rank-1:hover {{ background-color: shade(@accent_bg_color, 1.12); }}\n\
-         .stats-genre-rank-2:hover {{ background-color: shade(@accent_bg_color, 0.95); }}\n\
-         .stats-genre-rank-3:hover {{ background-color: shade(@accent_bg_color, 0.78); }}\n\
-         .stats-genre-rank-4:hover {{ background-color: shade(@accent_bg_color, 0.62); }}\n\
+         .stats-genre-rank-2 {{ background-color: shade(@accent_bg_color, 0.70); }}\n\
+         .stats-genre-rank-3 {{ background-color: alpha(@window_fg_color, 0.25); }}\n\
+         .stats-genre-rank-4 {{ background-color: alpha(@window_fg_color, 0.25); }}\n\
+         .stats-genre-rank-0:hover {{ background-color: shade(@accent_bg_color, 1.42); }}\n\
+         .stats-genre-rank-1:hover {{ background-color: shade(@accent_bg_color, 1.15); }}\n\
+         .stats-genre-rank-2:hover {{ background-color: shade(@accent_bg_color, 0.85); }}\n\
+         .stats-genre-rank-3:hover {{ background-color: alpha(@window_fg_color, 0.32); }}\n\
+         .stats-genre-rank-4:hover {{ background-color: alpha(@window_fg_color, 0.32); }}\n\
          .stats-genre-segment-last {{ background-color: alpha(@window_fg_color, 0.25); }}\n\
          .stats-genre-tile {{ padding: 4px; }}\n\
          .stats-genre-cover:focus-visible {{ outline: 2px solid @accent_color; }}\n\
@@ -223,20 +223,25 @@ mod tests {
     }
 
     #[test]
-    fn stats_genre_segments_define_rank_hover_steps() {
+    fn stats_genre_segments_define_a_legible_three_step_ramp_and_neutral_remainder() {
         let css = super::css();
         assert!(
             css.contains(".stats-genre-segment {") && css.contains("border-radius: 0;"),
             "inner segment corners must stay square"
         );
         for rule in [
-            ".stats-genre-rank-0:hover { background-color: shade(@accent_bg_color, 1.29); }",
-            ".stats-genre-rank-1:hover { background-color: shade(@accent_bg_color, 1.12); }",
-            ".stats-genre-rank-2:hover { background-color: shade(@accent_bg_color, 0.95); }",
-            ".stats-genre-rank-3:hover { background-color: shade(@accent_bg_color, 0.78); }",
-            ".stats-genre-rank-4:hover { background-color: shade(@accent_bg_color, 0.62); }",
+            ".stats-genre-rank-0 { background-color: shade(@accent_bg_color, 1.30); }",
+            ".stats-genre-rank-1 { background-color: shade(@accent_bg_color, 1.0); }",
+            ".stats-genre-rank-2 { background-color: shade(@accent_bg_color, 0.70); }",
+            ".stats-genre-rank-3 { background-color: alpha(@window_fg_color, 0.25); }",
+            ".stats-genre-rank-4 { background-color: alpha(@window_fg_color, 0.25); }",
+            ".stats-genre-rank-0:hover { background-color: shade(@accent_bg_color, 1.42); }",
+            ".stats-genre-rank-1:hover { background-color: shade(@accent_bg_color, 1.15); }",
+            ".stats-genre-rank-2:hover { background-color: shade(@accent_bg_color, 0.85); }",
+            ".stats-genre-rank-3:hover { background-color: alpha(@window_fg_color, 0.32); }",
+            ".stats-genre-rank-4:hover { background-color: alpha(@window_fg_color, 0.32); }",
         ] {
-            assert!(css.contains(rule), "missing hover rule: {rule}");
+            assert!(css.contains(rule), "missing genre-ramp rule: {rule}");
         }
     }
 
