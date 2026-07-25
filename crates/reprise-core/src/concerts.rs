@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 
 mod backoff;
 mod bandsintown;
-#[cfg_attr(not(test), allow(dead_code))]
 mod candidates;
 pub mod config;
 mod dedupe;
@@ -20,6 +19,7 @@ mod provider;
 mod query;
 mod refresh;
 mod resolution;
+mod similar;
 mod ticketmaster;
 
 pub use backoff::backoff_delay;
@@ -35,6 +35,10 @@ pub use query::{
     count_unseen, count_upcoming, latest_fetch_at, mark_scope_seen, query_events, query_unseen,
 };
 pub use refresh::{artist_due, jitter_seconds, refresh_due};
+pub use similar::{
+    lastfm_similar_url, listenbrainz_similar_url, parse_lastfm_similar, parse_listenbrainz_similar,
+    SimilarArtist, LB_SIMILAR_ALGORITHM,
+};
 pub use ticketmaster::TicketmasterProvider;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -93,6 +97,9 @@ mod domain_tests;
 #[cfg(test)]
 #[path = "concerts/pipeline_tests.rs"]
 mod pipeline_tests;
+#[cfg(test)]
+#[path = "concerts/similar_tests.rs"]
+mod similar_tests;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConcertError {

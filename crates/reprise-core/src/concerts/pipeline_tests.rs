@@ -3,6 +3,7 @@ use std::cell::Cell;
 use chrono::NaiveDate;
 use rusqlite::{params, Connection};
 
+use super::similar::{SimilarArtist, SimilarFetch};
 use super::{
     refresh, ArtistRef, BandsintownProvider, ConcertError, EventProvider, ProviderError,
     ProviderEvent, ProviderKind, Resolution, TicketmasterProvider,
@@ -90,6 +91,25 @@ impl EventProvider for FailingEventsProvider {
     }
 }
 
+struct FakeSimilarFetch {
+    artists: Vec<SimilarArtist>,
+}
+
+impl SimilarFetch for FakeSimilarFetch {
+    fn listenbrainz(&self, _mbid: &str) -> Result<Vec<SimilarArtist>, ProviderError> {
+        Ok(self.artists.clone())
+    }
+
+    fn lastfm(
+        &self,
+        _name: &str,
+        _api_key: &str,
+        _limit: usize,
+    ) -> Result<Vec<SimilarArtist>, ProviderError> {
+        Ok(self.artists.clone())
+    }
+}
+
 #[test]
 fn fallback_uses_ticketmaster_only_after_bandsintown_unmatched() {
     let conn = conn();
@@ -123,6 +143,139 @@ fn fallback_uses_ticketmaster_only_after_bandsintown_unmatched() {
         .query_row("SELECT provider FROM concert_artists", [], |row| row.get(0))
         .unwrap();
     assert_eq!(provider, "ticketmaster");
+}
+
+#[test]
+fn similar_candidates_share_the_pipeline_and_persist_the_seed_caption() {
+    let conn = conn();
+    seed_play(&conn, "Library Seed", 1_000);
+    conn.execute("UPDATE listen_events SET artist_mbid = 'seed-mbid'", [])
+        .unwrap();
+    crate::library::settings::set_bool(&conn, "concerts.similar_enabled", true).unwrap();
+    crate::library::settings::set_setting(&conn, "concerts.similar_count", "10").unwrap();
+    let provider = FakeProvider::new(
+        ProviderKind::Ticketmaster,
+        Resolution::Resolved {
+            provider_id: "tm-id".into(),
+            mbid_verified: false,
+        },
+        vec![event("Zenith")],
+    );
+    let fetch = FakeSimilarFetch {
+        artists: vec![SimilarArtist {
+            name: "Discovered Artist".into(),
+            mbid: Some("discovered-mbid".into()),
+            score: 1.0,
+        }],
+    };
+
+    let summary = super::pipeline::refresh_with_similar_fetch(
+        &conn,
+        &[Box::new(provider)],
+        NaiveDate::from_ymd_opt(2026, 7, 25).unwrap(),
+        1_000,
+        false,
+        &fetch,
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(summary.attempted, 2);
+    let similar: (i64, Option<String>, Option<String>) = conn
+        .query_row(
+            "SELECT is_similar, similar_to, artist_mbid
+             FROM concert_artists
+             WHERE artist_name = 'Discovered Artist'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        similar,
+        (
+            1,
+            Some("Library Seed".into()),
+            Some("discovered-mbid".into())
+        )
+    );
+
+    seed_play(&conn, "Discovered Artist", 1_001);
+    super::pipeline::refresh_with_similar_fetch(
+        &conn,
+        &[Box::new(FakeProvider::new(
+            ProviderKind::Ticketmaster,
+            Resolution::Resolved {
+                provider_id: "tm-id".into(),
+                mbid_verified: false,
+            },
+            vec![event("Zenith")],
+        ))],
+        NaiveDate::from_ymd_opt(2026, 7, 25).unwrap(),
+        2_000,
+        true,
+        &fetch,
+        None,
+    )
+    .unwrap();
+    let promoted: (i64, Option<String>) = conn
+        .query_row(
+            "SELECT is_similar, similar_to FROM concert_artists
+             WHERE artist_name = 'Discovered Artist'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(promoted, (0, None));
+}
+
+#[test]
+fn library_candidates_take_the_shared_thirty_artist_budget_first() {
+    let conn = conn();
+    for index in 0..30 {
+        seed_play(&conn, &format!("Library {index:02}"), 1_000);
+    }
+    conn.execute(
+        "UPDATE listen_events SET artist_mbid = 'seed-mbid' WHERE artist = 'Library 00'",
+        [],
+    )
+    .unwrap();
+    crate::library::settings::set_bool(&conn, "concerts.similar_enabled", true).unwrap();
+    let provider = FakeProvider::new(
+        ProviderKind::Ticketmaster,
+        Resolution::Resolved {
+            provider_id: "tm-id".into(),
+            mbid_verified: false,
+        },
+        Vec::new(),
+    );
+    let fetch = FakeSimilarFetch {
+        artists: vec![SimilarArtist {
+            name: "Budget Overflow".into(),
+            mbid: Some("overflow".into()),
+            score: 1.0,
+        }],
+    };
+
+    let summary = super::pipeline::refresh_with_similar_fetch(
+        &conn,
+        &[Box::new(provider)],
+        NaiveDate::from_ymd_opt(2026, 7, 25).unwrap(),
+        1_000,
+        false,
+        &fetch,
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(summary.attempted, 30);
+    let overflow: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM concert_artists WHERE artist_name = 'Budget Overflow'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(overflow, 0);
 }
 
 #[test]
