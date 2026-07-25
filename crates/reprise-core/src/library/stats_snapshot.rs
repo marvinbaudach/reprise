@@ -163,7 +163,22 @@ pub fn compute<Tz: TimeZone>(
             .iter()
             .filter_map(|row| local_parts(tz, row.played_at).map(|(day, _)| day))
             .collect::<BTreeSet<_>>();
-        apply_activity_granularity(&mut range, tz, active_days.len() as i64);
+        let active_weeks = listen_rows
+            .iter()
+            .filter_map(|row| week_start(tz, row.played_at))
+            .collect::<BTreeSet<_>>();
+        let first_active_unix = listen_rows
+            .iter()
+            .map(|row| row.played_at)
+            .min()
+            .unwrap_or(range.start_unix);
+        apply_activity_granularity(
+            &mut range,
+            tz,
+            active_days.len() as i64,
+            active_weeks.len(),
+            first_active_unix,
+        );
     }
 
     let total_ms = listen_rows.iter().map(|row| row.ms).sum::<i64>();

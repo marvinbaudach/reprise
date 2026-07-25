@@ -10,8 +10,8 @@ use reprise_core::library::stats_period::{Granularity, PeriodRange};
 use reprise_core::library::stats_snapshot::BestWeek;
 
 use super::stats_ribbon_math::{
-    best_week_bucket_index, bucket_at_x, month_ticks, reveal_clip_width, ribbon_layout, Point,
-    RibbonLayout,
+    bar_layout, best_week_bucket_index, bucket_at_x, month_ticks, reveal_clip_width, ribbon_layout,
+    Point, RibbonLayout,
 };
 
 pub(in crate::ui) const RIBBON_CSS_CLASS: &str = "stats-ribbon";
@@ -29,6 +29,8 @@ struct RibbonData {
     granularity: Granularity,
     open_index: Option<usize>,
     best_week: Option<BestWeek>,
+    sparse_weeks: bool,
+    since_label: Option<String>,
     reveal_fraction: f64,
 }
 
@@ -41,6 +43,8 @@ impl Default for RibbonData {
             granularity: Granularity::Day,
             open_index: None,
             best_week: None,
+            sparse_weeks: false,
+            since_label: None,
             reveal_fraction: 1.0,
         }
     }
@@ -162,6 +166,17 @@ impl StatsRibbon {
             .enumerate()
             .map(|(index, _)| values.get(index).copied().unwrap_or(0))
             .collect::<Vec<_>>();
+        let sparse_weeks = period.sparse_weeks;
+        let since_label = sparse_weeks
+            .then(|| period.buckets.first())
+            .flatten()
+            .filter(|bucket| bucket.start_unix > period.start_unix)
+            .and_then(|bucket| {
+                chrono::Local
+                    .timestamp_opt(bucket.start_unix, 0)
+                    .earliest()
+                    .map(|date| format!("since {}", date.format("%b %Y")))
+            });
         *self.data.borrow_mut() = RibbonData {
             labels: period
                 .buckets
@@ -182,6 +197,8 @@ impl StatsRibbon {
             granularity: period.granularity,
             open_index: period.buckets.iter().position(|bucket| bucket.open),
             best_week: best_week.cloned(),
+            sparse_weeks,
+            since_label,
             reveal_fraction: 1.0,
         };
         self.set_reveal_fraction(1.0);
@@ -214,7 +231,11 @@ fn draw(
         return;
     }
     let width = f64::from(width);
-    let layout = ribbon_layout(&data.values, width, plot_height, data.open_index);
+    let layout = if data.sparse_weeks {
+        bar_layout(&data.values, width, plot_height, data.open_index)
+    } else {
+        ribbon_layout(&data.values, width, plot_height, data.open_index)
+    };
     let color = area.color();
     let (red, green, blue, alpha) = (
         f64::from(color.red()),
@@ -231,17 +252,30 @@ fn draw(
         plot_height,
     );
     context.clip();
-    draw_fill(
-        context,
-        &layout,
-        width,
-        plot_height,
-        red,
-        green,
-        blue,
-        alpha,
-    );
-    draw_line(context, &layout, width, red, green, blue, alpha);
+    if data.sparse_weeks {
+        draw_bars(
+            context,
+            &layout,
+            width,
+            plot_height,
+            red,
+            green,
+            blue,
+            alpha,
+        );
+    } else {
+        draw_fill(
+            context,
+            &layout,
+            width,
+            plot_height,
+            red,
+            green,
+            blue,
+            alpha,
+        );
+        draw_line(context, &layout, width, red, green, blue, alpha);
+    }
     draw_best_week_marker(
         context,
         &layout,
@@ -318,6 +352,30 @@ fn draw_line(
 }
 
 #[allow(clippy::too_many_arguments)]
+fn draw_bars(
+    context: &gtk4::cairo::Context,
+    layout: &RibbonLayout,
+    plot_width: f64,
+    baseline: f64,
+    red: f64,
+    green: f64,
+    blue: f64,
+    alpha: f64,
+) {
+    if layout.points.is_empty() {
+        return;
+    }
+    let slot_width = plot_width / layout.points.len() as f64;
+    let bar_width = (slot_width * 0.62).clamp(2.0, 28.0).min(slot_width);
+    context.set_source_rgba(red, green, blue, alpha * 0.82);
+    for point in &layout.points {
+        let height = (baseline - point.y).max(0.0);
+        context.rectangle(point.x - bar_width / 2.0, point.y, bar_width, height);
+    }
+    let _ = context.fill();
+}
+
+#[allow(clippy::too_many_arguments)]
 fn draw_best_week_marker(
     context: &gtk4::cairo::Context,
     layout: &RibbonLayout,
@@ -345,13 +403,25 @@ fn draw_best_week_marker(
     let _ = context.stroke();
     context.set_dash(&[], 0.0);
     if let Some(best_week) = &data.best_week {
-        context.move_to((point.x + 5.0).min((plot_width - 110.0).max(0.0)), 12.0);
-        let _ = context.show_text(&format!(
-            "best week · {}",
-            format_duration(best_week.total_ms)
-        ));
+        let copy = format!("best week · {}", format_duration(best_week.total_ms));
+        context.move_to(best_week_label_x(context, point.x, plot_width, &copy), 12.0);
+        let _ = context.show_text(&copy);
         context.new_path();
     }
+}
+
+fn best_week_label_x(
+    context: &gtk4::cairo::Context,
+    marker_x: f64,
+    plot_width: f64,
+    copy: &str,
+) -> f64 {
+    let Ok(extents) = context.text_extents(copy) else {
+        return (marker_x - 5.0).max(0.0);
+    };
+    let right_edge = marker_x - 6.0;
+    let x = right_edge - extents.x_bearing() - extents.width();
+    x.clamp(0.0, (plot_width - extents.width()).max(0.0))
 }
 
 fn draw_open_marker(
@@ -387,13 +457,23 @@ fn draw_labels(
     );
     context.set_font_size(9.0);
     for tick in month_ticks(&data.bucket_starts, data.granularity) {
-        let x = if count <= 1 {
+        let x = if data.sparse_weeks && count > 0 {
+            (tick.index as f64 + 0.5) * width / count as f64
+        } else if count <= 1 {
             0.0
         } else {
             tick.index as f64 * width / (count - 1) as f64
         };
         context.move_to(x.min(width - 24.0).max(0.0), height - 5.0);
         let _ = context.show_text(&tick.label);
+        context.new_path();
+    }
+    if let Some(label) = &data.since_label {
+        let label_width = context
+            .text_extents(label)
+            .map_or(0.0, |extents| extents.width());
+        context.move_to((width - label_width).max(0.0), height - 5.0);
+        let _ = context.show_text(label);
         context.new_path();
     }
 }
@@ -467,6 +547,73 @@ mod tests {
             pixel_has_ink(&mut line_surface, 10, 25),
             "the sole bucket must render as a line, not an invisible move-to"
         );
+    }
+
+    #[test]
+    fn sparse_week_bars_render_as_discrete_columns() {
+        let layout = bar_layout(&[10, 30, 20], 90.0, 90.0, None);
+        let mut surface = ImageSurface::create(Format::ARgb32, 90, 100).unwrap();
+        {
+            let context = gtk4::cairo::Context::new(&surface).unwrap();
+            draw_bars(&context, &layout, 90.0, 90.0, 1.0, 1.0, 1.0, 1.0);
+        }
+
+        assert!(pixel_has_ink(&mut surface, 15, 80));
+        assert!(!pixel_has_ink(&mut surface, 30, 80));
+        assert!(pixel_has_ink(&mut surface, 45, 40));
+    }
+
+    #[test]
+    fn best_week_label_is_measured_to_the_left_of_its_marker() {
+        let surface = ImageSurface::create(Format::ARgb32, 400, 100).unwrap();
+        let context = gtk4::cairo::Context::new(&surface).unwrap();
+        let copy = "best week · 6 h 58 min";
+        let marker_x = 300.0;
+
+        let x = best_week_label_x(&context, marker_x, 400.0, copy);
+        let extents = context.text_extents(copy).unwrap();
+
+        assert!(x + extents.x_bearing() + extents.width() < marker_x);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn stats_12_sparse_year_ribbon_uses_bars_and_a_since_label() {
+        gtk4::init().unwrap();
+        let ribbon = StatsRibbon::new();
+        let timestamp = |month, day| {
+            chrono::Local
+                .with_ymd_and_hms(2026, month, day, 0, 0, 0)
+                .single()
+                .unwrap()
+                .timestamp()
+        };
+        let period = PeriodRange {
+            start_unix: timestamp(1, 1),
+            end_unix: timestamp(7, 13),
+            granularity: Granularity::Week,
+            sparse_weeks: true,
+            buckets: vec![
+                reprise_core::library::stats_period::Bucket {
+                    label: "Week of Jun 29".into(),
+                    start_unix: timestamp(7, 1),
+                    end_unix: timestamp(7, 6),
+                    open: false,
+                },
+                reprise_core::library::stats_period::Bucket {
+                    label: "Week of Jul 6".into(),
+                    start_unix: timestamp(7, 6),
+                    end_unix: timestamp(7, 13),
+                    open: true,
+                },
+            ],
+        };
+
+        ribbon.set_data(&period, &[3_600_000, 7_200_000], None);
+        let data = ribbon.data.borrow();
+
+        assert!(data.sparse_weeks);
+        assert_eq!(data.since_label.as_deref(), Some("since Jul 2026"));
     }
 
     /// CONTRAST: the accent belongs to the data. The axis descriptions take the
