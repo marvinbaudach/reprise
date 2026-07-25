@@ -48,6 +48,16 @@ pub use scan::*;
 mod news;
 pub use news::*;
 
+#[path = "strings_concerts.rs"]
+mod concerts;
+#[allow(unused_imports)]
+pub use concerts::*;
+
+#[path = "strings_releases.rs"]
+mod releases;
+#[allow(unused_imports)]
+pub use releases::*;
+
 #[path = "strings_filter.rs"]
 mod filter;
 pub use filter::*;

@@ -57,6 +57,13 @@ pub const NEW_RELEASES_INCLUDE_SINGLES_DESCRIPTION: &str =
     N_!("Also report singles that have already been released");
 pub const FETCH_NOW: &str = N_!("Fetch now");
 pub const FETCH_FAILED_INLINE: &str = N_!("Refresh failed · showing saved releases");
+pub const UPDATES_HEADER: &str = N_!("UPDATES");
+pub const UPDATES_NEW_RELEASES_HEADER: &str = N_!("NEW RELEASES");
+pub const UPDATES_CONCERTS_HEADER: &str = N_!("CONCERTS");
+pub const UPDATES_NEW_NEAR_YOU: &str = N_!("new near you");
+pub const UPDATES_NEWLY_ANNOUNCED: &str = N_!("newly announced");
+pub const UPDATES_CONCERTS_FETCH_FAILED: &str = N_!("Concerts fetch failed");
+pub const UPDATES_CONCERTS_NEEDS_KEY: &str = N_!("Add a concert provider API key in Preferences.");
 pub const NEW_RELEASES_CHECKING: &str = N_!("Checking for new releases…");
 pub const NEW_RELEASES_NONE: &str = N_!("No upcoming releases from your artists");
 pub const UPDATED_JUST_NOW: &str = N_!("Updated just now");
@@ -177,6 +184,20 @@ pub fn new_releases_history_count_suffix(count: usize) -> String {
     formatted(N_!("({count})"), &[("count", &count.to_string())])
 }
 
+pub fn updates_show_all_concerts(count: usize) -> String {
+    formatted(
+        N_!("Show all concerts ({count}) →"),
+        &[("count", &count.to_string())],
+    )
+}
+
+pub fn updates_show_all_releases(count: usize) -> String {
+    formatted(
+        N_!("Show all releases ({count}) →"),
+        &[("count", &count.to_string())],
+    )
+}
+
 /// Formats a release date already known to be released as-is (dates from
 /// `first_release_date` come pre-formatted from MusicBrainz, including the
 /// partial year/year-month forms `release_row::parse_release_date` accepts).
@@ -250,6 +271,12 @@ mod tests {
     #[test]
     fn new_releases_history_count_suffix_formats_count() {
         assert_eq!(new_releases_history_count_suffix(12), "(12)");
+    }
+
+    #[test]
+    fn updates_jump_rows_format_feed_counts() {
+        assert_eq!(updates_show_all_concerts(14), "Show all concerts (14) →");
+        assert_eq!(updates_show_all_releases(8), "Show all releases (8) →");
     }
 
     #[test]
