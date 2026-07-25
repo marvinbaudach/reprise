@@ -273,11 +273,11 @@ pub(crate) fn genre_artist_rows(
     let sql = format!(
         "SELECT le.genre, {RAW_EFFECTIVE_ALBUM_ARTIST} AS raw, le.artist, le.album_artist, \
                 NULLIF(TRIM(le.artist_mbid), ''), COUNT(le.id), \
-                COALESCE(SUM({CLAMPED_MS}), 0), MAX(le.played_at), le.path \
+                COALESCE(SUM({CLAMPED_MS}), 0), MAX(le.played_at), MAX(le.path) \
          FROM listen_events le \
          WHERE le.played_at >= ?1 AND le.played_at < ?2 \
            AND TRIM(le.genre) <> '' \
-         GROUP BY le.genre, raw, le.artist, le.album_artist, le.artist_mbid, le.path"
+         GROUP BY le.genre, raw, le.artist, le.album_artist, le.artist_mbid"
     );
     let mut statement = conn.prepare(&sql)?;
     let rows = statement

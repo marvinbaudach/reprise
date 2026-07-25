@@ -336,17 +336,25 @@ fn genre_section(
 ) -> GenreSection {
     let groups = ranked_groups(rows);
     let resolver = key_resolver(rows);
+    let mut artist_rows_by_genre = HashMap::<String, Vec<&GenreArtistRow>>::new();
+    for row in genre_artists {
+        artist_rows_by_genre
+            .entry(resolver.key_for(&row.genre_raw))
+            .or_default()
+            .push(row);
+    }
     let denominator_ms = groups.iter().map(|row| row.group.ms).sum::<i64>();
     let mut segments = groups
         .iter()
         .take(GENRE_LIMIT)
         .map(|row| {
             let (top_artist, representative_track_path) = genre_tile_metadata(
-                &resolver,
                 artist_resolver,
                 top_artists,
-                &row.group.key,
-                genre_artists,
+                artist_rows_by_genre
+                    .get(&row.group.key)
+                    .map(Vec::as_slice)
+                    .unwrap_or_default(),
             );
             GenreSegment {
                 label: row.group.label.clone(),
@@ -382,18 +390,12 @@ fn genre_section(
 }
 
 fn genre_tile_metadata(
-    genre_resolver: &KeyResolver,
     artist_resolver: &KeyResolver,
     top_artists: &[RankedGroup],
-    genre_key: &str,
-    rows: &[GenreArtistRow],
+    rows: &[&GenreArtistRow],
 ) -> (Option<String>, String) {
-    let matching = rows
-        .iter()
-        .filter(|row| genre_resolver.key_for(&row.genre_raw) == genre_key)
-        .collect::<Vec<_>>();
     let mut artist_totals = HashMap::<String, (i64, i64, i64)>::new();
-    for row in &matching {
+    for row in rows {
         let totals = artist_totals
             .entry(artist_resolver.key_for(&row.artist.raw))
             .or_default();
@@ -417,8 +419,9 @@ fn genre_tile_metadata(
             .find(|artist| artist.group.key == key)
             .map(|artist| artist.group.label.clone())
     });
-    let representative_track_path = matching
-        .into_iter()
+    let representative_track_path = rows
+        .iter()
+        .copied()
         .max_by(|left, right| {
             left.artist
                 .ms
