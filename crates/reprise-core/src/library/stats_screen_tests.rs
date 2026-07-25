@@ -37,3 +37,35 @@ fn genre_artist_rows_exclude_blank_genres() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].genre_raw, "Deathcore");
 }
+
+#[test]
+fn genre_artist_rows_aggregate_tracks_for_the_same_genre_artist() {
+    let conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    for (id, path, played_at, ms_played) in [
+        (1, "/music/a.flac", 100, 40_000),
+        (2, "/music/z.flac", 101, 60_000),
+    ] {
+        conn.execute(
+            "INSERT INTO tracks \
+             (id, path, title, artist, album, genre, duration_ms, play_count, added_at) \
+             VALUES (?1, ?2, 'Track', 'Artist', 'Album', 'Deathcore', 100000, 0, 0)",
+            params![id, path],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO listen_events (track_id, played_at, ms_played) \
+             VALUES (?1, ?2, ?3)",
+            params![id, played_at, ms_played],
+        )
+        .unwrap();
+    }
+
+    let rows = genre_artist_rows(&conn, 0, 200).unwrap();
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].artist.plays, 2);
+    assert_eq!(rows[0].artist.ms, 100_000);
+    assert_eq!(rows[0].artist.last_played_at, 101);
+    assert_eq!(rows[0].artist.path, "/music/z.flac");
+}
