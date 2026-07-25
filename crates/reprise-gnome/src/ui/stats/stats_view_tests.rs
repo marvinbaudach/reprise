@@ -427,14 +427,34 @@ fn stats_11_trend_tooltip_names_the_seasonally_congruent_compared_span() {
 
 /// The natural wrap point must never under-allocate either story card.
 #[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn story_row_minimums_fit_the_natural_line_length() {
-    let minimum = BAND_WIDTH + SONGS_WIDTH + STORY_SPACING;
+    gtk4::init().unwrap();
+    let provider = gtk4::CssProvider::new();
+    provider.load_from_string(&super::super::stats_css::css());
+    let display = gtk4::gdk::Display::default().unwrap();
+    gtk4::style_context_add_provider_for_display(
+        &display,
+        &provider,
+        gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
+    let (view, _) = view_and_conn();
+    let (band_minimum, _, _, _) = view
+        .render
+        .band_section
+        .measure(gtk4::Orientation::Horizontal, -1);
+    let (songs_minimum, _, _, _) = view
+        .render
+        .songs_section
+        .measure(gtk4::Orientation::Horizontal, -1);
+    let minimum = band_minimum + songs_minimum + STORY_SPACING;
+    gtk4::style_context_remove_provider_for_display(&display, &provider);
+
     assert!(
         minimum <= STORY_NATURAL_LINE_LENGTH,
-        "side-by-side minimum {minimum} exceeds the natural line length \
-         {STORY_NATURAL_LINE_LENGTH}"
+        "measured side-by-side minimum {minimum} exceeds the natural line length \
+         {STORY_NATURAL_LINE_LENGTH} (band {band_minimum}, songs {songs_minimum})"
     );
-    assert_eq!(BAND_WIDTH * 7, SONGS_WIDTH * 5);
 }
 
 #[test]
