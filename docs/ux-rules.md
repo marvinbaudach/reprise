@@ -1495,7 +1495,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   und nur Karten mit Daten werden gerendert — nie Platzhalterkarten. Ohne
   jeden Play gilt unverändert der Leerzustand aus STATS-6/STATS-6c samt
   bedienbarer Zeitraumwahl.
-- **STATS-17** [geplant] [gtk] — Die Seite animiert genau einmal pro Öffnen:
+- **STATS-17** [aktiv] [gtk] — Die Seite animiert genau einmal pro Öffnen:
   Hero-Zahl zählt hoch, das Chart zeichnet sich von links nach rechts, Karten
   faden gestaffelt ein, Balken wachsen auf ihren Zielwert; alle Dauern sind
   benannte Motion-Tokens, das Gesamtbudget bleibt unter einer Sekunde

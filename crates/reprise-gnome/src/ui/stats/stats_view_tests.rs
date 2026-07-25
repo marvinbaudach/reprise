@@ -602,6 +602,74 @@ fn stats_16_thin_history_swaps_chart_for_hint() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn stats_17_entrance_runs_once_per_open() {
+    gtk4::init().unwrap();
+    let (view, conn) = view_and_conn();
+    seed_plays(&conn.borrow(), 10);
+    view.wire_year_selector(&conn);
+
+    view.prepare_entrance();
+    view.refresh(&conn);
+    assert_eq!(view.render.entrance.entrance_runs(), 1);
+
+    view.refresh(&conn);
+    assert_eq!(view.render.entrance.entrance_runs(), 1);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_17_period_switch_only_tweens_values() {
+    gtk4::init().unwrap();
+    let (view, conn) = view_and_conn();
+    seed_plays(&conn.borrow(), 10);
+    view.wire_year_selector(&conn);
+    view.prepare_entrance();
+    view.refresh(&conn);
+    let entrances = view.render.entrance.entrance_runs();
+    let tweens = view.render.entrance.tween_runs();
+
+    let all_time = view
+        .periods
+        .borrow()
+        .iter()
+        .position(|period| *period == StatsPeriod::AllTime)
+        .unwrap() as u32;
+    view.period_dropdown.set_selected(all_time);
+    while glib::MainContext::default().iteration(false) {}
+
+    assert_eq!(view.render.entrance.entrance_runs(), entrances);
+    assert_eq!(view.render.entrance.tween_runs(), tweens + 1);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_17_reduced_motion_lands_in_end_state() {
+    gtk4::init().unwrap();
+    let settings = gtk4::Settings::default().unwrap();
+    let previous = settings.is_gtk_enable_animations();
+    settings.set_gtk_enable_animations(false);
+    let (view, conn) = view_and_conn();
+    seed_plays(&conn.borrow(), 10);
+    view.wire_year_selector(&conn);
+
+    view.prepare_entrance();
+    view.refresh(&conn);
+
+    assert_eq!(view.render.ribbon.reveal_fraction(), 1.0);
+    assert_eq!(view.render.band_section.opacity(), 1.0);
+    assert_eq!(view.render.songs_section.opacity(), 1.0);
+    assert_eq!(view.render.genres_section.opacity(), 1.0);
+    assert!(view
+        .render
+        .songs_card
+        .summary_bars()
+        .iter()
+        .all(|bar| bar.value() > 0.0));
+    settings.set_gtk_enable_animations(previous);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn stats_10_wide_window_keeps_band_and_songs_side_by_side() {
     gtk4::init().unwrap();
     let (view, window) = presented(1_000);

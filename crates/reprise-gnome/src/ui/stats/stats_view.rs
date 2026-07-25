@@ -15,6 +15,7 @@ use reprise_core::library::stats_snapshot::{self, StatsSnapshot};
 use rusqlite::Connection;
 
 use super::stats_band_card::StatsBandCard;
+use super::stats_entrance::StatsEntrance;
 use super::stats_genre_card::StatsGenreCard;
 use super::stats_header::StatsHeader;
 use super::stats_hero::StatsHero;
@@ -47,6 +48,7 @@ pub(in crate::ui) struct StatsView {
     period_model: gtk4::StringList,
     periods: Rc<RefCell<Vec<StatsPeriod>>>,
     wired: Cell<bool>,
+    entrance_pending: Rc<Cell<bool>>,
     connection: Rc<RefCell<Option<Rc<RefCell<Connection>>>>>,
     #[cfg_attr(not(test), allow(dead_code))]
     page: glib::WeakRef<gtk4::Box>,
@@ -156,6 +158,8 @@ impl StatsView {
         let connection = Rc::new(RefCell::new(None::<Rc<RefCell<Connection>>>));
         let on_go_to_artist: StringCallback = Rc::new(RefCell::new(None));
         let on_unify_spellings: IdsCallback = Rc::new(RefCell::new(None));
+        let entrance_pending = Rc::new(Cell::new(false));
+        let entrance = StatsEntrance::default();
 
         band_card.set_on_open_artist({
             let callback = on_go_to_artist.clone();
@@ -179,6 +183,7 @@ impl StatsView {
             band_section: band_section.clone(),
             songs_section: songs_section.clone(),
             genres_section: genres_section.clone(),
+            entrance,
         });
 
         Self {
@@ -188,6 +193,7 @@ impl StatsView {
             period_model,
             periods: Rc::new(RefCell::new(Vec::new())),
             wired: Cell::new(false),
+            entrance_pending,
             connection,
             page: page.downgrade(),
             story_row: story_row.downgrade(),
@@ -233,6 +239,7 @@ impl StatsView {
             let connection = self.connection.clone();
             let periods = self.periods.clone();
             let current_snapshot = self.current_snapshot.clone();
+            let entrance_pending = self.entrance_pending.clone();
             // The dropdown sits inside the page it re-renders. Both the stack
             // and the render targets are therefore held weakly; otherwise the
             // handler keeps the entire page widget tree alive forever.
@@ -247,7 +254,14 @@ impl StatsView {
                     let period = periods.borrow().get(dropdown.selected() as usize).copied();
                     let conn = connection.borrow().clone();
                     if let (Some(period), Some(conn)) = (period, conn) {
-                        refresh_parts(&conn, period, &page_stack, &current_snapshot, &render);
+                        refresh_parts(
+                            &conn,
+                            period,
+                            &page_stack,
+                            &current_snapshot,
+                            &render,
+                            &entrance_pending,
+                        );
                     }
                 }
             ));
@@ -269,7 +283,12 @@ impl StatsView {
             &self.page_stack,
             &self.current_snapshot,
             &self.render,
+            &self.entrance_pending,
         );
+    }
+
+    pub(in crate::ui) fn prepare_entrance(&self) {
+        self.entrance_pending.set(true);
     }
 
     pub(in crate::ui) fn set_on_go_to_artist(&self, callback: impl Fn(String) + 'static) {
@@ -365,6 +384,7 @@ struct RenderParts {
     band_section: gtk4::Box,
     songs_section: gtk4::Box,
     genres_section: gtk4::Box,
+    entrance: StatsEntrance,
 }
 
 fn refresh_parts(
@@ -373,6 +393,7 @@ fn refresh_parts(
     page_stack: &gtk4::Stack,
     current_snapshot: &Rc<RefCell<Option<StatsSnapshot>>>,
     render: &RenderParts,
+    entrance_pending: &Cell<bool>,
 ) {
     let now_unix = now_unix();
     let result = {
@@ -382,12 +403,13 @@ fn refresh_parts(
     match result {
         Ok(snapshot) => {
             render.hero.set_data(&snapshot, period, &render.header);
+            let entrance = entrance_pending.replace(false);
             // The stack decides what is on screen; hiding sections inside the
             // page it just switched away from changes nothing.
             if snapshot.is_empty() {
                 page_stack.set_visible_child_name("empty");
             } else {
-                render_snapshot(render, &snapshot);
+                render_snapshot(render, &snapshot, entrance);
                 page_stack.set_visible_child_name("sections");
             }
             *current_snapshot.borrow_mut() = Some(snapshot);
@@ -400,7 +422,7 @@ fn refresh_parts(
     }
 }
 
-fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot) {
+fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot, entrance: bool) {
     let ribbon_values = snapshot
         .ribbon
         .iter()
@@ -432,6 +454,23 @@ fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot) {
         .trend_stack
         .set_visible_child_name(if thin { "hint" } else { "chart" });
     render.thin_hint.set_visible(thin);
+
+    let mut bars = render.band_card.bars();
+    bars.extend(render.songs_card.summary_bars());
+    let cards = [
+        render.trend_stack.clone().upcast::<gtk4::Widget>(),
+        render.band_section.clone().upcast::<gtk4::Widget>(),
+        render.songs_section.clone().upcast::<gtk4::Widget>(),
+        render.genres_section.clone().upcast::<gtk4::Widget>(),
+    ];
+    render.entrance.update(
+        snapshot.hero.total_ms,
+        &render.hero.time,
+        &render.ribbon,
+        &cards,
+        &bars,
+        entrance,
+    );
 }
 
 fn wire_unify(

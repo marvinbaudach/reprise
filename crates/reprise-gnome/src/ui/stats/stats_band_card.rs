@@ -251,6 +251,10 @@ impl StatsBandCard {
     pub(in crate::ui) fn set_on_unify(&self, callback: impl Fn(String) + 'static) {
         *self.on_unify.borrow_mut() = Some(Rc::new(callback));
     }
+
+    pub(super) fn bars(&self) -> Vec<gtk4::LevelBar> {
+        self.rank_bars.borrow().clone()
+    }
 }
 
 fn label(text: &str, class: &str) -> gtk4::Label {

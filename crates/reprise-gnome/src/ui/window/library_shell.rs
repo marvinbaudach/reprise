@@ -186,6 +186,7 @@ pub(in crate::ui) fn wire_source_routing(
             device_view.show_device(serial);
             content_stack.set_visible_child_name("device");
         } else if matches!(source, ViewSource::MyStats) {
+            stats_view.prepare_entrance();
             stats_view.refresh(&conn);
             content_stack.set_visible_child_name("stats");
         } else if matches!(source, ViewSource::Conversions) {
