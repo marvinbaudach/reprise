@@ -2611,7 +2611,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "reprise-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "reprise-core",
@@ -2625,7 +2625,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-channel",
  "chrono",
@@ -2650,7 +2650,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-gnome"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-channel",
  "chrono",
@@ -2674,7 +2674,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-mcp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "reprise-core",
  "rmcp",
@@ -2690,7 +2690,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-platform-linux"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-channel",
  "gio",
@@ -2705,7 +2705,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-stems"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dirs",
  "flacenc",

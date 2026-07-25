@@ -45,7 +45,7 @@ pub struct HistoryEntry {
     pub seen_at: Option<i64>,
     pub hidden: bool,
     pub hidden_at: Option<i64>,
-    pub in_library: bool,
+    pub presence: crate::artist_news::LibraryPresence,
     pub announce_url: Option<String>,
 }
 
@@ -111,17 +111,15 @@ pub fn query_history(
                 hidden: row.get::<_, i64>(7)? != 0,
                 hidden_at: row.get(8)?,
                 announce_url: row.get(9)?,
-                in_library: false,
+                presence: crate::artist_news::LibraryPresence::Absent,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
-    let local_albums = crate::artist_news::local_album_set(conn)?;
+    let counts = crate::artist_news::local_album_track_counts(conn)?;
     for entry in &mut entries {
-        entry.in_library = local_albums.contains(&(
-            crate::artist_news::normalize(&entry.artist_name),
-            crate::artist_news::normalize(&entry.title),
-        ));
+        entry.presence =
+            crate::artist_news::presence_for(&counts, &entry.artist_name, &entry.title);
     }
 
     entries.sort_by(|left, right| {
@@ -312,7 +310,7 @@ mod tests {
             seen_at: None,
             hidden: false,
             hidden_at: None,
-            in_library: false,
+            presence: crate::artist_news::LibraryPresence::Absent,
             announce_url: None,
         }
     }

@@ -1,8 +1,14 @@
 //! One New Releases list row: cover, title/meta, and a chip<->actions
 //! `GtkStack` that reveals a primary action plus Hide on row hover or
-//! keyboard focus (NR-10). The primary action either opens the release's
-//! announcement externally (NR-11) or, for releases already in the
-//! library, navigates to and focuses the album — never a play path (NR-13).
+//! keyboard focus (NR-10). Library ownership is three-state
+//! (`LibraryPresence`: `Absent`, `Partial`, `Complete`), not a boolean —
+//! owning only the lead single off an album is `Partial`, distinct from
+//! owning nothing (`Absent`) or the whole thing (`Complete`). The primary
+//! action reflects that split: only a released, `Complete` match navigates
+//! to and focuses the album (never a play path, NR-13); both `Absent` and
+//! `Partial` open the release's announcement externally instead (NR-11),
+//! because owning just the single means the user wants the rest of the
+//! album, not a trip back to the one track they already have.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -10,7 +16,7 @@ use std::rc::Rc;
 use chrono::{Datelike, NaiveDate};
 use gtk4::prelude::*;
 
-use reprise_core::artist_news::StoredRelease;
+use reprise_core::artist_news::{LibraryPresence, StoredRelease};
 
 use super::release_cover::LazyReleaseCover;
 use crate::ui::strings;
@@ -31,6 +37,7 @@ pub(in crate::ui) type OnShowAlbum = Rc<dyn Fn(&str, &str)>;
 pub(in crate::ui) enum ChipPresentation {
     Upcoming(String),
     Released,
+    PartiallyOwned,
     InLibrary,
 }
 
@@ -112,15 +119,18 @@ pub(in crate::ui) fn chip_presentation(
             return ChipPresentation::Upcoming(strings::new_releases_days_until(days_until));
         }
     }
-    if release.in_library {
-        ChipPresentation::InLibrary
-    } else {
-        ChipPresentation::Released
+    match release.presence {
+        LibraryPresence::Complete => ChipPresentation::InLibrary,
+        LibraryPresence::Partial => ChipPresentation::PartiallyOwned,
+        LibraryPresence::Absent => ChipPresentation::Released,
     }
 }
 
 pub(in crate::ui) fn primary_action(release: &StoredRelease, today: NaiveDate) -> PrimaryAction {
-    if release.in_library && !is_upcoming(release, today) {
+    // Only full ownership navigates into the library. Owning the lead single
+    // means the album is still something to go read about, not something to
+    // go listen to.
+    if release.presence == LibraryPresence::Complete && !is_upcoming(release, today) {
         return PrimaryAction::ShowInLibrary;
     }
     PrimaryAction::OpenAnnouncement(reprise_core::artist_news_links::announce_url_or_fallback(
@@ -305,6 +315,10 @@ pub(in crate::ui) fn build(
             chip_label.set_label(&strings::text(strings::RELEASED));
             chip_label.add_css_class("new-release-chip-neutral");
         }
+        ChipPresentation::PartiallyOwned => {
+            chip_label.set_label(&strings::text(strings::NEW_RELEASES_PARTIALLY_OWNED));
+            chip_label.add_css_class("new-release-chip-partial");
+        }
         ChipPresentation::InLibrary => {
             chip_label.set_label(&strings::text(strings::IN_LIBRARY));
             chip_label.add_css_class("new-release-chip-neutral");
@@ -390,7 +404,7 @@ mod tests {
             seen_at: None,
             hidden: false,
             fallback_accent: "#123456".into(),
-            in_library: false,
+            presence: LibraryPresence::Absent,
             announce_url: None,
         }
     }
@@ -468,7 +482,7 @@ mod tests {
     #[test]
     fn chip_presentation_in_library_when_past_and_in_library() {
         let mut release = release_with_date("2026-01-01");
-        release.in_library = true;
+        release.presence = LibraryPresence::Complete;
         assert_eq!(
             chip_presentation(&release, today()),
             ChipPresentation::InLibrary
@@ -480,7 +494,7 @@ mod tests {
     #[test]
     fn chip_presentation_handles_partial_date() {
         let mut release = release_with_date("2024");
-        release.in_library = true;
+        release.presence = LibraryPresence::Complete;
         assert_eq!(
             chip_presentation(&release, today()),
             ChipPresentation::InLibrary
@@ -508,7 +522,7 @@ mod tests {
     #[test]
     fn nr_13_in_library_row_offers_show_in_library() {
         let mut release = release_with_date("2026-01-01");
-        release.in_library = true;
+        release.presence = LibraryPresence::Complete;
         assert_eq!(
             primary_action(&release, today()),
             PrimaryAction::ShowInLibrary
@@ -520,7 +534,7 @@ mod tests {
     #[test]
     fn nr_13_upcoming_in_library_release_still_opens_announcement() {
         let mut release = release_with_date("2026-08-15");
-        release.in_library = true;
+        release.presence = LibraryPresence::Complete;
         assert_eq!(
             primary_action(&release, today()),
             PrimaryAction::OpenAnnouncement(
@@ -646,7 +660,7 @@ mod tests {
             return;
         }
         let mut release = release_with_date("2026-01-01");
-        release.in_library = true;
+        release.presence = LibraryPresence::Complete;
         let navigated: Rc<std::cell::RefCell<Vec<(String, String)>>> =
             Rc::new(std::cell::RefCell::new(Vec::new()));
         let sink = navigated.clone();
@@ -674,5 +688,58 @@ mod tests {
             navigated.borrow().as_slice(),
             [("Release".to_string(), "Artist".to_string())]
         );
+    }
+
+    #[test]
+    fn partial_ownership_gets_its_own_chip_and_opens_the_announcement() {
+        let mut release = release_with_date("2026-01-01");
+        release.presence = LibraryPresence::Partial;
+
+        assert_eq!(
+            chip_presentation(&release, today()),
+            ChipPresentation::PartiallyOwned
+        );
+        assert!(
+            matches!(
+                primary_action(&release, today()),
+                PrimaryAction::OpenAnnouncement(_)
+            ),
+            "owning one track means you want the rest, not a jump into the library"
+        );
+    }
+
+    #[test]
+    fn complete_ownership_still_navigates_into_the_library() {
+        let mut release = release_with_date("2026-01-01");
+        release.presence = LibraryPresence::Complete;
+
+        assert_eq!(
+            chip_presentation(&release, today()),
+            ChipPresentation::InLibrary
+        );
+        assert_eq!(
+            primary_action(&release, today()),
+            PrimaryAction::ShowInLibrary
+        );
+    }
+
+    #[test]
+    fn upcoming_still_outranks_every_presence_state() {
+        for presence in [
+            LibraryPresence::Absent,
+            LibraryPresence::Partial,
+            LibraryPresence::Complete,
+        ] {
+            let mut release = release_with_date("2026-08-15");
+            release.presence = presence;
+            assert!(matches!(
+                chip_presentation(&release, today()),
+                ChipPresentation::Upcoming(_)
+            ));
+            assert!(matches!(
+                primary_action(&release, today()),
+                PrimaryAction::OpenAnnouncement(_)
+            ));
+        }
     }
 }
