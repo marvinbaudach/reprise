@@ -293,8 +293,8 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **ART-2** [geplant] [gtk] — Artist-Detail: Hero-Glow (vorberechnete
   Textur, 250 ms Crossfade beim Wechsel), Alben-Reihe (Hover wie ALB-1), Top
   Tracks (Doppelklick spielt gemäß PLAY-2 im Kontext „Top Tracks"). „Show all
-  N tracks ›" → Tracks-Modus mit gesetztem Artist-Filter-Chip (sichtbar, per
-  × entfernbar).
+  N tracks ›" → Tracks-Modus im Artist-Scope; dessen sichtbarer und per ×
+  entfernbarer Scope-Chip ist bereits durch FIL-1c aktiv.
 - **FX-1** [geplant] [manuell] — Alle Effekte respektieren
   `gtk-enable-animations=false` (harte Schaltung) und laufen nur GPU-billig
   (Opacity/Transform, vorgerenderte Glows). Keine Live-Blurs in Listen.
@@ -499,6 +499,15 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   wirkt dort bereits (Grid-Filterung); dieselbe Chip-Zeile inkl. Zählung und
   „Clear all" folgt dort nach dem Muster von FIL-1a/FIL-2. Bis dahin ist die
   Lücke hier benannt statt still gebrochen.
+- **FIL-1c** [aktiv] [gtk] — Artist- und Album-Scopes der Track-Liste tragen
+  in der Filter-Zeile eine eigene Scope-Chip-Klasse neben Such- und
+  Facetten-Chips: „<Interpret>" beziehungsweise „<Album> — <Interpret>" mit
+  eigenem ×-Klickziel von mindestens 20 px. Das × verlässt den Scope per
+  regulärem NAV-2-History-Push zur Library; dort werden deren gemerkte Suche
+  und Facetten wiederhergestellt. Die Zählung folgt FIL-2 und setzt die
+  Scope-Treffer ins Verhältnis zur ganzen Library. Playlist, Smart, Queue,
+  Missing und eigenständige Panels tragen keinen Scope-Chip. „Clear all"
+  räumt weiterhin nur Suche und Filter und wechselt nie den Ort.
 - **FIL-2** [aktiv] [gtk] — Zählung ist Zustand: Die Filter-Zeile ist
   permanenter Listen-Header jeder Track-Quelle — sie erscheint und
   verschwindet nie (kein Layout-Shift by design, P-4). Idle maximal leise:
