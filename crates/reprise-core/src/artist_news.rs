@@ -132,6 +132,20 @@ pub enum ArtistMatch {
     NotFound,
 }
 
+/// Outcome of resolving an artist's MBID for a refresh attempt. Distinct from
+/// `ArtistMatch` (which only describes what a *successful* search response
+/// contained): this also carries the "the search request itself failed or
+/// came back invalid" case, which `ArtistMatch`/`Option<String>` cannot
+/// express and which the ledger must record as `failed`, not `unmatched`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum MbidResolution {
+    Found(String),
+    /// The artist-search request failed or returned an invalid payload.
+    Failed,
+    /// The search succeeded but matched nothing, or matched ambiguously.
+    Unmatched,
+}
+
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum NewsError {
     #[error("artist could not be matched")]
@@ -292,8 +306,20 @@ where
             continue;
         }
         let mbid = match resolve_artist_mbid(conn, &candidate, fetch, &mut report)? {
-            Some(mbid) => mbid,
-            None => {
+            MbidResolution::Found(mbid) => mbid,
+            MbidResolution::Failed => {
+                crate::artist_news_ledger::record_attempt(
+                    conn,
+                    &artist_key,
+                    None,
+                    now,
+                    crate::artist_news_ledger::FetchOutcome::Failed,
+                    0,
+                )
+                .map_err(database_error)?;
+                continue;
+            }
+            MbidResolution::Unmatched => {
                 crate::artist_news_ledger::record_attempt(
                     conn,
                     &artist_key,
@@ -406,30 +432,30 @@ fn resolve_artist_mbid<F>(
     candidate: &ArtistCandidate,
     fetch: &mut F,
     report: &mut RefreshReport,
-) -> Result<Option<String>, NewsError>
+) -> Result<MbidResolution, NewsError>
 where
     F: FnMut(&str) -> Result<String, FetchError>,
 {
     if let Some(mbid) = candidate.mbid.clone() {
-        return Ok(Some(mbid));
+        return Ok(MbidResolution::Found(mbid));
     }
     let body = match fetch(&artist_search_url(&candidate.name)) {
         Ok(body) if artist_payload_valid(&body) => body,
         Ok(_) | Err(_) => {
             report.failed += 1;
-            return Ok(None);
+            return Ok(MbidResolution::Failed);
         }
     };
     match parse_artist_mbid(&body, &candidate.name) {
         ArtistMatch::Found(mbid) => {
             persist_artist_match(conn, &candidate.name, Some(&mbid), false)
                 .map_err(database_error)?;
-            Ok(Some(mbid))
+            Ok(MbidResolution::Found(mbid))
         }
         ArtistMatch::Ambiguous | ArtistMatch::NotFound => {
             persist_artist_match(conn, &candidate.name, None, true).map_err(database_error)?;
             report.unmatched += 1;
-            Ok(None)
+            Ok(MbidResolution::Unmatched)
         }
     }
 }

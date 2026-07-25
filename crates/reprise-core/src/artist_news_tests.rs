@@ -817,6 +817,55 @@ fn ledger_records_unmatched_outcome_and_negative_match_excludes_future_search() 
 }
 
 #[test]
+fn ledger_records_failed_outcome_for_a_failed_artist_search() {
+    // Same shape as `ledger_records_unmatched_outcome_and_negative_match_excludes_future_search`,
+    // but the artist-search request itself fails (transport error) rather
+    // than succeeding with an empty match list. `resolve_artist_mbid`
+    // increments `report.failed` for this branch, and the ledger entry must
+    // say so too — `unmatched` would mean "we looked and found nothing",
+    // which is not what happened here.
+    let conn = migrated_conn();
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+         VALUES ('/music/two.flac', 'Two', 'Nobody At All', 'Local Album', 5, 0)",
+        [],
+    )
+    .unwrap();
+    let mut fetch = |_url: &str| Err(crate::musicbrainz::FetchError::Transport);
+
+    let first = refresh_with(
+        &conn,
+        date(),
+        1_000,
+        FetchScope::TopArtists,
+        false,
+        &mut fetch,
+        &mut no_accent,
+    )
+    .unwrap();
+    assert_eq!(first.failed, 1);
+    assert_eq!(first.unmatched, 0);
+
+    let artist_key = "nobody at all";
+    assert_eq!(
+        crate::artist_news_ledger::last_attempt_at(&conn, artist_key).unwrap(),
+        Some(1_000),
+        "a failed artist-search must still get a ledger entry for its attempt"
+    );
+    let outcome: String = conn
+        .query_row(
+            "SELECT last_outcome FROM artist_news_fetch WHERE artist_key = ?1",
+            [artist_key],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        outcome, "failed",
+        "a failed artist-search request must be recorded as 'failed', not 'unmatched'"
+    );
+}
+
+#[test]
 fn ledger_records_failed_fetch_and_ttl_prevents_a_retry_within_the_window() {
     let conn = migrated_conn();
     conn.execute(
@@ -949,6 +998,83 @@ fn rotation_prefers_never_checked_artists_over_play_count() {
         "never-checked artist must come before a recently checked one"
     );
     assert_eq!(names[21], "artist-21");
+}
+
+#[test]
+fn rest_group_is_capped_at_rest_artists_per_run_and_keeps_the_stalest() {
+    // The rotation test above only ever has 2 (this file) or 7 (the doctest-
+    // style comment on `artists_for_fetch`) rest-group candidates — nowhere
+    // near REST_ARTISTS_PER_RUN (30), so truncation itself never engages.
+    // This test puts 50 candidates in the rest group (comfortably above the
+    // cap) and checks not just the count but *which* 30 survive: the
+    // never-checked artists first, then the ones with the oldest
+    // `last_attempt_at` — never an arbitrary 30.
+    let conn = migrated_conn();
+    for index in 1..=20 {
+        conn.execute(
+            "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+             VALUES (?1, 'T', ?2, 'Album', ?3, 0)",
+            rusqlite::params![
+                format!("/music/top-{index}.flac"),
+                format!("top-{index:02}"),
+                300 - index,
+            ],
+        )
+        .unwrap();
+    }
+    for index in 1..=50 {
+        conn.execute(
+            "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+             VALUES (?1, 'T', ?2, 'Album', ?3, 0)",
+            rusqlite::params![
+                format!("/music/rest-{index}.flac"),
+                format!("rest-{index:02}"),
+                200 - index,
+            ],
+        )
+        .unwrap();
+    }
+    // rest-01..rest-15 are never checked (no ledger row at all) — `None`
+    // sorts before every `Some`, so all 15 must be picked.
+    // rest-16..rest-50 (35 artists) each get a distinct, increasing
+    // `last_attempt_at`: rest-16 is the oldest, rest-50 the newest. Only the
+    // 15 oldest of these (rest-16..rest-30) are needed to fill the
+    // remaining slots up to REST_ARTISTS_PER_RUN (30).
+    for index in 16..=50 {
+        crate::artist_news_ledger::record_attempt(
+            &conn,
+            &format!("rest-{index:02}"),
+            None,
+            i64::from(index - 15) * 100,
+            crate::artist_news_ledger::FetchOutcome::Ok,
+            0,
+        )
+        .unwrap();
+    }
+
+    let candidates = artists_for_fetch(&conn, FetchScope::AllArtists).unwrap();
+    let names = candidates
+        .iter()
+        .map(|candidate| candidate.name.clone())
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        names.len(),
+        50,
+        "TOP_ARTIST_COUNT (20) plus REST_ARTISTS_PER_RUN (30), not all 70 candidates"
+    );
+
+    let expected_rest_group: Vec<String> = (1..=15)
+        .map(|index| format!("rest-{index:02}"))
+        .chain((16..=30).map(|index| format!("rest-{index:02}")))
+        .collect();
+    assert_eq!(
+        names[20..].to_vec(),
+        expected_rest_group,
+        "the rest group must be exactly the 15 never-checked artists followed \
+         by the 15 with the oldest last_attempt_at — the 20 artists with a \
+         more recent attempt (rest-31..rest-50) must be excluded"
+    );
 }
 
 #[test]
