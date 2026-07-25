@@ -48,7 +48,7 @@ public immutable release archive carrying its SHA-256 checksum, for example:
 
 ```yaml
 - type: archive
-  url: https://example.invalid/reprise/releases/download/v0.1.0/reprise-0.1.0.tar.xz
+  url: https://example.invalid/reprise/releases/download/v0.1.1/reprise-0.1.1.tar.xz
   sha256: REPLACE_WITH_ARCHIVE_SHA256
 ```
 
