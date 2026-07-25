@@ -8,17 +8,30 @@ use serde::{Deserialize, Serialize};
 
 mod backoff;
 mod bandsintown;
+#[cfg_attr(not(test), allow(dead_code))]
+mod candidates;
+pub mod config;
 mod dedupe;
+mod geo;
+mod geocode;
 pub mod http;
 mod provider;
+mod query;
+mod refresh;
 mod ticketmaster;
 
 pub use backoff::backoff_delay;
 pub use bandsintown::BandsintownProvider;
 pub use dedupe::{dedupe_key, merge, normalize_component, ticket_source_label};
+pub use geo::haversine_km;
+pub use geocode::{geocode, geocode_url, parse_geocode, GeocodedLocation};
 pub use provider::{
     ArtistRef, EventProvider, ProviderError, ProviderEvent, ProviderKind, Resolution,
 };
+pub use query::{
+    count_unseen, count_upcoming, latest_fetch_at, mark_scope_seen, query_events, query_unseen,
+};
+pub use refresh::{artist_due, jitter_seconds, refresh_due};
 pub use ticketmaster::TicketmasterProvider;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -52,6 +65,7 @@ impl Default for ConcertFilter {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ConcertRow {
+    pub id: i64,
     pub date_key: String,
     pub starts_at: String,
     pub artist_name: String,
@@ -69,6 +83,10 @@ pub struct ConcertRow {
     pub is_similar: bool,
     pub similar_to: Option<String>,
 }
+
+#[cfg(test)]
+#[path = "concerts/domain_tests.rs"]
+mod domain_tests;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConcertError {
