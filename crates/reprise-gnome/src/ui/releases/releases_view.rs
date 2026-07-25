@@ -397,7 +397,7 @@ fn fetch_from_database(path: &Path) -> Result<artist_news::RefreshReport, artist
         today,
         scope,
         true,
-        crate::ui::new_releases::release_cover::fallback_accent_for_artist,
+        crate::ui::updates::release_cover::fallback_accent_for_artist,
     )
 }
 

@@ -66,7 +66,7 @@ fn app_css() -> String {
         super::stats_css::css(),
         super::concerts::css::css(),
         super::releases::css::css(),
-        super::new_releases::css(),
+        super::updates::css(),
         super::toasts::css(),
         super::tag_editor_style::css(),
         info_panel_clip_css(),
