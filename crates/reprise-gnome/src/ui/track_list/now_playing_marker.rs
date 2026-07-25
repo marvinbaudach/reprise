@@ -51,6 +51,17 @@ pub(in crate::ui) fn register_cell(
     );
 }
 
+/// Drops the marker entry for `item`'s cell. Call from each column's
+/// `connect_unbind`: `GtkColumnView` keeps unbound `ListItem`s alive in a
+/// recycle pool, so without this the registry (and the cell widgets its
+/// re-appliers capture) grows by one full screen of cells on every
+/// `items_changed(0, N, N)` re-sort — a widget leak that makes each successive
+/// re-sort progressively slower. Unregistering on unbind keeps the registry
+/// bounded to the currently-bound (visible) cells.
+pub(in crate::ui) fn unregister_cell(shared: &Shared, item: &gtk4::ListItem) {
+    shared.unregister_now_playing_marker(item);
+}
+
 /// One registered cell's marker re-applier plus a weak handle to the
 /// `ListItem` it is bound to, used both to drop the entry when that item dies
 /// and to de-duplicate on rebind.
@@ -79,6 +90,19 @@ impl Shared {
         let weak = gtk4::glib::WeakRef::new();
         weak.set(Some(item));
         markers.push(NowPlayingMarker { item: weak, apply });
+    }
+
+    /// Removes the registry entry for `item` (and prunes any dead entries),
+    /// releasing the cell widgets that entry's re-applier captured. See
+    /// [`unregister_cell`] for why this must run on unbind.
+    pub(in crate::ui) fn unregister_now_playing_marker(&self, item: &gtk4::ListItem) {
+        let target = item.as_ptr();
+        self.now_playing_markers.borrow_mut().retain(|marker| {
+            marker
+                .item
+                .upgrade()
+                .is_some_and(|live| live.as_ptr() != target)
+        });
     }
 
     /// Re-runs every registered cell's marker application against the current
