@@ -1,9 +1,8 @@
 //! Native first-run wizard reusing the normal window actions and scan button.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use gtk4::gio::prelude::*;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -11,7 +10,7 @@ use libadwaita::prelude::*;
 use reprise_core::library::settings;
 use rusqlite::Connection;
 
-use crate::ui::{column_layout, primary_menu, strings};
+use crate::ui::{preference_rhythmbox, scan_flow::ScanControls, strings};
 
 pub(super) const SMOKE_ENV: &str = "REPRISE_SMOKE_FIRST_RUN";
 
@@ -24,17 +23,12 @@ pub(super) enum FirstRunDecision {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct CompletionOptions {
-    rhythmbox_columns: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct RhythmboxImportChoices {
-    column_layout: bool,
+    rhythmbox_import: bool,
 }
 
 struct RhythmboxImportWidgets {
     group: adw::PreferencesGroup,
-    column_layout: adw::SwitchRow,
+    import_data: adw::SwitchRow,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,45 +38,60 @@ enum CompletionResponse {
 }
 
 fn requested_actions(options: CompletionOptions) -> bool {
-    options.rhythmbox_columns
+    options.rhythmbox_import
 }
 
 fn should_open_folder(response: CompletionResponse) -> bool {
     response == CompletionResponse::SetUp
 }
 
-fn rhythmbox_offer(decision: FirstRunDecision, available: bool) -> Option<RhythmboxImportChoices> {
-    (decision == FirstRunDecision::ShowWizard
-        && column_layout::should_offer_rhythmbox_import(available))
-    .then_some(RhythmboxImportChoices {
-        column_layout: false,
-    })
+fn rhythmbox_offer(decision: FirstRunDecision, available: bool) -> Option<bool> {
+    (decision == FirstRunDecision::ShowWizard && available).then_some(false)
 }
 
-fn rhythmbox_layout_available() -> bool {
-    std::env::var(primary_menu::SMOKE_RHYTHMBOX_COLUMNS_ENV_VAR).is_ok()
-        || column_layout::read_rhythmbox_visible_columns().is_ok()
+fn take_completed_library_import(presented: &Cell<bool>, library_root: Option<&str>) -> bool {
+    if presented.get() || library_root.is_none_or(|root| root.trim().is_empty()) {
+        return false;
+    }
+    presented.set(true);
+    true
 }
 
-fn build_rhythmbox_import_group(choices: RhythmboxImportChoices) -> RhythmboxImportWidgets {
-    let group = adw::PreferencesGroup::builder()
+fn build_rhythmbox_import_group(active: bool) -> RhythmboxImportWidgets {
+    let group = adw::PreferencesGroup::new();
+    let import_data = adw::SwitchRow::builder()
         .title(strings::text(strings::ONBOARDING_IMPORT_FROM_RHYTHMBOX))
-        .description(strings::text(
+        .subtitle(strings::text(
             strings::ONBOARDING_IMPORT_FROM_RHYTHMBOX_DESCRIPTION,
         ))
+        .active(active)
+        .use_markup(false)
         .build();
-    let column_layout = adw::SwitchRow::builder()
-        .title(strings::text(strings::ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT))
-        .subtitle(strings::text(
-            strings::ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT_SUBTITLE,
-        ))
-        .active(choices.column_layout)
-        .build();
-    group.add(&column_layout);
-    RhythmboxImportWidgets {
-        group,
-        column_layout,
-    }
+    group.add(&import_data);
+    RhythmboxImportWidgets { group, import_data }
+}
+
+fn arm_rhythmbox_import_after_library_setup(
+    scan_controls: &ScanControls,
+    conn: &Rc<RefCell<Connection>>,
+    present_import: &Rc<dyn Fn()>,
+) {
+    let presented = Rc::new(Cell::new(false));
+    let conn = conn.clone();
+    let present_import = present_import.clone();
+    scan_controls.set_on_complete(move || {
+        let library_root = match settings::get_library_root(&conn.borrow()) {
+            Ok(root) => root,
+            Err(error) => {
+                tracing::warn!(%error, "could not read library root before Rhythmbox import");
+                return;
+            }
+        };
+        if !take_completed_library_import(&presented, library_root.as_deref()) {
+            return;
+        }
+        present_import();
+    });
 }
 
 pub(super) fn decide(completed: bool, library_root: Option<&str>) -> FirstRunDecision {
@@ -122,15 +131,17 @@ pub(super) fn initial_decision(conn: &Connection) -> FirstRunDecision {
 pub(super) fn run(
     window: &adw::ApplicationWindow,
     scan_button: &gtk4::Button,
+    scan_controls: &ScanControls,
     conn: &Rc<RefCell<Connection>>,
     decision: FirstRunDecision,
+    present_rhythmbox_import: &Rc<dyn Fn()>,
 ) {
     tracing::info!(?decision, "first-run decision");
     if decision != FirstRunDecision::ShowWizard {
         return;
     }
 
-    let rhythmbox_found = rhythmbox_layout_available();
+    let rhythmbox_found = preference_rhythmbox::rhythmbox_import_available();
     let rhythmbox = rhythmbox_offer(decision, rhythmbox_found).map(build_rhythmbox_import_group);
     tracing::info!(
         rhythmbox_found,
@@ -181,32 +192,38 @@ pub(super) fn run(
     let complete: Rc<dyn Fn(CompletionOptions, CompletionResponse, bool)> = {
         let window = window.downgrade();
         let scan_button = scan_button.downgrade();
+        let scan_controls = scan_controls.clone();
         let dialog = dialog.downgrade();
         let conn = conn.clone();
+        let present_rhythmbox_import = present_rhythmbox_import.clone();
         Rc::new(move |options, response, suppress_picker| {
-            let Some(window) = window.upgrade() else {
+            if window.upgrade().is_none() {
                 return;
-            };
-            let rhythmbox_columns = requested_actions(options);
-            if rhythmbox_columns {
-                if let Some(action) =
-                    window.lookup_action(primary_menu::ACTION_IMPORT_RHYTHMBOX_COLUMNS)
-                {
-                    action.activate(None);
-                }
             }
+            let rhythmbox_import = requested_actions(options);
             if let Err(error) = settings::set_onboarding_completed(&conn.borrow(), true) {
                 tracing::warn!(%error, "could not persist onboarding completion");
             }
             if let Some(dialog) = dialog.upgrade() {
                 dialog.close();
             }
+            if rhythmbox_import {
+                if suppress_picker {
+                    present_rhythmbox_import();
+                } else {
+                    arm_rhythmbox_import_after_library_setup(
+                        &scan_controls,
+                        &conn,
+                        &present_rhythmbox_import,
+                    );
+                }
+            }
             if should_open_folder(response) && !suppress_picker {
                 if let Some(scan_button) = scan_button.upgrade() {
                     scan_button.emit_clicked();
                 }
             }
-            tracing::info!(?response, rhythmbox_columns, "first-run setup completed");
+            tracing::info!(?response, rhythmbox_import, "first-run setup completed");
             log_smoke_result(&conn.borrow());
         })
     };
@@ -226,9 +243,9 @@ pub(super) fn run(
         setup.connect_clicked(move |_| {
             complete(
                 CompletionOptions {
-                    rhythmbox_columns: rhythmbox
+                    rhythmbox_import: rhythmbox
                         .as_ref()
-                        .is_some_and(|widgets| widgets.column_layout.is_active()),
+                        .is_some_and(|widgets| widgets.import_data.is_active()),
                 },
                 CompletionResponse::SetUp,
                 false,
@@ -247,7 +264,7 @@ pub(super) fn run(
             "skip" => (CompletionOptions::default(), CompletionResponse::Skip),
             "setup-options" => (
                 CompletionOptions {
-                    rhythmbox_columns: true,
+                    rhythmbox_import: true,
                 },
                 CompletionResponse::SetUp,
             ),
@@ -265,13 +282,9 @@ fn log_smoke_result(conn: &Connection) {
         return;
     }
     let completed = settings::get_onboarding_completed(conn).unwrap_or(false);
-    let column_layout = settings::get_setting(conn, settings::COLUMN_LAYOUT_KEY)
-        .ok()
-        .flatten();
     tracing::info!(
         completed,
         cover_download = true,
-        ?column_layout,
         "first-run smoke completed"
     );
 }
@@ -303,7 +316,7 @@ mod tests {
     fn completion_activates_only_explicitly_enabled_options() {
         assert!(!requested_actions(CompletionOptions::default()));
         assert!(requested_actions(CompletionOptions {
-            rhythmbox_columns: true,
+            rhythmbox_import: true,
         }));
     }
 
@@ -326,28 +339,35 @@ mod tests {
         );
         assert_eq!(
             rhythmbox_offer(FirstRunDecision::ShowWizard, true),
-            Some(RhythmboxImportChoices {
-                column_layout: false,
-            })
+            Some(false)
         );
+    }
+
+    #[test]
+    fn rhythmbox_import_is_taken_once_after_a_completed_library_scan() {
+        let presented = Cell::new(false);
+
+        assert!(!take_completed_library_import(&presented, None));
+        assert!(!take_completed_library_import(&presented, Some("  ")));
+        assert!(take_completed_library_import(&presented, Some("/music")));
+        assert!(!take_completed_library_import(&presented, Some("/music")));
     }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn detected_rhythmbox_group_lists_the_supported_import_choice() {
         gtk4::init().unwrap();
-        let widgets = build_rhythmbox_import_group(RhythmboxImportChoices {
-            column_layout: false,
-        });
+        let widgets = build_rhythmbox_import_group(false);
 
         assert_eq!(
-            widgets.group.title(),
+            widgets.import_data.title(),
             strings::text(strings::ONBOARDING_IMPORT_FROM_RHYTHMBOX)
         );
         assert_eq!(
-            widgets.column_layout.title(),
-            strings::text(strings::ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT)
+            widgets.import_data.subtitle().as_deref(),
+            Some(strings::text(strings::ONBOARDING_IMPORT_FROM_RHYTHMBOX_DESCRIPTION).as_str())
         );
-        assert!(!widgets.column_layout.is_active());
+        assert!(!widgets.import_data.is_active());
+        assert!(!widgets.import_data.uses_markup());
     }
 }

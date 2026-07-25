@@ -12,7 +12,6 @@ use libadwaita as adw;
 use crate::ui::strings;
 use crate::ui::track_list::TrackList;
 
-pub(super) const ACTION_IMPORT_RHYTHMBOX_COLUMNS: &str = "import-rhythmbox-columns";
 pub(super) const ACTION_EDIT_COLUMN_LAYOUT: &str = "edit-column-layout";
 pub(super) const ACTION_TOGGLE_MINIMAL_VIEW: &str = "toggle-minimal-view";
 pub(super) const ACTION_RESCAN_LIBRARY: &str = "rescan-library";
@@ -24,7 +23,6 @@ pub(super) const ACTION_KEYBOARD_SHORTCUTS: &str = "keyboard-shortcuts";
 pub(super) const ACTION_HELP: &str = "help";
 pub(super) const ACTION_ABOUT: &str = "about";
 pub(super) const ACTION_OPEN_PRIMARY_MENU: &str = "open-primary-menu";
-pub(super) const SMOKE_RHYTHMBOX_COLUMNS_ENV_VAR: &str = "REPRISE_SMOKE_RHYTHMBOX_COLUMNS";
 const SMOKE_MINIMAL_VIEW_ENV_VAR: &str = "REPRISE_SMOKE_MINIMAL_VIEW";
 
 pub(super) struct Callbacks {
@@ -141,19 +139,6 @@ pub(super) fn install(
         });
     }
     window.add_action(&open_primary_menu);
-
-    let import = gio::SimpleAction::new(ACTION_IMPORT_RHYTHMBOX_COLUMNS, None);
-    {
-        let track_list_weak = Rc::downgrade(track_list);
-        import.connect_activate(move |_, _| {
-            let Some(track_list) = track_list_weak.upgrade() else {
-                return;
-            };
-            handle_rhythmbox_import(&track_list, rhythmbox_smoke_tokens());
-        });
-    }
-    window.add_action(&import);
-    arm_smoke_rhythmbox_import(&import);
 
     let edit = gio::SimpleAction::new(ACTION_EDIT_COLUMN_LAYOUT, None);
     {
@@ -279,53 +264,6 @@ fn arm_smoke_column_layout_editor(action: &gio::SimpleAction) {
     }
     let action = action.clone();
     glib::idle_add_local_once(move || action.activate(None));
-}
-
-fn handle_rhythmbox_import(track_list: &TrackList, override_tokens: Option<Vec<String>>) {
-    let tokens = match override_tokens {
-        Some(tokens) => tokens,
-        None => match crate::ui::column_layout::read_rhythmbox_visible_columns() {
-            Ok(tokens) => tokens,
-            Err(error) => {
-                tracing::warn!(%error, "could not read Rhythmbox visible columns");
-                track_list.toast(&strings::rhythmbox_columns_import_failed(
-                    &error.to_string(),
-                ));
-                return;
-            }
-        },
-    };
-    let layout = crate::ui::column_layout::import_rhythmbox_tokens(&tokens);
-    if let Err(error) = track_list.apply_column_layout(&layout) {
-        tracing::warn!(%error, "could not persist imported Rhythmbox column layout");
-        track_list.toast(&strings::text(
-            strings::RHYTHMBOX_COLUMNS_IMPORT_SAVE_FAILED,
-        ));
-        return;
-    }
-    tracing::info!(
-        layout = %crate::ui::column_layout::serialize_layout(&layout),
-        "Rhythmbox column layout imported"
-    );
-    track_list.toast(&strings::text(strings::RHYTHMBOX_COLUMNS_IMPORTED));
-}
-
-fn rhythmbox_smoke_tokens() -> Option<Vec<String>> {
-    std::env::var(SMOKE_RHYTHMBOX_COLUMNS_ENV_VAR)
-        .ok()
-        .map(|value| value.split(',').map(str::to_string).collect())
-}
-
-fn arm_smoke_rhythmbox_import(action: &gio::SimpleAction) {
-    if std::env::var(SMOKE_RHYTHMBOX_COLUMNS_ENV_VAR).is_err()
-        || std::env::var(crate::ui::first_run::SMOKE_ENV).is_ok()
-    {
-        return;
-    }
-    let action = action.clone();
-    glib::idle_add_local_once(move || {
-        action.activate(None);
-    });
 }
 
 #[cfg(test)]

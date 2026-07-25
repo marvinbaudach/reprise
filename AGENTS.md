@@ -163,7 +163,7 @@ plan).
 
 Next: **GUI-B** (tag editor with **multi-select batch edit** — mixed fields show
 "(multiple values)", only user-changed fields are written, never clobber per-track values —
-plus delete/trash) · **GUI-C** (browse bar + Rhythmbox column-layout import) · **GUI-D**
+plus delete/trash) · **GUI-C** (browse bar + editable column layout) · **GUI-D**
 (first-run wizard + session restore). Then release (Flatpak/Flathub, gettext, AppStream).
 
 Each next stage starts with a design spec → an implementation plan (held in-session, not
