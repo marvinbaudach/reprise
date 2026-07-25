@@ -186,9 +186,9 @@ pub(in crate::ui) fn wire_source_routing(
             device_view.show_device(serial);
             content_stack.set_visible_child_name("device");
         } else if matches!(source, ViewSource::MyStats) {
+            content_stack.set_visible_child_name("stats");
             stats_view.prepare_entrance();
             stats_view.refresh(&conn);
-            content_stack.set_visible_child_name("stats");
         } else if matches!(source, ViewSource::Conversions) {
             // INST-13: the conversion/staging view lives on its own page. Ensure
             // it is installed (under the same experimental gate as the sidebar
