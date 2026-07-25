@@ -20,6 +20,22 @@ const FULL_TRACK_LIMIT: usize = 10;
 
 type IdCallback = Rc<RefCell<Option<Rc<dyn Fn(i64)>>>>;
 
+#[derive(Clone, Default)]
+struct CoverGenerations {
+    summary: Rc<Cell<u64>>,
+    full: Rc<Cell<u64>>,
+}
+
+impl CoverGenerations {
+    fn next_summary(&self) -> u64 {
+        next_generation(&self.summary)
+    }
+
+    fn next_full(&self) -> u64 {
+        next_generation(&self.full)
+    }
+}
+
 #[derive(Clone)]
 pub(in crate::ui) struct StatsSongsCard {
     root: gtk4::Box,
@@ -39,7 +55,7 @@ pub(in crate::ui) struct StatsSongsCard {
     snapshot: Rc<RefCell<Option<StatsSnapshot>>>,
     sort_by: Rc<Cell<SortBy>>,
     cover_loader: Rc<CoverLoader>,
-    generation: Rc<Cell<u64>>,
+    cover_generations: CoverGenerations,
     metadata: MetadataCallback,
     on_play_track: IdCallback,
     on_play_next: IdCallback,
@@ -83,7 +99,7 @@ impl StatsSongsCard {
 
         let snapshot = Rc::new(RefCell::new(None::<StatsSnapshot>));
         let sort_by = Rc::new(Cell::new(SortBy::Plays));
-        let generation = Rc::new(Cell::new(0_u64));
+        let cover_generations = CoverGenerations::default();
         let on_play_track: IdCallback = Rc::new(RefCell::new(None));
         let on_play_next: IdCallback = Rc::new(RefCell::new(None));
         let on_add_to_queue: IdCallback = Rc::new(RefCell::new(None));
@@ -112,7 +128,7 @@ impl StatsSongsCard {
                 let snapshot = snapshot.clone();
                 let sort_by = sort_by.clone();
                 let cover_loader = cover_loader.clone();
-                let generation = generation.clone();
+                let cover_generations = cover_generations.clone();
                 let metadata = metadata.clone();
                 move |button| {
                     if !button.is_active() {
@@ -125,7 +141,7 @@ impl StatsSongsCard {
                             snapshot,
                             value,
                             &cover_loader,
-                            &generation,
+                            &cover_generations,
                             &metadata,
                         );
                     }
@@ -147,7 +163,7 @@ impl StatsSongsCard {
             snapshot,
             sort_by,
             cover_loader,
-            generation,
+            cover_generations,
             metadata,
             on_play_track,
             on_play_next,
@@ -168,7 +184,7 @@ impl StatsSongsCard {
             snapshot,
             self.sort_by.get(),
             &self.cover_loader,
-            &self.generation,
+            &self.cover_generations,
             &self.metadata,
         );
     }
@@ -181,8 +197,7 @@ impl StatsSongsCard {
         self.row_clicks.borrow_mut().clear();
         let tracks = snapshot.top_tracks_sorted(SortBy::Plays);
         let leader = tracks.first().map_or(0, |track| track.play_count);
-        let token = self.generation.get().wrapping_add(1);
-        self.generation.set(token);
+        let token = self.cover_generations.next_summary();
         for track in tracks.iter().take(SONG_ROW_LIMIT) {
             let row = self.song_row(track, leader, token);
             self.rows.append(&row);
@@ -208,7 +223,7 @@ impl StatsSongsCard {
             &track.track_path,
             ThumbnailSize::List,
             token,
-            &self.generation,
+            &self.cover_generations.summary,
         );
         cover_overlay.set_child(Some(&cover));
         let play = gtk4::Button::from_icon_name("media-playback-start-symbolic");
@@ -403,12 +418,11 @@ fn render_full_rows(
     snapshot: &StatsSnapshot,
     sort_by: SortBy,
     cover_loader: &Rc<CoverLoader>,
-    generation: &Rc<Cell<u64>>,
+    generations: &CoverGenerations,
     metadata: &MetadataCallback,
 ) {
     clear(container);
-    let token = generation.get().wrapping_add(1);
-    generation.set(token);
+    let token = generations.next_full();
     let tracks = snapshot.top_tracks_sorted(sort_by);
     let leader = tracks.first().map_or(0, |track| metric(track, sort_by));
     for (index, track) in tracks.iter().take(FULL_TRACK_LIMIT).enumerate() {
@@ -426,7 +440,7 @@ fn render_full_rows(
             &track.track_path,
             ThumbnailSize::List,
             token,
-            generation,
+            &generations.full,
         );
         row.append(&cover);
         let text = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
@@ -464,6 +478,12 @@ fn render_full_rows(
         ));
         container.append(&row);
     }
+}
+
+fn next_generation(generation: &Cell<u64>) -> u64 {
+    let token = generation.get().wrapping_add(1);
+    generation.set(token);
+    token
 }
 
 fn invoke_id(callback: &IdCallback, id: i64) {
@@ -507,6 +527,16 @@ mod tests {
     use reprise_core::library::stats_snapshot;
 
     use super::*;
+
+    #[test]
+    fn summary_cover_generation_survives_rendering_the_full_ranking() {
+        let generations = CoverGenerations::default();
+        let summary_token = generations.next_summary();
+
+        generations.next_full();
+
+        assert_eq!(generations.summary.get(), summary_token);
+    }
 
     fn card_and_snapshot(metadata: MetadataCallback) -> (StatsSongsCard, StatsSnapshot) {
         let conn = reprise_core::db::open(None).unwrap();
