@@ -456,6 +456,7 @@ pub fn build(
         conn,
         db_path,
         &artist_news,
+        &concerts_runtime,
         on_show_album,
     );
     let compact_root = player

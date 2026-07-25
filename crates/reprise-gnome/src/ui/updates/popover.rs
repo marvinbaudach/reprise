@@ -8,15 +8,15 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
+use crate::ui::concerts::{ConcertsRequest, ConcertsRuntime};
 use crate::ui::{one_shot_task, strings};
 
-use super::badge;
+use super::badge::{self, FeedBadgeInput};
 use super::history_page;
 use super::release_cover::fallback_accent_for_artist;
 use super::release_row;
+use super::shell;
 
-/// Popover content width (NR-9 compact layout).
-const POPOVER_WIDTH: i32 = 336;
 /// Caps the scrolling release list's natural height before it scrolls.
 /// Shared with `history_page.rs` (C1) so both pages scroll at the same
 /// height.
@@ -60,6 +60,33 @@ fn footer_presentation(latest: Option<i64>, now: i64, failed: bool) -> FooterPre
             |timestamp| strings::new_releases_updated_ago(timestamp, now),
         ),
         show_cached_failure: failed,
+    }
+}
+
+fn oldest_active_feed_timestamp(
+    news_active: bool,
+    news_latest: Option<i64>,
+    concerts_active: bool,
+    concerts_latest: Option<i64>,
+) -> Option<i64> {
+    match (news_active, concerts_active) {
+        (false, false) => None,
+        (true, false) => news_latest,
+        (false, true) => concerts_latest,
+        (true, true) => Some(news_latest?.min(concerts_latest?)),
+    }
+}
+
+fn fetch_failure_text(news_failed: bool, concerts_failed: bool) -> String {
+    match (news_failed, concerts_failed) {
+        (false, false) => String::new(),
+        (true, false) => strings::text(strings::FETCH_FAILED_INLINE),
+        (false, true) => strings::text(strings::UPDATES_CONCERTS_FETCH_FAILED),
+        (true, true) => format!(
+            "{} · {}",
+            strings::text(strings::FETCH_FAILED_INLINE),
+            strings::text(strings::UPDATES_CONCERTS_FETCH_FAILED)
+        ),
     }
 }
 
@@ -107,13 +134,21 @@ fn periodic_fetch_due(enabled: bool, fetching: bool, refresh_due: bool) -> bool 
     enabled && !fetching && refresh_due
 }
 
+#[derive(Clone, Copy)]
+enum FeedKind {
+    News,
+    Concerts,
+}
+
 struct NewReleasesPopover {
     conn: Rc<RefCell<rusqlite::Connection>>,
     database_path: PathBuf,
+    concerts_runtime: Rc<ConcertsRuntime>,
     button: gtk4::MenuButton,
     badge: gtk4::Label,
     popover: gtk4::Popover,
     stack: gtk4::Stack,
+    news_section: gtk4::Box,
     list: gtk4::ListBox,
     empty: gtk4::Label,
     new_tag: gtk4::Label,
@@ -128,6 +163,10 @@ struct NewReleasesPopover {
     updated: gtk4::Label,
     failure: gtk4::Label,
     fetching: Cell<bool>,
+    pending_fetches: Cell<u8>,
+    news_failed: Cell<bool>,
+    concerts_failed: Cell<bool>,
+    generation: Cell<u64>,
     /// The hourly background staleness timer (Beschluss 8), running only
     /// while the module is enabled. `SourceId` is move-only, so `Cell::take`
     /// is how `stop_refresh_timer` retrieves it to call `remove()`.
@@ -139,108 +178,37 @@ impl NewReleasesPopover {
     fn new(
         conn: Rc<RefCell<rusqlite::Connection>>,
         database_path: PathBuf,
+        concerts_runtime: Rc<ConcertsRuntime>,
         on_show_album: release_row::OnShowAlbum,
     ) -> Rc<Self> {
-        let (button, badge) = badge::build_button();
-        let popover = gtk4::Popover::new();
-        popover.add_css_class("new-release-popover");
-
-        let list = gtk4::ListBox::new();
-        list.set_selection_mode(gtk4::SelectionMode::None);
-        let empty = gtk4::Label::new(None);
-        empty.set_wrap(true);
-        empty.set_justify(gtk4::Justification::Center);
-        empty.set_margin_top(12);
-        empty.set_margin_bottom(12);
-        let scroller = gtk4::ScrolledWindow::builder()
-            .child(&list)
-            .hscrollbar_policy(gtk4::PolicyType::Never)
-            .vscrollbar_policy(gtk4::PolicyType::Automatic)
-            .propagate_natural_height(true)
-            .max_content_height(SCROLLER_MAX_HEIGHT)
-            .build();
-
-        // #3: GTK CSS has no text-transform, so the uppercase look comes from
-        // uppercasing the string itself rather than relying on CSS alone.
-        let header_label = gtk4::Label::new(Some(
-            &strings::text(strings::NEW_RELEASES_HEADER).to_uppercase(),
-        ));
-        header_label.add_css_class("new-release-header");
-        header_label.set_xalign(0.0);
-        header_label.set_hexpand(true);
-        let new_tag = gtk4::Label::new(None);
-        new_tag.add_css_class("new-release-tag");
-        new_tag.set_visible(false);
-        let header_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-        header_row.append(&header_label);
-        header_row.append(&new_tag);
-
-        let separator = gtk4::Separator::new(gtk4::Orientation::Horizontal);
-        separator.add_css_class("new-release-separator");
-
-        // #7: "Show history" is navigation, not a primary action — the label
-        // text is static and the count sits in its own, even quieter class.
-        let history_row_label = gtk4::Label::new(Some(&strings::text(strings::SHOW_HISTORY)));
-        history_row_label.add_css_class("new-release-history-label");
-        let history_row_count = gtk4::Label::new(None);
-        history_row_count.add_css_class("new-release-history-count");
-        let history_text = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
-        history_text.set_hexpand(true);
-        history_text.append(&history_row_label);
-        history_text.append(&history_row_count);
-        let history_content = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-        history_content.append(&gtk4::Image::from_icon_name(
-            "document-open-recent-symbolic",
-        ));
-        history_content.append(&history_text);
-        history_content.append(&gtk4::Image::from_icon_name("go-next-symbolic"));
-        let history_row = gtk4::Button::builder()
-            .child(&history_content)
-            .css_classes(["flat", "new-release-history-row"])
-            .build();
-
-        let (footer, fetch_button, fetch_stack, spinner, updated, failure) = build_footer();
-
-        let list_page = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
-        list_page.append(&header_row);
-        list_page.append(&scroller);
-        list_page.append(&separator);
-        list_page.append(&history_row);
-        list_page.append(&footer);
-
-        // `show_history` fills this fresh from `history_page::build` every
-        // time it navigates here, rather than keeping one instance alive.
-        let history_page = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
-
-        let stack = gtk4::Stack::new();
-        stack.set_transition_type(gtk4::StackTransitionType::SlideLeftRight);
-        stack.set_transition_duration(crate::ui::motion::STANDARD_MS);
-        stack.add_named(&list_page, Some(LIST_PAGE));
-        stack.add_named(&history_page, Some(HISTORY_PAGE));
-        stack.set_visible_child_name(LIST_PAGE);
-
-        let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-        content.set_size_request(POPOVER_WIDTH, -1);
-        content.set_margin_top(10);
-        content.set_margin_bottom(10);
-        content.set_margin_start(10);
-        content.set_margin_end(10);
-        content.append(&stack);
-        popover.set_child(Some(&content));
-        // The MenuButton owns and parents this popover for its whole lifetime
-        // (set_popover). It must NOT be unparented on close — unlike the
-        // manually set_parent()/popup()-driven context menus that use
-        // popover_lifecycle — or the second open realizes a parentless popover
-        // and crashes (gdk_surface_new_popup: parent assertion / SIGSEGV).
-        button.set_popover(Some(&popover));
-
-        let state = Rc::new(Self {
-            conn,
-            database_path,
+        let shell::UpdatesShell {
             button,
             badge,
             popover,
             stack,
+            news_section,
+            list,
+            empty,
+            new_tag,
+            history_row,
+            history_row_count,
+            history_page,
+            fetch_button,
+            fetch_stack,
+            spinner,
+            updated,
+            failure,
+        } = shell::build();
+
+        let state = Rc::new(Self {
+            conn,
+            database_path,
+            concerts_runtime,
+            button,
+            badge,
+            popover,
+            stack,
+            news_section,
             list,
             empty,
             new_tag,
@@ -253,6 +221,10 @@ impl NewReleasesPopover {
             updated,
             failure,
             fetching: Cell::new(false),
+            pending_fetches: Cell::new(0),
+            news_failed: Cell::new(false),
+            concerts_failed: Cell::new(false),
+            generation: Cell::new(0),
             refresh_timer: Cell::new(None),
             on_show_album,
         });
@@ -273,14 +245,14 @@ impl NewReleasesPopover {
         self.popover.connect_show(move |_| {
             if let Some(state) = weak.upgrade() {
                 state.render(true, false);
-                state.trigger_staleness_refresh();
+                state.maybe_background_refresh();
             }
         });
 
         let weak = Rc::downgrade(self);
         self.fetch_button.connect_clicked(move |_| {
             if let Some(state) = weak.upgrade() {
-                state.fetch_now();
+                state.start_fetch(true);
             }
         });
 
@@ -344,26 +316,28 @@ impl NewReleasesPopover {
     }
 
     fn render(self: &Rc<Self>, mark_seen: bool, failed: bool) {
-        let enabled = reprise_core::modules::is_enabled(
+        let news_enabled = reprise_core::modules::is_enabled(
             &self.conn.borrow(),
             &reprise_core::modules::NEW_RELEASES_MODULE,
         )
         .unwrap_or(false);
-        if !enabled {
-            self.button.set_visible(false);
-            self.badge.set_visible(false);
-            return;
-        }
+        let concerts_enabled = reprise_core::modules::is_enabled(
+            &self.conn.borrow(),
+            &reprise_core::modules::CONCERTS_MODULE,
+        )
+        .unwrap_or(false);
         let today = chrono::Local::now().date_naive();
-        let all_releases =
+        let all_releases = if news_enabled {
             match reprise_core::artist_news::query_releases(&self.conn.borrow(), true, today) {
                 Ok(releases) => releases,
                 Err(error) => {
                     tracing::warn!(%error, "could not query New Releases");
-                    self.button.set_visible(false);
-                    return;
+                    Vec::new()
                 }
-            };
+            }
+        } else {
+            Vec::new()
+        };
         let releases = all_releases
             .iter()
             .filter(|release| !release.hidden)
@@ -371,12 +345,15 @@ impl NewReleasesPopover {
             .collect::<Vec<_>>();
         let fetch_completed = self.fetch_completed();
         let effect = module_effect(
-            enabled,
+            news_enabled,
             !all_releases.is_empty(),
             fetch_completed,
             self.fetching.get(),
         );
-        self.button.set_visible(effect.button_visible);
+        self.button
+            .set_visible(effect.button_visible || concerts_enabled);
+        self.news_section.set_visible(news_enabled);
+        self.history_row.set_visible(news_enabled);
         self.list.remove_all();
         match effect.empty {
             EmptyPresentation::Hidden => {}
@@ -429,19 +406,53 @@ impl NewReleasesPopover {
                     tracing::warn!(%error, "could not mark New Releases seen");
                 }
             }
+            if concerts_enabled {
+                let conn = self.conn.borrow();
+                let filter = reprise_core::concerts::config::persisted_filter(&conn);
+                let location = reprise_core::concerts::config::location(&conn);
+                match (filter, location) {
+                    (Ok(filter), Ok(location)) => {
+                        if let Err(error) = reprise_core::concerts::mark_scope_seen(
+                            &conn,
+                            &filter,
+                            location.as_ref(),
+                            today,
+                            chrono::Utc::now().timestamp(),
+                        ) {
+                            tracing::warn!(%error, "could not mark Concerts updates seen");
+                        }
+                    }
+                    (Err(error), _) | (_, Err(error)) => {
+                        tracing::warn!(%error, "could not read Concerts scope while opening Updates");
+                    }
+                }
+            }
         }
-        let unseen = reprise_core::artist_news::unseen_release_count(&self.conn.borrow())
+        let unseen_releases = reprise_core::artist_news::unseen_release_count(&self.conn.borrow())
             .unwrap_or_default();
-        match badge::badge_presentation(unseen) {
-            Some(text) if effect.badge_allowed => {
+        let (concerts_credentials, concerts_ready, unseen_concerts, latest_concerts) =
+            self.concerts_badge_state(today);
+        match badge::updates_badge(
+            FeedBadgeInput {
+                enabled: news_enabled,
+                ready: fetch_completed,
+                unseen: unseen_releases,
+            },
+            FeedBadgeInput {
+                enabled: concerts_enabled,
+                ready: concerts_ready,
+                unseen: unseen_concerts,
+            },
+        ) {
+            Some(text) => {
                 self.badge.set_label(&text);
                 self.badge.set_visible(true);
             }
             _ => self.badge.set_visible(false),
         }
-        if unseen > 0 {
+        if unseen_releases > 0 {
             self.new_tag
-                .set_label(&strings::new_releases_new_count(unseen));
+                .set_label(&strings::new_releases_new_count(unseen_releases));
             self.new_tag.set_visible(true);
         } else {
             self.new_tag.set_visible(false);
@@ -457,20 +468,44 @@ impl NewReleasesPopover {
                 );
         self.history_row_count
             .set_label(&strings::new_releases_history_count_suffix(history_count));
-        let latest = all_releases.iter().map(|release| release.fetched_at).max();
+        let latest_news = reprise_core::artist_news::latest_fetched_at(&self.conn.borrow())
+            .ok()
+            .flatten();
+        let latest = oldest_active_feed_timestamp(
+            news_enabled,
+            latest_news,
+            concerts_enabled && concerts_credentials,
+            latest_concerts,
+        );
         let footer = footer_presentation(latest, chrono::Utc::now().timestamp(), failed);
         self.updated.set_label(&footer.updated);
         self.updated.set_visible(latest.is_some());
-        self.failure.set_visible(footer.show_cached_failure);
+        let failure_text = fetch_failure_text(failed, self.concerts_failed.get());
+        self.failure.set_label(&failure_text);
+        self.failure
+            .set_visible(footer.show_cached_failure || self.concerts_failed.get());
     }
 
-    /// A5's staleness policy: opening the popover is a natural moment to
-    /// check whether a background refresh is due, without blocking the
-    /// synchronous render above. B5 adds the hourly timer as a second entry
-    /// point into the exact same check, so both share `maybe_background_refresh`
-    /// instead of drifting apart with their own copy of the condition.
-    fn trigger_staleness_refresh(self: &Rc<Self>) {
-        self.maybe_background_refresh();
+    fn concerts_badge_state(&self, today: chrono::NaiveDate) -> (bool, bool, i64, Option<i64>) {
+        let conn = self.conn.borrow();
+        let credentials = reprise_core::concerts::config::credentials(&conn)
+            .is_ok_and(|credentials| !credentials.is_empty());
+        let latest = reprise_core::concerts::latest_fetch_at(&conn)
+            .ok()
+            .flatten();
+        if !credentials {
+            return (false, false, 0, latest);
+        }
+        let unseen = reprise_core::concerts::config::persisted_filter(&conn)
+            .and_then(|filter| {
+                let location = reprise_core::concerts::config::location(&conn)?;
+                reprise_core::concerts::count_unseen(&conn, &filter, location.as_ref(), today)
+            })
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, "could not count unseen Concerts updates");
+                0
+            });
+        (true, latest.is_some(), unseen, latest)
     }
 
     /// The shared background-refresh check behind both the popover's open
@@ -492,7 +527,7 @@ impl NewReleasesPopover {
             reprise_core::artist_news::jitter_seconds(&self.database_path.to_string_lossy());
         let due = reprise_core::artist_news::refresh_due(latest, now, jitter);
         if periodic_fetch_due(enabled, self.fetching.get(), due) {
-            self.fetch_now();
+            self.start_fetch(false);
         }
     }
 
@@ -551,7 +586,7 @@ impl NewReleasesPopover {
         if enabled {
             self.start_refresh_timer();
             if !self.fetch_completed() {
-                self.fetch_now();
+                self.start_fetch(false);
             } else {
                 self.render(false, false);
             }
@@ -561,30 +596,53 @@ impl NewReleasesPopover {
         }
     }
 
-    fn fetch_now(self: &Rc<Self>) {
-        let enabled = reprise_core::modules::is_enabled(
+    fn start_fetch(self: &Rc<Self>, include_concerts: bool) {
+        if self.fetching.get() {
+            return;
+        }
+        let news_enabled = reprise_core::modules::is_enabled(
             &self.conn.borrow(),
             &reprise_core::modules::NEW_RELEASES_MODULE,
         )
         .unwrap_or(false);
-        if !module_effect(enabled, true, true, false).fetch_allowed {
+        let concerts_enabled = include_concerts
+            && reprise_core::modules::is_enabled(
+                &self.conn.borrow(),
+                &reprise_core::modules::CONCERTS_MODULE,
+            )
+            .unwrap_or(false)
+            && reprise_core::concerts::config::credentials(&self.conn.borrow())
+                .is_ok_and(|credentials| !credentials.is_empty());
+        let pending = u8::from(news_enabled) + u8::from(concerts_enabled);
+        if pending == 0 {
+            self.render(false, false);
             return;
         }
-        if self.fetching.replace(true) {
-            return;
-        }
+        self.fetching.set(true);
+        self.pending_fetches.set(pending);
+        self.news_failed.set(false);
+        self.concerts_failed.set(false);
         self.fetch_stack.set_visible_child_name("spinner");
         self.spinner.start();
         self.fetch_button.set_sensitive(false);
         self.failure.set_visible(false);
         self.render(false, false);
 
+        if news_enabled {
+            self.start_news_fetch();
+        }
+        if concerts_enabled {
+            self.start_concerts_fetch();
+        }
+    }
+
+    fn start_news_fetch(self: &Rc<Self>) {
         let database_path = self.database_path.clone();
         let result = one_shot_task::spawn("reprise-new-releases", move || {
             fetch_from_database(&database_path)
         });
         let Ok(receiver) = result else {
-            self.finish_fetch(true);
+            self.finish_feed(FeedKind::News, true);
             return;
         };
         let weak = Rc::downgrade(self);
@@ -601,13 +659,47 @@ impl NewReleasesPopover {
                 }
             };
             if let Some(state) = weak.upgrade() {
-                state.finish_fetch(failed);
+                state.finish_feed(FeedKind::News, failed);
             }
         });
     }
 
-    fn finish_fetch(self: &Rc<Self>, failed: bool) {
-        if !failed {
+    fn start_concerts_fetch(self: &Rc<Self>) {
+        let generation = self.generation.get().wrapping_add(1);
+        self.generation.set(generation);
+        let (sender, receiver) = async_channel::bounded(1);
+        if !self.concerts_runtime.request(ConcertsRequest {
+            generation,
+            force: true,
+            response: sender,
+        }) {
+            self.finish_feed(FeedKind::Concerts, true);
+            return;
+        }
+        let weak = Rc::downgrade(self);
+        gtk4::glib::spawn_future_local(async move {
+            let failed = match receiver.recv().await {
+                Ok(response) if response.generation == generation => match response.result {
+                    Ok(summary) => summary.failed > 0,
+                    Err(error) => {
+                        tracing::warn!(%error, "could not refresh Concerts from Updates");
+                        true
+                    }
+                },
+                Ok(_) => true,
+                Err(error) => {
+                    tracing::warn!(%error, "Concerts worker closed without an Updates result");
+                    true
+                }
+            };
+            if let Some(state) = weak.upgrade() {
+                state.finish_feed(FeedKind::Concerts, failed);
+            }
+        });
+    }
+
+    fn finish_feed(self: &Rc<Self>, feed: FeedKind, failed: bool) {
+        if matches!(feed, FeedKind::News) && !failed {
             let result = {
                 let conn = self.conn.borrow();
                 reprise_core::library::settings::set_new_releases_fetch_completed(&conn, true)
@@ -616,11 +708,20 @@ impl NewReleasesPopover {
                 tracing::warn!(%error, "could not save New Releases fetch state");
             }
         }
+        match feed {
+            FeedKind::News => self.news_failed.set(failed),
+            FeedKind::Concerts => self.concerts_failed.set(failed),
+        }
+        let remaining = self.pending_fetches.get().saturating_sub(1);
+        self.pending_fetches.set(remaining);
+        if remaining > 0 {
+            return;
+        }
         self.fetching.set(false);
         self.spinner.stop();
         self.fetch_stack.set_visible_child_name("icon");
         self.fetch_button.set_sensitive(true);
-        self.render(false, failed);
+        self.render(false, self.news_failed.get());
     }
 }
 
@@ -637,17 +738,37 @@ fn bind_runtime(state: &Rc<NewReleasesPopover>, runtime: &Rc<ArtistNewsRuntime>)
     );
 }
 
+fn bind_concerts_runtime(state: &Rc<NewReleasesPopover>, runtime: &Rc<ConcertsRuntime>) {
+    let alive = Rc::downgrade(state);
+    let target = Rc::downgrade(state);
+    runtime.subscribe_enabled(
+        move || alive.upgrade().is_some(),
+        move |_| {
+            if let Some(state) = target.upgrade() {
+                state.render(false, false);
+            }
+        },
+    );
+}
+
 pub(in crate::ui) fn install(
     header: &adw::HeaderBar,
     window: &adw::ApplicationWindow,
     conn: &Rc<RefCell<rusqlite::Connection>>,
     database_path: &Path,
     runtime: &Rc<ArtistNewsRuntime>,
+    concerts_runtime: &Rc<ConcertsRuntime>,
     on_show_album: release_row::OnShowAlbum,
 ) {
-    let state = NewReleasesPopover::new(conn.clone(), database_path.to_path_buf(), on_show_album);
+    let state = NewReleasesPopover::new(
+        conn.clone(),
+        database_path.to_path_buf(),
+        concerts_runtime.clone(),
+        on_show_album,
+    );
     header.pack_end(&state.button);
     bind_runtime(&state, runtime);
+    bind_concerts_runtime(&state, concerts_runtime);
     state.retain_for_window(window);
 }
 
@@ -665,44 +786,6 @@ fn fetch_from_database(
     let scope = reprise_core::artist_news::configured_fetch_scope(&conn)
         .map_err(|error| reprise_core::artist_news::NewsError::Database(error.to_string()))?;
     reprise_core::artist_news::refresh(&conn, today, scope, true, fallback_accent_for_artist)
-}
-
-fn build_footer() -> (
-    gtk4::Box,
-    gtk4::Button,
-    gtk4::Stack,
-    gtk4::Spinner,
-    gtk4::Label,
-    gtk4::Label,
-) {
-    let icon = gtk4::Image::from_icon_name("view-refresh-symbolic");
-    let spinner = gtk4::Spinner::new();
-    let stack = gtk4::Stack::new();
-    stack.add_named(&icon, Some("icon"));
-    stack.add_named(&spinner, Some("spinner"));
-    stack.set_visible_child_name("icon");
-    let fetch_label = gtk4::Label::new(Some(&strings::text(strings::FETCH_NOW)));
-    let fetch_content = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-    fetch_content.append(&stack);
-    fetch_content.append(&fetch_label);
-    let fetch_button = gtk4::Button::builder()
-        .child(&fetch_content)
-        .css_classes(["flat", "new-release-ghost"])
-        .build();
-    let updated = gtk4::Label::new(None);
-    updated.add_css_class("dim-label");
-    let failure = gtk4::Label::new(Some(&strings::text(strings::FETCH_FAILED_INLINE)));
-    failure.add_css_class("dim-label");
-    failure.set_visible(false);
-    let status = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-    status.set_hexpand(true);
-    status.set_halign(gtk4::Align::End);
-    status.append(&updated);
-    status.append(&failure);
-    let footer = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-    footer.append(&fetch_button);
-    footer.append(&status);
-    (footer, fetch_button, stack, spinner, updated, failure)
 }
 
 #[cfg(test)]

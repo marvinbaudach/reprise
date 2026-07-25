@@ -15,7 +15,7 @@ mod concerts_worker;
 pub(super) mod css;
 
 pub(in crate::ui) use concerts_view::ConcertsView;
-pub(in crate::ui) use concerts_worker::ConcertsRuntime;
+pub(in crate::ui) use concerts_worker::{ConcertsRequest, ConcertsRuntime};
 
 #[allow(dead_code)]
 pub(in crate::ui) fn install(
