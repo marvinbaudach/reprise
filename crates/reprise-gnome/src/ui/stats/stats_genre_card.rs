@@ -84,6 +84,7 @@ impl StatsGenreCard {
             bar.add_css_class("stats-genre-segment");
             bar.add_css_class(&segment_css_class(segment, index));
             bar.set_hexpand(true);
+            bar.set_height_request(22);
             bar.set_tooltip_text(Some(&format!(
                 "{} · {} % · {}",
                 segment.label,
@@ -267,6 +268,28 @@ mod tests {
         assert!(descendant_labels(&tile)
             .iter()
             .any(|copy| copy.contains("top: Lorna Shore")));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn stats_15_genre_segments_fill_the_22px_bar() {
+        gtk4::init().unwrap();
+        let card = card();
+        card.set_data(&fixture());
+        let window = gtk4::Window::builder()
+            .default_width(640)
+            .child(card.widget())
+            .build();
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        let eyebrow = card.widget().first_child().unwrap();
+        let segment_grid = eyebrow.next_sibling().unwrap();
+        let segment = segment_grid.first_child().unwrap();
+
+        assert_eq!(segment_grid.height(), 22);
+        assert_eq!(segment.height(), 22);
+        window.close();
     }
 
     #[test]
