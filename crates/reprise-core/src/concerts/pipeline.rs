@@ -6,6 +6,7 @@ use rusqlite::{params, Connection};
 
 use super::candidates::{self, ArtistCandidate, MAX_ARTISTS_PER_RUN};
 use super::resolution::{self, LedgerArtist, ResolvedIdentity, StoredOutcome};
+use super::similar::{self, HttpSimilarFetch, SimilarFetch, SIMILAR_SEEDS};
 use super::{
     artist_due, backoff_delay, dedupe_key, merge, ArtistRef, ConcertError, EventProvider,
     ProviderError, ProviderEvent, ProviderKind, Resolution,
@@ -27,13 +28,51 @@ pub fn refresh(
     now: i64,
     force: bool,
 ) -> Result<RefreshSummary, ConcertError> {
+    refresh_with_similar_fetch(
+        conn,
+        providers,
+        today,
+        now,
+        force,
+        &HttpSimilarFetch,
+        crate::scrobbling::BUNDLED_API_KEY,
+    )
+}
+
+pub(crate) fn refresh_with_similar_fetch(
+    conn: &Connection,
+    providers: &[Box<dyn EventProvider>],
+    today: NaiveDate,
+    now: i64,
+    force: bool,
+    similar_fetch: &dyn SimilarFetch,
+    lastfm_api_key: Option<&str>,
+) -> Result<RefreshSummary, ConcertError> {
     if providers.is_empty() {
         delete_past_events(conn, today)?;
         return Err(ConcertError::MissingCredentials);
     }
     let cutoff = now.saturating_sub(super::config::window_days(conn)?.saturating_mul(24 * 60 * 60));
-    let mut candidates = candidates::library_candidates(conn, cutoff)?;
-    candidates.retain(|candidate| artist_due(candidate.last_attempt_at, now, force));
+    let library_artists = candidates::library_candidates(conn, cutoff)?;
+    let mut candidates = library_artists
+        .iter()
+        .filter(|candidate| artist_due(candidate.last_attempt_at, now, force))
+        .cloned()
+        .collect::<Vec<_>>();
+    let similar_config = super::config::similar_config(conn)?;
+    if similar_config.enabled && candidates.len() < MAX_ARTISTS_PER_RUN {
+        let seeds = candidates::seed_artists(conn, cutoff, SIMILAR_SEEDS)?;
+        let mut similar = similar::similar_candidates(
+            conn,
+            &seeds,
+            &library_artists,
+            similar_fetch,
+            similar_config,
+            lastfm_api_key,
+        )?;
+        similar.retain(|candidate| artist_due(candidate.last_attempt_at, now, force));
+        candidates.extend(similar);
+    }
     candidates.truncate(MAX_ARTISTS_PER_RUN);
     let mut summary = RefreshSummary::default();
     for candidate in candidates {
