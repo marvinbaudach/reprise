@@ -106,6 +106,7 @@ impl StatsView {
         thin_hint.set_xalign(0.0);
         let hint_card = card(&thin_hint);
         let trend_stack = gtk4::Stack::new();
+        trend_stack.set_vhomogeneous(false);
         trend_stack.add_named(&chart_card, Some("chart"));
         trend_stack.add_named(&hint_card, Some("hint"));
         trend_stack.set_visible_child_name("chart");
@@ -126,6 +127,7 @@ impl StatsView {
             .build();
         let page_stack = gtk4::Stack::new();
         page_stack.set_vexpand(true);
+        page_stack.set_vhomogeneous(false);
         page_stack.add_named(&sections, Some("sections"));
         page_stack.add_named(&empty, Some("empty"));
         page_stack.add_named(&failed, Some("failed"));
@@ -183,7 +185,6 @@ impl StatsView {
             genres_section_data: genres.clone(),
             songs_card: songs_card.clone(),
             trend_stack: trend_stack.clone(),
-            thin_hint: thin_hint.clone(),
             band_section: band_section.clone(),
             songs_section: songs_section.clone(),
             genres_section: genres_section.clone(),
@@ -253,9 +254,9 @@ impl StatsView {
             .map(|period| period.label())
             .collect::<Vec<_>>();
         let label_refs = labels.iter().map(String::as_str).collect::<Vec<_>>();
+        *self.periods.borrow_mut() = periods;
         self.period_model
             .splice(0, self.period_model.n_items(), &label_refs);
-        *self.periods.borrow_mut() = periods;
         self.period_dropdown.set_selected(0);
 
         if !self.wired.replace(true) {
@@ -403,7 +404,6 @@ struct RenderParts {
     genres_section_data: StatsGenreCard,
     songs_card: StatsSongsCard,
     trend_stack: gtk4::Stack,
-    thin_hint: gtk4::Label,
     band_section: gtk4::Box,
     songs_section: gtk4::Box,
     genres_section: gtk4::Box,
@@ -465,6 +465,7 @@ fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot, entrance: boo
         render.band_card.set_data(spotlight);
         render.band_section.set_visible(true);
     } else {
+        render.band_card.clear_data();
         render.band_section.set_visible(false);
     }
     render.genres_section_data.set_data(&snapshot.genres);
@@ -474,15 +475,11 @@ fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot, entrance: boo
     render
         .songs_section
         .set_visible(!snapshot.top_tracks.is_empty());
-    if !snapshot.top_tracks.is_empty() {
-        render.songs_card.set_data(snapshot);
-    }
+    render.songs_card.set_data(snapshot);
     let thin = snapshot.hero.plays < MIN_PLAYS_FOR_TREND;
     render
         .trend_stack
         .set_visible_child_name(if thin { "hint" } else { "chart" });
-    render.thin_hint.set_visible(thin);
-
     let mut bars = render.band_card.bars();
     bars.extend(render.songs_card.summary_bars());
     let cards = [

@@ -14,6 +14,7 @@ pub(super) fn label(text: &str, class: &str) -> gtk4::Label {
     label.add_css_class(class);
     label.set_xalign(0.0);
     label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    label.set_max_width_chars(40);
     label
 }
 

@@ -14,6 +14,7 @@ use reprise_core::library::stats_snapshot::{SortBy, StatsSnapshot};
 use super::stats_metadata_links::{self, MetadataCallback, StatsMetadataTarget};
 use super::stats_view_widgets::{clear, label};
 use crate::ui::cover_loader::CoverLoader;
+use crate::ui::strings;
 
 const SONG_ROW_LIMIT: usize = 5;
 const FULL_TRACK_LIMIT: usize = 10;
@@ -237,7 +238,7 @@ impl StatsSongsCard {
             move |_| invoke_id(&callback, track_id)
         });
         cover_overlay.add_overlay(&play);
-        install_play_visibility(&row, &cover_overlay, &play);
+        install_play_visibility(&row, &play);
         self.play_buttons.borrow_mut().push(play);
         body.append(&cover_overlay);
 
@@ -372,8 +373,9 @@ impl StatsSongsCard {
     }
 }
 
-fn install_play_visibility(row: &gtk4::Box, overlay: &gtk4::Overlay, play: &gtk4::Button) {
+fn install_play_visibility(row: &gtk4::Box, play: &gtk4::Button) {
     let hovered = Rc::new(Cell::new(false));
+    let focused = Rc::new(Cell::new(false));
     let motion = gtk4::EventControllerMotion::new();
     motion.connect_enter({
         let play = play.clone();
@@ -386,20 +388,26 @@ fn install_play_visibility(row: &gtk4::Box, overlay: &gtk4::Overlay, play: &gtk4
     motion.connect_leave({
         let play = play.clone();
         let hovered = hovered.clone();
+        let focused = focused.clone();
         move |_| {
             hovered.set(false);
-            play.set_visible(play.has_focus());
+            play.set_visible(focused.get());
         }
     });
-    overlay.add_controller(motion);
+    row.add_controller(motion);
     play.connect_has_focus_notify({
         let hovered = hovered.clone();
         move |button| button.set_visible(button.has_focus() || hovered.get())
     });
-    row.connect_has_focus_notify({
+    let focus = gtk4::EventControllerFocus::new();
+    focus.connect_contains_focus_notify({
         let play = play.clone();
-        move |row| play.set_visible(row.has_focus() || play.has_focus() || hovered.get())
+        move |focus| {
+            focused.set(focus.contains_focus());
+            play.set_visible(focus.contains_focus() || hovered.get());
+        }
     });
+    row.add_controller(focus);
 }
 
 fn add_id_action(
@@ -483,7 +491,7 @@ fn render_full_rows(
             &format!(
                 "{} plays · {}",
                 format_thousands(track.play_count),
-                format_duration(track.total_ms)
+                strings::hero_listening_time(track.total_ms)
             ),
             "stats-play-count",
         ));
@@ -524,11 +532,6 @@ fn relative_value(value: i64, leader: i64) -> f64 {
     } else {
         value.max(0) as f64 / leader as f64
     }
-}
-
-fn format_duration(milliseconds: i64) -> String {
-    let minutes = milliseconds.max(0) / 60_000;
-    format!("{} h {} min", minutes / 60, minutes % 60)
 }
 
 #[cfg(test)]

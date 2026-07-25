@@ -6,7 +6,7 @@ use crate::library::stats_period::StatsPeriod;
 
 const NOW_2026_07_19: i64 = 1_784_424_000;
 
-/// STATS-1a: ordinary changes retain the familiar percentage form. The
+/// STATS-11a: ordinary changes retain the familiar percentage form. The
 /// presentation is core-owned so every frontend receives the same decision.
 #[test]
 fn stats_11a_percentage_below_the_threshold_stays_a_percentage() {
@@ -18,7 +18,7 @@ fn stats_11a_percentage_below_the_threshold_stays_a_percentage() {
     );
 }
 
-/// STATS-1a: +1000% is the first factor-form value. Core decides whether the
+/// STATS-11a: +1000% is the first factor-form value. Core decides whether the
 /// rounded factor is whole or decimal; only its punctuation remains localized.
 #[test]
 fn stats_11a_at_and_above_the_threshold_becomes_a_correctly_rounded_factor() {
@@ -44,7 +44,7 @@ fn stats_11a_at_and_above_the_threshold_becomes_a_correctly_rounded_factor() {
     }
 }
 
-/// STATS-1a: a strong decline uses the same multiplicative vocabulary as a
+/// STATS-11a: a strong decline uses the same multiplicative vocabulary as a
 /// strong rise while retaining the established downward direction marker.
 #[test]
 fn stats_11a_strong_decline_uses_the_symmetric_factor_form() {
@@ -59,7 +59,7 @@ fn stats_11a_strong_decline_uses_the_symmetric_factor_form() {
     );
 }
 
-/// STATS-1a: a nonzero decline must never round to the false factor `×0`.
+/// STATS-11a: a nonzero decline must never round to the false factor `×0`.
 #[test]
 fn stats_11a_extreme_nonzero_decline_stays_below_one_tenth() {
     let snapshot = comparison_snapshot(1_000, Some(100_000));
@@ -73,7 +73,7 @@ fn stats_11a_extreme_nonzero_decline_stays_below_one_tenth() {
     );
 }
 
-/// STATS-1a: a baseline below the product's one-minute display granularity is
+/// STATS-11a: a baseline below the product's one-minute display granularity is
 /// qualitative data, not a denominator for an explosive numeric comparison.
 #[test]
 fn stats_11a_zero_or_near_zero_baseline_uses_neither_percent_nor_factor() {

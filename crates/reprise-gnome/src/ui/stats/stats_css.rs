@@ -48,12 +48,6 @@ pub(in crate::ui) fn css() -> String {
            background-color: alpha(@accent_bg_color, 0.20); \
            color: @accent_color; }}\n\
          \
-         .stats-section-title {{ \
-           font-size: 13px; \
-           font-weight: 700; \
-           letter-spacing: 0.04em; \
-           color: alpha(@window_fg_color, 0.55); }}\n\
-         \
          .stats-rank {{ \
            font-size: 13px; \
            font-weight: 700; \
@@ -132,13 +126,6 @@ pub(in crate::ui) fn css() -> String {
            font-weight: 700; \
            letter-spacing: 0.06em; \
            color: alpha(@window_fg_color, 0.58); }}\n\
-         .stats-rank-badge {{ \
-           font-weight: 800; \
-           color: @accent_color; }}\n\
-         .stats-track-chip {{ \
-           padding: 4px 8px; \
-           border-radius: 999px; \
-           background-color: alpha(@window_fg_color, 0.08); }}\n\
          .stats-ghost-rank, .stats-unify-hint {{ \
            color: alpha(@window_fg_color, 0.58); }}\n\
          .stats-genre-card {{ padding: 8px; }}\n\
@@ -151,10 +138,6 @@ pub(in crate::ui) fn css() -> String {
          .stats-genre-segment-last {{ background-color: alpha(@window_fg_color, 0.25); }}\n\
          .stats-genre-tile {{ padding: 4px; }}\n\
          .stats-genre-cover:focus-visible {{ outline: 2px solid @accent_color; }}\n\
-         .stats-highlight-tile {{ \
-           padding: 12px; \
-           border-radius: {radius}; \
-           background-color: alpha(@window_fg_color, 0.05); }}\n\
          .stats-highlight-value {{ font-size: 18px; font-weight: 700; }}\n\
          .stats-top-track-row {{ padding: 5px; }}",
         radius = tokens::RADIUS_SURFACE,
@@ -166,7 +149,19 @@ pub(in crate::ui) fn css() -> String {
 mod tests {
     #[test]
     fn stats_css_omits_unsupported_overflow_property() {
-        assert!(!super::css().contains("overflow:"));
+        let css = super::css();
+        assert!(!css.contains("overflow:"));
+        for retired in [
+            ".stats-section-title",
+            ".stats-rank-badge",
+            ".stats-track-chip",
+            ".stats-highlight-tile",
+        ] {
+            assert!(
+                !css.contains(retired),
+                "retired selector survived: {retired}"
+            );
+        }
     }
 
     #[test]
@@ -193,7 +188,6 @@ mod tests {
         assert!(css.contains(".stats-headline-hours"));
         assert!(css.contains(".stats-hero-number"));
         assert!(css.contains(".stats-kpi-label"));
-        assert!(css.contains(".stats-section-title"));
         assert!(css.contains(".stats-card"));
         assert!(css.contains(".stats-thin-history"));
         assert!(css.contains(".stats-badge"));

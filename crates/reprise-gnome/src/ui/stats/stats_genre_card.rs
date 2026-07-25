@@ -7,6 +7,7 @@ use gtk4::prelude::*;
 use reprise_core::cover::ThumbnailSize;
 use reprise_core::library::stats_snapshot::{GenreSection, GenreSegment};
 
+use super::stats_view_widgets::label;
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::strings;
 
@@ -87,7 +88,7 @@ impl StatsGenreCard {
                 "{} · {} % · {}",
                 segment.label,
                 segment.share_percent,
-                format_duration(segment.total_ms)
+                strings::hero_listening_time(segment.total_ms)
             )));
             let width = segment.share_percent.max(1) as i32;
             self.segments.attach(&bar, column, 0, width, 1);
@@ -98,31 +99,35 @@ impl StatsGenreCard {
     fn tile(&self, segment: &GenreSegment, token: u64) -> gtk4::Box {
         let tile = gtk4::Box::new(gtk4::Orientation::Horizontal, 9);
         tile.add_css_class("stats-genre-tile");
-        let cover_button = gtk4::Button::new();
-        cover_button.add_css_class("flat");
-        cover_button.add_css_class("stats-genre-cover");
-        cover_button.set_tooltip_text(Some("Go to album"));
         let cover = gtk4::Image::builder()
             .pixel_size(40)
             .width_request(40)
             .height_request(40)
             .build();
         CoverLoader::set_placeholder(&cover);
-        self.cover_loader.load_into(
-            &cover,
-            &segment.representative_track_path,
-            ThumbnailSize::List,
-            token,
-            &self.cover_generation,
-        );
-        cover_button.set_child(Some(&cover));
-        cover_button.connect_clicked({
-            let callback = self.on_open_album_path.clone();
-            let path = segment.representative_track_path.clone();
-            move |_| invoke(&callback, path.clone())
-        });
-        self.cover_buttons.borrow_mut().push(cover_button.clone());
-        tile.append(&cover_button);
+        if segment.representative_track_path.is_empty() {
+            tile.append(&cover);
+        } else {
+            self.cover_loader.load_into(
+                &cover,
+                &segment.representative_track_path,
+                ThumbnailSize::List,
+                token,
+                &self.cover_generation,
+            );
+            let cover_button = gtk4::Button::new();
+            cover_button.add_css_class("flat");
+            cover_button.add_css_class("stats-genre-cover");
+            cover_button.set_tooltip_text(Some("Go to album"));
+            cover_button.set_child(Some(&cover));
+            cover_button.connect_clicked({
+                let callback = self.on_open_album_path.clone();
+                let path = segment.representative_track_path.clone();
+                move |_| invoke(&callback, path.clone())
+            });
+            self.cover_buttons.borrow_mut().push(cover_button.clone());
+            tile.append(&cover_button);
+        }
 
         let copy = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
         copy.set_hexpand(true);
@@ -133,7 +138,7 @@ impl StatsGenreCard {
         copy.append(&label(
             &format!(
                 "{} · top: {}",
-                format_duration(segment.total_ms),
+                strings::hero_listening_time(segment.total_ms),
                 segment.top_artist.as_deref().unwrap_or("Unknown artist")
             ),
             "stats-item-subtitle",
@@ -181,13 +186,6 @@ fn segment_css_class(segment: &GenreSegment, index: usize) -> String {
     }
 }
 
-fn label(text: &str, class: &str) -> gtk4::Label {
-    let label = gtk4::Label::new(Some(text));
-    label.add_css_class(class);
-    label.set_xalign(0.0);
-    label
-}
-
 fn clear_grid(container: &gtk4::Grid) {
     while let Some(child) = container.first_child() {
         container.remove(&child);
@@ -200,15 +198,6 @@ fn invoke(callback: &StringCallback, value: String) {
         if let Some(callback) = callback {
             callback(value);
         }
-    }
-}
-
-fn format_duration(milliseconds: i64) -> String {
-    let minutes = milliseconds.max(0) / 60_000;
-    if minutes < 60 {
-        format!("{minutes} min")
-    } else {
-        format!("{} h {}", minutes / 60, minutes % 60)
     }
 }
 
@@ -311,6 +300,19 @@ mod tests {
         card.cover_buttons.borrow()[0].emit_clicked();
 
         assert_eq!(opened.borrow().as_deref(), Some("/music/track.flac"));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn genre_without_a_representative_path_has_no_cover_action() {
+        gtk4::init().unwrap();
+        let card = card();
+        let mut section = fixture();
+        section.segments[0].representative_track_path.clear();
+
+        card.set_data(&section);
+
+        assert!(card.cover_buttons.borrow().is_empty());
     }
 
     fn descendant_labels(root: &gtk4::Widget) -> Vec<String> {

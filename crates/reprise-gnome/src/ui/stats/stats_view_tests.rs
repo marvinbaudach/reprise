@@ -18,6 +18,8 @@ fn stats_10_page_orders_header_hero_chart_row_genres() {
     let (view, _) = view_and_conn();
 
     assert_eq!(view.section_order(), SECTION_ORDER);
+    assert!(!view.page_stack.is_vhomogeneous());
+    assert!(!view.render.trend_stack.is_vhomogeneous());
 }
 
 #[test]
@@ -631,7 +633,6 @@ fn stats_16_thin_history_swaps_chart_for_hint() {
         view.render.trend_stack.visible_child_name().as_deref(),
         Some("hint")
     );
-    assert!(view.render.thin_hint.is_visible());
     assert!(view.render.hero.subline.label().starts_with("9 plays"));
 
     conn.borrow()
@@ -646,7 +647,6 @@ fn stats_16_thin_history_swaps_chart_for_hint() {
         view.render.trend_stack.visible_child_name().as_deref(),
         Some("chart")
     );
-    assert!(!view.render.thin_hint.is_visible());
 }
 
 #[test]
