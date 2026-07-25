@@ -203,7 +203,7 @@ fn doc_3a_none_clears_every_row() {
 }
 
 #[test]
-fn doc_1d_review_remote_toggle_removes_selection_and_restores_local_result() {
+fn doc_7a_review_remote_toggle_removes_selection_and_restores_local_result() {
     let mut remote = proposal(1, DoctorField::Title, ProposalSource::MusicBrainz);
     remote.local_fallback = Some(DoctorLocalFallback::Proposal {
         proposed: DoctorValue::Text("local-title".into()),

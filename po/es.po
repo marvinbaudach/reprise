@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-25 16:38+0200\n"
+"POT-Creation-Date: 2026-07-25 18:07+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Spanish\n"
@@ -352,8 +352,8 @@ msgid ""
 "device sync state are removed. The music file stays on disk and will be "
 "ignored during future scans. Listening history stays in My Stats."
 msgid_plural ""
-"Remove {count} tracks from the library? Their ratings, playlist entries, and"
-" device sync state are removed. The music files stay on disk and will be "
+"Remove {count} tracks from the library? Their ratings, playlist entries, and "
+"device sync state are removed. The music files stay on disk and will be "
 "ignored during future scans. Listening history stays in My Stats."
 msgstr[0] ""
 "¿Quitar {count} pista de la biblioteca? Se eliminan su valoración, sus "
@@ -363,8 +363,8 @@ msgstr[0] ""
 msgstr[1] ""
 "¿Quitar {count} pistas de la biblioteca? Se eliminan sus valoraciones, sus "
 "entradas en listas de reproducción y su estado de sincronización con el "
-"dispositivo. Los archivos de música permanecen en el disco y se ignorarán en"
-" futuros análisis. El historial de escucha permanece en Mis estadísticas."
+"dispositivo. Los archivos de música permanecen en el disco y se ignorarán en "
+"futuros análisis. El historial de escucha permanece en Mis estadísticas."
 
 #: crates/reprise-gnome/src/ui/strings.rs:213
 #, rust-format
@@ -1241,8 +1241,8 @@ msgstr "Título: {old} → {new}"
 msgid ""
 "This file is outside your library folder — it won't be watched or rescanned."
 msgstr ""
-"Este archivo está fuera de la carpeta de la biblioteca; no se supervisará ni"
-" se volverá a analizar."
+"Este archivo está fuera de la carpeta de la biblioteca; no se supervisará ni "
+"se volverá a analizar."
 
 #: crates/reprise-gnome/src/ui/strings_issues.rs:74
 msgid "Searching for missing tracks"
@@ -1423,8 +1423,8 @@ msgstr "Sugerencias de MusicBrainz y AcoustID"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:14
 msgid ""
-"Optional network lookup · local fixes are always included · no file paths or"
-" private library data"
+"Optional network lookup · local fixes are always included · no file paths or "
+"private library data"
 msgstr ""
 "Consulta de red opcional · las correcciones locales siempre se incluyen · "
 "sin rutas de archivo ni datos privados de la biblioteca"
@@ -1441,10 +1441,10 @@ msgid ""
 "playlists, and device data are never sent."
 msgstr ""
 "Reprise solo envía a MusicBrainz el título, artista, álbum, artista del "
-"álbum, identificadores de MusicBrainz y duración existentes. AcoustID recibe"
-" únicamente una huella y la duración. Nunca se envían rutas ni nombres de "
-"archivo, raíces de la biblioteca, valoraciones, historial de escucha, listas"
-" de reproducción ni datos de dispositivos."
+"álbum, identificadores de MusicBrainz y duración existentes. AcoustID recibe "
+"únicamente una huella y la duración. Nunca se envían rutas ni nombres de "
+"archivo, raíces de la biblioteca, valoraciones, historial de escucha, listas "
+"de reproducción ni datos de dispositivos."
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:19
 msgid "Enable Suggestions"
@@ -1697,14 +1697,6 @@ msgid "Revert Last Cleanup"
 msgstr "Revertir la última limpieza"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:86
-msgid "Available even when Library Doctor is disabled"
-msgstr "Disponible incluso cuando el Doctor de la biblioteca está desactivado"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:87
-msgid "Enable Library Doctor"
-msgstr "Activar el Doctor de la biblioteca"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:89
 msgid ""
 "This job continues in the background. Progress and Cancel stay in the "
 "sidebar."
@@ -1712,133 +1704,131 @@ msgstr ""
 "Esta tarea continúa en segundo plano. El progreso y la opción de cancelar "
 "permanecen en la barra lateral."
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:90
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:87
 msgid "Library Doctor Job Failed"
 msgstr "Falló la tarea del Doctor de la biblioteca"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:94
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:91
 #, rust-format
 msgid "{source} · {confidence}%"
 msgstr "{source} · {confidence}%"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:101
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:98
 #, rust-format
 msgid "{source} · {confidence}% · low confidence"
 msgstr "{source} · {confidence}% · confianza baja"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:114
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:111
 #, rust-format
 msgid ""
-"{track}, {field}. Current: {current}. Proposed: {proposed}. Source: "
-"{source}."
+"{track}, {field}. Current: {current}. Proposed: {proposed}. Source: {source}."
 msgstr ""
-"{track}, {field}. Actual: {current}. Propuesto: {proposed}. Fuente: "
-"{source}."
+"{track}, {field}. Actual: {current}. Propuesto: {proposed}. Fuente: {source}."
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:128
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:125
 #, rust-format
 msgid "Apply {count} track"
 msgid_plural "Apply {count} tracks"
 msgstr[0] "Aplicar a {count} pista"
 msgstr[1] "Aplicar a {count} pistas"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:137
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:134
 #, rust-format
 msgid "{changes} tag changes · {files} files · undo available after"
 msgstr ""
 "{changes} cambios de etiquetas · {files} archivos · se podrán deshacer "
 "después"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:147
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:144
 #, rust-format
 msgid "{value} ({count})"
 msgstr "{value} ({count})"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:155
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:152
 #, rust-format
 msgid "{count} spelling, no clear winner"
 msgid_plural "{count} spellings, no clear winner"
 msgstr[0] "{count} grafía, sin una opción claramente preferida"
 msgstr[1] "{count} grafías, sin una opción claramente preferida"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:164
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:161
 #, rust-format
 msgid "{label}: {value}"
 msgstr "{label}: {value}"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:171
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:168
 #, rust-format
 msgid "Duration: {duration} ms"
 msgstr "Duración: {duration} ms"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:178
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:175
 #, rust-format
 msgid "Duration difference: {delta} ms"
 msgstr "Diferencia de duración: {delta} ms"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:185
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:182
 #, rust-format
 msgid "{completed}/{total} tracks"
 msgstr "{completed}/{total} pistas"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:195
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:192
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:117
 #, rust-format
 msgid "Tags updated · {count} tracks"
 msgstr "Etiquetas actualizadas · {count} pistas"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:202
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:199
 #, rust-format
 msgid "Tags reverted · {count} tracks"
 msgstr "Etiquetas revertidas · {count} pistas"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:209
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:206
 #, rust-format
 msgid "{updated} tracks updated · {cancelled} cancelled"
 msgstr "{updated} pistas actualizadas · {cancelled} canceladas"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:219
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:216
 #, rust-format
 msgid "{updated} updated, {failed} failed"
 msgstr "{updated} actualizadas, {failed} fallidas"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:229
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:226
 #, rust-format
 msgid "{applied} applied · {remaining} remaining"
 msgstr "{applied} aplicados · {remaining} restantes"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:240
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:237
 #, rust-format
 msgid "{count} change"
 msgid_plural "{count} changes"
 msgstr[0] "{count} cambio"
 msgstr[1] "{count} cambios"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:250
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:247
 #, rust-format
 msgid "{count} group"
 msgid_plural "{count} groups"
 msgstr[0] "{count} grupo"
 msgstr[1] "{count} grupos"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:259
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:256
 #, rust-format
 msgid "{safe} safe · {review} review"
 msgstr "{safe} seguras · {review} para revisar"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:266
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:263
 #, rust-format
 msgid "{checked} checked · {skipped} skipped"
 msgstr "{checked} comprobadas · {skipped} omitidas"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:277
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:274
 #, rust-format
 msgid "Review {count} change"
 msgid_plural "Review {count} changes"
 msgstr[0] "Revisar {count} cambio"
 msgstr[1] "Revisar {count} cambios"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:287
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:284
 #, rust-format
 msgid "Review {count} safe fix"
 msgid_plural "Review {count} safe fixes"
@@ -1887,8 +1877,7 @@ msgid ""
 "sends file paths or listening history."
 msgstr ""
 "Al activarlo, los nombres de los artistas seleccionados se envían a "
-"MusicBrainz. Reprise nunca envía rutas de archivo ni el historial de "
-"escucha."
+"MusicBrainz. Reprise nunca envía rutas de archivo ni el historial de escucha."
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:22
 msgid "Artist News is Off"
@@ -1901,8 +1890,7 @@ msgstr "Selecciona una pista para ver novedades del artista y el álbum."
 #: crates/reprise-gnome/src/ui/strings_news.rs:25
 msgid "Artist News is paused while multiple tracks are selected."
 msgstr ""
-"Las novedades de artistas se pausan mientras hay varias pistas "
-"seleccionadas."
+"Las novedades de artistas se pausan mientras hay varias pistas seleccionadas."
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:26
 msgid "This track has no artist information."
@@ -1996,8 +1984,7 @@ msgstr "Activar los nuevos lanzamientos →"
 #: crates/reprise-gnome/src/ui/strings_news.rs:50
 msgid "Enable network features for artists (images & new releases) →"
 msgstr ""
-"Activar las funciones de red para artistas (imágenes y nuevos lanzamientos) "
-"→"
+"Activar las funciones de red para artistas (imágenes y nuevos lanzamientos) →"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:52
 msgid "Artists"
@@ -2238,8 +2225,8 @@ msgid ""
 "playlists, and optionally the column layout"
 msgstr ""
 "Importar valoraciones, número de reproducciones, fecha de adición, última "
-"reproducción, listas de reproducción y, opcionalmente, la disposición de las"
-" columnas"
+"reproducción, listas de reproducción y, opcionalmente, la disposición de las "
+"columnas"
 
 #: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:13
 msgid "Ratings"
@@ -2276,8 +2263,8 @@ msgid ""
 "Choose what to copy into Reprise. Rhythmbox and your audio files remain "
 "unchanged — you can undo the whole operation."
 msgstr ""
-"Elige qué copiar en Reprise. Rhythmbox y tus archivos de audio no cambiarán;"
-" puedes deshacer toda la operación."
+"Elige qué copiar en Reprise. Rhythmbox y tus archivos de audio no cambiarán; "
+"puedes deshacer toda la operación."
 
 #: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:25
 msgid "Import complete"
@@ -2399,34 +2386,70 @@ msgstr ""
 "predeterminada)"
 
 #: crates/reprise-gnome/src/ui/strings_scrobbling.rs:15
+msgid "Scrobbling"
+msgstr "Scrobbling"
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:16
+msgid "Open Scrobbling Settings"
+msgstr "Abrir la configuración de scrobbling"
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:17
+msgid "Connect ListenBrainz, Last.fm, or both"
+msgstr "Conecta ListenBrainz, Last.fm o ambos"
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:18
+msgid "ListenBrainz enabled"
+msgstr "ListenBrainz activado"
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:19
+msgid "Last.fm enabled"
+msgstr "Last.fm activado"
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:20
+msgid "ListenBrainz and Last.fm enabled"
+msgstr "ListenBrainz y Last.fm activados"
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:21
+msgid "Local Features"
+msgstr "Funciones locales"
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:22
+msgid "Online Content"
+msgstr "Contenido en línea"
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:23
+msgid "Connected Services"
+msgstr "Servicios conectados"
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:24
 msgid "ListenBrainz"
 msgstr "ListenBrainz"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:16
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:25
 msgid "ListenBrainz Account"
 msgstr "Cuenta de ListenBrainz"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:17
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:26
 msgid "Not connected"
 msgstr "No conectado"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:18
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:27
 msgid "Connecting…"
 msgstr "Conectando…"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:19
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:28
 msgid "Token rejected"
 msgstr "Token rechazado"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:20
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:29
 msgid "Connection error"
 msgstr "Error de conexión"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:21
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:30
 msgid "Offline"
 msgstr "Desconectado"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:23
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:32
 msgid ""
 "Enter a user token from your ListenBrainz profile. The token is stored in "
 "the system keyring."
@@ -2434,47 +2457,47 @@ msgstr ""
 "Introduce un token de usuario de tu perfil de ListenBrainz. Se guardará en "
 "el depósito de claves del sistema."
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:25
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:34
 msgid "User token"
 msgstr "Token de usuario"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:26
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:35
 msgid "Connect"
 msgstr "Conectar"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:28
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:37
 msgid "Requires your ListenBrainz user token"
 msgstr "Requiere tu token de usuario de ListenBrainz"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:29
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:38
 msgid "Disconnect"
 msgstr "Desconectar"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:31
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:40
 msgid "Could not access the system keyring. The token was not stored."
 msgstr ""
 "No se pudo acceder al depósito de claves del sistema. El token no se guardó."
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:33
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:42
 msgid "Could not validate the ListenBrainz token. Try again later."
 msgstr ""
 "No se pudo validar el token de ListenBrainz. Inténtalo de nuevo más tarde."
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:35
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:44
 msgid "Could not remove the ListenBrainz token from the system keyring."
 msgstr ""
 "No se pudo quitar el token de ListenBrainz del depósito de claves del "
 "sistema."
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:36
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:45
 msgid "Last.fm"
 msgstr "Last.fm"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:37
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:46
 msgid "Last.fm Account"
 msgstr "Cuenta de Last.fm"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:39
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:48
 msgid ""
 "Enter credentials for a Last.fm desktop API application. They and the "
 "resulting session are stored only in the system keyring."
@@ -2483,95 +2506,99 @@ msgstr ""
 "Last.fm. Tanto estas como la sesión resultante se guardan únicamente en el "
 "depósito de claves del sistema."
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:41
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:50
 msgid "API key"
 msgstr "Clave de API"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:42
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:51
 msgid "Shared secret"
 msgstr "Secreto compartido"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:43
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:52
 msgid "Authorize Reprise in Your Browser"
 msgstr "Autoriza Reprise en el navegador"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:45
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:54
 msgid "After approving access on Last.fm, return here and continue."
 msgstr "Después de aprobar el acceso en Last.fm, vuelve aquí y continúa."
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:46
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:55
 msgid "Continue"
 msgstr "Continuar"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:47
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:56
 msgid "Credentials or authorization rejected"
 msgstr "Credenciales o autorización rechazadas"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:49
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:58
 msgid ""
 "Could not access the system keyring. Last.fm credentials were not stored."
 msgstr ""
 "No se pudo acceder al depósito de claves del sistema. Las credenciales de "
 "Last.fm no se guardaron."
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:50
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:59
 msgid "Could not connect to Last.fm. Try again later."
 msgstr "No se pudo conectar con Last.fm. Inténtalo de nuevo más tarde."
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:52
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:61
 msgid "Could not remove Last.fm credentials from the system keyring."
 msgstr ""
-"No se pudieron quitar las credenciales de Last.fm del depósito de claves del"
-" sistema."
+"No se pudieron quitar las credenciales de Last.fm del depósito de claves del "
+"sistema."
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:53
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:62
 msgid "Open Browser"
 msgstr "Abrir navegador"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:55
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:64
 msgid "Requires API key and shared secret"
 msgstr "Requiere una clave de API y un secreto compartido"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:56
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:65
 msgid "Sign in with Last.fm"
 msgstr "Iniciar sesión con Last.fm"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:57
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:66
 msgid "Sign in with your Last.fm account. No API key needed."
 msgstr ""
 "Inicia sesión con tu cuenta de Last.fm. No se necesita una clave de API."
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:58
-msgid "Use your own API key"
-msgstr "Usar tu propia clave de API"
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:67
+msgid "Advanced setup"
+msgstr "Configuración avanzada"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:59
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:69
+msgid "Use credentials from your own Last.fm API application"
+msgstr "Usa credenciales de tu propia aplicación de la API de Last.fm"
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:70
 msgid "Test connection"
 msgstr "Probar la conexión"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:60
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:71
 msgid "Test failed — try again later."
 msgstr "La prueba falló; inténtalo de nuevo más tarde."
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:64
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:75
 #, rust-format
 msgid "Connected as {user_name} ✓"
 msgstr "Conectado como {user_name} ✓"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:70
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:74
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:81
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:85
 #, rust-format
 msgid "Connected as {user_name}"
 msgstr "Conectado como {user_name}"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:83
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:94
 #, rust-format
 msgid "{n} submitted"
 msgid_plural "{n} submitted"
 msgstr[0] "{n} enviada"
 msgstr[1] "{n} enviadas"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:93
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:104
 #, rust-format
 msgid "{n} queued"
 msgid_plural "{n} queued"
@@ -2695,8 +2722,8 @@ msgstr "No se pudieron leer tus estadísticas"
 
 #: crates/reprise-gnome/src/ui/strings_stats.rs:37
 msgid ""
-"Reading the listening history failed. Nothing is missing from it — this view"
-" just could not load it."
+"Reading the listening history failed. Nothing is missing from it — this view "
+"just could not load it."
 msgstr ""
 "No se pudo leer el historial de escucha. No falta nada; esta vista "
 "simplemente no pudo cargarlo."
@@ -2745,8 +2772,7 @@ msgstr ""
 #, rust-format
 msgid "End of results — {hidden} tracks hidden by search and filters"
 msgstr ""
-"Fin de los resultados — {hidden} pistas ocultas por la búsqueda y los "
-"filtros"
+"Fin de los resultados — {hidden} pistas ocultas por la búsqueda y los filtros"
 
 #: crates/reprise-gnome/src/ui/strings_filter.rs:31
 #, rust-format
@@ -2835,11 +2861,11 @@ msgstr "Activar funciones experimentales"
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:70
 msgid ""
-"Shows AI instrumental versions across the app: the context-menu trigger, the"
-" conversion view, badges, and the \"Hide AI music\" filter."
+"Shows AI instrumental versions across the app: the context-menu trigger, the "
+"conversion view, badges, and the \"Hide AI music\" filter."
 msgstr ""
-"Muestra versiones instrumentales con IA en toda la aplicación: el disparador"
-" del menú contextual, la vista de conversión, las insignias y el filtro "
+"Muestra versiones instrumentales con IA en toda la aplicación: el disparador "
+"del menú contextual, la vista de conversión, las insignias y el filtro "
 "«Ocultar música con IA»."
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:71
@@ -2852,11 +2878,11 @@ msgstr "Modelo de eliminación de voz"
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:74
 msgid ""
-"Downloaded on first use (~316 MB), verified by checksum, with a licence note"
-" kept beside it."
+"Downloaded on first use (~316 MB), verified by checksum, with a licence note "
+"kept beside it."
 msgstr ""
-"Se descarga la primera vez que se usa (~316 MB), se verifica con una suma de"
-" comprobación y se guarda junto a un aviso de licencia."
+"Se descarga la primera vez que se usa (~316 MB), se verifica con una suma de "
+"comprobación y se guarda junto a un aviso de licencia."
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:76
 msgid "Download"
@@ -3250,8 +3276,7 @@ msgstr "Conservado en el dispositivo"
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:18
 msgid ""
-"GVfs did not report total capacity; the bar shows known music and free "
-"space."
+"GVfs did not report total capacity; the bar shows known music and free space."
 msgstr ""
 "GVfs no indicó la capacidad total; la barra muestra la música conocida y el "
 "espacio libre."
@@ -3662,17 +3687,21 @@ msgstr "Chromium (CSD)"
 msgid "Separate title bar"
 msgstr "Barra de título independiente"
 
+#~ msgid "Use your own API key"
+#~ msgstr "Usar tu propia clave de API"
+
 #, rust-format
 #~ msgid ""
 #~ "Remove {count} track from the library? The music file will remain on disk."
 #~ msgid_plural ""
-#~ "Remove {count} tracks from the library? The music files will remain on disk."
+#~ "Remove {count} tracks from the library? The music files will remain on "
+#~ "disk."
 #~ msgstr[0] ""
-#~ "¿Quitar {count} pista de la biblioteca? El archivo de música permanecerá en "
-#~ "el disco."
+#~ "¿Quitar {count} pista de la biblioteca? El archivo de música permanecerá "
+#~ "en el disco."
 #~ msgstr[1] ""
-#~ "¿Quitar {count} pistas de la biblioteca? Los archivos de música permanecerán"
-#~ " en el disco."
+#~ "¿Quitar {count} pistas de la biblioteca? Los archivos de música "
+#~ "permanecerán en el disco."
 
 #~ msgid "Pause"
 #~ msgstr "Pausa"
@@ -3693,11 +3722,11 @@ msgstr "Barra de título independiente"
 #~ msgstr "Analizar el audio localmente"
 
 #~ msgid ""
-#~ "Reprise reads audio files only on this device. Nothing is uploaded. Existing"
-#~ " profiles are kept when this is turned off."
+#~ "Reprise reads audio files only on this device. Nothing is uploaded. "
+#~ "Existing profiles are kept when this is turned off."
 #~ msgstr ""
-#~ "Reprise lee los archivos de audio solo en este dispositivo. No se sube nada."
-#~ " Los perfiles existentes se conservan al desactivar esta opción."
+#~ "Reprise lee los archivos de audio solo en este dispositivo. No se sube "
+#~ "nada. Los perfiles existentes se conservan al desactivar esta opción."
 
 #~ msgid "Analysis progress"
 #~ msgstr "Progreso del análisis"
@@ -3708,7 +3737,8 @@ msgstr "Barra de título independiente"
 #, rust-format
 #~ msgid "Analysis is off · {analyzed} of {total} analyzed · {failed} failed"
 #~ msgstr ""
-#~ "Análisis desactivado · {analyzed} de {total} analizadas · {failed} fallidas"
+#~ "Análisis desactivado · {analyzed} de {total} analizadas · {failed} "
+#~ "fallidas"
 
 #, rust-format
 #~ msgid "Ready · {analyzed} of {total} analyzed · {failed} failed"
@@ -3771,7 +3801,8 @@ msgstr "Barra de título independiente"
 
 #~ msgid "Enable Analyze audio locally in Library Settings."
 #~ msgstr ""
-#~ "Activa «Analizar el audio localmente» en la configuración de la biblioteca."
+#~ "Activa «Analizar el audio localmente» en la configuración de la "
+#~ "biblioteca."
 
 #~ msgid "Audio Character is pending"
 #~ msgstr "El Carácter del audio está pendiente"
@@ -3915,19 +3946,19 @@ msgstr "Barra de título independiente"
 
 #, rust-format
 #~ msgid ""
-#~ "This removes {count} tracks from the library — their ratings and listening "
-#~ "history go with them. Files are never touched."
+#~ "This removes {count} tracks from the library — their ratings and "
+#~ "listening history go with them. Files are never touched."
 #~ msgstr ""
-#~ "Esto quita {count} pistas de la biblioteca junto con sus valoraciones y su "
-#~ "historial de escucha. Los archivos nunca se modifican."
+#~ "Esto quita {count} pistas de la biblioteca junto con sus valoraciones y "
+#~ "su historial de escucha. Los archivos nunca se modifican."
 
 #, rust-format
 #~ msgid ""
 #~ "This will remove {count} tracks now (deleted more than {days} days ago) — "
 #~ "their ratings and listening history go with them."
 #~ msgstr ""
-#~ "Esto quitará ahora {count} pistas (eliminadas hace más de {days} días) junto"
-#~ " con sus valoraciones y su historial de escucha."
+#~ "Esto quitará ahora {count} pistas (eliminadas hace más de {days} días) "
+#~ "junto con sus valoraciones y su historial de escucha."
 
 #~ msgid "Ctrl+M"
 #~ msgstr "Ctrl+M"

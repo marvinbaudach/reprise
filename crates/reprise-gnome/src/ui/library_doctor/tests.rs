@@ -57,7 +57,7 @@ fn doc_2a_scope_choice_freezes_the_requested_input_shape() {
 }
 
 #[test]
-fn doc_6a_entry_scope_defaults_to_library_and_suggests_filtered_view() {
+fn doc_7b_entry_scope_defaults_to_library_and_suggests_filtered_view() {
     assert_eq!(super::suggested_scope(&snapshot()), 0);
 
     let mut filtered = snapshot();
