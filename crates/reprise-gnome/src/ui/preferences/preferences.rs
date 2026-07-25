@@ -12,6 +12,7 @@ use rusqlite::Connection;
 
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
+use crate::ui::concerts::ConcertsRuntime;
 use crate::ui::cover_download_worker::CoverDownloadRuntime;
 use crate::ui::device_sync_runtime::DeviceSyncRuntime;
 use crate::ui::library_player_bar::LibraryPlayerBarShell;
@@ -115,6 +116,7 @@ pub(in crate::ui) struct PreferencesContext {
     pub(in crate::ui) syncing_lastfm: Cell<bool>,
     pub(in crate::ui) lastfm_activation_pending: Cell<bool>,
     pub(in crate::ui) artist_news: Rc<ArtistNewsRuntime>,
+    pub(in crate::ui) concerts: Rc<ConcertsRuntime>,
     pub(in crate::ui) cover_download: CoverDownloadRuntime,
     pub(in crate::ui) artist_portrait: Rc<ArtistPortraitRuntime>,
     pub(in crate::ui) decorations: Rc<WindowDecorations>,
@@ -146,6 +148,7 @@ impl PreferencesContext {
         listenbrainz: &Rc<ScrobbleRuntime>,
         lastfm: &Rc<ScrobbleRuntime>,
         artist_news: &Rc<ArtistNewsRuntime>,
+        concerts: &Rc<ConcertsRuntime>,
         cover_download: &CoverDownloadRuntime,
         artist_portrait: &Rc<ArtistPortraitRuntime>,
         decorations: &Rc<WindowDecorations>,
@@ -176,6 +179,7 @@ impl PreferencesContext {
             syncing_lastfm: Cell::new(false),
             lastfm_activation_pending: Cell::new(false),
             artist_news: artist_news.clone(),
+            concerts: concerts.clone(),
             cover_download: cover_download.clone(),
             artist_portrait: artist_portrait.clone(),
             decorations: decorations.clone(),
