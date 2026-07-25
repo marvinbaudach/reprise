@@ -1,6 +1,6 @@
 # Releasing Reprise
 
-This checklist prepares Reprise 0.1.0 for distribution without publishing or
+This checklist prepares Reprise 0.1.1 for distribution without publishing or
 modifying user data. The repository currently has no public remote, and this
 workflow must not push, tag, upload, or submit anything automatically.
 
@@ -263,7 +263,7 @@ populated test library; do not fabricate them from headless output.
 Two external prerequisites remain and cannot be inferred or manufactured:
 
 1. Publish the source through a maintainer-controlled public remote and create an
-   immutable 0.1.0 archive/tag with a verified SHA-256 checksum.
+   immutable 0.1.1 archive/tag with a verified SHA-256 checksum.
 2. Establish a verifiable project identity appropriate for the existing
    `org.reprise.Reprise` application ID.
 
