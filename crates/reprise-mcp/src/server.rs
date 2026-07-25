@@ -25,7 +25,7 @@ use crate::dto::{
     JobStatusParams, SearchTracksParams, UpdatePlaylistParams,
 };
 #[cfg(feature = "mpris")]
-use crate::dto::{PlayParams, PlaybackControlParams};
+use crate::dto::{PlayParams, PlaybackControlParams, PlaybackStateParams, SetPlaybackParams};
 use crate::error;
 
 /// URI of the library-summary resource.
@@ -56,6 +56,19 @@ pub struct RepriseServer {
 }
 
 impl RepriseServer {
+    #[cfg(feature = "mpris")]
+    async fn playback_allowed(&self) -> Result<Option<CallToolResult>, ErrorData> {
+        let path = self.db_path.clone();
+        let allowed = tokio::task::spawn_blocking(move || data::playback_allowed(path.as_path()))
+            .await
+            .map_err(|error| error::join_error(&error))?;
+        match allowed {
+            Ok(true) => Ok(None),
+            Ok(false) => Ok(Some(error::playback_denied())),
+            Err(err) => error::into_tool_outcome(err).map(Some),
+        }
+    }
+
     /// Builds a handler bound to `db_path` (and `staging_path` for the AI job
     /// queue). The three booleans are startup snapshots for the write-class
     /// capabilities (`playlist:create`, `playlist:manage`, `ai:create`) — the
@@ -397,14 +410,8 @@ impl RepriseServer {
         &self,
         Parameters(params): Parameters<PlaybackControlParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        let path = self.db_path.clone();
-        let allowed = tokio::task::spawn_blocking(move || data::playback_allowed(path.as_path()))
-            .await
-            .map_err(|error| error::join_error(&error))?;
-        match allowed {
-            Ok(false) => return Ok(error::playback_denied()),
-            Err(err) => return error::into_tool_outcome(err),
-            Ok(true) => {}
+        if let Some(denial) = self.playback_allowed().await? {
+            return Ok(denial);
         }
         let Some(action) = crate::playback::TransportAction::from_str(&params.action) else {
             return Ok(error::tool_error(format!(
@@ -416,6 +423,55 @@ impl RepriseServer {
             .await
             .map_err(|error| error::join_error(&error))?;
         error::playback_outcome(result, format!("Playback: {}", params.action))
+    }
+
+    /// Reads path-free live state from the running app's MPRIS player.
+    #[tool(
+        name = "music_get_playback_state",
+        description = "Read the running Reprise app's current playback status, \
+            track metadata, position, volume, shuffle and repeat state. Never \
+            returns file or cover paths. Requires the app running and the \
+            'playback:control' capability (on by default)."
+    )]
+    async fn music_get_playback_state(
+        &self,
+        Parameters(_params): Parameters<PlaybackStateParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if let Some(denial) = self.playback_allowed().await? {
+            return Ok(denial);
+        }
+        let result = tokio::task::spawn_blocking(crate::playback::state)
+            .await
+            .map_err(|error| error::join_error(&error))?;
+        error::playback_structured_outcome(result, |state| format!("Playback is {}", state.status))
+    }
+
+    /// Changes a live player setting through MPRIS.
+    #[tool(
+        name = "music_set_playback",
+        description = "Change a running Reprise playback setting. Actions: \
+            set_volume with volume 0..1; seek with a relative offset_seconds; \
+            set_shuffle with enabled; set_repeat with repeat off, all or one. \
+            Requires the app running and the 'playback:control' capability."
+    )]
+    async fn music_set_playback(
+        &self,
+        Parameters(params): Parameters<SetPlaybackParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if let Some(denial) = self.playback_allowed().await? {
+            return Ok(denial);
+        }
+        let setting = match crate::playback::PlaybackSetting::from_params(&params) {
+            Ok(setting) => setting,
+            Err(message) => return Ok(error::tool_error(message)),
+        };
+        let result = tokio::task::spawn_blocking(move || crate::playback::set(setting))
+            .await
+            .map_err(|error| error::join_error(&error))?;
+        match result {
+            Ok(summary) => error::playback_outcome(Ok(()), summary),
+            Err(error) => error::playback_outcome(Err(error), String::new()),
+        }
     }
 
     /// Starts playing an explicit list of tracks or a whole playlist in the
