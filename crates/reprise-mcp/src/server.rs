@@ -25,7 +25,9 @@ use crate::dto::{
     JobStatusParams, SearchTracksParams, UpdatePlaylistParams,
 };
 #[cfg(feature = "mpris")]
-use crate::dto::{PlayParams, PlaybackControlParams, PlaybackStateParams, SetPlaybackParams};
+use crate::dto::{
+    PlayParams, PlaybackControlParams, PlaybackStateParams, QueueParams, SetPlaybackParams,
+};
 use crate::error;
 
 /// URI of the library-summary resource.
@@ -466,6 +468,46 @@ impl RepriseServer {
             Err(message) => return Ok(error::tool_error(message)),
         };
         let result = tokio::task::spawn_blocking(move || crate::playback::set(setting))
+            .await
+            .map_err(|error| error::join_error(&error))?;
+        match result {
+            Ok(summary) => error::playback_outcome(Ok(()), summary),
+            Err(error) => error::playback_outcome(Err(error), String::new()),
+        }
+    }
+
+    /// Reads or safely mutates the running app's manual Play Next queue.
+    #[tool(
+        name = "music_queue",
+        description = "Read or update the running Reprise Play Next queue. \
+            Actions: status; add_next or add_last with track_ids; clear. Clear \
+            removes only manual Play Next entries and preserves the playback \
+            context. Status returns at most 200 ids per section plus complete \
+            totals. Requires the 'playback:control' capability."
+    )]
+    async fn music_queue(
+        &self,
+        Parameters(params): Parameters<QueueParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if let Some(denial) = self.playback_allowed().await? {
+            return Ok(denial);
+        }
+        let action = match crate::playback::QueueAction::from_params(&params) {
+            Ok(action) => action,
+            Err(message) => return Ok(error::tool_error(message)),
+        };
+        if action == crate::playback::QueueAction::Status {
+            let result = tokio::task::spawn_blocking(crate::playback::queue_state)
+                .await
+                .map_err(|error| error::join_error(&error))?;
+            return error::playback_structured_outcome(result, |state| {
+                format!(
+                    "{} Play Next and {} context track(s)",
+                    state.play_next_total, state.context_total
+                )
+            });
+        }
+        let result = tokio::task::spawn_blocking(move || crate::playback::queue_mutate(action))
             .await
             .map_err(|error| error::join_error(&error))?;
         match result {

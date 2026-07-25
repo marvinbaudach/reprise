@@ -181,12 +181,37 @@ fn playback_state_and_settings_are_refused_when_capability_is_revoked() {
             "music_set_playback",
             json!({ "action": "set_shuffle", "enabled": true }),
         ),
+        ("music_queue", json!({ "action": "status" })),
     ] {
         let response = client.call_tool(tool, params);
         let text = tool_error_text(&response);
         assert!(
             text.contains("Permission denied") && text.contains("playback:control"),
             "revoked capability should refuse {tool}: {text}"
+        );
+    }
+}
+
+#[test]
+fn music_queue_validates_action_specific_arguments() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("reprise.db");
+    common::seed_tracks(&path, &[]);
+    let mut client = McpClient::start(&path);
+
+    for (params, expected) in [
+        (json!({ "action": "add_next" }), "track_ids"),
+        (
+            json!({ "action": "add_last", "track_ids": [] }),
+            "must not be empty",
+        ),
+        (json!({ "action": "remove" }), "unknown action"),
+    ] {
+        let response = client.call_tool("music_queue", params);
+        let text = tool_error_text(&response);
+        assert!(
+            text.contains(expected),
+            "expected {expected:?} in validation error: {text}"
         );
     }
 }

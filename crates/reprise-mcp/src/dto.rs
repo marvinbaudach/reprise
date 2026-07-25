@@ -440,6 +440,29 @@ pub struct SetPlaybackParams {
     pub repeat: Option<String>,
 }
 
+/// Root-object parameters for the safe live queue surface.
+#[cfg(feature = "mpris")]
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+pub struct QueueParams {
+    /// One of: "status", "add_next", "add_last", "clear".
+    pub action: String,
+    /// Ordered track ids required by add_next and add_last.
+    #[serde(default)]
+    pub track_ids: Option<Vec<i64>>,
+}
+
+/// Bounded live queue state. Totals describe the complete sections even when
+/// the returned id windows are capped.
+#[cfg(feature = "mpris")]
+#[derive(Debug, Clone, Serialize)]
+pub struct QueueStateDto {
+    pub current_track_id: Option<i64>,
+    pub play_next_track_ids: Vec<i64>,
+    pub context_track_ids: Vec<i64>,
+    pub play_next_total: u64,
+    pub context_total: u64,
+}
+
 /// Parameters for `music_play`. Exactly one of `track_ids`/`playlist_id` must
 /// be set — enforced by `data::resolve_play_ids`, not by the schema (rmcp/
 /// schemars has no "exactly one of" combinator). Only the `mpris`-gated

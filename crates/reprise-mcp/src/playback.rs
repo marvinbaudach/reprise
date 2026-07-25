@@ -16,7 +16,7 @@ use std::collections::HashMap;
 
 use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
-use crate::dto::{PlaybackStateDto, SetPlaybackParams};
+use crate::dto::{PlaybackStateDto, QueueParams, QueueStateDto, SetPlaybackParams};
 
 /// The app's MPRIS well-known name (mirrors `reprise-platform-linux`'s server).
 const BUS_NAME: &str = "org.mpris.MediaPlayer2.reprise";
@@ -81,6 +81,41 @@ pub enum PlaybackSetting {
     SeekMicros(i64),
     Shuffle(bool),
     Repeat(&'static str),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum QueueAction {
+    Status,
+    AddNext(Vec<i64>),
+    AddLast(Vec<i64>),
+    Clear,
+}
+
+impl QueueAction {
+    pub fn from_params(params: &QueueParams) -> Result<Self, String> {
+        match params.action.as_str() {
+            "status" => Ok(Self::Status),
+            "clear" => Ok(Self::Clear),
+            "add_next" | "add_last" => {
+                let ids = params
+                    .track_ids
+                    .clone()
+                    .ok_or_else(|| format!("{} requires track_ids", params.action))?;
+                if ids.is_empty() {
+                    return Err("track_ids must not be empty".to_owned());
+                }
+                if ids.len() > 500 {
+                    return Err("track_ids accepts at most 500 ids".to_owned());
+                }
+                if params.action == "add_next" {
+                    Ok(Self::AddNext(ids))
+                } else {
+                    Ok(Self::AddLast(ids))
+                }
+            }
+            other => Err(format!("unknown action '{other}'")),
+        }
+    }
 }
 
 impl PlaybackSetting {
@@ -241,6 +276,58 @@ pub fn set(setting: PlaybackSetting) -> Result<String, PlaybackError> {
             .map_err(|error| map_fdo_error(&error))?,
     }
     Ok(setting.summary())
+}
+
+pub fn queue_state() -> Result<QueueStateDto, PlaybackError> {
+    let proxy = connect(REPRISE_INTERFACE)?;
+    let (current, play_next, context, play_next_total, context_total): (
+        i64,
+        Vec<i64>,
+        Vec<i64>,
+        u64,
+        u64,
+    ) = proxy
+        .call("QueueSnapshot", &())
+        .map_err(|error| map_zbus_error(&error))?;
+    Ok(QueueStateDto {
+        current_track_id: (current > 0).then_some(current),
+        play_next_track_ids: play_next,
+        context_track_ids: context,
+        play_next_total,
+        context_total,
+    })
+}
+
+pub fn queue_mutate(action: QueueAction) -> Result<String, PlaybackError> {
+    let proxy = connect(REPRISE_INTERFACE)?;
+    let summary = match action {
+        QueueAction::AddNext(ids) => {
+            let count = ids.len();
+            let _: () = proxy
+                .call("QueueAddNext", &(ids,))
+                .map_err(|error| map_zbus_error(&error))?;
+            format!("Added {count} track(s) to the front of Play Next")
+        }
+        QueueAction::AddLast(ids) => {
+            let count = ids.len();
+            let _: () = proxy
+                .call("QueueAddLast", &(ids,))
+                .map_err(|error| map_zbus_error(&error))?;
+            format!("Added {count} track(s) to the end of Play Next")
+        }
+        QueueAction::Clear => {
+            let _: () = proxy
+                .call("QueueClear", &())
+                .map_err(|error| map_zbus_error(&error))?;
+            "Cleared Play Next; playback context was preserved".to_owned()
+        }
+        QueueAction::Status => {
+            return Err(PlaybackError::Bus(
+                "internal queue action mismatch".to_owned(),
+            ));
+        }
+    };
+    Ok(summary)
 }
 
 fn get_property<T>(proxy: &zbus::blocking::Proxy<'_>, name: &str) -> Result<T, PlaybackError>

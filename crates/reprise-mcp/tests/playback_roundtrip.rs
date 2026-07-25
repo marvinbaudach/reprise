@@ -47,6 +47,9 @@ enum Recorded {
     SetVolume(f64),
     SetShuffle(bool),
     SetLoopStatus(String),
+    QueueAddNext(Vec<i64>),
+    QueueAddLast(Vec<i64>),
+    QueueClear,
 }
 
 type Calls = Arc<Mutex<Vec<Recorded>>>;
@@ -182,6 +185,31 @@ impl RepriseStub {
             .lock()
             .expect("calls lock")
             .push(Recorded::PlayTrackIds(ids));
+    }
+
+    fn queue_snapshot(&self) -> (i64, Vec<i64>, Vec<i64>, u64, u64) {
+        (42, vec![7, 8], vec![9, 10, 11], 2, 3)
+    }
+
+    fn queue_add_next(&self, ids: Vec<i64>) {
+        self.calls
+            .lock()
+            .expect("calls lock")
+            .push(Recorded::QueueAddNext(ids));
+    }
+
+    fn queue_add_last(&self, ids: Vec<i64>) {
+        self.calls
+            .lock()
+            .expect("calls lock")
+            .push(Recorded::QueueAddLast(ids));
+    }
+
+    fn queue_clear(&self) {
+        self.calls
+            .lock()
+            .expect("calls lock")
+            .push(Recorded::QueueClear);
     }
 }
 
@@ -396,4 +424,44 @@ fn music_set_playback_reaches_each_mpris_setting() {
     assert_eq!(recorded[1], Recorded::Seek(-12_500_000));
     assert_eq!(recorded[2], Recorded::SetShuffle(false));
     assert_eq!(recorded[3], Recorded::SetLoopStatus("Track".to_owned()));
+}
+
+#[test]
+fn music_queue_reads_state_and_dispatches_safe_mutations() {
+    let Some(bus) = PrivateBus::start() else {
+        eprintln!("environment-limited: dbus-daemon unavailable; skipping the MPRIS bus roundtrip");
+        return;
+    };
+    let (_conn, calls) = start_stub_player(&bus);
+
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("reprise.db");
+    common::seed_tracks(&path, &[]);
+    let mut client = McpClient::start_on_bus(&path, &bus);
+
+    let status = client.call_tool("music_queue", json!({ "action": "status" }));
+    let body = structured_ok(&status);
+    assert_eq!(body["current_track_id"], 42);
+    assert_eq!(body["play_next_track_ids"], json!([7, 8]));
+    assert_eq!(body["context_track_ids"], json!([9, 10, 11]));
+    assert_eq!(body["play_next_total"], 2);
+    assert_eq!(body["context_total"], 3);
+
+    for params in [
+        json!({ "action": "add_next", "track_ids": [3, 4] }),
+        json!({ "action": "add_last", "track_ids": [5, 6] }),
+        json!({ "action": "clear" }),
+    ] {
+        let response = client.call_tool("music_queue", params);
+        assert!(!tool_success_text(&response).is_empty());
+    }
+
+    assert_eq!(
+        recorded(&calls),
+        vec![
+            Recorded::QueueAddNext(vec![3, 4]),
+            Recorded::QueueAddLast(vec![5, 6]),
+            Recorded::QueueClear,
+        ]
+    );
 }

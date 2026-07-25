@@ -70,6 +70,7 @@ fn tool_discovery_lists_the_expected_tools() {
             "music_get_playback_state",
             "music_play",
             "music_playback_control",
+            "music_queue",
             "music_set_playback",
         ]);
     }
