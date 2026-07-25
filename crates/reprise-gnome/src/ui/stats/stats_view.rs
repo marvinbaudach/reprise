@@ -444,6 +444,7 @@ fn refresh_parts(
         }
         Err(error) => {
             tracing::error!(%error, "failed to compute My Stats snapshot");
+            render.hero.clear(&render.header);
             page_stack.set_visible_child_name("failed");
             *current_snapshot.borrow_mut() = None;
         }

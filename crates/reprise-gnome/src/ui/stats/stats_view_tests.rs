@@ -186,6 +186,10 @@ fn stats_6a_unreadable_history_shows_the_failure_page() {
         view.page_stack.visible_child_name().as_deref(),
         Some("failed")
     );
+    assert!(!view.render.hero.root.is_visible());
+    assert!(!view.render.header.new_badge.is_visible());
+    assert!(view.render.hero.time.label().is_empty());
+    assert!(view.render.hero.subline.label().is_empty());
 }
 
 /// Responsive wrapping only settles after a real allocation, so the test has
