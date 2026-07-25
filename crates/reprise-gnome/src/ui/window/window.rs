@@ -337,8 +337,8 @@ pub fn build(
         super::library_shell::ActiveContentFocus::new(&content_stack, &track_list);
     let metadata_navigator = super::metadata_navigation::MetadataNavigator::new(
         nav_history.clone(),
-        sidebar.clone(),
-        track_list.clone(),
+        &sidebar,
+        &track_list,
         content_stack.clone(),
         window_title.clone(),
         active_content_focus.clone(),

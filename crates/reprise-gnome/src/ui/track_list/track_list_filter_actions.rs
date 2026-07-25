@@ -25,6 +25,10 @@ impl TrackList {
     pub fn set_on_clear_all(&self, callback: impl Fn() + 'static) {
         self.shared.browse_bar.set_on_clear_all(callback);
     }
+
+    pub fn set_on_scope_cleared(&self, callback: impl Fn() + 'static) {
+        self.shared.browse_bar.set_on_scope_cleared(callback);
+    }
 }
 
 #[cfg(test)]

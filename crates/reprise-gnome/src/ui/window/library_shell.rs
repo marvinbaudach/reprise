@@ -272,18 +272,8 @@ pub(in crate::ui) fn route_to_place(
 }
 
 fn scope_title(source: &ViewSource) -> String {
-    match source {
-        ViewSource::Artist(artist) => artist.clone(),
-        ViewSource::Album {
-            album,
-            album_artist,
-        } if album_artist.trim().is_empty() => album.clone(),
-        ViewSource::Album {
-            album,
-            album_artist,
-        } => format!("{album} — {album_artist}"),
-        _ => source.label(),
-    }
+    crate::ui::browse::filter_restriction::scope_chip_label(source)
+        .unwrap_or_else(|| source.label())
 }
 
 #[allow(clippy::too_many_arguments)]

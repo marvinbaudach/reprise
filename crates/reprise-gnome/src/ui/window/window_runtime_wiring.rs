@@ -457,6 +457,12 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             gtk4::prelude::ActionGroupExt::activate_action(&window, "clear-all-filters", None);
         });
     }
+    {
+        let navigator = metadata_navigator.clone();
+        track_list.set_on_scope_cleared(move || {
+            navigator.leave_scope();
+        });
+    }
 
     cover_batch.start();
     app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);

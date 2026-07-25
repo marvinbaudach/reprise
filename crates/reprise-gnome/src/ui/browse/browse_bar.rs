@@ -182,6 +182,7 @@ fn restored_filter(filter: &BrowseFilter) -> BrowseFilter {
 pub struct BrowseBar {
     root: gtk4::Box,
     search: RefCell<String>,
+    source: RefCell<ViewSource>,
     track_source: Cell<bool>,
     is_library: Cell<bool>,
     preference_visible: Cell<bool>,
@@ -195,6 +196,8 @@ pub struct BrowseBar {
     pub(super) value_list: gtk4::ListBox,
     result_label: gtk4::Label,
     clear_all: gtk4::Button,
+    #[cfg_attr(not(test), allow(dead_code))]
+    scope_button: RefCell<Option<gtk4::Button>>,
     pub(super) chooser_facets: RefCell<Vec<BrowseFacet>>,
     pub(super) chooser_facet: Cell<Option<BrowseFacet>>,
     chooser_values: RefCell<Vec<BrowseValue>>,
@@ -211,6 +214,7 @@ pub struct BrowseBar {
     on_changed: RefCell<Option<OnChanged>>,
     on_search_cleared: RefCell<Option<OnVoid>>,
     on_clear_all: RefCell<Option<OnVoid>>,
+    on_scope_cleared: RefCell<Option<OnVoid>>,
 }
 
 impl BrowseBar {
@@ -281,6 +285,7 @@ impl BrowseBar {
         let bar = Rc::new(Self {
             root,
             search: RefCell::new(String::new()),
+            source: RefCell::new(ViewSource::Library),
             track_source: Cell::new(true),
             is_library: Cell::new(true),
             preference_visible: Cell::new(true),
@@ -294,6 +299,7 @@ impl BrowseBar {
             value_list,
             result_label,
             clear_all,
+            scope_button: RefCell::new(None),
             chooser_facets: RefCell::new(Vec::new()),
             chooser_facet: Cell::new(None),
             chooser_values: RefCell::new(Vec::new()),
@@ -306,6 +312,7 @@ impl BrowseBar {
             on_changed: RefCell::new(None),
             on_search_cleared: RefCell::new(None),
             on_clear_all: RefCell::new(None),
+            on_scope_cleared: RefCell::new(None),
         });
         {
             let weak = Rc::downgrade(&bar);
@@ -407,7 +414,12 @@ impl BrowseBar {
         *self.on_clear_all.borrow_mut() = Some(Rc::new(callback));
     }
 
+    pub fn set_on_scope_cleared(&self, callback: impl Fn() + 'static) {
+        *self.on_scope_cleared.borrow_mut() = Some(Rc::new(callback));
+    }
+
     pub fn set_source_context(self: &Rc<Self>, source: &ViewSource) {
+        *self.source.borrow_mut() = source.clone();
         self.track_source
             .set(super::filter_restriction::is_track_source(source));
         self.is_library.set(matches!(source, ViewSource::Library));
@@ -430,7 +442,11 @@ impl BrowseBar {
         let search = self.search.borrow().clone();
         let filter = self.effective_filter();
         let exclude_ai = self.exclude_ai.get() && self.ai_filter_available();
-        let restricted = super::filter_restriction::is_restricted(&search, &filter, exclude_ai);
+        let source = self.source.borrow().clone();
+        let filters_restrict =
+            super::filter_restriction::filters_restrict(&search, &filter, exclude_ai);
+        let restricted =
+            super::filter_restriction::is_restricted(&search, &filter, exclude_ai, &source);
         let visible = super::filter_restriction::row_visible(
             self.track_source.get(),
             restricted,
@@ -438,7 +454,7 @@ impl BrowseBar {
         );
         self.root.set_visible(visible);
         self.section_label.set_visible(restricted);
-        self.clear_all.set_visible(restricted);
+        self.clear_all.set_visible(filters_restrict);
         tracing::info!(visible, restricted, "filter row visibility updated");
     }
 
@@ -456,6 +472,11 @@ impl BrowseBar {
 
     pub(in crate::ui) fn result_count(&self) -> Option<(usize, usize)> {
         self.result_count.get()
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn scope_button(&self) -> Option<gtk4::Button> {
+        self.scope_button.borrow().clone()
     }
 
     pub fn hide_result_count(&self) {
@@ -502,7 +523,30 @@ impl BrowseBar {
         {
             wrapper.set_child(gtk4::Widget::NONE);
         }
+        self.scope_button.borrow_mut().take();
         self.chips.remove_all();
+        let source = self.source.borrow().clone();
+        if let Some(scope) = super::filter_restriction::scope_chip_label(&source) {
+            let button = gtk4::Button::with_label(&format!("{scope}  ×"));
+            button.add_css_class("flat");
+            button.add_css_class(CHIP_CSS_CLASS);
+            button.set_size_request(20, 20);
+            let remove_label = filter_strings::remove_scope_label(&scope);
+            button.set_tooltip_text(Some(&remove_label));
+            button.update_property(&[gtk4::accessible::Property::Label(&remove_label)]);
+            let weak = Rc::downgrade(self);
+            button.connect_clicked(move |_| {
+                let Some(bar) = weak.upgrade() else {
+                    return;
+                };
+                let callback = bar.on_scope_cleared.borrow().clone();
+                if let Some(callback) = callback {
+                    callback();
+                }
+            });
+            append_chip(&self.chips, &button);
+            *self.scope_button.borrow_mut() = Some(button);
+        }
         let query = self.search.borrow().trim().to_string();
         if !query.is_empty() {
             let button = gtk4::Button::with_label(&format!(
