@@ -215,3 +215,37 @@ fn music_queue_validates_action_specific_arguments() {
         );
     }
 }
+
+#[test]
+fn music_queue_rejects_tracks_that_are_absent_or_missing() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("reprise.db");
+    let ids = common::seed_tracks(
+        &path,
+        &[
+            SeedTrack::simple("Present", "Artist"),
+            SeedTrack::simple("Missing", "Artist"),
+        ],
+    );
+    {
+        let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+        conn.execute(
+            "UPDATE tracks SET missing_since = 1 WHERE id = ?1",
+            [ids[1]],
+        )
+        .unwrap();
+    }
+    let mut client = McpClient::start(&path);
+
+    for track_id in [ids[1], 999_999] {
+        let response = client.call_tool(
+            "music_queue",
+            json!({ "action": "add_next", "track_ids": [track_id] }),
+        );
+        let text = tool_error_text(&response);
+        assert!(
+            text.contains("not present") && text.contains(&track_id.to_string()),
+            "should reject absent queue track {track_id}: {text}"
+        );
+    }
+}

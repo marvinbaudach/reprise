@@ -436,7 +436,15 @@ fn music_queue_reads_state_and_dispatches_safe_mutations() {
 
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("reprise.db");
-    common::seed_tracks(&path, &[]);
+    let ids = common::seed_tracks(
+        &path,
+        &[
+            SeedTrack::simple("Queue 1", "Artist"),
+            SeedTrack::simple("Queue 2", "Artist"),
+            SeedTrack::simple("Queue 3", "Artist"),
+            SeedTrack::simple("Queue 4", "Artist"),
+        ],
+    );
     let mut client = McpClient::start_on_bus(&path, &bus);
 
     let status = client.call_tool("music_queue", json!({ "action": "status" }));
@@ -448,8 +456,8 @@ fn music_queue_reads_state_and_dispatches_safe_mutations() {
     assert_eq!(body["context_total"], 3);
 
     for params in [
-        json!({ "action": "add_next", "track_ids": [3, 4] }),
-        json!({ "action": "add_last", "track_ids": [5, 6] }),
+        json!({ "action": "add_next", "track_ids": &ids[..2] }),
+        json!({ "action": "add_last", "track_ids": &ids[2..] }),
         json!({ "action": "clear" }),
     ] {
         let response = client.call_tool("music_queue", params);
@@ -459,8 +467,8 @@ fn music_queue_reads_state_and_dispatches_safe_mutations() {
     assert_eq!(
         recorded(&calls),
         vec![
-            Recorded::QueueAddNext(vec![3, 4]),
-            Recorded::QueueAddLast(vec![5, 6]),
+            Recorded::QueueAddNext(ids[..2].to_vec()),
+            Recorded::QueueAddLast(ids[2..].to_vec()),
             Recorded::QueueClear,
         ]
     );

@@ -347,8 +347,8 @@ pub fn create_playlist(
 /// Enforces PRESENT semantics before a write: rejects ids that are not present
 /// in the library — either no row at all, or a row whose file is currently
 /// missing (a plain foreign-key check would let a missing row through). Lists
-/// the offending ids so the caller can correct its request. Shared by
-/// `music_create_playlist` and `music_create_instrumental`.
+/// the offending ids so the caller can correct its request. Shared by the
+/// playlist, instrumental, and live-queue mutation paths.
 pub(crate) fn reject_absent_track_ids(
     conn: &Connection,
     track_ids: &[i64],
@@ -377,6 +377,17 @@ pub(crate) fn reject_absent_track_ids(
         )));
     }
     Ok(())
+}
+
+/// Validates explicit queue ids against the current PRESENT library view.
+///
+/// Queue mutation is authorized by `playback:control`, so this check does not
+/// additionally require `library:read`; it only prevents callers from
+/// inserting unknown or currently missing rows into the live queue.
+#[cfg(feature = "mpris")]
+pub fn validate_present_track_ids(path: &Path, track_ids: &[i64]) -> Result<(), DataError> {
+    let conn = open(path)?;
+    reject_absent_track_ids(&conn, track_ids)
 }
 
 /// Registers one instrumental (vocal-removal) job per source track and returns
