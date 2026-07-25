@@ -14,6 +14,9 @@ use crate::ui::strings;
 
 type StringCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
 
+const RANK_NUMBER_WIDTH: i32 = 24;
+const RANK_NAME_WIDTH: i32 = 180;
+
 #[derive(Clone)]
 pub(in crate::ui) struct StatsBandCard {
     root: gtk4::Overlay,
@@ -184,18 +187,25 @@ impl StatsBandCard {
             let artist = gtk4::Button::new();
             artist.add_css_class("flat");
             artist.set_hexpand(true);
-            let body = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-            body.append(&label(
-                &format!("#{} {}", index + 2, ranked.group.label),
-                "stats-item-title",
-            ));
+            let body = gtk4::Grid::new();
+            body.set_column_spacing(8);
+            let rank = label(&format!("#{}", index + 2), "stats-item-title");
+            rank.set_width_request(RANK_NUMBER_WIDTH);
+            rank.set_xalign(1.0);
+            let name = label(&ranked.group.label, "stats-item-title");
+            name.set_width_request(RANK_NAME_WIDTH);
+            name.set_width_chars(20);
+            name.set_max_width_chars(20);
             let bar = gtk4::LevelBar::new();
             bar.add_css_class("stats-band-rank-bar");
             bar.set_min_value(0.0);
             bar.set_max_value(1.0);
             bar.set_value(relative_value(ranked.group.ms, leader_ms));
             bar.set_hexpand(true);
-            body.append(&bar);
+            bar.set_valign(gtk4::Align::Center);
+            body.attach(&rank, 0, 0, 1, 1);
+            body.attach(&name, 1, 0, 1, 1);
+            body.attach(&bar, 2, 0, 1, 1);
             artist.set_child(Some(&body));
             artist.connect_clicked({
                 let label = ranked.group.label.clone();
@@ -373,6 +383,12 @@ mod tests {
         gtk4::init().unwrap();
         let card = StatsBandCard::new();
         card.set_data(&fixture(1));
+        let window = gtk4::Window::builder()
+            .default_width(440)
+            .child(card.widget())
+            .build();
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
 
         let values = card
             .rank_bars
@@ -381,6 +397,15 @@ mod tests {
             .map(gtk4::LevelBar::value)
             .collect::<Vec<_>>();
         assert_eq!(values, vec![0.5, 0.25, 0.1, 0.05]);
+        let starts = card
+            .rank_bars
+            .borrow()
+            .iter()
+            .map(|bar| bar.compute_bounds(card.widget()).unwrap().x())
+            .collect::<Vec<_>>();
+        assert!(starts.iter().all(|start| *start == starts[0]));
+        assert!(card.rank_bars.borrow().iter().all(|bar| bar.width() > 0));
+        window.close();
     }
 
     #[test]
