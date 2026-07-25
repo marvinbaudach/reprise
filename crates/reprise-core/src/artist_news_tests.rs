@@ -1016,3 +1016,36 @@ fn released_album_is_filtered_only_when_the_local_album_is_really_owned() {
         .collect::<Vec<_>>();
     assert_eq!(titles, ["Single Only"]);
 }
+
+#[test]
+fn upcoming_album_bypasses_the_owned_threshold_even_when_two_local_tracks_match() {
+    // The user owns the lead single *and* a B-side, both mis-tagged with the
+    // forthcoming album's name — two local tracks, which is exactly
+    // `OWNED_ALBUM_MIN_TRACKS`. By the threshold's own measure this album
+    // looks owned. But the album has not been released yet, so an unreleased
+    // album cannot be owned: the bypass must let it through regardless.
+    let conn = migrated_conn();
+    for index in 1..=2 {
+        conn.execute(
+            "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+             VALUES (?1, 'T', 'Pink Floyd', 'Eclipse', 1, 0)",
+            [format!("/music/eclipse-{index}.flac")],
+        )
+        .unwrap();
+    }
+
+    let owned = crate::artist_news::local_albums_for_test(&conn, "Pink Floyd").unwrap();
+    assert!(
+        owned.iter().any(|album| album == "Eclipse"),
+        "two local tracks must meet the owned-album threshold"
+    );
+
+    let json = r#"{"release-groups":[
+      {"id":"1","title":"Eclipse","first-release-date":"2026-09-01","primary-type":"Album","secondary-types":[]}
+    ]}"#;
+    let items = parse_release_groups(json, &owned, date());
+
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].title, "Eclipse");
+    assert_eq!(items[0].kind, NewsKind::Upcoming);
+}
