@@ -191,6 +191,25 @@ impl StatsView {
             entrance,
         });
 
+        root.connect_map({
+            let current_snapshot = current_snapshot.clone();
+            let entrance_pending = entrance_pending.clone();
+            let render = Rc::downgrade(&render);
+            move |_| {
+                if !entrance_pending.replace(false) {
+                    return;
+                }
+                let snapshot = current_snapshot.borrow().clone();
+                let Some(snapshot) = snapshot else { return };
+                let Some(render) = render.upgrade() else {
+                    return;
+                };
+                if !snapshot.is_empty() {
+                    render_snapshot(&render, &snapshot, true);
+                }
+            }
+        });
+
         Self {
             root,
             page_stack,
@@ -414,7 +433,11 @@ fn refresh_parts(
             if snapshot.is_empty() {
                 page_stack.set_visible_child_name("empty");
             } else {
-                render_snapshot(render, &snapshot, entrance);
+                let mapped_entrance = entrance && page_stack.is_mapped();
+                render_snapshot(render, &snapshot, mapped_entrance);
+                if entrance && !mapped_entrance {
+                    entrance_pending.set(true);
+                }
                 page_stack.set_visible_child_name("sections");
             }
             *current_snapshot.borrow_mut() = Some(snapshot);
