@@ -1,10 +1,7 @@
-//! The stdio MCP server: two resources and two tools over `reprise-core`.
-//!
-//! Resources: `reprise://library/summary`, `reprise://playlists`.
-//! Tools: `music_search_tracks` (read), `music_create_playlist` (write, gated
-//! on the `playlist:create` capability). All blocking database work runs on
-//! `spawn_blocking`; the handler itself holds only the database path and the
-//! startup capability snapshot, so it stays `Send + Sync`.
+//! The stdio MCP server over `reprise-core`, plus feature-gated live playback
+//! and queue controls over the running app's local D-Bus interface. All
+//! blocking database and bus work runs on `spawn_blocking`; the handler itself
+//! holds only paths and startup capability snapshots, so it stays `Send + Sync`.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -37,10 +34,12 @@ pub const RESOURCE_PLAYLISTS: &str = "reprise://playlists";
 
 const RESOURCE_MIME_JSON: &str = "application/json";
 
-const SERVER_INSTRUCTIONS: &str = "Reprise local music library. Read-only tools \
-    and resources expose track metadata (never file paths); \
-    `music_create_playlist` creates a new manual playlist and requires the \
-    'playlist:create' capability, which is off by default. \
+const SERVER_INSTRUCTIONS: &str = "Reprise local music library and player. \
+    Read-only tools and resources expose path-free track, artist, album, and \
+    playlist metadata. Playlist creation and safe rename/append operations use \
+    separate opt-in capabilities. Playback tools expose transport, live state, \
+    volume, seek, shuffle, repeat, targeted play, and a bounded Play Next queue; \
+    they require the running Reprise app. \
     `music_create_instrumental` queues experimental vocal-removal renders of \
     explicit tracks (requires the 'ai:create' capability, off by default) and \
     returns immediately with job ids; `music_get_job_status` reports their \
