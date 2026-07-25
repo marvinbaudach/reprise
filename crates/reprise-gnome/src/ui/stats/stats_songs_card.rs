@@ -219,6 +219,7 @@ impl StatsSongsCard {
         let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
         row.add_css_class("stats-song-row");
         row.set_hexpand(true);
+        // a11y-semantics: role=group name=track-row state=focusable action=enter/shift-f10
         row.set_focusable(true);
 
         let body = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
@@ -275,6 +276,7 @@ impl StatsSongsCard {
         plays.set_xalign(1.0);
         body.append(&plays);
         row.append(&body);
+        // input-parity: ACC-8 keyboard=enter-row
         let activate = gtk4::GestureClick::new();
         activate.set_button(1);
         activate.connect_released({
@@ -320,6 +322,7 @@ impl StatsSongsCard {
         let popover = gtk4::PopoverMenu::from_model(Some(&menu));
         popover.set_parent(row);
         crate::ui::popover_lifecycle::unparent_after_actions(popover.upcast_ref());
+        // input-parity: ACC-8 keyboard=menu-shift-f10
         let click = gtk4::GestureClick::new();
         click.set_button(3);
         click.connect_pressed({
