@@ -32,19 +32,22 @@ pub(in crate::ui) enum HistoryAction {
 /// One action per history row: a hidden entry can only be restored — that
 /// takes priority even if the release also matches the library, since
 /// "restore" is the more specific and more urgent action for a hidden row.
-/// A visible entry that matches the library *and* has already been released
-/// navigates there; everything else — including an in-library name match
-/// whose release date is still ahead of `today` — opens its announcement
-/// instead. This mirrors `release_row::primary_action`'s NR-13 carve-out:
-/// `in_library` here comes from a name match against the local library (see
-/// `query_history`) and can true-positive on an announced reissue/remaster
-/// of an album already owned, so "Show in library" must not be offered
-/// until the matching release has actually shipped.
+/// A visible entry that is fully owned *and* has already been released
+/// navigates there; everything else — including a fully-owned match whose
+/// release date is still ahead of `today`, or one where only the lead single
+/// is owned — opens its announcement instead. This mirrors
+/// `release_row::primary_action`'s NR-13 carve-out: `presence` here comes
+/// from `query_history`'s track-count annotation, so owning just a single
+/// (`LibraryPresence::Partial`) must not offer "Show in library" either —
+/// that would send the user to the one track they already have instead of
+/// to the album they don't.
 pub(in crate::ui) fn history_action(entry: &HistoryEntry, today: NaiveDate) -> HistoryAction {
     if entry.hidden {
         return HistoryAction::Restore;
     }
-    if entry.in_library && !is_upcoming(entry, today) {
+    if entry.presence == reprise_core::artist_news::LibraryPresence::Complete
+        && !is_upcoming(entry, today)
+    {
         return HistoryAction::ShowInLibrary;
     }
     HistoryAction::OpenAnnouncement(reprise_core::artist_news_links::announce_url_or_fallback(
@@ -282,6 +285,7 @@ fn build_footer() -> gtk4::Box {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reprise_core::artist_news::LibraryPresence;
 
     fn entry(mbid: &str) -> HistoryEntry {
         HistoryEntry {
@@ -294,7 +298,7 @@ mod tests {
             seen_at: None,
             hidden: false,
             hidden_at: None,
-            in_library: false,
+            presence: LibraryPresence::Absent,
             announce_url: None,
         }
     }
@@ -319,7 +323,7 @@ mod tests {
     fn nr_12_history_action_hidden_entry_is_always_restorable() {
         let mut hidden_and_in_library = entry("one");
         hidden_and_in_library.hidden = true;
-        hidden_and_in_library.in_library = true;
+        hidden_and_in_library.presence = LibraryPresence::Complete;
         assert_eq!(
             history_action(&hidden_and_in_library, today()),
             HistoryAction::Restore
@@ -329,7 +333,7 @@ mod tests {
     #[test]
     fn nr_12_history_action_visible_in_library_entry_shows_in_library() {
         let mut visible_in_library = entry("one");
-        visible_in_library.in_library = true;
+        visible_in_library.presence = LibraryPresence::Complete;
         assert_eq!(
             history_action(&visible_in_library, today()),
             HistoryAction::ShowInLibrary
@@ -363,7 +367,7 @@ mod tests {
     #[test]
     fn nr_13_upcoming_in_library_history_entry_opens_announcement() {
         let mut upcoming_in_library = entry("one");
-        upcoming_in_library.in_library = true;
+        upcoming_in_library.presence = LibraryPresence::Complete;
         upcoming_in_library.first_release_date = "2026-08-15".to_string();
         assert_eq!(
             history_action(&upcoming_in_library, today()),
@@ -425,7 +429,7 @@ mod tests {
 
         let mut this_week_in_library = entry("this-week-in-library");
         this_week_in_library.first_seen = Some(this_week_hidden_at);
-        this_week_in_library.in_library = true;
+        this_week_in_library.presence = LibraryPresence::Complete;
 
         let mut older_announce = entry("older-month-announce");
         older_announce.first_seen = Some(local_timestamp(older_month));

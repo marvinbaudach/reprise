@@ -662,7 +662,7 @@ fn fetch_from_database(
         return Ok(reprise_core::artist_news::RefreshReport::default());
     }
     let today = chrono::Local::now().date_naive();
-    let scope = reprise_core::artist_news::configured_fetch_scope(&conn, today)
+    let scope = reprise_core::artist_news::configured_fetch_scope(&conn)
         .map_err(|error| reprise_core::artist_news::NewsError::Database(error.to_string()))?;
     reprise_core::artist_news::refresh(&conn, today, scope, true, fallback_accent_for_artist)
 }

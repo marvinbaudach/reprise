@@ -12,7 +12,7 @@ fn release(id: &str) -> reprise_core::artist_news::StoredRelease {
         seen_at: None,
         hidden: false,
         fallback_accent: "#123456".into(),
-        in_library: false,
+        presence: reprise_core::artist_news::LibraryPresence::Absent,
         announce_url: None,
     }
 }
