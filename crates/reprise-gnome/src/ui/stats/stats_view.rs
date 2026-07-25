@@ -491,7 +491,11 @@ fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot) {
         .iter()
         .map(|point| point.total_ms)
         .collect::<Vec<_>>();
-    render.ribbon.set_data(&snapshot.period, &ribbon_values);
+    render.ribbon.set_data(
+        &snapshot.period,
+        &ribbon_values,
+        snapshot.best_week.as_ref(),
+    );
     if let Some(spotlight) = &snapshot.spotlight {
         render.spotlight_section.set_data(spotlight);
         render.spotlight_section.widget().set_visible(true);

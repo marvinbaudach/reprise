@@ -1,3 +1,6 @@
+use chrono::{Datelike, NaiveDate};
+use reprise_core::library::stats_period::Granularity;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(in crate::ui) struct Point {
     pub x: f64,
@@ -7,8 +10,13 @@ pub(in crate::ui) struct Point {
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::ui) struct RibbonLayout {
     pub points: Vec<Point>,
-    pub peak_index: Option<usize>,
     pub open_index: Option<usize>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::ui) struct MonthTick {
+    pub index: usize,
+    pub label: String,
 }
 
 pub(in crate::ui) fn ribbon_layout(
@@ -38,20 +46,45 @@ pub(in crate::ui) fn ribbon_layout(
             }
         })
         .collect();
-    let peak_index = (maximum > 0).then(|| {
-        values
-            .iter()
-            .enumerate()
-            .max_by(|(left_index, left), (right_index, right)| {
-                left.cmp(right).then_with(|| right_index.cmp(left_index))
-            })
-            .map_or(0, |(index, _)| index)
-    });
     RibbonLayout {
         points,
-        peak_index,
         open_index: open_index.filter(|index| *index < values.len()),
     }
+}
+
+pub(in crate::ui) fn best_week_bucket_index(
+    bucket_starts: &[NaiveDate],
+    granularity: Granularity,
+    best_week_start: Option<NaiveDate>,
+) -> Option<usize> {
+    if granularity != Granularity::Week {
+        return None;
+    }
+    let best_week_start = best_week_start?;
+    bucket_starts
+        .iter()
+        .position(|start| *start == best_week_start)
+}
+
+pub(in crate::ui) fn month_ticks(bucket_starts: &[NaiveDate]) -> Vec<MonthTick> {
+    bucket_starts
+        .iter()
+        .enumerate()
+        .filter(|(index, date)| {
+            *index == 0
+                || bucket_starts
+                    .get(index.saturating_sub(1))
+                    .is_some_and(|previous| previous.month() != date.month())
+        })
+        .map(|(index, date)| MonthTick {
+            index,
+            label: date.format("%b").to_string().to_uppercase(),
+        })
+        .collect()
+}
+
+pub(in crate::ui) fn reveal_clip_width(width: f64, reveal_fraction: f64) -> f64 {
+    width.max(0.0) * reveal_fraction.clamp(0.0, 1.0)
 }
 
 pub(in crate::ui) fn bucket_at_x(x: f64, width: f64, bucket_count: usize) -> Option<usize> {
@@ -79,7 +112,6 @@ mod tests {
     fn ribbon_marks_the_open_bucket_and_the_peak() {
         let layout = ribbon_layout(&[10, 30, 20], 300.0, 100.0, Some(2));
 
-        assert_eq!(layout.peak_index, Some(1));
         assert_eq!(layout.open_index, Some(2));
     }
 
@@ -98,5 +130,59 @@ mod tests {
         assert_eq!(bucket_at_x(299.0, 300.0, 3), Some(2));
         assert_eq!(bucket_at_x(-1.0, 300.0, 3), None);
         assert_eq!(bucket_at_x(300.0, 300.0, 3), None);
+        assert_eq!(bucket_at_x(529.0, 530.0, 53), Some(52));
+    }
+
+    #[test]
+    fn stats_12_marker_sits_on_the_best_week_bucket() {
+        let starts = [
+            NaiveDate::from_ymd_opt(2026, 3, 2).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 3, 9).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 3, 16).unwrap(),
+        ];
+
+        assert_eq!(
+            best_week_bucket_index(&starts, Granularity::Week, Some(starts[1])),
+            Some(1)
+        );
+        assert_eq!(
+            best_week_bucket_index(&starts, Granularity::Day, Some(starts[1])),
+            None
+        );
+    }
+
+    #[test]
+    fn month_ticks_derive_from_bucket_starts() {
+        let starts = [
+            NaiveDate::from_ymd_opt(2026, 1, 26).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 2, 2).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 2, 9).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 3, 2).unwrap(),
+        ];
+
+        assert_eq!(
+            month_ticks(&starts),
+            vec![
+                MonthTick {
+                    index: 0,
+                    label: "JAN".into()
+                },
+                MonthTick {
+                    index: 1,
+                    label: "FEB".into()
+                },
+                MonthTick {
+                    index: 3,
+                    label: "MAR".into()
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn reveal_fraction_clips_the_area_path() {
+        assert_eq!(reveal_clip_width(320.0, 0.0), 0.0);
+        assert_eq!(reveal_clip_width(320.0, 0.4), 128.0);
+        assert_eq!(reveal_clip_width(320.0, 2.0), 320.0);
     }
 }
