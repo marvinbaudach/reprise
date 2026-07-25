@@ -27,7 +27,7 @@ pub(in crate::ui) struct StatsBandCard {
     fallback: gtk4::Label,
     name_button: gtk4::Button,
     summary: gtk4::Label,
-    ranks: gtk4::Box,
+    ranks: gtk4::Grid,
     rank_bars: Rc<RefCell<Vec<gtk4::LevelBar>>>,
     unify_hint: gtk4::Button,
     current_artist: Rc<RefCell<String>>,
@@ -96,7 +96,10 @@ impl StatsBandCard {
         unify_hint.set_visible(false);
         content.append(&unify_hint);
 
-        let ranks = gtk4::Box::new(gtk4::Orientation::Vertical, 5);
+        let ranks = gtk4::Grid::new();
+        ranks.set_column_spacing(4);
+        ranks.set_row_spacing(5);
+        ranks.set_hexpand(true);
         content.append(&ranks);
         root.add_overlay(&content);
 
@@ -184,10 +187,9 @@ impl StatsBandCard {
         self.rank_bars.borrow_mut().clear();
         let leader_ms = section.artist.group.ms.max(0);
         for (index, ranked) in section.also.iter().take(4).enumerate() {
-            let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
-            row.add_css_class("stats-band-rank");
             let artist = gtk4::Button::new();
             artist.add_css_class("flat");
+            artist.add_css_class("stats-band-rank");
             artist.set_hexpand(true);
             let body = gtk4::Grid::new();
             body.set_column_spacing(8);
@@ -214,7 +216,7 @@ impl StatsBandCard {
                 let callback = self.on_open_artist.clone();
                 move |_| invoke(&callback, label.clone())
             });
-            row.append(&artist);
+            self.ranks.attach(&artist, 0, index as i32, 1, 1);
             if ranked.group.variant_count >= 2 {
                 let unify = gtk4::Button::from_icon_name("document-edit-symbolic");
                 unify.add_css_class("flat");
@@ -226,10 +228,9 @@ impl StatsBandCard {
                     let callback = self.on_unify.clone();
                     move |_| invoke(&callback, key.clone())
                 });
-                row.append(&unify);
+                self.ranks.attach(&unify, 1, index as i32, 1, 1);
             }
             self.rank_bars.borrow_mut().push(bar);
-            self.ranks.append(&row);
         }
     }
 
@@ -305,7 +306,7 @@ impl StatsBandCard {
     }
 }
 
-fn clear(container: &gtk4::Box) {
+fn clear(container: &gtk4::Grid) {
     while let Some(child) = container.first_child() {
         container.remove(&child);
     }
@@ -347,13 +348,13 @@ mod tests {
     use reprise_core::library::stats_screen::{RankedGroup, TopTrack};
 
     fn fixture(variant_count: usize) -> SpotlightSection {
-        let ranked = |label: &str, ms: i64| RankedGroup {
+        let ranked = |label: &str, ms: i64, variant_count: usize| RankedGroup {
             group: Group {
                 label: label.into(),
                 key: label.to_lowercase(),
                 plays: ms / 60_000,
                 ms,
-                variant_count: 1,
+                variant_count,
             },
             representative_track_path: format!("/music/{label}.flac"),
         };
@@ -371,10 +372,10 @@ mod tests {
             share_percent: 60,
             top_tracks: Vec::<TopTrack>::new(),
             also: vec![
-                ranked("Alpha", 300_000),
-                ranked("Beta", 150_000),
-                ranked("Gamma", 60_000),
-                ranked("Delta", 30_000),
+                ranked("Alpha", 300_000, 1),
+                ranked("Beta", 150_000, 1),
+                ranked("Gamma", 60_000, 2),
+                ranked("Delta", 30_000, 1),
             ],
         }
     }
@@ -407,6 +408,19 @@ mod tests {
             .map(|bar| bar.compute_bounds(card.widget()).unwrap().x())
             .collect::<Vec<_>>();
         assert!(starts.iter().all(|start| *start == starts[0]));
+        let ends = card
+            .rank_bars
+            .borrow()
+            .iter()
+            .map(|bar| {
+                let bounds = bar.compute_bounds(card.widget()).unwrap();
+                bounds.x() + bounds.width()
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            ends.iter().all(|end| *end == ends[0]),
+            "rank tracks must share one right edge even when only one row has an action: {ends:?}"
+        );
         let widths = card
             .rank_bars
             .borrow()
