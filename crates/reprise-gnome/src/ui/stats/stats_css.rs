@@ -96,8 +96,7 @@ pub(in crate::ui) fn css() -> String {
          .stats-period-dropdown {{ min-width: 140px; }}\n\
          .stats-band-card {{ \
            border-radius: {radius}; \
-           background-color: @card_bg_color; \
-           overflow: hidden; }}\n\
+           background-color: @card_bg_color; }}\n\
          .stats-band-fade {{ \
            background-image: linear-gradient(to top, @card_bg_color 8%, \
              alpha(@card_bg_color, 0) 55%); }}\n\
@@ -165,6 +164,19 @@ pub(in crate::ui) fn css() -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn stats_css_omits_unsupported_overflow_property() {
+        assert!(!super::css().contains("overflow:"));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn stats_css_parses_without_errors() {
+        gtk4::init().unwrap();
+        let errors = crate::ui::style::css_parse_errors(&super::css());
+        assert!(errors.is_empty(), "CSS parse errors: {errors:?}");
+    }
+
     #[test]
     fn stats_css_defines_the_ribbon_pill_and_band_classes() {
         let css = super::css();
