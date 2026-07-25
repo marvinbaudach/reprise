@@ -28,9 +28,8 @@ use crate::ui::strings;
 
 const CONTENT_MAX_WIDTH: i32 = 1120;
 const SECTION_SPACING: i32 = 28;
-const STORY_NATURAL_LINE_LENGTH: i32 = 900;
+const STORY_NATURAL_LINE_LENGTH: i32 = 960;
 const STORY_SPACING: i32 = 20;
-const BAND_WIDTH: i32 = 350;
 const SONGS_WIDTH: i32 = 490;
 const MIN_PLAYS_FOR_TREND: i64 = 10;
 /// The fixed editorial order of the page's sections (STATS-10). The test reads
@@ -84,7 +83,6 @@ impl StatsView {
         let on_metadata_activate: MetadataCallback = Rc::new(RefCell::new(None));
         let songs_card = StatsSongsCard::new(cover_loader, on_metadata_activate.clone());
         let band_section = card(band_card.widget());
-        band_section.set_width_request(BAND_WIDTH);
         band_section.set_hexpand(true);
         let songs_section = card(songs_card.widget());
         songs_section.set_width_request(SONGS_WIDTH);
