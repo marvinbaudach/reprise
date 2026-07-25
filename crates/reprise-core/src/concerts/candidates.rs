@@ -36,7 +36,6 @@ pub(crate) fn library_candidates(
             .flatten();
     }
     rows.sort_by(candidate_fetch_order);
-    rows.truncate(MAX_ARTISTS_PER_RUN);
     Ok(rows)
 }
 

@@ -15,9 +15,11 @@ mod dedupe;
 mod geo;
 mod geocode;
 pub mod http;
+mod pipeline;
 mod provider;
 mod query;
 mod refresh;
+mod resolution;
 mod ticketmaster;
 
 pub use backoff::backoff_delay;
@@ -25,6 +27,7 @@ pub use bandsintown::BandsintownProvider;
 pub use dedupe::{dedupe_key, merge, normalize_component, ticket_source_label};
 pub use geo::haversine_km;
 pub use geocode::{geocode, geocode_url, parse_geocode, GeocodedLocation};
+pub use pipeline::{refresh, RefreshSummary};
 pub use provider::{
     ArtistRef, EventProvider, ProviderError, ProviderEvent, ProviderKind, Resolution,
 };
@@ -87,11 +90,16 @@ pub struct ConcertRow {
 #[cfg(test)]
 #[path = "concerts/domain_tests.rs"]
 mod domain_tests;
+#[cfg(test)]
+#[path = "concerts/pipeline_tests.rs"]
+mod pipeline_tests;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConcertError {
     #[error("concert database operation failed: {0}")]
     Database(#[from] rusqlite::Error),
+    #[error(transparent)]
+    Provider(#[from] ProviderError),
     #[error("concert provider data is invalid: {0}")]
     InvalidData(String),
     #[error("no concert provider is configured")]
