@@ -81,7 +81,7 @@ pub(super) struct StatsHero {
 
 impl StatsHero {
     pub(super) fn new() -> Self {
-        let time = label("0 h 0", "stats-hero-number");
+        let time = label("0 min", "stats-hero-number");
         time.set_ellipsize(gtk4::pango::EllipsizeMode::None);
         let subline = label("0 plays \u{00b7} 0 artists", "stats-headline-subtitle");
         let time_block = gtk4::Box::new(gtk4::Orientation::Vertical, 4);

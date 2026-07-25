@@ -11,7 +11,9 @@ use reprise_core::library::stats_snapshot::{
     ComparisonDirection, ComparisonFactor, ComparisonPresentation,
 };
 
-const STATS_DURATION: &str = N_!("{hours} h {minutes}");
+const STATS_DURATION_HOURS_MINUTES: &str = N_!("{hours} h {minutes}");
+const STATS_DURATION_HOURS: &str = N_!("{hours} h");
+const STATS_DURATION_MINUTES: &str = N_!("{minutes} min");
 const STATS_HERO_SUBLINE: &str = N_!("{plays} plays · {artists} artists");
 const STATS_PACE: &str = N_!("PACE FOR {year}");
 const STATS_BEST_WEEK: &str = N_!("{date} · {time}");
@@ -44,11 +46,19 @@ pub const STATS_THIN_HISTORY: &str = N_!("Keep listening — stats grow with you
 /// The single compact duration presentation used throughout My Stats.
 pub fn stats_duration(milliseconds: i64) -> String {
     let minutes = milliseconds.max(0) / 60_000;
+    if minutes < 60 {
+        return formatted(STATS_DURATION_MINUTES, &[("minutes", &minutes.to_string())]);
+    }
+    let hours = minutes / 60;
+    let remaining_minutes = minutes % 60;
+    if remaining_minutes == 0 {
+        return formatted(STATS_DURATION_HOURS, &[("hours", &hours.to_string())]);
+    }
     formatted(
-        STATS_DURATION,
+        STATS_DURATION_HOURS_MINUTES,
         &[
-            ("hours", &(minutes / 60).to_string()),
-            ("minutes", &(minutes % 60).to_string()),
+            ("hours", &hours.to_string()),
+            ("minutes", &remaining_minutes.to_string()),
         ],
     )
 }
@@ -279,10 +289,11 @@ mod tests {
     #[test]
     fn stats_duration_uses_one_compact_page_wide_format() {
         assert_eq!(stats_duration(25_080_000), "6 h 58");
-        assert_eq!(stats_duration(3_600_000), "1 h 0");
-        assert_eq!(stats_duration(2_400_000), "0 h 40");
-        assert_eq!(stats_per_day(2_400_000), "0 h 40");
+        assert_eq!(stats_duration(3_600_000), "1 h");
+        assert_eq!(stats_duration(2_400_000), "40 min");
+        assert_eq!(stats_per_day(180_000), "3 min");
         assert_eq!(stats_trend_delta(-25_080_000), "−6 h 58");
+        assert_eq!(stats_trend_delta(-2_400_000), "−40 min");
     }
 
     #[test]
