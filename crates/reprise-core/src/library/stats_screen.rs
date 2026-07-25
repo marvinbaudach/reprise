@@ -110,6 +110,12 @@ pub(crate) struct NamedRow {
 }
 
 #[derive(Debug, Clone)]
+pub(crate) struct GenreArtistRow {
+    pub genre_raw: String,
+    pub artist: NamedRow,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct AlbumRow {
     pub album: String,
     pub artist: NamedRow,
@@ -264,6 +270,43 @@ pub(crate) fn genre_rows(
          GROUP BY le.genre"
     );
     query_named_rows(conn, &sql, start_unix, end_unix)
+}
+
+pub(crate) fn genre_artist_rows(
+    conn: &Connection,
+    start_unix: i64,
+    end_unix: i64,
+) -> Result<Vec<GenreArtistRow>, rusqlite::Error> {
+    let sql = format!(
+        "SELECT le.genre, {RAW_EFFECTIVE_ALBUM_ARTIST} AS raw, le.artist, le.album_artist, \
+                NULLIF(TRIM(le.artist_mbid), ''), COUNT(le.id), \
+                COALESCE(SUM({CLAMPED_MS}), 0), MAX(le.played_at), le.path \
+         FROM listen_events le \
+         WHERE le.played_at >= ?1 AND le.played_at < ?2 \
+           AND TRIM(le.genre) <> '' \
+         GROUP BY le.genre, raw, le.artist, le.album_artist, le.artist_mbid, le.path"
+    );
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement
+        .query_map(params![start_unix, end_unix], |row| {
+            let artist: String = row.get(2)?;
+            let album_artist: String = row.get(3)?;
+            let mbid: Option<String> = row.get(4)?;
+            Ok(GenreArtistRow {
+                genre_raw: row.get(0)?,
+                artist: NamedRow {
+                    raw: row.get(1)?,
+                    mbid: eligible_artist_mbid(&artist, &album_artist, mbid.as_deref())
+                        .map(str::to_string),
+                    plays: row.get(5)?,
+                    ms: row.get(6)?,
+                    last_played_at: row.get(7)?,
+                    path: row.get(8)?,
+                },
+            })
+        })?
+        .collect();
+    rows
 }
 
 pub(crate) fn album_rows(

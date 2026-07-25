@@ -126,6 +126,8 @@ mod tests {
                     total_ms: 700,
                     share_percent: 70,
                     variant_count: 1,
+                    top_artist: Some("Artist".to_string()),
+                    representative_track_path: "/music/track.flac".to_string(),
                 },
                 GenreSegment {
                     label: "Other".to_string(),
@@ -134,6 +136,8 @@ mod tests {
                     total_ms: 300,
                     share_percent: 30,
                     variant_count: 1,
+                    top_artist: None,
+                    representative_track_path: String::new(),
                 },
             ],
             denominator_ms: 1_000,

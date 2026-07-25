@@ -8,9 +8,9 @@ use super::stats_period::{
     apply_activity_granularity, local_parts, week_start, PeriodRange, StatsPeriod,
 };
 use super::stats_screen::{
-    album_rows, artist_rows, discovered_count, first_event_unix, fold_album_rows, genre_rows,
-    key_resolver, listen_rows, ranked_groups, total_ms_in_range, track_rows, HourlyListens,
-    RankedGroup, TopAlbum, TopTrack, TrackAggregate,
+    album_rows, artist_rows, discovered_count, first_event_unix, fold_album_rows,
+    genre_artist_rows, genre_rows, key_resolver, listen_rows, ranked_groups, total_ms_in_range,
+    track_rows, GenreArtistRow, HourlyListens, RankedGroup, TopAlbum, TopTrack, TrackAggregate,
 };
 
 const SPOTLIGHT_TRACK_LIMIT: usize = 3;
@@ -90,6 +90,8 @@ pub struct GenreSegment {
     pub total_ms: i64,
     pub share_percent: i64,
     pub variant_count: usize,
+    pub top_artist: Option<String>,
+    pub representative_track_path: String,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -159,7 +161,7 @@ pub fn compute<Tz: TimeZone>(
     now_unix: i64,
     tz: &Tz,
 ) -> Result<StatsSnapshot, rusqlite::Error> {
-    // Eight read statements in a stable order. Keeping this function pure is
+    // Nine read statements in a stable order. Keeping this function pure is
     // the seam that permits a transparent cache wrapper later if profiling
     // ever justifies one.
     let first_event = first_event_unix(conn)?; // 1
@@ -177,8 +179,9 @@ pub fn compute<Tz: TimeZone>(
     let artists = artist_rows(conn, range.start_unix, range.end_unix)?; // 4
     let albums = album_rows(conn, range.start_unix, range.end_unix)?; // 5
     let genres = genre_rows(conn, range.start_unix, range.end_unix)?; // 6
-    let track_aggregates = track_rows(conn, range.start_unix, range.end_unix)?; // 7
-    let discovered_tracks = discovered_count(conn, range.start_unix, range.end_unix)?; // 8
+    let genre_artists = genre_artist_rows(conn, range.start_unix, range.end_unix)?; // 7
+    let track_aggregates = track_rows(conn, range.start_unix, range.end_unix)?; // 8
+    let discovered_tracks = discovered_count(conn, range.start_unix, range.end_unix)?; // 9
 
     if listen_rows.is_empty() {
         range.buckets.clear();
@@ -240,7 +243,7 @@ pub fn compute<Tz: TimeZone>(
         .collect();
     let best_week = best_week(&listen_rows, tz);
     let spotlight = spotlight(&top_artists, &key_resolver(&artists), &track_aggregates);
-    let genres = genre_section(&genres);
+    let genres = genre_section(&genres, &genre_artists);
     let (clock, busiest_day, streak_days) = time_sections(&listen_rows, tz);
     let on_repeat = top_tracks.first().cloned();
 
@@ -360,19 +363,29 @@ fn spotlight(
 /// without a genre are neither a segment nor "Other" (STATS-3), so counting
 /// them in the denominator would make the bar add up to less than 100 %.
 /// The spotlight follows the same rule against the artist population.
-fn genre_section(rows: &[super::stats_screen::NamedRow]) -> GenreSection {
+fn genre_section(
+    rows: &[super::stats_screen::NamedRow],
+    genre_artists: &[GenreArtistRow],
+) -> GenreSection {
     let groups = ranked_groups(rows);
+    let resolver = key_resolver(rows);
     let denominator_ms = groups.iter().map(|row| row.group.ms).sum::<i64>();
     let mut segments = groups
         .iter()
         .take(GENRE_LIMIT)
-        .map(|row| GenreSegment {
-            label: row.group.label.clone(),
-            key: row.group.key.clone(),
-            plays: row.group.plays,
-            total_ms: row.group.ms,
-            share_percent: percent(row.group.ms, denominator_ms),
-            variant_count: row.group.variant_count,
+        .map(|row| {
+            let (top_artist, representative_track_path) =
+                genre_tile_metadata(&resolver, &row.group.key, genre_artists);
+            GenreSegment {
+                label: row.group.label.clone(),
+                key: row.group.key.clone(),
+                plays: row.group.plays,
+                total_ms: row.group.ms,
+                share_percent: percent(row.group.ms, denominator_ms),
+                variant_count: row.group.variant_count,
+                top_artist,
+                representative_track_path,
+            }
         })
         .collect::<Vec<_>>();
     if groups.len() > GENRE_LIMIT {
@@ -386,12 +399,46 @@ fn genre_section(rows: &[super::stats_screen::NamedRow]) -> GenreSection {
             total_ms,
             share_percent: percent(total_ms, denominator_ms),
             variant_count: 1,
+            top_artist: None,
+            representative_track_path: String::new(),
         });
     }
     GenreSection {
         segments,
         denominator_ms,
     }
+}
+
+fn genre_tile_metadata(
+    genre_resolver: &KeyResolver,
+    genre_key: &str,
+    rows: &[GenreArtistRow],
+) -> (Option<String>, String) {
+    let matching = rows
+        .iter()
+        .filter(|row| genre_resolver.key_for(&row.genre_raw) == genre_key)
+        .collect::<Vec<_>>();
+    let artists = matching
+        .iter()
+        .map(|row| row.artist.clone())
+        .collect::<Vec<_>>();
+    let top_artist = ranked_groups(&artists)
+        .into_iter()
+        .next()
+        .map(|artist| artist.group.label);
+    let representative_track_path = matching
+        .into_iter()
+        .max_by(|left, right| {
+            left.artist
+                .ms
+                .cmp(&right.artist.ms)
+                .then_with(|| left.artist.plays.cmp(&right.artist.plays))
+                .then_with(|| left.artist.last_played_at.cmp(&right.artist.last_played_at))
+                .then_with(|| right.artist.path.cmp(&left.artist.path))
+        })
+        .map(|row| row.artist.path.clone())
+        .unwrap_or_default();
+    (top_artist, representative_track_path)
 }
 
 fn time_sections<Tz: TimeZone>(
@@ -561,3 +608,7 @@ mod comparison_tests;
 #[cfg(test)]
 #[path = "stats_snapshot_hero_tests.rs"]
 mod hero_tests;
+
+#[cfg(test)]
+#[path = "stats_snapshot_genre_tests.rs"]
+mod genre_tests;
