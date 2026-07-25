@@ -84,6 +84,12 @@ pub const SPECTRUM_BAND_COUNT: usize = 64;
 /// display refresh. Envelope time constants derive from it.
 pub const SPECTRUM_INTERVAL_MS: u64 = 16;
 const SPECTRUM_FLOOR_DB: f32 = -80.0;
+/// One skipped analyzer frame ages an onset instead of replaying it at full
+/// strength. Repeated burst coalescing applies this once per skipped frame,
+/// so old hits disappear quickly while a hit immediately before the freshest
+/// frame remains visible.
+const COALESCED_BEAT_DECAY: f32 = 0.72;
+const COALESCED_BEAT_MIN_STRENGTH: f32 = 0.05;
 
 /// A detected onset for the current frame. `fired` is the event edge; `strength`
 /// (`0..=1`) is how far the spectral flux overshot the adaptive threshold, so
@@ -156,6 +162,27 @@ impl SpectrumFrame {
     /// positive on a drop/slam after a lull, negative on a sudden quiet.
     pub fn dynamics(&self) -> f32 {
         self.dynamics
+    }
+
+    /// Replaces this frame's continuous spectrum data with `latest` while
+    /// retaining a sufficiently recent onset edge.
+    ///
+    /// UI consumers use this when render load lets analyzer frames accumulate:
+    /// continuous values must be latest-wins so the picture cannot lag behind
+    /// playback, but dropping the preceding frame outright would make short
+    /// kick/snare transients invisible. Folding a burst through this method
+    /// preserves that edge with per-frame decay and never replays stale bands.
+    pub fn coalesce_latest(self, mut latest: Self) -> Self {
+        let carried_strength = self.beat.strength * COALESCED_BEAT_DECAY;
+        if carried_strength >= COALESCED_BEAT_MIN_STRENGTH
+            && carried_strength > latest.beat.strength
+        {
+            latest.beat = Beat {
+                fired: true,
+                strength: carried_strength,
+            };
+        }
+        latest
     }
 }
 
@@ -460,42 +487,8 @@ pub enum PlayerEvent {
 }
 
 #[cfg(test)]
-mod song_visual_tests {
-    use super::*;
-
-    #[test]
-    fn ac_20_spectrum_frame_normalizes_decibels_and_rejects_non_finite_input() {
-        let mut decibels = [-80.0_f32; SPECTRUM_BAND_COUNT];
-        decibels[..16].copy_from_slice(&[
-            -80.0,
-            -72.0,
-            -64.0,
-            -56.0,
-            -48.0,
-            -40.0,
-            -32.0,
-            -24.0,
-            -16.0,
-            -8.0,
-            0.0,
-            -120.0,
-            12.0,
-            f32::NAN,
-            f32::INFINITY,
-            f32::NEG_INFINITY,
-        ]);
-        let frame = SpectrumFrame::from_decibels(decibels);
-
-        assert_eq!(frame.bands()[0], 0.0);
-        assert_eq!(frame.bands()[5], 0.5);
-        assert_eq!(frame.bands()[10], 1.0);
-        assert_eq!(frame.bands()[11], 0.0);
-        assert_eq!(frame.bands()[12], 1.0);
-        assert_eq!(&frame.bands()[13..16], &[0.0, 0.0, 0.0]);
-        // Bands beyond the explicit prefix sit at the floor.
-        assert!(frame.bands()[16..].iter().all(|&value| value == 0.0));
-    }
-}
+#[path = "playback/song_visual_tests.rs"]
+mod song_visual_tests;
 
 #[cfg(test)]
 mod spectrum_analyzer_tests {

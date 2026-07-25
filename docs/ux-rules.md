@@ -1524,6 +1524,10 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
   begrenzte Spektraldaten wahlweise als „Grid" oder „Bars".
   „Grid" bleibt die Standardauswahl; „Bars" zeigt zwanzig fein segmentierte,
   frequenzabhängige Säulen und reagiert auf denselben lokalen Beat-Impuls.
+  Unter Renderlast gelten aufeinanderfolgende Spektren als „latest wins";
+  ein unmittelbar übersprungener Beat-Impuls bleibt gedämpft erhalten, ohne
+  veraltete Spektren nachzuspielen. Fullscreen begrenzt dafür nur die interne
+  Szenen-Rasterfläche und skaliert sie auf die unveränderte Canvas-Größe.
   Flow, Pulse und weitere Modi existieren nicht. Der beschriftete Canvas
   übernimmt den aktuellen Cover-Akzent über denselben globalen
   Ambient-Crossfade wie die Playerleiste; nur ohne brauchbare Coverfarbe gilt

@@ -203,11 +203,15 @@ fn drawing_area(engine: &Rc<RefCell<VisualEngine>>) -> gtk4::DrawingArea {
         strings::SONG_VISUALS_ACCESSIBLE,
     ))]);
     let engine = engine.clone();
+    let renderer = Rc::new(RefCell::new(render::SceneRenderer::default()));
     area.set_draw_func(move |area, cr, width, height| {
         let accent = accent_rgb(area);
         engine.borrow_mut().set_accent(accent);
-        let scene = engine.borrow().scene(width as f32, height as f32);
-        render::draw_scene(cr, &scene);
+        let scene_size = render::capped_scene_size(width, height);
+        let scene = engine
+            .borrow()
+            .scene(scene_size.0 as f32, scene_size.1 as f32);
+        renderer.borrow_mut().draw(cr, &scene, width, height);
     });
     area
 }
