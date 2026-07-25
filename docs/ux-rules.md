@@ -1426,6 +1426,83 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Listeneintrag darauf hin und führt in den Mehrfach-Tag-Editor der betroffenen
   Tracks; das Vereinheitlichen bleibt eine Einladung, nie ein automatischer
   Schreibvorgang.
+- **STATS-10** [geplant] [gtk] — My Stats erzählt in fester Reihenfolge von
+  oben nach unten: Kopfzeile (Titel, optionales „New this year"-Badge,
+  Zeitraumwahl) · Hero (Gesamtzahl, Subline, KPI-Reihe) · Wochen-Chart ·
+  zweispaltige Reihe aus Band-Karte und Songs-Karte · Genre-Karte. Mehr
+  Sektionen gibt es nicht: keine Listening Clock, keine Highlight-Kacheln,
+  kein Customize-Menü — die Seite ist kuratiert und nicht konfigurierbar.
+  Im schmalen Fenster stapelt die zweispaltige Reihe, ohne die Reihenfolge zu
+  ändern. Die Zeitraumwahl bleibt gemäß STATS-8 der einzige Ansichts-Regler.
+- **STATS-11** [geplant] [core] — Der Hero zeigt die Gesamt-Hörzeit riesig
+  (volle Stunden, unter einer Stunde Minuten, nie „0 hours"), darunter die
+  Subline „N plays · N artists", rechts an der Grundlinie vier KPI-Paare:
+  „Per day" (Ø min/Tag) · Trend (absolutes Stunden-Delta zur Vergleichsspanne
+  mit Richtungs-Icon in Akzentfarbe) · „Pace for <Jahr>" (lineare
+  Jahres-Hochrechnung, nur im laufenden Jahr) · „Best week" (Startdatum und
+  Hörzeit der stärksten lokalen Kalenderwoche). Die Vergleichsspanne ist
+  unverändert die saisonal deckungsgleiche Vorperiode: „<Jahr> so far" gegen
+  dieselbe Spanne des Vorjahrs, ein volles Jahr gegen das Vorjahr, das
+  30-Tage-Fenster gegen die 30 Tage davor; „All time" hat keinen Trend-KPI.
+  KPIs ohne Wert entfallen ersatzlos statt Platzhalter zu zeigen.
+- **STATS-11a** [geplant] [core] — Der Trend bleibt bei jedem Verhältnis
+  ehrlich lesbar: Der KPI nennt das absolute Delta und die kurze Referenz
+  („vs 2025"); der Tooltip trägt die vollständige Semantik samt Prozentwert,
+  ab ×10-Verhältnissen als gerundeter Faktor nach den bisherigen Formregeln.
+  War die Vergleichszeit effektiv null (unter einer Minute), erscheint statt
+  des KPI das Badge „New this year" in der Kopfzeile — nie „∞ %" und nie
+  „×0". Der KPI ellipsiert nicht.
+- **STATS-12** [geplant] [core] — Das Chart zeigt die Hörzeit je lokaler
+  Kalenderwoche als Flächenverlauf: Achse exakt der gewählte Zeitraum,
+  Monatslabels darunter, Linie und Fläche in Abstufungen der Akzentfarbe.
+  Die beste Woche trägt eine gestrichelte Markerlinie mit Label
+  („best week · 4 h 12"); die laufende Woche endet in einem offenen Punkt.
+  Hover nennt Woche und exakten Wert. Marker und Punkte sind reine Anzeige.
+  Nur wenn der Zeitraum zu kurz für Wochen ist, fällt die Achse auf Tage
+  zurück (STATS-6); sehr lange „All time"-Spannen dürfen Monate zeigen und
+  lassen dann den Wochen-Marker weg — der Best-week-KPI bleibt.
+- **STATS-13** [geplant] [gtk] — Die Band-Karte zeigt den meistgehörten
+  Interpreten als Bild-Hero: das Album-Cover seines meistgespielten Tracks
+  füllt die Karte und blendet nach unten in den Kartengrund aus; fehlt ein
+  Cover, steht eine Initialen-Kachel an seiner Stelle — nie eine leere
+  Fläche. Darüber Kicker „MOST PLAYED BAND", Name und die Zeile „N plays ·
+  N h · N % of your artist listening". Darunter die Ränge 2–5 mit dünnem
+  Balken relativ zu Platz 1. Klick auf Karte oder Rangzeile öffnet die
+  Library gefiltert auf den Interpreten (regulärer History-Push). Fasst eine
+  Gruppe mehrere Schreibweisen zusammen, bleibt der Vereinheitlichungs-Hinweis
+  aus STATS-9 erhalten.
+- **STATS-14** [geplant] [gtk] — Die Songs-Karte zeigt die fünf meistgespielten
+  Tracks: Cover, Titel und Interpret zweizeilig, horizontaler Balken relativ
+  zu Platz 1 in einem Akzent-Verlauf, rechts die Play-Zahl. Klick auf die
+  Zeile öffnet die Library gefiltert auf den Interpreten mit fokussiertem
+  Track; Hover oder Fokus zeigt am Cover einen Play-Button, der genau diesen
+  Track sofort abspielt; das Kontextmenü bietet „Play next", „Add to queue"
+  und „Go to album". Der Ghost-Button „Show all top tracks" klappt darunter
+  die vollständige nummerierte Liste mit dem Sort-Toggle „by plays / by time"
+  auf; deren Balken bleibt relativ zum Spitzenreiter der Liste.
+- **STATS-15** [geplant] [core] — Die Genre-Karte besteht aus einem
+  gestapelten Balken (Segmentbreite = Anteil, Akzent-Abstufungen nach Rang,
+  letztes Segment neutral, Tooltip „<Genre> · N % · N h") und bis zu vier
+  Kacheln der stärksten Genres: Cover des meistgehörten Albums im Genre,
+  „<Genre> · N %", darunter „N h · top: <Interpret>". Top-Interpret und
+  Cover je Genre entstehen über dieselbe Schlüsselauflösung wie alle
+  Gruppierungen (STATS-9). Klick auf das Kachel-Cover öffnet die Library
+  gefiltert auf das Album; Segmente und Genre-Namen sind keine Navigation.
+  Tracks ohne Genre zählen weiterhin weder als Segment noch als „Other".
+- **STATS-16** [geplant] [gtk] — Unter zehn Plays im gewählten Zeitraum ist
+  die Datenlage zu dünn für einen Trend: Statt des Charts erscheint der
+  Hinweis „Keep listening — stats grow with you"; Hero-Zahlen bleiben echt,
+  und nur Karten mit Daten werden gerendert — nie Platzhalterkarten. Ohne
+  jeden Play gilt unverändert der Leerzustand aus STATS-6/STATS-6c samt
+  bedienbarer Zeitraumwahl.
+- **STATS-17** [geplant] [gtk] — Die Seite animiert genau einmal pro Öffnen:
+  Hero-Zahl zählt hoch, das Chart zeichnet sich von links nach rechts, Karten
+  faden gestaffelt ein, Balken wachsen auf ihren Zielwert; alle Dauern sind
+  benannte Motion-Tokens, das Gesamtbudget bleibt unter einer Sekunde
+  (Design-Intent, manuell geprüft). Ein Zeitraumwechsel wiederholt die
+  Choreografie nie, sondern interpoliert nur Zahlen und Balken kurz auf die
+  neuen Werte. Bei `gtk-enable-animations=false` steht alles sofort im
+  Endzustand.
 
 ## W. Buttons & Interaktionszustände
 
