@@ -1507,18 +1507,19 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Library gefiltert auf den Interpreten (regulärer History-Push). Fasst eine
   Gruppe mehrere Schreibweisen zusammen, bleibt der Vereinheitlichungs-Hinweis
   aus STATS-9 erhalten.
-- **STATS-14** [aktiv] [gtk] — Die Songs-Karte zeigt die fünf meistgespielten
+- **STATS-14** [aktiv] [gtk] — Die Songs-Karte zeigt die sechs führenden
   Tracks: Cover, Titel und Interpret zweizeilig, horizontaler Balken relativ
-  zu Platz 1 in einem Akzent-Verlauf, rechts die Play-Zahl. Klick auf die
-  Zeile öffnet die Library gefiltert auf den Interpreten mit fokussiertem
-  Track; Hover oder Fokus zeigt am Cover einen Play-Button, der genau diesen
-  Track sofort abspielt; das Kontextmenü bietet „Play next", „Add to queue"
-  und „Go to album". Der Ghost-Button „Show all top tracks" klappt unter der
-  zweispaltigen Reihe die nummerierte Top-10-Liste als eigene Sektion in
-  voller Breite mit dem Sort-Toggle „by plays / by time" auf; die Genre-Karte
-  folgt darunter und der Balken bleibt relativ zum Spitzenreiter der Liste.
-  Die Liste zeigt Dauern im Kompaktformat aus STATS-11; ihre Titel und
-  Interpreten erhalten Linkfarbe und Unterstreichung erst bei Hover, der
+  zu Platz 1 in einem Akzent-Verlauf, rechts die Play-Zahl. Neben dem Kicker
+  sortiert der Toggle „by plays / by time" sowohl diese sechs Zeilen als auch
+  die vollständige Rangliste. Klick auf die Zeile öffnet die Library gefiltert
+  auf den Interpreten mit fokussiertem Track; Hover oder Fokus zeigt am Cover
+  einen Play-Button, der genau diesen Track sofort abspielt; das Kontextmenü
+  bietet „Play next", „Add to queue" und „Go to album". Der Ghost-Button
+  „Show all top tracks" klappt unter der zweispaltigen Reihe die nummerierte
+  Top-10-Liste als eigene Sektion in voller Breite auf; die Genre-Karte folgt
+  darunter und der Balken bleibt relativ zum Spitzenreiter der jeweiligen
+  Sortierung. Die Liste zeigt Dauern im Kompaktformat aus STATS-11; ihre Titel
+  und Interpreten erhalten Linkfarbe und Unterstreichung erst bei Hover, der
   Fokus-Ring bleibt sichtbar.
 - **STATS-15** [aktiv] [core] — Die Genre-Karte besteht aus einem
   gestapelten Balken (Segmentbreite = Anteil, Akzent-Abstufungen nach Rang,
