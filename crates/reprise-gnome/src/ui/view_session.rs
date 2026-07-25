@@ -166,7 +166,7 @@ fn prepare_track_view(
         } else {
             gtk4::SortType::Ascending
         };
-        shared.column_view.sort_by_column(Some(column), order);
+        crate::ui::track_list_sort::sort_by_column(&shared.column_view, column, order);
     }
     shared.restoring_view.set(false);
 }
