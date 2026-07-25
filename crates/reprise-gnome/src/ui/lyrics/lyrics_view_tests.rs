@@ -322,14 +322,7 @@ fn npp_6_highlight_reflow_does_not_snap_after_centering() {
     gtk4::init().unwrap();
     let view = LyricsView::new();
     let lines = (0..40)
-        .map(|index| {
-            let text = if index == 20 {
-                "highlighting changes this lyric geometry"
-            } else {
-                "short synthetic line"
-            };
-            TimedLine::new(i64::from(index) * 1_000, text)
-        })
+        .map(|index| TimedLine::new(i64::from(index) * 1_000, "short synthetic line"))
         .collect();
     view.show_result(&LyricsBody::Synced(lines));
     let window = gtk4::Window::builder()
@@ -343,14 +336,21 @@ fn npp_6_highlight_reflow_does_not_snap_after_centering() {
     view.set_active_line(Some(19));
     wait_for_scroll_value(&view, |value, maximum| value > 0.0 && value < maximum);
     assert!(settle_until(1_000, || !view.has_scroll_animation()));
-    let inactive_height = view.line_labels()[20].height();
 
     view.set_active_line(Some(20));
     assert!(settle_until(1_000, || view.has_scroll_animation()));
+    let highlighted = view.line_labels()[20].clone();
+    let pre_reflow_height = highlighted.height();
+    // Font metrics differ across themes and CI images, so a text string
+    // cannot reliably wrap only after the active-line style is applied.
+    // Force the same late row-allocation growth while the highlight scroll is
+    // running. The previous completion callback then exposed its hard snap.
+    highlighted.set_height_request(pre_reflow_height + 18);
+    assert!(settle_until(1_000, || highlighted.height() > pre_reflow_height));
     let active_height = view.line_labels()[20].height();
     assert!(
-        active_height > inactive_height,
-        "fixture must make the highlighted line reflow: inactive={inactive_height}, active={active_height}"
+        active_height > pre_reflow_height,
+        "fixture must make the highlighted line reflow: before={pre_reflow_height}, active={active_height}"
     );
 
     let mut samples = vec![view.scroll_values().0];
