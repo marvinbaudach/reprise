@@ -1457,7 +1457,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
 - **STATS-11a** [aktiv] [core] — Der Trend bleibt bei jedem Verhältnis
   ehrlich lesbar: Der KPI nennt das absolute Delta und die kurze Referenz
   („vs 2025"); der Tooltip trägt die vollständige Semantik samt Prozentwert,
-  ab ×10-Verhältnissen als gerundeter Faktor nach den bisherigen Formregeln.
+  ab ×11-Verhältnissen als gerundeter Faktor nach den bisherigen Formregeln.
   War die Vergleichszeit effektiv null (unter einer Minute), erscheint statt
   des KPI das Badge „New this year" in der Kopfzeile — nie „∞ %" und nie
   „×0". Der KPI ellipsiert nicht.
@@ -1487,12 +1487,12 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Track; Hover oder Fokus zeigt am Cover einen Play-Button, der genau diesen
   Track sofort abspielt; das Kontextmenü bietet „Play next", „Add to queue"
   und „Go to album". Der Ghost-Button „Show all top tracks" klappt darunter
-  die vollständige nummerierte Liste mit dem Sort-Toggle „by plays / by time"
+  die nummerierte Top-10-Liste mit dem Sort-Toggle „by plays / by time"
   auf; deren Balken bleibt relativ zum Spitzenreiter der Liste.
 - **STATS-15** [aktiv] [core] — Die Genre-Karte besteht aus einem
   gestapelten Balken (Segmentbreite = Anteil, Akzent-Abstufungen nach Rang,
   letztes Segment neutral, Tooltip „<Genre> · N % · N h") und bis zu vier
-  Kacheln der stärksten Genres: Cover des meistgehörten Albums im Genre,
+  Kacheln der stärksten Genres: Cover des meistgespielten Tracks im Genre,
   „<Genre> · N %", darunter „N h · top: <Interpret>". Top-Interpret und
   Cover je Genre entstehen über dieselbe Schlüsselauflösung wie alle
   Gruppierungen (STATS-9). Klick auf das Kachel-Cover öffnet die Library
