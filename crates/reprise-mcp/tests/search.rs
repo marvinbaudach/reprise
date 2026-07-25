@@ -63,6 +63,7 @@ fn tool_discovery_lists_the_expected_tools() {
         "music_search_albums",
         "music_search_artists",
         "music_search_tracks",
+        "music_update_playlist",
     ];
     if cfg!(feature = "mpris") {
         expected.extend(["music_play", "music_playback_control"]);
