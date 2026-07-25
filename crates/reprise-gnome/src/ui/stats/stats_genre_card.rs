@@ -339,6 +339,7 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn stats_15_genre_segments_fill_the_22px_bar() {
         gtk4::init().unwrap();
+        crate::ui::style::install_css_string_for_test(&crate::ui::stats::stats_css::css());
         let card = card();
         card.set_data(&fixture());
         let window = gtk4::Window::builder()
