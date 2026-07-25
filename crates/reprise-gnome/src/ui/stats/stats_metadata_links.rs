@@ -21,25 +21,29 @@ pub(in crate::ui) enum StatsMetadataTarget {
     },
 }
 
-pub(super) fn button(
+pub(super) fn link(
     text: &str,
     css_class: &str,
     target: StatsMetadataTarget,
     callback: &MetadataCallback,
-) -> gtk4::Button {
-    let button = gtk4::Button::with_label(text);
-    button.set_halign(gtk4::Align::Start);
-    button.add_css_class("flat");
-    button.add_css_class("stats-metadata-link");
-    button.add_css_class(css_class);
+) -> gtk4::Label {
+    let label = gtk4::Label::new(Some(text));
+    label.set_halign(gtk4::Align::Start);
+    label.set_xalign(0.0);
+    label.add_css_class("stats-metadata-link");
+    label.add_css_class(css_class);
     let callback = callback.clone();
-    button.connect_clicked(move |_| {
-        let callback = callback.borrow().clone();
-        if let Some(callback) = callback {
-            callback(target.clone());
-        }
-    });
-    button
+    crate::ui::link_activation::arm(
+        &label,
+        text,
+        Rc::new(move || {
+            let callback = callback.borrow().clone();
+            if let Some(callback) = callback {
+                callback(target.clone());
+            }
+        }),
+    );
+    label
 }
 
 #[cfg(test)]
@@ -48,18 +52,18 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn stats_14_metadata_links_are_plain_until_hover() {
+    fn stats_14_metadata_links_are_compact_keyboard_links() {
         gtk4::init().unwrap();
         let callback: MetadataCallback = Rc::new(RefCell::new(None));
-        let button = button(
+        let link = link(
             "Track",
             "stats-item-title",
             StatsMetadataTarget::Track(1),
             &callback,
         );
 
-        assert!(button.has_css_class("stats-metadata-link"));
-        assert!(!button.has_css_class("link"));
-        assert!(button.is_focusable());
+        assert!(link.has_css_class("stats-metadata-link"));
+        assert!(link.is_focusable());
+        assert_eq!(link.accessible_role(), gtk4::AccessibleRole::Link);
     }
 }

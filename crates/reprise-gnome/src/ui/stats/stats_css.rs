@@ -121,10 +121,17 @@ pub(in crate::ui) fn css() -> String {
          .stats-song-bar block.empty {{ \
            background-color: alpha(@window_fg_color, 0.06); \
            min-height: 8px; border-radius: 99px; }}\n\
-         .stats-metadata-link {{ color: @window_fg_color; padding: 0; }}\n\
-         .stats-metadata-link > label {{ text-decoration: none; }}\n\
-         .stats-metadata-link:hover {{ color: @accent_color; }}\n\
-         .stats-metadata-link:hover > label {{ text-decoration: underline; }}\n\
+         .stats-compact-song-bar {{ \
+           min-height: 8px; border-radius: 99px; \
+           background-color: alpha(@window_fg_color, 0.06); }}\n\
+         .stats-compact-song-bar-fill {{ \
+           min-height: 8px; border-radius: 99px; \
+           background-image: linear-gradient(to right, \
+             shade(@accent_bg_color, 0.7), shade(@accent_bg_color, 1.15)); }}\n\
+         .stats-metadata-link {{ \
+           color: @window_fg_color; padding: 0; text-decoration: none; }}\n\
+         .stats-metadata-link:hover {{ \
+           color: @accent_color; text-decoration: underline; }}\n\
          .stats-songs-reveal {{ color: @accent_color; }}\n\
          .stats-eyebrow {{ \
            font-size: 11px; \
@@ -228,8 +235,11 @@ mod tests {
     #[test]
     fn expanded_tracks_use_compact_bars_and_hover_only_links() {
         let css = super::css();
-        assert!(css.contains(".stats-song-bar { min-height: 8px; border-radius: 99px; }"));
-        assert!(css.contains(".stats-metadata-link > label { text-decoration: none; }"));
-        assert!(css.contains(".stats-metadata-link:hover > label { text-decoration: underline; }"));
+        assert!(css.contains(".stats-compact-song-bar { min-height: 8px;"));
+        assert!(css.contains(".stats-compact-song-bar-fill { min-height: 8px;"));
+        assert!(css.contains("text-decoration: none;"));
+        assert!(css.contains(
+            ".stats-metadata-link:hover { color: @accent_color; text-decoration: underline; }"
+        ));
     }
 }
