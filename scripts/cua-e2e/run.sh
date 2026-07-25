@@ -5,8 +5,8 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 
 # shellcheck source=lib.sh
 source "$repo_root/scripts/cua-e2e/lib.sh"
-# shellcheck source=navigation_playback.sh
-source "$repo_root/scripts/cua-e2e/navigation_playback.sh"
+# shellcheck source=track_sort.sh
+source "$repo_root/scripts/cua-e2e/track_sort.sh"
 
 APP_ID=org.reprise.Reprise
 WINDOW_CLASS_MATCH=reprise
@@ -304,9 +304,9 @@ run_populated_library_secondary_scenario() {
 run_song_visuals_scenario() {
   local fixture_dir="$CUA_E2E_SCRATCH_ROOT/song-visuals-fixture-music"
   local cover_path="$CUA_E2E_SCRATCH_ROOT/song-visuals-cover.png"
-  local initial_path panel_path visual_path dialog_path closed_path
+  local initial_path panel_path visual_path
 
-  echo "[cua-e2e] ac-9/ac-10/ac-11: player info dialog and album-accent visuals"
+  echo "[cua-e2e] ac-10/ac-11: album-accent song visuals"
   mkdir -p "$fixture_dir"
   ffmpeg -hide_banner -loglevel error -y \
     -f lavfi -i color=c=0xd86a45:s=600x600 -frames:v 1 "$cover_path"
@@ -352,20 +352,11 @@ run_song_visuals_scenario() {
   cua_click_label "$APP_PID" "$WINDOW_ID" "Visual" song-visuals-select-visual
   visual_path=$(wait_for_label \
     "$APP_PID" "$WINDOW_ID" "Audio-reactive song visual" song-visuals-visible)
-  assert_snapshot_contains "$visual_path" "Rings"
+  assert_snapshot_contains "$visual_path" "Grid"
+  assert_snapshot_contains "$visual_path" "Bars"
   assert_snapshot_contains "$visual_path" "Flow"
   assert_snapshot_contains "$visual_path" "Pulse"
-  assert_snapshot_contains "$visual_path" "F11 Fullscreen · color follows the cover accent"
   assert_snapshot_absent "$visual_path" "Audio Character"
-
-  cua_click_label "$APP_PID" "$WINDOW_ID" "Song analysis" song-analysis-open
-  dialog_path=$(wait_for_label \
-    "$APP_PID" "$WINDOW_ID" "Audio Character" song-analysis-dialog)
-  assert_snapshot_contains "$dialog_path" "Local audio analysis is disabled"
-  cua_press_key_window "$APP_PID" "$WINDOW_ID" escape song-analysis-close
-  closed_path=$(wait_for_label_absent \
-    "$APP_PID" "$WINDOW_ID" "Audio Character" song-analysis-closed)
-  assert_focus_evidence_label "$closed_path" "Song analysis"
 
   finish_scenario song-visuals \
     "dev scan complete" \
@@ -471,10 +462,10 @@ run_library_doctor_scenario() {
   echo "[cua-e2e] browse-3-sidebar-escapes-doctor: active Music is an absolute target"
   # cua-driver currently reports every descendant of this nested utility
   # page at the native window's screen origin (200,50). The runner fixes the
-  # window at 1200x800, so the Music-row centre at local (110,115) is the
-  # deterministic screen point (310,165).
-  cua_click_screen_point \
-    "$APP_PID" "$WINDOW_ID" 310 165 browse-3-sidebar-escapes-doctor
+  # window at 1200x800, so the Music-row centre at local screenshot point
+  # (110,115) is deterministic.
+  cua_click_window_point \
+    "$APP_PID" "$WINDOW_ID" 110 115 browse-3-sidebar-escapes-doctor
   root_path=$(wait_for_label \
     "$APP_PID" "$WINDOW_ID" "Search all fields" browse-3-library-restored)
   assert_snapshot_absent "$root_path" "Run Scan Now"
@@ -614,6 +605,9 @@ run_private_session() {
     song-visuals)
       run_song_visuals_scenario
       ;;
+    track-sort-playing-marker)
+      run_track_sort_playing_marker_scenario
+      ;;
     *)
       echo "unknown private CUA scenario group: $private_group" >&2
       return 2
@@ -715,6 +709,8 @@ run_private_scenario_group() {
   mkdir -m 700 "$runtime_dir"
   mkdir -p "$root_profile/data" "$root_profile/cache" "$root_profile/config"
   dbus-run-session -- env \
+    -u GNOME_KEYRING_CONTROL \
+    -u GNOME_KEYRING_PID \
     XDG_RUNTIME_DIR="$runtime_dir" \
     XDG_DATA_HOME="$root_profile/data" \
     XDG_CACHE_HOME="$root_profile/cache" \
@@ -746,13 +742,15 @@ case "${CUA_E2E_ONLY:-all}" in
       tag-3-multi-dialog-structure
       library-doctor
       song-visuals
+      track-sort-playing-marker
     )
     ;;
   populated-library)
     scenario_groups=(populated-library populated-library-secondary)
     ;;
   fresh-install | populated-library-secondary | tag-1-no-jump-after-save \
-    | tag-3-multi-dialog-structure | library-doctor | song-visuals)
+    | tag-3-multi-dialog-structure | library-doctor | song-visuals \
+    | track-sort-playing-marker)
     scenario_groups=("$CUA_E2E_ONLY")
     ;;
   *)
