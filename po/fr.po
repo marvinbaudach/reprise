@@ -493,7 +493,7 @@ msgstr "Titre"
 
 #: crates/reprise-gnome/src/ui/strings.rs:339
 msgid "Cover"
-msgstr "Couverture"
+msgstr "Pochette"
 
 #: crates/reprise-gnome/src/ui/strings.rs:340
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:162
@@ -558,7 +558,7 @@ msgstr "Répéter"
 #: crates/reprise-gnome/src/ui/strings.rs:362
 #: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:23
 msgid "Rating"
-msgstr "Classement"
+msgstr "Note"
 
 #: crates/reprise-gnome/src/ui/strings.rs:370
 #, rust-format
@@ -1430,7 +1430,7 @@ msgstr "Sélection"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:24
 msgid "Scan Options"
-msgstr "Options de numérisation"
+msgstr "Options d’analyse"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:25
 msgid "Run Scan Now"
@@ -3728,4 +3728,4 @@ msgstr ""
 #~ msgstr "Artiste inconnu"
 
 #~ msgid "Top tracks"
-#~ msgstr "Meilleurs titres"
+#~ msgstr "Meilleures pistes"
