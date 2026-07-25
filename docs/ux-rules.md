@@ -1528,6 +1528,11 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
   ein unmittelbar übersprungener Beat-Impuls bleibt gedämpft erhalten, ohne
   veraltete Spektren nachzuspielen. Fullscreen begrenzt dafür nur die interne
   Szenen-Rasterfläche und skaliert sie auf die unveränderte Canvas-Größe.
+  Die Impulsgröße folgt der absoluten Energie der 256 Roh-Bins, nicht dem
+  Max-Pooling oder nur der relativen adaptiven Schwelle: große Schläge müssen
+  schwache Transienten sichtbar überragen. Ein Grid-Impuls setzt unabhängig
+  von der aktuellen Tuchphase sofort eine breite, runde Mittelkuppel; seine
+  freie Nachschwingung darf keinen späteren größeren Peak erfinden.
   Flow, Pulse und weitere Modi existieren nicht. Der beschriftete Canvas
   übernimmt den aktuellen Cover-Akzent über denselben globalen
   Ambient-Crossfade wie die Playerleiste; nur ohne brauchbare Coverfarbe gilt

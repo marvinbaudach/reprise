@@ -1,8 +1,8 @@
 //! Cairo renderer for a portable `reprise_core::visuals::Scene`.
 use reprise_core::visuals::{Fill, Geom, Scene, Shape};
 
-const MAX_SCENE_WIDTH: i32 = 800;
-const MAX_SCENE_HEIGHT: i32 = 450;
+const MAX_SCENE_WIDTH: i32 = 640;
+const MAX_SCENE_HEIGHT: i32 = 360;
 
 /// Caps only the expensive scene raster. The finished image is scaled back to
 /// the widget allocation, so fullscreen remains fullscreen while Grid/Bars
@@ -207,8 +207,8 @@ mod tests {
     #[test]
     fn ac_20_fullscreen_render_size_is_capped_without_upscaling_inline_canvases() {
         assert_eq!(capped_scene_size(548, 300), (548, 300));
-        assert_eq!(capped_scene_size(800, 450), (800, 450));
-        assert_eq!(capped_scene_size(1920, 1080), (800, 450));
-        assert_eq!(capped_scene_size(2560, 1080), (800, 338));
+        assert_eq!(capped_scene_size(640, 360), (640, 360));
+        assert_eq!(capped_scene_size(1920, 1080), (640, 360));
+        assert_eq!(capped_scene_size(2560, 1080), (640, 270));
     }
 }

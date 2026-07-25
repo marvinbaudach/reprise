@@ -19,8 +19,8 @@ const SEGMENT_GAP: f32 = 2.5;
 const PEAK_CAP_HEIGHT: f32 = 2.5;
 const PEAK_MIN: f32 = 0.04;
 const REFLECTION_SEGMENTS: usize = 6;
-const BEAT_LIFT_LOW: f32 = 0.24;
-const BEAT_LIFT_HIGH: f32 = 0.11;
+const BEAT_LIFT_LOW: f32 = 0.70;
+const BEAT_LIFT_HIGH: f32 = 0.45;
 const HUE_START: f32 = 188.0;
 const HUE_END: f32 = 315.0;
 
@@ -245,6 +245,40 @@ mod tests {
             })
             .count();
         assert_eq!(caps, BAR_COUNT);
+    }
+
+    #[test]
+    fn ac_20_large_kick_lifts_the_whole_analyzer_decisively() {
+        use crate::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
+        use crate::visuals::VisualEngine;
+
+        fn active_segments(engine: &VisualEngine) -> usize {
+            let shapes = scene(&test_ctx(engine, WIDTH, HEIGHT));
+            main_segments(&shapes).len()
+        }
+
+        let wall = [-40.0; SPECTRUM_ANALYSIS_BAND_COUNT];
+        let mut analyzer = SpectrumAnalyzer::new();
+        let mut engine = VisualEngine::new();
+        engine.set_playing(true);
+        for _ in 0..120 {
+            engine.ingest(&analyzer.ingest(wall));
+            engine.tick();
+        }
+        let before = active_segments(&engine);
+
+        let mut kick = wall;
+        kick[..8].fill(-2.0);
+        let hit = analyzer.ingest(kick);
+        assert!(hit.beat().fired);
+        engine.ingest(&hit);
+        engine.tick();
+        let after = active_segments(&engine);
+
+        assert!(
+            after >= before + BAR_COUNT * 5,
+            "a large kick must add at least five visible segments per column: before={before}, after={after}"
+        );
     }
 
     fn rect_x(shape: &Shape) -> f32 {

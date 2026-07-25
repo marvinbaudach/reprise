@@ -37,7 +37,8 @@ const BEAT_IMPULSE: f32 = 8.0;
 /// Immediate visible lift applied with the beat impulse. This bypasses the
 /// former driver→cloth integration delay while preserving the subsequent
 /// speaker-cone fall and radial waves.
-const BEAT_LIFT: f32 = 1.45;
+const BEAT_LIFT: f32 = 1.85;
+const BEAT_RADIUS: f32 = 0.42;
 const DRIVER_POSITION_LIMIT: f32 = 1.8;
 const DRIVER_VELOCITY_LIMIT: f32 = 28.0;
 /// Gaussian radius of the central loudspeaker, in normalized membrane space
@@ -61,10 +62,14 @@ const DAMP_RATE: f32 = 2.8;
 const HEIGHT_MIN: f32 = -1.35;
 const HEIGHT_MAX: f32 = 2.0;
 
-fn driver_weight(row: usize, col: usize) -> f32 {
+fn radial_weight(row: usize, col: usize, radius: f32) -> f32 {
     let y = (2 * row as isize - (MEMBRANE_ROWS - 1) as isize) as f32 / (MEMBRANE_ROWS - 1) as f32;
     let x = (2 * col as isize - (MEMBRANE_COLS - 1) as isize) as f32 / (MEMBRANE_COLS - 1) as f32;
-    (-(x * x + y * y) / (2.0 * DRIVER_RADIUS * DRIVER_RADIUS)).exp()
+    (-(x * x + y * y) / (2.0 * radius * radius)).exp()
+}
+
+fn driver_weight(row: usize, col: usize) -> f32 {
+    radial_weight(row, col, DRIVER_RADIUS)
 }
 
 /// Height (`h`) and velocity (`v`) field for every grid cell plus the one
@@ -152,13 +157,16 @@ impl Membrane {
     /// the center; no random cells or asymmetric splashes are introduced.
     pub fn splash(&mut self, strength: f32) {
         let strength = strength.clamp(0.0, 1.0);
-        self.driver_velocity =
-            (self.driver_velocity + strength * BEAT_IMPULSE).min(DRIVER_VELOCITY_LIMIT);
+        // A fresh beat establishes its own positive speaker stroke instead of
+        // inheriting the oscillator phase. Additive velocity/height made a
+        // kick landing in a trough look weak, then let stored spring energy
+        // create a larger peak after the music had already moved on.
+        self.driver_velocity = strength * BEAT_IMPULSE;
         for row in 0..MEMBRANE_ROWS {
             for col in 0..MEMBRANE_COLS {
                 let index = row * MEMBRANE_COLS + col;
-                self.h[index] = (self.h[index] + driver_weight(row, col) * strength * BEAT_LIFT)
-                    .clamp(HEIGHT_MIN, HEIGHT_MAX);
+                let beat_dome = radial_weight(row, col, BEAT_RADIUS) * strength * BEAT_LIFT;
+                self.h[index] = self.h[index].max(beat_dome).clamp(HEIGHT_MIN, HEIGHT_MAX);
             }
         }
     }
@@ -290,6 +298,54 @@ mod tests {
         assert!(
             trough < -0.05,
             "underdamped driver must fall into depth, trough was {trough}"
+        );
+    }
+
+    #[test]
+    fn strong_beat_overrides_the_negative_phase_and_remains_the_largest_peak() {
+        let mut membrane = Membrane::new();
+        let silent = [0.0_f32; SPECTRUM_BAND_COUNT];
+        membrane.splash(1.0);
+        let mut reached_trough = false;
+        for _ in 0..180 {
+            membrane.advance(&silent);
+            if center_height(&membrane) < -0.2 {
+                reached_trough = true;
+                break;
+            }
+        }
+        assert!(
+            reached_trough,
+            "fixture must reach the negative cloth phase"
+        );
+
+        membrane.splash(1.0);
+        let hit_height = center_height(&membrane);
+        assert!(
+            hit_height > 1.75,
+            "a strong beat must establish a large dome even from a trough, got {hit_height}"
+        );
+        let mut tail_peak = 0.0_f32;
+        for _ in 0..120 {
+            membrane.advance(&silent);
+            tail_peak = tail_peak.max(center_height(&membrane));
+        }
+        assert!(
+            tail_peak <= hit_height * 1.05,
+            "the cloth tail must not invent a larger peak later: hit={hit_height}, tail={tail_peak}"
+        );
+    }
+
+    #[test]
+    fn strong_beat_dome_is_broad_like_the_reference_speaker() {
+        let mut membrane = Membrane::new();
+        membrane.splash(1.0);
+        let center = center_height(&membrane);
+        let side = membrane.height(MEMBRANE_ROWS / 2 - 1, MEMBRANE_COLS / 2 - 9);
+        let depth = membrane.height(MEMBRANE_ROWS / 2 - 6, MEMBRANE_COLS / 2 - 1);
+        assert!(
+            side > center * 0.5 && depth > center * 0.5,
+            "beat dome must stay broad in both axes: center={center}, side={side}, depth={depth}"
         );
     }
 

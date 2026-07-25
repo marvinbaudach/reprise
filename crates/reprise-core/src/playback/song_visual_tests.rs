@@ -58,3 +58,48 @@ fn ac_20_coalescing_uses_the_freshest_spectrum_but_retains_one_recent_hit() {
         "a carried hit must age while skipped frames are collapsed"
     );
 }
+
+#[test]
+fn ac_20_beat_strength_tracks_absolute_transient_energy() {
+    fn kick_strength(peak_db: f32) -> f32 {
+        let wall = [-50.0; SPECTRUM_ANALYSIS_BAND_COUNT];
+        let mut analyzer = SpectrumAnalyzer::new();
+        for _ in 0..120 {
+            analyzer.ingest(wall);
+        }
+        let mut kick = wall;
+        kick[..FLUX_LOW_BANDS].fill(peak_db);
+        let beat = analyzer.ingest(kick).beat();
+        assert!(beat.fired, "{peak_db} dB kick must be detected");
+        beat.strength
+    }
+
+    let moderate = kick_strength(-38.0);
+    let huge = kick_strength(0.0);
+    assert!(
+        huge >= moderate + 0.25,
+        "a huge transient must visibly outrank a moderate one: moderate={moderate}, huge={huge}"
+    );
+}
+
+#[test]
+fn ac_20_sparse_fft_spikes_cannot_impersonate_a_full_energy_beat() {
+    let wall = [-50.0; SPECTRUM_ANALYSIS_BAND_COUNT];
+    let mut analyzer = SpectrumAnalyzer::new();
+    for _ in 0..120 {
+        analyzer.ingest(wall);
+    }
+    let edges = log_band_edges();
+    let mut sparse = wall;
+    for band in 32..SPECTRUM_BAND_COUNT {
+        sparse[edges[band]] = 0.0;
+    }
+
+    let beat = analyzer.ingest(sparse).beat();
+    assert!(beat.fired, "the sensitive onset path may detect the spike");
+    assert!(
+        beat.strength < 0.5,
+        "sparse max-pooled bins must not look like a full-energy beat, got {}",
+        beat.strength
+    );
+}
