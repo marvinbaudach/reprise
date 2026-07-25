@@ -18,6 +18,17 @@ fn active_providers(
     .filter_map(|(active, provider)| active.then_some(provider))
 }
 
+fn eligible_providers(
+    listenbrainz: bool,
+    lastfm: bool,
+    position_ms: i64,
+    duration_ms: i64,
+) -> impl Iterator<Item = scrobbling::ScrobbleProvider> {
+    active_providers(listenbrainz, lastfm).filter(move |provider| {
+        scrobbling::should_scrobble_for(*provider, position_ms, duration_ms)
+    })
+}
+
 impl PlayerController {
     pub(in crate::ui) fn begin_scrobble(&self, track: TrackMetadata) {
         if !self.listenbrainz.is_active() && !self.lastfm.is_active() {
@@ -48,8 +59,12 @@ impl PlayerController {
             self.listenbrainz.is_active() || self.lastfm.is_active(),
         );
         if let Some(listen) = scrobble {
-            for provider in active_providers(self.listenbrainz.is_active(), self.lastfm.is_active())
-            {
+            for provider in eligible_providers(
+                self.listenbrainz.is_active(),
+                self.lastfm.is_active(),
+                max_position_ms,
+                listen.track.duration_ms,
+            ) {
                 let (service, runtime) = match provider {
                     scrobbling::ScrobbleProvider::ListenBrainz => {
                         ("ListenBrainz", self.listenbrainz.as_ref())
@@ -185,6 +200,21 @@ mod tests {
     fn one_completed_listen_targets_both_active_providers() {
         assert_eq!(
             active_providers(true, true).collect::<Vec<_>>(),
+            vec![
+                scrobbling::ScrobbleProvider::ListenBrainz,
+                scrobbling::ScrobbleProvider::LastFm,
+            ]
+        );
+    }
+
+    #[test]
+    fn completed_play_targets_only_providers_that_accept_its_duration() {
+        assert_eq!(
+            eligible_providers(true, true, 15_000, 30_000).collect::<Vec<_>>(),
+            vec![scrobbling::ScrobbleProvider::ListenBrainz]
+        );
+        assert_eq!(
+            eligible_providers(true, true, 15_001, 30_001).collect::<Vec<_>>(),
             vec![
                 scrobbling::ScrobbleProvider::ListenBrainz,
                 scrobbling::ScrobbleProvider::LastFm,

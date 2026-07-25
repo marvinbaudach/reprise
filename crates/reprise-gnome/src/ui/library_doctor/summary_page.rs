@@ -154,12 +154,8 @@ impl LibraryDoctorPage {
             .model(&scope_model)
             .selected(0)
             .build();
-        let remote = preference_library_doctor::remote_suggestions_row_for(
-            conn,
-            parent,
-            true,
-            on_remote_changed,
-        );
+        let remote =
+            preference_library_doctor::remote_suggestions_row_for(conn, parent, on_remote_changed);
         let options = adw::PreferencesGroup::builder()
             .title(strings::text(strings::DOCTOR_SCAN_OPTIONS))
             .build();
@@ -530,7 +526,7 @@ mod tests {
     }
 
     #[test]
-    fn doc_1d_acoustid_unavailable_is_visible_only_for_remote_mode() {
+    fn doc_7a_acoustid_unavailable_is_visible_only_for_remote_mode() {
         assert!(super::show_acoustid_unavailable(true, false));
         assert!(!super::show_acoustid_unavailable(false, false));
         assert!(!super::show_acoustid_unavailable(true, true));

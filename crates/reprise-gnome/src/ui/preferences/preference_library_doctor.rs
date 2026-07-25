@@ -20,7 +20,6 @@ type RevertCallback = Rc<dyn Fn()>;
 
 #[derive(Default)]
 pub(in crate::ui) struct DoctorPreferenceControls {
-    module_switches: RefCell<Vec<glib::WeakRef<gtk4::Switch>>>,
     expander_rows: RefCell<Vec<glib::WeakRef<adw::ExpanderRow>>>,
     module_controls: RefCell<Vec<glib::WeakRef<gtk4::Widget>>>,
     revert_controls: RefCell<Vec<glib::WeakRef<gtk4::Widget>>>,
@@ -30,7 +29,6 @@ pub(in crate::ui) struct DoctorPreferenceControls {
 
 impl DoctorPreferenceControls {
     pub(in crate::ui) fn clear_surfaces(&self) {
-        self.module_switches.borrow_mut().clear();
         self.expander_rows.borrow_mut().clear();
         self.module_controls.borrow_mut().clear();
         self.revert_controls.borrow_mut().clear();
@@ -43,10 +41,6 @@ impl DoctorPreferenceControls {
     ) {
         self.run.borrow_mut().replace(Rc::new(run));
         self.revert.borrow_mut().replace(Rc::new(revert));
-    }
-
-    fn register_module_switch(&self, control: &gtk4::Switch) {
-        self.module_switches.borrow_mut().push(control.downgrade());
     }
 
     fn register_expander(&self, row: &adw::ExpanderRow) {
@@ -66,16 +60,7 @@ impl DoctorPreferenceControls {
     }
 
     pub(in crate::ui) fn set_job_running(&self, running: bool) {
-        let enabled = self
-            .module_switches
-            .borrow()
-            .iter()
-            .find_map(glib::WeakRef::upgrade)
-            .is_some_and(|control| control.is_active());
-        let state = control_state(enabled, running);
-        retain_apply(&self.module_switches, |control| {
-            control.set_sensitive(state.module_sensitive);
-        });
+        let state = control_state(running);
         retain_apply(&self.expander_rows, |row| row.set_subtitle(&state.subtitle));
         retain_apply(&self.module_controls, |control| {
             control.set_sensitive(state.remote_sensitive);
@@ -102,19 +87,17 @@ fn retain_apply<T: glib::object::IsA<glib::Object>>(
 }
 
 pub(super) struct DoctorPluginControlState {
-    pub(super) module_sensitive: bool,
     pub(super) remote_sensitive: bool,
     pub(super) revert_sensitive: bool,
     pub(super) subtitle: String,
 }
 
-pub(super) fn control_state(module_enabled: bool, job_running: bool) -> DoctorPluginControlState {
+pub(super) fn control_state(job_running: bool) -> DoctorPluginControlState {
     let description = crate::ui::preference_plugins::plugin_description(
         &reprise_core::modules::LIBRARY_DOCTOR_MODULE,
     );
     DoctorPluginControlState {
-        module_sensitive: !job_running,
-        remote_sensitive: module_enabled && !job_running,
+        remote_sensitive: !job_running,
         revert_sensitive: !job_running,
         subtitle: if job_running {
             format!(
@@ -148,18 +131,14 @@ pub(super) const fn remote_toggle_action(
     }
 }
 
-pub(super) fn remote_suggestions_row(
-    context: &Rc<PreferencesContext>,
-    module_enabled: bool,
-) -> adw::SwitchRow {
+pub(super) fn remote_suggestions_row(context: &Rc<PreferencesContext>) -> adw::SwitchRow {
     let parent = context.preferences_parent();
-    remote_suggestions_row_for(&context.conn, &parent, module_enabled, Rc::new(|_| {}))
+    remote_suggestions_row_for(&context.conn, &parent, Rc::new(|_| {}))
 }
 
 pub(in crate::ui) fn remote_suggestions_row_for(
     conn: &Rc<RefCell<Connection>>,
     parent: &impl IsA<gtk4::Widget>,
-    module_enabled: bool,
     on_changed: Rc<dyn Fn(bool)>,
 ) -> adw::SwitchRow {
     let preference = reprise_core::library_doctor::remote_suggestion_preference(&conn.borrow())
@@ -172,7 +151,6 @@ pub(in crate::ui) fn remote_suggestions_row_for(
         .subtitle(strings::text(strings::LIBRARY_DOCTOR_REMOTE_DESCRIPTION))
         .use_markup(false)
         .active(preference.enabled)
-        .sensitive(module_enabled)
         .build();
     let syncing = Rc::new(Cell::new(false));
     let conn = conn.clone();
@@ -274,26 +252,12 @@ fn present_remote_confirmation(
 }
 
 pub(in crate::ui) fn plugin_row(context: &Rc<PreferencesContext>) -> adw::ExpanderRow {
-    let enabled = reprise_core::modules::is_enabled(
-        &context.conn.borrow(),
-        &reprise_core::modules::LIBRARY_DOCTOR_MODULE,
-    )
-    .unwrap_or(false);
-    let state = control_state(enabled, context.library_doctor_job_running.get());
+    let state = control_state(context.library_doctor_job_running.get());
     let row = adw::ExpanderRow::builder()
         .title(strings::text(strings::LIBRARY_DOCTOR))
         .subtitle(&state.subtitle)
         .enable_expansion(true)
         .build();
-    let module_switch = gtk4::Switch::builder()
-        .active(enabled)
-        .sensitive(state.module_sensitive)
-        .valign(gtk4::Align::Center)
-        .build();
-    module_switch.update_property(&[gtk4::accessible::Property::Label(&strings::text(
-        strings::DOCTOR_ENABLE_MODULE,
-    ))]);
-    row.add_suffix(&module_switch);
 
     let scope = adw::ComboRow::builder()
         .title(strings::text(strings::DOCTOR_SCOPE))
@@ -306,7 +270,7 @@ pub(in crate::ui) fn plugin_row(context: &Rc<PreferencesContext>) -> adw::Expand
         .build();
     row.add_row(&scope);
 
-    let remote = remote_suggestions_row(context, enabled);
+    let remote = remote_suggestions_row(context);
     remote.set_sensitive(state.remote_sensitive);
     row.add_row(&remote);
 
@@ -344,7 +308,6 @@ pub(in crate::ui) fn plugin_row(context: &Rc<PreferencesContext>) -> adw::Expand
         .build();
     let revert_row = adw::ActionRow::builder()
         .title(strings::text(strings::DOCTOR_REVERT_LAST_CLEANUP))
-        .subtitle(strings::text(strings::DOCTOR_REVERT_AVAILABLE_DISABLED))
         .activatable_widget(&revert)
         .visible(cleanup_available)
         .build();
@@ -357,9 +320,6 @@ pub(in crate::ui) fn plugin_row(context: &Rc<PreferencesContext>) -> adw::Expand
         .plugin_rows
         .borrow_mut()
         .insert("library_doctor", target);
-    context
-        .doctor_controls
-        .register_module_switch(&module_switch);
     context.doctor_controls.register_expander(&row);
     for control in [
         scope.clone().upcast::<gtk4::Widget>(),
@@ -370,44 +330,6 @@ pub(in crate::ui) fn plugin_row(context: &Rc<PreferencesContext>) -> adw::Expand
     }
     context.doctor_controls.register_revert_control(&revert);
 
-    {
-        let weak = Rc::downgrade(context);
-        let row = row.clone();
-        let scope = scope.clone();
-        let remote = remote.clone();
-        let run = run.clone();
-        let syncing = Rc::new(Cell::new(false));
-        let syncing_notify = syncing.clone();
-        module_switch.connect_active_notify(move |control| {
-            let Some(context) = weak.upgrade() else {
-                return;
-            };
-            if syncing_notify.get() {
-                return;
-            }
-            let enabled = control.is_active();
-            let result = reprise_core::modules::set_enabled(
-                &context.conn.borrow(),
-                &reprise_core::modules::LIBRARY_DOCTOR_MODULE,
-                enabled,
-            );
-            if let Err(error) = result {
-                tracing::warn!(%error, "could not save Library Doctor plugin state");
-                syncing_notify.set(true);
-                control.set_active(!enabled);
-                syncing_notify.set(false);
-                return;
-            }
-            let state = control_state(enabled, context.library_doctor_job_running.get());
-            row.set_subtitle(&state.subtitle);
-            scope.set_sensitive(state.remote_sensitive);
-            remote.set_sensitive(state.remote_sensitive);
-            run.set_sensitive(state.remote_sensitive);
-            if !enabled {
-                remote.set_active(false);
-            }
-        });
-    }
     {
         let weak = Rc::downgrade(context);
         run.connect_clicked(move |_| {
@@ -443,7 +365,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn doc_1d_first_remote_enable_requires_confirmation_and_cancel_stays_off() {
+    fn doc_7a_first_remote_enable_requires_confirmation_and_cancel_stays_off() {
         let consent_required = reprise_core::library_doctor::RemoteSuggestionPreference {
             enabled: false,
             consent_required: true,

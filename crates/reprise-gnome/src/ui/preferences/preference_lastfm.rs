@@ -118,6 +118,20 @@ fn build_lastfm_expander(is_enabled: bool, connected: bool, status: &str) -> Las
         .activatable_widget(&open_browser)
         .build();
     browser_row.add_suffix(&open_browser);
+    let credentials_section = adw::ExpanderRow::builder()
+        .title(strings::text(strings::LASTFM_ADVANCED_SETUP))
+        .subtitle(strings::text(strings::LASTFM_ADVANCED_SETUP_DESCRIPTION))
+        .show_enable_switch(false)
+        .expanded(false)
+        .build();
+    credentials_section.add_row(&api_key);
+    credentials_section.add_row(&shared_secret);
+    let hint = adw::ActionRow::builder()
+        .subtitle(strings::text(strings::LASTFM_DIALOG_BODY))
+        .build();
+    hint.add_css_class("property");
+    credentials_section.add_row(&hint);
+    credentials_section.add_row(&browser_row);
 
     let sign_in: Option<gtk4::Button>;
     let mut sens: Vec<gtk4::glib::WeakRef<gtk4::Widget>> = Vec::new();
@@ -143,32 +157,12 @@ fn build_lastfm_expander(is_enabled: bool, connected: bool, status: &str) -> Las
         expander.add_row(&sign_in_row);
         sens.push(sign_in_row.upcast_ref::<gtk4::Widget>().downgrade());
 
-        let byo_section = adw::ExpanderRow::builder()
-            .title(strings::text(strings::LASTFM_BYO_KEY))
-            .show_enable_switch(false)
-            .enable_expansion(false)
-            .build();
-        byo_section.add_row(&api_key);
-        byo_section.add_row(&shared_secret);
-        byo_section.add_row(&browser_row);
-        expander.add_row(&byo_section);
-        sens.push(byo_section.upcast_ref::<gtk4::Widget>().downgrade());
         sign_in = Some(btn);
     } else {
-        expander.add_row(&api_key);
-        expander.add_row(&shared_secret);
-        let hint = adw::ActionRow::builder()
-            .subtitle(strings::text(strings::LASTFM_DIALOG_BODY))
-            .build();
-        hint.add_css_class("property");
-        expander.add_row(&hint);
-        sens.push(hint.upcast_ref::<gtk4::Widget>().downgrade());
-        sens.push(api_key.upcast_ref::<gtk4::Widget>().downgrade());
-        sens.push(shared_secret.upcast_ref::<gtk4::Widget>().downgrade());
-        expander.add_row(&browser_row);
-        sens.push(browser_row.upcast_ref::<gtk4::Widget>().downgrade());
         sign_in = None;
     }
+    expander.add_row(&credentials_section);
+    sens.push(credentials_section.upcast_ref::<gtk4::Widget>().downgrade());
 
     let test_connection = crate::ui::preference_dependencies::TestConnectionRow::new();
     test_connection.row.set_visible(connected);
@@ -281,7 +275,7 @@ fn client_for(
             return result;
         }
     }
-    LastFmClient::new(&credentials.api_key, &credentials.shared_secret)
+    crate::ui::scrobbling::smoke::lastfm_client(&credentials.api_key, &credentials.shared_secret)
 }
 
 fn has_bundled_credentials() -> bool {
@@ -491,7 +485,8 @@ impl PreferencesContext {
         let worker_secret = shared_secret.clone();
         let receiver = match one_shot_task::spawn("reprise-lastfm-token", move || {
             (|| {
-                let client = LastFmClient::new(&worker_api_key, &worker_secret)?;
+                let client =
+                    crate::ui::scrobbling::smoke::lastfm_client(&worker_api_key, &worker_secret)?;
                 let token = client.request_token()?;
                 let url = client.authorization_url(&token)?;
                 Ok::<_, TransportError>((token, url))
@@ -511,10 +506,7 @@ impl PreferencesContext {
                 return;
             };
             match receiver.recv().await {
-                Ok(Ok((token, url)))
-                    if gio::AppInfo::launch_default_for_uri(&url, gio::AppLaunchContext::NONE)
-                        .is_ok() =>
-                {
+                Ok(Ok((token, url))) if open_authorization_url(&url) => {
                     context.present_lastfm_confirmation(&row, api_key, shared_secret, token);
                 }
                 Ok(Err(TransportError::Unauthorized)) => {
@@ -581,7 +573,7 @@ impl PreferencesContext {
         let worker_api_key = api_key.clone();
         let worker_secret = shared_secret.clone();
         let receiver = match one_shot_task::spawn("reprise-lastfm-session", move || {
-            LastFmClient::new(&worker_api_key, &worker_secret)
+            crate::ui::scrobbling::smoke::lastfm_client(&worker_api_key, &worker_secret)
                 .map_err(TransportError::from)
                 .and_then(|client| client.exchange_token(&token))
         }) {
@@ -739,6 +731,14 @@ fn map_transport_error(error: &TransportError) -> String {
         TransportError::Unauthorized => strings::text(strings::LASTFM_CREDENTIALS_REJECTED),
         _ => strings::text(strings::LASTFM_CONNECTION_ERROR),
     }
+}
+
+fn open_authorization_url(url: &str) -> bool {
+    if crate::ui::scrobbling::smoke::bypass_lastfm_browser_launch(url) {
+        tracing::info!("smoke: accepted loopback Last.fm authorization URL");
+        return true;
+    }
+    gio::AppInfo::launch_default_for_uri(url, gio::AppLaunchContext::NONE).is_ok()
 }
 
 #[cfg(test)]

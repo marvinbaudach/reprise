@@ -327,7 +327,6 @@ impl LibraryDoctorReviewPage {
         let remote = preference_library_doctor::remote_suggestions_row_for(
             conn,
             parent,
-            true,
             Rc::new(move |visible| {
                 state_for_remote.set_remote_visible(visible);
                 on_remote_changed(visible);
