@@ -238,6 +238,33 @@ fn stats_15_genre_card_buckets_other() {
 }
 
 #[test]
+fn stats_15_genre_top_artist_uses_the_page_wide_artist_resolver() {
+    let conn = migrated_conn();
+    for (id, artist, genre, mbid, plays) in [
+        (1, "Old Name", "Metal", None, 3),
+        (2, "New Name", "Metal", None, 3),
+        (3, "Other Band", "Metal", None, 5),
+        (4, "Old Name", "Rock", Some("band-mbid"), 1),
+        (5, "New Name", "Rock", Some("band-mbid"), 1),
+    ] {
+        insert_track(&conn, id, artist, artist, "", genre, 100_000, 0, mbid);
+        for play in 0..plays {
+            insert_event(&conn, id, timestamp(2026, 3, id as u32, 12, play), 100_000);
+        }
+    }
+
+    let snapshot = compute(&conn, StatsPeriod::Year(2026), NOW_2026_07_19, &Utc).unwrap();
+    let metal = snapshot
+        .genres
+        .segments
+        .iter()
+        .find(|segment| segment.label == "Metal")
+        .unwrap();
+
+    assert_eq!(metal.top_artist.as_deref(), Some("New Name"));
+}
+
+#[test]
 fn stats_14_top_tracks_sort_toggle_orders_by_time() {
     let conn = migrated_conn();
     insert_track(&conn, 1, "Frequent", "Artist", "", "Rock", 10_000, 0, None);

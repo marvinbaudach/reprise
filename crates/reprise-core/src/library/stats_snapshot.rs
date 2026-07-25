@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use chrono::{Datelike, NaiveDate, TimeZone};
 use rusqlite::Connection;
@@ -215,8 +215,9 @@ pub fn compute<Tz: TimeZone>(
         })
         .collect();
     let best_week = best_week(&listen_rows, tz);
-    let spotlight = spotlight(&top_artists, &key_resolver(&artists), &track_aggregates);
-    let genres = genre_section(&genres, &genre_artists);
+    let artist_resolver = key_resolver(&artists);
+    let spotlight = spotlight(&top_artists, &artist_resolver, &track_aggregates);
+    let genres = genre_section(&genres, &genre_artists, &artist_resolver, &top_artists);
 
     Ok(StatsSnapshot {
         period: range,
@@ -330,6 +331,8 @@ fn spotlight(
 fn genre_section(
     rows: &[super::stats_screen::NamedRow],
     genre_artists: &[GenreArtistRow],
+    artist_resolver: &KeyResolver,
+    top_artists: &[RankedGroup],
 ) -> GenreSection {
     let groups = ranked_groups(rows);
     let resolver = key_resolver(rows);
@@ -338,8 +341,13 @@ fn genre_section(
         .iter()
         .take(GENRE_LIMIT)
         .map(|row| {
-            let (top_artist, representative_track_path) =
-                genre_tile_metadata(&resolver, &row.group.key, genre_artists);
+            let (top_artist, representative_track_path) = genre_tile_metadata(
+                &resolver,
+                artist_resolver,
+                top_artists,
+                &row.group.key,
+                genre_artists,
+            );
             GenreSegment {
                 label: row.group.label.clone(),
                 key: row.group.key.clone(),
@@ -375,6 +383,8 @@ fn genre_section(
 
 fn genre_tile_metadata(
     genre_resolver: &KeyResolver,
+    artist_resolver: &KeyResolver,
+    top_artists: &[RankedGroup],
     genre_key: &str,
     rows: &[GenreArtistRow],
 ) -> (Option<String>, String) {
@@ -382,14 +392,31 @@ fn genre_tile_metadata(
         .iter()
         .filter(|row| genre_resolver.key_for(&row.genre_raw) == genre_key)
         .collect::<Vec<_>>();
-    let artists = matching
-        .iter()
-        .map(|row| row.artist.clone())
-        .collect::<Vec<_>>();
-    let top_artist = ranked_groups(&artists)
+    let mut artist_totals = HashMap::<String, (i64, i64, i64)>::new();
+    for row in &matching {
+        let totals = artist_totals
+            .entry(artist_resolver.key_for(&row.artist.raw))
+            .or_default();
+        totals.0 = totals.0.saturating_add(row.artist.ms);
+        totals.1 = totals.1.saturating_add(row.artist.plays);
+        totals.2 = totals.2.max(row.artist.last_played_at);
+    }
+    let top_artist_key = artist_totals
         .into_iter()
-        .next()
-        .map(|artist| artist.group.label);
+        .max_by(|(left_key, left), (right_key, right)| {
+            left.0
+                .cmp(&right.0)
+                .then_with(|| left.1.cmp(&right.1))
+                .then_with(|| left.2.cmp(&right.2))
+                .then_with(|| right_key.cmp(left_key))
+        })
+        .map(|(key, _)| key);
+    let top_artist = top_artist_key.and_then(|key| {
+        top_artists
+            .iter()
+            .find(|artist| artist.group.key == key)
+            .map(|artist| artist.group.label.clone())
+    });
     let representative_track_path = matching
         .into_iter()
         .max_by(|left, right| {
