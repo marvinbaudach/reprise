@@ -518,6 +518,7 @@ pub fn build(
         &listenbrainz,
         &lastfm,
         &artist_news,
+        &concerts_runtime,
         &cover_download,
         &artist_portrait,
         &decorations,
