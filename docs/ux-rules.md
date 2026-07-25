@@ -1322,7 +1322,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Tooltip trägt die vollständige Semantik („vs same period 2025"). `×` und
   Dezimaltrenner bleiben übersetzbar. Saisonale Spanne und Vergleichsrechnung
   aus STATS-1 ändern sich dadurch nicht.
-- **STATS-2** [aktiv] [core] — Das Artist-Spotlight ist das Herzstück:
+- **STATS-2** [ersetzt durch STATS-13] [core] — Das Artist-Spotlight ist das Herzstück:
   #1-Artist mit großem Cover und Rang-Badge, Eyebrow „YOUR #1 ARTIST", Name,
   Zeile „N plays · N h · N % of your artist listening" — der Anteil bezieht
   sich auf die Hörzeit mit Artist-Zuordnung, dieselbe Grundgesamtheit, die die
@@ -1461,7 +1461,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Nur wenn der Zeitraum zu kurz für Wochen ist, fällt die Achse auf Tage
   zurück (STATS-6); sehr lange „All time"-Spannen dürfen Monate zeigen und
   lassen dann den Wochen-Marker weg — der Best-week-KPI bleibt.
-- **STATS-13** [geplant] [gtk] — Die Band-Karte zeigt den meistgehörten
+- **STATS-13** [aktiv] [gtk] — Die Band-Karte zeigt den meistgehörten
   Interpreten als Bild-Hero: das Album-Cover seines meistgespielten Tracks
   füllt die Karte und blendet nach unten in den Kartengrund aus; fehlt ein
   Cover, steht eine Initialen-Kachel an seiner Stelle — nie eine leere

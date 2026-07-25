@@ -18,6 +18,7 @@ use reprise_core::library::stats_snapshot::{self, SortBy, StatsSnapshot};
 use rusqlite::Connection;
 
 use super::hourly_chart::HourlyChart;
+use super::stats_band_card::StatsBandCard;
 use super::stats_customize::StatsCustomize;
 use super::stats_genre_bar::StatsGenreBar;
 use super::stats_header::StatsHeader;
@@ -25,7 +26,6 @@ use super::stats_hero::StatsHero;
 use super::stats_highlights::{StatsHighlights, TopGenre};
 use super::stats_metadata_links::{self, MetadataCallback, StatsMetadataTarget};
 use super::stats_ribbon::StatsRibbon;
-use super::stats_spotlight::StatsSpotlight;
 use super::stats_view_widgets::{card, clear, label, section};
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::strings;
@@ -94,8 +94,8 @@ impl StatsView {
         let period_model = header.period_model.clone();
 
         let ribbon = StatsRibbon::new();
-        let spotlight = StatsSpotlight::new();
-        spotlight.set_cover_loader(cover_loader.clone());
+        let band_card = StatsBandCard::new();
+        band_card.set_cover_loader(cover_loader.clone());
         let genres = StatsGenreBar::new();
         let clock = HourlyChart::new();
         let highlights = StatsHighlights::new();
@@ -140,7 +140,7 @@ impl StatsView {
 
         let sections = gtk4::Box::new(gtk4::Orientation::Vertical, SECTION_SPACING);
         sections.append(&card(ribbon.widget()));
-        sections.append(&card(spotlight.widget()));
+        sections.append(&card(band_card.widget()));
         sections.append(&genres_section);
         sections.append(&asymmetric_row);
         sections.append(&section("TOP TRACKS", &top_tracks_content));
@@ -191,21 +191,7 @@ impl StatsView {
         let on_create_smart_mix: GenreCallback = Rc::new(RefCell::new(None));
         let on_unify_spellings: IdsCallback = Rc::new(RefCell::new(None));
 
-        spotlight.set_on_play({
-            let current_snapshot = current_snapshot.clone();
-            let callback = on_spotlight_play.clone();
-            move |key| {
-                let label = current_snapshot
-                    .borrow()
-                    .as_ref()
-                    .and_then(|snapshot| snapshot.spotlight.as_ref())
-                    .map(|section| section.artist.group.label.clone());
-                if let (Some(label), Some(callback)) = (label, callback.borrow().clone()) {
-                    callback(label, key);
-                }
-            }
-        });
-        spotlight.set_on_go_to_artist({
+        band_card.set_on_open_artist({
             let callback = on_go_to_artist.clone();
             move |artist| {
                 if let Some(callback) = callback.borrow().clone() {
@@ -213,7 +199,7 @@ impl StatsView {
                 }
             }
         });
-        wire_unify(&spotlight, &genres, &connection, &on_unify_spellings);
+        wire_unify(&band_card, &genres, &connection, &on_unify_spellings);
         highlights.set_on_create_mix({
             let callback = on_create_smart_mix.clone();
             move |genre| {
@@ -249,7 +235,7 @@ impl StatsView {
             header: header.clone(),
             hero: hero.clone(),
             ribbon: ribbon.clone(),
-            spotlight_section: spotlight.clone(),
+            band_card: band_card.clone(),
             genres_section_data: genres.clone(),
             clock_section_data: clock.clone(),
             highlights_section_data: highlights.clone(),
@@ -407,7 +393,7 @@ impl StatsView {
         let render = &self.render;
         if render.ribbon.widget().is_ancestor(widget) {
             "ribbon"
-        } else if render.spotlight_section.widget().is_ancestor(widget) {
+        } else if render.band_card.widget().is_ancestor(widget) {
             "spotlight"
         } else if render.genres_section_data.widget().is_ancestor(widget) {
             "genres"
@@ -428,7 +414,7 @@ struct RenderParts {
     header: StatsHeader,
     hero: StatsHero,
     ribbon: StatsRibbon,
-    spotlight_section: StatsSpotlight,
+    band_card: StatsBandCard,
     genres_section_data: StatsGenreBar,
     clock_section_data: HourlyChart,
     highlights_section_data: StatsHighlights,
@@ -497,10 +483,10 @@ fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot) {
         snapshot.best_week.as_ref(),
     );
     if let Some(spotlight) = &snapshot.spotlight {
-        render.spotlight_section.set_data(spotlight);
-        render.spotlight_section.widget().set_visible(true);
+        render.band_card.set_data(spotlight);
+        render.band_card.widget().set_visible(true);
     } else {
-        render.spotlight_section.widget().set_visible(false);
+        render.band_card.widget().set_visible(false);
     }
     render.genres_section_data.set_data(&snapshot.genres);
     render
@@ -648,12 +634,12 @@ fn render_tracks(
 }
 
 fn wire_unify(
-    spotlight: &StatsSpotlight,
+    band_card: &StatsBandCard,
     genres: &StatsGenreBar,
     connection: &Rc<RefCell<Option<Rc<RefCell<Connection>>>>>,
     callback: &IdsCallback,
 ) {
-    spotlight.set_on_unify({
+    band_card.set_on_unify({
         let connection = connection.clone();
         let callback = callback.clone();
         move |key| resolve_unify(&connection, &callback, GroupKind::Artist, &key)
