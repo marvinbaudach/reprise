@@ -10,7 +10,7 @@ use reprise_core::library::stats_period::{Granularity, PeriodRange};
 use reprise_core::library::stats_snapshot::BestWeek;
 
 use super::stats_ribbon_math::{
-    axis_ticks, bar_layout, bar_width, best_week_bucket_index, bucket_at_x, reveal_clip_width,
+    axis_ticks, bar_layout, bar_layout_for_max, bar_width, best_week_bucket_index, bucket_at_x,
     ribbon_layout, Point, RibbonLayout,
 };
 use crate::ui::strings;
@@ -29,14 +29,15 @@ const MARKER_RADIUS: f64 = 4.0;
 struct RibbonData {
     labels: Vec<String>,
     bucket_starts: Vec<Option<NaiveDate>>,
-    values: Vec<i64>,
+    target_values: Vec<f64>,
+    display_values: Vec<f64>,
     granularity: Granularity,
     open_index: Option<usize>,
     best_week: Option<BestWeek>,
     sparse_weeks: bool,
     since_label: Option<String>,
-    reveal_fraction: f64,
-    marker_opacity: f64,
+    bar_fractions: Vec<f64>,
+    best_week_label_opacity: f64,
 }
 
 impl Default for RibbonData {
@@ -44,14 +45,15 @@ impl Default for RibbonData {
         Self {
             labels: Vec::new(),
             bucket_starts: Vec::new(),
-            values: Vec::new(),
+            target_values: Vec::new(),
+            display_values: Vec::new(),
             granularity: Granularity::Day,
             open_index: None,
             best_week: None,
             sparse_weeks: false,
             since_label: None,
-            reveal_fraction: 1.0,
-            marker_opacity: 1.0,
+            bar_fractions: Vec::new(),
+            best_week_label_opacity: 1.0,
         }
     }
 }
@@ -129,7 +131,7 @@ impl StatsRibbon {
                 // would turn that into a `BorrowMutError`.
                 let tooltip = {
                     let data = data.borrow();
-                    let index = bucket_at_x(x, f64::from(area.width()), data.values.len());
+                    let index = bucket_at_x(x, f64::from(area.width()), data.target_values.len());
                     if index == hovered.get() {
                         return;
                     }
@@ -143,7 +145,7 @@ impl StatsRibbon {
                                 ""
                             },
                             data.labels.get(index)?,
-                            strings::stats_duration(*data.values.get(index)?)
+                            strings::stats_duration(data.target_values.get(index)?.round() as i64)
                         ))
                     })
                 };
@@ -186,11 +188,11 @@ impl StatsRibbon {
         values: &[i64],
         best_week: Option<&BestWeek>,
     ) {
-        let values = period
+        let target_values = period
             .buckets
             .iter()
             .enumerate()
-            .map(|(index, _)| values.get(index).copied().unwrap_or(0))
+            .map(|(index, _)| values.get(index).copied().unwrap_or(0) as f64)
             .collect::<Vec<_>>();
         let sparse_weeks = period.sparse_weeks;
         self.area.set_content_height(if sparse_weeks {
@@ -224,36 +226,96 @@ impl StatsRibbon {
                         .map(|date| date.date_naive())
                 })
                 .collect(),
-            values,
+            display_values: target_values.clone(),
+            bar_fractions: vec![1.0; target_values.len()],
+            target_values,
             granularity: period.granularity,
             open_index: period.buckets.iter().position(|bucket| bucket.open),
             best_week: best_week.cloned(),
             sparse_weeks,
             since_label,
-            reveal_fraction: 1.0,
-            marker_opacity: 1.0,
+            best_week_label_opacity: 1.0,
         };
-        self.set_reveal_fraction(1.0);
     }
 
-    pub(in crate::ui) fn set_reveal_fraction(&self, fraction: f64) {
-        self.data.borrow_mut().reveal_fraction = fraction.clamp(0.0, 1.0);
+    pub(super) fn target_values(&self) -> Vec<f64> {
+        self.data.borrow().target_values.clone()
+    }
+
+    pub(super) fn set_display_values(&self, values: &[f64]) {
+        let mut data = self.data.borrow_mut();
+        data.display_values = data
+            .target_values
+            .iter()
+            .enumerate()
+            .map(|(index, target)| values.get(index).copied().unwrap_or(*target).max(0.0))
+            .collect();
+        drop(data);
         self.area.queue_draw();
     }
 
-    pub(in crate::ui) fn set_marker_opacity(&self, opacity: f64) {
-        self.data.borrow_mut().marker_opacity = opacity.clamp(0.0, 1.0);
+    pub(super) fn prepare_entrance(&self) {
+        let mut data = self.data.borrow_mut();
+        if data.sparse_weeks {
+            data.bar_fractions.fill(0.0);
+            data.best_week_label_opacity = 0.0;
+        } else {
+            data.bar_fractions.fill(1.0);
+            data.best_week_label_opacity = 1.0;
+        }
+        drop(data);
         self.area.queue_draw();
     }
 
-    #[cfg(test)]
-    pub(in crate::ui) fn reveal_fraction(&self) -> f64 {
-        self.data.borrow().reveal_fraction
+    pub(super) fn land_in_end_state(&self) {
+        let targets = self.target_values();
+        let mut data = self.data.borrow_mut();
+        data.display_values = targets;
+        data.bar_fractions.fill(1.0);
+        data.best_week_label_opacity = 1.0;
+        drop(data);
+        self.area.queue_draw();
+    }
+
+    pub(super) fn set_bar_fraction(&self, index: usize, fraction: f64) {
+        let mut data = self.data.borrow_mut();
+        if let Some(slot) = data.bar_fractions.get_mut(index) {
+            *slot = fraction.clamp(0.0, 1.0);
+        }
+        drop(data);
+        self.area.queue_draw();
+    }
+
+    pub(super) fn set_best_week_label_opacity(&self, opacity: f64) {
+        self.data.borrow_mut().best_week_label_opacity = opacity.clamp(0.0, 1.0);
+        self.area.queue_draw();
+    }
+
+    pub(super) fn is_sparse(&self) -> bool {
+        self.data.borrow().sparse_weeks
+    }
+
+    pub(super) fn bar_count(&self) -> usize {
+        self.data.borrow().bar_fractions.len()
+    }
+
+    pub(super) fn best_week_index(&self) -> Option<usize> {
+        let data = self.data.borrow();
+        best_week_bucket_index(
+            &data.bucket_starts,
+            data.granularity,
+            data.best_week.as_ref().map(|week| week.start),
+        )
     }
 
     #[cfg(test)]
-    pub(in crate::ui) fn marker_opacity(&self) -> f64 {
-        self.data.borrow().marker_opacity
+    pub(in crate::ui) fn bar_fractions(&self) -> Vec<f64> {
+        self.data.borrow().bar_fractions.clone()
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn best_week_label_opacity(&self) -> f64 {
+        self.data.borrow().best_week_label_opacity
     }
 }
 
@@ -272,7 +334,7 @@ fn draw(
     data: &RibbonData,
     colors: DrawColors,
 ) {
-    if data.values.is_empty() || width <= 0 || height <= 0 {
+    if data.target_values.is_empty() || width <= 0 || height <= 0 {
         return;
     }
     let plot_height = f64::from(height) - LABEL_HEIGHT;
@@ -281,9 +343,21 @@ fn draw(
     }
     let width = f64::from(width);
     let layout = if data.sparse_weeks {
-        bar_layout(&data.values, width, plot_height, data.open_index)
+        let maximum = data.target_values.iter().copied().fold(0.0, f64::max);
+        bar_layout_for_max(
+            &data.display_values,
+            maximum,
+            width,
+            plot_height,
+            data.open_index,
+        )
     } else {
-        ribbon_layout(&data.values, width, plot_height, data.open_index)
+        ribbon_layout(&data.target_values, width, plot_height, data.open_index)
+    };
+    let target_layout = if data.sparse_weeks {
+        bar_layout(&data.target_values, width, plot_height, data.open_index)
+    } else {
+        layout.clone()
     };
     let color = area.color();
     let (red, green, blue, alpha) = (
@@ -298,14 +372,6 @@ fn draw(
         data.best_week.as_ref().map(|week| week.start),
     );
 
-    let _ = context.save();
-    context.rectangle(
-        0.0,
-        0.0,
-        reveal_clip_width(width, data.reveal_fraction),
-        plot_height,
-    );
-    context.clip();
     if data.sparse_weeks {
         draw_bars(
             context,
@@ -318,7 +384,7 @@ fn draw(
                 best: colors.best_week,
                 baseline: colors.baseline,
             },
-            data.marker_opacity,
+            &data.bar_fractions,
         );
     } else {
         draw_fill(
@@ -335,7 +401,7 @@ fn draw(
     }
     draw_best_week_highlight(
         context,
-        &layout,
+        &target_layout,
         data,
         width,
         plot_height,
@@ -345,8 +411,7 @@ fn draw(
         alpha,
         colors.best_week,
     );
-    draw_open_marker(context, &layout, red, green, blue, alpha);
-    let _ = context.restore();
+    draw_open_marker(context, &target_layout, red, green, blue, alpha);
     draw_labels(context, data, width, f64::from(height), colors.axis);
 }
 
@@ -417,7 +482,7 @@ fn draw_bars(
     baseline: f64,
     best_index: Option<usize>,
     colors: BarColors,
-    highlight_opacity: f64,
+    bar_fractions: &[f64],
 ) {
     if layout.points.is_empty() {
         return;
@@ -431,17 +496,27 @@ fn draw_bars(
     let _ = context.stroke();
     for (index, point) in layout.points.iter().enumerate() {
         let color = if Some(index) == best_index {
-            blend_color(colors.standard, colors.best, highlight_opacity)
+            colors.best
         } else {
             colors.standard
         };
         set_source_color(context, color, 0.82);
-        let height = (baseline - point.y).max(0.0);
-        let (top, height) = if height == 0.0 {
-            (baseline - 2.0, 2.0)
+        let target_height = (baseline - point.y).max(0.0);
+        let target_height = if target_height == 0.0 {
+            2.0
         } else {
-            (point.y, height)
+            target_height
         };
+        let height = target_height
+            * bar_fractions
+                .get(index)
+                .copied()
+                .unwrap_or(1.0)
+                .clamp(0.0, 1.0);
+        let top = baseline - height;
+        if height == 0.0 {
+            continue;
+        }
         context.rectangle(point.x - bar_width / 2.0, top, bar_width, height);
         let _ = context.fill();
     }
@@ -495,10 +570,15 @@ fn draw_best_week_highlight(
         return;
     };
     let base_color = gtk4::gdk::RGBA::new(red as f32, green as f32, blue as f32, alpha as f32);
+    let opacity = if data.sparse_weeks {
+        data.best_week_label_opacity
+    } else {
+        1.0
+    };
     set_source_color(
         context,
-        blend_color(base_color, best_week_color, data.marker_opacity),
-        data.marker_opacity,
+        blend_color(base_color, best_week_color, opacity),
+        opacity,
     );
     if !data.sparse_weeks {
         context.new_path();
@@ -561,7 +641,7 @@ fn draw_labels(
     height: f64,
     color: gtk4::gdk::RGBA,
 ) {
-    let count = data.values.len();
+    let count = data.target_values.len();
     context.set_source_rgba(
         f64::from(color.red()),
         f64::from(color.green()),

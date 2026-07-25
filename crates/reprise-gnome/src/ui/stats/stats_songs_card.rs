@@ -15,7 +15,6 @@ use reprise_core::library::stats_snapshot::{SortBy, StatsSnapshot};
 use super::stats_metadata_links::{self, MetadataCallback, StatsMetadataTarget};
 use super::stats_view_widgets::{card, clear, label};
 use crate::ui::cover_loader::CoverLoader;
-use crate::ui::motion_slide::SlideBin;
 use crate::ui::strings;
 
 const SONG_ROW_LIMIT: usize = 6;
@@ -304,7 +303,7 @@ impl SummaryRenderer {
         bar.set_height_request(8);
         bar.set_valign(gtk4::Align::Center);
         self.bars.borrow_mut().push(bar.clone());
-        body.append(&SlideBin::new(&bar));
+        body.append(&bar);
         let plays = label(
             &format!("{} plays", format_thousands(track.play_count)),
             "stats-play-count",

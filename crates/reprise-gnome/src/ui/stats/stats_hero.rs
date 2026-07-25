@@ -6,7 +6,6 @@ use reprise_core::library::stats_period::StatsPeriod;
 use reprise_core::library::stats_snapshot::{ComparisonPresentation, StatsSnapshot};
 
 use super::stats_header::StatsHeader;
-use crate::ui::motion_slide::SlideBin;
 use crate::ui::strings;
 
 const HERO_NATURAL_LINE_LENGTH: i32 = 900;
@@ -77,8 +76,6 @@ pub(super) struct StatsHero {
     pub(super) time: gtk4::Label,
     pub(super) subline: gtk4::Label,
     pub(super) time_block: gtk4::Box,
-    pub(super) time_slide: SlideBin,
-    pub(super) kpi_slide: SlideBin,
     pub(super) kpis: StatsKpis,
 }
 
@@ -107,9 +104,6 @@ impl StatsHero {
         for kpi in [&kpis.per_day, &kpis.trend, &kpis.pace, &kpis.best_week] {
             kpi_row.append(&kpi.root);
         }
-        let time_slide = SlideBin::new(&time_block);
-        let kpi_slide = SlideBin::new(&kpi_row);
-
         let root = adw::WrapBox::new();
         root.set_child_spacing(32);
         root.set_line_spacing(16);
@@ -118,16 +112,14 @@ impl StatsHero {
         root.set_justify(adw::JustifyMode::Fill);
         root.set_justify_last_line(true);
         root.set_valign(gtk4::Align::End);
-        root.append(&time_slide);
-        root.append(&kpi_slide);
+        root.append(&time_block);
+        root.append(&kpi_row);
 
         Self {
             root,
             time,
             subline,
             time_block,
-            time_slide,
-            kpi_slide,
             kpis,
         }
     }
