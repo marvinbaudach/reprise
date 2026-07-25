@@ -15,10 +15,20 @@ mod imp {
     use super::*;
     use gtk4::subclass::prelude::*;
 
-    #[derive(Default)]
     pub struct SlideBin {
         pub child: RefCell<Option<gtk4::Widget>>,
         pub offset_y: Cell<f32>,
+        pub reveal_fraction: Cell<f32>,
+    }
+
+    impl Default for SlideBin {
+        fn default() -> Self {
+            Self {
+                child: RefCell::new(None),
+                offset_y: Cell::new(0.0),
+                reveal_fraction: Cell::new(1.0),
+            }
+        }
     }
 
     #[glib::object_subclass]
@@ -30,18 +40,27 @@ mod imp {
         fn class_init(class: &mut Self::Class) {
             class.set_layout_manager_type::<gtk4::BinLayout>();
             class.set_css_name("reprise-slide-bin");
+            class.set_accessible_role(gtk4::AccessibleRole::Presentation);
         }
     }
 
     impl ObjectImpl for SlideBin {
         fn properties() -> &'static [glib::ParamSpec] {
             static PROPERTIES: LazyLock<Vec<glib::ParamSpec>> = LazyLock::new(|| {
-                vec![glib::ParamSpecFloat::builder("offset-y")
-                    .minimum(f32::MIN)
-                    .maximum(f32::MAX)
-                    .default_value(0.0)
-                    .readwrite()
-                    .build()]
+                vec![
+                    glib::ParamSpecFloat::builder("offset-y")
+                        .minimum(f32::MIN)
+                        .maximum(f32::MAX)
+                        .default_value(0.0)
+                        .readwrite()
+                        .build(),
+                    glib::ParamSpecFloat::builder("reveal-fraction")
+                        .minimum(0.0)
+                        .maximum(1.0)
+                        .default_value(1.0)
+                        .readwrite()
+                        .build(),
+                ]
             });
             PROPERTIES.as_ref()
         }
@@ -53,6 +72,11 @@ mod imp {
                         .set(value.get().expect("offset-y must be an f32"));
                     self.obj().queue_draw();
                 }
+                "reveal-fraction" => {
+                    self.reveal_fraction
+                        .set(value.get().expect("reveal-fraction must be an f32"));
+                    self.obj().queue_draw();
+                }
                 name => unreachable!("unknown SlideBin property {name}"),
             }
         }
@@ -60,6 +84,7 @@ mod imp {
         fn property(&self, _id: usize, pspec: &glib::ParamSpec) -> glib::Value {
             match pspec.name() {
                 "offset-y" => self.offset_y.get().to_value(),
+                "reveal-fraction" => self.reveal_fraction.get().to_value(),
                 name => unreachable!("unknown SlideBin property {name}"),
             }
         }
@@ -75,9 +100,18 @@ mod imp {
         fn snapshot(&self, snapshot: &gtk4::Snapshot) {
             let child = self.child.borrow().clone();
             let Some(child) = child else { return };
+            let widget = self.obj();
+            let reveal_width = widget.width() as f32 * self.reveal_fraction.get();
             snapshot.save();
+            snapshot.push_clip(&gtk4::graphene::Rect::new(
+                0.0,
+                0.0,
+                reveal_width,
+                widget.height() as f32,
+            ));
             snapshot.translate(&gtk4::graphene::Point::new(0.0, self.offset_y.get()));
-            self.obj().snapshot_child(&child, snapshot);
+            widget.snapshot_child(&child, snapshot);
+            snapshot.pop();
             snapshot.restore();
         }
     }
@@ -90,14 +124,12 @@ glib::wrapper! {
 }
 
 impl SlideBin {
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn new(child: &impl IsA<gtk4::Widget>) -> Self {
         let slide: Self = glib::Object::new();
         slide.set_child(Some(child));
         slide
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn set_child(&self, child: Option<&impl IsA<gtk4::Widget>>) {
         let child = child.map(|child| child.clone().upcast::<gtk4::Widget>());
         if self.imp().child.borrow().as_ref() == child.as_ref() {
@@ -112,14 +144,21 @@ impl SlideBin {
         self.imp().child.replace(child);
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn offset_y(&self) -> f32 {
         self.property("offset-y")
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn set_offset_y(&self, offset_y: f32) {
         self.set_property("offset-y", offset_y);
+    }
+
+    pub(crate) fn set_reveal_fraction(&self, reveal_fraction: f32) {
+        self.set_property("reveal-fraction", reveal_fraction);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn reveal_fraction(&self) -> f32 {
+        self.property("reveal-fraction")
     }
 }
 

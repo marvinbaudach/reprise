@@ -15,7 +15,7 @@ use reprise_core::library::stats_snapshot::{self, StatsSnapshot};
 use rusqlite::Connection;
 
 use super::stats_band_card::StatsBandCard;
-use super::stats_entrance::StatsEntrance;
+use super::stats_entrance::{EntranceCard, StatsEntrance};
 use super::stats_genre_card::StatsGenreCard;
 use super::stats_header::StatsHeader;
 use super::stats_hero::StatsHero;
@@ -24,6 +24,7 @@ use super::stats_ribbon::StatsRibbon;
 use super::stats_songs_card::StatsSongsCard;
 use super::stats_view_widgets::card;
 use crate::ui::cover_loader::CoverLoader;
+use crate::ui::motion_slide::SlideBin;
 use crate::ui::strings;
 
 const CONTENT_MAX_WIDTH: i32 = 1120;
@@ -77,6 +78,7 @@ impl StatsView {
     pub(in crate::ui) fn new(cover_loader: Rc<CoverLoader>) -> Self {
         let header = StatsHeader::new();
         let hero = StatsHero::new();
+        let header_slide = SlideBin::new(&header.root);
         let period_dropdown = header.period_dropdown.clone();
         let period_model = header.period_model.clone();
 
@@ -85,15 +87,18 @@ impl StatsView {
         band_card.set_cover_loader(cover_loader.clone());
         let genres = StatsGenreCard::new(cover_loader.clone());
         let genres_section = card(genres.widget());
+        let genres_slide = SlideBin::new(&genres_section);
 
         let current_snapshot = Rc::new(RefCell::new(None::<StatsSnapshot>));
         let on_metadata_activate: MetadataCallback = Rc::new(RefCell::new(None));
         let songs_card = StatsSongsCard::new(cover_loader, on_metadata_activate.clone());
         let band_section = card(band_card.widget());
         band_section.set_hexpand(true);
+        let band_slide = SlideBin::new(&band_section);
         let songs_section = card(songs_card.widget());
         songs_section.set_width_request(SONGS_WIDTH);
         songs_section.set_hexpand(true);
+        let songs_slide = SlideBin::new(&songs_section);
         let story_row = adw::WrapBox::new();
         story_row.set_child_spacing(STORY_SPACING);
         story_row.set_line_spacing(STORY_SPACING);
@@ -102,8 +107,8 @@ impl StatsView {
         story_row.set_justify(adw::JustifyMode::Fill);
         story_row.set_justify_last_line(true);
         story_row.set_hexpand(true);
-        story_row.append(&band_section);
-        story_row.append(&songs_section);
+        story_row.append(&band_slide);
+        story_row.append(&songs_slide);
 
         let sections = gtk4::Box::new(gtk4::Orientation::Vertical, SECTION_SPACING);
         let chart_card = card(ribbon.widget());
@@ -117,10 +122,11 @@ impl StatsView {
         trend_stack.add_named(&chart_card, Some("chart"));
         trend_stack.add_named(&hint_card, Some("hint"));
         trend_stack.set_visible_child_name("chart");
-        sections.append(&trend_stack);
+        let chart_slide = SlideBin::new(&trend_stack);
+        sections.append(&chart_slide);
         sections.append(&story_row);
         sections.append(songs_card.expanded_widget());
-        sections.append(&genres_section);
+        sections.append(&genres_slide);
 
         let empty = adw::StatusPage::builder()
             .title(strings::stats_empty_title())
@@ -149,7 +155,7 @@ impl StatsView {
         page.set_margin_bottom(32);
         page.set_margin_start(24);
         page.set_margin_end(24);
-        page.append(&header.root);
+        page.append(&header_slide);
         page.append(&hero.root);
         page.append(&page_stack);
         // Tighten only at the maximum width. Adw::Clamp otherwise starts
@@ -187,16 +193,23 @@ impl StatsView {
 
         let render = Rc::new(RenderParts {
             header: header.clone(),
+            header_slide,
             hero: hero.clone(),
             ribbon: ribbon.clone(),
             band_card: band_card.clone(),
             genres_section_data: genres.clone(),
             songs_card: songs_card.clone(),
             trend_stack: trend_stack.clone(),
+            chart_slide,
             band_section: band_section.clone(),
+            band_slide,
             songs_section: songs_section.clone(),
+            songs_slide,
             top_tracks_section: songs_card.expanded_widget().clone(),
             genres_section: genres_section.clone(),
+            genres_slide,
+            viewport: root.clone(),
+            scroll_content: clamp.clone().upcast(),
             entrance,
         });
 
@@ -204,18 +217,25 @@ impl StatsView {
             let current_snapshot = current_snapshot.clone();
             let entrance_pending = entrance_pending.clone();
             let render = Rc::downgrade(&render);
-            move |_| {
+            move |root| {
                 if !entrance_pending.replace(false) {
                     return;
                 }
-                let snapshot = current_snapshot.borrow().clone();
-                let Some(snapshot) = snapshot else { return };
-                let Some(render) = render.upgrade() else {
-                    return;
-                };
-                if !snapshot.is_empty() {
-                    render_snapshot(&render, &snapshot, true);
-                }
+                let current_snapshot = current_snapshot.clone();
+                let render = render.clone();
+                root.add_tick_callback(move |_, _| {
+                    let snapshot = current_snapshot.borrow().clone();
+                    let Some(snapshot) = snapshot else {
+                        return glib::ControlFlow::Break;
+                    };
+                    let Some(render) = render.upgrade() else {
+                        return glib::ControlFlow::Break;
+                    };
+                    if !snapshot.is_empty() {
+                        render_snapshot(&render, &snapshot, true);
+                    }
+                    glib::ControlFlow::Break
+                });
             }
         });
 
@@ -419,17 +439,24 @@ impl StatsView {
 #[derive(Clone)]
 struct RenderParts {
     header: StatsHeader,
+    header_slide: SlideBin,
     hero: StatsHero,
     ribbon: StatsRibbon,
     band_card: StatsBandCard,
     genres_section_data: StatsGenreCard,
     songs_card: StatsSongsCard,
     trend_stack: gtk4::Stack,
+    chart_slide: SlideBin,
     band_section: gtk4::Box,
+    band_slide: SlideBin,
     songs_section: gtk4::Box,
+    songs_slide: SlideBin,
     #[cfg_attr(not(test), allow(dead_code))]
     top_tracks_section: gtk4::Revealer,
     genres_section: gtk4::Box,
+    genres_slide: SlideBin,
+    viewport: gtk4::ScrolledWindow,
+    scroll_content: gtk4::Widget,
     entrance: StatsEntrance,
 }
 
@@ -503,20 +530,29 @@ fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot, entrance: boo
     render
         .trend_stack
         .set_visible_child_name(if thin { "hint" } else { "chart" });
-    let mut bars = render.band_card.bars();
-    bars.extend(render.songs_card.summary_bars());
     let cards = [
-        render.trend_stack.clone().upcast::<gtk4::Widget>(),
-        render.band_section.clone().upcast::<gtk4::Widget>(),
-        render.songs_section.clone().upcast::<gtk4::Widget>(),
-        render.genres_section.clone().upcast::<gtk4::Widget>(),
+        EntranceCard::new(&render.band_slide, render.band_card.bars(), Vec::new()),
+        EntranceCard::new(
+            &render.songs_slide,
+            render.songs_card.summary_bars(),
+            Vec::new(),
+        ),
+        EntranceCard::new(
+            &render.genres_slide,
+            Vec::new(),
+            render.genres_section_data.segment_slides(),
+        ),
     ];
     render.entrance.update(
         snapshot.hero.total_ms,
         &render.hero.time,
         &render.ribbon,
+        &[render.header_slide.clone(), render.hero.time_slide.clone()],
+        &render.hero.kpi_slide,
+        &render.chart_slide,
         &cards,
-        &bars,
+        &render.viewport,
+        &render.scroll_content,
         entrance,
     );
 }
@@ -569,6 +605,9 @@ fn now_unix() -> i64 {
         .unwrap_or_default()
         .as_secs() as i64
 }
+#[cfg(test)]
+#[path = "stats_view_entrance_tests.rs"]
+mod entrance_tests;
 #[cfg(test)]
 #[path = "stats_view_tests.rs"]
 mod tests;

@@ -10,6 +10,7 @@ use reprise_core::library::stats_snapshot::SpotlightSection;
 
 use super::stats_view_widgets::label;
 use crate::ui::cover_loader::CoverLoader;
+use crate::ui::motion_slide::SlideBin;
 use crate::ui::strings;
 
 type StringCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
@@ -205,7 +206,7 @@ impl StatsBandCard {
             bar.set_valign(gtk4::Align::Center);
             body.attach(&rank, 0, 0, 1, 1);
             body.attach(&name, 1, 0, 1, 1);
-            body.attach(&bar, 2, 0, 1, 1);
+            body.attach(&SlideBin::new(&bar), 2, 0, 1, 1);
             artist.set_child(Some(&body));
             artist.connect_clicked({
                 let label = ranked.group.label.clone();

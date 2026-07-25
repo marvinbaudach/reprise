@@ -18,16 +18,33 @@ use libadwaita::prelude::AnimationExt;
 pub(in crate::ui) const MICRO_MS: u32 = 150;
 pub(in crate::ui) const STANDARD_MS: u32 = 250;
 pub(in crate::ui) const AMBIENT_MS: u32 = 400;
-// My Stats entrance choreography (design variant 2a).
-pub(in crate::ui) const STATS_COUNT_MS: u32 = 600;
-pub(in crate::ui) const STATS_REVEAL_MS: u32 = 500;
-pub(in crate::ui) const STATS_BAR_MS: u32 = 350;
-pub(in crate::ui) const STATS_TWEEN_MS: u32 = 200;
-pub(in crate::ui) const STATS_STAGGER_MS: u32 = 70;
+// My Stats entrance choreography (round 3).
+pub(in crate::ui) const STATS_HERO_MS: u32 = 350;
+pub(in crate::ui) const STATS_COUNT_MS: u32 = 900;
+pub(in crate::ui) const STATS_KPI_MS: u32 = 400;
+pub(in crate::ui) const STATS_REVEAL_MS: u32 = 700;
+pub(in crate::ui) const STATS_MARKER_MS: u32 = 200;
+pub(in crate::ui) const STATS_CARD_MS: u32 = 450;
+pub(in crate::ui) const STATS_BAR_MS: u32 = 500;
+pub(in crate::ui) const STATS_TWEEN_MS: u32 = 250;
+pub(in crate::ui) const STATS_CARD_STAGGER_MS: u32 = 120;
+pub(in crate::ui) const STATS_BAR_STAGGER_MS: u32 = 60;
+pub(in crate::ui) const STATS_COUNT_DELAY_MS: u32 = 100;
+pub(in crate::ui) const STATS_KPI_DELAY_MS: u32 = 250;
+pub(in crate::ui) const STATS_CHART_DELAY_MS: u32 = 500;
+pub(in crate::ui) const STATS_CARDS_DELAY_MS: u32 = 900;
+pub(in crate::ui) const STATS_BAR_DELAY_MS: u32 = 150;
+pub(in crate::ui) const STATS_SLIDE_HERO_PX: f32 = 12.0;
+pub(in crate::ui) const STATS_SLIDE_KPI_PX: f32 = 8.0;
+pub(in crate::ui) const STATS_SLIDE_CARD_PX: f32 = 16.0;
+pub(in crate::ui) const STATS_MARKER_TRIGGER: f64 = 0.85;
+pub(in crate::ui) const STATS_MARKER_DELAY_MS: u32 =
+    STATS_CHART_DELAY_MS + (STATS_REVEAL_MS as f64 * STATS_MARKER_TRIGGER) as u32;
 
 pub(in crate::ui) const MICRO_EASING: adw::Easing = adw::Easing::EaseOutQuad;
 pub(in crate::ui) const STANDARD_EASING: adw::Easing = adw::Easing::EaseOutCubic;
 pub(in crate::ui) const AMBIENT_EASING: adw::Easing = adw::Easing::EaseOutCubic;
+pub(in crate::ui) const STATS_EASING: adw::Easing = adw::Easing::EaseOutExpo;
 
 pub(in crate::ui) const MICRO_CSS_EASING: &str = "ease-out";
 // Kept for a complete CSS-easing token set and pinned by the motion-token
@@ -55,21 +72,37 @@ pub(in crate::ui) const AMBIENT: MotionToken = MotionToken {
     duration_ms: AMBIENT_MS,
     easing: AMBIENT_EASING,
 };
+pub(in crate::ui) const STATS_HERO: MotionToken = MotionToken {
+    duration_ms: STATS_HERO_MS,
+    easing: STATS_EASING,
+};
 pub(in crate::ui) const STATS_COUNT: MotionToken = MotionToken {
     duration_ms: STATS_COUNT_MS,
-    easing: STANDARD_EASING,
+    easing: STATS_EASING,
+};
+pub(in crate::ui) const STATS_KPI: MotionToken = MotionToken {
+    duration_ms: STATS_KPI_MS,
+    easing: STATS_EASING,
 };
 pub(in crate::ui) const STATS_REVEAL: MotionToken = MotionToken {
     duration_ms: STATS_REVEAL_MS,
-    easing: STANDARD_EASING,
+    easing: STATS_EASING,
+};
+pub(in crate::ui) const STATS_MARKER: MotionToken = MotionToken {
+    duration_ms: STATS_MARKER_MS,
+    easing: STATS_EASING,
+};
+pub(in crate::ui) const STATS_CARD: MotionToken = MotionToken {
+    duration_ms: STATS_CARD_MS,
+    easing: STATS_EASING,
 };
 pub(in crate::ui) const STATS_BAR: MotionToken = MotionToken {
     duration_ms: STATS_BAR_MS,
-    easing: STANDARD_EASING,
+    easing: STATS_EASING,
 };
 pub(in crate::ui) const STATS_TWEEN: MotionToken = MotionToken {
     duration_ms: STATS_TWEEN_MS,
-    easing: STANDARD_EASING,
+    easing: STATS_EASING,
 };
 
 pub(in crate::ui) const fn half(token: MotionToken) -> u32 {
@@ -114,11 +147,26 @@ mod tests {
         assert_eq!(MICRO_MS, 150);
         assert_eq!(STANDARD_MS, 250);
         assert_eq!(AMBIENT_MS, 400);
-        assert_eq!(STATS_COUNT_MS, 600);
-        assert_eq!(STATS_REVEAL_MS, 500);
-        assert_eq!(STATS_BAR_MS, 350);
-        assert_eq!(STATS_TWEEN_MS, 200);
-        assert_eq!(STATS_STAGGER_MS, 70);
+        assert_eq!(STATS_HERO_MS, 350);
+        assert_eq!(STATS_COUNT_MS, 900);
+        assert_eq!(STATS_KPI_MS, 400);
+        assert_eq!(STATS_REVEAL_MS, 700);
+        assert_eq!(STATS_MARKER_MS, 200);
+        assert_eq!(STATS_CARD_MS, 450);
+        assert_eq!(STATS_BAR_MS, 500);
+        assert_eq!(STATS_TWEEN_MS, 250);
+        assert_eq!(STATS_CARD_STAGGER_MS, 120);
+        assert_eq!(STATS_BAR_STAGGER_MS, 60);
+        assert_eq!(STATS_COUNT_DELAY_MS, 100);
+        assert_eq!(STATS_KPI_DELAY_MS, 250);
+        assert_eq!(STATS_CHART_DELAY_MS, 500);
+        assert_eq!(STATS_CARDS_DELAY_MS, 900);
+        assert_eq!(STATS_BAR_DELAY_MS, 150);
+        assert_eq!(STATS_MARKER_DELAY_MS, 1_095);
+        assert_eq!(STATS_SLIDE_HERO_PX, 12.0);
+        assert_eq!(STATS_SLIDE_KPI_PX, 8.0);
+        assert_eq!(STATS_SLIDE_CARD_PX, 16.0);
+        assert_eq!(STATS_MARKER_TRIGGER, 0.85);
         assert_eq!(half(MICRO), 75);
         assert_eq!(half(STANDARD), 125);
         assert_eq!(half(AMBIENT), 200);
@@ -132,10 +180,18 @@ mod tests {
         assert_eq!(MICRO.easing, MICRO_EASING);
         assert_eq!(STANDARD.easing, STANDARD_EASING);
         assert_eq!(AMBIENT.easing, AMBIENT_EASING);
-        assert_eq!(STATS_COUNT.easing, STANDARD_EASING);
-        assert_eq!(STATS_REVEAL.easing, STANDARD_EASING);
-        assert_eq!(STATS_BAR.easing, STANDARD_EASING);
-        assert_eq!(STATS_TWEEN.easing, STANDARD_EASING);
+        for token in [
+            STATS_HERO,
+            STATS_COUNT,
+            STATS_KPI,
+            STATS_REVEAL,
+            STATS_MARKER,
+            STATS_CARD,
+            STATS_BAR,
+            STATS_TWEEN,
+        ] {
+            assert_eq!(token.easing, libadwaita::Easing::EaseOutExpo);
+        }
         assert_eq!(MICRO_CSS_EASING, "ease-out");
         assert_eq!(STANDARD_CSS_EASING, "cubic-bezier(0.16, 1, 0.3, 1)");
         assert_eq!(AMBIENT_CSS_EASING, STANDARD_CSS_EASING);
