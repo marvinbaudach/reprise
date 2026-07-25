@@ -87,8 +87,8 @@ impl SongVisualizer {
         queue_registered_areas(&self.areas);
     }
 
-    /// A new track started: resets the engine's clock, water surface, and
-    /// impact overlay so ripples/sparks from the previous track don't bleed
+    /// A new track started: resets the engine's clock, membrane, and impact
+    /// overlay so vibrations/sparks from the previous track don't bleed
     /// into the new one.
     pub(in crate::ui) fn note_track_changed(&self) {
         self.engine.borrow_mut().note_track_changed();

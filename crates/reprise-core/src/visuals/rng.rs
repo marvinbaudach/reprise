@@ -1,8 +1,4 @@
-//! Tiny deterministic RNG shared by [`super::water`] and [`super::impact`] —
-//! one implementation instead of two copies drifting apart. Originally also
-//! backed the Particles visual mode's dust field; that mode (and the dust
-//! field itself) has since been removed, leaving `xorshift` as this module's
-//! sole remaining resident.
+//! Tiny deterministic RNG for the transient impact overlay.
 
 /// Xorshift32, returning a unit float in `0.0..1.0`. Avoids a `rand`
 /// dependency and stays deterministic across runs — variety comes from the

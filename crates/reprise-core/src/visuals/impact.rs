@@ -12,7 +12,7 @@
 //! particles in polar coordinates from the center) so impacts can be spawned
 //! without knowing the canvas size, and scaled at draw time.
 
-use super::dust::xorshift;
+use super::rng::xorshift;
 
 /// Fixed capacity for concurrent shockwaves. Overlapping beats stack up to here,
 /// then the oldest is recycled.

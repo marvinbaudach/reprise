@@ -1,13 +1,13 @@
-//! Grid: a perspective water surface with dual-accent crests — gray polylines
+//! Grid: a perspective membrane with dual-accent crests — gray polylines
 //! trace every row plus a vertical every 4 columns, and a secondary-accent
 //! stroke rides any contiguous run of cells thrown above `0.5` ("splash
 //! caught mid-crest").
 
-use super::super::engine::ModeCtx;
+use super::super::engine::GridCtx;
+use super::super::membrane::{MEMBRANE_COLS, MEMBRANE_ROWS};
 use super::super::scene::{Fill, Geom, Rgba, Shape};
-use super::super::water::{WATER_COLS, WATER_ROWS};
 
-/// Water height at which a crest starts to show (secondary accent). Set high so
+/// Membrane height at which a crest starts to show (secondary accent). Set high so
 /// the "hot" crest only rides genuine peaks and beat eruptions, not the modest
 /// ripples of ordinary playback.
 const CREST_THRESHOLD: f32 = 0.85;
@@ -16,24 +16,24 @@ const CREST_THRESHOLD: f32 = 0.85;
 /// on all at once.
 const CREST_FULL: f32 = 2.0;
 
-pub(crate) fn scene(ctx: &ModeCtx) -> Vec<Shape> {
+pub(crate) fn scene(ctx: &GridCtx) -> Vec<Shape> {
     let (w, h) = (ctx.width, ctx.height);
     let horizon = h * 0.30;
     let near_y = h * 0.94;
     let amp = h * 0.32;
-    // Project every water cell once.
-    let mut rows: Vec<(Vec<(f32, f32)>, f32)> = Vec::with_capacity(WATER_ROWS); // (points, near)
-    for row in 0..WATER_ROWS {
-        let near = (row as f32 / (WATER_ROWS - 1) as f32).powf(1.6);
+    // Project every membrane cell once.
+    let mut rows: Vec<(Vec<(f32, f32)>, f32)> = Vec::with_capacity(MEMBRANE_ROWS); // (points, near)
+    for row in 0..MEMBRANE_ROWS {
+        let near = (row as f32 / (MEMBRANE_ROWS - 1) as f32).powf(1.6);
         let y0 = horizon + near * (near_y - horizon);
         let half = w * 0.30 + near * w * 0.68;
         let row_amp = amp * (0.35 + 0.65 * near);
-        let points = (0..WATER_COLS)
+        let points = (0..MEMBRANE_COLS)
             .map(|col| {
-                let px = w / 2.0 + ((col as f32 / (WATER_COLS - 1) as f32) - 0.5) * 2.0 * half;
+                let px = w / 2.0 + ((col as f32 / (MEMBRANE_COLS - 1) as f32) - 0.5) * 2.0 * half;
                 (
                     px,
-                    (y0 - ctx.water.height(row, col) * row_amp).clamp(0.0, h),
+                    (y0 - ctx.membrane.height(row, col) * row_amp).clamp(0.0, h),
                 )
             })
             .collect();
@@ -60,7 +60,7 @@ pub(crate) fn scene(ctx: &ModeCtx) -> Vec<Shape> {
             dash: None,
         });
     }
-    for col in (0..WATER_COLS).step_by(4) {
+    for col in (0..MEMBRANE_COLS).step_by(4) {
         shapes.push(Shape {
             geom: Geom::Polyline {
                 points: rows.iter().map(|(p, _)| p[col]).collect(),
@@ -79,7 +79,7 @@ pub(crate) fn scene(ctx: &ModeCtx) -> Vec<Shape> {
         let mut run: Vec<(f32, f32)> = Vec::new();
         let mut run_peak = 0.0_f32;
         for (col, &point) in points.iter().enumerate() {
-            let height = ctx.water.height(row, col);
+            let height = ctx.membrane.height(row, col);
             if height > CREST_THRESHOLD {
                 run.push(point);
                 run_peak = run_peak.max(height);
@@ -98,7 +98,7 @@ pub(crate) fn scene(ctx: &ModeCtx) -> Vec<Shape> {
     shapes
 }
 
-fn crest(points: Vec<(f32, f32)>, peak: f32, near: f32, ctx: &ModeCtx) -> Shape {
+fn crest(points: Vec<(f32, f32)>, peak: f32, near: f32, ctx: &GridCtx) -> Shape {
     let intensity = ((peak - CREST_THRESHOLD) / (CREST_FULL - CREST_THRESHOLD)).clamp(0.0, 1.0);
     Shape {
         geom: Geom::Polyline {
@@ -121,10 +121,10 @@ mod tests {
     const WIDTH: f32 = 548.0;
     const HEIGHT: f32 = 300.0;
 
-    /// A lively engine, ticked well past the initial beat/slam so the water
-    /// surface has time to rise past the crest threshold in multiple cells (the
-    /// crest invariant needs cells above [`CREST_THRESHOLD`], and the driven hot
-    /// zone climbs there within a few frames of sustained loud input).
+    /// A lively engine, ticked well past the initial beat/slam so the membrane
+    /// has time to rise past the crest threshold in multiple cells (the
+    /// crest invariant needs cells above [`CREST_THRESHOLD`], and the central
+    /// driver climbs there within a few frames of sustained loud input).
     fn crested_engine() -> crate::visuals::engine::VisualEngine {
         let mut engine = lively_engine();
         for _ in 0..40 {
@@ -158,7 +158,7 @@ mod tests {
     }
 
     #[test]
-    fn draws_a_row_polyline_per_water_row_plus_verticals_every_4_cols() {
+    fn draws_a_row_polyline_per_membrane_row_plus_verticals_every_4_cols() {
         let engine = crested_engine();
         let ctx = test_ctx(&engine, WIDTH, HEIGHT);
         let shapes = scene(&ctx);
@@ -167,19 +167,22 @@ mod tests {
             .iter()
             .filter(|s| {
                 is_gray_mesh_line(s)
-                    && matches!(&s.geom, Geom::Polyline { points, .. } if points.len() == WATER_COLS)
+                    && matches!(&s.geom, Geom::Polyline { points, .. } if points.len() == MEMBRANE_COLS)
             })
             .count();
-        assert_eq!(row_lines, WATER_ROWS, "one gray polyline per water row");
+        assert_eq!(
+            row_lines, MEMBRANE_ROWS,
+            "one gray polyline per membrane row"
+        );
 
         let vertical_lines = shapes
             .iter()
             .filter(|s| {
                 is_gray_mesh_line(s)
-                    && matches!(&s.geom, Geom::Polyline { points, .. } if points.len() == WATER_ROWS)
+                    && matches!(&s.geom, Geom::Polyline { points, .. } if points.len() == MEMBRANE_ROWS)
             })
             .count();
-        let expected_verticals = (0..WATER_COLS).step_by(4).count();
+        let expected_verticals = (0..MEMBRANE_COLS).step_by(4).count();
         assert_eq!(
             vertical_lines, expected_verticals,
             "one vertical polyline every 4 columns"
@@ -187,16 +190,16 @@ mod tests {
     }
 
     #[test]
-    fn crests_appear_where_the_water_exceeds_the_threshold() {
+    fn crests_appear_where_the_membrane_exceeds_the_threshold() {
         let engine = crested_engine();
 
         // Confirm the fixture actually drove the surface past the crest
         // threshold somewhere — otherwise the crest-count assertion below
         // would pass vacuously.
         let ctx = test_ctx(&engine, WIDTH, HEIGHT);
-        let has_crest_cell = (0..WATER_ROWS)
-            .flat_map(|row| (0..WATER_COLS).map(move |col| (row, col)))
-            .any(|(row, col)| ctx.water.height(row, col) > CREST_THRESHOLD);
+        let has_crest_cell = (0..MEMBRANE_ROWS)
+            .flat_map(|row| (0..MEMBRANE_COLS).map(move |col| (row, col)))
+            .any(|(row, col)| ctx.membrane.height(row, col) > CREST_THRESHOLD);
         assert!(
             has_crest_cell,
             "fixture must drive some cell above the crest threshold"
@@ -208,7 +211,7 @@ mod tests {
         let crest_segments = shapes.iter().filter(|s| s.glow > 0.0).count();
         assert!(
             crest_segments > 0,
-            "expected accent2 crest segments where water exceeds the threshold"
+            "expected accent2 crest segments where the membrane exceeds the threshold"
         );
     }
 
