@@ -11,59 +11,26 @@ fn view_and_conn() -> (StatsView, Rc<RefCell<Connection>>) {
     (StatsView::new(loader), conn)
 }
 
-/// Presses the real CheckButtons of the Customize menu — a test that calls
-/// the handler behind them proves nothing about the menu (STYLE-1) — and
-/// reads the section order off the live widget tree.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_7_customize_toggles_sections() {
+fn stats_10_page_orders_header_hero_chart_row_genres() {
     gtk4::init().unwrap();
-    let (view, conn) = view_and_conn();
-    view.wire_year_selector(&conn);
-    let [clock_check, genres_check, highlights_check] = view.render.customize.checks();
-    assert_eq!(view.render.customize.check_count(), 3);
-    assert!(clock_check.is_active());
-    assert!(view.render.clock_section.is_visible());
-    assert!(view.render.genres_section.is_visible());
-    assert!(view.render.highlights_section.is_visible());
+    let (view, _) = view_and_conn();
+
     assert_eq!(view.section_order(), SECTION_ORDER);
+}
 
-    clock_check.activate();
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_10_no_clock_highlights_or_customize_widgets() {
+    gtk4::init().unwrap();
+    let (view, _) = view_and_conn();
+    let page = view.page.upgrade().unwrap();
+    let copy = descendant_copy(page.upcast_ref());
 
-    assert!(!clock_check.is_active());
-    assert!(!view.render.clock_section.is_visible());
-    assert!(view.render.genres_section.is_visible());
-    assert!(view.render.highlights_section.is_visible());
-    // Hiding a section never reorders the page.
-    assert_eq!(view.section_order(), SECTION_ORDER);
-    assert_eq!(
-        settings::get_stats_layout(&conn.borrow()),
-        StatsLayout {
-            clock: false,
-            genres: true,
-            highlights: true,
-        }
-    );
-
-    genres_check.activate();
-    highlights_check.activate();
-
-    assert!(!view.render.genres_section.is_visible());
-    assert!(!view.render.highlights_section.is_visible());
-    assert_eq!(view.section_order(), SECTION_ORDER);
-    assert_eq!(
-        settings::get_stats_layout(&conn.borrow()),
-        StatsLayout {
-            clock: false,
-            genres: false,
-            highlights: false,
-        }
-    );
-
-    clock_check.activate();
-
-    assert!(view.render.clock_section.is_visible());
-    assert_eq!(view.section_order(), SECTION_ORDER);
+    assert!(!copy.iter().any(|text| text.contains("LISTENING CLOCK")));
+    assert!(!copy.iter().any(|text| text.contains("HIGHLIGHTS")));
+    assert!(!copy.iter().any(|text| text.contains("Customize")));
 }
 
 #[test]
@@ -239,6 +206,17 @@ fn seed_one_play(conn: &Connection) {
     seed_play_at(conn, now_unix());
 }
 
+fn seed_plays(conn: &Connection, count: i64) {
+    seed_play_at(conn, now_unix());
+    for offset in 1..count {
+        conn.execute(
+            "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, 200000)",
+            rusqlite::params![now_unix() - offset],
+        )
+        .unwrap();
+    }
+}
+
 fn seed_previous_year_play(conn: &Connection) {
     conn.execute(
         "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, 100000)",
@@ -273,6 +251,24 @@ fn seed_imported_plays(conn: &Connection, play_count: i64) {
         rusqlite::params![play_count],
     )
     .unwrap();
+}
+
+fn descendant_copy(root: &gtk4::Widget) -> Vec<String> {
+    let mut copy = Vec::new();
+    let mut child = root.first_child();
+    while let Some(widget) = child {
+        if let Some(label) = widget.downcast_ref::<gtk4::Label>() {
+            copy.push(label.label().to_string());
+        }
+        if let Some(button) = widget.downcast_ref::<gtk4::Button>() {
+            if let Some(label) = button.label() {
+                copy.push(label.to_string());
+            }
+        }
+        copy.extend(descendant_copy(&widget));
+        child = widget.next_sibling();
+    }
+    copy
 }
 
 fn presented(width: i32) -> (StatsView, adw::Window) {
@@ -400,39 +396,52 @@ fn stats_11_trend_tooltip_names_the_seasonally_congruent_compared_span() {
     );
 }
 
-/// Between the two numbers lies a band of window widths where the row is
-/// still side by side but already narrower than the two sections need —
-/// GTK then under-allocates them. The band has to stay empty.
+/// The natural wrap point must never under-allocate either story card.
 #[test]
-fn asymmetric_row_minimums_fit_the_natural_line_length() {
-    let minimum = CLOCK_MIN_WIDTH + HIGHLIGHTS_MIN_WIDTH + ASYMMETRIC_SPACING;
+fn story_row_minimums_fit_the_natural_line_length() {
+    let minimum = BAND_WIDTH + SONGS_WIDTH + STORY_SPACING;
     assert!(
-        minimum <= ASYMMETRIC_NATURAL_LINE_LENGTH,
+        minimum <= STORY_NATURAL_LINE_LENGTH,
         "side-by-side minimum {minimum} exceeds the natural line length \
-         {ASYMMETRIC_NATURAL_LINE_LENGTH}"
+         {STORY_NATURAL_LINE_LENGTH}"
     );
+    assert_eq!(BAND_WIDTH * 7, SONGS_WIDTH * 5);
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_view_narrow_width_stacks_the_asymmetric_row() {
+fn stats_10_narrow_window_stacks_band_before_songs() {
     gtk4::init().unwrap();
     let (view, window) = presented(600);
-    let asymmetric_row = view.asymmetric_row.upgrade().unwrap();
+    let story_row = view.story_row.upgrade().unwrap();
 
-    assert!(asymmetric_row.width() > 0);
+    assert!(story_row.width() > 0);
     assert_ne!(
         view.render
-            .clock_section
-            .compute_bounds(&asymmetric_row)
+            .band_section
+            .compute_bounds(&story_row)
             .unwrap()
             .y(),
         view.render
-            .highlights_section
-            .compute_bounds(&asymmetric_row)
+            .songs_section
+            .compute_bounds(&story_row)
             .unwrap()
             .y(),
-        "narrow sections must wrap onto separate lines"
+        "narrow story cards must wrap onto separate lines"
+    );
+    assert!(
+        view.render
+            .band_section
+            .compute_bounds(&story_row)
+            .unwrap()
+            .y()
+            < view
+                .render
+                .songs_section
+                .compute_bounds(&story_row)
+                .unwrap()
+                .y(),
+        "the band card must remain before the songs card"
     );
     window.close();
 }
@@ -563,23 +572,53 @@ fn stats_11a_zero_baseline_shows_new_badge_not_a_delta() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_view_wide_width_keeps_the_asymmetric_row_side_by_side() {
+fn stats_16_thin_history_swaps_chart_for_hint() {
+    gtk4::init().unwrap();
+    let (view, conn) = view_and_conn();
+    seed_plays(&conn.borrow(), 9);
+    view.wire_year_selector(&conn);
+
+    assert_eq!(
+        view.render.trend_stack.visible_child_name().as_deref(),
+        Some("hint")
+    );
+    assert!(view.render.thin_hint.is_visible());
+    assert!(view.render.hero.subline.label().starts_with("9 plays"));
+
+    conn.borrow()
+        .execute(
+            "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, 200000)",
+            rusqlite::params![now_unix() - 10],
+        )
+        .unwrap();
+    view.refresh(&conn);
+
+    assert_eq!(
+        view.render.trend_stack.visible_child_name().as_deref(),
+        Some("chart")
+    );
+    assert!(!view.render.thin_hint.is_visible());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_10_wide_window_keeps_band_and_songs_side_by_side() {
     gtk4::init().unwrap();
     let (view, window) = presented(1_000);
-    let asymmetric_row = view.asymmetric_row.upgrade().unwrap();
+    let story_row = view.story_row.upgrade().unwrap();
 
     assert_eq!(
         view.render
-            .clock_section
-            .compute_bounds(&asymmetric_row)
+            .band_section
+            .compute_bounds(&story_row)
             .unwrap()
             .y(),
         view.render
-            .highlights_section
-            .compute_bounds(&asymmetric_row)
+            .songs_section
+            .compute_bounds(&story_row)
             .unwrap()
             .y(),
-        "wide sections must remain side by side"
+        "wide story cards must remain side by side"
     );
     window.close();
 }
