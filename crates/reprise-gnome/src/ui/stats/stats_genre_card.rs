@@ -36,9 +36,13 @@ impl StatsGenreCard {
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
         root.add_css_class("stats-genre-card");
         root.append(&label("GENRES", "stats-eyebrow"));
-        let segments = gtk4::Grid::builder().column_spacing(2).build();
+        let segments = gtk4::Grid::builder()
+            .column_spacing(2)
+            .column_homogeneous(true)
+            .build();
         segments.add_css_class("stats-genre-bar");
         segments.set_height_request(22);
+        segments.set_overflow(gtk4::Overflow::Hidden);
         root.append(&segments);
         let tiles = gtk4::Grid::builder()
             .column_spacing(16)
@@ -89,11 +93,12 @@ impl StatsGenreCard {
 
     fn render_segments(&self, section: &GenreSection) {
         let mut column = 0;
+        let last_index = section.segments.len().saturating_sub(1);
         for (index, segment) in section.segments.iter().enumerate() {
             let bar = gtk4::Button::new();
             bar.add_css_class("flat");
             bar.add_css_class("stats-genre-segment");
-            bar.add_css_class(&segment_css_class(segment, index));
+            bar.add_css_class(&segment_css_class(segment, index, index == last_index));
             bar.set_hexpand(true);
             bar.set_height_request(22);
             bar.update_property(&[gtk4::accessible::Property::Label(&format!(
@@ -242,8 +247,8 @@ fn has_genre_tile(segment: &GenreSegment) -> bool {
     segment.key != "other"
 }
 
-fn segment_css_class(segment: &GenreSegment, index: usize) -> String {
-    if segment.key == "other" {
+fn segment_css_class(segment: &GenreSegment, index: usize, is_last: bool) -> String {
+    if segment.key == "other" || is_last {
         "stats-genre-segment-last".into()
     } else {
         format!("stats-genre-rank-{}", index.min(4))
@@ -307,12 +312,21 @@ mod tests {
     fn genre_style_and_tile_eligibility_follow_the_semantic_key() {
         let mut genre = fixture().segments.remove(0);
         genre.label = "Other".into();
-        assert_eq!(segment_css_class(&genre, 0), "stats-genre-rank-0");
+        assert_eq!(segment_css_class(&genre, 0, false), "stats-genre-rank-0");
         assert!(has_genre_tile(&genre));
+
+        assert_eq!(
+            segment_css_class(&genre, 1, true),
+            "stats-genre-segment-last",
+            "the final ranked genre must stay neutral without an Other aggregate"
+        );
 
         genre.key = "other".into();
         genre.label = "Weitere".into();
-        assert_eq!(segment_css_class(&genre, 0), "stats-genre-segment-last");
+        assert_eq!(
+            segment_css_class(&genre, 0, false),
+            "stats-genre-segment-last"
+        );
         assert!(!has_genre_tile(&genre));
     }
 
@@ -371,14 +385,35 @@ mod tests {
             .child(card.widget())
             .build();
         window.present();
-        while gtk4::glib::MainContext::default().iteration(false) {}
+        run_main_loop_for_layout();
 
         let eyebrow = card.widget().first_child().unwrap();
         let segment_grid = eyebrow.next_sibling().unwrap();
-        let segment = segment_grid.first_child().unwrap();
+        let segments = card.segment_slides();
+        let occupied_width = segments
+            .iter()
+            .map(gtk4::prelude::WidgetExt::width)
+            .sum::<i32>()
+            + (segments.len().saturating_sub(1) as i32 * 2);
 
         assert_eq!(segment_grid.height(), 22);
-        assert_eq!(segment.height(), 22);
+        assert!(segments.iter().all(|segment| segment.height() == 22));
+        assert!(
+            segment_grid.width() >= 500,
+            "the stacked bar collapsed to {} px",
+            segment_grid.width()
+        );
+        assert_eq!(
+            occupied_width,
+            segment_grid.width(),
+            "segments and their 2 px gap must occupy the complete card width"
+        );
+        assert!(
+            (segments[0].width() as f64 / segment_grid.width() as f64 - 0.70).abs() < 0.02,
+            "the 70 percent segment received {} of {} px",
+            segments[0].width(),
+            segment_grid.width()
+        );
         window.close();
     }
 
@@ -450,5 +485,14 @@ mod tests {
             child = widget.next_sibling();
         }
         labels
+    }
+
+    fn run_main_loop_for_layout() {
+        let main_loop = gtk4::glib::MainLoop::new(None, false);
+        let quit = main_loop.clone();
+        gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(50), move || {
+            quit.quit();
+        });
+        main_loop.run();
     }
 }

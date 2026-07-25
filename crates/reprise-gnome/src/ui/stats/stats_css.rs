@@ -142,7 +142,7 @@ pub(in crate::ui) fn css() -> String {
            color: alpha(@window_fg_color, 0.58); }}\n\
          .stats-genre-card {{ padding: 8px; }}\n\
          .stats-genre-bar {{ border-radius: 999px; }}\n\
-         .stats-genre-segment {{ padding: 0; min-height: 0; border: none; \
+         .stats-genre-segment {{ padding: 0; min-height: 0; border: none; border-radius: 0; \
            box-shadow: none; background-image: none; }}\
          .stats-genre-segment:focus-visible {{ outline: 2px solid @accent_color; \
            outline-offset: -2px; }}\n\
@@ -221,6 +221,10 @@ mod tests {
     #[test]
     fn stats_genre_segments_define_rank_hover_steps() {
         let css = super::css();
+        assert!(
+            css.contains(".stats-genre-segment {") && css.contains("border-radius: 0;"),
+            "inner segment corners must stay square"
+        );
         for rule in [
             ".stats-genre-rank-0:hover { background-color: shade(@accent_bg_color, 1.29); }",
             ".stats-genre-rank-1:hover { background-color: shade(@accent_bg_color, 1.12); }",
