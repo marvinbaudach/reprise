@@ -2642,18 +2642,16 @@ msgid "Instrumental conversions"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:9
-#, fuzzy
 msgid "No conversions yet"
-msgstr "এখনও কোনো সংগীত নেই"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:10
 msgid "Save all"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:11
-#, fuzzy
 msgid "Clear playlist"
-msgstr "নতুন প্লে-লিস্ট"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:12
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:180
@@ -2679,18 +2677,16 @@ msgid "Queued"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:33
-#, fuzzy
 msgid "Processing…"
-msgstr "সংযোগ করা হচ্ছে…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:34
 msgid "Ready — not saved"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:35
-#, fuzzy
 msgid "Saved to library"
-msgstr "লাইব্রেরি সেট আপ করুন"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:52
 msgid "AI"
@@ -2759,9 +2755,8 @@ msgid "Verifying…"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scan.rs:5
-#, fuzzy
 msgid "Library folder unavailable"
-msgstr "লাইব্রেরি ফোল্ডার"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scan.rs:6
 #, rust-format
@@ -2847,9 +2842,8 @@ msgid "No effective changes"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:52
-#, fuzzy
 msgid "No changes yet"
-msgstr "এখনও কোনো সংগীত নেই"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:54
 #, rust-format
@@ -2901,18 +2895,16 @@ msgid "Some tracks could not be updated"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:152
-#, fuzzy
 msgid "Edit failed tracks…"
-msgstr "ট্যাগ সম্পাদনা করুন…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:160
 msgid "(multiple values)"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:164
-#, fuzzy
 msgid "Album artist"
-msgstr "শিল্পী"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:166
 msgid "Track number"
@@ -2927,18 +2919,16 @@ msgid "Could not open the library database for tag editing"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:171
-#, fuzzy
 msgid "Could not start the tag-edit worker"
-msgstr "উইন্ডো দৃশ্য সংরক্ষণ করা যায়নি"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:172
 msgid "same on all"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:176
-#, fuzzy
 msgid "Edit Tags"
-msgstr "ট্যাগ সম্পাদনা করুন…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:177
 #, rust-format
@@ -2946,9 +2936,8 @@ msgid "Edit {count} Tracks"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:178
-#, fuzzy
 msgid "per track"
-msgstr "প্রতি ট্র্যাক"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:179
 #, rust-format
@@ -3031,47 +3020,41 @@ msgid "Add to queue"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:6
-#, fuzzy
 msgid "Add to playlist"
-msgstr "নতুন প্লে-লিস্ট"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:8
 msgid "Create instrumental"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:9
-#, fuzzy
 msgid "Move to top"
-msgstr "আবর্জনায় সরান"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:10
 msgid "Go to album"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:11
-#, fuzzy
 msgid "Go to artist"
-msgstr "অজানা শিল্পী"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:15
-#, fuzzy
 msgid "New playlist…"
-msgstr "নতুন প্লে-লিস্ট"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:16
-#, fuzzy
 msgid "Remove from playlist"
-msgstr "লাইব্রেরি থেকে সরান…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:22
-#, fuzzy, rust-format
+#, rust-format
 msgid "Remove {count} from playlist"
-msgstr "লাইব্রেরি থেকে সরান…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:29
-#, fuzzy
 msgid "Remove from queue"
-msgstr "লাইব্রেরি থেকে সরান…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:30
 #, rust-format
@@ -3079,14 +3062,14 @@ msgid "Remove {count} from queue"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:38
-#, fuzzy, rust-format
+#, rust-format
 msgid "Remove {count} from library…"
-msgstr "লাইব্রেরি থেকে সরান…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:43
-#, fuzzy, rust-format
+#, rust-format
 msgid "Move {count} to Trash…"
-msgstr "আবর্জনায় সরান…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:65
 #, rust-format

@@ -2642,18 +2642,16 @@ msgid "Instrumental conversions"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:9
-#, fuzzy
 msgid "No conversions yet"
-msgstr "अभी कोई संगीत नहीं"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:10
 msgid "Save all"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:11
-#, fuzzy
 msgid "Clear playlist"
-msgstr "नई प्लेलिस्ट"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:12
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:180
@@ -2675,23 +2673,20 @@ msgid "Instrumental preview"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:32
-#, fuzzy
 msgid "Queued"
-msgstr "क्यू"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:33
-#, fuzzy
 msgid "Processing…"
-msgstr "जुड़ रहा है…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:34
 msgid "Ready — not saved"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:35
-#, fuzzy
 msgid "Saved to library"
-msgstr "लाइब्रेरी सेट अप करें"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:52
 msgid "AI"
@@ -2760,9 +2755,8 @@ msgid "Verifying…"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scan.rs:5
-#, fuzzy
 msgid "Library folder unavailable"
-msgstr "लाइब्रेरी फ़ोल्डर"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scan.rs:6
 #, rust-format
@@ -2848,9 +2842,8 @@ msgid "No effective changes"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:52
-#, fuzzy
 msgid "No changes yet"
-msgstr "अभी कोई संगीत नहीं"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:54
 #, rust-format
@@ -2902,18 +2895,16 @@ msgid "Some tracks could not be updated"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:152
-#, fuzzy
 msgid "Edit failed tracks…"
-msgstr "टैग संपादित करें…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:160
 msgid "(multiple values)"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:164
-#, fuzzy
 msgid "Album artist"
-msgstr "कलाकार"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:166
 msgid "Track number"
@@ -2928,18 +2919,16 @@ msgid "Could not open the library database for tag editing"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:171
-#, fuzzy
 msgid "Could not start the tag-edit worker"
-msgstr "विंडो दृश्य सहेजा नहीं जा सका"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:172
 msgid "same on all"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:176
-#, fuzzy
 msgid "Edit Tags"
-msgstr "टैग संपादित करें…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:177
 #, rust-format
@@ -2947,9 +2936,8 @@ msgid "Edit {count} Tracks"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:178
-#, fuzzy
 msgid "per track"
-msgstr "प्रति ट्रैक"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:179
 #, rust-format
@@ -3032,47 +3020,41 @@ msgid "Add to queue"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:6
-#, fuzzy
 msgid "Add to playlist"
-msgstr "नई प्लेलिस्ट"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:8
 msgid "Create instrumental"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:9
-#, fuzzy
 msgid "Move to top"
-msgstr "रद्दी में ले जाएं"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:10
 msgid "Go to album"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:11
-#, fuzzy
 msgid "Go to artist"
-msgstr "अज्ञात कलाकार"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:15
-#, fuzzy
 msgid "New playlist…"
-msgstr "नई प्लेलिस्ट"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:16
-#, fuzzy
 msgid "Remove from playlist"
-msgstr "लाइब्रेरी से हटाएँ…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:22
-#, fuzzy, rust-format
+#, rust-format
 msgid "Remove {count} from playlist"
-msgstr "लाइब्रेरी से हटाएँ…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:29
-#, fuzzy
 msgid "Remove from queue"
-msgstr "लाइब्रेरी से हटाएँ…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:30
 #, rust-format
@@ -3080,14 +3062,14 @@ msgid "Remove {count} from queue"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:38
-#, fuzzy, rust-format
+#, rust-format
 msgid "Remove {count} from library…"
-msgstr "लाइब्रेरी से हटाएँ…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:43
-#, fuzzy, rust-format
+#, rust-format
 msgid "Move {count} to Trash…"
-msgstr "रद्दी में ले जाएँ…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:65
 #, rust-format

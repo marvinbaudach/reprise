@@ -2651,18 +2651,16 @@ msgid "Instrumental conversions"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:9
-#, fuzzy
 msgid "No conversions yet"
-msgstr "لا توجد موسيقى بعد"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:10
 msgid "Save all"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:11
-#, fuzzy
 msgid "Clear playlist"
-msgstr "قائمة تشغيل جديدة"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:12
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:180
@@ -2684,23 +2682,20 @@ msgid "Instrumental preview"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:32
-#, fuzzy
 msgid "Queued"
-msgstr "طابور"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:33
-#, fuzzy
 msgid "Processing…"
-msgstr "يتّصل…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:34
 msgid "Ready — not saved"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:35
-#, fuzzy
 msgid "Saved to library"
-msgstr "إعداد المكتبة"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:52
 msgid "AI"
@@ -2769,14 +2764,13 @@ msgid "Verifying…"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scan.rs:5
-#, fuzzy
 msgid "Library folder unavailable"
-msgstr "مجلد المكتبة"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scan.rs:6
-#, fuzzy, rust-format
+#, rust-format
 msgid "{root} not mounted"
-msgstr "غير مركّب"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scan.rs:8
 msgid "1 moved file relinked"
@@ -2857,9 +2851,8 @@ msgid "No effective changes"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:52
-#, fuzzy
 msgid "No changes yet"
-msgstr "لا توجد موسيقى بعد"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:54
 #, rust-format
@@ -2911,18 +2904,16 @@ msgid "Some tracks could not be updated"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:152
-#, fuzzy
 msgid "Edit failed tracks…"
-msgstr "تحرير الوسوم…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:160
 msgid "(multiple values)"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:164
-#, fuzzy
 msgid "Album artist"
-msgstr "الفنان"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:166
 msgid "Track number"
@@ -2937,18 +2928,16 @@ msgid "Could not open the library database for tag editing"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:171
-#, fuzzy
 msgid "Could not start the tag-edit worker"
-msgstr "تعذر حفظ عرض النافذة"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:172
 msgid "same on all"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:176
-#, fuzzy
 msgid "Edit Tags"
-msgstr "تحرير الوسوم…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:177
 #, rust-format
@@ -2956,9 +2945,8 @@ msgid "Edit {count} Tracks"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:178
-#, fuzzy
 msgid "per track"
-msgstr "لكل مقطع"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:179
 #, rust-format
@@ -3045,47 +3033,41 @@ msgid "Add to queue"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:6
-#, fuzzy
 msgid "Add to playlist"
-msgstr "قائمة تشغيل جديدة"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:8
 msgid "Create instrumental"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:9
-#, fuzzy
 msgid "Move to top"
-msgstr "انقل إلى المهملات"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:10
 msgid "Go to album"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:11
-#, fuzzy
 msgid "Go to artist"
-msgstr "فنان غير معروف"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:15
-#, fuzzy
 msgid "New playlist…"
-msgstr "قائمة تشغيل جديدة"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:16
-#, fuzzy
 msgid "Remove from playlist"
-msgstr "إزالة من المكتبة…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:22
-#, fuzzy, rust-format
+#, rust-format
 msgid "Remove {count} from playlist"
-msgstr "إزالة من المكتبة…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:29
-#, fuzzy
 msgid "Remove from queue"
-msgstr "إزالة من المكتبة…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:30
 #, rust-format
@@ -3093,14 +3075,14 @@ msgid "Remove {count} from queue"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:38
-#, fuzzy, rust-format
+#, rust-format
 msgid "Remove {count} from library…"
-msgstr "إزالة من المكتبة…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:43
-#, fuzzy, rust-format
+#, rust-format
 msgid "Move {count} to Trash…"
-msgstr "نقل إلى المهملات…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:65
 #, rust-format

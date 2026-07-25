@@ -2659,18 +2659,16 @@ msgid "Instrumental conversions"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:9
-#, fuzzy
 msgid "No conversions yet"
-msgstr "Pas encore de musique"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:10
 msgid "Save all"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:11
-#, fuzzy
 msgid "Clear playlist"
-msgstr "Nouvelle liste de lecture"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:12
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:180
@@ -2692,23 +2690,20 @@ msgid "Instrumental preview"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:32
-#, fuzzy
 msgid "Queued"
-msgstr "File d’attente"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:33
-#, fuzzy
 msgid "Processing…"
-msgstr "Connexion en cours…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:34
 msgid "Ready — not saved"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:35
-#, fuzzy
 msgid "Saved to library"
-msgstr "Configurer la bibliothèque"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:52
 msgid "AI"
@@ -2777,14 +2772,13 @@ msgid "Verifying…"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scan.rs:5
-#, fuzzy
 msgid "Library folder unavailable"
-msgstr "Dossier de la bibliothèque"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scan.rs:6
-#, fuzzy, rust-format
+#, rust-format
 msgid "{root} not mounted"
-msgstr "non monté"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scan.rs:8
 msgid "1 moved file relinked"
@@ -2817,9 +2811,8 @@ msgid "Show local audio-reactive visuals in Now Playing"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_song_visuals.rs:7
-#, fuzzy
 msgid "Audio-reactive song visual"
-msgstr "Le Caractère audio est obsolète"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_song_visuals.rs:8
 msgid "Grid"
@@ -2866,9 +2859,8 @@ msgid "No effective changes"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:52
-#, fuzzy
 msgid "No changes yet"
-msgstr "Pas encore de musique"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:54
 #, rust-format
@@ -2886,14 +2878,14 @@ msgid "was: {value}"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:85
-#, fuzzy, rust-format
+#, rust-format
 msgid "Save · {count} track"
-msgstr "{count} piste"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:86
-#, fuzzy, rust-format
+#, rust-format
 msgid "Save · {count} tracks"
-msgstr "{count} pistes"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:109
 #, rust-format
@@ -2901,37 +2893,35 @@ msgid "Saving… {done}/{total}"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:116
-#, fuzzy, rust-format
+#, rust-format
 msgid "Tags updated · {count} track"
-msgstr "{updated} piste mise à jour"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:132
-#, fuzzy, rust-format
+#, rust-format
 msgid "Tags updated · {updated} track · {failed} failed"
-msgstr "{updated} piste mise à jour ; {failed} échec"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:134
-#, fuzzy, rust-format
+#, rust-format
 msgid "Tags updated · {updated} tracks · {failed} failed"
-msgstr "{updated} piste mise à jour ; {failed} échec"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:151
 msgid "Some tracks could not be updated"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:152
-#, fuzzy
 msgid "Edit failed tracks…"
-msgstr "Réessayer les pistes en échec"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:160
 msgid "(multiple values)"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:164
-#, fuzzy
 msgid "Album artist"
-msgstr "Artiste"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:166
 msgid "Track number"
@@ -2942,34 +2932,29 @@ msgid "Year and track number must be positive whole numbers"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:170
-#, fuzzy
 msgid "Could not open the library database for tag editing"
 msgstr ""
-"Impossible d’ouvrir la base de données de la bibliothèque pour le retrait"
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:171
-#, fuzzy
 msgid "Could not start the tag-edit worker"
-msgstr "Impossible de démarrer le processus de retrait"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:172
 msgid "same on all"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:176
-#, fuzzy
 msgid "Edit Tags"
-msgstr "Modifier les étiquettes…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:177
-#, fuzzy, rust-format
+#, rust-format
 msgid "Edit {count} Tracks"
-msgstr "{count} pistes"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:178
-#, fuzzy
 msgid "per track"
-msgstr "Par piste"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:179
 #, rust-format
@@ -2977,9 +2962,9 @@ msgid "will be applied to all {count}"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:181
-#, fuzzy, rust-format
+#, rust-format
 msgid "Save {count}"
-msgstr "Noter {count} étoile"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:186
 #, rust-format
@@ -3026,11 +3011,11 @@ msgid "Per-track field — edit tracks individually"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:277
-#, fuzzy, rust-format
+#, rust-format
 msgid "{count} cover"
 msgid_plural "{count} covers"
-msgstr[0] "{count} piste"
-msgstr[1] "{count} pistes"
+msgstr[0] ""
+msgstr[1] ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:286
 #, rust-format
@@ -3038,76 +3023,70 @@ msgid "Track {position} of {total}"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:302
-#, fuzzy, rust-format
+#, rust-format
 msgid "{count} value"
-msgstr "{count} piste"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:303
-#, fuzzy, rust-format
+#, rust-format
 msgid "{count} values"
-msgstr "{count} pistes"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:5
 msgid "Add to queue"
 msgstr "Ajouter à la file d’attente"
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:6
-#, fuzzy
 msgid "Add to playlist"
-msgstr "Nouvelle liste de lecture"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:8
 msgid "Create instrumental"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:9
-#, fuzzy
 msgid "Move to top"
-msgstr "Déplacer vers la corbeille"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:10
-#, fuzzy
 msgid "Go to album"
-msgstr "Aller à l’artiste"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:11
 msgid "Go to artist"
 msgstr "Aller à l’artiste"
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:15
-#, fuzzy
 msgid "New playlist…"
-msgstr "Nouvelle liste de lecture"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:16
-#, fuzzy
 msgid "Remove from playlist"
-msgstr "Retirer de la bibliothèque…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:22
-#, fuzzy, rust-format
+#, rust-format
 msgid "Remove {count} from playlist"
-msgstr "{count} piste retirée de la liste de lecture"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:29
-#, fuzzy
 msgid "Remove from queue"
-msgstr "Retirer de la bibliothèque…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:30
-#, fuzzy, rust-format
+#, rust-format
 msgid "Remove {count} from queue"
-msgstr "{count} piste ajoutée à la file d’attente"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:38
-#, fuzzy, rust-format
+#, rust-format
 msgid "Remove {count} from library…"
-msgstr "Retirer de la bibliothèque…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:43
-#, fuzzy, rust-format
+#, rust-format
 msgid "Move {count} to Trash…"
-msgstr "Déplacer vers la corbeille…"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:65
 #, rust-format
@@ -3120,28 +3099,28 @@ msgid "Queued {count} instrumental conversions"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:75
-#, fuzzy, rust-format
+#, rust-format
 msgid "{count} already exists"
-msgstr "{count} pistes"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:76
-#, fuzzy, rust-format
+#, rust-format
 msgid "{count} already exist"
-msgstr "{count} pistes"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:84
 msgid "Could not queue instrumental conversion"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:90
-#, fuzzy, rust-format
+#, rust-format
 msgid "Moved {count} track to top"
-msgstr "{count} piste"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:91
-#, fuzzy, rust-format
+#, rust-format
 msgid "Moved {count} tracks to top"
-msgstr "{count} pistes"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:13
 msgid "Eject device"
