@@ -13,6 +13,7 @@ pub const PLUGIN_LISTENBRAINZ_DESCRIPTION: &str =
 pub const PLUGIN_LASTFM_DESCRIPTION: &str =
     N_!("Scrobble completed listens to Last.fm (network; off by default)");
 pub const SCROBBLING: &str = N_!("Scrobbling");
+pub const SCROBBLING_OPEN_SETTINGS: &str = N_!("Open Scrobbling Settings");
 pub const SCROBBLING_CONNECT_SERVICES: &str = N_!("Connect ListenBrainz, Last.fm, or both");
 pub const SCROBBLING_LISTENBRAINZ_ENABLED: &str = N_!("ListenBrainz enabled");
 pub const SCROBBLING_LASTFM_ENABLED: &str = N_!("Last.fm enabled");

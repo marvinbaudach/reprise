@@ -10,7 +10,7 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use reprise_core::scrobbling::{ListenBrainzClient, ScrobblerTransport, TransportError};
+use reprise_core::scrobbling::{ScrobblerTransport, TransportError};
 use rusqlite::Connection;
 
 use crate::ui::scrobble_runtime::{ConnectionStatus, ScrobbleRuntime};
@@ -226,7 +226,10 @@ pub(in crate::ui) fn bootstrap(conn: &Rc<RefCell<Connection>>, runtime: &Rc<Scro
         };
         match listenbrainz_secret::load().await {
             Ok(Some(token)) if !token.trim().is_empty() => {
-                runtime.configure(token, Box::new(ListenBrainzClient::new()));
+                runtime.configure(
+                    token,
+                    Box::new(crate::ui::scrobbling::smoke::listenbrainz_client()),
+                );
             }
             Ok(_) => {
                 if let Err(error) = reprise_core::modules::set_enabled(
@@ -352,7 +355,7 @@ impl PreferencesContext {
                         }
                     };
                     trigger.trigger(move || {
-                        ListenBrainzClient::new()
+                        crate::ui::scrobbling::smoke::listenbrainz_client()
                             .validate_token(&token)
                             .map_err(|e| map_transport_error(&e))
                     });
@@ -437,7 +440,7 @@ impl PreferencesContext {
             .report_status(&ConnectionStatus::Connecting);
         let receiver = match one_shot_task::spawn("reprise-listenbrainz-validate", {
             let token = token.clone();
-            move || ListenBrainzClient::new().validate_token(&token)
+            move || crate::ui::scrobbling::smoke::listenbrainz_client().validate_token(&token)
         }) {
             Ok(receiver) => receiver,
             Err(error) => {
@@ -509,8 +512,10 @@ impl PreferencesContext {
     fn enable_listenbrainz(&self, row: &adw::ExpanderRow, token: String) {
         if self.persist_listenbrainz_enabled(true) {
             self.set_listenbrainz_switch(row, true);
-            self.listenbrainz
-                .configure(token, Box::new(ListenBrainzClient::new()));
+            self.listenbrainz.configure(
+                token,
+                Box::new(crate::ui::scrobbling::smoke::listenbrainz_client()),
+            );
         } else {
             self.restore_listenbrainz_switch(row);
         }
