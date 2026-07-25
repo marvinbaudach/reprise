@@ -77,6 +77,7 @@ fn run_with_db(
         Command::Library { action } => match action {
             LibraryAction::Summary => commands::library::summary(&conn, json),
         },
+        Command::Concerts { action } => commands::concerts::run(&conn, &action, json),
         Command::Scan { path } => commands::scan::run(&mut conn, path, json),
         Command::Events { action } => match action {
             EventsAction::Tail { since } => commands::events::tail(&conn, since, json),

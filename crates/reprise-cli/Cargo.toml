@@ -43,6 +43,7 @@ reprise-core = { path = "../reprise-core" }
 clap = { version = "4", features = ["derive"] }
 serde_json = "1.0"
 rusqlite = { version = "0.40", features = ["bundled"] }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 # --- Feature `worker` only (removable ML job host) --------------------------
 # `reprise-stems` is the removable stem-separation backend crate; it may only

@@ -1,6 +1,8 @@
-//! The stdio MCP server: two resources and two tools over `reprise-core`.
+//! The stdio MCP server: three resources and read/write tools over
+//! `reprise-core`.
 //!
-//! Resources: `reprise://library/summary`, `reprise://playlists`.
+//! Resources: `reprise://library/summary`, `reprise://playlists`, and
+//! `reprise://concerts`.
 //! Tools: `music_search_tracks` (read), `music_create_playlist` (write, gated
 //! on the `playlist:create` capability). All blocking database work runs on
 //! `spawn_blocking`; the handler itself holds only the database path and the
@@ -31,6 +33,8 @@ use crate::error;
 pub const RESOURCE_LIBRARY_SUMMARY: &str = "reprise://library/summary";
 /// URI of the playlist-listing resource.
 pub const RESOURCE_PLAYLISTS: &str = "reprise://playlists";
+/// URI of the filtered upcoming-concert listing.
+pub const RESOURCE_CONCERTS: &str = "reprise://concerts";
 
 const RESOURCE_MIME_JSON: &str = "application/json";
 
@@ -356,6 +360,12 @@ impl ServerHandler for RepriseServer {
             Resource::new(RESOURCE_PLAYLISTS, "playlists")
                 .with_description("Manual playlists: id, name and track count (no paths).")
                 .with_mime_type(RESOURCE_MIME_JSON),
+            Resource::new(RESOURCE_CONCERTS, "concerts")
+                .with_description(
+                    "Upcoming concerts for library artists after saved filters: dates, \
+                     venues, cities, ticket links. No file paths.",
+                )
+                .with_mime_type(RESOURCE_MIME_JSON),
         ]))
     }
 
@@ -378,6 +388,13 @@ impl ServerHandler for RepriseServer {
             RESOURCE_PLAYLISTS => {
                 let outcome =
                     tokio::task::spawn_blocking(move || data::list_playlists(path.as_path()))
+                        .await
+                        .map_err(|error| error::join_error(&error))?;
+                error::serialize_resource(&outcome.map_err(error::resource_error)?)?
+            }
+            RESOURCE_CONCERTS => {
+                let outcome =
+                    tokio::task::spawn_blocking(move || data::list_concerts(path.as_path()))
                         .await
                         .map_err(|error| error::join_error(&error))?;
                 error::serialize_resource(&outcome.map_err(error::resource_error)?)?
