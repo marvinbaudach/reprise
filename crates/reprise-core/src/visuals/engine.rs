@@ -432,6 +432,10 @@ mod tests {
         engine.ingest(&hit_frame);
         engine.tick();
         let first_frame = engine.membrane.sample(0.5, 0.5).max(0.0);
+        assert!(
+            first_frame > 1.6,
+            "a full-strength hit must create the large reference-scale dome, got {first_frame}"
+        );
 
         let mut peak = first_frame;
         let mut peak_frame = 0;
