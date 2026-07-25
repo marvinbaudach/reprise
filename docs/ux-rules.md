@@ -1920,6 +1920,11 @@ Ankündigung. Die App refresht ihre *eigenen* Schreibaktionen weiterhin selbst
   Wiedergabe-Queue ist ein Snapshot (`queue::snapshot`); ein Fremd-Write an
   der Bibliothek ändert weder die laufende Wiedergabe noch die Reihenfolge der
   bereits eingereihten Titel.
+- **EXT-5** [geplant] [gtk] — Autorisierte externe Live-Queue-Befehle
+  aktualisieren eine sichtbare Queue geräuschlos an Ort und Stelle: kein
+  Toast, kein Fokus-, Selektions- oder Scrollpositionsverlust. Fehlende oder
+  unbekannte Tracks werden nicht eingereiht.
+  <!-- REVIEW: Regelvorschlag -->
 
 ## AB. Instrumental-Fassungen (experimentell)
 

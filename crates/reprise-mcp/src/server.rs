@@ -506,6 +506,22 @@ impl RepriseServer {
                 )
             });
         }
+        let track_ids = match &action {
+            crate::playback::QueueAction::AddNext(ids)
+            | crate::playback::QueueAction::AddLast(ids) => Some(ids.clone()),
+            crate::playback::QueueAction::Status | crate::playback::QueueAction::Clear => None,
+        };
+        if let Some(track_ids) = track_ids {
+            let path = self.db_path.clone();
+            let outcome = tokio::task::spawn_blocking(move || {
+                data::validate_present_track_ids(path.as_path(), &track_ids)
+            })
+            .await
+            .map_err(|error| error::join_error(&error))?;
+            if let Err(err) = outcome {
+                return error::into_tool_outcome(err);
+            }
+        }
         let result = tokio::task::spawn_blocking(move || crate::playback::queue_mutate(action))
             .await
             .map_err(|error| error::join_error(&error))?;
