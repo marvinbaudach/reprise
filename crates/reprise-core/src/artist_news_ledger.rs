@@ -49,7 +49,16 @@ pub(crate) fn record_attempt(
             artist_mbid,
             now,
             outcome.as_str(),
-            i64::try_from(releases_found).unwrap_or(i64::MAX),
+            // Every call site passes either a literal `0` (failed/unmatched
+            // attempts) or `items.len()` from `parse_release_groups`, which
+            // truncates its result to `MAX_ITEMS` (20, see
+            // artist_news_parsing.rs) before returning — so this can never
+            // approach `i64::MAX`. `unwrap_or(i64::MAX)` used to silently
+            // substitute a bogus count if that invariant were ever violated;
+            // `expect` documents the invariant and fails loudly instead of
+            // lying about how many releases were found.
+            i64::try_from(releases_found)
+                .expect("releases_found is bounded by MAX_ITEMS, see artist_news_parsing"),
         ],
     )?;
     Ok(())
