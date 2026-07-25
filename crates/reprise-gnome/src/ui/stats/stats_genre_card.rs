@@ -9,6 +9,7 @@ use reprise_core::library::stats_snapshot::{GenreSection, GenreSegment};
 
 use super::stats_view_widgets::label;
 use crate::ui::cover_loader::CoverLoader;
+use crate::ui::motion_slide::SlideBin;
 use crate::ui::strings;
 
 type StringCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
@@ -23,6 +24,7 @@ pub(in crate::ui) struct StatsGenreCard {
     on_unify: StringCallback,
     on_open_album_path: StringCallback,
     on_open_genre: StringCallback,
+    segment_slides: Rc<RefCell<Vec<SlideBin>>>,
     #[cfg_attr(not(test), allow(dead_code))]
     cover_buttons: Rc<RefCell<Vec<gtk4::Button>>>,
     #[cfg_attr(not(test), allow(dead_code))]
@@ -54,6 +56,7 @@ impl StatsGenreCard {
             on_unify: Rc::new(RefCell::new(None)),
             on_open_album_path: Rc::new(RefCell::new(None)),
             on_open_genre: Rc::new(RefCell::new(None)),
+            segment_slides: Rc::new(RefCell::new(Vec::new())),
             cover_buttons: Rc::new(RefCell::new(Vec::new())),
             genre_buttons: Rc::new(RefCell::new(Vec::new())),
         }
@@ -68,6 +71,7 @@ impl StatsGenreCard {
         clear_grid(&self.tiles);
         self.cover_buttons.borrow_mut().clear();
         self.genre_buttons.borrow_mut().clear();
+        self.segment_slides.borrow_mut().clear();
         let token = self.cover_generation.get().wrapping_add(1);
         self.cover_generation.set(token);
         self.render_segments(section);
@@ -113,7 +117,9 @@ impl StatsGenreCard {
                 bar.set_can_target(false);
             }
             let width = segment.share_percent.max(1) as i32;
-            self.segments.attach(&bar, column, 0, width, 1);
+            let slide = SlideBin::new(&bar);
+            self.segments.attach(&slide, column, 0, width, 1);
+            self.segment_slides.borrow_mut().push(slide);
             column += width;
         }
     }
@@ -211,6 +217,10 @@ impl StatsGenreCard {
 
     pub(in crate::ui) fn set_on_open_genre(&self, callback: impl Fn(String) + 'static) {
         *self.on_open_genre.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(super) fn segment_slides(&self) -> Vec<SlideBin> {
+        self.segment_slides.borrow().clone()
     }
 }
 

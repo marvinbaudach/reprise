@@ -1519,13 +1519,23 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   jeden Play gilt unverändert der Leerzustand aus STATS-6/STATS-6c samt
   bedienbarer Zeitraumwahl.
 - **STATS-17** [aktiv] [gtk] — Die Seite animiert genau einmal pro Öffnen:
-  Hero-Zahl zählt hoch, das Chart zeichnet sich von links nach rechts, Karten
-  faden gestaffelt ein, Balken wachsen auf ihren Zielwert; alle Dauern sind
-  benannte Motion-Tokens, das Gesamtbudget bleibt unter einer Sekunde
-  (Design-Intent, manuell geprüft). Ein Zeitraumwechsel wiederholt die
-  Choreografie nie, sondern interpoliert nur Zahlen und Balken kurz auf die
-  neuen Werte. Bei `gtk-enable-animations=false` steht alles sofort im
-  Endzustand.
+  Kopfzeile und Hero-Zahl faden ab 0 ms über 350 ms ein und gleiten dabei
+  12 px aufwärts; der Zähler startet nach 100 ms und läuft 900 ms. Die
+  KPI-Gruppe folgt als Einheit ab 250 ms über 400 ms mit 8 px Weg. Das Chart
+  enthüllt sich ab 500 ms über 700 ms von links nach rechts; bei 85 % des
+  Reveals faden Best-Week-Marker und Label 200 ms ein. Band-, Songs- und
+  Genre-Karte starten ab 900 ms mit je 120 ms Versatz, faden über 450 ms ein
+  und gleiten 16 px aufwärts. Ihre Balken beginnen jeweils 150 ms nach dem
+  Kartenstart, wachsen über 500 ms und folgen von oben nach unten mit 60 ms
+  Versatz; Genre-Segmente wachsen entsprechend nacheinander von links.
+  Sämtliche Pfade nutzen benannte Motion-Tokens und Ease-out-expo; das
+  verbindliche Gesamtbudget liegt durch die letzte Staffelung bei rund zwei
+  Sekunden. Karten, die beim Öffnen vollständig unterhalb des sichtbaren
+  `ScrolledWindow`-Ausschnitts liegen, überspringen die Choreografie und
+  stehen sofort im Endzustand. Ein Zeitraumwechsel wiederholt Slides und
+  Fades nie, sondern interpoliert nur Zahl und Balkenbreiten über 250 ms. Bei
+  `gtk-enable-animations=false` stehen einschließlich aller Slide-Offsets
+  sofort alle Elemente im Endzustand.
 
 ## W. Buttons & Interaktionszustände
 

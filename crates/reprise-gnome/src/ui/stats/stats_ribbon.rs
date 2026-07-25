@@ -33,6 +33,7 @@ struct RibbonData {
     sparse_weeks: bool,
     since_label: Option<String>,
     reveal_fraction: f64,
+    marker_opacity: f64,
 }
 
 impl Default for RibbonData {
@@ -47,6 +48,7 @@ impl Default for RibbonData {
             sparse_weeks: false,
             since_label: None,
             reveal_fraction: 1.0,
+            marker_opacity: 1.0,
         }
     }
 }
@@ -201,6 +203,7 @@ impl StatsRibbon {
             sparse_weeks,
             since_label,
             reveal_fraction: 1.0,
+            marker_opacity: 1.0,
         };
         self.set_reveal_fraction(1.0);
     }
@@ -210,9 +213,19 @@ impl StatsRibbon {
         self.area.queue_draw();
     }
 
+    pub(in crate::ui) fn set_marker_opacity(&self, opacity: f64) {
+        self.data.borrow_mut().marker_opacity = opacity.clamp(0.0, 1.0);
+        self.area.queue_draw();
+    }
+
     #[cfg(test)]
     pub(in crate::ui) fn reveal_fraction(&self) -> f64 {
         self.data.borrow().reveal_fraction
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn marker_opacity(&self) -> f64 {
+        self.data.borrow().marker_opacity
     }
 }
 
@@ -396,7 +409,7 @@ fn draw_best_week_marker(
     let Some(point) = marker(layout, index) else {
         return;
     };
-    context.set_source_rgba(red, green, blue, alpha);
+    context.set_source_rgba(red, green, blue, alpha * data.marker_opacity);
     context.set_line_width(1.0);
     context.set_dash(&[4.0, 4.0], 0.0);
     context.move_to(point.x, 0.0);
