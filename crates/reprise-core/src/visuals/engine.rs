@@ -1,8 +1,8 @@
 //! The portable visual engine: owns every piece of reactive state a
-//! visualizer needs (eased bands, envelopes, water, impact overlay, accent
-//! palette) and turns [`SpectrumFrame`]s into a resolution-independent
+//! visualizer needs (eased bands, envelopes, membrane, impact overlay,
+//! accent palette) and turns [`SpectrumFrame`]s into a resolution-independent
 //! [`Scene`] a frontend can draw however it likes. No frontend ever touches
-//! easing constants or per-mode geometry directly — it only feeds frames in
+//! easing constants or Grid geometry directly — it only feeds frames in
 //! via [`VisualEngine::ingest`], steps the clock via [`VisualEngine::tick`],
 //! and reads a [`Scene`] back out via [`VisualEngine::scene`].
 //!
@@ -55,34 +55,9 @@ const PROFILE_GROUP: usize = SPECTRUM_BAND_COUNT / 4;
 /// Secondary accent hue offset when no cover-derived accent is available.
 const FALLBACK_ACCENT2_HUE_SHIFT: f32 = 42.0;
 
-/// Which of the 4 visual treatments the engine currently renders.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum VisualMode {
-    #[default]
-    Grid,
-    Bars,
-    Flow,
-    Pulse,
-}
-
-impl VisualMode {
-    pub const ALL: [Self; 4] = [Self::Grid, Self::Bars, Self::Flow, Self::Pulse];
-
-    /// Stable, lowercase identifier: used for widget names and persisted
-    /// settings, so it must never change once shipped.
-    pub fn id(self) -> &'static str {
-        match self {
-            Self::Grid => "grid",
-            Self::Bars => "bars",
-            Self::Flow => "flow",
-            Self::Pulse => "pulse",
-        }
-    }
-}
-
-/// The per-frame render inputs a mode's `scene` builder needs. Borrowed from
-/// the engine for the lifetime of one [`VisualEngine::scene`] call — modes
-/// never own or mutate engine state, they only read it.
+/// The per-frame render inputs the Grid scene builder needs. Borrowed from
+/// the engine for the lifetime of one [`VisualEngine::scene`] call — the
+/// renderer never owns or mutates engine state, it only reads it.
 pub struct ModeCtx<'a> {
     /// UI-smoothed, post-AGC display bands (`0..=1`).
     pub bands: &'a [f32; SPECTRUM_BAND_COUNT],
@@ -146,12 +121,11 @@ fn envelope_up(current: f32, raw: f32, release: f32) -> f32 {
 
 /// Owns every piece of state a visualizer needs across frames: eased spectrum
 /// bands and their peak-hold markers, the `level`/`mid`/`high` envelopes, the
-/// water surface, and impact overlay, plus the accent palette. Frontends
+/// membrane surface, and impact overlay, plus the accent palette. Frontends
 /// drive it with [`ingest`](Self::ingest)/[`tick`](Self::tick) and
 /// read a [`Scene`] back with [`scene`](Self::scene) — no frontend ever
-/// touches easing constants or per-mode geometry directly.
+/// touches easing constants or Grid geometry directly.
 pub struct VisualEngine {
-    mode: VisualMode,
     bands_current: [f32; SPECTRUM_BAND_COUNT],
     bands_target: [f32; SPECTRUM_BAND_COUNT],
     bands_peaks: [f32; SPECTRUM_BAND_COUNT],
@@ -181,7 +155,6 @@ impl Default for VisualEngine {
 impl VisualEngine {
     pub fn new() -> Self {
         Self {
-            mode: VisualMode::default(),
             bands_current: [0.0; SPECTRUM_BAND_COUNT],
             bands_target: [0.0; SPECTRUM_BAND_COUNT],
             bands_peaks: [0.0; SPECTRUM_BAND_COUNT],
@@ -198,14 +171,6 @@ impl VisualEngine {
             accent: (0.5, 0.5, 0.5),
             cover_accent2: None,
         }
-    }
-
-    pub fn set_mode(&mut self, mode: VisualMode) {
-        self.mode = mode;
-    }
-
-    pub fn mode(&self) -> VisualMode {
-        self.mode
     }
 
     /// Pauses drift (the tick loop stops feeding fresh frames in) and
@@ -366,8 +331,8 @@ impl VisualEngine {
     }
 
     /// Builds the resolution-independent scene for this instant: an accent
-    /// wash first, then the current mode's shapes, then a soft flash overlay
-    /// while a drop/slam is still decaying.
+    /// wash first, then the Grid shapes, then a soft flash overlay while a
+    /// drop/slam is still decaying.
     pub fn scene(&self, width: f32, height: f32) -> Scene {
         let ctx = self.make_ctx(width, height);
         let mut shapes = Vec::new();
@@ -382,7 +347,7 @@ impl VisualEngine {
             glow: 0.0,
             dash: None,
         });
-        shapes.extend(modes::build_scene(self.mode, &ctx));
+        shapes.extend(modes::build_scene(&ctx));
         let flash = self.impact.flash();
         if flash > 0.0 {
             shapes.push(Shape {
@@ -404,8 +369,8 @@ impl VisualEngine {
 /// Builds an engine that has just been hammered by a beat-then-slam: playing,
 /// accented, 20 silent frames (settles the envelopes at rest) followed by 10
 /// full-scale frames (fires a beat, a kick, and pins the bands high). Shared
-/// by every mode's tests (Tasks 11–17) so each one can exercise a "lively"
-/// scene without re-deriving this fixture.
+/// by Grid tests so they can exercise a "lively" scene without re-deriving
+/// this fixture.
 #[cfg(test)]
 pub(crate) fn lively_engine() -> VisualEngine {
     use crate::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
@@ -425,9 +390,8 @@ pub(crate) fn lively_engine() -> VisualEngine {
     engine
 }
 
-/// Borrows a [`ModeCtx`] out of an engine for direct per-mode testing
-/// (Tasks 11–17), without going through the full [`VisualEngine::scene`]
-/// wash + flash wrapping.
+/// Borrows a [`ModeCtx`] out of an engine for direct Grid testing, without
+/// going through the full [`VisualEngine::scene`] wash + flash wrapping.
 #[cfg(test)]
 pub(crate) fn test_ctx(engine: &VisualEngine, width: f32, height: f32) -> ModeCtx<'_> {
     engine.make_ctx(width, height)
@@ -439,36 +403,11 @@ mod tests {
     use crate::visuals::color;
 
     #[test]
-    fn every_mode_builds_a_finite_sane_nonempty_scene() {
-        let mut engine = lively_engine();
-        for mode in VisualMode::ALL {
-            engine.set_mode(mode);
-            let scene = engine.scene(548.0, 300.0);
-            assert!(scene.shapes.len() > 1, "{mode:?} must draw beyond the wash");
-            assert!(scene.is_finite_and_sane(548.0, 300.0), "{mode:?}");
-        }
-    }
-
-    #[test]
-    fn engine_reacts_to_a_slam_with_full_bars_and_kick() {
-        let mut engine = lively_engine();
-        engine.set_mode(VisualMode::Bars);
+    fn grid_builds_a_finite_sane_nonempty_scene() {
+        let engine = lively_engine();
         let scene = engine.scene(548.0, 300.0);
-        // Bars mode: with AGC + snap attack, a slam reaches large bar lengths.
-        let max_len = scene
-            .shapes
-            .iter()
-            .filter_map(|s| match &s.geom {
-                Geom::Polyline { points, .. } if points.len() == 2 => {
-                    Some((points[0].1 - points[1].1).abs())
-                }
-                _ => None,
-            })
-            .fold(0.0_f32, f32::max);
-        assert!(
-            max_len > 150.0,
-            "slam should nearly fill the canvas, got {max_len}"
-        );
+        assert!(scene.shapes.len() > 1, "Grid must draw beyond the wash");
+        assert!(scene.is_finite_and_sane(548.0, 300.0));
     }
 
     /// AC-11: continuous motion exists only during playback. A playing engine
@@ -515,9 +454,8 @@ mod tests {
         assert!(delta < 3.0);
     }
 
-    /// Exercises the `test_ctx` helper future mode tasks (11-17) will reuse
-    /// to build a `ModeCtx` directly, without going through `scene`'s wash
-    /// and flash wrapping.
+    /// Exercises the `test_ctx` helper Grid tests reuse to build a `ModeCtx`
+    /// directly, without going through `scene`'s wash and flash wrapping.
     #[test]
     fn test_ctx_borrows_a_matching_mode_ctx() {
         let engine = lively_engine();

@@ -3,7 +3,7 @@
 //! Beats and drops spawn short-lived ornaments — expanding shockwaves, radiating
 //! spark bursts, a soft full-canvas dynamics glow, a brief accent brightness
 //! lift, and a kick envelope for punchy scale/shake — that sit on top of the
-//! per-mode geometry and decay independently in the tick loop. This is what
+//! Grid geometry and decay independently in the tick loop. This is what
 //! turns a measured gauge into something playful and worth watching.
 //! Everything is bounded by fixed-capacity pools: a beat storm never
 //! allocates or grows without limit.
