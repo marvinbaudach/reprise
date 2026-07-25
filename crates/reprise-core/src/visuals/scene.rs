@@ -19,30 +19,8 @@ pub enum Geom {
         points: Vec<(f32, f32)>,
         closed: bool,
     },
-    Arc {
-        cx: f32,
-        cy: f32,
-        r: f32,
-        a0: f32,
-        a1: f32,
-    },
-    Disc {
-        cx: f32,
-        cy: f32,
-        r: f32,
-    },
-    Rect {
-        x: f32,
-        y: f32,
-        w: f32,
-        h: f32,
-    },
     /// Filled radial gradient: fill color at center → transparent at r.
-    RadialGlow {
-        cx: f32,
-        cy: f32,
-        r: f32,
-    },
+    RadialGlow { cx: f32, cy: f32, r: f32 },
 }
 
 #[derive(Clone, Debug)]
@@ -103,35 +81,6 @@ impl Scene {
                         }
                     }
                 }
-                Geom::Arc { cx, cy, r, a0, a1 } => {
-                    if !cx.is_finite()
-                        || !cy.is_finite()
-                        || !r.is_finite()
-                        || !a0.is_finite()
-                        || !a1.is_finite()
-                    {
-                        return false;
-                    }
-                    if cx.abs() > bound || cy.abs() > bound || r.abs() > bound {
-                        return false;
-                    }
-                }
-                Geom::Disc { cx, cy, r } => {
-                    if !cx.is_finite() || !cy.is_finite() || !r.is_finite() {
-                        return false;
-                    }
-                    if cx.abs() > bound || cy.abs() > bound || r.abs() > bound {
-                        return false;
-                    }
-                }
-                Geom::Rect { x, y, w, h } => {
-                    if !x.is_finite() || !y.is_finite() || !w.is_finite() || !h.is_finite() {
-                        return false;
-                    }
-                    if x.abs() > bound || y.abs() > bound || w.abs() > bound || h.abs() > bound {
-                        return false;
-                    }
-                }
                 Geom::RadialGlow { cx, cy, r } => {
                     if !cx.is_finite() || !cy.is_finite() || !r.is_finite() {
                         return false;
@@ -154,7 +103,7 @@ mod tests {
     #[test]
     fn sanity_accepts_bounded_and_rejects_nan() {
         let ok = Shape {
-            geom: Geom::Disc {
+            geom: Geom::RadialGlow {
                 cx: 10.0,
                 cy: 10.0,
                 r: 3.0,
@@ -174,7 +123,7 @@ mod tests {
         }
         .is_finite_and_sane(100.0, 100.0));
         let mut bad = ok;
-        bad.geom = Geom::Disc {
+        bad.geom = Geom::RadialGlow {
             cx: f32::NAN,
             cy: 10.0,
             r: 3.0,
