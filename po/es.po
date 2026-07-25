@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-25 10:17+0200\n"
+"POT-Creation-Date: 2026-07-25 16:38+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Spanish\n"
@@ -487,6 +487,7 @@ msgid " · "
 msgstr " · "
 
 #: crates/reprise-gnome/src/ui/strings.rs:338
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:161
 msgid "Title"
 msgstr "Título"
 
@@ -495,11 +496,13 @@ msgid "Cover"
 msgstr "Cubierta"
 
 #: crates/reprise-gnome/src/ui/strings.rs:340
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:162
 #: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:20
 msgid "Artist"
 msgstr "Artista"
 
 #: crates/reprise-gnome/src/ui/strings.rs:341
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:163
 #: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:21
 msgid "Album"
 msgstr "Álbum"
@@ -509,11 +512,13 @@ msgid "Track"
 msgstr "Pista"
 
 #: crates/reprise-gnome/src/ui/strings.rs:343
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:167
 #: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:19
 msgid "Genre"
 msgstr "Género"
 
 #: crates/reprise-gnome/src/ui/strings.rs:344
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:165
 #: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:22
 msgid "Year"
 msgstr "Año"
@@ -721,6 +726,7 @@ msgid "Could not remove tracks from library"
 msgstr "No se pudieron quitar las pistas de la biblioteca"
 
 #: crates/reprise-gnome/src/ui/strings.rs:520
+#: crates/reprise-gnome/src/ui/strings_scan.rs:7
 #: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:15
 msgid "Retry"
 msgstr "Reintentar"
@@ -780,6 +786,7 @@ msgstr ""
 "nuevo"
 
 #: crates/reprise-gnome/src/ui/strings.rs:605
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:267
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:151
 #, rust-format
 msgid "{count} track"
@@ -1172,6 +1179,7 @@ msgid "File missing since {date}"
 msgstr "Archivo ausente desde {date}"
 
 #: crates/reprise-gnome/src/ui/strings_issues.rs:62
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:13
 msgid "Show in Missing files"
 msgstr "Mostrar en Archivos ausentes"
 
@@ -1317,6 +1325,7 @@ msgid "Open in Tag Editor"
 msgstr "Abrir en el editor de etiquetas"
 
 #: crates/reprise-gnome/src/ui/strings_issues.rs:188
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:12
 msgid "Show in Files"
 msgstr "Mostrar en Archivos"
 
@@ -1372,6 +1381,7 @@ msgstr "{count} fallidos"
 
 #: crates/reprise-gnome/src/ui/strings_issues.rs:201
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:74
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:150
 msgid "Details"
 msgstr "Detalles"
 
@@ -1625,6 +1635,7 @@ msgid "Another tag-writing job is already running"
 msgstr "Ya se está ejecutando otra tarea de escritura de etiquetas"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:73
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:189
 msgid "Revert"
 msgstr "Revertir"
 
@@ -1649,6 +1660,7 @@ msgid "Stale"
 msgstr "Desactualizado"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:80
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:36
 msgid "Failed"
 msgstr "Falló"
 
@@ -1752,6 +1764,7 @@ msgid "{completed}/{total} tracks"
 msgstr "{completed}/{total} pistas"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:195
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:117
 #, rust-format
 msgid "Tags updated · {count} tracks"
 msgstr "Etiquetas actualizadas · {count} pistas"
@@ -2667,6 +2680,551 @@ msgstr ""
 "No se pudo leer el historial de escucha. No falta nada; esta vista "
 "simplemente no pudo cargarlo."
 
+#: crates/reprise-gnome/src/ui/strings_autocomplete.rs:12
+msgid "FROM YOUR LIBRARY"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_autocomplete.rs:13
+#, rust-format
+msgid "Use “{value}” as new artist…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_autocomplete.rs:14
+#, rust-format
+msgid "Use “{value}” as new album…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_autocomplete.rs:16
+#, rust-format
+msgid "Use “{value}” as new album artist…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_autocomplete.rs:17
+#, rust-format
+msgid "Use “{value}” as new genre…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_autocomplete.rs:18
+msgid "Tab"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:11
+#, rust-format
+msgid "End of results — {hidden} tracks hidden by search “{query}”"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:18
+#, rust-format
+msgid "End of results — {hidden} tracks hidden by active filters"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:25
+#, rust-format
+msgid "End of results — {hidden} tracks hidden by search and filters"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:31
+#, fuzzy, rust-format
+msgid "Show all {total} tracks"
+msgstr "Mostrar {count} pista ›"
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:8
+#, fuzzy
+msgid "Instrumental conversions"
+msgstr "Instrumental"
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:9
+#, fuzzy
+msgid "No conversions yet"
+msgstr "Aún no hay música"
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:10
+#, fuzzy
+msgid "Save all"
+msgstr "Ver todo"
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:11
+#, fuzzy
+msgid "Clear playlist"
+msgstr "Lista de reproducción nueva"
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:12
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:180
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:198
+msgid "Save"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:13
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:199
+msgid "Discard"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:14
+msgid "Play"
+msgstr "Reproducir"
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:17
+#, fuzzy
+msgid "Instrumental preview"
+msgstr "Instrumental"
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:32
+#, fuzzy
+msgid "Queued"
+msgstr "Cola"
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:33
+#, fuzzy
+msgid "Processing…"
+msgstr "Conectando…"
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:34
+msgid "Ready — not saved"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:35
+#, fuzzy
+msgid "Saved to library"
+msgstr "¿Quitar de la biblioteca?"
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:52
+msgid "AI"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:53
+msgid "Instrumental · AI-manipulated"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:56
+msgid "Hide AI music"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:64
+msgid "Experimental"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:65
+msgid "Experimental features"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:67
+msgid "Unfinished features with rough edges, off by default."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:68
+msgid "Enable experimental features"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:70
+msgid ""
+"Shows AI instrumental versions across the app: the context-menu trigger, the "
+"conversion view, badges, and the \"Hide AI music\" filter."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:71
+#, fuzzy
+msgid "Instrumental model"
+msgstr "Instrumental"
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:72
+msgid "Vocal-removal model"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:74
+msgid ""
+"Downloaded on first use (~316 MB), verified by checksum, with a licence note "
+"kept beside it."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:76
+msgid "Download"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:81
+msgid ""
+"This build has no stem-separation backend, so the model can't be downloaded "
+"here."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:83
+msgid "Model ready — instrumental rendering is available."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_instrumental.rs:87
+msgid "Verifying…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scan.rs:5
+#, fuzzy
+msgid "Library folder unavailable"
+msgstr "Carpeta de la biblioteca"
+
+#: crates/reprise-gnome/src/ui/strings_scan.rs:6
+#, fuzzy, rust-format
+msgid "{root} not mounted"
+msgstr "no montado"
+
+#: crates/reprise-gnome/src/ui/strings_scan.rs:8
+msgid "1 moved file relinked"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scan.rs:9
+#, fuzzy, rust-format
+msgid "{count} moved files relinked"
+msgstr "{count} archivos"
+
+#: crates/reprise-gnome/src/ui/strings_scan.rs:10
+msgid "1 previously failed file imported"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scan.rs:11
+#, rust-format
+msgid "{count} previously failed files imported"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:4
+msgid "Visual"
+msgstr "Visual"
+
+#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:5
+msgid "Song Visuals"
+msgstr "Visuales de canciones"
+
+#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:6
+msgid "Show local audio-reactive visuals in Now Playing"
+msgstr "Mostrar visuales locales que reaccionan al audio en En reproducción"
+
+#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:7
+msgid "Audio-reactive song visual"
+msgstr "Visual de canción reactiva al audio"
+
+#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:8
+msgid "Grid"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:9
+msgid "Bars"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:10
+msgid "Flow"
+msgstr "Flujo"
+
+#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:11
+msgid "Pulse"
+msgstr "Pulso"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:16
+#, fuzzy
+msgid "Review changes"
+msgstr "Revisar cambios"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:18
+#, rust-format
+msgid "{fields} field"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:19
+#, rust-format
+msgid "{fields} fields"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:20
+#, fuzzy, rust-format
+msgid "{tracks} track affected"
+msgstr "{count} pista seleccionada"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:21
+#, fuzzy, rust-format
+msgid "{tracks} tracks affected"
+msgstr "{count} pista seleccionada"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:47
+msgid "No effective changes"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:52
+#, fuzzy
+msgid "No changes yet"
+msgstr "No hay cambios que revisar"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:54
+#, fuzzy, rust-format
+msgid "{field}: {old} → {new} · {count} track"
+msgstr "Reproduciendo desde {source} · {count} pista"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:55
+#, fuzzy, rust-format
+msgid "{field}: {old} → {new} · {count} tracks"
+msgstr "Reproduciendo desde {source} · {count} pista"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:74
+#, fuzzy, rust-format
+msgid "was: {value}"
+msgstr "{label}: {value}"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:85
+#, fuzzy, rust-format
+msgid "Save · {count} track"
+msgstr "Etiquetas revertidas · {count} pistas"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:86
+#, fuzzy, rust-format
+msgid "Save · {count} tracks"
+msgstr "Etiquetas revertidas · {count} pistas"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:109
+#, fuzzy, rust-format
+msgid "Saving… {done}/{total}"
+msgstr "{done} de {total}"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:116
+#, fuzzy, rust-format
+msgid "Tags updated · {count} track"
+msgstr "Etiquetas actualizadas · {count} pistas"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:132
+#, fuzzy, rust-format
+msgid "Tags updated · {updated} track · {failed} failed"
+msgstr "Se actualizó {updated} pista; falló {failed}"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:134
+#, fuzzy, rust-format
+msgid "Tags updated · {updated} tracks · {failed} failed"
+msgstr "Se actualizó {updated} pista; falló {failed}"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:151
+#, fuzzy
+msgid "Some tracks could not be updated"
+msgstr "No se pudieron leer tus estadísticas"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:152
+#, fuzzy
+msgid "Edit failed tracks…"
+msgstr "Reintentar las pistas fallidas"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:160
+msgid "(multiple values)"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:164
+#, fuzzy
+msgid "Album artist"
+msgstr "Todos los artistas"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:166
+msgid "Track number"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:168
+msgid "Year and track number must be positive whole numbers"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:170
+#, fuzzy
+msgid "Could not open the library database for tag editing"
+msgstr ""
+"No se pudo abrir la base de datos de la biblioteca para quitar las entradas"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:171
+#, fuzzy
+msgid "Could not start the tag-edit worker"
+msgstr "No se pudo iniciar el proceso de eliminación"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:172
+msgid "same on all"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:176
+#, fuzzy
+msgid "Edit Tags"
+msgstr "Editar etiquetas…"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:177
+#, fuzzy, rust-format
+msgid "Edit {count} Tracks"
+msgstr "{count} pistas"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:178
+#, fuzzy
+msgid "per track"
+msgstr "Por pista"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:179
+#, rust-format
+msgid "will be applied to all {count}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:181
+#, fuzzy, rust-format
+msgid "Save {count}"
+msgstr "Valorar con {count} estrella"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:186
+#, fuzzy, rust-format
+msgid "{count} change pending"
+msgstr "{count} cambio"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:188
+#, fuzzy, rust-format
+msgid "{count} changes pending"
+msgstr "{count} cambio"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:196
+#, fuzzy
+msgid "Save changes?"
+msgstr "Revisar cambios"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:201
+#, fuzzy, rust-format
+msgid "Discard changes to {count} track?"
+msgstr "El último análisis volvió a vincular {count} pistas"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:202
+#, fuzzy, rust-format
+msgid "Discard changes to {count} tracks?"
+msgstr "El último análisis volvió a vincular {count} pistas"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:218
+msgid "Keep editing"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:226
+msgid "Save Tags"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:230
+msgid "Change cover…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:234
+msgid "Only changed fields will be written to all selected tracks"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:235
+msgid "Per-track field — edit tracks individually"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:277
+#, fuzzy, rust-format
+msgid "{count} cover"
+msgid_plural "{count} covers"
+msgstr[0] "{count} hora"
+msgstr[1] "{count} horas"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:286
+#, fuzzy, rust-format
+msgid "Track {position} of {total}"
+msgstr "{done} de {total}"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:302
+#, fuzzy, rust-format
+msgid "{count} value"
+msgstr "{count} álbum"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:303
+#, fuzzy, rust-format
+msgid "{count} values"
+msgstr "{count} archivos"
+
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:5
+msgid "Add to queue"
+msgstr "Añadir a la cola"
+
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:6
+#, fuzzy
+msgid "Add to playlist"
+msgstr "Lista de reproducción nueva"
+
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:8
+#, fuzzy
+msgid "Create instrumental"
+msgstr "Instrumental"
+
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:9
+#, fuzzy
+msgid "Move to top"
+msgstr "Mover a la papelera"
+
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:10
+#, fuzzy
+msgid "Go to album"
+msgstr "{count} álbum"
+
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:11
+msgid "Go to artist"
+msgstr "Ir al artista"
+
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:15
+#, fuzzy
+msgid "New playlist…"
+msgstr "Lista de reproducción nueva"
+
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:16
+#, fuzzy
+msgid "Remove from playlist"
+msgstr "¿Quitar de la biblioteca?"
+
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:22
+#, fuzzy, rust-format
+msgid "Remove {count} from playlist"
+msgstr "Quitar los {count} de la biblioteca"
+
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:29
+#, fuzzy
+msgid "Remove from queue"
+msgstr "Se quitó una pista de la cola"
+
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:30
+#, fuzzy, rust-format
+msgid "Remove {count} from queue"
+msgstr "Se quitaron {count} pistas de la cola"
+
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:38
+#, fuzzy, rust-format
+msgid "Remove {count} from library…"
+msgstr "Quitar los {count} de la biblioteca"
+
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:43
+#, fuzzy, rust-format
+msgid "Move {count} to Trash…"
+msgstr "Mover a la papelera…"
+
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:65
+#, rust-format
+msgid "Queued {count} instrumental conversion"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:66
+#, rust-format
+msgid "Queued {count} instrumental conversions"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:75
+#, fuzzy, rust-format
+msgid "{count} already exists"
+msgstr "{count} artista"
+
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:76
+#, fuzzy, rust-format
+msgid "{count} already exist"
+msgstr "{count} artista"
+
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:84
+#, fuzzy
+msgid "Could not queue instrumental conversion"
+msgstr "No se pudieron comprobar las carátulas"
+
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:90
+#, fuzzy, rust-format
+msgid "Moved {count} track to top"
+msgstr "Se quitaron {count} pistas de la cola"
+
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:91
+#, fuzzy, rust-format
+msgid "Moved {count} tracks to top"
+msgstr "Se quitaron {count} pistas de la cola"
+
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:13
 msgid "Eject device"
 msgstr "Expulsar dispositivo"
@@ -3110,9 +3668,6 @@ msgstr "Barra de título independiente"
 #~ "¿Quitar {count} pistas de la biblioteca? Los archivos de música "
 #~ "permanecerán en el disco."
 
-#~ msgid "Play"
-#~ msgstr "Reproducir"
-
 #~ msgid "Pause"
 #~ msgstr "Pausa"
 
@@ -3122,26 +3677,8 @@ msgstr "Barra de título independiente"
 #~ msgid "Song analysis"
 #~ msgstr "Análisis de la canción"
 
-#~ msgid "Visual"
-#~ msgstr "Visual"
-
-#~ msgid "Song Visuals"
-#~ msgstr "Visuales de canciones"
-
-#~ msgid "Show local audio-reactive visuals in Now Playing"
-#~ msgstr "Mostrar visuales locales que reaccionan al audio en En reproducción"
-
 #~ msgid "Rings"
 #~ msgstr "Anillos"
-
-#~ msgid "Flow"
-#~ msgstr "Flujo"
-
-#~ msgid "Pulse"
-#~ msgstr "Pulso"
-
-#~ msgid "Audio-reactive song visual"
-#~ msgstr "Visual de canción reactiva al audio"
 
 #~ msgid "F11 Fullscreen · color follows the cover accent"
 #~ msgstr "F11 Pantalla completa · el color sigue el acento de la portada"
@@ -3200,9 +3737,6 @@ msgstr "Barra de título independiente"
 
 #~ msgid "Cancel analysis"
 #~ msgstr "Cancelar el análisis"
-
-#~ msgid "Retry failed tracks"
-#~ msgstr "Reintentar las pistas fallidas"
 
 #~ msgid "Reanalyze library"
 #~ msgstr "Volver a analizar la biblioteca"
@@ -3305,12 +3839,6 @@ msgstr "Barra de título independiente"
 #~ msgid "No albums match \"{}\""
 #~ msgstr "Ningún álbum coincide con «{}»"
 
-#~ msgid "Add to queue"
-#~ msgstr "Añadir a la cola"
-
-#~ msgid "Go to artist"
-#~ msgstr "Ir al artista"
-
 #~ msgid "Stop Playback"
 #~ msgstr "Detener la reproducción"
 
@@ -3336,23 +3864,11 @@ msgstr "Barra de título independiente"
 #~ msgid "Unknown Artist"
 #~ msgstr "Artista desconocido"
 
-#, rust-format
-#~ msgid "{count} album"
-#~ msgid_plural "{count} albums"
-#~ msgstr[0] "{count} álbum"
-#~ msgstr[1] "{count} álbumes"
-
 #~ msgid "A–Z"
 #~ msgstr "A–Z"
 
 #~ msgid "Recently played"
 #~ msgstr "Reproducidas recientemente"
-
-#, rust-format
-#~ msgid "{count} artist"
-#~ msgid_plural "{count} artists"
-#~ msgstr[0] "{count} artista"
-#~ msgstr[1] "{count} artistas"
 
 #~ msgid "ARTIST"
 #~ msgstr "ARTISTA"
@@ -3382,12 +3898,6 @@ msgstr "Barra de título independiente"
 #~ msgstr "Este artista aún no tiene álbumes."
 
 #, rust-format
-#~ msgid "{count} hour"
-#~ msgid_plural "{count} hours"
-#~ msgstr[0] "{count} hora"
-#~ msgstr[1] "{count} horas"
-
-#, rust-format
 #~ msgid "{count} play this year"
 #~ msgid_plural "{count} plays this year"
 #~ msgstr[0] "{count} reproducción este año"
@@ -3398,12 +3908,6 @@ msgstr "Barra de título independiente"
 #~ msgid_plural "{count} plays"
 #~ msgstr[0] "{count} reproducción"
 #~ msgstr[1] "{count} reproducciones"
-
-#, rust-format
-#~ msgid "Show all {count} track ›"
-#~ msgid_plural "Show all {count} tracks ›"
-#~ msgstr[0] "Mostrar {count} pista ›"
-#~ msgstr[1] "Mostrar las {count} pistas ›"
 
 #, rust-format
 #~ msgid ""
