@@ -307,6 +307,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             let sidebar = sidebar.clone();
             let track_list = track_list.clone();
             let content_stack = content_stack.clone();
+            let window_title = window_title.clone();
             let active_content_focus = active_content_focus.clone();
             back_action.connect_activate(move |_, _| {
                 let Some(place) = nav_history.go_back_from(track_list.browser_place()) else {
@@ -324,6 +325,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                     &sidebar,
                     &track_list,
                     &content_stack,
+                    &window_title,
                     &active_content_focus,
                     "nav back",
                 );
@@ -341,6 +343,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             let sidebar = sidebar.clone();
             let track_list = track_list.clone();
             let content_stack = content_stack.clone();
+            let window_title = window_title.clone();
             let active_content_focus = active_content_focus.clone();
             forward_action.connect_activate(move |_, _| {
                 let Some(place) = nav_history.go_forward_from(track_list.browser_place()) else {
@@ -358,6 +361,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                     &sidebar,
                     &track_list,
                     &content_stack,
+                    &window_title,
                     &active_content_focus,
                     "nav forward",
                 );
@@ -594,6 +598,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         sidebar,
         track_list,
         content_stack,
+        window_title,
         &active_content_focus,
         "session restore",
     );

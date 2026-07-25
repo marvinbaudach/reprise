@@ -240,6 +240,7 @@ pub(in crate::ui) fn route_to_place(
     sidebar: &Rc<Sidebar>,
     track_list: &Rc<TrackList>,
     content_stack: &gtk4::Stack,
+    source_title: &adw::WindowTitle,
     active_content_focus: &ActiveContentFocus,
     reason: &str,
 ) {
@@ -254,6 +255,7 @@ pub(in crate::ui) fn route_to_place(
             content_stack.set_visible_child_name("library");
             let _ = track_list.restore_browser_place(place.browser_place());
             crate::ui::sidebar_session::sync_current_source(&sidebar.shared, &source);
+            source_title.set_title(&scope_title(&source));
         }
         _ => {
             crate::ui::sidebar_session::prepare_history_reroute(&sidebar.shared, &source);
@@ -267,6 +269,21 @@ pub(in crate::ui) fn route_to_place(
     // switch must map the page first); a `false` is logged like every other
     // focus move in this codebase.
     active_content_focus.focus_later();
+}
+
+fn scope_title(source: &ViewSource) -> String {
+    match source {
+        ViewSource::Artist(artist) => artist.clone(),
+        ViewSource::Album {
+            album,
+            album_artist,
+        } if album_artist.trim().is_empty() => album.clone(),
+        ViewSource::Album {
+            album,
+            album_artist,
+        } => format!("{album} — {album_artist}"),
+        _ => source.label(),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
