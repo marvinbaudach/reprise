@@ -158,6 +158,7 @@ pub(in crate::ui) fn append_column(
     let factory = gtk4::SignalListItemFactory::new();
 
     let shared_for_bind = shared.clone();
+    let shared_for_unbind = shared.clone();
     let shared = shared.clone();
     let column_view_for_setup = column_view.clone();
     factory.connect_setup(move |_, obj| {
@@ -226,6 +227,16 @@ pub(in crate::ui) fn append_column(
         });
     });
 
+    // GtkColumnView pools unbound cells; drop this cell's marker entry on
+    // unbind so the now-playing registry (and the widgets its re-appliers
+    // capture) stays bounded to visible cells instead of leaking one screenful
+    // per re-sort. See `now_playing_marker::unregister_cell`.
+    factory.connect_unbind(move |_, obj| {
+        if let Some(item) = obj.downcast_ref::<gtk4::ListItem>() {
+            now_playing_marker::unregister_cell(&shared_for_unbind, item);
+        }
+    });
+
     let column = gtk4::ColumnViewColumn::builder()
         .title(title)
         .factory(&factory)
@@ -262,6 +273,7 @@ pub(in crate::ui) fn append_title_column(
     // takes effect for running surfaces on the next launch (accepted rough edge).
     let experimental_on = crate::ui::instrumental::experimental_enabled(&shared.conn.borrow());
     let shared_for_bind = shared.clone();
+    let shared_for_unbind_title = shared.clone();
     let shared = shared.clone();
     let column_view_for_setup = column_view.clone();
     factory.connect_setup(move |_, obj| {
@@ -367,6 +379,14 @@ pub(in crate::ui) fn append_title_column(
                 toggle_class(&label, NOW_PLAYING_TITLE_CLASS, playing);
             }
         });
+    });
+
+    // Drop this cell's marker entry on unbind so the registry stays bounded to
+    // visible cells (see `now_playing_marker::unregister_cell`).
+    factory.connect_unbind(move |_, obj| {
+        if let Some(item) = obj.downcast_ref::<gtk4::ListItem>() {
+            now_playing_marker::unregister_cell(&shared_for_unbind_title, item);
+        }
     });
 
     let column = gtk4::ColumnViewColumn::builder()
@@ -502,6 +522,17 @@ pub(in crate::ui) fn append_cover_column(
     }
 
     {
+        // Drop this cell's marker entry on unbind so the registry stays bounded
+        // to visible cells (see `now_playing_marker::unregister_cell`).
+        let shared = shared.clone();
+        factory.connect_unbind(move |_, obj| {
+            if let Some(item) = obj.downcast_ref::<gtk4::ListItem>() {
+                now_playing_marker::unregister_cell(&shared, item);
+            }
+        });
+    }
+
+    {
         let generations = generations.clone();
         factory.connect_teardown(move |_, obj| {
             let Some(item) = obj.downcast_ref::<gtk4::ListItem>() else {
@@ -615,10 +646,15 @@ pub(in crate::ui) fn append_rating_column(
     // one before the widget can be interacted with again, so this mainly
     // closes off a race that's already vanishingly unlikely — but a no-op
     // closure costs nothing and removes the possibility outright.
+    //
+    // Also drop this cell's now-playing marker entry so the registry stays
+    // bounded to visible cells (see `now_playing_marker::unregister_cell`).
+    let shared_for_unbind_rating = shared.clone();
     factory.connect_unbind(move |_, obj| {
         let Some(item) = obj.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
+        now_playing_marker::unregister_cell(&shared_for_unbind_rating, item);
         let Some(rating_widget) = item.child().and_then(|w| w.downcast::<RatingWidget>().ok())
         else {
             return;
