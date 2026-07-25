@@ -191,9 +191,13 @@ fn stats_6a_unreadable_history_shows_the_failure_page() {
 /// Responsive wrapping only settles after a real allocation, so the test has
 /// to let a layout cycle run instead of merely draining pending sources.
 fn wait_for_layout() {
+    wait_for(150);
+}
+
+fn wait_for(milliseconds: u64) {
     let main_loop = gtk4::glib::MainLoop::new(None, false);
     let quit = main_loop.clone();
-    gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(150), move || {
+    gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(milliseconds), move || {
         quit.quit();
     });
     main_loop.run();
@@ -290,6 +294,27 @@ fn presented(width: i32) -> (StatsView, adw::Window) {
     window.present();
     wait_for_layout();
     (view, window)
+}
+
+/// Arms the entrance before the first map, matching navigation from another
+/// content-stack page. A mapped test window is the behavioral seam: libadwaita
+/// animations deliberately skip straight to their end on an unmapped widget.
+fn presented_entrance(width: i32) -> (StatsView, Rc<RefCell<Connection>>, adw::Window) {
+    let (view, conn) = view_and_conn();
+    seed_plays(&conn.borrow(), 10);
+    view.wire_year_selector(&conn);
+    view.prepare_entrance();
+    view.refresh(&conn);
+
+    let window = adw::Window::builder()
+        .default_width(width)
+        .default_height(700)
+        .content(view.widget())
+        .build();
+    window.set_size_request(width, -1);
+    window.present();
+    wait_for(80);
+    (view, conn, window)
 }
 
 /// Opening My Stats must expose the headline at the start of the viewport.
@@ -604,26 +629,36 @@ fn stats_16_thin_history_swaps_chart_for_hint() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn stats_17_entrance_runs_once_per_open() {
     gtk4::init().unwrap();
-    let (view, conn) = view_and_conn();
-    seed_plays(&conn.borrow(), 10);
-    view.wire_year_selector(&conn);
+    let (view, conn, window) = presented_entrance(1_000);
+    let final_copy = strings::hero_listening_time(
+        view.current_snapshot
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .hero
+            .total_ms,
+    );
 
-    view.prepare_entrance();
+    assert_eq!(view.render.entrance.entrance_runs(), 1);
+    assert_ne!(
+        view.render.hero.time.label(),
+        final_copy,
+        "the mapped hero must still be counting after its first frame"
+    );
+
+    wait_for(650);
     view.refresh(&conn);
     assert_eq!(view.render.entrance.entrance_runs(), 1);
-
-    view.refresh(&conn);
-    assert_eq!(view.render.entrance.entrance_runs(), 1);
+    window.close();
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn stats_17_period_switch_only_tweens_values() {
     gtk4::init().unwrap();
-    let (view, conn) = view_and_conn();
-    seed_plays(&conn.borrow(), 10);
-    view.wire_year_selector(&conn);
-    view.prepare_entrance();
+    let (view, conn, window) = presented_entrance(1_000);
+    wait_for(650);
+    seed_previous_year_play(&conn.borrow());
     view.refresh(&conn);
     let entrances = view.render.entrance.entrance_runs();
     let tweens = view.render.entrance.tween_runs();
@@ -635,10 +670,24 @@ fn stats_17_period_switch_only_tweens_values() {
         .position(|period| *period == StatsPeriod::AllTime)
         .unwrap() as u32;
     view.period_dropdown.set_selected(all_time);
-    while glib::MainContext::default().iteration(false) {}
+    wait_for(40);
+    let final_copy = strings::hero_listening_time(
+        view.current_snapshot
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .hero
+            .total_ms,
+    );
 
     assert_eq!(view.render.entrance.entrance_runs(), entrances);
     assert_eq!(view.render.entrance.tween_runs(), tweens + 1);
+    assert_ne!(
+        view.render.hero.time.label(),
+        final_copy,
+        "a mapped period switch must be observable mid-tween"
+    );
+    window.close();
 }
 
 #[test]
@@ -647,25 +696,52 @@ fn stats_17_reduced_motion_lands_in_end_state() {
     gtk4::init().unwrap();
     let settings = gtk4::Settings::default().unwrap();
     let previous = settings.is_gtk_enable_animations();
-    settings.set_gtk_enable_animations(false);
-    let (view, conn) = view_and_conn();
-    seed_plays(&conn.borrow(), 10);
-    view.wire_year_selector(&conn);
+    let (view, window) = presented(1_000);
+    let conn = view.connection.borrow().clone().unwrap();
 
+    settings.set_gtk_enable_animations(false);
     view.prepare_entrance();
     view.refresh(&conn);
+    let reduced_state = (
+        view.render.ribbon.reveal_fraction(),
+        view.render.band_section.opacity(),
+        view.render.songs_section.opacity(),
+        view.render.genres_section.opacity(),
+        view.render
+            .songs_card
+            .summary_bars()
+            .iter()
+            .all(|bar| bar.value() > 0.0),
+    );
 
-    assert_eq!(view.render.ribbon.reveal_fraction(), 1.0);
-    assert_eq!(view.render.band_section.opacity(), 1.0);
-    assert_eq!(view.render.songs_section.opacity(), 1.0);
-    assert_eq!(view.render.genres_section.opacity(), 1.0);
-    assert!(view
-        .render
-        .songs_card
-        .summary_bars()
-        .iter()
-        .all(|bar| bar.value() > 0.0));
+    settings.set_gtk_enable_animations(true);
+    view.prepare_entrance();
+    view.refresh(&conn);
+    wait_for(40);
+    let animated_state = (
+        view.render.ribbon.reveal_fraction(),
+        view.render.hero.time.label().to_string(),
+    );
+    let final_copy = strings::hero_listening_time(
+        view.current_snapshot
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .hero
+            .total_ms,
+    );
     settings.set_gtk_enable_animations(previous);
+
+    assert_eq!(reduced_state.0, 1.0);
+    assert_eq!(reduced_state.1, 1.0);
+    assert_eq!(reduced_state.2, 1.0);
+    assert_eq!(reduced_state.3, 1.0);
+    assert!(reduced_state.4);
+    assert!(
+        animated_state.0 < 1.0 || animated_state.1 != final_copy,
+        "the enabled-motion control run must still be in flight"
+    );
+    window.close();
 }
 
 #[test]
