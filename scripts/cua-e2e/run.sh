@@ -7,6 +7,8 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 source "$repo_root/scripts/cua-e2e/lib.sh"
 # shellcheck source=track_sort.sh
 source "$repo_root/scripts/cua-e2e/track_sort.sh"
+# shellcheck source=scrobbling.sh
+source "$repo_root/scripts/cua-e2e/scrobbling.sh"
 
 APP_ID=org.reprise.Reprise
 WINDOW_CLASS_MATCH=reprise
@@ -519,6 +521,7 @@ run_library_doctor_scenario() {
 private_session_cleanup() {
   local exit_code=$?
   stop_app_on_failure
+  stop_scrobbling_services
   cua_driver end_session \
     "$(jq -nc --arg session "$CUA_E2E_SESSION" '{session: $session}')" \
     >/dev/null 2>&1 || true
@@ -598,6 +601,9 @@ run_private_session() {
     track-sort-playing-marker)
       run_track_sort_playing_marker_scenario
       ;;
+    scrobbling)
+      run_scrobbling_scenario
+      ;;
     *)
       echo "unknown private CUA scenario group: $private_group" >&2
       return 2
@@ -611,7 +617,7 @@ if [[ "${1:-}" == "--private-session" ]]; then
   exit 0
 fi
 
-for command in "$CUA_DRIVER_BIN" Xvfb openbox cargo dbus-run-session ffmpeg jq rg timeout wmctrl; do
+for command in "$CUA_DRIVER_BIN" Xvfb openbox cargo dbus-run-session ffmpeg gdbus gnome-keyring-daemon jq python3 rg timeout wmctrl; do
   required_command "$command"
 done
 if [[ ! -x /usr/lib/at-spi-bus-launcher ]]; then
@@ -733,6 +739,7 @@ case "${CUA_E2E_ONLY:-all}" in
       library-doctor
       song-visuals
       track-sort-playing-marker
+      scrobbling
     )
     ;;
   populated-library)
@@ -740,7 +747,7 @@ case "${CUA_E2E_ONLY:-all}" in
     ;;
   fresh-install | populated-library-secondary | tag-1-no-jump-after-save \
     | tag-3-multi-dialog-structure | library-doctor | song-visuals \
-    | track-sort-playing-marker)
+    | track-sort-playing-marker | scrobbling)
     scenario_groups=("$CUA_E2E_ONLY")
     ;;
   *)

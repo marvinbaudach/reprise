@@ -1636,134 +1636,134 @@ msgstr ""
 msgid "Revert Last Cleanup"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:89
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:86
 msgid ""
 "This job continues in the background. Progress and Cancel stay in the "
 "sidebar."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:90
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:87
 msgid "Library Doctor Job Failed"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:94
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:91
 #, rust-format
 msgid "{source} · {confidence}%"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:101
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:98
 #, rust-format
 msgid "{source} · {confidence}% · low confidence"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:114
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:111
 #, rust-format
 msgid ""
 "{track}, {field}. Current: {current}. Proposed: {proposed}. Source: {source}."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:128
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:125
 #, rust-format
 msgid "Apply {count} track"
 msgid_plural "Apply {count} tracks"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:137
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:134
 #, rust-format
 msgid "{changes} tag changes · {files} files · undo available after"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:147
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:144
 #, rust-format
 msgid "{value} ({count})"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:155
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:152
 #, rust-format
 msgid "{count} spelling, no clear winner"
 msgid_plural "{count} spellings, no clear winner"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:164
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:161
 #, rust-format
 msgid "{label}: {value}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:171
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:168
 #, rust-format
 msgid "Duration: {duration} ms"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:178
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:175
 #, rust-format
 msgid "Duration difference: {delta} ms"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:185
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:182
 #, rust-format
 msgid "{completed}/{total} tracks"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:195
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:192
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:117
 #, rust-format
 msgid "Tags updated · {count} tracks"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:202
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:199
 #, rust-format
 msgid "Tags reverted · {count} tracks"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:209
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:206
 #, rust-format
 msgid "{updated} tracks updated · {cancelled} cancelled"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:219
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:216
 #, rust-format
 msgid "{updated} updated, {failed} failed"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:229
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:226
 #, rust-format
 msgid "{applied} applied · {remaining} remaining"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:240
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:237
 #, rust-format
 msgid "{count} change"
 msgid_plural "{count} changes"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:250
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:247
 #, rust-format
 msgid "{count} group"
 msgid_plural "{count} groups"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:259
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:256
 #, rust-format
 msgid "{safe} safe · {review} review"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:266
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:263
 #, rust-format
 msgid "{checked} checked · {skipped} skipped"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:277
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:274
 #, rust-format
 msgid "Review {count} change"
 msgid_plural "Review {count} changes"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:287
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:284
 #, rust-format
 msgid "Review {count} safe fix"
 msgid_plural "Review {count} safe fixes"
@@ -2300,197 +2300,201 @@ msgid "Scrobbling"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scrobbling.rs:16
-msgid "Connect ListenBrainz, Last.fm, or both"
+msgid "Open Scrobbling Settings"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scrobbling.rs:17
-msgid "ListenBrainz enabled"
+msgid "Connect ListenBrainz, Last.fm, or both"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scrobbling.rs:18
-msgid "Last.fm enabled"
+msgid "ListenBrainz enabled"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scrobbling.rs:19
-msgid "ListenBrainz and Last.fm enabled"
+msgid "Last.fm enabled"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scrobbling.rs:20
-msgid "Local Features"
+msgid "ListenBrainz and Last.fm enabled"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scrobbling.rs:21
-msgid "Online Content"
+msgid "Local Features"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scrobbling.rs:22
-msgid "Connected Services"
+msgid "Online Content"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scrobbling.rs:23
+msgid "Connected Services"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:24
 msgid "ListenBrainz"
 msgstr "ListenBrainz"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:24
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:25
 msgid "ListenBrainz Account"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:25
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:26
 msgid "Not connected"
 msgstr "未连接"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:26
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:27
 msgid "Connecting…"
 msgstr "正在连接…"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:27
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:28
 msgid "Token rejected"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:28
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:29
 msgid "Connection error"
 msgstr "连接错误"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:29
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:30
 msgid "Offline"
 msgstr "离线"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:31
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:32
 msgid ""
 "Enter a user token from your ListenBrainz profile. The token is stored in "
 "the system keyring."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:33
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:34
 msgid "User token"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:34
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:35
 msgid "Connect"
 msgstr "连接"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:36
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:37
 msgid "Requires your ListenBrainz user token"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:37
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:38
 msgid "Disconnect"
 msgstr "断开连接"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:39
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:40
 msgid "Could not access the system keyring. The token was not stored."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:41
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:42
 msgid "Could not validate the ListenBrainz token. Try again later."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:43
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:44
 msgid "Could not remove the ListenBrainz token from the system keyring."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:44
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:45
 msgid "Last.fm"
 msgstr "Last.fm"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:45
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:46
 msgid "Last.fm Account"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:47
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:48
 msgid ""
 "Enter credentials for a Last.fm desktop API application. They and the "
 "resulting session are stored only in the system keyring."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:49
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:50
 msgid "API key"
 msgstr "API 密钥"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:50
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:51
 msgid "Shared secret"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:51
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:52
 msgid "Authorize Reprise in Your Browser"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:53
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:54
 msgid "After approving access on Last.fm, return here and continue."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:54
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:55
 msgid "Continue"
 msgstr "继续"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:55
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:56
 msgid "Credentials or authorization rejected"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:57
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:58
 msgid ""
 "Could not access the system keyring. Last.fm credentials were not stored."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:58
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:59
 msgid "Could not connect to Last.fm. Try again later."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:60
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:61
 msgid "Could not remove Last.fm credentials from the system keyring."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:61
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:62
 msgid "Open Browser"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:63
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:64
 msgid "Requires API key and shared secret"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:64
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:65
 msgid "Sign in with Last.fm"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:65
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:66
 msgid "Sign in with your Last.fm account. No API key needed."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:66
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:67
 msgid "Advanced setup"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:68
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:69
 msgid "Use credentials from your own Last.fm API application"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:69
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:70
 msgid "Test connection"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:70
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:71
 msgid "Test failed — try again later."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:74
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:75
 #, rust-format
 msgid "Connected as {user_name} ✓"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:80
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:84
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:81
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:85
 #, rust-format
 msgid "Connected as {user_name}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:93
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:94
 #, rust-format
 msgid "{n} submitted"
 msgid_plural "{n} submitted"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:103
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:104
 #, rust-format
 msgid "{n} queued"
 msgid_plural "{n} queued"

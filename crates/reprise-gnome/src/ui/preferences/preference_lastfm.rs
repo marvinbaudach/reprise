@@ -275,7 +275,7 @@ fn client_for(
             return result;
         }
     }
-    LastFmClient::new(&credentials.api_key, &credentials.shared_secret)
+    crate::ui::scrobbling::smoke::lastfm_client(&credentials.api_key, &credentials.shared_secret)
 }
 
 fn has_bundled_credentials() -> bool {
@@ -485,7 +485,8 @@ impl PreferencesContext {
         let worker_secret = shared_secret.clone();
         let receiver = match one_shot_task::spawn("reprise-lastfm-token", move || {
             (|| {
-                let client = LastFmClient::new(&worker_api_key, &worker_secret)?;
+                let client =
+                    crate::ui::scrobbling::smoke::lastfm_client(&worker_api_key, &worker_secret)?;
                 let token = client.request_token()?;
                 let url = client.authorization_url(&token)?;
                 Ok::<_, TransportError>((token, url))
@@ -505,10 +506,7 @@ impl PreferencesContext {
                 return;
             };
             match receiver.recv().await {
-                Ok(Ok((token, url)))
-                    if gio::AppInfo::launch_default_for_uri(&url, gio::AppLaunchContext::NONE)
-                        .is_ok() =>
-                {
+                Ok(Ok((token, url))) if open_authorization_url(&url) => {
                     context.present_lastfm_confirmation(&row, api_key, shared_secret, token);
                 }
                 Ok(Err(TransportError::Unauthorized)) => {
@@ -575,7 +573,7 @@ impl PreferencesContext {
         let worker_api_key = api_key.clone();
         let worker_secret = shared_secret.clone();
         let receiver = match one_shot_task::spawn("reprise-lastfm-session", move || {
-            LastFmClient::new(&worker_api_key, &worker_secret)
+            crate::ui::scrobbling::smoke::lastfm_client(&worker_api_key, &worker_secret)
                 .map_err(TransportError::from)
                 .and_then(|client| client.exchange_token(&token))
         }) {
@@ -733,6 +731,14 @@ fn map_transport_error(error: &TransportError) -> String {
         TransportError::Unauthorized => strings::text(strings::LASTFM_CREDENTIALS_REJECTED),
         _ => strings::text(strings::LASTFM_CONNECTION_ERROR),
     }
+}
+
+fn open_authorization_url(url: &str) -> bool {
+    if crate::ui::scrobbling::smoke::bypass_lastfm_browser_launch(url) {
+        tracing::info!("smoke: accepted loopback Last.fm authorization URL");
+        return true;
+    }
+    gio::AppInfo::launch_default_for_uri(url, gio::AppLaunchContext::NONE).is_ok()
 }
 
 #[cfg(test)]

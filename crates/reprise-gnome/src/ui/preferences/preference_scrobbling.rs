@@ -13,6 +13,7 @@ use super::PreferencesContext;
 
 pub(in crate::ui) struct ScrobblingSurface {
     pub(in crate::ui) entry: adw::ActionRow,
+    pub(in crate::ui) open: gtk4::Button,
     pub(in crate::ui) page: adw::NavigationPage,
 }
 
@@ -36,7 +37,17 @@ pub(in crate::ui) fn build_surface(
         .subtitle(summary)
         .activatable(true)
         .build();
-    entry.add_suffix(&gtk4::Image::from_icon_name("go-next-symbolic"));
+    let open = gtk4::Button::builder()
+        .icon_name("go-next-symbolic")
+        .tooltip_text(strings::text(strings::SCROBBLING_OPEN_SETTINGS))
+        .valign(gtk4::Align::Center)
+        .css_classes(["flat"])
+        .build();
+    open.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+        strings::SCROBBLING_OPEN_SETTINGS,
+    ))]);
+    entry.add_suffix(&open);
+    entry.set_activatable_widget(Some(&open));
 
     let group = adw::PreferencesGroup::new();
     group.add(listenbrainz);
@@ -49,7 +60,7 @@ pub(in crate::ui) fn build_surface(
     toolbar.set_content(Some(&detail));
     let page = adw::NavigationPage::new(&toolbar, &strings::text(strings::SCROBBLING));
 
-    ScrobblingSurface { entry, page }
+    ScrobblingSurface { entry, open, page }
 }
 
 pub(in crate::ui) fn present_scrobbling(
@@ -73,8 +84,8 @@ pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::ActionRow {
     let surface = build_surface(&listenbrainz, &lastfm, &summary);
     let page = surface.page.clone();
     surface
-        .entry
-        .connect_activated(move |row| present_scrobbling(row, &page));
+        .open
+        .connect_clicked(move |button| present_scrobbling(button, &page));
     subscribe_summary(&context.listenbrainz, context, &surface.entry);
     subscribe_summary(&context.lastfm, context, &surface.entry);
     surface.entry
@@ -138,6 +149,10 @@ mod tests {
 
         assert_eq!(surface.entry.type_(), adw::ActionRow::static_type());
         assert_eq!(surface.entry.title(), "Scrobbling");
+        assert_eq!(
+            surface.open.tooltip_text().as_deref(),
+            Some("Open Scrobbling Settings")
+        );
         assert_eq!(surface.page.title(), "Scrobbling");
         assert!(listenbrainz.is_ancestor(&surface.page));
         assert!(lastfm.is_ancestor(&surface.page));
