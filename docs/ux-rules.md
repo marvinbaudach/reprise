@@ -1483,16 +1483,19 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   „×0". Der KPI ellipsiert nicht.
 - **STATS-12** [aktiv] [core] — Das Chart zeigt die Hörzeit je lokaler
   Kalenderwoche. Ab acht Wochen mit Plays gilt der Flächenverlauf über den
-  exakt gewählten Zeitraum; bei weniger Wochen beginnt die Achse mit der
-  ersten Play-Woche, nennt klein „since <Monat> <Jahr>" und zeigt einzelne
-  Wochenbalken. Beide Varianten lassen 10–15 % Luft über dem Maximum und
-  tragen Monatslabels darunter. Die beste Woche trägt eine gestrichelte
-  Markerlinie, deren gemessenes Label links davon steht
-  („best week · 4 h 12"); die laufende Woche endet in einem offenen Punkt.
-  Hover nennt Woche und exakten Wert. Marker und Punkte sind reine Anzeige.
-  Nur wenn der Zeitraum zu kurz für Wochen ist, fällt die Achse auf Tage
-  zurück (STATS-6); sehr lange „All time"-Spannen dürfen Monate zeigen und
-  lassen dann den Wochen-Marker weg — der Best-week-KPI bleibt.
+  exakt gewählten Zeitraum. Bei weniger Wochen beginnt die Achse mit der
+  ersten Play-Woche und jede Woche erhält über die volle Kartenbreite einen
+  gleich breiten Slot; Nullwochen bleiben als 2-Pixel-Strich auf einer
+  durchgehenden 1-Pixel-Basislinie sichtbar. Unter zehn Wochen trägt jeder
+  Slot ein Wochenlabel, längere Achsen tragen Monatslabels. Die kompakte
+  Variante ist ungefähr 160 Pixel hoch. Beide Varianten lassen 10–15 % Luft
+  über dem Maximum. Die beste Woche erhält statt einer Markerlinie eine
+  hellere Akzentstufe; ihr gemessenes Label steht mit Randabstand darüber
+  („best week · 4 h 12"). Die laufende Woche endet in einem offenen Punkt.
+  Hover nennt Woche und exakten Wert. Markierungen und Punkte sind reine
+  Anzeige. Nur wenn der Zeitraum zu kurz für Wochen ist, fällt die Achse auf
+  Tage zurück (STATS-6); sehr lange „All time"-Spannen dürfen Monate zeigen
+  und lassen dann die Wochenmarkierung weg — der Best-week-KPI bleibt.
 - **STATS-13** [aktiv] [gtk] — Die Band-Karte zeigt den meistgehörten
   Interpreten als Bild-Hero: das Album-Cover seines meistgespielten Tracks
   füllt die Karte und blendet nach unten in den Kartengrund aus; fehlt ein
