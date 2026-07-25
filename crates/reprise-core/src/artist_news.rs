@@ -362,7 +362,7 @@ pub(crate) fn artists_for_fetch(
                 keyed.push((last_attempt, candidate));
             }
             // `None` sorts before `Some` — never-checked artists come first.
-            keyed.sort_by(|(left, _), (right, _)| left.cmp(right));
+            keyed.sort_by_key(|(last_attempt, _)| *last_attempt);
             candidates.extend(
                 keyed
                     .into_iter()
