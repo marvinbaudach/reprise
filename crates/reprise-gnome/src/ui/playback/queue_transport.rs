@@ -164,6 +164,7 @@ impl PlayerController {
 
     pub(in crate::ui) fn notify_queue_changed(&self) {
         tracing::info!(up_next_len = self.up_next.borrow().len(), "up next changed");
+        self.update_agent_queue_mirror();
         let callbacks = self.queue_changed.borrow().clone();
         for callback in callbacks {
             callback();

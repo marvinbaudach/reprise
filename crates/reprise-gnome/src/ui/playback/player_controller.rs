@@ -175,7 +175,8 @@ use crate::ui::player_controller_wiring;
 use crate::ui::player_lyrics::{lyrics_query_for, start_track_for_lyrics, PlayerLyrics};
 use crate::ui::style::cover_accent::Rgb as AccentRgb;
 use reprise_core::media_integration::{
-    MediaIntegrationHandles, MprisPlaybackStatus, SharedMprisState, DEFAULT_VOLUME,
+    MediaIntegrationHandles, MprisPlaybackStatus, SharedAgentQueueState, SharedMprisState,
+    DEFAULT_VOLUME,
 };
 use reprise_core::playback::{PlaybackBackend, PlaybackState, PlayerEvent, SpectrumFrame};
 use reprise_core::queries;
@@ -314,6 +315,8 @@ pub struct PlayerController {
     /// never read directly here (the MPRIS thread is the only reader).
     /// `pub(in crate::ui)` so that sibling module can reach it.
     pub(in crate::ui) mpris_state: SharedMprisState,
+    /// Bounded live queue mirror read by the local Reprise D-Bus interface.
+    pub(in crate::ui) agent_queue_state: SharedAgentQueueState,
     /// Title/artist/album/duration of the currently-loaded track, for
     /// `mpris_mirror.rs`'s `update_mpris_mirror` to build `mpris::MprisState`'s
     /// `Metadata` fields from — see the module's `## MPRIS` doc section for
@@ -435,6 +438,7 @@ impl PlayerController {
         // Media integration is always on. Its platform handles are assembled
         // by the window composition root and remain failure-tolerant.
         let mpris_state = handles.shared_state;
+        let agent_queue_state = handles.queue_state;
         let mpris_receiver = handles.commands;
         let mpris_seek_notify = handles.seek_notify;
 
@@ -469,6 +473,7 @@ impl PlayerController {
             consecutive_skips: Cell::new(0),
             failure_skip_limit: Cell::new(0),
             mpris_state,
+            agent_queue_state,
             now_playing: Rc::new(RefCell::new(None)),
             volume: Cell::new(DEFAULT_VOLUME),
             mpris_seek_notify,

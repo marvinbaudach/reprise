@@ -62,6 +62,12 @@ pub enum MprisCommand {
     /// Seed the queue from this ordered id list and start playing (empty =
     /// no-op). Carries a `Vec`, so the enum is no longer `Copy`.
     PlayTrackIds(Vec<i64>),
+    /// Prepend ids to the manual Play Next list.
+    QueueAddNext(Vec<i64>),
+    /// Append ids to the manual Play Next list.
+    QueueAddLast(Vec<i64>),
+    /// Clear only the manual Play Next list, preserving playback context.
+    QueueClear,
 }
 
 /// Coarse playback status mirrored for MPRIS. Deliberately a separate type
@@ -233,10 +239,29 @@ pub fn metadata_differs(a: &MprisState, b: &MprisState) -> bool {
 /// lifetime.
 pub type SharedMprisState = Arc<Mutex<MprisState>>;
 
+/// Bounded, path-free mirror of the live queue exposed to local agents.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AgentQueueState {
+    pub current_track_id: Option<i64>,
+    pub play_next_track_ids: Vec<i64>,
+    pub context_track_ids: Vec<i64>,
+    pub play_next_total: usize,
+    pub context_total: usize,
+}
+
+pub type SharedAgentQueueState = Arc<Mutex<AgentQueueState>>;
+
 /// Reads `state` through the same poisoned-recovery pattern `player.rs`
 /// uses everywhere it locks: a panic on one side of the mutex must not
 /// poison MPRIS (or the controller) permanently.
 pub fn read_state(state: &SharedMprisState) -> MprisState {
+    state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
+pub fn read_agent_queue_state(state: &SharedAgentQueueState) -> AgentQueueState {
     state
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -252,6 +277,7 @@ pub fn read_state(state: &SharedMprisState) -> MprisState {
 /// `start(…) -> MediaIntegrationHandles` constructor.
 pub struct MediaIntegrationHandles {
     pub shared_state: SharedMprisState,
+    pub queue_state: SharedAgentQueueState,
     pub commands: async_channel::Receiver<MprisCommand>,
     pub seek_notify: async_channel::Sender<i64>,
 }
@@ -275,11 +301,13 @@ impl MediaIntegrationHandles {
     /// dormant-handle construction lives in this cross-platform core.
     pub fn inert() -> Self {
         let shared_state: SharedMprisState = Arc::new(Mutex::new(MprisState::default()));
+        let queue_state: SharedAgentQueueState = Arc::new(Mutex::new(AgentQueueState::default()));
         let (_commands_sender, commands) = async_channel::unbounded::<MprisCommand>();
         let (seek_notify, _seek_receiver) = async_channel::unbounded::<i64>();
 
         Self {
             shared_state,
+            queue_state,
             commands,
             seek_notify,
         }
