@@ -135,3 +135,58 @@ fn music_playback_control_reports_no_running_app() {
         "capability + action parsing should succeed, failing only at the bus: {text}"
     );
 }
+
+#[test]
+fn music_set_playback_validates_action_specific_arguments() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("reprise.db");
+    common::seed_tracks(&path, &[]);
+    let mut client = McpClient::start(&path);
+
+    for (params, expected) in [
+        (json!({ "action": "set_volume" }), "volume"),
+        (
+            json!({ "action": "set_volume", "volume": 1.5 }),
+            "between 0 and 1",
+        ),
+        (json!({ "action": "seek" }), "offset_seconds"),
+        (json!({ "action": "set_shuffle" }), "enabled"),
+        (json!({ "action": "set_repeat" }), "repeat"),
+        (
+            json!({ "action": "set_repeat", "repeat": "forever" }),
+            "off, all, or one",
+        ),
+        (json!({ "action": "boost_bass" }), "unknown action"),
+    ] {
+        let response = client.call_tool("music_set_playback", params);
+        let text = tool_error_text(&response);
+        assert!(
+            text.contains(expected),
+            "expected {expected:?} in validation error: {text}"
+        );
+    }
+}
+
+#[test]
+fn playback_state_and_settings_are_refused_when_capability_is_revoked() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("reprise.db");
+    common::seed_tracks(&path, &[]);
+    set_bool_setting(&path, CAP_PLAYBACK_CONTROL, false);
+    let mut client = McpClient::start(&path);
+
+    for (tool, params) in [
+        ("music_get_playback_state", json!({})),
+        (
+            "music_set_playback",
+            json!({ "action": "set_shuffle", "enabled": true }),
+        ),
+    ] {
+        let response = client.call_tool(tool, params);
+        let text = tool_error_text(&response);
+        assert!(
+            text.contains("Permission denied") && text.contains("playback:control"),
+            "revoked capability should refuse {tool}: {text}"
+        );
+    }
+}

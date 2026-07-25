@@ -66,7 +66,12 @@ fn tool_discovery_lists_the_expected_tools() {
         "music_update_playlist",
     ];
     if cfg!(feature = "mpris") {
-        expected.extend(["music_play", "music_playback_control"]);
+        expected.extend([
+            "music_get_playback_state",
+            "music_play",
+            "music_playback_control",
+            "music_set_playback",
+        ]);
     }
     expected.sort_unstable();
     assert_eq!(names, expected);

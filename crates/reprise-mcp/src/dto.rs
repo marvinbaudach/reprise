@@ -396,6 +396,50 @@ pub struct PlaybackControlParams {
     pub action: String,
 }
 
+/// Empty root-object parameters for the live playback-state read.
+#[cfg(feature = "mpris")]
+#[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
+pub struct PlaybackStateParams {}
+
+/// Path-free live state returned by `music_get_playback_state`.
+#[cfg(feature = "mpris")]
+#[derive(Debug, Clone, Serialize)]
+pub struct PlaybackStateDto {
+    /// One of: "playing", "paused", "stopped".
+    pub status: String,
+    pub track_id: Option<i64>,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub duration_ms: i64,
+    pub position_ms: i64,
+    pub volume: f64,
+    pub shuffle: bool,
+    /// One of: "off", "all", "one".
+    pub repeat: String,
+}
+
+/// Root-object parameters for `music_set_playback`. The selected `action`
+/// determines which one of the optional value fields is required.
+#[cfg(feature = "mpris")]
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+pub struct SetPlaybackParams {
+    /// One of: "set_volume", "seek", "set_shuffle", "set_repeat".
+    pub action: String,
+    /// New volume in the inclusive 0.0..=1.0 range.
+    #[serde(default)]
+    pub volume: Option<f64>,
+    /// Relative seek offset in seconds; negative values seek backwards.
+    #[serde(default)]
+    pub offset_seconds: Option<f64>,
+    /// New shuffle state.
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    /// One of: "off", "all", "one".
+    #[serde(default)]
+    pub repeat: Option<String>,
+}
+
 /// Parameters for `music_play`. Exactly one of `track_ids`/`playlist_id` must
 /// be set — enforced by `data::resolve_play_ids`, not by the schema (rmcp/
 /// schemars has no "exactly one of" combinator). Only the `mpris`-gated
