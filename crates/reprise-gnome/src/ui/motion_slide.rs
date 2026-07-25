@@ -97,6 +97,14 @@ mod imp {
     }
 
     impl WidgetImpl for SlideBin {
+        fn compute_expand(&self, hexpand: &mut bool, vexpand: &mut bool) {
+            self.parent_compute_expand(hexpand, vexpand);
+            let child = self.child.borrow().clone();
+            let Some(child) = child else { return };
+            *hexpand |= child.compute_expand(gtk4::Orientation::Horizontal);
+            *vexpand |= child.compute_expand(gtk4::Orientation::Vertical);
+        }
+
         fn snapshot(&self, snapshot: &gtk4::Snapshot) {
             let child = self.child.borrow().clone();
             let Some(child) = child else { return };
@@ -139,6 +147,10 @@ impl SlideBin {
             previous.unparent();
         }
         if let Some(child) = &child {
+            self.set_halign(child.halign());
+            self.set_valign(child.valign());
+            self.set_width_request(child.width_request());
+            self.set_height_request(child.height_request());
             child.set_parent(self);
         }
         self.imp().child.replace(child);
@@ -194,6 +206,32 @@ mod tests {
             "snapshot translation must not trigger a layout change"
         );
         window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn slide_bin_preserves_child_expansion_in_its_parent_layout() {
+        gtk4::init().unwrap();
+        let child = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        child.set_hexpand(true);
+        child.set_vexpand(true);
+        child.set_halign(gtk4::Align::Start);
+        child.set_valign(gtk4::Align::End);
+        child.set_size_request(140, 24);
+        let slide = SlideBin::new(&child);
+
+        assert!(
+            slide.compute_expand(gtk4::Orientation::Horizontal),
+            "a hexpanding child must make its transparent wrapper expand"
+        );
+        assert!(
+            slide.compute_expand(gtk4::Orientation::Vertical),
+            "a vexpanding child must make its transparent wrapper expand"
+        );
+        assert_eq!(slide.halign(), gtk4::Align::Start);
+        assert_eq!(slide.valign(), gtk4::Align::End);
+        assert_eq!(slide.width_request(), 140);
+        assert_eq!(slide.height_request(), 24);
     }
 
     fn run_main_loop_for_layout() {
