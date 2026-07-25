@@ -8,9 +8,9 @@ use super::stats_period::{
     apply_activity_granularity, local_parts, week_start, PeriodRange, StatsPeriod,
 };
 use super::stats_screen::{
-    album_rows, artist_rows, discovered_count, first_event_unix, fold_album_rows,
-    genre_artist_rows, genre_rows, key_resolver, listen_rows, ranked_groups, total_ms_in_range,
-    track_rows, GenreArtistRow, HourlyListens, RankedGroup, TopAlbum, TopTrack, TrackAggregate,
+    album_rows, artist_rows, first_event_unix, fold_album_rows, genre_artist_rows, genre_rows,
+    key_resolver, listen_rows, ranked_groups, total_ms_in_range, track_rows, GenreArtistRow,
+    RankedGroup, TopAlbum, TopTrack, TrackAggregate,
 };
 
 const SPOTLIGHT_TRACK_LIMIT: usize = 3;
@@ -22,9 +22,6 @@ pub const COMPARISON_FACTOR_PERCENT_THRESHOLD: i64 = 1_000;
 pub const COMPARISON_FACTOR_DECLINE_PERCENT_THRESHOLD: i64 = -50;
 /// Baselines below the UI's one-minute display granularity are qualitative.
 pub const COMPARISON_EFFECTIVELY_ZERO_MS: i64 = 60_000;
-/// Scattered peak hours are listed rather than spanned; beyond this many the
-/// caption says "+N" instead of growing past the clock's width.
-const PEAK_HOURS_LISTED: usize = 3;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SortBy {
@@ -101,27 +98,6 @@ pub struct GenreSection {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ClockSection {
-    pub hours: Vec<HourlyListens>,
-    pub peak_hours: Vec<i32>,
-    pub caption: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BusiestDay {
-    pub day: NaiveDate,
-    pub total_ms: i64,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct HighlightsSection {
-    pub streak_days: i64,
-    pub discovered_tracks: i64,
-    pub busiest_day: Option<BusiestDay>,
-    pub on_repeat: Option<TopTrack>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BestWeek {
     pub start: NaiveDate,
     pub total_ms: i64,
@@ -135,8 +111,6 @@ pub struct StatsSnapshot {
     pub best_week: Option<BestWeek>,
     pub spotlight: Option<SpotlightSection>,
     pub genres: GenreSection,
-    pub clock: ClockSection,
-    pub highlights: HighlightsSection,
     pub top_artists: Vec<RankedGroup>,
     pub top_albums: Vec<TopAlbum>,
     pub top_tracks: Vec<TopTrack>,
@@ -161,7 +135,7 @@ pub fn compute<Tz: TimeZone>(
     now_unix: i64,
     tz: &Tz,
 ) -> Result<StatsSnapshot, rusqlite::Error> {
-    // Nine read statements in a stable order. Keeping this function pure is
+    // Eight read statements in a stable order. Keeping this function pure is
     // the seam that permits a transparent cache wrapper later if profiling
     // ever justifies one.
     let first_event = first_event_unix(conn)?; // 1
@@ -181,7 +155,6 @@ pub fn compute<Tz: TimeZone>(
     let genres = genre_rows(conn, range.start_unix, range.end_unix)?; // 6
     let genre_artists = genre_artist_rows(conn, range.start_unix, range.end_unix)?; // 7
     let track_aggregates = track_rows(conn, range.start_unix, range.end_unix)?; // 8
-    let discovered_tracks = discovered_count(conn, range.start_unix, range.end_unix)?; // 9
 
     if listen_rows.is_empty() {
         range.buckets.clear();
@@ -244,8 +217,6 @@ pub fn compute<Tz: TimeZone>(
     let best_week = best_week(&listen_rows, tz);
     let spotlight = spotlight(&top_artists, &key_resolver(&artists), &track_aggregates);
     let genres = genre_section(&genres, &genre_artists);
-    let (clock, busiest_day, streak_days) = time_sections(&listen_rows, tz);
-    let on_repeat = top_tracks.first().cloned();
 
     Ok(StatsSnapshot {
         period: range,
@@ -254,13 +225,6 @@ pub fn compute<Tz: TimeZone>(
         best_week,
         spotlight,
         genres,
-        clock,
-        highlights: HighlightsSection {
-            streak_days,
-            discovered_tracks,
-            busiest_day,
-            on_repeat,
-        },
         top_artists,
         top_albums,
         top_tracks,
@@ -439,124 +403,6 @@ fn genre_tile_metadata(
         .map(|row| row.artist.path.clone())
         .unwrap_or_default();
     (top_artist, representative_track_path)
-}
-
-fn time_sections<Tz: TimeZone>(
-    rows: &[super::stats_screen::ListenRow],
-    tz: &Tz,
-) -> (ClockSection, Option<BusiestDay>, i64) {
-    let mut hour_plays = [0_i64; 24];
-    let mut hour_ms = [0_i64; 24];
-    let mut days = BTreeMap::<NaiveDate, i64>::new();
-    for row in rows {
-        let Some((day, hour)) = local_parts(tz, row.played_at) else {
-            continue;
-        };
-        let hour = hour as usize;
-        hour_plays[hour] += 1;
-        hour_ms[hour] += row.ms;
-        *days.entry(day).or_default() += row.ms;
-    }
-    let peak_ms = hour_ms.iter().copied().max().unwrap_or(0);
-    let peak_hours = if peak_ms == 0 {
-        Vec::new()
-    } else {
-        hour_ms
-            .iter()
-            .enumerate()
-            .filter_map(|(hour, ms)| (*ms == peak_ms).then_some(hour as i32))
-            .collect::<Vec<_>>()
-    };
-    let caption = peak_caption(&peak_hours);
-    let hours = (0..24)
-        .map(|hour| HourlyListens {
-            hour,
-            listens: hour_plays[hour as usize],
-            total_ms: hour_ms[hour as usize],
-        })
-        .collect();
-    let busiest_day = days
-        .iter()
-        .max_by(|(left_day, left_ms), (right_day, right_ms)| {
-            left_ms.cmp(right_ms).then_with(|| right_day.cmp(left_day))
-        })
-        .map(|(day, total_ms)| BusiestDay {
-            day: *day,
-            total_ms: *total_ms,
-        });
-    let streak_days = longest_streak(days.keys().copied());
-    (
-        ClockSection {
-            hours,
-            peak_hours,
-            caption,
-        },
-        busiest_day,
-        streak_days,
-    )
-}
-
-fn longest_streak(days: impl Iterator<Item = NaiveDate>) -> i64 {
-    let mut previous: Option<NaiveDate> = None;
-    let mut current = 0;
-    let mut longest = 0;
-    for day in days {
-        current = match previous {
-            Some(previous_day) if (day - previous_day).num_days() == 1 => current + 1,
-            _ => 1,
-        };
-        longest = longest.max(current);
-        previous = Some(day);
-    }
-    longest
-}
-
-/// Peaks that are not one block of hours must not be captioned as if they
-/// were: a play at 1 AM and one at 11 PM is not a "1 AM–11 PM" peak, and a
-/// single peak hour is not a span at all. Only a contiguous run becomes one.
-fn peak_caption(hours: &[i32]) -> String {
-    let Some(first) = hours.first().copied() else {
-        return "No peak yet".to_string();
-    };
-    let last = hours.last().copied().unwrap_or(first);
-    let is_contiguous_run = hours.len() as i32 == last - first + 1;
-    let peak = if hours.len() == 1 {
-        format_hour(first)
-    } else if is_contiguous_run {
-        format!("{}\u{2013}{}", format_hour(first), format_hour(last))
-    } else {
-        let listed = hours
-            .iter()
-            .take(PEAK_HOURS_LISTED)
-            .map(|hour| format_hour(*hour))
-            .collect::<Vec<_>>()
-            .join(", ");
-        match hours.len().saturating_sub(PEAK_HOURS_LISTED) {
-            0 => listed,
-            rest => format!("{listed} +{rest}"),
-        }
-    };
-    // Every listed hour carries the same maximum, so no one of them is "the"
-    // peak. The earliest names the trait; that is a display choice, not a rank.
-    let trait_name = if first < 6 {
-        "night owl"
-    } else if first < 12 {
-        "morning listener"
-    } else if first < 18 {
-        "afternoon listener"
-    } else {
-        "night owl"
-    };
-    format!("Peak {peak} \u{00b7} {trait_name}")
-}
-
-fn format_hour(hour: i32) -> String {
-    match hour {
-        0 => "12 AM".to_string(),
-        1..=11 => format!("{hour} AM"),
-        12 => "12 PM".to_string(),
-        _ => format!("{} PM", hour - 12),
-    }
 }
 
 fn sort_tracks(tracks: &mut [TopTrack], sort_by: SortBy) {
