@@ -65,7 +65,13 @@ pub mod visuals;
 pub mod waveform;
 
 #[cfg(test)]
-mod artist_news_tests;
+mod artist_news_candidates_tests;
+#[cfg(test)]
+mod artist_news_parsing_tests;
+#[cfg(test)]
+mod artist_news_pipeline_tests;
+#[cfg(test)]
+mod artist_news_query_tests;
 #[cfg(test)]
 mod fingerprint_tests;
 #[cfg(test)]
