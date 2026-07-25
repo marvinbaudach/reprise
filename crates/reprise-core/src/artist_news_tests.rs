@@ -963,3 +963,56 @@ fn configured_scope_round_trips_without_a_date() {
         FetchScope::AllArtists
     );
 }
+
+#[test]
+fn upcoming_album_survives_a_local_title_match() {
+    // The lead single is tagged with the forthcoming album's name. An album
+    // that has not been released yet cannot be owned, so the match must be
+    // ignored entirely — this is the case the whole change exists for.
+    let json = r#"{"release-groups":[
+      {"id":"1","title":"Eclipse","first-release-date":"2026-09-01","primary-type":"Album","secondary-types":[]}
+    ]}"#;
+    let items = parse_release_groups(json, &["Eclipse".into()], date());
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].title, "Eclipse");
+    assert_eq!(items[0].kind, NewsKind::Upcoming);
+}
+
+#[test]
+fn released_album_is_filtered_only_when_the_local_album_is_really_owned() {
+    let conn = migrated_conn();
+    // Two tracks under "Owned Album" — that counts as owned.
+    for index in 1..=2 {
+        conn.execute(
+            "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+             VALUES (?1, 'T', 'Pink Floyd', 'Owned Album', 1, 0)",
+            [format!("/music/owned-{index}.flac")],
+        )
+        .unwrap();
+    }
+    // One track under "Single Only" — a single, not the album.
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+         VALUES ('/music/single.flac', 'S', 'Pink Floyd', 'Single Only', 1, 0)",
+        [],
+    )
+    .unwrap();
+
+    let owned = crate::artist_news::local_albums_for_test(&conn, "Pink Floyd").unwrap();
+    assert!(owned.iter().any(|album| album == "Owned Album"));
+    assert!(
+        !owned.iter().any(|album| album == "Single Only"),
+        "one track must not make the whole album count as owned"
+    );
+
+    let json = r#"{"release-groups":[
+      {"id":"1","title":"Owned Album","first-release-date":"2026-07-01","primary-type":"Album","secondary-types":[]},
+      {"id":"2","title":"Single Only","first-release-date":"2026-07-01","primary-type":"Album","secondary-types":[]}
+    ]}"#;
+    let items = parse_release_groups(json, &owned, date());
+    let titles = items
+        .iter()
+        .map(|item| item.title.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(titles, ["Single Only"]);
+}
