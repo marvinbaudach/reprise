@@ -1524,6 +1524,10 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
   begrenzte Spektraldaten wahlweise als „Grid" oder „Bars".
   „Grid" bleibt die Standardauswahl; „Bars" zeigt zwanzig fein segmentierte,
   frequenzabhängige Säulen und reagiert auf denselben lokalen Beat-Impuls.
+  Neue Bars-Segmente blenden nahe vollständig transparent ein, starke Impulse
+  nutzen nur den verbleibenden Höhenraum statt Säulen hart zu sättigen, und
+  steigen im ersten 60-Hz-Schritt höchstens um drei volle Segmente. Beim
+  Abklingen fällt keine Säule um mehr als ein volles Segment pro Schritt.
   Unter Renderlast gelten aufeinanderfolgende Spektren als „latest wins";
   ein unmittelbar übersprungener Beat-Impuls bleibt gedämpft erhalten, ohne
   veraltete Spektren nachzuspielen. Fullscreen begrenzt dafür nur die interne
