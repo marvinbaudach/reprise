@@ -80,6 +80,23 @@ pub(crate) fn latest_attempt(conn: &Connection) -> Result<Option<i64>, rusqlite:
     )
 }
 
+/// Every artist key's last attempt timestamp in one query. Callers that need
+/// to judge staleness for many candidates at once (`artists_for_fetch`'s rest
+/// group) would otherwise issue one point query per candidate, including for
+/// candidates they immediately discard; looking each key up in this map costs
+/// one query total instead. A key absent from the map means "never
+/// attempted", matching `last_attempt_at`'s `None` case.
+pub(crate) fn all_last_attempts(
+    conn: &Connection,
+) -> Result<std::collections::HashMap<String, i64>, rusqlite::Error> {
+    let mut statement =
+        conn.prepare("SELECT artist_key, last_attempt_at FROM artist_news_fetch")?;
+    let rows = statement.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+    })?;
+    rows.collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -152,6 +169,21 @@ mod tests {
         record_attempt(&conn, "b", None, 400, FetchOutcome::Ok, 2).unwrap();
         record_attempt(&conn, "c", None, 250, FetchOutcome::Failed, 0).unwrap();
         assert_eq!(latest_attempt(&conn).unwrap(), Some(400));
+    }
+
+    #[test]
+    fn all_last_attempts_maps_every_recorded_artist_key() {
+        let conn = conn();
+        assert!(all_last_attempts(&conn).unwrap().is_empty());
+        record_attempt(&conn, "a", None, 100, FetchOutcome::Unmatched, 0).unwrap();
+        record_attempt(&conn, "b", None, 400, FetchOutcome::Ok, 2).unwrap();
+        record_attempt(&conn, "c", None, 250, FetchOutcome::Failed, 0).unwrap();
+        let map = all_last_attempts(&conn).unwrap();
+        assert_eq!(map.len(), 3);
+        assert_eq!(map.get("a").copied(), Some(100));
+        assert_eq!(map.get("b").copied(), Some(400));
+        assert_eq!(map.get("c").copied(), Some(250));
+        assert_eq!(map.get("nobody"), None);
     }
 
     #[test]
