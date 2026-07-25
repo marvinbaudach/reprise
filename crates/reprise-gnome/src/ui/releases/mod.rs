@@ -3,6 +3,9 @@
 use gtk4::prelude::*;
 
 pub(super) mod css;
+mod releases_empty_state;
+mod releases_model;
+mod releases_presentation;
 
 /// Compile-safe composition stub filled by the Releases view tasks.
 #[allow(dead_code)]
