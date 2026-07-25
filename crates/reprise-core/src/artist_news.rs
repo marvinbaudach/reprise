@@ -12,6 +12,10 @@ use crate::musicbrainz::{self, FetchError};
 const FETCH_TTL_SECONDS: i64 = 7 * 24 * 60 * 60;
 const MIN_ARTIST_SCORE: i64 = 95;
 const NEWS_WINDOW_DAYS: i64 = 90;
+/// How many tracks of an album must be present before the album counts as
+/// owned. One track is a single, not an album — treating it as ownership is
+/// what used to suppress the very album the single announces.
+const OWNED_ALBUM_MIN_TRACKS: i64 = 2;
 const MAX_ITEMS: usize = 20;
 const TOP_ARTIST_COUNT: usize = 20;
 const REST_ARTISTS_PER_RUN: usize = 30;
@@ -437,13 +441,26 @@ fn artist_cache_is_fresh(
 
 fn local_albums(conn: &Connection, artist: &str) -> Result<Vec<String>, rusqlite::Error> {
     let mut statement = conn.prepare(
-        "SELECT DISTINCT album FROM tracks
-         WHERE lower(trim(artist)) = lower(trim(?1)) AND trim(album) <> ''",
+        "SELECT album FROM tracks
+         WHERE lower(trim(artist)) = lower(trim(?1)) AND trim(album) <> ''
+           AND removed_at IS NULL AND missing_since IS NULL
+         GROUP BY lower(trim(album))
+         HAVING COUNT(*) >= ?2",
     )?;
     let albums = statement
-        .query_map([artist], |row| row.get(0))?
+        .query_map(rusqlite::params![artist, OWNED_ALBUM_MIN_TRACKS], |row| {
+            row.get(0)
+        })?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(albums)
+}
+
+#[cfg(test)]
+pub(crate) fn local_albums_for_test(
+    conn: &Connection,
+    artist: &str,
+) -> Result<Vec<String>, rusqlite::Error> {
+    local_albums(conn, artist)
 }
 
 fn upsert_releases(
@@ -731,7 +748,6 @@ fn parse_release_group(
     let primary_type_normalized = primary_type.to_ascii_lowercase();
     if !matches!(primary_type_normalized.as_str(), "album" | "ep" | "single")
         || title.is_empty()
-        || local.contains(&normalize(&title))
         || has_excluded_secondary_type(group)
     {
         return None;
@@ -744,6 +760,13 @@ fn parse_release_group(
         _ if delta >= -NEWS_WINDOW_DAYS => NewsKind::New,
         _ => return None,
     };
+    // An unreleased album cannot be owned. A title match here is by
+    // definition a mis-tagged pre-release track — typically the lead single
+    // tagged with the forthcoming album's name — so the library check is
+    // skipped outright rather than merely relaxed.
+    if kind == NewsKind::New && local.contains(&normalize(&title)) {
+        return None;
+    }
     Some((
         AlbumNews {
             release_group_mbid: mbid,
