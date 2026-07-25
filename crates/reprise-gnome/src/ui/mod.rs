@@ -46,7 +46,7 @@ mod library_views;
 pub(crate) mod link_activation;
 mod lyrics;
 pub(crate) mod motion;
-pub(crate) mod motion_slide;
+pub(crate) mod motion_reveal;
 mod mounts;
 pub mod mpris_mirror;
 pub(crate) mod nav_history;

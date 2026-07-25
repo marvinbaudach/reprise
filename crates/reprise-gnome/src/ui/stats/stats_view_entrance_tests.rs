@@ -1,4 +1,4 @@
-//! Rule-named display tests for the My Stats entrance choreography.
+//! Rule-named display tests for the My Stats bar-only entrance motion.
 
 use super::*;
 
@@ -10,53 +10,31 @@ fn view_and_conn() -> (StatsView, Rc<RefCell<Connection>>) {
     (StatsView::new(loader), conn)
 }
 
-fn presented(width: i32) -> (StatsView, adw::Window) {
+fn presented_entrance() -> (StatsView, Rc<RefCell<Connection>>, adw::Window) {
     let (view, conn) = view_and_conn();
-    seed_plays(&conn.borrow(), 10);
-    view.wire_year_selector(&conn);
-    let window = adw::Window::builder()
-        .default_width(width)
-        .default_height(700)
-        .content(view.widget())
-        .build();
-    window.set_size_request(width, -1);
-    window.present();
-    wait_for(150);
-    (view, window)
-}
-
-fn presented_entrance(width: i32) -> (StatsView, Rc<RefCell<Connection>>, adw::Window) {
-    presented_entrance_at_size(width, 700)
-}
-
-fn presented_entrance_at_size(
-    width: i32,
-    height: i32,
-) -> (StatsView, Rc<RefCell<Connection>>, adw::Window) {
-    let (view, conn) = view_and_conn();
-    seed_plays(&conn.borrow(), 10);
+    seed_current_plays(&conn.borrow(), 10);
     view.wire_year_selector(&conn);
     view.prepare_entrance();
     view.refresh(&conn);
 
     let window = adw::Window::builder()
-        .default_width(width)
-        .default_height(height)
+        .default_width(1_000)
+        .default_height(700)
         .content(view.widget())
         .build();
-    window.set_size_request(width, height);
+    window.set_size_request(1_000, 700);
     window.present();
-    wait_for(80);
+    wait_for(20);
     (view, conn, window)
 }
 
-fn seed_plays(conn: &Connection, count: i64) {
+fn seed_current_plays(conn: &Connection, count: i64) {
     conn.execute(
         "INSERT INTO tracks \
          (id, path, title, artist, album, album_artist, genre, duration_ms, \
           play_count, added_at) \
-         VALUES (1, '/music/1.flac', 'Track', 'Artist', 'Album', '', 'Rock', \
-                 300000, 1, 0)",
+         VALUES (1, '/music/1.flac', 'Current Track', 'Current Artist', \
+                 'Current Album', '', 'Rock', 300000, 1, 0)",
         [],
     )
     .unwrap();
@@ -69,12 +47,23 @@ fn seed_plays(conn: &Connection, count: i64) {
     }
 }
 
-fn seed_previous_year_play(conn: &Connection) {
+fn seed_previous_year_track(conn: &Connection, count: i64) {
     conn.execute(
-        "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, 100000)",
-        rusqlite::params![now_unix() - 365 * 24 * 60 * 60],
+        "INSERT INTO tracks \
+         (id, path, title, artist, album, album_artist, genre, duration_ms, \
+          play_count, added_at) \
+         VALUES (2, '/music/2.flac', 'Earlier Track', 'Earlier Artist', \
+                 'Earlier Album', '', 'Jazz', 300000, 1, 0)",
+        [],
     )
     .unwrap();
+    for offset in 0..count {
+        conn.execute(
+            "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (2, ?1, 200000)",
+            rusqlite::params![now_unix() - 365 * 24 * 60 * 60 - offset],
+        )
+        .unwrap();
+    }
 }
 
 fn wait_for(milliseconds: u64) {
@@ -108,11 +97,31 @@ fn wait_until(milliseconds: u64, condition: impl Fn() -> bool + 'static) -> bool
     reached.get()
 }
 
+struct AnimationSettingGuard {
+    settings: gtk4::Settings,
+    previous: bool,
+}
+
+impl AnimationSettingGuard {
+    fn disable() -> Self {
+        let settings = gtk4::Settings::default().unwrap();
+        let previous = settings.is_gtk_enable_animations();
+        settings.set_gtk_enable_animations(false);
+        Self { settings, previous }
+    }
+}
+
+impl Drop for AnimationSettingGuard {
+    fn drop(&mut self) {
+        self.settings.set_gtk_enable_animations(self.previous);
+    }
+}
+
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_17_entrance_runs_once_per_open() {
+fn stats_17_entrance_keeps_copy_static_while_sparse_week_bars_grow() {
     gtk4::init().unwrap();
-    let (view, conn, window) = presented_entrance(1_000);
+    let (view, _conn, window) = presented_entrance();
     let final_copy = strings::stats_duration(
         view.current_snapshot
             .borrow()
@@ -122,76 +131,96 @@ fn stats_17_entrance_runs_once_per_open() {
             .total_ms,
     );
 
-    assert_eq!(view.render.entrance.entrance_runs(), 1);
-    assert_ne!(
+    assert_eq!(
         view.render.hero.time.label(),
         final_copy,
-        "the mapped hero must still be counting after its first frame"
+        "the mapped hero copy must be final from its first presented frame"
     );
-
-    wait_for(1_050);
-    view.refresh(&conn);
-    assert_eq!(view.render.entrance.entrance_runs(), 1);
-    window.close();
-}
-
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn stats_17_entrance_is_a_sequence_not_a_burst() {
-    gtk4::init().unwrap();
-    let (view, _conn, window) = presented_entrance_at_size(1_000, 1_000);
-    let hero_slide = view.render.hero.time_slide.clone();
-
+    assert!(view.render.ribbon.is_sparse());
+    let ribbon = view.render.ribbon.clone();
     assert!(
-        wait_until(2_000, move || hero_slide.opacity() == 1.0),
-        "the hero entrance must complete within the bounded timeout"
+        wait_until(400, move || {
+            ribbon
+                .bar_fractions()
+                .iter()
+                .any(|fraction| *fraction > 0.0 && *fraction < 1.0)
+        }),
+        "a sparse-week chart bar must be visibly mid-growth after the calm frame"
     );
     assert_eq!(
-        view.render.genres_slide.opacity(),
+        view.render.ribbon.best_week_label_opacity(),
         0.0,
-        "the genre card must still be waiting while the hero is legible"
+        "the best-week label must wait for its bar to finish"
+    );
+    let ribbon = view.render.ribbon.clone();
+    assert!(
+        wait_until(800, move || {
+            ribbon
+                .bar_fractions()
+                .iter()
+                .all(|fraction| *fraction == 1.0)
+                && (0.0..1.0).contains(&ribbon.best_week_label_opacity())
+        }),
+        "the best-week label must fade only after its own bar reaches full height"
+    );
+    assert_eq!(view.render.hero.time.label(), final_copy);
+    assert_eq!(view.render.header.root.opacity(), 1.0);
+    assert_eq!(view.render.hero.root.opacity(), 1.0);
+    assert_eq!(view.render.band_section.opacity(), 1.0);
+    assert_eq!(view.render.songs_section.opacity(), 1.0);
+
+    let song_bar = view
+        .render
+        .songs_card
+        .summary_bars()
+        .into_iter()
+        .next()
+        .expect("the fixture renders one song bar");
+    let requested_width = song_bar.measure(gtk4::Orientation::Horizontal, -1).0;
+    assert!(
+        requested_width > 0,
+        "the mapped song bar must retain a real width requirement while its fill grows"
     );
     window.close();
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_17_cards_below_the_fold_skip_the_entrance() {
+fn stats_17_reduced_motion_puts_every_bar_at_its_target_immediately() {
     gtk4::init().unwrap();
-    let (view, _conn, window) = presented_entrance_at_size(1_000, 360);
-    let content = view.root.child().unwrap();
-    let bounds = view
-        .render
-        .genres_slide
-        .compute_bounds(&content)
-        .expect("the genre card and clamp share one widget tree");
-    let adjustment = view.root.vadjustment();
+    let _setting_guard = AnimationSettingGuard::disable();
+    let (view, _conn, window) = presented_entrance();
 
-    assert!(
-        f64::from(bounds.y()) >= adjustment.value() + adjustment.page_size(),
-        "the fixture must keep the genre card below the initial viewport"
-    );
-    assert_eq!(view.render.genres_slide.opacity(), 1.0);
-    assert_eq!(view.render.genres_slide.offset_y(), 0.0);
+    assert!(view
+        .render
+        .ribbon
+        .bar_fractions()
+        .iter()
+        .all(|fraction| *fraction == 1.0));
+    assert_eq!(view.render.ribbon.best_week_label_opacity(), 1.0);
+    assert!(view
+        .render
+        .songs_card
+        .summary_bars()
+        .iter()
+        .all(|bar| bar.value() > 0.0));
     assert!(view
         .render
         .genres_section_data
-        .segment_slides()
+        .segment_reveals()
         .iter()
         .all(|segment| segment.reveal_fraction() == 1.0));
+
     window.close();
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_17_period_switch_only_tweens_values() {
+fn stats_17_period_switch_tweens_bars_without_restarting_static_content() {
     gtk4::init().unwrap();
-    let (view, conn, window) = presented_entrance(1_000);
-    wait_for(1_050);
-    seed_previous_year_play(&conn.borrow());
-    view.refresh(&conn);
-    let entrances = view.render.entrance.entrance_runs();
-    let tweens = view.render.entrance.tween_runs();
+    let (view, conn, window) = presented_entrance();
+    wait_for(800);
+    seed_previous_year_track(&conn.borrow(), 20);
 
     let all_time = view
         .periods
@@ -201,6 +230,19 @@ fn stats_17_period_switch_only_tweens_values() {
         .unwrap() as u32;
     view.period_dropdown.set_selected(all_time);
     wait_for(40);
+
+    let bars = view.render.songs_card.summary_bars();
+    let growing_value = bars
+        .get(1)
+        .expect("the all-time period adds the earlier track")
+        .value();
+    let growing_genre_width = view
+        .render
+        .genres_section_data
+        .segment_reveals()
+        .get(1)
+        .expect("the all-time period adds a second genre")
+        .width();
     let final_copy = strings::stats_duration(
         view.current_snapshot
             .borrow()
@@ -209,91 +251,47 @@ fn stats_17_period_switch_only_tweens_values() {
             .hero
             .total_ms,
     );
-
-    assert_eq!(view.render.entrance.entrance_runs(), entrances);
-    assert_eq!(view.render.entrance.tween_runs(), tweens + 1);
-    assert_ne!(
+    assert!(
+        growing_value > 0.0,
+        "the newly visible song bar must have started its period tween"
+    );
+    assert!(
+        growing_genre_width > 0,
+        "the newly visible genre segment must have started its width tween"
+    );
+    assert_eq!(
         view.render.hero.time.label(),
         final_copy,
-        "a mapped period switch must be observable mid-tween"
+        "period copy changes immediately instead of counting"
     );
-    window.close();
-}
+    assert_eq!(view.render.header.root.opacity(), 1.0);
+    assert_eq!(view.render.hero.root.opacity(), 1.0);
+    assert_eq!(view.render.band_section.opacity(), 1.0);
+    assert_eq!(view.render.songs_section.opacity(), 1.0);
+    assert_eq!(view.render.ribbon.best_week_label_opacity(), 1.0);
 
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn stats_17_reduced_motion_lands_in_end_state() {
-    gtk4::init().unwrap();
-    let settings = gtk4::Settings::default().unwrap();
-    let previous = settings.is_gtk_enable_animations();
-    let (view, window) = presented(1_000);
-    let conn = view.connection.borrow().clone().unwrap();
-
-    settings.set_gtk_enable_animations(false);
-    view.prepare_entrance();
-    view.refresh(&conn);
-    let reduced_state = (
-        view.render.ribbon.reveal_fraction(),
-        view.render.ribbon.marker_opacity(),
-        view.render.band_slide.opacity(),
-        view.render.songs_slide.opacity(),
-        view.render.genres_slide.opacity(),
-        view.render.header_slide.offset_y(),
-        view.render.hero.time_slide.offset_y(),
-        view.render.hero.kpi_slide.offset_y(),
-        view.render.band_slide.offset_y(),
-        view.render.songs_slide.offset_y(),
-        view.render.genres_slide.offset_y(),
-        view.render
-            .songs_card
-            .summary_bars()
-            .iter()
-            .all(|bar| bar.value() > 0.0),
-    );
-
-    settings.set_gtk_enable_animations(true);
-    view.prepare_entrance();
-    view.refresh(&conn);
-    wait_for(40);
-    let animated_state = (
-        view.render.ribbon.reveal_fraction(),
-        view.render.hero.time.label().to_string(),
-    );
-    let final_copy = strings::stats_duration(
-        view.current_snapshot
-            .borrow()
-            .as_ref()
-            .unwrap()
-            .hero
-            .total_ms,
-    );
-    settings.set_gtk_enable_animations(previous);
-
-    assert_eq!(
-        [
-            reduced_state.0,
-            reduced_state.1,
-            reduced_state.2,
-            reduced_state.3,
-            reduced_state.4,
-        ],
-        [1.0; 5]
-    );
-    assert_eq!(
-        [
-            reduced_state.5,
-            reduced_state.6,
-            reduced_state.7,
-            reduced_state.8,
-            reduced_state.9,
-            reduced_state.10,
-        ],
-        [0.0; 6]
-    );
-    assert!(reduced_state.11);
+    wait_for(300);
+    let final_value = view
+        .render
+        .songs_card
+        .summary_bars()
+        .get(1)
+        .unwrap()
+        .value();
+    let final_genre_width = view
+        .render
+        .genres_section_data
+        .segment_reveals()
+        .get(1)
+        .unwrap()
+        .width();
     assert!(
-        animated_state.0 < 1.0 || animated_state.1 != final_copy,
-        "the enabled-motion control run must still be in flight"
+        growing_value < final_value,
+        "the observed intermediate width must finish at the new target"
+    );
+    assert!(
+        growing_genre_width < final_genre_width,
+        "the observed genre segment width must finish at the new target"
     );
     window.close();
 }

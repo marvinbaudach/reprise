@@ -1538,24 +1538,23 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   und nur Karten mit Daten werden gerendert — nie Platzhalterkarten. Ohne
   jeden Play gilt unverändert der Leerzustand aus STATS-6/STATS-6c samt
   bedienbarer Zeitraumwahl.
-- **STATS-17** [aktiv] [gtk] — Die Seite animiert genau einmal pro Öffnen:
-  Kopfzeile und Hero-Zahl faden ab 0 ms über 350 ms ein und gleiten dabei
-  12 px aufwärts; der Zähler startet nach 100 ms und läuft 900 ms. Die
-  KPI-Gruppe folgt als Einheit ab 250 ms über 400 ms mit 8 px Weg. Das Chart
-  enthüllt sich ab 500 ms über 700 ms von links nach rechts; bei 85 % des
-  Reveals faden Best-Week-Marker und Label 200 ms ein. Band-, Songs- und
-  Genre-Karte starten ab 900 ms mit je 120 ms Versatz, faden über 450 ms ein
-  und gleiten 16 px aufwärts. Ihre Balken beginnen jeweils 150 ms nach dem
-  Kartenstart, wachsen über 500 ms und folgen von oben nach unten mit 60 ms
-  Versatz; Genre-Segmente wachsen entsprechend nacheinander von links.
-  Sämtliche Pfade nutzen benannte Motion-Tokens und Ease-out-expo; das
-  verbindliche Gesamtbudget liegt durch die letzte Staffelung bei rund zwei
-  Sekunden. Karten, die beim Öffnen vollständig unterhalb des sichtbaren
-  `ScrolledWindow`-Ausschnitts liegen, überspringen die Choreografie und
-  stehen sofort im Endzustand. Ein Zeitraumwechsel wiederholt Slides und
-  Fades nie, sondern interpoliert nur Zahl und Balkenbreiten über 250 ms. Bei
-  `gtk-enable-animations=false` stehen einschließlich aller Slide-Offsets
-  sofort alle Elemente im Endzustand.
+- **STATS-17** [aktiv] [gtk] — My Stats steht ab dem ersten Frame vollständig
+  da: Karten, Hero-Zahl, KPIs, Texte, Cover und Bilder faden nicht, gleiten
+  nicht und zählen nicht hoch. Nur Balken bewegen sich, gemeinsam nach einem
+  ruhigen Startframe von ungefähr 100 ms und mit Ease-out
+  `cubic-bezier(0.16, 1, 0.3, 1)`: Im Sparse-Week-Modus wachsen die
+  Chart-Balken in 500 ms von der Grundlinie mit 80 ms Versatz; das
+  Best-Week-Label fadet erst nach dem Ende seines eigenen Balkens über 150 ms
+  ein. Der alternative Flächen-/Linienmodus ist bereits im ersten Frame
+  vollständig gezeichnet und besitzt keine Eingangsanimation. Horizontale
+  Balken — Band-Ränge 2–5, Song-Balken und Genre-Segmente — wachsen innerhalb
+  ihrer jeweiligen Karte in 450 ms von links mit 40 ms Versatz; Genre-Segmente
+  laufen in Leserichtung. Auch Balken unterhalb des sichtbaren Ausschnitts
+  folgen demselben Start, es gibt keine Fold-Sonderbehandlung. Ein
+  Zeitraumwechsel startet keine Eingangschoreografie neu und interpoliert
+  ausschließlich Balkenwerte über 250 ms; alle übrigen Inhalte wechseln
+  sofort in ihren neuen Endzustand. Bei `gtk-enable-animations=false` stehen
+  ausnahmslos alle Balken und das Best-Week-Label sofort im Endzustand.
 
 ## W. Buttons & Interaktionszustände
 

@@ -22,12 +22,12 @@ pub(in crate::ui) struct MonthTick {
 }
 
 pub(in crate::ui) fn ribbon_layout(
-    values: &[i64],
+    values: &[f64],
     width: f64,
     height: f64,
     open_index: Option<usize>,
 ) -> RibbonLayout {
-    let maximum = values.iter().copied().max().unwrap_or(0).max(0);
+    let maximum = values.iter().copied().fold(0.0, f64::max);
     let points = values
         .iter()
         .enumerate()
@@ -50,12 +50,22 @@ pub(in crate::ui) fn ribbon_layout(
 }
 
 pub(in crate::ui) fn bar_layout(
-    values: &[i64],
+    values: &[f64],
     width: f64,
     height: f64,
     open_index: Option<usize>,
 ) -> RibbonLayout {
-    let maximum = values.iter().copied().max().unwrap_or(0).max(0);
+    let maximum = values.iter().copied().fold(0.0, f64::max);
+    bar_layout_for_max(values, maximum, width, height, open_index)
+}
+
+pub(in crate::ui) fn bar_layout_for_max(
+    values: &[f64],
+    maximum: f64,
+    width: f64,
+    height: f64,
+    open_index: Option<usize>,
+) -> RibbonLayout {
     let slot_width = if values.is_empty() {
         0.0
     } else {
@@ -79,11 +89,11 @@ pub(in crate::ui) fn bar_width(slot_width: f64) -> f64 {
     (slot_width * 0.40).clamp(2.0, 48.0).min(slot_width)
 }
 
-fn point_y(value: i64, maximum: i64, height: f64) -> f64 {
-    let magnitude = if maximum == 0 {
+fn point_y(value: f64, maximum: f64, height: f64) -> f64 {
+    let magnitude = if maximum == 0.0 {
         0.0
     } else {
-        value.max(0) as f64 / (maximum as f64 * HEADROOM_FACTOR)
+        value.max(0.0) / (maximum * HEADROOM_FACTOR)
     };
     height - magnitude * height
 }
@@ -160,10 +170,6 @@ pub(in crate::ui) fn axis_ticks(
     month_ticks(bucket_starts, granularity)
 }
 
-pub(in crate::ui) fn reveal_clip_width(width: f64, reveal_fraction: f64) -> f64 {
-    width.max(0.0) * reveal_fraction.clamp(0.0, 1.0)
-}
-
 pub(in crate::ui) fn bucket_at_x(x: f64, width: f64, bucket_count: usize) -> Option<usize> {
     if bucket_count == 0 || width <= 0.0 || x < 0.0 || x >= width {
         return None;
@@ -177,7 +183,7 @@ mod tests {
 
     #[test]
     fn ribbon_area_path_spans_every_bucket() {
-        let layout = ribbon_layout(&[10, 20, 5], 300.0, 100.0, None);
+        let layout = ribbon_layout(&[10.0, 20.0, 5.0], 300.0, 100.0, None);
 
         assert_eq!(layout.points.len(), 3);
         assert_eq!(layout.points[0].x, 0.0);
@@ -187,7 +193,7 @@ mod tests {
 
     #[test]
     fn ribbon_marks_the_open_bucket_and_the_peak() {
-        let layout = ribbon_layout(&[10, 30, 20], 300.0, 100.0, Some(2));
+        let layout = ribbon_layout(&[10.0, 30.0, 20.0], 300.0, 100.0, Some(2));
 
         assert_eq!(layout.open_index, Some(2));
         assert!((layout.points[1].y - 10.714).abs() < 0.01);
@@ -195,7 +201,7 @@ mod tests {
 
     #[test]
     fn sparse_week_bars_are_centered_in_equal_slots_with_headroom() {
-        let layout = bar_layout(&[10, 30, 20], 300.0, 100.0, Some(2));
+        let layout = bar_layout(&[10.0, 30.0, 20.0], 300.0, 100.0, Some(2));
 
         assert_eq!(layout.points.len(), 3);
         assert_eq!(layout.points[0].x, 50.0);
@@ -213,7 +219,7 @@ mod tests {
 
     #[test]
     fn ribbon_with_all_zero_values_draws_a_flat_baseline() {
-        let layout = ribbon_layout(&[0, 0, 0], 300.0, 100.0, None);
+        let layout = ribbon_layout(&[0.0, 0.0, 0.0], 300.0, 100.0, None);
 
         assert!(layout.points.iter().all(|point| point.y == 100.0));
     }
@@ -377,12 +383,5 @@ mod tests {
                 },
             ]
         );
-    }
-
-    #[test]
-    fn reveal_fraction_clips_the_area_path() {
-        assert_eq!(reveal_clip_width(320.0, 0.0), 0.0);
-        assert_eq!(reveal_clip_width(320.0, 0.4), 128.0);
-        assert_eq!(reveal_clip_width(320.0, 2.0), 320.0);
     }
 }

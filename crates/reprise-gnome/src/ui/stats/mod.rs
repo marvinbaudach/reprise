@@ -1,6 +1,7 @@
 pub(in crate::ui) mod stats_band_card;
 pub(crate) mod stats_css;
 pub(in crate::ui) mod stats_entrance;
+pub(in crate::ui) mod stats_genre_bar;
 pub(in crate::ui) mod stats_genre_card;
 pub(in crate::ui) mod stats_header;
 pub(in crate::ui) mod stats_hero;

@@ -7,9 +7,10 @@ use gtk4::prelude::*;
 use reprise_core::cover::ThumbnailSize;
 use reprise_core::library::stats_snapshot::{GenreSection, GenreSegment};
 
+use super::stats_genre_bar::StatsGenreBar;
 use super::stats_view_widgets::label;
 use crate::ui::cover_loader::CoverLoader;
-use crate::ui::motion_slide::SlideBin;
+use crate::ui::motion_reveal::HorizontalReveal;
 use crate::ui::strings;
 
 type StringCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
@@ -17,14 +18,14 @@ type StringCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
 #[derive(Clone)]
 pub(in crate::ui) struct StatsGenreCard {
     root: gtk4::Box,
-    segments: gtk4::Grid,
+    segments: StatsGenreBar,
     tiles: gtk4::Grid,
     cover_loader: Rc<CoverLoader>,
     cover_generation: Rc<Cell<u64>>,
     on_unify: StringCallback,
     on_open_album_path: StringCallback,
     on_open_genre: StringCallback,
-    segment_slides: Rc<RefCell<Vec<SlideBin>>>,
+    segment_reveals: Rc<RefCell<Vec<HorizontalReveal>>>,
     #[cfg_attr(not(test), allow(dead_code))]
     cover_buttons: Rc<RefCell<Vec<gtk4::Button>>>,
     #[cfg_attr(not(test), allow(dead_code))]
@@ -36,13 +37,7 @@ impl StatsGenreCard {
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
         root.add_css_class("stats-genre-card");
         root.append(&label("GENRES", "stats-eyebrow"));
-        let segments = gtk4::Grid::builder()
-            .column_spacing(2)
-            .column_homogeneous(true)
-            .build();
-        segments.add_css_class("stats-genre-bar");
-        segments.set_height_request(22);
-        segments.set_overflow(gtk4::Overflow::Hidden);
+        let segments = StatsGenreBar::new();
         root.append(&segments);
         let tiles = gtk4::Grid::builder()
             .column_spacing(16)
@@ -51,6 +46,7 @@ impl StatsGenreCard {
             .build();
         tiles.add_css_class("stats-genre-tiles");
         root.append(&tiles);
+        let segment_reveals = Rc::new(RefCell::new(Vec::new()));
         Self {
             root,
             segments,
@@ -60,7 +56,7 @@ impl StatsGenreCard {
             on_unify: Rc::new(RefCell::new(None)),
             on_open_album_path: Rc::new(RefCell::new(None)),
             on_open_genre: Rc::new(RefCell::new(None)),
-            segment_slides: Rc::new(RefCell::new(Vec::new())),
+            segment_reveals,
             cover_buttons: Rc::new(RefCell::new(Vec::new())),
             genre_buttons: Rc::new(RefCell::new(Vec::new())),
         }
@@ -71,11 +67,10 @@ impl StatsGenreCard {
     }
 
     pub(in crate::ui) fn set_data(&self, section: &GenreSection) {
-        clear_grid(&self.segments);
+        self.segment_reveals.borrow_mut().clear();
         clear_grid(&self.tiles);
         self.cover_buttons.borrow_mut().clear();
         self.genre_buttons.borrow_mut().clear();
-        self.segment_slides.borrow_mut().clear();
         let token = self.cover_generation.get().wrapping_add(1);
         self.cover_generation.set(token);
         self.render_segments(section);
@@ -92,8 +87,13 @@ impl StatsGenreCard {
     }
 
     fn render_segments(&self, section: &GenreSection) {
-        let mut column = 0;
         let last_index = section.segments.len().saturating_sub(1);
+        let target_shares = section
+            .segments
+            .iter()
+            .map(|segment| segment.share_percent.max(1) as f64)
+            .collect::<Vec<_>>();
+        let mut reveals = Vec::with_capacity(section.segments.len());
         for (index, segment) in section.segments.iter().enumerate() {
             let bar = gtk4::Button::new();
             bar.add_css_class("flat");
@@ -121,12 +121,11 @@ impl StatsGenreCard {
             } else {
                 bar.set_can_target(false);
             }
-            let width = segment.share_percent.max(1) as i32;
-            let slide = SlideBin::new(&bar);
-            self.segments.attach(&slide, column, 0, width, 1);
-            self.segment_slides.borrow_mut().push(slide);
-            column += width;
+            let reveal = HorizontalReveal::new(&bar);
+            reveals.push(reveal);
         }
+        self.segments.set_segments(&reveals, &target_shares);
+        self.segment_reveals.replace(reveals);
     }
 
     fn tile(&self, segment: &GenreSegment, token: u64) -> gtk4::Box {
@@ -224,20 +223,28 @@ impl StatsGenreCard {
         *self.on_open_genre.borrow_mut() = Some(Rc::new(callback));
     }
 
-    pub(super) fn segment_slides(&self) -> Vec<SlideBin> {
-        self.segment_slides.borrow().clone()
+    pub(super) fn segment_reveals(&self) -> Vec<HorizontalReveal> {
+        self.segment_reveals.borrow().clone()
+    }
+
+    pub(super) fn target_segment_shares(&self) -> Vec<f64> {
+        self.segments.target_shares()
+    }
+
+    pub(super) fn set_segment_shares(&self, shares: &[f64]) {
+        self.segments.set_shares(shares);
     }
 
     #[cfg(test)]
     fn segment_buttons(&self) -> Vec<gtk4::Button> {
-        self.segment_slides
+        self.segment_reveals
             .borrow()
             .iter()
-            .map(|slide| {
-                slide
+            .map(|reveal| {
+                reveal
                     .first_child()
                     .and_downcast::<gtk4::Button>()
-                    .expect("every genre segment slide must wrap its button")
+                    .expect("every genre segment reveal must wrap its button")
             })
             .collect()
     }
@@ -389,7 +396,7 @@ mod tests {
 
         let eyebrow = card.widget().first_child().unwrap();
         let segment_grid = eyebrow.next_sibling().unwrap();
-        let segments = card.segment_slides();
+        let segments = card.segment_reveals();
         let occupied_width = segments
             .iter()
             .map(gtk4::prelude::WidgetExt::width)

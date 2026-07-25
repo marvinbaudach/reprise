@@ -71,7 +71,7 @@ fn one_bucket_draws_a_full_width_fill_and_line() {
 
 #[test]
 fn sparse_week_bars_render_zero_ticks_on_a_continuous_baseline() {
-    let layout = bar_layout(&[10, 0, 20], 90.0, 90.0, None);
+    let layout = bar_layout(&[10.0, 0.0, 20.0], 90.0, 90.0, None);
     let mut surface = ImageSurface::create(Format::ARgb32, 90, 100).unwrap();
     {
         let context = gtk4::cairo::Context::new(&surface).unwrap();
@@ -86,7 +86,7 @@ fn sparse_week_bars_render_zero_ticks_on_a_continuous_baseline() {
                 best: rgba(1.0, 1.0, 1.0, 1.0),
                 baseline: rgba(1.0, 1.0, 1.0, 0.18),
             },
-            1.0,
+            &[1.0; 3],
         );
     }
 
@@ -103,8 +103,39 @@ fn sparse_week_bars_render_zero_ticks_on_a_continuous_baseline() {
 }
 
 #[test]
+fn sparse_week_bar_fraction_grows_up_from_the_baseline() {
+    let layout = bar_layout(&[20.0], 90.0, 90.0, None);
+    let mut surface = ImageSurface::create(Format::ARgb32, 90, 100).unwrap();
+    {
+        let context = gtk4::cairo::Context::new(&surface).unwrap();
+        draw_bars(
+            &context,
+            &layout,
+            90.0,
+            90.0,
+            None,
+            BarColors {
+                standard: rgba(1.0, 1.0, 1.0, 1.0),
+                best: rgba(1.0, 1.0, 1.0, 1.0),
+                baseline: rgba(1.0, 1.0, 1.0, 0.18),
+            },
+            &[0.5],
+        );
+    }
+
+    assert!(
+        !pixel_has_ink(&mut surface, 45, 30),
+        "half growth must leave the target bar top unpainted"
+    );
+    assert!(
+        pixel_has_ink(&mut surface, 45, 70),
+        "half growth must stay anchored to the baseline"
+    );
+}
+
+#[test]
 fn best_week_bar_uses_the_lighter_accent_step() {
-    let layout = bar_layout(&[20, 20, 20], 90.0, 90.0, None);
+    let layout = bar_layout(&[20.0, 20.0, 20.0], 90.0, 90.0, None);
     let mut surface = ImageSurface::create(Format::ARgb32, 90, 100).unwrap();
     {
         let context = gtk4::cairo::Context::new(&surface).unwrap();
@@ -119,7 +150,7 @@ fn best_week_bar_uses_the_lighter_accent_step() {
                 best: rgba(0.8, 0.0, 0.0, 1.0),
                 baseline: rgba(0.0, 0.0, 0.0, 0.0),
             },
-            1.0,
+            &[1.0; 3],
         );
     }
 
