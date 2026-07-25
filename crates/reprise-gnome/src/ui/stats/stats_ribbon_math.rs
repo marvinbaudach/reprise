@@ -53,7 +53,7 @@ pub(in crate::ui) fn ribbon_layout(
 }
 
 pub(in crate::ui) fn best_week_bucket_index(
-    bucket_starts: &[NaiveDate],
+    bucket_starts: &[Option<NaiveDate>],
     granularity: Granularity,
     best_week_start: Option<NaiveDate>,
 ) -> Option<usize> {
@@ -61,26 +61,25 @@ pub(in crate::ui) fn best_week_bucket_index(
         return None;
     }
     let best_week_start = best_week_start?;
-    bucket_starts
-        .iter()
-        .position(|start| start.week(Weekday::Mon).first_day() == best_week_start)
+    bucket_starts.iter().position(|start| {
+        start.is_some_and(|start| start.week(Weekday::Mon).first_day() == best_week_start)
+    })
 }
 
-pub(in crate::ui) fn month_ticks(bucket_starts: &[NaiveDate]) -> Vec<MonthTick> {
-    bucket_starts
-        .iter()
-        .enumerate()
-        .filter(|(index, date)| {
-            *index == 0
-                || bucket_starts
-                    .get(index.saturating_sub(1))
-                    .is_some_and(|previous| previous.month() != date.month())
-        })
-        .map(|(index, date)| MonthTick {
-            index,
-            label: date.format("%b").to_string().to_uppercase(),
-        })
-        .collect()
+pub(in crate::ui) fn month_ticks(bucket_starts: &[Option<NaiveDate>]) -> Vec<MonthTick> {
+    let mut previous = None;
+    let mut ticks = Vec::new();
+    for (index, date) in bucket_starts.iter().enumerate() {
+        let Some(date) = date else { continue };
+        if previous.is_none_or(|previous: NaiveDate| previous.month() != date.month()) {
+            ticks.push(MonthTick {
+                index,
+                label: date.format("%b").to_string().to_uppercase(),
+            });
+        }
+        previous = Some(*date);
+    }
+    ticks
 }
 
 pub(in crate::ui) fn reveal_clip_width(width: f64, reveal_fraction: f64) -> f64 {
@@ -136,17 +135,17 @@ mod tests {
     #[test]
     fn stats_12_marker_sits_on_the_best_week_bucket() {
         let starts = [
-            NaiveDate::from_ymd_opt(2026, 3, 2).unwrap(),
-            NaiveDate::from_ymd_opt(2026, 3, 9).unwrap(),
-            NaiveDate::from_ymd_opt(2026, 3, 16).unwrap(),
+            Some(NaiveDate::from_ymd_opt(2026, 3, 2).unwrap()),
+            Some(NaiveDate::from_ymd_opt(2026, 3, 9).unwrap()),
+            Some(NaiveDate::from_ymd_opt(2026, 3, 16).unwrap()),
         ];
 
         assert_eq!(
-            best_week_bucket_index(&starts, Granularity::Week, Some(starts[1])),
+            best_week_bucket_index(&starts, Granularity::Week, starts[1]),
             Some(1)
         );
         assert_eq!(
-            best_week_bucket_index(&starts, Granularity::Day, Some(starts[1])),
+            best_week_bucket_index(&starts, Granularity::Day, starts[1]),
             None
         );
     }
@@ -159,7 +158,7 @@ mod tests {
 
         assert_eq!(
             best_week_bucket_index(
-                &[clipped_period_start, next_week],
+                &[Some(clipped_period_start), Some(next_week)],
                 Granularity::Week,
                 Some(aligned_best_week)
             ),
@@ -170,10 +169,10 @@ mod tests {
     #[test]
     fn month_ticks_derive_from_bucket_starts() {
         let starts = [
-            NaiveDate::from_ymd_opt(2026, 1, 26).unwrap(),
-            NaiveDate::from_ymd_opt(2026, 2, 2).unwrap(),
-            NaiveDate::from_ymd_opt(2026, 2, 9).unwrap(),
-            NaiveDate::from_ymd_opt(2026, 3, 2).unwrap(),
+            Some(NaiveDate::from_ymd_opt(2026, 1, 26).unwrap()),
+            Some(NaiveDate::from_ymd_opt(2026, 2, 2).unwrap()),
+            Some(NaiveDate::from_ymd_opt(2026, 2, 9).unwrap()),
+            Some(NaiveDate::from_ymd_opt(2026, 3, 2).unwrap()),
         ];
 
         assert_eq!(
@@ -190,6 +189,29 @@ mod tests {
                 MonthTick {
                     index: 3,
                     label: "MAR".into()
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn missing_local_dates_keep_month_tick_indices_aligned_with_values() {
+        let starts = [
+            Some(NaiveDate::from_ymd_opt(2026, 1, 26).unwrap()),
+            None,
+            Some(NaiveDate::from_ymd_opt(2026, 2, 9).unwrap()),
+        ];
+
+        assert_eq!(
+            month_ticks(&starts),
+            vec![
+                MonthTick {
+                    index: 0,
+                    label: "JAN".into()
+                },
+                MonthTick {
+                    index: 2,
+                    label: "FEB".into()
                 }
             ]
         );
