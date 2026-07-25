@@ -127,6 +127,9 @@ impl CoverLoader {
         self.load_target(image, track_path, size, token, current, |_| {});
     }
 
+    /// Loads into a picture and calls `on_loaded` only while `token` is still
+    /// current. Once stale, a request neither changes the target nor runs the
+    /// callback.
     pub fn load_into_picture(
         self: &Rc<Self>,
         picture: &gtk4::Picture,
@@ -181,6 +184,9 @@ impl CoverLoader {
         current: &Rc<Cell<u64>>,
         on_resolved: impl Fn(Option<PathBuf>) + 'static,
     ) {
+        if current.get() != token {
+            return;
+        }
         let key = format!("{track_path}|{}", size.pixels());
         if let Some(cached) = self.cache_get(&key) {
             target.show_texture(&cached.texture);
@@ -215,16 +221,19 @@ impl CoverLoader {
                     skip_if_covered: false,
                     response,
                 }) {
-                    on_resolved(None);
+                    if current.get() == token {
+                        on_resolved(None);
+                    }
                     return;
                 }
-                let Ok(DownloadOutcome::Downloaded(downloaded_path)) = result.recv().await else {
-                    on_resolved(None);
-                    return;
-                };
+                let result = result.recv().await;
                 if current.get() != token {
                     return;
                 }
+                let Ok(DownloadOutcome::Downloaded(downloaded_path)) = result else {
+                    on_resolved(None);
+                    return;
+                };
                 cache_path = gio::spawn_blocking(move || {
                     thumbnail(
                         &reprise_core::cover::CoverSource::FolderImage(downloaded_path),
@@ -263,5 +272,59 @@ impl CoverLoader {
                 }
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn stale_picture_load_does_not_run_completion_callback() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let (worker, requests) = async_channel::unbounded();
+        let loader = CoverLoader::new(CoverDownloadRuntime {
+            enabled: Rc::new(Cell::new(true)),
+            worker,
+        });
+        let picture = gtk4::Picture::new();
+        let current = Rc::new(Cell::new(1));
+        let completed = Rc::new(Cell::new(false));
+        loader.load_into_picture(
+            &picture,
+            "/missing/stale-cover-test.flac",
+            ThumbnailSize::Portrait,
+            1,
+            &current,
+            {
+                let completed = completed.clone();
+                move |_| completed.set(true)
+            },
+        );
+
+        let context = glib::MainContext::default();
+        let request = (0..10_000).find_map(|_| {
+            while context.pending() {
+                context.iteration(false);
+            }
+            std::thread::yield_now();
+            requests.try_recv().ok()
+        });
+        let request = request.expect("cover request should reach the controlled worker");
+        current.set(2);
+        request
+            .response
+            .try_send(DownloadOutcome::Unavailable)
+            .unwrap();
+        for _ in 0..100 {
+            while context.pending() {
+                context.iteration(false);
+            }
+            std::thread::yield_now();
+        }
+
+        assert!(!completed.get());
     }
 }

@@ -228,6 +228,7 @@ impl StatsBandCard {
         };
         let picture = self.picture.clone();
         let fallback = self.fallback.clone();
+        let cover_generation = self.cover_generation.clone();
         loader.load_into_picture(
             &self.picture,
             path,
@@ -235,6 +236,9 @@ impl StatsBandCard {
             token,
             &self.cover_generation,
             move |loaded| {
+                if cover_generation.get() != token {
+                    return;
+                }
                 picture.set_visible(loaded);
                 fallback.set_visible(!loaded);
             },
