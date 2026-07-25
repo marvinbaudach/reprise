@@ -11,6 +11,7 @@
 use reprise_core::ai_jobs::{AiJob, JobState};
 use reprise_core::library::playlists::PlaylistSummary;
 use reprise_core::models::Track;
+use reprise_core::queries::{AlbumSummary, ArtistSummary};
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
@@ -54,6 +55,74 @@ pub struct SearchTracksResult {
     pub has_more: bool,
 }
 
+/// Artist metadata exposed to agents. The representative cover source remains
+/// internal because it is a filesystem path.
+#[derive(Debug, Clone, Serialize)]
+pub struct ArtistDto {
+    pub artist: String,
+    pub track_count: i64,
+    pub album_count: i64,
+    pub total_plays: i64,
+}
+
+impl From<&ArtistSummary> for ArtistDto {
+    fn from(summary: &ArtistSummary) -> Self {
+        Self {
+            artist: summary.artist.clone(),
+            track_count: summary.track_count,
+            album_count: summary.album_count,
+            total_plays: summary.total_plays,
+        }
+    }
+}
+
+/// A page of artist search results.
+#[derive(Debug, Clone, Serialize)]
+pub struct SearchArtistsResult {
+    pub artists: Vec<ArtistDto>,
+    pub total: usize,
+    pub offset: i64,
+    pub limit: i64,
+    pub returned: usize,
+    pub has_more: bool,
+}
+
+/// Album metadata exposed to agents. Cover source paths and internal activity
+/// timestamps are deliberately omitted.
+#[derive(Debug, Clone, Serialize)]
+pub struct AlbumDto {
+    pub album: String,
+    pub album_artist: String,
+    pub track_count: i64,
+    pub year: Option<i32>,
+    pub total_duration_ms: i64,
+    pub total_play_count: i64,
+}
+
+impl From<&AlbumSummary> for AlbumDto {
+    fn from(summary: &AlbumSummary) -> Self {
+        Self {
+            album: summary.album.clone(),
+            album_artist: summary.album_artist.clone(),
+            track_count: summary.track_count,
+            year: summary.year,
+            total_duration_ms: summary.total_duration_ms,
+            total_play_count: summary.total_play_count,
+        }
+    }
+}
+
+/// A page of album search results.
+#[derive(Debug, Clone, Serialize)]
+pub struct SearchAlbumsResult {
+    pub albums: Vec<AlbumDto>,
+    pub total: usize,
+    pub offset: i64,
+    pub limit: i64,
+    pub returned: usize,
+    pub has_more: bool,
+}
+
 /// The `reprise://library/summary` resource body.
 #[derive(Debug, Clone, Serialize)]
 pub struct LibrarySummary {
@@ -87,6 +156,18 @@ pub struct PlaylistsResult {
     pub playlists: Vec<PlaylistDto>,
 }
 
+/// One playlist plus a page of its durable membership, in playlist order.
+#[derive(Debug, Clone, Serialize)]
+pub struct PlaylistContentsResult {
+    pub playlist: PlaylistDto,
+    pub tracks: Vec<TrackDto>,
+    pub total: i64,
+    pub offset: i64,
+    pub limit: i64,
+    pub returned: usize,
+    pub has_more: bool,
+}
+
 /// The `music_create_playlist` result body.
 #[derive(Debug, Clone, Serialize)]
 pub struct CreatePlaylistResult {
@@ -106,6 +187,33 @@ pub struct SearchTracksParams {
     #[serde(default)]
     pub limit: Option<u32>,
     /// Zero-based offset into the full result set (default 0).
+    #[serde(default)]
+    pub offset: Option<u32>,
+}
+
+/// Shared pagination and substring-filter parameters for artist and album
+/// discovery.
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+pub struct BrowseLibraryParams {
+    /// Case-insensitive substring. Empty matches every artist or album.
+    #[serde(default)]
+    pub query: String,
+    /// Maximum rows to return (1..=200, default 50).
+    #[serde(default)]
+    pub limit: Option<u32>,
+    /// Zero-based offset into the matching rows (default 0).
+    #[serde(default)]
+    pub offset: Option<u32>,
+}
+
+/// Parameters for reading one manual playlist's membership.
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+pub struct GetPlaylistParams {
+    pub playlist_id: i64,
+    /// Maximum tracks to return (1..=200, default 50).
+    #[serde(default)]
+    pub limit: Option<u32>,
+    /// Zero-based offset in playlist order (default 0).
     #[serde(default)]
     pub offset: Option<u32>,
 }
