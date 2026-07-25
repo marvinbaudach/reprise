@@ -62,7 +62,7 @@ fn disabled_equalizer_is_neutral_in_the_stable_filter() {
 }
 
 #[test]
-fn ac_10_audio_filter_contains_a_disabled_bounded_spectrum_analyzer() {
+fn ac_19_audio_filter_contains_a_disabled_bounded_spectrum_analyzer() {
     gst::init().unwrap();
     let filter = build_audio_filter(&AudioEffects::default())
         .unwrap()
@@ -84,7 +84,7 @@ fn ac_10_audio_filter_contains_a_disabled_bounded_spectrum_analyzer() {
 }
 
 #[test]
-fn ac_10_spectrum_messages_project_exactly_one_bounded_frame() {
+fn ac_19_spectrum_messages_project_exactly_one_bounded_frame() {
     gst::init().unwrap();
     let magnitudes = gst::List::new(
         (0..reprise_core::playback::SPECTRUM_ANALYSIS_BAND_COUNT)
@@ -171,7 +171,7 @@ fn play_and_stop_emit_state_changed_events() {
 }
 
 #[test]
-fn ac_10_enabled_player_emits_live_spectrum_frames() {
+fn ac_19_enabled_player_emits_live_spectrum_frames() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
