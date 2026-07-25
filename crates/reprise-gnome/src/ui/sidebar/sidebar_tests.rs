@@ -560,3 +560,80 @@ fn inst_13_experimental_switch_reveals_the_conversions_sidebar_row() {
         "the conversions row appears once experimental is on (INST-13)"
     );
 }
+
+fn assert_update_feed_rows_are_module_gated_ordered_and_badged() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let shared = test_shared();
+
+    rebuild(&shared, None, "modules off");
+    assert!(find_row(&shared, &ViewSource::Releases).is_none());
+    assert!(find_row(&shared, &ViewSource::Concerts).is_none());
+
+    {
+        let conn = shared.conn.borrow();
+        reprise_core::modules::set_enabled(
+            &conn,
+            &reprise_core::modules::NEW_RELEASES_MODULE,
+            true,
+        )
+        .unwrap();
+        reprise_core::modules::set_enabled(&conn, &reprise_core::modules::CONCERTS_MODULE, true)
+            .unwrap();
+        conn.execute(
+            "INSERT INTO new_releases (
+               release_group_mbid, artist_name, artist_mbid, title, release_type,
+               first_release_date, fetched_at, fallback_accent, first_seen
+             ) VALUES ('release', 'Artist', 'artist-id', 'Release', 'Album',
+                       '2099-08-01', 1, '#123456', 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO concert_events (
+               artist_key, artist_name, starts_at, date_key, venue, city,
+               provider, fetched_at, dedupe_key
+             ) VALUES ('artist', 'Artist', '2099-08-02T20:00:00',
+                       '2099-08-02', 'Venue', 'City', 'bandsintown', 1,
+                       '2099-08-02|city|venue')",
+            [],
+        )
+        .unwrap();
+    }
+
+    rebuild(&shared, None, "modules on");
+    let rows = shared.rows.borrow();
+    let releases = rows
+        .iter()
+        .position(|(_, source, _)| matches!(source, ViewSource::Releases))
+        .unwrap();
+    let concerts = rows
+        .iter()
+        .position(|(_, source, _)| matches!(source, ViewSource::Concerts))
+        .unwrap();
+    let stats = rows
+        .iter()
+        .position(|(_, source, _)| matches!(source, ViewSource::MyStats))
+        .unwrap();
+    assert!(releases < concerts && concerts < stats);
+    assert_eq!(
+        numeric_badge_text(rows[releases].0.upcast_ref()),
+        Some("1".to_string())
+    );
+    assert_eq!(
+        numeric_badge_text(rows[concerts].0.upcast_ref()),
+        Some("1".to_string())
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn conc_1_concerts_row_is_module_gated_and_badged_from_the_filtered_view() {
+    assert_update_feed_rows_are_module_gated_ordered_and_badged();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn nr_15_releases_row_is_module_gated_before_concerts_and_badged_from_the_filtered_view() {
+    assert_update_feed_rows_are_module_gated_ordered_and_badged();
+}

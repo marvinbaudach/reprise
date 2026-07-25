@@ -1082,11 +1082,10 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   announcement. Die permanente Filterzeile bietet sticky Chips für Not in
   library, Type und Hidden samt „X of Y releases", „Clear all" und genau
   einem „Show all"-Schritt bei null Treffern.
-- **NR-15** [geplant] [gtk] — „Releases" ist ein Sidebar-Ort in SMART, vor
+- **NR-15** [aktiv] [gtk] — „Releases" ist ein Sidebar-Ort in SMART, vor
   Concerts und nur bei aktivem `new_releases`-Modul. Sein Badge entspricht
   exakt der Anzahl der nach persistenten Filtern beim Öffnen sichtbaren
   Zeilen; 0 rendert keinen Badge.
-  <!-- REVIEW: Regelvorschlag -->
 
 ## S. Flächen & Geometrie
 
@@ -2112,11 +2111,10 @@ Dateien.
      Concerts setzt mit AE fort. Die Regeln starten als Entwürfe und werden
      jeweils zusammen mit Verhalten und regelbenanntem Test aktiviert. -->
 
-- **CONC-1** [geplant] [gtk] — Concerts ist ein Sidebar-Ort in SMART und nur
+- **CONC-1** [aktiv] [gtk] — Concerts ist ein Sidebar-Ort in SMART und nur
   bei aktivem Modul sichtbar. Sein Badge entspricht exakt den kommenden,
   nach persistenten Filtern beim Öffnen sichtbaren Konzerten; 0 rendert
   keinen Badge.
-  <!-- REVIEW: Regelvorschlag -->
 - **CONC-2** [aktiv] [gtk] — Die Filterzeile ist ein permanenter Header.
   Idle zeigt sie leise Gesamtzahl und „+ Add filter"; jede aktive
   Einschränkung ist ein Chip mit eigenem ×-Ziel von mindestens 20 px.
