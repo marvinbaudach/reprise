@@ -535,20 +535,25 @@ pub(crate) fn local_album_track_counts(
     conn: &Connection,
 ) -> Result<std::collections::HashMap<(String, String), i64>, rusqlite::Error> {
     let mut statement = conn.prepare(
-        "SELECT artist, album, COUNT(*) FROM tracks
-         WHERE removed_at IS NULL AND missing_since IS NULL AND trim(album) <> ''
-         GROUP BY lower(trim(artist)), lower(trim(album))",
+        "SELECT artist, album FROM tracks
+         WHERE removed_at IS NULL AND missing_since IS NULL AND trim(album) <> ''",
     )?;
-    let counts = statement
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, i64>(2)?,
-            ))
-        })?
-        .map(|row| row.map(|(artist, album, count)| ((normalize(&artist), normalize(&album)), count)))
-        .collect::<Result<std::collections::HashMap<_, _>, _>>()?;
+    let rows = statement.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+
+    // Aggregate in Rust under `normalize()`, not in SQL. SQL's
+    // `lower(trim(x))` only lowercases and trims the ends, while `normalize()`
+    // also collapses internal whitespace runs — grouping in SQL would split a
+    // single album's tracks across separate groups whenever a tagging
+    // inconsistency differs only by internal whitespace, undercounting it.
+    let mut counts = std::collections::HashMap::new();
+    for row in rows {
+        let (artist, album) = row?;
+        *counts
+            .entry((normalize(&artist), normalize(&album)))
+            .or_insert(0) += 1;
+    }
     Ok(counts)
 }
 

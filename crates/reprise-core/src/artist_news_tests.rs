@@ -1113,3 +1113,34 @@ fn query_releases_reports_partial_ownership_for_a_single_track() {
     assert_eq!(releases.len(), 1);
     assert_eq!(releases[0].presence, LibraryPresence::Partial);
 }
+
+#[test]
+fn track_counts_survive_internal_whitespace_tagging_drift() {
+    use crate::artist_news::{local_album_track_counts, presence_for, LibraryPresence};
+
+    let conn = migrated_conn();
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+         VALUES ('/music/one.flac', 'T1', 'Pink Floyd', 'Eclipse', 1, 0)",
+        [],
+    )
+    .unwrap();
+    // Same artist tag, but with an extra internal space. SQL's
+    // `lower(trim(x))` grouping treats this as a distinct artist, while
+    // Rust's `normalize()` collapses both to "pink floyd". If counting
+    // happens on the SQL side, this second track lands in its own group of
+    // one and the two real tracks are never summed together.
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+         VALUES ('/music/two.flac', 'T2', 'Pink  Floyd', 'Eclipse', 1, 0)",
+        [],
+    )
+    .unwrap();
+
+    let counts = local_album_track_counts(&conn).unwrap();
+    assert_eq!(
+        presence_for(&counts, "Pink Floyd", "Eclipse"),
+        LibraryPresence::Complete,
+        "two tracks tagged with an internal-whitespace-only artist variant must still count as one owned album"
+    );
+}
