@@ -11,15 +11,11 @@ use reprise_core::library::stats_snapshot::{
     ComparisonDirection, ComparisonFactor, ComparisonPresentation,
 };
 
-const HERO_HOURS_ONE: &str = N_!("1 hour");
-const HERO_HOURS: &str = N_!("{count} hours");
-const HERO_MINUTES_ONE: &str = N_!("1 minute");
-const HERO_MINUTES: &str = N_!("{count} minutes");
+const STATS_DURATION: &str = N_!("{hours} h {minutes}");
 const STATS_HERO_SUBLINE: &str = N_!("{plays} plays · {artists} artists");
-const STATS_PER_DAY: &str = N_!("{count} min");
 const STATS_PACE: &str = N_!("PACE FOR {year}");
 const STATS_BEST_WEEK: &str = N_!("{date} · {time}");
-const STATS_TREND_DELTA: &str = N_!("{sign}{count} h");
+const STATS_TREND_DELTA: &str = N_!("{sign}{time}");
 const STATS_VS_YEAR: &str = N_!("vs {year}");
 const STATS_VS_PREVIOUS_DAYS: &str = N_!("vs previous {count} days");
 const COMPARISON_UP: &str = N_!("\u{25b2} {percent}% vs {period}");
@@ -45,24 +41,15 @@ pub const STATS_UNAVAILABLE_DESCRIPTION: &str =
     N_!("Reading the listening history failed. Nothing is missing from it — this view just could not load it.");
 pub const STATS_THIN_HISTORY: &str = N_!("Keep listening — stats grow with you");
 
-/// The hero figure, rounded to whole hours as the editorial layout calls for.
-/// Below an hour it names minutes rather than claiming "0 hours".
-pub fn hero_listening_time(milliseconds: i64) -> String {
+/// The single compact duration presentation used throughout My Stats.
+pub fn stats_duration(milliseconds: i64) -> String {
     let minutes = milliseconds.max(0) / 60_000;
-    if minutes < 60 {
-        return plural(
-            HERO_MINUTES_ONE,
-            HERO_MINUTES,
-            minutes as usize,
-            &[("count", &minutes.to_string())],
-        );
-    }
-    let hours = minutes / 60;
-    plural(
-        HERO_HOURS_ONE,
-        HERO_HOURS,
-        hours as usize,
-        &[("count", &hours.to_string())],
+    formatted(
+        STATS_DURATION,
+        &[
+            ("hours", &(minutes / 60).to_string()),
+            ("minutes", &(minutes % 60).to_string()),
+        ],
     )
 }
 
@@ -77,10 +64,7 @@ pub fn stats_hero_subline(plays: i64, artists: i64) -> String {
 }
 
 pub fn stats_per_day(milliseconds: i64) -> String {
-    formatted(
-        STATS_PER_DAY,
-        &[("count", &(milliseconds.max(0) / 60_000).to_string())],
-    )
+    stats_duration(milliseconds)
 }
 
 pub fn stats_pace_label(year: i32) -> String {
@@ -92,18 +76,17 @@ pub fn stats_best_week(start: NaiveDate, milliseconds: i64) -> String {
         STATS_BEST_WEEK,
         &[
             ("date", &format!("{} {}", start.format("%b"), start.day())),
-            ("time", &hero_listening_time(milliseconds)),
+            ("time", &stats_duration(milliseconds)),
         ],
     )
 }
 
 pub fn stats_trend_delta(milliseconds: i64) -> String {
-    let hours = milliseconds.abs() / 3_600_000;
     formatted(
         STATS_TREND_DELTA,
         &[
             ("sign", if milliseconds >= 0 { "+" } else { "−" }),
-            ("count", &hours.to_string()),
+            ("time", &stats_duration(milliseconds.saturating_abs())),
         ],
     )
 }
@@ -294,10 +277,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hero_time_names_hours_and_falls_back_to_minutes() {
-        assert_eq!(hero_listening_time(245_000_000), "68 hours");
-        assert_eq!(hero_listening_time(3_600_000), "1 hour");
-        assert_eq!(hero_listening_time(2_400_000), "40 minutes");
+    fn stats_duration_uses_one_compact_page_wide_format() {
+        assert_eq!(stats_duration(25_080_000), "6 h 58");
+        assert_eq!(stats_duration(3_600_000), "1 h 0");
+        assert_eq!(stats_duration(2_400_000), "0 h 40");
+        assert_eq!(stats_per_day(2_400_000), "0 h 40");
+        assert_eq!(stats_trend_delta(-25_080_000), "−6 h 58");
     }
 
     #[test]

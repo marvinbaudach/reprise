@@ -169,7 +169,7 @@ impl StatsBandCard {
         self.summary.set_label(&format!(
             "{} plays · {} · {}% of your artist listening",
             format_thousands(leader.plays),
-            strings::hero_listening_time(leader.ms),
+            strings::stats_duration(leader.ms),
             section.share_percent
         ));
         self.render_ranks(section);

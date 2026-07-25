@@ -81,7 +81,7 @@ pub(super) struct StatsHero {
 
 impl StatsHero {
     pub(super) fn new() -> Self {
-        let time = label("0 minutes", "stats-hero-number");
+        let time = label("0 h 0", "stats-hero-number");
         time.set_ellipsize(gtk4::pango::EllipsizeMode::None);
         let subline = label("0 plays \u{00b7} 0 artists", "stats-headline-subtitle");
         let time_block = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
@@ -133,7 +133,7 @@ impl StatsHero {
     ) {
         self.root.set_visible(true);
         self.time
-            .set_label(&strings::hero_listening_time(snapshot.hero.total_ms));
+            .set_label(&strings::stats_duration(snapshot.hero.total_ms));
         self.subline.set_label(&strings::stats_hero_subline(
             snapshot.hero.plays,
             snapshot.hero.artists,
@@ -155,7 +155,7 @@ impl StatsHero {
                 .set_label(&strings::stats_pace_label(year));
             self.kpis
                 .pace
-                .show(&strings::hero_listening_time(pace), None, None);
+                .show(&strings::stats_duration(pace), None, None);
         } else {
             self.kpis.pace.hide();
         }

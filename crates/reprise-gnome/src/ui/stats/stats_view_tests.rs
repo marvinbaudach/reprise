@@ -654,7 +654,7 @@ fn stats_16_thin_history_swaps_chart_for_hint() {
 fn stats_17_entrance_runs_once_per_open() {
     gtk4::init().unwrap();
     let (view, conn, window) = presented_entrance(1_000);
-    let final_copy = strings::hero_listening_time(
+    let final_copy = strings::stats_duration(
         view.current_snapshot
             .borrow()
             .as_ref()
@@ -695,7 +695,7 @@ fn stats_17_period_switch_only_tweens_values() {
         .unwrap() as u32;
     view.period_dropdown.set_selected(all_time);
     wait_for(40);
-    let final_copy = strings::hero_listening_time(
+    let final_copy = strings::stats_duration(
         view.current_snapshot
             .borrow()
             .as_ref()
@@ -746,7 +746,7 @@ fn stats_17_reduced_motion_lands_in_end_state() {
         view.render.ribbon.reveal_fraction(),
         view.render.hero.time.label().to_string(),
     );
-    let final_copy = strings::hero_listening_time(
+    let final_copy = strings::stats_duration(
         view.current_snapshot
             .borrow()
             .as_ref()

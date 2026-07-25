@@ -13,6 +13,7 @@ use super::stats_ribbon_math::{
     bar_layout, best_week_bucket_index, bucket_at_x, month_ticks, reveal_clip_width, ribbon_layout,
     Point, RibbonLayout,
 };
+use crate::ui::strings;
 
 pub(in crate::ui) const RIBBON_CSS_CLASS: &str = "stats-ribbon";
 /// The secondary caption tone the axis labels borrow (CONTRAST: the accent
@@ -121,7 +122,7 @@ impl StatsRibbon {
                                 ""
                             },
                             data.labels.get(index)?,
-                            format_duration(*data.values.get(index)?)
+                            strings::stats_duration(*data.values.get(index)?)
                         ))
                     })
                 };
@@ -403,7 +404,10 @@ fn draw_best_week_marker(
     let _ = context.stroke();
     context.set_dash(&[], 0.0);
     if let Some(best_week) = &data.best_week {
-        let copy = format!("best week · {}", format_duration(best_week.total_ms));
+        let copy = format!(
+            "best week · {}",
+            strings::stats_duration(best_week.total_ms)
+        );
         context.move_to(best_week_label_x(context, point.x, plot_width, &copy), 12.0);
         let _ = context.show_text(&copy);
         context.new_path();
@@ -480,11 +484,6 @@ fn draw_labels(
 
 fn marker(layout: &RibbonLayout, index: Option<usize>) -> Option<Point> {
     layout.points.get(index?).copied()
-}
-
-fn format_duration(milliseconds: i64) -> String {
-    let minutes = milliseconds.max(0) / 60_000;
-    format!("{} h {} min", minutes / 60, minutes % 60)
 }
 
 #[cfg(test)]
@@ -567,7 +566,7 @@ mod tests {
     fn best_week_label_is_measured_to_the_left_of_its_marker() {
         let surface = ImageSurface::create(Format::ARgb32, 400, 100).unwrap();
         let context = gtk4::cairo::Context::new(&surface).unwrap();
-        let copy = "best week · 6 h 58 min";
+        let copy = "best week · 6 h 58";
         let marker_x = 300.0;
 
         let x = best_week_label_x(&context, marker_x, 400.0, copy);

@@ -263,6 +263,8 @@ impl StatsSongsCard {
         bar.set_max_value(1.0);
         bar.set_value(relative_value(track.play_count, leader));
         bar.set_width_request(110);
+        bar.set_height_request(8);
+        bar.set_valign(gtk4::Align::Center);
         self.summary_bars.borrow_mut().push(bar.clone());
         body.append(&bar);
         let plays = label(
@@ -456,11 +458,15 @@ fn render_full_rows(
     for (index, track) in tracks.iter().take(FULL_TRACK_LIMIT).enumerate() {
         let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
         row.add_css_class("stats-top-track-row");
-        row.append(&label(&(index + 1).to_string(), "stats-rank"));
+        row.set_height_request(56);
+        let rank = label(&(index + 1).to_string(), "stats-rank");
+        rank.set_width_request(24);
+        rank.set_xalign(1.0);
+        row.append(&rank);
         let cover = gtk4::Image::builder()
-            .pixel_size(40)
-            .width_request(40)
-            .height_request(40)
+            .pixel_size(42)
+            .width_request(42)
+            .height_request(42)
             .build();
         CoverLoader::set_placeholder(&cover);
         cover_loader.load_into(
@@ -495,12 +501,14 @@ fn render_full_rows(
         bar.set_max_value(1.0);
         bar.set_value(relative_value(metric(track, sort_by), leader));
         bar.set_width_request(120);
+        bar.set_height_request(8);
+        bar.set_valign(gtk4::Align::Center);
         row.append(&bar);
         row.append(&label(
             &format!(
                 "{} plays · {}",
                 format_thousands(track.play_count),
-                strings::hero_listening_time(track.total_ms)
+                strings::stats_duration(track.total_ms)
             ),
             "stats-play-count",
         ));
@@ -652,22 +660,48 @@ mod tests {
         card.set_data(&snapshot);
 
         assert!(!card.revealer.reveals_child());
+        assert!(
+            card.revealer.parent().is_none(),
+            "the expanded ranking must not live inside the songs card"
+        );
+        let stage = gtk4::Box::new(gtk4::Orientation::Vertical, 20);
+        stage.append(card.widget());
+        stage.append(card.expanded_widget());
+        let window = gtk4::Window::builder()
+            .default_width(960)
+            .child(&stage)
+            .build();
+        window.present();
+        card.revealer
+            .set_transition_type(gtk4::RevealerTransitionType::None);
         assert_eq!(
             card.reveal_button.label().as_deref(),
             Some("Show all top tracks")
         );
         assert_eq!(card.rows.observe_children().n_items(), 5);
-        assert!(
-            card.revealer.parent().is_none(),
-            "the expanded ranking must not live inside the songs card"
-        );
         card.reveal_button.emit_clicked();
+        while gtk4::glib::MainContext::default().iteration(false) {}
         assert!(card.revealer.reveals_child());
         card.time_sort.set_active(true);
         assert_eq!(card.sort_by.get(), SortBy::Time);
         assert_eq!(card.full_rows.observe_children().n_items(), 6);
         card.plays_sort.set_active(true);
         assert_eq!(card.sort_by.get(), SortBy::Plays);
+        let row = card.full_rows.first_child().unwrap();
+        let rank = row.first_child().unwrap();
+        let cover = rank.next_sibling().unwrap();
+        let text = cover.next_sibling().unwrap();
+        let bar = text.next_sibling().unwrap();
+        assert_eq!(row.height_request(), 56);
+        assert!(
+            row.height() <= 64,
+            "expanded row was {} px tall",
+            row.height()
+        );
+        assert_eq!(rank.width(), 24);
+        assert_eq!((cover.width(), cover.height()), (42, 42));
+        assert_eq!(bar.height(), 8);
+        window.close();
     }
 
     #[test]
