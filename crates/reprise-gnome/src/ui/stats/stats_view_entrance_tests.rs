@@ -97,6 +97,52 @@ fn wait_until(milliseconds: u64, condition: impl Fn() -> bool + 'static) -> bool
     reached.get()
 }
 
+#[derive(Default)]
+struct BestWeekOrder {
+    saw_reset: Cell<bool>,
+    saw_growth: Cell<bool>,
+    finished: Cell<bool>,
+    label_appeared_while_growing: Cell<bool>,
+}
+
+fn observe_best_week_order(ribbon: StatsRibbon, milliseconds: u64) -> Rc<BestWeekOrder> {
+    let best_index = ribbon
+        .best_week_index()
+        .expect("the fixture must identify its best-week bar");
+    let order = Rc::new(BestWeekOrder::default());
+    let observed = order.clone();
+    let main_loop = gtk4::glib::MainLoop::new(None, false);
+    let quit = main_loop.clone();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(milliseconds);
+    gtk4::glib::timeout_add_local(std::time::Duration::from_millis(10), move || {
+        let fraction = ribbon.bar_fractions()[best_index];
+        let label_opacity = ribbon.best_week_label_opacity();
+        if fraction == 0.0 {
+            observed.saw_reset.set(true);
+        } else if fraction < 1.0 {
+            observed.saw_growth.set(true);
+            if label_opacity > 0.0 {
+                observed.label_appeared_while_growing.set(true);
+                quit.quit();
+                return gtk4::glib::ControlFlow::Break;
+            }
+        } else if observed.saw_growth.get() {
+            observed.finished.set(true);
+            quit.quit();
+            return gtk4::glib::ControlFlow::Break;
+        }
+
+        if std::time::Instant::now() >= deadline {
+            quit.quit();
+            gtk4::glib::ControlFlow::Break
+        } else {
+            gtk4::glib::ControlFlow::Continue
+        }
+    });
+    main_loop.run();
+    order
+}
+
 struct AnimationSettingGuard {
     settings: gtk4::Settings,
     previous: bool,
@@ -137,31 +183,35 @@ fn stats_17_entrance_keeps_copy_static_while_sparse_week_bars_grow() {
         "the mapped hero copy must be final from its first presented frame"
     );
     assert!(view.render.ribbon.is_sparse());
+    let order = observe_best_week_order(view.render.ribbon.clone(), 1_000);
+    assert!(
+        order.saw_reset.get(),
+        "the best-week bar must start from the baseline"
+    );
+    assert!(
+        order.saw_growth.get(),
+        "the best-week bar must visibly grow after the calm frame"
+    );
+    assert!(
+        !order.label_appeared_while_growing.get(),
+        "the best-week label must remain invisible for every observed growth frame"
+    );
+    assert!(
+        order.finished.get(),
+        "the best-week bar must finish within the bounded poll"
+    );
+
     let ribbon = view.render.ribbon.clone();
     assert!(
-        wait_until(400, move || {
-            ribbon
-                .bar_fractions()
-                .iter()
-                .any(|fraction| *fraction > 0.0 && *fraction < 1.0)
-        }),
-        "a sparse-week chart bar must be visibly mid-growth after the calm frame"
-    );
-    assert_eq!(
-        view.render.ribbon.best_week_label_opacity(),
-        0.0,
-        "the best-week label must wait for its bar to finish"
-    );
-    let ribbon = view.render.ribbon.clone();
-    assert!(
-        wait_until(800, move || {
-            ribbon
-                .bar_fractions()
-                .iter()
-                .all(|fraction| *fraction == 1.0)
-                && (0.0..1.0).contains(&ribbon.best_week_label_opacity())
-        }),
+        wait_until(300, move || (0.0..1.0)
+            .contains(&ribbon.best_week_label_opacity())),
         "the best-week label must fade only after its own bar reaches full height"
+    );
+    let best_index = view.render.ribbon.best_week_index().unwrap();
+    assert_eq!(
+        view.render.ribbon.bar_fractions()[best_index],
+        1.0,
+        "the label fade must never overtake its own bar"
     );
     assert_eq!(view.render.hero.time.label(), final_copy);
     assert_eq!(view.render.header.root.opacity(), 1.0);
