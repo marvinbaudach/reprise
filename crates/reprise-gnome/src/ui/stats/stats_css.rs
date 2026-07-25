@@ -135,6 +135,11 @@ pub(in crate::ui) fn css() -> String {
          .stats-genre-rank-2 {{ background-color: shade(@accent_bg_color, 0.85); }}\n\
          .stats-genre-rank-3 {{ background-color: shade(@accent_bg_color, 0.70); }}\n\
          .stats-genre-rank-4 {{ background-color: shade(@accent_bg_color, 0.55); }}\n\
+         .stats-genre-rank-0:hover {{ background-color: shade(@accent_bg_color, 1.29); }}\n\
+         .stats-genre-rank-1:hover {{ background-color: shade(@accent_bg_color, 1.12); }}\n\
+         .stats-genre-rank-2:hover {{ background-color: shade(@accent_bg_color, 0.95); }}\n\
+         .stats-genre-rank-3:hover {{ background-color: shade(@accent_bg_color, 0.78); }}\n\
+         .stats-genre-rank-4:hover {{ background-color: shade(@accent_bg_color, 0.62); }}\n\
          .stats-genre-segment-last {{ background-color: alpha(@window_fg_color, 0.25); }}\n\
          .stats-genre-tile {{ padding: 4px; }}\n\
          .stats-genre-cover:focus-visible {{ outline: 2px solid @accent_color; }}\n\
@@ -194,5 +199,19 @@ mod tests {
         assert!(css.contains(".stats-cover-thumb"));
         assert!(css.contains(".stats-period-dropdown"));
         assert!(css.contains("@accent_color"));
+    }
+
+    #[test]
+    fn stats_genre_segments_define_rank_hover_steps() {
+        let css = super::css();
+        for rule in [
+            ".stats-genre-rank-0:hover { background-color: shade(@accent_bg_color, 1.29); }",
+            ".stats-genre-rank-1:hover { background-color: shade(@accent_bg_color, 1.12); }",
+            ".stats-genre-rank-2:hover { background-color: shade(@accent_bg_color, 0.95); }",
+            ".stats-genre-rank-3:hover { background-color: shade(@accent_bg_color, 0.78); }",
+            ".stats-genre-rank-4:hover { background-color: shade(@accent_bg_color, 0.62); }",
+        ] {
+            assert!(css.contains(rule), "missing hover rule: {rule}");
+        }
     }
 }

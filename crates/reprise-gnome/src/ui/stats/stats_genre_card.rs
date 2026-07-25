@@ -28,7 +28,7 @@ pub(in crate::ui) struct StatsGenreCard {
 
 impl StatsGenreCard {
     pub(in crate::ui) fn new(cover_loader: Rc<CoverLoader>) -> Self {
-        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 14);
+        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
         root.add_css_class("stats-genre-card");
         root.append(&label("GENRES", "stats-eyebrow"));
         let segments = gtk4::Grid::builder().column_spacing(2).build();
@@ -89,7 +89,7 @@ impl StatsGenreCard {
                 "{} · {} % · {}",
                 segment.label,
                 segment.share_percent,
-                strings::hero_listening_time(segment.total_ms)
+                format_duration(segment.total_ms)
             )));
             let width = segment.share_percent.max(1) as i32;
             self.segments.attach(&bar, column, 0, width, 1);
@@ -202,6 +202,11 @@ fn invoke(callback: &StringCallback, value: String) {
     }
 }
 
+fn format_duration(milliseconds: i64) -> String {
+    let minutes = milliseconds.max(0) / 60_000;
+    format!("{} h {}", minutes / 60, minutes % 60)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,6 +256,32 @@ mod tests {
         genre.label = "Weitere".into();
         assert_eq!(segment_css_class(&genre, 0), "stats-genre-segment-last");
         assert!(!has_genre_tile(&genre));
+    }
+
+    #[test]
+    fn genre_duration_uses_the_compact_hour_minute_format() {
+        assert_eq!(format_duration(25_080_000), "6 h 58");
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn stats_15_genre_card_uses_compact_spacing_and_exact_tooltips() {
+        gtk4::init().unwrap();
+        let card = card();
+        let mut section = fixture();
+        section.segments[0].total_ms = 25_080_000;
+        section.segments[0].share_percent = 55;
+        card.set_data(&section);
+
+        assert_eq!(card.widget().spacing(), 12);
+        assert_eq!(
+            card.segments
+                .first_child()
+                .unwrap()
+                .tooltip_text()
+                .as_deref(),
+            Some("Metalcore · 55 % · 6 h 58")
+        );
     }
 
     #[test]
