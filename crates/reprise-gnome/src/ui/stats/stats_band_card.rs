@@ -38,6 +38,7 @@ impl StatsBandCard {
         let root = gtk4::Overlay::new();
         root.add_css_class("stats-band-card");
         root.set_size_request(380, 420);
+        root.set_overflow(gtk4::Overflow::Hidden);
 
         let picture = gtk4::Picture::new();
         picture.set_content_fit(gtk4::ContentFit::Cover);
