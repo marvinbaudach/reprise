@@ -246,16 +246,33 @@ fn local_albums(conn: &Connection, artist: &str) -> Result<Vec<String>, rusqlite
     let mut statement = conn.prepare(
         "SELECT album FROM tracks
          WHERE lower(trim(artist)) = lower(trim(?1)) AND trim(album) <> ''
-           AND removed_at IS NULL AND missing_since IS NULL
-         GROUP BY lower(trim(album))
-         HAVING COUNT(*) >= ?2",
+           AND removed_at IS NULL AND missing_since IS NULL",
     )?;
     let albums = statement
-        .query_map(rusqlite::params![artist, OWNED_ALBUM_MIN_TRACKS], |row| {
-            row.get(0)
-        })?
+        .query_map([artist], |row| row.get::<_, String>(0))?
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(albums)
+
+    // Aggregate in Rust under `normalize()`, not in SQL, for the same reason
+    // `local_album_track_counts` does (see its comment): SQL's
+    // `lower(trim(x))` only lowercases and trims the ends, while `normalize()`
+    // also collapses internal whitespace runs — grouping in SQL would split a
+    // single album's tracks across separate groups whenever a tagging
+    // inconsistency differs only by internal whitespace, undercounting it
+    // below `OWNED_ALBUM_MIN_TRACKS`. One representative (first-seen) raw
+    // album string is kept per group so the caller still gets displayable
+    // titles rather than normalized keys.
+    let mut grouped: std::collections::HashMap<String, (String, i64)> =
+        std::collections::HashMap::new();
+    for album in albums {
+        let key = normalize(&album);
+        let entry = grouped.entry(key).or_insert_with(|| (album, 0));
+        entry.1 += 1;
+    }
+    Ok(grouped
+        .into_values()
+        .filter(|(_, count)| *count >= OWNED_ALBUM_MIN_TRACKS)
+        .map(|(album, _)| album)
+        .collect())
 }
 
 #[cfg(test)]

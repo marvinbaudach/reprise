@@ -251,6 +251,37 @@ fn released_album_is_filtered_only_when_the_local_album_is_really_owned() {
 }
 
 #[test]
+fn released_album_is_owned_despite_internal_whitespace_tagging_drift() {
+    // Two tracks of the same album, tagged with an internal whitespace run
+    // that differs ("The  Wall" vs "The Wall"). SQL's `lower(trim(x))` only
+    // trims the ends, so grouping in SQL would split these into two groups
+    // of one track each and neither would reach `OWNED_ALBUM_MIN_TRACKS`.
+    // `normalize()` additionally collapses internal whitespace runs, so both
+    // tracks must land in the same group and the album must count as owned.
+    let conn = migrated_conn();
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+         VALUES ('/music/wall-1.flac', 'T', 'Pink Floyd', 'The  Wall', 1, 0)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+         VALUES ('/music/wall-2.flac', 'T', 'Pink Floyd', 'The Wall', 1, 0)",
+        [],
+    )
+    .unwrap();
+
+    let owned = crate::artist_news::local_albums_for_test(&conn, "Pink Floyd").unwrap();
+    assert!(
+        owned
+            .iter()
+            .any(|album| crate::artist_news::normalize(album) == crate::artist_news::normalize("The Wall")),
+        "two tracks differing only by an internal whitespace run must count as one owned album, got {owned:?}"
+    );
+}
+
+#[test]
 fn upcoming_album_bypasses_the_owned_threshold_even_when_two_local_tracks_match() {
     // The user owns the lead single *and* a B-side, both mis-tagged with the
     // forthcoming album's name — two local tracks, which is exactly
