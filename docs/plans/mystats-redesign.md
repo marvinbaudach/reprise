@@ -2,7 +2,7 @@
 slug: mystats-redesign
 worktree: /home/marvin/Projects/reprise-mystats-redesign
 branch: feature/mystats-redesign
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-07-24
 ---
