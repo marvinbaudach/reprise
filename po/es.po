@@ -204,7 +204,7 @@ msgstr "Transiciones de audio"
 
 #: crates/reprise-gnome/src/ui/strings.rs:142
 msgid "Crossfade"
-msgstr "Crossfade"
+msgstr "Fundido cruzado"
 
 #: crates/reprise-gnome/src/ui/strings.rs:143
 msgid "Smoothly blend the end of a track into the next"
