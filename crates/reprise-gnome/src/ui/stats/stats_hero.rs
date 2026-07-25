@@ -131,6 +131,7 @@ impl StatsHero {
         period: StatsPeriod,
         header: &StatsHeader,
     ) {
+        self.root.set_visible(true);
         self.time
             .set_label(&strings::hero_listening_time(snapshot.hero.total_ms));
         self.subline.set_label(&strings::stats_hero_subline(
@@ -168,6 +169,17 @@ impl StatsHero {
         } else {
             self.kpis.best_week.hide();
         }
+    }
+
+    pub(super) fn clear(&self, header: &StatsHeader) {
+        self.time.set_label("");
+        self.subline.set_label("");
+        self.kpis.per_day.hide();
+        self.kpis.trend.hide();
+        self.kpis.pace.hide();
+        self.kpis.best_week.hide();
+        header.hide_new_badge();
+        self.root.set_visible(false);
     }
 
     fn render_comparison(
