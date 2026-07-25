@@ -4,7 +4,9 @@ use chrono::{NaiveDate, TimeZone};
 use rusqlite::Connection;
 
 use super::group_key::KeyResolver;
-use super::stats_period::{apply_activity_granularity, local_parts, PeriodRange, StatsPeriod};
+use super::stats_period::{
+    apply_activity_granularity, local_parts, week_start, PeriodRange, StatsPeriod,
+};
 use super::stats_screen::{
     album_rows, artist_rows, discovered_count, first_event_unix, fold_album_rows, genre_rows,
     key_resolver, listen_rows, ranked_groups, total_ms_in_range, track_rows, HourlyListens,
@@ -116,10 +118,17 @@ pub struct HighlightsSection {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BestWeek {
+    pub start: NaiveDate,
+    pub total_ms: i64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StatsSnapshot {
     pub period: PeriodRange,
     pub hero: HeroSection,
     pub ribbon: Vec<RibbonPoint>,
+    pub best_week: Option<BestWeek>,
     pub spotlight: Option<SpotlightSection>,
     pub genres: GenreSection,
     pub clock: ClockSection,
@@ -213,6 +222,7 @@ pub fn compute<Tz: TimeZone>(
             open: bucket.open,
         })
         .collect();
+    let best_week = best_week(&listen_rows, tz);
     let spotlight = spotlight(&top_artists, &key_resolver(&artists), &track_aggregates);
     let genres = genre_section(&genres);
     let (clock, busiest_day, streak_days) = time_sections(&listen_rows, tz);
@@ -222,6 +232,7 @@ pub fn compute<Tz: TimeZone>(
         period: range,
         hero,
         ribbon,
+        best_week,
         spotlight,
         genres,
         clock,
@@ -235,6 +246,24 @@ pub fn compute<Tz: TimeZone>(
         top_albums,
         top_tracks,
     })
+}
+
+fn best_week<Tz: TimeZone>(rows: &[super::stats_screen::ListenRow], tz: &Tz) -> Option<BestWeek> {
+    let mut totals = BTreeMap::<NaiveDate, i64>::new();
+    for row in rows {
+        let Some(start) = week_start(tz, row.played_at) else {
+            continue;
+        };
+        *totals.entry(start).or_default() += row.ms;
+    }
+    totals
+        .into_iter()
+        .max_by(|(left_start, left_ms), (right_start, right_ms)| {
+            left_ms
+                .cmp(right_ms)
+                .then_with(|| right_start.cmp(left_start))
+        })
+        .map(|(start, total_ms)| BestWeek { start, total_ms })
 }
 
 fn comparison_percent(current_ms: i64, previous_ms: i64) -> Option<i64> {

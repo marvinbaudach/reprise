@@ -1,6 +1,6 @@
-use chrono::{TimeZone, Utc};
+use chrono::{NaiveDate, TimeZone, Utc};
 
-use super::{Granularity, StatsPeriod};
+use super::{week_start, Granularity, StatsPeriod};
 
 const NOW_2026_07_19: i64 = 1_784_424_000;
 
@@ -11,21 +11,20 @@ fn stats_1_ribbon_axis_matches_period() {
         &Utc,
         Some(timestamp(2026, 1, 2, 12, 0)),
     );
-    assert_eq!(year_to_date.granularity, Granularity::Month);
+    assert_eq!(year_to_date.granularity, Granularity::Week);
+    assert_eq!(year_to_date.buckets.len(), 29);
+    assert_eq!(year_to_date.buckets[0].label, "Week of Dec 29");
     assert_eq!(
-        year_to_date
-            .buckets
-            .iter()
-            .map(|bucket| bucket.label.as_str())
-            .collect::<Vec<_>>(),
-        ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul"]
+        year_to_date.buckets[0].start_unix,
+        timestamp(2026, 1, 1, 0, 0)
     );
     assert!(year_to_date.buckets.last().unwrap().open);
-    assert!(year_to_date.buckets[..6].iter().all(|bucket| !bucket.open));
+    assert!(year_to_date.buckets[..28].iter().all(|bucket| !bucket.open));
 
     let previous_year =
         StatsPeriod::Year(2025).resolve(NOW_2026_07_19, &Utc, Some(timestamp(2025, 1, 1, 0, 0)));
-    assert_eq!(previous_year.buckets.len(), 12);
+    assert_eq!(previous_year.granularity, Granularity::Week);
+    assert_eq!(previous_year.buckets.len(), 53);
     assert!(previous_year.buckets.iter().all(|bucket| !bucket.open));
 
     let last_30_days = StatsPeriod::Last30Days.resolve(NOW_2026_07_19, &Utc, Some(NOW_2026_07_19));
@@ -33,6 +32,49 @@ fn stats_1_ribbon_axis_matches_period() {
     assert_eq!(last_30_days.buckets.len(), 30);
     assert!(last_30_days.buckets.last().unwrap().open);
     assert_eq!(last_30_days.buckets.last().unwrap().label, "Jul 19");
+}
+
+#[test]
+fn stats_12_year_axis_uses_week_buckets() {
+    let year_to_date = StatsPeriod::YearToDate(2026).resolve(
+        NOW_2026_07_19,
+        &Utc,
+        Some(timestamp(2026, 1, 1, 0, 0)),
+    );
+    assert_eq!(year_to_date.granularity, Granularity::Week);
+    assert_eq!(year_to_date.buckets.len(), 29);
+    assert!(year_to_date.buckets.last().unwrap().open);
+
+    let full_year =
+        StatsPeriod::Year(2025).resolve(NOW_2026_07_19, &Utc, Some(timestamp(2025, 1, 1, 0, 0)));
+    assert_eq!(full_year.granularity, Granularity::Week);
+    assert!((52..=53).contains(&full_year.buckets.len()));
+    assert_eq!(full_year.buckets[0].label, "Week of Dec 30");
+    assert!(full_year.buckets.iter().all(|bucket| !bucket.open));
+}
+
+#[test]
+fn spans_longer_than_two_years_use_month_buckets() {
+    assert_eq!(super::granularity_for(730, 365), Granularity::Week);
+    assert_eq!(super::granularity_for(731, 365), Granularity::Month);
+}
+
+#[test]
+fn week_start_folds_days_onto_monday() {
+    let monday = NaiveDate::from_ymd_opt(2026, 7, 13).unwrap();
+
+    assert_eq!(
+        week_start(&Utc, timestamp(2026, 7, 13, 12, 0)),
+        Some(monday)
+    );
+    assert_eq!(
+        week_start(&Utc, timestamp(2026, 7, 19, 23, 59)),
+        Some(monday)
+    );
+    assert_eq!(
+        week_start(&Utc, timestamp(2026, 7, 20, 0, 0)),
+        NaiveDate::from_ymd_opt(2026, 7, 20)
+    );
 }
 
 /// `resolve` is public and the module promises never to panic, so a year
