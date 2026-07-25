@@ -112,6 +112,7 @@ impl StatsBandCard {
                 invoke(&callback, artist);
             }
         });
+        // input-parity: ACC-8 keyboard=artist-name-button
         let card_click = gtk4::GestureClick::new();
         card_click.set_button(gtk4::gdk::BUTTON_PRIMARY);
         card_click.connect_released({

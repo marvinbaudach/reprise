@@ -411,14 +411,7 @@ fn stats_11_trend_tooltip_names_the_seasonally_congruent_compared_span() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn story_row_minimums_fit_the_natural_line_length() {
     gtk4::init().unwrap();
-    let provider = gtk4::CssProvider::new();
-    provider.load_from_string(&super::super::stats_css::css());
-    let display = gtk4::gdk::Display::default().unwrap();
-    gtk4::style_context_add_provider_for_display(
-        &display,
-        &provider,
-        gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
-    );
+    crate::ui::style::install_css_string_for_test(&super::super::stats_css::css());
     let (view, _) = view_and_conn();
     let (band_minimum, _, _, _) = view
         .render
@@ -429,7 +422,6 @@ fn story_row_minimums_fit_the_natural_line_length() {
         .songs_section
         .measure(gtk4::Orientation::Horizontal, -1);
     let minimum = band_minimum + songs_minimum + STORY_SPACING;
-    gtk4::style_context_remove_provider_for_display(&display, &provider);
 
     assert!(
         minimum <= STORY_NATURAL_LINE_LENGTH,
