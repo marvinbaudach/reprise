@@ -1,10 +1,10 @@
 //! The Grid visual's thin membrane — a spring-mesh height field driven from
 //! its center like a bass loudspeaker. Low-band energy moves one underdamped
-//! central driver and beat impulses lift the same radial speaker cone while
-//! kicking its velocity. The immediate lift keeps the visible impact aligned
-//! with the analyzer; the underdamped driver and mesh propagate the following
-//! motion outward. Signed heights let the surface rise toward the viewer and
-//! then fall into depth before damping back to rest.
+//! central driver and beat impulses accelerate the same radial speaker cone.
+//! The cloth begins moving on the detected frame, builds its crest over a
+//! short fluid attack, and then lets the underdamped driver and mesh propagate
+//! the motion outward. Signed heights let the surface rise toward the viewer
+//! and then fall into depth before damping back to rest.
 
 use crate::playback::SPECTRUM_BAND_COUNT;
 
@@ -34,10 +34,12 @@ const DRIVER_SPRING: f32 = 165.0;
 const DRIVER_DAMPING: f32 = 11.0;
 /// Velocity kick applied by a full-strength detected beat.
 const BEAT_IMPULSE: f32 = 8.0;
-/// Immediate visible lift applied with the beat impulse. This bypasses the
-/// former driver→cloth integration delay while preserving the subsequent
-/// speaker-cone fall and radial waves.
-const BEAT_LIFT: f32 = 1.85;
+const BEAT_DRIVER_TARGET: f32 = 1.0;
+/// Broad velocity kick applied directly to the cloth. Position is never
+/// teleported: the kick produces a short visible attack through normal
+/// integration, like a thin loudspeaker membrane accelerating from rest.
+const BEAT_SURFACE_IMPULSE: f32 = 25.0;
+const BEAT_SURFACE_TARGET: f32 = 1.8;
 const BEAT_RADIUS: f32 = 0.42;
 const DRIVER_POSITION_LIMIT: f32 = 1.8;
 const DRIVER_VELOCITY_LIMIT: f32 = 28.0;
@@ -151,22 +153,36 @@ impl Membrane {
         }
     }
 
-    /// Beat impact, scaled by `strength` (`0..=1`), applied as an immediate
-    /// radial lift plus a velocity kick to the central driver. Both use the
+    /// Beat impact, scaled by `strength` (`0..=1`), applied as radial momentum
+    /// plus a velocity kick to the central driver. Both use the
     /// same circular speaker profile, so the vibration stays uniform around
-    /// the center; no random cells or asymmetric splashes are introduced.
+    /// the center; no position jump, random cells, or asymmetric splashes are
+    /// introduced.
     pub fn splash(&mut self, strength: f32) {
         let strength = strength.clamp(0.0, 1.0);
         // A fresh beat establishes its own positive speaker stroke instead of
-        // inheriting the oscillator phase. Additive velocity/height made a
+        // inheriting the oscillator phase. Additive velocity made a
         // kick landing in a trough look weak, then let stored spring energy
         // create a larger peak after the music had already moved on.
-        self.driver_velocity = strength * BEAT_IMPULSE;
+        let driver_target = strength * BEAT_DRIVER_TARGET;
+        let driver_headroom = if driver_target > 0.0 {
+            ((driver_target - self.driver_position) / driver_target).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        self.driver_velocity = strength * BEAT_IMPULSE * driver_headroom;
         for row in 0..MEMBRANE_ROWS {
             for col in 0..MEMBRANE_COLS {
                 let index = row * MEMBRANE_COLS + col;
-                let beat_dome = radial_weight(row, col, BEAT_RADIUS) * strength * BEAT_LIFT;
-                self.h[index] = self.h[index].max(beat_dome).clamp(HEIGHT_MIN, HEIGHT_MAX);
+                let weight = radial_weight(row, col, BEAT_RADIUS);
+                let beat_target = weight * strength * BEAT_SURFACE_TARGET;
+                let headroom = if beat_target > 0.0 {
+                    ((beat_target - self.h[index]) / beat_target).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let beat_velocity = weight * strength * BEAT_SURFACE_IMPULSE * headroom;
+                self.v[index] = self.v[index].max(beat_velocity);
             }
         }
     }
@@ -302,6 +318,53 @@ mod tests {
     }
 
     #[test]
+    fn strong_beat_rises_fluidly_without_teleporting_the_surface() {
+        let mut membrane = Membrane::new();
+        let silent = [0.0_f32; SPECTRUM_BAND_COUNT];
+        let before = center_height(&membrane);
+
+        membrane.splash(1.0);
+        let scheduled = center_height(&membrane);
+        assert!(
+            (scheduled - before).abs() < 1.0e-5,
+            "splash must schedule momentum instead of teleporting the cloth: before={before}, after={scheduled}"
+        );
+
+        let mut heights = Vec::new();
+        for _ in 0..120 {
+            membrane.advance(&silent);
+            heights.push(center_height(&membrane));
+        }
+        let peak = heights
+            .iter()
+            .copied()
+            .max_by(f32::total_cmp)
+            .expect("the fixture advances at least once");
+        let peak_index = heights
+            .iter()
+            .position(|height| (*height - peak).abs() < 1.0e-5)
+            .expect("the measured peak must occur in the trace");
+        let max_step = heights
+            .windows(2)
+            .map(|pair| (pair[1] - pair[0]).abs())
+            .fold((heights[0] - scheduled).abs(), f32::max);
+
+        assert!(
+            peak > 1.5,
+            "a full-strength beat must retain a large dome, peaked at {peak}"
+        );
+        assert!(
+            (4..=8).contains(&peak_index),
+            "the dome must peak after a fluid 5-9 frame attack, peaked at frame {}",
+            peak_index + 1,
+        );
+        assert!(
+            max_step < 0.45,
+            "the cloth must not jump between adjacent frames, largest step was {max_step}"
+        );
+    }
+
+    #[test]
     fn strong_beat_overrides_the_negative_phase_and_remains_the_largest_peak() {
         let mut membrane = Membrane::new();
         let silent = [0.0_f32; SPECTRUM_BAND_COUNT];
@@ -319,11 +382,29 @@ mod tests {
             "fixture must reach the negative cloth phase"
         );
 
+        let trough_height = center_height(&membrane);
         membrane.splash(1.0);
-        let hit_height = center_height(&membrane);
         assert!(
-            hit_height > 1.75,
-            "a strong beat must establish a large dome even from a trough, got {hit_height}"
+            (center_height(&membrane) - trough_height).abs() < 1.0e-5,
+            "a new beat must not teleport the cloth out of its trough"
+        );
+        let mut impact_peak = f32::NEG_INFINITY;
+        let mut previous_height = trough_height;
+        let mut max_step = 0.0_f32;
+        for _ in 0..9 {
+            membrane.advance(&silent);
+            let height = center_height(&membrane);
+            impact_peak = impact_peak.max(height);
+            max_step = max_step.max((height - previous_height).abs());
+            previous_height = height;
+        }
+        assert!(
+            impact_peak > 1.5,
+            "a strong beat must build a large dome even from a trough, got {impact_peak}"
+        );
+        assert!(
+            max_step < 0.45,
+            "a beat landing in the depth phase must still transition fluidly, largest step was {max_step}"
         );
         let mut tail_peak = 0.0_f32;
         for _ in 0..120 {
@@ -331,8 +412,8 @@ mod tests {
             tail_peak = tail_peak.max(center_height(&membrane));
         }
         assert!(
-            tail_peak <= hit_height * 1.05,
-            "the cloth tail must not invent a larger peak later: hit={hit_height}, tail={tail_peak}"
+            tail_peak <= impact_peak * 1.05,
+            "the cloth tail must not invent a larger peak later: hit={impact_peak}, tail={tail_peak}"
         );
     }
 
@@ -340,12 +421,44 @@ mod tests {
     fn strong_beat_dome_is_broad_like_the_reference_speaker() {
         let mut membrane = Membrane::new();
         membrane.splash(1.0);
+        let silent = [0.0_f32; SPECTRUM_BAND_COUNT];
+        for _ in 0..3 {
+            membrane.advance(&silent);
+        }
         let center = center_height(&membrane);
         let side = membrane.height(MEMBRANE_ROWS / 2 - 1, MEMBRANE_COLS / 2 - 9);
         let depth = membrane.height(MEMBRANE_ROWS / 2 - 6, MEMBRANE_COLS / 2 - 1);
         assert!(
             side > center * 0.5 && depth > center * 0.5,
             "beat dome must stay broad in both axes: center={center}, side={side}, depth={depth}"
+        );
+    }
+
+    #[test]
+    fn rapid_beats_do_not_flatten_the_membrane_against_its_height_limit() {
+        let mut membrane = Membrane::new();
+        let mut bass_sustain = [0.0_f32; SPECTRUM_BAND_COUNT];
+        bass_sustain[..BASS_BANDS].fill(0.75);
+        let mut peak = 0.0_f32;
+        let mut saturated_frames = 0;
+
+        for frame in 0..180 {
+            if frame % 3 == 0 {
+                membrane.splash(1.0);
+            }
+            membrane.advance(&bass_sustain);
+            let height = center_height(&membrane);
+            peak = peak.max(height);
+            saturated_frames += usize::from(height >= HEIGHT_MAX - 1.0e-3);
+        }
+
+        assert!(
+            peak > 1.5,
+            "rapid strong beats must still produce a large dome, peaked at {peak}"
+        );
+        assert_eq!(
+            saturated_frames, 0,
+            "rapid beats must preserve a rounded cloth crest instead of pinning it flat"
         );
     }
 

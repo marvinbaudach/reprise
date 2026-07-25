@@ -1,8 +1,10 @@
 //! Cairo renderer for a portable `reprise_core::visuals::Scene`.
 use reprise_core::visuals::{Fill, Geom, Scene, Shape};
 
-const MAX_SCENE_WIDTH: i32 = 640;
-const MAX_SCENE_HEIGHT: i32 = 360;
+const MAX_INLINE_WIDTH: i32 = 640;
+const MAX_INLINE_HEIGHT: i32 = 360;
+const MAX_FULLSCREEN_SCENE_WIDTH: i32 = 512;
+const MAX_FULLSCREEN_SCENE_HEIGHT: i32 = 288;
 
 /// Caps only the expensive scene raster. The finished image is scaled back to
 /// the widget allocation, so fullscreen remains fullscreen while Grid/Bars
@@ -10,12 +12,12 @@ const MAX_SCENE_HEIGHT: i32 = 360;
 pub(super) fn capped_scene_size(width: i32, height: i32) -> (i32, i32) {
     let width = width.max(1);
     let height = height.max(1);
-    if width <= MAX_SCENE_WIDTH && height <= MAX_SCENE_HEIGHT {
+    if width <= MAX_INLINE_WIDTH && height <= MAX_INLINE_HEIGHT {
         return (width, height);
     }
 
-    let scale = (f64::from(MAX_SCENE_WIDTH) / f64::from(width))
-        .min(f64::from(MAX_SCENE_HEIGHT) / f64::from(height));
+    let scale = (f64::from(MAX_FULLSCREEN_SCENE_WIDTH) / f64::from(width))
+        .min(f64::from(MAX_FULLSCREEN_SCENE_HEIGHT) / f64::from(height));
     (
         (f64::from(width) * scale).round() as i32,
         (f64::from(height) * scale).round() as i32,
@@ -208,7 +210,7 @@ mod tests {
     fn ac_20_fullscreen_render_size_is_capped_without_upscaling_inline_canvases() {
         assert_eq!(capped_scene_size(548, 300), (548, 300));
         assert_eq!(capped_scene_size(640, 360), (640, 360));
-        assert_eq!(capped_scene_size(1920, 1080), (640, 360));
-        assert_eq!(capped_scene_size(2560, 1080), (640, 270));
+        assert_eq!(capped_scene_size(1920, 1080), (512, 288));
+        assert_eq!(capped_scene_size(2560, 1080), (512, 216));
     }
 }

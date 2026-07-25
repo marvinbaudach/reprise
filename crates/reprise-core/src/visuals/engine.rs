@@ -311,12 +311,12 @@ impl VisualEngine {
     }
 }
 
-/// Builds an engine that has just been hammered by a beat-then-slam: playing,
-/// accented, 20 silent frames (settles the envelopes at rest) followed by one
-/// full-scale frame. The synchronized visuals peak on that detected hit, so
-/// this fixture deliberately captures the same frame rather than waiting for
-/// the old delayed build-up. Shared by mode tests so they can exercise a
-/// "lively" scene without re-deriving this fixture.
+/// Builds an engine during the short fluid attack after a beat-then-slam:
+/// playing, accented, 20 silent frames (settles the envelopes at rest), one
+/// full-scale frame and five more physics steps. The first frame already moves,
+/// while this fixture captures the rounded crest instead of the old teleported
+/// position. Shared by mode tests so they can exercise a "lively" scene
+/// without re-deriving this fixture.
 #[cfg(test)]
 pub(crate) fn lively_engine() -> VisualEngine {
     use crate::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
@@ -330,7 +330,9 @@ pub(crate) fn lively_engine() -> VisualEngine {
         engine.tick();
     }
     engine.ingest(&analyzer.ingest([0.0; SPECTRUM_ANALYSIS_BAND_COUNT]));
-    engine.tick();
+    for _ in 0..6 {
+        engine.tick();
+    }
     engine
 }
 
@@ -433,8 +435,8 @@ mod tests {
         engine.tick();
         let first_frame = engine.membrane.sample(0.5, 0.5).max(0.0);
         assert!(
-            first_frame > 1.6,
-            "a full-strength hit must create the large reference-scale dome, got {first_frame}"
+            first_frame > 0.3,
+            "a full-strength hit must begin moving the visible cloth immediately, got {first_frame}"
         );
 
         let mut peak = first_frame;
@@ -450,12 +452,12 @@ mod tests {
         }
 
         assert!(
-            first_frame >= peak * 0.35,
-            "the hit must be visibly present immediately: first={first_frame}, peak={peak} at frame {peak_frame}"
+            first_frame < peak * 0.75,
+            "the membrane must rise into its peak instead of appearing there instantly: first={first_frame}, peak={peak} at frame {peak_frame}"
         );
         assert!(
-            peak_frame <= 2,
-            "the visible peak must stay within 33 ms of the detected hit, arrived at frame {peak_frame}"
+            peak_frame <= 8,
+            "the visible peak must stay within 150 ms of the detected hit, arrived at frame {peak_frame}"
         );
     }
 

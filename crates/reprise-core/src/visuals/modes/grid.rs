@@ -21,7 +21,7 @@ const NEAR_Y: f32 = 0.95;
 const FAR_HALF_WIDTH: f32 = 0.18;
 const NEAR_HALF_WIDTH: f32 = 0.54;
 const PERSPECTIVE_POWER: f32 = 1.65;
-const HEIGHT_SCALE: f32 = 0.48;
+const HEIGHT_SCALE: f32 = 0.40;
 
 struct ProjectedRow {
     points: Vec<(f32, f32)>,
@@ -125,7 +125,10 @@ pub(crate) fn scene(ctx: &ModeCtx) -> Vec<Shape> {
     // Secondary-accent crests ride any contiguous run of cells thrown above
     // CREST_THRESHOLD. Brightness/width fade in with how high the run peaked, so
     // a crest only reads "hot" on a genuine eruption, not on every ripple.
-    for row in &rows {
+    // Bloom is the expensive second stroke pass. Every other depth wire is
+    // enough to read as one continuous hot crest while keeping prolonged
+    // beat attacks inside the 60 Hz render budget.
+    for row in rows.iter().step_by(2) {
         let mut run: Vec<(f32, f32)> = Vec::new();
         let mut run_peak = 0.0_f32;
         for (&point, &height) in row.points.iter().zip(row.heights.iter()) {
@@ -171,9 +174,9 @@ mod tests {
     const WIDTH: f32 = 548.0;
     const HEIGHT: f32 = 300.0;
 
-    /// A lively engine captured at the beat peak. The synchronized membrane
-    /// lifts immediately, so waiting dozens of frames here would inspect the
-    /// intentionally damped tail rather than the hot crest.
+    /// A lively engine captured during the rounded beat crest. Its short
+    /// attack is already complete, while the intentionally damped tail has
+    /// not taken over yet.
     fn crested_engine() -> crate::visuals::engine::VisualEngine {
         lively_engine()
     }
@@ -324,6 +327,10 @@ mod tests {
             crest_segments > 0,
             "expected accent2 crest segments where the membrane exceeds the threshold"
         );
+        assert!(
+            crest_segments <= RENDER_ROWS.div_ceil(2),
+            "the hot glow layer must stay bounded to every second wire row, got {crest_segments}"
+        );
     }
 
     #[test]
@@ -341,5 +348,31 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn strong_beat_keeps_the_wire_peak_inside_the_canvas() {
+        let mut engine = crested_engine();
+        for _ in 0..3 {
+            engine.tick();
+        }
+        let ctx = test_ctx(&engine, WIDTH, HEIGHT);
+        let shapes = scene(&ctx);
+        let top = shapes
+            .iter()
+            .filter(|shape| is_gray_mesh_line(shape))
+            .filter_map(|shape| match &shape.geom {
+                Geom::Polyline { points, .. } => {
+                    points.iter().map(|(_, y)| *y).min_by(f32::total_cmp)
+                }
+                _ => None,
+            })
+            .min_by(f32::total_cmp)
+            .expect("the Grid always contains wire lines");
+
+        assert!(
+            top > HEIGHT * 0.02,
+            "a strong dome must remain visibly rounded instead of clipping at the top edge: y={top}"
+        );
     }
 }

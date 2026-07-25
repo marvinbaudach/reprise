@@ -1531,8 +1531,12 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
   Die Impulsgröße folgt der absoluten Energie der 256 Roh-Bins, nicht dem
   Max-Pooling oder nur der relativen adaptiven Schwelle: große Schläge müssen
   schwache Transienten sichtbar überragen. Ein Grid-Impuls setzt unabhängig
-  von der aktuellen Tuchphase sofort eine breite, runde Mittelkuppel; seine
-  freie Nachschwingung darf keinen späteren größeren Peak erfinden.
+  von der aktuellen Tuchphase sofort die breite, runde Aufwärtsbewegung in
+  Gang, teleportiert aber keine Tuchposition: Die Mittelkuppel baut sich über
+  fünf bis neun 60-Hz-Schritte (höchstens 150 ms) flüssig zum großen Peak auf.
+  Schnelle Beatfolgen berücksichtigen den verbleibenden Hub, statt die
+  Membran am Höhenlimit flach festzudrücken; ihre freie Nachschwingung darf
+  keinen späteren größeren Peak erfinden.
   Flow, Pulse und weitere Modi existieren nicht. Der beschriftete Canvas
   übernimmt den aktuellen Cover-Akzent über denselben globalen
   Ambient-Crossfade wie die Playerleiste; nur ohne brauchbare Coverfarbe gilt
