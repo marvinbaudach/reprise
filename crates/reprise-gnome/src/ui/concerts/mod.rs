@@ -2,6 +2,8 @@
 
 use gtk4::prelude::*;
 
+mod concerts_model;
+mod concerts_presentation;
 pub(super) mod css;
 
 /// Compile-safe composition stub filled by the Concerts view tasks.
