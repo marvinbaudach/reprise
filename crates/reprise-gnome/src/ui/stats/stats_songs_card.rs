@@ -643,6 +643,10 @@ mod tests {
         card.set_data(&snapshot);
 
         assert!(!card.revealer.reveals_child());
+        assert_eq!(
+            card.reveal_button.label().as_deref(),
+            Some("Show all top tracks")
+        );
         assert_eq!(card.rows.observe_children().n_items(), 5);
         card.reveal_button.emit_clicked();
         assert!(card.revealer.reveals_child());
