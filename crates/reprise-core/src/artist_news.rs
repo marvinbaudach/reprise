@@ -4,7 +4,7 @@
 use std::cmp::Ordering;
 use std::path::PathBuf;
 
-use chrono::{Datelike, NaiveDate};
+use chrono::NaiveDate;
 use rusqlite::Connection;
 
 use crate::musicbrainz::{self, FetchError};
@@ -14,7 +14,7 @@ const MIN_ARTIST_SCORE: i64 = 95;
 const NEWS_WINDOW_DAYS: i64 = 90;
 const MAX_ITEMS: usize = 20;
 const TOP_ARTIST_COUNT: usize = 20;
-const DAILY_REST_COUNT: usize = 5;
+const REST_ARTISTS_PER_RUN: usize = 30;
 const DEFAULT_FALLBACK_ACCENT: &str = "#3584E4";
 const FETCH_ALL_ARTISTS_KEY: &str = "module.new_releases.all_artists";
 
@@ -62,17 +62,12 @@ pub struct StoredRelease {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FetchScope {
     TopArtists,
-    AllArtists { day_index: u64 },
+    AllArtists,
 }
 
-pub fn configured_fetch_scope(
-    conn: &Connection,
-    today: NaiveDate,
-) -> Result<FetchScope, rusqlite::Error> {
+pub fn configured_fetch_scope(conn: &Connection) -> Result<FetchScope, rusqlite::Error> {
     if crate::library::settings::get_bool(conn, FETCH_ALL_ARTISTS_KEY, false)? {
-        Ok(FetchScope::AllArtists {
-            day_index: u64::try_from(today.num_days_from_ce()).unwrap_or_default(),
-        })
+        Ok(FetchScope::AllArtists)
     } else {
         Ok(FetchScope::TopArtists)
     }
@@ -319,6 +314,15 @@ where
     Ok(report)
 }
 
+/// Candidates for this run: the `TOP_ARTIST_COUNT` most-played artists
+/// always, plus — in `AllArtists` scope — the `REST_ARTISTS_PER_RUN` artists
+/// that have gone longest without an attempt, never-checked ones first.
+///
+/// Ordering the tail by staleness rather than by a date-derived rotation
+/// window is what lets an artist you own a single track of ever come up at
+/// all: play count decides who is *preferred*, not who is *reachable*. A run
+/// that never happens costs nothing now — the skipped artists are simply the
+/// oldest next time.
 pub(crate) fn artists_for_fetch(
     conn: &Connection,
     scope: FetchScope,
@@ -347,14 +351,24 @@ pub(crate) fn artists_for_fetch(
             candidates.truncate(TOP_ARTIST_COUNT);
             Ok(candidates)
         }
-        FetchScope::AllArtists { day_index } => {
-            let rest_len = candidates.len() - TOP_ARTIST_COUNT;
-            let start = ((day_index as usize).saturating_mul(DAILY_REST_COUNT) % rest_len)
-                + TOP_ARTIST_COUNT;
-            let end = (start + DAILY_REST_COUNT).min(candidates.len());
-            let daily = candidates[start..end].to_vec();
-            candidates.truncate(TOP_ARTIST_COUNT);
-            candidates.extend(daily);
+        FetchScope::AllArtists => {
+            let mut rest = candidates.split_off(TOP_ARTIST_COUNT);
+            let mut keyed = Vec::with_capacity(rest.len());
+            for candidate in rest.drain(..) {
+                let last_attempt = crate::artist_news_ledger::last_attempt_at(
+                    conn,
+                    &normalize(&candidate.name),
+                )?;
+                keyed.push((last_attempt, candidate));
+            }
+            // `None` sorts before `Some` — never-checked artists come first.
+            keyed.sort_by(|(left, _), (right, _)| left.cmp(right));
+            candidates.extend(
+                keyed
+                    .into_iter()
+                    .take(REST_ARTISTS_PER_RUN)
+                    .map(|(_, candidate)| candidate),
+            );
             Ok(candidates)
         }
     }
