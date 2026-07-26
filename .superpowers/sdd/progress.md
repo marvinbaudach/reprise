@@ -42,3 +42,9 @@ My Stats final polish Q3: complete (this commit, base 66674acbfd, separated the 
 My Stats final polish Q4: complete (this commit, base 2b574551f1, made the expanded ranking leave section flow only after its collapse animation, normalized all section gaps to 20 pixels, and replaced the two loose sort buttons with an accessible native AdwToggleGroup that still sorts both rankings; all requested non-display gates passed and the operator-owned display regressions compiled but were not run in the sandbox)
 My Stats static entrance simplification: complete (this commit, base 4e5c6b54c2, removed every non-bar entrance path, limited sparse-ribbon motion to staggered baseline growth plus its best-week label, retained a reduced horizontal reveal solely for genre segments, and kept period changes bar-only; all requested non-display gates passed, the three replacement STATS-17 display tests compiled, and the operator-owned display gate was not run in the sandbox)
 My Stats entrance order follow-up: complete (this commit, base c83e0be239, chained the best-week label fade to its bar's actual animation completion, guarded stale completions by generation, and made the STATS-17 display regression continuously assert reset-growth-finish-label order; all requested non-display gates passed and the operator-owned display gate was not run in the sandbox)
+
+# Idle Play random-start follow-up
+
+Base: `331217f344`
+
+Task P1: complete (this commit, base 331217f344, made stopped Play/Pause seed and start a random present-library snapshot without row activation, kept empty-library and queue navigation sensitivity honest, and activated PLAY-9; full non-display gates passed, while the rule-named display regression compiled but its isolated Xvfb run was blocked by sandbox D-Bus socket permissions)

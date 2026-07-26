@@ -228,6 +228,12 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   selbst ein Verfeinern auf null Treffer verändern weder Snapshot noch laufenden
   Track. Nach dem letzten Track endet die Wiedergabe bei Repeat Off, sofern
   nicht ein expliziter Up-Next-Eintrag folgt; Löschhygiene regeln PLAY-5a/5b.
+- **PLAY-9** [aktiv] [gtk] — Play/Pause startet bei gestoppter Wiedergabe ohne
+  geladenen Titel, Queue-Snapshot oder „Play Next" sofort einen zufällig
+  gewählten vorhandenen Bibliothekstitel. Dafür entsteht ein unveränderlicher
+  Snapshot aus allen vorhandenen Bibliothekstiteln in zufälliger Reihenfolge;
+  Missing- und gelöschte Titel sind ausgeschlossen. Bei leerer Bibliothek
+  bleibt Play/Pause deaktiviert und die Wiedergabe gestoppt.
 
 ## D. Albums- & Artists-Ansicht
 
