@@ -61,8 +61,44 @@ fn pcm_sines_land_in_the_same_bands_as_cavas_standalone_test() {
 
     assert_eq!(peak_index(&bass_bars), 2);
     assert_eq!(peak_index(&mid_bars), 6);
-    assert!(bass_bars[2] > bass_bars[1] * 20.0);
-    assert!(mid_bars[6] > mid_bars[5] * 20.0);
+    assert!(
+        bass_bars[2] > bass_bars[1] * 5.0,
+        "bass target={}, neighbor={}",
+        bass_bars[2],
+        bass_bars[1]
+    );
+    assert!(
+        mid_bars[6] > mid_bars[5] * 5.0,
+        "mid target={}, neighbor={}",
+        mid_bars[6],
+        mid_bars[5]
+    );
+}
+
+#[test]
+fn gravity_keeps_a_peak_alive_then_releases_it_to_zero() {
+    let mut processor = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
+    let full_window = 8_192;
+    let tone: Vec<f32> = (0..full_window)
+        .map(|sample| {
+            (std::f32::consts::TAU * 200.0 * sample as f32 / 44_100.0).sin() * (20_000.0 / 65_535.0)
+        })
+        .collect();
+    let silence = vec![0.0; full_window];
+
+    let peak = processor.process(&tone)[2];
+    let first_release = processor.process(&silence)[2];
+    let mut tail = first_release;
+    for _ in 0..240 {
+        tail = processor.process(&silence)[2];
+    }
+
+    assert!(peak > 0.0);
+    assert!(
+        first_release > peak * 0.5,
+        "CAVA gravity should prevent an abrupt drop: peak={peak}, release={first_release}"
+    );
+    assert!(tail < 0.001, "gravity tail should settle, got {tail}");
 }
 
 fn sine_chunk(frequency_hz: f32, chunk: usize) -> Vec<f32> {

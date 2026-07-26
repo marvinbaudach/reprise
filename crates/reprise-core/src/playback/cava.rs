@@ -7,6 +7,7 @@
 //! threading, or FFTW integration is included.
 
 mod bands;
+mod smoothing;
 
 use std::sync::Arc;
 
@@ -14,11 +15,13 @@ use realfft::{num_complex::Complex32, RealFftPlanner, RealToComplex};
 use thiserror::Error;
 
 use bands::{fft_size_for_rate, BandPlan};
+use smoothing::Smoother;
 
 /// Maximum supported display resolution.
 pub const MAX_CAVA_BAR_COUNT: usize = 256;
 const DEFAULT_LOW_CUTOFF_HZ: u32 = 50;
 const DEFAULT_HIGH_CUTOFF_HZ: u32 = 10_000;
+const DEFAULT_NOISE_REDUCTION: f32 = 0.77;
 
 /// Configuration for [`CavaBarProcessor`].
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -27,6 +30,7 @@ pub struct CavaConfig {
     pub bar_count: usize,
     pub low_cutoff_hz: u32,
     pub high_cutoff_hz: u32,
+    pub noise_reduction: f32,
 }
 
 impl CavaConfig {
@@ -36,6 +40,7 @@ impl CavaConfig {
             bar_count,
             low_cutoff_hz: DEFAULT_LOW_CUTOFF_HZ,
             high_cutoff_hz: DEFAULT_HIGH_CUTOFF_HZ.min(sample_rate_hz / 2),
+            noise_reduction: DEFAULT_NOISE_REDUCTION,
         }
     }
 }
@@ -51,6 +56,8 @@ pub enum CavaError {
     InvalidCutoffRange,
     #[error("high cutoff cannot exceed the Nyquist frequency")]
     HighCutoffAboveNyquist,
+    #[error("noise reduction must be finite and between 0 and 1")]
+    InvalidNoiseReduction,
 }
 
 /// Converts successive mono PCM chunks into bounded visualizer bars.
@@ -60,6 +67,7 @@ pub struct CavaBarProcessor {
     input_buffer: Vec<f32>,
     main_fft: FftWorkspace,
     bass_fft: FftWorkspace,
+    smoother: Smoother,
 }
 
 impl CavaBarProcessor {
@@ -79,6 +87,9 @@ impl CavaBarProcessor {
         if config.high_cutoff_hz > config.sample_rate_hz / 2 {
             return Err(CavaError::HighCutoffAboveNyquist);
         }
+        if !config.noise_reduction.is_finite() || !(0.0..=1.0).contains(&config.noise_reduction) {
+            return Err(CavaError::InvalidNoiseReduction);
+        }
         let band_plan = BandPlan::new(config)?;
         let fft_size = fft_size_for_rate(config.sample_rate_hz);
         Ok(Self {
@@ -87,6 +98,7 @@ impl CavaBarProcessor {
             input_buffer: vec![0.0; fft_size * 2],
             main_fft: FftWorkspace::new(fft_size),
             bass_fft: FftWorkspace::new(fft_size * 2),
+            smoother: Smoother::new(config.bar_count, config.noise_reduction),
         })
     }
 
@@ -106,7 +118,8 @@ impl CavaBarProcessor {
             .process(&self.input_buffer[..self.main_fft.len()]);
         self.bass_fft.process(&self.input_buffer);
 
-        self.band_plan
+        let mut bars: Vec<f32> = self
+            .band_plan
             .bands()
             .iter()
             .map(|band| {
@@ -122,7 +135,11 @@ impl CavaBarProcessor {
                     * band.equalizer
                     * 65_535.0
             })
-            .collect()
+            .collect();
+        let new_samples = mono_samples.len().min(self.input_buffer.len());
+        self.smoother
+            .apply(&mut bars, new_samples, self.config.sample_rate_hz);
+        bars
     }
 
     fn push_samples(&mut self, mono_samples: &[f32]) {
