@@ -54,6 +54,8 @@ pub(in crate::ui) struct PlayerBarWidgets {
     pub(in crate::ui) play_pause_button: gtk4::Button,
     pub(in crate::ui) next_button: gtk4::Button,
     pub(in crate::ui) repeat_button: gtk4::ToggleButton,
+    pub(in crate::ui) play_next_episode_button: gtk4::Button,
+    pub(in crate::ui) retry_external_button: gtk4::Button,
     pub(in crate::ui) position_label: gtk4::Label,
     pub(in crate::ui) duration_label: gtk4::Label,
     pub(in crate::ui) waveform: super::waveform_seek::WaveformSeek,
@@ -137,6 +139,13 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     let next_button = transport_button(ICON_NEXT, strings::TOOLTIP_NEXT);
     next_button.set_sensitive(false);
     let repeat_button = transport_toggle(ICON_REPEAT_ALL, strings::REPEAT);
+    let play_next_episode_button =
+        gtk4::Button::with_label(&strings::text(strings::PODCAST_PLAY_NEXT_EPISODE));
+    play_next_episode_button.set_visible(false);
+    buttons::arm(&play_next_episode_button, buttons::ADD_ACTION_CLASS);
+    let retry_external_button = gtk4::Button::with_label(&strings::text(strings::RADIO_RETRY));
+    retry_external_button.set_visible(false);
+    buttons::arm(&retry_external_button, buttons::ADD_ACTION_CLASS);
 
     let transport_row = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
     transport_row.append(&shuffle_button);
@@ -144,6 +153,8 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     transport_row.append(&play_pause_button);
     transport_row.append(&next_button);
     transport_row.append(&repeat_button);
+    transport_row.append(&play_next_episode_button);
+    transport_row.append(&retry_external_button);
     transport_row.set_halign(gtk4::Align::Center);
     // CSS class lets transport hover rules target only these buttons (spec 1.5).
     transport_row.add_css_class(TRANSPORT_ROW_CSS_CLASS);
@@ -260,6 +271,8 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         play_pause_button,
         next_button,
         repeat_button,
+        play_next_episode_button,
+        retry_external_button,
         position_label,
         duration_label,
         waveform,
@@ -325,6 +338,7 @@ pub(in crate::ui) fn css() -> String {
          /* Shape only. Hover, press, focus and the checked state all come from \
             the one central set in `style::buttons` (BTN-4) — no local tint. */\n\
          .{TRANSPORT_ROW_CSS_CLASS} button {{ border-radius: 50%; }}\n\
+         .{TRANSPORT_ROW_CSS_CLASS} button.reprise-btn-add {{ border-radius: 8px; }}\n\
          .{VOLUME_SCALE_CSS_CLASS} trough > slider {{ \
            opacity: 0; transition: opacity {TRANSITION}; }}\n\
          .{VOLUME_SCALE_CSS_CLASS}.{KNOB_VISIBLE_CSS_CLASS} trough > slider {{ opacity: 1; }}\n\

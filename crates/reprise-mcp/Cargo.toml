@@ -50,6 +50,7 @@ serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+url = "2"
 
 # --- PLAYBACK CONTROL (behind the `mpris` feature). A thin session-bus client
 # to the running app's MPRIS + org.reprise.Player1, exactly like reprise-cli's
@@ -60,7 +61,7 @@ zbus = { version = "5", optional = true }
 # The integration tests spawn the real binary and speak JSON-RPC over its
 # stdio; they arrange throwaway temp databases directly (test-fixture SQL is
 # explicitly allowed by scripts/check-architecture.sh).
-reprise-core = { path = "../reprise-core" }
+reprise-core = { path = "../reprise-core", features = ["test-fixtures"] }
 rusqlite = { version = "0.40", features = ["bundled"] }
 serde_json = "1"
 tempfile = "3"

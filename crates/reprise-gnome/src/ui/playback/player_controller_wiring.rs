@@ -45,6 +45,46 @@ const SMOKE_REPEAT_ALL_VALUE: &str = "all";
 /// strong reference here would be a leak-guaranteeing Rc cycle.
 pub(in crate::ui) fn wire_bar_controls(controller: &Rc<PlayerController>) {
     let weak = Rc::downgrade(controller);
+    controller.bar.connect_play_next_episode(move || {
+        if let Some(controller) = weak.upgrade() {
+            controller.play_pending_next();
+        }
+    });
+
+    let weak = Rc::downgrade(controller);
+    controller.bar.connect_retry_external(move || {
+        if let Some(controller) = weak.upgrade() {
+            controller.toggle_pause();
+        }
+    });
+
+    let weak = Rc::downgrade(controller);
+    controller.add_on_external_changed(move |snapshot| {
+        let Some(controller) = weak.upgrade() else {
+            return;
+        };
+        if snapshot.is_some() {
+            controller
+                .waveform_generation
+                .set(controller.waveform_generation.get().wrapping_add(1));
+        }
+        controller.bar.set_external_snapshot(snapshot.as_ref());
+        controller
+            .compact_player
+            .set_external_snapshot(snapshot.as_ref());
+        controller
+            .bar
+            .show_play_next_episode(snapshot.is_none() && controller.pending_play_next().is_some());
+    });
+
+    let weak = Rc::downgrade(controller);
+    controller.add_on_play_next_offer(move |_| {
+        if let Some(controller) = weak.upgrade() {
+            controller.bar.show_play_next_episode(true);
+        }
+    });
+
+    let weak = Rc::downgrade(controller);
     controller.bar.connect_play_pause(move || {
         let Some(controller) = weak.upgrade() else {
             return;

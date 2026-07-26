@@ -94,6 +94,16 @@ pub use stats::*;
 mod library_doctor;
 pub use library_doctor::*;
 
+#[path = "strings_podcasts.rs"]
+mod podcasts;
+#[allow(unused_imports)]
+pub use podcasts::*;
+
+#[path = "strings_radio.rs"]
+mod radio;
+#[allow(unused_imports)]
+pub use radio::*;
+
 pub const ONBOARDING_WELCOME: &str = N_!("Welcome to Reprise");
 pub const ONBOARDING_PRIVACY: &str = N_!("Reprise keeps your library local. Missing album covers are retrieved automatically from MusicBrainz and Cover Art Archive. Music files are changed only when you explicitly edit tags or move tracks to Trash.");
 pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX: &str = N_!("Import from Rhythmbox");

@@ -268,12 +268,11 @@ pub struct PlayerController {
     /// Queue view's named virtual context tail and NAV-9b's jump target.
     /// `None` before the first play and after a stop cleared the context.
     pub(in crate::ui) play_origin: RefCell<Option<super::play_origin::PlayOrigin>>,
-    /// Staging path of the render currently PREVIEWING, else `None` — the single
-    /// source of truth for the preview mode (`preview.rs`, INST-4b).
-    pub(in crate::ui) preview_path: RefCell<Option<String>>,
+    /// One state owner for preview, podcast, and live-radio playback.
+    pub(in crate::ui) external: RefCell<super::external_media::ExternalPlaybackState>,
     /// See the module's `## Toast + track-list-reload seam` doc section.
     /// Empty (`WeakRef::new()`) until `set_toast_overlay` is called.
-    toast_overlay: glib::WeakRef<adw::ToastOverlay>,
+    pub(in crate::ui) toast_overlay: glib::WeakRef<adw::ToastOverlay>,
     /// See the module's `## Toast + track-list-reload seam` doc section.
     /// `None` until `set_track_list_reload` is called.
     reload_track_list: RefCell<Option<Rc<dyn Fn()>>>,
@@ -465,7 +464,7 @@ impl PlayerController {
             current_up_next: Cell::new(None),
             deferred_queue_purge_id: Cell::new(None),
             play_origin: RefCell::new(None),
-            preview_path: RefCell::new(None),
+            external: RefCell::new(super::external_media::ExternalPlaybackState::default()),
             toast_overlay: glib::WeakRef::new(),
             reload_track_list: RefCell::new(None),
             listen_event_recorded: RefCell::new(None),
@@ -621,7 +620,7 @@ impl PlayerController {
         self.evaluate_play_tracking();
         self.sync_lyrics_track(None);
         // Ordinary queue playback leaves preview mode (INST-4b).
-        *self.preview_path.borrow_mut() = None;
+        self.leave_external_for_queue();
 
         let summary = {
             let conn = self.conn.borrow();

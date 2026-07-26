@@ -30,6 +30,8 @@ pub(in crate::ui) enum NavIcon {
     Missing,
     Releases,
     Concerts,
+    Podcasts,
+    Radio,
     MyStats,
     Conversions,
 }
@@ -48,6 +50,8 @@ impl NavIcon {
             Self::Missing => "edit-delete-symbolic",
             Self::Releases => "star-new-symbolic",
             Self::Concerts => "ticket-symbolic",
+            Self::Podcasts => "audio-input-microphone-symbolic",
+            Self::Radio => "network-wireless-symbolic",
             // Unused: My Stats renders a drawn three-bar chart via `nav_icon`,
             // not a theme symbolic (so it never collides with `TopRated`'s
             // star). Kept only to satisfy the exhaustive match.
@@ -61,6 +65,7 @@ impl NavIcon {
         match self {
             Self::Releases => "starred-symbolic",
             Self::Concerts => "x-office-calendar-symbolic",
+            Self::Radio => "network-cellular-symbolic",
             _ => self.icon_name(),
         }
     }
@@ -335,6 +340,15 @@ mod tests {
         assert_eq!(NavIcon::MyStats.icon_name(), "starred-symbolic");
         assert_eq!(NavIcon::Releases.icon_name(), "star-new-symbolic");
         assert_eq!(NavIcon::Concerts.icon_name(), "ticket-symbolic");
+        assert_eq!(
+            NavIcon::Podcasts.icon_name(),
+            "audio-input-microphone-symbolic"
+        );
+        assert_eq!(NavIcon::Radio.icon_name(), "network-wireless-symbolic");
+        assert_eq!(
+            NavIcon::Radio.fallback_icon_name(),
+            "network-cellular-symbolic"
+        );
         assert_eq!(NavIcon::Releases.fallback_icon_name(), "starred-symbolic");
         assert_eq!(
             NavIcon::Concerts.fallback_icon_name(),

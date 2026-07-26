@@ -49,6 +49,9 @@ impl PlayerController {
     /// `current_track.take()` remains the idempotency guard for local counts;
     /// `ScrobbleSession::finish` independently takes its pending listen.
     pub(in crate::ui) fn evaluate_play_tracking(&self) {
+        if !self.playback_mode().credits_listening() {
+            return;
+        }
         let Some((track_id, duration_ms)) = self.current_track.take() else {
             return;
         };

@@ -13,6 +13,40 @@ fn path_to_uri_encodes_special_chars() {
 }
 
 #[test]
+fn play_uri_accepts_only_http_https_and_file_schemes() {
+    assert_eq!(
+        validated_playback_uri("https://radio.example/live").unwrap(),
+        "https://radio.example/live"
+    );
+    assert_eq!(
+        validated_playback_uri("file:///tmp/episode.mp3").unwrap(),
+        "file:///tmp/episode.mp3"
+    );
+    assert!(validated_playback_uri("ftp://example.test/audio").is_err());
+    assert!(validated_playback_uri("relative/audio.mp3").is_err());
+}
+
+#[test]
+fn stream_tags_merge_partial_updates_and_suppress_duplicates() {
+    let empty = (None, None);
+    let title = merge_stream_tags(&empty, Some("Current song".into()), None)
+        .expect("the first title changes stream metadata");
+    assert_eq!(title, (Some("Current song".into()), None));
+
+    let complete = merge_stream_tags(&title, None, Some("Example Radio".into()))
+        .expect("organization augments the existing title");
+    assert_eq!(
+        complete,
+        (Some("Current song".into()), Some("Example Radio".into()))
+    );
+    assert_eq!(merge_stream_tags(&complete, None, None), None);
+    assert_eq!(
+        merge_stream_tags(&complete, Some("Current song".into()), None),
+        None
+    );
+}
+
+#[test]
 fn audio_filter_contains_configured_equalizer_and_replaygain() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()

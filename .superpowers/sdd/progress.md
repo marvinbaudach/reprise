@@ -49,6 +49,11 @@ Base: `331217f344`
 
 Task P1: complete (this commit, base 331217f344, made stopped Play/Pause seed and start a random present-library snapshot without row activation, kept empty-library and queue navigation sensitivity honest, and activated PLAY-9; full non-display gates passed, while the rule-named display regression compiled but its isolated Xvfb run was blocked by sandbox D-Bus socket permissions)
 
+# Podcasts & Radio
+
+Task Z1: complete with sandbox-limited visual verification (this commit, base 4b9b80627f, implemented podcast RSS/YouTube and radio-browser sources, external playback/MPRIS, source views, reversible removal, preferences, schema v33 future-only baselines, and all AF rules; fmt, clippy, 1398 core tests, 951 GNOME non-display tests, audit with only accepted RUSTSEC-2024-0436, core purity, motion, input, accessibility, and UX traceability passed; the unchanged origin/dev 806-line MCP file keeps the architecture script red, and sandbox D-Bus socket denial blocks display tests plus the isolated application smoke; real feeds/streams, yt-dlp, ICY, GNOME-Shell MPRIS, and theme icon optics remain the documented manual pass)
+Podcast & Radio MCP follow-up: complete (commit 277aad8540, base a1eb838bf4, added capability-gated podcast/YouTube and radio add/edit/remove/refresh tools plus URL-safe cached resources; fmt, strict clippy, workspace tests, audit with only accepted RUSTSEC-2024-0436, core purity, motion, input, accessibility, and UX traceability passed; the pre-existing 806-line MCP data file remains the sole architecture-lint failure, the 284/285 parallel display run's unrelated My Stats failure passed on isolated rerun, and a throwaway live MCP smoke read DGE RSS, HOLLOW FALLEN via yt-dlp, and RADIO BOB Metal via PLS without exposing source URLs)
+
 # Concerts credential feedback follow-up
 
 Base: `e38791b251`

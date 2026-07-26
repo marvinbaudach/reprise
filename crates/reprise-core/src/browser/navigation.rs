@@ -22,6 +22,8 @@ pub enum SidebarTarget {
     MyStats,
     Releases,
     Concerts,
+    Podcasts,
+    Radio,
     Conversions,
     Device(String),
 }
@@ -204,6 +206,8 @@ impl BrowserNavigation {
             SidebarTarget::MyStats => BrowserPlace::MyStats,
             SidebarTarget::Releases => BrowserPlace::Releases,
             SidebarTarget::Concerts => BrowserPlace::Concerts,
+            SidebarTarget::Podcasts => BrowserPlace::Podcasts,
+            SidebarTarget::Radio => BrowserPlace::Radio,
             SidebarTarget::Conversions => BrowserPlace::Conversions,
             SidebarTarget::Device(serial) if !serial.trim().is_empty() => BrowserPlace::Device {
                 serial: serial.trim().to_owned(),
@@ -319,6 +323,8 @@ fn same_destination(left: &BrowserPlace, right: &BrowserPlace) -> bool {
         | (BrowserPlace::MyStats, BrowserPlace::MyStats)
         | (BrowserPlace::Releases, BrowserPlace::Releases)
         | (BrowserPlace::Concerts, BrowserPlace::Concerts)
+        | (BrowserPlace::Podcasts, BrowserPlace::Podcasts)
+        | (BrowserPlace::Radio, BrowserPlace::Radio)
         | (BrowserPlace::Conversions, BrowserPlace::Conversions) => true,
         (BrowserPlace::Device { serial: left }, BrowserPlace::Device { serial: right }) => {
             left == right
@@ -438,6 +444,16 @@ mod tests {
             .navigate(NavigationIntent::Sidebar(SidebarTarget::MyStats))
             .unwrap();
         assert_eq!(stats.to, BrowserPlace::MyStats);
+
+        let podcasts = navigation
+            .navigate(NavigationIntent::Sidebar(SidebarTarget::Podcasts))
+            .unwrap();
+        assert_eq!(podcasts.to, BrowserPlace::Podcasts);
+
+        let radio = navigation
+            .navigate(NavigationIntent::Sidebar(SidebarTarget::Radio))
+            .unwrap();
+        assert_eq!(radio.to, BrowserPlace::Radio);
     }
 
     #[test]

@@ -40,6 +40,8 @@ impl MenuContext {
             | ViewSource::MyStats
             | ViewSource::Releases
             | ViewSource::Concerts
+            | ViewSource::Podcasts
+            | ViewSource::Radio
             | ViewSource::Conversions
             | ViewSource::Genre(_)
             | ViewSource::Device { .. } => Self::LibraryTracks,

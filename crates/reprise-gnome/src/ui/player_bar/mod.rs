@@ -1,4 +1,5 @@
 pub(in crate::ui) mod library_player_bar;
+mod player_bar_external;
 pub(in crate::ui) mod player_bar_layout;
 pub(in crate::ui) mod player_bar_seek;
 pub(in crate::ui) mod player_bar_state;

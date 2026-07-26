@@ -454,6 +454,12 @@ pub enum PlayerEvent {
     /// `TrackFinished`, which fires on a real end-of-stream (no next track was
     /// pre-fed) and is the frontend's cue to *start* the next track.
     AdvancedToNext,
+    /// Metadata carried by a remote stream. Radio uses the title as its live
+    /// now-playing value and the organization as the station label.
+    StreamTags {
+        title: Option<String>,
+        organization: Option<String>,
+    },
     /// A local-only, normalized audio spectrum for optional visual rendering.
     Spectrum(SpectrumFrame),
     Error(String),
@@ -724,6 +730,9 @@ mod spectrum_analyzer_tests {
 /// constructor and may invoke it from any thread; frontends marshal.
 pub trait PlaybackBackend {
     fn play(&self, path: &str) -> Result<(), PlaybackError>;
+    /// Starts a non-local media URI. Implementations must accept `http`,
+    /// `https`, and `file`; local-path callers continue to use [`Self::play`].
+    fn play_uri(&self, uri: &str) -> Result<(), PlaybackError>;
     fn toggle_pause(&self) -> Result<PlaybackState, PlaybackError>;
     fn seek_to(&self, position_ms: i64) -> Result<(), PlaybackError>;
     fn set_volume(&self, volume: f64);
