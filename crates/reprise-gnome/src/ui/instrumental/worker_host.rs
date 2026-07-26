@@ -1,346 +1,111 @@
-//! The app-hosted instrumental worker (plan §2.4/2) — one job at a time, its
-//! own connection, the claim/lease/heartbeat/progress/finish protocol driven
-//! through the `ai_jobs` core facade, and a `StemSeparationBackend` (the Fake
-//! in this package; the real backend in P3b).
+//! Supervisor for the packaged instrumental-render worker process.
 //!
-//! The spike's ~6 GB memory peak forces **exactly one job at a time**, so this
-//! is a single worker thread, not a pool — the same shape as
-//! `ui::scan::audio_analysis_runtime`. The render *logic* is factored into the
-//! pure, synchronous [`run_next_job`]/[`run_claimed_job`] so a headless test
-//! drives a full claim→progress→done / cancel / fail roundtrip with an injected
-//! clock and no threads or sleeps; [`InstrumentalWorker`] only wraps that in the
-//! thread + condvar + coalesced progress channel.
+//! The GTK process never loads the inference implementation or ONNX Runtime.
+//! It starts the separately packaged `reprise-worker` executable for one
+//! queue-draining run, observes it from a lightweight monitor thread, and tells
+//! the GTK view to re-read `ai_jobs` while work is active. A native
+//! decoder/runtime crash can therefore terminate only the worker process.
 
-use std::path::PathBuf;
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use reprise_core::ai_jobs::{self, ClaimedJob, HeartbeatOutcome};
-use reprise_core::ai_promotion::{self, CompletionOutcome, PromotionConfig};
 use reprise_core::ai_staging::StagingStore;
-use reprise_core::library::settings;
-use reprise_core::stem_separation::{StemError, StemSeparationBackend};
-use rusqlite::Connection;
 
-use super::SourceResolver;
+/// The worker's lease remains long enough for heartbeats while making a
+/// crashed render reclaimable on a later run.
+const WORKER_LEASE_SECS: i64 = 120;
+/// The UI reads durable job progress at most four times per second.
+const PROGRESS_POLL_INTERVAL: Duration = Duration::from_millis(250);
+const SUPERVISOR_THREAD_NAME: &str = "reprise-instrumental-supervisor";
 
-/// Lease length for a claimed job. Generous: a real render can run minutes on
-/// slow hardware (plan §2.4/6), so the lease must outlast the gap between two
-/// heartbeats by a wide margin. A worker heartbeats between chunks, well within
-/// this, and a crashed worker's job becomes reclaimable once it elapses.
-pub(in crate::ui) const LEASE_SECS: i64 = 120;
+/// Build-time path embedded by Meson. Bare Cargo builds intentionally have no
+/// production worker path and therefore cannot expose a fake render backend.
+const PACKAGED_WORKER_PATH: Option<&str> = option_env!("REPRISE_INSTRUMENTAL_WORKER");
 
-/// Floor between two `progress_permille` writes (plan §2.2: ≤ 2 writes/s). A
-/// real backend reports at chunk boundaries; this keeps a chatty one from
-/// hammering the row. Monotonic so it is immune to wall-clock jumps.
-const PROGRESS_MIN_INTERVAL: Duration = Duration::from_millis(250);
-
-const WORKER_THREAD_NAME: &str = "reprise-instrumental-worker";
-
-/// How a single job's run ended — the terminal DB state is the truth, this is
-/// the worker's view of what it did.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::ui) enum JobRunOutcome {
-    /// Rendered and marked `done` (staging render written).
-    Completed,
-    /// A requested cancel was acked (`cancelled`); no output left behind.
-    Cancelled,
-    /// The backend failed (`failed`); no output.
-    Failed,
-    /// The lease was lost mid-run (another worker owns it now) — left as-is for
-    /// that worker, nothing was marked.
-    Abandoned,
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct WorkerCommandSpec {
+    executable: PathBuf,
+    args: Vec<OsString>,
 }
 
-/// The result of running one job.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::ui) struct JobRun {
-    pub job_id: i64,
-    pub outcome: JobRunOutcome,
-}
+impl WorkerCommandSpec {
+    fn packaged(db_path: &Path, staging: &StagingStore) -> Result<Self, WorkerStartError> {
+        let executable = PACKAGED_WORKER_PATH
+            .filter(|path| !path.is_empty())
+            .map(PathBuf::from)
+            .ok_or(WorkerStartError::MissingPackagedWorker)?;
+        Ok(Self::for_paths(executable, db_path, staging.root()))
+    }
 
-/// A diagnostic `error_kind` for a failed render — stored on the job row, not
-/// user-facing.
-fn error_kind(error: &StemError) -> &'static str {
-    match error {
-        StemError::Cancelled => "cancelled",
-        StemError::SourceUnreadable(_) => "source-unreadable",
-        StemError::Io(_) => "io",
-        StemError::Backend(_) => "backend",
+    fn for_paths(executable: PathBuf, db_path: &Path, staging_dir: &Path) -> Self {
+        Self {
+            executable,
+            args: vec![
+                OsString::from("--db"),
+                db_path.as_os_str().to_owned(),
+                OsString::from("--staging-dir"),
+                staging_dir.as_os_str().to_owned(),
+                OsString::from("jobs"),
+                OsString::from("work"),
+                OsString::from("--once"),
+                OsString::from("--lease"),
+                OsString::from(WORKER_LEASE_SECS.to_string()),
+            ],
+        }
+    }
+
+    fn command(&self) -> Command {
+        let mut command = Command::new(&self.executable);
+        command
+            .args(&self.args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit());
+        command
     }
 }
 
-/// Claims the next runnable job for `worker_id` and runs it to completion,
-/// returning `None` when the queue holds nothing runnable. Pure and synchronous
-/// — the thread loop calls it repeatedly; tests call it directly.
-#[allow(clippy::too_many_arguments)]
-pub(in crate::ui) fn run_next_job(
-    conn: &mut Connection,
-    backend: &dyn StemSeparationBackend,
-    staging: &StagingStore,
-    resolve: &SourceResolver,
-    config: Option<&PromotionConfig>,
-    worker_id: i64,
-    lease_secs: i64,
-    clock: &dyn Fn() -> i64,
-    on_progress: &mut dyn FnMut(),
-) -> Option<JobRun> {
-    let claimed = match ai_jobs::claim_next(conn, worker_id, clock(), lease_secs) {
-        Ok(claimed) => claimed?,
-        Err(error) => {
-            tracing::error!(%error, "instrumental worker: claim failed");
-            return None;
-        }
-    };
-    // A job just went running — tick so the conversion view leaves `queued`.
-    on_progress();
-    let run = run_claimed_job(
-        conn,
-        backend,
-        staging,
-        resolve,
-        config,
-        worker_id,
-        &claimed,
-        lease_secs,
-        clock,
-        on_progress,
-    );
-    // ...and once it reaches a terminal state, so `done`/`failed` show even when
-    // that transition wrote no progress (mark_failed does not tick on its own).
-    on_progress();
-    Some(run)
+/// Why the GTK client could not start its packaged worker supervisor.
+#[derive(Debug, thiserror::Error)]
+pub(in crate::ui) enum WorkerStartError {
+    #[error("this build has no packaged instrumental worker path")]
+    MissingPackagedWorker,
+    #[error("could not start instrumental supervisor thread: {0}")]
+    Supervisor(#[source] std::io::Error),
 }
 
-/// Runs one already-claimed (`running`) job: resolves the source, renders into
-/// the staging store, and marks the terminal state through `ai_jobs`. Split out
-/// so a test can claim a job, request its cancel, then run it — proving the
-/// running→cancelled path deterministically.
-#[allow(clippy::too_many_arguments)]
-pub(in crate::ui) fn run_claimed_job(
-    conn: &mut Connection,
-    backend: &dyn StemSeparationBackend,
-    staging: &StagingStore,
-    resolve: &SourceResolver,
-    config: Option<&PromotionConfig>,
-    worker_id: i64,
-    job: &ClaimedJob,
-    lease_secs: i64,
-    clock: &dyn Fn() -> i64,
-    on_progress: &mut dyn FnMut(),
-) -> JobRun {
-    let job_id = job.id;
-
-    let Some(source) = job.source_track_id.and_then(|id| resolve(&*conn, id)) else {
-        tracing::warn!(job_id, "instrumental worker: source path unavailable");
-        return fail_run(conn, job_id, worker_id, "source-unavailable", clock);
-    };
-    if let Err(error) = staging.ensure_dir() {
-        tracing::error!(%error, job_id, "instrumental worker: could not create staging dir");
-        return fail_run(conn, job_id, worker_id, "io", clock);
-    }
-    // Render into a claim-scoped temp file, never the shared canonical path.
-    // `complete_render_with_publish` renames it onto the canonical staging path
-    // only after an owner-guarded `mark_done`, so a straggler whose lease was
-    // reclaimed can never clobber or resurrect the committed render.
-    let temp = staging.temp_path_for_job(job_id, worker_id);
-
-    // The progress/cancel closures borrow `conn` immutably; scoping them to this
-    // block releases that borrow before the completion below takes `conn` mutably
-    // (promotion needs `&mut Connection`).
-    let result = {
-        let conn: &Connection = conn;
-        // Progress: throttled DB write + a coalesced UI tick (plan §2.2).
-        let last_write = std::cell::Cell::new(Option::<Instant>::None);
-        let mut progress = |permille: u16| {
-            let now = Instant::now();
-            let due = last_write
-                .get()
-                .is_none_or(|last| now.duration_since(last) >= PROGRESS_MIN_INTERVAL);
-            if !due {
-                return;
-            }
-            last_write.set(Some(now));
-            if let Err(error) = ai_jobs::set_progress(conn, job_id, worker_id, permille) {
-                tracing::warn!(%error, job_id, "instrumental worker: set_progress failed");
-            }
-            on_progress();
-        };
-        // Cancel probe: heartbeat between chunks refreshes the lease and reports
-        // a pending cancel; losing the lease also stops the run.
-        let cancel = || {
-            let outcome = ai_jobs::heartbeat(conn, job_id, worker_id, clock(), lease_secs)
-                .unwrap_or(HeartbeatOutcome {
-                    still_owner: false,
-                    cancel_requested: false,
-                });
-            outcome.cancel_requested || !outcome.still_owner
-        };
-        // Catch a backend panic (a crafted source can make a decoder panic, e.g.
-        // dividing by a zero channel count) and map it to a normal backend
-        // failure, so one poisoned file never takes the worker thread down.
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            backend.separate_instrumental(&source, &temp, &mut progress, &cancel)
-        }))
-        .unwrap_or_else(|_| {
-            Err(StemError::Backend(
-                "backend panicked during separation".to_string(),
-            ))
-        })
-    };
-    match result {
-        Ok(()) => complete_published_run(
-            conn,
-            staging,
-            config,
-            job_id,
-            worker_id,
-            &temp,
-            clock,
-            on_progress,
-        ),
-        Err(StemError::Cancelled) => {
-            // A cancelled run's temp is worthless — drop it. mark_cancelled is
-            // gated on a real pending cancel; if it did not apply, the lease was
-            // lost instead — leave the row for the reclaiming worker.
-            let _ = std::fs::remove_file(&temp);
-            match ai_jobs::mark_cancelled(conn, job_id, worker_id, clock()) {
-                Ok(true) => {
-                    on_progress();
-                    JobRun {
-                        job_id,
-                        outcome: JobRunOutcome::Cancelled,
-                    }
-                }
-                Ok(false) => JobRun {
-                    job_id,
-                    outcome: JobRunOutcome::Abandoned,
-                },
-                Err(error) => {
-                    tracing::error!(%error, job_id, "instrumental worker: mark_cancelled");
-                    JobRun {
-                        job_id,
-                        outcome: JobRunOutcome::Abandoned,
-                    }
-                }
-            }
-        }
-        Err(error) => {
-            // A partial render is never valid output — drop the temp.
-            let _ = std::fs::remove_file(&temp);
-            fail_run(conn, job_id, worker_id, error_kind(&error), clock)
-        }
-    }
+#[derive(Debug)]
+struct SupervisorState {
+    requested_generation: u64,
+    handled_generation: u64,
+    child: Option<Child>,
 }
 
-/// Marks a running job `failed` with `kind` and returns the failed [`JobRun`].
-/// A free helper (not a closure) so it never holds a borrow on `conn` across the
-/// later `&mut Connection` completion.
-fn fail_run(
-    conn: &Connection,
-    job_id: i64,
-    worker_id: i64,
-    kind: &str,
-    clock: &dyn Fn() -> i64,
-) -> JobRun {
-    if let Err(error) = ai_jobs::mark_failed(conn, job_id, worker_id, kind, clock()) {
-        tracing::error!(%error, job_id, "instrumental worker: mark_failed failed");
-    }
-    JobRun {
-        job_id,
-        outcome: JobRunOutcome::Failed,
-    }
-}
-
-/// Completes a finished render through the core publish-safe path: the
-/// owner-guarded `mark_done` runs first, and only the winner publishes the temp
-/// onto the canonical staging path and honors the job's save-intent — promoting
-/// into the library when a root is configured, else leaving it staged. A failed
-/// auto-promotion degrades gracefully: the job stays `done` + unsaved with its
-/// render kept for a manual retry.
-#[allow(clippy::too_many_arguments)]
-fn complete_published_run(
-    conn: &mut Connection,
-    staging: &StagingStore,
-    config: Option<&PromotionConfig>,
-    job_id: i64,
-    worker_id: i64,
-    temp: &std::path::Path,
-    clock: &dyn Fn() -> i64,
-    on_progress: &mut dyn FnMut(),
-) -> JobRun {
-    match ai_promotion::complete_render_with_publish(
-        conn,
-        staging,
-        config,
-        job_id,
-        worker_id,
-        temp,
-        clock(),
-    ) {
-        Ok(CompletionOutcome::NotOwned) => {
-            tracing::warn!(job_id, "instrumental worker: completion lost ownership");
-            JobRun {
-                job_id,
-                outcome: JobRunOutcome::Abandoned,
-            }
-        }
-        Ok(outcome) => {
-            if let CompletionOutcome::PromotionDeferred { error } = &outcome {
-                tracing::warn!(
-                    job_id,
-                    %error,
-                    "instrumental worker: auto-promotion deferred; render kept for retry"
-                );
-            }
-            on_progress();
-            JobRun {
-                job_id,
-                outcome: JobRunOutcome::Completed,
-            }
-        }
-        Err(error) => {
-            // A DB/rename failure after (or during) the guarded mark_done. Leave
-            // the row for a reclaiming worker rather than fake a terminal state;
-            // the DB is the truth and the startup sweep reclaims any stray temp.
-            tracing::error!(%error, job_id, "instrumental worker: completion failed");
-            JobRun {
-                job_id,
-                outcome: JobRunOutcome::Abandoned,
-            }
-        }
-    }
-}
-
-// --- Threaded runtime -------------------------------------------------------
-
-struct LoopState {
-    revision: u64,
-    shutdown: bool,
-}
-
-struct SharedState {
-    state: Mutex<LoopState>,
+struct Shared {
+    state: Mutex<SupervisorState>,
     changed: Condvar,
-    progress_tx: async_channel::Sender<()>,
     stopping: AtomicBool,
+    progress_tx: async_channel::Sender<()>,
 }
 
 struct Inner {
-    shared: Arc<SharedState>,
-    worker: Mutex<Option<JoinHandle<()>>>,
+    shared: Arc<Shared>,
+    monitor: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl Drop for Inner {
     fn drop(&mut self) {
-        shutdown(&self.shared, &self.worker);
+        shutdown(&self.shared, &self.monitor);
     }
 }
 
-/// The window-owned handle to the instrumental worker thread. Cheap to clone;
-/// dropping the last clone joins the thread.
+/// Window-owned handle to the out-of-process renderer. Clones share one
+/// supervisor and therefore never run more than one worker process at a time.
 #[derive(Clone)]
 pub(in crate::ui) struct InstrumentalWorker {
     inner: Arc<Inner>,
@@ -348,163 +113,164 @@ pub(in crate::ui) struct InstrumentalWorker {
 }
 
 impl InstrumentalWorker {
-    /// Spawns the worker thread. It opens its **own** migrated connection to
-    /// `db_path` (never the UI connection — `rusqlite::Connection` is not
-    /// `Send`), then idles on a condvar until [`wake`](Self::wake) or shutdown.
+    /// Starts an idle supervisor for the Meson-packaged worker. Rendering
+    /// begins only after [`wake`](Self::wake), so merely opening Reprise never
+    /// loads a multi-gigabyte model when the queue is empty.
     pub(in crate::ui) fn new(
-        db_path: PathBuf,
-        backend: Box<dyn StemSeparationBackend + Send>,
-        staging: StagingStore,
-        resolve: SourceResolver,
-        worker_id: i64,
-    ) -> Self {
-        let (progress_tx, progress_rx) = async_channel::bounded::<()>(1);
-        let shared = Arc::new(SharedState {
-            state: Mutex::new(LoopState {
-                revision: 0,
-                shutdown: false,
-            }),
-            changed: Condvar::new(),
-            progress_tx,
-            stopping: AtomicBool::new(false),
-        });
-        let worker = {
-            let shared = shared.clone();
-            std::thread::Builder::new()
-                .name(WORKER_THREAD_NAME.into())
-                .spawn(move || {
-                    // The thread owns the backend for its whole life; worker_loop
-                    // only ever borrows it.
-                    worker_loop(
-                        &db_path,
-                        backend.as_ref(),
-                        &staging,
-                        &resolve,
-                        worker_id,
-                        &shared,
-                    );
-                })
-                .ok()
-        };
-        if worker.is_none() {
-            tracing::error!("instrumental worker: could not spawn worker thread");
-        }
-        Self {
-            inner: Arc::new(Inner {
-                shared,
-                worker: Mutex::new(worker),
-            }),
-            progress_rx,
-        }
+        db_path: &Path,
+        staging: &StagingStore,
+    ) -> Result<Self, WorkerStartError> {
+        let spec = WorkerCommandSpec::packaged(db_path, staging)?;
+        Self::start(spec)
     }
 
-    /// Nudges the worker to re-poll the queue — call after enqueuing jobs so a
-    /// newly queued render starts without waiting for the next event.
+    fn start(spec: WorkerCommandSpec) -> Result<Self, WorkerStartError> {
+        let (progress_tx, progress_rx) = async_channel::bounded(1);
+        let shared = Arc::new(Shared {
+            state: Mutex::new(SupervisorState {
+                requested_generation: 0,
+                handled_generation: 0,
+                child: None,
+            }),
+            changed: Condvar::new(),
+            stopping: AtomicBool::new(false),
+            progress_tx,
+        });
+        let monitor = {
+            let shared = shared.clone();
+            std::thread::Builder::new()
+                .name(SUPERVISOR_THREAD_NAME.into())
+                .spawn(move || supervise(&spec, &shared))
+                .map_err(WorkerStartError::Supervisor)?
+        };
+        Ok(Self {
+            inner: Arc::new(Inner {
+                shared,
+                monitor: Mutex::new(Some(monitor)),
+            }),
+            progress_rx,
+        })
+    }
+
+    /// Requests another finite queue-draining run. If a worker is already
+    /// active, the generation is retained and one final drain starts after it
+    /// exits, closing the enqueue-vs-exit race without parallel inference.
     pub(in crate::ui) fn wake(&self) {
         let mut state = self.inner.shared.state.lock().unwrap();
-        state.revision = state.revision.wrapping_add(1);
+        state.requested_generation = state.requested_generation.wrapping_add(1);
         self.inner.shared.changed.notify_all();
     }
 
-    /// A coalesced "refresh" stream: one tick per progress/lifecycle write
-    /// (bounded(1), so a slow UI collapses a burst into one). The conversion
-    /// view drains it via `glib::spawn_future_local` and re-reads the job rows
-    /// — progress is not a change_log event, so this is how the bar stays live.
+    /// Coalesced refresh ticks while the child runs and once when it exits.
+    /// The GTK task re-reads durable job rows; no backend-private progress
+    /// crosses the process boundary.
     pub(in crate::ui) fn progress_receiver(&self) -> async_channel::Receiver<()> {
         self.progress_rx.clone()
     }
 
-    /// Stops the worker thread and joins it. Idempotent; also runs on drop and
-    /// should be called from `window.connect_close_request`.
+    /// Stops supervising new work. A currently rendering `--once` child is
+    /// deliberately detached so closing the UI does not destroy hours of
+    /// compute; it drains the already-visible queue and exits by itself.
     pub(in crate::ui) fn shutdown(&self) {
-        shutdown(&self.inner.shared, &self.inner.worker);
+        shutdown(&self.inner.shared, &self.inner.monitor);
+    }
+
+    #[cfg(test)]
+    fn is_idle(&self) -> bool {
+        self.inner.shared.state.lock().unwrap().child.is_none()
     }
 }
 
-fn shutdown(shared: &Arc<SharedState>, worker: &Mutex<Option<JoinHandle<()>>>) {
-    shared.stopping.store(true, Ordering::SeqCst);
-    {
-        let mut state = shared.state.lock().unwrap();
-        state.shutdown = true;
-        shared.changed.notify_all();
-    }
-    if let Some(handle) = worker.lock().unwrap().take() {
-        if handle.join().is_err() {
-            tracing::error!("instrumental worker: worker thread panicked");
-        }
-    }
-}
-
-fn worker_loop(
-    db_path: &std::path::Path,
-    backend: &dyn StemSeparationBackend,
-    staging: &StagingStore,
-    resolve: &SourceResolver,
-    worker_id: i64,
-    shared: &Arc<SharedState>,
-) {
-    let mut conn = match reprise_core::db::open_migrated(Some(db_path)) {
-        Ok(conn) => conn,
-        Err(error) => {
-            tracing::error!(%error, "instrumental worker: could not open database");
+fn supervise(spec: &WorkerCommandSpec, shared: &Arc<Shared>) {
+    loop {
+        if shared.stopping.load(Ordering::SeqCst) {
+            detach_child(shared);
             return;
         }
-    };
-    // Clean up resurrectable staging orphans left by a prior run before working.
-    match staging.sweep_orphans(&conn) {
-        Ok(removed) if !removed.is_empty() => {
-            tracing::info!(
-                count = removed.len(),
-                "instrumental worker: swept staging orphans"
-            );
+
+        let should_spawn = {
+            let state = shared.state.lock().unwrap();
+            state.child.is_none() && state.handled_generation != state.requested_generation
+        };
+        if should_spawn {
+            spawn_generation(spec, shared);
+            continue;
         }
-        Ok(_) => {}
-        Err(error) => {
-            tracing::warn!(%error, "instrumental worker: staging orphan sweep failed");
+
+        let child_active = shared.state.lock().unwrap().child.is_some();
+        if child_active {
+            std::thread::sleep(PROGRESS_POLL_INTERVAL);
+            poll_child(shared);
+            continue;
         }
-    }
-    let clock = super::now_unix;
-    let mut handled = 0u64;
-    loop {
-        // Drain every runnable job, one at a time.
-        loop {
-            if shared.stopping.load(Ordering::SeqCst) {
-                return;
-            }
-            // The promotion target, read fresh each pass so a mid-session
-            // library-root change is honored; `None` leaves finished renders
-            // staged (nothing to file), waiting for a manual save.
-            let config = settings::get_library_root(&conn)
-                .ok()
-                .flatten()
-                .map(PromotionConfig::new);
-            let mut tick = || {
-                let _ = shared.progress_tx.try_send(());
-            };
-            match run_next_job(
-                &mut conn,
-                backend,
-                staging,
-                resolve,
-                config.as_ref(),
-                worker_id,
-                LEASE_SECS,
-                &clock,
-                &mut tick,
-            ) {
-                Some(_) => continue,
-                None => break,
-            }
-        }
-        // Idle until woken (new work) or told to stop.
+
         let mut state = shared.state.lock().unwrap();
-        while state.revision == handled && !state.shutdown {
+        while !shared.stopping.load(Ordering::SeqCst)
+            && state.child.is_none()
+            && state.handled_generation == state.requested_generation
+        {
             state = shared.changed.wait(state).unwrap();
         }
-        if state.shutdown {
-            return;
+    }
+}
+
+fn spawn_generation(spec: &WorkerCommandSpec, shared: &Shared) {
+    let requested = shared.state.lock().unwrap().requested_generation;
+    match spec.command().spawn() {
+        Ok(child) => {
+            let mut state = shared.state.lock().unwrap();
+            state.handled_generation = requested;
+            state.child = Some(child);
+            let _ = shared.progress_tx.try_send(());
         }
-        handled = state.revision;
+        Err(error) => {
+            tracing::error!(
+                %error,
+                worker = %spec.executable.display(),
+                "instrumental: could not start packaged worker"
+            );
+            let mut state = shared.state.lock().unwrap();
+            state.handled_generation = requested;
+            let _ = shared.progress_tx.try_send(());
+        }
+    }
+}
+
+fn poll_child(shared: &Shared) {
+    let mut state = shared.state.lock().unwrap();
+    let Some(child) = state.child.as_mut() else {
+        return;
+    };
+    match child.try_wait() {
+        Ok(Some(status)) => {
+            state.child.take();
+            if !status.success() {
+                tracing::warn!(%status, "instrumental: worker process exited unsuccessfully");
+            }
+        }
+        Ok(None) => {}
+        Err(error) => {
+            tracing::warn!(%error, "instrumental: could not inspect worker process");
+            state.child.take();
+        }
+    }
+    let _ = shared.progress_tx.try_send(());
+}
+
+fn detach_child(shared: &Shared) {
+    let mut state = shared.state.lock().unwrap();
+    if state.child.take().is_some() {
+        tracing::info!("instrumental: detached active worker during app shutdown");
+    }
+}
+
+fn shutdown(shared: &Shared, monitor: &Mutex<Option<JoinHandle<()>>>) {
+    shared.stopping.store(true, Ordering::SeqCst);
+    shared.changed.notify_all();
+    if let Some(handle) = monitor.lock().unwrap().take() {
+        if handle.join().is_err() {
+            tracing::error!("instrumental: supervisor thread panicked");
+        }
     }
 }
 

@@ -2242,6 +2242,13 @@ Dateien.
   der „Experimental features"-Schalter an ist** (INST-11) — dieselbe Gatung, die
   auch die Inhaltsseite anlegt, sodass der Eintrag nie eine fehlende Seite
   auswählt. (Plan 2.4/7, Paket F)
+- **INST-14** [geplant] [gtk] — Der Sidebar-Eintrag „Instrumental conversions"
+  ist ein Drop-Ziel für Tracks aus der Library. Eine Mehrfachauswahl wird als
+  ein Batch eingereiht; fehlende oder entfernte Tracks werden übersprungen,
+  bestehende Arbeit wird nach INST-9 referenziert statt dupliziert. Fehlen die
+  verifizierten Modell-/Runtime-Assets, öffnet die Aktion die Experimental-
+  Einstellungen und legt keinen sicher scheiternden Job an.
+  <!-- REVIEW: Regelvorschlag -->
 ## AD. Kompaktmodus / Mini-Player
 
 <!-- Sektionsbuchstabe: Z (Einteiliger Track-Browser) ist die letzte
