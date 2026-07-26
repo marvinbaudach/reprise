@@ -79,8 +79,31 @@ fn set_current_location_pending(button: &gtk4::Button, pending: bool) {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CredentialApplyFeedback {
+    Hidden,
+    Saved,
+}
+
+fn credential_apply_feedback(saved: bool) -> CredentialApplyFeedback {
+    if saved {
+        CredentialApplyFeedback::Saved
+    } else {
+        CredentialApplyFeedback::Hidden
+    }
+}
+
+#[derive(Clone)]
+struct CredentialPreferenceRow {
+    row: adw::PasswordEntryRow,
+    #[cfg(test)]
+    status: gtk4::Label,
+}
+
 struct ConcertPreferenceRowsInner {
     rows: Vec<gtk4::Widget>,
+    #[cfg(test)]
+    credentials: Vec<CredentialPreferenceRow>,
     similar_enabled: adw::SwitchRow,
     similar_count: adw::SpinRow,
     module_enabled: Cell<bool>,
@@ -169,8 +192,8 @@ pub(in crate::ui) fn build(
         });
     }
     let rows = vec![
-        bandsintown.upcast(),
-        ticketmaster.upcast(),
+        bandsintown.row.clone().upcast(),
+        ticketmaster.row.clone().upcast(),
         city.upcast(),
         location_status.upcast(),
         radius.upcast(),
@@ -181,6 +204,8 @@ pub(in crate::ui) fn build(
     let preferences = ConcertPreferenceRows {
         inner: Rc::new(ConcertPreferenceRowsInner {
             rows,
+            #[cfg(test)]
+            credentials: vec![bandsintown, ticketmaster],
             similar_enabled: similar_enabled.clone(),
             similar_count: similar_count.clone(),
             module_enabled: Cell::new(enabled),
@@ -204,7 +229,7 @@ fn password_row(
     runtime: &Rc<ConcertsRuntime>,
     key: &'static str,
     title: &'static str,
-) -> adw::PasswordEntryRow {
+) -> CredentialPreferenceRow {
     let value = reprise_core::library::settings::get_setting(&conn.borrow(), key)
         .ok()
         .flatten()
@@ -212,15 +237,43 @@ fn password_row(
     let row = adw::PasswordEntryRow::builder()
         .title(strings::text(title))
         .text(value)
+        .show_apply_button(true)
         .build();
-    let conn = conn.clone();
-    let runtime = runtime.clone();
-    row.connect_changed(move |row| {
-        if save_setting(&conn, key, row.text().as_str()) {
-            runtime.notify_settings_changed();
-        }
-    });
-    row
+    let status = gtk4::Label::builder()
+        .accessible_role(gtk4::AccessibleRole::Status)
+        .css_classes(["caption", "dim-label"])
+        .visible(false)
+        .build();
+    row.add_suffix(&status);
+    {
+        let conn = conn.clone();
+        let runtime = runtime.clone();
+        let status = status.clone();
+        row.connect_changed(move |row| {
+            status.set_visible(false);
+            if save_setting(&conn, key, row.text().as_str()) {
+                runtime.notify_settings_changed();
+            }
+        });
+    }
+    {
+        let conn = conn.clone();
+        let runtime = runtime.clone();
+        let status = status.clone();
+        row.connect_apply(move |row| {
+            let feedback = credential_apply_feedback(save_setting(&conn, key, row.text().as_str()));
+            status.set_label(&strings::text(strings::CONCERTS_CREDENTIAL_SAVED));
+            status.set_visible(feedback == CredentialApplyFeedback::Saved);
+            if feedback == CredentialApplyFeedback::Saved {
+                runtime.notify_settings_changed();
+            }
+        });
+    }
+    CredentialPreferenceRow {
+        row,
+        #[cfg(test)]
+        status,
+    }
 }
 
 fn location_rows(
@@ -555,6 +608,18 @@ mod tests {
     }
 
     #[test]
+    fn set_4_credential_feedback_is_visible_only_after_a_successful_apply() {
+        assert_eq!(
+            credential_apply_feedback(false),
+            CredentialApplyFeedback::Hidden
+        );
+        assert_eq!(
+            credential_apply_feedback(true),
+            CredentialApplyFeedback::Saved
+        );
+    }
+
+    #[test]
     fn stored_credentials_are_preferred_and_similar_count_clamps() {
         let conn = reprise_core::db::open(None).unwrap();
         reprise_core::db::migrate(&conn).unwrap();
@@ -603,5 +668,28 @@ mod tests {
         assert!(preferences.inner.similar_count.is_sensitive());
         preferences.set_sensitive(false);
         assert!(!preferences.inner.similar_count.is_sensitive());
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn set_4_concert_credentials_apply_button_confirms_the_saved_value() {
+        gtk4::init().unwrap();
+        let conn = Rc::new(RefCell::new(Connection::open_in_memory().unwrap()));
+        reprise_core::db::migrate(&conn.borrow()).unwrap();
+        let runtime = ConcertsRuntime::setup(&conn.borrow());
+        let preferences = build(&conn, &runtime, true);
+        let credential = &preferences.inner.credentials[0];
+
+        assert!(credential.row.shows_apply_button());
+        credential.row.set_text("saved-key");
+        assert!(!credential.status.is_visible());
+
+        credential.row.emit_by_name::<()>("apply", &[]);
+
+        assert!(credential.status.is_visible());
+        assert_eq!(
+            credential.status.label(),
+            strings::text(strings::CONCERTS_CREDENTIAL_SAVED)
+        );
     }
 }

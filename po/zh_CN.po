@@ -3842,3 +3842,6 @@ msgstr ""
 
 #~ msgid "Top tracks"
 #~ msgstr "顶级曲目"
+
+msgid "Saved"
+msgstr "已保存"

@@ -3834,3 +3834,6 @@ msgstr ""
 
 #~ msgid "Unknown Artist"
 #~ msgstr "অজানা শিল্পী"
+
+msgid "Saved"
+msgstr "সংরক্ষিত"
