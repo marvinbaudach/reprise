@@ -390,10 +390,10 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Relink-Vertrag (2a) und die noch nicht einheitlich gelieferte Karte der
   übrigen Langläufer (2b) gesplittet.
 - **FB-2a** [aktiv] [gtk] — Der Relink-Suchlauf läuft off-thread in der
-  bestehenden, mit Scan/Sync stapelbaren Fortschrittskarte im Sidebar-
-  Bottom-Slot: Spinner + Titel + % rechts (tabular) + 3-px-Balken +
-  ellipsierte Detailzeile. Klick auf die Karte → Missing files; der sichtbare
-  Cancel-Button prüft den Abbruch vor jeder Audiodatei.
+  bestehenden, mit Scan/Sync stapelbaren Fortschrittskarte direkt über dem
+  unten fixierten Issues-Bereich: Spinner + Titel + % rechts (tabular) +
+  3-px-Balken + ellipsierte Detailzeile. Klick auf die Karte → Missing files;
+  der sichtbare Cancel-Button prüft den Abbruch vor jeder Audiodatei.
 - **FB-2b** [geplant] [gtk] — Scan, Sync und Playlist-Import verwenden für
   jeden Lauf > ~1 s denselben vollständigen Kartenvertrag aus FB-2a,
   einschließlich sichtbarem Cancel und Navigation zur zugehörigen Ansicht.
@@ -1166,16 +1166,21 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   denselben Befehl. Sidebar, Liste und Grid sind je **ein** Tab-Stop; Pfeile
   bewegen darin den aktiven Eintrag. Reines Fokussieren/Selektieren löst
   keine Navigation, Wiedergabe oder andere Aktion aus — erst Aktivierung.
-- **ACC-4** [aktiv] [e2e] — Standardtasten gelten überall konsistent:
+- **ACC-4** [ersetzt durch ACC-4a] — Standardtasten gelten überall konsistent;
+  die globale Space-Ausnahme des linken Sidebar-Toggles ist jetzt in ACC-4a
+  explizit.
+- **ACC-4a** [aktiv] [e2e] — Standardtasten gelten überall konsistent:
   Pfeile navigieren räumlich bzw. zeilenweise, Home/End springen in langen
   Collections an Anfang/Ende, Page Up/Down bewegen seitenweise, Enter
   aktiviert den fokussierten Eintrag. Space bleibt in passiven Collections
-  sowie auf einem bereits ausgewählten, passiven View-Tab global Play/Pause,
-  schaltet aber einen fokussierten Button/Toggle mit echter lokaler Aktion und
-  tippt in Textfeldern ein Leerzeichen. Menü-Taste/Shift+F10 öffnet das
-  Kontextmenü, F10 das Primärmenü und Esc schließt den obersten transienten
-  Container. Ein globaler Shortcut darf nie Texteingabe oder die lokale
-  Semantik eines fokussierten Controls stehlen.
+  sowie auf einem bereits ausgewählten, passiven View-Tab global Play/Pause.
+  Dasselbe gilt für den fokussierten linken Sidebar-Toggle; er klappt die
+  Sidebar nur per Pointer oder Enter ein und aus. Andere fokussierte
+  Buttons/Toggles mit echter lokaler Aktion behalten Space, Textfelder tippen
+  ein Leerzeichen. Menü-Taste/Shift+F10 öffnet das Kontextmenü, F10 das
+  Primärmenü und Esc schließt den obersten transienten Container. Ein globaler
+  Shortcut darf nie Texteingabe oder die lokale Semantik eines fokussierten
+  Controls stehlen.
 - **ACC-5** [aktiv] [e2e] — Fokus hat einen nachvollziehbaren Lebenszyklus:
   Start und Navigation setzen ihn in die aktive Zielansicht; Ctrl+F setzt ihn
   ins Suchfeld, dessen Esc-Kaskade gibt ihn an die **aktuelle** Content-View

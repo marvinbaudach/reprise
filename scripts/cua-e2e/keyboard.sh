@@ -7,6 +7,8 @@ manifest="$repo_root/scripts/cua-e2e/keyboard-surfaces.tsv"
 # shellcheck source=lib.sh
 source "$repo_root/scripts/cua-e2e/lib.sh"
 
+SPACE_TOGGLE_REGRESSION_COUNT=6
+
 assert_after_has_focus() {
   local stem=$1
   assert_unique_focus "$CUA_E2E_OUT_DIR/$stem-after.json"
@@ -124,7 +126,7 @@ keyboard_tracks_playlist_queue() {
 }
 
 keyboard_player_now_playing() {
-  local pid=$1 window_id=$2 focus_path state_path
+  local pid=$1 window_id=$2 focus_path state_path attempt expected stem
   # This scenario waits for "Pause (Space)", which only exists while something
   # plays — nothing here started playback, so it depended on a previous surface
   # having left a track running. Establish the precondition instead: focus a
@@ -143,6 +145,25 @@ keyboard_player_now_playing() {
     "$pid" "$window_id" "Play (Space)" acc-player-paused)
   assert_snapshot_contains "$state_path" "Play (Space)"
   assert_after_has_focus acc-player-toggle
+
+  focus_path=$(cua_focus_label_via_tab \
+    "$pid" "$window_id" "Toggle sidebar" acc-player-sidebar-toggle-focus)
+  assert_focus_evidence_label "$focus_path" "Toggle sidebar"
+  for ((attempt = 1; attempt <= SPACE_TOGGLE_REGRESSION_COUNT; attempt++)); do
+    if ((attempt % 2 == 1)); then
+      expected="Pause (Space)"
+    else
+      expected="Play (Space)"
+    fi
+    stem="acc-player-sidebar-space-$attempt"
+    cua_press_key_window "$pid" "$window_id" space "$stem"
+    state_path=$(cua_wait_for_label \
+      "$pid" "$window_id" "$expected" "$stem-state")
+    assert_snapshot_contains "$state_path" "$expected"
+    assert_snapshot_contains "$state_path" "Music"
+    assert_focus_evidence_label "$state_path" "Toggle sidebar"
+  done
+
   cua_hotkey "$pid" "$window_id" acc-player-now-playing ctrl l
   assert_after_has_focus acc-player-now-playing
 }
@@ -287,7 +308,7 @@ run_manifest() {
   check_manifest
   echo "[cua-keyboard] acc-1-keyboard-only-surface-sweep"
   echo "[cua-keyboard] acc-3-tab-order-and-roving-collections"
-  echo "[cua-keyboard] acc-4-standard-keys-respect-local-controls"
+  echo "[cua-keyboard] acc-4a-space-routes-global-and-local-controls"
   echo "[cua-keyboard] acc-5-transients-and-navigation-restore-focus"
   echo "[cua-keyboard] acc-8-direct-manipulation-has-keyboard-equivalence"
   # Run every surface and report one balance sheet, rather than dying on the
