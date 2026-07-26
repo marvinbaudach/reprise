@@ -165,6 +165,36 @@ fn replace_track_overwrites_a_changed_file_even_when_its_size_is_unchanged() {
 }
 
 #[test]
+fn replacement_verifies_the_partial_size_before_overwriting_the_final_file() {
+    let (temp, storage) = fixture();
+    fs::create_dir_all(temp.path().join("Music/Reprise/Road")).unwrap();
+    fs::write(temp.path().join("source.flac"), b"short").unwrap();
+    let final_path = temp.path().join("Music/Reprise/Road/7-source.flac");
+    fs::write(&final_path, b"known-good").unwrap();
+
+    let result = run(storage.replace_track(
+        &gio::File::for_path(temp.path().join("source.flac")),
+        "Road/7-source.flac",
+        6,
+        &gio::Cancellable::new(),
+        |_copied, _total| {},
+    ));
+
+    assert!(matches!(
+        result,
+        Err(DeviceIoError::SizeMismatch {
+            expected: 6,
+            actual: 5,
+        })
+    ));
+    assert_eq!(fs::read(final_path).unwrap(), b"known-good");
+    assert!(!temp
+        .path()
+        .join("Music/Reprise/Road/7-source.flac.part")
+        .exists());
+}
+
+#[test]
 fn copy_rejects_paths_outside_the_managed_root() {
     let (temp, storage) = fixture();
     fs::write(temp.path().join("source.flac"), b"x").unwrap();

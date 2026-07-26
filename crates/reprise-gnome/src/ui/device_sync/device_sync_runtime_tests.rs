@@ -13,6 +13,7 @@ use reprise_core::device_sync::{
     DeviceSelection, DeviceSettings, SelectionSource, SyncPhase, SyncSnapshot,
 };
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceContents, DeviceDescriptor};
+use reprise_platform_linux::device_transfer::{Mp3TranscodeRequest, TranscodedFile};
 use rusqlite::Connection;
 
 use super::device_sync_runtime::*;
@@ -32,8 +33,10 @@ struct FakeState {
     max_total: Cell<usize>,
     playlists: RefCell<Vec<(String, String, Vec<u8>)>>,
     deleted: RefCell<Vec<String>>,
+    planned_operations: RefCell<Vec<(String, &'static str)>>,
     available_bytes: Cell<Option<u64>>,
     total_bytes: Cell<Option<u64>>,
+    mp3_probe_error: RefCell<Option<String>>,
 }
 
 #[derive(Clone)]
@@ -53,6 +56,11 @@ impl FakeBackend {
 
     fn with_available_bytes(self, available_bytes: Option<u64>) -> Self {
         self.state.available_bytes.set(available_bytes);
+        self
+    }
+
+    fn with_mp3_probe_error(self, error: &str) -> Self {
+        self.state.mp3_probe_error.replace(Some(error.into()));
         self
     }
 
@@ -97,6 +105,10 @@ impl DeviceBackend for FakeBackend {
         let state = self.state.clone();
         let delay_ms = self.delay_ms;
         Box::pin(async move {
+            state
+                .planned_operations
+                .borrow_mut()
+                .push((device_id.clone(), "copy"));
             state.copy_attempts.set(state.copy_attempts.get() + 1);
             {
                 let mut active = state.active_by_device.borrow_mut();
@@ -130,6 +142,32 @@ impl DeviceBackend for FakeBackend {
                 .borrow_mut()
                 .push((device_id, relative_target));
             Ok(CopyOutcome::Copied)
+        })
+    }
+
+    fn probe_mp3_transcode(&self) -> Result<(), String> {
+        self.state
+            .mp3_probe_error
+            .borrow()
+            .clone()
+            .map_or(Ok(()), Err)
+    }
+
+    fn transcode_track(
+        &self,
+        request: Mp3TranscodeRequest,
+        _cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) -> TestFuture<TranscodedFile> {
+        let state = self.state.clone();
+        Box::pin(async move {
+            state
+                .planned_operations
+                .borrow_mut()
+                .push(("fake".into(), "transcode"));
+            Ok(TranscodedFile {
+                path: request.output,
+                size_bytes: 100,
+            })
         })
     }
 

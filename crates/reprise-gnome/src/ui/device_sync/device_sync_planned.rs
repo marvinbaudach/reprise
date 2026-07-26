@@ -60,6 +60,27 @@ impl DeviceSyncRuntime {
         }
         self.recompute_delta(device_id)
             .map_err(SyncStartError::Planning)?;
+        let requires_mp3_transcode = {
+            let devices = self.device_states.borrow();
+            let device = devices
+                .iter()
+                .find(|device| device.descriptor.id == device_id && device.connected)
+                .ok_or(SyncStartError::UnknownDevice)?;
+            let copy_ids = device
+                .delta
+                .as_ref()
+                .map(|delta| delta.to_copy.iter().copied().collect::<HashSet<_>>())
+                .unwrap_or_default();
+            device.transfer_plan.iter().any(|entry| {
+                copy_ids.contains(&entry.track.id)
+                    && matches!(entry.mode, TransferMode::TranscodeMp3 { .. })
+            })
+        };
+        if requires_mp3_transcode {
+            self.backend
+                .probe_mp3_transcode()
+                .map_err(SyncStartError::Planning)?;
+        }
         let work = {
             let mut devices = self.device_states.borrow_mut();
             let device = devices
@@ -220,40 +241,6 @@ async fn run_transfers(
         .filter(|entry| copy_ids.contains(&entry.track.id))
         .cloned()
         .collect::<Vec<_>>();
-    let encode_requests = transfers
-        .iter()
-        .enumerate()
-        .filter_map(|(token, entry)| match entry.mode {
-            TransferMode::Copy => None,
-            TransferMode::TranscodeOpus { bitrate } => Some(EncodeRequest {
-                token,
-                source: entry.track.source_path.clone(),
-                output: temporary_opus_path(&work.device_id, entry.track.id),
-                bitrate_kbps: bitrate,
-            }),
-        })
-        .collect::<Vec<_>>();
-    let receiver = if encode_requests.is_empty() {
-        None
-    } else {
-        match runtime
-            .backend
-            .start_transcodes(encode_requests, work.cancelled.clone())
-        {
-            Ok(receiver) => Some(receiver),
-            Err(error) => {
-                tracing::warn!(%error, "could not start device encoders");
-                failures.extend(
-                    transfers
-                        .iter()
-                        .filter(|entry| matches!(entry.mode, TransferMode::TranscodeOpus { .. }))
-                        .map(|entry| entry.track.id),
-                );
-                None
-            }
-        }
-    };
-    let mut ready = HashMap::new();
     let mut completed_bytes = 0_u64;
     for (token, entry) in transfers.iter().enumerate() {
         if work.cancelled.load(Ordering::SeqCst) {
@@ -264,7 +251,7 @@ async fn run_transfers(
             TransferMode::Copy => {
                 Some((entry.track.source_path.clone(), entry.expected_bytes, false))
             }
-            TransferMode::TranscodeOpus { .. } => {
+            TransferMode::TranscodeMp3 { quality } => {
                 set_phase(
                     runtime,
                     &work.device_id,
@@ -278,7 +265,25 @@ async fn run_transfers(
                         work.delta.bytes,
                     ),
                 );
-                receive_ready(receiver.as_ref(), token, &mut ready).await
+                let request = Mp3TranscodeRequest {
+                    source: entry.track.source_path.clone(),
+                    output: temporary_mp3_path(&work.device_id, entry.track.id),
+                    quality,
+                    metadata: reprise_platform_linux::device_transfer::Mp3Metadata::for_track(
+                        &entry.track,
+                    ),
+                };
+                match runtime
+                    .backend
+                    .transcode_track(request, work.cancelled.clone())
+                    .await
+                {
+                    Ok(file) => Some((file.path, file.size_bytes, true)),
+                    Err(error) => {
+                        tracing::warn!(track_id = entry.track.id, %error, "device MP3 transcode failed");
+                        None
+                    }
+                }
             }
         };
         let Some((source, actual_size, temporary)) = prepared else {
@@ -365,35 +370,6 @@ async fn run_transfers(
         }
         completed_bytes = completed_bytes.saturating_add(entry.expected_bytes);
     }
-}
-
-async fn receive_ready(
-    receiver: Option<&async_channel::Receiver<EncodeOutcome>>,
-    token: usize,
-    pending: &mut HashMap<usize, Result<ReadyFile, String>>,
-) -> Option<(PathBuf, u64, bool)> {
-    if let Some(result) = pending.remove(&token) {
-        return result.ok().map(|file| (file.path, file.size, true));
-    }
-    let receiver = receiver?;
-    while let Ok(outcome) = receiver.recv().await {
-        let result = outcome.result.map_err(|error| error.to_string());
-        if outcome.token == token {
-            match result {
-                Ok(file) => return Some((file.path, file.size, true)),
-                Err(error) => {
-                    tracing::warn!(%error, "device transcode failed");
-                    return None;
-                }
-            }
-        } else {
-            if let Err(error) = &result {
-                tracing::warn!(%error, "device transcode failed");
-            }
-            pending.insert(outcome.token, result);
-        }
-    }
-    None
 }
 
 async fn run_playlists(
@@ -640,11 +616,11 @@ fn update_copy_bytes(
     runtime.notify();
 }
 
-fn temporary_opus_path(device_id: &str, track_id: i64) -> PathBuf {
+fn temporary_mp3_path(device_id: &str, track_id: i64) -> PathBuf {
     let sequence = TEMP_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     let safe_device = reprise_core::device_sync::safe_component(device_id, "device");
     std::env::temp_dir().join(format!(
-        "reprise-sync-{safe_device}-{}-{track_id}-{sequence}.opus",
+        "reprise-sync-{safe_device}-{}-{track_id}-{sequence}.mp3",
         std::process::id()
     ))
 }

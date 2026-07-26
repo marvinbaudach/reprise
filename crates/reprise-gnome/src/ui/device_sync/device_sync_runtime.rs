@@ -27,7 +27,7 @@ use reprise_core::library::m3u::{M3uEntry, M3uExportEntry};
 use reprise_platform_linux::device_sync::{
     CopyOutcome, DeviceContents, DeviceDescriptor, DeviceMonitor,
 };
-use reprise_platform_linux::device_transfer::{EncodeOutcome, EncodeRequest, ReadyFile};
+use reprise_platform_linux::device_transfer::{Mp3TranscodeRequest, TranscodedFile};
 use rusqlite::Connection;
 
 #[path = "device_sync_types.rs"]
@@ -393,7 +393,7 @@ impl DeviceSyncRuntime {
                 .map_err(|error| error.to_string())?;
             let files = load_device_files(&conn, device_id).map_err(|error| error.to_string())?;
             let transfer_plan =
-                build_transfer_plan_with_inventory(tracks, settings.opus_bitrate, &files);
+                build_transfer_plan_with_inventory(tracks, settings.profile, &files);
             let candidates = transfer_plan
                 .iter()
                 .map(|entry| SyncCandidate {

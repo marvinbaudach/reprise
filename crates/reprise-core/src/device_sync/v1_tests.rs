@@ -11,7 +11,7 @@ use super::settings::{
     SelectionSource,
 };
 use super::transfer::{build_transfer_plan, build_transfer_plan_with_inventory, TransferMode};
-use super::{SyncTrack, TransferProfile};
+use super::{Mp3Quality, SyncTrack, TransferProfile};
 
 fn migrated() -> Connection {
     let conn = crate::db::open(None).unwrap();
@@ -294,7 +294,7 @@ fn named_playlist_is_replaced_with_relative_utf8_entries() {
 }
 
 #[test]
-fn transfer_plan_transcodes_only_lossless_sources_and_resolves_name_collisions() {
+fn transfer_plan_applies_the_mp3_profile_and_resolves_name_collisions() {
     let tracks = vec![
         SyncTrack {
             id: 1,
@@ -320,15 +320,20 @@ fn transfer_plan_transcodes_only_lossless_sources_and_resolves_name_collisions()
             album_artist: "Artist".into(),
             track_number: Some(1),
             duration_ms: 80_000,
-            bitrate_kbps: None,
+            bitrate_kbps: Some(96),
             size_bytes: 500_000,
             source_mtime: 20,
         },
     ];
 
-    let plan = build_transfer_plan(tracks, 128);
-    assert_eq!(plan[0].mode, TransferMode::TranscodeOpus { bitrate: 128 });
-    assert_eq!(plan[0].device_path, "Artist/Album/01 same.opus");
+    let plan = build_transfer_plan(tracks, TransferProfile::Mp3(Mp3Quality::Kbps128));
+    assert_eq!(
+        plan[0].mode,
+        TransferMode::TranscodeMp3 {
+            quality: Mp3Quality::Kbps128
+        }
+    );
+    assert_eq!(plan[0].device_path, "Artist/Album/01 same.mp3");
     assert_eq!(plan[0].expected_bytes, 1_280_000);
     assert_eq!(plan[1].mode, TransferMode::Copy);
     assert_eq!(plan[1].device_path, "Artist/Album/01 Same (2).mp3");
@@ -353,11 +358,11 @@ fn collision_suffixes_are_stable_when_track_input_order_changes() {
     };
     let ascending = build_transfer_plan(
         vec![track(1, "/library/one.mp3"), track(2, "/library/two.mp3")],
-        0,
+        TransferProfile::default(),
     );
     let reversed = build_transfer_plan(
         vec![track(2, "/library/two.mp3"), track(1, "/library/one.mp3")],
-        0,
+        TransferProfile::default(),
     );
     let paths = |plan: Vec<super::transfer::TransferPlanEntry>| {
         plan.into_iter()
@@ -411,7 +416,7 @@ fn collision_suffixes_preserve_selected_and_pinned_inventory_slots() {
 
     let plan = build_transfer_plan_with_inventory(
         vec![track(1, "/library/one.mp3"), track(2, "/library/two.mp3")],
-        0,
+        TransferProfile::default(),
         &inventory,
     );
     let paths = plan
@@ -424,7 +429,7 @@ fn collision_suffixes_preserve_selected_and_pinned_inventory_slots() {
 }
 
 #[test]
-fn zero_bitrate_preserves_lossless_files_without_transcoding() {
+fn default_profile_transcodes_lossless_files_to_mp3() {
     let track = SyncTrack {
         id: 1,
         source_path: "/library/one.flac".into(),
@@ -439,13 +444,18 @@ fn zero_bitrate_preserves_lossless_files_without_transcoding() {
         size_bytes: 1_000_000,
         source_mtime: 10,
     };
-    let plan = build_transfer_plan(vec![track], 0);
-    assert_eq!(plan[0].mode, TransferMode::Copy);
-    assert_eq!(plan[0].device_path, "Artist/Album/01 One.flac");
+    let plan = build_transfer_plan(vec![track], TransferProfile::default());
+    assert_eq!(
+        plan[0].mode,
+        TransferMode::TranscodeMp3 {
+            quality: Mp3Quality::Kbps256
+        }
+    );
+    assert_eq!(plan[0].device_path, "Artist/Album/01 One.mp3");
 }
 
 #[test]
-fn unknown_duration_still_produces_a_bitrate_specific_transfer_fingerprint() {
+fn unknown_duration_uses_the_source_size_for_every_mp3_quality() {
     let track = SyncTrack {
         id: 1,
         source_path: "/library/one.flac".into(),
@@ -461,10 +471,16 @@ fn unknown_duration_still_produces_a_bitrate_specific_transfer_fingerprint() {
         source_mtime: 10,
     };
 
-    let at_64 = build_transfer_plan(vec![track.clone()], 64)[0].expected_bytes;
-    let at_128 = build_transfer_plan(vec![track], 128)[0].expected_bytes;
+    let at_128 = build_transfer_plan(
+        vec![track.clone()],
+        TransferProfile::Mp3(Mp3Quality::Kbps128),
+    )[0]
+    .expected_bytes;
+    let at_320 = build_transfer_plan(vec![track], TransferProfile::Mp3(Mp3Quality::Kbps320))[0]
+        .expected_bytes;
 
-    assert_ne!(at_64, at_128);
+    assert_eq!(at_128, 1_000_000);
+    assert_eq!(at_320, 1_000_000);
 }
 
 #[test]
@@ -527,7 +543,7 @@ fn entire_library_legacy_value_computes_no_copy_delta() {
 
     let ids = resolve_selection_track_ids(&conn, &DeviceSelection::EntireLibrary).unwrap();
     let tracks = crate::queries::query_sync_tracks(&conn, &ids).unwrap();
-    let plan = build_transfer_plan(tracks, 0);
+    let plan = build_transfer_plan(tracks, TransferProfile::default());
     let candidates = plan
         .iter()
         .map(|entry| SyncCandidate {
