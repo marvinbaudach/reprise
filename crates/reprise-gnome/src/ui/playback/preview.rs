@@ -38,6 +38,8 @@ pub(in crate::ui) enum PlaybackMode {
     #[default]
     Queue,
     Preview,
+    Podcast,
+    Radio,
 }
 
 impl PlaybackMode {
@@ -48,19 +50,23 @@ impl PlaybackMode {
     pub(in crate::ui) fn advances_queue_on_finish(self) -> bool {
         matches!(self, PlaybackMode::Queue)
     }
+
+    pub(in crate::ui) fn credits_listening(self) -> bool {
+        matches!(self, PlaybackMode::Queue)
+    }
 }
 
 impl PlayerController {
     /// Whether a staging-render preview is currently playing. Read by
     /// `player_event_handling`'s `TrackFinished` arm to decide advance-vs-stop.
     pub(in crate::ui) fn is_previewing(&self) -> bool {
-        self.preview_path.borrow().is_some()
+        self.playback_mode() == PlaybackMode::Preview
     }
 
     /// The staging path of the render currently previewing, if any. Lets the
     /// conversion wiring correlate a discard against the live preview (FIX-6).
     pub(in crate::ui) fn previewing_path(&self) -> Option<String> {
-        self.preview_path.borrow().clone()
+        self.external.borrow().preview_path()
     }
 
     /// Stops the active preview, if one is playing, WITHOUT advancing or
@@ -103,7 +109,7 @@ impl PlayerController {
         // Enter preview mode (single source of truth for the mode + FIX-6's
         // discard correlation), in its own statement so no borrow is held
         // across the calls below.
-        *self.preview_path.borrow_mut() = Some(path.to_string());
+        self.begin_external_preview(path.to_string());
 
         let title = strings::instrumental_preview_title(source_title);
         *self.now_playing.borrow_mut() = Some(NowPlaying {
@@ -131,7 +137,7 @@ impl PlayerController {
             Err(error) => {
                 // The pipeline never started: drop back to queue mode so a later
                 // `TrackFinished`/stop behaves normally.
-                *self.preview_path.borrow_mut() = None;
+                self.external.borrow_mut().clear_preview();
                 Err(error)
             }
         }
@@ -144,7 +150,7 @@ impl PlayerController {
     /// does NOT clear the queue snapshot — unlike `reset_to_stopped` — so a
     /// preview never discards the queue the user was listening to.
     pub(in crate::ui) fn end_preview(&self) {
-        *self.preview_path.borrow_mut() = None;
+        self.external.borrow_mut().clear_preview();
         // `current_track` is already `None` for a preview, so this credits
         // nothing; kept for symmetry with every other session-ending path.
         self.evaluate_play_tracking();
@@ -177,10 +183,24 @@ mod tests {
             !PlaybackMode::Preview.advances_queue_on_finish(),
             "a finished preview stops instead of advancing the queue (INST-4b/5b)"
         );
+        assert!(!PlaybackMode::Podcast.advances_queue_on_finish());
+        assert!(!PlaybackMode::Radio.advances_queue_on_finish());
     }
 
     #[test]
     fn playback_mode_defaults_to_queue() {
         assert_eq!(PlaybackMode::default(), PlaybackMode::Queue);
+    }
+
+    #[test]
+    fn pod_4_external_session_never_scrobbles() {
+        assert!(PlaybackMode::Queue.credits_listening());
+        assert!(!PlaybackMode::Preview.credits_listening());
+        assert!(!PlaybackMode::Podcast.credits_listening());
+    }
+
+    #[test]
+    fn rad_2_external_session_never_scrobbles() {
+        assert!(!PlaybackMode::Radio.credits_listening());
     }
 }

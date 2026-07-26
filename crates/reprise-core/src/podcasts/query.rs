@@ -146,7 +146,7 @@ mod tests {
     }
 
     #[test]
-    fn next_unplayed_of_show_orders_by_date_and_skips_played_and_other_shows() {
+    fn pod_4_finish_offers_next_unplayed_of_show() {
         let conn = conn();
         let show = add_show(&conn, "https://example.test/show", "Show");
         let other = add_show(&conn, "https://example.test/other", "Other");

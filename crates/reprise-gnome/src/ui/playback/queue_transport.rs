@@ -188,7 +188,10 @@ impl PlayerController {
     /// Starts the restored queue's current track while stopped; otherwise
     /// toggles the already-loaded pipeline. Shared by the bar, Space, and
     /// MPRIS PlayPause, without ever introducing startup autoplay.
-    pub(in crate::ui) fn toggle_pause(&self) {
+    pub(in crate::ui) fn toggle_pause(self: &Rc<Self>) {
+        if self.toggle_external_pause() {
+            return;
+        }
         let status = self
             .mpris_state
             .lock()
