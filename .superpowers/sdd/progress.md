@@ -64,3 +64,7 @@ Point 2: complete (commit 5786b63f97, base 72e85defff, kept SET-4 immediate pers
 Point 3: complete (commit 5bc3b56b8b, base 5786b63f97, verified provider credentials off-thread through the shared limiter, mapped fixture-only success/rejection/timeout/transport outcomes to inline feedback, kept secrets out of fixture logs, activated CONC-8 and replaced CONC-5 with CONC-5a; all non-display gates passed, while isolated Xvfb display launches were blocked by sandbox D-Bus socket permissions)
 Sidebar progress follow-up: complete (this commit, base 5bc3b56b8b, pinned the shared progress activity below Issues at the sidebar bottom and added an FB-2a allocation regression)
 MCP catalog follow-up: complete (this commit, base e7a208112e, added complete path-free Concerts cache and Releases history resources while preserving the filtered Concerts contract and never exposing provider credentials)
+
+# Source-view UX follow-ups
+
+Task R1: complete (this commit, base 3fc0b2bf8a, preserved smart-playlist membership while honoring visible column sorting, emitted narrow queue row removals instead of full replacements, and made hidden content-stack pages unable to push the bottom player bar out of view; fmt, strict clippy, full workspace tests, audit with only accepted RUSTSEC-2024-0436, core purity, file-size checks, and the isolated rule-named PLAY-7b display regression passed)

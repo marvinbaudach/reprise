@@ -86,6 +86,98 @@ fn queue_snapshot_defers_metadata_until_a_row_is_requested() {
 }
 
 #[test]
+fn advancing_the_queue_emits_one_leading_removal_instead_of_a_full_replace() {
+    let model = seeded_model(&[("One", "A"), ("Two", "B"), ("Three", "C")]);
+    let live_tail = Rc::new(RefCell::new(vec![1, 2, 3]));
+    let tail_for_before = live_tail.clone();
+    let before = super::super::queue_sections::compose_virtual(
+        None,
+        &[],
+        Some(
+            super::super::queue_sections::VirtualContextTail::identified(
+                3,
+                (7, 11),
+                1,
+                Rc::new(move |offset, limit| {
+                    tail_for_before
+                        .borrow()
+                        .iter()
+                        .skip(offset)
+                        .take(limit)
+                        .copied()
+                        .collect()
+                }),
+            ),
+        ),
+        None,
+    );
+    model.set_queue_snapshot(&before, vec![(0, 3)]);
+
+    let changes = Rc::new(RefCell::new(Vec::new()));
+    let changes_for_signal = changes.clone();
+    model.connect_items_changed(move |_, position, removed, added| {
+        changes_for_signal
+            .borrow_mut()
+            .push((position, removed, added));
+    });
+
+    *live_tail.borrow_mut() = vec![2, 3];
+    let tail_for_after = live_tail.clone();
+    let after = super::super::queue_sections::compose_virtual(
+        None,
+        &[],
+        Some(
+            super::super::queue_sections::VirtualContextTail::identified(
+                2,
+                (7, 11),
+                2,
+                Rc::new(move |offset, limit| {
+                    tail_for_after
+                        .borrow()
+                        .iter()
+                        .skip(offset)
+                        .take(limit)
+                        .copied()
+                        .collect()
+                }),
+            ),
+        ),
+        None,
+    );
+    model.set_queue_snapshot(&after, vec![(0, 2)]);
+
+    assert_eq!(
+        *changes.borrow(),
+        vec![(0, 1, 0)],
+        "automatic advance must preserve the unchanged queue rows"
+    );
+}
+
+#[test]
+fn consuming_play_next_preserves_the_remaining_sidebar_rows() {
+    let model = seeded_model(&[("One", "A"), ("Two", "B"), ("Three", "C")]);
+    let before = super::super::queue_sections::compose(None, &[1, 2, 3], &[], None);
+    model.set_queue_snapshot(&before, vec![(0, 3)]);
+
+    let changes = Rc::new(RefCell::new(Vec::new()));
+    let changes_for_signal = changes.clone();
+    model.connect_items_changed(move |_, position, removed, added| {
+        changes_for_signal
+            .borrow_mut()
+            .push((position, removed, added));
+    });
+
+    let after = super::super::queue_sections::compose(None, &[2, 3], &[], None);
+    model.set_queue_snapshot(&after, vec![(0, 2)]);
+
+    assert_eq!(
+        *changes.borrow(),
+        vec![(0, 1, 0)],
+        "consuming Play Next must preserve the remaining sidebar rows"
+    );
+}
+
+#[test]
 fn set_query_applies_filter_to_count_and_rows() {
     let model = seeded_model(&[("Zulu", "AAA"), ("Alpha", "BBB"), ("Mid", "CCC")]);
     model.set_query(&ViewSource::Library, "title", "asc", "zu", &[]);

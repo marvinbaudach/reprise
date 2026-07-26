@@ -330,8 +330,9 @@ pub fn build(
     let content_stack = gtk4::Stack::new();
     // Size to the visible page (see the library stack's `set_hhomogeneous`):
     // Stats/Device pages must not inherit the library's minimum width, nor vice
-    // versa, or the whole content is forced past the window edge (QA #3/#4).
-    content_stack.set_hhomogeneous(false);
+    // versa, and hidden source pages must not push the structural player bar
+    // below the window edge.
+    super::library_player_bar::configure_content_stack(&content_stack);
     content_stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
     content_stack.set_transition_duration(crate::ui::motion::STANDARD_MS);
     content_stack.add_named(&track_content, Some("library"));

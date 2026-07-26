@@ -180,6 +180,21 @@ glib::wrapper! {
         @implements gio::ListModel;
 }
 
+/// Returns the one contiguous `items_changed` span between two queue
+/// snapshots. Preserving the common prefix and suffix lets GTK keep their
+/// existing row widgets; the frequent automatic-advance shape
+/// `[current-next, ...] -> [...]` becomes one leading removal.
+fn queue_snapshot_change(
+    old: &super::queue_sections::QueueViewModel,
+    new: &super::queue_sections::QueueViewModel,
+) -> (u32, u32, u32) {
+    new.leading_removal_change_from(old).unwrap_or((
+        0,
+        u32::try_from(old.total_len()).unwrap_or(u32::MAX),
+        u32::try_from(new.total_len()).unwrap_or(u32::MAX),
+    ))
+}
+
 impl TrackListModel {
     /// Builds an empty model (`n_items() == 0`) bound to `conn`. Call
     /// `set_query` to load the initial sort/filter — the model does not
@@ -216,10 +231,16 @@ impl TrackListModel {
         queue: &super::queue_sections::QueueViewModel,
         sections: Vec<(u32, u32)>,
     ) {
-        let old_total = self.imp().state.borrow().total;
         let new_total = u32::try_from(queue.total_len()).unwrap_or(u32::MAX);
-        {
+        let (position, removed, added) = {
             let mut state = self.imp().state.borrow_mut();
+            let change = state
+                .virtual_queue
+                .as_ref()
+                .map_or((0, state.total, new_total), |old_queue| {
+                    queue_snapshot_change(old_queue, queue)
+                });
+            let sections_changed = state.sections != sections;
             state.source = ViewSource::Queue;
             state.sort_field.clear();
             state.sort_dir.clear();
@@ -230,8 +251,15 @@ impl TrackListModel {
             state.sections = sections;
             state.total = new_total;
             state.cache.clear();
+            if change == (0, 0, 0) && sections_changed {
+                (0, new_total, new_total)
+            } else {
+                change
+            }
+        };
+        if removed != 0 || added != 0 {
+            self.items_changed(position, removed, added);
         }
-        self.items_changed(0, old_total, new_total);
     }
 
     pub fn set_query(
