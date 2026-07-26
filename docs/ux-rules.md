@@ -2302,19 +2302,19 @@ Hörstatistik.
   Unsubscribe nie still gelöscht: der Commit-Toast meldet behaltene Dateien
   und bietet ausschließlich Verschieben in den Papierkorb an; mehrere
   Unsubscribes werden aggregiert.
-- **POD-1** [geplant] [core] — Episodenstatus ist pure Ableitung: Played
+- **POD-1** [aktiv] [core] — Episodenstatus ist pure Ableitung: Played
   genau bei gesetztem `played_at`, sonst Resume bei `position_ms > 0`, sonst
   New. Ein Episodenende setzt Played und löscht die Position. Die Tabelle
   lautet Date · Episode · Show · Length · Source · Status und sortiert
   standardmäßig nach Datum absteigend.
-- **POD-2** [geplant] [core] — RSS ist die Daten-API:
+- **POD-2** [aktiv] [core] — RSS ist die Daten-API:
   enclosure/guid/pubDate/itunes:duration; GUID, ersatzweise Enclosure-URL und
   bei YouTube die Video-ID, ist die einzige Episodenidentität für Dedupe,
   Resume, Played und Download. Conditional Refresh läuft mit Intervall und
   deterministischem Jitter auf einem Worker; Upserts erhalten Seen- und
   Positionszustand. Automatischer Refresh verlangt aktives Modul, mindestens
   ein Abo, fällige TTL und eine nicht getaktete Verbindung.
-- **POD-3** [geplant] [core] — YouTube liegt ausschließlich hinter der
+- **POD-3** [aktiv] [core] — YouTube liegt ausschließlich hinter der
   yt-dlp-Providergrenze: Flat-Playlist zum Auflisten, Audioauflösung erst beim
   Abspielen und nie persistiert. Fehler werden lesbar klassifiziert und
   crashen nie. Fehlt das Binary, bleibt das Setting unverändert und die
@@ -2325,7 +2325,7 @@ Hörstatistik.
   derselben Show nach Datum per Toast und persistentem Player-Bar-Button an,
   spielt sie aber nie automatisch. Podcast-Sessions erzeugen weder Scrobbles
   noch `listen_events` oder Play-Counts.
-- **POD-5** [geplant] [gtk] — Downloads sind pro Abo opt-in, liegen im
+- **POD-5** [aktiv] [gtk] — Downloads sind pro Abo opt-in, liegen im
   XDG-Datenpfad der App unter einem GUID-stabilen Pfad, folgen der gewählten
   Cleanup-Policy und werden offline bevorzugt lokal abgespielt.
 - **RAD-1** [geplant] [gtk] — Nur die aktuell verbundene Station ist in der
