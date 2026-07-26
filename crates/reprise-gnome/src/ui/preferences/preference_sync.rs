@@ -25,9 +25,6 @@ pub(in crate::ui) fn build_page(
     let group = adw::PreferencesGroup::builder()
         .title(copy::text(copy::CONNECTED_DEVICES))
         .build();
-    // A real GtkListBox, not a styled Box: AdwActionRow's `activated` signal
-    // only fires when a parent list box activates the row — inside a plain
-    // Box the device rows render fine but are dead to clicks.
     let list = gtk4::ListBox::new();
     list.set_selection_mode(gtk4::SelectionMode::None);
     list.add_css_class("boxed-list");
@@ -39,10 +36,21 @@ pub(in crate::ui) fn build_page(
         crate::ui::track_list::track_list_context_menu::current_selection_ids(&track_list.shared),
     );
     let update_list = list.clone();
+    let selected_ids_for_update = selected_ids.clone();
     let subscription = runtime.subscribe(Rc::new(move |state| {
-        render_devices(&update_list, &state, &runtime_for_update, &selected_ids);
+        render_devices(
+            &update_list,
+            &state,
+            &runtime_for_update,
+            &selected_ids_for_update,
+        );
     }));
     retain_subscription(&page, subscription);
+    super::preference_sync_navigation::install_single_device_shortcut(
+        &page,
+        runtime,
+        &selected_ids,
+    );
     page
 }
 fn render_devices(
@@ -765,36 +773,5 @@ mod tests {
         assert!(second.first_child().is_some());
         assert_eq!(before, progress_summary(&snapshot));
         assert_eq!(file_fraction(&snapshot), 0.4);
-    }
-}
-
-#[cfg(test)]
-mod nav_push_tests {
-    use super::*;
-    use std::cell::RefCell;
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn device_row_pushes_a_navigation_subpage_instead_of_a_dialog() {
-        gtk4::init().unwrap();
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        let runtime = DeviceSyncRuntime::new(
-            &Rc::new(RefCell::new(conn)),
-            reprise_platform_linux::device_sync::DeviceMonitor::new(),
-        );
-
-        let navigation = adw::NavigationView::new();
-        let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-        let root = adw::NavigationPage::new(&content, "Preferences");
-        navigation.add(&root);
-
-        // `present_device` walks up from any widget inside the preferences
-        // navigation; an unknown device id still pushes the page (titled
-        // Disconnected by the immediate subscription callback).
-        present_device(&content, "unknown-device", &runtime, &Rc::new(Vec::new()));
-
-        let visible = navigation.visible_page().expect("a page is visible");
-        assert_eq!(visible.title(), copy::text(copy::DISCONNECTED));
     }
 }

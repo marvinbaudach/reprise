@@ -91,3 +91,9 @@ Repeat tooltips: complete (commit bbe3028309, base 6f69d0aeff, explained all thr
 Now Playing transition: complete (commit 2b8302599a, base bbe3028309, replaced the whole-panel crossfade with an interruption-safe outgoing-cover fade that waits for cold-cache resolution and activated NPP-13 with corrected MOT-1/MOT-6 references)
 Catalog gate repair: complete (commit 20591fb5cb, base 2b8302599a, synchronized all seven catalogs with the Podcasts/Radio sources inherited from dev, completed the German and Spanish translations, and removed fuzzy entries)
 Verification: complete with sandbox exclusions (format, strict clippy, rustdoc, architecture, accessibility, input, UX traceability, motion, gettext, audit with only accepted RUSTSEC-2024-0436, 1404 core tests, 959 GNOME non-display tests, and all other workspace tests passed; two inherited MCP Radio tests requiring local sockets and the isolated NPP-13 Xvfb regression were blocked by sandbox socket permissions and remain required on GitHub CI)
+
+# Android synchronization follow-up
+
+Base: `e83d7303955`
+
+Single-device navigation polish: complete (this commit, base e83d7303955, skipped the chooser for one connected device, restored sidebar visibility with non-homogeneous content sizing, and replaced the split-action device row with a vertically centered neutral full-card navigation target; format, strict clippy, audit, core purity, architecture, accessibility, input, motion and UX traceability gates passed, while two inherited MCP Radio tests and isolated display tests remain blocked by sandbox socket permissions)

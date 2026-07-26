@@ -90,6 +90,16 @@ pub fn available_space(bytes: Option<u64>) -> String {
     )
 }
 
+pub fn free_space(bytes: Option<u64>) -> String {
+    bytes.map_or_else(
+        || text(SPACE_UNKNOWN),
+        |bytes| {
+            let size = format_bytes(bytes);
+            formatted(N_!("{size} free"), &[("size", &size)])
+        },
+    )
+}
+
 pub fn device_subtitle(connected: bool, available: Option<u64>) -> String {
     if connected {
         formatted(
@@ -278,6 +288,7 @@ mod tests {
         assert_eq!(format_bytes(0), "0 B");
         assert_eq!(format_bytes(1_024), "1.0 KiB");
         assert_eq!(format_bytes(2 * 1_024 * 1_024), "2.0 MiB");
+        assert_eq!(free_space(Some(2 * 1_024 * 1_024)), "2.0 MiB free");
     }
 
     #[test]

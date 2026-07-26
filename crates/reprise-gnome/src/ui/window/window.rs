@@ -331,13 +331,10 @@ pub fn build(
     let stats_view = super::stats_view::StatsView::new(track_list.shared_cover_loader());
     stats_view.wire_year_selector(conn);
     let device_view = super::device_view::DeviceViewPage::new(&device_sync);
-    let content_stack = gtk4::Stack::new();
-    // Size to the visible page (see the library stack's `set_hhomogeneous`):
-    // Stats/Device pages must not inherit the library's minimum width, nor vice
-    // versa, or the whole content is forced past the window edge (QA #3/#4).
-    content_stack.set_hhomogeneous(false);
-    content_stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
-    content_stack.set_transition_duration(crate::ui::motion::STANDARD_MS);
+    let content_stack = super::content_stack::build();
+    // Size to the visible page in both axes: Stats/Device pages must not
+    // inherit the library's minimum size, nor vice versa, or a hidden tall
+    // device list can push the sidebar activity below the window edge.
     content_stack.add_named(&track_content, Some("library"));
     content_stack.add_named(stats_view.widget(), Some("stats"));
     content_stack.add_named(device_view.widget(), Some("device"));
@@ -532,6 +529,14 @@ pub fn build(
         &decorations,
         &device_sync,
     );
+    {
+        let preferences = Rc::downgrade(&preferences);
+        concerts_view.set_on_open_preferences(move || {
+            if let Some(preferences) = preferences.upgrade() {
+                preferences.present_plugins(&["concerts"]);
+            }
+        });
+    }
     {
         let preferences = preferences.clone();
         device_view.set_on_settings(move || preferences.present_page("synchronization"));
