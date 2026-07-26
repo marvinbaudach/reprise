@@ -5,6 +5,14 @@ const BASS_SPLIT_HZ: f32 = 100.0;
 
 pub(super) struct BandPlan {
     cutoff_frequencies_hz: Vec<f32>,
+    bands: Vec<Band>,
+}
+
+pub(super) struct Band {
+    pub(super) lower_bin: usize,
+    pub(super) upper_bin: usize,
+    pub(super) use_bass_fft: bool,
+    pub(super) equalizer: f32,
 }
 
 impl BandPlan {
@@ -90,13 +98,39 @@ impl BandPlan {
             cutoffs[boundary] = relative_cutoffs[boundary] * exact_nyquist_hz;
         }
 
+        let bands = (0..config.bar_count)
+            .map(|bar| {
+                let use_bass_fft = bar < bass_boundary_count;
+                let window_size = if use_bass_fft {
+                    bass_fft_size
+                } else {
+                    fft_size
+                };
+                let bin_count = upper_bins[bar] - lower_bins[bar] + 1;
+                let equalizer = 2.0_f32.powi(-28) * cutoffs[bar + 1].powf(0.85)
+                    / (window_size as f32).log2()
+                    / bin_count as f32;
+                Band {
+                    lower_bin: lower_bins[bar],
+                    upper_bin: upper_bins[bar],
+                    use_bass_fft,
+                    equalizer,
+                }
+            })
+            .collect();
+
         Ok(Self {
             cutoff_frequencies_hz: cutoffs,
+            bands,
         })
     }
 
     pub(super) fn cutoff_frequencies_hz(&self) -> &[f32] {
         &self.cutoff_frequencies_hz
+    }
+
+    pub(super) fn bands(&self) -> &[Band] {
+        &self.bands
     }
 }
 

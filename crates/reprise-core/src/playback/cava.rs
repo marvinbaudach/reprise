@@ -8,9 +8,12 @@
 
 mod bands;
 
+use std::sync::Arc;
+
+use realfft::{num_complex::Complex32, RealFftPlanner, RealToComplex};
 use thiserror::Error;
 
-use bands::BandPlan;
+use bands::{fft_size_for_rate, BandPlan};
 
 /// Maximum supported display resolution.
 pub const MAX_CAVA_BAR_COUNT: usize = 256;
@@ -54,6 +57,9 @@ pub enum CavaError {
 pub struct CavaBarProcessor {
     config: CavaConfig,
     band_plan: BandPlan,
+    input_buffer: Vec<f32>,
+    main_fft: FftWorkspace,
+    bass_fft: FftWorkspace,
 }
 
 impl CavaBarProcessor {
@@ -74,7 +80,14 @@ impl CavaBarProcessor {
             return Err(CavaError::HighCutoffAboveNyquist);
         }
         let band_plan = BandPlan::new(config)?;
-        Ok(Self { config, band_plan })
+        let fft_size = fft_size_for_rate(config.sample_rate_hz);
+        Ok(Self {
+            config,
+            band_plan,
+            input_buffer: vec![0.0; fft_size * 2],
+            main_fft: FftWorkspace::new(fft_size),
+            bass_fft: FftWorkspace::new(fft_size * 2),
+        })
     }
 
     pub fn bar_count(&self) -> usize {
@@ -84,5 +97,96 @@ impl CavaBarProcessor {
     /// Actual FFT-quantized band boundaries, in Hz.
     pub fn cutoff_frequencies_hz(&self) -> &[f32] {
         self.band_plan.cutoff_frequencies_hz()
+    }
+
+    /// Adds normalized mono PCM samples and returns one CAVA band value per bar.
+    pub fn process(&mut self, mono_samples: &[f32]) -> Vec<f32> {
+        self.push_samples(mono_samples);
+        self.main_fft
+            .process(&self.input_buffer[..self.main_fft.len()]);
+        self.bass_fft.process(&self.input_buffer);
+
+        self.band_plan
+            .bands()
+            .iter()
+            .map(|band| {
+                let spectrum = if band.use_bass_fft {
+                    self.bass_fft.spectrum()
+                } else {
+                    self.main_fft.spectrum()
+                };
+                spectrum[band.lower_bin..=band.upper_bin]
+                    .iter()
+                    .map(|value| value.norm())
+                    .sum::<f32>()
+                    * band.equalizer
+                    * 65_535.0
+            })
+            .collect()
+    }
+
+    fn push_samples(&mut self, mono_samples: &[f32]) {
+        let buffer_len = self.input_buffer.len();
+        let kept = mono_samples.len().min(buffer_len);
+        self.input_buffer.copy_within(..buffer_len - kept, kept);
+        for (target, sample) in self.input_buffer[..kept]
+            .iter_mut()
+            .rev()
+            .zip(mono_samples[mono_samples.len() - kept..].iter())
+        {
+            *target = if sample.is_finite() { *sample } else { 0.0 };
+        }
+    }
+}
+
+struct FftWorkspace {
+    plan: Arc<dyn RealToComplex<f32>>,
+    input: Vec<f32>,
+    spectrum: Vec<Complex32>,
+    scratch: Vec<Complex32>,
+    hann: Vec<f32>,
+}
+
+impl FftWorkspace {
+    fn new(len: usize) -> Self {
+        let mut planner = RealFftPlanner::<f32>::new();
+        let plan = planner.plan_fft_forward(len);
+        let input = plan.make_input_vec();
+        let spectrum = plan.make_output_vec();
+        let scratch = plan.make_scratch_vec();
+        let hann = (0..len)
+            .map(|index| {
+                0.5 * (1.0 - (std::f32::consts::TAU * index as f32 / (len - 1) as f32).cos())
+            })
+            .collect();
+        Self {
+            plan,
+            input,
+            spectrum,
+            scratch,
+            hann,
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.input.len()
+    }
+
+    fn process(&mut self, samples: &[f32]) {
+        for ((target, sample), multiplier) in self
+            .input
+            .iter_mut()
+            .zip(samples.iter())
+            .zip(self.hann.iter())
+        {
+            *target = sample * multiplier;
+        }
+        self.plan
+            .process_with_scratch(&mut self.input, &mut self.spectrum, &mut self.scratch)
+            .expect("real FFT buffers are allocated by their plan");
+    }
+
+    fn spectrum(&self) -> &[Complex32] {
+        &self.spectrum
     }
 }
