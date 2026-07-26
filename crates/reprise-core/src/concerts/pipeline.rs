@@ -1,4 +1,8 @@
 use std::collections::HashSet;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::Duration;
 
 use chrono::NaiveDate;
@@ -21,6 +25,20 @@ pub struct RefreshSummary {
     pub events_upserted: usize,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct CancellationToken(Arc<AtomicBool>);
+
+impl CancellationToken {
+    pub fn cancel(&self) {
+        self.0.store(true, Ordering::Release);
+    }
+
+    #[must_use]
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::Acquire)
+    }
+}
+
 pub fn refresh(
     conn: &Connection,
     providers: &[Box<dyn EventProvider>],
@@ -28,17 +46,36 @@ pub fn refresh(
     now: i64,
     force: bool,
 ) -> Result<RefreshSummary, ConcertError> {
-    refresh_with_similar_fetch(
+    refresh_cancellable(
         conn,
         providers,
         today,
         now,
         force,
-        &HttpSimilarFetch,
-        crate::scrobbling::BUNDLED_API_KEY,
+        &CancellationToken::default(),
     )
 }
 
+pub fn refresh_cancellable(
+    conn: &Connection,
+    providers: &[Box<dyn EventProvider>],
+    today: NaiveDate,
+    now: i64,
+    force: bool,
+    cancelled: &CancellationToken,
+) -> Result<RefreshSummary, ConcertError> {
+    refresh_with_similar_fetch_cancellable(
+        conn,
+        providers,
+        today,
+        now,
+        force,
+        (&HttpSimilarFetch, crate::scrobbling::BUNDLED_API_KEY),
+        cancelled,
+    )
+}
+
+#[cfg(test)]
 pub(crate) fn refresh_with_similar_fetch(
     conn: &Connection,
     providers: &[Box<dyn EventProvider>],
@@ -48,6 +85,29 @@ pub(crate) fn refresh_with_similar_fetch(
     similar_fetch: &dyn SimilarFetch,
     lastfm_api_key: Option<&str>,
 ) -> Result<RefreshSummary, ConcertError> {
+    refresh_with_similar_fetch_cancellable(
+        conn,
+        providers,
+        today,
+        now,
+        force,
+        (similar_fetch, lastfm_api_key),
+        &CancellationToken::default(),
+    )
+}
+
+fn refresh_with_similar_fetch_cancellable(
+    conn: &Connection,
+    providers: &[Box<dyn EventProvider>],
+    today: NaiveDate,
+    now: i64,
+    force: bool,
+    similar: (&dyn SimilarFetch, Option<&str>),
+    cancelled: &CancellationToken,
+) -> Result<RefreshSummary, ConcertError> {
+    if cancelled.is_cancelled() {
+        return Ok(RefreshSummary::default());
+    }
     if providers.is_empty() {
         delete_past_events(conn, today)?;
         return Err(ConcertError::MissingCredentials);
@@ -61,14 +121,17 @@ pub(crate) fn refresh_with_similar_fetch(
         .collect::<Vec<_>>();
     let similar_config = super::config::similar_config(conn)?;
     if similar_config.enabled && candidates.len() < MAX_ARTISTS_PER_RUN {
+        if cancelled.is_cancelled() {
+            return Ok(RefreshSummary::default());
+        }
         let seeds = candidates::seed_artists(conn, cutoff, SIMILAR_SEEDS)?;
         let mut similar = similar::similar_candidates(
             conn,
             &seeds,
             &library_artists,
-            similar_fetch,
+            similar.0,
             similar_config,
-            lastfm_api_key,
+            similar.1,
         )?;
         similar.retain(|candidate| artist_due(candidate.last_attempt_at, now, force));
         candidates.extend(similar);
@@ -76,6 +139,9 @@ pub(crate) fn refresh_with_similar_fetch(
     candidates.truncate(MAX_ARTISTS_PER_RUN);
     let mut summary = RefreshSummary::default();
     for candidate in candidates {
+        if cancelled.is_cancelled() {
+            return Ok(summary);
+        }
         let stored = resolution::load(conn, &candidate.key)?;
         if resolution::negative_retry_blocked(stored.as_ref(), now) {
             continue;
@@ -86,9 +152,12 @@ pub(crate) fn refresh_with_similar_fetch(
             Some((provider, provider_id, mbid_verified)) => {
                 ResolvedProvider::Found(provider, provider_id, mbid_verified)
             }
-            None => match resolve_provider(providers, &candidate) {
+            None => match resolve_provider(providers, &candidate, cancelled) {
                 Ok(resolved) => resolved,
                 Err(AttemptFailure::Failed(error)) => {
+                    if cancelled.is_cancelled() {
+                        return Ok(summary);
+                    }
                     tracing::warn!(
                         artist = candidate.name,
                         %error,
@@ -99,20 +168,30 @@ pub(crate) fn refresh_with_similar_fetch(
                     continue;
                 }
                 Err(AttemptFailure::QuietPeriod(error)) => {
+                    if cancelled.is_cancelled() {
+                        return Ok(summary);
+                    }
                     resolution::store_failed(conn, &artist, now)?;
                     delete_past_events(conn, today)?;
                     return Err(error.into());
                 }
+                Err(AttemptFailure::Cancelled) => return Ok(summary),
             },
         };
         let ResolvedProvider::Found(provider, provider_id, mbid_verified) = resolved else {
+            if cancelled.is_cancelled() {
+                return Ok(summary);
+            }
             resolution::store_unmatched(conn, &artist, now)?;
             summary.unmatched += 1;
             continue;
         };
-        let events = match retry_provider_call(|| provider.events(&provider_id)) {
+        let events = match retry_provider_call(cancelled, || provider.events(&provider_id)) {
             Ok(events) => events,
             Err(AttemptFailure::Failed(error)) => {
+                if cancelled.is_cancelled() {
+                    return Ok(summary);
+                }
                 tracing::warn!(
                     artist = candidate.name,
                     %error,
@@ -123,10 +202,14 @@ pub(crate) fn refresh_with_similar_fetch(
                 continue;
             }
             Err(AttemptFailure::QuietPeriod(error)) => {
+                if cancelled.is_cancelled() {
+                    return Ok(summary);
+                }
                 resolution::store_failed(conn, &artist, now)?;
                 delete_past_events(conn, today)?;
                 return Err(error.into());
             }
+            Err(AttemptFailure::Cancelled) => return Ok(summary),
         };
         let today_key = today.format("%Y-%m-%d").to_string();
         let events = merge(
@@ -140,6 +223,9 @@ pub(crate) fn refresh_with_similar_fetch(
             provider_id: &provider_id,
             mbid_verified,
         };
+        if cancelled.is_cancelled() {
+            return Ok(summary);
+        }
         let upserted = reconcile_artist(conn, &artist, &identity, &events, today, now)?;
         summary.resolved += 1;
         summary.events_upserted += upserted;
@@ -156,6 +242,7 @@ enum ResolvedProvider<'a> {
 fn resolve_provider<'a>(
     providers: &'a [Box<dyn EventProvider>],
     candidate: &ArtistCandidate,
+    cancelled: &CancellationToken,
 ) -> Result<ResolvedProvider<'a>, AttemptFailure> {
     let artist = ArtistRef {
         name: &candidate.name,
@@ -165,7 +252,7 @@ fn resolve_provider<'a>(
         let Some(provider) = provider_for(providers, kind) else {
             continue;
         };
-        match retry_provider_call(|| provider.resolve(&artist))? {
+        match retry_provider_call(cancelled, || provider.resolve(&artist))? {
             Resolution::Resolved {
                 provider_id,
                 mbid_verified,
@@ -207,17 +294,25 @@ fn provider_for(
 enum AttemptFailure {
     Failed(ProviderError),
     QuietPeriod(ProviderError),
+    Cancelled,
 }
 
 fn retry_provider_call<T>(
+    cancelled: &CancellationToken,
     mut operation: impl FnMut() -> Result<T, ProviderError>,
 ) -> Result<T, AttemptFailure> {
     let mut attempt = 1;
     loop {
+        if cancelled.is_cancelled() {
+            return Err(AttemptFailure::Cancelled);
+        }
         let error = match operation() {
             Ok(value) => return Ok(value),
             Err(error) => error,
         };
+        if cancelled.is_cancelled() {
+            return Err(AttemptFailure::Cancelled);
+        }
         let retry_after = match &error {
             ProviderError::RateLimited { retry_after } => *retry_after,
             ProviderError::HttpStatus(500..=599) => None,
@@ -229,18 +324,24 @@ fn retry_provider_call<T>(
         let Some(delay) = backoff_delay(attempt, retry_after) else {
             return Err(AttemptFailure::Failed(error));
         };
-        wait_backoff(delay);
+        if !wait_backoff(delay, cancelled) {
+            return Err(AttemptFailure::Cancelled);
+        }
         attempt += 1;
     }
 }
 
-fn wait_backoff(mut delay: Duration) {
+pub(super) fn wait_backoff(mut delay: Duration, cancelled: &CancellationToken) -> bool {
     const SLICE: Duration = Duration::from_millis(50);
     while !delay.is_zero() {
+        if cancelled.is_cancelled() {
+            return false;
+        }
         let slice = delay.min(SLICE);
         std::thread::sleep(slice);
         delay = delay.saturating_sub(slice);
     }
+    !cancelled.is_cancelled()
 }
 
 fn ledger_artist(candidate: &ArtistCandidate) -> LedgerArtist<'_> {

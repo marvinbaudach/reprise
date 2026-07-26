@@ -27,7 +27,7 @@ pub use bandsintown::BandsintownProvider;
 pub use dedupe::{dedupe_key, merge, normalize_component, ticket_source_label};
 pub use geo::haversine_km;
 pub use geocode::{geocode, geocode_url, parse_geocode, GeocodedLocation};
-pub use pipeline::{refresh, RefreshSummary};
+pub use pipeline::{refresh, refresh_cancellable, CancellationToken, RefreshSummary};
 pub use provider::{
     ArtistRef, EventProvider, ProviderError, ProviderEvent, ProviderKind, Resolution,
 };
