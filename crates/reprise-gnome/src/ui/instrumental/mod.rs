@@ -24,8 +24,11 @@ mod runtime;
 pub(in crate::ui) mod worker_host;
 
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::rc::Rc;
 
+use reprise_core::ai_jobs::EnqueueOutcome;
+use reprise_core::ai_staging::StagingStore;
 use reprise_core::library::settings;
 use rusqlite::Connection;
 
@@ -78,6 +81,98 @@ pub(in crate::ui) fn app_model_id() -> Option<String> {
     Some(reprise_core::stem_separation::CURRENT_MODEL_ID.to_string())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::ui) struct EnqueueSummary {
+    pub created: usize,
+    pub deduplicated: usize,
+    pub skipped_unavailable: usize,
+}
+
+impl EnqueueSummary {
+    pub(in crate::ui) fn accepted(self) -> usize {
+        self.created + self.deduplicated
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[cfg_attr(not(feature = "stem-backend"), allow(dead_code))]
+pub(in crate::ui) enum EnqueueError {
+    #[error("this build has no production instrumental backend")]
+    BackendUnavailable,
+    #[error("the instrumental model must be downloaded first")]
+    ModelRequired,
+    #[error("the packaged instrumental runtime is unavailable: {0}")]
+    RuntimeUnavailable(String),
+    #[error(transparent)]
+    Database(#[from] rusqlite::Error),
+}
+
+/// Enqueues the present subset of a drag/selection through the same batch and
+/// dedup facade. Missing, removed, repeated, and unknown ids never become jobs.
+pub(in crate::ui) fn enqueue_present_tracks(
+    conn: &Connection,
+    ids: &[i64],
+) -> Result<EnqueueSummary, EnqueueError> {
+    if ids.is_empty() {
+        return Ok(EnqueueSummary {
+            created: 0,
+            deduplicated: 0,
+            skipped_unavailable: 0,
+        });
+    }
+    #[cfg(feature = "stem-backend")]
+    match reprise_stems::provision::runtime_readiness() {
+        reprise_stems::provision::RuntimeReadiness::Ready(_) => {}
+        reprise_stems::provision::RuntimeReadiness::ModelRequired { .. } => {
+            return Err(EnqueueError::ModelRequired);
+        }
+        reprise_stems::provision::RuntimeReadiness::Unavailable { detail, .. } => {
+            return Err(EnqueueError::RuntimeUnavailable(detail));
+        }
+    }
+    let model = app_model_id().ok_or(EnqueueError::BackendUnavailable)?;
+    enqueue_present_tracks_with_model(
+        conn,
+        &StagingStore::with_default_dir(),
+        ids,
+        &model,
+        now_unix(),
+    )
+    .map_err(EnqueueError::Database)
+}
+
+fn enqueue_present_tracks_with_model(
+    conn: &Connection,
+    staging: &StagingStore,
+    ids: &[i64],
+    model: &str,
+    now: i64,
+) -> Result<EnqueueSummary, rusqlite::Error> {
+    let unique_requested = ids.iter().copied().collect::<HashSet<_>>().len();
+    let present = reprise_core::queries::filter_present(conn, ids)?;
+    let skipped_unavailable = unique_requested.saturating_sub(present.len());
+    if present.is_empty() {
+        return Ok(EnqueueSummary {
+            created: 0,
+            deduplicated: 0,
+            skipped_unavailable,
+        });
+    }
+    let batch = reprise_core::ai_conversion::add_batch_to_conversion(
+        conn, staging, &present, model, false, now,
+    )?;
+    let created = batch
+        .jobs
+        .iter()
+        .filter(|outcome| matches!(outcome, EnqueueOutcome::Created { .. }))
+        .count();
+    Ok(EnqueueSummary {
+        created,
+        deduplicated: batch.jobs.len() - created,
+        skipped_unavailable,
+    })
+}
+
 thread_local! {
     /// The UI-thread hook that nudges the worker to re-poll the queue. The
     /// conversion wiring registers it with the worker handle; the enqueue paths
@@ -89,6 +184,8 @@ thread_local! {
     /// Window-runtime hook for applying the persisted master gate immediately.
     /// Preferences owns persistence; conversion wiring owns process/UI lifetime.
     static ENABLED_HOOK: RefCell<Option<EnabledHook>> = const { RefCell::new(None) };
+    /// Opens the Experimental preferences page when first-use assets need work.
+    static SETTINGS_HOOK: RefCell<Option<Rc<dyn Fn()>>> = const { RefCell::new(None) };
 }
 
 /// Registers the worker-wake hook (called once by the conversion wiring).
@@ -126,6 +223,21 @@ pub(in crate::ui) fn apply_enabled(enabled: bool) {
 /// Drops the current window's live gate handler during teardown.
 fn clear_enabled_hook() {
     ENABLED_HOOK.with(|hook_cell| hook_cell.borrow_mut().take());
+}
+
+pub(in crate::ui) fn set_settings_hook(hook: Rc<dyn Fn()>) {
+    SETTINGS_HOOK.with(|hook_cell| *hook_cell.borrow_mut() = Some(hook));
+}
+
+pub(in crate::ui) fn open_settings() {
+    let hook = SETTINGS_HOOK.with(|hook_cell| hook_cell.borrow().clone());
+    if let Some(hook) = hook {
+        hook();
+    }
+}
+
+fn clear_settings_hook() {
+    SETTINGS_HOOK.with(|hook_cell| hook_cell.borrow_mut().take());
 }
 
 /// Unix seconds — the clock every facade call (`enqueue`, `promote`, `discard`)
@@ -185,6 +297,49 @@ mod tests {
             wakes.get(),
             1,
             "queued work must not reach a stopped supervisor after live disable"
+        );
+    }
+
+    #[test]
+    fn conversion_drop_filters_missing_tracks_and_reuses_batch_dedup() {
+        let conn = Connection::open_in_memory().unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (id, path, title, artist, added_at) VALUES
+             (1, '/music/live.flac', 'Live', 'Artist', 0),
+             (2, '/music/missing.flac', 'Missing', 'Artist', 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE tracks SET missing_since = 1, missing_reason = 'deleted' WHERE id = 2",
+            [],
+        )
+        .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let staging = reprise_core::ai_staging::StagingStore::new(dir.path());
+
+        let first =
+            enqueue_present_tracks_with_model(&conn, &staging, &[1, 2, 1], "model@1", 10).unwrap();
+        assert_eq!(
+            first,
+            EnqueueSummary {
+                created: 1,
+                deduplicated: 0,
+                skipped_unavailable: 1,
+            }
+        );
+
+        let second =
+            enqueue_present_tracks_with_model(&conn, &staging, &[1, 2], "model@1", 20).unwrap();
+        assert_eq!(
+            second,
+            EnqueueSummary {
+                created: 0,
+                deduplicated: 1,
+                skipped_unavailable: 1,
+            },
+            "a second drop references the existing job instead of duplicating it"
         );
     }
 }

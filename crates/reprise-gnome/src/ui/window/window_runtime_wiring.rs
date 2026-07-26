@@ -506,6 +506,52 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         Some(track_list) => track_list.reload(),
         None => tracing::warn!("track list reload skipped: track list is gone"),
     });
+    crate::ui::instrumental::set_settings_hook({
+        let preferences = Rc::downgrade(preferences);
+        Rc::new(move || {
+            if let Some(preferences) = preferences.upgrade() {
+                preferences.present_page("experimental");
+            }
+        })
+    });
+    {
+        let conn = conn.clone();
+        let overlay = toast_overlay.downgrade();
+        sidebar.set_on_conversion_drop(move |ids| {
+            let outcome = crate::ui::instrumental::enqueue_present_tracks(&conn.borrow(), ids);
+            match outcome {
+                Ok(summary) if summary.accepted() > 0 => {
+                    crate::ui::instrumental::wake_worker();
+                    if let Some(overlay) = overlay.upgrade() {
+                        overlay.add_toast(adw::Toast::new(
+                            &crate::ui::strings::create_instrumental_toast(
+                                summary.created,
+                                summary.deduplicated,
+                            ),
+                        ));
+                    }
+                    true
+                }
+                Ok(_) => false,
+                Err(
+                    crate::ui::instrumental::EnqueueError::ModelRequired
+                    | crate::ui::instrumental::EnqueueError::RuntimeUnavailable(_),
+                ) => {
+                    crate::ui::instrumental::open_settings();
+                    true
+                }
+                Err(error) => {
+                    tracing::error!(%error, "conversion drop could not queue instrumentals");
+                    if let Some(overlay) = overlay.upgrade() {
+                        overlay.add_toast(adw::Toast::new(
+                            &crate::ui::strings::create_instrumental_failed_toast(),
+                        ));
+                    }
+                    false
+                }
+            }
+        });
+    }
     let sidebar_weak = Rc::downgrade(sidebar);
     track_list.set_on_sidebar_playlist_drop(move |playlist_id, playlist_name, ids| {
         match sidebar_weak.upgrade() {
