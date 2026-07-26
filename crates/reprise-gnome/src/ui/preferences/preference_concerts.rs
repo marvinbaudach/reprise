@@ -132,6 +132,21 @@ struct CredentialPreferenceRow {
     status: gtk4::Label,
 }
 
+#[derive(Clone, Copy)]
+struct CredentialPreferenceSpec {
+    provider: reprise_core::concerts::ProviderKind,
+    key: &'static str,
+    title: &'static str,
+}
+
+fn credential_preference_specs() -> [CredentialPreferenceSpec; 1] {
+    [CredentialPreferenceSpec {
+        provider: reprise_core::concerts::ProviderKind::Bandsintown,
+        key: reprise_core::concerts::config::BANDSINTOWN_APP_ID_KEY,
+        title: strings::CONCERTS_BANDSINTOWN_APP_ID,
+    }]
+}
+
 struct ConcertPreferenceRowsInner {
     rows: Vec<gtk4::Widget>,
     #[cfg(test)]
@@ -164,25 +179,36 @@ impl ConcertPreferenceRows {
     }
 }
 
+pub(in crate::ui) fn build_page(
+    conn: &Rc<RefCell<Connection>>,
+    runtime: &Rc<ConcertsRuntime>,
+) -> adw::PreferencesPage {
+    let page = adw::PreferencesPage::builder()
+        .title(strings::text(strings::CONCERTS))
+        .icon_name("x-office-calendar-symbolic")
+        .build();
+    let group = adw::PreferencesGroup::new();
+    let rows = build(conn, runtime, runtime.enabled.get());
+    rows.add_to(&group);
+    page.add(&group);
+
+    let alive = page.downgrade();
+    runtime.subscribe_enabled(
+        move || alive.upgrade().is_some(),
+        move |enabled| rows.set_sensitive(enabled),
+    );
+    page
+}
+
 pub(in crate::ui) fn build(
     conn: &Rc<RefCell<Connection>>,
     runtime: &Rc<ConcertsRuntime>,
     enabled: bool,
 ) -> ConcertPreferenceRows {
-    let bandsintown = password_row(
-        conn,
-        runtime,
-        reprise_core::concerts::ProviderKind::Bandsintown,
-        reprise_core::concerts::config::BANDSINTOWN_APP_ID_KEY,
-        strings::CONCERTS_BANDSINTOWN_APP_ID,
-    );
-    let ticketmaster = password_row(
-        conn,
-        runtime,
-        reprise_core::concerts::ProviderKind::Ticketmaster,
-        reprise_core::concerts::config::TICKETMASTER_API_KEY,
-        strings::CONCERTS_TICKETMASTER_API_KEY,
-    );
+    let credentials = credential_preference_specs()
+        .into_iter()
+        .map(|spec| password_row(conn, runtime, spec.provider, spec.key, spec.title))
+        .collect::<Vec<_>>();
     let (city, location_status) = location_rows(conn, runtime);
     let radius = radius_row(conn, runtime);
     let window_days = window_days_row(conn, runtime);
@@ -225,21 +251,23 @@ pub(in crate::ui) fn build(
             }
         });
     }
-    let rows = vec![
-        bandsintown.row.clone().upcast(),
-        ticketmaster.row.clone().upcast(),
+    let mut rows = credentials
+        .iter()
+        .map(|credential| credential.row.clone().upcast())
+        .collect::<Vec<_>>();
+    rows.extend([
         city.upcast(),
         location_status.upcast(),
         radius.upcast(),
         window_days.upcast(),
         similar_enabled.clone().upcast(),
         similar_count.clone().upcast(),
-    ];
+    ]);
     let preferences = ConcertPreferenceRows {
         inner: Rc::new(ConcertPreferenceRowsInner {
             rows,
             #[cfg(test)]
-            credentials: vec![bandsintown, ticketmaster],
+            credentials,
             similar_enabled: similar_enabled.clone(),
             similar_count: similar_count.clone(),
             module_enabled: Cell::new(enabled),

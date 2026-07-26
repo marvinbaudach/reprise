@@ -160,12 +160,6 @@ impl PreferencesContext {
                 row_ref.set(Some(row.upcast_ref::<gtk4::Widget>()));
                 self.plugin_rows.borrow_mut().insert(descriptor.id, row_ref);
             }
-            let scope_row = (descriptor.id == "new_releases")
-                .then(|| super::preference_new_releases::scope_row(&self.conn, active));
-            let singles_row = (descriptor.id == "new_releases")
-                .then(|| super::preference_new_releases::singles_row(&self.conn, active));
-            let concerts_rows = (descriptor.id == "concerts")
-                .then(|| super::preference_concerts::build(&self.conn, &self.concerts, active));
             let podcast_rows = (descriptor.id == "podcasts")
                 .then(|| super::preference_podcasts::build(&self.conn, active));
             let radio_rows = (descriptor.id == "radio")
@@ -174,9 +168,6 @@ impl PreferencesContext {
             let weak = Rc::downgrade(self);
             let descriptor = *descriptor;
             let syncing_notify = syncing.clone();
-            let scope_notify = scope_row.clone();
-            let singles_notify = singles_row.clone();
-            let concerts_notify = concerts_rows.clone();
             let podcasts_notify = podcast_rows.clone();
             let radio_notify = radio_rows.clone();
             row.connect_active_notify(move |row| {
@@ -247,15 +238,6 @@ impl PreferencesContext {
                     syncing_notify.set(false);
                     return;
                 }
-                if let Some(scope) = &scope_notify {
-                    scope.set_sensitive(active);
-                }
-                if let Some(singles) = &singles_notify {
-                    singles.set_sensitive(active);
-                }
-                if let Some(rows) = &concerts_notify {
-                    rows.set_sensitive(active);
-                }
                 if let Some(rows) = &podcasts_notify {
                     rows.set_sensitive(active);
                 }
@@ -270,16 +252,6 @@ impl PreferencesContext {
                 let alive = glib::WeakRef::new();
                 alive.set(Some(&row));
                 let target = alive.clone();
-                let scope_target = scope_row.as_ref().map(|scope| {
-                    let target = glib::WeakRef::new();
-                    target.set(Some(scope));
-                    target
-                });
-                let singles_target = singles_row.as_ref().map(|singles| {
-                    let target = glib::WeakRef::new();
-                    target.set(Some(singles));
-                    target
-                });
                 let syncing = syncing.clone();
                 self.artist_news.subscribe_enabled(
                     move || alive.upgrade().is_some(),
@@ -288,15 +260,6 @@ impl PreferencesContext {
                         syncing.set(true);
                         row.set_active(enabled);
                         syncing.set(false);
-                        if let Some(scope) = scope_target.as_ref().and_then(glib::WeakRef::upgrade)
-                        {
-                            scope.set_sensitive(enabled);
-                        }
-                        if let Some(singles) =
-                            singles_target.as_ref().and_then(glib::WeakRef::upgrade)
-                        {
-                            singles.set_sensitive(enabled);
-                        }
                     },
                 );
             }
@@ -304,7 +267,6 @@ impl PreferencesContext {
                 let alive = glib::WeakRef::new();
                 alive.set(Some(&row));
                 let target = alive.clone();
-                let rows = concerts_rows.clone();
                 let syncing = syncing.clone();
                 self.concerts.subscribe_enabled(
                     move || alive.upgrade().is_some(),
@@ -313,9 +275,6 @@ impl PreferencesContext {
                         syncing.set(true);
                         row.set_active(enabled);
                         syncing.set(false);
-                        if let Some(rows) = &rows {
-                            rows.set_sensitive(enabled);
-                        }
                     },
                 );
             }
@@ -336,15 +295,6 @@ impl PreferencesContext {
                 });
             }
             group.add(&row);
-            if let Some(scope) = scope_row {
-                group.add(&scope);
-            }
-            if let Some(singles) = singles_row {
-                group.add(&singles);
-            }
-            if let Some(rows) = concerts_rows {
-                rows.add_to(group);
-            }
             if let Some(rows) = podcast_rows {
                 rows.add_to(group);
             }

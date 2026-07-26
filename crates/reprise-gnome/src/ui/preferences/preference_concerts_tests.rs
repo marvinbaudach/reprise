@@ -94,6 +94,21 @@ fn conc_8_credential_feedback_projects_every_verification_outcome_inline() {
 }
 
 #[test]
+fn conc_9_ticketmaster_build_credential_is_not_user_editable() {
+    let credentials = credential_preference_specs();
+
+    assert_eq!(credentials.len(), 1);
+    assert_eq!(
+        credentials[0].provider,
+        reprise_core::concerts::ProviderKind::Bandsintown
+    );
+    assert_eq!(
+        credentials[0].key,
+        reprise_core::concerts::config::BANDSINTOWN_APP_ID_KEY
+    );
+}
+
+#[test]
 fn stored_credentials_are_preferred_and_similar_count_clamps() {
     let conn = reprise_core::db::open(None).unwrap();
     reprise_core::db::migrate(&conn).unwrap();
@@ -122,7 +137,7 @@ fn stored_credentials_are_preferred_and_similar_count_clamps() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn concerts_preferences_use_protected_credentials_and_link_similar_sensitivity() {
+fn concerts_preferences_expose_only_bandsintown_and_link_similar_sensitivity() {
     gtk4::init().unwrap();
     let _main_context = crate::ui::test_main_context::lock_main_context();
     let conn = reprise_core::db::open(None).unwrap();
@@ -131,10 +146,9 @@ fn concerts_preferences_use_protected_credentials_and_link_similar_sensitivity()
     let runtime = ConcertsRuntime::setup(&conn.borrow());
     let preferences = build(&conn, &runtime, true);
 
-    assert!(
-        preferences.inner.rows[0].is::<adw::PasswordEntryRow>()
-            && preferences.inner.rows[1].is::<adw::PasswordEntryRow>()
-    );
+    assert!(preferences.inner.rows[0].is::<adw::PasswordEntryRow>());
+    assert!(!preferences.inner.rows[1].is::<adw::PasswordEntryRow>());
+    assert_eq!(preferences.inner.credentials.len(), 1);
     assert!(!preferences.inner.similar_count.is_sensitive());
     preferences.inner.similar_enabled.set_active(true);
     assert!(preferences.inner.similar_count.is_sensitive());

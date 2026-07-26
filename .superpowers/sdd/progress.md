@@ -49,6 +49,15 @@ Base: `331217f344`
 
 Task P1: complete (this commit, base 331217f344, made stopped Play/Pause seed and start a random present-library snapshot without row activation, kept empty-library and queue navigation sensitivity honest, and activated PLAY-9; full non-display gates passed, while the rule-named display regression compiled but its isolated Xvfb run was blocked by sandbox D-Bus socket permissions)
 
+# Visualizer sync regression
+
+Base: `7d89d9b20c`
+
+Task V1: complete (this commit, base 7d89d9b20c, reserved spectrum headroom and added sustained bass-dominant breakdown pressure so the decoded WAKE UP profile stays near 8–24% before the breakdown and reaches 88–93% on its major hits; workspace 1312 core + 901 GNOME non-display tests passed, 279 display-required GNOME tests were intentionally ignored, and native visual review remains manual)
+Task V2: complete (this commit, base 52efec9753, kept Space global Play/Pause while passive collection views hold focus, preserved native Space handling for direct controls and text entry, and extended ACC-4's isolated GTK and CUA coverage; WAKE UP diagnosis found the reported missing 16-second peak came from the legacy nested worktree, while the canonical worktree's exact player-to-scene profile reached 89% during the UI's displayed 16-second window; workspace 1312 core + 901 GNOME non-display tests passed, 280 display tests were intentionally ignored by the workspace run, and the targeted Xvfb test plus real key-event CUA path passed)
+Task V3: complete (this commit, base 05b4adad89, moved the Spectrum analyzer ahead of ReplayGain so stored Track/Album gain cannot attenuate visual energy while audible normalization remains unchanged; the exact WAKE UP Track-ReplayGain profile improved from 43% to 93% visible peak at 16 seconds and from 37% to 87% at 36 seconds; workspace 1312 core + 901 GNOME non-display + 81 Linux platform + 45 stems tests passed, 280 display tests were intentionally ignored, and one unrelated device-sync test failed once before passing both isolated and in the full rerun)
+Task V4: complete (this commit, base 9aa28f69fb, added a faster-than-realtime song-corpus profiler and calibrated Bars against WAKE UP, To the Hellfire, and Sun//Eater so compressed metal retains headroom while the reported 16- and 36-second WAKE UP windows peak near 80-82% mean and 88% tallest-bar height with 16-32 ms best alignment; the quieter half now produces 0.5% false-full frames in WAKE UP and at most 6.5% across the Lorna Shore corpus, a three-tick pressure hold preserves fluid short-hit attack, and selected passive view tabs again leave Space to global Play/Pause; workspace 1314 core + 901 GNOME non-display + 81 Linux platform + 45 stems tests passed, 281 display tests were intentionally ignored, the targeted Xvfb regression and isolated real-key CUA song-visuals scenario passed, core purity and architecture/UX gates passed, and cargo audit reported only the accepted RUSTSEC-2024-0436 warning)
+
 # Podcasts & Radio
 
 Task Z1: complete with sandbox-limited visual verification (this commit, base 4b9b80627f, implemented podcast RSS/YouTube and radio-browser sources, external playback/MPRIS, source views, reversible removal, preferences, schema v33 future-only baselines, and all AF rules; fmt, clippy, 1398 core tests, 951 GNOME non-display tests, audit with only accepted RUSTSEC-2024-0436, core purity, motion, input, accessibility, and UX traceability passed; the unchanged origin/dev 806-line MCP file keeps the architecture script red, and sandbox D-Bus socket denial blocks display tests plus the isolated application smoke; real feeds/streams, yt-dlp, ICY, GNOME-Shell MPRIS, and theme icon optics remain the documented manual pass)
@@ -64,3 +73,21 @@ Point 2: complete (commit 5786b63f97, base 72e85defff, kept SET-4 immediate pers
 Point 3: complete (commit 5bc3b56b8b, base 5786b63f97, verified provider credentials off-thread through the shared limiter, mapped fixture-only success/rejection/timeout/transport outcomes to inline feedback, kept secrets out of fixture logs, activated CONC-8 and replaced CONC-5 with CONC-5a; all non-display gates passed, while isolated Xvfb display launches were blocked by sandbox D-Bus socket permissions)
 Sidebar progress follow-up: complete (this commit, base 5bc3b56b8b, pinned the shared progress activity below Issues at the sidebar bottom and added an FB-2a allocation regression)
 MCP catalog follow-up: complete (this commit, base e7a208112e, added complete path-free Concerts cache and Releases history resources while preserving the filtered Concerts contract and never exposing provider credentials)
+
+# Ticketmaster bundled build credential
+
+Base: `3fc0b2bf8a`
+
+Task TM1: complete (commit aefc61d4c5, base 3fc0b2bf8a, resolved Ticketmaster credentials in stored then runtime then bundled-build order, treated blank values as absent, redacted credential debug output, and documented local and GitHub Actions release injection plus binary extractability; required gates passed with isolated XDG state and serial workspace tests; visible affiliate disclosure remains a separate review question before public release)
+Task TM2: complete (commit 14f40a4442, base aefc61d4c5, removed the Ticketmaster credential editor, the credential-entry status action and the Updates key hint while retaining the optional Bandsintown row and legacy stored Ticketmaster resolution; all required gates passed after one unrelated one-shot progress flake passed 10 focused reruns and the repeated full workspace gate)
+Task TM3: complete (this commit, base 14f40a4442, promoted New Releases and Concerts settings to peer Preferences pages, left only their activation switches on Plugins, preserved the newly merged Podcast and Radio plugin controls, kept page controls live-sensitive to module state, and activated SET-7; fmt, strict clippy, audit, core purity, architecture and all non-socket workspace tests passed after rebase onto current dev, while two new Radio MCP loopback tests were blocked only by the sandbox's TCP bind restriction)
+
+# PR 64 UI follow-up repair
+
+Base: `428c9bbff9`
+
+Autocomplete surface: complete (commit 6f69d0aeff, base 428c9bbff9, preserved the popover surface behind transparent inner autocomplete views and added the manual TAG-9 rule proposal)
+Repeat tooltips: complete (commit bbe3028309, base 6f69d0aeff, explained all three repeat modes from the current behavior)
+Now Playing transition: complete (commit 2b8302599a, base bbe3028309, replaced the whole-panel crossfade with an interruption-safe outgoing-cover fade that waits for cold-cache resolution and activated NPP-13 with corrected MOT-1/MOT-6 references)
+Catalog gate repair: complete (commit 20591fb5cb, base 2b8302599a, synchronized all seven catalogs with the Podcasts/Radio sources inherited from dev, completed the German and Spanish translations, and removed fuzzy entries)
+Verification: complete with sandbox exclusions (format, strict clippy, rustdoc, architecture, accessibility, input, UX traceability, motion, gettext, audit with only accepted RUSTSEC-2024-0436, 1404 core tests, 959 GNOME non-display tests, and all other workspace tests passed; two inherited MCP Radio tests requiring local sockets and the isolated NPP-13 Xvfb regression were blocked by sandbox socket permissions and remain required on GitHub CI)
