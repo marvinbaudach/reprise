@@ -70,7 +70,7 @@ _Vermeiden_: Ansicht, Scope
 
 **Library-Scope**:
 Ein navigierbarer, aus Track-Metadaten abgeleiteter Ausschnitt der Bibliothek:
-alle Tracks, ein Album oder ein Interpret. Ein Scope verwendet dieselbe
+alle Tracks, ein Album, ein Interpret oder ein Genre. Ein Scope verwendet dieselbe
 Trackliste und ist keine eigene Darstellungsart oder dauerhafte Entität.
 _Vermeiden_: Modus, Tab, Filterchip, Albumobjekt
 

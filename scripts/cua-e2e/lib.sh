@@ -430,9 +430,26 @@ cua_double_click_label() {
   cua_pointer_action_label double_click "$@"
 }
 
+assert_type_text_landed() {
+  local action_path=$1
+
+  # X11 foreground key events report the delivered character count but cannot
+  # inspect password-entry contents. The retained post-action snapshot and the
+  # control becoming sensitive provide the end-to-end confirmation instead.
+  if jq -e '
+    .effect == "unverifiable"
+    and .path == "key_events"
+    and (.characters // 0) > 0
+    and .escalation.recommended? == "foreground"
+  ' "$action_path" >/dev/null; then
+    return 0
+  fi
+  assert_action_landed "$action_path"
+}
+
 cua_type_text_label() {
   local pid=$1 window_id=$2 label=$3 value=$4 stem=$5
-  local before_path action_path index payload
+  local before_path action_path background_action_path index payload
 
   before_path=$(cua_snapshot "$pid" "$window_id" "$stem-before")
   index=$(element_index_for_label "$before_path" "$label")
@@ -449,7 +466,16 @@ cua_type_text_label() {
     echo "CUA type_text command failed: $stem" >&2
     return 1
   fi
-  assert_action_landed "$action_path" || return 1
+  if jq -e '.code == "background_unavailable"' "$action_path" >/dev/null; then
+    background_action_path="$CUA_E2E_OUT_DIR/$stem-background-action.json"
+    mv "$action_path" "$background_action_path"
+    payload=$(jq -c '. + {delivery_mode: "foreground"}' <<<"$payload")
+    if ! cua_driver type_text "$payload" >"$action_path"; then
+      echo "CUA foreground type_text command failed: $stem" >&2
+      return 1
+    fi
+  fi
+  assert_type_text_landed "$action_path" || return 1
   cua_snapshot "$pid" "$window_id" "$stem-after" >/dev/null || return 1
 }
 
@@ -470,7 +496,7 @@ cua_type_text_window() {
     echo "CUA focused type_text command failed: $stem" >&2
     return 1
   fi
-  assert_action_landed "$action_path" || return 1
+  assert_type_text_landed "$action_path" || return 1
   cua_snapshot "$pid" "$window_id" "$stem-after" >/dev/null || return 1
 }
 

@@ -45,6 +45,40 @@ fn next_sort_order_toggles_the_primary_column_and_resets_any_other() {
     );
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn sorting_a_new_column_replaces_the_previous_sort_key() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+
+    let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
+    let artist = gtk4::ColumnViewColumn::new(Some("Artist"), None::<gtk4::ListItemFactory>);
+    artist.set_sorter(Some(&gtk4::CustomSorter::new(|_, _| gtk4::Ordering::Equal)));
+    let rating = gtk4::ColumnViewColumn::new(Some("Rating"), None::<gtk4::ListItemFactory>);
+    rating.set_sorter(Some(&gtk4::CustomSorter::new(|_, _| gtk4::Ordering::Equal)));
+    view.append_column(&artist);
+    view.append_column(&rating);
+
+    let store = gtk4::gio::ListStore::new::<gtk4::glib::Object>();
+    let sort_model = gtk4::SortListModel::new(Some(store), view.sorter());
+    let selection = gtk4::NoSelection::new(Some(sort_model));
+    view.set_model(Some(&selection));
+
+    activate_sort_click(&view, &artist);
+    activate_sort_click(&view, &rating);
+
+    let sorter = view
+        .sorter()
+        .and_downcast::<gtk4::ColumnViewSorter>()
+        .expect("column view sorter");
+    assert_eq!(
+        sorter.n_sort_columns(),
+        1,
+        "switching columns must not retain a secondary sort key"
+    );
+    assert_eq!(sorter.primary_sort_column(), Some(rating));
+}
+
 fn span(visible: bool, left: f64, right: f64) -> TitleSpan {
     TitleSpan {
         visible,

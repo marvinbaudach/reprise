@@ -163,6 +163,7 @@ fn place_is_resolvable(conn: &Connection, place: &BrowserPlace) -> bool {
             !key.album.trim().is_empty() && !key.album_artist.trim().is_empty()
         }
         Some(TrackCollection::Library(LibraryScope::Artist(key))) => !key.artist.trim().is_empty(),
+        Some(TrackCollection::Library(LibraryScope::Genre(genre))) => !genre.trim().is_empty(),
         Some(
             TrackCollection::Library(LibraryScope::All)
             | TrackCollection::Queue
@@ -411,6 +412,18 @@ mod tests {
         assert_eq!(restored.browser_place, Some(current.clone()));
         assert_eq!(restored.library_root, Some(root));
         assert_eq!(restored.play_origin_place, Some(current));
+    }
+
+    #[test]
+    fn fil_1c_genre_scope_round_trips_as_the_current_browser_place() {
+        let conn = conn();
+        let mut state = full_state();
+        let genre = BrowserPlace::from(ViewSource::Genre("Metalcore".into()));
+        state.browser_place = Some(genre.clone());
+
+        save(&conn, &state).unwrap();
+
+        assert_eq!(load(&conn).browser_place, Some(genre));
     }
 
     #[test]

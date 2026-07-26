@@ -1,11 +1,13 @@
 use std::collections::BTreeSet;
 
-use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Timelike};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Timelike, Weekday};
 use rusqlite::Connection;
 
 /// Length of the rolling window behind [`StatsPeriod::Last30Days`], counted in
 /// whole local calendar days including today.
 pub const ROLLING_WINDOW_DAYS: i64 = 30;
+/// Fewer active weeks than this use a cropped weekly bar axis.
+pub const SPARSE_WEEK_THRESHOLD: usize = 8;
 
 /// A user-selectable local listening-history period.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -22,6 +24,7 @@ pub struct PeriodRange {
     pub start_unix: i64,
     pub end_unix: i64,
     pub granularity: Granularity,
+    pub sparse_weeks: bool,
     pub buckets: Vec<Bucket>,
 }
 
@@ -114,6 +117,7 @@ impl StatsPeriod {
             start_unix,
             end_unix,
             granularity,
+            sparse_weeks: false,
             buckets: build_buckets(tz, start_unix, end_unix, granularity, open),
         }
     }
@@ -213,7 +217,7 @@ impl StatsPeriod {
 pub fn granularity_for(span_days: i64, distinct_active_days: i64) -> Granularity {
     if span_days <= 45 || distinct_active_days < 8 {
         Granularity::Day
-    } else if span_days <= 120 || distinct_active_days < 24 {
+    } else if span_days <= 730 || distinct_active_days < 24 {
         Granularity::Week
     } else {
         Granularity::Month
@@ -227,22 +231,39 @@ pub fn local_parts<Tz: TimeZone>(tz: &Tz, unix: i64) -> Option<(NaiveDate, u32)>
         .map(|value| (value.date_naive(), value.hour()))
 }
 
+/// Monday that begins the local calendar week containing `unix`.
+pub fn week_start<Tz: TimeZone>(tz: &Tz, unix: i64) -> Option<NaiveDate> {
+    local_parts(tz, unix).map(|(date, _)| date.week(Weekday::Mon).first_day())
+}
+
 pub(crate) fn apply_activity_granularity<Tz: TimeZone>(
     range: &mut PeriodRange,
     tz: &Tz,
     distinct_active_days: i64,
+    distinct_active_weeks: usize,
+    first_active_unix: i64,
 ) {
     if range.start_unix >= range.end_unix {
+        range.sparse_weeks = false;
         range.buckets.clear();
         return;
     }
     let open = range.buckets.last().is_some_and(|bucket| bucket.open);
-    let granularity = granularity_for(
-        span_days(tz, range.start_unix, range.end_unix),
-        distinct_active_days,
-    );
+    let days = span_days(tz, range.start_unix, range.end_unix);
+    let sparse_weeks = days > 45 && days <= 730 && distinct_active_weeks < SPARSE_WEEK_THRESHOLD;
+    let granularity = if sparse_weeks {
+        Granularity::Week
+    } else {
+        granularity_for(days, distinct_active_days)
+    };
+    let bucket_start = if sparse_weeks {
+        first_active_unix.max(range.start_unix)
+    } else {
+        range.start_unix
+    };
     range.granularity = granularity;
-    range.buckets = build_buckets(tz, range.start_unix, range.end_unix, granularity, open);
+    range.sparse_weeks = sparse_weeks;
+    range.buckets = build_buckets(tz, bucket_start, range.end_unix, granularity, open);
 }
 
 fn empty_range() -> PeriodRange {
@@ -250,6 +271,7 @@ fn empty_range() -> PeriodRange {
         start_unix: 0,
         end_unix: 0,
         granularity: Granularity::Day,
+        sparse_weeks: false,
         buckets: Vec::new(),
     }
 }
@@ -310,13 +332,19 @@ fn build_buckets<Tz: TimeZone>(
     let Some((mut cursor_date, _)) = local_parts(tz, start_unix) else {
         return Vec::new();
     };
-    if granularity == Granularity::Month {
-        let Some(first_of_month) =
-            NaiveDate::from_ymd_opt(cursor_date.year(), cursor_date.month(), 1)
-        else {
-            return Vec::new();
-        };
-        cursor_date = first_of_month;
+    match granularity {
+        Granularity::Week => {
+            cursor_date = cursor_date.week(Weekday::Mon).first_day();
+        }
+        Granularity::Month => {
+            let Some(first_of_month) =
+                NaiveDate::from_ymd_opt(cursor_date.year(), cursor_date.month(), 1)
+            else {
+                return Vec::new();
+            };
+            cursor_date = first_of_month;
+        }
+        Granularity::Day => {}
     }
 
     let mut buckets = Vec::new();

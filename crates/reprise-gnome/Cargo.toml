@@ -13,6 +13,9 @@ path = "src/main.rs"
 
 [features]
 default = []
+# Enables the two core HTTP fixture routers for isolated smoke/E2E binaries.
+# Production builds keep this off, so fixture environment variables are inert.
+test-fixtures = ["reprise-core/test-fixtures"]
 # The real stem-separation backend (reprise-stems + onnxruntime via ort's
 # load-dynamic). The GTK app is a sanctioned binary host for reprise-stems
 # (LICENSING.md; scripts/check-architecture.sh §"the GTK app may depend on it"),

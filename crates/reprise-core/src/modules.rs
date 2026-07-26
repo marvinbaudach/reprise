@@ -53,11 +53,19 @@ pub const NEW_RELEASES_MODULE: ModuleDescriptor = ModuleDescriptor {
     applies_live: true,
 };
 
+pub const CONCERTS_MODULE: ModuleDescriptor = ModuleDescriptor {
+    id: "concerts",
+    name: "Concerts",
+    description: "Show upcoming concerts for library artists; contacts event providers",
+    default_enabled: false,
+    applies_live: true,
+};
+
 pub const LIBRARY_DOCTOR_MODULE: ModuleDescriptor = ModuleDescriptor {
     id: "library_doctor",
     name: "Library Doctor",
     description: "Review local tag cleanup suggestions; optional remote suggestions; contacts MusicBrainz / AcoustID",
-    default_enabled: false,
+    default_enabled: true,
     applies_live: true,
 };
 
@@ -98,6 +106,7 @@ pub const ALL_MODULES: &[&ModuleDescriptor] = &[
     &SONG_VISUALS_MODULE,
     &LIBRARY_DOCTOR_MODULE,
     &NEW_RELEASES_MODULE,
+    &CONCERTS_MODULE,
     &COVER_DOWNLOAD_MODULE,
     &ARTIST_PORTRAITS_MODULE,
     &ONLINE_LYRICS_MODULE,
@@ -209,7 +218,22 @@ mod tests {
     }
 
     #[test]
-    fn doc_1d_library_doctor_is_live_local_only_and_default_off() {
+    fn concerts_is_a_live_opt_in_module() {
+        let conn = migrated_conn();
+        let descriptor = ALL_MODULES
+            .iter()
+            .copied()
+            .find(|module| module.id == "concerts")
+            .expect("Concerts must be exposed on the Plugins page");
+
+        assert_eq!(descriptor.name, "Concerts");
+        assert!(!descriptor.default_enabled);
+        assert!(descriptor.applies_live);
+        assert!(!is_enabled(&conn, &CONCERTS_MODULE).unwrap());
+    }
+
+    #[test]
+    fn doc_7a_library_doctor_is_live_local_only_and_always_available() {
         let conn = migrated_conn();
         let descriptor = ALL_MODULES
             .iter()
@@ -219,8 +243,8 @@ mod tests {
 
         assert_eq!(descriptor.name, "Library Doctor");
         assert!(descriptor.applies_live);
-        assert!(!descriptor.default_enabled);
-        assert!(!is_enabled(&conn, descriptor).unwrap());
+        assert!(descriptor.default_enabled);
+        assert!(is_enabled(&conn, descriptor).unwrap());
         assert!(!settings::get_bool(&conn, "library_doctor.remote.enabled", false).unwrap());
 
         set_enabled(&conn, descriptor, true).unwrap();

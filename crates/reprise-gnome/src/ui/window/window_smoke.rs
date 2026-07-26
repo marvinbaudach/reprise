@@ -8,17 +8,7 @@ use rusqlite::Connection;
 
 const SMOKE_BAR_POSITION_ENV_VAR: &str = "REPRISE_SMOKE_BAR_POSITION";
 const SMOKE_LISTENBRAINZ_ENV_VAR: &str = "REPRISE_SMOKE_LISTENBRAINZ";
-const SMOKE_LISTENBRAINZ_API_ROOT_ENV_VAR: &str = "REPRISE_SMOKE_LISTENBRAINZ_API_ROOT";
 const SMOKE_LASTFM_ENV_VAR: &str = "REPRISE_SMOKE_LASTFM";
-const SMOKE_LASTFM_API_ROOT_ENV_VAR: &str = "REPRISE_SMOKE_LASTFM_API_ROOT";
-
-fn is_loopback_smoke_root(value: &str) -> bool {
-    ["http://127.0.0.1:", "http://[::1]:"]
-        .into_iter()
-        .find_map(|prefix| value.strip_prefix(prefix))
-        .and_then(|remainder| remainder.split('/').next())
-        .is_some_and(|port| port.parse::<u16>().is_ok())
-}
 
 pub(in crate::ui) fn arm_bar_position(
     conn: &Rc<RefCell<Connection>>,
@@ -51,10 +41,7 @@ pub(in crate::ui) fn arm_listenbrainz(
     if std::env::var(SMOKE_LISTENBRAINZ_ENV_VAR).as_deref() != Ok("exercise") {
         return;
     }
-    let Some(api_root) = std::env::var(SMOKE_LISTENBRAINZ_API_ROOT_ENV_VAR)
-        .ok()
-        .filter(|root| cfg!(debug_assertions) && is_loopback_smoke_root(root))
-    else {
+    let Some(api_root) = crate::ui::scrobbling::smoke::listenbrainz_api_root() else {
         tracing::warn!("ListenBrainz smoke requested without a loopback API root");
         return;
     };
@@ -91,10 +78,7 @@ pub(in crate::ui) fn arm_lastfm(
     if std::env::var(SMOKE_LASTFM_ENV_VAR).as_deref() != Ok("exercise") {
         return;
     }
-    let Some(api_root) = std::env::var(SMOKE_LASTFM_API_ROOT_ENV_VAR)
-        .ok()
-        .filter(|root| cfg!(debug_assertions) && is_loopback_smoke_root(root))
-    else {
+    let Some(api_root) = crate::ui::scrobbling::smoke::lastfm_api_root() else {
         tracing::warn!("Last.fm smoke requested without a loopback API root");
         return;
     };
@@ -128,28 +112,5 @@ pub(in crate::ui) fn arm_lastfm(
         }
         (Err(error), _) => tracing::warn!(%error, "Last.fm smoke could not queue scrobble"),
         (_, Err(error)) => tracing::warn!(%error, "Last.fm smoke client is invalid"),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::is_loopback_smoke_root;
-
-    #[test]
-    fn smoke_api_override_accepts_only_explicit_loopback_http_ports() {
-        assert!(is_loopback_smoke_root("http://127.0.0.1:8123"));
-        assert!(is_loopback_smoke_root("http://[::1]:8123/api"));
-        assert!(!is_loopback_smoke_root("https://api.listenbrainz.org"));
-        assert!(!is_loopback_smoke_root("http://127.0.0.1"));
-        assert!(!is_loopback_smoke_root("http://example.test:8123"));
-    }
-
-    #[test]
-    fn lastfm_production_and_non_port_urls_cannot_be_smoke_targets() {
-        assert!(!is_loopback_smoke_root(
-            "https://ws.audioscrobbler.com/2.0/"
-        ));
-        assert!(!is_loopback_smoke_root("http://[::1]/2.0/"));
-        assert!(is_loopback_smoke_root("http://127.0.0.1:9876/2.0/"));
     }
 }

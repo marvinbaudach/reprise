@@ -1,10 +1,12 @@
-//! The stdio MCP server: two resources and two tools over `reprise-core`.
+//! The stdio MCP server over `reprise-core`, plus feature-gated live playback
+//! and queue controls over the running app's local D-Bus interface.
 //!
-//! Resources: `reprise://library/summary`, `reprise://playlists`.
-//! Tools: `music_search_tracks` (read), `music_create_playlist` (write, gated
-//! on the `playlist:create` capability). All blocking database work runs on
-//! `spawn_blocking`; the handler itself holds only the database path and the
-//! startup capability snapshot, so it stays `Send + Sync`.
+//! Resources: `reprise://library/summary`, `reprise://playlists`, and
+//! `reprise://concerts`. Tools: `music_search_tracks` (read),
+//! `music_create_playlist` (write, gated on the `playlist:create` capability).
+//! All blocking database and bus work runs on `spawn_blocking`; the handler
+//! itself holds only paths and startup capability snapshots, so it stays
+//! `Send + Sync`.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -21,23 +23,30 @@ use rmcp::{tool, tool_handler, tool_router, ErrorData, RoleServer, ServerHandler
 
 use crate::data;
 use crate::dto::{
-    CreateInstrumentalParams, CreatePlaylistParams, JobStatusParams, SearchTracksParams,
+    BrowseLibraryParams, CreateInstrumentalParams, CreatePlaylistParams, GetPlaylistParams,
+    JobStatusParams, SearchTracksParams, UpdatePlaylistParams,
 };
 #[cfg(feature = "mpris")]
-use crate::dto::{PlayParams, PlaybackControlParams};
+use crate::dto::{
+    PlayParams, PlaybackControlParams, PlaybackStateParams, QueueParams, SetPlaybackParams,
+};
 use crate::error;
 
 /// URI of the library-summary resource.
 pub const RESOURCE_LIBRARY_SUMMARY: &str = "reprise://library/summary";
 /// URI of the playlist-listing resource.
 pub const RESOURCE_PLAYLISTS: &str = "reprise://playlists";
+/// URI of the filtered upcoming-concert listing.
+pub const RESOURCE_CONCERTS: &str = "reprise://concerts";
 
 const RESOURCE_MIME_JSON: &str = "application/json";
 
-const SERVER_INSTRUCTIONS: &str = "Reprise local music library. Read-only tools \
-    and resources expose track metadata (never file paths); \
-    `music_create_playlist` creates a new manual playlist and requires the \
-    'playlist:create' capability, which is off by default. \
+const SERVER_INSTRUCTIONS: &str = "Reprise local music library and player. \
+    Read-only tools and resources expose path-free track, artist, album, and \
+    playlist metadata. Playlist creation and safe rename/append operations use \
+    separate opt-in capabilities. Playback tools expose transport, live state, \
+    volume, seek, shuffle, repeat, targeted play, and a bounded Play Next queue; \
+    they require the running Reprise app. \
     `music_create_instrumental` queues experimental vocal-removal renders of \
     explicit tracks (requires the 'ai:create' capability, off by default) and \
     returns immediately with job ids; `music_get_job_status` reports their \
@@ -49,25 +58,41 @@ pub struct RepriseServer {
     db_path: Arc<PathBuf>,
     staging_path: Arc<PathBuf>,
     write_granted_at_startup: bool,
+    playlist_manage_granted_at_startup: bool,
     ai_create_granted_at_startup: bool,
     tool_router: ToolRouter<Self>,
 }
 
 impl RepriseServer {
+    #[cfg(feature = "mpris")]
+    async fn playback_allowed(&self) -> Result<Option<CallToolResult>, ErrorData> {
+        let path = self.db_path.clone();
+        let allowed = tokio::task::spawn_blocking(move || data::playback_allowed(path.as_path()))
+            .await
+            .map_err(|error| error::join_error(&error))?;
+        match allowed {
+            Ok(true) => Ok(None),
+            Ok(false) => Ok(Some(error::playback_denied())),
+            Err(err) => error::into_tool_outcome(err).map(Some),
+        }
+    }
+
     /// Builds a handler bound to `db_path` (and `staging_path` for the AI job
-    /// queue). `write_granted_at_startup` / `ai_create_granted_at_startup` are
-    /// the `playlist:create` / `ai:create` snapshots taken during startup (the
-    /// restart half of the D18 / Beschluss 7 gate).
+    /// queue). The three booleans are startup snapshots for the write-class
+    /// capabilities (`playlist:create`, `playlist:manage`, `ai:create`) — the
+    /// restart half of the D18 / Beschluss 7 gate.
     pub fn new(
         db_path: PathBuf,
         staging_path: PathBuf,
         write_granted_at_startup: bool,
+        playlist_manage_granted_at_startup: bool,
         ai_create_granted_at_startup: bool,
     ) -> Self {
         Self {
             db_path: Arc::new(db_path),
             staging_path: Arc::new(staging_path),
             write_granted_at_startup,
+            playlist_manage_granted_at_startup,
             ai_create_granted_at_startup,
             tool_router: Self::build_tool_router(),
         }
@@ -121,6 +146,95 @@ impl RepriseServer {
         }
     }
 
+    /// Paginated, path-free artist discovery.
+    #[tool(
+        name = "music_search_artists",
+        description = "Search artists in the present library by case-insensitive \
+            substring. Returns artist name, track count, album count and total \
+            plays — never file paths. Paginate with limit and offset."
+    )]
+    async fn music_search_artists(
+        &self,
+        Parameters(params): Parameters<BrowseLibraryParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let path = self.db_path.clone();
+        let outcome = tokio::task::spawn_blocking(move || {
+            data::search_artists(path.as_path(), &params.query, params.limit, params.offset)
+        })
+        .await
+        .map_err(|error| error::join_error(&error))?;
+
+        match outcome {
+            Ok(result) => error::structured_ok(
+                &result,
+                format!("{} of {} matching artist(s)", result.returned, result.total),
+            ),
+            Err(err) => error::into_tool_outcome(err),
+        }
+    }
+
+    /// Paginated, path-free album discovery.
+    #[tool(
+        name = "music_search_albums",
+        description = "Search albums and album artists in the present library \
+            by case-insensitive substring. Returns display metadata and counts \
+            — never file paths. Paginate with limit and offset."
+    )]
+    async fn music_search_albums(
+        &self,
+        Parameters(params): Parameters<BrowseLibraryParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let path = self.db_path.clone();
+        let outcome = tokio::task::spawn_blocking(move || {
+            data::search_albums(path.as_path(), &params.query, params.limit, params.offset)
+        })
+        .await
+        .map_err(|error| error::join_error(&error))?;
+
+        match outcome {
+            Ok(result) => error::structured_ok(
+                &result,
+                format!("{} of {} matching album(s)", result.returned, result.total),
+            ),
+            Err(err) => error::into_tool_outcome(err),
+        }
+    }
+
+    /// Reads one manual playlist's membership in durable order.
+    #[tool(
+        name = "music_get_playlist",
+        description = "Read one manual playlist by id, including a paginated \
+            page of track display metadata in playlist order. Read-only and \
+            never returns file paths."
+    )]
+    async fn music_get_playlist(
+        &self,
+        Parameters(params): Parameters<GetPlaylistParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let path = self.db_path.clone();
+        let outcome = tokio::task::spawn_blocking(move || {
+            data::playlist_contents(
+                path.as_path(),
+                params.playlist_id,
+                params.limit,
+                params.offset,
+            )
+        })
+        .await
+        .map_err(|error| error::join_error(&error))?;
+
+        match outcome {
+            Ok(result) => error::structured_ok(
+                &result,
+                format!(
+                    "{} of {} track(s) in playlist '{}'",
+                    result.returned, result.total, result.playlist.name
+                ),
+            ),
+            Err(err) => error::into_tool_outcome(err),
+        }
+    }
+
     /// Creates a new manual playlist from an explicit, ordered list of track
     /// ids. Never overwrites or deletes an existing playlist (Beschluss 2).
     #[tool(
@@ -150,6 +264,39 @@ impl RepriseServer {
                 );
                 error::structured_ok(&result, summary)
             }
+            Err(err) => error::into_tool_outcome(err),
+        }
+    }
+
+    /// Applies one non-destructive update to an existing manual playlist.
+    #[tool(
+        name = "music_update_playlist",
+        description = "Update an existing manual playlist without deleting \
+            anything. Supported actions: rename, or add_tracks (ordered append; \
+            duplicates allowed; at most 500 ids). Requires the separate \
+            'playlist:manage' capability, which is off by default. Removing \
+            tracks and deleting playlists are intentionally not supported."
+    )]
+    async fn music_update_playlist(
+        &self,
+        Parameters(params): Parameters<UpdatePlaylistParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let path = self.db_path.clone();
+        let granted = self.playlist_manage_granted_at_startup;
+        let outcome = tokio::task::spawn_blocking(move || {
+            crate::playlist_update::update(path.as_path(), granted, &params)
+        })
+        .await
+        .map_err(|error| error::join_error(&error))?;
+
+        match outcome {
+            Ok(result) => error::structured_ok(
+                &result,
+                format!(
+                    "Updated playlist '{}' (id {}): {} affected",
+                    result.name, result.playlist_id, result.affected
+                ),
+            ),
             Err(err) => error::into_tool_outcome(err),
         }
     }
@@ -271,14 +418,8 @@ impl RepriseServer {
         &self,
         Parameters(params): Parameters<PlaybackControlParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        let path = self.db_path.clone();
-        let allowed = tokio::task::spawn_blocking(move || data::playback_allowed(path.as_path()))
-            .await
-            .map_err(|error| error::join_error(&error))?;
-        match allowed {
-            Ok(false) => return Ok(error::playback_denied()),
-            Err(err) => return error::into_tool_outcome(err),
-            Ok(true) => {}
+        if let Some(denial) = self.playback_allowed().await? {
+            return Ok(denial);
         }
         let Some(action) = crate::playback::TransportAction::from_str(&params.action) else {
             return Ok(error::tool_error(format!(
@@ -290,6 +431,111 @@ impl RepriseServer {
             .await
             .map_err(|error| error::join_error(&error))?;
         error::playback_outcome(result, format!("Playback: {}", params.action))
+    }
+
+    /// Reads path-free live state from the running app's MPRIS player.
+    #[tool(
+        name = "music_get_playback_state",
+        description = "Read the running Reprise app's current playback status, \
+            track metadata, position, volume, shuffle and repeat state. Never \
+            returns file or cover paths. Requires the app running and the \
+            'playback:control' capability (on by default)."
+    )]
+    async fn music_get_playback_state(
+        &self,
+        Parameters(_params): Parameters<PlaybackStateParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if let Some(denial) = self.playback_allowed().await? {
+            return Ok(denial);
+        }
+        let result = tokio::task::spawn_blocking(crate::playback::state)
+            .await
+            .map_err(|error| error::join_error(&error))?;
+        error::playback_structured_outcome(result, |state| format!("Playback is {}", state.status))
+    }
+
+    /// Changes a live player setting through MPRIS.
+    #[tool(
+        name = "music_set_playback",
+        description = "Change a running Reprise playback setting. Actions: \
+            set_volume with volume 0..1; seek with a relative offset_seconds; \
+            set_shuffle with enabled; set_repeat with repeat off, all or one. \
+            Requires the app running and the 'playback:control' capability."
+    )]
+    async fn music_set_playback(
+        &self,
+        Parameters(params): Parameters<SetPlaybackParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if let Some(denial) = self.playback_allowed().await? {
+            return Ok(denial);
+        }
+        let setting = match crate::playback::PlaybackSetting::from_params(&params) {
+            Ok(setting) => setting,
+            Err(message) => return Ok(error::tool_error(message)),
+        };
+        let result = tokio::task::spawn_blocking(move || crate::playback::set(setting))
+            .await
+            .map_err(|error| error::join_error(&error))?;
+        match result {
+            Ok(summary) => error::playback_outcome(Ok(()), summary),
+            Err(error) => error::playback_outcome(Err(error), String::new()),
+        }
+    }
+
+    /// Reads or safely mutates the running app's manual Play Next queue.
+    #[tool(
+        name = "music_queue",
+        description = "Read or update the running Reprise Play Next queue. \
+            Actions: status; add_next or add_last with track_ids; clear. Clear \
+            removes only manual Play Next entries and preserves the playback \
+            context. Status returns at most 200 ids per section plus complete \
+            totals. Requires the 'playback:control' capability."
+    )]
+    async fn music_queue(
+        &self,
+        Parameters(params): Parameters<QueueParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if let Some(denial) = self.playback_allowed().await? {
+            return Ok(denial);
+        }
+        let action = match crate::playback::QueueAction::from_params(&params) {
+            Ok(action) => action,
+            Err(message) => return Ok(error::tool_error(message)),
+        };
+        if action == crate::playback::QueueAction::Status {
+            let result = tokio::task::spawn_blocking(crate::playback::queue_state)
+                .await
+                .map_err(|error| error::join_error(&error))?;
+            return error::playback_structured_outcome(result, |state| {
+                format!(
+                    "{} Play Next and {} context track(s)",
+                    state.play_next_total, state.context_total
+                )
+            });
+        }
+        let track_ids = match &action {
+            crate::playback::QueueAction::AddNext(ids)
+            | crate::playback::QueueAction::AddLast(ids) => Some(ids.clone()),
+            crate::playback::QueueAction::Status | crate::playback::QueueAction::Clear => None,
+        };
+        if let Some(track_ids) = track_ids {
+            let path = self.db_path.clone();
+            let outcome = tokio::task::spawn_blocking(move || {
+                data::validate_present_track_ids(path.as_path(), &track_ids)
+            })
+            .await
+            .map_err(|error| error::join_error(&error))?;
+            if let Err(err) = outcome {
+                return error::into_tool_outcome(err);
+            }
+        }
+        let result = tokio::task::spawn_blocking(move || crate::playback::queue_mutate(action))
+            .await
+            .map_err(|error| error::join_error(&error))?;
+        match result {
+            Ok(summary) => error::playback_outcome(Ok(()), summary),
+            Err(error) => error::playback_outcome(Err(error), String::new()),
+        }
     }
 
     /// Starts playing an explicit list of tracks or a whole playlist in the
@@ -356,6 +602,12 @@ impl ServerHandler for RepriseServer {
             Resource::new(RESOURCE_PLAYLISTS, "playlists")
                 .with_description("Manual playlists: id, name and track count (no paths).")
                 .with_mime_type(RESOURCE_MIME_JSON),
+            Resource::new(RESOURCE_CONCERTS, "concerts")
+                .with_description(
+                    "Upcoming concerts for library artists after saved filters: dates, \
+                     venues, cities, ticket links. No file paths.",
+                )
+                .with_mime_type(RESOURCE_MIME_JSON),
         ]))
     }
 
@@ -378,6 +630,13 @@ impl ServerHandler for RepriseServer {
             RESOURCE_PLAYLISTS => {
                 let outcome =
                     tokio::task::spawn_blocking(move || data::list_playlists(path.as_path()))
+                        .await
+                        .map_err(|error| error::join_error(&error))?;
+                error::serialize_resource(&outcome.map_err(error::resource_error)?)?
+            }
+            RESOURCE_CONCERTS => {
+                let outcome =
+                    tokio::task::spawn_blocking(move || data::list_concerts(path.as_path()))
                         .await
                         .map_err(|error| error::join_error(&error))?;
                 error::serialize_resource(&outcome.map_err(error::resource_error)?)?

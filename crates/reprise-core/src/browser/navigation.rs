@@ -20,6 +20,8 @@ pub enum SidebarTarget {
     Missing,
     ImportErrors,
     MyStats,
+    Releases,
+    Concerts,
     Conversions,
     Device(String),
 }
@@ -34,6 +36,9 @@ pub enum NavigationIntent {
     OpenArtist {
         artist: ArtistKey,
         anchor_track_id: Option<i64>,
+    },
+    OpenGenre {
+        genre: String,
     },
     RevealTrack {
         origin: Box<BrowserPlace>,
@@ -163,6 +168,16 @@ impl BrowserNavigation {
                     fresh_target_state(anchor_track_id),
                 ))
             }
+            NavigationIntent::OpenGenre { genre } => {
+                let genre = genre.trim();
+                if genre.is_empty() {
+                    return None;
+                }
+                self.go_metadata_scope(BrowserPlace::tracks(
+                    TrackCollection::Library(LibraryScope::Genre(genre.to_owned())),
+                    TrackViewState::default(),
+                ))
+            }
             NavigationIntent::RevealTrack { origin, track_id } => {
                 if track_id <= 0 {
                     return None;
@@ -187,6 +202,8 @@ impl BrowserNavigation {
             SidebarTarget::Missing => fresh_tracks(TrackCollection::Missing),
             SidebarTarget::ImportErrors => BrowserPlace::ImportErrors,
             SidebarTarget::MyStats => BrowserPlace::MyStats,
+            SidebarTarget::Releases => BrowserPlace::Releases,
+            SidebarTarget::Concerts => BrowserPlace::Concerts,
             SidebarTarget::Conversions => BrowserPlace::Conversions,
             SidebarTarget::Device(serial) if !serial.trim().is_empty() => BrowserPlace::Device {
                 serial: serial.trim().to_owned(),
@@ -299,7 +316,10 @@ fn same_destination(left: &BrowserPlace, right: &BrowserPlace) -> bool {
             left.collection == right.collection
         }
         (BrowserPlace::ImportErrors, BrowserPlace::ImportErrors)
-        | (BrowserPlace::MyStats, BrowserPlace::MyStats) => true,
+        | (BrowserPlace::MyStats, BrowserPlace::MyStats)
+        | (BrowserPlace::Releases, BrowserPlace::Releases)
+        | (BrowserPlace::Concerts, BrowserPlace::Concerts)
+        | (BrowserPlace::Conversions, BrowserPlace::Conversions) => true,
         (BrowserPlace::Device { serial: left }, BrowserPlace::Device { serial: right }) => {
             left == right
         }
@@ -327,6 +347,22 @@ mod tests {
             TrackCollection::Library(LibraryScope::All),
             TrackViewState::default(),
         )
+    }
+
+    #[test]
+    fn concerts_and_releases_are_independent_sidebar_places() {
+        let mut navigation = BrowserNavigation::new(library());
+
+        let releases = navigation
+            .navigate(NavigationIntent::Sidebar(SidebarTarget::Releases))
+            .unwrap();
+        assert_eq!(releases.to, BrowserPlace::Releases);
+
+        let concerts = navigation
+            .navigate(NavigationIntent::Sidebar(SidebarTarget::Concerts))
+            .unwrap();
+        assert_eq!(concerts.to, BrowserPlace::Concerts);
+        assert_eq!(navigation.back_len(), 2);
     }
 
     #[test]
@@ -433,6 +469,32 @@ mod tests {
             )))
         );
         assert_eq!(artist.track_state(), Some(&TrackViewState::default()));
+    }
+
+    #[test]
+    fn fil_1c_genre_scope_uses_the_same_history_path_as_other_library_scopes() {
+        let mut navigation = BrowserNavigation::new(library());
+        let genre = navigation
+            .navigate(NavigationIntent::OpenGenre {
+                genre: "  Metalcore  ".into(),
+            })
+            .unwrap()
+            .to;
+
+        assert_eq!(
+            genre.collection(),
+            Some(&TrackCollection::Library(LibraryScope::Genre(
+                "Metalcore".into()
+            )))
+        );
+        assert_eq!(
+            navigation.navigate(NavigationIntent::Back).unwrap().to,
+            library()
+        );
+        assert_eq!(
+            navigation.navigate(NavigationIntent::Forward).unwrap().to,
+            genre
+        );
     }
 
     #[test]

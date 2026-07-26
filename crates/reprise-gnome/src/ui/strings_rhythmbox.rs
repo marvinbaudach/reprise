@@ -8,8 +8,6 @@ macro_rules! N_ {
     };
 }
 
-pub const RHYTHMBOX_IMPORT_DESCRIPTION: &str =
-    N_!("Import ratings, play counts, date-added and last-played information, playlists, and optionally the column layout");
 pub const RHYTHMBOX_IMPORT_RATINGS: &str = N_!("Ratings");
 pub const RHYTHMBOX_IMPORT_DATE_ADDED: &str = N_!("Date added");
 pub const RHYTHMBOX_PLAY_COUNTS_AND_LAST_PLAYED: &str = N_!("Play counts & last played");
