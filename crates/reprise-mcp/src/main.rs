@@ -11,6 +11,7 @@ mod capability;
 mod catalog_resources;
 mod config;
 mod data;
+mod data_concerts;
 mod dto;
 mod error;
 #[cfg(feature = "mpris")]
