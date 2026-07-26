@@ -942,7 +942,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   „lyrics · tags"; keine Lyrics → dezenter Leerzustand ohne Such-CTA;
   Fehler → Inline-Retry im Tab. Instrumental-Gap (> 10 s ohne Zeile) hält
   die aktive Zeile und dimmt sie auf 60 %, statt das Highlight zu verlieren.
-- **NPP-10** [aktiv] [gtk] — Trackwechsel ist kein Ortswechsel: Cover,
+- **NPP-10** [ersetzt durch NPP-13] — Trackwechsel ist kein Ortswechsel: Cover,
   Titelblock, Glow und Tab-Inhalt crossfaden **gemeinsam** in einem
   Übergang (Standard-Token, MOT-5), niemals als Slide; die Lyrics starten
   danach bei Zeile 0 und positionieren sie gemäß LYR-4.
@@ -1344,6 +1344,17 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   öffnet oder schließt, gewinnt dieser persistierte Zustand bei allen
   folgenden Starts (NPP-4); der neue Default überschreibt keine bestehende
   Präferenz.
+- **NPP-13** [aktiv] [gtk] — Ein Trackwechsel baut die rechte Spalte nicht
+  sichtbar neu auf: Tabs, Queue bzw. aktiver Tab, Footer und Panel-Fläche
+  bleiben durchgehend stehen. Nur das Album-Cover wechselt mit dem
+  Standard-Token; das alte Cover liegt dafür über dem vollständig
+  aufgelösten neuen Cover oder Platzhalter und blendet erst dann aus. Die
+  Queue aktualisiert ihre Zeilen unabhängig davon, sodass der abgespielte
+  Titel nach oben aus der Liste rückt. Der vom Cover abgeleitete
+  Playback-Akzent folgt weiterhin separat der Ambient-Transition aus MOT-1;
+  Unterbrechungen folgen MOT-6. Neu geladene synchronisierte Lyrics starten
+  bei Zeile 0 und positionieren sie gemäß LYR-4. Ohne Animationen wechseln
+  Cover und Inhalt hart (MOT-7).
 
 ## V. My Stats
 
