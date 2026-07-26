@@ -23,16 +23,24 @@ const ACTION: &str = "create-instrumental";
 /// testable without a display.
 pub(in crate::ui) fn create_instrumental_visible(
     instrumental_enabled: bool,
+    production_backend_available: bool,
     selection: &SelectionSummary,
 ) -> bool {
-    instrumental_enabled && selection.count > 0 && !selection.all_missing
+    instrumental_enabled
+        && production_backend_available
+        && selection.count > 0
+        && !selection.all_missing
 }
 
 /// Appends the "Create instrumental" section to the context menu when the gate
 /// permits it.
 pub(super) fn append_section(menu: &gio::Menu, shared: &Rc<Shared>, summary: &SelectionSummary) {
     let instrumental_enabled = crate::ui::instrumental::experimental_enabled(&shared.conn.borrow());
-    if !create_instrumental_visible(instrumental_enabled, summary) {
+    if !create_instrumental_visible(
+        instrumental_enabled,
+        crate::ui::instrumental::production_backend_compiled(),
+        summary,
+    ) {
         return;
     }
     let section = gio::Menu::new();
@@ -65,7 +73,11 @@ fn handle(shared: &Rc<Shared>) {
         return;
     }
     let staging = reprise_core::ai_staging::StagingStore::with_default_dir();
-    let model_id = crate::ui::instrumental::app_model_id();
+    let Some(model_id) = crate::ui::instrumental::app_model_id() else {
+        tracing::error!("context menu: production stem backend is unavailable");
+        show_toast(shared, &strings::create_instrumental_failed_toast());
+        return;
+    };
     let now = crate::ui::instrumental::now_unix();
     let outcome = {
         let conn = shared.conn.borrow();
@@ -129,25 +141,29 @@ mod tests {
     fn inst_1_create_instrumental_visible_iff_experimental_and_present_selection() {
         let present = selection(2);
         assert!(
-            create_instrumental_visible(true, &present),
+            create_instrumental_visible(true, true, &present),
             "shown for a present selection when experimental is on"
         );
         assert!(
-            !create_instrumental_visible(false, &present),
+            !create_instrumental_visible(false, true, &present),
             "hidden while the experimental switch is off (INST-11)"
+        );
+        assert!(
+            !create_instrumental_visible(true, false, &present),
+            "a user build without a production backend never offers a fake conversion"
         );
         let all_missing = SelectionSummary {
             all_missing: true,
             ..present
         };
         assert!(
-            !create_instrumental_visible(true, &all_missing),
+            !create_instrumental_visible(true, true, &all_missing),
             "a missing file cannot be separated"
         );
         let empty = SelectionSummary {
             count: 0,
             ..present
         };
-        assert!(!create_instrumental_visible(true, &empty));
+        assert!(!create_instrumental_visible(true, true, &empty));
     }
 }

@@ -7,10 +7,10 @@
 //!
 //! This module consumes the **reprise-core** facades — `ai_jobs`, `ai_staging`,
 //! `ai_promotion`, `ai_conversion`, `provenance`, `stem_separation` (the trait +
-//! the deterministic `FakeStemBackend`). The worker host is generic over the
-//! `StemSeparationBackend` trait, so the **default build never links
-//! reprise-stems** and runs the Fake (the enforced architecture probe + CI
-//! check). P3b wires the real backend behind the **`stem-backend` cargo
+//! a test-only deterministic `FakeStemBackend`). The worker host is generic
+//! over the `StemSeparationBackend` trait, so the **default build never links
+//! reprise-stems** and cannot render instrumentals. P3b wires the real backend
+//! behind the **`stem-backend` cargo
 //! feature**: the GTK app is a sanctioned binary host for reprise-stems
 //! (LICENSING.md; `scripts/check-architecture.sh`), so under that feature
 //! [`app_backend`] returns the real, lazily-provisioned `OrtStemBackend`.
@@ -70,32 +70,38 @@ pub(in crate::ui) fn set_experimental_enabled(
 pub(in crate::ui) type SourceResolver =
     Arc<dyn Fn(&Connection, i64) -> Option<PathBuf> + Send + Sync>;
 
-/// The stem-separation backend this app build runs. The default build uses the
-/// deterministic [`reprise_core::stem_separation::FakeStemBackend`]; the
-/// `stem-backend` feature swaps in the real, lazily-provisioned
-/// `stem_backend::LazyOrtBackend`. The worker host is generic over the trait,
-/// so only this constructor and [`app_model_id`] differ between builds.
+/// Whether this build contains the production stem-separation backend.
+///
+/// This is deliberately a compile-time capability: a normal build must not
+/// expose a conversion action that can silently fall back to test behavior.
+pub(in crate::ui) const fn production_backend_compiled() -> bool {
+    cfg!(feature = "stem-backend")
+}
+
+/// The stem-separation backend this app build runs. A build without the
+/// `stem-backend` feature has no app backend; the deterministic fake remains
+/// available only to tests that construct a worker explicitly.
 #[cfg(not(feature = "stem-backend"))]
-pub(in crate::ui) fn app_backend() -> Box<dyn StemSeparationBackend + Send> {
-    Box::new(reprise_core::stem_separation::FakeStemBackend::new())
+pub(in crate::ui) fn app_backend() -> Option<Box<dyn StemSeparationBackend + Send>> {
+    None
 }
 
 #[cfg(feature = "stem-backend")]
-pub(in crate::ui) fn app_backend() -> Box<dyn StemSeparationBackend + Send> {
-    Box::new(stem_backend::LazyOrtBackend::new())
+pub(in crate::ui) fn app_backend() -> Option<Box<dyn StemSeparationBackend + Send>> {
+    Some(Box::new(stem_backend::LazyOrtBackend::new()))
 }
 
 /// The model id every enqueue stamps as the job's `params_fingerprint`. It must
 /// match the id of the backend [`app_backend`] produces output with, so dedup
 /// (Beschluss 16) and the `REPRISE_AI_MODEL` provenance tag stay consistent.
 #[cfg(not(feature = "stem-backend"))]
-pub(in crate::ui) fn app_model_id() -> String {
-    reprise_core::stem_separation::FakeStemBackend::new().model_id()
+pub(in crate::ui) fn app_model_id() -> Option<String> {
+    None
 }
 
 #[cfg(feature = "stem-backend")]
-pub(in crate::ui) fn app_model_id() -> String {
-    reprise_stems::model::HTDEMUCS_FP32.model_id.to_string()
+pub(in crate::ui) fn app_model_id() -> Option<String> {
+    Some(reprise_stems::model::HTDEMUCS_FP32.model_id.to_string())
 }
 
 thread_local! {
@@ -215,6 +221,20 @@ mod stem_backend {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(not(feature = "stem-backend"))]
+    #[test]
+    fn user_build_without_stem_backend_exposes_no_fake_backend_or_model() {
+        assert!(
+            app_backend().is_none(),
+            "a user build must never render through the test-only fake backend"
+        );
+        assert_eq!(
+            app_model_id(),
+            None,
+            "a user build without a production backend cannot stamp a fake model identity"
+        );
+    }
 
     #[test]
     fn db_source_resolver_resolves_a_seeded_track_and_none_for_a_missing_one() {

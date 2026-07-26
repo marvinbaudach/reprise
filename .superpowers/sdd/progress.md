@@ -74,6 +74,12 @@ Point 3: complete (commit 5bc3b56b8b, base 5786b63f97, verified provider credent
 Sidebar progress follow-up: complete (this commit, base 5bc3b56b8b, pinned the shared progress activity below Issues at the sidebar bottom and added an FB-2a allocation regression)
 MCP catalog follow-up: complete (this commit, base e7a208112e, added complete path-free Concerts cache and Releases history resources while preserving the filtered Concerts contract and never exposing provider credentials)
 
+# Instrumental production readiness
+
+Base: `3fc0b2bf8a`
+
+Task I1: complete (this commit, base 3fc0b2bf8a, removed the test-only fake backend from user builds and gated the context action and worker on a compiled production backend)
+
 # Ticketmaster bundled build credential
 
 Base: `3fc0b2bf8a`

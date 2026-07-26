@@ -70,9 +70,13 @@ pub(in crate::ui) fn install(deps: &ConversionWiring<'_>) {
         tracing::warn!(%error, "instrumental: could not create staging dir");
     }
 
+    let Some(backend) = super::app_backend() else {
+        tracing::warn!("instrumental: production stem backend is not compiled in");
+        return;
+    };
     let worker = InstrumentalWorker::new(
         deps.db_path.to_path_buf(),
-        super::app_backend(),
+        backend,
         staging.clone(),
         super::db_source_resolver(),
         std::process::id() as i64,
