@@ -131,6 +131,8 @@ pub(in crate::ui) fn parse_smoke_source(value: &str) -> Option<ViewSource> {
         "my_stats" => Some(ViewSource::MyStats),
         "concerts" => Some(ViewSource::Concerts),
         "releases" => Some(ViewSource::Releases),
+        "podcasts" => Some(ViewSource::Podcasts),
+        "radio" => Some(ViewSource::Radio),
         _ => value
             .strip_prefix("playlist:")
             .and_then(|id| id.parse::<i64>().ok())
@@ -211,7 +213,11 @@ pub(in crate::ui) fn arm_smoke_source(shared: &Rc<Shared>) {
         };
         if matches!(
             source,
-            ViewSource::MyStats | ViewSource::Concerts | ViewSource::Releases
+            ViewSource::MyStats
+                | ViewSource::Concerts
+                | ViewSource::Releases
+                | ViewSource::Podcasts
+                | ViewSource::Radio
         ) {
             tracing::debug!(
                 "{SMOKE_SOURCE_ENV_VAR} detail source delegated to the window source router"
@@ -282,5 +288,7 @@ mod tests {
         assert_eq!(parse_smoke_source("my_stats"), Some(ViewSource::MyStats));
         assert_eq!(parse_smoke_source("concerts"), Some(ViewSource::Concerts));
         assert_eq!(parse_smoke_source("releases"), Some(ViewSource::Releases));
+        assert_eq!(parse_smoke_source("podcasts"), Some(ViewSource::Podcasts));
+        assert_eq!(parse_smoke_source("radio"), Some(ViewSource::Radio));
     }
 }

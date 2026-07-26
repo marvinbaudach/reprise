@@ -2279,7 +2279,7 @@ UX-Grammatik für Ort, Filter, Hinzufügen und reversibles Entfernen. Externe
 Medien bleiben strukturell außerhalb der Track-Queue und der
 Hörstatistik.
 
-- **SRC-1** [geplant] [gtk] — Podcasts und Radio stehen in der
+- **SRC-1** [aktiv] [gtk] — Podcasts und Radio stehen in der
   LIBRARY-Sektion zwischen Music und Queue und erscheinen nur bei aktivem
   Modul. Der Podcast-Zähler zeigt ungespielte Episoden, der Radio-Zähler
   Favoriten; null bleibt unsichtbar. Radio ist standardmäßig aktiv, weil es
