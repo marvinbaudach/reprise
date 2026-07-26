@@ -371,6 +371,11 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   anbieterspezifisch. Mit gebündelten App-Zugangsdaten bietet Last.fm den
   normalen Browser-Login direkt an; eigene API-Zugangsdaten liegen
   eingeklappt unter „Advanced setup".
+- **SET-7** [aktiv] [gtk] — „New Releases" und „Concerts" sind gleichrangige
+  Preferences-Hauptseiten in der vertikalen Navigation. Für diese beiden
+  Features behält die Plugins-Seite nur die Aktivierungsschalter; Scope-,
+  Provider-, Location- und Similar-Optionen stehen ausschließlich auf den
+  jeweiligen Hauptseiten und sind bei deaktiviertem Modul nicht bedienbar.
 
 ## G. Feedback-Vokabular
 
@@ -2287,15 +2292,28 @@ Dateien.
   Ticket-Zelle öffnen dasselbe externe Ziel: Offer-URL, sonst Event-Seite.
   Ohne beides ist die Zelle leer und Aktivierung ein No-op mit Tooltip. Es
   gibt keinen Play-Pfad.
-- **CONC-4** [aktiv] [gtk] — Ohne Credential zeigt Concerts eine
-  StatusPage mit Preferences-Deep-Link und startet keinen Fetch. Nie
-  gefetcht bietet genau „Fetch now"; null Treffer mit Filtern genau „Show
-  all". Offline oder Fehler lassen Cache und „Updated X ago" sichtbar und
-  melden den Fehler ausschließlich inline im Footer.
-- **CONC-5** [aktiv] [core] — Netz läuft ausschließlich im Worker. Trigger
-  sind View-Open-Staleness (24 h plus Jitter), der stündliche Due-Check und
-  „Fetch now". Track-Wechsel und Navigation lesen nur Cache; Ergebnisse
-  werden nach MOT-2 ohne Einblendanimation eingespielt.
+- **CONC-4** [ersetzt durch CONC-4a] — Ursprünglicher Zustandsvertrag ohne
+  explizite Live-Neubewertung nach Änderungen der Concerts-Einstellungen.
+- **CONC-4a** [ersetzt durch CONC-4b] — Ursprünglicher Zustandsvertrag mit
+  Credential-Eingabehinweis und Preferences-Deep-Link.
+- **CONC-4b** [aktiv] [gtk] — Ohne Credential zeigt Concerts neutral „No
+  concert data yet" ohne Aktion; die Concerts-Sektion im Updates-Popover ist
+  nicht sichtbar. Es gibt keinen Credential-Eingabehinweis und keinen
+  Preferences-Deep-Link. Änderungen an Credentials, Location, Default-Radius,
+  Zeitraum und Similar-Einstellungen bewerten die bereits offene View, ihre
+  Sidebar-Zahl und das Updates-Popover sofort neu. Nie gefetcht bietet genau
+  „Fetch now"; null Treffer mit Filtern genau „Show all". Offline oder Fehler
+  lassen Cache und „Updated X ago" sichtbar und melden den Fehler
+  ausschließlich inline im Footer.
+- **CONC-5** [ersetzt durch CONC-5a] — Ursprünglicher Worker-Vertrag mit
+  View-Open-Staleness, Due-Check und „Fetch now" als einzigen Netz-Triggern.
+- **CONC-5a** [aktiv] [core] — Netz läuft ausschließlich im Worker oder
+  `one_shot_task`. Trigger sind View-Open-Staleness (24 h plus Jitter), der
+  stündliche Due-Check, „Fetch now" und eine explizit bestätigte
+  Credential-Prüfung. Alle Concerts-Anfragen teilen den 1-req/s-Limiter.
+  Track-Wechsel, Navigation und einzelne Credential-Tastendrücke lesen oder
+  schreiben nur lokal; Fetch-Ergebnisse werden nach MOT-2 ohne
+  Einblendanimation eingespielt.
 - **CONC-6** [aktiv] [gtk] — Similar-Zeilen tragen dimm „similar to
   {seed}" und verschwinden mit „Library artists only". Die Source-Pill ist
   sichtbar, sobald Similar aktiviert ist oder Similar-Zeilen existieren.
@@ -2304,6 +2322,100 @@ Dateien.
   Filter-Scopes und „Show all concerts (N) →". Öffnen stempelt die gesamte
   Delta-Menge beider Sektionen. Das Header-Badge summiert ungesehene Einträge
   aller aktiven, fetch-bereiten Feeds nach dem `badge_presentation`-Idiom.
+- **CONC-8** [aktiv] [core] [gtk] — Apply
+  oder Enter an einer Credential-Zeile prüft den gespeicherten Wert genau
+  einmal off-thread über den gemeinsamen Concerts-Limiter. Gültig, abgelehnt
+  und nicht verifizierbar erscheinen inline; leer setzt den Zustand ohne
+  Anfrage zurück. Die Prüfung schreibt Credential-Werte nie in Logs oder
+  Fehlermeldungen.
+- **CONC-9** [aktiv] [core] [gtk] — Ticketmaster-Credentials sind in der UI
+  weder sichtbar noch editierbar. Der Core bevorzugt einen gespeicherten
+  Altwert vor der Laufzeitumgebung und dem eingebetteten Build-Wert; leere
+  Werte zählen nicht. Bandsintown bleibt als optionale Credential-Zeile
+  unabhängig davon verfügbar.
+
+## AF. Podcasts & Radio
+
+<!-- Sektionsbuchstabe: AE ist nach der Landung von Concerts die letzte
+     vergebene Sektion; dieser Branch belegt deshalb AF. Die Regeln starten
+     geplant und werden jeweils im Implementierungs-Commit mit ihrem
+     regelbenannten Test aktiviert. REVIEW: Regelvorschlag -->
+
+Podcasts und Radio sind eigenständige Bibliotheksquellen, teilen aber eine
+UX-Grammatik für Ort, Filter, Hinzufügen und reversibles Entfernen. Externe
+Medien bleiben strukturell außerhalb der Track-Queue und der
+Hörstatistik.
+
+- **SRC-1** [aktiv] [gtk] — Podcasts und Radio stehen in der
+  LIBRARY-Sektion zwischen Music und Queue und erscheinen nur bei aktivem
+  Modul. Der Podcast-Zähler zeigt ungespielte Episoden, der Radio-Zähler
+  Favoriten; null bleibt unsichtbar. Radio ist standardmäßig aktiv, weil es
+  nur auf Nutzeraktion funkt; verbindliche Bedingung ist ein Radio-Leerzustand
+  mit genau einer direkt erreichbaren „Add station"-Aktion.
+- **SRC-2** [aktiv] [gtk] — Hinzufügen verwendet in beiden Quellen einen
+  getönten rechteckigen Button mit Plus, Beschriftung und Radius 8, niemals
+  die Chip-Form. Die gemeinsame Toolbar-Grammatik lautet Add-Button ·
+  „Add filter" · aktive löschbare Filter-Pills · Zählung rechts; Filterzeilen
+  behalten bei Zustandswechseln ihre Höhe.
+- **SRC-3** [aktiv] [gtk] — Jede Quelle besitzt genau einen Add-Dialog mit
+  genau einem Eingabefeld für Suchbegriffe oder URL. Suche liefert gruppierte
+  Ergebnisse mit Zeilenaktionen; eine erkannte URL führt über Preview und
+  Optionen zu einer Bestätigung. Netz- und Subprozessarbeit startet nur auf
+  Submit und läuft nie auf dem GTK-Main-Loop.
+- **SRC-4** [aktiv] [gtk] — Entfernen wirkt sofort, bleibt zehn Sekunden
+  tombstoned und ist über einen hoch priorisierten Undo-Toast reversibel.
+  Kontextmenü und Hover-Star bieten dieselbe destruktive Aktion; „Play Next"
+  und „Add to Queue" fehlen vollständig. Podcast-Downloads werden beim
+  Unsubscribe nie still gelöscht: der Commit-Toast meldet behaltene Dateien
+  und bietet ausschließlich Verschieben in den Papierkorb an; mehrere
+  Unsubscribes werden aggregiert.
+- **POD-1** [aktiv] [core] — Episodenstatus ist pure Ableitung: Played
+  genau bei gesetztem `played_at`, sonst Resume bei `position_ms > 0`, sonst
+  New. Ein Episodenende setzt Played und löscht die Position. Die Tabelle
+  lautet Date · Episode · Show · Length · Source · Status und sortiert
+  standardmäßig nach Datum absteigend.
+- **POD-2** [aktiv] [core] — RSS ist die Daten-API:
+  enclosure/guid/pubDate/itunes:duration; GUID, ersatzweise Enclosure-URL und
+  bei YouTube die Video-ID, ist die einzige Episodenidentität für Dedupe,
+  Resume, Played und Download. Conditional Refresh läuft mit Intervall und
+  deterministischem Jitter auf einem Worker; Upserts erhalten Seen- und
+  Positionszustand. Automatischer Refresh verlangt aktives Modul, mindestens
+  ein Abo, fällige TTL und eine nicht getaktete Verbindung.
+- **POD-3** [aktiv] [core] — YouTube liegt ausschließlich hinter der
+  yt-dlp-Providergrenze: Flat-Playlist zum Auflisten, Audioauflösung erst beim
+  Abspielen und nie persistiert. Fehler werden lesbar klassifiziert und
+  crashen nie. Fehlt das Binary, bleibt das Setting unverändert und die
+  Degradierung wird am standardmäßig aktiven YouTube-Schalter sichtbar.
+- **POD-4** [aktiv] [gtk] — Episoden starten an der gespeicherten Position;
+  diese wird gedrosselt sowie bei Pause, Stop, Wechsel und Beenden
+  persistiert. Nach dem Ende bietet die App die nächste ungespielte Episode
+  derselben Show nach Datum per Toast und persistentem Player-Bar-Button an,
+  spielt sie aber nie automatisch. Podcast-Sessions erzeugen weder Scrobbles
+  noch `listen_events` oder Play-Counts.
+- **POD-5** [aktiv] [gtk] — Downloads sind pro Abo opt-in, liegen im
+  XDG-Datenpfad der App unter einem GUID-stabilen Pfad, folgen der gewählten
+  Cleanup-Policy und werden offline bevorzugt lokal abgespielt.
+- **RAD-1** [aktiv] [gtk] — Nur die aktuell verbundene Station ist in der
+  Tabelle akzentuiert; ihr Zustandsicon, Name, Now-playing und Zeilentint
+  wechseln gemeinsam. Alle anderen sowie eine präsentierte, aber getrennte
+  pausierte Station zeigen „—". Nur die Player-Bar darf den letzten ICY-Titel
+  gedimmt als Session-Gedächtnis behalten.
+- **RAD-2** [aktiv] [gtk] — Live-Wiedergabe besitzt weder Seek noch Dauer:
+  Player-Bar und Mini-Player zeigen Elapsed und einen geometriegleichen
+  Waveform-Platzhalter, MPRIS meldet `CanSeek=false` und keine Länge. Pause
+  trennt den Stream, bleibt aber als Paused/CanPause mit Station und
+  gedimmtem letztem Titel präsentiert; Play verbindet live neu. Ein
+  Reconnect-Fehler lässt den pausierten Zustand mit Inline-Fehler und Retry
+  stehen. Radio erzeugt keine Hörstatistik; erneute Aktivierung der laufenden
+  Zeile stoppt.
+- **RAD-3** [aktiv] [core] — Radio-browser-Server werden über den
+  Discovery-Endpunkt gewählt und bei Fehler rotiert. Jeder Start einer
+  UUID-Station meldet den Etikette-Klick; ein toter Stream wird vor der
+  Fehleranzeige genau einmal über seine UUID neu aufgelöst.
+- **RAD-4** [aktiv] [core] — Eingefügte Radio-URLs werden höchstens eine
+  Ebene durch PLS oder M3U bis zur Stream-URL aufgelöst; HLS-Manifeste bleiben
+  selbst die Stream-URL. Die Preview liest Name, Bitrate, Genre und
+  Content-Type ausschließlich aus ICY-/HTTP-Headern und streamt keinen Body.
 
 ---
 

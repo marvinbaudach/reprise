@@ -53,6 +53,9 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) stats_view: StatsView,
     pub(in crate::ui) concerts_view: &'a Rc<crate::ui::concerts::ConcertsView>,
     pub(in crate::ui) releases_view: &'a Rc<crate::ui::releases::ReleasesView>,
+    pub(in crate::ui) podcasts_view: &'a Rc<crate::ui::podcasts::PodcastsView>,
+    pub(in crate::ui) radio_view: &'a Rc<crate::ui::radio::RadioView>,
+    pub(in crate::ui) podcasts_runtime: &'a Rc<crate::ui::podcasts::PodcastsRuntime>,
     pub(in crate::ui) content_stack: &'a gtk4::Stack,
     pub(in crate::ui) device_view: &'a Rc<DeviceViewPage>,
     pub(in crate::ui) window_title: &'a adw::WindowTitle,
@@ -92,6 +95,9 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         stats_view,
         concerts_view,
         releases_view,
+        podcasts_view,
+        radio_view,
+        podcasts_runtime,
         content_stack,
         device_view,
         window_title,
@@ -484,6 +490,8 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         stats_view,
         concerts_view,
         releases_view,
+        podcasts_view,
+        radio_view,
         conn,
         content_stack,
         device_view,
@@ -491,6 +499,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         show_content_if_collapsed,
         &active_content_focus,
     );
+    super::podcast_refresh_scheduler::arm(conn, db_path, podcasts_runtime, podcasts_view);
 
     let track_list_weak = Rc::downgrade(track_list);
     sidebar.set_on_tracks_added(move || match track_list_weak.upgrade() {

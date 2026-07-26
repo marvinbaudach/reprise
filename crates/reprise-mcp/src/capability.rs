@@ -20,6 +20,8 @@ pub const CAP_PLAYLIST_CREATE: &str = "agent.capability.playlist:create";
 pub const CAP_PLAYLIST_MANAGE: &str = "agent.capability.playlist:manage";
 /// Settings key granting instrumental (AI) creation (Beschluss 7).
 pub const CAP_AI_CREATE: &str = "agent.capability.ai:create";
+/// Settings key granting podcast, YouTube, and radio source mutations.
+pub const CAP_SOURCES_MANAGE: &str = "agent.capability.sources:manage";
 /// Settings key granting playback control (transport + targeted play).
 /// Consumed by the `music_playback_control`/`music_play` tools, which only
 /// exist under the `mpris` feature — gated to match, so a plain (non-`mpris`)
@@ -35,6 +37,7 @@ const PLAYLIST_MANAGE_DEFAULT: bool = false;
 // Beschluss 7: `ai:create` is fail-closed (off) by default, exactly like
 // `playlist:create`.
 const AI_CREATE_DEFAULT: bool = false;
+const SOURCES_MANAGE_DEFAULT: bool = false;
 // Playback control starts audio but destroys no data — on by default, like the
 // read surface, and revocable live.
 #[cfg(feature = "mpris")]
@@ -58,6 +61,11 @@ pub fn playlist_manage_granted(conn: &Connection) -> Result<bool, rusqlite::Erro
 /// Whether `ai:create` is currently granted (the live setting value).
 pub fn ai_create_granted(conn: &Connection) -> Result<bool, rusqlite::Error> {
     settings::get_bool(conn, CAP_AI_CREATE, AI_CREATE_DEFAULT)
+}
+
+/// Whether `sources:manage` is currently granted (the live setting value).
+pub fn sources_manage_granted(conn: &Connection) -> Result<bool, rusqlite::Error> {
+    settings::get_bool(conn, CAP_SOURCES_MANAGE, SOURCES_MANAGE_DEFAULT)
 }
 
 /// Whether playback control is currently granted (live setting value).
@@ -110,6 +118,15 @@ pub fn ai_create_effective(
     granted_at_startup: bool,
 ) -> Result<bool, rusqlite::Error> {
     Ok(effective(granted_at_startup, ai_create_granted(conn)?))
+}
+
+/// Whether a podcast/YouTube/radio mutation is permitted right now, given the
+/// startup snapshot.
+pub fn sources_manage_effective(
+    conn: &Connection,
+    granted_at_startup: bool,
+) -> Result<bool, rusqlite::Error> {
+    Ok(effective(granted_at_startup, sources_manage_granted(conn)?))
 }
 
 #[cfg(all(test, feature = "mpris"))]

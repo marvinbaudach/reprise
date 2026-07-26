@@ -71,10 +71,10 @@ fn v31_is_idempotent() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 31);
+    assert_eq!(version, crate::db::SUPPORTED_SCHEMA_VERSION);
 }
 
 #[test]
-fn supported_schema_version_is_v31() {
-    assert_eq!(crate::db::SUPPORTED_SCHEMA_VERSION, 31);
+fn supported_schema_version_is_v33() {
+    assert_eq!(crate::db::SUPPORTED_SCHEMA_VERSION, 33);
 }

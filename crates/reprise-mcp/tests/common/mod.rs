@@ -325,6 +325,17 @@ impl McpClient {
         client
     }
 
+    /// Spawns the server with path-valued test boundary overrides.
+    pub fn start_with_env(db_path: &Path, env: &[(&str, &Path)]) -> Self {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_reprise-mcp"));
+        for (key, value) in env {
+            command.env(key, value);
+        }
+        let mut client = Self::spawn_command(command, db_path);
+        client.handshake();
+        client
+    }
+
     /// Spawns the server without performing the handshake (for handshake tests).
     pub fn spawn(db_path: &Path) -> Self {
         Self::spawn_command(Command::new(env!("CARGO_BIN_EXE_reprise-mcp")), db_path)

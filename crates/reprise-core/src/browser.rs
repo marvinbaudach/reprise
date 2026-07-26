@@ -174,6 +174,8 @@ pub enum BrowserPlace {
     MyStats,
     Releases,
     Concerts,
+    Podcasts,
+    Radio,
     Conversions,
     Device { serial: String },
 }
@@ -200,6 +202,8 @@ impl BrowserPlace {
             | Self::MyStats
             | Self::Releases
             | Self::Concerts
+            | Self::Podcasts
+            | Self::Radio
             | Self::Conversions
             | Self::Device { .. } => None,
         }
@@ -218,6 +222,8 @@ impl BrowserPlace {
             | Self::MyStats
             | Self::Releases
             | Self::Concerts
+            | Self::Podcasts
+            | Self::Radio
             | Self::Conversions
             | Self::Device { .. } => None,
         }
@@ -231,6 +237,8 @@ impl BrowserPlace {
             | Self::MyStats
             | Self::Releases
             | Self::Concerts
+            | Self::Podcasts
+            | Self::Radio
             | Self::Conversions
             | Self::Device { .. } => None,
         }
@@ -260,6 +268,8 @@ impl BrowserPlace {
             Self::MyStats => ViewSource::MyStats,
             Self::Releases => ViewSource::Releases,
             Self::Concerts => ViewSource::Concerts,
+            Self::Podcasts => ViewSource::Podcasts,
+            Self::Radio => ViewSource::Radio,
             Self::Conversions => ViewSource::Conversions,
             Self::Device { serial } => ViewSource::Device {
                 serial: serial.clone(),
@@ -290,6 +300,8 @@ impl From<ViewSource> for BrowserPlace {
             ViewSource::MyStats => return Self::MyStats,
             ViewSource::Releases => return Self::Releases,
             ViewSource::Concerts => return Self::Concerts,
+            ViewSource::Podcasts => return Self::Podcasts,
+            ViewSource::Radio => return Self::Radio,
             ViewSource::Conversions => return Self::Conversions,
             ViewSource::Device { serial } => return Self::Device { serial },
         };
@@ -366,6 +378,8 @@ mod tests {
             ViewSource::Concerts,
             ViewSource::Genre("Metalcore".into()),
             ViewSource::MyStats,
+            ViewSource::Podcasts,
+            ViewSource::Radio,
             ViewSource::Device {
                 serial: "pixel-8".into(),
             },

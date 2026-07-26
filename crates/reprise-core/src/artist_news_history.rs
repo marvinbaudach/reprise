@@ -43,6 +43,42 @@ pub struct HistoryEntry {
     pub announce_url: Option<String>,
 }
 
+/// One complete row from the durable New Releases history, plus its derived
+/// local-library presence.
+///
+/// Unlike [`HistoryEntry`], this record retains every stored column so
+/// headless read surfaces can expose the complete cache contract without SQL
+/// outside `reprise-core`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReleaseHistoryRecord {
+    pub release_group_mbid: String,
+    pub artist_name: String,
+    pub artist_mbid: String,
+    pub title: String,
+    pub release_type: String,
+    pub first_release_date: String,
+    pub fetched_at: i64,
+    pub seen_at: Option<i64>,
+    pub hidden: bool,
+    pub fallback_accent: String,
+    pub first_seen: Option<i64>,
+    pub hidden_at: Option<i64>,
+    pub announce_url: Option<String>,
+    pub presence: crate::artist_news::LibraryPresence,
+}
+
+impl ReleaseHistoryRecord {
+    pub fn history_status(&self) -> HistoryStatus {
+        if self.hidden {
+            HistoryStatus::Hidden
+        } else if self.seen_at.is_some() {
+            HistoryStatus::Seen
+        } else {
+            HistoryStatus::New
+        }
+    }
+}
+
 impl HistoryEntry {
     pub fn status(&self) -> HistoryStatus {
         if self.hidden {
@@ -65,25 +101,52 @@ pub fn query_history(
     conn: &Connection,
     today: NaiveDate,
 ) -> Result<Vec<HistoryEntry>, rusqlite::Error> {
+    Ok(query_complete_history(conn, today)?
+        .into_iter()
+        .map(|record| HistoryEntry {
+            release_group_mbid: record.release_group_mbid,
+            artist_name: record.artist_name,
+            title: record.title,
+            release_type: record.release_type,
+            first_release_date: record.first_release_date,
+            first_seen: record.first_seen,
+            seen_at: record.seen_at,
+            hidden: record.hidden,
+            hidden_at: record.hidden_at,
+            presence: record.presence,
+            announce_url: record.announce_url,
+        })
+        .collect())
+}
+
+/// Reads every durable New Releases field, including hidden history, without
+/// applying the current Releases UI filters.
+pub fn query_complete_history(
+    conn: &Connection,
+    today: NaiveDate,
+) -> Result<Vec<ReleaseHistoryRecord>, rusqlite::Error> {
     let mut statement = conn.prepare(
-        "SELECT release_group_mbid, artist_name, title, release_type,
-                first_release_date, first_seen, seen_at, hidden, hidden_at,
-                announce_url
+        "SELECT release_group_mbid, artist_name, artist_mbid, title,
+                release_type, first_release_date, fetched_at, seen_at, hidden,
+                fallback_accent, first_seen, hidden_at, announce_url
          FROM new_releases",
     )?;
     let mut entries = statement
         .query_map([], |row| {
-            Ok(HistoryEntry {
+            Ok(ReleaseHistoryRecord {
                 release_group_mbid: row.get(0)?,
                 artist_name: row.get(1)?,
-                title: row.get(2)?,
-                release_type: row.get(3)?,
-                first_release_date: row.get(4)?,
-                first_seen: row.get(5)?,
-                seen_at: row.get(6)?,
-                hidden: row.get::<_, i64>(7)? != 0,
-                hidden_at: row.get(8)?,
-                announce_url: row.get(9)?,
+                artist_mbid: row.get(2)?,
+                title: row.get(3)?,
+                release_type: row.get(4)?,
+                first_release_date: row.get(5)?,
+                fetched_at: row.get(6)?,
+                seen_at: row.get(7)?,
+                hidden: row.get::<_, i64>(8)? != 0,
+                fallback_accent: row.get(9)?,
+                first_seen: row.get(10)?,
+                hidden_at: row.get(11)?,
+                announce_url: row.get(12)?,
                 presence: crate::artist_news::LibraryPresence::Absent,
             })
         })?

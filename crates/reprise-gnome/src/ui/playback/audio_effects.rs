@@ -79,6 +79,10 @@ mod tests {
             Ok(())
         }
 
+        fn play_uri(&self, _: &str) -> Result<(), PlaybackError> {
+            Ok(())
+        }
+
         fn toggle_pause(&self) -> Result<PlaybackState, PlaybackError> {
             Ok(PlaybackState::Paused)
         }

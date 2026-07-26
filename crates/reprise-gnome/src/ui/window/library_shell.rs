@@ -37,6 +37,8 @@ pub(in crate::ui) enum ActiveContentTarget {
     Device,
     Concerts,
     Releases,
+    Podcasts,
+    Radio,
 }
 
 fn active_content_target(content_name: Option<&str>) -> Option<ActiveContentTarget> {
@@ -45,6 +47,8 @@ fn active_content_target(content_name: Option<&str>) -> Option<ActiveContentTarg
         Some("device") => Some(ActiveContentTarget::Device),
         Some("concerts") => Some(ActiveContentTarget::Concerts),
         Some("releases") => Some(ActiveContentTarget::Releases),
+        Some("podcasts") => Some(ActiveContentTarget::Podcasts),
+        Some("radio") => Some(ActiveContentTarget::Radio),
         Some("library") => Some(ActiveContentTarget::Tracks),
         _ => None,
     }
@@ -85,7 +89,9 @@ impl ActiveContentFocus {
                 ActiveContentTarget::Stats
                 | ActiveContentTarget::Device
                 | ActiveContentTarget::Concerts
-                | ActiveContentTarget::Releases,
+                | ActiveContentTarget::Releases
+                | ActiveContentTarget::Podcasts
+                | ActiveContentTarget::Radio,
             ) => content_stack
                 .visible_child()
                 .is_some_and(|child| focus_widget_or_descendant(&child)),
@@ -129,8 +135,13 @@ fn arm_smoke_detail_view(sidebar: &Rc<Sidebar>) {
     else {
         return;
     };
-    let Some(source @ (ViewSource::MyStats | ViewSource::Concerts | ViewSource::Releases)) =
-        crate::ui::track_list::track_list_smoke::parse_smoke_source(&value)
+    let Some(
+        source @ (ViewSource::MyStats
+        | ViewSource::Concerts
+        | ViewSource::Releases
+        | ViewSource::Podcasts
+        | ViewSource::Radio),
+    ) = crate::ui::track_list::track_list_smoke::parse_smoke_source(&value)
     else {
         return;
     };
@@ -149,6 +160,8 @@ pub(in crate::ui) fn wire_source_routing(
     stats_view: StatsView,
     concerts_view: &Rc<crate::ui::concerts::ConcertsView>,
     releases_view: &Rc<crate::ui::releases::ReleasesView>,
+    podcasts_view: &Rc<crate::ui::podcasts::PodcastsView>,
+    radio_view: &Rc<crate::ui::radio::RadioView>,
     conn: &Rc<RefCell<Connection>>,
     content_stack: &gtk4::Stack,
     device_view: &Rc<DeviceViewPage>,
@@ -162,6 +175,8 @@ pub(in crate::ui) fn wire_source_routing(
     let stats_view = Rc::new(stats_view);
     let concerts_view = concerts_view.clone();
     let releases_view = releases_view.clone();
+    let podcasts_view = podcasts_view.clone();
+    let radio_view = radio_view.clone();
     let device_view = device_view.clone();
     let conn = conn.clone();
     let sidebar_for_select = sidebar.clone();
@@ -204,6 +219,12 @@ pub(in crate::ui) fn wire_source_routing(
         } else if matches!(source, ViewSource::Releases) {
             releases_view.refresh();
             content_stack.set_visible_child_name("releases");
+        } else if matches!(source, ViewSource::Podcasts) {
+            podcasts_view.refresh();
+            content_stack.set_visible_child_name("podcasts");
+        } else if matches!(source, ViewSource::Radio) {
+            radio_view.refresh();
+            content_stack.set_visible_child_name("radio");
         } else if matches!(source, ViewSource::Conversions) {
             // INST-13: the conversion/staging view lives on its own page. Ensure
             // it is installed (under the same experimental gate as the sidebar
@@ -385,6 +406,14 @@ mod tests {
         assert_eq!(
             active_content_target(Some("releases")),
             Some(ActiveContentTarget::Releases)
+        );
+        assert_eq!(
+            active_content_target(Some("podcasts")),
+            Some(ActiveContentTarget::Podcasts)
+        );
+        assert_eq!(
+            active_content_target(Some("radio")),
+            Some(ActiveContentTarget::Radio)
         );
         assert_eq!(active_content_target(Some("unknown")), None);
     }

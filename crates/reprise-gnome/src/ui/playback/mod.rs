@@ -1,5 +1,9 @@
 pub(crate) mod album_identity;
 pub(in crate::ui) mod audio_effects;
+pub(in crate::ui) mod external_media;
+mod external_media_mpris;
+mod external_media_state;
+mod external_media_toast;
 pub(crate) mod now_playing_wiring;
 pub(crate) mod play_origin;
 pub(in crate::ui) mod play_tracking;

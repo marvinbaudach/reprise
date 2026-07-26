@@ -180,6 +180,8 @@ fn intent_for(place: &BrowserPlace) -> NavigationIntent {
         BrowserPlace::MyStats => NavigationIntent::Sidebar(SidebarTarget::MyStats),
         BrowserPlace::Releases => NavigationIntent::Sidebar(SidebarTarget::Releases),
         BrowserPlace::Concerts => NavigationIntent::Sidebar(SidebarTarget::Concerts),
+        BrowserPlace::Podcasts => NavigationIntent::Sidebar(SidebarTarget::Podcasts),
+        BrowserPlace::Radio => NavigationIntent::Sidebar(SidebarTarget::Radio),
         BrowserPlace::Conversions => NavigationIntent::Sidebar(SidebarTarget::Conversions),
         BrowserPlace::Device { serial } => {
             NavigationIntent::Sidebar(SidebarTarget::Device(serial.clone()))

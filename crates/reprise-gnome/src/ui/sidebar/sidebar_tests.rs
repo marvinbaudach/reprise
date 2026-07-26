@@ -137,23 +137,41 @@ fn handle_queue_drop_is_a_noop_without_ids_or_callback() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn issues_list_is_the_bottom_most_root_child_below_the_activity_slot() {
+fn fb_2a_progress_activity_is_pinned_to_the_sidebar_bottom() {
     gtk4::init().unwrap();
-    let scrolled = gtk4::ScrolledWindow::new();
+    let scrolled = gtk4::ScrolledWindow::builder().vexpand(true).build();
     let activity = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    activity.append(&gtk4::Label::new(Some("Cover check complete")));
     let issues = gtk4::ListBox::new();
+    issues.append(&gtk4::Label::new(Some("Missing files")));
     let root = build_root(&scrolled, &activity, &issues);
+    let window = gtk4::Window::builder()
+        .default_width(300)
+        .default_height(900)
+        .child(&root)
+        .build();
 
-    // The scrolling nav list stays on top and the issues list is pinned at
-    // the very bottom (QA #6), with the activity slot sandwiched between so an
-    // active scan/relink card grows upward instead of pushing issues off the
-    // bottom edge.
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    // FB-2a: the shared progress activity is the sidebar's bottom slot.
+    // Issues remain directly above it, so cover/scan/relink progress never
+    // floats in the middle of a tall sidebar.
+    let activity_bounds = activity.compute_bounds(&root).unwrap();
+    let issues_bounds = issues.compute_bounds(&root).unwrap();
     assert_eq!(root.first_child().as_ref(), Some(scrolled.upcast_ref()));
-    assert_eq!(
-        scrolled.next_sibling().as_ref(),
-        Some(activity.upcast_ref())
+    assert_eq!(scrolled.next_sibling().as_ref(), Some(issues.upcast_ref()));
+    assert_eq!(root.last_child().as_ref(), Some(activity.upcast_ref()));
+    assert!(
+        (activity_bounds.y() + activity_bounds.height() - root.height() as f32).abs() < 0.5,
+        "the progress activity must touch the sidebar bottom edge: activity={activity_bounds:?}, root_height={}",
+        root.height()
     );
-    assert_eq!(root.last_child().as_ref(), Some(issues.upcast_ref()));
+    assert!(
+        (issues_bounds.y() + issues_bounds.height() - activity_bounds.y()).abs() < 0.5,
+        "issues must sit directly above the progress activity: issues={issues_bounds:?}, activity={activity_bounds:?}"
+    );
+    window.close();
 }
 
 #[test]
@@ -636,4 +654,70 @@ fn conc_1_concerts_row_is_module_gated_and_badged_from_the_filtered_view() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn nr_15_releases_row_is_module_gated_before_concerts_and_badged_from_the_filtered_view() {
     assert_update_feed_rows_are_module_gated_ordered_and_badged();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_1_podcast_and_radio_rows_are_gated_ordered_and_live_counted() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let shared = test_shared();
+
+    rebuild(&shared, None, "source defaults");
+    assert!(find_row(&shared, &ViewSource::Podcasts).is_none());
+    assert!(find_row(&shared, &ViewSource::Radio).is_some());
+
+    {
+        let conn = shared.conn.borrow();
+        reprise_core::modules::set_enabled(&conn, &reprise_core::modules::PODCASTS_MODULE, true)
+            .unwrap();
+        conn.execute(
+            "INSERT INTO podcast_subscriptions
+               (kind, feed_url, title, auto_download, added_at)
+             VALUES ('rss', 'https://example.test/feed', 'Show', 0, 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO podcast_episodes
+               (subscription_id, guid, title, audio_url, position_ms, first_seen_at)
+             VALUES (1, 'episode', 'Episode', 'https://example.test/episode.mp3', 0, 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO radio_stations (name, stream_url, added_at)
+             VALUES ('Station', 'https://example.test/live', 1)",
+            [],
+        )
+        .unwrap();
+    }
+
+    rebuild(&shared, None, "source data changed");
+    let rows = shared.rows.borrow();
+    let music = rows
+        .iter()
+        .position(|(_, source, _)| matches!(source, ViewSource::Library))
+        .unwrap();
+    let podcasts = rows
+        .iter()
+        .position(|(_, source, _)| matches!(source, ViewSource::Podcasts))
+        .unwrap();
+    let radio = rows
+        .iter()
+        .position(|(_, source, _)| matches!(source, ViewSource::Radio))
+        .unwrap();
+    let queue = rows
+        .iter()
+        .position(|(_, source, _)| matches!(source, ViewSource::Queue))
+        .unwrap();
+    assert!(music < podcasts && podcasts < radio && radio < queue);
+    assert_eq!(
+        numeric_badge_text(rows[podcasts].0.upcast_ref()),
+        Some("1".to_string())
+    );
+    assert_eq!(
+        numeric_badge_text(rows[radio].0.upcast_ref()),
+        Some("1".to_string())
+    );
 }

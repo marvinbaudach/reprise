@@ -72,7 +72,7 @@ fn geocode_url_and_parser_are_tolerant_and_pure() {
 fn config_defaults_are_bounded_and_stored_credentials_win() {
     let conn = conn();
     assert_eq!(
-        config::credentials_with_env(&conn, |_| Some("environment".into()))
+        config::credentials_with_env(&conn, |_| Some("environment".into()), None)
             .unwrap()
             .bandsintown_app_id
             .as_deref(),
@@ -80,18 +80,105 @@ fn config_defaults_are_bounded_and_stored_credentials_win() {
     );
     assert_eq!(config::window_days(&conn).unwrap(), 90);
     assert_eq!(config::similar_config(&conn).unwrap().count, 10);
+    assert_eq!(
+        config::persisted_filter(&conn).unwrap().radius_km,
+        Some(1_000.0)
+    );
+    assert_eq!(config::RADIUS_PRESETS_KM, [100, 250, 500, 1_000]);
     crate::library::settings::set_setting(&conn, "concerts.window_days", "999").unwrap();
     crate::library::settings::set_setting(&conn, "concerts.similar_count", "0").unwrap();
     crate::library::settings::set_setting(&conn, "concerts.bandsintown_app_id", "stored").unwrap();
     assert_eq!(config::window_days(&conn).unwrap(), 365);
     assert_eq!(config::similar_config(&conn).unwrap().count, 1);
     assert_eq!(
-        config::credentials_with_env(&conn, |_| Some("environment".into()))
+        config::credentials_with_env(&conn, |_| Some("environment".into()), None)
             .unwrap()
             .bandsintown_app_id
             .as_deref(),
         Some("stored")
     );
+}
+
+#[test]
+fn ticketmaster_credentials_fall_back_to_the_bundled_build_value() {
+    let conn = conn();
+    let credentials =
+        config::credentials_with_env(&conn, |_| None, Some("  dummy-bundled-ticketmaster-key  "))
+            .unwrap();
+    assert_eq!(
+        credentials.ticketmaster_api_key.as_deref(),
+        Some("dummy-bundled-ticketmaster-key")
+    );
+
+    let credentials = config::credentials_with_env(
+        &conn,
+        |_| Some(" \t ".to_owned()),
+        Some("dummy-bundled-ticketmaster-key"),
+    )
+    .unwrap();
+    assert_eq!(
+        credentials.ticketmaster_api_key.as_deref(),
+        Some("dummy-bundled-ticketmaster-key")
+    );
+
+    let credentials = config::credentials_with_env(&conn, |_| None, Some(" \t ")).unwrap();
+    assert_eq!(credentials.ticketmaster_api_key, None);
+}
+
+#[test]
+fn ticketmaster_credentials_prefer_stored_then_runtime_then_build() {
+    let conn = conn();
+    let read_runtime = |key: &str| {
+        (key == "REPRISE_TICKETMASTER_APIKEY")
+            .then(|| "  dummy-runtime-ticketmaster-key  ".to_owned())
+    };
+    let credentials =
+        config::credentials_with_env(&conn, read_runtime, Some("dummy-bundled-ticketmaster-key"))
+            .unwrap();
+    assert_eq!(
+        credentials.ticketmaster_api_key.as_deref(),
+        Some("dummy-runtime-ticketmaster-key")
+    );
+
+    crate::library::settings::set_setting(
+        &conn,
+        config::TICKETMASTER_API_KEY,
+        "  dummy-stored-ticketmaster-key  ",
+    )
+    .unwrap();
+    let credentials =
+        config::credentials_with_env(&conn, read_runtime, Some("dummy-bundled-ticketmaster-key"))
+            .unwrap();
+    assert_eq!(
+        credentials.ticketmaster_api_key.as_deref(),
+        Some("dummy-stored-ticketmaster-key")
+    );
+
+    crate::library::settings::set_setting(&conn, config::TICKETMASTER_API_KEY, "   ").unwrap();
+    let credentials =
+        config::credentials_with_env(&conn, read_runtime, Some("dummy-bundled-ticketmaster-key"))
+            .unwrap();
+    assert_eq!(
+        credentials.ticketmaster_api_key.as_deref(),
+        Some("dummy-runtime-ticketmaster-key")
+    );
+
+    let credentials =
+        config::credentials_with_env(&conn, |_| Some("   ".to_owned()), None).unwrap();
+    assert_eq!(credentials.ticketmaster_api_key, None);
+}
+
+#[test]
+fn credential_debug_output_redacts_secret_values() {
+    let credentials = config::Credentials {
+        bandsintown_app_id: Some("dummy-bandsintown-secret".to_owned()),
+        ticketmaster_api_key: Some("dummy-ticketmaster-secret".to_owned()),
+    };
+
+    let debug = format!("{credentials:?}");
+    assert!(!debug.contains("dummy-bandsintown-secret"));
+    assert!(!debug.contains("dummy-ticketmaster-secret"));
+    assert!(debug.contains("<redacted>"));
 }
 
 #[test]

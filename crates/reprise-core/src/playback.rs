@@ -4,56 +4,16 @@
 //! frontend drives playback through. The concrete implementations live in the
 //! per-OS platform crates (Linux: GStreamer `playbin3` in `player.rs`).
 
+mod fault_policy;
+
+pub use fault_policy::{playback_fault_policy, PlaybackFaultNotice, PlaybackFaultPolicy};
+
 /// Coarse playback state, mirrored from the underlying GStreamer pipeline state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlaybackState {
     Playing,
     Paused,
     Stopped,
-}
-
-/// The one user-facing notice a playback fault is allowed to produce.
-/// Frontends translate these semantic variants at their presentation edge;
-/// keeping the cardinality in [`PlaybackFaultPolicy`] makes FB-6's "one
-/// toast" rule a core policy rather than an accident of one GTK branch.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PlaybackFaultNotice {
-    /// The file vanished while it was playing: mark it missing, skip, and
-    /// explain that availability—not decoding—caused the skip.
-    TrackUnavailableSkipped,
-    /// The file still exists but the backend could not play it.
-    CouldNotPlaySkipped,
-}
-
-/// Complete effect policy for one fault of the currently playing track.
-/// Background watcher events never construct this value and therefore stay
-/// silent; only the player fault path consumes it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PlaybackFaultPolicy {
-    pub mark_missing: bool,
-    pub skip: bool,
-    /// Exactly one notice by construction. An array is deliberate: a future
-    /// edit cannot silently add a second toast without changing this API and
-    /// its FB-6 acceptance test.
-    pub notices: [PlaybackFaultNotice; 1],
-}
-
-/// Resolves a player backend fault from the strongest evidence available at
-/// that moment: whether the track's path still names a file.
-pub fn playback_fault_policy(file_exists: bool) -> PlaybackFaultPolicy {
-    if file_exists {
-        PlaybackFaultPolicy {
-            mark_missing: false,
-            skip: true,
-            notices: [PlaybackFaultNotice::CouldNotPlaySkipped],
-        }
-    } else {
-        PlaybackFaultPolicy {
-            mark_missing: true,
-            skip: true,
-            notices: [PlaybackFaultNotice::TrackUnavailableSkipped],
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -512,6 +472,12 @@ pub enum PlayerEvent {
     /// `TrackFinished`, which fires on a real end-of-stream (no next track was
     /// pre-fed) and is the frontend's cue to *start* the next track.
     AdvancedToNext,
+    /// Metadata carried by a remote stream. Radio uses the title as its live
+    /// now-playing value and the organization as the station label.
+    StreamTags {
+        title: Option<String>,
+        organization: Option<String>,
+    },
     /// A local-only, normalized audio spectrum for optional visual rendering.
     Spectrum(SpectrumFrame),
     Error(String),
@@ -748,6 +714,9 @@ mod spectrum_analyzer_tests {
 /// constructor and may invoke it from any thread; frontends marshal.
 pub trait PlaybackBackend {
     fn play(&self, path: &str) -> Result<(), PlaybackError>;
+    /// Starts a non-local media URI. Implementations must accept `http`,
+    /// `https`, and `file`; local-path callers continue to use [`Self::play`].
+    fn play_uri(&self, uri: &str) -> Result<(), PlaybackError>;
     fn toggle_pause(&self) -> Result<PlaybackState, PlaybackError>;
     fn seek_to(&self, position_ms: i64) -> Result<(), PlaybackError>;
     fn set_volume(&self, volume: f64);

@@ -1,3 +1,5 @@
+use std::fmt;
+
 use rusqlite::Connection;
 
 use super::{ConcertFilter, DateHorizon};
@@ -15,14 +17,33 @@ pub const FILTER_RADIUS_KEY: &str = "concerts.filter.radius_km";
 pub const FILTER_COUNTRY_KEY: &str = "concerts.filter.country";
 pub const FILTER_HORIZON_KEY: &str = "concerts.filter.horizon";
 pub const FILTER_INCLUDE_SIMILAR_KEY: &str = "concerts.filter.include_similar";
+pub const DEFAULT_RADIUS_KM: f64 = 1_000.0;
+pub const RADIUS_PRESETS_KM: [u32; 4] = [100, 250, 500, 1_000];
 
 const BANDSINTOWN_ENV: &str = "REPRISE_BANDSINTOWN_APP_ID";
 const TICKETMASTER_ENV: &str = "REPRISE_TICKETMASTER_APIKEY";
+const BUNDLED_TICKETMASTER_API_KEY: Option<&str> = option_env!("REPRISE_TICKETMASTER_APIKEY");
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct Credentials {
     pub bandsintown_app_id: Option<String>,
     pub ticketmaster_api_key: Option<String>,
+}
+
+impl fmt::Debug for Credentials {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Credentials")
+            .field(
+                "bandsintown_app_id",
+                &self.bandsintown_app_id.as_ref().map(|_| "<redacted>"),
+            )
+            .field(
+                "ticketmaster_api_key",
+                &self.ticketmaster_api_key.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
 }
 
 impl Credentials {
@@ -46,18 +67,24 @@ pub struct SimilarConfig {
 }
 
 pub fn credentials(conn: &Connection) -> Result<Credentials, rusqlite::Error> {
-    credentials_with_env(conn, |key| std::env::var(key).ok())
+    credentials_with_env(
+        conn,
+        |key| std::env::var(key).ok(),
+        BUNDLED_TICKETMASTER_API_KEY,
+    )
 }
 
 pub(crate) fn credentials_with_env(
     conn: &Connection,
     read_env: impl Fn(&str) -> Option<String>,
+    bundled_ticketmaster_api_key: Option<&str>,
 ) -> Result<Credentials, rusqlite::Error> {
     Ok(Credentials {
         bandsintown_app_id: non_empty_setting(conn, BANDSINTOWN_APP_ID_KEY)?
             .or_else(|| read_env(BANDSINTOWN_ENV).as_deref().and_then(non_empty)),
         ticketmaster_api_key: non_empty_setting(conn, TICKETMASTER_API_KEY)?
-            .or_else(|| read_env(TICKETMASTER_ENV).as_deref().and_then(non_empty)),
+            .or_else(|| read_env(TICKETMASTER_ENV).as_deref().and_then(non_empty))
+            .or_else(|| bundled_ticketmaster_api_key.and_then(non_empty)),
     })
 }
 
@@ -85,7 +112,7 @@ pub fn persisted_filter(conn: &Connection) -> Result<ConcertFilter, rusqlite::Er
     let stored_radius = crate::library::settings::get_setting(conn, FILTER_RADIUS_KEY)?;
     let radius_km = match stored_radius {
         Some(value) => value.trim().parse::<f64>().ok(),
-        None => numeric_setting(conn, DEFAULT_RADIUS_KEY)?,
+        None => Some(numeric_setting(conn, DEFAULT_RADIUS_KEY)?.unwrap_or(DEFAULT_RADIUS_KM)),
     }
     .filter(|radius| radius.is_finite() && *radius > 0.0);
     let country = non_empty_setting(conn, FILTER_COUNTRY_KEY)?;

@@ -18,6 +18,7 @@ use crate::ui::device_sync_runtime::DeviceSyncRuntime;
 use crate::ui::library_player_bar::LibraryPlayerBarShell;
 use crate::ui::now_playing::NowPlayingPanel;
 use crate::ui::player_controller::PlayerController;
+use crate::ui::podcasts::PodcastsRuntime;
 use crate::ui::preference_playback::build_equalizer_surface;
 use crate::ui::scan_flow::ScanControls;
 use crate::ui::scan_progress::ScanProgressView;
@@ -117,6 +118,7 @@ pub(in crate::ui) struct PreferencesContext {
     pub(in crate::ui) lastfm_activation_pending: Cell<bool>,
     pub(in crate::ui) artist_news: Rc<ArtistNewsRuntime>,
     pub(in crate::ui) concerts: Rc<ConcertsRuntime>,
+    pub(in crate::ui) podcasts: Rc<PodcastsRuntime>,
     pub(in crate::ui) cover_download: CoverDownloadRuntime,
     pub(in crate::ui) artist_portrait: Rc<ArtistPortraitRuntime>,
     pub(in crate::ui) decorations: Rc<WindowDecorations>,
@@ -149,6 +151,7 @@ impl PreferencesContext {
         lastfm: &Rc<ScrobbleRuntime>,
         artist_news: &Rc<ArtistNewsRuntime>,
         concerts: &Rc<ConcertsRuntime>,
+        podcasts: &Rc<PodcastsRuntime>,
         cover_download: &CoverDownloadRuntime,
         artist_portrait: &Rc<ArtistPortraitRuntime>,
         decorations: &Rc<WindowDecorations>,
@@ -180,6 +183,7 @@ impl PreferencesContext {
             lastfm_activation_pending: Cell::new(false),
             artist_news: artist_news.clone(),
             concerts: concerts.clone(),
+            podcasts: podcasts.clone(),
             cover_download: cover_download.clone(),
             artist_portrait: artist_portrait.clone(),
             decorations: decorations.clone(),
@@ -257,6 +261,12 @@ impl PreferencesContext {
                 PageId::Library => self.library_page(),
                 PageId::Synchronization => {
                     super::preference_sync::build_page(&self.device_sync, &self.track_list)
+                }
+                PageId::NewReleases => {
+                    super::preference_new_releases::build_page(&self.conn, &self.artist_news)
+                }
+                PageId::Concerts => {
+                    super::preference_concerts::build_page(&self.conn, &self.concerts)
                 }
                 PageId::Plugins => self.plugins_page(),
                 PageId::Experimental => super::preference_experimental::build_page(&self.conn),
