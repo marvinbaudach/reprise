@@ -7,6 +7,8 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 source "$repo_root/scripts/cua-e2e/lib.sh"
 # shellcheck source=track_sort.sh
 source "$repo_root/scripts/cua-e2e/track_sort.sh"
+# shellcheck source=tag_autocomplete.sh
+source "$repo_root/scripts/cua-e2e/tag_autocomplete.sh"
 # shellcheck source=scrobbling.sh
 source "$repo_root/scripts/cua-e2e/scrobbling.sh"
 
@@ -595,6 +597,9 @@ run_private_session() {
     tag-3-multi-dialog-structure)
       run_tag_3_multi_dialog_structure_scenario
       ;;
+    tag-autocomplete-surface)
+      run_tag_autocomplete_surface_scenario
+      ;;
     library-doctor)
       run_library_doctor_scenario
       ;;
@@ -620,7 +625,7 @@ if [[ "${1:-}" == "--private-session" ]]; then
   exit 0
 fi
 
-for command in "$CUA_DRIVER_BIN" Xvfb openbox cargo dbus-run-session ffmpeg gdbus gnome-keyring-daemon jq python3 rg timeout wmctrl; do
+for command in "$CUA_DRIVER_BIN" Xvfb openbox cargo dbus-run-session ffmpeg gdbus gnome-keyring-daemon import jq python3 rg timeout wmctrl; do
   required_command "$command"
 done
 if [[ ! -x /usr/lib/at-spi-bus-launcher ]]; then
@@ -739,6 +744,7 @@ case "${CUA_E2E_ONLY:-all}" in
       populated-library-secondary
       tag-1-no-jump-after-save
       tag-3-multi-dialog-structure
+      tag-autocomplete-surface
       library-doctor
       song-visuals
       track-sort-playing-marker
@@ -749,7 +755,8 @@ case "${CUA_E2E_ONLY:-all}" in
     scenario_groups=(populated-library populated-library-secondary)
     ;;
   fresh-install | populated-library-secondary | tag-1-no-jump-after-save \
-    | tag-3-multi-dialog-structure | library-doctor | song-visuals \
+    | tag-3-multi-dialog-structure | tag-autocomplete-surface \
+    | library-doctor | song-visuals \
     | track-sort-playing-marker | scrobbling)
     scenario_groups=("$CUA_E2E_ONLY")
     ;;
