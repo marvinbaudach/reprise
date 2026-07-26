@@ -36,6 +36,14 @@ pub(in crate::ui) const ICON_NEXT: &str = "media-skip-forward-symbolic";
 pub(in crate::ui) const ICON_REPEAT_ALL: &str = "media-playlist-repeat-symbolic";
 pub(in crate::ui) const ICON_REPEAT_ONE: &str = "media-playlist-repeat-song-symbolic";
 
+fn repeat_indicator(repeat: Repeat) -> (&'static str, &'static str) {
+    match repeat {
+        Repeat::Off => (ICON_REPEAT_ALL, strings::TOOLTIP_REPEAT_OFF),
+        Repeat::All => (ICON_REPEAT_ALL, strings::TOOLTIP_REPEAT_ALL),
+        Repeat::One => (ICON_REPEAT_ONE, strings::TOOLTIP_REPEAT_ONE),
+    }
+}
+
 /// Volume icon names indexed by loudness tier.
 const ICON_VOLUME_MUTED: &str = "audio-volume-muted-symbolic";
 const ICON_VOLUME_LOW: &str = "audio-volume-low-symbolic";
@@ -757,11 +765,10 @@ impl PlayerBar {
     /// connected to the repeat button's `toggled` signal, and the click cycle
     /// runs off `clicked`, which `set_active` does not emit.
     pub fn set_repeat_indicator(&self, repeat: Repeat) {
-        let icon = match repeat {
-            Repeat::Off | Repeat::All => ICON_REPEAT_ALL,
-            Repeat::One => ICON_REPEAT_ONE,
-        };
+        let (icon, tooltip) = repeat_indicator(repeat);
         self.repeat_button.set_icon_name(icon);
+        self.repeat_button
+            .set_tooltip_text(Some(&strings::text(tooltip)));
         self.repeat_button.set_active(repeat != Repeat::Off);
     }
 }
