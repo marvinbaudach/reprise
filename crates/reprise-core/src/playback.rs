@@ -221,7 +221,7 @@ const BEAT_STRENGTH_OVERSHOOT: f32 = 0.12;
 /// impact. The adaptive threshold decides whether an onset exists; its visual
 /// size must follow actual transient energy so a small isolated tick cannot
 /// look as large as a breakdown kick.
-const BEAT_STRENGTH_ABSOLUTE_SPAN: f32 = 0.16;
+const BEAT_STRENGTH_ABSOLUTE_SPAN: f32 = 0.25;
 const BEAT_STRENGTH_RELATIVE_MIX: f32 = 0.15;
 const BEAT_ENERGY_LOW_RAW_BINS: usize = 8;
 const BEAT_ENERGY_LOW_GAIN: f32 = 0.9;
