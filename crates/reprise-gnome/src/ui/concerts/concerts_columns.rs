@@ -42,28 +42,44 @@ fn similar_caption(row: &ConcertRow) -> Option<String> {
         .map(strings::concert_similar_caption)
 }
 
+struct ArtistCell {
+    root: gtk4::Box,
+    artist: gtk4::Label,
+    caption: gtk4::Label,
+}
+
+fn build_artist_cell() -> ArtistCell {
+    let root = gtk4::Box::new(gtk4::Orientation::Vertical, 1);
+    root.set_valign(gtk4::Align::Center);
+    let artist = gtk4::Label::builder()
+        .xalign(0.0)
+        .hexpand(true)
+        .ellipsize(gtk4::pango::EllipsizeMode::End)
+        .build();
+    let caption = gtk4::Label::builder()
+        .xalign(0.0)
+        .hexpand(true)
+        .ellipsize(gtk4::pango::EllipsizeMode::End)
+        .build();
+    caption.add_css_class("dim-label");
+    caption.add_css_class("caption");
+    root.append(&artist);
+    root.append(&caption);
+    ArtistCell {
+        root,
+        artist,
+        caption,
+    }
+}
+
 fn artist_column(view: &gtk4::ColumnView) {
     let factory = gtk4::SignalListItemFactory::new();
     factory.connect_setup(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
-        let cell = gtk4::Box::new(gtk4::Orientation::Vertical, 1);
-        let artist = gtk4::Label::builder()
-            .xalign(0.0)
-            .hexpand(true)
-            .ellipsize(gtk4::pango::EllipsizeMode::End)
-            .build();
-        let caption = gtk4::Label::builder()
-            .xalign(0.0)
-            .hexpand(true)
-            .ellipsize(gtk4::pango::EllipsizeMode::End)
-            .build();
-        caption.add_css_class("dim-label");
-        caption.add_css_class("caption");
-        cell.append(&artist);
-        cell.append(&caption);
-        item.set_child(Some(&cell));
+        let cell = build_artist_cell();
+        item.set_child(Some(&cell.root));
     });
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
@@ -360,5 +376,16 @@ mod tests {
         );
         event.is_similar = false;
         assert_eq!(similar_caption(&event), None);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn conc_10_artist_cell_is_vertically_centered_with_the_other_columns() {
+        gtk4::init().unwrap();
+        let cell = build_artist_cell();
+
+        assert_eq!(cell.root.valign(), gtk4::Align::Center);
+        assert_eq!(cell.artist.xalign(), 0.0);
+        assert_eq!(cell.caption.xalign(), 0.0);
     }
 }

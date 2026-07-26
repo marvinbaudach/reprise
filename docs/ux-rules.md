@@ -583,6 +583,14 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Sonderregel** in v1: das Queue-Nachfüllen folgt der sichtbaren Ansicht — bei
   aktivem Filter sind KI-Titel nicht sichtbar und werden nicht nachgefüllt. Nur
   verfügbar, solange der Experimental-Schalter an ist (INST-11). (Beschluss 17)
+- **FIL-8** [aktiv] [core] [gtk] — „Recently added" ist ein eigener
+  Library-Scope über alle gegenwärtig vorhandenen Tracks, deren `added_at`
+  höchstens sieben Tage zurückliegt; es gibt kein 50-Track-Limit. Die Quelle
+  sortiert initial nach `added_at` absteigend und trägt in der Filter-Zeile
+  eine löschbare Scope-Pille nach FIL-1c. Deren × verlässt den Scope über den
+  normalen History-Push und stellt die gemerkte, uneingeschränkte Library
+  wieder her.
+
 ## L. Tag-Editor
 
 - **TAG-1** [aktiv] [gtk] — Save ist navigationsneutral: Speichern ändert
@@ -2094,6 +2102,13 @@ deterministisch und hoch-konfident, nie „ohne Review".
   fällt Auswahl und Fokus auf die nächste, am Listenende auf die vorherige
   Zeile und bei leerer Liste auf den stabilen Content-Container.
 
+- **BROWSE-9** [aktiv] [gtk] — **Das Aufnahmedatum ist eine normale
+  Library-Spalte.** „Added" ist im Spalteneditor wählbar, verschiebbar,
+  breitenpersistierbar und nach `added_at` sortierbar. Die ISO-formatierte
+  Zeit ist standardmäßig ausgeblendet; bestehende Layouts erhalten die neue
+  Spalte beim Normalisieren ebenfalls ausgeblendet, ohne ihre gespeicherte
+  Reihenfolge oder Sichtbarkeit zu verlieren.
+
 ## AA. Externe Änderungen (Live-Refresh von CLI/MCP)
 
 <!-- Sektionsbuchstabe: A–Z sind auf main bereits vergeben (T doppelt); die
@@ -2362,6 +2377,11 @@ Dateien.
   Altwert vor der Laufzeitumgebung und dem eingebetteten Build-Wert; leere
   Werte zählen nicht. Bandsintown bleibt als optionale Credential-Zeile
   unabhängig davon verfügbar.
+- **CONC-10** [aktiv] [gtk] — Jede Concerts-Zeile besitzt eine gemeinsame
+  vertikale Mitte. Der Interpret steht als einzeilige Gruppe auf derselben
+  Grundachse wie Datum, Ort, Venue, Distanz und Ticket; eine optionale
+  „similar to …"-Caption erweitert und zentriert die Interpretengruppe als
+  Einheit, statt den Interpreten am oberen Zeilenrand festzuhalten.
 
 ## AF. Podcasts & Radio
 
@@ -2424,6 +2444,12 @@ Hörstatistik.
 - **POD-5** [aktiv] [gtk] — Downloads sind pro Abo opt-in, liegen im
   XDG-Datenpfad der App unter einem GUID-stabilen Pfad, folgen der gewählten
   Cleanup-Policy und werden offline bevorzugt lokal abgespielt.
+- **POD-6** [aktiv] [core] [gtk] — Einzelne RSS- und YouTube-Episoden lassen
+  sich im Kontextmenü entfernen, verschwinden sofort und bleiben zehn Sekunden
+  per Undo reversibel. Der Commit löscht nur den Datenbankeintrag und sperrt
+  seine quellstabile GUID dauerhaft gegen erneuten Feed-Import; eine
+  heruntergeladene Datei bleibt erhalten und kann ausschließlich über die
+  angebotene Papierkorb-Aktion entfernt werden.
 - **RAD-1** [aktiv] [gtk] — Nur die aktuell verbundene Station ist in der
   Tabelle akzentuiert; ihr Zustandsicon, Name, Now-playing und Zeilentint
   wechseln gemeinsam. Alle anderen sowie eine präsentierte, aber getrennte

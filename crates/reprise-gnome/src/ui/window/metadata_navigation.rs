@@ -266,4 +266,62 @@ mod tests {
             ViewSource::Genre("Metalcore".into())
         );
     }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn fil_8_recently_added_chip_x_returns_to_the_normal_library_with_history() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
+        reprise_core::db::migrate(&conn.borrow()).unwrap();
+        let app = adw::Application::builder()
+            .application_id("org.reprise.Reprise.RecentScopeChipTest")
+            .build();
+        app.register(None::<&gtk4::gio::Cancellable>).unwrap();
+        let window = adw::ApplicationWindow::new(&app);
+        let sidebar = Rc::new(Sidebar::new(conn.clone(), &window, || 0));
+        let track_list = Rc::new(TrackList::new(
+            conn,
+            Box::new(|_, _, _, _| {}),
+            |_, _, _, _| {},
+            crate::ui::track_list::queue_sections::QueueViewModel::default,
+            crate::ui::cover_download_worker::setup_for_test(),
+        ));
+        let content_stack = gtk4::Stack::new();
+        content_stack.add_named(&gtk4::Box::default(), Some("library"));
+        let source_title = adw::WindowTitle::new("Music", "");
+        let history = Rc::new(NavHistory::default());
+        let library = BrowserPlace::from(ViewSource::Library);
+        history.restore(library.clone(), library);
+        let navigator = MetadataNavigator::new(
+            history.clone(),
+            &sidebar,
+            &track_list,
+            content_stack.clone(),
+            source_title,
+            ActiveContentFocus::new(&content_stack, &track_list),
+        );
+        track_list.set_on_scope_cleared({
+            let navigator = navigator.clone();
+            move || navigator.leave_scope()
+        });
+        navigator.navigate(
+            NavigationIntent::Sidebar(
+                reprise_core::browser::navigation::SidebarTarget::RecentlyAdded,
+            ),
+            "test recently added navigation",
+        );
+        let scope_chip = track_list.shared.browse_bar.scope_button().unwrap();
+        assert!(scope_chip
+            .label()
+            .is_some_and(|label| label.contains("Recently added")));
+
+        scope_chip.emit_clicked();
+
+        assert_eq!(track_list.current_source(), ViewSource::Library);
+        let previous = history
+            .go_back_from(track_list.browser_place())
+            .expect("leaving Recently added must push it onto Back history");
+        assert_eq!(previous.view_source(), ViewSource::RecentlyAdded);
+    }
 }

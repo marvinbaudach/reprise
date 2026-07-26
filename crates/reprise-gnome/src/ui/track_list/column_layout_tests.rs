@@ -8,6 +8,7 @@ fn numeric_metadata_columns_are_classified_for_centering() {
         ColumnId::Duration,
         ColumnId::Rating,
         ColumnId::PlayCount,
+        ColumnId::Added,
     ] {
         assert_eq!(cell_alignment(id), CellAlignment::Numeric);
     }
@@ -37,6 +38,7 @@ fn every_non_cover_column_can_persist_its_width() {
         ColumnId::Rating,
         ColumnId::PlayCount,
         ColumnId::TrackNumber,
+        ColumnId::Added,
     ] {
         assert!(is_width_persistable(id), "{id:?} should be persistable");
     }
@@ -115,6 +117,59 @@ fn legacy_layout_gains_a_hidden_play_count_column() {
     let layout = parse_layout("cover,title,artist;cover,title,artist").unwrap();
     assert!(layout.order.contains(&ColumnId::PlayCount));
     assert!(!layout.visible.contains(&ColumnId::PlayCount));
+}
+
+#[test]
+fn browse_9_added_is_selectable_sortable_persisted_and_hidden_by_default() {
+    let layout = ColumnLayout::default();
+    let year = layout
+        .order
+        .iter()
+        .position(|id| *id == ColumnId::Year)
+        .unwrap();
+    assert_eq!(layout.order[year + 1], ColumnId::Added);
+    assert!(!layout.visible.contains(&ColumnId::Added));
+    assert_eq!(ColumnId::Added.as_str(), "added");
+    assert_eq!(ColumnId::from_sort_field("added_at"), Some(ColumnId::Added));
+    assert_eq!(column_label(ColumnId::Added), "Added");
+
+    let restored = parse_layout(&serialize_layout(&ColumnLayout {
+        order: layout.order,
+        visible: HashSet::from([ColumnId::Cover, ColumnId::Title, ColumnId::Added]),
+    }))
+    .unwrap();
+    assert!(restored.visible.contains(&ColumnId::Added));
+}
+
+#[test]
+fn browse_9_legacy_layout_gains_a_hidden_added_column() {
+    let layout = parse_layout("cover,title,artist;cover,title,artist").unwrap();
+    assert!(layout.order.contains(&ColumnId::Added));
+    assert!(!layout.visible.contains(&ColumnId::Added));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn browse_9_track_list_builds_the_hidden_added_column() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
+    reprise_core::db::migrate(&conn.borrow()).unwrap();
+    let track_list = crate::ui::track_list::TrackList::new(
+        conn,
+        Box::new(|_, _, _, _| {}),
+        |_, _, _, _| {},
+        crate::ui::track_list::queue_sections::QueueViewModel::default,
+        crate::ui::cover_download_worker::setup_for_test(),
+    );
+
+    let added = track_list
+        .column_registry
+        .column(ColumnId::Added)
+        .expect("Added must be registered so the editor can reveal it");
+    assert_eq!(added.title().as_deref(), Some("Added"));
+    assert_eq!(added.id().as_deref(), Some("added_at"));
+    assert!(!added.is_visible());
 }
 
 fn test_registry(ids: &[ColumnId]) -> ColumnRegistry {

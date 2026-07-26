@@ -49,11 +49,36 @@ pub(crate) struct QueueViewModel {
 pub(crate) struct VirtualContextTail {
     count: usize,
     window: Rc<dyn Fn(usize, usize) -> Vec<i64>>,
+    identity: Option<VirtualContextIdentity>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct VirtualContextIdentity {
+    sequence: (u64, u64),
+    start: usize,
 }
 
 impl VirtualContextTail {
+    #[cfg(test)]
     pub(crate) fn new(count: usize, window: Rc<dyn Fn(usize, usize) -> Vec<i64>>) -> Self {
-        Self { count, window }
+        Self {
+            count,
+            window,
+            identity: None,
+        }
+    }
+
+    pub(crate) fn identified(
+        count: usize,
+        sequence: (u64, u64),
+        start: usize,
+        window: Rc<dyn Fn(usize, usize) -> Vec<i64>>,
+    ) -> Self {
+        Self {
+            count,
+            window,
+            identity: Some(VirtualContextIdentity { sequence, start }),
+        }
     }
 }
 
@@ -144,6 +169,48 @@ impl QueueViewModel {
 
     pub(crate) fn all_ids(&self) -> Vec<i64> {
         self.ids_window(0, self.total_len())
+    }
+
+    /// Exact O(1) model delta for the two normal forward-playback shapes:
+    /// consuming the first materialized Play Next row, or advancing through
+    /// an unchanged virtual context. The lazy tail closure is live, so its
+    /// frozen sequence/start identity is the proof for the virtual case.
+    pub(crate) fn leading_removal_change_from(&self, old: &Self) -> Option<(u32, u32, u32)> {
+        let material_removed = old.ids.len().checked_sub(self.ids.len())?;
+        let context_unchanged = match (&old.context, &self.context) {
+            (None, None) => true,
+            (Some(old), Some(new)) => {
+                old.identity.is_some() && old.identity == new.identity && old.count == new.count
+            }
+            _ => false,
+        };
+        if material_removed > 0
+            && context_unchanged
+            && old.ids.get(material_removed..) == Some(self.ids.as_slice())
+        {
+            return Some((0, u32::try_from(material_removed).unwrap_or(u32::MAX), 0));
+        }
+        if material_removed != 0 {
+            return None;
+        }
+        let old_identity = old.context.as_ref()?.identity?;
+        let new_identity = self.context.as_ref()?.identity?;
+        if old_identity.sequence != new_identity.sequence || new_identity.start < old_identity.start
+        {
+            return None;
+        }
+        let removed = new_identity.start - old_identity.start;
+        if old.context.as_ref()?.count != self.context.as_ref()?.count.saturating_add(removed) {
+            return None;
+        }
+        if removed == 0 {
+            return Some((0, 0, 0));
+        }
+        Some((
+            u32::try_from(self.ids.len()).unwrap_or(u32::MAX),
+            u32::try_from(removed).unwrap_or(u32::MAX),
+            0,
+        ))
     }
 }
 

@@ -19,6 +19,7 @@ const DEFAULT_HEIGHT: i32 = 800;
 pub enum SessionSource {
     #[default]
     Library,
+    RecentlyAdded,
     Playlist(i64),
     Smart(i64),
     Queue,
@@ -165,7 +166,7 @@ fn place_is_resolvable(conn: &Connection, place: &BrowserPlace) -> bool {
         Some(TrackCollection::Library(LibraryScope::Artist(key))) => !key.artist.trim().is_empty(),
         Some(TrackCollection::Library(LibraryScope::Genre(genre))) => !genre.trim().is_empty(),
         Some(
-            TrackCollection::Library(LibraryScope::All)
+            TrackCollection::Library(LibraryScope::All | LibraryScope::RecentlyAdded)
             | TrackCollection::Queue
             | TrackCollection::Missing,
         ) => true,
@@ -276,6 +277,7 @@ fn legacy_browser_place(state: &SessionState) -> BrowserPlace {
 fn session_source_place(source: &SessionSource) -> BrowserPlace {
     BrowserPlace::from(match source {
         SessionSource::Library => ViewSource::Library,
+        SessionSource::RecentlyAdded => ViewSource::RecentlyAdded,
         SessionSource::Playlist(id) => ViewSource::Playlist(*id),
         SessionSource::Smart(id) => ViewSource::Smart(*id),
         SessionSource::Queue => ViewSource::Queue,

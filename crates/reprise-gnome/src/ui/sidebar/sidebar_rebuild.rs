@@ -106,16 +106,20 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
             })
             .into_iter()
             .map(|smart| {
+                let source = if smart.role.as_deref() == Some(playlists::RECENTLY_ADDED_ROLE) {
+                    ViewSource::RecentlyAdded
+                } else {
+                    ViewSource::Smart(smart.id)
+                };
                 let count =
-                    queries::query_track_count(&conn, &ViewSource::Smart(smart.id), "", &[])
-                        .unwrap_or_else(|error| {
-                            tracing::error!(
-                                %error,
-                                smart_id = smart.id,
-                                "failed to count smart playlist tracks for sidebar badge"
-                            );
-                            0
-                        });
+                    queries::query_track_count(&conn, &source, "", &[]).unwrap_or_else(|error| {
+                        tracing::error!(
+                            %error,
+                            smart_id = smart.id,
+                            "failed to count smart playlist tracks for sidebar badge"
+                        );
+                        0
+                    });
                 (smart, count)
             })
             .collect();
@@ -255,9 +259,14 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         &strings::text(strings::SIDEBAR_SECTION_SMART),
     );
     for (smart, count) in &smart_rows {
+        let source = if smart.role.as_deref() == Some(playlists::RECENTLY_ADDED_ROLE) {
+            ViewSource::RecentlyAdded
+        } else {
+            ViewSource::Smart(smart.id)
+        };
         add_row(
             shared,
-            ViewSource::Smart(smart.id),
+            source,
             &smart.name,
             sidebar_presentation::nonzero_count(*count),
             sidebar_presentation::smart_icon(&smart.sort_field),
