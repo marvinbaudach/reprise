@@ -11,12 +11,18 @@ use crate::library::m3u::{M3uEntry, M3uExportEntry};
 
 pub mod delta;
 pub mod m3u;
+pub mod mirror;
 pub mod profile;
 pub mod sanitize;
 pub mod settings;
 pub mod transfer;
 
 pub use delta::{compute_delta, SyncCandidate, SyncDelta};
+pub use mirror::{
+    plan_mirror, DesiredManagedFile, ManagedDeviceFile, ManagedRemoval, MirrorBlocker, MirrorInput,
+    MirrorPlan, MirrorPlaylistProjection, MirrorPlaylistSnapshot, MirrorReplacement, MirrorTrack,
+    MirrorWarning, PlaylistWrite, UnavailableTrack,
+};
 pub use profile::{
     project_playlist_sizes, Mp3Quality, PlaylistSizeProjection, PlaylistTargetSize, PlaylistTracks,
     TransferAction, TransferProfile, UnsupportedMp3Quality,
@@ -337,6 +343,10 @@ mod profile_tests;
 #[cfg(test)]
 #[path = "device_sync/inventory_tests.rs"]
 mod inventory_tests;
+
+#[cfg(test)]
+#[path = "device_sync/mirror_tests.rs"]
+mod mirror_tests;
 
 #[cfg(test)]
 mod tests {

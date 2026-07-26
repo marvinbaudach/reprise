@@ -101,6 +101,13 @@ impl TransferProfile {
             }
         }
     }
+
+    pub fn output_fingerprint(self, track: &SyncTrack) -> &'static str {
+        match self.action_for(track) {
+            TransferAction::CopyOriginal => "copy-original-mp3-v1",
+            TransferAction::TranscodeMp3(quality) => quality.fingerprint(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
