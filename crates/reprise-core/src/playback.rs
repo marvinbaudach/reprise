@@ -4,8 +4,10 @@
 //! frontend drives playback through. The concrete implementations live in the
 //! per-OS platform crates (Linux: GStreamer `playbin3` in `player.rs`).
 
+mod cava;
 mod fault_policy;
 
+pub use cava::{CavaBarProcessor, CavaConfig, CavaError};
 pub use fault_policy::{playback_fault_policy, PlaybackFaultNotice, PlaybackFaultPolicy};
 
 /// Coarse playback state, mirrored from the underlying GStreamer pipeline state.
@@ -486,6 +488,10 @@ pub enum PlayerEvent {
 #[cfg(test)]
 #[path = "playback/song_visual_tests.rs"]
 mod song_visual_tests;
+
+#[cfg(test)]
+#[path = "playback/cava_tests.rs"]
+mod cava_tests;
 
 #[cfg(test)]
 mod spectrum_analyzer_tests {
