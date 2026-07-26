@@ -12,6 +12,15 @@ pub enum TransferMode {
     TranscodeOpus { bitrate: u32 },
 }
 
+impl TransferMode {
+    pub fn fingerprint(self) -> String {
+        match self {
+            Self::Copy => "source-copy-v1".into(),
+            Self::TranscodeOpus { bitrate } => format!("legacy-opus-{bitrate}-v1"),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TransferPlanEntry {
     pub track: SyncTrack,

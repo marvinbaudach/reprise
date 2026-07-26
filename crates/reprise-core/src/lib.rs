@@ -37,6 +37,7 @@ mod db_ai_jobs;
 mod db_artist_news_fetch;
 mod db_change_log;
 mod db_concerts;
+mod db_device_sync;
 mod db_drop_audio_analysis_mix;
 mod db_grandfather;
 mod db_library_doctor;

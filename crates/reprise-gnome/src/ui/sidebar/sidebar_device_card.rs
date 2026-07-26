@@ -498,6 +498,7 @@ mod tests {
                 device_serial: "pixel".into(),
                 device_name: "Pixel 8".into(),
                 selection: reprise_core::device_sync::DeviceSelection::EntireLibrary,
+                profile: reprise_core::device_sync::TransferProfile::default(),
                 opus_bitrate: 0,
                 ratings_back: false,
                 remove_deleted: true,

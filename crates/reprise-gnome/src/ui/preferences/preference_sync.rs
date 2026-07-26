@@ -582,6 +582,7 @@ mod tests {
                 device_serial: "phone".into(),
                 device_name: "Phone".into(),
                 selection: reprise_core::device_sync::DeviceSelection::default(),
+                profile: reprise_core::device_sync::TransferProfile::default(),
                 opus_bitrate: 0,
                 ratings_back: false,
                 remove_deleted: true,
