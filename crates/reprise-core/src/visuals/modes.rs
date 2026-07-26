@@ -1,16 +1,12 @@
-//! Scene dispatch for the deliberately small Grid/Bars mode set.
+//! Bars scene construction.
 
-use super::engine::{ModeCtx, VisualMode};
+use super::engine::ModeCtx;
 use super::scene::Shape;
 
 mod bars;
-mod grid;
 
 pub(crate) use bars::{BarsEnvelope, BAR_COUNT};
 
-pub(crate) fn build_scene(mode: VisualMode, ctx: &ModeCtx) -> Vec<Shape> {
-    match mode {
-        VisualMode::Grid => grid::scene(ctx),
-        VisualMode::Bars => bars::scene(ctx),
-    }
+pub(crate) fn build_scene(ctx: &ModeCtx) -> Vec<Shape> {
+    bars::scene(ctx)
 }

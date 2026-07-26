@@ -1,29 +1,20 @@
 use super::*;
 
-const MEMBRANE_PHASE_STEPS: [usize; 9] = [0, 4, 8, 12, 16, 22, 30, 40, 56];
-
 #[test]
-fn ac_20_visual_chrome_offers_only_grid_and_bars() {
+fn ac_20_visual_chrome_is_a_bars_only_canvas() {
     let css = css();
     assert!(css.contains("color: @reprise_player_accent"));
     assert!(css.contains(".reprise-song-visual-canvas"));
-    assert!(css.contains(".reprise-song-visual-modes"));
-
-    let labels: Vec<String> = VisualMode::ALL
-        .iter()
-        .map(|&mode| strings::text(mode_label(mode)))
-        .collect();
-    let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
-    assert_eq!(labels, ["Grid", "Bars"]);
+    assert!(!css.contains(".reprise-song-visual-modes"));
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_20_visual_widget_exposes_a_labeled_canvas_and_mode_row() {
+fn ac_20_visual_widget_exposes_only_a_labeled_bars_canvas() {
     gtk4::init().unwrap();
     let visualizer = SongVisualizer::new();
 
-    assert_eq!(visualizer.root.observe_children().n_items(), 2);
+    assert_eq!(visualizer.root.observe_children().n_items(), 1);
     assert_eq!(visualizer.area.accessible_role(), gtk4::AccessibleRole::Img);
     assert!(gtk4::test_accessible_has_property(
         &visualizer.area,
@@ -76,128 +67,41 @@ fn lively_engine() -> VisualEngine {
 }
 
 #[test]
-fn membrane_phase_gallery_steps_cover_both_dome_and_depth() {
-    use reprise_core::playback::SPECTRUM_BAND_COUNT;
-    use reprise_core::visuals::Membrane;
-
-    let mut membrane = Membrane::new();
-    let silent = [0.0_f32; SPECTRUM_BAND_COUNT];
-    membrane.splash(1.0);
-    membrane.advance(&silent);
-
-    let mut captured = Vec::new();
-    for step in 0..=*MEMBRANE_PHASE_STEPS.last().unwrap() {
-        if MEMBRANE_PHASE_STEPS.contains(&step) {
-            captured.push(membrane.sample(0.5, 0.5));
-        }
-        membrane.advance(&silent);
-    }
-    let peak = captured.iter().copied().fold(0.0_f32, f32::max);
-    let trough = captured.iter().copied().fold(0.0_f32, f32::min);
-    assert!(peak > 0.35, "gallery must capture the dome, peak {peak}");
-    assert!(
-        trough < -0.05,
-        "gallery must capture the depth phase, trough {trough}"
-    );
-}
-
-#[test]
-#[ignore = "visual gallery: renders both mode scenes to REPRISE_VIS_OUT for eyeballing"]
-fn render_mode_gallery_ppm() {
+#[ignore = "visual gallery: renders the Bars scene to REPRISE_VIS_OUT for eyeballing"]
+fn render_bars_gallery_ppm() {
     let out = std::env::var("REPRISE_VIS_OUT").unwrap_or_else(|_| "/tmp".to_owned());
     let (w, h) = (548.0_f32, 300.0_f32);
 
-    for mode in VisualMode::ALL {
-        let mut engine = lively_engine();
-        engine.set_mode(mode);
-        let scene = engine.scene(w, h);
+    let engine = lively_engine();
+    let scene = engine.scene(w, h);
 
-        let mut surface =
-            gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, w as i32, h as i32)
-                .unwrap();
-        {
-            let cr = gtk4::cairo::Context::new(&surface).unwrap();
-            cr.set_source_rgb(0.078, 0.094, 0.102);
-            let _ = cr.paint();
-            render::draw_scene(&cr, &scene);
-        }
-        let (iw, ih) = (w as usize, h as usize);
-        let stride = surface.stride() as usize;
-        let data = surface.data().unwrap();
-        let mut ppm = format!("P6\n{iw} {ih}\n255\n").into_bytes();
-        for y in 0..ih {
-            for x in 0..iw {
-                let o = y * stride + x * 4;
-                ppm.extend_from_slice(&[data[o + 2], data[o + 1], data[o]]);
-            }
-        }
-        drop(data);
-        let path = format!("{out}/visualizer-{}.ppm", mode.id());
-        std::fs::write(&path, ppm).unwrap();
-        println!("wrote {path}");
+    let mut surface =
+        gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, w as i32, h as i32).unwrap();
+    {
+        let cr = gtk4::cairo::Context::new(&surface).unwrap();
+        cr.set_source_rgb(0.078, 0.094, 0.102);
+        let _ = cr.paint();
+        render::draw_scene(&cr, &scene);
     }
-}
-
-/// Renders a radial membrane phase sequence (one strong beat off silence,
-/// followed by quiet) so the dome, glow, depth trough and settling rings can
-/// be inspected. Frames are written as `grid-phase-NN.ppm`.
-#[test]
-#[ignore = "visual: renders the Grid membrane phases to REPRISE_VIS_OUT"]
-fn render_grid_membrane_phase_sequence() {
-    use reprise_core::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
-    let out = std::env::var("REPRISE_VIS_OUT").unwrap_or_else(|_| "/tmp".to_owned());
-    let (w, h) = (548.0_f32, 300.0_f32);
-
-    let mut engine = VisualEngine::new();
-    engine.set_playing(true);
-    engine.set_accent((0.22, 0.78, 0.74));
-    let mut analyzer = SpectrumAnalyzer::new();
-    for _ in 0..25 {
-        engine.ingest(&analyzer.ingest([-80.0; SPECTRUM_ANALYSIS_BAND_COUNT]));
-        engine.tick();
-    }
-    // One full-scale broadband frame fires a strong central cone impulse.
-    engine.ingest(&analyzer.ingest([0.0; SPECTRUM_ANALYSIS_BAND_COUNT]));
-    engine.tick();
-
-    let mut next = 0usize;
-    for step in 0..=*MEMBRANE_PHASE_STEPS.last().unwrap() {
-        if MEMBRANE_PHASE_STEPS.get(next) == Some(&step) {
-            let scene = engine.scene(w, h);
-            let mut surface =
-                gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, w as i32, h as i32)
-                    .unwrap();
-            {
-                let cr = gtk4::cairo::Context::new(&surface).unwrap();
-                cr.set_source_rgb(0.078, 0.094, 0.102);
-                let _ = cr.paint();
-                render::draw_scene(&cr, &scene);
-            }
-            let (iw, ih) = (w as usize, h as usize);
-            let stride = surface.stride() as usize;
-            let data = surface.data().unwrap();
-            let mut ppm = format!("P6\n{iw} {ih}\n255\n").into_bytes();
-            for y in 0..ih {
-                for x in 0..iw {
-                    let o = y * stride + x * 4;
-                    ppm.extend_from_slice(&[data[o + 2], data[o + 1], data[o]]);
-                }
-            }
-            drop(data);
-            let path = format!("{out}/grid-phase-{step:02}.ppm");
-            std::fs::write(&path, ppm).unwrap();
-            println!("wrote {path}");
-            next += 1;
+    let (iw, ih) = (w as usize, h as usize);
+    let stride = surface.stride() as usize;
+    let data = surface.data().unwrap();
+    let mut ppm = format!("P6\n{iw} {ih}\n255\n").into_bytes();
+    for y in 0..ih {
+        for x in 0..iw {
+            let o = y * stride + x * 4;
+            ppm.extend_from_slice(&[data[o + 2], data[o + 1], data[o]]);
         }
-        // Quiet after the beat: isolate the cloth's underdamped response.
-        engine.ingest(&analyzer.ingest([-80.0; SPECTRUM_ANALYSIS_BAND_COUNT]));
-        engine.tick();
     }
+    drop(data);
+    let path = format!("{out}/visualizer-bars.ppm");
+    std::fs::write(&path, ppm).unwrap();
+    println!("wrote {path}");
 }
 
 #[test]
 #[ignore = "diagnostic: measures the complete scene-build and Cairo-render frame budget"]
-fn grid_and_bars_fullscreen_render_budget_diagnostic() {
+fn bars_fullscreen_render_budget_diagnostic() {
     use reprise_core::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
     use std::time::Instant;
 
@@ -206,49 +110,45 @@ fn grid_and_bars_fullscreen_render_budget_diagnostic() {
 
     let mut over_budget = Vec::new();
     for (width, height) in [(548, 300), (960, 540), (1920, 1080)] {
-        for mode in [VisualMode::Grid, VisualMode::Bars] {
-            let mut analyzer = SpectrumAnalyzer::new();
-            let mut engine = VisualEngine::new();
-            engine.set_mode(mode);
-            engine.set_playing(true);
-            let surface =
-                gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, width, height)
-                    .unwrap();
-            let mut renderer = render::SceneRenderer::default();
-            let mut timings = Vec::with_capacity(FRAMES);
+        let mut analyzer = SpectrumAnalyzer::new();
+        let mut engine = VisualEngine::new();
+        engine.set_playing(true);
+        let surface =
+            gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, width, height).unwrap();
+        let mut renderer = render::SceneRenderer::default();
+        let mut timings = Vec::with_capacity(FRAMES);
 
-            for frame in 0..FRAMES {
-                let mut input = [-42.0_f32; SPECTRUM_ANALYSIS_BAND_COUNT];
-                if frame % 10 == 0 {
-                    input[..96].fill(-2.0);
-                    input[96..].fill(-12.0);
-                }
-                engine.ingest(&analyzer.ingest(input));
-
-                let started = Instant::now();
-                engine.tick();
-                let scene_size = render::capped_scene_size(width, height);
-                let scene = engine.scene(scene_size.0 as f32, scene_size.1 as f32);
-                let cr = gtk4::cairo::Context::new(&surface).unwrap();
-                cr.set_source_rgb(0.02, 0.025, 0.03);
-                let _ = cr.paint();
-                renderer.draw(&cr, &scene, width, height);
-                surface.flush();
-                timings.push(started.elapsed().as_secs_f64() * 1000.0);
+        for frame in 0..FRAMES {
+            let mut input = [-42.0_f32; SPECTRUM_ANALYSIS_BAND_COUNT];
+            if frame % 10 == 0 {
+                input[..96].fill(-2.0);
+                input[96..].fill(-12.0);
             }
+            engine.ingest(&analyzer.ingest(input));
 
-            timings.sort_by(f64::total_cmp);
-            let percentile = |fraction: f64| {
-                let index = ((timings.len() - 1) as f64 * fraction).round() as usize;
-                timings[index]
-            };
-            let p50 = percentile(0.50);
-            let p95 = percentile(0.95);
-            let p99 = percentile(0.99);
-            println!("{mode:?} {width}x{height}: p50={p50:.3} ms p95={p95:.3} ms p99={p99:.3} ms");
-            if p95 > FRAME_BUDGET_MS {
-                over_budget.push(format!("{mode:?} {width}x{height} p95={p95:.3} ms"));
-            }
+            let started = Instant::now();
+            engine.tick();
+            let scene_size = render::capped_scene_size(width, height);
+            let scene = engine.scene(scene_size.0 as f32, scene_size.1 as f32);
+            let cr = gtk4::cairo::Context::new(&surface).unwrap();
+            cr.set_source_rgb(0.02, 0.025, 0.03);
+            let _ = cr.paint();
+            renderer.draw(&cr, &scene, width, height);
+            surface.flush();
+            timings.push(started.elapsed().as_secs_f64() * 1000.0);
+        }
+
+        timings.sort_by(f64::total_cmp);
+        let percentile = |fraction: f64| {
+            let index = ((timings.len() - 1) as f64 * fraction).round() as usize;
+            timings[index]
+        };
+        let p50 = percentile(0.50);
+        let p95 = percentile(0.95);
+        let p99 = percentile(0.99);
+        println!("Bars {width}x{height}: p50={p50:.3} ms p95={p95:.3} ms p99={p99:.3} ms");
+        if p95 > FRAME_BUDGET_MS {
+            over_budget.push(format!("Bars {width}x{height} p95={p95:.3} ms"));
         }
     }
     assert!(
