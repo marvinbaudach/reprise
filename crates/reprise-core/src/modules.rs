@@ -61,6 +61,22 @@ pub const CONCERTS_MODULE: ModuleDescriptor = ModuleDescriptor {
     applies_live: true,
 };
 
+pub const PODCASTS_MODULE: ModuleDescriptor = ModuleDescriptor {
+    id: "podcasts",
+    name: "Podcasts",
+    description: "Subscribe to podcast feeds and YouTube sources via yt-dlp",
+    default_enabled: false,
+    applies_live: true,
+};
+
+pub const RADIO_MODULE: ModuleDescriptor = ModuleDescriptor {
+    id: "radio",
+    name: "Radio",
+    description: "Play favorite stations; each play reports a click to radio-browser.info",
+    default_enabled: true,
+    applies_live: true,
+};
+
 pub const LIBRARY_DOCTOR_MODULE: ModuleDescriptor = ModuleDescriptor {
     id: "library_doctor",
     name: "Library Doctor",
@@ -107,6 +123,8 @@ pub const ALL_MODULES: &[&ModuleDescriptor] = &[
     &LIBRARY_DOCTOR_MODULE,
     &NEW_RELEASES_MODULE,
     &CONCERTS_MODULE,
+    &PODCASTS_MODULE,
+    &RADIO_MODULE,
     &COVER_DOWNLOAD_MODULE,
     &ARTIST_PORTRAITS_MODULE,
     &ONLINE_LYRICS_MODULE,
@@ -324,5 +342,33 @@ mod tests {
         assert!(!is_enabled(&conn, descriptor).unwrap());
         set_enabled(&conn, descriptor, true).unwrap();
         assert!(is_enabled(&conn, descriptor).unwrap());
+    }
+
+    #[test]
+    fn src_1_podcasts_default_off_and_radio_defaults_on() {
+        let conn = migrated_conn();
+
+        assert!(!is_enabled(&conn, &PODCASTS_MODULE).unwrap());
+        assert!(is_enabled(&conn, &RADIO_MODULE).unwrap());
+        for id in ["podcasts", "radio"] {
+            let descriptor = ALL_MODULES
+                .iter()
+                .find(|module| module.id == id)
+                .expect("source module must be registered");
+            assert!(descriptor.applies_live);
+        }
+    }
+
+    #[test]
+    fn source_modules_are_registered_once() {
+        for module in [&PODCASTS_MODULE, &RADIO_MODULE] {
+            assert_eq!(
+                ALL_MODULES
+                    .iter()
+                    .filter(|registered| registered.id == module.id)
+                    .count(),
+                1
+            );
+        }
     }
 }
