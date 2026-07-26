@@ -349,7 +349,7 @@ mod tests {
     }
 
     #[test]
-    fn conc_5_only_enabled_due_idle_workers_fetch() {
+    fn conc_5a_only_enabled_due_idle_workers_fetch() {
         assert!(request_allowed(true, false, true));
         assert!(!request_allowed(false, false, true));
         assert!(!request_allowed(true, true, true));

@@ -4317,3 +4317,15 @@ msgstr "Barra de título independiente"
 
 msgid "Saved"
 msgstr "Guardado"
+
+msgid "Checking key…"
+msgstr "Verificando clave…"
+
+msgid "Key works"
+msgstr "La clave funciona"
+
+msgid "Key was rejected"
+msgstr "La clave fue rechazada"
+
+msgid "Could not verify"
+msgstr "No se pudo verificar"

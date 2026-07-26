@@ -3853,3 +3853,15 @@ msgstr ""
 
 msgid "Saved"
 msgstr "تم الحفظ"
+
+msgid "Checking key…"
+msgstr "جارٍ التحقق من المفتاح…"
+
+msgid "Key works"
+msgstr "المفتاح صالح"
+
+msgid "Key was rejected"
+msgstr "تم رفض المفتاح"
+
+msgid "Could not verify"
+msgstr "تعذر التحقق"

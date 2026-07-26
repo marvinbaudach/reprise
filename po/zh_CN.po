@@ -3845,3 +3845,15 @@ msgstr ""
 
 msgid "Saved"
 msgstr "已保存"
+
+msgid "Checking key…"
+msgstr "正在验证密钥…"
+
+msgid "Key works"
+msgstr "密钥有效"
+
+msgid "Key was rejected"
+msgstr "密钥被拒绝"
+
+msgid "Could not verify"
+msgstr "无法验证"
