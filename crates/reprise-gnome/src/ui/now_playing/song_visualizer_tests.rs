@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn ac_20_visual_chrome_is_a_bars_only_canvas() {
+fn ac_21_visual_chrome_is_a_bars_only_canvas() {
     let css = css();
     assert!(css.contains("color: @reprise_player_accent"));
     assert!(css.contains(".reprise-song-visual-canvas"));
@@ -10,7 +10,7 @@ fn ac_20_visual_chrome_is_a_bars_only_canvas() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_20_visual_widget_exposes_only_a_labeled_bars_canvas() {
+fn ac_21_visual_widget_exposes_only_a_labeled_bars_canvas() {
     gtk4::init().unwrap();
     let visualizer = SongVisualizer::new();
 
@@ -22,47 +22,18 @@ fn ac_20_visual_widget_exposes_only_a_labeled_bars_canvas() {
     ));
 }
 
-/// Builds an engine that has just been hammered by a beat-then-sustain:
-/// playing, accented, 20 silent frames (settles the envelopes at rest), one
-/// full-spectrum impact frame (fires the beat/kick off the silence-to-loud
-/// flux jump — a real kick is broadband for an instant), then 9 frames of a
-/// realistic bass-heavy, treble-light sustain.
-///
-/// With the honest-loudness spectrum mapping (`SpectrumAnalyzer::ingest`,
-/// `playback.rs`), each band's height reflects its actual level, so the
-/// bass-heavy sustain reads back as a genuine spectrum silhouette (loud bass
-/// tapering to quiet treble) rather than a flat maxed-out wall. Mirrors
-/// `reprise_core::visuals::engine::lively_engine`, which is test-only and not
-/// exported across the crate boundary.
+/// Builds a representative already-smoothed CAVA silhouette.
 fn lively_engine() -> VisualEngine {
-    use reprise_core::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
+    use reprise_core::playback::{SpectrumFrame, SPECTRUM_BAND_COUNT};
 
     let mut engine = VisualEngine::new();
     engine.set_playing(true);
-    engine.set_accent((0.22, 0.78, 0.74)); // app teal
-    let mut analyzer = SpectrumAnalyzer::new();
-    for _ in 0..20 {
-        engine.ingest(&analyzer.ingest([-80.0; SPECTRUM_ANALYSIS_BAND_COUNT]));
-        engine.tick();
-    }
-    // One full-scale impact frame: fires the beat and seeds every band's
-    // auto-gain ceiling near its max.
-    engine.ingest(&analyzer.ingest([0.0; SPECTRUM_ANALYSIS_BAND_COUNT]));
-    engine.tick();
-    // Bass-heavy descending sustain with a couple of ripples, not a flat
-    // 0 dB slam: db(i) = -6 - 55*(i/255)^0.6 + 8*sin(i*0.20), clamped. Held
-    // well above the auto-gain floor throughout, so it reads as a smooth
-    // taper rather than a hard on/off cutoff.
-    let mut shaped = [0.0_f32; SPECTRUM_ANALYSIS_BAND_COUNT];
-    for (i, bin) in shaped.iter_mut().enumerate() {
-        let x = i as f32 / (SPECTRUM_ANALYSIS_BAND_COUNT - 1) as f32;
-        let db = -6.0 - 55.0 * x.powf(0.6) + 8.0 * (i as f32 * 0.20).sin();
-        *bin = db.clamp(-80.0, 0.0);
-    }
-    for _ in 0..9 {
-        engine.ingest(&analyzer.ingest(shaped));
-        engine.tick();
-    }
+    engine.set_accent((0.22, 0.78, 0.74));
+    let shaped = std::array::from_fn(|index| {
+        let x = index as f32 / (SPECTRUM_BAND_COUNT - 1) as f32;
+        (0.9 - 0.55 * x.powf(0.6) + 0.08 * (index as f32 * 0.45).sin()).clamp(0.0, 1.0)
+    });
+    engine.ingest(&SpectrumFrame::from_cava_bars(shaped));
     engine
 }
 
@@ -102,7 +73,7 @@ fn render_bars_gallery_ppm() {
 #[test]
 #[ignore = "diagnostic: measures the complete scene-build and Cairo-render frame budget"]
 fn bars_fullscreen_render_budget_diagnostic() {
-    use reprise_core::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
+    use reprise_core::playback::{SpectrumFrame, SPECTRUM_BAND_COUNT};
     use std::time::Instant;
 
     const FRAMES: usize = 240;
@@ -110,7 +81,6 @@ fn bars_fullscreen_render_budget_diagnostic() {
 
     let mut over_budget = Vec::new();
     for (width, height) in [(548, 300), (960, 540), (1920, 1080)] {
-        let mut analyzer = SpectrumAnalyzer::new();
         let mut engine = VisualEngine::new();
         engine.set_playing(true);
         let surface =
@@ -119,12 +89,12 @@ fn bars_fullscreen_render_budget_diagnostic() {
         let mut timings = Vec::with_capacity(FRAMES);
 
         for frame in 0..FRAMES {
-            let mut input = [-42.0_f32; SPECTRUM_ANALYSIS_BAND_COUNT];
+            let mut input = [0.45_f32; SPECTRUM_BAND_COUNT];
             if frame % 10 == 0 {
-                input[..96].fill(-2.0);
-                input[96..].fill(-12.0);
+                input[..24].fill(0.98);
+                input[24..].fill(0.78);
             }
-            engine.ingest(&analyzer.ingest(input));
+            engine.ingest(&SpectrumFrame::from_cava_bars(input));
 
             let started = Instant::now();
             engine.tick();

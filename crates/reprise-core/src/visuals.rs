@@ -2,7 +2,6 @@
 
 pub mod color;
 pub mod engine;
-mod impact;
 pub mod modes;
 pub mod scene;
 
@@ -14,7 +13,7 @@ pub use scene::{Fill, Geom, Rgba, Scene, Shape};
 #[cfg(test)]
 mod bars_source_tests {
     #[test]
-    fn ac_20_builds_bars_without_visual_mode_state() {
+    fn ac_21_builds_bars_without_visual_mode_state() {
         let engine = include_str!("visuals/engine.rs");
         for removed in ["pub enum VisualMode", "set_mode(", "fn mode("] {
             assert!(
@@ -48,20 +47,6 @@ mod bars_source_tests {
             assert!(
                 !engine.contains(removed),
                 "removed visual modes left engine marker {removed}"
-            );
-        }
-
-        let impact = include_str!("visuals/impact.rs");
-        for removed in [
-            "Shockwave",
-            "Particle",
-            "spawn_beat",
-            "accent_boost",
-            "kick",
-        ] {
-            assert!(
-                !impact.contains(removed),
-                "removed visual modes left impact marker {removed}"
             );
         }
 
