@@ -1540,7 +1540,10 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
   fünf bis neun 60-Hz-Schritte (höchstens 150 ms) flüssig zum großen Peak auf.
   Schnelle Beatfolgen berücksichtigen den verbleibenden Hub, statt die
   Membran am Höhenlimit flach festzudrücken; ihre freie Nachschwingung darf
-  keinen späteren größeren Peak erfinden.
+  keinen späteren größeren Peak erfinden. Nach dem ersten Tiefendurchlauf
+  bleibt jeder frei erzeugte positive Rückprall unter zwanzig Prozent des
+  auslösenden Hauptpeaks, damit ein einzelner Schlag nicht wie ein zweiter
+  Breakdown-Hit erscheint.
   Flow, Pulse und weitere Modi existieren nicht. Der beschriftete Canvas
   übernimmt den aktuellen Cover-Akzent über denselben globalen
   Ambient-Crossfade wie die Playerleiste; nur ohne brauchbare Coverfarbe gilt

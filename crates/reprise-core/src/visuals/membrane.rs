@@ -58,9 +58,9 @@ const CELL_SPACING_RATIO: f32 = (MEMBRANE_COLS - 1) as f32 / (MEMBRANE_ROWS - 1)
 const COL_SPRING_SCALE: f32 = CELL_SPACING_RATIO * CELL_SPACING_RATIO;
 /// Restoring pull back toward a flat surface.
 const RESTORING: f32 = 4.0;
-/// Velocity damping rate; light enough for cloth-like rings to travel, strong
-/// enough for AC-11 to reach a genuinely static stopped frame.
-const DAMP_RATE: f32 = 2.8;
+/// Velocity damping rate; light enough for one cloth-like depth stroke to
+/// travel, strong enough that its free rebound cannot resemble another beat.
+const DAMP_RATE: f32 = 4.2;
 const HEIGHT_MIN: f32 = -1.35;
 const HEIGHT_MAX: f32 = 2.0;
 
@@ -414,6 +414,39 @@ mod tests {
         assert!(
             tail_peak <= impact_peak * 1.05,
             "the cloth tail must not invent a larger peak later: hit={impact_peak}, tail={tail_peak}"
+        );
+    }
+
+    #[test]
+    fn ac_20_single_hit_does_not_generate_another_breakdown_sized_rebound() {
+        let mut membrane = Membrane::new();
+        let silent = [0.0_f32; SPECTRUM_BAND_COUNT];
+        membrane.splash(1.0);
+
+        let mut heights = Vec::new();
+        for _ in 0..240 {
+            membrane.advance(&silent);
+            heights.push(center_height(&membrane));
+        }
+
+        let first_peak_index = heights
+            .windows(2)
+            .position(|pair| pair[0] > pair[1])
+            .expect("a strong hit must form a positive crest");
+        let first_peak = heights[first_peak_index];
+        let first_depth_index = heights[first_peak_index..]
+            .iter()
+            .position(|height| *height < 0.0)
+            .map(|index| first_peak_index + index)
+            .expect("the speaker stroke must continue into depth");
+        let rebound = heights[first_depth_index..]
+            .iter()
+            .copied()
+            .fold(0.0_f32, f32::max);
+
+        assert!(
+            rebound < first_peak * 0.20,
+            "one musical hit must not create a second hit-sized crest: first={first_peak}, rebound={rebound}"
         );
     }
 
