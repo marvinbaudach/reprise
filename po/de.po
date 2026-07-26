@@ -4514,3 +4514,6 @@ msgstr "Separate Titelleiste"
 #~ msgid "Based on {count} analyzed plays · {coverage}% coverage"
 #~ msgstr ""
 #~ "Basierend auf {count} analysierten Wiedergaben · {coverage}% Abdeckung"
+
+msgid "Saved"
+msgstr "Gespeichert"

@@ -4043,3 +4043,6 @@ msgstr ""
 
 #~ msgid "Top tracks"
 #~ msgstr "Meilleures pistes"
+
+msgid "Saved"
+msgstr "Enregistré"

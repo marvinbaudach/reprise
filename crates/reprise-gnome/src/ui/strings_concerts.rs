@@ -42,6 +42,7 @@ pub const CONCERTS_UPDATED_NEVER: &str = N_!("Never updated");
 pub const CONCERTS_NO_LINK: &str = N_!("No ticket or event link available");
 pub const CONCERTS_BANDSINTOWN_APP_ID: &str = N_!("Bandsintown app_id");
 pub const CONCERTS_TICKETMASTER_API_KEY: &str = N_!("Ticketmaster API key");
+pub const CONCERTS_CREDENTIAL_SAVED: &str = N_!("Saved");
 pub const CONCERTS_LOCATION: &str = N_!("Location");
 pub const CONCERTS_CITY_ENTRY: &str = N_!("City");
 pub const CONCERTS_USE_CURRENT_LOCATION: &str = N_!("Use current location");

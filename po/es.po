@@ -4314,3 +4314,6 @@ msgstr "Barra de título independiente"
 #~ msgid "Based on {count} analyzed plays · {coverage}% coverage"
 #~ msgstr ""
 #~ "Basado en {count} reproducciones analizadas · {coverage}% de cobertura"
+
+msgid "Saved"
+msgstr "Guardado"
