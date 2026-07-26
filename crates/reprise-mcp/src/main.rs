@@ -8,6 +8,7 @@
 //! or raw listen event).
 
 mod capability;
+mod catalog_resources;
 mod config;
 mod data;
 mod dto;
