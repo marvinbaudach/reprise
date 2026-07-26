@@ -13,14 +13,14 @@ use reprise_core::podcasts::{EpisodeRow, PodcastKind};
 use crate::ui::player_controller::PlayerController;
 
 use super::external_media_state::{
-    podcast_source_requires_resolution, ExternalSession, PodcastSession, RadioCommand, RadioPhase,
+    podcast_source_requires_resolution, ExternalSession, PodcastSession, RadioCommand,
     RadioSession, ResumePolicy,
 };
 use super::preview::PlaybackMode;
 
 pub(in crate::ui) use super::external_media_state::{
     EpisodeSource, ExternalMedia, ExternalPlaybackSnapshot, ExternalPlaybackState, PodcastPhase,
-    RadioPresentation, StreamTags,
+    RadioPhase, RadioPresentation, StreamTags,
 };
 
 const POSITION_PERSIST_INTERVAL_MS: i64 = 5_000;
@@ -56,6 +56,17 @@ impl PlayerController {
 
     pub(in crate::ui) fn pending_play_next(&self) -> Option<EpisodeRow> {
         self.external.borrow().play_next.clone()
+    }
+
+    pub(in crate::ui) fn play_pending_next(self: &Rc<Self>) {
+        let Some(episode) = self.pending_play_next() else {
+            return;
+        };
+        if let Err(error) =
+            self.play_external(super::external_media_toast::media_from_episode(&episode))
+        {
+            self.show_toast(&error.to_string());
+        }
     }
 
     pub(in crate::ui) fn play_external(
@@ -389,7 +400,10 @@ impl PlayerController {
                         self.update_external_mpris(MprisPlaybackStatus::Paused);
                         self.notify_external_changed();
                     }
-                    Some(RadioCommand::Reconnect) => self.retry_radio(),
+                    Some(RadioCommand::Reconnect) => {
+                        self.notify_external_changed();
+                        self.retry_radio();
+                    }
                     _ => {}
                 }
                 true
@@ -420,6 +434,7 @@ impl PlayerController {
         let mut external = self.external.borrow_mut();
         external.clear_session();
         external.clear_preview();
+        external.play_next = None;
         drop(external);
         self.notify_external_changed();
     }
