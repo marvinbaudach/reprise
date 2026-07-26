@@ -180,6 +180,7 @@ impl AutocompleteEntry {
             .max_content_height(320)
             .propagate_natural_height(true)
             .build();
+        scrolled.add_css_class("reprise-autocomplete-scroller");
 
         let section_header = gtk4::Label::builder()
             .label(crate::ui::strings::text(
@@ -192,6 +193,7 @@ impl AutocompleteEntry {
 
         let container = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         container.add_css_class("reprise-autocomplete-menu");
+        container.set_overflow(gtk4::Overflow::Hidden);
         container.append(&section_header);
         container.append(&scrolled);
 
