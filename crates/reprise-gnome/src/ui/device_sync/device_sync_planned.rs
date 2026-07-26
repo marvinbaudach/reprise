@@ -91,6 +91,8 @@ impl DeviceSyncRuntime {
             device.planned_cancel = Some(cancelled.clone());
             device.cancellable = Some(cancellable.clone());
             device.sync_error = None;
+            device.transfer_started_at = None;
+            device.bytes_per_second = 0;
             device.sync_phase = syncing_phase(
                 SyncStep::Removing,
                 0,
@@ -590,6 +592,17 @@ fn set_phase(
         .iter_mut()
         .find(|device| device.descriptor.id == device_id && device.generation == generation)
     {
+        if matches!(
+            phase,
+            PlannedSyncPhase::Syncing {
+                step: SyncStep::Copying,
+                ..
+            }
+        ) && device.transfer_started_at.is_none()
+        {
+            device.transfer_started_at = Some(Instant::now());
+            device.bytes_per_second = 0;
+        }
         device.sync_phase = phase;
     }
     runtime.notify();
@@ -616,6 +629,9 @@ fn update_copy_bytes(
         {
             *bytes_done = (*bytes_done).max(done.min(total));
             *bytes_total = total;
+            if let Some(started_at) = device.transfer_started_at {
+                device.bytes_per_second = transfer_rate(*bytes_done, started_at.elapsed());
+            }
         }
     }
     runtime.notify();

@@ -445,6 +445,8 @@ impl PlayerController {
         let agent_queue_state = handles.queue_state;
         let mpris_receiver = handles.commands;
         let mpris_seek_notify = handles.seek_notify;
+        let _device_sync_state = handles.device_sync_state;
+        let _device_sync_commands = handles.device_sync_commands;
 
         let lyrics = PlayerLyrics::new(&conn.borrow());
         let controller = Rc::new(Self {

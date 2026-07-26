@@ -90,6 +90,7 @@ pub struct DeviceView {
     pub last_sync: Option<chrono::DateTime<chrono::Utc>>,
     pub tracks: Vec<DeviceTrackView>,
     pub selected_track_count: usize,
+    pub bytes_per_second: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

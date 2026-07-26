@@ -34,6 +34,8 @@ pub struct StartupCaps {
     pub ai_create: bool,
     /// Whether `sources:manage` was granted at startup.
     pub sources_manage: bool,
+    #[cfg(feature = "mpris")]
+    pub device_sync: bool,
 }
 
 /// Opens and migrates the database, then snapshots the write-class capabilities
@@ -52,5 +54,7 @@ pub fn prepare(db_path: &Path) -> Result<StartupCaps, StartupError> {
         playlist_manage: capability::playlist_manage_granted(&conn).map_err(StartupError::Query)?,
         ai_create: capability::ai_create_granted(&conn).map_err(StartupError::Query)?,
         sources_manage: capability::sources_manage_granted(&conn).map_err(StartupError::Query)?,
+        #[cfg(feature = "mpris")]
+        device_sync: capability::device_sync_granted(&conn).map_err(StartupError::Query)?,
     })
 }

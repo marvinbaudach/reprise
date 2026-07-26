@@ -649,6 +649,12 @@ pub fn playback_allowed(path: &Path) -> Result<bool, DataError> {
     capability::playback_control_enabled(&conn).map_err(DataError::Db)
 }
 
+#[cfg(feature = "mpris")]
+pub fn device_sync_allowed(path: &Path, granted_at_startup: bool) -> Result<bool, DataError> {
+    let conn = open(path)?;
+    capability::device_sync_effective(&conn, granted_at_startup).map_err(DataError::Db)
+}
+
 /// Resolves a `music_play` request to an ordered id list. Exactly one of
 /// `track_ids`/`playlist_id` must be set; a playlist is resolved to its tracks
 /// via `playlists::track_ids` (in playlist order); an empty/absent result is
