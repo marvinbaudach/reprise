@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn ac_21_visual_chrome_is_a_bars_only_canvas() {
+fn ac_22_visual_chrome_is_a_bars_only_canvas() {
     let css = css();
     assert!(css.contains("color: @reprise_player_accent"));
     assert!(css.contains(".reprise-song-visual-canvas"));
@@ -10,7 +10,7 @@ fn ac_21_visual_chrome_is_a_bars_only_canvas() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_21_visual_widget_exposes_only_a_labeled_bars_canvas() {
+fn ac_22_visual_widget_exposes_only_a_labeled_bars_canvas() {
     gtk4::init().unwrap();
     let visualizer = SongVisualizer::new();
 

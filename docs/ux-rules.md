@@ -1716,7 +1716,8 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
   Dauerbewegung.
 - **AC-19** [ersetzt durch AC-20]
 - **AC-20** [ersetzt durch AC-21]
-- **AC-21** [aktiv] [core] [gtk] — „Song Visuals" ist ein standardmäßig
+- **AC-21** [ersetzt durch AC-22]
+- **AC-22** [aktiv] [core] [gtk] — „Song Visuals" ist ein standardmäßig
   ausgeschaltetes, live anwendbares Plugin. Eingeschaltet zweigt die
   Linux-Pipeline vor ReplayGain lokal normalisiertes Mono-PCM ab; CAVA-Mathematik
   erzeugt daraus 64 logarithmische, auf 0–1 begrenzte Anzeigebänder. Der
@@ -1733,6 +1734,14 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
   Impulse werden nicht in neuere CAVA-Frames übertragen. Pause und Stop dürfen
   ausschließlich für das nach AC-11 geforderte statische Ausklingen eine
   visuelle Absenkung anwenden.
+  Unabhängig von den Balkenhöhen steuert die quadratische Energie der zwölf
+  tiefsten CAVA-Bänder eine reine Darstellungsschicht: kräftiger Bass zündet
+  sofort zwei breite Neon-Glows hinter den Säulen, die nach dem Impuls weich
+  ausklingen. Ein extremer, breit anliegender Breakdown-Bass ergänzt
+  nichtlinear zwei hellere innere Auren; ausschließlich hohe Frequenzenergie
+  löst den Effekt nicht aus. Diese Bass-Aura verändert weder CAVA-Werte noch
+  Peak-Kappen oder Balkenhöhen. Bei ausgeschalteten Animationen springt sie
+  ohne Nachlauf auf den statischen Wert des aktuellen Frames.
   Track- und Album-ReplayGain normalisieren erst hinter dem PCM-Abzweig die
   hörbare Ausgabe; dieselbe Eingangswellenform erzeugt deshalb unabhängig vom
   gespeicherten Gain-Wert denselben visuellen Ausschlag. Eine Modusauswahl und

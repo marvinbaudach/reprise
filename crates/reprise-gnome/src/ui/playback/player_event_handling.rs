@@ -271,7 +271,7 @@ mod spectrum_coalescing_tests {
     }
 
     #[test]
-    fn ac_21_spectrum_burst_keeps_only_the_freshest_cava_frame() {
+    fn ac_22_spectrum_burst_keeps_only_the_freshest_cava_frame() {
         let events = coalesce_player_event_burst([spectrum(0.25), spectrum(0.5), spectrum(0.75)]);
         assert_eq!(events.len(), 1);
         let PlayerEvent::Spectrum(frame) = &events[0] else {
