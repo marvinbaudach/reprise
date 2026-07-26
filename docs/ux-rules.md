@@ -578,6 +578,14 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Sonderregel** in v1: das Queue-Nachfüllen folgt der sichtbaren Ansicht — bei
   aktivem Filter sind KI-Titel nicht sichtbar und werden nicht nachgefüllt. Nur
   verfügbar, solange der Experimental-Schalter an ist (INST-11). (Beschluss 17)
+- **FIL-8** [aktiv] [core] [gtk] — „Recently added" ist ein eigener
+  Library-Scope über alle gegenwärtig vorhandenen Tracks, deren `added_at`
+  höchstens sieben Tage zurückliegt; es gibt kein 50-Track-Limit. Die Quelle
+  sortiert initial nach `added_at` absteigend und trägt in der Filter-Zeile
+  eine löschbare Scope-Pille nach FIL-1c. Deren × verlässt den Scope über den
+  normalen History-Push und stellt die gemerkte, uneingeschränkte Library
+  wieder her.
+
 ## L. Tag-Editor
 
 - **TAG-1** [aktiv] [gtk] — Save ist navigationsneutral: Speichern ändert

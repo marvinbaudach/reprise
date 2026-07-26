@@ -252,3 +252,61 @@ fn smart_source_not_found_degrades_to_empty() {
             .is_empty()
     );
 }
+
+#[test]
+fn fil_8_recently_added_includes_every_track_from_the_last_seven_days_without_a_50_cap() {
+    let conn = crate::db::open_migrated(None).unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    for id in 1..=60 {
+        conn.execute(
+            "INSERT INTO tracks (id, path, title, artist, added_at)
+             VALUES (?1, ?2, ?3, '', ?4)",
+            rusqlite::params![
+                id,
+                format!("/recent/{id}.flac"),
+                format!("Recent {id}"),
+                now - id
+            ],
+        )
+        .unwrap();
+    }
+    conn.execute(
+        "INSERT INTO tracks (id, path, title, artist, added_at)
+         VALUES (61, '/old.flac', 'Old', '', ?1)",
+        [now - 8 * 24 * 60 * 60],
+    )
+    .unwrap();
+
+    assert_eq!(
+        query_track_count(&conn, &ViewSource::RecentlyAdded, "", &[]).unwrap(),
+        60
+    );
+    let ids = query_track_ids(
+        &conn,
+        &ViewSource::RecentlyAdded,
+        "added_at",
+        "desc",
+        "",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(ids.len(), 60);
+    assert_eq!(ids[0], 1);
+    assert!(!ids.contains(&61));
+
+    let smart_id = conn
+        .query_row(
+            "SELECT id FROM smart_playlists WHERE role = ?1",
+            [crate::library::playlists::RECENTLY_ADDED_ROLE],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap();
+    assert_eq!(
+        query_track_count(&conn, &ViewSource::Smart(smart_id), "", &[]).unwrap(),
+        60,
+        "legacy sessions and non-GTK consumers must resolve the built-in smart id identically"
+    );
+}

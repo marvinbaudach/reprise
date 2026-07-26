@@ -458,8 +458,9 @@ fn smart_playlist_rows_badge_their_live_track_count() {
 
     // Seed five present tracks; the default "Recently added" smart list has an
     // empty rule set, so it matches every present track — the badge must read 5.
-    let smart_id = {
+    let _smart_id = {
         let conn = shared.conn.borrow();
+        let now = chrono::Utc::now().timestamp();
         for id in 1..=5i64 {
             conn.execute(
                 "INSERT INTO tracks (path, title, artist, added_at) \
@@ -467,7 +468,7 @@ fn smart_playlist_rows_badge_their_live_track_count() {
                 (
                     format!("/synthetic/{id:03}.flac"),
                     format!("Track {id:03}"),
-                    id,
+                    now - id,
                 ),
             )
             .unwrap();
@@ -482,7 +483,7 @@ fn smart_playlist_rows_badge_their_live_track_count() {
 
     rebuild(&shared, None, "test build");
 
-    let row = find_row(&shared, &ViewSource::Smart(smart_id))
+    let row = find_row(&shared, &ViewSource::RecentlyAdded)
         .expect("the 'Recently added' smart list must have a sidebar row");
     assert_eq!(
         numeric_badge_text(row.upcast_ref()),
@@ -499,7 +500,7 @@ fn empty_smart_playlist_shows_no_badge() {
 
     // No tracks seeded: every default smart list resolves to zero and must
     // therefore render no badge at all (nonzero-only policy).
-    let smart_id = {
+    let _smart_id = {
         let conn = shared.conn.borrow();
         conn.query_row(
             "SELECT id FROM smart_playlists WHERE name = 'Recently added'",
@@ -511,7 +512,7 @@ fn empty_smart_playlist_shows_no_badge() {
 
     rebuild(&shared, None, "test build");
 
-    let row = find_row(&shared, &ViewSource::Smart(smart_id))
+    let row = find_row(&shared, &ViewSource::RecentlyAdded)
         .expect("the 'Recently added' smart list must have a sidebar row");
     assert_eq!(
         numeric_badge_text(row.upcast_ref()),

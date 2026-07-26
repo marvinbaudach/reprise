@@ -100,6 +100,20 @@ pub(super) fn query_track_window_smart(
         );
         return Ok(Vec::new());
     };
+    if smart.role.as_deref() == Some(playlists::RECENTLY_ADDED_ROLE) {
+        let browse = super::recently_added_browse(&super::BrowseFilter::default());
+        return super::library::query_track_window_library(
+            conn,
+            view_sort.0,
+            view_sort.1,
+            filter,
+            offset,
+            limit,
+            &browse,
+            false,
+            project_ai,
+        );
+    }
 
     let (sql, params) = match build_smart_window_query(
         &smart,
@@ -134,6 +148,13 @@ pub(super) fn query_track_count_smart(
         );
         return Ok(0);
     };
+    if smart.role.as_deref() == Some(playlists::RECENTLY_ADDED_ROLE) {
+        return super::library::query_track_count_library(
+            conn,
+            filter,
+            &super::recently_added_browse(&super::BrowseFilter::default()),
+        );
+    }
     let has_filter = !filter.trim().is_empty();
     let (rules_frag, mut params) = match playlists::smart_rules_to_sql(&smart.rules_json) {
         Ok(v) => v,
@@ -171,6 +192,16 @@ pub(super) fn query_track_ids_smart(
         );
         return Ok(Vec::new());
     };
+    if smart.role.as_deref() == Some(playlists::RECENTLY_ADDED_ROLE) {
+        return super::query_track_ids_recently_added(
+            conn,
+            sort_field,
+            sort_dir,
+            filter,
+            &super::BrowseFilter::default(),
+            false,
+        );
+    }
     let has_filter = !filter.trim().is_empty();
     let (member_order_expr, member_dir) = order_expr_and_dir(&smart.sort_field, &smart.sort_dir);
     let (view_order_expr, view_dir) = order_expr_and_dir(sort_field, sort_dir);
@@ -184,7 +215,7 @@ pub(super) fn query_track_ids_smart(
     let next_idx = params.len() as u8 + 1;
     let mut inner_sql = format!(
         "SELECT id, title, artist, album, year, track_no, genre, duration_ms, \
-         rating, play_count FROM tracks WHERE {PRESENT} AND ({rules_frag})"
+         rating, play_count, added_at FROM tracks WHERE {PRESENT} AND ({rules_frag})"
     );
     if has_filter {
         inner_sql.push_str(&filter_clause(true, next_idx));
