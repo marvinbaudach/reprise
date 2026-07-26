@@ -221,7 +221,7 @@ pub(super) fn settings_group(
         .build();
     group.add(&ratings);
 
-    let bitrates = [0_u32, 64, 96, 128, 160, 192];
+    let bitrates = reprise_core::device_sync::settings::SUPPORTED_OPUS_BITRATES;
     let labels = gtk4::StringList::new(&[
         "Do not convert",
         "64 kbit/s",
@@ -229,6 +229,7 @@ pub(super) fn settings_group(
         "128 kbit/s",
         "160 kbit/s",
         "192 kbit/s",
+        "256 kbit/s",
     ]);
     let bitrate = adw::ComboRow::builder()
         .title("Convert lossless tracks to Opus")
