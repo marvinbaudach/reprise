@@ -158,8 +158,14 @@ pub fn refresh_to_root(
             }
         };
 
+        let baseline = super::store::future_only_baseline(conn, subscription.id)?
+            .into_iter()
+            .collect::<std::collections::HashSet<_>>();
         let mut new_episode_ids = Vec::new();
         for episode in &feed.episodes {
+            if baseline.contains(&episode.guid) {
+                continue;
+            }
             let upsert = super::store::upsert_episode(conn, subscription.id, episode, now)?;
             if upsert.inserted {
                 summary.episodes_inserted += 1;
@@ -414,6 +420,36 @@ mod tests {
         assert_eq!(stored.last_fetch_at, Some(20));
         assert_eq!(stored.last_outcome.as_deref(), Some("not_modified"));
         assert_eq!(stored.etag.as_deref(), Some("\"v1\""));
+    }
+
+    #[test]
+    fn future_only_baseline_skips_known_guids_and_keeps_importing_new_ones() {
+        let conn = conn();
+        let id = add_subscription(&conn, "https://example.test/feed", false);
+        store::replace_future_only_baseline(&conn, id, &["g0".to_owned(), "g1".to_owned()])
+            .unwrap();
+        let feed = FakeFeed {
+            responses: RefCell::new(vec![
+                Ok(feed_response("Show", 2, None)),
+                Ok(feed_response("Show", 3, None)),
+            ]),
+            ..FakeFeed::default()
+        };
+        let directory = tempfile::tempdir().unwrap();
+
+        let first =
+            refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
+        assert_eq!(first.episodes_inserted, 0);
+        assert_eq!(super::super::query::count_unplayed(&conn).unwrap(), 0);
+
+        let second =
+            refresh_to_root(&conn, &feed, &FakeYoutube, 20, true, directory.path()).unwrap();
+        assert_eq!(second.episodes_inserted, 1);
+        assert_eq!(super::super::query::count_unplayed(&conn).unwrap(), 1);
+        assert_eq!(
+            store::future_only_baseline(&conn, id).unwrap(),
+            ["g0".to_owned(), "g1".to_owned()]
+        );
     }
 
     #[test]
