@@ -53,6 +53,10 @@ pub(in crate::ui) fn remove_search_label(query: &str) -> String {
     formatted(N_!("Remove search: {query}"), &[("query", query)])
 }
 
+pub(in crate::ui) fn remove_scope_label(scope: &str) -> String {
+    formatted(N_!("Leave scope: {scope}"), &[("scope", scope)])
+}
+
 pub(in crate::ui) fn result_count(filtered: usize, total: usize) -> String {
     let filtered_number = i64::try_from(filtered).unwrap_or(i64::MAX);
     let total_number = i64::try_from(total).unwrap_or(i64::MAX);

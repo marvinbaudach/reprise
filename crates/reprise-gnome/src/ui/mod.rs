@@ -26,6 +26,7 @@ mod accessibility_semantics;
 mod artist_news;
 mod browse;
 mod compact;
+mod concerts;
 mod cover;
 pub mod delete_tracks;
 mod device_sync;
@@ -34,6 +35,7 @@ pub mod dialogs;
 pub(crate) mod ellipsis_tooltip;
 pub(crate) mod eq_bars;
 mod external_changes;
+pub(crate) mod external_link;
 pub(crate) mod file_open;
 pub mod first_run;
 mod help;
@@ -46,10 +48,10 @@ mod library_views;
 pub(crate) mod link_activation;
 mod lyrics;
 pub(crate) mod motion;
+pub(crate) mod motion_reveal;
 mod mounts;
 pub mod mpris_mirror;
 pub(crate) mod nav_history;
-mod new_releases;
 mod notifications;
 pub(crate) mod now_playing;
 mod one_shot_task;
@@ -60,6 +62,7 @@ mod playlists;
 mod popover_lifecycle;
 pub(crate) mod preferences;
 pub mod primary_menu;
+mod releases;
 mod runtime_performance;
 mod scan;
 mod scrobbling;
@@ -81,6 +84,7 @@ pub mod toasts;
 pub(crate) mod tooltip_discipline;
 pub(crate) mod track_list;
 mod transient_focus;
+mod updates;
 pub mod view_session;
 pub(crate) mod window;
 
@@ -151,8 +155,6 @@ use sidebar::{
 };
 #[allow(unused_imports)]
 pub(crate) use sidebar::{sidebar_dnd, sidebar_export, sidebar_session};
-#[allow(unused_imports)]
-use stats::{hourly_chart, hourly_chart_math};
 #[allow(unused_imports)]
 pub(crate) use stats::{stats_css, stats_view};
 #[allow(unused_imports)]

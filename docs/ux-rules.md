@@ -228,6 +228,12 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   selbst ein Verfeinern auf null Treffer verändern weder Snapshot noch laufenden
   Track. Nach dem letzten Track endet die Wiedergabe bei Repeat Off, sofern
   nicht ein expliziter Up-Next-Eintrag folgt; Löschhygiene regeln PLAY-5a/5b.
+- **PLAY-9** [aktiv] [gtk] — Play/Pause startet bei gestoppter Wiedergabe ohne
+  geladenen Titel, Queue-Snapshot oder „Play Next" sofort einen zufällig
+  gewählten vorhandenen Bibliothekstitel. Dafür entsteht ein unveränderlicher
+  Snapshot aus allen vorhandenen Bibliothekstiteln in zufälliger Reihenfolge;
+  Missing- und gelöschte Titel sind ausgeschlossen. Bei leerer Bibliothek
+  bleibt Play/Pause deaktiviert und die Wiedergabe gestoppt.
 
 ## D. Albums- & Artists-Ansicht
 
@@ -293,8 +299,8 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **ART-2** [geplant] [gtk] — Artist-Detail: Hero-Glow (vorberechnete
   Textur, 250 ms Crossfade beim Wechsel), Alben-Reihe (Hover wie ALB-1), Top
   Tracks (Doppelklick spielt gemäß PLAY-2 im Kontext „Top Tracks"). „Show all
-  N tracks ›" → Tracks-Modus mit gesetztem Artist-Filter-Chip (sichtbar, per
-  × entfernbar).
+  N tracks ›" → Tracks-Modus im Artist-Scope; dessen sichtbarer und per ×
+  entfernbarer Scope-Chip ist bereits durch FIL-1c aktiv.
 - **FX-1** [geplant] [manuell] — Alle Effekte respektieren
   `gtk-enable-animations=false` (harte Schaltung) und laufen nur GPU-billig
   (Opacity/Transform, vorgerenderte Glows). Keine Live-Blurs in Listen.
@@ -354,6 +360,17 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   mit dem kompakten Standardabstand direkt unter dem Inhalts-Header. Kurze
   Seiten werden nicht vertikal zentriert; ungenutzter Raum bleibt unter der
   letzten Gruppe.
+- **SET-6a** [aktiv] [gtk] — Die Plugins-Seite gruppiert nach Nutzerabsicht:
+  „Local Features", „Online Content" und „Connected Services". Scrobbling
+  erscheint dort genau einmal als Navigationseintrag und öffnet eine
+  Navigation-Page im selben Preferences-Fenster mit ‹-Back. Es gibt keinen
+  globalen Scrobbling-Schalter.
+- **SET-6b** [aktiv] [gtk] — Die Scrobbling-Unterseite führt ListenBrainz und
+  Last.fm als unabhängige Anbieter; beide dürfen gleichzeitig aktiv sein.
+  Aktivierung, Konto, Status, Fehler und Warteschlange bleiben
+  anbieterspezifisch. Mit gebündelten App-Zugangsdaten bietet Last.fm den
+  normalen Browser-Login direkt an; eigene API-Zugangsdaten liegen
+  eingeklappt unter „Advanced setup".
 
 ## G. Feedback-Vokabular
 
@@ -499,6 +516,15 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   wirkt dort bereits (Grid-Filterung); dieselbe Chip-Zeile inkl. Zählung und
   „Clear all" folgt dort nach dem Muster von FIL-1a/FIL-2. Bis dahin ist die
   Lücke hier benannt statt still gebrochen.
+- **FIL-1c** [aktiv] [gtk] — Artist-, Album- und Genre-Scopes der Track-Liste tragen
+  in der Filter-Zeile eine eigene Scope-Chip-Klasse neben Such- und
+  Facetten-Chips: „<Interpret>", „<Album> — <Interpret>" beziehungsweise
+  „<Genre>" mit eigenem ×-Klickziel von mindestens 20 px. Das × verlässt den Scope per
+  regulärem NAV-2-History-Push zur Library; dort werden deren gemerkte Suche
+  und Facetten wiederhergestellt. Die Zählung folgt FIL-2 und setzt die
+  Scope-Treffer ins Verhältnis zur ganzen Library. Playlist, Smart, Queue,
+  Missing und eigenständige Panels tragen keinen Scope-Chip. „Clear all"
+  räumt weiterhin nur Suche und Filter und wechselt nie den Ort.
 - **FIL-2** [aktiv] [gtk] — Zählung ist Zustand: Die Filter-Zeile ist
   permanenter Listen-Header jeder Track-Quelle — sie erscheint und
   verschwindet nie (kein Layout-Shift by design, P-4). Idle maximal leise:
@@ -975,7 +1001,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   (`/release-group/{mbid}/front-250`). Ein fehlendes Cover ist Normalzustand
   und zeigt sofort eine gleich große Kachel aus gespeicherter Artist-
   Akzentfarbe plus Initialen — niemals ein Loch oder einen Dauer-Spinner.
-- **NR-3** [aktiv] [gtk] — Die Header-Lupe ✦ erscheint nur bei vorhandenen
+- **NR-3** [ersetzt durch NR-3a] [gtk] — Die Header-Lupe ✦ erscheint nur bei vorhandenen
   Einträgen und trägt einen Badge ausschließlich für `seen_at IS NULL`.
   Öffnen stempelt die gelistete Episode als gesehen; sie badgt nie erneut,
   erst ein später neu gefundener Eintrag erzeugt wieder einen Badge (FB-4).
@@ -989,7 +1015,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   verändert den Navigations-Stack nie. Erst „See all" navigiert regulär in
   den Digest-Ort; Schließen kehrt ohne Zustandsverlust zur aktuellen Ansicht
   zurück.
-- **NR-5a** [aktiv] [gtk] — Das Popover ist transient; Öffnen/Schließen
+- **NR-5a** [ersetzt durch NR-5b] [gtk] — Das Popover ist transient; Öffnen/Schließen
   verändert den Navigations-Stack nie. Nur explizite Zeilen-Aktionen (Show in
   library) navigieren regulär und schließen das Popover; der Verlauf ist eine
   Popover-interne Unterseite ohne Navigation.
@@ -1018,7 +1044,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   einen Start-Abruf gibt es nicht. NR-8 schließt diese Schleife, ohne NR-5 zu
   kippen. Datenschutzlich unverändert: Netzverkehr entsteht ausschließlich nach
   ausdrücklicher Aktivierung, nur sofort statt nie.
-- **NR-9** [aktiv] [gtk] — setzt auf NR-3 auf (NR-3 bleibt aktiv): Der Badge
+- **NR-9** [ersetzt durch NR-9a] [gtk] — setzt auf NR-3 auf: Der Badge
   aus NR-3 zeigt die **Anzahl** der Einträge mit `seen_at IS NULL`, ab 10 als
   „9+", verschwindet mit dem Öffnen (alle gelisteten Einträge werden
   gestempelt) und rendert bei 0 kein leeres Element.
@@ -1030,7 +1056,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   Priorität: MusicBrainz-URL-Relations der Release-Group (Bandcamp/Kauf/
   Streaming vor offizieller Homepage/Discography) → Fallback
   MusicBrainz-Release-Group-Seite. Geöffnet wird extern (Standardbrowser).
-- **NR-12** [aktiv] [gtk] — Der Verlauf ist eine persistente Historie
+- **NR-12** [ersetzt durch NR-12a] [gtk] — Der Verlauf ist eine persistente Historie
   aller je gezeigten Meldungen als **Popover-Unterseite** (kein eigener
   Navigations-Ort), gruppiert nach Zeitraum, ausgeblendete Einträge einzeln
   rückholbar. Retention: 6 Monate **und** höchstens 200 Einträge (strengere
@@ -1040,6 +1066,37 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   erschienene Releases werden markiert (nicht herausgefiltert) und bieten
   die Aktion „Show in library" (Navigieren + Fokussieren, **kein** direkter
   Play-Pfad).
+- **NR-3a** [aktiv] [gtk] — Der Header-Auslöser öffnet „Updates" und ist
+  sichtbar, sobald mindestens ein aktiver Feed Einträge oder einen
+  Erstlauf-Zustand nach NR-8 hat. Sein Badge zählt ausschließlich ungesehene
+  Einträge aller aktiven, fetch-bereiten Feeds.
+- **NR-5b** [aktiv] [gtk] — Das Popover ist transient; Öffnen/Schließen
+  verändert den Navigations-Stack nie. Explizite Zeilen-Aktionen und die
+  Sprungzeilen „Show all releases/concerts →" navigieren regulär und
+  schließen das Popover. Das Popover hat keine internen Unterseiten; der
+  Verlauf lebt in der Releases-Vollansicht (NR-12a).
+- **NR-9a** [aktiv] [gtk] — Das Badge zeigt die Summe ungesehener Releases
+  und Konzerte, ab 10 als „9+", und rendert bei 0 nichts. Öffnen stempelt die
+  gesamte Delta-Menge beider Sektionen im aktuellen Scope. Vollständig in der
+  Bibliothek vorhandene Releases werden gelistet und gestempelt, zählen aber
+  nie in den Unseen-Badge.
+- **NR-12a** [aktiv] [gtk] — Die persistente Historie aller je gezeigten
+  Meldungen lebt in der Releases-Vollansicht als eigenem Sidebar-Ort.
+  Ausgeblendete Einträge sind dort über den Hidden-Filter einzeln mit „Show
+  again" rückholbar. Retention bleibt: sechs Monate UND höchstens 200
+  Einträge, hartes Löschen, nie innerhalb des 90-Tage-Fetch-Fensters.
+- **NR-14** [aktiv] [gtk] — Die Releases-Vollansicht ist eine Tabelle
+  `Date · Title · Artist · Type · Status`, standardmäßig nach Datum
+  absteigend. Status ist `In library`, sonst `upcoming` oder `released`.
+  Aktivierung führt immer die Dreiweg-Primäraktion aus: Hidden → Show again;
+  vollständig vorhanden und erschienen → Show in library; sonst Open
+  announcement. Die permanente Filterzeile bietet sticky Chips für Not in
+  library, Type und Hidden samt „X of Y releases", „Clear all" und genau
+  einem „Show all"-Schritt bei null Treffern.
+- **NR-15** [aktiv] [gtk] — „Releases" ist ein Sidebar-Ort in SMART, vor
+  Concerts und nur bei aktivem `new_releases`-Modul. Sein Badge entspricht
+  exakt der Anzahl der nach persistenten Filtern beim Öffnen sichtbaren
+  Zeilen; 0 rendert keinen Badge.
 
 ## S. Flächen & Geometrie
 
@@ -1290,7 +1347,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Ereignis einzeln durch sie hindurch, damit Sommer-/Winterzeit-Wechsel keine
   Grenze verschieben. Alles ist lokal: kein Netz, keine Cloud, keine
   Fremdquelle wird eingemischt.
-- **STATS-1** [aktiv] [core] — Der Kopf zeigt die Gesamt-Hörzeit groß in vollen
+- **STATS-1** [ersetzt durch STATS-11/STATS-12] [core] — Der Kopf zeigt die Gesamt-Hörzeit groß in vollen
   Stunden („68 hours"; unter einer Stunde in Minuten, nie „0 hours"), eine
   Vergleichs-Pill „▲ N % vs <Vorperiode>" im teal App-Akzent (nie im
   Cover-Akzent) und die Subzeile „N plays · Ø X min/day · N artists" auf
@@ -1313,7 +1370,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   wiedererkennbare Kalenderentsprechung ein Jahr zurück. Der 29. Februar klemmt
   im Vorjahr auf den 28. „All time" hat keine Vorperiode und trägt nie eine
   Pill.
-- **STATS-1a** [aktiv] [core] — Die Vergleichs-Pill bleibt bei jedem Verhältnis
+- **STATS-1a** [ersetzt durch STATS-11a] [core] — Die Vergleichs-Pill bleibt bei jedem Verhältnis
   lesbar: Anstiege unter +1000 % erscheinen weiter als ganze Prozentzahl, ab
   +1000 % als gerundeter Faktor („▲ ×11 vs 2025"). Eine sinnvolle
   Nachkommastelle bleibt erhalten („×11,5"), eine bedeutungslose Null entfällt
@@ -1327,7 +1384,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Tooltip trägt die vollständige Semantik („vs same period 2025"). `×` und
   Dezimaltrenner bleiben übersetzbar. Saisonale Spanne und Vergleichsrechnung
   aus STATS-1 ändern sich dadurch nicht.
-- **STATS-2** [aktiv] [core] — Das Artist-Spotlight ist das Herzstück:
+- **STATS-2** [ersetzt durch STATS-13] [core] — Das Artist-Spotlight ist das Herzstück:
   #1-Artist mit großem Cover und Rang-Badge, Eyebrow „YOUR #1 ARTIST", Name,
   Zeile „N plays · N h · N % of your artist listening" — der Anteil bezieht
   sich auf die Hörzeit mit Artist-Zuordnung, dieselbe Grundgesamtheit, die die
@@ -1336,13 +1393,13 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   „Go to artist" (regulärer NAV-Push mit Back-Historie). Hinter dem Cover liegt
   ein dezenter Cover-Akzent-Glow — der Cover-Akzent bleibt Playback-Elementen
   vorbehalten. Darunter nennt eine Ghost-Zeile die Ränge 2–5.
-- **STATS-3** [aktiv] [core] — Das Genre-Spektrum ist **eine** horizontale
+- **STATS-3** [ersetzt durch STATS-15] [core] — Das Genre-Spektrum ist **eine** horizontale
   Segment-Leiste in Teal-Abstufungen mit Legende (Punkt · Name · %), gespeist
   aus den Genre-Tags der Bibliothek. Die fünf stärksten Genres bilden eigene
   Segmente, der Rest wird zu „Other" gebündelt; Tracks ohne Genre zählen weder
   als Segment noch als „Other". Die Leiste ist reine Anzeige und keine
   Navigation: Segmente und Legende sind nicht klickbar.
-- **STATS-4** [aktiv] [core] — Unter dem Spektrum steht eine asymmetrische
+- **STATS-4** [ersetzt durch STATS-10] [core] — Unter dem Spektrum steht eine asymmetrische
   Reihe (1.35fr / 1fr): links die Listening Clock als 24-Stunden-Histogramm aus
   den Timestamps mit teal hervorgehobenen Peak-Stunden und Caption
   („Peak 11 PM–1 AM · night owl"), rechts vier Highlight-Kacheln — Streak
@@ -1362,7 +1419,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   ist so bemessen, dass ihre beiden Mindestbreiten zusammen unter dem
   Breakpoint bleiben — sonst gäbe es Fensterbreiten, in denen sie noch
   nebeneinander steht, aber schmaler ist als sie braucht.
-- **STATS-5** [aktiv] [core] — Top Tracks steht über die volle Breite:
+- **STATS-5** [ersetzt durch STATS-14] [core] — Top Tracks steht über die volle Breite:
   nummerierte Liste mit Cover, Titel und Artist, relativem Play-Balken und
   Play-Count, mit Sort-Toggle „by plays / by time". Der Balken ist relativ zum
   Spitzenreiter der Liste, nie zu einem absoluten Maximum.
@@ -1386,7 +1443,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   noch eine Sondermeldung. Ist ein verfügbarer Zeitraum leer, bleibt der
   reguläre Leerzustand sichtbar; Hero und Zeitraum-Dropdown bleiben darüber
   bedienbar, damit die Auswahl nie zur Sackgasse wird.
-- **STATS-7** [aktiv] [gtk] — My Stats ist kuratiert, nicht frei editierbar:
+- **STATS-7** [ersetzt durch STATS-10] [gtk] — My Stats ist kuratiert, nicht frei editierbar:
   kein Drag-and-Drop-Widget-Board. Ein ⋮-Menü „Customize" blendet die Sektionen
   Clock, Genres und Highlights per CheckButton ein und aus; die Auswahl bleibt
   über Sitzungen erhalten. Mehr enthält das Menü nicht — das Spotlight ist
@@ -1431,6 +1488,110 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Listeneintrag darauf hin und führt in den Mehrfach-Tag-Editor der betroffenen
   Tracks; das Vereinheitlichen bleibt eine Einladung, nie ein automatischer
   Schreibvorgang.
+- **STATS-10** [aktiv] [gtk] — My Stats erzählt in fester Reihenfolge von
+  oben nach unten: Kopfzeile (Titel, optionales „New this year"-Badge,
+  Zeitraumwahl) · Hero (Gesamtzahl, Subline, KPI-Reihe) · Wochen-Chart ·
+  zweispaltige Reihe aus Band-Karte und Songs-Karte · optional die
+  aufgeklappte Top-Track-Liste als eigene Sektion in voller Breite ·
+  Genre-Karte. Mehr Sektionen gibt es nicht: keine Listening Clock, keine
+  Highlight-Kacheln, kein Customize-Menü — die Seite ist kuratiert und nicht
+  konfigurierbar.
+  Im schmalen Fenster stapelt die zweispaltige Reihe, ohne die Reihenfolge zu
+  ändern. Die Zeitraumwahl bleibt gemäß STATS-8 der einzige Ansichts-Regler.
+- **STATS-11** [aktiv] [core] — Der Hero zeigt die Gesamt-Hörzeit riesig im
+  seitenweit einheitlichen Kompaktformat: ab einer Stunde „N h M", bei vollen
+  Stunden „N h", unter einer Stunde „N min". Darunter steht die
+  Subline „N plays · N artists", rechts an der Grundlinie vier KPI-Paare:
+  „Per day" (Ø Hörzeit/Tag) · Trend (absolutes Hörzeit-Delta zur
+  Vergleichsspanne mit Richtungs-Icon in Akzentfarbe) · „Pace for <Jahr>" (lineare
+  Jahres-Hochrechnung, nur im laufenden Jahr) · „Best week" (Startdatum und
+  Hörzeit der stärksten lokalen Kalenderwoche). Alle KPI-Dauern nutzen
+  dasselbe Kompaktformat. Die Vergleichsspanne ist
+  unverändert die saisonal deckungsgleiche Vorperiode: „<Jahr> so far" gegen
+  dieselbe Spanne des Vorjahrs, ein volles Jahr gegen das Vorjahr, das
+  30-Tage-Fenster gegen die 30 Tage davor; „All time" hat keinen Trend-KPI.
+  KPIs ohne Wert entfallen ersatzlos statt Platzhalter zu zeigen.
+- **STATS-11a** [aktiv] [core] — Der Trend bleibt bei jedem Verhältnis
+  ehrlich lesbar: Der KPI nennt das absolute Delta und die kurze Referenz
+  („vs 2025"); der Tooltip trägt die vollständige Semantik samt Prozentwert,
+  ab ×11-Verhältnissen als gerundeter Faktor nach den bisherigen Formregeln.
+  War die Vergleichszeit effektiv null (unter einer Minute), erscheint statt
+  des KPI das Badge „New this year" in der Kopfzeile — nie „∞ %" und nie
+  „×0". Der KPI ellipsiert nicht.
+- **STATS-12** [aktiv] [core] — Das Chart zeigt die Hörzeit je lokaler
+  Kalenderwoche. Ab acht Wochen mit Plays gilt der Flächenverlauf über den
+  exakt gewählten Zeitraum. Bei weniger Wochen beginnt die Achse mit der
+  ersten Play-Woche und jede Woche erhält über die volle Kartenbreite einen
+  gleich breiten Slot; Nullwochen bleiben als 2-Pixel-Strich auf einer
+  durchgehenden 1-Pixel-Basislinie sichtbar. Unter zehn Wochen trägt jeder
+  Slot ein Wochenlabel, längere Achsen tragen Monatslabels. Die kompakte
+  Variante ist ungefähr 160 Pixel hoch. Beide Varianten lassen 10–15 % Luft
+  über dem Maximum. Die beste Woche erhält statt einer Markerlinie eine
+  hellere Akzentstufe; ihr gemessenes Label steht mit Randabstand darüber
+  („best week · 4 h 12"). Die laufende Woche endet in einem offenen Punkt.
+  Hover nennt Woche und exakten Wert. Markierungen und Punkte sind reine
+  Anzeige. Nur wenn der Zeitraum zu kurz für Wochen ist, fällt die Achse auf
+  Tage zurück (STATS-6); sehr lange „All time"-Spannen dürfen Monate zeigen
+  und lassen dann die Wochenmarkierung weg — der Best-week-KPI bleibt.
+- **STATS-13** [aktiv] [gtk] — Die Band-Karte zeigt den meistgehörten
+  Interpreten als Bild-Hero: das Album-Cover seines meistgespielten Tracks
+  füllt die Karte und blendet nach unten in den Kartengrund aus; fehlt ein
+  Cover, steht eine Initialen-Kachel an seiner Stelle — nie eine leere
+  Fläche. Darüber Kicker „MOST PLAYED BAND", Name und die Zeile „N plays ·
+  <Dauer> · N % of your artist listening"; die Dauer folgt dem Kompaktformat
+  aus STATS-11. Darunter die Ränge 2–5 mit dünnem Balken relativ zu Platz 1.
+  Klick auf Karte oder Rangzeile öffnet die
+  Library gefiltert auf den Interpreten (regulärer History-Push). Fasst eine
+  Gruppe mehrere Schreibweisen zusammen, bleibt der Vereinheitlichungs-Hinweis
+  aus STATS-9 erhalten.
+- **STATS-14** [aktiv] [gtk] — Die Songs-Karte zeigt die sechs führenden
+  Tracks: Cover, Titel und Interpret zweizeilig, horizontaler Balken relativ
+  zu Platz 1 in einem Akzent-Verlauf, rechts die Play-Zahl. Neben dem Kicker
+  sortiert der Toggle „by plays / by time" sowohl diese sechs Zeilen als auch
+  die vollständige Rangliste. Klick auf die Zeile öffnet die Library gefiltert
+  auf den Interpreten mit fokussiertem Track; Hover oder Fokus zeigt am Cover
+  einen Play-Button, der genau diesen Track sofort abspielt; das Kontextmenü
+  bietet „Play next", „Add to queue" und „Go to album". Der Ghost-Button
+  „Show all top tracks" klappt unter der zweispaltigen Reihe die nummerierte
+  Top-10-Liste als eigene Sektion in voller Breite auf; die Genre-Karte folgt
+  darunter und der Balken bleibt relativ zum Spitzenreiter der jeweiligen
+  Sortierung. Die Liste zeigt Dauern im Kompaktformat aus STATS-11; ihre Titel
+  und Interpreten erhalten Linkfarbe und Unterstreichung erst bei Hover, der
+  Fokus-Ring bleibt sichtbar.
+- **STATS-15** [aktiv] [core] — Die Genre-Karte besteht aus einem
+  gestapelten Balken (Segmentbreite = Anteil, Akzent-Abstufungen nach Rang,
+  letztes Segment neutral, Tooltip „<Genre> · N % · <Dauer>") und bis zu vier
+  Kacheln der stärksten Genres: Cover des meistgespielten Tracks im Genre,
+  „<Genre> · N %", darunter „<Dauer> · top: <Interpret>". Beide Dauern folgen
+  dem Kompaktformat aus STATS-11. Top-Interpret und Cover je Genre entstehen
+  über dieselbe Schlüsselauflösung wie alle Gruppierungen (STATS-9). Klick auf
+  das Kachel-Cover öffnet die Library
+  gefiltert auf das Album; Klick auf ein Segment oder die übrige Kachelfläche
+  öffnet die Library im Scope des jeweiligen Genres.
+  Tracks ohne Genre zählen weiterhin weder als Segment noch als „Other".
+- **STATS-16** [aktiv] [gtk] — Unter zehn Plays im gewählten Zeitraum ist
+  die Datenlage zu dünn für einen Trend: Statt des Charts erscheint der
+  Hinweis „Keep listening — stats grow with you"; Hero-Zahlen bleiben echt,
+  und nur Karten mit Daten werden gerendert — nie Platzhalterkarten. Ohne
+  jeden Play gilt unverändert der Leerzustand aus STATS-6/STATS-6c samt
+  bedienbarer Zeitraumwahl.
+- **STATS-17** [aktiv] [gtk] — My Stats steht ab dem ersten Frame vollständig
+  da: Karten, Hero-Zahl, KPIs, Texte, Cover und Bilder faden nicht, gleiten
+  nicht und zählen nicht hoch. Nur Balken bewegen sich, gemeinsam nach einem
+  ruhigen Startframe von ungefähr 100 ms und mit Ease-out
+  `cubic-bezier(0.16, 1, 0.3, 1)`: Im Sparse-Week-Modus wachsen die
+  Chart-Balken in 500 ms von der Grundlinie mit 80 ms Versatz; das
+  Best-Week-Label fadet erst nach dem Ende seines eigenen Balkens über 150 ms
+  ein. Der alternative Flächen-/Linienmodus ist bereits im ersten Frame
+  vollständig gezeichnet und besitzt keine Eingangsanimation. Horizontale
+  Balken — Band-Ränge 2–5, Song-Balken und Genre-Segmente — wachsen innerhalb
+  ihrer jeweiligen Karte in 450 ms von links mit 40 ms Versatz; Genre-Segmente
+  laufen in Leserichtung. Auch Balken unterhalb des sichtbaren Ausschnitts
+  folgen demselben Start, es gibt keine Fold-Sonderbehandlung. Ein
+  Zeitraumwechsel startet keine Eingangschoreografie neu und interpoliert
+  ausschließlich Balkenwerte über 250 ms; alle übrigen Inhalte wechseln
+  sofort in ihren neuen Endzustand. Bei `gtk-enable-animations=false` stehen
+  ausnahmslos alle Balken und das Best-Week-Label sofort im Endzustand.
 
 ## W. Buttons & Interaktionszustände
 
@@ -1601,7 +1762,7 @@ deterministisch und hoch-konfident, nie „ohne Review".
   auch während Backoff; lokaler Scan und vollständige Einzelergebnisse bleiben
   dabei gültig.
 
-- **DOC-1d** [aktiv] [gtk] — **Lokale Aktivierung ist keine
+- **DOC-1d** [ersetzt durch DOC-7a] [gtk] — **Lokale Aktivierung ist keine
   Netzfreigabe.** Library Doctor ist standardmäßig aus. Sein Hauptschalter
   aktiviert ausschließlich lokale Checks und zeigt keine Netzfrage. Der
   getrennte, standardmäßig ausgeschaltete Schalter „MusicBrainz/AcoustID
@@ -1750,7 +1911,7 @@ deterministisch und hoch-konfident, nie „ohne Review".
   können erneut reviewed werden; ein neuer vollständiger Scan ersetzt das
   Scan-Ergebnis unabhängig vom weiterhin gültigen Undo-Journal.
 
-- **DOC-6a** [aktiv] [gtk] — **Library Doctor ist eine
+- **DOC-6a** [ersetzt durch DOC-7b] [gtk] — **Library Doctor ist eine
   Hauptfenster-Navigation.** 26a lebt als Root-Page im bestehenden
   `content_nav`, 26b wird darauf gepusht; Back kehrt mit unveränderter
   In-Session-Auswahl zu 26a zurück. Es gibt keinen Doctor-Dialog und keinen
@@ -1774,9 +1935,39 @@ deterministisch und hoch-konfident, nie „ohne Review".
   Scan/Apply/Revert laufen nicht parallel, und alle Tag-Writes sind global
   serialisiert; Playback, Navigation und lesender Device-Sync bleiben
   benutzbar. Ein erneuter Doctor-Einstieg während eines laufenden Jobs
-  navigiert zu diesem Job statt einen zweiten zu starten. Haupt- und
-  Remote-Toggle sind während des Jobs gesperrt und erklären den laufenden
-  Job; Cancel lebt ausschließlich an dessen Fortschrittsoberfläche.
+  navigiert zu diesem Job statt einen zweiten zu starten. Scope,
+  Remote-Toggle und Scan-Aktion sind während des Jobs gesperrt und erklären
+  den laufenden Job; Cancel lebt ausschließlich an dessen
+  Fortschrittsoberfläche.
+
+- **DOC-7a** [aktiv] [gtk] — **Lokale Checks sind ein verfügbares
+  Werkzeug; Netzwerk bleibt Opt-in.** Library Doctor hat keinen
+  Hauptschalter und seine lokalen, rein lesenden Checks sind jederzeit
+  manuell startbar. Das ist keine Netzfreigabe. Der getrennte, standardmäßig
+  ausgeschaltete Schalter „MusicBrainz/AcoustID suggestions" zeigt beim
+  ersten Einschalten eine kurze, versionierte Bestätigung mit der
+  Daten-Allowlist aus DOC-1c; Abbrechen lässt ihn aus. Plugin-Zeile und
+  Ergebnisansicht binden denselben persistenten Schalter. Ausschalten stoppt
+  künftige Remote-Anfragen, versteckt Remote-Zeilen und entfernt deren
+  Auswahl; erneutes Einschalten zeigt vorhandene oder neu geladene
+  Remote-Vorschläge ungeprüft. Fehlende Fingerprint-Capability wird sichtbar
+  als „AcoustID unavailable" erklärt, während Local und reine
+  MusicBrainz-Auflösung weiter funktionieren.
+
+- **DOC-7b** [aktiv] [gtk] — **Library Doctor ist eine direkt verfügbare
+  Hauptfenster-Navigation.** 26a lebt als Root-Page im bestehenden
+  `content_nav`, 26b wird darauf gepusht; Back kehrt mit unveränderter
+  In-Session-Auswahl zu 26a zurück. Es gibt keinen Doctor-Dialog und keinen
+  zusätzlichen Apply-Bestätigungsdialog. Einstiege sind die Plugins-Seite
+  mit Privacy-Untertitel „contacts MusicBrainz / AcoustID", das ⋮-Menü der
+  Library und der STATS-DEDUP-Hinweis; jeder Einstieg führt direkt zur
+  Doctor-Seite. Der Scope ist kein persistentes Plugin-Setting: Default Whole
+  Library, aus gefilterter View Current View vorgeschlagen, aus
+  Auswahlkontext Selection. Die aufgeklappte Plugin-Zeile zeigt ohne
+  Hauptschalter Scope, Remote-Schalter, den Hinweis „local fixes always
+  included · no network", „Run scan now" und „Revert last cleanup". Revert
+  bleibt über eine minimale Doctor-Jobseite verfügbar und aktiviert kein
+  Netzwerk.
 
 - **DOC-6c** [geplant] [manuell] — **Die sichtbare Abnahme entspricht den
   Frames 26a, 26b und 27.** Auf einem echten GNOME-Display werden breite und
@@ -1896,6 +2087,11 @@ Ankündigung. Die App refresht ihre *eigenen* Schreibaktionen weiterhin selbst
   Wiedergabe-Queue ist ein Snapshot (`queue::snapshot`); ein Fremd-Write an
   der Bibliothek ändert weder die laufende Wiedergabe noch die Reihenfolge der
   bereits eingereihten Titel.
+- **EXT-5** [geplant] [gtk] — Autorisierte externe Live-Queue-Befehle
+  aktualisieren eine sichtbare Queue geräuschlos an Ort und Stelle: kein
+  Toast, kein Fokus-, Selektions- oder Scrollpositionsverlust. Fehlende oder
+  unbekannte Tracks werden nicht eingereiht.
+  <!-- REVIEW: Regelvorschlag -->
 
 ## AB. Instrumental-Fassungen (experimentell)
 
@@ -2050,6 +2246,43 @@ Dateien.
   (Capture-Phase, damit die Pfeil-Seek der Waveform die modifizierten Pfeile
   nicht schluckt) und decken sich mit den im Kontextmenü gezeigten
   Acceleratoren.
+
+## AE. Concerts
+
+<!-- Sektionsbuchstabe: AD (Kompaktmodus) ist die letzte vergebene Sektion;
+     Concerts setzt mit AE fort. Die Regeln starten als Entwürfe und werden
+     jeweils zusammen mit Verhalten und regelbenanntem Test aktiviert. -->
+
+- **CONC-1** [aktiv] [gtk] — Concerts ist ein Sidebar-Ort in SMART und nur
+  bei aktivem Modul sichtbar. Sein Badge entspricht exakt den kommenden,
+  nach persistenten Filtern beim Öffnen sichtbaren Konzerten; 0 rendert
+  keinen Badge.
+- **CONC-2** [aktiv] [gtk] — Die Filterzeile ist ein permanenter Header.
+  Idle zeigt sie leise Gesamtzahl und „+ Add filter"; jede aktive
+  Einschränkung ist ein Chip mit eigenem ×-Ziel von mindestens 20 px.
+  Aktiv zeigt sie „X of Y concerts" und „Clear all". Ohne Location ist
+  Radius deaktiviert und trägt den Tooltip „Set a location in Preferences".
+- **CONC-3** [aktiv] [gtk] — Doppelklick/Enter auf eine Zeile und die
+  Ticket-Zelle öffnen dasselbe externe Ziel: Offer-URL, sonst Event-Seite.
+  Ohne beides ist die Zelle leer und Aktivierung ein No-op mit Tooltip. Es
+  gibt keinen Play-Pfad.
+- **CONC-4** [aktiv] [gtk] — Ohne Credential zeigt Concerts eine
+  StatusPage mit Preferences-Deep-Link und startet keinen Fetch. Nie
+  gefetcht bietet genau „Fetch now"; null Treffer mit Filtern genau „Show
+  all". Offline oder Fehler lassen Cache und „Updated X ago" sichtbar und
+  melden den Fehler ausschließlich inline im Footer.
+- **CONC-5** [aktiv] [core] — Netz läuft ausschließlich im Worker. Trigger
+  sind View-Open-Staleness (24 h plus Jitter), der stündliche Due-Check und
+  „Fetch now". Track-Wechsel und Navigation lesen nur Cache; Ergebnisse
+  werden nach MOT-2 ohne Einblendanimation eingespielt.
+- **CONC-6** [aktiv] [gtk] — Similar-Zeilen tragen dimm „similar to
+  {seed}" und verschwinden mit „Library artists only". Die Source-Pill ist
+  sichtbar, sobald Similar aktiviert ist oder Similar-Zeilen existieren.
+- **CONC-7** [aktiv] [gtk] — Das Updates-Popover zeigt die Concerts-Sektion
+  nur bei aktivem Modul, höchstens drei ungesehene Einträge des persistenten
+  Filter-Scopes und „Show all concerts (N) →". Öffnen stempelt die gesamte
+  Delta-Menge beider Sektionen. Das Header-Badge summiert ungesehene Einträge
+  aller aktiven, fetch-bereiten Feeds nach dem `badge_presentation`-Idiom.
 
 ---
 

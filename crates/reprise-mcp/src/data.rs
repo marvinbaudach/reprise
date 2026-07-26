@@ -15,12 +15,14 @@ use reprise_core::models::Track;
 use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
 use rusqlite::Connection;
+use serde::Serialize;
 
 use crate::capability;
 use crate::dto::{
-    BatchProgressDto, CreateInstrumentalResult, CreatePlaylistResult, InstrumentalJobDto,
-    JobStatusDto, JobStatusResult, LibrarySummary, PlaylistDto, PlaylistsResult,
-    SearchTracksResult, TrackDto,
+    AlbumDto, ArtistDto, BatchProgressDto, CreateInstrumentalResult, CreatePlaylistResult,
+    InstrumentalJobDto, JobStatusDto, JobStatusResult, LibrarySummary, PlaylistContentsResult,
+    PlaylistDto, PlaylistsResult, SearchAlbumsResult, SearchArtistsResult, SearchTracksResult,
+    TrackDto,
 };
 
 /// Default page size when a search omits `limit`.
@@ -84,7 +86,7 @@ impl std::fmt::Display for DataError {
     }
 }
 
-fn open(path: &Path) -> Result<Connection, DataError> {
+pub(crate) fn open(path: &Path) -> Result<Connection, DataError> {
     // The database was migrated once at startup; per call we open a plain
     // connection (WAL, `busy_timeout`, `foreign_keys` all set by `db::open`)
     // without re-running migrations or the change-log prune, so a read stays a
@@ -148,6 +150,87 @@ pub fn search_tracks(
     })
 }
 
+/// Paginated artist discovery using the same effective-album-artist grouping
+/// as the native Artists view.
+pub fn search_artists(
+    path: &Path,
+    query: &str,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> Result<SearchArtistsResult, DataError> {
+    let conn = open(path)?;
+    require_read(&conn)?;
+
+    let needle = query.trim().to_lowercase();
+    let matching: Vec<_> = queries::query_artists(&conn)
+        .map_err(DataError::Db)?
+        .into_iter()
+        .filter(|artist| artist.artist.to_lowercase().contains(&needle))
+        .collect();
+    let total = matching.len();
+    let limit = resolve_limit(limit);
+    let offset = i64::from(offset.unwrap_or(0));
+    let artists: Vec<ArtistDto> = matching
+        .iter()
+        .skip(offset as usize)
+        .take(limit as usize)
+        .map(ArtistDto::from)
+        .collect();
+    let returned = artists.len();
+    let has_more = offset.saturating_add(returned as i64) < total as i64;
+
+    Ok(SearchArtistsResult {
+        artists,
+        total,
+        offset,
+        limit,
+        returned,
+        has_more,
+    })
+}
+
+/// Paginated album discovery using the native Albums view's grouping and
+/// stable ordering.
+pub fn search_albums(
+    path: &Path,
+    query: &str,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> Result<SearchAlbumsResult, DataError> {
+    let conn = open(path)?;
+    require_read(&conn)?;
+
+    let needle = query.trim().to_lowercase();
+    let matching: Vec<_> = queries::query_albums(&conn)
+        .map_err(DataError::Db)?
+        .into_iter()
+        .filter(|album| {
+            album.album.to_lowercase().contains(&needle)
+                || album.album_artist.to_lowercase().contains(&needle)
+        })
+        .collect();
+    let total = matching.len();
+    let limit = resolve_limit(limit);
+    let offset = i64::from(offset.unwrap_or(0));
+    let albums: Vec<AlbumDto> = matching
+        .iter()
+        .skip(offset as usize)
+        .take(limit as usize)
+        .map(AlbumDto::from)
+        .collect();
+    let returned = albums.len();
+    let has_more = offset.saturating_add(returned as i64) < total as i64;
+
+    Ok(SearchAlbumsResult {
+        albums,
+        total,
+        offset,
+        limit,
+        returned,
+        has_more,
+    })
+}
+
 /// Library-wide summary for the `reprise://library/summary` resource.
 pub fn library_summary(path: &Path) -> Result<LibrarySummary, DataError> {
     let conn = open(path)?;
@@ -173,6 +256,114 @@ pub fn list_playlists(path: &Path) -> Result<PlaylistsResult, DataError> {
     let summaries = playlists::list(&conn).map_err(DataError::Db)?;
     let playlists = summaries.iter().map(PlaylistDto::from).collect();
     Ok(PlaylistsResult { playlists })
+}
+
+#[derive(Debug, Serialize)]
+pub struct ConcertsResource {
+    events: Vec<ConcertResourceEvent>,
+    filter_applied: bool,
+    latest_fetch_at: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+struct ConcertResourceEvent {
+    date: String,
+    starts_at: String,
+    artist: String,
+    venue: String,
+    city: String,
+    region: Option<String>,
+    country: Option<String>,
+    distance_km: Option<f64>,
+    ticket_url: Option<String>,
+    ticket_source: Option<String>,
+    event_url: Option<String>,
+    provider: String,
+    is_similar: bool,
+    similar_to: Option<String>,
+}
+
+/// Upcoming concerts after the saved filters, with no filesystem paths.
+pub fn list_concerts(path: &Path) -> Result<ConcertsResource, DataError> {
+    let conn = open(path)?;
+    require_read(&conn)?;
+    let filter = reprise_core::concerts::config::persisted_filter(&conn).map_err(DataError::Db)?;
+    let location = reprise_core::concerts::config::location(&conn).map_err(DataError::Db)?;
+    let events = reprise_core::concerts::query_events(
+        &conn,
+        &filter,
+        location.as_ref(),
+        chrono::Local::now().date_naive(),
+    )
+    .map_err(DataError::Db)?
+    .into_iter()
+    .map(|event| ConcertResourceEvent {
+        date: event.date_key,
+        starts_at: event.starts_at,
+        artist: event.artist_name,
+        venue: event.venue,
+        city: event.city,
+        region: event.region,
+        country: event.country,
+        distance_km: event.distance_km,
+        ticket_url: event.ticket_url,
+        ticket_source: event.ticket_source,
+        event_url: event.event_url,
+        provider: event.provider,
+        is_similar: event.is_similar,
+        similar_to: event.similar_to,
+    })
+    .collect();
+    Ok(ConcertsResource {
+        events,
+        filter_applied: true,
+        latest_fetch_at: reprise_core::concerts::latest_fetch_at(&conn).map_err(DataError::Db)?,
+    })
+}
+
+/// Reads a page of one manual playlist in durable playlist order. Membership
+/// rows are returned even when their files are currently unavailable, matching
+/// the native playlist view.
+pub fn playlist_contents(
+    path: &Path,
+    playlist_id: i64,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> Result<PlaylistContentsResult, DataError> {
+    let mut conn = open(path)?;
+    require_read(&conn)?;
+
+    let summary = playlists::get(&conn, playlist_id)
+        .map_err(DataError::Db)?
+        .ok_or_else(|| DataError::InvalidInput("playlist does not exist".to_owned()))?;
+    let source = ViewSource::Playlist(playlist_id);
+    let total = queries::query_track_count(&conn, &source, "", &[]).map_err(DataError::Db)?;
+    let limit = resolve_limit(limit);
+    let offset = i64::from(offset.unwrap_or(0));
+    let tracks = queries::query_track_window(
+        &mut conn,
+        &source,
+        "playlist_order",
+        "asc",
+        "",
+        offset,
+        limit,
+        &[],
+    )
+    .map_err(DataError::Db)?;
+    let tracks: Vec<TrackDto> = tracks.iter().map(TrackDto::from).collect();
+    let returned = tracks.len();
+    let has_more = offset.saturating_add(returned as i64) < total;
+
+    Ok(PlaylistContentsResult {
+        playlist: PlaylistDto::from(&summary),
+        tracks,
+        total,
+        offset,
+        limit,
+        returned,
+        has_more,
+    })
 }
 
 /// Creates a new manual playlist from explicit track ids.
@@ -220,9 +411,12 @@ pub fn create_playlist(
 /// Enforces PRESENT semantics before a write: rejects ids that are not present
 /// in the library — either no row at all, or a row whose file is currently
 /// missing (a plain foreign-key check would let a missing row through). Lists
-/// the offending ids so the caller can correct its request. Shared by
-/// `music_create_playlist` and `music_create_instrumental`.
-fn reject_absent_track_ids(conn: &Connection, track_ids: &[i64]) -> Result<(), DataError> {
+/// the offending ids so the caller can correct its request. Shared by the
+/// playlist, instrumental, and live-queue mutation paths.
+pub(crate) fn reject_absent_track_ids(
+    conn: &Connection,
+    track_ids: &[i64],
+) -> Result<(), DataError> {
     if track_ids.is_empty() {
         return Ok(());
     }
@@ -247,6 +441,17 @@ fn reject_absent_track_ids(conn: &Connection, track_ids: &[i64]) -> Result<(), D
         )));
     }
     Ok(())
+}
+
+/// Validates explicit queue ids against the current PRESENT library view.
+///
+/// Queue mutation is authorized by `playback:control`, so this check does not
+/// additionally require `library:read`; it only prevents callers from
+/// inserting unknown or currently missing rows into the live queue.
+#[cfg(feature = "mpris")]
+pub fn validate_present_track_ids(path: &Path, track_ids: &[i64]) -> Result<(), DataError> {
+    let conn = open(path)?;
+    reject_absent_track_ids(&conn, track_ids)
 }
 
 /// Registers one instrumental (vocal-removal) job per source track and returns

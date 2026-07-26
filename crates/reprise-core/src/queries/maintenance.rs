@@ -57,6 +57,28 @@ pub fn query_live_track_ids(conn: &Connection) -> Result<HashSet<i64>, rusqlite:
     Ok(ids)
 }
 
+/// Whether at least one present library track can seed playback.
+pub fn query_has_live_tracks(conn: &Connection) -> Result<bool, rusqlite::Error> {
+    conn.query_row(
+        &format!("SELECT EXISTS(SELECT 1 FROM tracks WHERE {PRESENT})"),
+        [],
+        |row| row.get(0),
+    )
+}
+
+/// Returns every present library track in a fresh random order. The idle
+/// transport action uses the first row immediately and retains the rest as
+/// its immutable playback snapshot.
+pub fn query_random_live_track_ids(conn: &Connection) -> Result<Vec<i64>, rusqlite::Error> {
+    let mut statement = conn.prepare(&format!(
+        "SELECT id FROM tracks WHERE {PRESENT} ORDER BY RANDOM()"
+    ))?;
+    let ids = statement
+        .query_map([], |row| row.get(0))?
+        .collect::<Result<_, _>>()?;
+    Ok(ids)
+}
+
 /// Returns the subset of `ids` that are present (`PRESENT`: not missing, not
 /// removed), in input order with duplicates collapsed. Unlike a foreign-key
 /// check — which only rejects ids with no `tracks` row at all — this also

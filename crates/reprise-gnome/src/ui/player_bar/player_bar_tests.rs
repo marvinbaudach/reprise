@@ -42,6 +42,20 @@ fn player_metadata_uses_native_keyboard_activation() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn play_9_idle_play_is_reachable_without_enabling_queue_navigation() {
+    gtk4::init().unwrap();
+    let bar = PlayerBar::new();
+
+    bar.set_transport_enabled(false, true);
+
+    assert!(bar.widget().is_sensitive());
+    assert!(bar.play_pause_button.is_sensitive());
+    assert!(!bar.prev_button.is_sensitive());
+    assert!(!bar.next_button.is_sensitive());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn mot_5_play_pause_pulses_on_state_change() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
@@ -163,7 +177,7 @@ fn mot_6_second_track_and_state_changes_finish_the_previous_visual_state() {
         assert!(track_animation.follows_enable_animations_setting());
     }
 
-    bar.set_transport_enabled(true);
+    bar.set_transport_enabled(true, false);
     bar.set_state(PlaybackState::Playing);
     bar.set_state(PlaybackState::Paused);
     assert_eq!(bar.playback_state.get(), PlaybackState::Paused);
@@ -199,7 +213,7 @@ fn mot_7_player_bar_hard_switches_when_system_animations_are_disabled() {
 
     let bar = PlayerBar::new();
     bar.set_track("Immediate", "Artist");
-    bar.set_transport_enabled(true);
+    bar.set_transport_enabled(true, false);
     bar.set_state(PlaybackState::Playing);
 
     assert_eq!(bar.title_label.text(), "Immediate");

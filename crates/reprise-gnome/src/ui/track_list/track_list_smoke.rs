@@ -129,6 +129,8 @@ pub(in crate::ui) fn parse_smoke_source(value: &str) -> Option<ViewSource> {
         "queue" => Some(ViewSource::Queue),
         "import_errors" => Some(ViewSource::ImportErrors),
         "my_stats" => Some(ViewSource::MyStats),
+        "concerts" => Some(ViewSource::Concerts),
+        "releases" => Some(ViewSource::Releases),
         _ => value
             .strip_prefix("playlist:")
             .and_then(|id| id.parse::<i64>().ok())
@@ -207,9 +209,12 @@ pub(in crate::ui) fn arm_smoke_source(shared: &Rc<Shared>) {
             );
             return;
         };
-        if matches!(source, ViewSource::MyStats) {
+        if matches!(
+            source,
+            ViewSource::MyStats | ViewSource::Concerts | ViewSource::Releases
+        ) {
             tracing::debug!(
-                "{SMOKE_SOURCE_ENV_VAR}=my_stats delegated to the window source router"
+                "{SMOKE_SOURCE_ENV_VAR} detail source delegated to the window source router"
             );
             return;
         }
@@ -264,7 +269,7 @@ pub(in crate::ui) fn arm_smoke_sort_column(
             field,
             "{SMOKE_SORT_COLUMN_ENV_VAR} set: applying programmatic column sort"
         );
-        column_view.sort_by_column(Some(&column), gtk4::SortType::Ascending);
+        super::track_list_sort::sort_by_column(&column_view, &column, gtk4::SortType::Ascending);
     });
 }
 
@@ -273,7 +278,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn my_stats_is_a_supported_smoke_source() {
+    fn detail_views_are_supported_smoke_sources() {
         assert_eq!(parse_smoke_source("my_stats"), Some(ViewSource::MyStats));
+        assert_eq!(parse_smoke_source("concerts"), Some(ViewSource::Concerts));
+        assert_eq!(parse_smoke_source("releases"), Some(ViewSource::Releases));
     }
 }

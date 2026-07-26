@@ -72,5 +72,5 @@ fn v30_is_idempotent() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 30);
+    assert_eq!(version, crate::db::SUPPORTED_SCHEMA_VERSION);
 }

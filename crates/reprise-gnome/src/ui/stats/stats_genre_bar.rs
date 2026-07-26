@@ -1,169 +1,171 @@
-//! Display-only genre spectrum and legend.
+//! Proportional, non-reflowing layout for the interactive genre segments.
 
 use std::cell::RefCell;
-use std::rc::Rc;
 
+use gtk4::glib;
+use gtk4::glib::subclass::prelude::ObjectSubclassIsExt;
 use gtk4::prelude::*;
-use reprise_core::library::stats_snapshot::GenreSection;
 
-use crate::ui::strings;
+use crate::ui::motion_reveal::HorizontalReveal;
 
-type UnifyCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
+const SEGMENT_GAP: i32 = 2;
+const BAR_HEIGHT: i32 = 22;
 
-#[derive(Clone)]
-pub(in crate::ui) struct StatsGenreBar {
-    root: gtk4::Box,
-    segments: gtk4::Grid,
-    legend: gtk4::Box,
-    on_unify: UnifyCallback,
+mod imp {
+    use super::*;
+    use gtk4::subclass::prelude::*;
+
+    #[derive(Default)]
+    pub struct StatsGenreBar {
+        pub children: RefCell<Vec<HorizontalReveal>>,
+        pub shares: RefCell<Vec<f64>>,
+        pub target_shares: RefCell<Vec<f64>>,
+    }
+
+    #[glib::object_subclass]
+    impl ObjectSubclass for StatsGenreBar {
+        const NAME: &'static str = "RepriseStatsGenreBar";
+        type Type = super::StatsGenreBar;
+        type ParentType = gtk4::Widget;
+
+        fn class_init(class: &mut Self::Class) {
+            class.set_css_name("reprise-stats-genre-bar");
+            class.set_accessible_role(gtk4::AccessibleRole::Group);
+        }
+    }
+
+    impl ObjectImpl for StatsGenreBar {
+        fn dispose(&self) {
+            for child in self.children.borrow_mut().drain(..) {
+                child.unparent();
+            }
+        }
+    }
+
+    impl WidgetImpl for StatsGenreBar {
+        fn measure(&self, orientation: gtk4::Orientation, for_size: i32) -> (i32, i32, i32, i32) {
+            if orientation == gtk4::Orientation::Horizontal {
+                return (0, 0, -1, -1);
+            }
+            let natural = self
+                .children
+                .borrow()
+                .iter()
+                .map(|child| child.measure(orientation, for_size).1)
+                .max()
+                .unwrap_or(BAR_HEIGHT)
+                .max(BAR_HEIGHT);
+            (BAR_HEIGHT.min(natural), natural, -1, -1)
+        }
+
+        fn size_allocate(&self, width: i32, height: i32, baseline: i32) {
+            let children = self.children.borrow().clone();
+            let shares = self.shares.borrow().clone();
+            let widths = segment_widths(width, &shares, children.len());
+            let mut x = 0;
+            for (index, (child, child_width)) in children.iter().zip(widths).enumerate() {
+                let transform = gtk4::gsk::Transform::new()
+                    .translate(&gtk4::graphene::Point::new(x as f32, 0.0));
+                child.allocate(child_width, height, baseline, Some(transform));
+                x += child_width
+                    + if index + 1 < children.len() {
+                        SEGMENT_GAP
+                    } else {
+                        0
+                    };
+            }
+        }
+
+        fn snapshot(&self, snapshot: &gtk4::Snapshot) {
+            let widget = self.obj();
+            for child in self.children.borrow().iter() {
+                widget.snapshot_child(child, snapshot);
+            }
+        }
+    }
+}
+
+glib::wrapper! {
+    pub struct StatsGenreBar(ObjectSubclass<imp::StatsGenreBar>)
+        @extends gtk4::Widget,
+        @implements gtk4::Accessible, gtk4::Buildable, gtk4::ConstraintTarget;
 }
 
 impl StatsGenreBar {
-    pub(in crate::ui) fn new() -> Self {
-        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
-        root.add_css_class("stats-genre-spectrum");
-        let segments = gtk4::Grid::builder()
-            .column_spacing(2)
-            .column_homogeneous(true)
-            .build();
-        segments.add_css_class("stats-genre-bar");
-        segments.set_height_request(20);
-        root.append(&segments);
-        let legend = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
-        legend.add_css_class("stats-genre-legend");
-        root.append(&legend);
-        Self {
-            root,
-            segments,
-            legend,
-            on_unify: Rc::new(RefCell::new(None)),
+    pub(super) fn new() -> Self {
+        let bar: Self = glib::Object::new();
+        bar.add_css_class("stats-genre-bar");
+        bar.set_height_request(BAR_HEIGHT);
+        bar.set_hexpand(true);
+        bar.set_overflow(gtk4::Overflow::Hidden);
+        bar
+    }
+
+    pub(super) fn set_segments(&self, children: &[HorizontalReveal], shares: &[f64]) {
+        for child in self.imp().children.borrow_mut().drain(..) {
+            child.unparent();
         }
-    }
-
-    pub(in crate::ui) fn widget(&self) -> &gtk4::Box {
-        &self.root
-    }
-
-    pub(in crate::ui) fn set_data(&self, section: &GenreSection) {
-        clear_grid(&self.segments);
-        clear(&self.legend);
-        let mut column = 0;
-        for (index, segment) in section.segments.iter().enumerate() {
-            let bar = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
-            bar.add_css_class("stats-genre-segment");
-            bar.add_css_class(&format!("stats-genre-segment-{}", index.min(5)));
-            bar.set_hexpand(true);
-            bar.set_tooltip_text(Some(&format!(
-                "{}: {}%",
-                segment.label, segment.share_percent
-            )));
-            let width = segment.share_percent.max(1) as i32;
-            self.segments.attach(&bar, column, 0, width, 1);
-            column += width;
-
-            let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-            let dot = gtk4::Label::new(Some("\u{2022}"));
-            dot.add_css_class(&format!("stats-genre-dot-{}", index.min(5)));
-            row.append(&dot);
-            let label = gtk4::Label::new(Some(&format!(
-                "{} \u{00b7} {}%",
-                segment.label, segment.share_percent
-            )));
-            label.set_xalign(0.0);
-            label.set_hexpand(true);
-            row.append(&label);
-            if segment.variant_count >= 2 {
-                let hint = gtk4::Button::with_label("Tag spellings");
-                hint.add_css_class("flat");
-                hint.add_css_class("stats-unify-hint");
-                hint.set_tooltip_text(Some(&strings::spellings_merged_hint(segment.variant_count)));
-                hint.connect_clicked({
-                    let key = segment.key.clone();
-                    let on_unify = self.on_unify.clone();
-                    move |_| {
-                        if let Some(callback) = on_unify.borrow().clone() {
-                            callback(key.clone());
-                        }
-                    }
-                });
-                row.append(&hint);
-            }
-            self.legend.append(&row);
+        for child in children {
+            child.set_parent(self);
         }
+        self.imp().children.replace(children.to_vec());
+        self.imp().shares.replace(shares.to_vec());
+        self.imp().target_shares.replace(shares.to_vec());
+        self.queue_resize();
     }
 
-    pub(in crate::ui) fn set_on_unify(&self, callback: impl Fn(String) + 'static) {
-        *self.on_unify.borrow_mut() = Some(Rc::new(callback));
+    pub(super) fn target_shares(&self) -> Vec<f64> {
+        self.imp().target_shares.borrow().clone()
+    }
+
+    pub(super) fn set_shares(&self, shares: &[f64]) {
+        let targets = self.target_shares();
+        self.imp().shares.replace(
+            targets
+                .iter()
+                .enumerate()
+                .map(|(index, target)| shares.get(index).copied().unwrap_or(*target).max(0.0))
+                .collect(),
+        );
+        self.queue_resize();
     }
 }
 
-fn clear(container: &gtk4::Box) {
-    while let Some(child) = container.first_child() {
-        container.remove(&child);
+fn segment_widths(total_width: i32, shares: &[f64], count: usize) -> Vec<i32> {
+    if count == 0 {
+        return Vec::new();
     }
-}
-
-fn clear_grid(container: &gtk4::Grid) {
-    while let Some(child) = container.first_child() {
-        container.remove(&child);
+    let gap_total = SEGMENT_GAP * count.saturating_sub(1) as i32;
+    let usable_width = total_width.saturating_sub(gap_total);
+    let total = shares.iter().take(count).sum::<f64>();
+    if usable_width <= 0 || total <= 0.0 {
+        return vec![0; count];
     }
+    let mut used = 0;
+    (0..count)
+        .map(|index| {
+            let width = if index + 1 == count {
+                usable_width.saturating_sub(used)
+            } else {
+                ((f64::from(usable_width) * shares.get(index).copied().unwrap_or(0.0) / total)
+                    .round() as i32)
+                    .clamp(0, usable_width.saturating_sub(used))
+            };
+            used += width;
+            width
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
-    use gtk4::prelude::*;
-    use reprise_core::library::stats_snapshot::{GenreSection, GenreSegment};
-
-    use super::*;
-
-    fn fixture() -> GenreSection {
-        GenreSection {
-            segments: vec![
-                GenreSegment {
-                    label: "Metal".to_string(),
-                    key: "metal".to_string(),
-                    plays: 7,
-                    total_ms: 700,
-                    share_percent: 70,
-                    variant_count: 1,
-                },
-                GenreSegment {
-                    label: "Other".to_string(),
-                    key: "other".to_string(),
-                    plays: 3,
-                    total_ms: 300,
-                    share_percent: 30,
-                    variant_count: 1,
-                },
-            ],
-            denominator_ms: 1_000,
-        }
-    }
+    use super::segment_widths;
 
     #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn genre_bar_renders_one_segment_per_share_plus_legend() {
-        gtk4::init().unwrap();
-        let bar = StatsGenreBar::new();
-        bar.set_data(&fixture());
+    fn proportional_widths_fill_the_track_with_fixed_gaps() {
+        let widths = segment_widths(500, &[70.0, 30.0], 2);
 
-        assert_eq!(bar.segments.observe_children().n_items(), 2);
-        assert_eq!(bar.legend.observe_children().n_items(), 2);
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn genre_bar_has_no_click_controller() {
-        gtk4::init().unwrap();
-        let bar = StatsGenreBar::new();
-        bar.set_data(&fixture());
-        let segment = bar.segments.first_child().unwrap();
-        let controllers = segment.observe_controllers();
-
-        assert!((0..controllers.n_items()).all(|index| {
-            !controllers
-                .item(index)
-                .is_some_and(|item| item.is::<gtk4::GestureClick>())
-        }));
+        assert_eq!(widths.iter().sum::<i32>() + 2, 500);
+        assert!((widths[0] as f64 / 498.0 - 0.70).abs() < 0.01);
     }
 }

@@ -145,11 +145,15 @@ fn spawn(
     watcher: Option<notify::RecommendedWatcher>,
     on_wake: impl Fn() + Send + 'static,
 ) -> Handle {
+    // Establish the baseline before returning the handle. If the worker read
+    // it after being spawned, a commit in that scheduling gap could become
+    // the baseline and remain invisible forever.
+    let initial_version = current_data_version(&conn);
     let stopped = Arc::new(AtomicBool::new(false));
     let stopped_thread = stopped.clone();
     std::thread::spawn(move || match rx {
-        Some(rx) => run_armed(&conn, &rx, &stopped_thread, &on_wake),
-        None => run_polling(&conn, &stopped_thread, &on_wake),
+        Some(rx) => run_armed(&conn, &rx, &stopped_thread, initial_version, &on_wake),
+        None => run_polling(&conn, &stopped_thread, initial_version, &on_wake),
     });
     Handle {
         stopped,
@@ -164,9 +168,9 @@ fn run_armed(
     conn: &Connection,
     rx: &std_mpsc::Receiver<notify::Result<notify::Event>>,
     stopped: &AtomicBool,
+    mut last_version: i64,
     on_wake: &(impl Fn() + Send + 'static),
 ) {
-    let mut last_version = current_data_version(conn);
     let mut pending_since: Option<Instant> = None;
     let mut last_check = Instant::now();
 
@@ -191,8 +195,12 @@ fn run_armed(
 
 /// Polling fallback: no filesystem events, just a `data_version` check every
 /// [`POLL_FALLBACK`], waking on a real change.
-fn run_polling(conn: &Connection, stopped: &AtomicBool, on_wake: &(impl Fn() + Send + 'static)) {
-    let mut last_version = current_data_version(conn);
+fn run_polling(
+    conn: &Connection,
+    stopped: &AtomicBool,
+    mut last_version: i64,
+    on_wake: &(impl Fn() + Send + 'static),
+) {
     let mut last_check = Instant::now();
 
     loop {

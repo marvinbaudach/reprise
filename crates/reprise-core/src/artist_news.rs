@@ -35,9 +35,8 @@ pub struct ArtistNews {
 
 /// How many tracks of an album must be present before the album counts as
 /// owned. One track is a single, not an album — treating it as ownership is
-/// what used to suppress the very album the single announces. Shared by the
-/// refresh pipeline's `local_albums` filter and the query layer's
-/// `presence_for`, so it lives here rather than in either sibling module.
+/// what used to suppress the very album the single announces. The query
+/// layer's `presence_for` applies this threshold without filtering rows.
 pub(crate) const OWNED_ALBUM_MIN_TRACKS: i64 = 2;
 
 /// Fetch-scope configuration and candidate selection for a refresh run live
@@ -52,16 +51,12 @@ pub use crate::artist_news_candidates::{
 #[cfg(test)]
 pub(crate) use crate::artist_news_candidates::artists_for_fetch;
 
+#[cfg(test)]
+pub(crate) use crate::artist_news_pipeline::refresh_with;
 /// The refresh pipeline that talks to MusicBrainz and writes the database
 /// lives in `artist_news_pipeline`; re-exported here so existing callers
 /// keep using `artist_news::{refresh, RefreshReport, NewsError}`.
 pub use crate::artist_news_pipeline::{refresh, NewsError, RefreshReport};
-// `refresh_with` is only called directly by the test suite (production code
-// calls the public `refresh`), so the re-export is test-only too.
-#[cfg(test)]
-pub(crate) use crate::artist_news_pipeline::local_albums_for_test;
-#[cfg(test)]
-pub(crate) use crate::artist_news_pipeline::refresh_with;
 
 pub(crate) use crate::artist_news_parsing::parse_partial_date;
 /// MusicBrainz JSON parsing and the URL builders live in
@@ -80,6 +75,14 @@ pub use crate::artist_news_query::{
     LibraryPresence, StoredRelease,
 };
 pub(crate) use crate::artist_news_query::{local_album_track_counts, presence_for};
+
+/// Decisions and queries for the persistent Releases full view.
+pub use crate::artist_news_view::{
+    count_releases_view, filter_rows as filter_release_rows, persisted_releases_filter,
+    query_releases_view, release_status, sort_rows as sort_release_rows, ReleaseSortDirection,
+    ReleaseStatus, ReleaseTypeFilter, ReleasesFilter, RELEASES_FILTER_HIDDEN_KEY,
+    RELEASES_FILTER_NOT_IN_LIBRARY_KEY, RELEASES_FILTER_TYPE_KEY,
+};
 
 /// Staleness policy (when a refresh is due, the per-install jitter, and the
 /// latest fetch timestamp) lives in `artist_news_refresh`; re-exported here

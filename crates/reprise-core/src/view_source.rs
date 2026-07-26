@@ -52,11 +52,18 @@ pub enum ViewSource {
     /// Artist identity is the trimmed, case-insensitive effective album
     /// artist used by the summary query.
     Artist(String),
+    /// A read-only genre scope reached from My Stats. The value remains a
+    /// durable scope independent of clearable Library browse facets.
+    Genre(String),
     /// The "My Stats" screen — a dedicated view backed by
     /// `library::stats_screen` rather than the shared track list. The
     /// sidebar routes to it; the content area shows the stats view widget
     /// instead of the `ColumnView`.
     MyStats,
+    /// The full releases table backed by the New Releases cache.
+    Releases,
+    /// The full upcoming-concerts table backed by the Concerts cache.
+    Concerts,
     /// The instrumental conversion/staging view (experimental) — a dedicated
     /// view backed by `ai_jobs` + the staging store rather than the shared
     /// track list. The sidebar routes to it only while the experimental switch
@@ -85,7 +92,10 @@ impl ViewSource {
                 album_artist,
             } => format!("album:{album}:{album_artist}"),
             Self::Artist(artist) => format!("artist:{artist}"),
+            Self::Genre(genre) => format!("genre:{genre}"),
             Self::MyStats => "my_stats".to_string(),
+            Self::Releases => "releases".to_string(),
+            Self::Concerts => "concerts".to_string(),
             Self::Conversions => "conversions".to_string(),
             Self::Device { serial } => format!("device:{serial}"),
         }
@@ -109,6 +119,8 @@ mod tests {
         assert_eq!(ViewSource::Queue.label(), "queue");
         assert_eq!(ViewSource::Missing.label(), "missing");
         assert_eq!(ViewSource::ImportErrors.label(), "import_errors");
+        assert_eq!(ViewSource::Releases.label(), "releases");
+        assert_eq!(ViewSource::Concerts.label(), "concerts");
         assert_eq!(ViewSource::MyStats.label(), "my_stats");
         assert_eq!(ViewSource::Conversions.label(), "conversions");
         assert_eq!(
@@ -127,5 +139,9 @@ mod tests {
             "album:Blue:Joni Mitchell"
         );
         assert_eq!(ViewSource::Artist("Björk".into()).label(), "artist:Björk");
+        assert_eq!(
+            ViewSource::Genre("Metalcore".into()).label(),
+            "genre:Metalcore"
+        );
     }
 }
