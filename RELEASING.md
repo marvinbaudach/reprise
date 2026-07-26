@@ -224,9 +224,11 @@ Do not point development hooks at the maintainer's real library.
   the upper third, fades into the neutral-dark stage, and disappears in the idle state.
 - NPP-5/NPP-6: Play copied music with synchronized lyrics and inspect the 100/45/32/28
   line hierarchy, centered accent underline, 150 ms line fades, and calm centered glide.
-- NPP-10: Change tracks with animations enabled and disabled; cover, title, glow, and
-  tab content must use one shared crossfade or one immediate hard switch respectively,
-  and new synchronized lyrics must start with line zero centered.
+- NPP-13: Change tracks with animations enabled and disabled; the right panel, active
+  tab, queue, and footer must remain visible while only the outgoing cover fades over
+  the resolved new cover. The queue advances independently, the cover-derived accent
+  follows its ambient transition, and new synchronized lyrics start with line zero
+  centered.
 - For the reduced-motion variants above, toggle GNOME's system animation
   setting for the duration of the test and restore its previous value after
   closing Reprise. A per-profile GTK `settings.ini` can be overridden by the
