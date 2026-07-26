@@ -28,6 +28,8 @@ pub(in crate::ui) const ICON_CLASS: &str = "reprise-btn-icon";
 pub(in crate::ui) const TOGGLE_CLASS: &str = "reprise-btn-toggle";
 /// Accent-surface primary actions (Play/Pause).
 pub(in crate::ui) const PRIMARY_CLASS: &str = "reprise-btn-primary";
+/// Tinted rectangular source-add actions, visually distinct from filter chips.
+pub(in crate::ui) const ADD_ACTION_CLASS: &str = "reprise-btn-add";
 /// Tertiary/flat entries: background hover only, deliberately no press scale.
 pub(in crate::ui) const TERTIARY_CLASS: &str = "reprise-btn-tertiary";
 
@@ -73,6 +75,7 @@ fn press_scale_selectors() -> Vec<String> {
         ".reprise-btn-toggle:active",
         ".reprise-btn-toggle:checked:active",
         ".reprise-btn-primary:active",
+        ".reprise-btn-add:active",
         "button.suggested-action:active",
     ]
     .iter()
@@ -94,6 +97,7 @@ fn focus_ring_selectors() -> Vec<String> {
         ".reprise-btn-icon:focus-visible",
         ".reprise-btn-toggle:focus-visible",
         ".reprise-btn-primary:focus-visible",
+        ".reprise-btn-add:focus-visible",
         ".reprise-btn-tertiary:focus-visible",
         "button.suggested-action:focus-visible",
     ]
@@ -214,6 +218,16 @@ pub(in crate::ui) fn css() -> String {
                        transform {TRANSITION}; }}\n\
          button.suggested-action:hover {{ \
            box-shadow: 0 0 {FOCUS_GLOW_BLUR} alpha(@accent_color, {FOCUS_GLOW_ALPHA}); }}\n\
+         /* Source add actions are rectangular tinted controls, never pills. */\n\
+         .{ADD_ACTION_CLASS} {{ \
+           border-radius: 8px; \
+           background-color: alpha(@accent_bg_color, 0.16); \
+           color: @accent_color; \
+           transition: background-color {TRANSITION}, transform {TRANSITION}; }}\n\
+         .{ADD_ACTION_CLASS}:hover {{ \
+           background-color: alpha(@accent_bg_color, 0.22); }}\n\
+         .{ADD_ACTION_CLASS}:active {{ \
+           background-color: alpha(@accent_bg_color, 0.28); }}\n\
          /* BTN-3: tertiary tier — background hover only, no scale, because menu \
             rows sitting in a list must not jump under the cursor. */\n\
          .{TERTIARY_CLASS} {{ transition: background-color {TRANSITION}; }}\n\
@@ -339,6 +353,17 @@ mod tests {
             assert!(css.contains(&format!("{hosted}:hover")));
             assert!(css.contains(&format!("{hosted}:active")));
         }
+    }
+
+    #[test]
+    fn src_2_add_action_is_tinted_button_not_chip() {
+        let css = super::css();
+
+        assert_eq!(super::ADD_ACTION_CLASS, "reprise-btn-add");
+        assert!(css.contains(".reprise-btn-add"));
+        assert!(css.contains("border-radius: 8px"));
+        assert!(css.contains("alpha(@accent_bg_color, 0.16)"));
+        assert!(!super::ADD_ACTION_CLASS.contains("chip"));
     }
 
     #[test]

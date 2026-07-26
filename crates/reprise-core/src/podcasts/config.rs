@@ -1,0 +1,1 @@
+//! Persisted podcast configuration.
