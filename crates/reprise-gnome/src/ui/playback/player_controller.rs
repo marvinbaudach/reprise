@@ -24,12 +24,13 @@
 //! pattern the gtk4-rs book recommends: the player callback does a
 //! non-blocking `try_send` into an unbounded `async_channel`, and a single
 //! future spawned on the default (main) `glib::MainContext` drains the
-//! receiver and applies each event to the bar. Compared to the alternative —
+//! receiver and applies events to the bar. Compared to the alternative —
 //! `glib::idle_add` from the callback thread per event — this keeps one
-//! long-lived drain loop with strict FIFO ordering instead of allocating a
-//! GSource per event, and it makes the thread boundary explicit in the
-//! types: only `PlayerEvent` (plain `Send` data) crosses it, exactly the
-//! runtime-safety property the player was designed around.
+//! long-lived drain loop instead of allocating a GSource per event, and it
+//! makes the thread boundary explicit in the types: only `PlayerEvent` (plain
+//! `Send` data) crosses it. Semantic playback events retain strict FIFO order;
+//! consecutive high-rate spectrum frames are collapsed latest-wins so a busy
+//! renderer cannot replay stale audio.
 //!
 //! ## Lifetime
 //!
@@ -511,15 +512,7 @@ impl PlayerController {
             tracing::warn!(%error, "could not restore live song visuals; using the static profile");
         }
 
-        let weak = Rc::downgrade(&controller);
-        glib::spawn_future_local(async move {
-            while let Ok(event) = receiver.recv().await {
-                let Some(controller) = weak.upgrade() else {
-                    break;
-                };
-                controller.apply_event(event);
-            }
-        });
+        crate::ui::player_event_handling::spawn_event_drain(&controller, receiver);
 
         // MPRIS-command drain: see `mpris_mirror.rs`'s `spawn_command_drain`
         // doc comment (moved there — Stage-3 close-out — to keep this file's
