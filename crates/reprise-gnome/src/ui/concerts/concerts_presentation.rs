@@ -85,12 +85,16 @@ pub(super) fn count_line(shown: usize, total: usize) -> String {
 }
 
 pub(super) fn ticket_button_label(row: &ConcertRow) -> Option<String> {
-    row.ticket_url.as_ref().or(row.event_url.as_ref()).map(|_| {
-        row.ticket_source
-            .as_deref()
-            .filter(|source| !source.trim().is_empty())
-            .map_or_else(|| strings::text(strings::CONCERTS_TICKETS), strings::text)
-    })
+    [row.ticket_url.as_deref(), row.event_url.as_deref()]
+        .into_iter()
+        .flatten()
+        .find(|url| reprise_core::external_link::is_launchable_url(url))
+        .map(|_| {
+            row.ticket_source
+                .as_deref()
+                .filter(|source| !source.trim().is_empty())
+                .map_or_else(|| strings::text(strings::CONCERTS_TICKETS), strings::text)
+        })
 }
 
 pub(super) fn updated_ago(latest_attempt: Option<i64>, now: i64) -> String {
@@ -203,5 +207,14 @@ mod tests {
         assert_eq!(ticket_button_label(&event), None);
         assert_eq!(updated_ago(None, 10_000), "Never updated");
         assert_eq!(updated_ago(Some(9_900), 10_000), "Updated 1 min ago");
+    }
+
+    #[test]
+    fn non_web_provider_urls_hide_the_ticket_cell() {
+        let mut event = row("2026-10-17", None);
+        event.ticket_url = Some("javascript:alert(1)".into());
+        event.event_url = Some("file:///etc/passwd".into());
+
+        assert_eq!(ticket_button_label(&event), None);
     }
 }
