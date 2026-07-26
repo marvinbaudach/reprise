@@ -4333,9 +4333,6 @@ msgstr ""
 #~ msgid "Rhythmbox column layout imported"
 #~ msgstr "تم استيراد تخطيط أعمدة Rhythmbox"
 
-#~ msgid "Could not save the imported column layout"
-#~ msgstr "تعذر حفظ تخطيط الأعمدة المستورد"
-
 #~ msgid "1 minute"
 #~ msgstr "دقيقة واحدة"
 

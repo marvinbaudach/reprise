@@ -4296,9 +4296,6 @@ msgstr ""
 #~ msgid "Rhythmbox column layout imported"
 #~ msgstr "已导入 Rhythmbox 列布局"
 
-#~ msgid "Could not save the imported column layout"
-#~ msgstr "无法保存导入的列布局"
-
 #~ msgid "1 hour"
 #~ msgstr "1 小时"
 

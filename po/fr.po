@@ -4503,9 +4503,6 @@ msgstr ""
 #~ msgid "Artist A–Z"
 #~ msgstr "Artiste A–Z"
 
-#~ msgid "Most played"
-#~ msgstr "Les plus écoutées"
-
 #, rust-format
 #~ msgid "{} albums"
 #~ msgstr "{} albums"
