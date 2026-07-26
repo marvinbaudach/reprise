@@ -59,6 +59,15 @@ CREATE TABLE IF NOT EXISTS radio_stations (
 );
 "#;
 
+const SCHEMA_V33: &str = r#"
+CREATE TABLE IF NOT EXISTS podcast_subscription_baselines (
+  subscription_id INTEGER NOT NULL
+                  REFERENCES podcast_subscriptions(id) ON DELETE CASCADE,
+  guid            TEXT NOT NULL,
+  PRIMARY KEY(subscription_id, guid)
+);
+"#;
+
 pub(crate) fn migrate_v32(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version >= 32 {
@@ -67,6 +76,17 @@ pub(crate) fn migrate_v32(conn: &Connection) -> Result<(), rusqlite::Error> {
     let transaction = conn.unchecked_transaction()?;
     transaction.execute_batch(SCHEMA_V32)?;
     transaction.pragma_update(None, "user_version", 32)?;
+    transaction.commit()
+}
+
+pub(crate) fn migrate_v33(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= 33 {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    transaction.execute_batch(SCHEMA_V33)?;
+    transaction.pragma_update(None, "user_version", 33)?;
     transaction.commit()
 }
 

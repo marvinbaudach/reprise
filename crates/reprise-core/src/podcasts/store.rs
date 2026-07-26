@@ -35,6 +35,31 @@ pub fn add_or_restore(
     subscription: &NewSubscription,
     now: i64,
 ) -> Result<i64, rusqlite::Error> {
+    add_or_restore_in(conn, subscription, now)
+}
+
+pub fn add_or_restore_with_baseline(
+    conn: &Connection,
+    subscription: &NewSubscription,
+    now: i64,
+    future_only_baseline: Option<&[String]>,
+) -> Result<i64, rusqlite::Error> {
+    let transaction = conn.unchecked_transaction()?;
+    let subscription_id = add_or_restore_in(&transaction, subscription, now)?;
+    replace_future_only_baseline_in(
+        &transaction,
+        subscription_id,
+        future_only_baseline.unwrap_or_default(),
+    )?;
+    transaction.commit()?;
+    Ok(subscription_id)
+}
+
+fn add_or_restore_in(
+    conn: &Connection,
+    subscription: &NewSubscription,
+    now: i64,
+) -> Result<i64, rusqlite::Error> {
     conn.query_row(
         "INSERT INTO podcast_subscriptions
          (kind, feed_url, title, author, image_url, auto_download, added_at, removed_at)
@@ -96,6 +121,63 @@ pub fn count_subscriptions(conn: &Connection) -> Result<usize, rusqlite::Error> 
         |row| row.get::<_, i64>(0),
     )
     .map(|count| count.max(0) as usize)
+}
+
+pub fn replace_future_only_baseline(
+    conn: &Connection,
+    subscription_id: i64,
+    guids: &[String],
+) -> Result<(), rusqlite::Error> {
+    let transaction = conn.unchecked_transaction()?;
+    replace_future_only_baseline_in(&transaction, subscription_id, guids)?;
+    transaction.commit()
+}
+
+fn replace_future_only_baseline_in(
+    conn: &Connection,
+    subscription_id: i64,
+    guids: &[String],
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "DELETE FROM podcast_subscription_baselines WHERE subscription_id = ?1",
+        [subscription_id],
+    )?;
+    {
+        let mut insert = conn.prepare(
+            "INSERT OR IGNORE INTO podcast_subscription_baselines (subscription_id, guid)
+             VALUES (?1, ?2)",
+        )?;
+        for guid in guids {
+            insert.execute(params![subscription_id, guid])?;
+        }
+    }
+    Ok(())
+}
+
+pub fn clear_future_only_baseline(
+    conn: &Connection,
+    subscription_id: i64,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "DELETE FROM podcast_subscription_baselines WHERE subscription_id = ?1",
+        [subscription_id],
+    )?;
+    Ok(())
+}
+
+pub fn future_only_baseline(
+    conn: &Connection,
+    subscription_id: i64,
+) -> Result<Vec<String>, rusqlite::Error> {
+    let mut statement = conn.prepare(
+        "SELECT guid FROM podcast_subscription_baselines
+         WHERE subscription_id = ?1
+         ORDER BY guid",
+    )?;
+    let guids = statement
+        .query_map([subscription_id], |row| row.get(0))?
+        .collect();
+    guids
 }
 
 pub fn upsert_episode(
@@ -415,6 +497,34 @@ mod tests {
         assert_eq!(row.first_seen_at, 20);
         assert_eq!(row.position_ms, 8_000);
         assert_eq!(row.played_at, Some(30));
+    }
+
+    #[test]
+    fn future_only_baseline_replaces_and_clears_atomically() {
+        let conn = conn();
+        let subscription_id = add_or_restore(&conn, &subscription_draft(), 10).unwrap();
+
+        replace_future_only_baseline(
+            &conn,
+            subscription_id,
+            &["old-a".to_owned(), "old-b".to_owned()],
+        )
+        .unwrap();
+        assert_eq!(
+            future_only_baseline(&conn, subscription_id).unwrap(),
+            ["old-a".to_owned(), "old-b".to_owned()]
+        );
+
+        replace_future_only_baseline(&conn, subscription_id, &["new".to_owned()]).unwrap();
+        assert_eq!(
+            future_only_baseline(&conn, subscription_id).unwrap(),
+            ["new".to_owned()]
+        );
+
+        clear_future_only_baseline(&conn, subscription_id).unwrap();
+        assert!(future_only_baseline(&conn, subscription_id)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

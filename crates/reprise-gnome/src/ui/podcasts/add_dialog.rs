@@ -60,6 +60,7 @@ struct Preview {
     image_url: Option<String>,
     count: usize,
     url: String,
+    guids: Vec<String>,
 }
 
 type OnAdded = Rc<dyn Fn(bool)>;
@@ -306,26 +307,40 @@ fn preview(
                         podcasts::http::get(&task_url).map_err(|error| error.to_string())?;
                     let feed = podcasts::feed::parse_feed(&response.body, import_count)
                         .map_err(|error| error.to_string())?;
+                    let count = feed.episodes.len();
+                    let guids = feed
+                        .episodes
+                        .iter()
+                        .map(|episode| episode.guid.clone())
+                        .collect();
                     Ok(Preview {
                         kind,
                         title: feed.title,
                         author: feed.author,
                         image_url: feed.image_url,
-                        count: feed.episodes.len(),
+                        count,
                         url: task_url,
+                        guids,
                     })
                 }
                 PodcastKind::Youtube => {
                     let listing = podcasts::ytdlp::YtDlp::discover(ytdlp_path.as_deref())
                         .list(&task_url)
                         .map_err(|error| error.to_string())?;
+                    let count = listing.entries.len();
+                    let guids = listing
+                        .entries
+                        .iter()
+                        .map(|entry| entry.id.clone())
+                        .collect();
                     Ok(Preview {
                         kind,
                         title: listing.title.unwrap_or_else(|| task_url.clone()),
                         author: None,
                         image_url: None,
-                        count: listing.entries.len(),
+                        count,
                         url: task_url,
+                        guids,
                     })
                 }
             }
@@ -373,16 +388,16 @@ fn append_candidate(
     button.add_css_class("suggested-action");
     let conn = conn.clone();
     let on_added = on_added.clone();
-    button.connect_clicked(
-        move |button| match subscribe(&conn.borrow(), &candidate, false) {
+    button.connect_clicked(move |button| {
+        match subscribe(&conn.borrow(), &candidate, false, None) {
             Ok(_) => {
                 button.set_label("✓");
                 button.set_sensitive(false);
                 on_added(true);
             }
             Err(error) => button.set_tooltip_text(Some(&error.to_string())),
-        },
-    );
+        }
+    });
     row.append(&button);
     parent.append(&row);
 }
@@ -416,8 +431,15 @@ fn append_preview(
     };
     let conn = conn.clone();
     let on_added = on_added.clone();
+    let preview_guids = preview.guids;
     subscribe_button.connect_clicked(move |button| {
-        match subscribe(&conn.borrow(), &candidate, auto_download.is_active()) {
+        let baseline = baseline_for_import_choice(import.is_active(), &preview_guids);
+        match subscribe(
+            &conn.borrow(),
+            &candidate,
+            auto_download.is_active(),
+            baseline.as_deref(),
+        ) {
             Ok(_) => {
                 button.set_label("✓");
                 button.set_sensitive(false);
@@ -457,8 +479,9 @@ fn subscribe(
     conn: &Connection,
     candidate: &Candidate,
     auto_download: bool,
+    future_only_baseline: Option<&[String]>,
 ) -> Result<i64, rusqlite::Error> {
-    podcasts::store::add_or_restore(
+    podcasts::store::add_or_restore_with_baseline(
         conn,
         &podcasts::store::NewSubscription {
             kind: candidate.kind,
@@ -469,7 +492,12 @@ fn subscribe(
             auto_download,
         },
         chrono::Utc::now().timestamp(),
+        future_only_baseline,
     )
+}
+
+fn baseline_for_import_choice(import: bool, preview_guids: &[String]) -> Option<Vec<String>> {
+    (!import).then(|| preview_guids.to_vec())
 }
 
 fn clear(parent: &gtk4::Box) {
@@ -509,5 +537,12 @@ mod tests {
             AddDialogPhase::Error,
         ];
         assert_eq!(phases.len(), 6);
+    }
+
+    #[test]
+    fn disabling_initial_import_persists_the_previewed_guid_baseline() {
+        let guids = vec!["old-a".to_owned(), "old-b".to_owned()];
+        assert_eq!(baseline_for_import_choice(false, &guids), Some(guids));
+        assert_eq!(baseline_for_import_choice(true, &["old".to_owned()]), None);
     }
 }
