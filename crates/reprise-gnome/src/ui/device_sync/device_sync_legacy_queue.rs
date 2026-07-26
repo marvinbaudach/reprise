@@ -133,7 +133,6 @@ fn finish_interrupted(
     work: Work,
 ) {
     let remaining_bytes = remaining_work_bytes(&work);
-    let mut continue_queue = false;
     if let Some(device) = runtime
         .device_states
         .borrow_mut()
@@ -148,7 +147,6 @@ fn finish_interrupted(
         if device.interrupted_disconnect && device.descriptor.reconnectable {
             device.paused_work = Some(work);
             device.queue.pause_disconnected();
-            continue_queue = device.connected;
         } else if device.interrupted_disconnect {
             device.reserved_bytes = device.reserved_bytes.saturating_sub(remaining_bytes);
             device
@@ -157,15 +155,11 @@ fn finish_interrupted(
         } else {
             device.reserved_bytes = device.reserved_bytes.saturating_sub(remaining_bytes);
             device.queue.finish_job();
-            continue_queue = device.connected;
         }
         device.interrupted_disconnect = false;
     }
     runtime.notify();
     runtime.release_and_start_next(device_id);
-    if continue_queue && runtime.active_device.borrow().is_none() {
-        runtime.start_or_resume(device_id);
-    }
 }
 
 pub(super) fn remaining_work_bytes(work: &Work) -> u64 {

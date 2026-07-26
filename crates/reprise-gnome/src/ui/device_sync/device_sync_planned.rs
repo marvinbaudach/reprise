@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 
 use reprise_core::device_sync::m3u::{render_named_playlist, DevicePlaylistEntry};
 use reprise_core::device_sync::settings::{
@@ -25,7 +26,7 @@ impl fmt::Display for SyncStartError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnknownDevice => formatter.write_str("device is not connected"),
-            Self::Busy => formatter.write_str("another device synchronization is active"),
+            Self::Busy => formatter.write_str("device synchronization is already active"),
             Self::InsufficientSpace {
                 required_bytes,
                 available_bytes,
@@ -55,8 +56,15 @@ struct PlannedWork {
 
 impl DeviceSyncRuntime {
     pub fn sync_now(self: &Rc<Self>, device_id: &str) -> Result<(), SyncStartError> {
-        if self.active_device.borrow().is_some() {
-            return Err(SyncStartError::Busy);
+        {
+            let devices = self.device_states.borrow();
+            let device = devices
+                .iter()
+                .find(|device| device.descriptor.id == device_id && device.connected)
+                .ok_or(SyncStartError::UnknownDevice)?;
+            if device.is_active() {
+                return Err(SyncStartError::Busy);
+            }
         }
         self.recompute_delta(device_id)
             .map_err(SyncStartError::Planning)?;
@@ -87,6 +95,9 @@ impl DeviceSyncRuntime {
                 .iter_mut()
                 .find(|device| device.descriptor.id == device_id && device.connected)
                 .ok_or(SyncStartError::UnknownDevice)?;
+            if device.is_active() {
+                return Err(SyncStartError::Busy);
+            }
             let delta = device
                 .delta
                 .clone()
@@ -112,8 +123,7 @@ impl DeviceSyncRuntime {
             device.planned_cancel = Some(cancelled.clone());
             device.cancellable = Some(cancellable.clone());
             device.sync_error = None;
-            device.transfer_started_at = None;
-            device.bytes_per_second = 0;
+            device.mtp_rate.reset();
             device.sync_phase = syncing_phase(
                 SyncStep::Removing,
                 0,
@@ -133,7 +143,6 @@ impl DeviceSyncRuntime {
                 cancellable,
             }
         };
-        self.active_device.replace(Some(device_id.to_string()));
         self.notify();
         let weak = Rc::downgrade(self);
         gtk4::glib::MainContext::ref_thread_default().spawn_local(async move {
@@ -317,6 +326,7 @@ async fn run_transfers(
                     progress_generation,
                     base.saturating_add(copied.min(estimated)),
                     bytes_total,
+                    copied,
                 );
             }
         });
@@ -337,14 +347,6 @@ async fn run_transfers(
         }
         match result {
             Ok(_) => {
-                if let Some(old) = existing.get(&entry.track.id) {
-                    if old.device_path != entry.device_path {
-                        let _ = runtime
-                            .backend
-                            .delete_track(work.root_uri.clone(), old.device_path.clone())
-                            .await;
-                    }
-                }
                 let record = DeviceFileRecord {
                     device_serial: work.device_id.clone(),
                     track_id: entry.track.id,
@@ -356,9 +358,33 @@ async fn run_transfers(
                     profile_fingerprint: entry.mode.fingerprint(),
                     pinned: false,
                 };
-                if let Err(error) = upsert_device_file(&runtime.conn.borrow(), &record) {
-                    tracing::warn!(track_id = entry.track.id, %error, "could not update device inventory");
-                    failures.push(entry.track.id);
+                let inventory_result = {
+                    let conn = runtime.conn.borrow();
+                    upsert_device_file(&conn, &record)
+                };
+                match inventory_result {
+                    Ok(()) => {
+                        if let Some(old) = existing.get(&entry.track.id) {
+                            if old.device_path != entry.device_path {
+                                if let Err(error) = runtime
+                                    .backend
+                                    .delete_track(work.root_uri.clone(), old.device_path.clone())
+                                    .await
+                                {
+                                    tracing::warn!(
+                                        track_id = entry.track.id,
+                                        %error,
+                                        "could not remove replaced device track"
+                                    );
+                                    failures.push(entry.track.id);
+                                }
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        tracing::warn!(track_id = entry.track.id, %error, "could not update device inventory");
+                        failures.push(entry.track.id);
+                    }
                 }
             }
             Err(error) => {
@@ -480,9 +506,6 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, mut failures
         work.generation,
         PlannedSyncPhase::Finishing,
     );
-    if runtime.active_device.borrow().as_deref() == Some(&work.device_id) {
-        runtime.active_device.replace(None);
-    }
     let resume = {
         let mut devices = runtime.device_states.borrow_mut();
         if let Some(device) = devices
@@ -525,7 +548,7 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, mut failures
     runtime.notify();
     runtime.refresh_contents_after_sync(&work.device_id);
     runtime.release_and_start_next(&work.device_id);
-    if resume && runtime.active_device.borrow().is_none() {
+    if resume {
         if let Err(error) = runtime.sync_now(&work.device_id) {
             tracing::warn!(device_id = work.device_id, %error, "could not resume synchronization");
         }
@@ -577,10 +600,8 @@ fn set_phase(
                 step: SyncStep::Copying,
                 ..
             }
-        ) && device.transfer_started_at.is_none()
-        {
-            device.transfer_started_at = Some(Instant::now());
-            device.bytes_per_second = 0;
+        ) {
+            device.mtp_rate.begin_copy(Instant::now());
         }
         device.sync_phase = phase;
     }
@@ -593,6 +614,7 @@ fn update_copy_bytes(
     generation: u64,
     done: u64,
     total: u64,
+    copied: u64,
 ) {
     if let Some(device) = runtime
         .device_states
@@ -608,9 +630,7 @@ fn update_copy_bytes(
         {
             *bytes_done = (*bytes_done).max(done.min(total));
             *bytes_total = total;
-            if let Some(started_at) = device.transfer_started_at {
-                device.bytes_per_second = transfer_rate(*bytes_done, started_at.elapsed());
-            }
+            device.mtp_rate.observe(copied, Instant::now());
         }
     }
     runtime.notify();
