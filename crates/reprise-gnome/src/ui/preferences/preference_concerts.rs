@@ -179,6 +179,27 @@ impl ConcertPreferenceRows {
     }
 }
 
+pub(in crate::ui) fn build_page(
+    conn: &Rc<RefCell<Connection>>,
+    runtime: &Rc<ConcertsRuntime>,
+) -> adw::PreferencesPage {
+    let page = adw::PreferencesPage::builder()
+        .title(strings::text(strings::CONCERTS))
+        .icon_name("x-office-calendar-symbolic")
+        .build();
+    let group = adw::PreferencesGroup::new();
+    let rows = build(conn, runtime, runtime.enabled.get());
+    rows.add_to(&group);
+    page.add(&group);
+
+    let alive = page.downgrade();
+    runtime.subscribe_enabled(
+        move || alive.upgrade().is_some(),
+        move |enabled| rows.set_sensitive(enabled),
+    );
+    page
+}
+
 pub(in crate::ui) fn build(
     conn: &Rc<RefCell<Connection>>,
     runtime: &Rc<ConcertsRuntime>,

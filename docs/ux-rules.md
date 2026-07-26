@@ -371,6 +371,11 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   anbieterspezifisch. Mit gebündelten App-Zugangsdaten bietet Last.fm den
   normalen Browser-Login direkt an; eigene API-Zugangsdaten liegen
   eingeklappt unter „Advanced setup".
+- **SET-7** [aktiv] [gtk] — „New Releases" und „Concerts" sind gleichrangige
+  Preferences-Hauptseiten in der vertikalen Navigation. Für diese beiden
+  Features behält die Plugins-Seite nur die Aktivierungsschalter; Scope-,
+  Provider-, Location- und Similar-Optionen stehen ausschließlich auf den
+  jeweiligen Hauptseiten und sind bei deaktiviertem Modul nicht bedienbar.
 
 ## G. Feedback-Vokabular
 
