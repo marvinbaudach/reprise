@@ -311,6 +311,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             let sidebar = sidebar.clone();
             let track_list = track_list.clone();
             let content_stack = content_stack.clone();
+            let window_title = window_title.clone();
             let active_content_focus = active_content_focus.clone();
             back_action.connect_activate(move |_, _| {
                 let Some(place) = nav_history.go_back_from(track_list.browser_place()) else {
@@ -328,6 +329,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                     &sidebar,
                     &track_list,
                     &content_stack,
+                    &window_title,
                     &active_content_focus,
                     "nav back",
                 );
@@ -345,6 +347,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             let sidebar = sidebar.clone();
             let track_list = track_list.clone();
             let content_stack = content_stack.clone();
+            let window_title = window_title.clone();
             let active_content_focus = active_content_focus.clone();
             forward_action.connect_activate(move |_, _| {
                 let Some(place) = nav_history.go_forward_from(track_list.browser_place()) else {
@@ -362,6 +365,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                     &sidebar,
                     &track_list,
                     &content_stack,
+                    &window_title,
                     &active_content_focus,
                     "nav forward",
                 );
@@ -455,6 +459,12 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         let window = window.clone();
         track_list.set_on_clear_all(move || {
             gtk4::prelude::ActionGroupExt::activate_action(&window, "clear-all-filters", None);
+        });
+    }
+    {
+        let navigator = metadata_navigator.clone();
+        track_list.set_on_scope_cleared(move || {
+            navigator.leave_scope();
         });
     }
 
@@ -600,6 +610,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         sidebar,
         track_list,
         content_stack,
+        window_title,
         &active_content_focus,
         "session restore",
     );
@@ -614,7 +625,22 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         nav_history,
     );
     super::session_restore::arm_seed_close(window);
-    super::first_run::run(window, scan_button, conn, first_run_decision);
+    let present_rhythmbox_import = {
+        let preferences = Rc::downgrade(preferences);
+        Rc::new(move || {
+            if let Some(preferences) = preferences.upgrade() {
+                preferences.present_rhythmbox_import_dialog();
+            }
+        }) as Rc<dyn Fn()>
+    };
+    super::first_run::run(
+        window,
+        scan_button,
+        scan_controls,
+        conn,
+        first_run_decision,
+        &present_rhythmbox_import,
+    );
     active_content_focus.focus_later_if_unset(window);
     minimal_view.apply_initial();
     arm_smoke_quit(window);

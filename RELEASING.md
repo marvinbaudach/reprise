@@ -157,23 +157,24 @@ Do not point development hooks at the maintainer's real library.
 
 - Confirm first-run copy/layout, Skip, Set Up Library, and the portal folder
   chooser. The copy must disclose automatic cover lookup without showing a
-  disable switch. A detected Rhythmbox installation must show a clearly
-  default-off `Column layout` choice in the one-time import section; no false
-  offer appears without it and no later menu/Preferences entry exists.
+  disable switch. A detected `rhythmdb.xml` must show a clearly default-off,
+  one-time Rhythmbox data-import choice; after the initial library scan it must
+  offer ratings, play history, dates, and playlists, but no column-layout
+  import. No false offer or later menu/Preferences entry may exist.
 - Check English and German UI for clipping, untranslated text, natural plurals,
   keyboard mnemonics, narrow-window adaptation, touch/pointer interaction, and
   light/dark appearance.
-- My Stats editorial pass (UX STATS-1, STATS-2, STATS-3, STATS-4): open My Stats
+- My Stats editorial pass (UX STATS-10 through STATS-16): open My Stats
   on a populated library. Hero time and play count must agree with the top-track
   list; the ribbon axis must match the selected period with the running bucket
   drawn open and the peak marked; hover must name an exact value. Play the
-  spotlight artist and follow "Go to artist", then use Back. Check that axis
+  top song and follow its band to the artist, then use Back. Check that axis
   labels, eyebrows and sublines stay readable against the view background in all
-  three dark themes, and narrow the window until the clock/highlights row stacks.
+  three dark themes, and narrow the window until the band/songs row stacks.
 - My Stats grouping (UX STATS-9): on a library with a deliberately mis-tagged
   artist ("Lorna Shore" / "lorna shore" / "Lorna Shore "), Top Artists must show
   one entry with the summed plays and hours, labelled in the clean spelling, and
-  the spotlight Play must queue every merged track. Two genuinely different
+  the band card must show one merged artist. Two genuinely different
   artists must never merge. Follow the "unify spellings" hint into the tag editor
   and cancel it, then confirm with a tag dump that the files and DB rows are
   unchanged by merely opening My Stats.
@@ -205,9 +206,9 @@ Do not point development hooks at the maintainer's real library.
 - Verify MPRIS quick settings, media keys, notifications, lock screen, metadata,
   cover art, shuffle/repeat writes, and clean shutdown on a real GNOME session.
 - Exercise browse facets, search, the column-layout editor (switches, buttons,
-  whole-row drag, insertion lines, reset and restart persistence), a real read-only
-  first-run Rhythmbox column import plus second-start suppression, playlists, M3U
-  import/export, and drag/reorder gestures.
+  whole-row drag, insertion lines, reset and restart persistence), a real
+  read-only first-run Rhythmbox data import plus second-start suppression,
+  playlists, M3U import/export, and drag/reorder gestures.
 - With a disposable Android device unlocked in File transfer/MTP mode, verify
   detection, device music browsing, phone-playlist creation, drag-to-copy,
   per-file/overall progress, same-device FIFO ordering, cancellation, and safe

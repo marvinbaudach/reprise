@@ -28,8 +28,8 @@ cargo build --locked -p reprise-mcp --release --features mpris
 # -> target/release/reprise-mcp
 ```
 
-A plain `cargo build -p reprise-mcp` (no features) stays D-Bus-free and simply
-omits `music_playback_control` / `music_play`.
+A plain `cargo build -p reprise-mcp` (no features) stays D-Bus-free and omits
+the playback-state, playback-control, targeted-play, and live-queue tools.
 
 Install it somewhere stable, e.g.:
 
@@ -43,6 +43,18 @@ The server opens your live library at the XDG default
 ---
 
 ## Connect it to an agent
+
+### Codex
+
+Register the server once:
+
+```sh
+codex mcp add reprise -- ~/.local/bin/reprise-mcp --db ~/.local/share/reprise/reprise.db
+```
+
+Start a fresh Codex session afterward. MCP tool discovery happens when the
+session starts, so an already-open session does not see a newly installed
+binary or newly added tools.
 
 ### Claude Code (CLI)
 
@@ -87,14 +99,25 @@ client that launches it must run on the **same machine** as Reprise.
 | Tool | Arguments | Effect | Capability |
 |------|-----------|--------|------------|
 | `music_search_tracks` | `query`, optional `limit`/`offset` | Search the library | `library:read` |
+| `music_search_artists` | `query`, optional `limit`/`offset` | Search path-free artist summaries | `library:read` |
+| `music_search_albums` | `query`, optional `limit`/`offset` | Search path-free album summaries | `library:read` |
+| `music_get_playlist` | `playlist_id`, optional `limit`/`offset` | Read ordered playlist contents | `library:read` |
 | `music_create_playlist` | `name`, `track_ids` | Create a manual playlist | `playlist:create` |
+| `music_update_playlist` | `action` = `rename`\|`add_tracks`, plus playlist/name/track ids | Safely rename a playlist or append tracks | `playlist:manage` |
 | `music_create_instrumental` | `track_ids` | Queue vocal-removal (htdemucs) render jobs | `ai:create` |
 | `music_get_job_status` | job/batch id | Progress of a render job | `library:read` |
 | `music_playback_control` | `action` = `play`\|`pause`\|`stop`\|`next`\|`previous` | Transport-control the running app | `playback:control` |
+| `music_get_playback_state` | none | Read live track, position, volume, shuffle, and repeat state | `playback:control` |
+| `music_set_playback` | `action` plus `volume`, `offset_seconds`, `enabled`, or `repeat` | Set volume, seek, shuffle, or repeat | `playback:control` |
 | `music_play` | exactly one of `track_ids` or `playlist_id` | Play a track list or a whole playlist | `playback:control` |
+| `music_queue` | `action` = `status`\|`add_next`\|`add_last`\|`clear` | Read or safely change the manual Play Next queue | `playback:control` |
 
 `music_play` resolves a `playlist_id` to its ordered tracks itself, then tells
 the app to play them. Only **present** (non-missing) tracks are playable.
+
+`music_queue` keeps the hidden playback context intact when clearing: `clear`
+removes only manually queued Play Next entries. Queue status returns at most
+200 ids from each section, together with the complete section totals.
 
 ### Resources
 
@@ -111,8 +134,9 @@ Defaults follow "read is safe, writes are opt-in":
 | Setting key | Default | Grants |
 |-------------|---------|--------|
 | `agent.capability.library:read` | **on** | search + resources |
-| `agent.capability.playback:control` | **on** | transport + `music_play` |
+| `agent.capability.playback:control` | **on** | transport, live state/settings, targeted play, and queue |
 | `agent.capability.playlist:create` | off | `music_create_playlist` |
+| `agent.capability.playlist:manage` | off | playlist rename + append tracks |
 | `agent.capability.ai:create` | off | `music_create_instrumental` |
 
 To grant a write capability, set its key to `1` in the library DB, e.g.:
@@ -134,6 +158,9 @@ effect on the next call.
 
 - **Playback needs the running app** (audio + D-Bus live there). No app → a clear
   "no running Reprise app on the session bus — start the app first" error.
+- Track, artist, album, and playlist reads are paginated. The live queue mirror
+  is bounded to 200 ids per section, so large libraries and long playback
+  contexts do not create oversized MCP responses.
 - **`music_create_instrumental` only enqueues** a job; the actual htdemucs render
   is done by a worker — the running app's background worker, or
   `reprise-cli jobs work` — and needs the stem model provisioned. Track progress

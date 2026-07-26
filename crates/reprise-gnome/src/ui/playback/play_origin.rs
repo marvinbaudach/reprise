@@ -65,6 +65,7 @@ fn resolve_label(conn: &Connection, source: &ViewSource) -> String {
             ),
         ViewSource::Album { album, .. } => album.clone(),
         ViewSource::Artist(artist) => artist.clone(),
+        ViewSource::Genre(genre) => genre.clone(),
         ViewSource::Missing => strings::text(strings::SIDEBAR_MISSING_FILES),
         ViewSource::ImportErrors => strings::text(strings::SIDEBAR_IMPORT_ERRORS),
         ViewSource::Library

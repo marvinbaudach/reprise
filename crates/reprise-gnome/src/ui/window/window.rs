@@ -259,22 +259,27 @@ pub fn build(
     let track_list = {
         let status_bar = status_bar.clone();
         let conn_for_status = conn.clone();
+        let player_for_reload = player.clone();
         // This `on_reload` hook fires on *every* reload — initial load,
         // search-filter debounce, sort-header click, and plain source
-        // switch, besides the scan-completion one — so it's kept to the one
-        // thing that's cheap and correct at that frequency: the status
-        // line. Stage 3 Task 4's review (finding #2) caught an earlier
-        // version of this closure also calling `sidebar.refresh()` here,
-        // which meant a full `ListBox` teardown/rebuild plus five DB queries
-        // on every debounced keystroke and every column-sort click. The
-        // sidebar now refreshes only from its own specific triggers — see
-        // `Sidebar::refresh`'s doc comment for the trigger inventory, and
-        // `spawn_scan`'s success arm / the `player.set_track_list_reload`
-        // closure just below for two of the three call sites.
+        // switch, besides the scan-completion one — so it is limited to two
+        // cheap reads: the status line and a SELECT EXISTS that keeps idle
+        // Play availability current after scans/library mutations. Stage 3
+        // Task 4's review (finding #2) caught an earlier version of this
+        // closure also calling `sidebar.refresh()` here, which meant a full
+        // `ListBox` teardown/rebuild plus five DB queries on every debounced
+        // keystroke and every column-sort click. The sidebar now refreshes
+        // only from its own specific triggers — see `Sidebar::refresh`'s doc
+        // comment for the trigger inventory, and `spawn_scan`'s success arm /
+        // the `player.set_track_list_reload` closure just below for two of
+        // the three call sites.
         Rc::new(TrackList::new(
             conn.clone(),
             on_activate,
             move |source, _count, _filter, _browse| {
+                if let Some(player) = &player_for_reload {
+                    player.refresh_library_availability();
+                }
                 if matches!(source, ViewSource::Library) {
                     status_bar.refresh(&conn_for_status);
                 } else {
@@ -338,9 +343,10 @@ pub fn build(
         super::library_shell::ActiveContentFocus::new(&content_stack, &track_list);
     let metadata_navigator = super::metadata_navigation::MetadataNavigator::new(
         nav_history.clone(),
-        sidebar.clone(),
-        track_list.clone(),
+        &sidebar,
+        &track_list,
         content_stack.clone(),
+        window_title.clone(),
         active_content_focus.clone(),
     );
     let on_show_album: crate::ui::updates::release_row::OnShowAlbum = {

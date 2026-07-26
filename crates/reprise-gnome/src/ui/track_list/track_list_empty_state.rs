@@ -93,9 +93,10 @@ pub(in crate::ui) fn empty_state_for(
         (0, true) => EmptyState::NoResults,
         (0, false) => match source {
             ViewSource::Missing => EmptyState::MissingClear,
-            ViewSource::ImportErrors | ViewSource::Album { .. } | ViewSource::Artist(_) => {
-                EmptyState::NothingHere
-            }
+            ViewSource::ImportErrors
+            | ViewSource::Album { .. }
+            | ViewSource::Artist(_)
+            | ViewSource::Genre(_) => EmptyState::NothingHere,
             ViewSource::Queue => EmptyState::EmptyQueue,
             _ => EmptyState::EmptyLibrary,
         },

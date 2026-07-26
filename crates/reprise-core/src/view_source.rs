@@ -52,6 +52,9 @@ pub enum ViewSource {
     /// Artist identity is the trimmed, case-insensitive effective album
     /// artist used by the summary query.
     Artist(String),
+    /// A read-only genre scope reached from My Stats. The value remains a
+    /// durable scope independent of clearable Library browse facets.
+    Genre(String),
     /// The "My Stats" screen — a dedicated view backed by
     /// `library::stats_screen` rather than the shared track list. The
     /// sidebar routes to it; the content area shows the stats view widget
@@ -89,6 +92,7 @@ impl ViewSource {
                 album_artist,
             } => format!("album:{album}:{album_artist}"),
             Self::Artist(artist) => format!("artist:{artist}"),
+            Self::Genre(genre) => format!("genre:{genre}"),
             Self::MyStats => "my_stats".to_string(),
             Self::Releases => "releases".to_string(),
             Self::Concerts => "concerts".to_string(),
@@ -135,5 +139,9 @@ mod tests {
             "album:Blue:Joni Mitchell"
         );
         assert_eq!(ViewSource::Artist("Björk".into()).label(), "artist:Björk");
+        assert_eq!(
+            ViewSource::Genre("Metalcore".into()).label(),
+            "genre:Metalcore"
+        );
     }
 }

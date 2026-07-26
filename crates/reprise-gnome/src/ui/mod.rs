@@ -48,6 +48,7 @@ mod library_views;
 pub(crate) mod link_activation;
 mod lyrics;
 pub(crate) mod motion;
+pub(crate) mod motion_reveal;
 mod mounts;
 pub mod mpris_mirror;
 pub(crate) mod nav_history;
@@ -154,8 +155,6 @@ use sidebar::{
 };
 #[allow(unused_imports)]
 pub(crate) use sidebar::{sidebar_dnd, sidebar_export, sidebar_session};
-#[allow(unused_imports)]
-use stats::{hourly_chart, hourly_chart_math};
 #[allow(unused_imports)]
 pub(crate) use stats::{stats_css, stats_view};
 #[allow(unused_imports)]

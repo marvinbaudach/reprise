@@ -41,6 +41,7 @@ impl MenuContext {
             | ViewSource::Releases
             | ViewSource::Concerts
             | ViewSource::Conversions
+            | ViewSource::Genre(_)
             | ViewSource::Device { .. } => Self::LibraryTracks,
         }
     }

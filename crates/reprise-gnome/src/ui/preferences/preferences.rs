@@ -294,7 +294,6 @@ impl PreferencesContext {
         let smoke = std::env::var(SMOKE_ENV).ok();
         let smoke_page = match smoke.as_deref() {
             Some("columns") => Some("layout"),
-            Some("rhythmbox") => Some("library"),
             Some(page) if super::preferences_window::page_index_by_name(page).is_some() => {
                 Some(page)
             }
@@ -404,10 +403,6 @@ impl PreferencesContext {
         };
         let page = super::column_layout_editor::build_navigation_page(&self.track_list);
         navigation.push(&page);
-    }
-
-    pub(in crate::ui) fn open_rhythmbox_import(self: &Rc<Self>) {
-        self.present_rhythmbox_import_dialog();
     }
 
     pub(in crate::ui) fn preferences_dialog(&self) -> Option<adw::Dialog> {

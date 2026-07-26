@@ -44,6 +44,18 @@ pub(in crate::ui) fn restored_sort(field: &str, dir: &str) -> SortState {
     }
 }
 
+/// Applies one primary column sort and synchronizes the app-owned header
+/// indicator before GTK's delayed internal style-class update can expose both
+/// the old and new arrows in the same frame.
+pub(in crate::ui) fn sort_by_column(
+    view: &gtk4::ColumnView,
+    column: &gtk4::ColumnViewColumn,
+    order: gtk4::SortType,
+) {
+    view.sort_by_column(Some(column), order);
+    super::track_list_header_style::sync_primary_sort_indicator(view);
+}
+
 /// Observes the `ColumnView`'s aggregate sorter for header clicks and maps
 /// them back to a whitelisted sort field + direction, then reloads.
 pub(in crate::ui) fn wire_sort_clicks(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
@@ -138,6 +150,7 @@ fn default_sort_for_source(source: &ViewSource) -> Option<SortState> {
         | ViewSource::Missing
         | ViewSource::Album { .. }
         | ViewSource::Artist(_)
+        | ViewSource::Genre(_)
         | ViewSource::Device { .. } => None,
         ViewSource::ImportErrors
         | ViewSource::MyStats

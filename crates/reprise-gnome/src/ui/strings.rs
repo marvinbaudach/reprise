@@ -99,9 +99,7 @@ pub const ONBOARDING_PRIVACY: &str = N_!("Reprise keeps your library local. Miss
 pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX: &str = N_!("Import from Rhythmbox");
 pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX_DESCRIPTION: &str =
     N_!("Rhythmbox was found. Choose what Reprise should import.");
-pub const ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT: &str = N_!("Column layout");
-pub const ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT_SUBTITLE: &str =
-    N_!("Read the layout without changing Rhythmbox settings");
+pub const COLUMN_LAYOUT: &str = N_!("Column layout");
 
 #[path = "strings_rhythmbox.rs"]
 mod rhythmbox;
@@ -183,16 +181,6 @@ pub const RESET_TO_DEFAULT: &str = N_!("Reset to Default");
 pub const CLOSE: &str = N_!("Close");
 pub const DRAG_TO_REORDER: &str = N_!("Drag to reorder");
 pub const COLUMN_LAYOUT_SAVE_FAILED: &str = N_!("Could not save the column layout");
-pub const RHYTHMBOX_COLUMNS_IMPORTED: &str = N_!("Rhythmbox column layout imported");
-pub const RHYTHMBOX_COLUMNS_IMPORT_SAVE_FAILED: &str =
-    N_!("Could not save the imported column layout");
-
-pub fn rhythmbox_columns_import_failed(error: &str) -> String {
-    formatted(
-        N_!("Could not import Rhythmbox columns: {error}"),
-        &[("error", error)],
-    )
-}
 pub const EDIT_TAGS: &str = N_!("Edit tags…");
 pub const REMOVE_FROM_LIBRARY: &str = N_!("Remove from library…");
 pub const MOVE_TO_TRASH: &str = N_!("Move to Trash…");
