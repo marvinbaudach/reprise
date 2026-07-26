@@ -1158,11 +1158,12 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
 - **ACC-4** [aktiv] [e2e] — Standardtasten gelten überall konsistent:
   Pfeile navigieren räumlich bzw. zeilenweise, Home/End springen in langen
   Collections an Anfang/Ende, Page Up/Down bewegen seitenweise, Enter
-  aktiviert den fokussierten Eintrag, Space schaltet den fokussierten
-  Button/Toggle bzw. die Selektion, Menü-Taste/Shift+F10 öffnet dessen
-  Kontextmenü, F10 das Primärmenü und Esc schließt den obersten transienten
-  Container. Ein globaler Shortcut darf nie Texteingabe oder die lokale
-  Semantik des fokussierten Controls stehlen.
+  aktiviert den fokussierten Eintrag. Space bleibt in passiven Collections
+  global Play/Pause, schaltet aber einen fokussierten Button/Toggle und tippt
+  in Textfeldern ein Leerzeichen. Menü-Taste/Shift+F10 öffnet das Kontextmenü,
+  F10 das Primärmenü und Esc schließt den obersten transienten Container. Ein
+  globaler Shortcut darf nie Texteingabe oder die lokale Semantik eines
+  fokussierten Controls stehlen.
 - **ACC-5** [aktiv] [e2e] — Fokus hat einen nachvollziehbaren Lebenszyklus:
   Start und Navigation setzen ihn in die aktive Zielansicht; Ctrl+F setzt ihn
   ins Suchfeld, dessen Esc-Kaskade gibt ihn an die **aktuelle** Content-View

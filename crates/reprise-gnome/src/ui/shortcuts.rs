@@ -76,10 +76,10 @@ pub(in crate::ui) fn next_search_mode(current: bool) -> bool {
     !current
 }
 
-/// Whether `focus` (the window's currently focused widget, if any)
-/// implements `gtk::Editable` — the interface every text-entry-shaped widget
-/// in this app (`gtk::SearchEntry`, and any plain `gtk::Text`/`gtk::Entry`)
-/// implements. `None` (nothing focused) is not a text entry.
+/// Whether `focus` (the window's currently focused widget, if any) owns an
+/// unmodified Space press. Text entry and direct controls keep their native
+/// activation semantics. Passive collection views deliberately do not: ACC-4
+/// reserves Space there for global play/pause.
 fn focused_widget_owns_space(focus: Option<&gtk4::Widget>) -> bool {
     focus.is_some_and(|widget| {
         widget.is::<gtk4::Editable>()
@@ -88,11 +88,6 @@ fn focused_widget_owns_space(focus: Option<&gtk4::Widget>) -> bool {
             || widget.is::<gtk4::Switch>()
             || widget.is::<gtk4::Range>()
             || widget.is::<gtk4::DropDown>()
-            || widget.is::<gtk4::ListBox>()
-            || widget.is::<gtk4::FlowBox>()
-            || widget.is::<gtk4::ListView>()
-            || widget.is::<gtk4::GridView>()
-            || widget.is::<gtk4::ColumnView>()
     })
 }
 
@@ -489,10 +484,6 @@ mod tests {
             gtk4::CheckButton::new().upcast(),
             gtk4::Switch::new().upcast(),
             gtk4::Scale::with_range(gtk4::Orientation::Horizontal, 0.0, 1.0, 0.1).upcast(),
-            gtk4::ListBox::new().upcast(),
-            gtk4::GridView::new(None::<gtk4::SelectionModel>, None::<gtk4::ListItemFactory>)
-                .upcast(),
-            gtk4::ColumnView::new(None::<gtk4::SelectionModel>).upcast(),
         ];
         for control in local_controls {
             assert!(
@@ -503,6 +494,28 @@ mod tests {
         }
         let passive = gtk4::Label::new(Some("Passive")).upcast::<gtk4::Widget>();
         assert!(!focused_widget_owns_space(Some(&passive)));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn space_remains_global_from_passive_collection_views() {
+        gtk4::init().unwrap();
+        let collection_views: Vec<gtk4::Widget> = vec![
+            gtk4::ListBox::new().upcast(),
+            gtk4::ListView::new(None::<gtk4::SelectionModel>, None::<gtk4::ListItemFactory>)
+                .upcast(),
+            gtk4::GridView::new(None::<gtk4::SelectionModel>, None::<gtk4::ListItemFactory>)
+                .upcast(),
+            gtk4::ColumnView::new(None::<gtk4::SelectionModel>).upcast(),
+        ];
+
+        for view in collection_views {
+            assert!(
+                !focused_widget_owns_space(Some(&view)),
+                "{} must leave Space to global play/pause",
+                view.type_().name()
+            );
+        }
     }
 
     #[test]

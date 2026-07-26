@@ -101,12 +101,22 @@ keyboard_sidebar() {
 }
 
 keyboard_tracks_playlist_queue() {
-  local pid=$1 window_id=$2 focus_path
+  local pid=$1 window_id=$2 focus_path state_path
   focus_path=$(cua_focus_label_via_tab \
     "$pid" "$window_id" sine_01 acc-tracks-focus)
   assert_focus_evidence_label "$focus_path" sine_01
   cua_press_key_window "$pid" "$window_id" enter acc-tracks-enter
   assert_after_has_focus acc-tracks-enter
+  cua_wait_for_label "$pid" "$window_id" "Pause (Space)" acc-tracks-playing >/dev/null
+  cua_press_key_window "$pid" "$window_id" space acc-tracks-space-pause
+  state_path=$(cua_wait_for_label \
+    "$pid" "$window_id" "Play (Space)" acc-tracks-paused)
+  assert_snapshot_contains "$state_path" "Play (Space)"
+  assert_focus_evidence_label \
+    "$CUA_E2E_OUT_DIR/acc-tracks-space-pause-after.json" \
+    sine_01
+  cua_press_key_window "$pid" "$window_id" space acc-tracks-space-resume
+  cua_wait_for_label "$pid" "$window_id" "Pause (Space)" acc-tracks-resumed >/dev/null
   cua_hotkey "$pid" "$window_id" acc-tracks-context shift f10
   assert_after_has_focus acc-tracks-context
   cua_press_key_focused "$pid" "$window_id" escape acc-tracks-context-close
