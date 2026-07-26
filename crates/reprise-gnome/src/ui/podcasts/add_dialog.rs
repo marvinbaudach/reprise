@@ -177,6 +177,8 @@ fn search(
     conn: &Rc<RefCell<Connection>>,
     on_added: &OnAdded,
 ) {
+    let config = podcasts::config::load(&conn.borrow()).ok();
+    let auto_download_default = configured_auto_download_default(config.as_ref());
     let locale = std::env::var("LC_ALL")
         .or_else(|_| std::env::var("LANG"))
         .unwrap_or_else(|_| "C".into());
@@ -206,9 +208,9 @@ fn search(
         conn,
         on_added,
         strings::PODCAST_APPLE_RESULTS,
+        auto_download_default,
     );
 
-    let config = podcasts::config::load(&conn.borrow()).ok();
     if config.as_ref().is_some_and(|value| value.youtube_enabled) {
         let ytdlp_path = config.and_then(|value| value.ytdlp_path);
         let youtube = one_shot_task::spawn("reprise-youtube-search", move || {
@@ -238,6 +240,7 @@ fn search(
             conn,
             on_added,
             strings::PODCAST_YOUTUBE_RESULTS,
+            auto_download_default,
         );
     }
 }
@@ -252,6 +255,7 @@ fn attach_candidates(
     conn: &Rc<RefCell<Connection>>,
     on_added: &OnAdded,
     heading: &'static str,
+    auto_download_default: bool,
 ) {
     let generation = generation.clone();
     let status = status.clone();
@@ -271,7 +275,7 @@ fn attach_candidates(
                 status.set_text("");
                 append_heading(&results, heading);
                 for candidate in rows {
-                    append_candidate(&results, candidate, &conn, &on_added);
+                    append_candidate(&results, candidate, &conn, &on_added, auto_download_default);
                 }
             }
             Err(error) => status.set_text(&error),
@@ -296,6 +300,7 @@ fn preview(
         .map_or(podcasts::config::DEFAULT_IMPORT_COUNT, |value| {
             value.import_count
         });
+    let auto_download_default = configured_auto_download_default(config.as_ref());
     let ytdlp_path = config.and_then(|value| value.ytdlp_path);
     let task_url = url.to_owned();
     let receiver = one_shot_task::spawn(
@@ -362,7 +367,14 @@ fn preview(
         match response.and_then(|value| value) {
             Ok(preview) => {
                 status.set_text("");
-                append_preview(&results, preview, import_count, &conn, &on_added);
+                append_preview(
+                    &results,
+                    preview,
+                    import_count,
+                    auto_download_default,
+                    &conn,
+                    &on_added,
+                );
             }
             Err(error) => status.set_text(&error),
         }
@@ -382,6 +394,7 @@ fn append_candidate(
     candidate: Candidate,
     conn: &Rc<RefCell<Connection>>,
     on_added: &OnAdded,
+    auto_download_default: bool,
 ) {
     let row = candidate_row(&candidate.title, &candidate.subtitle, candidate.kind);
     let button = gtk4::Button::with_label(&strings::text(strings::PODCAST_SUBSCRIBE));
@@ -389,7 +402,7 @@ fn append_candidate(
     let conn = conn.clone();
     let on_added = on_added.clone();
     button.connect_clicked(move |button| {
-        match subscribe(&conn.borrow(), &candidate, false, None) {
+        match subscribe(&conn.borrow(), &candidate, auto_download_default, None) {
             Ok(_) => {
                 button.set_label("✓");
                 button.set_sensitive(false);
@@ -406,6 +419,7 @@ fn append_preview(
     parent: &gtk4::Box,
     preview: Preview,
     import_count: usize,
+    auto_download_default: bool,
     conn: &Rc<RefCell<Connection>>,
     on_added: &OnAdded,
 ) {
@@ -418,6 +432,7 @@ fn append_preview(
     parent.append(&import);
     let auto_download =
         gtk4::CheckButton::with_label(&strings::text(strings::PODCAST_AUTO_DOWNLOAD));
+    auto_download.set_active(auto_download_default);
     parent.append(&auto_download);
     let subscribe_button = gtk4::Button::with_label(&strings::text(strings::PODCAST_SUBSCRIBE));
     subscribe_button.add_css_class("suggested-action");
@@ -500,6 +515,10 @@ fn baseline_for_import_choice(import: bool, preview_guids: &[String]) -> Option<
     (!import).then(|| preview_guids.to_vec())
 }
 
+fn configured_auto_download_default(config: Option<&podcasts::config::PodcastConfig>) -> bool {
+    config.is_some_and(|value| value.auto_download_default)
+}
+
 fn clear(parent: &gtk4::Box) {
     while let Some(child) = parent.first_child() {
         parent.remove(&child);
@@ -544,5 +563,19 @@ mod tests {
         let guids = vec!["old-a".to_owned(), "old-b".to_owned()];
         assert_eq!(baseline_for_import_choice(false, &guids), Some(guids));
         assert_eq!(baseline_for_import_choice(true, &["old".to_owned()]), None);
+    }
+
+    #[test]
+    fn new_subscription_uses_the_configured_auto_download_default() {
+        let config = podcasts::config::PodcastConfig {
+            import_count: 25,
+            auto_download_default: true,
+            cleanup_policy: podcasts::config::CleanupPolicy::KeepAll,
+            youtube_enabled: true,
+            ytdlp_path: None,
+            refresh_hours: 6,
+        };
+        assert!(configured_auto_download_default(Some(&config)));
+        assert!(!configured_auto_download_default(None));
     }
 }
