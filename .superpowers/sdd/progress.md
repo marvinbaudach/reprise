@@ -67,7 +67,8 @@ MCP catalog follow-up: complete (this commit, base e7a208112e, added complete pa
 
 # Ticketmaster bundled build credential
 
-Base: `a95a12ebad`
+Base: `3fc0b2bf8a`
 
-Task TM1: complete (commit 8b5a516ae1, base a95a12ebad, resolved Ticketmaster credentials in stored then runtime then bundled-build order, treated blank values as absent, redacted credential debug output, and documented local and GitHub Actions release injection plus binary extractability; required gates passed with isolated XDG state and serial workspace tests; visible affiliate disclosure remains a separate review question before public release)
-Task TM2: complete (this commit, base 8b5a516ae1, removed the Ticketmaster credential editor, the credential-entry status action and the Updates key hint while retaining the optional Bandsintown row and legacy stored Ticketmaster resolution; all required gates passed after one unrelated one-shot progress flake passed 10 focused reruns and the repeated full workspace gate)
+Task TM1: complete (commit aefc61d4c5, base 3fc0b2bf8a, resolved Ticketmaster credentials in stored then runtime then bundled-build order, treated blank values as absent, redacted credential debug output, and documented local and GitHub Actions release injection plus binary extractability; required gates passed with isolated XDG state and serial workspace tests; visible affiliate disclosure remains a separate review question before public release)
+Task TM2: complete (commit 14f40a4442, base aefc61d4c5, removed the Ticketmaster credential editor, the credential-entry status action and the Updates key hint while retaining the optional Bandsintown row and legacy stored Ticketmaster resolution; all required gates passed after one unrelated one-shot progress flake passed 10 focused reruns and the repeated full workspace gate)
+Task TM3: complete (this commit, base 14f40a4442, promoted New Releases and Concerts settings to peer Preferences pages, left only their activation switches on Plugins, preserved the newly merged Podcast and Radio plugin controls, kept page controls live-sensitive to module state, and activated SET-7; fmt, strict clippy, audit, core purity, architecture and all non-socket workspace tests passed after rebase onto current dev, while two new Radio MCP loopback tests were blocked only by the sandbox's TCP bind restriction)
