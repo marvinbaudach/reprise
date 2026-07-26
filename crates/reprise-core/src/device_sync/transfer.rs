@@ -80,6 +80,40 @@ pub fn build_transfer_plan_with_inventory(
     plan.into_iter().map(|(_, entry)| entry).collect()
 }
 
+pub(super) fn stable_device_paths(
+    tracks: &[SyncTrack],
+    forced_extension: &str,
+    inventory: &[super::settings::DeviceFileRecord],
+) -> HashMap<i64, String> {
+    let mut collisions = HashMap::<String, CollisionSlots>::new();
+    let mut tracks = tracks.iter().collect::<Vec<_>>();
+    tracks.sort_by_key(|track| track.id);
+    let mut paths = HashMap::new();
+    for track in tracks {
+        if paths.contains_key(&track.id) {
+            continue;
+        }
+        let metadata = DevicePathMetadata {
+            album_artist: track.album_artist.clone(),
+            artist: track.artist.clone(),
+            album: track.album.clone(),
+            track_number: track.track_number,
+            title: track.title.clone(),
+            source_path: track.source_path.clone(),
+        };
+        let collision_key = path_stem_key(&metadata);
+        let collision_index = collisions
+            .entry(collision_key)
+            .or_insert_with_key(|key| CollisionSlots::from_inventory(key, inventory))
+            .assign(track.id);
+        paths.insert(
+            track.id,
+            device_track_path(&metadata, Some(forced_extension), collision_index),
+        );
+    }
+    paths
+}
+
 #[derive(Default)]
 struct CollisionSlots {
     used: HashSet<usize>,

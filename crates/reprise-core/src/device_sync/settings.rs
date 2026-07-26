@@ -10,7 +10,7 @@ use super::{Mp3Quality, TransferProfile};
 
 pub const SUPPORTED_OPUS_BITRATES: [u32; 7] = [0, 64, 96, 128, 160, 192, 256];
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SelectionSource {
     Playlist(i64),
     Smart(i64),
