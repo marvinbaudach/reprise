@@ -58,6 +58,8 @@ pub enum ProviderError {
     Transport,
     #[error("concert provider response body could not be read")]
     Body,
+    #[error("concert provider response body exceeds the size limit")]
+    BodyTooLarge,
     #[error("concert provider response could not be parsed")]
     Parse,
     #[error("concert provider credentials are missing")]

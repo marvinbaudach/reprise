@@ -7,6 +7,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use url::Url;
 
 use super::ProviderError;
+use crate::http_body::{self, BoundedReadError};
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 const MIN_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
@@ -56,10 +57,7 @@ pub fn get(url: &str) -> Result<String, ProviderError> {
     if !(200..300).contains(&status) {
         return Err(ProviderError::HttpStatus(status));
     }
-    response
-        .into_body()
-        .read_to_string()
-        .map_err(|_| ProviderError::Body)
+    http_body::read_bounded_string(response.into_body().into_reader()).map_err(map_body_error)
 }
 
 fn fixture_directory() -> Option<PathBuf> {
@@ -143,8 +141,16 @@ fn fixture_request(value: &str) -> Option<FixtureRequest> {
 fn fixture_get(url: &str, directory: &Path) -> Result<String, ProviderError> {
     let request = fixture_request(url).ok_or(ProviderError::Transport)?;
     append_fixture_log(&request)?;
-    std::fs::read_to_string(directory.join(request.filename()))
-        .map_err(|_| ProviderError::Transport)
+    let file = std::fs::File::open(directory.join(request.filename()))
+        .map_err(|_| ProviderError::Transport)?;
+    http_body::read_bounded_string(file).map_err(map_body_error)
+}
+
+fn map_body_error(error: BoundedReadError) -> ProviderError {
+    match error {
+        BoundedReadError::Read => ProviderError::Body,
+        BoundedReadError::TooLarge => ProviderError::BodyTooLarge,
+    }
 }
 
 fn append_fixture_log(request: &FixtureRequest) -> Result<(), ProviderError> {
@@ -276,5 +282,23 @@ mod tests {
         let value = user_agent();
         assert!(value.contains(env!("CARGO_PKG_VERSION")));
         assert!(value.contains(crate::musicbrainz::CONTACT_URL));
+    }
+
+    #[test]
+    fn oversized_fixture_body_is_rejected() {
+        let fixtures = tempfile::tempdir().unwrap();
+        std::fs::write(
+            fixtures.path().join("bandsintown-artist-Oversized.json"),
+            vec![b'x'; crate::http_body::MAX_JSON_RESPONSE_BYTES as usize + 1],
+        )
+        .unwrap();
+
+        assert_eq!(
+            fixture_get(
+                "https://rest.bandsintown.com/artists/Oversized?app_id=x",
+                fixtures.path()
+            ),
+            Err(ProviderError::BodyTooLarge)
+        );
     }
 }
