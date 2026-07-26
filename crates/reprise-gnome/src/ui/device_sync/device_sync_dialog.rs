@@ -214,7 +214,6 @@ struct DialogActions {
 }
 
 impl DialogActions {
-    #[allow(dead_code)]
     fn for_runtime(runtime: &Rc<DeviceSyncRuntime>, device_id: &str) -> Self {
         let set_quality = {
             let runtime = runtime.clone();
@@ -594,7 +593,6 @@ impl SyncDialogSurface {
             )));
     }
 
-    #[allow(dead_code)]
     fn show_disconnected(&self) {
         self.connected_stack.set_visible_child_name("disconnected");
         self.title.set_subtitle("Disconnected");
@@ -677,7 +675,6 @@ fn dialog_for_surface(surface: &SyncDialogSurface) -> adw::Dialog {
         .build()
 }
 
-#[allow(dead_code)]
 pub(in crate::ui) fn present(
     parent: &impl IsA<gtk4::Widget>,
     device_id: &str,
