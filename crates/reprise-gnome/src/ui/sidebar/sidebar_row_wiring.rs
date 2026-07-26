@@ -31,7 +31,7 @@ pub(in crate::ui) fn wire_row_selected(shared: &Rc<Shared>) {
 
 /// Wires `row-selected` on one nav list. Clears `sibling`'s selection first so
 /// only one row is ever visually selected across the main list and the
-/// bottom-pinned issues list — `sibling`'s handler then fires with `None` and
+/// lower issues list — `sibling`'s handler then fires with `None` and
 /// returns early, so there is no source change and no loop.
 ///
 /// A selection that arrived through KEYBOARD FOCUS (`row.has_focus()`) does
