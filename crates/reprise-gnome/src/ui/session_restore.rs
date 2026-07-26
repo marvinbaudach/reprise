@@ -133,6 +133,7 @@ pub(super) fn wire_close(
             }
         }
         if let Some(player) = player.as_ref().and_then(std::rc::Weak::upgrade) {
+            player.persist_external_on_quit();
             state.queue = player.session_queue_snapshot();
             let (up_next, current_up_next) = player.session_up_next_snapshot();
             state.up_next = up_next;
