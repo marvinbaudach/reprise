@@ -64,3 +64,11 @@ Point 2: complete (commit 5786b63f97, base 72e85defff, kept SET-4 immediate pers
 Point 3: complete (commit 5bc3b56b8b, base 5786b63f97, verified provider credentials off-thread through the shared limiter, mapped fixture-only success/rejection/timeout/transport outcomes to inline feedback, kept secrets out of fixture logs, activated CONC-8 and replaced CONC-5 with CONC-5a; all non-display gates passed, while isolated Xvfb display launches were blocked by sandbox D-Bus socket permissions)
 Sidebar progress follow-up: complete (this commit, base 5bc3b56b8b, pinned the shared progress activity below Issues at the sidebar bottom and added an FB-2a allocation regression)
 MCP catalog follow-up: complete (this commit, base e7a208112e, added complete path-free Concerts cache and Releases history resources while preserving the filtered Concerts contract and never exposing provider credentials)
+
+# Ticketmaster bundled build credential
+
+Base: `3fc0b2bf8a`
+
+Task TM1: complete (commit aefc61d4c5, base 3fc0b2bf8a, resolved Ticketmaster credentials in stored then runtime then bundled-build order, treated blank values as absent, redacted credential debug output, and documented local and GitHub Actions release injection plus binary extractability; required gates passed with isolated XDG state and serial workspace tests; visible affiliate disclosure remains a separate review question before public release)
+Task TM2: complete (commit 14f40a4442, base aefc61d4c5, removed the Ticketmaster credential editor, the credential-entry status action and the Updates key hint while retaining the optional Bandsintown row and legacy stored Ticketmaster resolution; all required gates passed after one unrelated one-shot progress flake passed 10 focused reruns and the repeated full workspace gate)
+Task TM3: complete (this commit, base 14f40a4442, promoted New Releases and Concerts settings to peer Preferences pages, left only their activation switches on Plugins, preserved the newly merged Podcast and Radio plugin controls, kept page controls live-sensitive to module state, and activated SET-7; fmt, strict clippy, audit, core purity, architecture and all non-socket workspace tests passed after rebase onto current dev, while two new Radio MCP loopback tests were blocked only by the sandbox's TCP bind restriction)
