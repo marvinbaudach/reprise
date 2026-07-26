@@ -6,8 +6,8 @@
 use crate::models::Track;
 
 use super::clauses::{
-    ai_projection, filter_clause, like_pattern, order_expr_and_dir, row_to_id,
-    row_to_playlist_track, PRESENT,
+    ai_projection, filter_clause, like_pattern, order_clause, row_to_id, row_to_playlist_track,
+    PRESENT,
 };
 use super::queue::QUEUE_LIMIT;
 use super::MAX_WINDOW_LIMIT;
@@ -33,7 +33,7 @@ fn build_playlist_track_query(
     has_filter: bool,
     project_ai: bool,
 ) -> String {
-    let (order_expr, dir) = order_expr_and_dir(sort_field, sort_dir);
+    let order = order_clause(sort_field, sort_dir);
     let filter_clause = filter_clause(has_filter, 4);
     let is_ai = ai_projection(project_ai);
     format!(
@@ -47,7 +47,7 @@ fn build_playlist_track_query(
          pt.position \
          FROM tracks JOIN playlist_tracks pt ON pt.track_id = tracks.id \
          WHERE pt.playlist_id = ?3{filter_clause} \
-         ORDER BY {order_expr} {dir} LIMIT ?1 OFFSET ?2"
+         ORDER BY {order} LIMIT ?1 OFFSET ?2"
     )
 }
 
@@ -137,11 +137,11 @@ pub(super) fn query_visible_track_ids_playlist(
     filter: &str,
 ) -> Result<Vec<i64>, rusqlite::Error> {
     let has_filter = !filter.trim().is_empty();
-    let (order_expr, dir) = order_expr_and_dir(sort_field, sort_dir);
+    let order = order_clause(sort_field, sort_dir);
     let sql = format!(
         "SELECT tracks.id FROM tracks JOIN playlist_tracks pt ON pt.track_id = tracks.id \
          WHERE pt.playlist_id = ?1{} \
-         ORDER BY {order_expr} {dir} LIMIT {QUEUE_LIMIT}",
+         ORDER BY {order} LIMIT {QUEUE_LIMIT}",
         filter_clause(has_filter, 2)
     );
     let mut stmt = conn.prepare(&sql)?;

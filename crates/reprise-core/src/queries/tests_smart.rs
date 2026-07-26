@@ -115,6 +115,37 @@ fn smart_window_keeps_membership_but_honors_the_requested_column_sort() {
 }
 
 #[test]
+fn smart_window_sorts_the_primary_artist_term_descending() {
+    let conn = seeded_conn_with_tracks(3);
+    conn.execute(
+        "UPDATE tracks SET artist = CASE id \
+         WHEN 1 THEN 'Abyss' WHEN 2 THEN 'Annisokay' ELSE 'Zulu' END",
+        [],
+    )
+    .unwrap();
+    let smart_id = insert_smart_playlist(&conn, "[]", "title", "asc", Some(2));
+
+    let mut conn = conn;
+    let rows = query_track_window(
+        &mut conn,
+        &ViewSource::Smart(smart_id),
+        "artist",
+        "desc",
+        "",
+        0,
+        10,
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(
+        rows.iter().map(|track| track.id).collect::<Vec<_>>(),
+        vec![2, 1],
+        "Artist descending must reverse the primary artist term, not only its final tie-breaker"
+    );
+}
+
+#[test]
 fn smart_window_applies_live_search_filter_too() {
     let conn = seeded_conn_with_tracks(5);
     conn.execute("UPDATE tracks SET rating = 4", []).unwrap();
@@ -211,7 +242,7 @@ fn smart_ids_are_capped_by_limit_count() {
 #[test]
 fn smart_window_falls_back_to_title_on_tampered_sort_field() {
     // Simulates a hand-edited (DB-tampered) smart_playlists row whose
-    // sort_field isn't a whitelisted value — `order_expr_and_dir` must
+    // sort_field isn't a whitelisted value — `order_clause` must
     // fall back to title order rather than erroring or (worse)
     // interpolating the value into SQL.
     let conn = seeded_conn_with_tracks(3);
