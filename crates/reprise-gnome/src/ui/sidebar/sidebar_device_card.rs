@@ -21,7 +21,7 @@ type OpenCallback = Rc<dyn Fn(String, String)>;
 type CardRegistry = Rc<RefCell<HashMap<String, DeviceCard>>>;
 
 struct DeviceCard {
-    root: gtk4::Box,
+    root: gtk4::Button,
     indicator: gtk4::Stack,
     icon: gtk4::Image,
     spinner: gtk4::Spinner,
@@ -30,10 +30,8 @@ struct DeviceCard {
     delta_detail: gtk4::Label,
     progress_detail: gtk4::Label,
     synced_detail: gtk4::Label,
-    open: gtk4::Button,
-    percent_revealer: gtk4::Revealer,
+    suffix_stack: gtk4::Stack,
     percent: gtk4::Label,
-    action: gtk4::Button,
     progress_revealer: gtk4::Revealer,
     progress: gtk4::ProgressBar,
     progress_generation: Rc<Cell<u64>>,
@@ -103,25 +101,32 @@ fn render(
 
 impl DeviceCard {
     fn new(device: &DeviceView, on_open: &OpenCallback) -> Self {
-        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 5);
-        root.add_css_class("card");
+        let content = gtk4::Box::new(gtk4::Orientation::Vertical, 5);
+        content.set_valign(gtk4::Align::Center);
+        let root = gtk4::Button::builder()
+            .child(&content)
+            .has_frame(false)
+            .hexpand(true)
+            .build();
         root.add_css_class("device-card");
         root.set_margin_bottom(3);
         root.set_margin_start(2);
         root.set_margin_end(2);
 
         let top = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-        top.set_margin_top(8);
-        top.set_margin_bottom(8);
-        top.set_margin_start(10);
-        top.set_margin_end(8);
+        top.set_margin_top(9);
+        top.set_margin_bottom(9);
+        top.set_margin_start(9);
+        top.set_margin_end(9);
         // Icon and spinner occupy the same slot: idle shows the device, a
         // running sync shows motion — the card morphs rather than being
         // rebuilt.
         let icon = gtk4::Image::from_gicon(&device.icon);
-        icon.set_pixel_size(24);
+        icon.add_css_class("device-card-glyph");
+        icon.set_pixel_size(32);
         let spinner = gtk4::Spinner::new();
-        spinner.set_size_request(13, 13);
+        spinner.add_css_class("device-card-glyph");
+        spinner.set_size_request(18, 18);
         spinner.set_valign(gtk4::Align::Center);
         let indicator = gtk4::Stack::builder()
             .transition_type(gtk4::StackTransitionType::Crossfade)
@@ -130,6 +135,12 @@ impl DeviceCard {
         indicator.add_named(&icon, Some("device"));
         indicator.add_named(&spinner, Some("syncing"));
         indicator.set_visible_child_name("device");
+        let icon_frame = gtk4::CenterBox::new();
+        icon_frame.add_css_class("device-card-icon");
+        icon_frame.set_size_request(48, 48);
+        indicator.set_halign(gtk4::Align::Center);
+        indicator.set_valign(gtk4::Align::Center);
+        icon_frame.set_center_widget(Some(&indicator));
 
         let labels = gtk4::Box::new(gtk4::Orientation::Vertical, 1);
         labels.set_hexpand(true);
@@ -151,19 +162,11 @@ impl DeviceCard {
         detail_stack.set_visible_child_name("delta");
         labels.append(&name);
         labels.append(&detail_stack);
-        let open_content = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-        open_content.append(&indicator);
-        open_content.append(&labels);
-        let open = gtk4::Button::builder()
-            .child(&open_content)
-            .has_frame(false)
-            .hexpand(true)
-            .build();
-        open.add_css_class("device-card-open");
-        open.update_property(&[gtk4::accessible::Property::Label(
+        top.append(&icon_frame);
+        top.append(&labels);
+        root.update_property(&[gtk4::accessible::Property::Label(
             &device_sync_strings::open_device_label(&device.name),
         )]);
-        top.append(&open);
 
         // Fixed-width so the number cannot shove the title around as it grows
         // from "0 %" to "100 %".
@@ -171,21 +174,21 @@ impl DeviceCard {
         percent.add_css_class("device-card-percent");
         percent.set_width_chars(5);
         percent.set_xalign(1.0);
-        let percent_revealer = gtk4::Revealer::builder()
-            .transition_type(gtk4::RevealerTransitionType::Crossfade)
+        let chevron = gtk4::Image::from_icon_name("go-next-symbolic");
+        chevron.add_css_class("dim-label");
+        chevron.set_pixel_size(16);
+        let suffix_stack = gtk4::Stack::builder()
+            .transition_type(gtk4::StackTransitionType::Crossfade)
             .transition_duration(crate::ui::motion::STANDARD_MS)
-            .child(&percent)
-            .reveal_child(false)
             .build();
-        top.append(&percent_revealer);
+        suffix_stack.set_hhomogeneous(false);
+        suffix_stack.set_vhomogeneous(false);
+        suffix_stack.add_named(&chevron, Some("open"));
+        suffix_stack.add_named(&percent, Some("progress"));
+        suffix_stack.set_visible_child_name("open");
+        top.append(&suffix_stack);
 
-        let action = gtk4::Button::new();
-        action.set_valign(gtk4::Align::Center);
-        action.add_css_class("device-card-action");
-        action.set_action_name(Some("app.sync-device"));
-        action.set_action_target_value(Some(&device.id.to_variant()));
-        top.append(&action);
-        root.append(&top);
+        content.append(&top);
 
         // Inset rather than full-bleed: a full-width bar is clipped by the
         // card's own corner radius and reads as half-drawn.
@@ -203,24 +206,24 @@ impl DeviceCard {
             .child(&progress)
             .reveal_child(false)
             .build();
+        progress_revealer.set_visible(false);
         let reset_progress = progress.clone();
         progress_revealer.connect_child_revealed_notify(move |revealer| {
             if !revealer.is_child_revealed() {
                 reset_progress.set_fraction(0.0);
+                revealer.set_visible(false);
             }
         });
-        root.append(&progress_revealer);
+        content.append(&progress_revealer);
 
-        // The button lives as long as the card, so opening the device view
-        // works mid-sync; the name is read fresh on activation because it can
-        // change (GVfs settles a generic "mtp" into the real model name).
-        // The action button claims its own clicks, so Cancel never opens the
-        // view.
+        // The whole card is one native keyboard and pointer target. The name
+        // is read fresh because GVfs can replace a generic MTP label with the
+        // real model name after the card was built.
         let open_name = Rc::new(RefCell::new(device.name.clone()));
         let open_callback = on_open.clone();
         let id = device.id.clone();
         let click_name = open_name.clone();
-        open.connect_clicked(move |_| {
+        root.connect_clicked(move |_| {
             let name = click_name.borrow().clone();
             open_callback(id.clone(), name);
         });
@@ -235,10 +238,8 @@ impl DeviceCard {
             delta_detail,
             progress_detail,
             synced_detail,
-            open,
-            percent_revealer,
+            suffix_stack,
             percent,
-            action,
             progress_revealer,
             progress,
             progress_generation: Rc::new(Cell::new(0)),
@@ -248,7 +249,7 @@ impl DeviceCard {
 
     fn update(&self, device: &DeviceView) {
         self.name.set_text(&card_title(device));
-        self.open
+        self.root
             .update_property(&[gtk4::accessible::Property::Label(
                 &device_sync_strings::open_device_label(&device.name),
             )]);
@@ -283,27 +284,12 @@ impl DeviceCard {
             }
             DetailMode::Synced => {
                 self.synced_detail.set_text(&format!(
-                    "Everything in sync ✓ · {}",
-                    device_sync_strings::available_space(device.available_bytes)
+                    "Synced ✓ · {}",
+                    device_sync_strings::free_space(device.available_bytes)
                 ));
                 self.detail_stack.set_visible_child_name("synced");
             }
         }
-
-        self.action
-            .set_label(if syncing { "Cancel" } else { "Sync" });
-        self.action.set_css_classes(if syncing {
-            &["flat", "device-card-action", "device-card-cancel"]
-        } else {
-            &["suggested-action", "device-card-action"]
-        });
-        self.action.set_sensitive(
-            syncing
-                || device
-                    .delta
-                    .as_ref()
-                    .is_some_and(|delta| !delta.to_copy.is_empty() || !delta.to_remove.is_empty()),
-        );
 
         match &device.sync_phase {
             PlannedSyncPhase::Syncing {
@@ -314,11 +300,12 @@ impl DeviceCard {
                 bytes_total,
                 ..
             } => {
-                self.percent_revealer.set_reveal_child(true);
+                self.suffix_stack.set_visible_child_name("progress");
                 self.percent.set_text(&device_sync_strings::sync_percent(
                     *bytes_done,
                     *bytes_total,
                 ));
+                self.progress_revealer.set_visible(true);
                 self.progress_revealer.set_reveal_child(true);
                 self.animate_progress(sync_fraction(*bytes_done, *bytes_total));
                 self.root
@@ -333,7 +320,7 @@ impl DeviceCard {
             _ => {
                 self.progress_generation
                     .set(self.progress_generation.get().saturating_add(1));
-                self.percent_revealer.set_reveal_child(false);
+                self.suffix_stack.set_visible_child_name("open");
                 self.progress_revealer.set_reveal_child(false);
                 self.root.set_tooltip_text(None);
             }
@@ -426,14 +413,19 @@ fn sync_fraction(bytes_done: u64, bytes_total: u64) -> f64 {
 /// (`@accent_color` is the palette's petrol), never a literal, so every named
 /// dark theme keeps its own accent.
 pub(in crate::ui) fn css() -> String {
-    ".device-card:hover { background-color: alpha(#ffffff, 0.03); }\n\
-     .device-card-title { font-size: 13px; }\n\
-     .device-card-detail { font-size: 11.5px; color: alpha(@window_fg_color, 0.45); }\n\
+    ".device-card { min-height: 0; padding: 0; border-radius: 14px; \
+       border: 1px solid alpha(@window_fg_color, 0.07); \
+       background-color: alpha(@window_fg_color, 0.035); }\n\
+     .device-card:hover { background-color: alpha(@window_fg_color, 0.065); }\n\
+     .device-card:focus-visible { box-shadow: inset 0 0 0 2px \
+       alpha(@window_fg_color, 0.32); }\n\
+     .device-card-icon { border-radius: 13px; \
+       background-color: alpha(@window_fg_color, 0.075); }\n\
+     .device-card-glyph { color: alpha(@window_fg_color, 0.82); }\n\
+     .device-card-title { font-size: 13.5px; }\n\
+     .device-card-detail { font-size: 11.5px; color: alpha(@window_fg_color, 0.55); }\n\
      .device-card-percent { font-size: 11.5px; font-feature-settings: \"tnum\"; \
        color: alpha(@window_fg_color, 0.45); }\n\
-     .device-card-cancel { color: alpha(@window_fg_color, 0.55); }\n\
-     .device-card-cancel:hover { color: @window_fg_color; \
-       background-color: alpha(#ffffff, 0.10); }\n\
      .device-card-progress { min-height: 3px; }\n\
      .device-card-progress trough { min-height: 3px; border-radius: 2px; \
        background-color: alpha(#ffffff, 0.12); }\n\
@@ -587,6 +579,13 @@ mod tests {
     }
 
     #[test]
+    fn sidebar_device_card_has_no_direct_sync_action() {
+        let direct_sync_action = ["app", "sync-device"].join(".");
+
+        assert!(!include_str!("sidebar_device_card.rs").contains(&direct_sync_action));
+    }
+
+    #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn device_card_open_is_a_native_keyboard_action() {
         gtk4::init().unwrap();
@@ -596,8 +595,8 @@ mod tests {
             opened_for_callback.borrow_mut().replace((id, name));
         });
         let card = DeviceCard::new(&view(PlannedSyncPhase::Idle), &on_open);
-        assert!(card.open.is_focusable());
-        card.open.emit_clicked();
+        assert!(card.root.is_focusable());
+        card.root.emit_clicked();
         assert_eq!(
             opened.borrow().as_ref(),
             Some(&("pixel".to_owned(), "Pixel 8".to_owned()))
@@ -705,8 +704,8 @@ mod tests {
             gtk4::StackTransitionType::Crossfade
         );
         assert_eq!(
-            card.percent_revealer.transition_type(),
-            gtk4::RevealerTransitionType::Crossfade
+            card.suffix_stack.transition_type(),
+            gtk4::StackTransitionType::Crossfade
         );
         assert_eq!(
             card.progress_revealer.transition_type(),
@@ -721,10 +720,13 @@ mod css_tests {
     fn css_covers_the_sync_card_vocabulary() {
         let css = super::css();
         for marker in [
+            ".device-card {",
             ".device-card:hover",
+            ".device-card:focus-visible",
+            ".device-card-icon",
+            ".device-card-glyph",
             ".device-card-detail",
             ".device-card-percent",
-            ".device-card-cancel:hover",
             ".device-card-progress trough",
             ".device-card-progress progress",
         ] {
