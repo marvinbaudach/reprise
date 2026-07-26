@@ -354,9 +354,11 @@ impl PlayerController {
         self.sync_lyrics_position(position_ms);
     }
 
-    pub(in crate::ui) fn sync_transport_enabled(&self, enabled: bool) {
-        self.bar.set_transport_enabled(enabled);
-        self.compact_player.set_transport_enabled(enabled);
+    pub(in crate::ui) fn sync_transport_enabled(&self, queue_has_tracks: bool) {
+        let play_available = queue_has_tracks || self.library_has_tracks.get();
+        self.bar
+            .set_transport_enabled(queue_has_tracks, self.library_has_tracks.get());
+        self.compact_player.set_transport_enabled(play_available);
     }
 
     /// Sets the shuffle indicator on both widgets — called from whichever

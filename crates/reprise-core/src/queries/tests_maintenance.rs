@@ -119,6 +119,34 @@ fn feature_queries_filter_and_order_tracks_for_their_consumers() {
     );
 }
 
+#[test]
+fn play_9_random_idle_snapshot_contains_only_present_library_tracks() {
+    let conn = crate::db::open_migrated(None).unwrap();
+    for (id, missing_since, removed_at) in [
+        (1, None::<i64>, None::<i64>),
+        (2, Some(1), None),
+        (3, None, Some(1)),
+        (4, None, None),
+    ] {
+        conn.execute(
+            "INSERT INTO tracks \
+             (id, path, title, artist, added_at, missing_since, removed_at) \
+             VALUES (?1, ?2, '', '', 0, ?3, ?4)",
+            rusqlite::params![id, format!("/x/{id}.flac"), missing_since, removed_at],
+        )
+        .unwrap();
+    }
+
+    let snapshot = query_random_live_track_ids(&conn).unwrap();
+
+    assert_eq!(
+        snapshot.into_iter().collect::<HashSet<_>>(),
+        HashSet::from([1, 4])
+    );
+    assert!(query_has_live_tracks(&conn).unwrap());
+    assert!(!query_has_live_tracks(&crate::db::open_migrated(None).unwrap()).unwrap());
+}
+
 // -- ImportErrors source -------------------------------------------------
 
 #[test]
