@@ -2281,6 +2281,11 @@ Dateien.
   und nicht verifizierbar erscheinen inline; leer setzt den Zustand ohne
   Anfrage zurück. Die Prüfung schreibt Credential-Werte nie in Logs oder
   Fehlermeldungen.
+- **CONC-9** [aktiv] [gtk] — Jede Concerts-Zeile besitzt eine gemeinsame
+  vertikale Mitte. Der Interpret steht als einzeilige Gruppe auf derselben
+  Grundachse wie Datum, Ort, Venue, Distanz und Ticket; eine optionale
+  „similar to …"-Caption erweitert und zentriert die Interpretengruppe als
+  Einheit, statt den Interpreten am oberen Zeilenrand festzuhalten.
 
 ## AF. Podcasts & Radio
 

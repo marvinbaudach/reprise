@@ -172,15 +172,16 @@ pub use scrobbling::*;
 pub const LIBRARY_FOLDER: &str = N_!("Library Folder");
 pub const NO_LIBRARY_FOLDER: &str = N_!("No folder selected");
 pub const CHOOSE_FOLDER: &str = N_!("Choose Folder…");
-pub const EXCLUDED_FILES: &str = N_!("Excluded Files");
+pub const EXCLUDED_FILES: &str = N_!("Removed from Library");
 pub const RESTORE_EXCLUDED_FILES: &str = N_!("Restore All");
-pub const RESTORE_EXCLUDED_FILES_FAILED: &str = N_!("Could not restore excluded files");
+pub const RESTORE_EXCLUDED_FILES_FAILED: &str =
+    N_!("Could not restore removed files to the library");
 
 pub fn excluded_files_subtitle(count: usize) -> String {
     let count_text = count.to_string();
     plural(
-        "{count} file ignored during library scans",
-        "{count} files ignored during library scans",
+        "{count} file removed from the library and ignored during scans",
+        "{count} files removed from the library and ignored during scans",
         count,
         &[("count", &count_text)],
     )
@@ -756,11 +757,12 @@ mod tests {
         assert!(body.contains("Listening history stays in My Stats"));
         assert_eq!(
             excluded_files_subtitle(0),
-            "0 files ignored during library scans"
+            "0 files removed from the library and ignored during scans"
         );
         assert_eq!(
             excluded_files_subtitle(1),
-            "1 file ignored during library scans"
+            "1 file removed from the library and ignored during scans"
         );
+        assert_eq!(text(EXCLUDED_FILES), "Removed from Library");
     }
 }
