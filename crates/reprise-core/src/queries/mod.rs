@@ -325,6 +325,8 @@ pub fn query_track_window_browsed_ai(
         }
         ViewSource::ImportErrors
         | ViewSource::MyStats
+        | ViewSource::Releases
+        | ViewSource::Concerts
         | ViewSource::Conversions
         | ViewSource::Device { .. } => Ok(Vec::new()),
     }
@@ -378,6 +380,8 @@ pub fn query_track_count_browsed(
         }
         ViewSource::ImportErrors
         | ViewSource::MyStats
+        | ViewSource::Releases
+        | ViewSource::Concerts
         | ViewSource::Conversions
         | ViewSource::Device { .. } => Ok(0),
     }
@@ -548,6 +552,8 @@ pub fn query_track_ids_browsed_ai(
         }
         ViewSource::ImportErrors
         | ViewSource::MyStats
+        | ViewSource::Releases
+        | ViewSource::Concerts
         | ViewSource::Conversions
         | ViewSource::Device { .. } => Ok(Vec::new()),
     }

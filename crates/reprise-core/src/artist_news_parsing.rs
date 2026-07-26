@@ -73,12 +73,7 @@ pub fn parse_artist_mbid(json: &str, artist: &str) -> ArtistMatch {
     }
 }
 
-pub fn parse_release_groups(
-    json: &str,
-    local_albums: &[String],
-    today: NaiveDate,
-    include_singles: bool,
-) -> Vec<AlbumNews> {
+pub fn parse_release_groups(json: &str, today: NaiveDate, include_singles: bool) -> Vec<AlbumNews> {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
         return Vec::new();
     };
@@ -88,13 +83,9 @@ pub fn parse_release_groups(
     else {
         return Vec::new();
     };
-    let local = local_albums
-        .iter()
-        .map(|album| normalize(album))
-        .collect::<std::collections::HashSet<_>>();
     let mut items = groups
         .iter()
-        .filter_map(|group| parse_release_group(group, &local, today, include_singles))
+        .filter_map(|group| parse_release_group(group, today, include_singles))
         .collect::<Vec<_>>();
     items.sort_by(|(left, left_date), (right, right_date)| {
         compare_news(left, *left_date, right, *right_date)
@@ -105,7 +96,6 @@ pub fn parse_release_groups(
 
 fn parse_release_group(
     group: &serde_json::Value,
-    local: &std::collections::HashSet<String>,
     today: NaiveDate,
     include_singles: bool,
 ) -> Option<(AlbumNews, NaiveDate)> {
@@ -134,13 +124,6 @@ fn parse_release_group(
         _ if delta >= -NEWS_WINDOW_DAYS => NewsKind::New,
         _ => return None,
     };
-    // An unreleased album cannot be owned. A title match here is by
-    // definition a mis-tagged pre-release track — typically the lead single
-    // tagged with the forthcoming album's name — so the library check is
-    // skipped outright rather than merely relaxed.
-    if kind == NewsKind::New && local.contains(&normalize(&title)) {
-        return None;
-    }
     Some((
         AlbumNews {
             release_group_mbid: mbid,

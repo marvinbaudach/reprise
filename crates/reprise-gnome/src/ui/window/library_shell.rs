@@ -35,12 +35,16 @@ pub(in crate::ui) enum ActiveContentTarget {
     Tracks,
     Stats,
     Device,
+    Concerts,
+    Releases,
 }
 
 fn active_content_target(content_name: Option<&str>) -> Option<ActiveContentTarget> {
     match content_name {
         Some("stats") => Some(ActiveContentTarget::Stats),
         Some("device") => Some(ActiveContentTarget::Device),
+        Some("concerts") => Some(ActiveContentTarget::Concerts),
+        Some("releases") => Some(ActiveContentTarget::Releases),
         Some("library") => Some(ActiveContentTarget::Tracks),
         _ => None,
     }
@@ -77,7 +81,12 @@ impl ActiveContentFocus {
         let content_name = content_stack.visible_child_name();
         match active_content_target(content_name.as_deref()) {
             Some(ActiveContentTarget::Tracks) => (self.focus_tracks)(),
-            Some(ActiveContentTarget::Stats | ActiveContentTarget::Device) => content_stack
+            Some(
+                ActiveContentTarget::Stats
+                | ActiveContentTarget::Device
+                | ActiveContentTarget::Concerts
+                | ActiveContentTarget::Releases,
+            ) => content_stack
                 .visible_child()
                 .is_some_and(|child| focus_widget_or_descendant(&child)),
             None => false,
@@ -114,25 +123,21 @@ fn focus_widget_or_descendant(widget: &gtk4::Widget) -> bool {
     widget.grab_focus() || widget.child_focus(gtk4::DirectionType::TabForward)
 }
 
-/// Dev/verification hook for the row-less My Stats content view. The shared
-/// `REPRISE_SMOKE_SOURCE=my_stats` spelling stays consistent with track-list
-/// sources, but this is armed only after source routing exists so it exercises
-/// the same sidebar callback that refreshes and reveals the stats stack page.
-fn arm_smoke_my_stats(sidebar: &Rc<Sidebar>) {
+/// Dev/verification hook for non-track content views.
+fn arm_smoke_detail_view(sidebar: &Rc<Sidebar>) {
     let Ok(value) = std::env::var(crate::ui::track_list::track_list_smoke::SMOKE_SOURCE_ENV_VAR)
     else {
         return;
     };
-    if !matches!(
-        crate::ui::track_list::track_list_smoke::parse_smoke_source(&value),
-        Some(ViewSource::MyStats)
-    ) {
+    let Some(source @ (ViewSource::MyStats | ViewSource::Concerts | ViewSource::Releases)) =
+        crate::ui::track_list::track_list_smoke::parse_smoke_source(&value)
+    else {
         return;
-    }
+    };
     let sidebar = sidebar.clone();
     gtk4::glib::idle_add_local_once(move || {
-        tracing::info!("smoke: opening My Stats through sidebar source routing");
-        sidebar.refresh_and_select(ViewSource::MyStats, "smoke My Stats source");
+        tracing::info!(source = %source.label(), "smoke: opening detail view through sidebar source routing");
+        sidebar.refresh_and_select(source, "smoke detail source");
     });
 }
 
@@ -142,6 +147,8 @@ pub(in crate::ui) fn wire_source_routing(
     nav_history: &Rc<crate::ui::nav_history::NavHistory>,
     track_list: &Rc<TrackList>,
     stats_view: StatsView,
+    concerts_view: &Rc<crate::ui::concerts::ConcertsView>,
+    releases_view: &Rc<crate::ui::releases::ReleasesView>,
     conn: &Rc<RefCell<Connection>>,
     content_stack: &gtk4::Stack,
     device_view: &Rc<DeviceViewPage>,
@@ -153,6 +160,8 @@ pub(in crate::ui) fn wire_source_routing(
     let content_stack = content_stack.clone();
     let source_title = source_title.clone();
     let stats_view = Rc::new(stats_view);
+    let concerts_view = concerts_view.clone();
+    let releases_view = releases_view.clone();
     let device_view = device_view.clone();
     let conn = conn.clone();
     let sidebar_for_select = sidebar.clone();
@@ -189,6 +198,12 @@ pub(in crate::ui) fn wire_source_routing(
             content_stack.set_visible_child_name("stats");
             stats_view.prepare_entrance();
             stats_view.refresh(&conn);
+        } else if matches!(source, ViewSource::Concerts) {
+            concerts_view.refresh();
+            content_stack.set_visible_child_name("concerts");
+        } else if matches!(source, ViewSource::Releases) {
+            releases_view.refresh();
+            content_stack.set_visible_child_name("releases");
         } else if matches!(source, ViewSource::Conversions) {
             // INST-13: the conversion/staging view lives on its own page. Ensure
             // it is installed (under the same experimental gate as the sidebar
@@ -206,7 +221,7 @@ pub(in crate::ui) fn wire_source_routing(
         active_content_focus.focus_later();
     });
     sidebar.set_on_show_content(move || show_content());
-    arm_smoke_my_stats(sidebar);
+    arm_smoke_detail_view(sidebar);
 }
 
 /// Builds the library split view in its collapsed default. It starts with the
@@ -362,6 +377,14 @@ mod tests {
         assert_eq!(
             active_content_target(Some("device")),
             Some(ActiveContentTarget::Device)
+        );
+        assert_eq!(
+            active_content_target(Some("concerts")),
+            Some(ActiveContentTarget::Concerts)
+        );
+        assert_eq!(
+            active_content_target(Some("releases")),
+            Some(ActiveContentTarget::Releases)
         );
         assert_eq!(active_content_target(Some("unknown")), None);
     }
