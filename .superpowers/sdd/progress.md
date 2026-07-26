@@ -72,3 +72,13 @@ Base: `3fc0b2bf8a`
 Task TM1: complete (commit aefc61d4c5, base 3fc0b2bf8a, resolved Ticketmaster credentials in stored then runtime then bundled-build order, treated blank values as absent, redacted credential debug output, and documented local and GitHub Actions release injection plus binary extractability; required gates passed with isolated XDG state and serial workspace tests; visible affiliate disclosure remains a separate review question before public release)
 Task TM2: complete (commit 14f40a4442, base aefc61d4c5, removed the Ticketmaster credential editor, the credential-entry status action and the Updates key hint while retaining the optional Bandsintown row and legacy stored Ticketmaster resolution; all required gates passed after one unrelated one-shot progress flake passed 10 focused reruns and the repeated full workspace gate)
 Task TM3: complete (this commit, base 14f40a4442, promoted New Releases and Concerts settings to peer Preferences pages, left only their activation switches on Plugins, preserved the newly merged Podcast and Radio plugin controls, kept page controls live-sensitive to module state, and activated SET-7; fmt, strict clippy, audit, core purity, architecture and all non-socket workspace tests passed after rebase onto current dev, while two new Radio MCP loopback tests were blocked only by the sandbox's TCP bind restriction)
+
+# PR 64 UI follow-up repair
+
+Base: `428c9bbff9`
+
+Autocomplete surface: complete (commit 6f69d0aeff, base 428c9bbff9, preserved the popover surface behind transparent inner autocomplete views and added the manual TAG-9 rule proposal)
+Repeat tooltips: complete (commit bbe3028309, base 6f69d0aeff, explained all three repeat modes from the current behavior)
+Now Playing transition: complete (commit 2b8302599a, base bbe3028309, replaced the whole-panel crossfade with an interruption-safe outgoing-cover fade that waits for cold-cache resolution and activated NPP-13 with corrected MOT-1/MOT-6 references)
+Catalog gate repair: complete (commit 20591fb5cb, base 2b8302599a, synchronized all seven catalogs with the Podcasts/Radio sources inherited from dev, completed the German and Spanish translations, and removed fuzzy entries)
+Verification: complete with sandbox exclusions (format, strict clippy, rustdoc, architecture, accessibility, input, UX traceability, motion, gettext, audit with only accepted RUSTSEC-2024-0436, 1404 core tests, 959 GNOME non-display tests, and all other workspace tests passed; two inherited MCP Radio tests requiring local sockets and the isolated NPP-13 Xvfb regression were blocked by sandbox socket permissions and remain required on GitHub CI)
