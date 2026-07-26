@@ -2348,6 +2348,12 @@ Hörstatistik.
 - **POD-5** [aktiv] [gtk] — Downloads sind pro Abo opt-in, liegen im
   XDG-Datenpfad der App unter einem GUID-stabilen Pfad, folgen der gewählten
   Cleanup-Policy und werden offline bevorzugt lokal abgespielt.
+- **POD-6** [aktiv] [core] [gtk] — Einzelne RSS- und YouTube-Episoden lassen
+  sich im Kontextmenü entfernen, verschwinden sofort und bleiben zehn Sekunden
+  per Undo reversibel. Der Commit löscht nur den Datenbankeintrag und sperrt
+  seine quellstabile GUID dauerhaft gegen erneuten Feed-Import; eine
+  heruntergeladene Datei bleibt erhalten und kann ausschließlich über die
+  angebotene Papierkorb-Aktion entfernt werden.
 - **RAD-1** [aktiv] [gtk] — Nur die aktuell verbundene Station ist in der
   Tabelle akzentuiert; ihr Zustandsicon, Name, Now-playing und Zeilentint
   wechseln gemeinsam. Alle anderen sowie eine präsentierte, aber getrennte

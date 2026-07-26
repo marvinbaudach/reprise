@@ -68,6 +68,7 @@ pub const PODCAST_MARK_PLAYED: &str = N_!("Mark as played");
 pub const PODCAST_MARK_UNPLAYED: &str = N_!("Mark as unplayed");
 pub const PODCAST_DOWNLOAD: &str = N_!("Download episode");
 pub const PODCAST_DELETE_DOWNLOAD: &str = N_!("Delete download");
+pub const PODCAST_REMOVE_EPISODE: &str = N_!("Remove episode");
 pub const PODCAST_UNSUBSCRIBE: &str = N_!("Unsubscribe");
 pub const PODCAST_UNDO: &str = N_!("Undo");
 pub const PODCAST_DELETE_FILES: &str = N_!("Delete files");
@@ -115,6 +116,10 @@ pub fn podcast_show_all_count(count: usize) -> String {
 
 pub fn podcast_unsubscribe_from(show: &str) -> String {
     formatted(N_!("Unsubscribe from “{show}”"), &[("show", show)])
+}
+
+pub fn podcast_removed_episode(title: &str) -> String {
+    formatted(N_!("Removed “{title}”"), &[("title", title)])
 }
 
 pub fn podcast_play_next(title: &str) -> String {
