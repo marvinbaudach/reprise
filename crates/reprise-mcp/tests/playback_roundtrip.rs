@@ -22,12 +22,14 @@
 
 mod common;
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use common::{tool_success_text, McpClient, PrivateBus, SeedTrack};
+use common::{structured_ok, tool_success_text, McpClient, PrivateBus, SeedTrack};
 use serde_json::json;
 use tempfile::TempDir;
 use zbus::interface;
+use zbus::zvariant::{ObjectPath, OwnedValue, Value};
 
 /// The app's MPRIS well-known name and object path (mirrors both the client and
 /// `reprise-platform-linux`'s server).
@@ -35,12 +37,19 @@ const BUS_NAME: &str = "org.mpris.MediaPlayer2.reprise";
 const OBJECT_PATH: &str = "/org/mpris/MediaPlayer2";
 
 /// One recorded incoming D-Bus call on the stub player, in arrival order.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 enum Recorded {
     /// An `org.mpris.MediaPlayer2.Player` transport method, by its D-Bus name.
     Transport(&'static str),
     /// `org.reprise.Player1.PlayTrackIds(ids)`.
     PlayTrackIds(Vec<i64>),
+    Seek(i64),
+    SetVolume(f64),
+    SetShuffle(bool),
+    SetLoopStatus(String),
+    QueueAddNext(Vec<i64>),
+    QueueAddLast(Vec<i64>),
+    QueueClear,
 }
 
 type Calls = Arc<Mutex<Vec<Recorded>>>;
@@ -69,6 +78,83 @@ impl PlayerStub {
     fn previous(&self) {
         self.record("Previous");
     }
+
+    fn seek(&self, offset: i64) {
+        self.calls
+            .lock()
+            .expect("calls lock")
+            .push(Recorded::Seek(offset));
+    }
+
+    #[zbus(property)]
+    fn playback_status(&self) -> String {
+        "Playing".to_owned()
+    }
+
+    #[zbus(property)]
+    fn metadata(&self) -> HashMap<String, OwnedValue> {
+        let mut metadata = HashMap::new();
+        metadata.insert(
+            "mpris:trackid".to_owned(),
+            OwnedValue::from(
+                ObjectPath::try_from("/org/reprise/Reprise/track/42")
+                    .expect("valid fixture object path"),
+            ),
+        );
+        metadata.insert("mpris:length".to_owned(), OwnedValue::from(240_000_000_i64));
+        insert_owned(&mut metadata, "xesam:title", Value::from("Sun//Eater"));
+        insert_owned(
+            &mut metadata,
+            "xesam:artist",
+            Value::from(vec!["Lorna Shore"]),
+        );
+        insert_owned(&mut metadata, "xesam:album", Value::from("Pain Remains"));
+        metadata
+    }
+
+    #[zbus(property)]
+    fn position(&self) -> i64 {
+        61_500_000
+    }
+
+    #[zbus(property)]
+    fn volume(&self) -> f64 {
+        0.72
+    }
+
+    #[zbus(property)]
+    fn set_volume(&self, value: f64) {
+        self.calls
+            .lock()
+            .expect("calls lock")
+            .push(Recorded::SetVolume(value));
+    }
+
+    #[zbus(property)]
+    fn shuffle(&self) -> bool {
+        true
+    }
+
+    #[zbus(property)]
+    fn set_shuffle(&self, value: bool) {
+        self.calls
+            .lock()
+            .expect("calls lock")
+            .push(Recorded::SetShuffle(value));
+    }
+
+    #[zbus(property)]
+    fn loop_status(&self) -> String {
+        "Playlist".to_owned()
+    }
+
+    #[zbus(property)]
+    fn set_loop_status(&self, value: &str) {
+        self.calls
+            .lock()
+            .expect("calls lock")
+            .push(Recorded::SetLoopStatus(value.to_owned()));
+    }
 }
 
 impl PlayerStub {
@@ -78,6 +164,13 @@ impl PlayerStub {
             .expect("calls lock")
             .push(Recorded::Transport(method));
     }
+}
+
+fn insert_owned(metadata: &mut HashMap<String, OwnedValue>, key: &str, value: Value<'_>) {
+    metadata.insert(
+        key.to_owned(),
+        OwnedValue::try_from(value).expect("fixture metadata converts"),
+    );
 }
 
 /// Stub for the Reprise-specific interface carrying `PlayTrackIds`.
@@ -92,6 +185,31 @@ impl RepriseStub {
             .lock()
             .expect("calls lock")
             .push(Recorded::PlayTrackIds(ids));
+    }
+
+    fn queue_snapshot(&self) -> (i64, Vec<i64>, Vec<i64>, u64, u64) {
+        (42, vec![7, 8], vec![9, 10, 11], 2, 3)
+    }
+
+    fn queue_add_next(&self, ids: Vec<i64>) {
+        self.calls
+            .lock()
+            .expect("calls lock")
+            .push(Recorded::QueueAddNext(ids));
+    }
+
+    fn queue_add_last(&self, ids: Vec<i64>) {
+        self.calls
+            .lock()
+            .expect("calls lock")
+            .push(Recorded::QueueAddLast(ids));
+    }
+
+    fn queue_clear(&self) {
+        self.calls
+            .lock()
+            .expect("calls lock")
+            .push(Recorded::QueueClear);
     }
 }
 
@@ -237,5 +355,121 @@ fn music_playback_control_reaches_the_player_over_the_bus() {
             Recorded::Transport("Previous"),
         ],
         "each verb should invoke its matching MPRIS transport method, in order"
+    );
+}
+
+#[test]
+fn music_get_playback_state_returns_live_path_free_properties() {
+    let Some(bus) = PrivateBus::start() else {
+        eprintln!("environment-limited: dbus-daemon unavailable; skipping the MPRIS bus roundtrip");
+        return;
+    };
+    let (_conn, _calls) = start_stub_player(&bus);
+
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("reprise.db");
+    common::seed_tracks(&path, &[]);
+    let mut client = McpClient::start_on_bus(&path, &bus);
+
+    let response = client.call_tool("music_get_playback_state", json!({}));
+    let body = structured_ok(&response);
+    assert_eq!(body["status"], "playing");
+    assert_eq!(body["track_id"], 42);
+    assert_eq!(body["title"], "Sun//Eater");
+    assert_eq!(body["artist"], "Lorna Shore");
+    assert_eq!(body["album"], "Pain Remains");
+    assert_eq!(body["duration_ms"], 240_000);
+    assert_eq!(body["position_ms"], 61_500);
+    assert_eq!(body["volume"], 0.72);
+    assert_eq!(body["shuffle"], true);
+    assert_eq!(body["repeat"], "all");
+    assert!(
+        !response.to_string().contains("/music/"),
+        "playback state must never expose a music path: {response}"
+    );
+}
+
+#[test]
+fn music_set_playback_reaches_each_mpris_setting() {
+    let Some(bus) = PrivateBus::start() else {
+        eprintln!("environment-limited: dbus-daemon unavailable; skipping the MPRIS bus roundtrip");
+        return;
+    };
+    let (_conn, calls) = start_stub_player(&bus);
+
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("reprise.db");
+    common::seed_tracks(&path, &[]);
+    let mut client = McpClient::start_on_bus(&path, &bus);
+
+    for params in [
+        json!({ "action": "set_volume", "volume": 0.35 }),
+        json!({ "action": "seek", "offset_seconds": -12.5 }),
+        json!({ "action": "set_shuffle", "enabled": false }),
+        json!({ "action": "set_repeat", "repeat": "one" }),
+    ] {
+        let response = client.call_tool("music_set_playback", params);
+        assert!(
+            !tool_success_text(&response).is_empty(),
+            "setting should return a confirmation: {response}"
+        );
+    }
+
+    let recorded = recorded(&calls);
+    assert_eq!(recorded.len(), 4);
+    assert!(matches!(
+        recorded[0],
+        Recorded::SetVolume(value) if (value - 0.35).abs() < f64::EPSILON
+    ));
+    assert_eq!(recorded[1], Recorded::Seek(-12_500_000));
+    assert_eq!(recorded[2], Recorded::SetShuffle(false));
+    assert_eq!(recorded[3], Recorded::SetLoopStatus("Track".to_owned()));
+}
+
+#[test]
+fn music_queue_reads_state_and_dispatches_safe_mutations() {
+    let Some(bus) = PrivateBus::start() else {
+        eprintln!("environment-limited: dbus-daemon unavailable; skipping the MPRIS bus roundtrip");
+        return;
+    };
+    let (_conn, calls) = start_stub_player(&bus);
+
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("reprise.db");
+    let ids = common::seed_tracks(
+        &path,
+        &[
+            SeedTrack::simple("Queue 1", "Artist"),
+            SeedTrack::simple("Queue 2", "Artist"),
+            SeedTrack::simple("Queue 3", "Artist"),
+            SeedTrack::simple("Queue 4", "Artist"),
+        ],
+    );
+    let mut client = McpClient::start_on_bus(&path, &bus);
+
+    let status = client.call_tool("music_queue", json!({ "action": "status" }));
+    let body = structured_ok(&status);
+    assert_eq!(body["current_track_id"], 42);
+    assert_eq!(body["play_next_track_ids"], json!([7, 8]));
+    assert_eq!(body["context_track_ids"], json!([9, 10, 11]));
+    assert_eq!(body["play_next_total"], 2);
+    assert_eq!(body["context_total"], 3);
+
+    for params in [
+        json!({ "action": "add_next", "track_ids": &ids[..2] }),
+        json!({ "action": "add_last", "track_ids": &ids[2..] }),
+        json!({ "action": "clear" }),
+    ] {
+        let response = client.call_tool("music_queue", params);
+        assert!(!tool_success_text(&response).is_empty());
+    }
+
+    assert_eq!(
+        recorded(&calls),
+        vec![
+            Recorded::QueueAddNext(ids[..2].to_vec()),
+            Recorded::QueueAddLast(ids[2..].to_vec()),
+            Recorded::QueueClear,
+        ]
     );
 }

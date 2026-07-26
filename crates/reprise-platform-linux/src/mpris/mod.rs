@@ -92,8 +92,10 @@
 //! `main.rs`, and the rest of the app runs exactly as if this module didn't
 //! exist.
 
+mod control;
 mod state;
 
+use control::RepriseControl;
 use state::{build_metadata, loop_status_to_repeat, repeat_to_loop_status, track_object_path};
 
 use std::borrow::Cow;
@@ -110,7 +112,8 @@ use zbus::{fdo, interface};
 
 use reprise_core::media_integration::{
     can_pause, can_play, can_seek, metadata_differs, micros_to_ms, ms_to_micros, read_state,
-    MediaIntegrationHandles, MprisCommand, MprisState, SharedMprisState,
+    AgentQueueState, MediaIntegrationHandles, MprisCommand, MprisState, SharedAgentQueueState,
+    SharedMprisState,
 };
 
 /// Well-known bus name this app claims — must match the MPRIS spec's
@@ -153,14 +156,25 @@ const FIXED_RATE: f64 = 1.0;
 /// poll loop.
 pub fn start(desktop_entry: &'static str) -> MediaIntegrationHandles {
     let state: SharedMprisState = Arc::new(Mutex::new(MprisState::default()));
+    let queue_state: SharedAgentQueueState = Arc::new(Mutex::new(AgentQueueState::default()));
     let (sender, receiver) = async_channel::unbounded::<MprisCommand>();
     let (seek_sender, seek_receiver) = async_channel::unbounded::<i64>();
 
     let thread_state = state.clone();
-    std::thread::spawn(move || run(&thread_state, sender, seek_receiver, desktop_entry));
+    let thread_queue_state = queue_state.clone();
+    std::thread::spawn(move || {
+        run(
+            &thread_state,
+            thread_queue_state,
+            sender,
+            seek_receiver,
+            desktop_entry,
+        );
+    });
 
     MediaIntegrationHandles {
         shared_state: state,
+        queue_state,
         commands: receiver,
         seek_notify: seek_sender,
     }
@@ -175,6 +189,7 @@ pub fn start(desktop_entry: &'static str) -> MediaIntegrationHandles {
 /// itself — the owning `Arc` stays with `start`'s thread closure.
 fn run(
     state: &SharedMprisState,
+    queue_state: SharedAgentQueueState,
     commands: async_channel::Sender<MprisCommand>,
     seek_receiver: async_channel::Receiver<i64>,
     desktop_entry: &'static str,
@@ -183,7 +198,7 @@ fn run(
         state: state.clone(),
         commands: commands.clone(),
     };
-    let reprise_control = RepriseControl { commands };
+    let reprise_control = RepriseControl::new(commands, queue_state);
 
     let connection = connection::Builder::session()
         .and_then(|builder| builder.name(BUS_NAME))
@@ -700,58 +715,4 @@ impl MprisPlayer {
     /// jumps.
     #[zbus(signal)]
     async fn seeked(emitter: &SignalEmitter<'_>, position: i64) -> zbus::Result<()>;
-}
-
-/// Reprise-specific control surface, served on the same object alongside
-/// MPRIS, for commands MPRIS has no vocabulary for. Today: play an explicit
-/// ordered list of library track ids (a single track = one id; a playlist =
-/// its ids, resolved by the caller). Kept minimal on purpose — the app stays
-/// a dumb command sink; callers own any library resolution.
-struct RepriseControl {
-    commands: async_channel::Sender<MprisCommand>,
-}
-
-#[interface(name = "org.reprise.Player1")]
-impl RepriseControl {
-    /// Seed the queue from `ids` (in order) and start playing. An empty list
-    /// is a no-op (never clears the current queue).
-    ///
-    /// Send idiom matches `MprisPlayer::dispatch` exactly (see its doc
-    /// comment): `MprisCommand` isn't `Copy`, so `try_send` genuinely moves
-    /// `ids` in; on failure `TrySendError::into_inner` hands the never-sent
-    /// value back for the log line instead of cloning it up front.
-    fn play_track_ids(&self, ids: Vec<i64>) {
-        if ids.is_empty() {
-            return;
-        }
-        if let Err(error) = self.commands.try_send(MprisCommand::PlayTrackIds(ids)) {
-            let message = error.to_string();
-            let command = error.into_inner();
-            tracing::warn!(error = %message, ?command, "MPRIS command dropped: controller receiver is gone");
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn reprise_control_play_track_ids_dispatches_the_command() {
-        let (sender, receiver) = async_channel::unbounded::<MprisCommand>();
-        let control = RepriseControl { commands: sender };
-        control.play_track_ids(vec![3, 1, 2]);
-        assert_eq!(
-            receiver.try_recv().unwrap(),
-            MprisCommand::PlayTrackIds(vec![3, 1, 2])
-        );
-    }
-
-    #[test]
-    fn reprise_control_play_track_ids_empty_list_is_a_no_op() {
-        let (sender, receiver) = async_channel::unbounded::<MprisCommand>();
-        let control = RepriseControl { commands: sender };
-        control.play_track_ids(vec![]);
-        assert!(receiver.try_recv().is_err());
-    }
 }
