@@ -10,6 +10,5 @@ option(
   'stem_backend',
   type: 'boolean',
   value: true,
-  description: 'Compile the experimental stem-separation backend (reprise-stems + onnxruntime via runtime load-dynamic; no build-time download). The bare cargo build that scripts/check-architecture.sh probes passes no features and stays core-only — only this meson build opts reprise-gnome into --features stem-backend.',
+  description: 'Build the experimental out-of-process stem worker (reprise-cli worker + onnxruntime via runtime load-dynamic; no build-time download) and enable its GTK client surface.',
 )
-

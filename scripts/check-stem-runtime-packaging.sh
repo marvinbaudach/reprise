@@ -48,6 +48,8 @@ assert "/app/lib/reprise" in commands
 assert "/app/share/licenses/org.reprise.Reprise/onnxruntime" in commands
 PY
 
+rg --quiet 'REPRISE_BUNDLED_ORT_DYLIB' build-aux/meson-cargo-worker-build.sh
+rg --quiet 'REPRISE_BUNDLED_ORT_DYLIB_SHA256' build-aux/meson-cargo-worker-build.sh
 rg --quiet 'REPRISE_BUNDLED_ORT_DYLIB' build-aux/meson-cargo-build.sh
 rg --quiet 'REPRISE_BUNDLED_ORT_DYLIB_SHA256' build-aux/meson-cargo-build.sh
 rg --quiet 'option_env!\("REPRISE_BUNDLED_ORT_DYLIB"\)' \
