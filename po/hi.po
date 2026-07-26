@@ -4303,9 +4303,6 @@ msgstr ""
 #~ msgid "Rhythmbox column layout imported"
 #~ msgstr "Rhythmbox स्तंभ विन्यास आयात हुआ"
 
-#~ msgid "Could not save the imported column layout"
-#~ msgstr "आयातित स्तंभ विन्यास सहेजा नहीं जा सका"
-
 #~ msgid "1 hour"
 #~ msgstr "1 घंटा"
 

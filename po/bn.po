@@ -4304,9 +4304,6 @@ msgstr ""
 #~ msgid "Rhythmbox column layout imported"
 #~ msgstr "Rhythmbox-এর কলাম বিন্যাস আমদানি হয়েছে"
 
-#~ msgid "Could not save the imported column layout"
-#~ msgstr "আমদানি করা কলাম বিন্যাস সংরক্ষণ করা যায়নি"
-
 #~ msgid "Pause"
 #~ msgstr "সাময়িক বিরতি"
 
