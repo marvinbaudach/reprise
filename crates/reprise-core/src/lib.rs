@@ -12,6 +12,7 @@
 //! implementations live in per-OS platform crates (Linux: GStreamer and
 //! MPRIS in `reprise-platform-linux`).
 
+pub mod agent_device_sync;
 pub mod ai_conversion;
 pub mod ai_jobs;
 pub mod ai_promotion;

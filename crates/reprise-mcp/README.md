@@ -23,7 +23,8 @@ running.
 
 ## Build
 
-The playback tools live behind the opt-in `mpris` cargo feature (Linux/D-Bus).
+The playback and device-sync tools live behind the opt-in `mpris` cargo feature
+(Linux/D-Bus).
 Build the release binary with it enabled:
 
 ```sh
@@ -32,7 +33,8 @@ cargo build --locked -p reprise-mcp --release --features mpris
 ```
 
 A plain `cargo build -p reprise-mcp` (no features) stays D-Bus-free and omits
-the playback-state, playback-control, targeted-play, and live-queue tools.
+the playback-state, playback-control, targeted-play, live-queue, and live
+device-sync tools.
 
 Install it somewhere stable, e.g.:
 
@@ -116,6 +118,8 @@ client that launches it must run on the **same machine** as Reprise.
 | `music_set_playback` | `action` plus `volume`, `offset_seconds`, `enabled`, or `repeat` | Set volume, seek, shuffle, or repeat | `playback:control` |
 | `music_play` | exactly one of `track_ids` or `playlist_id` | Play a track list or a whole playlist | `playback:control` |
 | `music_queue` | `action` = `status`\|`add_next`\|`add_last`\|`clear` | Read or safely change the manual Play Next queue | `playback:control` |
+| `music_get_device_sync_state` | none | Read device capacity, managed/selected counts, delta, progress, current title, and bytes/second | read-only |
+| `music_device_sync` | `action` = `configure_playlist`\|`start`\|`cancel`, exact `device_name`, and configuration fields including `bitrate_kbps` | Configure and control synchronization of Reprise-managed files | `device:sync` |
 
 `music_play` resolves a `playlist_id` to its ordered tracks itself, then tells
 the app to play them. Only **present** (non-missing) tracks are playable.
@@ -123,6 +127,12 @@ the app to play them. Only **present** (non-missing) tracks are playable.
 `music_queue` keeps the hidden playback context intact when clearing: `clear`
 removes only manually queued Play Next entries. Queue status returns at most
 200 ids from each section, together with the complete section totals.
+
+`music_device_sync` deliberately separates `configure_playlist` from `start`.
+After configuration, inspect `tracks_to_copy`, `tracks_to_remove`, and
+`bytes_to_copy` with `music_get_device_sync_state` before starting. Removal is
+limited to Reprise's managed inventory under `Music/Reprise`; music outside
+that root is never a deletion target.
 
 `music_manage_podcasts` accepts an RSS feed URL or a YouTube channel/playlist
 URL for `add`. RSS is parsed directly; YouTube is listed through the configured
@@ -171,6 +181,7 @@ Defaults follow "read is safe, writes are opt-in":
 | `agent.capability.playlist:manage` | off | playlist rename + append tracks |
 | `agent.capability.ai:create` | off | `music_create_instrumental` |
 | `agent.capability.sources:manage` | off | podcast/YouTube and radio add/edit/remove/refresh |
+| `agent.capability.device:sync` | off | configure, start, or cancel Android synchronization |
 
 To grant a write capability, set its key to `1` in the library DB, e.g.:
 

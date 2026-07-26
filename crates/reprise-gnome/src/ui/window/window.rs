@@ -43,6 +43,7 @@ const MIN_HEIGHT: i32 = 400;
 
 fn build_player_backends(
     waveform: Arc<dyn WaveformBackend>,
+    media: reprise_core::media_integration::MediaIntegrationHandles,
 ) -> Result<PlayerControllerBackends, PlaybackError> {
     let (sender, playback_events) = async_channel::unbounded::<PlayerEvent>();
     let player = Player::new(Box::new(move |event| {
@@ -54,7 +55,7 @@ fn build_player_backends(
     Ok(PlayerControllerBackends {
         playback: Box::new(player),
         playback_events,
-        media: reprise_platform_linux::mpris::start(crate::APP_ID),
+        media,
         waveform,
     })
 }
@@ -166,16 +167,19 @@ pub fn build(
     let podcasts_runtime = crate::ui::podcasts::PodcastsRuntime::setup(&conn.borrow());
     let artist_portrait =
         super::artist_portrait_worker::ArtistPortraitRuntime::setup(&conn.borrow());
+    let media = reprise_platform_linux::mpris::start(crate::APP_ID);
     let device_sync = super::device_sync_smoke::runtime_from_env(conn).unwrap_or_else(|| {
         super::device_sync_runtime::DeviceSyncRuntime::new(
             conn,
             reprise_platform_linux::device_sync::DeviceMonitor::new(),
         )
     });
+    device_sync
+        .bind_agent_device_sync(&media.device_sync_state, media.device_sync_commands.clone());
     super::device_sync_actions::install(app, &device_sync);
     super::device_sync_smoke::arm(&device_sync);
 
-    let player = match build_player_backends(waveform_backend.clone()) {
+    let player = match build_player_backends(waveform_backend.clone(), media) {
         Ok(backends) => Some(PlayerController::new(
             conn.clone(),
             cover_download.clone(),
