@@ -286,6 +286,9 @@ impl PlayerController {
     /// inside this one `let` statement, so the borrow drops before
     /// `play_track_id`/`reset_to_stopped` run.
     pub(in crate::ui) fn previous(&self) {
+        if self.playback_mode() != super::preview::PlaybackMode::Queue {
+            return;
+        }
         self.previous_with_up_next();
     }
 
@@ -293,6 +296,9 @@ impl PlayerController {
     /// if there is none) — shared by the bar's next button and MPRIS's
     /// `Next` method. Same borrow discipline as `previous`.
     pub(in crate::ui) fn next(&self) {
+        if self.playback_mode() != super::preview::PlaybackMode::Queue {
+            return;
+        }
         self.advance_playback(AdvanceReason::Manual);
     }
 

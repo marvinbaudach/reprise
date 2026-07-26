@@ -2319,7 +2319,7 @@ Hörstatistik.
   Abspielen und nie persistiert. Fehler werden lesbar klassifiziert und
   crashen nie. Fehlt das Binary, bleibt das Setting unverändert und die
   Degradierung wird am standardmäßig aktiven YouTube-Schalter sichtbar.
-- **POD-4** [geplant] [gtk] — Episoden starten an der gespeicherten Position;
+- **POD-4** [aktiv] [gtk] — Episoden starten an der gespeicherten Position;
   diese wird gedrosselt sowie bei Pause, Stop, Wechsel und Beenden
   persistiert. Nach dem Ende bietet die App die nächste ungespielte Episode
   derselben Show nach Datum per Toast und persistentem Player-Bar-Button an,
@@ -2333,7 +2333,7 @@ Hörstatistik.
   wechseln gemeinsam. Alle anderen sowie eine präsentierte, aber getrennte
   pausierte Station zeigen „—". Nur die Player-Bar darf den letzten ICY-Titel
   gedimmt als Session-Gedächtnis behalten.
-- **RAD-2** [geplant] [gtk] — Live-Wiedergabe besitzt weder Seek noch Dauer:
+- **RAD-2** [aktiv] [gtk] — Live-Wiedergabe besitzt weder Seek noch Dauer:
   Player-Bar und Mini-Player zeigen Elapsed und einen geometriegleichen
   Waveform-Platzhalter, MPRIS meldet `CanSeek=false` und keine Länge. Pause
   trennt den Stream, bleibt aber als Paused/CanPause mit Station und

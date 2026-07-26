@@ -36,7 +36,7 @@ impl PlayerController {
     }
 }
 
-fn media_from_episode(episode: &EpisodeRow) -> ExternalMedia {
+pub(super) fn media_from_episode(episode: &EpisodeRow) -> ExternalMedia {
     let source = episode.downloaded_path.clone().map_or_else(
         || EpisodeSource::Url(episode.audio_url.clone()),
         EpisodeSource::File,

@@ -126,6 +126,7 @@ impl ExternalPlaybackState {
     pub(in crate::ui) fn begin_preview(&mut self, path: String) {
         self.session = None;
         self.preview_path = Some(path);
+        self.play_next = None;
         self.bump_generation();
     }
 
