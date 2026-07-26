@@ -114,6 +114,41 @@ network.
 scripts/check-lyrics-smoke.sh
 ```
 
+## Bundled Ticketmaster credential
+
+To bundle a Ticketmaster Discovery API key in a local release, inject it into
+the environment as `REPRISE_TICKETMASTER_APIKEY` before running the release
+build. Meson passes its build environment to Cargo:
+
+```sh
+# Populate REPRISE_TICKETMASTER_APIKEY through a secret manager first.
+export REPRISE_TICKETMASTER_APIKEY
+meson setup target/meson-release . --prefix=/usr -Dprofile=release
+meson compile -C target/meson-release
+unset REPRISE_TICKETMASTER_APIKEY
+```
+
+For a GitHub Actions release build, create an Actions repository secret named
+exactly `REPRISE_TICKETMASTER_APIKEY` and pass it only to the build step:
+
+```yaml
+- name: Build release
+  env:
+    REPRISE_TICKETMASTER_APIKEY: ${{ secrets.REPRISE_TICKETMASTER_APIKEY }}
+  run: meson compile -C target/meson-release
+```
+
+Never print the variable or enable shell tracing around the build. Keeping a
+build credential out of the repository does not make it secret after
+distribution: a bundled key is fundamentally extractable from a published
+binary.
+
+Do not add an Impact wrapper or a separate Impact API key. Ticketmaster
+Discovery event links receive affiliate tracking when the Ticketmaster
+Developer Portal associates the key with an Impact Publisher ID. Before any
+public release, review as a separate product/legal question where a visible
+affiliate disclosure must appear.
+
 ## Build artifacts
 
 Create a clean optimized install tree without writing to `/usr`:

@@ -371,6 +371,11 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   anbieterspezifisch. Mit gebündelten App-Zugangsdaten bietet Last.fm den
   normalen Browser-Login direkt an; eigene API-Zugangsdaten liegen
   eingeklappt unter „Advanced setup".
+- **SET-7** [aktiv] [gtk] — „New Releases" und „Concerts" sind gleichrangige
+  Preferences-Hauptseiten in der vertikalen Navigation. Für diese beiden
+  Features behält die Plugins-Seite nur die Aktivierungsschalter; Scope-,
+  Provider-, Location- und Similar-Optionen stehen ausschließlich auf den
+  jeweiligen Hauptseiten und sind bei deaktiviertem Modul nicht bedienbar.
 
 ## G. Feedback-Vokabular
 
@@ -2251,13 +2256,17 @@ Dateien.
   gibt keinen Play-Pfad.
 - **CONC-4** [ersetzt durch CONC-4a] — Ursprünglicher Zustandsvertrag ohne
   explizite Live-Neubewertung nach Änderungen der Concerts-Einstellungen.
-- **CONC-4a** [aktiv] [gtk] — Ohne Credential zeigt Concerts eine StatusPage
-  mit Preferences-Deep-Link und bietet nirgends „Fetch now" an. Änderungen an
-  Credentials, Location, Default-Radius, Zeitraum und Similar-Einstellungen
-  bewerten die bereits offene View, ihre Sidebar-Zahl und das Updates-Popover
-  sofort neu. Nie gefetcht bietet genau „Fetch now"; null Treffer mit Filtern
-  genau „Show all". Offline oder Fehler lassen Cache und „Updated X ago"
-  sichtbar und melden den Fehler ausschließlich inline im Footer.
+- **CONC-4a** [ersetzt durch CONC-4b] — Ursprünglicher Zustandsvertrag mit
+  Credential-Eingabehinweis und Preferences-Deep-Link.
+- **CONC-4b** [aktiv] [gtk] — Ohne Credential zeigt Concerts neutral „No
+  concert data yet" ohne Aktion; die Concerts-Sektion im Updates-Popover ist
+  nicht sichtbar. Es gibt keinen Credential-Eingabehinweis und keinen
+  Preferences-Deep-Link. Änderungen an Credentials, Location, Default-Radius,
+  Zeitraum und Similar-Einstellungen bewerten die bereits offene View, ihre
+  Sidebar-Zahl und das Updates-Popover sofort neu. Nie gefetcht bietet genau
+  „Fetch now"; null Treffer mit Filtern genau „Show all". Offline oder Fehler
+  lassen Cache und „Updated X ago" sichtbar und melden den Fehler
+  ausschließlich inline im Footer.
 - **CONC-5** [ersetzt durch CONC-5a] — Ursprünglicher Worker-Vertrag mit
   View-Open-Staleness, Due-Check und „Fetch now" als einzigen Netz-Triggern.
 - **CONC-5a** [aktiv] [core] — Netz läuft ausschließlich im Worker oder
@@ -2281,6 +2290,11 @@ Dateien.
   und nicht verifizierbar erscheinen inline; leer setzt den Zustand ohne
   Anfrage zurück. Die Prüfung schreibt Credential-Werte nie in Logs oder
   Fehlermeldungen.
+- **CONC-9** [aktiv] [core] [gtk] — Ticketmaster-Credentials sind in der UI
+  weder sichtbar noch editierbar. Der Core bevorzugt einen gespeicherten
+  Altwert vor der Laufzeitumgebung und dem eingebetteten Build-Wert; leere
+  Werte zählen nicht. Bandsintown bleibt als optionale Credential-Zeile
+  unabhängig davon verfügbar.
 
 ## AF. Podcasts & Radio
 
