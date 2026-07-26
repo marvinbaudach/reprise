@@ -48,3 +48,9 @@ My Stats entrance order follow-up: complete (this commit, base c83e0be239, chain
 Base: `331217f344`
 
 Task P1: complete (this commit, base 331217f344, made stopped Play/Pause seed and start a random present-library snapshot without row activation, kept empty-library and queue navigation sensitivity honest, and activated PLAY-9; full non-display gates passed, while the rule-named display regression compiled but its isolated Xvfb run was blocked by sandbox D-Bus socket permissions)
+
+# Visualizer sync regression
+
+Base: `7d89d9b20c`
+
+Task V1: complete (this commit, base 7d89d9b20c, reserved spectrum headroom and added sustained bass-dominant breakdown pressure so the decoded WAKE UP profile stays near 8–24% before the breakdown and reaches 88–93% on its major hits; workspace 1312 core + 901 GNOME non-display tests passed, 279 display-required GNOME tests were intentionally ignored, and native visual review remains manual)

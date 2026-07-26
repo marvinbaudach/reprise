@@ -79,6 +79,8 @@ pub struct VisualEngine {
     bands_peaks: [f32; SPECTRUM_BAND_COUNT],
     level_current: f32,
     level_target: f32,
+    bass_current: f32,
+    bass_target: f32,
     beat_pulse: f32,
     bars: BarsEnvelope,
     playing: bool,
@@ -101,6 +103,8 @@ impl VisualEngine {
             bands_peaks: [0.0; SPECTRUM_BAND_COUNT],
             level_current: 0.0,
             level_target: 0.0,
+            bass_current: 0.0,
+            bass_target: 0.0,
             beat_pulse: 0.0,
             bars: BarsEnvelope::new(),
             playing: false,
@@ -118,6 +122,7 @@ impl VisualEngine {
         if !playing {
             self.bands_target = NEUTRAL_PROFILE;
             self.level_target = 0.0;
+            self.bass_target = 0.0;
         }
     }
 
@@ -140,6 +145,8 @@ impl VisualEngine {
     /// motion from the previous track does not bleed in.
     pub fn note_track_changed(&mut self) {
         self.bands_peaks = [0.0; SPECTRUM_BAND_COUNT];
+        self.bass_current = 0.0;
+        self.bass_target = 0.0;
         self.beat_pulse = 0.0;
         self.bars.reset();
         self.impact = ImpactState::new();
@@ -150,6 +157,7 @@ impl VisualEngine {
     pub fn ingest(&mut self, frame: &SpectrumFrame) {
         self.bands_target = *frame.bands();
         self.level_target = frame.level();
+        self.bass_target = frame.bass();
         let beat = frame.beat();
         if beat.fired {
             self.beat_pulse = self.beat_pulse.max(beat.strength);
@@ -191,8 +199,22 @@ impl VisualEngine {
         self.level_current += level_delta * level_coeff;
         let level_settled = (self.level_target - self.level_current).abs() < SETTLE_EPSILON;
 
+        let bass_delta = self.bass_target - self.bass_current;
+        let bass_coeff = if bass_delta > 0.0 {
+            SCALAR_ATTACK
+        } else {
+            SCALAR_RELEASE
+        };
+        self.bass_current += bass_delta * bass_coeff;
+        let bass_settled = (self.bass_target - self.bass_current).abs() < SETTLE_EPSILON;
+
         self.impact.advance();
-        let bars_settled = self.bars.advance(&self.bands_current, self.beat_pulse);
+        let bars_settled = self.bars.advance(
+            &self.bands_current,
+            self.beat_pulse,
+            self.bass_current,
+            self.level_current,
+        );
         self.beat_pulse *= BEAT_PULSE_DECAY;
         if self.beat_pulse < SETTLE_EPSILON {
             self.beat_pulse = 0.0;
@@ -201,6 +223,7 @@ impl VisualEngine {
         bands_settled
             && peaks_settled
             && level_settled
+            && bass_settled
             && bars_settled
             && self.beat_pulse == 0.0
             && self.impact.is_idle()
@@ -213,8 +236,14 @@ impl VisualEngine {
         self.bands_current = self.bands_target;
         self.bands_peaks = self.bands_current;
         self.level_current = self.level_target;
+        self.bass_current = self.bass_target;
         self.beat_pulse = 0.0;
-        self.bars.snap(&self.bands_current, self.beat_pulse);
+        self.bars.snap(
+            &self.bands_current,
+            self.beat_pulse,
+            self.bass_current,
+            self.level_current,
+        );
         self.impact = ImpactState::new();
     }
 
@@ -507,6 +536,55 @@ mod tests {
         assert!(
             loud > light * 2.5,
             "the captured bass hit must dominate the light rhythm: light={light}, loud={loud}"
+        );
+    }
+
+    #[test]
+    fn ac_20_wake_up_breakdown_energy_keeps_bars_near_full_between_onsets() {
+        use crate::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
+
+        let mut analyzer = SpectrumAnalyzer::new();
+        let mut engine = VisualEngine::new();
+        engine.set_playing(true);
+
+        // Captured envelope shape from "WAKE UP": a compressed metal bed sits
+        // around bass=0.46/level=0.30, while the breakdown reaches roughly
+        // bass=0.75/level=0.52. The broad values keep this fixture independent
+        // of one exceptional onset; sustained bass pressure must remain visible
+        // after the first beat pulse has decayed.
+        let mut metal_bed = [-56.0; SPECTRUM_ANALYSIS_BAND_COUNT];
+        metal_bed[..8].fill(-43.2);
+        for _ in 0..120 {
+            engine.ingest(&analyzer.ingest(metal_bed));
+            engine.tick();
+        }
+        let bed_average =
+            engine.bars.values().iter().sum::<f32>() / engine.bars.values().len() as f32;
+
+        let mut breakdown = [-38.4; SPECTRUM_ANALYSIS_BAND_COUNT];
+        breakdown[..8].fill(-19.7);
+        let mut last_frame = analyzer.ingest(breakdown);
+        engine.ingest(&last_frame);
+        engine.tick();
+        for _ in 0..120 {
+            last_frame = analyzer.ingest(breakdown);
+            engine.ingest(&last_frame);
+            engine.tick();
+        }
+        let breakdown_average =
+            engine.bars.values().iter().sum::<f32>() / engine.bars.values().len() as f32;
+
+        assert!(
+            !last_frame.beat().fired,
+            "the sustained fixture must verify breakdown energy, not a fresh onset"
+        );
+        assert!(
+            bed_average < 0.60,
+            "ordinary compressed metal must preserve visible headroom, average={bed_average}"
+        );
+        assert!(
+            breakdown_average > 0.82,
+            "sustained Wake Up breakdown energy must keep Bars near full height, average={breakdown_average}"
         );
     }
 

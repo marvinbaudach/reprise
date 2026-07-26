@@ -1683,8 +1683,14 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
   dritte Panel-Tab „Visual" ausschließlich lokal berechnete, aus 256 FFT-Bins
   auf 64 logarithmische Anzeigebänder gefaltete und auf den Bereich 0–1
   begrenzte Spektraldaten als „Bars": zwanzig fein segmentierte,
-  frequenzabhängige Säulen, die auf den lokalen Beat-Impuls reagieren.
+  frequenzabhängige Säulen, die auf den lokalen Beat-Impuls und anhaltenden,
+  bassdominanten Energiedruck reagieren.
   Eine Modusauswahl und „Grid" existieren nicht.
+  Das reine Frequenzbild reserviert das obere Drittel der Säulen für echte
+  Beat- und Breakdown-Energie. Anhaltender Druck darf diesen Höhenraum nur
+  nutzen, wenn Basspräsenz, Gesamtenergie und der Bassvorsprung gegenüber der
+  Gesamtenergie gleichzeitig hoch sind; ein gewöhnliches komprimiertes
+  Metal-Bett bleibt darunter.
   Neue Bars-Segmente blenden nahe vollständig transparent ein, starke Impulse
   nutzen nur den verbleibenden Höhenraum statt Säulen hart zu sättigen, und
   steigen im ersten 60-Hz-Schritt höchstens um drei volle Segmente. Beim
@@ -1700,12 +1706,14 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
   Säulendurchschnitt um mehr als 0,36 und mindestens 75 Prozent stärker als
   derselbe moderate Rhythmus. Der aus „WAKE UP" erfasste große Bass-Schlag hebt
   ihn um mehr als 0,45 und mindestens 150 Prozent stärker als der erfasste
-  leichte Rhythmus. Bei knapper Panelhöhe bleibt der Visual-Inhalt unter dem
-  Tab-Switcher und scrollt innerhalb seines Tabs, statt den Switcher zu
-  überlagern. Flow, Pulse und weitere Modi existieren nicht. Der beschriftete
-  Canvas übernimmt den aktuellen Cover-Akzent über denselben globalen
-  Ambient-Crossfade wie die Playerleiste; nur ohne brauchbare Coverfarbe gilt
-  der Theme-Akzent.
+  leichte Rhythmus. Im dekodierten „WAKE UP"-Profil bleibt der Abschnitt vor
+  dem Breakdown überwiegend bei etwa 8–24 Prozent sichtbarer Höhe; die
+  Bassschläge ab ungefähr 17,25 Sekunden erreichen etwa 88–93 Prozent.
+  Bei knapper Panelhöhe bleibt der Visual-Inhalt unter dem Tab-Switcher und
+  scrollt innerhalb seines Tabs, statt den Switcher zu überlagern. Flow, Pulse
+  und weitere Modi existieren nicht. Der beschriftete Canvas übernimmt den
+  aktuellen Cover-Akzent über denselben globalen Ambient-Crossfade wie die
+  Playerleiste; nur ohne brauchbare Coverfarbe gilt der Theme-Akzent.
 
 
 ## Y. Library Doctor / Tag Cleanup
