@@ -72,6 +72,8 @@ meson compile -C "$tmp_root/build"
 DESTDIR="$tmp_root/root" meson install -C "$tmp_root/build"
 test -x "$tmp_root/root/usr/bin/reprise"
 test -x "$tmp_root/root/usr/libexec/reprise-worker"
+scripts/check-packaged-instrumental-e2e.sh \
+  "$tmp_root/root/usr/libexec/reprise-worker"
 test -f "$tmp_root/root/usr/share/applications/org.reprise.Reprise.desktop"
 test -f "$tmp_root/root/usr/share/metainfo/org.reprise.Reprise.metainfo.xml"
 test -f "$tmp_root/root/usr/share/icons/hicolor/scalable/apps/org.reprise.Reprise.svg"

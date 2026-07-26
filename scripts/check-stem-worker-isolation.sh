@@ -19,6 +19,7 @@ rg --quiet "install_dir: get_option\\('libexecdir'\\)" meson.build
 rg --quiet 'reprise-cli.*--features worker|--features worker.*reprise-cli' \
   build-aux/meson-cargo-worker-build.sh
 rg --quiet 'REPRISE_INSTRUMENTAL_WORKER' build-aux/meson-cargo-build.sh
+rg --quiet 'check-packaged-instrumental-e2e.sh' scripts/check-release.sh
 
 # No backend implementation or render loop may remain in the GTK host.
 rg --quiet 'use std::process.*Command' \
