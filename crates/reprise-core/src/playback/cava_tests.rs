@@ -46,3 +46,41 @@ fn odd_sample_rate_preserves_cavas_fractional_nyquist_cutoffs() {
         );
     }
 }
+
+#[test]
+fn pcm_sines_land_in_the_same_bands_as_cavas_standalone_test() {
+    let mut bass = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
+    let mut mids = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
+    let mut bass_bars = Vec::new();
+    let mut mid_bars = Vec::new();
+
+    for chunk in 0..20 {
+        bass_bars = bass.process(&sine_chunk(200.0, chunk));
+        mid_bars = mids.process(&sine_chunk(2_000.0, chunk));
+    }
+
+    assert_eq!(peak_index(&bass_bars), 2);
+    assert_eq!(peak_index(&mid_bars), 6);
+    assert!(bass_bars[2] > bass_bars[1] * 20.0);
+    assert!(mid_bars[6] > mid_bars[5] * 20.0);
+}
+
+fn sine_chunk(frequency_hz: f32, chunk: usize) -> Vec<f32> {
+    const CHUNK_SIZE: usize = 512;
+    (0..CHUNK_SIZE)
+        .map(|sample| {
+            let absolute_sample = chunk * CHUNK_SIZE + sample;
+            (std::f32::consts::TAU * frequency_hz * absolute_sample as f32 / 44_100.0).sin()
+                * (20_000.0 / 65_535.0)
+        })
+        .collect()
+}
+
+fn peak_index(values: &[f32]) -> usize {
+    values
+        .iter()
+        .enumerate()
+        .max_by(|(_, left), (_, right)| left.total_cmp(right))
+        .map(|(index, _)| index)
+        .unwrap()
+}
