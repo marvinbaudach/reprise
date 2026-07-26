@@ -48,3 +48,10 @@ My Stats entrance order follow-up: complete (this commit, base c83e0be239, chain
 Base: `331217f344`
 
 Task P1: complete (this commit, base 331217f344, made stopped Play/Pause seed and start a random present-library snapshot without row activation, kept empty-library and queue navigation sensitivity honest, and activated PLAY-9; full non-display gates passed, while the rule-named display regression compiled but its isolated Xvfb run was blocked by sandbox D-Bus socket permissions)
+
+# Concerts credential feedback follow-up
+
+Base: `e38791b251`
+
+Gate repair: complete (commit 47d26b1c1c, base e38791b251, split the MCP data unit tests into a sibling module so the architecture file-size gate passes)
+Point 1: complete (this commit, base 47d26b1c1c, propagated Concerts settings changes live to the view, sidebar and Updates popover, hid credential-ineligible fetch actions, and made 1000 km the default with 100/250/500/1000 km presets; all non-display gates passed, while the rule-named display regression compiled but its isolated Xvfb run was blocked by sandbox D-Bus socket permissions)

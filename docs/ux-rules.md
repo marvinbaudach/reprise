@@ -2249,11 +2249,15 @@ Dateien.
   Ticket-Zelle öffnen dasselbe externe Ziel: Offer-URL, sonst Event-Seite.
   Ohne beides ist die Zelle leer und Aktivierung ein No-op mit Tooltip. Es
   gibt keinen Play-Pfad.
-- **CONC-4** [aktiv] [gtk] — Ohne Credential zeigt Concerts eine
-  StatusPage mit Preferences-Deep-Link und startet keinen Fetch. Nie
-  gefetcht bietet genau „Fetch now"; null Treffer mit Filtern genau „Show
-  all". Offline oder Fehler lassen Cache und „Updated X ago" sichtbar und
-  melden den Fehler ausschließlich inline im Footer.
+- **CONC-4** [ersetzt durch CONC-4a] — Ursprünglicher Zustandsvertrag ohne
+  explizite Live-Neubewertung nach Änderungen der Concerts-Einstellungen.
+- **CONC-4a** [aktiv] [gtk] — Ohne Credential zeigt Concerts eine StatusPage
+  mit Preferences-Deep-Link und bietet nirgends „Fetch now" an. Änderungen an
+  Credentials, Location, Default-Radius, Zeitraum und Similar-Einstellungen
+  bewerten die bereits offene View, ihre Sidebar-Zahl und das Updates-Popover
+  sofort neu. Nie gefetcht bietet genau „Fetch now"; null Treffer mit Filtern
+  genau „Show all". Offline oder Fehler lassen Cache und „Updated X ago"
+  sichtbar und melden den Fehler ausschließlich inline im Footer.
 - **CONC-5** [aktiv] [core] — Netz läuft ausschließlich im Worker. Trigger
   sind View-Open-Staleness (24 h plus Jitter), der stündliche Due-Check und
   „Fetch now". Track-Wechsel und Navigation lesen nur Cache; Ergebnisse
