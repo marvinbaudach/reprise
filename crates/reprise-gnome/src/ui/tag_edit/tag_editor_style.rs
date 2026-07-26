@@ -29,19 +29,26 @@ pub(in crate::ui) fn css() -> String {
            color: @accent_color; \
            font-size: 12px; }}\n\
          \
-         /* --- Autocomplete popover. Keep the outer node transparent so only \
-            the compact contents surface is painted below the active field. --- */
+         /* --- Autocomplete popover. Its complete contents node is the only \
+            background owner; every GTK view layer inside stays transparent. --- */
          .reprise-autocomplete-popover {{ \
            background: transparent; \
            border: none; \
            box-shadow: none; \
            padding: 0; }}\n\
          .reprise-autocomplete-popover > contents {{ \
-            background: @popover_bg_color; \
-            border: 1px solid alpha(@window_fg_color, {SURFACE_BORDER_ALPHA}); \
-            border-radius: 10px; \
-            box-shadow: {SURFACE_SHADOW}; \
-            padding: 0; }}\n\
+           background: @popover_bg_color; \
+           border: 1px solid alpha(@window_fg_color, {SURFACE_BORDER_ALPHA}); \
+           border-radius: 10px; \
+           box-shadow: {SURFACE_SHADOW}; \
+           padding: 0; }}\n\
+         .reprise-autocomplete-menu {{ \
+           background: transparent; \
+           border-radius: 10px; }}\n\
+         .reprise-autocomplete-scroller {{ \
+           background: transparent; }}\n\
+         .reprise-autocomplete-scroller > viewport {{ \
+           background: transparent; }}\n\
          .reprise-autocomplete-list {{ \
            background: transparent; }}\n\
          .reprise-autocomplete-list row {{ \
@@ -236,6 +243,15 @@ pub(in crate::ui) fn css() -> String {
 
 #[cfg(test)]
 mod tests {
+    fn css_rule<'a>(css: &'a str, selector: &str) -> &'a str {
+        css.split_once(&format!("{selector} {{"))
+            .and_then(|(_, rest)| rest.split_once('}'))
+            .map_or_else(
+                || panic!("missing CSS rule for {selector}"),
+                |(rule, _)| rule,
+            )
+    }
+
     #[test]
     fn css_defines_tag_editor_styles() {
         let css = super::css();
@@ -272,6 +288,24 @@ mod tests {
             list_rule.contains("background: transparent;"),
             "the list must not paint a near-black view layer over @popover_bg_color"
         );
+    }
+
+    #[test]
+    fn autocomplete_surface_has_one_background_owner() {
+        let css = super::css();
+        assert!(css_rule(&css, ".reprise-autocomplete-popover > contents")
+            .contains("background: @popover_bg_color;"));
+        for transparent_layer in [
+            ".reprise-autocomplete-menu",
+            ".reprise-autocomplete-scroller",
+            ".reprise-autocomplete-scroller > viewport",
+            ".reprise-autocomplete-list",
+        ] {
+            assert!(
+                css_rule(&css, transparent_layer).contains("background: transparent;"),
+                "{transparent_layer} must reveal the complete popover surface"
+            );
+        }
     }
 
     #[test]
