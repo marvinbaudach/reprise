@@ -94,6 +94,7 @@ pub struct PlayerBar {
     duration_ms: Rc<Cell<i64>>,
     playback_state: Cell<PlaybackState>,
     queue_has_tracks: Cell<bool>,
+    library_has_tracks: Cell<bool>,
     /// True for the duration of `set_shuffle_indicator`'s `set_active`
     /// call, so `connect_shuffle_toggled`'s handler can tell a programmatic
     /// set (MPRIS `Shuffle` write) apart from a real user click. See the
@@ -231,6 +232,7 @@ impl PlayerBar {
             duration_ms: Rc::new(Cell::new(0)),
             playback_state: Cell::new(PlaybackState::Stopped),
             queue_has_tracks: Cell::new(false),
+            library_has_tracks: Cell::new(false),
             updating_shuffle: Rc::new(Cell::new(false)),
             updating_volume: Rc::new(Cell::new(false)),
             muted: Cell::new(false),
@@ -686,26 +688,29 @@ impl PlayerBar {
         self.repeat_button.connect_clicked(move |_| f());
     }
 
-    /// Updates queue-dependent controls and the stopped bar's resumability.
+    /// Updates transport-dependent controls and the stopped bar's reachability.
     /// Previous/next remain insensitive without a current queue position;
-    /// Play remains usable while stopped when a queue can be resumed.
-    pub fn set_transport_enabled(&self, enabled: bool) {
-        self.queue_has_tracks.set(enabled);
-        self.prev_button.set_sensitive(enabled);
-        self.next_button.set_sensitive(enabled);
+    /// Play remains usable when either a queue can resume or the library can
+    /// seed a random snapshot.
+    pub fn set_transport_enabled(&self, queue_has_tracks: bool, library_has_tracks: bool) {
+        self.queue_has_tracks.set(queue_has_tracks);
+        self.library_has_tracks.set(library_has_tracks);
+        self.prev_button.set_sensitive(queue_has_tracks);
+        self.next_button.set_sensitive(queue_has_tracks);
         self.refresh_sensitivity();
     }
 
     fn refresh_sensitivity(&self) {
         let state = self.playback_state.get();
         let queue_has_tracks = self.queue_has_tracks.get();
-        self.root
-            .set_sensitive(super::player_bar_state::bar_should_be_sensitive(
-                state,
-                queue_has_tracks,
-            ));
-        self.play_pause_button
-            .set_sensitive(state != PlaybackState::Stopped || queue_has_tracks);
+        let library_has_tracks = self.library_has_tracks.get();
+        let playback_available = super::player_bar_state::bar_should_be_sensitive(
+            state,
+            queue_has_tracks,
+            library_has_tracks,
+        );
+        self.root.set_sensitive(playback_available);
+        self.play_pause_button.set_sensitive(playback_available);
         self.waveform
             .widget()
             .set_sensitive(state != PlaybackState::Stopped);

@@ -7,7 +7,9 @@ use libadwaita as adw;
 use libadwaita::prelude::AnimationExt;
 
 use super::{centered_scroll_value, LyricsView};
-use crate::ui::lyrics::lyrics_scroll::{content_margins, PauseHandle, USER_PAUSE_MS};
+use crate::ui::lyrics::lyrics_scroll::{
+    content_margins, PauseHandle, StableScrollTarget, USER_PAUSE_MS,
+};
 
 impl LyricsView {
     pub(super) fn wire_scroll_input(self: &Rc<Self>) {
@@ -118,37 +120,53 @@ impl LyricsView {
         if !self.scroll_state.borrow().should_follow_active_line() {
             return;
         }
+        self.cancel_scroll_animation();
+        let generation = self.scroll_animation_generation.get();
         let label = label.clone();
         let view = Rc::downgrade(self);
         gtk4::glib::idle_add_local_once(move || {
             let Some(view) = view.upgrade() else {
                 return;
             };
-            if !view.scroll_state.borrow().should_follow_active_line() {
+            if view.scroll_animation_generation.get() != generation
+                || !view.scroll_state.borrow().should_follow_active_line()
+            {
                 return;
             }
             let row_height = label.parent().map_or(label.height(), |row| row.height());
             let (top, bottom) = content_margins(view.scrolled.height(), row_height);
             view.content.set_margin_top(top);
             view.content.set_margin_bottom(bottom);
+            let stable_target = StableScrollTarget::default();
+            let scrolled = view.scrolled.clone();
             let view = Rc::downgrade(&view);
-            gtk4::glib::idle_add_local_once(move || {
-                if let Some(view) = view.upgrade() {
-                    if view.scroll_state.borrow().should_follow_active_line() {
-                        view.begin_center_scroll(&label, animated);
-                    }
+            scrolled.add_tick_callback(move |_, _| {
+                let Some(view) = view.upgrade() else {
+                    return gtk4::glib::ControlFlow::Break;
+                };
+                if view.scroll_animation_generation.get() != generation
+                    || !view.scroll_state.borrow().should_follow_active_line()
+                {
+                    return gtk4::glib::ControlFlow::Break;
                 }
+                let Some(target) = view.center_scroll_target(&label) else {
+                    return gtk4::glib::ControlFlow::Continue;
+                };
+                let Some(target) = stable_target.observe(target) else {
+                    return gtk4::glib::ControlFlow::Continue;
+                };
+                view.begin_center_scroll(target, animated, generation);
+                gtk4::glib::ControlFlow::Break
             });
         });
     }
 
-    fn begin_center_scroll(self: &Rc<Self>, label: &gtk4::Label, animated: bool) {
-        let adjustment = self.scrolled.vadjustment();
-        let Some(target) = self.center_scroll_target(label) else {
+    fn begin_center_scroll(self: &Rc<Self>, target: f64, animated: bool, generation: u64) {
+        if self.scroll_animation_generation.get() != generation {
             return;
-        };
+        }
+        let adjustment = self.scrolled.vadjustment();
         if !animated || !crate::ui::motion::animations_enabled() {
-            self.cancel_scroll_animation();
             adjustment.set_value(target);
             self.scroll_state.borrow_mut().return_finished();
             return;
@@ -158,9 +176,6 @@ impl LyricsView {
             return;
         }
 
-        self.cancel_scroll_animation();
-        let generation = self.scroll_animation_generation.get().wrapping_add(1);
-        self.scroll_animation_generation.set(generation);
         let animation_target = adw::CallbackAnimationTarget::new({
             let adjustment = adjustment.clone();
             move |value| adjustment.set_value(value)
@@ -173,19 +188,12 @@ impl LyricsView {
             animation_target,
         );
         let view = Rc::downgrade(self);
-        let label = label.clone();
         animation.connect_done(move |_| {
             let Some(view) = view.upgrade() else {
                 return;
             };
             if view.scroll_animation_generation.get() != generation {
                 return;
-            }
-            // Margins can finish allocating while the animation is running.
-            // Recompute once at completion so the last line reaches the final
-            // clamp instead of stopping at an obsolete maximum.
-            if let Some(target) = view.center_scroll_target(&label) {
-                view.scrolled.vadjustment().set_value(target);
             }
             view.scroll_animation.borrow_mut().take();
             view.scroll_state.borrow_mut().return_finished();

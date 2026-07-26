@@ -19,18 +19,6 @@ pub enum Geom {
         points: Vec<(f32, f32)>,
         closed: bool,
     },
-    Arc {
-        cx: f32,
-        cy: f32,
-        r: f32,
-        a0: f32,
-        a1: f32,
-    },
-    Disc {
-        cx: f32,
-        cy: f32,
-        r: f32,
-    },
     Rect {
         x: f32,
         y: f32,
@@ -49,7 +37,7 @@ pub enum Geom {
 pub struct Shape {
     pub geom: Geom,
     pub fill: Fill,
-    /// Stroke width; 0.0 = filled (Disc/Rect/RadialGlow always filled).
+    /// Stroke width; 0.0 = filled (Rect/RadialGlow are always filled).
     pub width: f32,
     /// 0..=1: renderers fake bloom (wide translucent under-stroke ×3 width).
     pub glow: f32,
@@ -103,29 +91,11 @@ impl Scene {
                         }
                     }
                 }
-                Geom::Arc { cx, cy, r, a0, a1 } => {
-                    if !cx.is_finite()
-                        || !cy.is_finite()
-                        || !r.is_finite()
-                        || !a0.is_finite()
-                        || !a1.is_finite()
-                    {
-                        return false;
-                    }
-                    if cx.abs() > bound || cy.abs() > bound || r.abs() > bound {
-                        return false;
-                    }
-                }
-                Geom::Disc { cx, cy, r } => {
-                    if !cx.is_finite() || !cy.is_finite() || !r.is_finite() {
-                        return false;
-                    }
-                    if cx.abs() > bound || cy.abs() > bound || r.abs() > bound {
-                        return false;
-                    }
-                }
                 Geom::Rect { x, y, w, h } => {
                     if !x.is_finite() || !y.is_finite() || !w.is_finite() || !h.is_finite() {
+                        return false;
+                    }
+                    if *w < 0.0 || *h < 0.0 {
                         return false;
                     }
                     if x.abs() > bound || y.abs() > bound || w.abs() > bound || h.abs() > bound {
@@ -154,7 +124,7 @@ mod tests {
     #[test]
     fn sanity_accepts_bounded_and_rejects_nan() {
         let ok = Shape {
-            geom: Geom::Disc {
+            geom: Geom::RadialGlow {
                 cx: 10.0,
                 cy: 10.0,
                 r: 3.0,
@@ -174,11 +144,33 @@ mod tests {
         }
         .is_finite_and_sane(100.0, 100.0));
         let mut bad = ok;
-        bad.geom = Geom::Disc {
+        bad.geom = Geom::RadialGlow {
             cx: f32::NAN,
             cy: 10.0,
             r: 3.0,
         };
         assert!(!Scene { shapes: vec![bad] }.is_finite_and_sane(100.0, 100.0));
+
+        let negative_rect = Shape {
+            geom: Geom::Rect {
+                x: 10.0,
+                y: 10.0,
+                w: -3.0,
+                h: 4.0,
+            },
+            fill: Fill::Solid(Rgba {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: 0.5,
+            }),
+            width: 0.0,
+            glow: 0.0,
+            dash: None,
+        };
+        assert!(!Scene {
+            shapes: vec![negative_rect]
+        }
+        .is_finite_and_sane(100.0, 100.0));
     }
 }

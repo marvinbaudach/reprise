@@ -61,9 +61,13 @@ fn stopped_toggle_starts_current_queue_track_without_autoplay() {
         toggle_action(MprisPlaybackStatus::Stopped, None, true),
         ToggleAction::StartPending
     );
+}
+
+#[test]
+fn play_9_stopped_empty_queue_requests_random_library_start() {
     assert_eq!(
         toggle_action(MprisPlaybackStatus::Stopped, None, false),
-        ToggleAction::Noop
+        ToggleAction::StartRandom
     );
 }
 

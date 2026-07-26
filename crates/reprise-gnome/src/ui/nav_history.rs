@@ -2,7 +2,7 @@
 //!
 //! GTK routing still speaks in `NavPlace` while the browser migration is in
 //! progress, but all current-place and Back/Forward state lives in
-//! [`BrowserNavigation`]. Album and artist destinations are ordinary scoped
+//! [`BrowserNavigation`]. Album, artist, and genre destinations are ordinary scoped
 //! track places; there is no parallel library-tab history.
 
 use std::cell::{Cell, RefCell};
@@ -157,6 +157,11 @@ fn intent_for(place: &BrowserPlace) -> NavigationIntent {
             ) => NavigationIntent::OpenArtist {
                 artist: ArtistKey::new(&key.artist),
                 anchor_track_id: None,
+            },
+            reprise_core::browser::TrackCollection::Library(
+                reprise_core::browser::LibraryScope::Genre(genre),
+            ) => NavigationIntent::OpenGenre {
+                genre: genre.clone(),
             },
             reprise_core::browser::TrackCollection::Playlist(id) => {
                 NavigationIntent::Sidebar(SidebarTarget::Playlist(*id))

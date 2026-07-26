@@ -164,11 +164,11 @@ pub use library_views::{
 };
 pub use maintenance::{
     exclude_tracks_matching_paths, filter_present, mark_track_missing_if_current, purge_tombstones,
-    query_import_error_count, query_live_track_ids, query_live_track_paths,
-    query_queue_purge_track_ids, query_queue_retained_track_ids, query_sync_tracks,
-    query_track_album_artist, query_track_ids_by_title_desc, query_track_ids_by_titles,
-    query_track_summary, remove_missing_tracks, remove_tracks_matching_paths, tombstone_tracks,
-    track_id_for_path, undo_tombstone,
+    query_has_live_tracks, query_import_error_count, query_live_track_ids, query_live_track_paths,
+    query_queue_purge_track_ids, query_queue_retained_track_ids, query_random_live_track_ids,
+    query_sync_tracks, query_track_album_artist, query_track_ids_by_title_desc,
+    query_track_ids_by_titles, query_track_summary, remove_missing_tracks,
+    remove_tracks_matching_paths, tombstone_tracks, track_id_for_path, undo_tombstone,
 };
 // `remove_tracks_impl`/`RemoveGuard` are the internal shared deletion path
 // `remove_missing_tracks`/`purge_tombstones`/`remove_tracks_matching_paths` all funnel
@@ -317,6 +317,12 @@ pub fn query_track_window_browsed_ai(
         ViewSource::Artist(artist) => library_views::query_artist_track_window(
             conn, artist, sort_field, sort_dir, filter, browse, offset, limit, project_ai,
         ),
+        ViewSource::Genre(genre) => {
+            let browse = genre_browse(genre, browse);
+            library::query_track_window_library(
+                conn, sort_field, sort_dir, filter, offset, limit, &browse, exclude_ai, project_ai,
+            )
+        }
         ViewSource::ImportErrors
         | ViewSource::MyStats
         | ViewSource::Releases
@@ -369,6 +375,9 @@ pub fn query_track_count_browsed(
         ViewSource::Artist(artist) => {
             library_views::query_artist_track_count(conn, artist, filter, browse)
         }
+        ViewSource::Genre(genre) => {
+            library::query_track_count_library(conn, filter, &genre_browse(genre, browse))
+        }
         ViewSource::ImportErrors
         | ViewSource::MyStats
         | ViewSource::Releases
@@ -412,6 +421,12 @@ pub fn query_track_count_browsed_ai(
         ViewSource::Library => {
             library::query_track_count_library_ai(conn, filter, browse, exclude_ai)
         }
+        ViewSource::Genre(genre) => library::query_track_count_library_ai(
+            conn,
+            filter,
+            &genre_browse(genre, browse),
+            exclude_ai,
+        ),
         _ => query_track_count_browsed(conn, source, filter, browse, queue_ids),
     }
 }
@@ -519,6 +534,22 @@ pub fn query_track_ids_browsed_ai(
         ViewSource::Artist(artist) => library_views::query_artist_track_ids(
             conn, artist, sort_field, sort_dir, filter, browse,
         ),
+        ViewSource::Genre(genre) => {
+            let browse = genre_browse(genre, browse);
+            let has_filter = !filter.trim().is_empty();
+            let sql = build_track_ids_query_browsed(
+                sort_field, sort_dir, has_filter, &browse, exclude_ai,
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let mut params = Vec::new();
+            if has_filter {
+                params.push(Value::Text(like_pattern(filter.trim())));
+            }
+            let (_, browse_values) = browse::browse_clause(&browse, params.len() + 1);
+            params.extend(browse_values.into_iter().map(Value::Text));
+            let rows = stmt.query_map(rusqlite::params_from_iter(params), row_to_id)?;
+            rows.collect()
+        }
         ViewSource::ImportErrors
         | ViewSource::MyStats
         | ViewSource::Releases
@@ -526,6 +557,12 @@ pub fn query_track_ids_browsed_ai(
         | ViewSource::Conversions
         | ViewSource::Device { .. } => Ok(Vec::new()),
     }
+}
+
+fn genre_browse(genre: &str, browse: &BrowseFilter) -> BrowseFilter {
+    let mut scoped = browse.clone();
+    scoped.genre = Some(genre.trim().to_owned());
+    scoped
 }
 
 /// Returns the ids represented by the current visible view. This differs
@@ -645,6 +682,8 @@ pub fn query_library_stats_browsed(
 mod tests;
 #[cfg(test)]
 mod tests_auto_clean;
+#[cfg(test)]
+mod tests_genre_scope;
 #[cfg(test)]
 mod tests_import_errors;
 #[cfg(test)]

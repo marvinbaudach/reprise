@@ -228,6 +228,12 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   selbst ein Verfeinern auf null Treffer verändern weder Snapshot noch laufenden
   Track. Nach dem letzten Track endet die Wiedergabe bei Repeat Off, sofern
   nicht ein expliziter Up-Next-Eintrag folgt; Löschhygiene regeln PLAY-5a/5b.
+- **PLAY-9** [aktiv] [gtk] — Play/Pause startet bei gestoppter Wiedergabe ohne
+  geladenen Titel, Queue-Snapshot oder „Play Next" sofort einen zufällig
+  gewählten vorhandenen Bibliothekstitel. Dafür entsteht ein unveränderlicher
+  Snapshot aus allen vorhandenen Bibliothekstiteln in zufälliger Reihenfolge;
+  Missing- und gelöschte Titel sind ausgeschlossen. Bei leerer Bibliothek
+  bleibt Play/Pause deaktiviert und die Wiedergabe gestoppt.
 
 ## D. Albums- & Artists-Ansicht
 
@@ -293,8 +299,8 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **ART-2** [geplant] [gtk] — Artist-Detail: Hero-Glow (vorberechnete
   Textur, 250 ms Crossfade beim Wechsel), Alben-Reihe (Hover wie ALB-1), Top
   Tracks (Doppelklick spielt gemäß PLAY-2 im Kontext „Top Tracks"). „Show all
-  N tracks ›" → Tracks-Modus mit gesetztem Artist-Filter-Chip (sichtbar, per
-  × entfernbar).
+  N tracks ›" → Tracks-Modus im Artist-Scope; dessen sichtbarer und per ×
+  entfernbarer Scope-Chip ist bereits durch FIL-1c aktiv.
 - **FX-1** [geplant] [manuell] — Alle Effekte respektieren
   `gtk-enable-animations=false` (harte Schaltung) und laufen nur GPU-billig
   (Opacity/Transform, vorgerenderte Glows). Keine Live-Blurs in Listen.
@@ -510,6 +516,15 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   wirkt dort bereits (Grid-Filterung); dieselbe Chip-Zeile inkl. Zählung und
   „Clear all" folgt dort nach dem Muster von FIL-1a/FIL-2. Bis dahin ist die
   Lücke hier benannt statt still gebrochen.
+- **FIL-1c** [aktiv] [gtk] — Artist-, Album- und Genre-Scopes der Track-Liste tragen
+  in der Filter-Zeile eine eigene Scope-Chip-Klasse neben Such- und
+  Facetten-Chips: „<Interpret>", „<Album> — <Interpret>" beziehungsweise
+  „<Genre>" mit eigenem ×-Klickziel von mindestens 20 px. Das × verlässt den Scope per
+  regulärem NAV-2-History-Push zur Library; dort werden deren gemerkte Suche
+  und Facetten wiederhergestellt. Die Zählung folgt FIL-2 und setzt die
+  Scope-Treffer ins Verhältnis zur ganzen Library. Playlist, Smart, Queue,
+  Missing und eigenständige Panels tragen keinen Scope-Chip. „Clear all"
+  räumt weiterhin nur Suche und Filter und wechselt nie den Ort.
 - **FIL-2** [aktiv] [gtk] — Zählung ist Zustand: Die Filter-Zeile ist
   permanenter Listen-Header jeder Track-Quelle — sie erscheint und
   verschwindet nie (kein Layout-Shift by design, P-4). Idle maximal leise:
@@ -1332,7 +1347,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Ereignis einzeln durch sie hindurch, damit Sommer-/Winterzeit-Wechsel keine
   Grenze verschieben. Alles ist lokal: kein Netz, keine Cloud, keine
   Fremdquelle wird eingemischt.
-- **STATS-1** [aktiv] [core] — Der Kopf zeigt die Gesamt-Hörzeit groß in vollen
+- **STATS-1** [ersetzt durch STATS-11/STATS-12] [core] — Der Kopf zeigt die Gesamt-Hörzeit groß in vollen
   Stunden („68 hours"; unter einer Stunde in Minuten, nie „0 hours"), eine
   Vergleichs-Pill „▲ N % vs <Vorperiode>" im teal App-Akzent (nie im
   Cover-Akzent) und die Subzeile „N plays · Ø X min/day · N artists" auf
@@ -1355,7 +1370,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   wiedererkennbare Kalenderentsprechung ein Jahr zurück. Der 29. Februar klemmt
   im Vorjahr auf den 28. „All time" hat keine Vorperiode und trägt nie eine
   Pill.
-- **STATS-1a** [aktiv] [core] — Die Vergleichs-Pill bleibt bei jedem Verhältnis
+- **STATS-1a** [ersetzt durch STATS-11a] [core] — Die Vergleichs-Pill bleibt bei jedem Verhältnis
   lesbar: Anstiege unter +1000 % erscheinen weiter als ganze Prozentzahl, ab
   +1000 % als gerundeter Faktor („▲ ×11 vs 2025"). Eine sinnvolle
   Nachkommastelle bleibt erhalten („×11,5"), eine bedeutungslose Null entfällt
@@ -1369,7 +1384,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Tooltip trägt die vollständige Semantik („vs same period 2025"). `×` und
   Dezimaltrenner bleiben übersetzbar. Saisonale Spanne und Vergleichsrechnung
   aus STATS-1 ändern sich dadurch nicht.
-- **STATS-2** [aktiv] [core] — Das Artist-Spotlight ist das Herzstück:
+- **STATS-2** [ersetzt durch STATS-13] [core] — Das Artist-Spotlight ist das Herzstück:
   #1-Artist mit großem Cover und Rang-Badge, Eyebrow „YOUR #1 ARTIST", Name,
   Zeile „N plays · N h · N % of your artist listening" — der Anteil bezieht
   sich auf die Hörzeit mit Artist-Zuordnung, dieselbe Grundgesamtheit, die die
@@ -1378,13 +1393,13 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   „Go to artist" (regulärer NAV-Push mit Back-Historie). Hinter dem Cover liegt
   ein dezenter Cover-Akzent-Glow — der Cover-Akzent bleibt Playback-Elementen
   vorbehalten. Darunter nennt eine Ghost-Zeile die Ränge 2–5.
-- **STATS-3** [aktiv] [core] — Das Genre-Spektrum ist **eine** horizontale
+- **STATS-3** [ersetzt durch STATS-15] [core] — Das Genre-Spektrum ist **eine** horizontale
   Segment-Leiste in Teal-Abstufungen mit Legende (Punkt · Name · %), gespeist
   aus den Genre-Tags der Bibliothek. Die fünf stärksten Genres bilden eigene
   Segmente, der Rest wird zu „Other" gebündelt; Tracks ohne Genre zählen weder
   als Segment noch als „Other". Die Leiste ist reine Anzeige und keine
   Navigation: Segmente und Legende sind nicht klickbar.
-- **STATS-4** [aktiv] [core] — Unter dem Spektrum steht eine asymmetrische
+- **STATS-4** [ersetzt durch STATS-10] [core] — Unter dem Spektrum steht eine asymmetrische
   Reihe (1.35fr / 1fr): links die Listening Clock als 24-Stunden-Histogramm aus
   den Timestamps mit teal hervorgehobenen Peak-Stunden und Caption
   („Peak 11 PM–1 AM · night owl"), rechts vier Highlight-Kacheln — Streak
@@ -1404,7 +1419,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   ist so bemessen, dass ihre beiden Mindestbreiten zusammen unter dem
   Breakpoint bleiben — sonst gäbe es Fensterbreiten, in denen sie noch
   nebeneinander steht, aber schmaler ist als sie braucht.
-- **STATS-5** [aktiv] [core] — Top Tracks steht über die volle Breite:
+- **STATS-5** [ersetzt durch STATS-14] [core] — Top Tracks steht über die volle Breite:
   nummerierte Liste mit Cover, Titel und Artist, relativem Play-Balken und
   Play-Count, mit Sort-Toggle „by plays / by time". Der Balken ist relativ zum
   Spitzenreiter der Liste, nie zu einem absoluten Maximum.
@@ -1428,7 +1443,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   noch eine Sondermeldung. Ist ein verfügbarer Zeitraum leer, bleibt der
   reguläre Leerzustand sichtbar; Hero und Zeitraum-Dropdown bleiben darüber
   bedienbar, damit die Auswahl nie zur Sackgasse wird.
-- **STATS-7** [aktiv] [gtk] — My Stats ist kuratiert, nicht frei editierbar:
+- **STATS-7** [ersetzt durch STATS-10] [gtk] — My Stats ist kuratiert, nicht frei editierbar:
   kein Drag-and-Drop-Widget-Board. Ein ⋮-Menü „Customize" blendet die Sektionen
   Clock, Genres und Highlights per CheckButton ein und aus; die Auswahl bleibt
   über Sitzungen erhalten. Mehr enthält das Menü nicht — das Spotlight ist
@@ -1473,6 +1488,110 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Listeneintrag darauf hin und führt in den Mehrfach-Tag-Editor der betroffenen
   Tracks; das Vereinheitlichen bleibt eine Einladung, nie ein automatischer
   Schreibvorgang.
+- **STATS-10** [aktiv] [gtk] — My Stats erzählt in fester Reihenfolge von
+  oben nach unten: Kopfzeile (Titel, optionales „New this year"-Badge,
+  Zeitraumwahl) · Hero (Gesamtzahl, Subline, KPI-Reihe) · Wochen-Chart ·
+  zweispaltige Reihe aus Band-Karte und Songs-Karte · optional die
+  aufgeklappte Top-Track-Liste als eigene Sektion in voller Breite ·
+  Genre-Karte. Mehr Sektionen gibt es nicht: keine Listening Clock, keine
+  Highlight-Kacheln, kein Customize-Menü — die Seite ist kuratiert und nicht
+  konfigurierbar.
+  Im schmalen Fenster stapelt die zweispaltige Reihe, ohne die Reihenfolge zu
+  ändern. Die Zeitraumwahl bleibt gemäß STATS-8 der einzige Ansichts-Regler.
+- **STATS-11** [aktiv] [core] — Der Hero zeigt die Gesamt-Hörzeit riesig im
+  seitenweit einheitlichen Kompaktformat: ab einer Stunde „N h M", bei vollen
+  Stunden „N h", unter einer Stunde „N min". Darunter steht die
+  Subline „N plays · N artists", rechts an der Grundlinie vier KPI-Paare:
+  „Per day" (Ø Hörzeit/Tag) · Trend (absolutes Hörzeit-Delta zur
+  Vergleichsspanne mit Richtungs-Icon in Akzentfarbe) · „Pace for <Jahr>" (lineare
+  Jahres-Hochrechnung, nur im laufenden Jahr) · „Best week" (Startdatum und
+  Hörzeit der stärksten lokalen Kalenderwoche). Alle KPI-Dauern nutzen
+  dasselbe Kompaktformat. Die Vergleichsspanne ist
+  unverändert die saisonal deckungsgleiche Vorperiode: „<Jahr> so far" gegen
+  dieselbe Spanne des Vorjahrs, ein volles Jahr gegen das Vorjahr, das
+  30-Tage-Fenster gegen die 30 Tage davor; „All time" hat keinen Trend-KPI.
+  KPIs ohne Wert entfallen ersatzlos statt Platzhalter zu zeigen.
+- **STATS-11a** [aktiv] [core] — Der Trend bleibt bei jedem Verhältnis
+  ehrlich lesbar: Der KPI nennt das absolute Delta und die kurze Referenz
+  („vs 2025"); der Tooltip trägt die vollständige Semantik samt Prozentwert,
+  ab ×11-Verhältnissen als gerundeter Faktor nach den bisherigen Formregeln.
+  War die Vergleichszeit effektiv null (unter einer Minute), erscheint statt
+  des KPI das Badge „New this year" in der Kopfzeile — nie „∞ %" und nie
+  „×0". Der KPI ellipsiert nicht.
+- **STATS-12** [aktiv] [core] — Das Chart zeigt die Hörzeit je lokaler
+  Kalenderwoche. Ab acht Wochen mit Plays gilt der Flächenverlauf über den
+  exakt gewählten Zeitraum. Bei weniger Wochen beginnt die Achse mit der
+  ersten Play-Woche und jede Woche erhält über die volle Kartenbreite einen
+  gleich breiten Slot; Nullwochen bleiben als 2-Pixel-Strich auf einer
+  durchgehenden 1-Pixel-Basislinie sichtbar. Unter zehn Wochen trägt jeder
+  Slot ein Wochenlabel, längere Achsen tragen Monatslabels. Die kompakte
+  Variante ist ungefähr 160 Pixel hoch. Beide Varianten lassen 10–15 % Luft
+  über dem Maximum. Die beste Woche erhält statt einer Markerlinie eine
+  hellere Akzentstufe; ihr gemessenes Label steht mit Randabstand darüber
+  („best week · 4 h 12"). Die laufende Woche endet in einem offenen Punkt.
+  Hover nennt Woche und exakten Wert. Markierungen und Punkte sind reine
+  Anzeige. Nur wenn der Zeitraum zu kurz für Wochen ist, fällt die Achse auf
+  Tage zurück (STATS-6); sehr lange „All time"-Spannen dürfen Monate zeigen
+  und lassen dann die Wochenmarkierung weg — der Best-week-KPI bleibt.
+- **STATS-13** [aktiv] [gtk] — Die Band-Karte zeigt den meistgehörten
+  Interpreten als Bild-Hero: das Album-Cover seines meistgespielten Tracks
+  füllt die Karte und blendet nach unten in den Kartengrund aus; fehlt ein
+  Cover, steht eine Initialen-Kachel an seiner Stelle — nie eine leere
+  Fläche. Darüber Kicker „MOST PLAYED BAND", Name und die Zeile „N plays ·
+  <Dauer> · N % of your artist listening"; die Dauer folgt dem Kompaktformat
+  aus STATS-11. Darunter die Ränge 2–5 mit dünnem Balken relativ zu Platz 1.
+  Klick auf Karte oder Rangzeile öffnet die
+  Library gefiltert auf den Interpreten (regulärer History-Push). Fasst eine
+  Gruppe mehrere Schreibweisen zusammen, bleibt der Vereinheitlichungs-Hinweis
+  aus STATS-9 erhalten.
+- **STATS-14** [aktiv] [gtk] — Die Songs-Karte zeigt die sechs führenden
+  Tracks: Cover, Titel und Interpret zweizeilig, horizontaler Balken relativ
+  zu Platz 1 in einem Akzent-Verlauf, rechts die Play-Zahl. Neben dem Kicker
+  sortiert der Toggle „by plays / by time" sowohl diese sechs Zeilen als auch
+  die vollständige Rangliste. Klick auf die Zeile öffnet die Library gefiltert
+  auf den Interpreten mit fokussiertem Track; Hover oder Fokus zeigt am Cover
+  einen Play-Button, der genau diesen Track sofort abspielt; das Kontextmenü
+  bietet „Play next", „Add to queue" und „Go to album". Der Ghost-Button
+  „Show all top tracks" klappt unter der zweispaltigen Reihe die nummerierte
+  Top-10-Liste als eigene Sektion in voller Breite auf; die Genre-Karte folgt
+  darunter und der Balken bleibt relativ zum Spitzenreiter der jeweiligen
+  Sortierung. Die Liste zeigt Dauern im Kompaktformat aus STATS-11; ihre Titel
+  und Interpreten erhalten Linkfarbe und Unterstreichung erst bei Hover, der
+  Fokus-Ring bleibt sichtbar.
+- **STATS-15** [aktiv] [core] — Die Genre-Karte besteht aus einem
+  gestapelten Balken (Segmentbreite = Anteil, Akzent-Abstufungen nach Rang,
+  letztes Segment neutral, Tooltip „<Genre> · N % · <Dauer>") und bis zu vier
+  Kacheln der stärksten Genres: Cover des meistgespielten Tracks im Genre,
+  „<Genre> · N %", darunter „<Dauer> · top: <Interpret>". Beide Dauern folgen
+  dem Kompaktformat aus STATS-11. Top-Interpret und Cover je Genre entstehen
+  über dieselbe Schlüsselauflösung wie alle Gruppierungen (STATS-9). Klick auf
+  das Kachel-Cover öffnet die Library
+  gefiltert auf das Album; Klick auf ein Segment oder die übrige Kachelfläche
+  öffnet die Library im Scope des jeweiligen Genres.
+  Tracks ohne Genre zählen weiterhin weder als Segment noch als „Other".
+- **STATS-16** [aktiv] [gtk] — Unter zehn Plays im gewählten Zeitraum ist
+  die Datenlage zu dünn für einen Trend: Statt des Charts erscheint der
+  Hinweis „Keep listening — stats grow with you"; Hero-Zahlen bleiben echt,
+  und nur Karten mit Daten werden gerendert — nie Platzhalterkarten. Ohne
+  jeden Play gilt unverändert der Leerzustand aus STATS-6/STATS-6c samt
+  bedienbarer Zeitraumwahl.
+- **STATS-17** [aktiv] [gtk] — My Stats steht ab dem ersten Frame vollständig
+  da: Karten, Hero-Zahl, KPIs, Texte, Cover und Bilder faden nicht, gleiten
+  nicht und zählen nicht hoch. Nur Balken bewegen sich, gemeinsam nach einem
+  ruhigen Startframe von ungefähr 100 ms und mit Ease-out
+  `cubic-bezier(0.16, 1, 0.3, 1)`: Im Sparse-Week-Modus wachsen die
+  Chart-Balken in 500 ms von der Grundlinie mit 80 ms Versatz; das
+  Best-Week-Label fadet erst nach dem Ende seines eigenen Balkens über 150 ms
+  ein. Der alternative Flächen-/Linienmodus ist bereits im ersten Frame
+  vollständig gezeichnet und besitzt keine Eingangsanimation. Horizontale
+  Balken — Band-Ränge 2–5, Song-Balken und Genre-Segmente — wachsen innerhalb
+  ihrer jeweiligen Karte in 450 ms von links mit 40 ms Versatz; Genre-Segmente
+  laufen in Leserichtung. Auch Balken unterhalb des sichtbaren Ausschnitts
+  folgen demselben Start, es gibt keine Fold-Sonderbehandlung. Ein
+  Zeitraumwechsel startet keine Eingangschoreografie neu und interpoliert
+  ausschließlich Balkenwerte über 250 ms; alle übrigen Inhalte wechseln
+  sofort in ihren neuen Endzustand. Bei `gtk-enable-animations=false` stehen
+  ausnahmslos alle Balken und das Best-Week-Label sofort im Endzustand.
 
 ## W. Buttons & Interaktionszustände
 
@@ -1552,19 +1671,24 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
 
 - **AC-7** [ersetzt durch AC-10]
 - **AC-8** [ersetzt durch AC-11]
-- **AC-10** [aktiv] [core] [gtk] — „Song Visuals" ist ein standardmäßig
-  ausgeschaltetes, live anwendbares Plugin. Eingeschaltet visualisiert der
-  dritte Panel-Tab „Visual" ausschließlich lokal berechnete, auf 16 Bänder und
-  den Bereich 0–1 begrenzte Spektraldaten als die vier tastaturbedienbaren Modi
-  Grid, Bars, Flow und Pulse. Canvas und Auswahlzustand übernehmen den
-  aktuellen Cover-Akzent über denselben globalen Ambient-Crossfade wie die
-  Playerleiste; nur ohne brauchbare Coverfarbe gilt der Theme-Akzent. Farbe
-  bleibt durch benannte Modi und eine Screenreader-Beschriftung redundant.
+- **AC-10** [ersetzt durch AC-19]
 - **AC-11** [aktiv] [gtk] — Dauerbewegung existiert ausschließlich während
   laufender Wiedergabe und nur bei sichtbarem Visual-Tab. Pause und Stop klingen
   auf das statische Bild aus; `gtk-enable-animations=false` zeigt dieses ohne
   Tick-Callback. Das ist die in MOT-2 erlaubte, audiofunktionale Ausnahme für
   Dauerbewegung.
+- **AC-19** [ersetzt durch AC-20]
+- **AC-20** [aktiv] [core] [gtk] — „Song Visuals" ist ein standardmäßig
+  ausgeschaltetes, live anwendbares Plugin. Eingeschaltet visualisiert der
+  dritte Panel-Tab „Visual" ausschließlich lokal berechnete, aus 256 FFT-Bins
+  auf 64 logarithmische Anzeigebänder gefaltete und auf den Bereich 0–1
+  begrenzte Spektraldaten wahlweise als „Grid" oder „Bars".
+  „Grid" bleibt die Standardauswahl; „Bars" zeigt zwanzig fein segmentierte,
+  frequenzabhängige Säulen und reagiert auf denselben lokalen Beat-Impuls.
+  Flow, Pulse und weitere Modi existieren nicht. Der beschriftete Canvas
+  übernimmt den aktuellen Cover-Akzent über denselben globalen
+  Ambient-Crossfade wie die Playerleiste; nur ohne brauchbare Coverfarbe gilt
+  der Theme-Akzent.
 
 
 ## Y. Library Doctor / Tag Cleanup
@@ -1946,6 +2070,11 @@ Ankündigung. Die App refresht ihre *eigenen* Schreibaktionen weiterhin selbst
   Wiedergabe-Queue ist ein Snapshot (`queue::snapshot`); ein Fremd-Write an
   der Bibliothek ändert weder die laufende Wiedergabe noch die Reihenfolge der
   bereits eingereihten Titel.
+- **EXT-5** [geplant] [gtk] — Autorisierte externe Live-Queue-Befehle
+  aktualisieren eine sichtbare Queue geräuschlos an Ort und Stelle: kein
+  Toast, kein Fokus-, Selektions- oder Scrollpositionsverlust. Fehlende oder
+  unbekannte Tracks werden nicht eingereiht.
+  <!-- REVIEW: Regelvorschlag -->
 
 ## AB. Instrumental-Fassungen (experimentell)
 

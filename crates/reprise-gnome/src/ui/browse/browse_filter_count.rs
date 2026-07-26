@@ -28,7 +28,7 @@ pub(in crate::ui) fn update(
         bar.hide_result_count();
         return;
     }
-    let restricted = super::filter_restriction::is_restricted(search, browse, exclude_ai);
+    let restricted = super::filter_restriction::is_restricted(search, browse, exclude_ai, source);
     let total = {
         let conn = conn.borrow();
         source_total(&conn, source, restricted, count, queue_ids)
@@ -52,7 +52,12 @@ fn source_total(
     if !restricted || matches!(source, ViewSource::Queue) {
         return Ok(count);
     }
-    queries::query_track_count_browsed(conn, source, "", &BrowseFilter::default(), queue_ids)
+    let total_source = if super::filter_restriction::scope_restricts(source) {
+        ViewSource::Library
+    } else {
+        source.clone()
+    };
+    queries::query_track_count_browsed(conn, &total_source, "", &BrowseFilter::default(), queue_ids)
         .and_then(|value| {
             usize::try_from(value).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(0, value))
         })
@@ -101,6 +106,16 @@ mod tests {
         assert_eq!(
             source_total(&conn, &ViewSource::Playlist(7), false, 2, &[]).unwrap(),
             2
+        );
+    }
+
+    #[test]
+    fn fil_1c_scope_total_is_the_whole_library_count() {
+        let conn = seeded_conn();
+
+        assert_eq!(
+            source_total(&conn, &ViewSource::Artist("Caskets".into()), true, 1, &[]).unwrap(),
+            3
         );
     }
 

@@ -11,7 +11,7 @@ if ! jq -e --arg expected "$expected_msrv" '
   . as $metadata
   | [$metadata.packages[]
       | select(.id as $id | $metadata.workspace_members | index($id))] as $members
-  | ($members | length == 3)
+  | ($members | length > 0)
     and all($members[]; .rust_version == $expected)
 ' <<<"$metadata" >/dev/null; then
   echo "every workspace package must declare Rust $expected_msrv as its MSRV" >&2

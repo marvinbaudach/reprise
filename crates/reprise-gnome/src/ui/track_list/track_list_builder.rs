@@ -23,7 +23,7 @@ use super::track_list_reload::reload;
 use super::track_list_smoke::{
     arm_smoke_activate, arm_smoke_filter, arm_smoke_sort_column, arm_smoke_source,
 };
-use super::track_list_sort::{wire_sort_clicks, SortState};
+use super::track_list_sort::{sort_by_column, wire_sort_clicks, SortState};
 use super::{
     notify_import_errors_mutated_and_reload, OnActivate, Shared, TrackList, STACK_PAGE_EMPTY,
     STACK_PAGE_IMPORT_ERRORS, STACK_PAGE_LIST, STACK_PAGE_MISSING,
@@ -257,7 +257,11 @@ pub(in crate::ui) fn build(
     };
 
     wire_sort_clicks(&column_view, &shared);
-    column_view.sort_by_column(Some(&initial_sort_column), gtk4::SortType::Ascending);
+    sort_by_column(
+        &column_view,
+        &initial_sort_column,
+        gtk4::SortType::Ascending,
+    );
     wire_activate(&column_view, &shared);
     track_list_context_menu::wire_context_menu_actions(&column_view, &shared);
 
