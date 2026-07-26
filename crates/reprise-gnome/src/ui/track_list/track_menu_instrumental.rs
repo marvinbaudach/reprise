@@ -72,47 +72,29 @@ fn handle(shared: &Rc<Shared>) {
         tracing::debug!("context menu: create-instrumental with no present selection; ignoring");
         return;
     }
-    let staging = reprise_core::ai_staging::StagingStore::with_default_dir();
-    let Some(model_id) = crate::ui::instrumental::app_model_id() else {
-        tracing::error!("context menu: production stem backend is unavailable");
-        show_toast(shared, &strings::create_instrumental_failed_toast());
-        return;
-    };
-    let now = crate::ui::instrumental::now_unix();
     let outcome = {
         let conn = shared.conn.borrow();
-        // `auto_promote = false`: the context-menu/drop path stages every render
-        // for a manual save decision and never auto-promotes (decision 15; see
-        // `ai_jobs::enqueue_instrumental`). Only the MCP/CLI batch path saves by
-        // default.
-        reprise_core::ai_conversion::add_batch_to_conversion(
-            &conn, &staging, &ids, &model_id, false, now,
-        )
+        crate::ui::instrumental::enqueue_present_tracks(&conn, &ids)
     };
     match outcome {
-        Ok(batch) => {
+        Ok(summary) if summary.accepted() > 0 => {
             crate::ui::instrumental::wake_worker();
-            let created = batch
-                .jobs
-                .iter()
-                .filter(|outcome| {
-                    matches!(
-                        outcome,
-                        reprise_core::ai_jobs::EnqueueOutcome::Created { .. }
-                    )
-                })
-                .count();
-            let deduped = batch.jobs.len() - created;
             tracing::info!(
-                created,
-                deduped,
+                created = summary.created,
+                deduplicated = summary.deduplicated,
+                skipped_unavailable = summary.skipped_unavailable,
                 "context menu: instrumental conversions queued"
             );
             show_toast(
                 shared,
-                &strings::create_instrumental_toast(created, deduped),
+                &strings::create_instrumental_toast(summary.created, summary.deduplicated),
             );
         }
+        Ok(_) => {}
+        Err(
+            crate::ui::instrumental::EnqueueError::ModelRequired
+            | crate::ui::instrumental::EnqueueError::RuntimeUnavailable(_),
+        ) => crate::ui::instrumental::open_settings(),
         Err(error) => {
             tracing::error!(%error, "context menu: create instrumental failed");
             show_toast(shared, &strings::create_instrumental_failed_toast());

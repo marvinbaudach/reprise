@@ -196,6 +196,7 @@ impl InstrumentalRuntime {
         }
         self.disable();
         super::clear_enabled_hook();
+        super::clear_settings_hook();
         clear_ensure_page_hook();
     }
 }
