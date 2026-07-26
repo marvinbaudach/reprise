@@ -1001,7 +1001,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   (`/release-group/{mbid}/front-250`). Ein fehlendes Cover ist Normalzustand
   und zeigt sofort eine gleich große Kachel aus gespeicherter Artist-
   Akzentfarbe plus Initialen — niemals ein Loch oder einen Dauer-Spinner.
-- **NR-3** [aktiv] [gtk] — Die Header-Lupe ✦ erscheint nur bei vorhandenen
+- **NR-3** [ersetzt durch NR-3a] [gtk] — Die Header-Lupe ✦ erscheint nur bei vorhandenen
   Einträgen und trägt einen Badge ausschließlich für `seen_at IS NULL`.
   Öffnen stempelt die gelistete Episode als gesehen; sie badgt nie erneut,
   erst ein später neu gefundener Eintrag erzeugt wieder einen Badge (FB-4).
@@ -1015,7 +1015,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   verändert den Navigations-Stack nie. Erst „See all" navigiert regulär in
   den Digest-Ort; Schließen kehrt ohne Zustandsverlust zur aktuellen Ansicht
   zurück.
-- **NR-5a** [aktiv] [gtk] — Das Popover ist transient; Öffnen/Schließen
+- **NR-5a** [ersetzt durch NR-5b] [gtk] — Das Popover ist transient; Öffnen/Schließen
   verändert den Navigations-Stack nie. Nur explizite Zeilen-Aktionen (Show in
   library) navigieren regulär und schließen das Popover; der Verlauf ist eine
   Popover-interne Unterseite ohne Navigation.
@@ -1044,7 +1044,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   einen Start-Abruf gibt es nicht. NR-8 schließt diese Schleife, ohne NR-5 zu
   kippen. Datenschutzlich unverändert: Netzverkehr entsteht ausschließlich nach
   ausdrücklicher Aktivierung, nur sofort statt nie.
-- **NR-9** [aktiv] [gtk] — setzt auf NR-3 auf (NR-3 bleibt aktiv): Der Badge
+- **NR-9** [ersetzt durch NR-9a] [gtk] — setzt auf NR-3 auf: Der Badge
   aus NR-3 zeigt die **Anzahl** der Einträge mit `seen_at IS NULL`, ab 10 als
   „9+", verschwindet mit dem Öffnen (alle gelisteten Einträge werden
   gestempelt) und rendert bei 0 kein leeres Element.
@@ -1056,7 +1056,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   Priorität: MusicBrainz-URL-Relations der Release-Group (Bandcamp/Kauf/
   Streaming vor offizieller Homepage/Discography) → Fallback
   MusicBrainz-Release-Group-Seite. Geöffnet wird extern (Standardbrowser).
-- **NR-12** [aktiv] [gtk] — Der Verlauf ist eine persistente Historie
+- **NR-12** [ersetzt durch NR-12a] [gtk] — Der Verlauf ist eine persistente Historie
   aller je gezeigten Meldungen als **Popover-Unterseite** (kein eigener
   Navigations-Ort), gruppiert nach Zeitraum, ausgeblendete Einträge einzeln
   rückholbar. Retention: 6 Monate **und** höchstens 200 Einträge (strengere
@@ -1066,6 +1066,37 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   erschienene Releases werden markiert (nicht herausgefiltert) und bieten
   die Aktion „Show in library" (Navigieren + Fokussieren, **kein** direkter
   Play-Pfad).
+- **NR-3a** [aktiv] [gtk] — Der Header-Auslöser öffnet „Updates" und ist
+  sichtbar, sobald mindestens ein aktiver Feed Einträge oder einen
+  Erstlauf-Zustand nach NR-8 hat. Sein Badge zählt ausschließlich ungesehene
+  Einträge aller aktiven, fetch-bereiten Feeds.
+- **NR-5b** [aktiv] [gtk] — Das Popover ist transient; Öffnen/Schließen
+  verändert den Navigations-Stack nie. Explizite Zeilen-Aktionen und die
+  Sprungzeilen „Show all releases/concerts →" navigieren regulär und
+  schließen das Popover. Das Popover hat keine internen Unterseiten; der
+  Verlauf lebt in der Releases-Vollansicht (NR-12a).
+- **NR-9a** [aktiv] [gtk] — Das Badge zeigt die Summe ungesehener Releases
+  und Konzerte, ab 10 als „9+", und rendert bei 0 nichts. Öffnen stempelt die
+  gesamte Delta-Menge beider Sektionen im aktuellen Scope. Vollständig in der
+  Bibliothek vorhandene Releases werden gelistet und gestempelt, zählen aber
+  nie in den Unseen-Badge.
+- **NR-12a** [aktiv] [gtk] — Die persistente Historie aller je gezeigten
+  Meldungen lebt in der Releases-Vollansicht als eigenem Sidebar-Ort.
+  Ausgeblendete Einträge sind dort über den Hidden-Filter einzeln mit „Show
+  again" rückholbar. Retention bleibt: sechs Monate UND höchstens 200
+  Einträge, hartes Löschen, nie innerhalb des 90-Tage-Fetch-Fensters.
+- **NR-14** [aktiv] [gtk] — Die Releases-Vollansicht ist eine Tabelle
+  `Date · Title · Artist · Type · Status`, standardmäßig nach Datum
+  absteigend. Status ist `In library`, sonst `upcoming` oder `released`.
+  Aktivierung führt immer die Dreiweg-Primäraktion aus: Hidden → Show again;
+  vollständig vorhanden und erschienen → Show in library; sonst Open
+  announcement. Die permanente Filterzeile bietet sticky Chips für Not in
+  library, Type und Hidden samt „X of Y releases", „Clear all" und genau
+  einem „Show all"-Schritt bei null Treffern.
+- **NR-15** [aktiv] [gtk] — „Releases" ist ein Sidebar-Ort in SMART, vor
+  Concerts und nur bei aktivem `new_releases`-Modul. Sein Badge entspricht
+  exakt der Anzahl der nach persistenten Filtern beim Öffnen sichtbaren
+  Zeilen; 0 rendert keinen Badge.
 
 ## S. Flächen & Geometrie
 
@@ -2198,6 +2229,43 @@ Dateien.
   (Capture-Phase, damit die Pfeil-Seek der Waveform die modifizierten Pfeile
   nicht schluckt) und decken sich mit den im Kontextmenü gezeigten
   Acceleratoren.
+
+## AE. Concerts
+
+<!-- Sektionsbuchstabe: AD (Kompaktmodus) ist die letzte vergebene Sektion;
+     Concerts setzt mit AE fort. Die Regeln starten als Entwürfe und werden
+     jeweils zusammen mit Verhalten und regelbenanntem Test aktiviert. -->
+
+- **CONC-1** [aktiv] [gtk] — Concerts ist ein Sidebar-Ort in SMART und nur
+  bei aktivem Modul sichtbar. Sein Badge entspricht exakt den kommenden,
+  nach persistenten Filtern beim Öffnen sichtbaren Konzerten; 0 rendert
+  keinen Badge.
+- **CONC-2** [aktiv] [gtk] — Die Filterzeile ist ein permanenter Header.
+  Idle zeigt sie leise Gesamtzahl und „+ Add filter"; jede aktive
+  Einschränkung ist ein Chip mit eigenem ×-Ziel von mindestens 20 px.
+  Aktiv zeigt sie „X of Y concerts" und „Clear all". Ohne Location ist
+  Radius deaktiviert und trägt den Tooltip „Set a location in Preferences".
+- **CONC-3** [aktiv] [gtk] — Doppelklick/Enter auf eine Zeile und die
+  Ticket-Zelle öffnen dasselbe externe Ziel: Offer-URL, sonst Event-Seite.
+  Ohne beides ist die Zelle leer und Aktivierung ein No-op mit Tooltip. Es
+  gibt keinen Play-Pfad.
+- **CONC-4** [aktiv] [gtk] — Ohne Credential zeigt Concerts eine
+  StatusPage mit Preferences-Deep-Link und startet keinen Fetch. Nie
+  gefetcht bietet genau „Fetch now"; null Treffer mit Filtern genau „Show
+  all". Offline oder Fehler lassen Cache und „Updated X ago" sichtbar und
+  melden den Fehler ausschließlich inline im Footer.
+- **CONC-5** [aktiv] [core] — Netz läuft ausschließlich im Worker. Trigger
+  sind View-Open-Staleness (24 h plus Jitter), der stündliche Due-Check und
+  „Fetch now". Track-Wechsel und Navigation lesen nur Cache; Ergebnisse
+  werden nach MOT-2 ohne Einblendanimation eingespielt.
+- **CONC-6** [aktiv] [gtk] — Similar-Zeilen tragen dimm „similar to
+  {seed}" und verschwinden mit „Library artists only". Die Source-Pill ist
+  sichtbar, sobald Similar aktiviert ist oder Similar-Zeilen existieren.
+- **CONC-7** [aktiv] [gtk] — Das Updates-Popover zeigt die Concerts-Sektion
+  nur bei aktivem Modul, höchstens drei ungesehene Einträge des persistenten
+  Filter-Scopes und „Show all concerts (N) →". Öffnen stempelt die gesamte
+  Delta-Menge beider Sektionen. Das Header-Badge summiert ungesehene Einträge
+  aller aktiven, fetch-bereiten Feeds nach dem `badge_presentation`-Idiom.
 
 ---
 

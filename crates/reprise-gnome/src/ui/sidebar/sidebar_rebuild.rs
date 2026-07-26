@@ -3,8 +3,11 @@
 use std::rc::Rc;
 
 use gtk4::prelude::*;
+use reprise_core::artist_news;
+use reprise_core::concerts;
 use reprise_core::library::playlists;
 use reprise_core::library::settings;
+use reprise_core::modules::{self, CONCERTS_MODULE, NEW_RELEASES_MODULE};
 use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
 
@@ -34,8 +37,13 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         new_import_error_count,
         playlist_rows,
         smart_rows,
+        releases_enabled,
+        releases_count,
+        concerts_enabled,
+        concerts_count,
     ) = {
         let conn = shared.conn.borrow();
+        let today = chrono::Local::now().date_naive();
         let music_count =
             queries::query_track_count(&conn, &ViewSource::Library, "", &[]).unwrap_or(0);
         let missing_count = queries::count_missing(&conn).unwrap_or_else(|error| {
@@ -104,6 +112,31 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
                 (smart, count)
             })
             .collect();
+        let releases_enabled = modules::is_enabled(&conn, &NEW_RELEASES_MODULE).unwrap_or(false);
+        let releases_count = if releases_enabled {
+            artist_news::persisted_releases_filter(&conn)
+                .and_then(|filter| artist_news::count_releases_view(&conn, &filter, today))
+                .unwrap_or_else(|error| {
+                    tracing::error!(%error, "failed to count Releases rows for sidebar badge");
+                    0
+                })
+        } else {
+            0
+        };
+        let concerts_enabled = modules::is_enabled(&conn, &CONCERTS_MODULE).unwrap_or(false);
+        let concerts_count = if concerts_enabled {
+            concerts::config::persisted_filter(&conn)
+                .and_then(|filter| {
+                    let location = concerts::config::location(&conn)?;
+                    concerts::count_upcoming(&conn, &filter, location.as_ref(), today)
+                })
+                .unwrap_or_else(|error| {
+                    tracing::error!(%error, "failed to count Concerts rows for sidebar badge");
+                    0
+                })
+        } else {
+            0
+        };
         (
             music_count,
             missing_count,
@@ -113,6 +146,10 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
             new_import_error_count,
             playlist_rows,
             smart_rows,
+            releases_enabled,
+            releases_count,
+            concerts_enabled,
+            concerts_count,
         )
     };
     let queue_count = (shared.queue_len_provider)() as i64;
@@ -171,6 +208,24 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
             &smart.name,
             sidebar_presentation::nonzero_count(*count),
             sidebar_presentation::smart_icon(&smart.sort_field),
+        );
+    }
+    if releases_enabled {
+        add_row(
+            shared,
+            ViewSource::Releases,
+            &strings::text(strings::RELEASES),
+            sidebar_presentation::nonzero_count(releases_count),
+            NavIcon::Releases,
+        );
+    }
+    if concerts_enabled {
+        add_row(
+            shared,
+            ViewSource::Concerts,
+            &strings::text(strings::CONCERTS),
+            sidebar_presentation::nonzero_count(concerts_count),
+            NavIcon::Concerts,
         );
     }
     add_row(

@@ -1,5 +1,5 @@
-//! Resource discovery and reads: `reprise://library/summary` and
-//! `reprise://playlists`, plus their leak-matrix negatives.
+//! Resource discovery and reads for summary, playlists, and upcoming
+//! concerts, plus their leak-matrix negatives.
 
 mod common;
 
@@ -9,6 +9,7 @@ use tempfile::TempDir;
 
 const SUMMARY_URI: &str = "reprise://library/summary";
 const PLAYLISTS_URI: &str = "reprise://playlists";
+const CONCERTS_URI: &str = "reprise://concerts";
 
 fn fixture_db(dir: &TempDir) -> std::path::PathBuf {
     let path = dir.path().join("reprise.db");
@@ -37,7 +38,7 @@ fn resource_body(response: &Value) -> Value {
 }
 
 #[test]
-fn lists_both_resources() {
+fn lists_all_resources() {
     let dir = TempDir::new().unwrap();
     let path = fixture_db(&dir);
     let mut client = McpClient::start(&path);
@@ -61,6 +62,47 @@ fn lists_both_resources() {
         uris.contains(&PLAYLISTS_URI),
         "missing playlists resource: {uris:?}"
     );
+    assert!(
+        uris.contains(&CONCERTS_URI),
+        "missing concerts resource: {uris:?}"
+    );
+}
+
+#[test]
+fn reads_filtered_concerts_without_paths() {
+    let dir = TempDir::new().unwrap();
+    let path = fixture_db(&dir);
+    let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+    conn.execute(
+        "INSERT INTO concert_artists (
+           artist_key, artist_name, last_attempt_at, last_outcome, events_found
+         ) VALUES ('artist', 'Artist One', 4321, 'ok', 1)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO concert_events (
+           artist_key, artist_name, starts_at, date_key, venue, city, country,
+           ticket_url, ticket_source, event_url, provider, fetched_at, dedupe_key
+         ) VALUES (
+           'artist', 'Artist One', '2099-10-17T19:00:00', '2099-10-17',
+           'Zenith', 'Munich', 'DE', 'https://tickets.example/1',
+           'Ticketmaster', 'https://events.example/1', 'ticketmaster', 4321,
+           '2099-10-17|munich|zenith'
+         )",
+        [],
+    )
+    .unwrap();
+    drop(conn);
+    let mut client = McpClient::start(&path);
+
+    let response = client.read_resource(CONCERTS_URI);
+    let body = resource_body(&response);
+    assert_eq!(body["latest_fetch_at"], 4321);
+    assert_eq!(body["filter_applied"], true);
+    assert_eq!(body["events"][0]["artist"], "Artist One");
+    assert_eq!(body["events"][0]["date"], "2099-10-17");
+    assert_no_leaks(&serde_json::to_string(&response).unwrap());
 }
 
 #[test]
