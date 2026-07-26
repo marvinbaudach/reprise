@@ -168,6 +168,11 @@ const BASS_BAND_COUNT: usize = 4;
 const FLUX_LOW_BANDS: usize = 8;
 const FLUX_LOW_WEIGHT: f32 = 1.6;
 const FLUX_HIGH_WEIGHT: f32 = 1.0;
+/// Parallel low-frequency onset path. A kick inside an already loud,
+/// compressed mix may barely move the broad average while still producing a
+/// clear local bass transient. Keep this below unity so broadband impacts
+/// retain comparable strength.
+const FLUX_LOW_PATH_GAIN: f32 = 0.75;
 /// Envelope release time constants (ms). Attack is near-instant.
 const LEVEL_RELEASE_MS: f32 = 180.0;
 const BASS_RELEASE_MS: f32 = 140.0;
@@ -179,12 +184,12 @@ const DYN_LONG_MS: f32 = 2200.0;
 const DYN_SCALE: f32 = 1.5;
 /// Beat fires when flux exceeds `mean + K*std + floor`, is above a minimum, and
 /// the refractory window has elapsed.
-const BEAT_K: f32 = 1.8;
-const BEAT_FLOOR: f32 = 0.02;
-const BEAT_MIN_FLUX: f32 = 0.05;
+const BEAT_K: f32 = 1.4;
+const BEAT_FLOOR: f32 = 0.01;
+const BEAT_MIN_FLUX: f32 = 0.03;
 const BEAT_REFRACTORY_MS: f32 = 90.0;
 /// Flux overshoot above threshold that maps to full `strength`.
-const BEAT_STRENGTH_OVERSHOOT: f32 = 0.35;
+const BEAT_STRENGTH_OVERSHOOT: f32 = 0.12;
 // --- Display-band mapping: honest to loudness, no per-band auto-gain ---------
 //
 // Each band's magnitude is mapped through a *fixed* decibel window so the
@@ -363,24 +368,33 @@ impl SpectrumAnalyzer {
     }
 
     fn detect_beat(&mut self, bands: &[f32; SPECTRUM_BAND_COUNT]) -> Beat {
-        let mut flux = 0.0_f32;
+        let mut weighted_flux = 0.0_f32;
+        let mut low_flux = 0.0_f32;
         let mut total_weight = 0.0_f32;
         for (index, (&band, &prev)) in bands.iter().zip(self.prev_bands.iter()).enumerate() {
+            let positive_delta = (band - prev).max(0.0);
             let weight = if index < FLUX_LOW_BANDS {
+                low_flux += positive_delta;
                 FLUX_LOW_WEIGHT
             } else {
                 FLUX_HIGH_WEIGHT
             };
-            flux += (band - prev).max(0.0) * weight;
+            weighted_flux += positive_delta * weight;
             total_weight += weight;
         }
-        flux /= total_weight.max(1.0);
+        let broad_flux = weighted_flux / total_weight.max(1.0);
+        let bass_flux = low_flux / FLUX_LOW_BANDS as f32 * FLUX_LOW_PATH_GAIN;
+        let flux = broad_flux.max(bass_flux);
 
         let variance = (self.flux_sq_mean - self.flux_mean * self.flux_mean).max(0.0);
         let threshold = self.flux_mean + BEAT_K * variance.sqrt() + BEAT_FLOOR;
         let fired = flux > threshold
             && flux > BEAT_MIN_FLUX
-            && self.frames_since_beat >= self.refractory_frames;
+            // `frames_since_beat` counts completed frames after the hit. The
+            // current candidate frame contributes the final interval, so add
+            // it before comparing; otherwise a hit exactly at the documented
+            // refractory boundary is swallowed for one extra frame.
+            && self.frames_since_beat.saturating_add(1) >= self.refractory_frames;
         let strength = if fired {
             ((flux - threshold) / BEAT_STRENGTH_OVERSHOOT).clamp(0.0, 1.0)
         } else {
@@ -450,7 +464,7 @@ mod song_visual_tests {
     use super::*;
 
     #[test]
-    fn ac_10_spectrum_frame_normalizes_decibels_and_rejects_non_finite_input() {
+    fn ac_20_spectrum_frame_normalizes_decibels_and_rejects_non_finite_input() {
         let mut decibels = [-80.0_f32; SPECTRUM_BAND_COUNT];
         decibels[..16].copy_from_slice(&[
             -80.0,
@@ -575,6 +589,60 @@ mod spectrum_analyzer_tests {
         assert!(hit.beat().fired);
         assert!(hit.beat().strength > 0.0);
         assert!(hit.level() > 0.9);
+    }
+
+    #[test]
+    fn breakdown_hits_at_the_refractory_boundary_both_fire() {
+        let mut analyzer = SpectrumAnalyzer::new();
+        ingest_n(&mut analyzer, SILENCE, 20);
+        assert!(analyzer.ingest(FULL).beat().fired);
+
+        let interval_frames = (BEAT_REFRACTORY_MS / SPECTRUM_INTERVAL_MS as f32).ceil() as usize;
+        for _ in 1..interval_frames {
+            analyzer.ingest(SILENCE);
+        }
+
+        let second = analyzer.ingest(FULL);
+        assert!(
+            second.beat().fired,
+            "a second hit after {interval_frames} analysis intervals must not be swallowed"
+        );
+    }
+
+    #[test]
+    fn localized_kick_inside_a_loud_mix_still_fires() {
+        let mut analyzer = SpectrumAnalyzer::new();
+        let wall = [-24.0; SPECTRUM_ANALYSIS_BAND_COUNT];
+        ingest_n(&mut analyzer, wall, 120);
+
+        let mut kick = wall;
+        kick[..FLUX_LOW_BANDS].fill(-12.0);
+        let hit = analyzer.ingest(kick);
+
+        assert!(
+            hit.beat().fired,
+            "a bass-localized transient must survive a compressed loud background"
+        );
+        assert!(
+            hit.beat().strength > 0.65,
+            "a genuine kick must report a strong onset, got {}",
+            hit.beat().strength
+        );
+    }
+
+    #[test]
+    fn minor_bass_shimmer_inside_a_loud_mix_does_not_fire() {
+        let mut analyzer = SpectrumAnalyzer::new();
+        let wall = [-24.0; SPECTRUM_ANALYSIS_BAND_COUNT];
+        ingest_n(&mut analyzer, wall, 120);
+
+        let mut shimmer = wall;
+        shimmer[..FLUX_LOW_BANDS].fill(-22.0);
+
+        assert!(
+            !analyzer.ingest(shimmer).beat().fired,
+            "small low-band fluctuations must not become a beat storm"
+        );
     }
 
     #[test]

@@ -7,5 +7,3 @@ pub const SONG_VISUALS_DESCRIPTION: &str = N_!("Show local audio-reactive visual
 pub const SONG_VISUALS_ACCESSIBLE: &str = N_!("Audio-reactive song visual");
 pub const SONG_VISUALS_MODE_GRID: &str = N_!("Grid");
 pub const SONG_VISUALS_MODE_BARS: &str = N_!("Bars");
-pub const SONG_VISUALS_MODE_FLOW: &str = N_!("Flow");
-pub const SONG_VISUALS_MODE_PULSE: &str = N_!("Pulse");
