@@ -16,6 +16,9 @@ mod error;
 mod playback;
 mod playlist_update;
 mod server;
+mod source_actions;
+mod source_data;
+mod source_tools;
 mod startup;
 mod stdin_cap;
 
@@ -81,6 +84,7 @@ async fn serve(db_path: PathBuf, staging_path: PathBuf, caps: startup::StartupCa
         caps.playlist_create,
         caps.playlist_manage,
         caps.ai_create,
+        caps.sources_manage,
     );
     // Cap stdin per line so a hostile or newline-less client cannot OOM the
     // process through rmcp's unbounded `read_until` (see `stdin_cap`). `serve`

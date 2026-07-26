@@ -32,10 +32,13 @@ pub struct StartupCaps {
     pub playlist_manage: bool,
     /// Whether `ai:create` was granted at startup.
     pub ai_create: bool,
+    /// Whether `sources:manage` was granted at startup.
+    pub sources_manage: bool,
 }
 
 /// Opens and migrates the database, then snapshots the write-class capabilities
-/// (`playlist:create`, `playlist:manage`, `ai:create`) as they stood at startup.
+/// (`playlist:create`, `playlist:manage`, `ai:create`, `sources:manage`) as they
+/// stood at startup.
 pub fn prepare(db_path: &Path) -> Result<StartupCaps, StartupError> {
     let conn = match db::open_migrated(Some(db_path)) {
         Ok(conn) => conn,
@@ -48,5 +51,6 @@ pub fn prepare(db_path: &Path) -> Result<StartupCaps, StartupError> {
         playlist_create: capability::playlist_create_granted(&conn).map_err(StartupError::Query)?,
         playlist_manage: capability::playlist_manage_granted(&conn).map_err(StartupError::Query)?,
         ai_create: capability::ai_create_granted(&conn).map_err(StartupError::Query)?,
+        sources_manage: capability::sources_manage_granted(&conn).map_err(StartupError::Query)?,
     })
 }
