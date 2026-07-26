@@ -1,3 +1,5 @@
+use crate::ui::strings;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ConcertsEmptyState {
     List,
@@ -26,12 +28,59 @@ pub(super) fn concerts_empty_state_for(
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub(super) struct ConcertsEmptyStatePresentation {
+    pub icon: &'static str,
+    pub title: String,
+    pub description: String,
+    pub action: Option<String>,
+}
+
+pub(super) fn concerts_empty_state_presentation(
+    state: ConcertsEmptyState,
+    total: usize,
+) -> ConcertsEmptyStatePresentation {
+    let (icon, title, description, action) = match state {
+        ConcertsEmptyState::NoCredentials => (
+            "x-office-calendar-symbolic",
+            strings::text(strings::CONCERTS_NO_DATA_TITLE),
+            String::new(),
+            None,
+        ),
+        ConcertsEmptyState::NeverFetched => (
+            "x-office-calendar-symbolic",
+            strings::text(strings::CONCERTS_NO_DATA_TITLE),
+            String::new(),
+            Some(strings::text(strings::FETCH_NOW)),
+        ),
+        ConcertsEmptyState::NoResults => (
+            "system-search-symbolic",
+            strings::text(strings::NO_RESULTS_TITLE),
+            strings::text(strings::NO_RESULTS_DESCRIPTION),
+            Some(strings::show_all_concerts(total)),
+        ),
+        ConcertsEmptyState::Empty => (
+            "emblem-ok-symbolic",
+            strings::text(strings::CONCERTS_NO_UPCOMING_TITLE),
+            String::new(),
+            Some(strings::text(strings::FETCH_NOW)),
+        ),
+        ConcertsEmptyState::List => unreachable!("list state has no status presentation"),
+    };
+    ConcertsEmptyStatePresentation {
+        icon,
+        title,
+        description,
+        action,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn conc_4a_empty_state_matrix_has_one_deterministic_next_step() {
+    fn conc_4b_empty_state_matrix_has_one_deterministic_next_step() {
         assert_eq!(
             concerts_empty_state_for(1, false, false, true),
             ConcertsEmptyState::List
@@ -52,5 +101,17 @@ mod tests {
             concerts_empty_state_for(0, false, true, false),
             ConcertsEmptyState::Empty
         );
+    }
+
+    #[test]
+    fn conc_4b_missing_credentials_have_no_key_entry_prompt() {
+        let presentation = concerts_empty_state_presentation(ConcertsEmptyState::NoCredentials, 0);
+
+        assert_eq!(
+            presentation.title,
+            strings::text(strings::CONCERTS_NO_DATA_TITLE)
+        );
+        assert!(presentation.description.is_empty());
+        assert_eq!(presentation.action, None);
     }
 }

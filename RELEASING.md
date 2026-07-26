@@ -123,8 +123,8 @@ build. Meson passes its build environment to Cargo:
 ```sh
 # Populate REPRISE_TICKETMASTER_APIKEY through a secret manager first.
 export REPRISE_TICKETMASTER_APIKEY
-meson setup /tmp/reprise-release-build . --prefix=/usr -Dprofile=release
-meson compile -C /tmp/reprise-release-build
+meson setup target/meson-release . --prefix=/usr -Dprofile=release
+meson compile -C target/meson-release
 unset REPRISE_TICKETMASTER_APIKEY
 ```
 
@@ -135,7 +135,7 @@ exactly `REPRISE_TICKETMASTER_APIKEY` and pass it only to the build step:
 - name: Build release
   env:
     REPRISE_TICKETMASTER_APIKEY: ${{ secrets.REPRISE_TICKETMASTER_APIKEY }}
-  run: meson compile -C /tmp/reprise-release-build
+  run: meson compile -C target/meson-release
 ```
 
 Never print the variable or enable shell tracing around the build. Keeping a
