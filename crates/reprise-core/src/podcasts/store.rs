@@ -393,7 +393,7 @@ mod tests {
     }
 
     #[test]
-    fn episode_upsert_changes_metadata_but_preserves_listening_state() {
+    fn pod_2_episode_upsert_changes_metadata_but_preserves_listening_state() {
         let conn = conn();
         let subscription_id = add_or_restore(&conn, &subscription_draft(), 10).unwrap();
         let first = upsert_episode(&conn, subscription_id, &parsed_episode("Old"), 20).unwrap();

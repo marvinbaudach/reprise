@@ -242,7 +242,7 @@ mod tests {
     }
 
     #[test]
-    fn paths_are_guid_keyed_and_reclaimable() {
+    fn pod_5_paths_are_guid_keyed_and_reclaimable() {
         let directory = tempfile::tempdir().unwrap();
         let first = download_path(
             directory.path(),
