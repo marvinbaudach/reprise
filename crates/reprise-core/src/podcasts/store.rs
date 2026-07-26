@@ -123,6 +123,21 @@ pub fn count_subscriptions(conn: &Connection) -> Result<usize, rusqlite::Error> 
     .map(|count| count.max(0) as usize)
 }
 
+pub fn update_subscription_details(
+    conn: &Connection,
+    id: i64,
+    title: Option<&str>,
+    auto_download: Option<bool>,
+) -> Result<bool, rusqlite::Error> {
+    Ok(conn.execute(
+        "UPDATE podcast_subscriptions
+         SET title = COALESCE(?2, title),
+             auto_download = COALESCE(?3, auto_download)
+         WHERE id = ?1 AND removed_at IS NULL",
+        params![id, title, auto_download],
+    )? != 0)
+}
+
 pub fn replace_future_only_baseline(
     conn: &Connection,
     subscription_id: i64,

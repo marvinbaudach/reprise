@@ -157,6 +157,29 @@ pub fn update_details(
     )? != 0)
 }
 
+pub fn update(conn: &Connection, id: i64, station: &NewStation) -> Result<bool, rusqlite::Error> {
+    Ok(conn.execute(
+        "UPDATE radio_stations
+         SET uuid = ?2, name = ?3, stream_url = ?4, homepage = ?5,
+             favicon_url = ?6, genre = ?7, codec = ?8, bitrate_kbps = ?9,
+             country_code = ?10, votes = ?11
+         WHERE id = ?1 AND removed_at IS NULL",
+        params![
+            id,
+            station.uuid,
+            station.name,
+            station.stream_url,
+            station.homepage,
+            station.favicon_url,
+            station.genre,
+            station.codec,
+            station.bitrate_kbps,
+            station.country_code,
+            station.votes,
+        ],
+    )? != 0)
+}
+
 fn find_identity(conn: &Connection, station: &NewStation) -> Result<Option<i64>, rusqlite::Error> {
     conn.query_row(
         "SELECT id
@@ -268,5 +291,26 @@ mod tests {
             get(&conn, id).unwrap().unwrap().stream_url,
             "https://radio.example/fresh"
         );
+    }
+
+    #[test]
+    fn updating_a_manual_station_can_replace_its_url_without_duplication() {
+        let conn = conn();
+        let mut manual = station();
+        manual.uuid = None;
+        let id = add_or_restore(&conn, &manual, 10).unwrap();
+        let replacement = NewStation {
+            name: "Renamed".into(),
+            stream_url: "https://radio.example/fresh".into(),
+            genre: Some("Doom".into()),
+            ..manual
+        };
+
+        assert!(update(&conn, id, &replacement).unwrap());
+        assert_eq!(count_stations(&conn).unwrap(), 1);
+        let stored = get(&conn, id).unwrap().unwrap();
+        assert_eq!(stored.name, "Renamed");
+        assert_eq!(stored.stream_url, "https://radio.example/fresh");
+        assert_eq!(stored.genre.as_deref(), Some("Doom"));
     }
 }

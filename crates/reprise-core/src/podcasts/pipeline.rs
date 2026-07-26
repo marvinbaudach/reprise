@@ -41,28 +41,32 @@ impl FeedFetcher for HttpFeedFetcher {
 impl YoutubeFetcher for super::ytdlp::YtDlp {
     fn list(&self, url: &str, limit: usize) -> Result<ParsedFeed, PodcastError> {
         let listing = super::youtube::project_playlist(super::ytdlp::YtDlp::list(self, url)?);
-        Ok(ParsedFeed {
-            title: listing.title.unwrap_or_else(|| url.to_owned()),
-            author: None,
-            image_url: None,
-            episodes: listing
-                .episodes
-                .into_iter()
-                .take(limit)
-                .map(|episode| ParsedEpisode {
-                    guid: episode.guid,
-                    title: episode.title,
-                    audio_url: episode.audio_url,
-                    page_url: None,
-                    published_at: episode.published_at,
-                    duration_secs: episode.duration_secs,
-                })
-                .collect(),
-        })
+        Ok(project_youtube_feed(listing, limit))
     }
 
     fn download(&self, url: &str, destination: &Path) -> Result<(), PodcastError> {
         super::ytdlp::YtDlp::download(self, url, destination)
+    }
+}
+
+pub fn project_youtube_feed(listing: super::youtube::YoutubeListing, limit: usize) -> ParsedFeed {
+    ParsedFeed {
+        title: listing.title.unwrap_or_else(|| "YouTube source".to_owned()),
+        author: None,
+        image_url: None,
+        episodes: listing
+            .episodes
+            .into_iter()
+            .take(limit)
+            .map(|episode| ParsedEpisode {
+                guid: episode.guid,
+                title: episode.title,
+                audio_url: episode.audio_url,
+                page_url: None,
+                published_at: episode.published_at,
+                duration_secs: episode.duration_secs,
+            })
+            .collect(),
     }
 }
 
@@ -336,6 +340,18 @@ mod tests {
         fn download(&self, _: &str, _: &Path) -> Result<(), PodcastError> {
             Err(PodcastError::YtDlp("unexpected YouTube call".to_owned()))
         }
+    }
+
+    #[test]
+    fn untitled_youtube_listing_uses_a_non_url_fallback_title() {
+        let feed = project_youtube_feed(
+            super::super::youtube::YoutubeListing {
+                title: None,
+                episodes: Vec::new(),
+            },
+            25,
+        );
+        assert_eq!(feed.title, "YouTube source");
     }
 
     struct PartialFailureFeed {

@@ -1,8 +1,9 @@
 //! The stdio MCP server over `reprise-core`, plus feature-gated live playback
 //! and queue controls over the running app's local D-Bus interface.
 //!
-//! Resources: `reprise://library/summary`, `reprise://playlists`, and
-//! `reprise://concerts`. Tools: `music_search_tracks` (read),
+//! Resources: `reprise://library/summary`, `reprise://playlists`,
+//! `reprise://concerts`, `reprise://podcasts`, and `reprise://radio`. Tools:
+//! `music_search_tracks` (read),
 //! `music_create_playlist` (write, gated on the `playlist:create` capability).
 //! All blocking database and bus work runs on `spawn_blocking`; the handler
 //! itself holds only paths and startup capability snapshots, so it stays
@@ -38,13 +39,21 @@ pub const RESOURCE_LIBRARY_SUMMARY: &str = "reprise://library/summary";
 pub const RESOURCE_PLAYLISTS: &str = "reprise://playlists";
 /// URI of the filtered upcoming-concert listing.
 pub const RESOURCE_CONCERTS: &str = "reprise://concerts";
+/// URI of the cached podcast subscriptions and episodes.
+pub const RESOURCE_PODCASTS: &str = "reprise://podcasts";
+/// URI of the cached radio favorites.
+pub const RESOURCE_RADIO: &str = "reprise://radio";
 
 const RESOURCE_MIME_JSON: &str = "application/json";
 
 const SERVER_INSTRUCTIONS: &str = "Reprise local music library and player. \
     Read-only tools and resources expose path-free track, artist, album, and \
-    playlist metadata. Playlist creation and safe rename/append operations use \
-    separate opt-in capabilities. Playback tools expose transport, live state, \
+    playlist metadata plus cached podcast/YouTube and radio metadata. \
+    `music_manage_podcasts` and `music_manage_radio` add, edit, remove, or \
+    refresh remote sources under the opt-in 'sources:manage' capability; \
+    resource responses never expose stored source URLs. Playlist creation and \
+    safe rename/append operations use separate opt-in capabilities. Playback \
+    tools expose transport, live state, \
     volume, seek, shuffle, repeat, targeted play, and a bounded Play Next queue; \
     they require the running Reprise app. \
     `music_create_instrumental` queues experimental vocal-removal renders of \
@@ -60,6 +69,7 @@ pub struct RepriseServer {
     write_granted_at_startup: bool,
     playlist_manage_granted_at_startup: bool,
     ai_create_granted_at_startup: bool,
+    sources_manage_granted_at_startup: bool,
     tool_router: ToolRouter<Self>,
 }
 
@@ -78,15 +88,16 @@ impl RepriseServer {
     }
 
     /// Builds a handler bound to `db_path` (and `staging_path` for the AI job
-    /// queue). The three booleans are startup snapshots for the write-class
-    /// capabilities (`playlist:create`, `playlist:manage`, `ai:create`) — the
-    /// restart half of the D18 / Beschluss 7 gate.
+    /// queue). The four booleans are startup snapshots for the write-class
+    /// capabilities (`playlist:create`, `playlist:manage`, `ai:create`, and
+    /// `sources:manage`) — the restart half of the D18 / Beschluss 7 gate.
     pub fn new(
         db_path: PathBuf,
         staging_path: PathBuf,
         write_granted_at_startup: bool,
         playlist_manage_granted_at_startup: bool,
         ai_create_granted_at_startup: bool,
+        sources_manage_granted_at_startup: bool,
     ) -> Self {
         Self {
             db_path: Arc::new(db_path),
@@ -94,6 +105,7 @@ impl RepriseServer {
             write_granted_at_startup,
             playlist_manage_granted_at_startup,
             ai_create_granted_at_startup,
+            sources_manage_granted_at_startup,
             tool_router: Self::build_tool_router(),
         }
     }
@@ -107,12 +119,20 @@ impl RepriseServer {
     /// router (`playback_tool_router`) merged in only for that build.
     #[cfg(feature = "mpris")]
     fn build_tool_router() -> ToolRouter<Self> {
-        Self::tool_router() + Self::playback_tool_router()
+        Self::tool_router() + Self::source_tool_router() + Self::playback_tool_router()
     }
 
     #[cfg(not(feature = "mpris"))]
     fn build_tool_router() -> ToolRouter<Self> {
-        Self::tool_router()
+        Self::tool_router() + Self::source_tool_router()
+    }
+
+    pub(crate) fn source_db_path(&self) -> Arc<PathBuf> {
+        self.db_path.clone()
+    }
+
+    pub(crate) fn sources_manage_granted_at_startup(&self) -> bool {
+        self.sources_manage_granted_at_startup
     }
 }
 
@@ -608,6 +628,18 @@ impl ServerHandler for RepriseServer {
                      venues, cities, ticket links. No file paths.",
                 )
                 .with_mime_type(RESOURCE_MIME_JSON),
+            Resource::new(RESOURCE_PODCASTS, "podcasts")
+                .with_description(
+                    "Cached podcast and YouTube subscriptions plus recent episodes. \
+                     No source, media, artwork, or filesystem paths.",
+                )
+                .with_mime_type(RESOURCE_MIME_JSON),
+            Resource::new(RESOURCE_RADIO, "radio")
+                .with_description(
+                    "Cached radio favorites and display metadata. No stream, artwork, \
+                     homepage, or filesystem paths.",
+                )
+                .with_mime_type(RESOURCE_MIME_JSON),
         ]))
     }
 
@@ -637,6 +669,21 @@ impl ServerHandler for RepriseServer {
             RESOURCE_CONCERTS => {
                 let outcome =
                     tokio::task::spawn_blocking(move || data::list_concerts(path.as_path()))
+                        .await
+                        .map_err(|error| error::join_error(&error))?;
+                error::serialize_resource(&outcome.map_err(error::resource_error)?)?
+            }
+            RESOURCE_PODCASTS => {
+                let outcome = tokio::task::spawn_blocking(move || {
+                    crate::source_data::podcasts(path.as_path())
+                })
+                .await
+                .map_err(|error| error::join_error(&error))?;
+                error::serialize_resource(&outcome.map_err(error::resource_error)?)?
+            }
+            RESOURCE_RADIO => {
+                let outcome =
+                    tokio::task::spawn_blocking(move || crate::source_data::radio(path.as_path()))
                         .await
                         .map_err(|error| error::join_error(&error))?;
                 error::serialize_resource(&outcome.map_err(error::resource_error)?)?
