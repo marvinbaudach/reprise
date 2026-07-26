@@ -94,7 +94,7 @@ pub(crate) fn open(path: &Path) -> Result<Connection, DataError> {
     db::open(Some(path)).map_err(DataError::Open)
 }
 
-fn require_read(conn: &Connection) -> Result<(), DataError> {
+pub(crate) fn require_read(conn: &Connection) -> Result<(), DataError> {
     if capability::library_read_enabled(conn).map_err(DataError::Db)? {
         Ok(())
     } else {
