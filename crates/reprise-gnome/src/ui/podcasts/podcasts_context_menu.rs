@@ -11,12 +11,14 @@ pub(super) const ACTION_PLAY: &str = "play";
 pub(super) const ACTION_COPY_URL: &str = "copy-url";
 pub(super) const ACTION_TOGGLE_PLAYED: &str = "toggle-played";
 pub(super) const ACTION_TOGGLE_DOWNLOAD: &str = "toggle-download";
+pub(super) const ACTION_REMOVE_EPISODE: &str = "remove-episode";
 pub(super) const ACTION_UNSUBSCRIBE: &str = "unsubscribe";
 const ACTIONS: &[&str] = &[
     ACTION_PLAY,
     ACTION_COPY_URL,
     ACTION_TOGGLE_PLAYED,
     ACTION_TOGGLE_DOWNLOAD,
+    ACTION_REMOVE_EPISODE,
     ACTION_UNSUBSCRIBE,
 ];
 
@@ -57,6 +59,12 @@ pub(super) fn build(row: &EpisodeRow) -> gio::Menu {
     menu.append_section(None, &primary);
 
     let destructive = gio::Menu::new();
+    append_targeted(
+        &destructive,
+        strings::PODCAST_REMOVE_EPISODE,
+        ACTION_REMOVE_EPISODE,
+        row.id,
+    );
     append_targeted(
         &destructive,
         &strings::podcast_unsubscribe_from(&row.show),
@@ -134,5 +142,10 @@ mod tests {
                 && !action.contains("play-next")
                 && !action.contains("play_next")
         }));
+    }
+
+    #[test]
+    fn pod_6_context_menu_exposes_individual_episode_removal() {
+        assert!(ACTIONS.contains(&ACTION_REMOVE_EPISODE));
     }
 }

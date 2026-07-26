@@ -200,7 +200,18 @@ pub fn upsert_episode(
     subscription_id: i64,
     episode: &ParsedEpisode,
     now: i64,
-) -> Result<UpsertResult, rusqlite::Error> {
+) -> Result<Option<UpsertResult>, rusqlite::Error> {
+    let dismissed = conn.query_row(
+        "SELECT EXISTS(
+           SELECT 1 FROM podcast_episode_dismissals
+           WHERE subscription_id = ?1 AND guid = ?2
+         )",
+        params![subscription_id, episode.guid],
+        |row| row.get::<_, bool>(0),
+    )?;
+    if dismissed {
+        return Ok(None);
+    }
     let existing = conn
         .query_row(
             "SELECT id FROM podcast_episodes
@@ -233,10 +244,10 @@ pub fn upsert_episode(
         ],
         |row| row.get(0),
     )?;
-    Ok(UpsertResult {
+    Ok(Some(UpsertResult {
         episode_id,
         inserted: existing.is_none(),
-    })
+    }))
 }
 
 pub fn episode(conn: &Connection, id: i64) -> Result<Option<EpisodeRow>, rusqlite::Error> {
@@ -247,7 +258,7 @@ pub fn episode(conn: &Connection, id: i64) -> Result<Option<EpisodeRow>, rusqlit
                 e.position_ms, e.first_seen_at
          FROM podcast_episodes e
          JOIN podcast_subscriptions s ON s.id = e.subscription_id
-         WHERE e.id = ?1 AND s.removed_at IS NULL",
+         WHERE e.id = ?1 AND s.removed_at IS NULL AND e.removed_at IS NULL",
         [id],
         episode_from_row,
     )
@@ -376,6 +387,60 @@ pub fn downloaded_paths_for_subscription(
     rows.collect::<Result<Vec<_>, _>>()
 }
 
+pub fn tombstone_episode(conn: &Connection, id: i64, now: i64) -> Result<bool, rusqlite::Error> {
+    Ok(conn.execute(
+        "UPDATE podcast_episodes
+         SET removed_at = ?2
+         WHERE id = ?1 AND removed_at IS NULL",
+        params![id, now],
+    )? != 0)
+}
+
+pub fn undo_remove_episode(conn: &Connection, id: i64) -> Result<bool, rusqlite::Error> {
+    Ok(conn.execute(
+        "UPDATE podcast_episodes
+         SET removed_at = NULL
+         WHERE id = ?1 AND removed_at IS NOT NULL",
+        [id],
+    )? != 0)
+}
+
+pub fn commit_remove_episode(
+    conn: &Connection,
+    id: i64,
+) -> Result<Option<String>, rusqlite::Error> {
+    let transaction = conn.unchecked_transaction()?;
+    let removed = transaction
+        .query_row(
+            "SELECT subscription_id, guid, removed_at, downloaded_path
+             FROM podcast_episodes
+             WHERE id = ?1 AND removed_at IS NOT NULL",
+            [id],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            },
+        )
+        .optional()?;
+    let Some((subscription_id, guid, removed_at, downloaded_path)) = removed else {
+        transaction.commit()?;
+        return Ok(None);
+    };
+    transaction.execute(
+        "INSERT INTO podcast_episode_dismissals (subscription_id, guid, removed_at)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(subscription_id, guid) DO UPDATE SET removed_at = excluded.removed_at",
+        params![subscription_id, guid, removed_at],
+    )?;
+    transaction.execute("DELETE FROM podcast_episodes WHERE id = ?1", [id])?;
+    transaction.commit()?;
+    Ok(downloaded_path)
+}
+
 pub fn tombstone_subscription(conn: &Connection, id: i64, now: i64) -> Result<(), rusqlite::Error> {
     conn.execute(
         "UPDATE podcast_subscriptions SET removed_at = ?2 WHERE id = ?1",
@@ -493,7 +558,9 @@ mod tests {
     fn pod_2_episode_upsert_changes_metadata_but_preserves_listening_state() {
         let conn = conn();
         let subscription_id = add_or_restore(&conn, &subscription_draft(), 10).unwrap();
-        let first = upsert_episode(&conn, subscription_id, &parsed_episode("Old"), 20).unwrap();
+        let first = upsert_episode(&conn, subscription_id, &parsed_episode("Old"), 20)
+            .unwrap()
+            .expect("episode should be imported");
         save_position(&conn, first.episode_id, 8_000).unwrap();
         conn.execute(
             "UPDATE podcast_episodes SET played_at = 30 WHERE id = ?1",
@@ -501,8 +568,9 @@ mod tests {
         )
         .unwrap();
 
-        let second =
-            upsert_episode(&conn, subscription_id, &parsed_episode("Renamed"), 99).unwrap();
+        let second = upsert_episode(&conn, subscription_id, &parsed_episode("Renamed"), 99)
+            .unwrap()
+            .expect("episode should be updated");
         let row = episode(&conn, first.episode_id).unwrap().unwrap();
 
         assert!(first.inserted);
@@ -571,7 +639,9 @@ mod tests {
     fn resubscribe_revives_existing_identity_and_history() {
         let conn = conn();
         let id = add_or_restore(&conn, &subscription_draft(), 10).unwrap();
-        let episode = upsert_episode(&conn, id, &parsed_episode("Episode"), 20).unwrap();
+        let episode = upsert_episode(&conn, id, &parsed_episode("Episode"), 20)
+            .unwrap()
+            .expect("episode should be imported");
         save_position(&conn, episode.episode_id, 12_000).unwrap();
         tombstone_subscription(&conn, id, 30).unwrap();
 
@@ -600,8 +670,9 @@ mod tests {
     fn episode_finish_marks_played_and_clears_resume_position() {
         let conn = conn();
         let subscription_id = add_or_restore(&conn, &subscription_draft(), 10).unwrap();
-        let result =
-            upsert_episode(&conn, subscription_id, &parsed_episode("Episode"), 20).unwrap();
+        let result = upsert_episode(&conn, subscription_id, &parsed_episode("Episode"), 20)
+            .unwrap()
+            .expect("episode should be imported");
         save_position(&conn, result.episode_id, 9_000).unwrap();
 
         mark_played(&conn, result.episode_id, 30).unwrap();
@@ -609,5 +680,62 @@ mod tests {
         let row = episode(&conn, result.episode_id).unwrap().unwrap();
         assert_eq!(row.played_at, Some(30));
         assert_eq!(row.position_ms, 0);
+    }
+
+    #[test]
+    fn pod_6_episode_removal_undo_and_commit_block_rss_and_youtube_reimport() {
+        for kind in [PodcastKind::Rss, PodcastKind::Youtube] {
+            let conn = conn();
+            let subscription_id = add_or_restore(
+                &conn,
+                &NewSubscription {
+                    kind,
+                    ..subscription_draft()
+                },
+                10,
+            )
+            .unwrap();
+            let episode = upsert_episode(&conn, subscription_id, &parsed_episode("Episode"), 20)
+                .unwrap()
+                .expect("episode should be imported");
+            set_downloaded_path(&conn, episode.episode_id, Some("/kept/download.mp3")).unwrap();
+
+            assert!(tombstone_episode(&conn, episode.episode_id, 30).unwrap());
+            assert!(super::episode(&conn, episode.episode_id).unwrap().is_none());
+            assert!(super::super::query::list_episodes(&conn)
+                .unwrap()
+                .is_empty());
+
+            assert!(undo_remove_episode(&conn, episode.episode_id).unwrap());
+            assert!(super::episode(&conn, episode.episode_id).unwrap().is_some());
+
+            assert!(tombstone_episode(&conn, episode.episode_id, 40).unwrap());
+            let retained_download = commit_remove_episode(&conn, episode.episode_id).unwrap();
+            assert_eq!(retained_download.as_deref(), Some("/kept/download.mp3"));
+            assert!(super::episode(&conn, episode.episode_id).unwrap().is_none());
+            assert_eq!(
+                conn.query_row("SELECT COUNT(*) FROM podcast_episodes", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
+                0
+            );
+
+            let reimport =
+                upsert_episode(&conn, subscription_id, &parsed_episode("Reimported"), 50).unwrap();
+            assert!(reimport.is_none());
+            assert!(super::super::query::list_episodes(&conn)
+                .unwrap()
+                .is_empty());
+            assert_eq!(
+                conn.query_row(
+                    "SELECT COUNT(*) FROM podcast_episode_dismissals",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+                1
+            );
+        }
     }
 }

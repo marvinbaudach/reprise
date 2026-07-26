@@ -170,7 +170,10 @@ pub fn refresh_to_root(
             if baseline.contains(&episode.guid) {
                 continue;
             }
-            let upsert = super::store::upsert_episode(conn, subscription.id, episode, now)?;
+            let Some(upsert) = super::store::upsert_episode(conn, subscription.id, episode, now)?
+            else {
+                continue;
+            };
             if upsert.inserted {
                 summary.episodes_inserted += 1;
                 new_episode_ids.push(upsert.episode_id);
