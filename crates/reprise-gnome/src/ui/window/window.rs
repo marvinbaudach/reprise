@@ -522,6 +522,7 @@ pub fn build(
         &lastfm,
         &artist_news,
         &concerts_runtime,
+        &podcasts_runtime,
         &cover_download,
         &artist_portrait,
         &decorations,

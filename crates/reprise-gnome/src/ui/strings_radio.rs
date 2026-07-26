@@ -10,7 +10,7 @@ use super::{formatted, plural};
 
 pub const RADIO: &str = N_!("Radio");
 pub const RADIO_DESCRIPTION: &str =
-    N_!("Play favorite stations; each play reports a click to radio-browser.info");
+    N_!("Contacts radio-browser.info for search; each favorite play reports its etiquette click");
 pub const RADIO_STATION: &str = N_!("Station");
 pub const RADIO_GENRE: &str = N_!("Genre");
 pub const RADIO_BITRATE: &str = N_!("Bitrate");
