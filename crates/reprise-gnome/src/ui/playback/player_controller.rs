@@ -256,6 +256,9 @@ pub struct PlayerController {
     /// `## Queue borrow discipline` doc section for the rule every call site
     /// (in any of the three files) follows.
     pub(in crate::ui) queue: RefCell<Queue>,
+    /// Cached library availability used to keep idle Play reachable without
+    /// enabling it for a genuinely empty library.
+    pub(in crate::ui) library_has_tracks: Cell<bool>,
     pub(in crate::ui) up_next: RefCell<UpNextQueue>,
     pub(in crate::ui) current_up_next: Cell<Option<i64>>,
     /// Catalog id removed while its player-owned snapshot remains loaded.
@@ -424,6 +427,8 @@ impl PlayerController {
             waveform,
         } = backends;
         let initial_effects = super::audio_effects::apply_initial(player.as_ref(), &conn);
+        let library_has_tracks =
+            super::queue_transport::initial_library_availability(&conn.borrow());
         {
             // Apply the stored transition mode to the backend up front so
             // Gapless/Crossfade is active from the first track (feed_next then
@@ -455,6 +460,7 @@ impl PlayerController {
             lastfm,
             scrobble_session: RefCell::new(ScrobbleSession::default()),
             queue: RefCell::new(Queue::new()),
+            library_has_tracks: Cell::new(library_has_tracks),
             up_next: RefCell::new(UpNextQueue::default()),
             current_up_next: Cell::new(None),
             deferred_queue_purge_id: Cell::new(None),
@@ -495,6 +501,7 @@ impl PlayerController {
         player_controller_wiring::wire_bar_controls(&controller);
         player_controller_wiring::wire_compact_controls(&controller);
         player_controller_wiring::arm_smoke_repeat(&controller);
+        controller.sync_transport_enabled(false);
 
         let song_visuals_enabled = reprise_core::modules::is_enabled(
             &controller.conn.borrow(),
