@@ -97,3 +97,4 @@ Verification: complete with sandbox exclusions (format, strict clippy, rustdoc, 
 Base: `e83d7303955`
 
 Single-device navigation polish: complete (this commit, base e83d7303955, skipped the chooser for one connected device, restored sidebar visibility with non-homogeneous content sizing, and replaced the split-action device row with a vertically centered neutral full-card navigation target; format, strict clippy, audit, core purity, architecture, accessibility, input, motion and UX traceability gates passed, while two inherited MCP Radio tests and isolated display tests remain blocked by sandbox socket permissions)
+Baseline gate repair: complete (this commit, base ea1b3dc7c1, removed the stale Concerts preferences callback reintroduced by the navigation merge; format, strict clippy, core purity, audit and the workspace suite excluding the two inherited sandbox-blocked Radio socket tests passed)
