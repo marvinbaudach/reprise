@@ -1686,6 +1686,9 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
   begrenzte Spektraldaten als „Bars": zwanzig fein segmentierte,
   frequenzabhängige Säulen, die auf den lokalen Beat-Impuls und anhaltenden,
   bassdominanten Energiedruck reagieren.
+  Track- und Album-ReplayGain normalisieren erst hinter dem Analyzer die
+  hörbare Ausgabe; dieselbe musikalische Energie erzeugt deshalb unabhängig
+  vom gespeicherten Gain-Wert denselben visuellen Ausschlag.
   Eine Modusauswahl und „Grid" existieren nicht.
   Das reine Frequenzbild reserviert das obere Drittel der Säulen für echte
   Beat- und Breakdown-Energie. Anhaltender Druck darf diesen Höhenraum nur

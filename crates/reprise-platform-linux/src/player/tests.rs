@@ -84,6 +84,30 @@ fn ac_20_audio_filter_contains_a_disabled_bounded_spectrum_analyzer() {
 }
 
 #[test]
+fn ac_20_visual_analyzer_precedes_replay_gain_normalization() {
+    gst::init().unwrap();
+    let filter = build_audio_filter(&AudioEffects {
+        replay_gain: reprise_core::library::settings::ReplayGainMode::Track,
+        ..AudioEffects::default()
+    })
+    .unwrap()
+    .unwrap();
+    let bin = filter.downcast::<gst::Bin>().unwrap();
+    let spectrum = bin.by_name("reprise-spectrum").unwrap();
+    let replay_gain = bin.by_name("reprise-replaygain").unwrap();
+    let spectrum_downstream = spectrum
+        .static_pad("src")
+        .and_then(|pad| pad.peer())
+        .and_then(|pad| pad.parent_element())
+        .expect("the spectrum analyzer has a downstream element");
+
+    assert_eq!(
+        spectrum_downstream, replay_gain,
+        "ReplayGain must not attenuate the signal used to size song visuals"
+    );
+}
+
+#[test]
 fn ac_20_spectrum_messages_project_exactly_one_bounded_frame() {
     gst::init().unwrap();
     let magnitudes = gst::List::new(
