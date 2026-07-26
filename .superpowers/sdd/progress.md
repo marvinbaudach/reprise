@@ -79,6 +79,7 @@ MCP catalog follow-up: complete (this commit, base e7a208112e, added complete pa
 Base: `3fc0b2bf8a`
 
 Task I1: complete (this commit, base 3fc0b2bf8a, removed the test-only fake backend from user builds and gated the context action and worker on a compiled production backend)
+Task I2: complete (this commit, base ee14aa8d7a, exposed one verified runtime-readiness contract for the model and native ONNX Runtime and made the production backend and preferences consume it)
 
 # Ticketmaster bundled build credential
 
