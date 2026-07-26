@@ -242,6 +242,7 @@ pub enum CopyOutcome {
 #[derive(Debug)]
 pub enum DeviceIoError {
     InvalidRelativePath,
+    SizeMismatch { expected: u64, actual: u64 },
     Io(gio::glib::Error),
 }
 
@@ -249,6 +250,10 @@ impl fmt::Display for DeviceIoError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidRelativePath => formatter.write_str("invalid managed device path"),
+            Self::SizeMismatch { expected, actual } => write!(
+                formatter,
+                "partial device file has {actual} bytes, expected {expected}"
+            ),
             Self::Io(error) => write!(formatter, "device I/O failed: {error}"),
         }
     }
@@ -597,6 +602,14 @@ impl DeviceStorage {
         if let Err(error) = copied {
             delete_if_present(&partial).await;
             return Err(error.into());
+        }
+        let actual_size = target_size(&partial).await?.unwrap_or(0);
+        if actual_size != expected_size {
+            delete_if_present(&partial).await;
+            return Err(DeviceIoError::SizeMismatch {
+                expected: expected_size,
+                actual: actual_size,
+            });
         }
         if let Err(error) = partial
             .move_future(

@@ -48,13 +48,16 @@ pub trait DeviceBackend {
     fn delete_track(&self, _root_uri: String, _relative_target: String) -> BackendFuture<bool> {
         Box::pin(async { Err("device deletion is unavailable".into()) })
     }
-    fn start_transcodes(
+    fn probe_mp3_transcode(&self) -> Result<(), String> {
+        Err("MP3 transcoding is unavailable".into())
+    }
+    fn transcode_track(
         &self,
-        requests: Vec<EncodeRequest>,
+        request: Mp3TranscodeRequest,
         cancelled: Arc<AtomicBool>,
-    ) -> Result<async_channel::Receiver<EncodeOutcome>, String> {
-        let _ = (requests, cancelled);
-        Err("Opus transcoding is unavailable".into())
+    ) -> BackendFuture<TranscodedFile> {
+        let _ = (request, cancelled);
+        Box::pin(async { Err("MP3 transcoding is unavailable".into()) })
     }
     fn read_playlist(&self, root_uri: String, name: String) -> BackendFuture<Vec<M3uEntry>>;
     fn replace_playlist(

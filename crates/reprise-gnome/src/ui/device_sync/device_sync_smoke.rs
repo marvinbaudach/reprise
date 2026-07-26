@@ -14,7 +14,9 @@ use reprise_core::library::m3u::M3uEntry;
 use reprise_platform_linux::device_sync::{
     CopyOutcome, DeviceContents, DeviceDescriptor, DeviceStorage,
 };
-use reprise_platform_linux::device_transfer::{EncodeOutcome, EncodeRequest, EncoderPipeline};
+use reprise_platform_linux::device_transfer::{
+    probe_mp3_transcode_capability, transcode_to_mp3, Mp3TranscodeRequest, TranscodedFile,
+};
 use rusqlite::Connection;
 
 use super::device_sync_runtime::{BackendFuture, DeviceBackend, DeviceSyncRuntime, Subscription};
@@ -144,28 +146,33 @@ impl DeviceBackend for SmokeDeviceBackend {
         })
     }
 
-    fn start_transcodes(
+    fn probe_mp3_transcode(&self) -> Result<(), String> {
+        probe_mp3_transcode_capability().map_err(|error| error.to_string())
+    }
+
+    fn transcode_track(
         &self,
-        requests: Vec<EncodeRequest>,
+        request: Mp3TranscodeRequest,
         cancelled: Arc<AtomicBool>,
-    ) -> Result<async_channel::Receiver<EncodeOutcome>, String> {
-        let (sender, receiver) = async_channel::bounded(1);
-        std::thread::Builder::new()
-            .name("reprise-smoke-device-encoders".into())
-            .spawn(move || match EncoderPipeline::start(requests, cancelled) {
-                Ok(pipeline) => {
-                    while let Some(result) = pipeline.next() {
-                        if sender.send_blocking(result).is_err() {
-                            break;
-                        }
+    ) -> BackendFuture<TranscodedFile> {
+        Box::pin(async move {
+            let (sender, receiver) = async_channel::bounded(1);
+            std::thread::Builder::new()
+                .name("reprise-smoke-device-mp3-encoder".into())
+                .spawn(move || {
+                    let output = request.output.clone();
+                    let result =
+                        transcode_to_mp3(&request, &cancelled).map_err(|error| error.to_string());
+                    if sender.send_blocking(result).is_err() {
+                        let _ = std::fs::remove_file(output);
                     }
-                }
-                Err(error) => {
-                    tracing::warn!(%error, "could not create smoke encoder pipeline");
-                }
-            })
-            .map_err(|error| error.to_string())?;
-        Ok(receiver)
+                })
+                .map_err(|error| error.to_string())?;
+            receiver
+                .recv()
+                .await
+                .map_err(|_| "MP3 encoder stopped without a result".to_string())?
+        })
     }
 
     fn replace_playlist(

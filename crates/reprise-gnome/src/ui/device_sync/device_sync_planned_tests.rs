@@ -92,8 +92,8 @@ fn planned_paths_preserve_existing_collision_slots_across_selection_changes() {
             .map(|track| (track.track_id, track.device_path.clone()))
             .collect::<std::collections::HashMap<_, _>>();
 
-        assert_eq!(paths[&2], "Artist/Album/01 Same.flac");
-        assert_eq!(paths[&1], "Artist/Album/01 Same (3).flac");
+        assert_eq!(paths[&2], "Artist/Album/01 Same.mp3");
+        assert_eq!(paths[&1], "Artist/Album/01 Same (3).mp3");
     });
 }
 
@@ -115,8 +115,8 @@ fn sync_now_copies_the_selection_and_commits_the_device_inventory() {
         assert_eq!(playlists.len(), 1);
         assert_eq!(playlists[0].1, "Road");
         let playlist = String::from_utf8(playlists[0].2.clone()).unwrap();
-        assert!(playlist.contains("Artist/Unknown Album/00 Track 1.flac"));
-        assert!(playlist.contains("Artist/Unknown Album/00 Track 2.flac"));
+        assert!(playlist.contains("Artist/Unknown Album/00 Track 1.mp3"));
+        assert!(playlist.contains("Artist/Unknown Album/00 Track 2.mp3"));
         assert_eq!(
             reprise_core::device_sync::settings::load_device_files(&conn.borrow(), "a")
                 .unwrap()
@@ -127,6 +127,66 @@ fn sync_now_copies_the_selection_and_commits_the_device_inventory() {
         assert!(device.delta.unwrap().to_copy.is_empty());
         assert_eq!(device.sync_phase, PlannedSyncPhase::Idle);
         assert!(device.last_sync.is_some());
+    });
+}
+
+#[test]
+fn planned_transcodes_finish_before_each_corresponding_device_copy_starts() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1, 2]);
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+
+        runtime.sync_now("a").unwrap();
+        settle().await;
+
+        let operations = backend
+            .state
+            .planned_operations
+            .borrow()
+            .iter()
+            .map(|(_, operation)| *operation)
+            .collect::<Vec<_>>();
+        assert_eq!(operations, ["transcode", "copy", "transcode", "copy"]);
+    });
+}
+
+#[test]
+fn missing_mp3_capability_blocks_before_any_managed_deletion_or_copy() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1]);
+        reprise_core::device_sync::settings::upsert_device_file(
+            &conn.borrow(),
+            &reprise_core::device_sync::DeviceFileRecord {
+                device_serial: "a".into(),
+                track_id: 3,
+                source_path: "/library/3.flac".into(),
+                source_size: 100,
+                source_mtime: 1,
+                device_path: "Old/Three.mp3".into(),
+                device_size: 100,
+                profile_fingerprint: "legacy-opus-v1".into(),
+                pinned: false,
+            },
+        )
+        .unwrap();
+        let backend = Rc::new(
+            FakeBackend::new(vec![descriptor("a", true)], 1)
+                .with_mp3_probe_error("lamemp3enc is missing"),
+        );
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+
+        assert_eq!(
+            runtime.sync_now("a"),
+            Err(SyncStartError::Planning("lamemp3enc is missing".into()))
+        );
+        assert!(backend.state.deleted.borrow().is_empty());
+        assert!(backend.state.copy_order.borrow().is_empty());
+        assert!(backend.state.planned_operations.borrow().is_empty());
     });
 }
 
@@ -248,7 +308,7 @@ fn insufficient_space_is_projected_as_a_device_warning() {
         let (_temp, conn) = fixture();
         select_road_playlist(&conn, &[1, 2]);
         let backend = Rc::new(
-            FakeBackend::new(vec![descriptor("a", true)], 1).with_available_bytes(Some(150)),
+            FakeBackend::new(vec![descriptor("a", true)], 1).with_available_bytes(Some(50_000)),
         );
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
         gtk4::glib::timeout_future(Duration::from_millis(2)).await;
@@ -256,15 +316,15 @@ fn insufficient_space_is_projected_as_a_device_warning() {
         assert!(matches!(
             runtime.sync_now("a"),
             Err(SyncStartError::InsufficientSpace {
-                required_bytes: 200,
-                available_bytes: 150,
+                required_bytes: 64_000,
+                available_bytes: 50_000,
             })
         ));
         let device = runtime.devices().remove(0);
         assert_eq!(device.sync_phase, PlannedSyncPhase::Idle);
         assert!(device
             .sync_error
-            .is_some_and(|error| error.message.contains("only 150 bytes are available")));
+            .is_some_and(|error| error.message.contains("only 50000 bytes are available")));
     });
 }
 
@@ -318,7 +378,7 @@ fn stale_progress_from_a_cancelled_run_does_not_update_its_replacement() {
             runtime.devices()[0].sync_phase,
             PlannedSyncPhase::Syncing {
                 bytes_done: 50,
-                bytes_total: 100,
+                bytes_total: 32_000,
                 ..
             }
         ));
@@ -405,7 +465,7 @@ fn reconnect_resumes_planned_sync_from_the_remaining_delta() {
 }
 
 #[test]
-fn local_gio_sync_transcodes_lossless_selection_to_opus() {
+fn local_gio_sync_transcodes_lossless_selection_to_mp3() {
     run(async {
         let (sources, conn) = fixture();
         let wav = sources.path().join("transcode.wav");
@@ -466,8 +526,8 @@ fn local_gio_sync_transcodes_lossless_selection_to_opus() {
 
         let output = device_root
             .path()
-            .join("Music/Reprise/Artist/Album/01 Encoded.opus");
-        assert!(std::fs::read(output).unwrap().starts_with(b"OggS"));
+            .join("Music/Reprise/Artist/Album/01 Encoded.mp3");
+        assert!(std::fs::read(output).unwrap().starts_with(b"ID3"));
         let device = runtime.devices().remove(0);
         assert!(device.last_sync.is_some(), "device state: {device:?}");
         assert!(device.sync_error.is_none());
