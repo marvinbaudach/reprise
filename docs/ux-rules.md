@@ -1634,19 +1634,24 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
 
 - **AC-7** [ersetzt durch AC-10]
 - **AC-8** [ersetzt durch AC-11]
-- **AC-10** [aktiv] [core] [gtk] — „Song Visuals" ist ein standardmäßig
-  ausgeschaltetes, live anwendbares Plugin. Eingeschaltet visualisiert der
-  dritte Panel-Tab „Visual" ausschließlich lokal berechnete, auf 16 Bänder und
-  den Bereich 0–1 begrenzte Spektraldaten als die vier tastaturbedienbaren Modi
-  Grid, Bars, Flow und Pulse. Canvas und Auswahlzustand übernehmen den
-  aktuellen Cover-Akzent über denselben globalen Ambient-Crossfade wie die
-  Playerleiste; nur ohne brauchbare Coverfarbe gilt der Theme-Akzent. Farbe
-  bleibt durch benannte Modi und eine Screenreader-Beschriftung redundant.
+- **AC-10** [ersetzt durch AC-19]
 - **AC-11** [aktiv] [gtk] — Dauerbewegung existiert ausschließlich während
   laufender Wiedergabe und nur bei sichtbarem Visual-Tab. Pause und Stop klingen
   auf das statische Bild aus; `gtk-enable-animations=false` zeigt dieses ohne
   Tick-Callback. Das ist die in MOT-2 erlaubte, audiofunktionale Ausnahme für
   Dauerbewegung.
+- **AC-19** [ersetzt durch AC-20]
+- **AC-20** [aktiv] [core] [gtk] — „Song Visuals" ist ein standardmäßig
+  ausgeschaltetes, live anwendbares Plugin. Eingeschaltet visualisiert der
+  dritte Panel-Tab „Visual" ausschließlich lokal berechnete, aus 256 FFT-Bins
+  auf 64 logarithmische Anzeigebänder gefaltete und auf den Bereich 0–1
+  begrenzte Spektraldaten wahlweise als „Grid" oder „Bars".
+  „Grid" bleibt die Standardauswahl; „Bars" zeigt zwanzig fein segmentierte,
+  frequenzabhängige Säulen und reagiert auf denselben lokalen Beat-Impuls.
+  Flow, Pulse und weitere Modi existieren nicht. Der beschriftete Canvas
+  übernimmt den aktuellen Cover-Akzent über denselben globalen
+  Ambient-Crossfade wie die Playerleiste; nur ohne brauchbare Coverfarbe gilt
+  der Theme-Akzent.
 
 
 ## Y. Library Doctor / Tag Cleanup
@@ -2028,6 +2033,11 @@ Ankündigung. Die App refresht ihre *eigenen* Schreibaktionen weiterhin selbst
   Wiedergabe-Queue ist ein Snapshot (`queue::snapshot`); ein Fremd-Write an
   der Bibliothek ändert weder die laufende Wiedergabe noch die Reihenfolge der
   bereits eingereihten Titel.
+- **EXT-5** [geplant] [gtk] — Autorisierte externe Live-Queue-Befehle
+  aktualisieren eine sichtbare Queue geräuschlos an Ort und Stelle: kein
+  Toast, kein Fokus-, Selektions- oder Scrollpositionsverlust. Fehlende oder
+  unbekannte Tracks werden nicht eingereiht.
+  <!-- REVIEW: Regelvorschlag -->
 
 ## AB. Instrumental-Fassungen (experimentell)
 

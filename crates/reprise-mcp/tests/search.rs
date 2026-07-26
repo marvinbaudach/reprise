@@ -58,11 +58,21 @@ fn tool_discovery_lists_the_expected_tools() {
     let mut expected = vec![
         "music_create_instrumental",
         "music_create_playlist",
+        "music_get_playlist",
         "music_get_job_status",
+        "music_search_albums",
+        "music_search_artists",
         "music_search_tracks",
+        "music_update_playlist",
     ];
     if cfg!(feature = "mpris") {
-        expected.extend(["music_play", "music_playback_control"]);
+        expected.extend([
+            "music_get_playback_state",
+            "music_play",
+            "music_playback_control",
+            "music_queue",
+            "music_set_playback",
+        ]);
     }
     expected.sort_unstable();
     assert_eq!(names, expected);
