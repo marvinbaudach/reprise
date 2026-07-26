@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use chrono::Local;
-use gtk4::gio;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::artist_news::{self, ReleaseSortDirection, ReleasesFilter};
@@ -20,6 +19,7 @@ use super::releases_filter_bar::ReleasesFilterBar;
 use super::releases_model::{ReleaseObject, ReleasesModel};
 use super::releases_presentation::{releases_row_action, ReleasesRowAction};
 use super::OnShowAlbum;
+use crate::ui::external_link::{self, LaunchErrorSlot};
 use crate::ui::{one_shot_task, strings};
 
 const LIST_PAGE: &str = "list";
@@ -28,7 +28,6 @@ const FETCH_ICON_PAGE: &str = "icon";
 const FETCH_SPINNER_PAGE: &str = "spinner";
 
 type Callback = Rc<dyn Fn()>;
-type ErrorCallback = Rc<dyn Fn(String)>;
 
 struct Shared {
     conn: Rc<RefCell<Connection>>,
@@ -47,7 +46,7 @@ struct Shared {
     fetching: Cell<bool>,
     empty_state: Cell<ReleasesEmptyState>,
     on_show_album: OnShowAlbum,
-    on_launch_error: Rc<RefCell<Option<ErrorCallback>>>,
+    on_launch_error: LaunchErrorSlot,
     on_refreshed: RefCell<Option<Callback>>,
 }
 
@@ -274,19 +273,7 @@ fn activate_position(shared: &Rc<Shared>, position: u32) {
             (shared.on_show_album)(&entry.title, &entry.artist_name);
         }
         ReleasesRowAction::OpenAnnouncement(url) => {
-            let launch_error = shared.on_launch_error.clone();
-            gtk4::UriLauncher::new(&url).launch(
-                None::<&gtk4::Window>,
-                gio::Cancellable::NONE,
-                move |result| {
-                    if let Err(error) = result {
-                        tracing::warn!(%error, "could not open release announcement");
-                        if let Some(callback) = launch_error.borrow().as_ref() {
-                            callback(error.to_string());
-                        }
-                    }
-                },
-            );
+            external_link::launch(&url, "release announcement", Some(&shared.on_launch_error));
         }
     }
 }

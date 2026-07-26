@@ -35,6 +35,7 @@ pub mod dialogs;
 pub(crate) mod ellipsis_tooltip;
 pub(crate) mod eq_bars;
 mod external_changes;
+pub(crate) mod external_link;
 pub(crate) mod file_open;
 pub mod first_run;
 mod help;

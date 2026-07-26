@@ -47,6 +47,7 @@ mod db_new_releases_history;
 mod db_tag_write_jobs;
 pub mod device_sync;
 pub mod events;
+pub mod external_link;
 pub mod fingerprint;
 pub mod format;
 pub mod library;

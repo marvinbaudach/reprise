@@ -4,7 +4,6 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use chrono::Local;
-use gtk4::gio;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::concerts::{self, ConcertFilter, ConcertRow};
@@ -16,6 +15,7 @@ use super::concerts_filter_bar::ConcertsFilterBar;
 use super::concerts_model::{ConcertObject, ConcertsModel};
 use super::concerts_presentation::{sort_rows, updated_ago, ConcertSortKey, SortDirection};
 use super::concerts_worker::{request_allowed, ConcertsRequest, ConcertsResponse, ConcertsRuntime};
+use crate::ui::external_link::{self, LaunchErrorSlot};
 use crate::ui::strings;
 
 const LIST_PAGE: &str = "list";
@@ -25,7 +25,6 @@ const FETCH_SPINNER_PAGE: &str = "spinner";
 const REFRESH_TIMER_SECONDS: u32 = 60 * 60;
 
 type Callback = Rc<dyn Fn()>;
-type ErrorCallback = Rc<dyn Fn(String)>;
 
 struct Shared {
     conn: Rc<RefCell<Connection>>,
@@ -49,7 +48,7 @@ struct Shared {
     on_clear_filters: RefCell<Option<Callback>>,
     on_open_preferences: RefCell<Option<Callback>>,
     on_refreshed: RefCell<Option<Callback>>,
-    on_launch_error: Rc<RefCell<Option<ErrorCallback>>>,
+    on_launch_error: LaunchErrorSlot,
 }
 
 pub(in crate::ui) struct ConcertsView {
@@ -68,27 +67,10 @@ impl ConcertsView {
             .build();
         column_view.add_css_class("reprise-concerts-table");
 
-        let launch_error = Rc::new(RefCell::new(None::<ErrorCallback>));
+        let launch_error: LaunchErrorSlot = Rc::new(RefCell::new(None));
         let launch_error_for_open = launch_error.clone();
         let on_open: OnOpenTarget = Rc::new(move |target| {
-            let error_callback = launch_error_for_open.clone();
-            let target_for_log = target.clone();
-            gtk4::UriLauncher::new(&target).launch(
-                None::<&gtk4::Window>,
-                gio::Cancellable::NONE,
-                move |result| {
-                    if let Err(error) = result {
-                        tracing::warn!(
-                            %error,
-                            target = target_for_log,
-                            "could not open concert URL"
-                        );
-                        if let Some(callback) = error_callback.borrow().as_ref() {
-                            callback(error.to_string());
-                        }
-                    }
-                },
-            );
+            external_link::launch(&target, "concert", Some(&launch_error_for_open));
         });
         let columns = concerts_columns::append_columns(&column_view, &on_open);
 
