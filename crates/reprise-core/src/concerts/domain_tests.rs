@@ -80,6 +80,11 @@ fn config_defaults_are_bounded_and_stored_credentials_win() {
     );
     assert_eq!(config::window_days(&conn).unwrap(), 90);
     assert_eq!(config::similar_config(&conn).unwrap().count, 10);
+    assert_eq!(
+        config::persisted_filter(&conn).unwrap().radius_km,
+        Some(1_000.0)
+    );
+    assert_eq!(config::RADIUS_PRESETS_KM, [100, 250, 500, 1_000]);
     crate::library::settings::set_setting(&conn, "concerts.window_days", "999").unwrap();
     crate::library::settings::set_setting(&conn, "concerts.similar_count", "0").unwrap();
     crate::library::settings::set_setting(&conn, "concerts.bandsintown_app_id", "stored").unwrap();

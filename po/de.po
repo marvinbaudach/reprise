@@ -4514,3 +4514,18 @@ msgstr "Separate Titelleiste"
 #~ msgid "Based on {count} analyzed plays · {coverage}% coverage"
 #~ msgstr ""
 #~ "Basierend auf {count} analysierten Wiedergaben · {coverage}% Abdeckung"
+
+msgid "Saved"
+msgstr "Gespeichert"
+
+msgid "Checking key…"
+msgstr "Schlüssel wird geprüft …"
+
+msgid "Key works"
+msgstr "Schlüssel funktioniert"
+
+msgid "Key was rejected"
+msgstr "Schlüssel wurde abgelehnt"
+
+msgid "Could not verify"
+msgstr "Überprüfung nicht möglich"

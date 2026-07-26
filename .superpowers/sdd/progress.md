@@ -48,3 +48,14 @@ My Stats entrance order follow-up: complete (this commit, base c83e0be239, chain
 Base: `331217f344`
 
 Task P1: complete (this commit, base 331217f344, made stopped Play/Pause seed and start a random present-library snapshot without row activation, kept empty-library and queue navigation sensitivity honest, and activated PLAY-9; full non-display gates passed, while the rule-named display regression compiled but its isolated Xvfb run was blocked by sandbox D-Bus socket permissions)
+
+# Concerts credential feedback follow-up
+
+Base: `e38791b251`
+
+Gate repair: complete (commit 47d26b1c1c, base e38791b251, split the MCP data unit tests into a sibling module so the architecture file-size gate passes)
+Point 1: complete (commit 72e85defff, base 47d26b1c1c, propagated Concerts settings changes live to the view, sidebar and Updates popover, hid credential-ineligible fetch actions, and made 1000 km the default with 100/250/500/1000 km presets; all non-display gates passed, while the rule-named display regression compiled but its isolated Xvfb run was blocked by sandbox D-Bus socket permissions)
+Point 2: complete (commit 5786b63f97, base 72e85defff, kept SET-4 immediate persistence while adding the same Apply/Enter affordance as City and an inline saved acknowledgement to both credential rows; all non-display gates passed, while the display regression compiled but its isolated Xvfb run was blocked by sandbox D-Bus socket permissions)
+Point 3: complete (commit 5bc3b56b8b, base 5786b63f97, verified provider credentials off-thread through the shared limiter, mapped fixture-only success/rejection/timeout/transport outcomes to inline feedback, kept secrets out of fixture logs, activated CONC-8 and replaced CONC-5 with CONC-5a; all non-display gates passed, while isolated Xvfb display launches were blocked by sandbox D-Bus socket permissions)
+Sidebar progress follow-up: complete (this commit, base 5bc3b56b8b, pinned the shared progress activity below Issues at the sidebar bottom and added an FB-2a allocation regression)
+MCP catalog follow-up: complete (this commit, base e7a208112e, added complete path-free Concerts cache and Releases history resources while preserving the filtered Concerts contract and never exposing provider credentials)

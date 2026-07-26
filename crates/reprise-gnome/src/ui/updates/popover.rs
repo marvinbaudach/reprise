@@ -734,6 +734,16 @@ fn bind_concerts_runtime(state: &Rc<NewReleasesPopover>, runtime: &Rc<ConcertsRu
             }
         },
     );
+    let alive = Rc::downgrade(state);
+    let target = Rc::downgrade(state);
+    runtime.subscribe_settings(
+        move || alive.upgrade().is_some(),
+        move || {
+            if let Some(state) = target.upgrade() {
+                state.render(false, false);
+            }
+        },
+    );
 }
 
 pub(in crate::ui) fn install(
