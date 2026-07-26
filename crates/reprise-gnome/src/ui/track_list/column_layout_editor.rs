@@ -496,14 +496,14 @@ mod tests {
         // Cover is a fixed leading column — never listed, so it can't be
         // reordered or hidden from the editor.
         assert!(!editor_lists_column(ColumnId::Cover));
-        for id in [ColumnId::Title, ColumnId::Artist] {
+        for id in [ColumnId::Title, ColumnId::Artist, ColumnId::Added] {
             assert!(editor_lists_column(id), "{id:?} should be listed");
         }
     }
 
     #[test]
     fn every_listed_column_is_draggable_and_toggleable() {
-        for id in [ColumnId::Title, ColumnId::Artist] {
+        for id in [ColumnId::Title, ColumnId::Artist, ColumnId::Added] {
             let caps = row_capabilities(id);
             assert!(caps.toggleable, "{id:?} should be toggleable");
             assert!(caps.draggable, "{id:?} should be draggable");
