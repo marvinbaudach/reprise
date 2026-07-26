@@ -20,6 +20,13 @@ use super::device_sync_runtime::*;
 
 type TestFuture<T> = Pin<Box<dyn Future<Output = Result<T, String>>>>;
 type DeviceSubscriber = Rc<dyn Fn(Vec<DeviceDescriptor>)>;
+type DeleteObserver = Rc<dyn Fn(&str)>;
+
+#[derive(Clone)]
+struct CopyGate {
+    started: async_channel::Sender<String>,
+    releases: HashMap<String, async_channel::Receiver<()>>,
+}
 
 #[derive(Default)]
 struct FakeState {
@@ -37,6 +44,8 @@ struct FakeState {
     available_bytes: Cell<Option<u64>>,
     total_bytes: Cell<Option<u64>>,
     mp3_probe_error: RefCell<Option<String>>,
+    copy_gate: RefCell<Option<CopyGate>>,
+    delete_observer: RefCell<Option<DeleteObserver>>,
 }
 
 #[derive(Clone)]
@@ -74,6 +83,31 @@ impl FakeBackend {
         for subscriber in subscribers {
             subscriber(devices.to_owned());
         }
+    }
+
+    fn gate_copies(
+        &self,
+        device_ids: &[&str],
+    ) -> (
+        async_channel::Receiver<String>,
+        HashMap<String, async_channel::Sender<()>>,
+    ) {
+        let (started, started_rx) = async_channel::unbounded();
+        let mut releases = HashMap::new();
+        let mut release_senders = HashMap::new();
+        for device_id in device_ids {
+            let (release, release_rx) = async_channel::unbounded();
+            releases.insert((*device_id).to_string(), release_rx);
+            release_senders.insert((*device_id).to_string(), release);
+        }
+        self.state
+            .copy_gate
+            .replace(Some(CopyGate { started, releases }));
+        (started_rx, release_senders)
+    }
+
+    fn observe_deletes(&self, observer: DeleteObserver) {
+        self.state.delete_observer.replace(Some(observer));
     }
 }
 
@@ -123,7 +157,21 @@ impl DeviceBackend for FakeBackend {
             state.active_total.set(active_total);
             state.max_total.set(state.max_total.get().max(active_total));
             progress(expected_size / 2, expected_size);
-            gtk4::glib::timeout_future(Duration::from_millis(delay_ms)).await;
+            let gate = state.copy_gate.borrow().clone();
+            if let Some(gate) = gate {
+                gate.started
+                    .send(device_id.clone())
+                    .await
+                    .map_err(|_| "copy-start observer was dropped".to_string())?;
+                gate.releases
+                    .get(&device_id)
+                    .ok_or_else(|| format!("missing copy gate for {device_id}"))?
+                    .recv()
+                    .await
+                    .map_err(|_| format!("copy gate for {device_id} was dropped"))?;
+            } else {
+                gtk4::glib::timeout_future(Duration::from_millis(delay_ms)).await;
+            }
             let current = state.active_total.get();
             state.active_total.set(current.saturating_sub(1));
             if let Some(active) = state.active_by_device.borrow_mut().get_mut(&device_id) {
@@ -182,6 +230,10 @@ impl DeviceBackend for FakeBackend {
     fn delete_track(&self, _root_uri: String, relative_target: String) -> TestFuture<bool> {
         let state = self.state.clone();
         Box::pin(async move {
+            let observer = state.delete_observer.borrow().clone();
+            if let Some(observer) = observer {
+                observer(&relative_target);
+            }
             state.deleted.borrow_mut().push(relative_target);
             Ok(true)
         })
@@ -284,6 +336,19 @@ fn snapshot(runtime: &DeviceSyncRuntime, id: &str) -> SyncSnapshot {
         .snapshot
 }
 
+fn signal_when(
+    runtime: &Rc<DeviceSyncRuntime>,
+    condition: impl Fn(&DeviceSyncState) -> bool + 'static,
+) -> (Subscription, async_channel::Receiver<()>) {
+    let (sender, receiver) = async_channel::bounded(1);
+    let subscription = runtime.subscribe(Rc::new(move |state| {
+        if condition(&state) {
+            let _ = sender.try_send(());
+        }
+    }));
+    (subscription, receiver)
+}
+
 #[test]
 fn rapid_jobs_for_one_device_copy_strictly_fifo_without_overlap() {
     run(async {
@@ -309,18 +374,36 @@ fn rapid_jobs_for_one_device_copy_strictly_fifo_without_overlap() {
 }
 
 #[test]
-fn different_devices_share_one_global_copy_slot() {
+fn legacy_jobs_on_different_devices_copy_concurrently_without_per_device_overlap() {
     run(async {
         let (_temp, conn) = fixture();
         let backend = Rc::new(FakeBackend::new(
             vec![descriptor("a", true), descriptor("b", true)],
-            10,
+            0,
         ));
+        let (started, releases) = backend.gate_copies(&["a", "b"]);
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        let (_subscription, completed) = signal_when(&runtime, |state| {
+            state.devices.len() == 2
+                && state
+                    .devices
+                    .iter()
+                    .all(|device| device.snapshot.phase == SyncPhase::Complete)
+        });
+
         runtime.enqueue("a", "A", &[1]).unwrap();
         runtime.enqueue("b", "B", &[2]).unwrap();
-        settle().await;
-        assert_eq!(backend.state.max_total.get(), 1);
+        let first = started.recv().await.unwrap();
+        let second = started.recv().await.unwrap();
+
+        assert_ne!(first, second);
+        assert_eq!(backend.state.max_total.get(), 2);
+        assert_eq!(backend.state.max_by_device.borrow().get("a"), Some(&1));
+        assert_eq!(backend.state.max_by_device.borrow().get("b"), Some(&1));
+
+        releases["a"].send(()).await.unwrap();
+        releases["b"].send(()).await.unwrap();
+        completed.recv().await.unwrap();
         assert_eq!(backend.state.copy_order.borrow().len(), 2);
     });
 }

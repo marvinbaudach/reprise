@@ -131,6 +131,199 @@ fn sync_now_copies_the_selection_and_commits_the_device_inventory() {
 }
 
 #[test]
+fn different_devices_sync_concurrently_while_each_device_stays_single_operation() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1]);
+        save_road_settings(&conn, "b");
+        let backend = Rc::new(FakeBackend::new(
+            vec![descriptor("a", true), descriptor("b", true)],
+            0,
+        ));
+        let (started, releases) = backend.gate_copies(&["a", "b"]);
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        let (_subscription, completed) = signal_when(&runtime, |state| {
+            state.devices.len() == 2
+                && state
+                    .devices
+                    .iter()
+                    .all(|device| device.last_sync.is_some())
+        });
+
+        assert_eq!(runtime.sync_now("a"), Ok(()));
+        assert_eq!(runtime.sync_now("a"), Err(SyncStartError::Busy));
+        assert_eq!(runtime.sync_now("b"), Ok(()));
+        let mut active = vec![started.recv().await.unwrap(), started.recv().await.unwrap()];
+        active.sort();
+
+        assert_eq!(active, ["a", "b"]);
+        assert_eq!(backend.state.max_total.get(), 2);
+        assert_eq!(backend.state.max_by_device.borrow().get("a"), Some(&1));
+        assert_eq!(backend.state.max_by_device.borrow().get("b"), Some(&1));
+
+        releases["a"].send(()).await.unwrap();
+        releases["b"].send(()).await.unwrap();
+        completed.recv().await.unwrap();
+    });
+}
+
+#[test]
+fn cancelling_one_device_does_not_cancel_an_independent_sync() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1]);
+        save_road_settings(&conn, "b");
+        let backend = Rc::new(FakeBackend::new(
+            vec![descriptor("a", true), descriptor("b", true)],
+            0,
+        ));
+        let (started, releases) = backend.gate_copies(&["a", "b"]);
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        let (_subscription, completed) = signal_when(&runtime, |state| {
+            let a = state.devices.iter().find(|device| device.id == "a");
+            let b = state.devices.iter().find(|device| device.id == "b");
+            matches!(
+                (a, b),
+                (Some(a), Some(b))
+                    if a.sync_phase == PlannedSyncPhase::Idle
+                        && a.last_sync.is_none()
+                        && b.last_sync.is_some()
+            )
+        });
+
+        runtime.sync_now("a").unwrap();
+        runtime.sync_now("b").unwrap();
+        let first = started.recv().await.unwrap();
+        let second = started.recv().await.unwrap();
+        assert_ne!(first, second);
+
+        runtime.cancel_current("a");
+        releases["a"].send(()).await.unwrap();
+        releases["b"].send(()).await.unwrap();
+        completed.recv().await.unwrap();
+
+        assert!(
+            reprise_core::device_sync::settings::load_device_files(&conn.borrow(), "a")
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            reprise_core::device_sync::settings::load_device_files(&conn.borrow(), "b")
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(backend.state.max_total.get(), 2);
+    });
+}
+
+#[test]
+fn replacement_inventory_is_committed_before_the_old_device_path_is_deleted() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1]);
+        reprise_core::device_sync::settings::upsert_device_file(
+            &conn.borrow(),
+            &reprise_core::device_sync::DeviceFileRecord {
+                device_serial: "a".into(),
+                track_id: 1,
+                source_path: "/old/library/1.flac".into(),
+                source_size: 100,
+                source_mtime: 0,
+                device_path: "Old/Track 1.flac".into(),
+                device_size: 100,
+                profile_fingerprint: "legacy-v1".into(),
+                pinned: false,
+            },
+        )
+        .unwrap();
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let paths_at_delete = Rc::new(RefCell::new(Vec::new()));
+        let observed_paths = paths_at_delete.clone();
+        let observed_conn = conn.clone();
+        backend.observe_deletes(Rc::new(move |_| {
+            let current = reprise_core::device_sync::settings::load_device_files(
+                &observed_conn.borrow(),
+                "a",
+            )
+            .unwrap()
+            .into_iter()
+            .find(|file| file.track_id == 1)
+            .unwrap()
+            .device_path;
+            observed_paths.borrow_mut().push(current);
+        }));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        let (_subscription, completed) =
+            signal_when(&runtime, |state| state.devices[0].last_sync.is_some());
+
+        runtime.sync_now("a").unwrap();
+        completed.recv().await.unwrap();
+
+        assert_eq!(
+            paths_at_delete.borrow().as_slice(),
+            ["Artist/Unknown Album/00 Track 1.mp3"]
+        );
+    });
+}
+
+#[test]
+fn failed_replacement_inventory_preserves_the_old_device_path() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1]);
+        reprise_core::device_sync::settings::upsert_device_file(
+            &conn.borrow(),
+            &reprise_core::device_sync::DeviceFileRecord {
+                device_serial: "a".into(),
+                track_id: 1,
+                source_path: "/old/library/1.flac".into(),
+                source_size: 100,
+                source_mtime: 0,
+                device_path: "Old/Track 1.flac".into(),
+                device_size: 100,
+                profile_fingerprint: "legacy-v1".into(),
+                pinned: false,
+            },
+        )
+        .unwrap();
+        conn.borrow()
+            .execute_batch(
+                "CREATE TRIGGER reject_replacement_inventory
+                 BEFORE INSERT ON device_files
+                 WHEN NEW.device_serial = 'a'
+                   AND NEW.device_path <> 'Old/Track 1.flac'
+                 BEGIN
+                   SELECT RAISE(FAIL, 'injected inventory failure');
+                 END;",
+            )
+            .unwrap();
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        let (_subscription, completed) = signal_when(&runtime, |state| {
+            state.devices[0].sync_phase == PlannedSyncPhase::Idle
+                && state.devices[0].sync_error.is_some()
+        });
+
+        runtime.sync_now("a").unwrap();
+        completed.recv().await.unwrap();
+
+        assert!(backend.state.deleted.borrow().is_empty());
+        let files =
+            reprise_core::device_sync::settings::load_device_files(&conn.borrow(), "a").unwrap();
+        assert_eq!(files[0].device_path, "Old/Track 1.flac");
+        assert_eq!(
+            runtime.devices()[0]
+                .sync_error
+                .as_ref()
+                .unwrap()
+                .failed_tracks,
+            [1]
+        );
+    });
+}
+
+#[test]
 fn planned_transcodes_finish_before_each_corresponding_device_copy_starts() {
     run(async {
         let (_temp, conn) = fixture();
@@ -233,12 +426,6 @@ fn agent_bridge_reports_capacity_delta_and_applies_playlist_configuration() {
             .unwrap_err()
             .contains("absent, disconnected, or ambiguous"));
     });
-}
-
-#[test]
-fn transfer_rate_uses_fractional_seconds_without_dividing_by_zero() {
-    assert_eq!(transfer_rate(1_024, Duration::from_millis(500)), 2_048);
-    assert_eq!(transfer_rate(1_024, Duration::ZERO), 0);
 }
 
 #[test]
@@ -566,11 +753,15 @@ fn select_road_playlist(conn: &Rc<RefCell<Connection>>, ids: &[i64]) {
             )
             .unwrap();
     }
+    save_road_settings(conn, "a");
+}
+
+fn save_road_settings(conn: &Rc<RefCell<Connection>>, device_id: &str) {
     save_settings(
         &conn.borrow(),
         &DeviceSettings {
-            device_serial: "a".into(),
-            device_name: "Phone a".into(),
+            device_serial: device_id.into(),
+            device_name: format!("Phone {device_id}"),
             selection: DeviceSelection::Sources(vec![SelectionSource::Playlist(10)]),
             profile: reprise_core::device_sync::TransferProfile::default(),
             opus_bitrate: 0,
