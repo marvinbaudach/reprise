@@ -145,6 +145,10 @@ pub fn micros_to_ms(us: i64) -> i64 {
 pub struct MprisState {
     pub status: MprisPlaybackStatus,
     pub track_id: Option<i64>,
+    /// Stable non-track identity such as `podcast/42` or `radio/7`.
+    pub external_ref: Option<String>,
+    /// Live external media has no meaningful duration or seek operation.
+    pub live_stream: bool,
     pub title: String,
     pub artist: String,
     pub album: String,
@@ -168,6 +172,8 @@ impl Default for MprisState {
         Self {
             status: MprisPlaybackStatus::Stopped,
             track_id: None,
+            external_ref: None,
+            live_stream: false,
             title: String::new(),
             artist: String::new(),
             album: String::new(),
@@ -198,7 +204,7 @@ impl Default for MprisState {
 /// made the lock-screen/quick-settings media controls *vanish the moment
 /// playback started* and reappear only while paused.
 pub fn can_play(state: &MprisState) -> bool {
-    state.track_id.is_some() || state.can_next || state.can_prev
+    state.track_id.is_some() || state.external_ref.is_some() || state.can_next || state.can_prev
 }
 
 /// `CanPause`: whether there is a current track that could be paused. Like
@@ -209,23 +215,29 @@ pub fn can_play(state: &MprisState) -> bool {
 /// stopped is simply a no-op `PlayerController::mpris_pause`
 /// short-circuits.
 pub fn can_pause(state: &MprisState) -> bool {
-    state.track_id.is_some()
+    state.track_id.is_some() || state.external_ref.is_some()
 }
 
-/// `CanSeek`: whether seeking is meaningful right now — exactly the same
-/// intrinsic "is a track loaded" condition as [`can_pause`] (seeking a
-/// track that isn't loaded is meaningless regardless of play/pause status,
-/// same reasoning as that function's own doc comment), so this simply
-/// reuses it rather than duplicating the identical check under a different
-/// name.
+/// `CanSeek`: whether seeking is meaningful for the loaded media. Library
+/// tracks and podcast episodes are seekable; live external streams are not.
 pub fn can_seek(state: &MprisState) -> bool {
-    can_pause(state)
+    state.track_id.is_some() || (state.external_ref.is_some() && !state.live_stream)
+}
+
+pub fn can_go_next(state: &MprisState) -> bool {
+    state.external_ref.is_none() && state.can_next
+}
+
+pub fn can_go_previous(state: &MprisState) -> bool {
+    state.external_ref.is_none() && state.can_prev
 }
 
 /// Whether the `Metadata` dict-valued property needs re-emitting: any field
 /// that feeds the Linux backend's `build_metadata` changed.
 pub fn metadata_differs(a: &MprisState, b: &MprisState) -> bool {
     a.track_id != b.track_id
+        || a.external_ref != b.external_ref
+        || a.live_stream != b.live_stream
         || a.title != b.title
         || a.artist != b.artist
         || a.album != b.album
@@ -322,6 +334,8 @@ mod tests {
         MprisState {
             status: MprisPlaybackStatus::Playing,
             track_id: Some(1),
+            external_ref: None,
+            live_stream: false,
             title: "Title".into(),
             artist: "Artist".into(),
             album: "Album".into(),
@@ -447,6 +461,8 @@ mod tests {
         let state = MprisState::default();
         assert_eq!(state.status, MprisPlaybackStatus::Stopped);
         assert_eq!(state.track_id, None);
+        assert_eq!(state.external_ref, None);
+        assert!(!state.live_stream);
         assert_eq!(state.art_url, None);
         assert!(!state.can_next);
         assert!(!state.can_prev);
@@ -456,9 +472,7 @@ mod tests {
         assert_eq!(state.volume, DEFAULT_VOLUME);
     }
 
-    /// Stage 3 Task 10: `CanSeek` mirrors `CanPause`'s "track loaded"
-    /// semantics exactly (see `can_seek`'s doc comment) — proven by
-    /// checking every case `can_pause`'s own tests already cover.
+    /// Local library tracks remain seekable regardless of play/pause status.
     #[test]
     fn can_seek_true_whenever_a_track_is_loaded() {
         assert!(can_seek(&playing_state()));
@@ -477,6 +491,46 @@ mod tests {
         };
         assert!(!can_seek(&no_track));
         assert!(!can_seek(&MprisState::default()));
+    }
+
+    #[test]
+    fn rad_2_live_state_disables_seek_and_reports_external_transport_truth() {
+        let podcast = MprisState {
+            track_id: None,
+            external_ref: Some("podcast/42".into()),
+            live_stream: false,
+            can_next: true,
+            can_prev: true,
+            ..playing_state()
+        };
+        assert!(can_play(&podcast));
+        assert!(can_pause(&podcast));
+        assert!(can_seek(&podcast));
+        assert!(!can_go_next(&podcast));
+        assert!(!can_go_previous(&podcast));
+
+        let radio = MprisState {
+            external_ref: Some("radio/7".into()),
+            live_stream: true,
+            ..podcast
+        };
+        assert!(can_play(&radio));
+        assert!(can_pause(&radio));
+        assert!(!can_seek(&radio));
+        assert!(!can_go_next(&radio));
+        assert!(!can_go_previous(&radio));
+    }
+
+    #[test]
+    fn metadata_differs_when_external_identity_or_live_kind_changes() {
+        let base = playing_state();
+        let mut other = base.clone();
+        other.external_ref = Some("radio/7".into());
+        assert!(metadata_differs(&base, &other));
+
+        let mut other = base.clone();
+        other.live_stream = true;
+        assert!(metadata_differs(&base, &other));
     }
 
     #[test]

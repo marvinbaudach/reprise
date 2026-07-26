@@ -38,6 +38,10 @@ impl PlaybackBackend for FakePlayback {
         self.result.borrow_mut().take().unwrap()
     }
 
+    fn play_uri(&self, _uri: &str) -> Result<(), PlaybackError> {
+        unreachable!()
+    }
+
     fn toggle_pause(&self) -> Result<PlaybackState, PlaybackError> {
         unreachable!()
     }
