@@ -156,6 +156,110 @@ pub struct LibraryLocation {
     pub expected_sha256: Option<String>,
 }
 
+/// The asset that prevents the production stem runtime from being ready.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeComponent {
+    /// The pinned htdemucs weights.
+    Model,
+    /// The native ONNX Runtime library loaded into the worker process.
+    NativeRuntime,
+}
+
+/// Verified paths needed to construct the production backend.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeAssets {
+    pub model_path: PathBuf,
+    pub model_id: String,
+    pub library_path: PathBuf,
+}
+
+/// One authoritative readiness result shared by hosts and UI.
+///
+/// `Ready` means both files exist and match their pinned SHA-256 values.
+/// `ModelRequired` is the only recoverable first-use state; the application can
+/// offer the checksummed weights download. Every native-runtime problem is a
+/// packaging/configuration failure and must remain non-actionable in the UI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RuntimeReadiness {
+    Ready(RuntimeAssets),
+    ModelRequired {
+        path: PathBuf,
+    },
+    Unavailable {
+        component: RuntimeComponent,
+        detail: String,
+    },
+}
+
+/// Checks the production runtime using the platform model directory and the
+/// configured native-library candidates.
+pub fn runtime_readiness() -> RuntimeReadiness {
+    let model_dir = match default_model_dir() {
+        Ok(path) => path,
+        Err(error) => {
+            return RuntimeReadiness::Unavailable {
+                component: RuntimeComponent::Model,
+                detail: error.to_string(),
+            };
+        }
+    };
+    runtime_readiness_in(
+        &model_dir,
+        &crate::model::HTDEMUCS_FP32,
+        &onnxruntime_location(),
+    )
+}
+
+/// Purely path-injected readiness check used by tests and packaging probes.
+pub fn runtime_readiness_in(
+    model_dir: &Path,
+    spec: &WeightsSpec,
+    library_location: &LibraryLocation,
+) -> RuntimeReadiness {
+    let library_path = match resolve_library(library_location) {
+        Ok(path) => path,
+        Err(error) => {
+            return RuntimeReadiness::Unavailable {
+                component: RuntimeComponent::NativeRuntime,
+                detail: error.to_string(),
+            };
+        }
+    };
+    if library_location.expected_sha256.is_none() {
+        return RuntimeReadiness::Unavailable {
+            component: RuntimeComponent::NativeRuntime,
+            detail: format!(
+                "onnxruntime library {} has no pinned SHA-256; set {}",
+                library_path.display(),
+                ORT_DYLIB_SHA256_ENV
+            ),
+        };
+    }
+
+    let model_path = weights_path(model_dir, spec);
+    if !model_path.is_file() {
+        return RuntimeReadiness::ModelRequired { path: model_path };
+    }
+    match file_sha256(&model_path) {
+        Ok(actual) if actual == spec.sha256 => RuntimeReadiness::Ready(RuntimeAssets {
+            model_path,
+            model_id: spec.model_id.to_string(),
+            library_path,
+        }),
+        Ok(actual) => RuntimeReadiness::Unavailable {
+            component: RuntimeComponent::Model,
+            detail: format!(
+                "model checksum mismatch: expected {}, got {actual}",
+                spec.sha256
+            ),
+        },
+        Err(error) => RuntimeReadiness::Unavailable {
+            component: RuntimeComponent::Model,
+            detail: error.to_string(),
+        },
+    }
+}
+
 /// Resolves the first existing candidate onnxruntime library, verifying its
 /// SHA-256 when one is pinned. Returns [`ProvisionError::LibraryNotFound`]
 /// listing every path tried when none exists — the "clear error when absent"
@@ -488,6 +592,91 @@ mod tests {
             }
             other => panic!("expected LibraryNotFound, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn runtime_readiness_requires_verified_model_and_native_runtime() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = fake_spec();
+        let model = weights_path(dir.path(), &spec);
+        let library = dir.path().join("libonnxruntime.so");
+        std::fs::write(&library, b"runtime bytes").unwrap();
+        let location = LibraryLocation {
+            candidates: vec![library.clone()],
+            expected_sha256: Some(sha256_hex(b"runtime bytes")),
+        };
+
+        assert_eq!(
+            runtime_readiness_in(dir.path(), &spec, &location),
+            RuntimeReadiness::ModelRequired {
+                path: model.clone()
+            },
+            "a verified runtime alone is not render-ready"
+        );
+
+        std::fs::write(&model, b"corrupt model").unwrap();
+        assert!(matches!(
+            runtime_readiness_in(dir.path(), &spec, &location),
+            RuntimeReadiness::Unavailable {
+                component: RuntimeComponent::Model,
+                ..
+            }
+        ));
+
+        std::fs::write(&model, PAYLOAD).unwrap();
+        assert_eq!(
+            runtime_readiness_in(dir.path(), &spec, &location),
+            RuntimeReadiness::Ready(RuntimeAssets {
+                model_path: model,
+                model_id: spec.model_id.to_string(),
+                library_path: library,
+            })
+        );
+    }
+
+    #[test]
+    fn runtime_readiness_rejects_missing_unpinned_or_tampered_native_code() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = fake_spec();
+        std::fs::write(weights_path(dir.path(), &spec), PAYLOAD).unwrap();
+        let library = dir.path().join("libonnxruntime.so");
+
+        let missing = LibraryLocation {
+            candidates: vec![library.clone()],
+            expected_sha256: Some(sha256_hex(b"runtime bytes")),
+        };
+        assert!(matches!(
+            runtime_readiness_in(dir.path(), &spec, &missing),
+            RuntimeReadiness::Unavailable {
+                component: RuntimeComponent::NativeRuntime,
+                ..
+            }
+        ));
+
+        std::fs::write(&library, b"runtime bytes").unwrap();
+        let unpinned = LibraryLocation {
+            candidates: vec![library.clone()],
+            expected_sha256: None,
+        };
+        assert!(matches!(
+            runtime_readiness_in(dir.path(), &spec, &unpinned),
+            RuntimeReadiness::Unavailable {
+                component: RuntimeComponent::NativeRuntime,
+                ..
+            }
+        ));
+
+        let tampered = LibraryLocation {
+            candidates: vec![library],
+            expected_sha256: Some(sha256_hex(b"different runtime")),
+        };
+        assert!(matches!(
+            runtime_readiness_in(dir.path(), &spec, &tampered),
+            RuntimeReadiness::Unavailable {
+                component: RuntimeComponent::NativeRuntime,
+                ..
+            }
+        ));
     }
 
     #[test]

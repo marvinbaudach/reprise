@@ -22,8 +22,8 @@ test-fixtures = ["reprise-core/test-fixtures"]
 # but the dependency is feature-gated so the DEFAULT build stays core-only — the
 # enforced architecture probe and the CI "default build does not link
 # reprise-stems" check both keep passing — and dev/test builds skip the heavy ML
-# stack. Enable it for a real render / release build; without it the app-hosted
-# worker runs the deterministic FakeStemBackend from reprise-core.
+# stack. Enable it for a real render / release build; without it the app exposes
+# no render action or worker. FakeStemBackend is test-only.
 stem-backend = ["dep:reprise-stems"]
 
 [dependencies]
