@@ -1,9 +1,15 @@
+#[cfg(any(test, feature = "test-fixtures"))]
 use std::fs::OpenOptions;
+#[cfg(any(test, feature = "test-fixtures"))]
 use std::io::Write;
+#[cfg(any(test, feature = "test-fixtures"))]
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
+#[cfg(any(test, feature = "test-fixtures"))]
+use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(any(test, feature = "test-fixtures"))]
 use url::Url;
 
 use super::ProviderError;
@@ -11,7 +17,9 @@ use crate::http_body::{self, BoundedReadError};
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 const MIN_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
+#[cfg(any(test, feature = "test-fixtures"))]
 const FIXTURE_DIR_ENV: &str = "REPRISE_CONCERTS_FIXTURE_DIR";
+#[cfg(any(test, feature = "test-fixtures"))]
 const FIXTURE_LOG_ENV: &str = "REPRISE_CONCERTS_FIXTURE_LOG";
 
 static LAST_REQUEST: Mutex<Option<Instant>> = Mutex::new(None);
@@ -33,6 +41,7 @@ pub fn user_agent() -> String {
 
 pub fn get(url: &str) -> Result<String, ProviderError> {
     let _ = wait_for_request_slot(&mut || false);
+    #[cfg(any(test, feature = "test-fixtures"))]
     if let Some(directory) = fixture_directory() {
         return fixture_get(url, &directory);
     }
@@ -60,6 +69,7 @@ pub fn get(url: &str) -> Result<String, ProviderError> {
     http_body::read_bounded_string(response.into_body().into_reader()).map_err(map_body_error)
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 fn fixture_directory() -> Option<PathBuf> {
     #[cfg(test)]
     if let Some(directory) = TEST_FIXTURE_DIR.with(|slot| slot.borrow().clone()) {
@@ -81,6 +91,7 @@ pub(crate) fn with_fixture_dir<T>(directory: &Path, operation: impl FnOnce() -> 
     operation()
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum FixtureRequest {
     BandsintownArtist(String),
@@ -92,6 +103,7 @@ enum FixtureRequest {
     LastfmSimilar(String),
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 impl FixtureRequest {
     fn filename(&self) -> String {
         let (prefix, value) = match self {
@@ -107,6 +119,7 @@ impl FixtureRequest {
     }
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 fn fixture_request(value: &str) -> Option<FixtureRequest> {
     let url = Url::parse(value).ok()?;
     let query = |name: &str| {
@@ -138,6 +151,7 @@ fn fixture_request(value: &str) -> Option<FixtureRequest> {
     }
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 fn fixture_get(url: &str, directory: &Path) -> Result<String, ProviderError> {
     let request = fixture_request(url).ok_or(ProviderError::Transport)?;
     append_fixture_log(&request)?;
@@ -153,6 +167,7 @@ fn map_body_error(error: BoundedReadError) -> ProviderError {
     }
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 fn append_fixture_log(request: &FixtureRequest) -> Result<(), ProviderError> {
     let Ok(path) = std::env::var(FIXTURE_LOG_ENV) else {
         return Ok(());
@@ -206,6 +221,7 @@ fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 fn fixture_component(value: &str) -> String {
     value
         .chars()
@@ -219,6 +235,7 @@ fn fixture_component(value: &str) -> String {
         .collect()
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 fn percent_decode(value: &str) -> String {
     let bytes = value.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());

@@ -4,17 +4,24 @@
 //! one-request-per-second policy cannot accidentally diverge. Callers must
 //! keep this work off the UI thread.
 
+#[cfg(any(test, feature = "test-fixtures"))]
 use std::fs::OpenOptions;
+#[cfg(any(test, feature = "test-fixtures"))]
 use std::io::Write;
+#[cfg(any(test, feature = "test-fixtures"))]
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
+#[cfg(any(test, feature = "test-fixtures"))]
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::http_body::{self, BoundedReadError};
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 const MIN_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
+#[cfg(any(test, feature = "test-fixtures"))]
 const FIXTURE_DIR_ENV: &str = "REPRISE_MUSICBRAINZ_FIXTURE_DIR";
+#[cfg(any(test, feature = "test-fixtures"))]
 const FIXTURE_LOG_ENV: &str = "REPRISE_MUSICBRAINZ_FIXTURE_LOG";
 
 pub const CONTACT_URL: &str = "https://github.com/marvinbaudach";
@@ -42,6 +49,7 @@ pub fn user_agent() -> String {
 /// Performs a blocking, rate-limited MusicBrainz GET.
 pub fn get(url: &str) -> Result<String, FetchError> {
     respect_rate_limit();
+    #[cfg(any(test, feature = "test-fixtures"))]
     if let Ok(directory) = std::env::var(FIXTURE_DIR_ENV) {
         return fixture_get(url, Path::new(&directory));
     }
@@ -56,6 +64,7 @@ pub fn get(url: &str) -> Result<String, FetchError> {
     http_body::read_bounded_string(response.into_body().into_reader()).map_err(map_body_error)
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 #[derive(Debug, PartialEq, Eq)]
 enum FixtureRequest {
     Artist(String),
@@ -63,6 +72,7 @@ enum FixtureRequest {
     NewReleases(String),
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 impl FixtureRequest {
     fn filename(&self) -> String {
         match self {
@@ -81,6 +91,7 @@ impl FixtureRequest {
     }
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 fn fixture_request(url: &str) -> Option<FixtureRequest> {
     const ARTIST_PREFIX: &str = "query=artist%3A%22";
     if let Some(start) = url.find(ARTIST_PREFIX) {
@@ -100,6 +111,7 @@ fn fixture_request(url: &str) -> Option<FixtureRequest> {
     None
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 fn fixture_get(url: &str, directory: &Path) -> Result<String, FetchError> {
     let request = fixture_request(url).ok_or(FetchError::Transport)?;
     append_fixture_log(&request)?;
@@ -119,6 +131,7 @@ fn map_body_error(error: BoundedReadError) -> FetchError {
     }
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 fn append_fixture_log(request: &FixtureRequest) -> Result<(), FetchError> {
     let Ok(path) = std::env::var(FIXTURE_LOG_ENV) else {
         return Ok(());
