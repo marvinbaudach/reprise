@@ -19,13 +19,11 @@ use reprise_core::device_sync::transfer::{
 };
 use reprise_core::device_sync::{
     compute_delta, merge_playlist_entries, track_relative_path, DeviceQueue, DeviceSelection,
-    DeviceSettings, SyncCandidate, SyncDelta, SyncJob, SyncPhase, SyncSnapshot, SyncTrack,
-    TrackOutcome,
+    DeviceSettings, DeviceStorageInspection, DeviceStorageSnapshot, ManagedDeviceFile,
+    SyncCandidate, SyncDelta, SyncJob, SyncPhase, SyncSnapshot, SyncTrack, TrackOutcome,
 };
 use reprise_core::library::m3u::{M3uEntry, M3uExportEntry};
-use reprise_platform_linux::device_sync::{
-    CopyOutcome, DeviceContents, DeviceDescriptor, DeviceMonitor,
-};
+use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor, DeviceMonitor};
 use reprise_platform_linux::device_transfer::{Mp3TranscodeRequest, TranscodedFile};
 use rusqlite::Connection;
 
@@ -53,9 +51,8 @@ struct DeviceState {
     cancellable: Option<gio::Cancellable>,
     interrupted_disconnect: bool,
     paused_work: Option<Work>,
-    contents: DeviceContents,
-    available_bytes: Option<u64>,
-    total_bytes: Option<u64>,
+    storage: DeviceStorageSnapshot,
+    managed_files: Vec<ManagedDeviceFile>,
     scanning: bool,
     scan_generation: u64,
     scan_error: Option<String>,
@@ -86,9 +83,8 @@ impl DeviceState {
             cancellable: None,
             interrupted_disconnect: false,
             paused_work: None,
-            contents: DeviceContents::default(),
-            available_bytes: None,
-            total_bytes: None,
+            storage: DeviceStorageSnapshot::default(),
+            managed_files: Vec::new(),
             scanning: false,
             scan_generation: 0,
             scan_error: None,
@@ -115,9 +111,7 @@ impl DeviceState {
             name: self.descriptor.name.clone(),
             icon: self.descriptor.icon.clone(),
             connected: self.connected,
-            available_bytes: self.available_bytes,
-            total_bytes: self.total_bytes,
-            contents: self.contents.clone(),
+            storage: self.storage.clone(),
             scanning: self.scanning,
             scan_error: self.scan_error.clone(),
             draft_playlists: self.draft_playlists.clone(),
@@ -226,7 +220,7 @@ impl DeviceSyncRuntime {
             .iter_mut()
             .find(|device| device.descriptor.id == device_id)
             .ok_or(EnqueueError::UnknownDevice)?;
-        if let Some(available_bytes) = device.available_bytes {
+        if let Some(available_bytes) = device.storage.free_bytes {
             let unreserved_bytes = available_bytes.saturating_sub(device.reserved_bytes);
             if required_bytes > unreserved_bytes {
                 return Err(EnqueueError::InsufficientSpace {
@@ -292,12 +286,7 @@ impl DeviceSyncRuntime {
             let device = devices
                 .iter_mut()
                 .find(|device| device.descriptor.id == device_id)?;
-            let exists_on_device = device
-                .contents
-                .playlists
-                .iter()
-                .any(|playlist| playlist.name == name);
-            if !exists_on_device && !device.draft_playlists.contains(&name) {
+            if !device.draft_playlists.contains(&name) {
                 device.draft_playlists.push(name.clone());
                 device.draft_playlists.sort();
             }
@@ -474,10 +463,12 @@ impl DeviceSyncRuntime {
                     }
                     device.scanning = false;
                     match result {
-                        Ok((contents, available, total)) => {
-                            device.contents = contents;
-                            device.available_bytes = available;
-                            device.total_bytes = total;
+                        Ok(DeviceStorageInspection {
+                            snapshot,
+                            managed_files,
+                        }) => {
+                            device.storage = snapshot;
+                            device.managed_files = managed_files;
                             device.scan_error = None;
                         }
                         Err(error) => device.scan_error = Some(error),

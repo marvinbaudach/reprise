@@ -25,7 +25,7 @@ pub(super) fn device_header_group(
         .subtitle(format!(
             "MTP · connected · {} · {}",
             last_sync,
-            copy::available_space(device.available_bytes)
+            copy::available_space(device.storage.free_bytes)
         ))
         .build();
     let icon = gtk4::Image::from_gicon(&device.icon);

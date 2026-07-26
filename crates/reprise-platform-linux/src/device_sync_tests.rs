@@ -46,13 +46,16 @@ fn descriptor_falls_back_to_uri_without_claiming_reconnect_support() {
 #[test]
 fn missing_music_directory_inspects_as_empty() {
     let (_temp, storage) = fixture();
-    let contents = run(storage.inspect()).unwrap();
-    assert!(contents.files.is_empty());
-    assert!(contents.playlists.is_empty());
+    let inspection = run(storage.inspect()).unwrap();
+    assert!(inspection.managed_files.is_empty());
+    assert_eq!(inspection.snapshot.reprise_music_bytes, 0);
+    assert_eq!(inspection.snapshot.other_music_bytes, 0);
+    assert!(inspection.snapshot.free_bytes.is_some());
+    assert!(inspection.snapshot.total_bytes.is_some());
 }
 
 #[test]
-fn inspection_finds_audio_and_reprise_playlists_but_not_other_files() {
+fn inspection_aggregates_music_and_returns_only_reprise_managed_paths() {
     let (temp, storage) = fixture();
     fs::create_dir_all(temp.path().join("Music/Reprise/Road")).unwrap();
     fs::write(temp.path().join("Music/Reprise/Road/1-song.flac"), b"audio").unwrap();
@@ -64,21 +67,33 @@ fn inspection_finds_audio_and_reprise_playlists_but_not_other_files() {
     )
     .unwrap();
 
-    let contents = run(storage.inspect()).unwrap();
-    let paths = contents
-        .files
+    let inspection = run(storage.inspect()).unwrap();
+    let paths = inspection
+        .managed_files
         .iter()
         .map(|file| file.relative_path.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(paths, ["Reprise/Road/1-song.flac", "loose.mp3"]);
-    assert_eq!(contents.playlists.len(), 1);
-    assert_eq!(contents.playlists[0].name, "Road");
+    assert_eq!(paths, ["Road/1-song.flac"]);
+    assert_eq!(inspection.snapshot.reprise_music_bytes, 5);
+    assert_eq!(inspection.snapshot.other_music_bytes, 6);
     assert_eq!(
-        contents.playlists[0].entries,
-        vec![M3uEntry {
-            path: "Road/1-song.flac".into()
-        }]
+        inspection.snapshot.target_name.as_deref(),
+        temp.path().file_name().and_then(|name| name.to_str())
     );
+}
+
+#[test]
+fn storage_volume_choice_prefers_internal_storage_and_otherwise_stays_deterministic() {
+    let volumes = vec!["SD Card".to_string(), "Internal shared storage".to_string()];
+    assert_eq!(
+        choose_storage_volume(&volumes),
+        Some("Internal shared storage".into())
+    );
+    assert_eq!(
+        choose_storage_volume(&["SD Card".into(), "Phone storage".into()]),
+        Some("Phone storage".into())
+    );
+    assert_eq!(choose_storage_volume(&[]), None);
 }
 
 #[test]

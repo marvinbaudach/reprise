@@ -285,7 +285,7 @@ impl DeviceCard {
             DetailMode::Synced => {
                 self.synced_detail.set_text(&format!(
                     "Synced ✓ · {}",
-                    device_sync_strings::free_space(device.available_bytes)
+                    device_sync_strings::free_space(device.storage.free_bytes)
                 ));
                 self.detail_stack.set_visible_child_name("synced");
             }
@@ -460,7 +460,7 @@ fn card_subtitle(device: &DeviceView) -> String {
             let queued = device.delta.as_ref().map_or(0, |delta| delta.to_copy.len());
             format!(
                 "{queued} queued · {}",
-                device_sync_strings::available_space(device.available_bytes)
+                device_sync_strings::available_space(device.storage.free_bytes)
             )
         }
     }
@@ -486,9 +486,7 @@ mod tests {
             name: "Pixel 8".into(),
             icon: gtk4::gio::ThemedIcon::new("phone-symbolic").upcast(),
             connected: true,
-            available_bytes: None,
-            total_bytes: None,
-            contents: Default::default(),
+            storage: Default::default(),
             scanning: false,
             scan_error: None,
             draft_playlists: Vec::new(),

@@ -86,7 +86,7 @@ pub(super) fn device_row(
         .title(&device.name)
         .subtitle(copy::device_subtitle(
             device.connected,
-            device.available_bytes,
+            device.storage.free_bytes,
         ))
         .activatable(true)
         .build();
@@ -304,17 +304,20 @@ fn music_group(device: &DeviceView) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::builder()
         .title(copy::text(copy::DEVICE_MUSIC))
         .build();
-    if device.contents.files.is_empty() && !device.scanning {
+    if device.storage.reprise_music_bytes == 0
+        && device.storage.other_music_bytes == 0
+        && !device.scanning
+    {
         group.set_description(Some(&copy::text(copy::NO_DEVICE_MUSIC)));
     }
-    for file in &device.contents.files {
+    for (title, bytes) in [
+        ("Reprise music", device.storage.reprise_music_bytes),
+        ("Other music", device.storage.other_music_bytes),
+    ] {
         let row = adw::ActionRow::builder()
-            .title(&file.name)
-            .subtitle(&file.relative_path)
+            .title(title)
+            .subtitle(copy::file_size(bytes))
             .build();
-        let size = gtk4::Label::new(Some(&copy::file_size(file.size_bytes)));
-        size.add_css_class("dim-label");
-        row.add_suffix(&size);
         group.add(&row);
     }
     group
@@ -521,12 +524,7 @@ fn overall_fraction(snapshot: &SyncSnapshot) -> f64 {
 }
 
 fn playlist_names(device: &DeviceView) -> Vec<(String, usize, bool)> {
-    let mut names = device
-        .contents
-        .playlists
-        .iter()
-        .map(|playlist| (playlist.name.clone(), playlist.entries.len(), false))
-        .collect::<Vec<_>>();
+    let mut names = Vec::new();
     for draft in &device.draft_playlists {
         if !names.iter().any(|(name, _, _)| name == draft) {
             names.push((draft.clone(), 0, true));
@@ -560,8 +558,6 @@ mod planned;
 
 #[cfg(test)]
 mod tests {
-    use reprise_platform_linux::device_sync::DeviceContents;
-
     use super::*;
 
     fn view() -> DeviceView {
@@ -570,9 +566,11 @@ mod tests {
             name: "Phone".into(),
             icon: gtk4::gio::ThemedIcon::new("phone-symbolic").upcast(),
             connected: true,
-            available_bytes: Some(1_024),
-            total_bytes: Some(2_048),
-            contents: DeviceContents::default(),
+            storage: reprise_core::device_sync::DeviceStorageSnapshot {
+                free_bytes: Some(1_024),
+                total_bytes: Some(2_048),
+                ..Default::default()
+            },
             scanning: false,
             scan_error: None,
             draft_playlists: vec!["Road".into()],
@@ -615,17 +613,10 @@ mod tests {
     #[test]
     fn draft_playlist_names_are_sorted_without_duplicates() {
         let mut device = view();
-        device
-            .contents
-            .playlists
-            .push(reprise_platform_linux::device_sync::DevicePlaylist {
-                name: "Road".into(),
-                entries: Vec::new(),
-            });
         device.draft_playlists.push("Ambient".into());
         assert_eq!(
             playlist_names(&device),
-            [("Ambient".into(), 0, true), ("Road".into(), 0, false)]
+            [("Ambient".into(), 0, true), ("Road".into(), 0, true)]
         );
     }
 

@@ -92,8 +92,9 @@ pub(super) async fn run_work(
                     }
                     device.reserved_bytes = device.reserved_bytes.saturating_sub(track.size_bytes);
                     if outcome == CopyOutcome::Copied {
-                        device.available_bytes = device
-                            .available_bytes
+                        device.storage.free_bytes = device
+                            .storage
+                            .free_bytes
                             .map(|available| available.saturating_sub(track.size_bytes));
                     }
                     device.queue.set_track_bytes(track.size_bytes);

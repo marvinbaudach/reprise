@@ -270,7 +270,7 @@ mod tests {
             ".issue-card",
             ".mini-player-card",
             ".scan-card",
-            ".device-storage-music progress",
+            ".device-storage-reprise progress",
         ] {
             assert!(css.contains(marker), "missing section marker: {marker}");
         }
