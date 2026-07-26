@@ -84,7 +84,7 @@ fn gravity_keeps_a_peak_alive_then_releases_it_to_zero() {
             (std::f32::consts::TAU * 200.0 * sample as f32 / 44_100.0).sin() * (20_000.0 / 65_535.0)
         })
         .collect();
-    let silence = vec![0.0; full_window];
+    let silence = vec![0.0; 512];
 
     let peak = processor.process(&tone)[2];
     let first_release = processor.process(&silence)[2];
@@ -99,6 +99,103 @@ fn gravity_keeps_a_peak_alive_then_releases_it_to_zero() {
         "CAVA gravity should prevent an abrupt drop: peak={peak}, release={first_release}"
     );
     assert!(tail < 0.001, "gravity tail should settle, got {tail}");
+}
+
+#[test]
+fn autosensitivity_matches_cavas_pinned_two_hundred_hertz_blueprint() {
+    let mut processor = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
+    let mut bars = Vec::new();
+
+    for chunk in 0..300 {
+        bars = processor.process(&sine_chunk(200.0, chunk));
+    }
+
+    let expected = [0.0, 0.0, 0.994, 0.004, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    for (index, (actual, expected)) in bars.iter().zip(expected).enumerate() {
+        assert!(
+            (actual - expected).abs() <= 0.02,
+            "bar {index}: expected {expected}, got {actual}"
+        );
+    }
+}
+
+#[test]
+fn maximum_noise_reduction_still_releases_after_silence() {
+    let mut config = CavaConfig::new(44_100, 10);
+    config.noise_reduction = 1.0;
+    let mut processor = CavaBarProcessor::new(config).unwrap();
+    let full_window = 8_192;
+    let tone: Vec<f32> = (0..full_window)
+        .map(|sample| {
+            (std::f32::consts::TAU * 200.0 * sample as f32 / 44_100.0).sin() * (20_000.0 / 65_535.0)
+        })
+        .collect();
+    let silence = vec![0.0; 512];
+
+    processor.process(&tone);
+    let mut tail = 1.0;
+    for _ in 0..800 {
+        tail = processor.process(&silence)[2];
+    }
+
+    assert!(tail < 0.001, "maximum smoothing must settle, got {tail}");
+}
+
+#[test]
+fn silence_never_inflates_autosensitivity() {
+    let mut fresh = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
+    let mut aged = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
+    let silence = vec![0.0; 512];
+
+    for _ in 0..2_048 {
+        assert!(aged.process(&silence).iter().all(|bar| *bar == 0.0));
+    }
+
+    let expected = fresh.process(&sine_chunk(200.0, 0));
+    let actual = aged.process(&sine_chunk(200.0, 0));
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn noise_floor_cuts_subthreshold_fft_leakage() {
+    let mut processor = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
+    let whisper: Vec<f32> = sine_chunk(200.0, 0)
+        .into_iter()
+        .map(|sample| sample * 1.0e-5)
+        .collect();
+
+    let bars = processor.process(&whisper);
+
+    assert!(bars.iter().all(|bar| *bar == 0.0));
+}
+
+#[test]
+fn hostile_pcm_and_high_resolution_always_return_finite_bounded_bars() {
+    let mut processor = CavaBarProcessor::new(CavaConfig::new(44_100, 256)).unwrap();
+    let hostile = [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 10.0, -10.0];
+
+    let bars = processor.process(&hostile.repeat(103));
+
+    assert_eq!(bars.len(), 256);
+    assert!(bars
+        .iter()
+        .all(|bar| bar.is_finite() && (0.0..=1.0).contains(bar)));
+}
+
+#[test]
+fn reset_restores_a_fresh_processor_state() {
+    let mut processor = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
+    let mut fresh = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
+    for chunk in 0..40 {
+        processor.process(&sine_chunk(200.0, chunk));
+    }
+
+    processor.reset();
+
+    assert_eq!(
+        processor.process(&sine_chunk(2_000.0, 0)),
+        fresh.process(&sine_chunk(2_000.0, 0))
+    );
 }
 
 fn sine_chunk(frequency_hz: f32, chunk: usize) -> Vec<f32> {
