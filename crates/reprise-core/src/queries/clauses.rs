@@ -120,15 +120,15 @@ pub(super) fn like_pattern(filter_trimmed: &str) -> String {
     format!("%{}%", playlists::escape_like(filter_trimmed))
 }
 
-/// Resolves `sort_field`/`sort_dir` to a whitelisted `ORDER BY` expression
-/// and direction keyword. Shared by every source's window/ids query builder
-/// so they can never disagree about what a given sort field/direction
-/// means. `sort_field` is only ever used as a lookup key into `SORT_
-/// WHITELIST` — never interpolated into SQL directly — so caller input
-/// cannot inject arbitrary SQL. Unknown sort fields silently fall back to
-/// sorting by title (this is also what makes a DB-tampered smart-playlist
-/// `sort_field` degrade safely — see the module doc's `Smart(id)` section).
-pub(super) fn order_expr_and_dir(sort_field: &str, sort_dir: &str) -> (&'static str, &'static str) {
+/// Resolves `sort_field`/`sort_dir` to a complete whitelisted `ORDER BY`
+/// clause body. The direction is applied to every term of a compound sort,
+/// so descending Artist reverses Artist itself as well as its stable
+/// year/album/track-number tie-breakers.
+///
+/// `sort_field` is only ever used as a lookup key into `SORT_WHITELIST` —
+/// never interpolated into SQL directly — so caller input cannot inject
+/// arbitrary SQL. Unknown sort fields silently fall back to sorting by title.
+pub(super) fn order_clause(sort_field: &str, sort_dir: &str) -> String {
     let order_expr = SORT_WHITELIST
         .iter()
         .find(|(k, _)| *k == sort_field)
@@ -138,7 +138,11 @@ pub(super) fn order_expr_and_dir(sort_field: &str, sort_dir: &str) -> (&'static 
     } else {
         "ASC"
     };
-    (order_expr, dir)
+    order_expr
+        .split(',')
+        .map(|term| format!("{} {dir}", term.trim()))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// Resolves a `missing_flag` (`0` for the library view, `1` for the
@@ -190,7 +194,7 @@ pub(super) fn build_track_query_base_browsed(
     exclude_ai: bool,
     project_ai: bool,
 ) -> String {
-    let (order_expr, dir) = order_expr_and_dir(sort_field, sort_dir);
+    let order = order_clause(sort_field, sort_dir);
     let filter_clause = filter_clause(has_filter, 3);
     let browse_first_param = if has_filter { 4 } else { 3 };
     let (browse_clause, _) = browse_clause(browse, browse_first_param);
@@ -203,7 +207,7 @@ pub(super) fn build_track_query_base_browsed(
          file_mtime, missing_since, missing_reason, untagged, file_size, device, inode, \
          {is_ai} AS is_ai \
          FROM tracks WHERE {presence}{filter_clause}{browse_clause}{ai_clause} \
-         ORDER BY {order_expr} {dir} LIMIT ?1 OFFSET ?2"
+         ORDER BY {order} LIMIT ?1 OFFSET ?2"
     )
 }
 
@@ -233,7 +237,7 @@ pub(super) fn build_track_query_browsed(
 /// (`query_track_ids`, library/missing shape): every id matching
 /// `(missing_flag, sort_field, sort_dir, filter)`, capped at `QUEUE_LIMIT` —
 /// a literal, not a bound parameter, since it's a fixed Rust-side constant
-/// rather than caller input (nothing to inject). Shares `order_expr_and_dir`/
+/// rather than caller input (nothing to inject). Shares `order_clause`/
 /// `filter_clause` with `build_track_query_base` so the queue's ordering can
 /// never drift from the track list's.
 pub(super) fn build_track_ids_query_base(
@@ -242,12 +246,12 @@ pub(super) fn build_track_ids_query_base(
     sort_dir: &str,
     has_filter: bool,
 ) -> String {
-    let (order_expr, dir) = order_expr_and_dir(sort_field, sort_dir);
+    let order = order_clause(sort_field, sort_dir);
     let filter_clause = filter_clause(has_filter, 1);
     let presence = presence_clause(missing_flag);
     format!(
         "SELECT id FROM tracks WHERE {presence}{filter_clause} \
-         ORDER BY {order_expr} {dir} LIMIT {QUEUE_LIMIT}"
+         ORDER BY {order} LIMIT {QUEUE_LIMIT}"
     )
 }
 
@@ -264,14 +268,14 @@ pub(super) fn build_track_ids_query_browsed(
     browse: &BrowseFilter,
     exclude_ai: bool,
 ) -> String {
-    let (order_expr, dir) = order_expr_and_dir(sort_field, sort_dir);
+    let order = order_clause(sort_field, sort_dir);
     let filter_clause = filter_clause(has_filter, 1);
     let browse_first_param = if has_filter { 2 } else { 1 };
     let (browse_clause, _) = browse_clause(browse, browse_first_param);
     let ai_clause = ai_exclude_clause(exclude_ai);
     format!(
         "SELECT id FROM tracks WHERE {PRESENT}{filter_clause}{browse_clause}{ai_clause} \
-         ORDER BY {order_expr} {dir} LIMIT {QUEUE_LIMIT}"
+         ORDER BY {order} LIMIT {QUEUE_LIMIT}"
     )
 }
 
@@ -336,9 +340,14 @@ mod tests {
 
     #[test]
     fn play_count_is_a_whitelisted_numeric_sort() {
+        assert_eq!(order_clause("play_count", "desc"), "play_count DESC");
+    }
+
+    #[test]
+    fn descending_compound_sort_reverses_every_order_term() {
         assert_eq!(
-            order_expr_and_dir("play_count", "desc"),
-            ("play_count", "DESC")
+            order_clause("artist", "desc"),
+            "artist COLLATE NOCASE DESC, year DESC, album COLLATE NOCASE DESC, track_no DESC"
         );
     }
 

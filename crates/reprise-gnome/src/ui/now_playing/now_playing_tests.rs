@@ -471,21 +471,21 @@ fn fixed_panel_owner_survives_and_header_toggle_reopens_it() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn npp_10_track_change_uses_one_shared_crossfade() {
+fn npp_10_track_change_crossfades_identity_without_repainting_the_active_tab() {
     gtk4::init().unwrap();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let widgets = test_widgets(&content, true);
     let shared_tree = widget_tree(widgets.track_content.upcast_ref());
     assert!(shared_tree.iter().any(|widget| widget == &widgets.cover));
     assert!(shared_tree.iter().any(|widget| widget == &widgets.title));
-    assert!(shared_tree
+    assert!(!shared_tree
         .iter()
         .any(|widget| widget == &widgets.tab_stack));
     assert_eq!(
         widgets.stage.first_child(),
         Some(widgets.track_content.clone().upcast())
     );
-    assert!(widgets.track_content.next_sibling().is_none());
+    assert!(widgets.track_content.next_sibling().is_some());
 
     let (window, panel) = test_panel("org.reprise.Reprise.NowPlayingCrossfadeTest");
     panel.retain_for_window(&window);

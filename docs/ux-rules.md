@@ -940,9 +940,10 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   Fehler → Inline-Retry im Tab. Instrumental-Gap (> 10 s ohne Zeile) hält
   die aktive Zeile und dimmt sie auf 60 %, statt das Highlight zu verlieren.
 - **NPP-10** [aktiv] [gtk] — Trackwechsel ist kein Ortswechsel: Cover,
-  Titelblock, Glow und Tab-Inhalt crossfaden **gemeinsam** in einem
-  Übergang (Standard-Token, MOT-5), niemals als Slide; die Lyrics starten
-  danach bei Zeile 0 und positionieren sie gemäß LYR-4.
+  Titelblock und Glow crossfaden **gemeinsam** in einem Übergang
+  (Standard-Token, MOT-5), niemals als Slide. Tab-Schalter, aktiver
+  Tab-Inhalt und Fußzeile bleiben stabil und werden nicht neu überblendet;
+  die Lyrics starten danach bei Zeile 0 und positionieren sie gemäß LYR-4.
   `gtk-enable-animations=false` schaltet auch hier hart (MOT-7).
 
 ## Q. Suche

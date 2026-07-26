@@ -21,7 +21,7 @@
 //!   passthrough of arbitrary text, so the whitelist is never weakened by
 //!   this addition. A column header click still works: `track_list.rs`
 //!   passes a normal whitelisted field (e.g. `"title"`) instead, and this
-//!   module's shared `order_expr_and_dir` treats it exactly like any other
+//!   module's shared `order_clause` treats it exactly like any other
 //!   source's sort. `"playlist_order"` only resolves to valid SQL when the
 //!   query being built actually joins `playlist_tracks AS pt` — i.e. only
 //!   for the `Playlist` source — which holds because `track_list.rs` is the
@@ -37,7 +37,7 @@
 //!   search filter. Its own `sort_field`/`sort_dir`/`limit_count` choose the
 //!   member set first (a "Top 50" definition must keep meaning Top 50), then
 //!   the track list's current column sort orders those members for display.
-//!   Both sort pairs run through the shared `order_expr_and_dir`, so a
+//!   Both sort pairs run through the shared `order_clause`, so a
 //!   hand-edited (DB-tampered) sort field silently falls back to title order,
 //!   same as every other source.
 //!

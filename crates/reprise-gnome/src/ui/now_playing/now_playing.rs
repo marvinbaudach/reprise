@@ -38,8 +38,9 @@ struct PanelWidgets {
     title: gtk4::Label,
     artist: gtk4::Label,
     album: gtk4::Label,
-    // Retained for T9's shared track-content crossfade; the T5 acceptance
-    // test also inspects the selected page directly.
+    // Retained for the tab-session behavior and NPP-10's structural
+    // regression test, which proves the active tab stays outside the
+    // track-identity crossfade.
     tab_stack: adw::ViewStack,
     #[cfg(test)]
     tab_switcher: adw::InlineViewSwitcher,
@@ -221,12 +222,11 @@ fn build_widgets_for_session(
     stage.set_vexpand(true);
     let track_content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     track_content.add_css_class("reprise-now-playing-track-content");
-    track_content.set_vexpand(true);
     track_content.append(&head_overlay);
-    track_content.append(&tabs);
-    track_content.append(&tab_stack);
-    track_content.append(&footer);
     stage.append(&track_content);
+    stage.append(&tabs);
+    stage.append(&tab_stack);
+    stage.append(&footer);
 
     let toolbar = adw::ToolbarView::new();
     toolbar.set_content(Some(&stage));
