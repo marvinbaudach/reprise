@@ -33,18 +33,19 @@ const BREAKDOWN_STRENGTH_FLOOR: f32 = 0.25;
 const BREAKDOWN_STRENGTH_FULL: f32 = 0.85;
 /// Sustained breakdown pressure needs all three gates: real bass presence,
 /// enough whole-mix energy, and bass that clearly dominates that mix.
-const BASS_PRESENCE_FLOOR: f32 = 0.48;
-const BASS_PRESENCE_FULL: f32 = 0.72;
-const LEVEL_PRESENCE_FLOOR: f32 = 0.30;
-const LEVEL_PRESENCE_FULL: f32 = 0.50;
-const BASS_DOMINANCE_FLOOR: f32 = 0.08;
-const BASS_DOMINANCE_FULL: f32 = 0.22;
+const BASS_PRESENCE_FLOOR: f32 = 0.68;
+const BASS_PRESENCE_FULL: f32 = 0.735;
+const LEVEL_PRESENCE_FLOOR: f32 = 0.44;
+const LEVEL_PRESENCE_FULL: f32 = 0.52;
+const BASS_DOMINANCE_FLOOR: f32 = 0.12;
+const BASS_DOMINANCE_FULL: f32 = 0.21;
 const HUE_START: f32 = 188.0;
 const HUE_END: f32 = 315.0;
 const ENVELOPE_EASING: f32 = 0.65;
 const MAX_RISE_PER_TICK: f32 = 3.0 / SEGMENT_COUNT as f32;
 const MAX_FALL_PER_TICK: f32 = 1.0 / SEGMENT_COUNT as f32;
 const ENVELOPE_SETTLE_EPSILON: f32 = 0.002;
+const PRESSURE_HOLD_TICKS: u8 = 3;
 
 fn group_value(values: &[f32; SPECTRUM_BAND_COUNT], bar: usize) -> f32 {
     let start = bar * SPECTRUM_BAND_COUNT / BAR_COUNT;
@@ -71,20 +72,17 @@ fn bass_pressure(bass: f32, level: f32) -> f32 {
     let presence = normalize_between(bass, BASS_PRESENCE_FLOOR, BASS_PRESENCE_FULL);
     let mix_energy = normalize_between(level, LEVEL_PRESENCE_FLOOR, LEVEL_PRESENCE_FULL);
     let dominance = normalize_between(bass - level, BASS_DOMINANCE_FLOOR, BASS_DOMINANCE_FULL);
-    presence * mix_energy * dominance
+    presence * (mix_energy * dominance).sqrt()
 }
 
-fn target_value(
-    bands: &[f32; SPECTRUM_BAND_COUNT],
-    beat: f32,
-    bass: f32,
-    level: f32,
-    bar: usize,
-) -> f32 {
+fn instant_pressure(beat: f32, bass: f32, level: f32) -> f32 {
+    beat_pressure(beat).max(bass_pressure(bass, level))
+}
+
+fn target_value(bands: &[f32; SPECTRUM_BAND_COUNT], pressure: f32, bar: usize) -> f32 {
     let across = bar as f32 / (BAR_COUNT - 1) as f32;
     let lift = BREAKDOWN_LIFT_LOW + (BREAKDOWN_LIFT_HIGH - BREAKDOWN_LIFT_LOW) * across;
     let spectrum = group_value(bands, bar).sqrt() * SPECTRUM_HEADROOM;
-    let pressure = beat_pressure(beat).max(bass_pressure(bass, level));
     // Exceptional energy lifts the remaining headroom instead of adding a
     // fixed amount. The spectrum silhouette survives while a breakdown can
     // approach full height between individual onset edges.
@@ -93,12 +91,16 @@ fn target_value(
 
 pub(crate) struct BarsEnvelope {
     values: [f32; BAR_COUNT],
+    pressure: f32,
+    pressure_hold_ticks: u8,
 }
 
 impl BarsEnvelope {
     pub(crate) fn new() -> Self {
         Self {
             values: [0.0; BAR_COUNT],
+            pressure: 0.0,
+            pressure_hold_ticks: 0,
         }
     }
 
@@ -113,9 +115,19 @@ impl BarsEnvelope {
         bass: f32,
         level: f32,
     ) -> bool {
-        let mut settled = true;
+        let pressure = instant_pressure(beat, bass, level);
+        if pressure > self.pressure + ENVELOPE_SETTLE_EPSILON {
+            self.pressure = pressure;
+            self.pressure_hold_ticks = PRESSURE_HOLD_TICKS;
+        } else if self.pressure_hold_ticks > 0 {
+            self.pressure_hold_ticks -= 1;
+        } else {
+            self.pressure = pressure;
+        }
+        let mut settled = self.pressure_hold_ticks == 0
+            && (self.pressure - pressure).abs() < ENVELOPE_SETTLE_EPSILON;
         for (bar, current) in self.values.iter_mut().enumerate() {
-            let target = target_value(bands, beat, bass, level, bar);
+            let target = target_value(bands, self.pressure, bar);
             let delta = target - *current;
             let step = (delta * ENVELOPE_EASING).clamp(-MAX_FALL_PER_TICK, MAX_RISE_PER_TICK);
             *current = (*current + step).clamp(0.0, 1.0);
@@ -126,6 +138,8 @@ impl BarsEnvelope {
 
     pub(crate) fn reset(&mut self) {
         self.values = [0.0; BAR_COUNT];
+        self.pressure = 0.0;
+        self.pressure_hold_ticks = 0;
     }
 
     pub(crate) fn snap(
@@ -135,7 +149,9 @@ impl BarsEnvelope {
         bass: f32,
         level: f32,
     ) {
-        self.values = std::array::from_fn(|bar| target_value(bands, beat, bass, level, bar));
+        self.pressure = instant_pressure(beat, bass, level);
+        self.pressure_hold_ticks = 0;
+        self.values = std::array::from_fn(|bar| target_value(bands, self.pressure, bar));
     }
 }
 
@@ -355,6 +371,55 @@ mod tests {
             })
             .count();
         assert_eq!(caps, BAR_COUNT);
+    }
+
+    #[test]
+    fn ac_20_breakdown_pressure_outranks_a_compressed_metal_bed() {
+        fn settled_average(bass: f32, level: f32) -> f32 {
+            let bands = [0.4; SPECTRUM_BAND_COUNT];
+            let mut envelope = BarsEnvelope::new();
+            for _ in 0..60 {
+                envelope.advance(&bands, 0.0, bass, level);
+            }
+            envelope.values().iter().sum::<f32>() / BAR_COUNT as f32
+        }
+
+        let metal_bed = settled_average(0.674, 0.444);
+        let breakdown = settled_average(0.732, 0.520);
+
+        assert!(
+            metal_bed < 0.55,
+            "ordinary compressed metal must retain visual headroom, got {metal_bed}"
+        );
+        assert!(
+            breakdown > 0.80,
+            "captured Wake Up breakdown energy must approach full height, got {breakdown}"
+        );
+        assert!(
+            breakdown >= metal_bed + 0.30,
+            "breakdown energy must visibly outrank the metal bed: bed={metal_bed}, breakdown={breakdown}"
+        );
+    }
+
+    #[test]
+    fn ac_20_short_breakdown_pressure_survives_the_fluid_attack() {
+        let bands = [0.4; SPECTRUM_BAND_COUNT];
+        let mut envelope = BarsEnvelope::new();
+        for _ in 0..60 {
+            envelope.advance(&bands, 0.0, 0.674, 0.444);
+        }
+
+        envelope.advance(&bands, 0.0, 0.732, 0.520);
+        let mut peak = envelope.values().iter().sum::<f32>() / BAR_COUNT as f32;
+        for _ in 0..3 {
+            envelope.advance(&bands, 0.0, 0.674, 0.444);
+            peak = peak.max(envelope.values().iter().sum::<f32>() / BAR_COUNT as f32);
+        }
+
+        assert!(
+            peak > 0.80,
+            "a captured one-frame breakdown must remain long enough for the fluid attack, got {peak}"
+        );
     }
 
     #[test]

@@ -1159,11 +1159,12 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Pfeile navigieren räumlich bzw. zeilenweise, Home/End springen in langen
   Collections an Anfang/Ende, Page Up/Down bewegen seitenweise, Enter
   aktiviert den fokussierten Eintrag. Space bleibt in passiven Collections
-  global Play/Pause, schaltet aber einen fokussierten Button/Toggle und tippt
-  in Textfeldern ein Leerzeichen. Menü-Taste/Shift+F10 öffnet das Kontextmenü,
-  F10 das Primärmenü und Esc schließt den obersten transienten Container. Ein
-  globaler Shortcut darf nie Texteingabe oder die lokale Semantik eines
-  fokussierten Controls stehlen.
+  sowie auf einem bereits ausgewählten, passiven View-Tab global Play/Pause,
+  schaltet aber einen fokussierten Button/Toggle mit echter lokaler Aktion und
+  tippt in Textfeldern ein Leerzeichen. Menü-Taste/Shift+F10 öffnet das
+  Kontextmenü, F10 das Primärmenü und Esc schließt den obersten transienten
+  Container. Ein globaler Shortcut darf nie Texteingabe oder die lokale
+  Semantik eines fokussierten Controls stehlen.
 - **ACC-5** [aktiv] [e2e] — Fokus hat einen nachvollziehbaren Lebenszyklus:
   Start und Navigation setzen ihn in die aktive Zielansicht; Ctrl+F setzt ihn
   ins Suchfeld, dessen Esc-Kaskade gibt ihn an die **aktuelle** Content-View
@@ -1710,9 +1711,17 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
   Säulendurchschnitt um mehr als 0,36 und mindestens 75 Prozent stärker als
   derselbe moderate Rhythmus. Der aus „WAKE UP" erfasste große Bass-Schlag hebt
   ihn um mehr als 0,45 und mindestens 150 Prozent stärker als der erfasste
-  leichte Rhythmus. Im dekodierten „WAKE UP"-Profil bleibt der Abschnitt vor
-  dem Breakdown überwiegend bei etwa 8–24 Prozent sichtbarer Höhe; die
-  Bassschläge ab ungefähr 17,25 Sekunden erreichen etwa 88–93 Prozent.
+  leichte Rhythmus. Eine vollständige, schneller als Echtzeit laufende
+  Korpusanalyse durchläuft dafür denselben Analyzer und dieselbe Scene-Engine
+  wie die Anwendung. Bei „WAKE UP" bleibt das Fenster 11,5–13,0 Sekunden bei
+  etwa 24 Prozent mittlerer Säulenhöhe; in den Fenstern 15,5–17,5 und
+  35,0–37,5 Sekunden steigen die mittleren Spitzen auf etwa 80 bzw. 82 Prozent
+  und die höchste Säule auf etwa 88 Prozent. In der leiseren Hälfte des Songs
+  liegen weniger als ein Prozent der Frames fälschlich über 75 Prozent. Für
+  „To the Hellfire" und „Sun//Eater" bleibt diese Rate trotz durchgehend
+  komprimiertem Metal unter sieben Prozent. Die beste gemessene zeitliche
+  Zuordnung zwischen Rohbass und sichtbarer Antwort liegt im Korpus bei
+  höchstens 32 Millisekunden.
   Bei knapper Panelhöhe bleibt der Visual-Inhalt unter dem Tab-Switcher und
   scrollt innerhalb seines Tabs, statt den Switcher zu überlagern. Flow, Pulse
   und weitere Modi existieren nicht. Der beschriftete Canvas übernimmt den

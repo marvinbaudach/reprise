@@ -43,10 +43,9 @@
 //! boolean-in shape, `escape_action_for`) are pure functions,
 //! unit-tested with no display. The action *callbacks* that wrap them are
 //! exercised by calling them directly in tests too (see this module's
-//! `#[cfg(test)]`). Real key events (does pressing the physical Space bar
-//! actually toggle playback; does a focused search entry actually keep
-//! typing a space) are pointer/keyboard-driven and are **not** headlessly
-//! drivable — manual check required (see the Task 9 report).
+//! `#[cfg(test)]`). The isolated CUA suite additionally delivers real key
+//! events to passive views, direct controls, text entry, and the selected
+//! Now Playing view tab.
 
 use gtk4::gio;
 use gtk4::gio::prelude::*;
@@ -82,12 +81,19 @@ pub(in crate::ui) fn next_search_mode(current: bool) -> bool {
 /// reserves Space there for global play/pause.
 fn focused_widget_owns_space(focus: Option<&gtk4::Widget>) -> bool {
     focus.is_some_and(|widget| {
-        widget.is::<gtk4::Editable>()
-            || widget.is::<gtk4::Button>()
-            || widget.is::<gtk4::CheckButton>()
-            || widget.is::<gtk4::Switch>()
-            || widget.is::<gtk4::Range>()
-            || widget.is::<gtk4::DropDown>()
+        let is_selected_view_tab = widget
+            .downcast_ref::<gtk4::ToggleButton>()
+            .is_some_and(gtk4::ToggleButton::is_active)
+            && widget
+                .ancestor(adw::InlineViewSwitcher::static_type())
+                .is_some();
+        !is_selected_view_tab
+            && (widget.is::<gtk4::Editable>()
+                || widget.is::<gtk4::Button>()
+                || widget.is::<gtk4::CheckButton>()
+                || widget.is::<gtk4::Switch>()
+                || widget.is::<gtk4::Range>()
+                || widget.is::<gtk4::DropDown>())
     })
 }
 
@@ -168,7 +174,8 @@ fn wire_toggle_play_pause(
             return gtk4::glib::Propagation::Proceed;
         };
         let focus = gtk4::prelude::GtkWindowExt::focus(&window);
-        if !space_should_toggle(focused_widget_owns_space(focus.as_ref())) {
+        let focus_owns_space = focused_widget_owns_space(focus.as_ref());
+        if !space_should_toggle(focus_owns_space) {
             return gtk4::glib::Propagation::Proceed;
         }
         if let Err(error) = gtk4::prelude::WidgetExt::activate_action(
@@ -494,6 +501,52 @@ mod tests {
         }
         let passive = gtk4::Label::new(Some("Passive")).upcast::<gtk4::Widget>();
         assert!(!focused_widget_owns_space(Some(&passive)));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn selected_view_tab_leaves_space_to_global_playback() {
+        fn collect_toggles(root: &gtk4::Widget, toggles: &mut Vec<gtk4::ToggleButton>) {
+            let mut child = root.first_child();
+            while let Some(widget) = child {
+                if let Some(toggle) = widget.downcast_ref::<gtk4::ToggleButton>() {
+                    toggles.push(toggle.clone());
+                }
+                collect_toggles(&widget, toggles);
+                child = widget.next_sibling();
+            }
+        }
+
+        gtk4::init().unwrap();
+        let switcher = adw::InlineViewSwitcher::new();
+        let stack = adw::ViewStack::new();
+        stack.add_titled(&gtk4::Box::default(), Some("queue"), "Queue");
+        stack.add_titled(&gtk4::Box::default(), Some("visual"), "Visual");
+        switcher.set_stack(Some(&stack));
+        let window = gtk4::Window::new();
+        window.set_child(Some(&switcher));
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        let mut tabs = Vec::new();
+        collect_toggles(switcher.upcast_ref(), &mut tabs);
+        let selected = tabs
+            .iter()
+            .find(|tab| tab.is_active())
+            .expect("view switcher has one selected tab");
+        let inactive = tabs
+            .iter()
+            .find(|tab| !tab.is_active())
+            .expect("view switcher has one inactive tab");
+
+        assert!(
+            !focused_widget_owns_space(Some(selected.upcast_ref())),
+            "an already selected view tab has no useful local Space action"
+        );
+        assert!(
+            focused_widget_owns_space(Some(inactive.upcast_ref())),
+            "an inactive view tab keeps Space so it can activate locally"
+        );
+        window.close();
     }
 
     #[test]

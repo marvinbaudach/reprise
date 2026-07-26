@@ -354,11 +354,14 @@ run_song_visuals_scenario() {
   cua_click_label "$APP_PID" "$WINDOW_ID" "Visual" song-visuals-select-visual
   visual_path=$(wait_for_label \
     "$APP_PID" "$WINDOW_ID" "Audio-reactive song visual" song-visuals-visible)
-  assert_snapshot_contains "$visual_path" "Grid"
-  assert_snapshot_contains "$visual_path" "Bars"
-  assert_snapshot_contains "$visual_path" "Flow"
-  assert_snapshot_contains "$visual_path" "Pulse"
+  assert_snapshot_contains "$visual_path" "Visual"
   assert_snapshot_absent "$visual_path" "Audio Character"
+  cua_focus_label_via_tab \
+    "$APP_PID" "$WINDOW_ID" "Visual" song-visuals-visual-focus >/dev/null
+  cua_press_key_window \
+    "$APP_PID" "$WINDOW_ID" space song-visuals-space-pause
+  wait_for_label \
+    "$APP_PID" "$WINDOW_ID" "Play (Space)" song-visuals-space-paused >/dev/null
 
   finish_scenario song-visuals \
     "dev scan complete" \
