@@ -41,6 +41,7 @@ jq -r '.[] | select(.type == "archive") | .sha256' flatpak/cargo-sources.json | 
 cmp "$tmp_root/lock-checksums" "$tmp_root/source-checksums"
 test "$(rg -c '^checksum = ' Cargo.lock)" -eq "$(jq '[.[] | select(.type == "archive")] | length' flatpak/cargo-sources.json)"
 bash scripts/check-flatpak-device-permissions.sh org.reprise.Reprise.yml
+bash scripts/check-stem-runtime-packaging.sh
 if command -v flatpak-builder-lint >/dev/null; then
   flatpak-builder-lint manifest org.reprise.Reprise.yml
 elif flatpak info org.flatpak.Builder >/dev/null 2>&1; then

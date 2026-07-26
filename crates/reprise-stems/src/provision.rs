@@ -17,11 +17,12 @@
 //!
 //! `load-dynamic` `dlopen`s native code into the process, so a swapped or
 //! planted `libonnxruntime.so` executes with full process privileges.
-//! **Production packaging MUST set [`ORT_DYLIB_SHA256_ENV`]
-//! (`REPRISE_ORT_DYLIB_SHA256`)** to the pinned SHA-256 of the library it ships,
-//! so [`resolve_library`] refuses anything else. When it is unset the library
-//! loads unverified and the backend logs a loud warning to stderr. The model
-//! directory is also never resolved to a CWD-relative path (see
+//! **Production packaging MUST provide a pinned SHA-256 of the library it
+//! ships**, either at build time (`REPRISE_BUNDLED_ORT_DYLIB_SHA256`) or through
+//! [`ORT_DYLIB_SHA256_ENV`] (`REPRISE_ORT_DYLIB_SHA256`), so
+//! [`resolve_library`] refuses anything else. When neither is present the
+//! library loads unverified and the backend logs a loud warning to stderr. The
+//! model directory is also never resolved to a CWD-relative path (see
 //! [`default_model_dir`]), so a relative candidate can't be planted either.
 
 use std::fmt::Write as _;
@@ -32,6 +33,10 @@ use sha2::{Digest, Sha256};
 
 use crate::model::{WeightsSpec, HTDEMUCS_LICENSE_NOTICE};
 
+mod runtime_location;
+
+use runtime_location::configured_library_location;
+
 /// Environment variable ort itself reads for the dynamic library path; we honor
 /// it first so a host/Flatpak can point at its bundled, checksummed library.
 pub const ORT_DYLIB_ENV: &str = "ORT_DYLIB_PATH";
@@ -39,6 +44,9 @@ pub const ORT_DYLIB_ENV: &str = "ORT_DYLIB_PATH";
 /// Optional expected SHA-256 (lower hex) for the onnxruntime library, so a
 /// Flatpak/host can pin the exact library it shipped.
 pub const ORT_DYLIB_SHA256_ENV: &str = "REPRISE_ORT_DYLIB_SHA256";
+
+const BUNDLED_ORT_DYLIB: Option<&str> = option_env!("REPRISE_BUNDLED_ORT_DYLIB");
+const BUNDLED_ORT_DYLIB_SHA256: Option<&str> = option_env!("REPRISE_BUNDLED_ORT_DYLIB_SHA256");
 
 /// Something went wrong provisioning the model or locating onnxruntime.
 #[derive(Debug, thiserror::Error)]
@@ -297,25 +305,19 @@ pub fn resolve_library(location: &LibraryLocation) -> Result<PathBuf, ProvisionE
 }
 
 /// Assembles the production candidate list for onnxruntime from the environment
-/// (`ORT_DYLIB_PATH` first, then a Reprise-bundled library beside the model
-/// directory) plus an optional pinned checksum from [`ORT_DYLIB_SHA256_ENV`].
+/// (`ORT_DYLIB_PATH` first), a checksum-pinned library embedded by the package
+/// build, then a Reprise-bundled library beside the model directory.
 ///
 /// Reads the environment (a side effect), so the pure resolution logic lives in
 /// [`resolve_library`], which this feeds.
 pub fn onnxruntime_location() -> LibraryLocation {
-    let mut candidates = Vec::new();
-    if let Some(explicit) = std::env::var_os(ORT_DYLIB_ENV) {
-        candidates.push(PathBuf::from(explicit));
-    }
-    // A library the host bundled next to the models (e.g. a Flatpak extension).
-    // Skipped when there is no data dir — never a CWD-relative candidate.
-    if let Ok(model_dir) = default_model_dir() {
-        candidates.push(model_dir.join("libonnxruntime.so"));
-    }
-    LibraryLocation {
-        candidates,
-        expected_sha256: std::env::var(ORT_DYLIB_SHA256_ENV).ok(),
-    }
+    configured_library_location(
+        std::env::var_os(ORT_DYLIB_ENV).map(PathBuf::from),
+        std::env::var(ORT_DYLIB_SHA256_ENV).ok(),
+        BUNDLED_ORT_DYLIB,
+        BUNDLED_ORT_DYLIB_SHA256,
+        default_model_dir().ok(),
+    )
 }
 
 /// The memory cap for a model download — generous so a mispointed URL cannot

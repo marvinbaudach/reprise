@@ -80,6 +80,7 @@ Base: `3fc0b2bf8a`
 
 Task I1: complete (this commit, base 3fc0b2bf8a, removed the test-only fake backend from user builds and gated the context action and worker on a compiled production backend)
 Task I2: complete (this commit, base ee14aa8d7a, exposed one verified runtime-readiness contract for the model and native ONNX Runtime and made the production backend and preferences consume it)
+Task I3: complete (this commit, base e4bd73aae4, packaged the official x86_64 ONNX Runtime 1.22.0 archive with a pinned SHA-512 and licence notices, embedded the installed library path and build-time SHA-256, and added a release packaging contract; fmt, strict clippy, affected stem tests, QA linters, core purity, and the workspace suite with the two local-TCP MCP fixtures filtered passed; the unfiltered suite reached only those two fixtures, which the sandbox blocks at TcpListener::bind with EPERM; audit reported only accepted RUSTSEC-2024-0436)
 
 # Ticketmaster bundled build credential
 

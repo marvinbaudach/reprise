@@ -42,9 +42,9 @@
 //! optionally checksummed candidate list ([`provision::onnxruntime_location`]):
 //! `ORT_DYLIB_PATH` first, then a host-bundled `libonnxruntime.so` beside the
 //! models; if none exists it fails with a clear message. A Flatpak ships the
-//! library as a checksum-declared source and points `ORT_DYLIB_PATH` at it
-//! (optionally pinning `REPRISE_ORT_DYLIB_SHA256`). onnxruntime is pinned to
-//! **1.22.0** (ort 2.0-rc.10).
+//! library as a checksum-declared source, installs it under `/app/lib/reprise`,
+//! and embeds its path plus SHA-256 into the app build. onnxruntime is pinned
+//! to **1.22.0** (ort 2.0-rc.10).
 //!
 //! For local development, point `ORT_DYLIB_PATH` at any onnxruntime 1.22.0
 //! `libonnxruntime.so` (e.g. the official

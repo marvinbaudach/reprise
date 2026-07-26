@@ -22,6 +22,7 @@ custom_target(
     '@OUTPUT@',
     localedir,
     get_option('stem_backend').to_string(),
+    prefix,
   ],
   env: {'MESON_BUILD_PROFILE': get_option('profile')},
   build_by_default: true,
