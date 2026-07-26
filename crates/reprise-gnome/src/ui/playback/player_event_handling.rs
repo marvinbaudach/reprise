@@ -79,6 +79,12 @@ impl PlayerController {
                     callback(frame);
                 }
             }
+            PlayerEvent::StreamTags {
+                title,
+                organization,
+            } => {
+                tracing::debug!(?title, ?organization, "received stream metadata");
+            }
             PlayerEvent::Error(message) => {
                 // Stage 2 Task 5: this can fire asynchronously for the
                 // *currently loaded* queue track (e.g. GStreamer resolving a

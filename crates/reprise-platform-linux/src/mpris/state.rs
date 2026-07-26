@@ -17,7 +17,9 @@ use std::collections::HashMap;
 
 use zbus::zvariant::{ObjectPath, OwnedValue, Value};
 
-use reprise_core::media_integration::{ms_to_micros, MprisState};
+use reprise_core::media_integration::{
+    can_go_next, can_go_previous, can_seek, micros_to_ms, ms_to_micros, MprisCommand, MprisState,
+};
 use reprise_core::queue::Repeat;
 
 /// Maps an MPRIS `LoopStatus` string to `queue::Repeat` — the three exact
@@ -55,9 +57,45 @@ pub(super) fn track_object_path(track_id: i64) -> String {
     format!("/org/reprise/Reprise/track/{track_id}")
 }
 
+fn external_object_path(external_ref: &str) -> String {
+    format!("/org/reprise/Reprise/external/{external_ref}")
+}
+
+pub(super) fn current_media_object_path(state: &MprisState) -> Option<String> {
+    state
+        .external_ref
+        .as_deref()
+        .map(external_object_path)
+        .or_else(|| state.track_id.map(track_object_path))
+}
+
+pub(super) fn next_command(state: &MprisState) -> Option<MprisCommand> {
+    can_go_next(state).then_some(MprisCommand::Next)
+}
+
+pub(super) fn previous_command(state: &MprisState) -> Option<MprisCommand> {
+    can_go_previous(state).then_some(MprisCommand::Previous)
+}
+
+pub(super) fn seek_command(state: &MprisState, offset_us: i64) -> Option<MprisCommand> {
+    can_seek(state).then_some(MprisCommand::Seek(micros_to_ms(offset_us)))
+}
+
+pub(super) fn set_position_command(
+    state: &MprisState,
+    requested_path: &str,
+    position_us: i64,
+) -> Option<MprisCommand> {
+    if !can_seek(state) || current_media_object_path(state).as_deref() != Some(requested_path) {
+        return None;
+    }
+    let position_ms = micros_to_ms(position_us).clamp(0, state.duration_ms.max(0));
+    Some(MprisCommand::SetPosition(position_ms))
+}
+
 /// Builds the MPRIS `Metadata` dict (`a{sv}`) from `state`. Empty
-/// (`{}`, legal per spec) when nothing is loaded. `mpris:trackid` is built
-/// via [`track_object_path`] — track ids are DB row ids (see
+/// (`{}`, legal per spec) when nothing is loaded. Library `mpris:trackid`
+/// values are built via [`track_object_path`] — track ids are DB row ids (see
 /// `queries::TrackSummary`), always non-negative decimal digits, which is
 /// already a valid D-Bus object path segment, so the `ObjectPath::try_from`
 /// here can only fail on a bug elsewhere (e.g. a change to id generation);
@@ -70,21 +108,23 @@ pub(super) fn track_object_path(track_id: i64) -> String {
 pub(super) fn build_metadata(state: &MprisState) -> HashMap<String, OwnedValue> {
     let mut metadata = HashMap::new();
 
-    let Some(track_id) = state.track_id else {
+    let Some(identity) = current_media_object_path(state) else {
         return metadata;
     };
 
-    match ObjectPath::try_from(track_object_path(track_id)) {
+    match ObjectPath::try_from(identity.as_str()) {
         Ok(path) => {
             metadata.insert("mpris:trackid".to_string(), OwnedValue::from(path));
         }
         Err(error) => {
-            tracing::warn!(%error, track_id, "MPRIS: could not build a valid trackid object path");
+            tracing::warn!(%error, identity, "MPRIS: could not build a valid trackid object path");
         }
     }
 
-    let length_us = ms_to_micros(state.duration_ms);
-    metadata.insert("mpris:length".to_string(), OwnedValue::from(length_us));
+    if !state.live_stream {
+        let length_us = ms_to_micros(state.duration_ms);
+        metadata.insert("mpris:length".to_string(), OwnedValue::from(length_us));
+    }
     insert_owned(
         &mut metadata,
         "xesam:title",
@@ -134,6 +174,8 @@ mod tests {
         MprisState {
             status: MprisPlaybackStatus::Playing,
             track_id: Some(1),
+            external_ref: None,
+            live_stream: false,
             title: "Title".into(),
             artist: "Artist".into(),
             album: "Album".into(),
@@ -214,6 +256,82 @@ mod tests {
     fn build_metadata_omits_art_url_without_a_cover() {
         let metadata = build_metadata(&playing_state());
         assert!(!metadata.contains_key("mpris:artUrl"));
+    }
+
+    #[test]
+    fn rad_2_live_metadata_uses_external_identity_and_omits_length() {
+        let state = MprisState {
+            track_id: None,
+            external_ref: Some("radio/7".into()),
+            live_stream: true,
+            title: "Current song".into(),
+            artist: "Example Radio".into(),
+            art_url: Some("https://example.test/radio.png".into()),
+            ..playing_state()
+        };
+        let metadata = build_metadata(&state);
+        let trackid: ObjectPath = metadata["mpris:trackid"]
+            .clone()
+            .try_into()
+            .expect("external track id is an object path");
+        assert_eq!(trackid.as_str(), "/org/reprise/Reprise/external/radio/7");
+        assert!(!metadata.contains_key("mpris:length"));
+        let art_url: String = metadata["mpris:artUrl"]
+            .clone()
+            .try_into()
+            .expect("remote art URL remains a string");
+        assert_eq!(art_url, "https://example.test/radio.png");
+    }
+
+    #[test]
+    fn podcast_external_transport_keeps_seek_and_blocks_queue_navigation() {
+        let state = MprisState {
+            track_id: None,
+            external_ref: Some("podcast/42".into()),
+            live_stream: false,
+            duration_ms: 180_000,
+            can_next: true,
+            can_prev: true,
+            ..playing_state()
+        };
+
+        assert_eq!(next_command(&state), None);
+        assert_eq!(previous_command(&state), None);
+        assert_eq!(
+            seek_command(&state, 5_500_000),
+            Some(MprisCommand::Seek(5_500))
+        );
+        assert_eq!(
+            set_position_command(
+                &state,
+                "/org/reprise/Reprise/external/podcast/42",
+                42_000_000,
+            ),
+            Some(MprisCommand::SetPosition(42_000))
+        );
+        assert_eq!(
+            set_position_command(
+                &state,
+                "/org/reprise/Reprise/external/podcast/41",
+                42_000_000,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn live_external_transport_rejects_every_seek_command() {
+        let state = MprisState {
+            track_id: None,
+            external_ref: Some("radio/7".into()),
+            live_stream: true,
+            ..playing_state()
+        };
+        assert_eq!(seek_command(&state, 5_000_000), None);
+        assert_eq!(
+            set_position_command(&state, "/org/reprise/Reprise/external/radio/7", 5_000_000,),
+            None
+        );
     }
 
     #[test]

@@ -173,6 +173,8 @@ impl PlayerController {
             Some(track) => MprisState {
                 status,
                 track_id: Some(track.id),
+                external_ref: None,
+                live_stream: false,
                 title: track.title,
                 artist: track.artist,
                 album: track.album,
@@ -188,6 +190,8 @@ impl PlayerController {
             None => MprisState {
                 status,
                 track_id: None,
+                external_ref: None,
+                live_stream: false,
                 title: String::new(),
                 artist: String::new(),
                 album: String::new(),
