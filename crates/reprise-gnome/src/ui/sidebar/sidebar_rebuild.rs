@@ -375,6 +375,9 @@ fn add_row(
         ViewSource::Queue => {
             sidebar_dnd::wire_queue_drop_target(shared, &row);
         }
+        ViewSource::Conversions => {
+            sidebar_dnd::wire_conversion_drop_target(shared, &row);
+        }
         ViewSource::ImportErrors | ViewSource::Missing => {
             sidebar_issue_cleanup::wire_issue_context_menu(shared, &row, source.clone());
         }

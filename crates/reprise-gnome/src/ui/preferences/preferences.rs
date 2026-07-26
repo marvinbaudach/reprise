@@ -269,7 +269,7 @@ impl PreferencesContext {
                     super::preference_concerts::build_page(&self.conn, &self.concerts)
                 }
                 PageId::Plugins => self.plugins_page(),
-                PageId::Experimental => super::preference_experimental::build_page(&self.conn),
+                PageId::Experimental => super::preference_experimental::build_page(self),
             };
             (id, page)
         });
