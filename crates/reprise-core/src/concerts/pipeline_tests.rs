@@ -1,12 +1,14 @@
 use std::cell::Cell;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use chrono::NaiveDate;
 use rusqlite::{params, Connection};
 
 use super::similar::{SimilarArtist, SimilarFetch};
 use super::{
-    refresh, ArtistRef, BandsintownProvider, ConcertError, EventProvider, ProviderError,
-    ProviderEvent, ProviderKind, Resolution, TicketmasterProvider,
+    refresh, refresh_cancellable, ArtistRef, BandsintownProvider, CancellationToken, ConcertError,
+    EventProvider, ProviderError, ProviderEvent, ProviderKind, Resolution, TicketmasterProvider,
 };
 
 fn conn() -> Connection {
@@ -88,6 +90,39 @@ impl EventProvider for FailingEventsProvider {
 
     fn events(&self, _provider_id: &str) -> Result<Vec<ProviderEvent>, ProviderError> {
         Err(ProviderError::Transport)
+    }
+}
+
+struct CancellingProvider {
+    cancelled: CancellationToken,
+    requests: Arc<Mutex<Vec<String>>>,
+}
+
+impl EventProvider for CancellingProvider {
+    fn kind(&self) -> ProviderKind {
+        ProviderKind::Ticketmaster
+    }
+
+    fn resolve(&self, artist: &ArtistRef<'_>) -> Result<Resolution, ProviderError> {
+        self.requests
+            .lock()
+            .unwrap()
+            .push(format!("resolve:{}", artist.name));
+        Ok(Resolution::Resolved {
+            provider_id: artist.name.to_string(),
+            mbid_verified: false,
+        })
+    }
+
+    fn events(&self, provider_id: &str) -> Result<Vec<ProviderEvent>, ProviderError> {
+        self.requests
+            .lock()
+            .unwrap()
+            .push(format!("events:{provider_id}"));
+        if provider_id == "Artist A" {
+            self.cancelled.cancel();
+        }
+        Ok(vec![event("Zenith")])
     }
 }
 
@@ -478,4 +513,46 @@ fn cleanup_removes_past_events_and_missing_credentials_is_typed() {
         .query_row("SELECT COUNT(*) FROM concert_events", [], |row| row.get(0))
         .unwrap();
     assert_eq!(count, 0);
+}
+
+#[test]
+fn wait_backoff_stops_immediately_when_cancelled() {
+    let cancelled = CancellationToken::default();
+    cancelled.cancel();
+    let started = Instant::now();
+
+    assert!(!super::pipeline::wait_backoff(
+        Duration::from_secs(1),
+        &cancelled
+    ));
+    assert!(started.elapsed() < Duration::from_millis(50));
+}
+
+#[test]
+fn cancellation_after_first_artist_stops_further_provider_calls() {
+    let conn = conn();
+    seed_play(&conn, "Artist A", 1_000);
+    seed_play(&conn, "Artist B", 1_000);
+    let cancelled = CancellationToken::default();
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let provider = CancellingProvider {
+        cancelled: cancelled.clone(),
+        requests: requests.clone(),
+    };
+
+    let summary = refresh_cancellable(
+        &conn,
+        &[Box::new(provider)],
+        NaiveDate::from_ymd_opt(2026, 7, 25).unwrap(),
+        1_000,
+        false,
+        &cancelled,
+    )
+    .unwrap();
+
+    assert_eq!(summary.attempted, 1);
+    assert_eq!(
+        *requests.lock().unwrap(),
+        ["resolve:Artist A", "events:Artist A"]
+    );
 }

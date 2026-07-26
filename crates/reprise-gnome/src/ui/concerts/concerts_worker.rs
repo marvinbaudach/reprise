@@ -5,7 +5,8 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use reprise_core::concerts::{
-    self, BandsintownProvider, ConcertError, EventProvider, RefreshSummary, TicketmasterProvider,
+    self, BandsintownProvider, CancellationToken, ConcertError, EventProvider, RefreshSummary,
+    TicketmasterProvider,
 };
 
 pub(in crate::ui) struct ConcertsRequest {
@@ -18,6 +19,11 @@ pub(in crate::ui) struct ConcertsRequest {
 pub(in crate::ui) struct ConcertsResponse {
     pub generation: u64,
     pub result: Result<RefreshSummary, ConcertError>,
+}
+
+struct WorkerRequest {
+    request: ConcertsRequest,
+    cancelled: CancellationToken,
 }
 
 type IsAlive = Rc<dyn Fn() -> bool>;
@@ -95,7 +101,8 @@ impl EnabledSubscribers {
 
 pub(in crate::ui) struct ConcertsRuntime {
     pub enabled: Rc<Cell<bool>>,
-    worker: async_channel::Sender<ConcertsRequest>,
+    worker: async_channel::Sender<WorkerRequest>,
+    cancellation: RefCell<CancellationToken>,
     subscribers: EnabledSubscribers,
     jitter_seconds: i64,
 }
@@ -119,6 +126,7 @@ impl ConcertsRuntime {
         Rc::new(Self {
             enabled: Rc::new(Cell::new(enabled)),
             worker: spawn(database_path),
+            cancellation: RefCell::new(CancellationToken::default()),
             subscribers: EnabledSubscribers::default(),
             jitter_seconds: concerts::jitter_seconds(&seed),
         })
@@ -130,7 +138,15 @@ impl ConcertsRuntime {
         enabled: bool,
     ) -> Result<(), rusqlite::Error> {
         reprise_core::modules::set_enabled(conn, &reprise_core::modules::CONCERTS_MODULE, enabled)?;
-        if self.enabled.replace(enabled) != enabled {
+        let changed = self.enabled.replace(enabled) != enabled;
+        if enabled {
+            if changed {
+                *self.cancellation.borrow_mut() = CancellationToken::default();
+            }
+        } else {
+            self.cancellation.borrow().cancel();
+        }
+        if changed {
             self.subscribers.notify(enabled);
         }
         Ok(())
@@ -149,7 +165,8 @@ impl ConcertsRuntime {
         if !self.enabled.get() {
             return false;
         }
-        match self.worker.try_send(request) {
+        let cancelled = self.cancellation.borrow().clone();
+        match self.worker.try_send(WorkerRequest { request, cancelled }) {
             Ok(()) => true,
             Err(error) => {
                 tracing::warn!(%error, "could not queue Concerts request");
@@ -165,6 +182,11 @@ impl ConcertsRuntime {
     #[cfg(test)]
     fn subscriber_count(&self) -> usize {
         self.subscribers.len()
+    }
+
+    #[cfg(test)]
+    fn cancellation_token(&self) -> CancellationToken {
+        self.cancellation.borrow().clone()
     }
 }
 
@@ -185,24 +207,24 @@ fn database_path(conn: &rusqlite::Connection) -> Option<PathBuf> {
     None
 }
 
-fn spawn(database_path: Option<PathBuf>) -> async_channel::Sender<ConcertsRequest> {
-    let (sender, receiver) = async_channel::unbounded::<ConcertsRequest>();
+fn spawn(database_path: Option<PathBuf>) -> async_channel::Sender<WorkerRequest> {
+    let (sender, receiver) = async_channel::unbounded::<WorkerRequest>();
     let result = std::thread::Builder::new()
         .name("reprise-concerts".into())
         .spawn(move || {
             let connection = database_path
                 .as_deref()
                 .map(|path| reprise_core::db::open_migrated(Some(path)));
-            while let Ok(request) = receiver.recv_blocking() {
+            while let Ok(work) = receiver.recv_blocking() {
                 let result = match connection.as_ref() {
-                    Some(Ok(conn)) => refresh_configured(conn, request.force),
+                    Some(Ok(conn)) => refresh_configured(conn, work.request.force, &work.cancelled),
                     Some(Err(error)) => Err(ConcertError::InvalidData(error.to_string())),
                     None => Err(ConcertError::InvalidData(
                         "the active database has no persistent path".into(),
                     )),
                 };
-                let _ = request.response.try_send(ConcertsResponse {
-                    generation: request.generation,
+                let _ = work.request.response.try_send(ConcertsResponse {
+                    generation: work.request.generation,
                     result,
                 });
             }
@@ -216,6 +238,7 @@ fn spawn(database_path: Option<PathBuf>) -> async_channel::Sender<ConcertsReques
 fn refresh_configured(
     conn: &rusqlite::Connection,
     force: bool,
+    cancelled: &CancellationToken,
 ) -> Result<RefreshSummary, ConcertError> {
     let credentials = concerts::config::credentials(conn)?;
     let mut providers: Vec<Box<dyn EventProvider>> = Vec::new();
@@ -225,12 +248,13 @@ fn refresh_configured(
     if let Some(api_key) = credentials.ticketmaster_api_key {
         providers.push(Box::new(TicketmasterProvider::new(api_key)));
     }
-    concerts::refresh(
+    concerts::refresh_cancellable(
         conn,
         &providers,
         chrono::Local::now().date_naive(),
         chrono::Utc::now().timestamp(),
         force,
+        cancelled,
     )
 }
 
@@ -286,5 +310,21 @@ mod tests {
         alive.set(false);
         runtime.set_enabled(&conn, false).unwrap();
         assert_eq!(runtime.subscriber_count(), 0);
+    }
+
+    #[test]
+    fn disabling_cancels_the_active_refresh_epoch_without_cancelling_the_next_one() {
+        let conn = migrated_conn();
+        let runtime = ConcertsRuntime::setup(&conn);
+        runtime.set_enabled(&conn, true).unwrap();
+        let active = runtime.cancellation_token();
+
+        runtime.set_enabled(&conn, false).unwrap();
+        assert!(active.is_cancelled());
+
+        runtime.set_enabled(&conn, true).unwrap();
+        let next = runtime.cancellation_token();
+        assert!(active.is_cancelled());
+        assert!(!next.is_cancelled());
     }
 }
