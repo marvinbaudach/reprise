@@ -19,8 +19,14 @@ fn device_view_projects_descriptor_scan_and_idle_state() {
         assert_eq!(device.name, "Phone a");
         assert_eq!(device.icon, expected_icon);
         assert!(device.connected);
-        assert_eq!(device.available_bytes, Some(1_000_000));
-        assert!(device.contents.files.is_empty());
+        assert_eq!(device.storage.free_bytes, Some(1_000_000));
+        assert_eq!(device.storage.total_bytes, Some(2_000_000));
+        assert_eq!(
+            device.storage.target_name.as_deref(),
+            Some("Internal shared storage")
+        );
+        assert_eq!(device.storage.reprise_music_bytes, 0);
+        assert_eq!(device.storage.other_music_bytes, 0);
         assert!(!device.scanning);
         assert!(device.scan_error.is_none());
         assert_eq!(device.snapshot.phase, SyncPhase::Idle);
@@ -436,13 +442,13 @@ fn planned_sync_refreshes_available_space_after_finishing() {
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
         gtk4::glib::timeout_future(Duration::from_millis(2)).await;
-        assert_eq!(runtime.devices()[0].available_bytes, Some(1_000_000));
+        assert_eq!(runtime.devices()[0].storage.free_bytes, Some(1_000_000));
         backend.set_available_bytes(Some(900_000));
 
         runtime.sync_now("a").unwrap();
         settle().await;
 
-        assert_eq!(runtime.devices()[0].available_bytes, Some(900_000));
+        assert_eq!(runtime.devices()[0].storage.free_bytes, Some(900_000));
     });
 }
 

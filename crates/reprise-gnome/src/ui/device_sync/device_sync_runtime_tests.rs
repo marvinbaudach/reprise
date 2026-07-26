@@ -10,9 +10,10 @@ use gtk4::gio;
 use gtk4::gio::prelude::*;
 use reprise_core::device_sync::settings::save_settings;
 use reprise_core::device_sync::{
-    DeviceSelection, DeviceSettings, SelectionSource, SyncPhase, SyncSnapshot,
+    DeviceSelection, DeviceSettings, DeviceStorageInspection, DeviceStorageSnapshot,
+    SelectionSource, SyncPhase, SyncSnapshot,
 };
-use reprise_platform_linux::device_sync::{CopyOutcome, DeviceContents, DeviceDescriptor};
+use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor};
 use reprise_platform_linux::device_transfer::{Mp3TranscodeRequest, TranscodedFile};
 use rusqlite::Connection;
 
@@ -120,10 +121,20 @@ impl DeviceBackend for FakeBackend {
         self.state.subscribers.borrow_mut().push(callback);
     }
 
-    fn inspect(&self, _root_uri: String) -> TestFuture<(DeviceContents, Option<u64>, Option<u64>)> {
+    fn inspect(&self, _root_uri: String) -> TestFuture<DeviceStorageInspection> {
         let available_bytes = self.state.available_bytes.get();
         let total_bytes = self.state.total_bytes.get();
-        Box::pin(async move { Ok((DeviceContents::default(), available_bytes, total_bytes)) })
+        Box::pin(async move {
+            Ok(DeviceStorageInspection {
+                snapshot: DeviceStorageSnapshot {
+                    target_name: Some("Internal shared storage".into()),
+                    free_bytes: available_bytes,
+                    total_bytes,
+                    ..DeviceStorageSnapshot::default()
+                },
+                managed_files: Vec::new(),
+            })
+        })
     }
 
     fn copy_track(

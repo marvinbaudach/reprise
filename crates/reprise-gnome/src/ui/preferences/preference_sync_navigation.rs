@@ -53,12 +53,9 @@ pub(super) fn install_single_device_shortcut(
 mod tests {
     use std::cell::RefCell;
 
-    use gtk4::prelude::*;
+    use super::*;
     use libadwaita as adw;
     use libadwaita::prelude::*;
-    use reprise_platform_linux::device_sync::DeviceContents;
-
-    use super::*;
 
     fn device(id: &str) -> DeviceView {
         DeviceView {
@@ -66,9 +63,7 @@ mod tests {
             name: id.into(),
             icon: gtk4::gio::ThemedIcon::new("phone-symbolic").upcast(),
             connected: true,
-            available_bytes: None,
-            total_bytes: None,
-            contents: DeviceContents::default(),
+            storage: Default::default(),
             scanning: false,
             scan_error: None,
             draft_playlists: Vec::new(),

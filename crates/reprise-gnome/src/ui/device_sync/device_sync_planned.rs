@@ -102,7 +102,7 @@ impl DeviceSyncRuntime {
                 .delta
                 .clone()
                 .ok_or_else(|| SyncStartError::Planning("delta is unavailable".into()))?;
-            if let Some(available_bytes) = device.available_bytes {
+            if let Some(available_bytes) = device.storage.free_bytes {
                 if delta.bytes > available_bytes {
                     let error = SyncStartError::InsufficientSpace {
                         required_bytes: delta.bytes,

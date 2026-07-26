@@ -108,8 +108,8 @@ fn agent_device(device: DeviceView) -> AgentDeviceSyncDevice {
     AgentDeviceSyncDevice {
         name: device.name,
         connected: device.connected,
-        available_bytes: device.available_bytes,
-        total_bytes: device.total_bytes,
+        available_bytes: device.storage.free_bytes,
+        total_bytes: device.storage.total_bytes,
         managed_tracks: device
             .tracks
             .iter()

@@ -9,11 +9,9 @@ use std::time::Duration;
 
 use gtk4::gio;
 use gtk4::gio::prelude::*;
-use reprise_core::device_sync::SyncPhase;
+use reprise_core::device_sync::{DeviceStorageInspection, SyncPhase};
 use reprise_core::library::m3u::M3uEntry;
-use reprise_platform_linux::device_sync::{
-    CopyOutcome, DeviceContents, DeviceDescriptor, DeviceStorage,
-};
+use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor, DeviceStorage};
 use reprise_platform_linux::device_transfer::{
     probe_mp3_transcode_capability, transcode_to_mp3, Mp3TranscodeRequest, TranscodedFile,
 };
@@ -56,18 +54,10 @@ impl DeviceBackend for SmokeDeviceBackend {
 
     fn subscribe_devices(&self, _callback: Rc<dyn Fn(Vec<DeviceDescriptor>)>) {}
 
-    fn inspect(
-        &self,
-        root_uri: String,
-    ) -> BackendFuture<(DeviceContents, Option<u64>, Option<u64>)> {
+    fn inspect(&self, root_uri: String) -> BackendFuture<DeviceStorageInspection> {
         Box::pin(async move {
             let storage = Self::storage(&root_uri);
-            let contents = storage.inspect().await.map_err(|error| error.to_string())?;
-            let (available, total) = storage
-                .capacity_bytes()
-                .await
-                .map_err(|error| error.to_string())?;
-            Ok((contents, available, total))
+            storage.inspect().await.map_err(|error| error.to_string())
         })
     }
 

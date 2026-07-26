@@ -15,6 +15,7 @@ pub mod mirror;
 pub mod profile;
 pub mod sanitize;
 pub mod settings;
+pub mod storage;
 pub mod transfer;
 
 pub use delta::{compute_delta, SyncCandidate, SyncDelta};
@@ -29,6 +30,10 @@ pub use profile::{
 };
 pub use settings::{
     DeviceFileRecord, DevicePlaylistRecord, DeviceSelection, DeviceSettings, SelectionSource,
+};
+pub use storage::{
+    project_storage, storage_composition, DeviceStorageInspection, DeviceStorageProjection,
+    DeviceStorageSnapshot, StorageComposition, StorageKnowledge, StorageProjectionState,
 };
 
 pub const REPRISE_DEVICE_DIR: &str = "Reprise";
@@ -339,6 +344,9 @@ mod v1_tests;
 #[cfg(test)]
 #[path = "device_sync/profile_tests.rs"]
 mod profile_tests;
+#[cfg(test)]
+#[path = "device_sync/storage_tests.rs"]
+mod storage_tests;
 
 #[cfg(test)]
 #[path = "device_sync/inventory_tests.rs"]
