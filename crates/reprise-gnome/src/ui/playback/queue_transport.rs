@@ -376,7 +376,16 @@ impl PlayerController {
             .map(|np| np.id)
             .filter(|id| Some(*id) != deferred);
         let play_next = self.up_next.borrow().ids().to_vec();
-        let context_count = self.queue.borrow().remaining_len();
+        let (context_count, context_sequence, context_start) = {
+            let queue = self.queue.borrow();
+            (
+                queue.remaining_len(),
+                queue.sequence_identity(),
+                queue
+                    .current_order_position()
+                    .map_or(0, |position| position + 1),
+            )
+        };
         let origin_label = self
             .play_origin
             .borrow()
@@ -384,8 +393,10 @@ impl PlayerController {
             .map(|origin| origin.label.clone());
         let player = Rc::downgrade(self);
         let context = (context_count > 0).then(|| {
-            VirtualContextTail::new(
+            VirtualContextTail::identified(
                 context_count,
+                context_sequence,
+                context_start,
                 Rc::new(move |offset, limit| {
                     player.upgrade().map_or_else(Vec::new, |player| {
                         player.queue.borrow().remaining_window(offset, limit)

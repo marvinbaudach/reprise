@@ -70,6 +70,51 @@ fn smart_window_applies_rules_and_own_sort() {
 }
 
 #[test]
+fn smart_window_keeps_membership_but_honors_the_requested_column_sort() {
+    let conn = seeded_conn_with_tracks(3);
+    conn.execute(
+        "UPDATE tracks SET artist = CASE id \
+         WHEN 1 THEN 'Gamma' WHEN 2 THEN 'Beta' ELSE 'Alpha' END",
+        [],
+    )
+    .unwrap();
+    let smart_id = insert_smart_playlist(&conn, "[]", "title", "asc", Some(2));
+
+    let mut conn = conn;
+    let rows = query_track_window(
+        &mut conn,
+        &ViewSource::Smart(smart_id),
+        "artist",
+        "asc",
+        "",
+        0,
+        10,
+        &[],
+    )
+    .unwrap();
+    let ids: Vec<i64> = rows.iter().map(|track| track.id).collect();
+
+    assert_eq!(
+        ids,
+        vec![2, 1],
+        "the smart definition chooses members 1 and 2, then the clicked Artist column sorts them"
+    );
+    assert_eq!(
+        query_track_ids(
+            &conn,
+            &ViewSource::Smart(smart_id),
+            "artist",
+            "asc",
+            "",
+            &[],
+        )
+        .unwrap(),
+        vec![2, 1],
+        "playback snapshots must follow the same visible smart-playlist order"
+    );
+}
+
+#[test]
 fn smart_window_applies_live_search_filter_too() {
     let conn = seeded_conn_with_tracks(5);
     conn.execute("UPDATE tracks SET rating = 4", []).unwrap();
@@ -205,5 +250,63 @@ fn smart_source_not_found_degrades_to_empty() {
         query_track_ids(&conn, &ViewSource::Smart(999), "x", "x", "", &[])
             .unwrap()
             .is_empty()
+    );
+}
+
+#[test]
+fn fil_8_recently_added_includes_every_track_from_the_last_seven_days_without_a_50_cap() {
+    let conn = crate::db::open_migrated(None).unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    for id in 1..=60 {
+        conn.execute(
+            "INSERT INTO tracks (id, path, title, artist, added_at)
+             VALUES (?1, ?2, ?3, '', ?4)",
+            rusqlite::params![
+                id,
+                format!("/recent/{id}.flac"),
+                format!("Recent {id}"),
+                now - id
+            ],
+        )
+        .unwrap();
+    }
+    conn.execute(
+        "INSERT INTO tracks (id, path, title, artist, added_at)
+         VALUES (61, '/old.flac', 'Old', '', ?1)",
+        [now - 8 * 24 * 60 * 60],
+    )
+    .unwrap();
+
+    assert_eq!(
+        query_track_count(&conn, &ViewSource::RecentlyAdded, "", &[]).unwrap(),
+        60
+    );
+    let ids = query_track_ids(
+        &conn,
+        &ViewSource::RecentlyAdded,
+        "added_at",
+        "desc",
+        "",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(ids.len(), 60);
+    assert_eq!(ids[0], 1);
+    assert!(!ids.contains(&61));
+
+    let smart_id = conn
+        .query_row(
+            "SELECT id FROM smart_playlists WHERE role = ?1",
+            [crate::library::playlists::RECENTLY_ADDED_ROLE],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap();
+    assert_eq!(
+        query_track_count(&conn, &ViewSource::Smart(smart_id), "", &[]).unwrap(),
+        60,
+        "legacy sessions and non-GTK consumers must resolve the built-in smart id identically"
     );
 }

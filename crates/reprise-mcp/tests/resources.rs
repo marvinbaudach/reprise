@@ -369,6 +369,7 @@ fn reads_cached_podcasts_without_source_or_download_paths() {
         210,
     )
     .unwrap()
+    .expect("episode should be imported")
     .episode_id;
     store::save_position(&conn, episode_id, 12_000).unwrap();
     store::set_downloaded_path(

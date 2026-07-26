@@ -28,17 +28,19 @@ pub enum ColumnId {
     Album,
     Genre,
     Year,
+    Added,
     Duration,
     Rating,
     PlayCount,
 }
 
-const DEFAULT_ORDER: [ColumnId; 10] = [
+const DEFAULT_ORDER: [ColumnId; 11] = [
     ColumnId::Cover,
     ColumnId::Title,
     ColumnId::Artist,
     ColumnId::Album,
     ColumnId::Year,
+    ColumnId::Added,
     ColumnId::Duration,
     ColumnId::Rating,
     ColumnId::PlayCount,
@@ -50,6 +52,7 @@ fn cell_alignment(id: ColumnId) -> CellAlignment {
     match id {
         ColumnId::TrackNumber
         | ColumnId::Year
+        | ColumnId::Added
         | ColumnId::Duration
         | ColumnId::Rating
         | ColumnId::PlayCount => CellAlignment::Numeric,
@@ -79,6 +82,7 @@ fn column_width_policy(id: ColumnId) -> ColumnWidthPolicy {
         ColumnId::Album => 300,
         ColumnId::Genre => 180,
         ColumnId::Year => 90,
+        ColumnId::Added => 160,
         ColumnId::Duration => 100,
         ColumnId::Rating => COMPACT_RATING_COLUMN_WIDTH,
         ColumnId::PlayCount => 90,
@@ -149,6 +153,7 @@ impl ColumnId {
             Self::Album => "album",
             Self::Genre => "genre",
             Self::Year => "year",
+            Self::Added => "added",
             Self::Duration => "duration",
             Self::Rating => "rating",
             Self::PlayCount => "play-count",
@@ -164,6 +169,7 @@ impl ColumnId {
             "album" => Some(Self::Album),
             "genre" => Some(Self::Genre),
             "year" => Some(Self::Year),
+            "added" => Some(Self::Added),
             "duration" => Some(Self::Duration),
             "rating" => Some(Self::Rating),
             "play-count" => Some(Self::PlayCount),
@@ -179,6 +185,7 @@ impl ColumnId {
             "album" => Some(Self::Album),
             "genre" => Some(Self::Genre),
             "year" => Some(Self::Year),
+            "added_at" => Some(Self::Added),
             "duration_ms" => Some(Self::Duration),
             "rating" => Some(Self::Rating),
             "play_count" => Some(Self::PlayCount),
@@ -196,6 +203,7 @@ pub(in crate::ui) fn column_label(id: ColumnId) -> String {
         ColumnId::Album => strings::COLUMN_ALBUM,
         ColumnId::Genre => strings::COLUMN_GENRE,
         ColumnId::Year => strings::COLUMN_YEAR,
+        ColumnId::Added => strings::COLUMN_ADDED,
         ColumnId::Duration => strings::COLUMN_LENGTH,
         ColumnId::Rating => strings::RATING,
         ColumnId::PlayCount => strings::COLUMN_PLAY_COUNT,
@@ -639,6 +647,14 @@ pub(super) fn build_columns(
         cell_alignment(ColumnId::Duration),
         |t| format_duration(t.duration_ms),
     );
+    let added = append_column(
+        view,
+        shared,
+        "added_at",
+        &strings::text(strings::COLUMN_ADDED),
+        cell_alignment(ColumnId::Added),
+        |track| reprise_core::format::format_unix_timestamp(track.added_at),
+    );
     let rating = append_rating_column(view, shared);
     let play_count = append_column(
         view,
@@ -657,6 +673,7 @@ pub(super) fn build_columns(
         (ColumnId::Album, album),
         (ColumnId::Genre, genre),
         (ColumnId::Year, year),
+        (ColumnId::Added, added),
         (ColumnId::Duration, duration),
         (ColumnId::Rating, rating),
         (ColumnId::PlayCount, play_count),

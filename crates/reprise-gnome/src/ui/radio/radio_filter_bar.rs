@@ -12,7 +12,7 @@ use crate::ui::style::buttons;
 
 const GENRE_KEY: &str = "radio.filter.genre";
 const COUNTRY_KEY: &str = "radio.filter.country";
-const FILTER_BAR_MIN_HEIGHT: i32 = 44;
+const FILTER_BAR_MIN_HEIGHT: i32 = 34;
 
 type FilterCallback = Rc<dyn Fn(RadioFilter)>;
 
@@ -143,7 +143,7 @@ impl RadioFilterBar {
         let add_filter = gtk4::MenuButton::builder()
             .label(format!("+ {}", strings::text(strings::RADIO_ADD_FILTER)))
             .build();
-        add_filter.add_css_class(CHIP_CSS_CLASS);
+        add_filter.add_css_class("pill");
         let chooser = gtk4::ListBox::new();
         chooser.set_selection_mode(gtk4::SelectionMode::None);
         let popover = gtk4::Popover::builder().child(&chooser).build();
@@ -157,9 +157,12 @@ impl RadioFilterBar {
         count.set_halign(gtk4::Align::End);
 
         let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-        root.set_height_request(FILTER_BAR_MIN_HEIGHT);
+        root.set_margin_top(6);
+        root.set_margin_bottom(6);
         root.set_margin_start(12);
         root.set_margin_end(12);
+        root.set_size_request(-1, FILTER_BAR_MIN_HEIGHT);
+        root.add_css_class("toolbar");
         root.append(&add);
         root.append(&add_filter);
         root.append(&chips);
@@ -377,7 +380,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn src_2_add_action_is_tinted_button_not_chip() {
+    fn src_2_radio_toolbar_matches_the_podcast_toolbar_geometry() {
         gtk4::init().unwrap();
         let conn = Rc::new(RefCell::new(
             rusqlite::Connection::open_in_memory().unwrap(),
@@ -386,7 +389,14 @@ mod tests {
         let bar = RadioFilterBar::new(conn);
         assert!(bar.add.has_css_class(buttons::ADD_ACTION_CLASS));
         assert!(!bar.add.has_css_class(CHIP_CSS_CLASS));
-        assert_eq!(bar.root.height_request(), FILTER_BAR_MIN_HEIGHT);
+        assert_eq!(bar.root.height_request(), 34);
+        assert_eq!(bar.root.margin_top(), 6);
+        assert_eq!(bar.root.margin_bottom(), 6);
+        assert_eq!(bar.root.margin_start(), 12);
+        assert_eq!(bar.root.margin_end(), 12);
+        assert!(bar.root.has_css_class("toolbar"));
+        assert!(bar.add_filter.has_css_class("pill"));
+        assert!(!bar.add_filter.has_css_class(CHIP_CSS_CLASS));
     }
 
     fn test_station(

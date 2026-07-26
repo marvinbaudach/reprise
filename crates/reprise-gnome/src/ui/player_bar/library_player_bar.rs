@@ -6,6 +6,14 @@
 use gtk4::prelude::*;
 use reprise_core::library::settings::PlayerBarPosition;
 
+/// Keeps hidden source pages from contributing their minimum height to the
+/// visible Library page. Otherwise one tall Podcast/Radio page can make the
+/// structural player bar overflow below the window even while Music is active.
+pub(in crate::ui) fn configure_content_stack(stack: &gtk4::Stack) {
+    stack.set_hhomogeneous(false);
+    stack.set_vhomogeneous(false);
+}
+
 #[derive(Clone)]
 pub(in crate::ui) struct LibraryPlayerBarShell {
     root: gtk4::Box,
@@ -157,5 +165,49 @@ mod tests {
             shell.widget().last_child().as_ref(),
             Some(content.upcast_ref::<gtk4::Widget>())
         );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn play_7b_hidden_tall_stack_page_cannot_push_the_bottom_player_bar_out_of_view() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+
+        let stack = gtk4::Stack::new();
+        super::configure_content_stack(&stack);
+        let library = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        let hidden_source = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        hidden_source.set_height_request(1_200);
+        stack.add_named(&library, Some("library"));
+        stack.add_named(&hidden_source, Some("hidden-source"));
+        stack.set_visible_child_name("library");
+
+        let player = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        player.set_height_request(86);
+        let shell = LibraryPlayerBarShell::new(
+            &stack,
+            Some(player.upcast_ref()),
+            PlayerBarPosition::Bottom,
+        );
+        let window = gtk4::Window::builder()
+            .default_width(1_000)
+            .default_height(600)
+            .child(shell.widget())
+            .build();
+        window.present();
+        wait_for_layout();
+
+        let bar_bounds = shell
+            .bar_box
+            .compute_bounds(shell.widget())
+            .expect("player bar bounds in shell");
+        assert!(
+            shell.bar_box.height() >= 86
+                && bar_bounds.y() + bar_bounds.height() <= shell.widget().height() as f32,
+            "the hidden page must not push the player bar below the shell: bar_bounds={bar_bounds:?}, shell_height={}",
+            shell.widget().height()
+        );
+
+        window.close();
     }
 }
