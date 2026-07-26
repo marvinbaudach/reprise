@@ -571,7 +571,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn conc_5_footer_keeps_fetch_progress_below_the_live_table() {
+    fn conc_5a_footer_keeps_fetch_progress_below_the_live_table() {
         gtk4::init().unwrap();
         let conn = Rc::new(RefCell::new(Connection::open_in_memory().unwrap()));
         reprise_core::db::migrate(&conn.borrow()).unwrap();

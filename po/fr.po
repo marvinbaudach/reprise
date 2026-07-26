@@ -4046,3 +4046,15 @@ msgstr ""
 
 msgid "Saved"
 msgstr "Enregistré"
+
+msgid "Checking key…"
+msgstr "Vérification de la clé…"
+
+msgid "Key works"
+msgstr "La clé fonctionne"
+
+msgid "Key was rejected"
+msgstr "La clé a été rejetée"
+
+msgid "Could not verify"
+msgstr "Impossible de vérifier"

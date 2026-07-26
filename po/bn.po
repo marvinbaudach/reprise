@@ -3837,3 +3837,15 @@ msgstr ""
 
 msgid "Saved"
 msgstr "সংরক্ষিত"
+
+msgid "Checking key…"
+msgstr "কী যাচাই করা হচ্ছে…"
+
+msgid "Key works"
+msgstr "কী কাজ করছে"
+
+msgid "Key was rejected"
+msgstr "কী প্রত্যাখ্যান করা হয়েছে"
+
+msgid "Could not verify"
+msgstr "যাচাই করা যায়নি"

@@ -10,6 +10,7 @@ mod backoff;
 mod bandsintown;
 mod candidates;
 pub mod config;
+mod credential;
 mod dedupe;
 mod geo;
 mod geocode;
@@ -24,6 +25,7 @@ mod ticketmaster;
 
 pub use backoff::backoff_delay;
 pub use bandsintown::BandsintownProvider;
+pub use credential::{verify_credential, CredentialVerification};
 pub use dedupe::{dedupe_key, merge, normalize_component, ticket_source_label};
 pub use geo::haversine_km;
 pub use geocode::{geocode, geocode_url, parse_geocode, GeocodedLocation};

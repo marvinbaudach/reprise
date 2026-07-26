@@ -80,17 +80,49 @@ fn set_current_location_pending(button: &gtk4::Button, pending: bool) {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CredentialApplyFeedback {
-    Hidden,
-    Saved,
+enum CredentialApplyDecision {
+    Reset,
+    Verify,
+    CouldNotVerify,
 }
 
-fn credential_apply_feedback(saved: bool) -> CredentialApplyFeedback {
-    if saved {
-        CredentialApplyFeedback::Saved
-    } else {
-        CredentialApplyFeedback::Hidden
+fn credential_apply_decision(credential: &str, saved: bool) -> CredentialApplyDecision {
+    if credential.trim().is_empty() {
+        return CredentialApplyDecision::Reset;
     }
+    if !saved {
+        return CredentialApplyDecision::CouldNotVerify;
+    }
+    CredentialApplyDecision::Verify
+}
+
+fn credential_feedback_message(
+    verification: reprise_core::concerts::CredentialVerification,
+) -> Option<&'static str> {
+    match verification {
+        reprise_core::concerts::CredentialVerification::Empty => None,
+        reprise_core::concerts::CredentialVerification::Valid => {
+            Some(strings::CONCERTS_CREDENTIAL_VALID)
+        }
+        reprise_core::concerts::CredentialVerification::Rejected => {
+            Some(strings::CONCERTS_CREDENTIAL_REJECTED)
+        }
+        reprise_core::concerts::CredentialVerification::CouldNotVerify => {
+            Some(strings::CONCERTS_CREDENTIAL_UNVERIFIED)
+        }
+    }
+}
+
+fn apply_credential_feedback(
+    status: &gtk4::Label,
+    verification: reprise_core::concerts::CredentialVerification,
+) {
+    let Some(message) = credential_feedback_message(verification) else {
+        status.set_visible(false);
+        return;
+    };
+    status.set_label(&strings::text(message));
+    status.set_visible(true);
 }
 
 #[derive(Clone)]
@@ -140,12 +172,14 @@ pub(in crate::ui) fn build(
     let bandsintown = password_row(
         conn,
         runtime,
+        reprise_core::concerts::ProviderKind::Bandsintown,
         reprise_core::concerts::config::BANDSINTOWN_APP_ID_KEY,
         strings::CONCERTS_BANDSINTOWN_APP_ID,
     );
     let ticketmaster = password_row(
         conn,
         runtime,
+        reprise_core::concerts::ProviderKind::Ticketmaster,
         reprise_core::concerts::config::TICKETMASTER_API_KEY,
         strings::CONCERTS_TICKETMASTER_API_KEY,
     );
@@ -227,6 +261,7 @@ pub(in crate::ui) fn build(
 fn password_row(
     conn: &Rc<RefCell<Connection>>,
     runtime: &Rc<ConcertsRuntime>,
+    provider: reprise_core::concerts::ProviderKind,
     key: &'static str,
     title: &'static str,
 ) -> CredentialPreferenceRow {
@@ -245,11 +280,14 @@ fn password_row(
         .visible(false)
         .build();
     row.add_suffix(&status);
+    let generation = Rc::new(Cell::new(0_u64));
     {
         let conn = conn.clone();
         let runtime = runtime.clone();
         let status = status.clone();
+        let generation = generation.clone();
         row.connect_changed(move |row| {
+            generation.set(generation.get().wrapping_add(1));
             status.set_visible(false);
             if save_setting(&conn, key, row.text().as_str()) {
                 runtime.notify_settings_changed();
@@ -260,12 +298,31 @@ fn password_row(
         let conn = conn.clone();
         let runtime = runtime.clone();
         let status = status.clone();
+        let generation = generation.clone();
         row.connect_apply(move |row| {
-            let feedback = credential_apply_feedback(save_setting(&conn, key, row.text().as_str()));
-            status.set_label(&strings::text(strings::CONCERTS_CREDENTIAL_SAVED));
-            status.set_visible(feedback == CredentialApplyFeedback::Saved);
-            if feedback == CredentialApplyFeedback::Saved {
+            let credential = row.text().trim().to_owned();
+            let saved = save_setting(&conn, key, &credential);
+            if saved {
                 runtime.notify_settings_changed();
+            }
+            match credential_apply_decision(&credential, saved) {
+                CredentialApplyDecision::Reset => {
+                    generation.set(generation.get().wrapping_add(1));
+                    apply_credential_feedback(
+                        &status,
+                        reprise_core::concerts::CredentialVerification::Empty,
+                    );
+                }
+                CredentialApplyDecision::CouldNotVerify => {
+                    generation.set(generation.get().wrapping_add(1));
+                    apply_credential_feedback(
+                        &status,
+                        reprise_core::concerts::CredentialVerification::CouldNotVerify,
+                    );
+                }
+                CredentialApplyDecision::Verify => {
+                    start_credential_verification(&status, &generation, provider, credential);
+                }
             }
         });
     }
@@ -274,6 +331,44 @@ fn password_row(
         #[cfg(test)]
         status,
     }
+}
+
+fn start_credential_verification(
+    status: &gtk4::Label,
+    generation: &Rc<Cell<u64>>,
+    provider: reprise_core::concerts::ProviderKind,
+    credential: String,
+) {
+    let current = generation.get().wrapping_add(1);
+    generation.set(current);
+    status.set_label(&strings::text(strings::CONCERTS_CREDENTIAL_CHECKING));
+    status.set_visible(true);
+    let receiver = match one_shot_task::spawn("reprise-concert-credential", move || {
+        reprise_core::concerts::verify_credential(provider, &credential)
+    }) {
+        Ok(receiver) => receiver,
+        Err(_) => {
+            apply_credential_feedback(
+                status,
+                reprise_core::concerts::CredentialVerification::CouldNotVerify,
+            );
+            return;
+        }
+    };
+    let status = status.downgrade();
+    let generation = generation.clone();
+    glib::spawn_future_local(async move {
+        let verification = receiver
+            .recv()
+            .await
+            .unwrap_or(reprise_core::concerts::CredentialVerification::CouldNotVerify);
+        if generation.get() != current {
+            return;
+        }
+        if let Some(status) = status.upgrade() {
+            apply_credential_feedback(&status, verification);
+        }
+    });
 }
 
 fn location_rows(
@@ -547,149 +642,5 @@ fn save_setting(conn: &Rc<RefCell<Connection>>, key: &str, value: &str) -> bool 
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn location_apply_decisions_store_success_and_keep_errors_visible() {
-        assert_eq!(
-            geocode_decision(Ok(Some(reprise_core::concerts::GeocodedLocation {
-                lat: 48.137,
-                lon: 11.575,
-                display_name: "Munich, Bavaria".into(),
-            }))),
-            LocationDecision::Store {
-                latitude: 48.137,
-                longitude: 11.575,
-                name: "Munich, Bavaria".into(),
-            }
-        );
-        assert!(matches!(
-            geocode_decision(Ok(None)),
-            LocationDecision::Error(_)
-        ));
-        assert_eq!(
-            portal_decision(&Ok(reprise_platform_linux::location::PortalLocation {
-                latitude: 47.376,
-                longitude: 8.541,
-                accuracy_m: Some(1_000.0),
-            })),
-            LocationDecision::Store {
-                latitude: 47.376,
-                longitude: 8.541,
-                name: crate::ui::strings::text(crate::ui::strings::CONCERTS_CURRENT_LOCATION),
-            }
-        );
-        assert!(matches!(
-            portal_decision(&Err("denied".into())),
-            LocationDecision::Error(error)
-                if error == crate::ui::strings::text(
-                    crate::ui::strings::CONCERTS_LOCATION_NOT_FOUND
-                )
-        ));
-    }
-
-    #[test]
-    fn current_location_button_is_disabled_with_pending_feedback() {
-        assert_eq!(
-            current_location_button_state(false),
-            CurrentLocationButtonState {
-                sensitive: true,
-                show_spinner: false,
-            }
-        );
-        assert_eq!(
-            current_location_button_state(true),
-            CurrentLocationButtonState {
-                sensitive: false,
-                show_spinner: true,
-            }
-        );
-    }
-
-    #[test]
-    fn set_4_credential_feedback_is_visible_only_after_a_successful_apply() {
-        assert_eq!(
-            credential_apply_feedback(false),
-            CredentialApplyFeedback::Hidden
-        );
-        assert_eq!(
-            credential_apply_feedback(true),
-            CredentialApplyFeedback::Saved
-        );
-    }
-
-    #[test]
-    fn stored_credentials_are_preferred_and_similar_count_clamps() {
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        reprise_core::library::settings::set_setting(
-            &conn,
-            reprise_core::concerts::config::BANDSINTOWN_APP_ID_KEY,
-            "stored-app",
-        )
-        .unwrap();
-        reprise_core::library::settings::set_setting(
-            &conn,
-            reprise_core::concerts::config::SIMILAR_COUNT_KEY,
-            "99",
-        )
-        .unwrap();
-
-        let credentials = reprise_core::concerts::config::credentials(&conn).unwrap();
-        let similar = reprise_core::concerts::config::similar_config(&conn).unwrap();
-
-        assert_eq!(
-            credentials.bandsintown_app_id.as_deref(),
-            Some("stored-app")
-        );
-        assert_eq!(similar.count, 25);
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn concerts_preferences_use_protected_credentials_and_link_similar_sensitivity() {
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        if gtk4::init().is_err() {
-            return;
-        }
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        let conn = Rc::new(RefCell::new(conn));
-        let runtime = ConcertsRuntime::setup(&conn.borrow());
-        let preferences = build(&conn, &runtime, true);
-
-        assert!(
-            preferences.inner.rows[0].is::<adw::PasswordEntryRow>()
-                && preferences.inner.rows[1].is::<adw::PasswordEntryRow>()
-        );
-        assert!(!preferences.inner.similar_count.is_sensitive());
-        preferences.inner.similar_enabled.set_active(true);
-        assert!(preferences.inner.similar_count.is_sensitive());
-        preferences.set_sensitive(false);
-        assert!(!preferences.inner.similar_count.is_sensitive());
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn set_4_concert_credentials_apply_button_confirms_the_saved_value() {
-        gtk4::init().unwrap();
-        let conn = Rc::new(RefCell::new(Connection::open_in_memory().unwrap()));
-        reprise_core::db::migrate(&conn.borrow()).unwrap();
-        let runtime = ConcertsRuntime::setup(&conn.borrow());
-        let preferences = build(&conn, &runtime, true);
-        let credential = &preferences.inner.credentials[0];
-
-        assert!(credential.row.shows_apply_button());
-        credential.row.set_text("saved-key");
-        assert!(!credential.status.is_visible());
-
-        credential.row.emit_by_name::<()>("apply", &[]);
-
-        assert!(credential.status.is_visible());
-        assert_eq!(
-            credential.status.label(),
-            strings::text(strings::CONCERTS_CREDENTIAL_SAVED)
-        );
-    }
-}
+#[path = "preference_concerts_tests.rs"]
+mod tests;
