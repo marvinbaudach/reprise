@@ -12,9 +12,11 @@ use crate::library::m3u::{M3uEntry, M3uExportEntry};
 pub mod delta;
 pub mod m3u;
 pub mod mirror;
+pub mod page;
 pub mod profile;
 pub mod sanitize;
 pub mod settings;
+pub mod snapshot;
 pub mod storage;
 pub mod transfer;
 
@@ -24,6 +26,10 @@ pub use mirror::{
     MirrorPlan, MirrorPlaylistProjection, MirrorPlaylistSnapshot, MirrorReplacement, MirrorTrack,
     MirrorWarning, PlaylistWrite, UnavailableTrack,
 };
+pub use page::{
+    project_sync_page, SyncChangeSummary, SyncPageControls, SyncPageInput, SyncPageProjection,
+    SyncPageState, SyncPageWarning, SyncPlaylistRow,
+};
 pub use profile::{
     project_playlist_sizes, Mp3Quality, PlaylistSizeProjection, PlaylistTargetSize, PlaylistTracks,
     TransferAction, TransferProfile, UnsupportedMp3Quality,
@@ -31,6 +37,7 @@ pub use profile::{
 pub use settings::{
     DeviceFileRecord, DevicePlaylistRecord, DeviceSelection, DeviceSettings, SelectionSource,
 };
+pub use snapshot::load_mirror_playlist_snapshots;
 pub use storage::{
     project_storage, storage_composition, DeviceStorageInspection, DeviceStorageProjection,
     DeviceStorageSnapshot, StorageComposition, StorageKnowledge, StorageProjectionState,
@@ -341,6 +348,9 @@ fn safe_playlist_path(path: &str) -> bool {
 #[path = "device_sync/v1_tests.rs"]
 mod v1_tests;
 
+#[cfg(test)]
+#[path = "device_sync/page_tests.rs"]
+mod page_tests;
 #[cfg(test)]
 #[path = "device_sync/profile_tests.rs"]
 mod profile_tests;

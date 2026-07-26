@@ -1,5 +1,5 @@
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
 use std::path::PathBuf;
@@ -10,17 +10,12 @@ use std::sync::Arc;
 
 use gtk4::gio;
 use gtk4::gio::prelude::*;
-use reprise_core::device_sync::settings::{
-    load_device_files, load_or_create_settings, resolve_selection_track_ids, save_settings,
-    set_file_pinned,
-};
-use reprise_core::device_sync::transfer::{
-    build_transfer_plan_with_inventory, TransferMode, TransferPlanEntry,
-};
+use reprise_core::device_sync::settings::{load_or_create_settings, set_file_pinned};
+use reprise_core::device_sync::transfer::TransferPlanEntry;
 use reprise_core::device_sync::{
-    compute_delta, merge_playlist_entries, track_relative_path, DeviceQueue, DeviceSelection,
-    DeviceSettings, DeviceStorageInspection, DeviceStorageSnapshot, ManagedDeviceFile,
-    SyncCandidate, SyncDelta, SyncJob, SyncPhase, SyncSnapshot, SyncTrack, TrackOutcome,
+    merge_playlist_entries, track_relative_path, DeviceQueue, DeviceSelection, DeviceSettings,
+    DeviceStorageInspection, DeviceStorageSnapshot, ManagedDeviceFile, MirrorPlan, SyncDelta,
+    SyncJob, SyncPageState, SyncPhase, SyncSnapshot, SyncTrack, TrackOutcome,
 };
 use reprise_core::library::m3u::{M3uEntry, M3uExportEntry};
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor, DeviceMonitor};
@@ -70,6 +65,8 @@ struct DeviceState {
     tracks: Vec<DeviceTrackView>,
     selected_track_count: usize,
     mtp_rate: MtpRateMeter,
+    mirror_plan: MirrorPlan,
+    page: SyncPageState,
 }
 
 impl DeviceState {
@@ -102,10 +99,20 @@ impl DeviceState {
             tracks: Vec::new(),
             selected_track_count: 0,
             mtp_rate: MtpRateMeter::default(),
+            mirror_plan: MirrorPlan::default(),
+            page: SyncPageState::default(),
         }
     }
 
     fn view(&self) -> DeviceView {
+        let mut page = self.page.clone();
+        page.update_controls(
+            self.connected,
+            !self.scanning
+                && self.scan_error.is_none()
+                && self.sync_phase != PlannedSyncPhase::ComputingDelta,
+            self.is_active(),
+        );
         DeviceView {
             id: self.descriptor.id.clone(),
             name: self.descriptor.name.clone(),
@@ -125,6 +132,7 @@ impl DeviceState {
             tracks: self.tracks.clone(),
             selected_track_count: self.selected_track_count,
             bytes_per_second: self.mtp_rate.bytes_per_second(),
+            page,
         }
     }
 
@@ -296,34 +304,6 @@ impl DeviceSyncRuntime {
         Some(created)
     }
 
-    pub fn update_settings(self: &Rc<Self>, settings: DeviceSettings) -> Result<(), String> {
-        {
-            let devices = self.device_states.borrow();
-            let device = devices
-                .iter()
-                .find(|device| device.descriptor.id == settings.device_serial)
-                .ok_or_else(|| "device is not connected".to_string())?;
-            if device.is_active() {
-                return Err("device synchronization is active".into());
-            }
-        }
-        save_settings(&self.conn.borrow(), &settings).map_err(|error| error.to_string())?;
-        let device_id = settings.device_serial.clone();
-        {
-            let mut devices = self.device_states.borrow_mut();
-            let Some(device) = devices
-                .iter_mut()
-                .find(|device| device.descriptor.id == device_id)
-            else {
-                return Err("device is not connected".into());
-            };
-            device.settings = settings;
-            device.sync_phase = PlannedSyncPhase::ComputingDelta;
-            device.sync_error = None;
-        }
-        self.recompute_delta(&device_id)
-    }
-
     pub fn set_pinned(
         self: &Rc<Self>,
         device_id: &str,
@@ -338,92 +318,12 @@ impl DeviceSyncRuntime {
         Ok(changed)
     }
 
-    pub fn selection_options(&self) -> Result<Vec<DeviceSelectionOption>, String> {
-        let conn = self.conn.borrow();
-        let mut options = reprise_core::library::playlists::list(&conn)
-            .map_err(|error| error.to_string())?
-            .into_iter()
-            .map(|playlist| DeviceSelectionOption {
-                source: reprise_core::device_sync::SelectionSource::Playlist(playlist.id),
-                name: playlist.name,
-                track_count: usize::try_from(playlist.track_count.max(0)).unwrap_or(usize::MAX),
-                smart: false,
-            })
-            .collect::<Vec<_>>();
-        for playlist in reprise_core::library::playlists::list_smart(&conn)
-            .map_err(|error| error.to_string())?
-        {
-            let source = reprise_core::device_sync::SelectionSource::Smart(playlist.id);
-            let count =
-                resolve_selection_track_ids(&conn, &DeviceSelection::Sources(vec![source.clone()]))
-                    .map_err(|error| error.to_string())?
-                    .len();
-            options.push(DeviceSelectionOption {
-                source,
-                name: playlist.name,
-                track_count: count,
-                smart: true,
-            });
-        }
-        Ok(options)
-    }
-
-    pub fn recompute_delta(self: &Rc<Self>, device_id: &str) -> Result<(), String> {
-        let settings = self
-            .device_states
-            .borrow()
-            .iter()
-            .find(|device| device.descriptor.id == device_id)
-            .map(|device| device.settings.clone())
-            .ok_or_else(|| "device is not connected".to_string())?;
-        let (delta, transfer_plan, tracks) = {
-            let conn = self.conn.borrow();
-            let ids = resolve_selection_track_ids(&conn, &settings.selection)
-                .map_err(|error| error.to_string())?;
-            let tracks = reprise_core::queries::query_sync_tracks(&conn, &ids)
-                .map_err(|error| error.to_string())?;
-            let files = load_device_files(&conn, device_id).map_err(|error| error.to_string())?;
-            let transfer_plan =
-                build_transfer_plan_with_inventory(tracks, settings.profile, &files);
-            let candidates = transfer_plan
-                .iter()
-                .map(|entry| SyncCandidate {
-                    track_id: entry.track.id,
-                    source_path: entry.track.source_path.to_string_lossy().into_owned(),
-                    source_size: entry.track.size_bytes,
-                    source_mtime: entry.track.source_mtime,
-                    device_path: entry.device_path.clone(),
-                    profile_fingerprint: entry.mode.fingerprint(),
-                    transfer_bytes: entry.expected_bytes,
-                })
-                .collect::<Vec<_>>();
-            let delta = compute_delta(&candidates, &files, settings.remove_deleted);
-            let tracks = build_device_tracks(&conn, &transfer_plan, &files, &delta);
-            (delta, transfer_plan, tracks)
-        };
-        if let Some(device) = self
-            .device_states
-            .borrow_mut()
-            .iter_mut()
-            .find(|device| device.descriptor.id == device_id)
-        {
-            device.delta = Some(delta);
-            device.transfer_plan = transfer_plan;
-            device.tracks = tracks;
-            device.selected_track_count = device.transfer_plan.len();
-            device.sync_phase = PlannedSyncPhase::Idle;
-            device.sync_error = None;
-        }
-        self.notify();
-        Ok(())
-    }
-
     pub fn refresh_contents(self: &Rc<Self>, device_id: &str) {
         self.refresh_contents_with_delta(device_id, true);
     }
 
     fn refresh_contents_after_sync(self: &Rc<Self>, device_id: &str) {
-        self.refresh_contents_with_delta(device_id, false);
+        self.refresh_contents_with_delta(device_id, true);
     }
 
     fn refresh_contents_with_delta(self: &Rc<Self>, device_id: &str, recompute_delta: bool) {
@@ -491,6 +391,27 @@ impl DeviceSyncRuntime {
                     });
                 }
                 runtime.notify();
+            } else {
+                let should_resume = {
+                    let mut devices = runtime.device_states.borrow_mut();
+                    devices
+                        .iter_mut()
+                        .find(|device| device.descriptor.id == id)
+                        .is_some_and(|device| {
+                            let resume = device.resume_planned
+                                && device.connected
+                                && !device.is_active();
+                            if resume {
+                                device.resume_planned = false;
+                            }
+                            resume
+                        })
+                };
+                if should_resume {
+                    if let Err(error) = runtime.sync_now(&id) {
+                        tracing::warn!(device_id = id, %error, "could not resume device synchronization");
+                    }
+                }
             }
         });
     }
@@ -518,7 +439,6 @@ impl DeviceSyncRuntime {
             .map(|descriptor| (descriptor.id.clone(), descriptor))
             .collect::<HashMap<_, _>>();
         let mut resume = Vec::new();
-        let mut resume_planned = Vec::new();
         let mut refresh = Vec::new();
         {
             let mut states = self.device_states.borrow_mut();
@@ -570,9 +490,8 @@ impl DeviceSyncRuntime {
                     if !was_connected && state.paused_work.is_some() && !state.running {
                         resume.push(id.clone());
                     }
-                    if !was_connected && state.resume_planned && state.planned_cancel.is_none() {
-                        state.resume_planned = false;
-                        resume_planned.push(id.clone());
+                    if !was_connected {
+                        refresh.push(id.clone());
                     }
                 } else {
                     let settings = load_or_create_settings(
@@ -603,11 +522,6 @@ impl DeviceSyncRuntime {
         }
         for id in resume {
             self.start_or_resume(&id);
-        }
-        for id in resume_planned {
-            if let Err(error) = self.sync_now(&id) {
-                tracing::warn!(device_id = id, %error, "could not resume device synchronization");
-            }
         }
     }
 
@@ -674,74 +588,10 @@ impl DeviceSyncRuntime {
     }
 }
 
-fn build_device_tracks(
-    conn: &Connection,
-    transfer_plan: &[TransferPlanEntry],
-    files: &[reprise_core::device_sync::DeviceFileRecord],
-    delta: &SyncDelta,
-) -> Vec<DeviceTrackView> {
-    let files_by_id = files
-        .iter()
-        .map(|file| (file.track_id, file))
-        .collect::<HashMap<_, _>>();
-    let selected = transfer_plan
-        .iter()
-        .map(|entry| entry.track.id)
-        .collect::<HashSet<_>>();
-    let queued = delta.to_copy.iter().copied().collect::<HashSet<_>>();
-    let removing = delta.to_remove.iter().copied().collect::<HashSet<_>>();
-    let mut tracks = transfer_plan
-        .iter()
-        .map(|entry| {
-            let file = files_by_id.get(&entry.track.id);
-            DeviceTrackView {
-                track_id: entry.track.id,
-                title: entry.track.title.clone(),
-                artist: entry.track.artist.clone(),
-                device_path: entry.device_path.clone(),
-                size: entry.expected_bytes,
-                duration_ms: entry.track.duration_ms,
-                status: if queued.contains(&entry.track.id) {
-                    DeviceTrackStatus::Queued
-                } else {
-                    DeviceTrackStatus::Synced
-                },
-                pinned: file.is_some_and(|file| file.pinned),
-            }
-        })
-        .collect::<Vec<_>>();
-    for file in files
-        .iter()
-        .filter(|file| !selected.contains(&file.track_id))
-    {
-        let metadata = conn
-            .query_row(
-                "SELECT title, artist, duration_ms FROM tracks WHERE id = ?1",
-                [file.track_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-            )
-            .unwrap_or_else(|_| (file.device_path.clone(), String::new(), 0));
-        tracks.push(DeviceTrackView {
-            track_id: file.track_id,
-            title: metadata.0,
-            artist: metadata.1,
-            device_path: file.device_path.clone(),
-            size: file.device_size,
-            duration_ms: metadata.2,
-            status: if removing.contains(&file.track_id) {
-                DeviceTrackStatus::Remove
-            } else {
-                DeviceTrackStatus::Synced
-            },
-            pinned: file.pinned,
-        });
-    }
-    tracks.sort_by(|left, right| left.title.cmp(&right.title));
-    tracks
-}
-
 #[path = "device_sync_agent.rs"]
 mod agent;
+#[path = "device_sync_compact.rs"]
+mod compact;
 #[path = "device_sync_legacy_queue.rs"]
 mod legacy_queue;
 #[path = "device_sync_planned.rs"]
