@@ -50,6 +50,7 @@ pub mod events;
 pub mod external_link;
 pub mod fingerprint;
 pub mod format;
+mod http_body;
 pub mod library;
 pub use library::library_doctor;
 pub mod lyrics;

@@ -10,6 +10,8 @@ use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use crate::http_body::{self, BoundedReadError};
+
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 const MIN_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
 const FIXTURE_DIR_ENV: &str = "REPRISE_MUSICBRAINZ_FIXTURE_DIR";
@@ -29,6 +31,8 @@ pub enum FetchError {
     HttpStatus(u16),
     #[error("MusicBrainz response body could not be read")]
     Body,
+    #[error("MusicBrainz response body exceeds the size limit")]
+    BodyTooLarge,
 }
 
 pub fn user_agent() -> String {
@@ -49,10 +53,7 @@ pub fn get(url: &str) -> Result<String, FetchError> {
         .get(url)
         .call()
         .map_err(classify_error)?;
-    response
-        .into_body()
-        .read_to_string()
-        .map_err(|_| FetchError::Body)
+    http_body::read_bounded_string(response.into_body().into_reader()).map_err(map_body_error)
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -107,7 +108,15 @@ fn fixture_get(url: &str, directory: &Path) -> Result<String, FetchError> {
         let millis = delay.trim().parse::<u64>().unwrap_or_default();
         std::thread::sleep(Duration::from_millis(millis));
     }
-    std::fs::read_to_string(path).map_err(|_| FetchError::Transport)
+    let file = std::fs::File::open(path).map_err(|_| FetchError::Transport)?;
+    http_body::read_bounded_string(file).map_err(map_body_error)
+}
+
+fn map_body_error(error: BoundedReadError) -> FetchError {
+    match error {
+        BoundedReadError::Read => FetchError::Body,
+        BoundedReadError::TooLarge => FetchError::BodyTooLarge,
+    }
 }
 
 fn append_fixture_log(request: &FixtureRequest) -> Result<(), FetchError> {
@@ -252,6 +261,24 @@ mod tests {
         respect_rate_limit_with(&limiter, &mut now, &mut sleep);
 
         assert_eq!(slept.get(), Duration::from_millis(750));
+    }
+
+    #[test]
+    fn oversized_fixture_body_is_rejected() {
+        let fixtures = tempfile::tempdir().unwrap();
+        std::fs::write(
+            fixtures.path().join("artist-Oversized.json"),
+            vec![b'x'; crate::http_body::MAX_JSON_RESPONSE_BYTES as usize + 1],
+        )
+        .unwrap();
+
+        assert_eq!(
+            fixture_get(
+                "https://musicbrainz.org/ws/2/artist?query=artist%3A%22Oversized%22&fmt=json",
+                fixtures.path()
+            ),
+            Err(FetchError::BodyTooLarge)
+        );
     }
 
     #[test]
