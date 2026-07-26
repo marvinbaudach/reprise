@@ -37,14 +37,16 @@ pub(in crate::ui) fn css() -> String {
            box-shadow: none; \
            padding: 0; }}\n\
          .reprise-autocomplete-popover > contents {{ \
-           background: @popover_bg_color; \
-           border: 1px solid alpha(@window_fg_color, {SURFACE_BORDER_ALPHA}); \
-           border-radius: 10px; \
-           box-shadow: {SURFACE_SHADOW}; \
-           padding: 0; }}\n\
+            background: @popover_bg_color; \
+            border: 1px solid alpha(@window_fg_color, {SURFACE_BORDER_ALPHA}); \
+            border-radius: 10px; \
+            box-shadow: {SURFACE_SHADOW}; \
+            padding: 0; }}\n\
+         .reprise-autocomplete-list {{ \
+           background: transparent; }}\n\
          .reprise-autocomplete-list row {{ \
-           min-height: 34px; \
-           padding: 6px 12px; }}\n\
+            min-height: 34px; \
+            padding: 6px 12px; }}\n\
          .reprise-autocomplete-list row:selected {{ \
            background: alpha(@accent_bg_color, 0.15); }}\n\
          .reprise-autocomplete-value {{ \
@@ -256,6 +258,20 @@ mod tests {
         assert!(css.contains(".reprise-autocomplete-use-as-new-row"));
         assert!(css.contains("@accent_color"));
         assert!(css.contains("@reprise_dim_fg_color"));
+    }
+
+    #[test]
+    fn autocomplete_inner_views_reveal_the_popover_surface() {
+        let css = super::css();
+        let list_rule = css
+            .split_once(".reprise-autocomplete-list {")
+            .and_then(|(_, rest)| rest.split_once('}'))
+            .map(|(rule, _)| rule)
+            .expect("autocomplete list rule");
+        assert!(
+            list_rule.contains("background: transparent;"),
+            "the list must not paint a near-black view layer over @popover_bg_color"
+        );
     }
 
     #[test]

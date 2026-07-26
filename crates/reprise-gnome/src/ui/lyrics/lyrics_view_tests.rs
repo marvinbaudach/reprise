@@ -436,7 +436,7 @@ fn lyr_4_start_of_song_is_not_centered() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn npp_10_new_lyrics_begin_at_line_zero() {
+fn npp_13_new_lyrics_begin_at_line_zero() {
     gtk4::init().unwrap();
     let view = LyricsView::new();
     let lines = (0..20)
