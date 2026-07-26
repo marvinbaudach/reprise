@@ -43,11 +43,34 @@ pub fn location_from_vardict(
 }
 
 enum PortalMessage {
-    Setup {
-        connection: zbus::blocking::Connection,
-        session_path: OwnedObjectPath,
-    },
+    Ready(PortalControl),
     Finished(Result<PortalLocation, String>),
+}
+
+struct PortalControl {
+    start: Option<Box<dyn FnOnce() + Send>>,
+    cancel: Option<Box<dyn FnOnce() + Send>>,
+}
+
+impl PortalControl {
+    fn new(start: impl FnOnce() + Send + 'static, cancel: impl FnOnce() + Send + 'static) -> Self {
+        Self {
+            start: Some(Box::new(start)),
+            cancel: Some(Box::new(cancel)),
+        }
+    }
+
+    fn start(&mut self) {
+        if let Some(start) = self.start.take() {
+            start();
+        }
+    }
+
+    fn cancel(mut self) {
+        if let Some(cancel) = self.cancel.take() {
+            cancel();
+        }
+    }
 }
 
 /// Requests one city-level location update and closes the portal session.
@@ -55,49 +78,100 @@ pub fn current_location(timeout: Duration) -> Result<PortalLocation, String> {
     if timeout.is_zero() {
         return Err("Location portal timed out before CreateSession".to_string());
     }
+    run_portal_worker(timeout, move |sender| {
+        portal_worker(&sender, timeout);
+    })
+}
+
+fn run_portal_worker(
+    timeout: Duration,
+    worker: impl FnOnce(mpsc::Sender<PortalMessage>) + Send + 'static,
+) -> Result<PortalLocation, String> {
     let (sender, receiver) = mpsc::channel();
-    std::thread::Builder::new()
+    let worker = std::thread::Builder::new()
         .name("reprise-location-portal".to_string())
-        .spawn(move || portal_worker(&sender))
+        .spawn(move || worker(sender))
         .map_err(|error| format!("could not start Location portal worker: {error}"))?;
 
     let started = Instant::now();
-    let mut session = None;
+    let mut control = None;
     loop {
         let remaining = timeout.saturating_sub(started.elapsed());
         if remaining.is_zero() {
-            close_after_timeout(session);
+            cancel_and_join(control, worker)?;
             return Err(location_timeout_error());
         }
         match receiver.recv_timeout(remaining) {
-            Ok(PortalMessage::Setup {
-                connection,
-                session_path,
-            }) => session = Some((connection, session_path)),
-            Ok(PortalMessage::Finished(result)) => return result,
+            Ok(PortalMessage::Ready(mut ready)) => {
+                ready.start();
+                control = Some(ready);
+            }
+            Ok(PortalMessage::Finished(result)) => {
+                join_worker(worker)?;
+                return result;
+            }
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                close_after_timeout(session);
+                cancel_and_join(control, worker)?;
                 return Err(location_timeout_error());
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
+                join_worker(worker)?;
                 return Err("Location portal worker ended without a result".to_string());
             }
         }
     }
 }
 
-fn portal_worker(sender: &mpsc::Sender<PortalMessage>) {
-    let result = portal_roundtrip(sender);
+fn cancel_and_join(
+    control: Option<PortalControl>,
+    worker: std::thread::JoinHandle<()>,
+) -> Result<(), String> {
+    if let Some(control) = control {
+        control.cancel();
+    }
+    join_worker(worker)
+}
+
+fn join_worker(worker: std::thread::JoinHandle<()>) -> Result<(), String> {
+    worker
+        .join()
+        .map_err(|_| "Location portal worker panicked".to_string())
+}
+
+fn portal_worker(sender: &mpsc::Sender<PortalMessage>, timeout: Duration) {
+    let result = portal_roundtrip(sender, timeout);
     let _ = sender.send(PortalMessage::Finished(result));
 }
 
-fn portal_roundtrip(sender: &mpsc::Sender<PortalMessage>) -> Result<PortalLocation, String> {
-    let connection = zbus::blocking::Connection::session().map_err(|error| {
-        format!(
-            "could not connect to session bus for Location portal ({}): {error}",
-            environment_label()
-        )
-    })?;
+fn portal_roundtrip(
+    sender: &mpsc::Sender<PortalMessage>,
+    timeout: Duration,
+) -> Result<PortalLocation, String> {
+    let connection = zbus::blocking::connection::Builder::session()
+        .and_then(|builder| builder.method_timeout(timeout).build())
+        .map_err(|error| {
+            format!(
+                "could not connect to session bus for Location portal ({}): {error}",
+                environment_label()
+            )
+        })?;
+    let (start_sender, start_receiver) = mpsc::channel();
+    let connection_to_close = connection.clone();
+    sender
+        .send(PortalMessage::Ready(PortalControl::new(
+            move || {
+                let _ = start_sender.send(());
+            },
+            move || {
+                if let Err(error) = connection_to_close.close() {
+                    tracing::warn!(%error, "could not close timed-out Location portal connection");
+                }
+            },
+        )))
+        .map_err(|_| "Location portal request ended before setup".to_string())?;
+    start_receiver
+        .recv()
+        .map_err(|_| "Location portal request was cancelled during setup".to_string())?;
     let proxy = zbus::blocking::Proxy::new(
         &connection,
         PORTAL_DESTINATION,
@@ -140,10 +214,6 @@ fn portal_roundtrip(sender: &mpsc::Sender<PortalMessage>) -> Result<PortalLocati
         close_session(&connection, &session_path);
         return Err("Location portal Start returned an unexpected request handle".to_string());
     }
-    let _ = sender.send(PortalMessage::Setup {
-        connection: connection.clone(),
-        session_path: session_path.clone(),
-    });
     let response = responses
         .next()
         .ok_or_else(|| "Location portal Start response stream ended".to_string())
@@ -199,16 +269,6 @@ fn portal_response_result(code: u32) -> Result<(), String> {
         other => Err(format!(
             "Location portal Start failed with response code {other}"
         )),
-    }
-}
-
-fn close_after_timeout(session: Option<(zbus::blocking::Connection, OwnedObjectPath)>) {
-    let Some((connection, session_path)) = session else {
-        return;
-    };
-    close_session(&connection, &session_path);
-    if let Err(error) = connection.close() {
-        tracing::warn!(%error, "could not close timed-out Location portal connection");
     }
 }
 
@@ -292,5 +352,34 @@ mod tests {
         assert!(portal_response_result(2)
             .unwrap_err()
             .contains("response code 2"));
+    }
+
+    #[test]
+    fn timed_out_worker_is_cancelled_and_joined() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        let worker_finished = Arc::new(AtomicBool::new(false));
+        let finished = Arc::clone(&worker_finished);
+        let result = run_portal_worker(Duration::from_millis(10), move |sender| {
+            let (start_sender, start_receiver) = mpsc::channel();
+            let (cancel_sender, cancel_receiver) = mpsc::channel();
+            sender
+                .send(PortalMessage::Ready(PortalControl::new(
+                    move || {
+                        let _ = start_sender.send(());
+                    },
+                    move || {
+                        let _ = cancel_sender.send(());
+                    },
+                )))
+                .unwrap();
+            start_receiver.recv().unwrap();
+            cancel_receiver.recv().unwrap();
+            finished.store(true, Ordering::Release);
+        });
+
+        assert!(result.unwrap_err().contains("timed out"));
+        assert!(worker_finished.load(Ordering::Acquire));
     }
 }
