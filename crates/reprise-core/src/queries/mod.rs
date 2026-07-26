@@ -327,6 +327,8 @@ pub fn query_track_window_browsed_ai(
         | ViewSource::MyStats
         | ViewSource::Releases
         | ViewSource::Concerts
+        | ViewSource::Podcasts
+        | ViewSource::Radio
         | ViewSource::Conversions
         | ViewSource::Device { .. } => Ok(Vec::new()),
     }
@@ -382,6 +384,8 @@ pub fn query_track_count_browsed(
         | ViewSource::MyStats
         | ViewSource::Releases
         | ViewSource::Concerts
+        | ViewSource::Podcasts
+        | ViewSource::Radio
         | ViewSource::Conversions
         | ViewSource::Device { .. } => Ok(0),
     }
@@ -554,6 +558,8 @@ pub fn query_track_ids_browsed_ai(
         | ViewSource::MyStats
         | ViewSource::Releases
         | ViewSource::Concerts
+        | ViewSource::Podcasts
+        | ViewSource::Radio
         | ViewSource::Conversions
         | ViewSource::Device { .. } => Ok(Vec::new()),
     }

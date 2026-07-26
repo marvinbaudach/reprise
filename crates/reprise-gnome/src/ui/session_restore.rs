@@ -215,6 +215,8 @@ fn apply_view_snapshot(state: &mut SessionState, view: TrackViewSnapshot) {
         ViewSource::MyStats
         | ViewSource::Releases
         | ViewSource::Concerts
+        | ViewSource::Podcasts
+        | ViewSource::Radio
         | ViewSource::Conversions
         | ViewSource::Album { .. }
         | ViewSource::Artist(_)
