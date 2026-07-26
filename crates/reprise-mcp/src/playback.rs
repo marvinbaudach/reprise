@@ -257,9 +257,9 @@ pub fn state() -> Result<PlaybackStateDto, PlaybackError> {
 }
 
 /// Applies one validated MPRIS setting to the running player.
-pub fn set(setting: PlaybackSetting) -> Result<String, PlaybackError> {
+pub fn set(setting: &PlaybackSetting) -> Result<String, PlaybackError> {
     let proxy = connect(PLAYER_INTERFACE)?;
-    match &setting {
+    match setting {
         PlaybackSetting::Volume(value) => proxy
             .set_property("Volume", *value)
             .map_err(|error| map_fdo_error(&error))?,

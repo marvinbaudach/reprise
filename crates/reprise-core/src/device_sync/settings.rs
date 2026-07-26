@@ -6,7 +6,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::view_source::ViewSource;
 
-const SUPPORTED_OPUS_BITRATES: [u32; 6] = [0, 64, 96, 128, 160, 192];
+pub const SUPPORTED_OPUS_BITRATES: [u32; 7] = [0, 64, 96, 128, 160, 192, 256];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SelectionSource {

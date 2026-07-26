@@ -7,6 +7,7 @@ use std::pin::Pin;
 use std::rc::{Rc, Weak};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::time::Instant;
 
 use gtk4::gio;
 use gtk4::gio::prelude::*;
@@ -69,6 +70,8 @@ struct DeviceState {
     last_sync: Option<chrono::DateTime<chrono::Utc>>,
     tracks: Vec<DeviceTrackView>,
     selected_track_count: usize,
+    transfer_started_at: Option<Instant>,
+    bytes_per_second: u64,
 }
 
 impl DeviceState {
@@ -101,6 +104,8 @@ impl DeviceState {
             last_sync: None,
             tracks: Vec::new(),
             selected_track_count: 0,
+            transfer_started_at: None,
+            bytes_per_second: 0,
         }
     }
 
@@ -125,6 +130,7 @@ impl DeviceState {
             last_sync: self.last_sync,
             tracks: self.tracks.clone(),
             selected_track_count: self.selected_track_count,
+            bytes_per_second: self.bytes_per_second,
         }
     }
 }
@@ -138,6 +144,7 @@ pub struct DeviceSyncRuntime {
     next_job_id: Cell<u64>,
     active_device: RefCell<Option<String>>,
     weak_self: RefCell<Weak<Self>>,
+    agent_subscription: RefCell<Option<Subscription>>,
 }
 
 impl DeviceSyncRuntime {
@@ -161,6 +168,7 @@ impl DeviceSyncRuntime {
             next_job_id: Cell::new(1),
             active_device: RefCell::new(None),
             weak_self: RefCell::new(Weak::new()),
+            agent_subscription: RefCell::new(None),
         });
         runtime.weak_self.replace(Rc::downgrade(&runtime));
         runtime.apply_devices(runtime.backend.devices());
@@ -763,6 +771,17 @@ fn build_device_tracks(
     tracks
 }
 
+pub(super) fn transfer_rate(bytes: u64, elapsed: std::time::Duration) -> u64 {
+    let nanos = elapsed.as_nanos();
+    if nanos == 0 {
+        return 0;
+    }
+    let bytes_per_second = u128::from(bytes).saturating_mul(1_000_000_000) / nanos;
+    u64::try_from(bytes_per_second).unwrap_or(u64::MAX)
+}
+
+#[path = "device_sync_agent.rs"]
+mod agent;
 #[path = "device_sync_legacy_queue.rs"]
 mod legacy_queue;
 #[path = "device_sync_planned.rs"]

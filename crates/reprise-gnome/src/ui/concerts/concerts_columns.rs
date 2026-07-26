@@ -380,7 +380,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn conc_9_artist_cell_is_vertically_centered_with_the_other_columns() {
+    fn conc_10_artist_cell_is_vertically_centered_with_the_other_columns() {
         gtk4::init().unwrap();
         let cell = build_artist_cell();
 

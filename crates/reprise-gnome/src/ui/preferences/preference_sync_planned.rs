@@ -91,12 +91,12 @@ pub(super) fn selection_group(
                 } else {
                     format!("{} tracks", option.track_count)
                 };
-                let row = adw::SwitchRow::builder()
-                    .title(&option.name)
-                    .subtitle(subtitle)
-                    .active(selected.contains(&option.source))
-                    .sensitive(!entire)
-                    .build();
+                let row = selection_option_row(
+                    &option.name,
+                    &subtitle,
+                    selected.contains(&option.source),
+                    !entire,
+                );
                 let runtime = runtime.clone();
                 let settings_template = device.settings.clone();
                 let source = option.source;
@@ -122,6 +122,37 @@ pub(super) fn selection_group(
         Err(error) => group.set_description(Some(&format!("Could not load playlists: {error}"))),
     }
     group
+}
+
+fn selection_option_row(
+    title: &str,
+    subtitle: &str,
+    active: bool,
+    sensitive: bool,
+) -> adw::SwitchRow {
+    let text = selection_option_text(title, subtitle);
+    adw::SwitchRow::builder()
+        .title(text.title)
+        .subtitle(text.subtitle)
+        .use_markup(text.uses_markup)
+        .active(active)
+        .sensitive(sensitive)
+        .build()
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct SelectionOptionText<'a> {
+    title: &'a str,
+    subtitle: &'a str,
+    uses_markup: bool,
+}
+
+fn selection_option_text<'a>(title: &'a str, subtitle: &'a str) -> SelectionOptionText<'a> {
+    SelectionOptionText {
+        title,
+        subtitle,
+        uses_markup: false,
+    }
 }
 
 pub(super) fn delta_group(device: &DeviceView) -> adw::PreferencesGroup {
@@ -190,7 +221,7 @@ pub(super) fn settings_group(
         .build();
     group.add(&ratings);
 
-    let bitrates = [0_u32, 64, 96, 128, 160, 192];
+    let bitrates = reprise_core::device_sync::settings::SUPPORTED_OPUS_BITRATES;
     let labels = gtk4::StringList::new(&[
         "Do not convert",
         "64 kbit/s",
@@ -198,6 +229,7 @@ pub(super) fn settings_group(
         "128 kbit/s",
         "160 kbit/s",
         "192 kbit/s",
+        "256 kbit/s",
     ]);
     let bitrate = adw::ComboRow::builder()
         .title("Convert lossless tracks to Opus")
@@ -324,5 +356,38 @@ fn delta_copy(device: &DeviceView) -> (String, String, f64) {
                 }
             },
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use libadwaita::prelude::*;
+
+    use super::*;
+
+    #[test]
+    fn playlist_titles_are_not_interpreted_as_markup() {
+        assert_eq!(
+            selection_option_text("Lorna Shore & Similar…", "100 tracks"),
+            SelectionOptionText {
+                title: "Lorna Shore & Similar…",
+                subtitle: "100 tracks",
+                uses_markup: false,
+            }
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn playlist_titles_with_markup_characters_render_as_plain_text() {
+        gtk4::init().unwrap();
+
+        let row = selection_option_row("Lorna Shore & Similar…", "100 tracks", false, true);
+
+        assert_eq!(row.title(), "Lorna Shore & Similar…");
+        assert!(
+            !row.uses_markup(),
+            "user-provided playlist names must not be parsed as Pango markup"
+        );
     }
 }

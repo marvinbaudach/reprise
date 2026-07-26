@@ -262,8 +262,14 @@ impl PreferencesContext {
                 PageId::Synchronization => {
                     super::preference_sync::build_page(&self.device_sync, &self.track_list)
                 }
+                PageId::NewReleases => {
+                    super::preference_new_releases::build_page(&self.conn, &self.artist_news)
+                }
+                PageId::Concerts => {
+                    super::preference_concerts::build_page(&self.conn, &self.concerts)
+                }
                 PageId::Plugins => self.plugins_page(),
-                PageId::Experimental => super::preference_experimental::build_page(&self.conn),
+                PageId::Experimental => super::preference_experimental::build_page(self),
             };
             (id, page)
         });

@@ -3,26 +3,26 @@
 pub mod color;
 pub mod engine;
 mod impact;
-pub mod membrane;
 pub mod modes;
 pub mod scene;
 
 // Re-export public types
 pub use color::{hsla_to_rgb, hue_shift, rgb_hue, secondary_accent};
-pub use engine::{ModeCtx, VisualEngine, VisualMode};
-pub use membrane::{Membrane, MEMBRANE_COLS, MEMBRANE_ROWS};
+pub use engine::{ModeCtx, VisualEngine};
 pub use scene::{Fill, Geom, Rgba, Scene, Shape};
 
 #[cfg(test)]
-mod visual_mode_source_tests {
-    use super::engine::VisualMode;
-
+mod bars_source_tests {
     #[test]
-    fn ac_20_exports_exactly_grid_and_bars() {
-        assert_eq!(VisualMode::ALL, [VisualMode::Grid, VisualMode::Bars]);
-        assert_eq!(VisualMode::default(), VisualMode::Grid);
-        assert_eq!(VisualMode::Grid.id(), "grid");
-        assert_eq!(VisualMode::Bars.id(), "bars");
+    fn ac_20_builds_bars_without_visual_mode_state() {
+        let engine = include_str!("visuals/engine.rs");
+        for removed in ["pub enum VisualMode", "set_mode(", "fn mode("] {
+            assert!(
+                !engine.contains(removed),
+                "Bars-only visuals must not retain mode state: {removed}"
+            );
+        }
+        assert!(include_str!("visuals/modes.rs").contains("bars::scene(ctx)"));
     }
 
     #[test]
@@ -41,6 +41,7 @@ mod visual_mode_source_tests {
             "pub kick:",
             "pub clock:",
             "pub impact:",
+            "Membrane",
             "hsla_fill",
             "fn band(",
         ] {
@@ -66,8 +67,10 @@ mod visual_mode_source_tests {
 
         let modes = include_str!("visuals/modes.rs");
         for removed in [
+            "mod grid",
             "mod flow",
             "mod pulse",
+            "VisualMode",
             "VisualMode::Flow",
             "VisualMode::Pulse",
         ] {

@@ -72,11 +72,15 @@ tempfile = "3"
 
 [features]
 default = []
-# The production backend: the real `OrtStemBackend`, audio IO and HTTP model
+# The production model download can be hosted without the inference runtime.
+# The GTK client enables this narrow feature while the worker enables `ort`.
+provision-http = ["dep:ureq"]
+
+# The production backend: the real `OrtStemBackend`, audio IO and model
 # download. onnxruntime is loaded dynamically at runtime (`load-dynamic`), so
 # there is NO build-time download and the build stays Flatpak/offline
-# compatible — even `--all-features` never fetches onnxruntime. Binary hosts
-# (the GTK app; the CLI behind its own `worker` feature) enable this.
+# compatible — even `--all-features` never fetches onnxruntime. Only the
+# dedicated worker binary enables this feature.
 #
 # For a throwaway LOCAL build that should link a prebuilt runtime instead of
 # providing a libonnxruntime.so, add ort's own `download-binaries` on the
@@ -91,7 +95,7 @@ ort = [
     "dep:flacenc",
     "dep:rubato",
     "dep:ndarray",
-    "dep:ureq",
+    "provision-http",
 ]
 
 # A production-path model provisioner (checksum + licence notice). Needs the
