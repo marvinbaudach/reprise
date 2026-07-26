@@ -3,7 +3,7 @@ use crate::player_effects::{build_audio_filter, set_spectrum_messages};
 use gstreamer_app as gst_app;
 
 #[test]
-fn ac_21_audio_filter_exposes_normalized_mono_pcm_to_cava() {
+fn ac_22_audio_filter_exposes_normalized_mono_pcm_to_cava() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -32,7 +32,7 @@ fn ac_21_audio_filter_exposes_normalized_mono_pcm_to_cava() {
 }
 
 #[test]
-fn ac_21_cava_pcm_branch_splits_before_replay_gain_normalization() {
+fn ac_22_cava_pcm_branch_splits_before_replay_gain_normalization() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -77,7 +77,7 @@ fn ac_21_cava_pcm_branch_splits_before_replay_gain_normalization() {
 }
 
 #[test]
-fn ac_21_enabled_player_emits_live_cava_frames() {
+fn ac_22_enabled_player_emits_live_cava_frames() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -119,7 +119,7 @@ fn ac_21_enabled_player_emits_live_cava_frames() {
 }
 
 #[test]
-fn ac_21_filter_replacement_reattaches_the_cava_processor() {
+fn ac_22_filter_replacement_reattaches_the_cava_processor() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -157,7 +157,7 @@ fn ac_21_filter_replacement_reattaches_the_cava_processor() {
 }
 
 #[test]
-fn ac_21_stream_start_invalidates_the_previous_cava_history() {
+fn ac_22_stream_start_invalidates_the_previous_cava_history() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
