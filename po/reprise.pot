@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-26 06:52+0200\n"
+"POT-Creation-Date: 2026-07-26 14:15+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1854,7 +1854,7 @@ msgid "Open in MusicBrainz"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:36
-#: crates/reprise-gnome/src/ui/strings_news.rs:147
+#: crates/reprise-gnome/src/ui/strings_news.rs:146
 msgid "New Releases"
 msgstr ""
 
@@ -1956,161 +1956,157 @@ msgid "Concerts fetch failed"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:66
-msgid "Add a concert provider API key in Preferences."
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_news.rs:67
 msgid "Checking for new releases…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:68
+#: crates/reprise-gnome/src/ui/strings_news.rs:67
 msgid "No upcoming releases from your artists"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:69
+#: crates/reprise-gnome/src/ui/strings_news.rs:68
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:86
 msgid "Updated just now"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:70
+#: crates/reprise-gnome/src/ui/strings_news.rs:69
 msgid "See all"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:71
+#: crates/reprise-gnome/src/ui/strings_news.rs:70
 #: crates/reprise-gnome/src/ui/strings_releases.rs:30
 msgid "Hide"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:76
+#: crates/reprise-gnome/src/ui/strings_news.rs:75
 #, rust-format
 msgid "{count} track selected"
 msgid_plural "{count} tracks selected"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:87
+#: crates/reprise-gnome/src/ui/strings_news.rs:86
 #, rust-format
 msgid "{count} track · {duration}"
 msgid_plural "{count} tracks · {duration}"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:98
+#: crates/reprise-gnome/src/ui/strings_news.rs:97
 #, rust-format
 msgid "Playing from {source} · {count} track"
 msgid_plural "Playing from {source} · {count} tracks"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:107
+#: crates/reprise-gnome/src/ui/strings_news.rs:106
 #, rust-format
 msgid "{type} · {date}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:114
+#: crates/reprise-gnome/src/ui/strings_news.rs:113
 #, rust-format
 msgid "MusicBrainz · Updated {date}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:119
+#: crates/reprise-gnome/src/ui/strings_news.rs:118
 #, rust-format
 msgid "Cached · Updated {date}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:130
+#: crates/reprise-gnome/src/ui/strings_news.rs:129
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:90
 #, rust-format
 msgid "Updated {age} min ago"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:136
+#: crates/reprise-gnome/src/ui/strings_news.rs:135
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:96
 #, rust-format
 msgid "Updated {age} h ago"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:139
+#: crates/reprise-gnome/src/ui/strings_news.rs:138
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:101
 #, rust-format
 msgid "Updated {age} d ago"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:144
+#: crates/reprise-gnome/src/ui/strings_news.rs:143
 #, rust-format
 msgid "{count} hidden · Show"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:148
+#: crates/reprise-gnome/src/ui/strings_news.rs:147
 #: crates/reprise-gnome/src/ui/strings_releases.rs:26
 msgid "released"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:149
+#: crates/reprise-gnome/src/ui/strings_news.rs:148
 #: crates/reprise-gnome/src/ui/strings_releases.rs:25
 msgid "In library"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:150
+#: crates/reprise-gnome/src/ui/strings_news.rs:149
 msgid "Single in library"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:151
+#: crates/reprise-gnome/src/ui/strings_news.rs:150
 msgid "Show in library"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:152
+#: crates/reprise-gnome/src/ui/strings_news.rs:151
 msgid "Open announcement"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:153
+#: crates/reprise-gnome/src/ui/strings_news.rs:152
 msgid "Show again"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:154
+#: crates/reprise-gnome/src/ui/strings_news.rs:153
 msgid "All caught up"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:155
+#: crates/reprise-gnome/src/ui/strings_news.rs:154
 msgid "Retention: 6 months"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:161
+#: crates/reprise-gnome/src/ui/strings_news.rs:160
 #, rust-format
 msgid "in {days} d"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:167
+#: crates/reprise-gnome/src/ui/strings_news.rs:166
 #, rust-format
 msgid "{count} new"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:172
+#: crates/reprise-gnome/src/ui/strings_news.rs:171
 #, rust-format
 msgid "Show all concerts ({count}) →"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:179
+#: crates/reprise-gnome/src/ui/strings_news.rs:178
 #, rust-format
 msgid "Show all releases ({count}) →"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:186
+#: crates/reprise-gnome/src/ui/strings_news.rs:185
 msgid "unknown date"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:195
+#: crates/reprise-gnome/src/ui/strings_news.rs:194
 msgid "Checking missing album covers…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:196
+#: crates/reprise-gnome/src/ui/strings_news.rs:195
 msgid "Cover check complete"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:197
+#: crates/reprise-gnome/src/ui/strings_news.rs:196
 msgid "Could not check album covers"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:210
+#: crates/reprise-gnome/src/ui/strings_news.rs:209
 #, rust-format
 msgid ""
 "{checked} of {total} checked · {downloaded} downloaded · {unavailable} "
@@ -2205,43 +2201,47 @@ msgid "Set a location in Preferences"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:34
-msgid "Concerts needs an API key"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:36
-msgid "Add a Bandsintown app_id or Ticketmaster API key in Preferences."
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:37
-msgid "Open Preferences"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:38
 msgid "No concert data yet"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:39
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:35
 msgid "No upcoming concerts for your artists"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:40
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:36
 msgid "Concerts fetch failed · showing saved concerts"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:41
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:37
 msgid "Never updated"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:42
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:38
 msgid "No ticket or event link available"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:43
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:39
 msgid "Bandsintown app_id"
 msgstr ""
 
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:40
+msgid "Saved"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:41
+msgid "Checking key…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:42
+msgid "Key works"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:43
+msgid "Key was rejected"
+msgstr ""
+
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:44
-msgid "Ticketmaster API key"
+msgid "Could not verify"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:45
