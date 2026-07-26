@@ -97,3 +97,9 @@ Verification: complete with sandbox exclusions (format, strict clippy, rustdoc, 
 Base: `e83d7303955`
 
 Single-device navigation polish: complete (this commit, base e83d7303955, skipped the chooser for one connected device, restored sidebar visibility with non-homogeneous content sizing, and replaced the split-action device row with a vertically centered neutral full-card navigation target; format, strict clippy, audit, core purity, architecture, accessibility, input, motion and UX traceability gates passed, while two inherited MCP Radio tests and isolated display tests remain blocked by sandbox socket permissions)
+
+# Tag autocomplete design 4a surface follow-up
+
+Base: `d889ad6073`
+
+Task TAG-AUTOCOMPLETE-SURFACE: complete (this commit, base d889ad6073, made the complete popover contents the single theme-surface owner, kept the menu/scroller/viewport/list transparent, clipped selected rows to the rounded surface, and added an isolated CUA evidence scenario; format, strict clippy, architecture, UX traceability, motion, input, accessibility, audit with only accepted RUSTSEC-2024-0436, 1401 core tests, 962 GNOME non-display tests with 291 display tests ignored, 86 Linux platform tests, 45 stems tests, and all remaining workspace tests passed in isolated host state; the CUA render showed the three library matches, selected accent row, and create row on one continuous surface, while compositor alpha around the detached X11 popup remains a native-desktop manual check)
