@@ -70,6 +70,51 @@ fn smart_window_applies_rules_and_own_sort() {
 }
 
 #[test]
+fn smart_window_keeps_membership_but_honors_the_requested_column_sort() {
+    let conn = seeded_conn_with_tracks(3);
+    conn.execute(
+        "UPDATE tracks SET artist = CASE id \
+         WHEN 1 THEN 'Gamma' WHEN 2 THEN 'Beta' ELSE 'Alpha' END",
+        [],
+    )
+    .unwrap();
+    let smart_id = insert_smart_playlist(&conn, "[]", "title", "asc", Some(2));
+
+    let mut conn = conn;
+    let rows = query_track_window(
+        &mut conn,
+        &ViewSource::Smart(smart_id),
+        "artist",
+        "asc",
+        "",
+        0,
+        10,
+        &[],
+    )
+    .unwrap();
+    let ids: Vec<i64> = rows.iter().map(|track| track.id).collect();
+
+    assert_eq!(
+        ids,
+        vec![2, 1],
+        "the smart definition chooses members 1 and 2, then the clicked Artist column sorts them"
+    );
+    assert_eq!(
+        query_track_ids(
+            &conn,
+            &ViewSource::Smart(smart_id),
+            "artist",
+            "asc",
+            "",
+            &[],
+        )
+        .unwrap(),
+        vec![2, 1],
+        "playback snapshots must follow the same visible smart-playlist order"
+    );
+}
+
+#[test]
 fn smart_window_applies_live_search_filter_too() {
     let conn = seeded_conn_with_tracks(5);
     conn.execute("UPDATE tracks SET rating = 4", []).unwrap();
