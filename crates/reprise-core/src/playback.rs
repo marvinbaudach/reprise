@@ -126,6 +126,10 @@ fn normalize_db<const N: usize>(decibels: [f32; N]) -> [f32; N] {
     })
 }
 
+fn linear_amplitude(normalized_db: f32) -> f32 {
+    10.0_f32.powf((SPECTRUM_FLOOR_DB + normalized_db * -SPECTRUM_FLOOR_DB) / 20.0)
+}
+
 impl SpectrumFrame {
     /// Display-resolution decibels, no log fold, no auto-gain.
     pub fn from_decibels(decibels: [f32; SPECTRUM_BAND_COUNT]) -> Self {
@@ -217,14 +221,15 @@ const BEAT_MIN_FLUX: f32 = 0.03;
 const BEAT_REFRACTORY_MS: f32 = 90.0;
 /// Flux overshoot above threshold that maps the relative confidence term to 1.
 const BEAT_STRENGTH_OVERSHOOT: f32 = 0.12;
-/// Absolute flux span above the firing floor that maps to a full-size visual
-/// impact. The adaptive threshold decides whether an onset exists; its visual
-/// size must follow actual transient energy so a small isolated tick cannot
-/// look as large as a breakdown kick.
-const BEAT_STRENGTH_ABSOLUTE_SPAN: f32 = 0.25;
+/// Linear-amplitude range that maps a detected onset to a full-size visual
+/// impact. Onset detection remains logarithmic; sizing must be linear so a
+/// quiet jump spanning many decibels cannot outrank a loud breakdown kick.
+const BEAT_STRENGTH_ENERGY_FLOOR: f32 = 0.005;
+const BEAT_STRENGTH_ABSOLUTE_SPAN: f32 = 0.08;
 const BEAT_STRENGTH_RELATIVE_MIX: f32 = 0.15;
 const BEAT_ENERGY_LOW_RAW_BINS: usize = 8;
 const BEAT_ENERGY_LOW_GAIN: f32 = 0.9;
+const BEAT_ENERGY_BROAD_GAIN: f32 = 0.3;
 // --- Display-band mapping: honest to loudness, no per-band auto-gain ---------
 //
 // Each band's magnitude is mapped through a *fixed* decibel window so the
@@ -307,7 +312,6 @@ fn pink_tilt_db(edges: &[usize; SPECTRUM_BAND_COUNT + 1]) -> [f32; SPECTRUM_BAND
 /// the GTK visualizer only renders what this produces.
 pub struct SpectrumAnalyzer {
     prev_bands: [f32; SPECTRUM_BAND_COUNT],
-    prev_raw: [f32; SPECTRUM_ANALYSIS_BAND_COUNT],
     level_env: f32,
     bass_env: f32,
     flux_mean: f32,
@@ -340,7 +344,6 @@ impl SpectrumAnalyzer {
         let tilt_db = pink_tilt_db(&edges);
         Self {
             prev_bands: [0.0; SPECTRUM_BAND_COUNT],
-            prev_raw: [0.0; SPECTRUM_ANALYSIS_BAND_COUNT],
             level_env: 0.0,
             bass_env: 0.0,
             flux_mean: 0.0,
@@ -378,7 +381,6 @@ impl SpectrumAnalyzer {
         self.bass_env = bass;
         let beat = self.detect_beat(&folded, &raw);
         self.prev_bands = folded;
-        self.prev_raw = raw;
         let dynamics = self.detect_dynamics(overall);
 
         let mut bands = [0.0_f32; SPECTRUM_BAND_COUNT];
@@ -427,17 +429,16 @@ impl SpectrumAnalyzer {
         let broad_flux = weighted_flux / total_weight.max(1.0);
         let bass_flux = low_flux / FLUX_LOW_BANDS as f32 * FLUX_LOW_PATH_GAIN;
         let flux = broad_flux.max(bass_flux);
-        let mut raw_flux = 0.0_f32;
-        let mut raw_low_flux = 0.0_f32;
-        for (index, (&bin, &previous)) in raw.iter().zip(self.prev_raw.iter()).enumerate() {
-            let rise = (bin - previous).max(0.0);
-            raw_flux += rise;
-            if index < BEAT_ENERGY_LOW_RAW_BINS {
-                raw_low_flux += rise;
-            }
-        }
-        let absolute_flux = (raw_flux / SPECTRUM_ANALYSIS_BAND_COUNT as f32)
-            .max(raw_low_flux / BEAT_ENERGY_LOW_RAW_BINS as f32 * BEAT_ENERGY_LOW_GAIN);
+        let overall_energy = raw.iter().map(|bin| linear_amplitude(*bin)).sum::<f32>()
+            / raw.len() as f32
+            * BEAT_ENERGY_BROAD_GAIN;
+        let low_energy = raw[..BEAT_ENERGY_LOW_RAW_BINS]
+            .iter()
+            .map(|bin| linear_amplitude(*bin))
+            .sum::<f32>()
+            / BEAT_ENERGY_LOW_RAW_BINS as f32
+            * BEAT_ENERGY_LOW_GAIN;
+        let absolute_energy = overall_energy.max(low_energy);
 
         let variance = (self.flux_sq_mean - self.flux_mean * self.flux_mean).max(0.0);
         let threshold = self.flux_mean + BEAT_K * variance.sqrt() + BEAT_FLOOR;
@@ -450,8 +451,9 @@ impl SpectrumAnalyzer {
             && self.frames_since_beat.saturating_add(1) >= self.refractory_frames;
         let strength = if fired {
             let relative = ((flux - threshold) / BEAT_STRENGTH_OVERSHOOT).clamp(0.0, 1.0);
-            let absolute =
-                ((absolute_flux - BEAT_MIN_FLUX) / BEAT_STRENGTH_ABSOLUTE_SPAN).clamp(0.0, 1.0);
+            let absolute = ((absolute_energy - BEAT_STRENGTH_ENERGY_FLOOR)
+                / BEAT_STRENGTH_ABSOLUTE_SPAN)
+                .clamp(0.0, 1.0);
             absolute * (1.0 - BEAT_STRENGTH_RELATIVE_MIX + relative * BEAT_STRENGTH_RELATIVE_MIX)
         } else {
             0.0
