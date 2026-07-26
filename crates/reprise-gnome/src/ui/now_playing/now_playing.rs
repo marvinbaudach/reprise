@@ -29,17 +29,18 @@ mod now_playing_effects;
 struct PanelWidgets {
     column: NowPlayingColumn,
     stage: gtk4::Box,
+    #[cfg(test)]
     track_content: gtk4::Box,
     lyrics: Rc<LyricsView>,
     up_next: Rc<UpNextPanel>,
     visualizer: SongVisualizer,
     visual_page: adw::ViewStackPage,
     cover: gtk4::Image,
+    outgoing_cover: gtk4::Image,
     title: gtk4::Label,
     artist: gtk4::Label,
     album: gtk4::Label,
-    // Retained for T9's shared track-content crossfade; the T5 acceptance
-    // test also inspects the selected page directly.
+    // Retained so the acceptance tests can inspect the selected page directly.
     tab_stack: adw::ViewStack,
     #[cfg(test)]
     tab_switcher: adw::InlineViewSwitcher,
@@ -72,6 +73,19 @@ fn build_widgets_for_session(
         .build();
     cover.add_css_class("reprise-now-playing-cover");
     CoverLoader::set_placeholder(&cover);
+    let outgoing_cover = gtk4::Image::builder()
+        .pixel_size(tokens::NOW_PLAYING_COVER_SIZE)
+        .width_request(tokens::NOW_PLAYING_COVER_SIZE)
+        .height_request(tokens::NOW_PLAYING_COVER_SIZE)
+        .can_target(false)
+        .opacity(0.0)
+        .visible(false)
+        .build();
+    outgoing_cover.add_css_class("reprise-now-playing-cover");
+    outgoing_cover.set_accessible_role(gtk4::AccessibleRole::Presentation);
+    let cover_transition = gtk4::Overlay::new();
+    cover_transition.set_child(Some(&cover));
+    cover_transition.add_overlay(&outgoing_cover);
 
     let title = gtk4::Label::builder()
         .xalign(0.5)
@@ -104,7 +118,7 @@ fn build_widgets_for_session(
     head.add_css_class("reprise-now-playing-head");
     head.set_halign(gtk4::Align::Center);
     head.set_valign(gtk4::Align::Center);
-    head.append(&cover);
+    head.append(&cover_transition);
     head.append(&metadata);
 
     let glow = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
@@ -234,12 +248,14 @@ fn build_widgets_for_session(
     PanelWidgets {
         column,
         stage,
+        #[cfg(test)]
         track_content,
         lyrics,
         up_next,
         visualizer,
         visual_page,
         cover,
+        outgoing_cover,
         title,
         artist,
         album,
@@ -262,8 +278,9 @@ pub(in crate::ui) struct NowPlayingPanel {
     playback_state: Cell<PlaybackState>,
     syncing_visibility: Cell<bool>,
     on_up_next_refresh: RefCell<Option<OnVoid>>,
-    track_animation: RefCell<Option<adw::TimedAnimation>>,
-    track_animation_generation: Cell<u64>,
+    cover_animation: RefCell<Option<adw::TimedAnimation>>,
+    cover_animation_generation: Cell<u64>,
+    cover_transition_active: Cell<bool>,
     on_track_reveal: crate::ui::link_activation::ActivationSlot,
     song_visuals_enabled: Cell<bool>,
     on_album_reveal: crate::ui::link_activation::ActivationSlot,
@@ -298,8 +315,9 @@ impl NowPlayingPanel {
             playback_state: Cell::new(PlaybackState::Stopped),
             syncing_visibility: Cell::new(false),
             on_up_next_refresh: RefCell::new(None),
-            track_animation: RefCell::new(None),
-            track_animation_generation: Cell::new(0),
+            cover_animation: RefCell::new(None),
+            cover_animation_generation: Cell::new(0),
+            cover_transition_active: Cell::new(false),
             on_track_reveal: Rc::new(RefCell::new(None)),
             song_visuals_enabled: Cell::new(song_visuals_enabled),
             on_album_reveal: Rc::new(RefCell::new(None)),
@@ -378,18 +396,17 @@ impl NowPlayingPanel {
             self.widgets.visualizer.note_track_changed();
         }
         if !changed {
-            if self.track_animation.borrow().is_none() {
+            if !self.cover_transition_active.get() {
                 self.render_track();
             }
             return;
         }
         if !crate::ui::motion::animations_enabled() {
-            self.cancel_track_animation();
-            self.widgets.track_content.set_opacity(1.0);
+            self.cancel_cover_animation();
             self.render_track();
             return;
         }
-        self.animate_track_change();
+        self.animate_cover_change();
     }
 
     pub(in crate::ui) fn set_playback_state(&self, state: PlaybackState) {
