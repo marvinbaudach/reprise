@@ -19,14 +19,26 @@ const SEGMENT_GAP: f32 = 2.5;
 const PEAK_CAP_HEIGHT: f32 = 2.5;
 const PEAK_MIN: f32 = 0.04;
 const REFLECTION_SEGMENTS: usize = 6;
-const BEAT_LIFT_LOW: f32 = 0.88;
-const BEAT_LIFT_HIGH: f32 = 0.62;
+/// The spectrum alone uses the lower two thirds. Exceptional beat or sustained
+/// bass energy owns the remaining headroom, so compressed music cannot look
+/// permanently maxed out.
+const SPECTRUM_HEADROOM: f32 = 0.66;
+const BREAKDOWN_LIFT_LOW: f32 = 0.98;
+const BREAKDOWN_LIFT_HIGH: f32 = 0.82;
 /// Hits below this captured absolute-energy strength remain frequency-shaped
 /// detail instead of lifting the entire analyzer.
 const BREAKDOWN_STRENGTH_FLOOR: f32 = 0.25;
 /// At this strength a hit receives the full whole-analyzer lift. The value is
 /// anchored to the strongest captured bass impact in The Browning's "Wake Up".
 const BREAKDOWN_STRENGTH_FULL: f32 = 0.85;
+/// Sustained breakdown pressure needs all three gates: real bass presence,
+/// enough whole-mix energy, and bass that clearly dominates that mix.
+const BASS_PRESENCE_FLOOR: f32 = 0.48;
+const BASS_PRESENCE_FULL: f32 = 0.72;
+const LEVEL_PRESENCE_FLOOR: f32 = 0.30;
+const LEVEL_PRESENCE_FULL: f32 = 0.50;
+const BASS_DOMINANCE_FLOOR: f32 = 0.08;
+const BASS_DOMINANCE_FULL: f32 = 0.22;
 const HUE_START: f32 = 188.0;
 const HUE_END: f32 = 315.0;
 const ENVELOPE_EASING: f32 = 0.65;
@@ -43,19 +55,40 @@ fn group_value(values: &[f32; SPECTRUM_BAND_COUNT], bar: usize) -> f32 {
     peak * 0.62 + mean * 0.38
 }
 
-fn target_value(bands: &[f32; SPECTRUM_BAND_COUNT], beat: f32, bar: usize) -> f32 {
+fn normalize_between(value: f32, floor: f32, full: f32) -> f32 {
+    ((value - floor) / (full - floor)).clamp(0.0, 1.0)
+}
+
+fn beat_pressure(beat: f32) -> f32 {
+    smoothstep(normalize_between(
+        beat,
+        BREAKDOWN_STRENGTH_FLOOR,
+        BREAKDOWN_STRENGTH_FULL,
+    ))
+}
+
+fn bass_pressure(bass: f32, level: f32) -> f32 {
+    let presence = normalize_between(bass, BASS_PRESENCE_FLOOR, BASS_PRESENCE_FULL);
+    let mix_energy = normalize_between(level, LEVEL_PRESENCE_FLOOR, LEVEL_PRESENCE_FULL);
+    let dominance = normalize_between(bass - level, BASS_DOMINANCE_FLOOR, BASS_DOMINANCE_FULL);
+    presence * mix_energy * dominance
+}
+
+fn target_value(
+    bands: &[f32; SPECTRUM_BAND_COUNT],
+    beat: f32,
+    bass: f32,
+    level: f32,
+    bar: usize,
+) -> f32 {
     let across = bar as f32 / (BAR_COUNT - 1) as f32;
-    let beat_lift = BEAT_LIFT_LOW + (BEAT_LIFT_HIGH - BEAT_LIFT_LOW) * across;
-    let spectrum = group_value(bands, bar);
-    let normalized = ((beat - BREAKDOWN_STRENGTH_FLOOR)
-        / (BREAKDOWN_STRENGTH_FULL - BREAKDOWN_STRENGTH_FLOOR))
-        .clamp(0.0, 1.0);
-    let emphasized = normalized * normalized * (3.0 - 2.0 * normalized);
-    let beat = emphasized * beat_lift;
-    // A beat lifts the remaining headroom instead of adding a fixed amount.
-    // That preserves the spectrum silhouette and avoids hard clipping whole
-    // columns to full height on the first frame of a strong hit.
-    spectrum + (1.0 - spectrum) * beat
+    let lift = BREAKDOWN_LIFT_LOW + (BREAKDOWN_LIFT_HIGH - BREAKDOWN_LIFT_LOW) * across;
+    let spectrum = group_value(bands, bar).sqrt() * SPECTRUM_HEADROOM;
+    let pressure = beat_pressure(beat).max(bass_pressure(bass, level));
+    // Exceptional energy lifts the remaining headroom instead of adding a
+    // fixed amount. The spectrum silhouette survives while a breakdown can
+    // approach full height between individual onset edges.
+    spectrum + (1.0 - spectrum) * pressure * lift
 }
 
 pub(crate) struct BarsEnvelope {
@@ -73,10 +106,16 @@ impl BarsEnvelope {
         &self.values
     }
 
-    pub(crate) fn advance(&mut self, bands: &[f32; SPECTRUM_BAND_COUNT], beat: f32) -> bool {
+    pub(crate) fn advance(
+        &mut self,
+        bands: &[f32; SPECTRUM_BAND_COUNT],
+        beat: f32,
+        bass: f32,
+        level: f32,
+    ) -> bool {
         let mut settled = true;
         for (bar, current) in self.values.iter_mut().enumerate() {
-            let target = target_value(bands, beat, bar);
+            let target = target_value(bands, beat, bass, level, bar);
             let delta = target - *current;
             let step = (delta * ENVELOPE_EASING).clamp(-MAX_FALL_PER_TICK, MAX_RISE_PER_TICK);
             *current = (*current + step).clamp(0.0, 1.0);
@@ -89,8 +128,14 @@ impl BarsEnvelope {
         self.values = [0.0; BAR_COUNT];
     }
 
-    pub(crate) fn snap(&mut self, bands: &[f32; SPECTRUM_BAND_COUNT], beat: f32) {
-        self.values = std::array::from_fn(|bar| target_value(bands, beat, bar));
+    pub(crate) fn snap(
+        &mut self,
+        bands: &[f32; SPECTRUM_BAND_COUNT],
+        beat: f32,
+        bass: f32,
+        level: f32,
+    ) {
+        self.values = std::array::from_fn(|bar| target_value(bands, beat, bass, level, bar));
     }
 }
 
