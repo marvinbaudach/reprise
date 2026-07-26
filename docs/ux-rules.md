@@ -2037,6 +2037,13 @@ deterministisch und hoch-konfident, nie „ohne Review".
   fällt Auswahl und Fokus auf die nächste, am Listenende auf die vorherige
   Zeile und bei leerer Liste auf den stabilen Content-Container.
 
+- **BROWSE-9** [aktiv] [gtk] — **Das Aufnahmedatum ist eine normale
+  Library-Spalte.** „Added" ist im Spalteneditor wählbar, verschiebbar,
+  breitenpersistierbar und nach `added_at` sortierbar. Die ISO-formatierte
+  Zeit ist standardmäßig ausgeblendet; bestehende Layouts erhalten die neue
+  Spalte beim Normalisieren ebenfalls ausgeblendet, ohne ihre gespeicherte
+  Reihenfolge oder Sichtbarkeit zu verlieren.
+
 ## AA. Externe Änderungen (Live-Refresh von CLI/MCP)
 
 <!-- Sektionsbuchstabe: A–Z sind auf main bereits vergeben (T doppelt); die
