@@ -2,7 +2,8 @@
 //! and queue controls over the running app's local D-Bus interface.
 //!
 //! Resources: `reprise://library/summary`, `reprise://playlists`,
-//! `reprise://concerts`, `reprise://podcasts`, and `reprise://radio`. Tools:
+//! `reprise://concerts`, `reprise://concerts/all`, and
+//! `reprise://releases`, `reprise://podcasts`, and `reprise://radio`. Tools:
 //! `music_search_tracks` (read),
 //! `music_create_playlist` (write, gated on the `playlist:create` capability).
 //! All blocking database and bus work runs on `spawn_blocking`; the handler
@@ -22,6 +23,7 @@ use rmcp::model::{
 use rmcp::service::RequestContext;
 use rmcp::{tool, tool_handler, tool_router, ErrorData, RoleServer, ServerHandler};
 
+use crate::catalog_resources;
 use crate::data;
 use crate::dto::{
     BrowseLibraryParams, CreateInstrumentalParams, CreatePlaylistParams, GetPlaylistParams,
@@ -39,6 +41,10 @@ pub const RESOURCE_LIBRARY_SUMMARY: &str = "reprise://library/summary";
 pub const RESOURCE_PLAYLISTS: &str = "reprise://playlists";
 /// URI of the filtered upcoming-concert listing.
 pub const RESOURCE_CONCERTS: &str = "reprise://concerts";
+/// URI of every cached concert event and its non-secret configuration.
+pub const RESOURCE_CONCERTS_ALL: &str = "reprise://concerts/all";
+/// URI of the complete durable New Releases history.
+pub const RESOURCE_RELEASES: &str = "reprise://releases";
 /// URI of the cached podcast subscriptions and episodes.
 pub const RESOURCE_PODCASTS: &str = "reprise://podcasts";
 /// URI of the cached radio favorites.
@@ -48,7 +54,7 @@ const RESOURCE_MIME_JSON: &str = "application/json";
 
 const SERVER_INSTRUCTIONS: &str = "Reprise local music library and player. \
     Read-only tools and resources expose path-free track, artist, album, and \
-    playlist metadata plus cached podcast/YouTube and radio metadata. \
+    playlist, concert, release, cached podcast/YouTube, and radio metadata. \
     `music_manage_podcasts` and `music_manage_radio` add, edit, remove, or \
     refresh remote sources under the opt-in 'sources:manage' capability; \
     resource responses never expose stored source URLs. Playlist creation and \
@@ -628,6 +634,19 @@ impl ServerHandler for RepriseServer {
                      venues, cities, ticket links. No file paths.",
                 )
                 .with_mime_type(RESOURCE_MIME_JSON),
+            Resource::new(RESOURCE_CONCERTS_ALL, "concerts-all")
+                .with_description(
+                    "Complete cached concert-event records and effective non-secret \
+                     configuration, including past and filtered-out events. No \
+                     credentials or file paths.",
+                )
+                .with_mime_type(RESOURCE_MIME_JSON),
+            Resource::new(RESOURCE_RELEASES, "releases")
+                .with_description(
+                    "Complete durable New Releases history, including hidden entries, \
+                     timestamps, MusicBrainz ids, links and library presence. No file paths.",
+                )
+                .with_mime_type(RESOURCE_MIME_JSON),
             Resource::new(RESOURCE_PODCASTS, "podcasts")
                 .with_description(
                     "Cached podcast and YouTube subscriptions plus recent episodes. \
@@ -671,6 +690,22 @@ impl ServerHandler for RepriseServer {
                     tokio::task::spawn_blocking(move || data::list_concerts(path.as_path()))
                         .await
                         .map_err(|error| error::join_error(&error))?;
+                error::serialize_resource(&outcome.map_err(error::resource_error)?)?
+            }
+            RESOURCE_CONCERTS_ALL => {
+                let outcome = tokio::task::spawn_blocking(move || {
+                    catalog_resources::complete_concerts(path.as_path())
+                })
+                .await
+                .map_err(|error| error::join_error(&error))?;
+                error::serialize_resource(&outcome.map_err(error::resource_error)?)?
+            }
+            RESOURCE_RELEASES => {
+                let outcome = tokio::task::spawn_blocking(move || {
+                    catalog_resources::releases(path.as_path())
+                })
+                .await
+                .map_err(|error| error::join_error(&error))?;
                 error::serialize_resource(&outcome.map_err(error::resource_error)?)?
             }
             RESOURCE_PODCASTS => {

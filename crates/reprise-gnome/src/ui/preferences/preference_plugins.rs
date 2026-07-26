@@ -165,7 +165,7 @@ impl PreferencesContext {
             let singles_row = (descriptor.id == "new_releases")
                 .then(|| super::preference_new_releases::singles_row(&self.conn, active));
             let concerts_rows = (descriptor.id == "concerts")
-                .then(|| super::preference_concerts::build(&self.conn, active));
+                .then(|| super::preference_concerts::build(&self.conn, &self.concerts, active));
             let podcast_rows = (descriptor.id == "podcasts")
                 .then(|| super::preference_podcasts::build(&self.conn, active));
             let radio_rows = (descriptor.id == "radio")
