@@ -48,3 +48,7 @@ My Stats entrance order follow-up: complete (this commit, base c83e0be239, chain
 Base: `331217f344`
 
 Task P1: complete (this commit, base 331217f344, made stopped Play/Pause seed and start a random present-library snapshot without row activation, kept empty-library and queue navigation sensitivity honest, and activated PLAY-9; full non-display gates passed, while the rule-named display regression compiled but its isolated Xvfb run was blocked by sandbox D-Bus socket permissions)
+
+# Podcasts & Radio
+
+Task Z1: complete with sandbox-limited visual verification (this commit, base 4b9b80627f, implemented podcast RSS/YouTube and radio-browser sources, external playback/MPRIS, source views, reversible removal, preferences, schema v33 future-only baselines, and all AF rules; fmt, clippy, 1398 core tests, 951 GNOME non-display tests, audit with only accepted RUSTSEC-2024-0436, core purity, motion, input, accessibility, and UX traceability passed; the unchanged origin/dev 806-line MCP file keeps the architecture script red, and sandbox D-Bus socket denial blocks display tests plus the isolated application smoke; real feeds/streams, yt-dlp, ICY, GNOME-Shell MPRIS, and theme icon optics remain the documented manual pass)
