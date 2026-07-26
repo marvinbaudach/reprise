@@ -343,9 +343,12 @@ async fn run_transfers(
                 let record = DeviceFileRecord {
                     device_serial: work.device_id.clone(),
                     track_id: entry.track.id,
+                    source_path: entry.track.source_path.to_string_lossy().into_owned(),
+                    source_size: entry.track.size_bytes,
+                    source_mtime: entry.track.source_mtime,
                     device_path: entry.device_path.clone(),
-                    size: entry.expected_bytes,
-                    mtime: entry.track.source_mtime,
+                    device_size: actual_size,
+                    profile_fingerprint: entry.mode.fingerprint(),
                     pinned: false,
                 };
                 if let Err(error) = upsert_device_file(&runtime.conn.borrow(), &record) {

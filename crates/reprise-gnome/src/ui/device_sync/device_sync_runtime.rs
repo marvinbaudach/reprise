@@ -398,9 +398,12 @@ impl DeviceSyncRuntime {
                 .iter()
                 .map(|entry| SyncCandidate {
                     track_id: entry.track.id,
-                    device_path: entry.device_path.clone(),
-                    transfer_bytes: entry.expected_bytes,
+                    source_path: entry.track.source_path.to_string_lossy().into_owned(),
+                    source_size: entry.track.size_bytes,
                     source_mtime: entry.track.source_mtime,
+                    device_path: entry.device_path.clone(),
+                    profile_fingerprint: entry.mode.fingerprint(),
+                    transfer_bytes: entry.expected_bytes,
                 })
                 .collect::<Vec<_>>();
             let delta = compute_delta(&candidates, &files, settings.remove_deleted);
@@ -590,6 +593,7 @@ impl DeviceSyncRuntime {
                             device_serial: descriptor.id.clone(),
                             device_name: descriptor.name.clone(),
                             selection: DeviceSelection::default(),
+                            profile: reprise_core::device_sync::TransferProfile::default(),
                             opus_bitrate: 0,
                             ratings_back: false,
                             remove_deleted: true,
@@ -757,7 +761,7 @@ fn build_device_tracks(
             title: metadata.0,
             artist: metadata.1,
             device_path: file.device_path.clone(),
-            size: file.size,
+            size: file.device_size,
             duration_ms: metadata.2,
             status: if removing.contains(&file.track_id) {
                 DeviceTrackStatus::Remove

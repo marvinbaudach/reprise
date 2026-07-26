@@ -21,7 +21,9 @@ pub use profile::{
     project_playlist_sizes, Mp3Quality, PlaylistSizeProjection, PlaylistTargetSize, PlaylistTracks,
     TransferAction, TransferProfile, UnsupportedMp3Quality,
 };
-pub use settings::{DeviceFileRecord, DeviceSelection, DeviceSettings, SelectionSource};
+pub use settings::{
+    DeviceFileRecord, DevicePlaylistRecord, DeviceSelection, DeviceSettings, SelectionSource,
+};
 
 pub const REPRISE_DEVICE_DIR: &str = "Reprise";
 
@@ -331,6 +333,10 @@ mod v1_tests;
 #[cfg(test)]
 #[path = "device_sync/profile_tests.rs"]
 mod profile_tests;
+
+#[cfg(test)]
+#[path = "device_sync/inventory_tests.rs"]
+mod inventory_tests;
 
 #[cfg(test)]
 mod tests {

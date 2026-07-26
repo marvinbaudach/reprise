@@ -78,6 +78,7 @@ mod tests {
                 device_serial: id.into(),
                 device_name: id.into(),
                 selection: reprise_core::device_sync::DeviceSelection::default(),
+                profile: reprise_core::device_sync::TransferProfile::default(),
                 opus_bitrate: 0,
                 ratings_back: false,
                 remove_deleted: true,

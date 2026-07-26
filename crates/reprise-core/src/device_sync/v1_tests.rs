@@ -11,7 +11,7 @@ use super::settings::{
     SelectionSource,
 };
 use super::transfer::{build_transfer_plan, build_transfer_plan_with_inventory, TransferMode};
-use super::SyncTrack;
+use super::{SyncTrack, TransferProfile};
 
 fn migrated() -> Connection {
     let conn = crate::db::open(None).unwrap();
@@ -29,6 +29,7 @@ fn settings_default_then_round_trip_selection_and_supported_bitrate() {
             device_serial: "serial-1".into(),
             device_name: "Pixel 8".into(),
             selection: DeviceSelection::Sources(Vec::new()),
+            profile: TransferProfile::default(),
             opus_bitrate: 0,
             ratings_back: false,
             remove_deleted: true,
@@ -56,7 +57,7 @@ fn settings_default_then_round_trip_selection_and_supported_bitrate() {
 }
 
 #[test]
-fn entire_library_uses_the_documented_scalar_json_shape() {
+fn entire_library_is_persisted_as_an_unconfigured_selection() {
     let conn = migrated();
     let mut settings = load_or_create_settings(&conn, "serial-2", "Phone").unwrap();
     settings.selection = DeviceSelection::EntireLibrary;
@@ -69,12 +70,12 @@ fn entire_library_uses_the_documented_scalar_json_shape() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(raw, "\"entire_library\"");
+    assert_eq!(raw, "[]");
     assert_eq!(
         load_or_create_settings(&conn, "serial-2", "Phone")
             .unwrap()
             .selection,
-        DeviceSelection::EntireLibrary
+        DeviceSelection::Sources(Vec::new())
     );
 }
 
@@ -115,9 +116,12 @@ fn device_file_inventory_round_trips_and_pinning_is_per_device() {
     let record = DeviceFileRecord {
         device_serial: "serial-1".into(),
         track_id: 7,
+        source_path: "/music/a.flac".into(),
+        source_size: 999,
+        source_mtime: 456,
         device_path: "Music/Reprise/B/A/01 Song.opus".into(),
-        size: 123,
-        mtime: 456,
+        device_size: 123,
+        profile_fingerprint: "legacy-opus-v1".into(),
         pinned: false,
     };
     upsert_device_file(&conn, &record).unwrap();
@@ -134,48 +138,66 @@ fn delta_copies_new_or_changed_tracks_and_only_removes_unpinned_unselected_track
     let selected = vec![
         SyncCandidate {
             track_id: 1,
-            device_path: "Artist/Album/01 One.flac".into(),
-            transfer_bytes: 100,
+            source_path: "/library/one.flac".into(),
+            source_size: 100,
             source_mtime: 10,
+            device_path: "Artist/Album/01 One.flac".into(),
+            profile_fingerprint: "legacy-v1".into(),
+            transfer_bytes: 100,
         },
         SyncCandidate {
             track_id: 2,
-            device_path: "Artist/Album/02 Two.opus".into(),
-            transfer_bytes: 40,
+            source_path: "/library/two.flac".into(),
+            source_size: 90,
             source_mtime: 20,
+            device_path: "Artist/Album/02 Two.opus".into(),
+            profile_fingerprint: "legacy-opus-128-v1".into(),
+            transfer_bytes: 40,
         },
     ];
     let files = vec![
         DeviceFileRecord {
             device_serial: "phone".into(),
             track_id: 1,
+            source_path: "/library/one.flac".into(),
+            source_size: 100,
+            source_mtime: 10,
             device_path: "Artist/Album/01 One.flac".into(),
-            size: 100,
-            mtime: 10,
+            device_size: 100,
+            profile_fingerprint: "legacy-v1".into(),
             pinned: false,
         },
         DeviceFileRecord {
             device_serial: "phone".into(),
             track_id: 2,
+            source_path: "/library/two.flac".into(),
+            source_size: 90,
+            source_mtime: 20,
             device_path: "Artist/Album/02 Two.flac".into(),
-            size: 90,
-            mtime: 20,
+            device_size: 90,
+            profile_fingerprint: "legacy-v1".into(),
             pinned: false,
         },
         DeviceFileRecord {
             device_serial: "phone".into(),
             track_id: 3,
+            source_path: "/library/three.flac".into(),
+            source_size: 30,
+            source_mtime: 1,
             device_path: "Old/Three.flac".into(),
-            size: 30,
-            mtime: 1,
+            device_size: 30,
+            profile_fingerprint: "legacy-v1".into(),
             pinned: false,
         },
         DeviceFileRecord {
             device_serial: "phone".into(),
             track_id: 4,
+            source_path: "/library/four.flac".into(),
+            source_size: 30,
+            source_mtime: 1,
             device_path: "Pinned/Four.flac".into(),
-            size: 30,
-            mtime: 1,
+            device_size: 30,
+            profile_fingerprint: "legacy-v1".into(),
             pinned: true,
         },
     ];
@@ -189,19 +211,25 @@ fn delta_copies_new_or_changed_tracks_and_only_removes_unpinned_unselected_track
 }
 
 #[test]
-fn delta_recopies_when_the_expected_transfer_size_changes() {
+fn delta_recopies_when_the_explicit_profile_fingerprint_changes() {
     let selected = vec![SyncCandidate {
         track_id: 1,
-        device_path: "Artist/Album/01 One.opus".into(),
-        transfer_bytes: 640_000,
+        source_path: "/library/one.flac".into(),
+        source_size: 1_000_000,
         source_mtime: 10,
+        device_path: "Artist/Album/01 One.opus".into(),
+        profile_fingerprint: "legacy-opus-64-v1".into(),
+        transfer_bytes: 640_000,
     }];
     let files = vec![DeviceFileRecord {
         device_serial: "phone".into(),
         track_id: 1,
+        source_path: "/library/one.flac".into(),
+        source_size: 1_000_000,
+        source_mtime: 10,
         device_path: "Artist/Album/01 One.opus".into(),
-        size: 1_280_000,
-        mtime: 10,
+        device_size: 1_280_000,
+        profile_fingerprint: "legacy-opus-128-v1".into(),
         pinned: false,
     }];
 
@@ -360,17 +388,23 @@ fn collision_suffixes_preserve_selected_and_pinned_inventory_slots() {
         DeviceFileRecord {
             device_serial: "phone".into(),
             track_id: 2,
+            source_path: "/library/two.mp3".into(),
+            source_size: 500_000,
+            source_mtime: 10,
             device_path: "Artist/Album/01 Same.mp3".into(),
-            size: 500_000,
-            mtime: 10,
+            device_size: 500_000,
+            profile_fingerprint: "legacy-v1".into(),
             pinned: false,
         },
         DeviceFileRecord {
             device_serial: "phone".into(),
             track_id: 99,
+            source_path: "/library/old.mp3".into(),
+            source_size: 500_000,
+            source_mtime: 10,
             device_path: "Artist/Album/01 Same (2).mp3".into(),
-            size: 500_000,
-            mtime: 10,
+            device_size: 500_000,
+            profile_fingerprint: "legacy-v1".into(),
             pinned: true,
         },
     ];
@@ -434,7 +468,7 @@ fn unknown_duration_still_produces_a_bitrate_specific_transfer_fingerprint() {
 }
 
 #[test]
-fn selection_resolves_playlist_union_without_duplicates_and_entire_library_exclusively() {
+fn selection_resolves_playlist_union_without_duplicates_and_disables_entire_library() {
     let conn = migrated();
     conn.execute_batch(
         "INSERT INTO tracks (id, path, title, artist, added_at) VALUES
@@ -461,18 +495,16 @@ fn selection_resolves_playlist_union_without_duplicates_and_entire_library_exclu
     );
     assert_eq!(
         resolve_selection_track_ids(&conn, &DeviceSelection::EntireLibrary).unwrap(),
-        vec![1, 3, 2]
+        Vec::<i64>::new()
     );
 }
 
-/// End-to-end repro of the fresh-device "Entire library" flow: selection →
-/// `query_sync_tracks` (which silently drops rows whose files are absent on
-/// disk, hence the real temp files) → transfer plan → delta. A fresh device
-/// (empty `device_files`) must see every selected track in `to_copy` — the
-/// UI's "Everything in sync ✓" for this state was a rendering bug, not a
-/// delta bug.
+/// A legacy in-memory `EntireLibrary` value is inert even if it reaches the
+/// old V1 pipeline. The durable v34 migration and settings encoder both turn
+/// it into an unconfigured selection, while this guard prevents an outdated
+/// caller from reviving the retired whole-library mode.
 #[test]
-fn entire_library_selection_computes_a_full_copy_delta_for_a_fresh_device() {
+fn entire_library_legacy_value_computes_no_copy_delta() {
     let conn = migrated();
     let dir = tempfile::tempdir().unwrap();
     for (id, title) in [(1, "One"), (2, "Two"), (3, "Three")] {
@@ -500,9 +532,12 @@ fn entire_library_selection_computes_a_full_copy_delta_for_a_fresh_device() {
         .iter()
         .map(|entry| SyncCandidate {
             track_id: entry.track.id,
-            device_path: entry.device_path.clone(),
-            transfer_bytes: entry.expected_bytes,
+            source_path: entry.track.source_path.to_string_lossy().into_owned(),
+            source_size: entry.track.size_bytes,
             source_mtime: entry.track.source_mtime,
+            device_path: entry.device_path.clone(),
+            profile_fingerprint: entry.mode.fingerprint(),
+            transfer_bytes: entry.expected_bytes,
         })
         .collect::<Vec<_>>();
     let files = load_device_files(&conn, "serial-fresh").unwrap();
@@ -511,7 +546,7 @@ fn entire_library_selection_computes_a_full_copy_delta_for_a_fresh_device() {
     let delta = compute_delta(&candidates, &files, true);
     let mut to_copy = delta.to_copy.clone();
     to_copy.sort_unstable();
-    assert_eq!(to_copy, vec![1, 2, 3], "every on-disk track is copied");
+    assert!(to_copy.is_empty());
     assert!(delta.to_remove.is_empty());
-    assert!(delta.bytes > 0);
+    assert_eq!(delta.bytes, 0);
 }
