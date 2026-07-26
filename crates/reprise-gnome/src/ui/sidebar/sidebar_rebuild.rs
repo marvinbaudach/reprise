@@ -7,9 +7,12 @@ use reprise_core::artist_news;
 use reprise_core::concerts;
 use reprise_core::library::playlists;
 use reprise_core::library::settings;
-use reprise_core::modules::{self, CONCERTS_MODULE, NEW_RELEASES_MODULE};
+use reprise_core::modules::{
+    self, CONCERTS_MODULE, NEW_RELEASES_MODULE, PODCASTS_MODULE, RADIO_MODULE,
+};
 use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
+use reprise_core::{podcasts, radio};
 
 use super::sidebar_dnd;
 use super::sidebar_export;
@@ -37,6 +40,10 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         new_import_error_count,
         playlist_rows,
         smart_rows,
+        podcasts_enabled,
+        podcasts_count,
+        radio_enabled,
+        radio_count,
         releases_enabled,
         releases_count,
         concerts_enabled,
@@ -112,6 +119,30 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
                 (smart, count)
             })
             .collect();
+        let podcasts_enabled = modules::is_enabled(&conn, &PODCASTS_MODULE).unwrap_or(false);
+        let podcasts_count = if podcasts_enabled {
+            podcasts::query::count_unplayed(&conn).map_or_else(
+                |error| {
+                    tracing::error!(%error, "failed to count unplayed podcast episodes");
+                    0
+                },
+                |count| i64::try_from(count).unwrap_or(i64::MAX),
+            )
+        } else {
+            0
+        };
+        let radio_enabled = modules::is_enabled(&conn, &RADIO_MODULE).unwrap_or(false);
+        let radio_count = if radio_enabled {
+            radio::station::count_stations(&conn).map_or_else(
+                |error| {
+                    tracing::error!(%error, "failed to count favorite radio stations");
+                    0
+                },
+                |count| i64::try_from(count).unwrap_or(i64::MAX),
+            )
+        } else {
+            0
+        };
         let releases_enabled = modules::is_enabled(&conn, &NEW_RELEASES_MODULE).unwrap_or(false);
         let releases_count = if releases_enabled {
             artist_news::persisted_releases_filter(&conn)
@@ -146,6 +177,10 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
             new_import_error_count,
             playlist_rows,
             smart_rows,
+            podcasts_enabled,
+            podcasts_count,
+            radio_enabled,
+            radio_count,
             releases_enabled,
             releases_count,
             concerts_enabled,
@@ -172,6 +207,24 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         sidebar_presentation::nonzero_count(music_count),
         NavIcon::Library,
     );
+    if podcasts_enabled {
+        add_row(
+            shared,
+            ViewSource::Podcasts,
+            &strings::text(strings::PODCASTS),
+            sidebar_presentation::nonzero_count(podcasts_count),
+            NavIcon::Podcasts,
+        );
+    }
+    if radio_enabled {
+        add_row(
+            shared,
+            ViewSource::Radio,
+            &strings::text(strings::RADIO),
+            sidebar_presentation::nonzero_count(radio_count),
+            NavIcon::Radio,
+        );
+    }
     add_row(
         shared,
         ViewSource::Queue,

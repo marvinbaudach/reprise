@@ -31,11 +31,13 @@ fn creates_scrobbling_entry(descriptor: &ModuleDescriptor) -> bool {
     descriptor.id == "listenbrainz"
 }
 
-pub(in crate::ui) fn network_descriptors() -> [&'static ModuleDescriptor; 6] {
+pub(in crate::ui) fn network_descriptors() -> [&'static ModuleDescriptor; 8] {
     [
         &reprise_core::modules::LIBRARY_DOCTOR_MODULE,
         &reprise_core::modules::NEW_RELEASES_MODULE,
         &reprise_core::modules::CONCERTS_MODULE,
+        &reprise_core::modules::PODCASTS_MODULE,
+        &reprise_core::modules::RADIO_MODULE,
         &reprise_core::modules::COVER_DOWNLOAD_MODULE,
         &reprise_core::modules::ARTIST_PORTRAITS_MODULE,
         &reprise_core::modules::ONLINE_LYRICS_MODULE,
@@ -69,6 +71,8 @@ pub(in crate::ui) fn plugin_title(descriptor: &ModuleDescriptor) -> String {
         "lastfm" => strings::LASTFM,
         "new_releases" => strings::NEW_RELEASES,
         "concerts" => strings::CONCERTS,
+        "podcasts" => strings::PODCASTS,
+        "radio" => strings::RADIO,
         "library_doctor" => strings::LIBRARY_DOCTOR,
         "cover_download" => strings::COVER_DOWNLOAD,
         "artist_portraits" => strings::ARTIST_PORTRAITS,
@@ -85,6 +89,8 @@ pub(in crate::ui) fn plugin_description(descriptor: &ModuleDescriptor) -> String
         "lastfm" => strings::PLUGIN_LASTFM_DESCRIPTION,
         "new_releases" => strings::NEW_RELEASES_DESCRIPTION,
         "concerts" => strings::CONCERTS_DESCRIPTION,
+        "podcasts" => strings::PODCASTS_DESCRIPTION,
+        "radio" => strings::RADIO_DESCRIPTION,
         "library_doctor" => strings::LIBRARY_DOCTOR_DESCRIPTION,
         "cover_download" => strings::COVER_DOWNLOAD_DESCRIPTION,
         "artist_portraits" => strings::ARTIST_PORTRAITS_DESCRIPTION,
@@ -154,19 +160,16 @@ impl PreferencesContext {
                 row_ref.set(Some(row.upcast_ref::<gtk4::Widget>()));
                 self.plugin_rows.borrow_mut().insert(descriptor.id, row_ref);
             }
-            let scope_row = (descriptor.id == "new_releases")
-                .then(|| super::preference_new_releases::scope_row(&self.conn, active));
-            let singles_row = (descriptor.id == "new_releases")
-                .then(|| super::preference_new_releases::singles_row(&self.conn, active));
-            let concerts_rows = (descriptor.id == "concerts")
-                .then(|| super::preference_concerts::build(&self.conn, active));
+            let podcast_rows = (descriptor.id == "podcasts")
+                .then(|| super::preference_podcasts::build(&self.conn, active));
+            let radio_rows = (descriptor.id == "radio")
+                .then(|| super::preference_radio::build(&self.conn, active));
             let syncing = Rc::new(Cell::new(false));
             let weak = Rc::downgrade(self);
             let descriptor = *descriptor;
             let syncing_notify = syncing.clone();
-            let scope_notify = scope_row.clone();
-            let singles_notify = singles_row.clone();
-            let concerts_notify = concerts_rows.clone();
+            let podcasts_notify = podcast_rows.clone();
+            let radio_notify = radio_rows.clone();
             row.connect_active_notify(move |row| {
                 let Some(context) = weak.upgrade() else {
                     return;
@@ -180,6 +183,7 @@ impl PreferencesContext {
                         .artist_news
                         .set_enabled(&context.conn.borrow(), active),
                     "concerts" => context.concerts.set_enabled(&context.conn.borrow(), active),
+                    "podcasts" => context.podcasts.set_enabled(&context.conn.borrow(), active),
                     "cover_download" => context
                         .cover_download
                         .set_enabled(&context.conn.borrow(), active),
@@ -234,33 +238,20 @@ impl PreferencesContext {
                     syncing_notify.set(false);
                     return;
                 }
-                if let Some(scope) = &scope_notify {
-                    scope.set_sensitive(active);
-                }
-                if let Some(singles) = &singles_notify {
-                    singles.set_sensitive(active);
-                }
-                if let Some(rows) = &concerts_notify {
+                if let Some(rows) = &podcasts_notify {
                     rows.set_sensitive(active);
                 }
-                if descriptor.id == "concerts" {
-                    context.sidebar.refresh("concerts module toggled");
+                if let Some(rows) = &radio_notify {
+                    rows.set_sensitive(active);
+                }
+                if matches!(descriptor.id, "concerts" | "podcasts" | "radio") {
+                    context.sidebar.refresh("source module toggled");
                 }
             });
             if descriptor.id == "new_releases" {
                 let alive = glib::WeakRef::new();
                 alive.set(Some(&row));
                 let target = alive.clone();
-                let scope_target = scope_row.as_ref().map(|scope| {
-                    let target = glib::WeakRef::new();
-                    target.set(Some(scope));
-                    target
-                });
-                let singles_target = singles_row.as_ref().map(|singles| {
-                    let target = glib::WeakRef::new();
-                    target.set(Some(singles));
-                    target
-                });
                 let syncing = syncing.clone();
                 self.artist_news.subscribe_enabled(
                     move || alive.upgrade().is_some(),
@@ -269,15 +260,6 @@ impl PreferencesContext {
                         syncing.set(true);
                         row.set_active(enabled);
                         syncing.set(false);
-                        if let Some(scope) = scope_target.as_ref().and_then(glib::WeakRef::upgrade)
-                        {
-                            scope.set_sensitive(enabled);
-                        }
-                        if let Some(singles) =
-                            singles_target.as_ref().and_then(glib::WeakRef::upgrade)
-                        {
-                            singles.set_sensitive(enabled);
-                        }
                     },
                 );
             }
@@ -285,7 +267,6 @@ impl PreferencesContext {
                 let alive = glib::WeakRef::new();
                 alive.set(Some(&row));
                 let target = alive.clone();
-                let rows = concerts_rows.clone();
                 let syncing = syncing.clone();
                 self.concerts.subscribe_enabled(
                     move || alive.upgrade().is_some(),
@@ -294,20 +275,30 @@ impl PreferencesContext {
                         syncing.set(true);
                         row.set_active(enabled);
                         syncing.set(false);
-                        if let Some(rows) = &rows {
-                            rows.set_sensitive(enabled);
-                        }
                     },
                 );
             }
+            if descriptor.id == "podcasts" {
+                let alive = glib::WeakRef::new();
+                alive.set(Some(&row));
+                let target = alive.clone();
+                let rows = podcast_rows.clone();
+                let syncing = syncing.clone();
+                self.podcasts.subscribe_enabled(move |enabled| {
+                    let Some(row) = target.upgrade() else { return };
+                    syncing.set(true);
+                    row.set_active(enabled);
+                    syncing.set(false);
+                    if let Some(rows) = &rows {
+                        rows.set_sensitive(enabled);
+                    }
+                });
+            }
             group.add(&row);
-            if let Some(scope) = scope_row {
-                group.add(&scope);
+            if let Some(rows) = podcast_rows {
+                rows.add_to(group);
             }
-            if let Some(singles) = singles_row {
-                group.add(&singles);
-            }
-            if let Some(rows) = concerts_rows {
+            if let Some(rows) = radio_rows {
                 rows.add_to(group);
             }
         }
@@ -374,6 +365,19 @@ mod tests {
     }
 
     #[test]
+    fn podcast_and_radio_plugins_expose_source_privacy_copy() {
+        for descriptor in [
+            &reprise_core::modules::PODCASTS_MODULE,
+            &reprise_core::modules::RADIO_MODULE,
+        ] {
+            assert!(plugin_description(descriptor)
+                .to_ascii_lowercase()
+                .contains("contacts"));
+            assert!(plugin_applies_live(descriptor));
+        }
+    }
+
+    #[test]
     fn network_plugin_deep_link_highlight_is_transient() {
         assert_eq!(
             highlight_duration(),
@@ -391,10 +395,12 @@ mod tests {
     #[test]
     fn all_network_plugin_rows_expose_privacy_copy() {
         let descriptors = network_descriptors();
-        assert_eq!(descriptors.len(), 6);
+        assert_eq!(descriptors.len(), 8);
         for descriptor in descriptors {
             assert!(plugin_applies_live(descriptor));
-            assert!(plugin_description(descriptor).contains("contacts"));
+            assert!(plugin_description(descriptor)
+                .to_ascii_lowercase()
+                .contains("contacts"));
         }
     }
 
@@ -411,6 +417,8 @@ mod tests {
         for descriptor in [
             &reprise_core::modules::NEW_RELEASES_MODULE,
             &reprise_core::modules::CONCERTS_MODULE,
+            &reprise_core::modules::PODCASTS_MODULE,
+            &reprise_core::modules::RADIO_MODULE,
             &reprise_core::modules::COVER_DOWNLOAD_MODULE,
             &reprise_core::modules::ARTIST_PORTRAITS_MODULE,
             &reprise_core::modules::ONLINE_LYRICS_MODULE,

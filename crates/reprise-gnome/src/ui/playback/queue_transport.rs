@@ -188,7 +188,10 @@ impl PlayerController {
     /// Starts the restored queue's current track while stopped; otherwise
     /// toggles the already-loaded pipeline. Shared by the bar, Space, and
     /// MPRIS PlayPause, without ever introducing startup autoplay.
-    pub(in crate::ui) fn toggle_pause(&self) {
+    pub(in crate::ui) fn toggle_pause(self: &Rc<Self>) {
+        if self.toggle_external_pause() {
+            return;
+        }
         let status = self
             .mpris_state
             .lock()
@@ -283,6 +286,9 @@ impl PlayerController {
     /// inside this one `let` statement, so the borrow drops before
     /// `play_track_id`/`reset_to_stopped` run.
     pub(in crate::ui) fn previous(&self) {
+        if self.playback_mode() != super::preview::PlaybackMode::Queue {
+            return;
+        }
         self.previous_with_up_next();
     }
 
@@ -290,6 +296,9 @@ impl PlayerController {
     /// if there is none) — shared by the bar's next button and MPRIS's
     /// `Next` method. Same borrow discipline as `previous`.
     pub(in crate::ui) fn next(&self) {
+        if self.playback_mode() != super::preview::PlaybackMode::Queue {
+            return;
+        }
         self.advance_playback(AdvanceReason::Manual);
     }
 

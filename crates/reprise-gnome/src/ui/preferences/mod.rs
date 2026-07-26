@@ -12,6 +12,8 @@ pub(in crate::ui) mod preference_listenbrainz;
 pub(in crate::ui) mod preference_new_releases;
 pub(in crate::ui) mod preference_playback;
 pub(in crate::ui) mod preference_plugins;
+pub(in crate::ui) mod preference_podcasts;
+pub(in crate::ui) mod preference_radio;
 pub(in crate::ui) mod preference_rhythmbox;
 pub(in crate::ui) mod preference_scrobbling;
 pub(in crate::ui) mod preference_sync;

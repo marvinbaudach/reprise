@@ -155,9 +155,39 @@ fn fixture_request(value: &str) -> Option<FixtureRequest> {
 fn fixture_get(url: &str, directory: &Path) -> Result<String, ProviderError> {
     let request = fixture_request(url).ok_or(ProviderError::Transport)?;
     append_fixture_log(&request)?;
-    let file = std::fs::File::open(directory.join(request.filename()))
-        .map_err(|_| ProviderError::Transport)?;
+    let filename = request.filename();
+    if let Some(error) = fixture_status(directory.join(format!("{filename}.status")).as_path())? {
+        return Err(error);
+    }
+    let file =
+        std::fs::File::open(directory.join(filename)).map_err(|_| ProviderError::Transport)?;
     http_body::read_bounded_string(file).map_err(map_body_error)
+}
+
+#[cfg(any(test, feature = "test-fixtures"))]
+fn fixture_status(path: &Path) -> Result<Option<ProviderError>, ProviderError> {
+    let value = match std::fs::read_to_string(path) {
+        Ok(value) => value,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(None);
+        }
+        Err(_) => return Err(ProviderError::Transport),
+    };
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("timeout") {
+        return Ok(Some(ProviderError::Timeout));
+    }
+    if value.eq_ignore_ascii_case("transport") {
+        return Ok(Some(ProviderError::Transport));
+    }
+    let status = value.parse::<u16>().map_err(|_| ProviderError::Transport)?;
+    if (200..300).contains(&status) {
+        return Ok(None);
+    }
+    if status == 429 {
+        return Ok(Some(ProviderError::RateLimited { retry_after: None }));
+    }
+    Ok(Some(ProviderError::HttpStatus(status)))
 }
 
 fn map_body_error(error: BoundedReadError) -> ProviderError {
