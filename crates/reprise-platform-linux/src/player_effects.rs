@@ -22,14 +22,6 @@ pub(super) fn build_audio_filter(
         .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
     set_equalizer_bands(&equalizer, effects);
     elements.push(equalizer);
-    if effects.replay_gain != ReplayGainMode::Off {
-        let replaygain = gst::ElementFactory::make("rgvolume")
-            .name("reprise-replaygain")
-            .build()
-            .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
-        replaygain.set_property("album-mode", effects.replay_gain == ReplayGainMode::Album);
-        elements.push(replaygain);
-    }
     let spectrum = gst::ElementFactory::make("spectrum")
         .name(SPECTRUM_ELEMENT_NAME)
         .property(
@@ -47,6 +39,14 @@ pub(super) fn build_audio_filter(
         Err(error) => {
             tracing::warn!(%error, "GStreamer spectrum analyzer unavailable; song visuals disabled");
         }
+    }
+    if effects.replay_gain != ReplayGainMode::Off {
+        let replaygain = gst::ElementFactory::make("rgvolume")
+            .name("reprise-replaygain")
+            .build()
+            .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
+        replaygain.set_property("album-mode", effects.replay_gain == ReplayGainMode::Album);
+        elements.push(replaygain);
     }
     elements.push(
         gst::ElementFactory::make("audioconvert")
