@@ -15,6 +15,9 @@ use rusqlite::Connection;
 pub const CAP_LIBRARY_READ: &str = "agent.capability.library:read";
 /// Settings key granting manual-playlist creation.
 pub const CAP_PLAYLIST_CREATE: &str = "agent.capability.playlist:create";
+/// Settings key granting non-destructive manual-playlist updates (rename and
+/// append tracks; never remove/delete).
+pub const CAP_PLAYLIST_MANAGE: &str = "agent.capability.playlist:manage";
 /// Settings key granting instrumental (AI) creation (Beschluss 7).
 pub const CAP_AI_CREATE: &str = "agent.capability.ai:create";
 /// Settings key granting playback control (transport + targeted play).
@@ -28,6 +31,7 @@ pub const CAP_PLAYBACK_CONTROL: &str = "agent.capability.playback:control";
 const LIBRARY_READ_DEFAULT: bool = true;
 // Beschluss 7 / D18: writes are fail-closed (off) by default.
 const PLAYLIST_CREATE_DEFAULT: bool = false;
+const PLAYLIST_MANAGE_DEFAULT: bool = false;
 // Beschluss 7: `ai:create` is fail-closed (off) by default, exactly like
 // `playlist:create`.
 const AI_CREATE_DEFAULT: bool = false;
@@ -44,6 +48,11 @@ pub fn library_read_enabled(conn: &Connection) -> Result<bool, rusqlite::Error> 
 /// Whether `playlist:create` is currently granted (the live setting value).
 pub fn playlist_create_granted(conn: &Connection) -> Result<bool, rusqlite::Error> {
     settings::get_bool(conn, CAP_PLAYLIST_CREATE, PLAYLIST_CREATE_DEFAULT)
+}
+
+/// Whether `playlist:manage` is currently granted (the live setting value).
+pub fn playlist_manage_granted(conn: &Connection) -> Result<bool, rusqlite::Error> {
+    settings::get_bool(conn, CAP_PLAYLIST_MANAGE, PLAYLIST_MANAGE_DEFAULT)
 }
 
 /// Whether `ai:create` is currently granted (the live setting value).
@@ -79,6 +88,18 @@ pub fn write_effective(
     Ok(effective(
         granted_at_startup,
         playlist_create_granted(conn)?,
+    ))
+}
+
+/// Whether a `playlist:manage` write is permitted right now, given the startup
+/// snapshot.
+pub fn playlist_manage_effective(
+    conn: &Connection,
+    granted_at_startup: bool,
+) -> Result<bool, rusqlite::Error> {
+    Ok(effective(
+        granted_at_startup,
+        playlist_manage_granted(conn)?,
     ))
 }
 
