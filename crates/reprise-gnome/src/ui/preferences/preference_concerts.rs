@@ -48,6 +48,36 @@ fn portal_decision(
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CurrentLocationButtonState {
+    sensitive: bool,
+    show_spinner: bool,
+}
+
+fn current_location_button_state(pending: bool) -> CurrentLocationButtonState {
+    CurrentLocationButtonState {
+        sensitive: !pending,
+        show_spinner: pending,
+    }
+}
+
+fn set_current_location_pending(button: &gtk4::Button, pending: bool) {
+    let state = current_location_button_state(pending);
+    button.set_sensitive(state.sensitive);
+    if state.show_spinner {
+        let content = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+        let spinner = gtk4::Spinner::new();
+        spinner.start();
+        content.append(&spinner);
+        content.append(&gtk4::Label::new(Some(&strings::text(
+            strings::CONCERTS_USE_CURRENT_LOCATION,
+        ))));
+        button.set_child(Some(&content));
+    } else {
+        button.set_label(&strings::text(strings::CONCERTS_USE_CURRENT_LOCATION));
+    }
+}
+
 struct ConcertPreferenceRowsInner {
     rows: Vec<gtk4::Widget>,
     similar_enabled: adw::SwitchRow,
@@ -198,6 +228,7 @@ fn location_rows(conn: &Rc<RefCell<Connection>>) -> (adw::EntryRow, adw::ActionR
     city.add_suffix(&current);
     city.add_suffix(&clear);
     let status = adw::ActionRow::builder().visible(false).build();
+    let current_pending = Rc::new(Cell::new(false));
 
     {
         let conn = conn.clone();
@@ -217,19 +248,34 @@ fn location_rows(conn: &Rc<RefCell<Connection>>) -> (adw::EntryRow, adw::ActionR
                     reprise_core::concerts::geocode(&query).map_err(|error| error.to_string()),
                 )
             });
-            receive_location(receiver, conn.clone(), status.clone());
+            receive_location(receiver, conn.clone(), status.clone(), None);
         });
     }
     {
         let conn = conn.clone();
         let status = status.clone();
-        current.connect_clicked(move |_| {
+        let pending = current_pending.clone();
+        current.connect_clicked(move |button| {
+            if pending.replace(true) {
+                return;
+            }
+            set_current_location_pending(button, true);
             let receiver = one_shot_task::spawn("reprise-location", || {
                 portal_decision(&reprise_platform_linux::location::current_location(
                     reprise_platform_linux::location::DEFAULT_TIMEOUT,
                 ))
             });
-            receive_location(receiver, conn.clone(), status.clone());
+            let button = button.clone();
+            let pending = pending.clone();
+            receive_location(
+                receiver,
+                conn.clone(),
+                status.clone(),
+                Some(Box::new(move || {
+                    pending.set(false);
+                    set_current_location_pending(&button, false);
+                })),
+            );
         });
     }
     {
@@ -249,6 +295,7 @@ fn receive_location(
     receiver: std::io::Result<async_channel::Receiver<LocationDecision>>,
     conn: Rc<RefCell<Connection>>,
     status: adw::ActionRow,
+    on_complete: Option<Box<dyn FnOnce()>>,
 ) {
     let Ok(receiver) = receiver else {
         apply_location(
@@ -256,6 +303,9 @@ fn receive_location(
             &status,
             LocationDecision::Error(strings::text(strings::CONCERTS_LOCATION_NOT_FOUND)),
         );
+        if let Some(on_complete) = on_complete {
+            on_complete();
+        }
         return;
     };
     glib::spawn_future_local(async move {
@@ -263,6 +313,9 @@ fn receive_location(
             LocationDecision::Error(strings::text(strings::CONCERTS_LOCATION_NOT_FOUND))
         });
         apply_location(&conn, &status, decision);
+        if let Some(on_complete) = on_complete {
+            on_complete();
+        }
     });
 }
 
@@ -417,6 +470,24 @@ mod tests {
                     crate::ui::strings::CONCERTS_LOCATION_NOT_FOUND
                 )
         ));
+    }
+
+    #[test]
+    fn current_location_button_is_disabled_with_pending_feedback() {
+        assert_eq!(
+            current_location_button_state(false),
+            CurrentLocationButtonState {
+                sensitive: true,
+                show_spinner: false,
+            }
+        );
+        assert_eq!(
+            current_location_button_state(true),
+            CurrentLocationButtonState {
+                sensitive: false,
+                show_spinner: true,
+            }
+        );
     }
 
     #[test]
