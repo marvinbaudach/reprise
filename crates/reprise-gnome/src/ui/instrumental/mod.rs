@@ -20,6 +20,7 @@
 pub(in crate::ui) mod conversion_model;
 pub(in crate::ui) mod conversion_view;
 pub(in crate::ui) mod conversion_wiring;
+mod runtime;
 pub(in crate::ui) mod worker_host;
 
 use std::cell::RefCell;
@@ -27,6 +28,8 @@ use std::rc::Rc;
 
 use reprise_core::library::settings;
 use rusqlite::Connection;
+
+type EnabledHook = Rc<dyn Fn(bool)>;
 
 /// The persisted settings key gating **all** instrumental UI (INST-11,
 /// Beschluss 11). A bespoke key rather than a `reprise_core::modules`
@@ -83,11 +86,19 @@ thread_local! {
     /// keeps the worker handle out of unrelated widgets' state — everything here
     /// runs single-threaded on the UI thread.
     static WAKE_HOOK: RefCell<Option<Rc<dyn Fn()>>> = const { RefCell::new(None) };
+    /// Window-runtime hook for applying the persisted master gate immediately.
+    /// Preferences owns persistence; conversion wiring owns process/UI lifetime.
+    static ENABLED_HOOK: RefCell<Option<EnabledHook>> = const { RefCell::new(None) };
 }
 
 /// Registers the worker-wake hook (called once by the conversion wiring).
 pub(in crate::ui) fn set_wake_hook(hook: Rc<dyn Fn()>) {
     WAKE_HOOK.with(|hook_cell| *hook_cell.borrow_mut() = Some(hook));
+}
+
+/// Removes the wake target before a live disable drops its supervisor.
+pub(in crate::ui) fn clear_wake_hook() {
+    WAKE_HOOK.with(|hook_cell| hook_cell.borrow_mut().take());
 }
 
 /// Nudges the worker to re-poll the queue, if one is running. A no-op when the
@@ -99,6 +110,24 @@ pub(in crate::ui) fn wake_worker() {
     }
 }
 
+/// Registers the current window's live master-gate handler.
+fn set_enabled_hook(hook: Rc<dyn Fn(bool)>) {
+    ENABLED_HOOK.with(|hook_cell| *hook_cell.borrow_mut() = Some(hook));
+}
+
+/// Applies a persisted master-gate transition to the running window.
+pub(in crate::ui) fn apply_enabled(enabled: bool) {
+    let hook = ENABLED_HOOK.with(|hook_cell| hook_cell.borrow().clone());
+    if let Some(hook) = hook {
+        hook(enabled);
+    }
+}
+
+/// Drops the current window's live gate handler during teardown.
+fn clear_enabled_hook() {
+    ENABLED_HOOK.with(|hook_cell| hook_cell.borrow_mut().take());
+}
+
 /// Unix seconds — the clock every facade call (`enqueue`, `promote`, `discard`)
 /// on the UI thread feeds `ai_jobs`/`ai_promotion`.
 pub(in crate::ui) fn now_unix() -> i64 {
@@ -107,16 +136,55 @@ pub(in crate::ui) fn now_unix() -> i64 {
         .map_or(0, |elapsed| elapsed.as_secs() as i64)
 }
 
-#[cfg(all(test, not(feature = "stem-backend")))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
+    #[cfg(not(feature = "stem-backend"))]
     fn user_build_without_stem_backend_exposes_no_model() {
         assert_eq!(
             app_model_id(),
             None,
             "a user build without a production backend cannot stamp a fake model identity"
+        );
+    }
+
+    #[test]
+    fn live_toggle_hook_observes_every_runtime_transition() {
+        let transitions = Rc::new(RefCell::new(Vec::new()));
+        set_enabled_hook({
+            let transitions = transitions.clone();
+            Rc::new(move |enabled| transitions.borrow_mut().push(enabled))
+        });
+
+        apply_enabled(true);
+        apply_enabled(false);
+
+        assert_eq!(
+            *transitions.borrow(),
+            vec![true, false],
+            "the running window must receive both live feature transitions"
+        );
+        clear_enabled_hook();
+    }
+
+    #[test]
+    fn disabling_clears_the_worker_wake_target() {
+        let wakes = Rc::new(std::cell::Cell::new(0));
+        set_wake_hook({
+            let wakes = wakes.clone();
+            Rc::new(move || wakes.set(wakes.get() + 1))
+        });
+
+        wake_worker();
+        clear_wake_hook();
+        wake_worker();
+
+        assert_eq!(
+            wakes.get(),
+            1,
+            "queued work must not reach a stopped supervisor after live disable"
         );
     }
 }

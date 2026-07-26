@@ -22,7 +22,6 @@ use reprise_core::{ai_jobs, library::settings};
 use rusqlite::Connection;
 
 use super::conversion_view::ConversionView;
-use super::worker_host::InstrumentalWorker;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::strings;
 use crate::ui::track_list::TrackList;
@@ -34,7 +33,7 @@ use crate::ui::track_list::TrackList;
 /// [`ensure_page_installed`] the moment the row is selected after a live
 /// toggle-on — so the row can never select a missing page. Must match
 /// `library_shell`'s Conversions branch.
-const CONVERSION_PAGE: &str = "conversions";
+pub(super) const CONVERSION_PAGE: &str = "conversions";
 
 const CLEAR_RESPONSE_DISCARD: &str = "discard-all";
 const CLEAR_RESPONSE_CANCEL: &str = "cancel";
@@ -52,84 +51,10 @@ pub(in crate::ui) struct ConversionWiring<'a> {
     pub player: &'a Option<Rc<PlayerController>>,
 }
 
-/// Starts the worker host + conversion view when the experimental switch is on,
-/// and always registers the on-demand page installer so a later toggle-on stays
-/// reachable (INST-13).
+/// Installs the window-owned live runtime. It applies the persisted gate now
+/// and every later preference transition without restarting the application.
 pub(in crate::ui) fn install(deps: &ConversionWiring<'_>) {
-    // Register the router's page-ensure hook first, unconditionally: the switch
-    // may start off and be toggled on mid-session, at which point the sidebar
-    // row appears on the next rebuild and its selection must find a real page
-    // (INST-13). The hook installs it on demand under the same experimental gate.
-    register_ensure_hook(deps);
-
-    if !super::experimental_enabled(&deps.conn.borrow()) {
-        return;
-    }
-    let staging = StagingStore::with_default_dir();
-    if let Err(error) = staging.ensure_dir() {
-        tracing::warn!(%error, "instrumental: could not create staging dir");
-    }
-
-    if !super::production_backend_compiled() {
-        tracing::warn!("instrumental: packaged stem worker is not compiled in");
-        return;
-    }
-    let worker = match InstrumentalWorker::new(deps.db_path, &staging) {
-        Ok(worker) => worker,
-        Err(error) => {
-            tracing::error!(%error, "instrumental: could not start worker supervisor");
-            return;
-        }
-    };
-    // The enqueue paths (context menu) nudge the worker through this hook so a
-    // freshly queued render starts immediately rather than after the next event.
-    super::set_wake_hook({
-        let worker = worker.clone();
-        Rc::new(move || worker.wake())
-    });
-
-    // Switch on at construction: install the page + callbacks now. Shares the
-    // idempotent installer with the on-demand hook, so the two paths can never
-    // add a duplicate page.
-    let Some(view) = install_conversions_page(deps.content_stack, deps.conn, &staging) else {
-        return;
-    };
-    wire_callbacks(&view, &staging, deps);
-
-    // Progress is not a change_log event (plan §2.2), so the worker's coalesced
-    // tick is how the aggregate bar stays live. Drop-safe: when the worker is
-    // dropped its sender closes and this future ends. The same tick also drives
-    // the library refresh when the worker auto-promotes a render: that write is
-    // the app's own (filtered from the external-changes runtime), so nothing else
-    // reloads the track list — watch the saved-job count and reload when it grows.
-    let receiver = worker.progress_receiver();
-    let view_weak = Rc::downgrade(&view);
-    let refresh_conn = deps.conn.clone();
-    let track_list_weak = Rc::downgrade(deps.track_list);
-    let saved_baseline = std::cell::Cell::new(saved_job_count(&refresh_conn));
-    glib::spawn_future_local(async move {
-        while receiver.recv().await.is_ok() {
-            if let Some(view) = view_weak.upgrade() {
-                view.refresh();
-            }
-            let saved_now = saved_job_count(&refresh_conn);
-            if saved_now > saved_baseline.get() {
-                saved_baseline.set(saved_now);
-                if let Some(track_list) = track_list_weak.upgrade() {
-                    track_list.reload();
-                }
-            }
-        }
-    });
-
-    // The close handler owns the sole strong refs to the supervisor and view,
-    // so both live exactly as long as the window. An active finite worker is
-    // detached to finish its render safely when the UI closes.
-    deps.window.connect_close_request(move |_| {
-        let _keep_view_alive = &view;
-        worker.shutdown();
-        glib::Propagation::Proceed
-    });
+    super::runtime::install(deps);
 }
 
 thread_local! {
@@ -155,54 +80,12 @@ pub(in crate::ui) fn ensure_page_installed() {
     }
 }
 
-/// Registers the [`ensure_page_installed`] hook with the deps it needs to build
-/// the page and wire its callbacks on demand. Captures weak handles (never
-/// keeping the window or player alive past their natural life; the one strong
-/// capture is the shared DB connection) plus a slot that keeps a lazily-created
-/// view alive.
-fn register_ensure_hook(deps: &ConversionWiring<'_>) {
-    let conn = deps.conn.clone();
-    let db_path = deps.db_path.to_path_buf();
-    let window = deps.window.downgrade();
-    let content_stack = deps.content_stack.downgrade();
-    let toast_overlay = deps.toast_overlay.downgrade();
-    let track_list = Rc::downgrade(deps.track_list);
-    let player = deps.player.as_ref().map(Rc::downgrade);
-    let kept_view: RefCell<Option<Rc<ConversionView>>> = RefCell::new(None);
-    let hook = Rc::new(move || {
-        let (Some(window), Some(content_stack), Some(toast_overlay), Some(track_list)) = (
-            window.upgrade(),
-            content_stack.upgrade(),
-            toast_overlay.upgrade(),
-            track_list.upgrade(),
-        ) else {
-            return; // the window is torn down: nothing to install into.
-        };
-        let staging = StagingStore::with_default_dir();
-        if let Err(error) = staging.ensure_dir() {
-            tracing::warn!(%error, "instrumental: could not create staging dir on demand");
-        }
-        let Some(view) = install_conversions_page(&content_stack, &conn, &staging) else {
-            return; // switch off, or the page is already installed.
-        };
-        // The on-demand page has no worker/progress future (the worker reads the
-        // switch at launch — an accepted rough edge), but its Save/Discard/Play/
-        // Clear callbacks act directly on the DB + staging, so persisted renders
-        // stay actionable. Rebuild the borrowable deps from the upgraded handles.
-        let player = player.as_ref().and_then(std::rc::Weak::upgrade);
-        let deps = ConversionWiring {
-            conn: &conn,
-            db_path: &db_path,
-            window: &window,
-            content_stack: &content_stack,
-            toast_overlay: &toast_overlay,
-            track_list: &track_list,
-            player: &player,
-        };
-        wire_callbacks(&view, &staging, &deps);
-        *kept_view.borrow_mut() = Some(view);
-    });
+pub(super) fn set_ensure_page_hook(hook: Rc<dyn Fn()>) {
     ENSURE_PAGE_HOOK.with(|cell| *cell.borrow_mut() = Some(hook));
+}
+
+pub(super) fn clear_ensure_page_hook() {
+    ENSURE_PAGE_HOOK.with(|cell| cell.borrow_mut().take());
 }
 
 /// Idempotently installs the conversions content page (INST-13), returning the
@@ -211,7 +94,7 @@ fn register_ensure_hook(deps: &ConversionWiring<'_>) {
 /// gate that reveals the sidebar row — and only when the page is absent, so
 /// neither the up-front nor the on-demand path can add a duplicate. `None` (a
 /// no-op) when the switch is off or the page already exists.
-fn install_conversions_page(
+pub(super) fn install_conversions_page(
     content_stack: &gtk4::Stack,
     conn: &Rc<RefCell<Connection>>,
     staging: &StagingStore,
@@ -227,7 +110,21 @@ fn install_conversions_page(
     Some(view)
 }
 
-fn wire_callbacks(view: &Rc<ConversionView>, staging: &StagingStore, deps: &ConversionWiring<'_>) {
+/// Removes the gated surface and leaves it safely when it was selected.
+pub(super) fn remove_conversions_page(content_stack: &gtk4::Stack) {
+    if content_stack.visible_child_name().as_deref() == Some(CONVERSION_PAGE) {
+        content_stack.set_visible_child_name("library");
+    }
+    if let Some(page) = content_stack.child_by_name(CONVERSION_PAGE) {
+        content_stack.remove(&page);
+    }
+}
+
+pub(super) fn wire_callbacks(
+    view: &Rc<ConversionView>,
+    staging: &StagingStore,
+    deps: &ConversionWiring<'_>,
+) {
     let overlay = deps.toast_overlay.downgrade();
 
     // Save (INST-6): promote the staged render into the library, then refresh
@@ -467,7 +364,7 @@ fn promote_one(
 /// The number of worker-promoted (saved) renders, via the core facade — the
 /// signal the progress future watches to reload the library after an app-hosted
 /// auto-promotion. A read error reads as `0` (no growth => no spurious reload).
-fn saved_job_count(conn: &Rc<RefCell<Connection>>) -> i64 {
+pub(super) fn saved_job_count(conn: &Rc<RefCell<Connection>>) -> i64 {
     reprise_core::ai_jobs::count_saved(&conn.borrow()).unwrap_or(0)
 }
 
@@ -547,7 +444,8 @@ fn toast(overlay: &glib::WeakRef<adw::ToastOverlay>, message: &str) {
 #[cfg(test)]
 mod tests {
     use super::{
-        install_conversions_page, is_previewing_render, play_target, PlayTarget, CONVERSION_PAGE,
+        install_conversions_page, is_previewing_render, play_target, remove_conversions_page,
+        PlayTarget, CONVERSION_PAGE,
     };
     use reprise_core::ai_jobs;
     use reprise_core::ai_staging::StagingStore;
@@ -720,6 +618,19 @@ mod tests {
         assert!(
             install_conversions_page(&content_stack, &conn, &staging).is_none(),
             "the page installer is idempotent once the page exists"
+        );
+
+        // Live toggle-off immediately leaves and removes the whole feature page.
+        crate::ui::instrumental::set_experimental_enabled(&conn.borrow(), false).unwrap();
+        remove_conversions_page(&content_stack);
+        assert_eq!(
+            content_stack.visible_child_name().as_deref(),
+            Some("library"),
+            "disabling while Conversions is visible routes back to Library"
+        );
+        assert!(
+            content_stack.child_by_name(CONVERSION_PAGE).is_none(),
+            "the conversions surface is absent immediately after live disable"
         );
     }
 }

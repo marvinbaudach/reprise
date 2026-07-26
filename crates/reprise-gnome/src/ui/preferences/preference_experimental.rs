@@ -5,22 +5,20 @@
 //! ## INST-12 — real flow vs honest placeholder
 //!
 //! When this build packages the stem worker (`stem-backend` cargo feature), the
-//! Download button runs the production provisioning path on a background thread
-//! — `reprise_stems::provision::ensure_weights` (SHA-256 checksum + atomic write
-//! + a licence notice beside the file), streaming byte progress back to the row,
-//! with clear failure text (offline, checksum). GTK links only that provisioning
-//! slice; inference stays in the worker process. Without the feature, the row
-//! is an honest, disabled placeholder — never a functionless enabled button.
+//! Download button runs `reprise_stems::provision::ensure_weights` on a
+//! background thread with SHA-256 verification, an atomic write, a licence
+//! notice, streaming byte progress, and clear failure text. GTK links only that
+//! provisioning slice; inference stays in the worker process. Without the
+//! feature, the row is an honest, disabled placeholder.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use rusqlite::Connection;
 
 use crate::ui::instrumental;
+use crate::ui::preferences::PreferencesContext;
 use crate::ui::strings;
 
 /// What the model-download row can offer, given whether this build linked the
@@ -77,13 +75,10 @@ fn runtime_assets_state() -> (bool, bool) {
     (false, false)
 }
 
-/// Builds the Experimental page. The switch persists the
-/// `experimental_features.enabled` key; the model group's visibility follows it
-/// live (mirroring the Song Visuals gate). Toggling takes effect for already-
-/// running surfaces on the next app start (the worker host reads the switch at
-/// launch) — an accepted experimental rough edge; the settings key itself is
-/// authoritative immediately.
-pub(in crate::ui) fn build_page(conn: &Rc<RefCell<Connection>>) -> adw::PreferencesPage {
+/// Builds the Experimental page. A successful switch write immediately applies
+/// the master gate to the running worker, conversion page, sidebar, browse bar,
+/// query projection, and visible AI badges.
+pub(in crate::ui) fn build_page(context: &Rc<PreferencesContext>) -> adw::PreferencesPage {
     let page = adw::PreferencesPage::builder()
         .title(strings::text(strings::EXPERIMENTAL_PAGE_TITLE))
         .build();
@@ -101,7 +96,7 @@ pub(in crate::ui) fn build_page(conn: &Rc<RefCell<Connection>>) -> adw::Preferen
     build_model_row(&model_row, availability);
     model_group.add(&model_row);
 
-    let enabled = instrumental::experimental_enabled(&conn.borrow());
+    let enabled = instrumental::experimental_enabled(&context.conn.borrow());
     model_group.set_visible(enabled);
 
     // INST-11: the master switch.
@@ -115,14 +110,22 @@ pub(in crate::ui) fn build_page(conn: &Rc<RefCell<Connection>>) -> adw::Preferen
         .active(enabled)
         .build();
     {
-        let conn = conn.clone();
+        let context = Rc::downgrade(context);
         let model_group = model_group.clone();
         toggle.connect_active_notify(move |row| {
             let active = row.is_active();
-            if let Err(error) = instrumental::set_experimental_enabled(&conn.borrow(), active) {
+            let Some(context) = context.upgrade() else {
+                return;
+            };
+            let persisted = instrumental::set_experimental_enabled(&context.conn.borrow(), active);
+            if let Err(error) = persisted {
                 tracing::warn!(%error, "could not save the experimental-features switch");
+                return;
             }
             model_group.set_visible(active);
+            instrumental::apply_enabled(active);
+            context.sidebar.refresh("experimental features toggled");
+            context.track_list.reload();
         });
     }
     switch_group.add(&toggle);
