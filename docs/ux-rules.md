@@ -672,6 +672,12 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Antworten: Keep editing (Default) und Discard (destruktiv). Kein Save im
   Prompt: Speichern ist nie der Ausweg aus einer Schließen-Geste.
 
+  <!-- REVIEW: Regelvorschlag -->
+- **TAG-9** [geplant] [manuell] — Das Autocomplete-Popover verwendet
+  durchgehend die erhöhte, vom Theme gelieferte Popover-Fläche. Innere
+  Listen malen keine eigene dunkle View-Fläche darüber; Auswahl und
+  Akzent-Hervorhebung bleiben auf hellen und dunklen Themes lesbar.
+
 ## M. Tooltips
 
 <!-- Die Sektionsbuchstaben K (Filter- & Such-Sichtbarkeit) und L (Tag-Editor)
