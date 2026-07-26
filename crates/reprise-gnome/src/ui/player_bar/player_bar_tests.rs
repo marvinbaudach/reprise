@@ -268,6 +268,30 @@ fn browse_4_player_bar_metadata_has_distinct_track_album_and_artist_targets() {
     );
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn repeat_mode_tooltips_explain_current_behavior() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let bar = PlayerBar::new();
+
+    for (repeat, expected) in [
+        (Repeat::Off, "Repeat off — playback stops after the queue"),
+        (Repeat::All, "Repeat all — the entire queue repeats"),
+        (Repeat::One, "Repeat one — the current track repeats"),
+    ] {
+        bar.set_repeat_indicator(repeat);
+        assert_eq!(bar.repeat_button.tooltip_text().as_deref(), Some(expected));
+    }
+}
+
+#[test]
+fn repeat_mode_tooltip_keys_follow_the_current_behavior() {
+    assert_eq!(repeat_indicator(Repeat::Off).1, strings::TOOLTIP_REPEAT_OFF);
+    assert_eq!(repeat_indicator(Repeat::All).1, strings::TOOLTIP_REPEAT_ALL);
+    assert_eq!(repeat_indicator(Repeat::One).1, strings::TOOLTIP_REPEAT_ONE);
+}
+
 /// BTN-2: Shuffle and Repeat are toggles, so "on" must be a state the widget
 /// keeps — not a flash at click time. The state has to survive the pointer
 /// arriving and leaving, and it must not rest on colour alone.

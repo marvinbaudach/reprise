@@ -533,14 +533,6 @@ pub fn build(
         &device_sync,
     );
     {
-        let preferences = Rc::downgrade(&preferences);
-        concerts_view.set_on_open_preferences(move || {
-            if let Some(preferences) = preferences.upgrade() {
-                preferences.present_plugins(&["concerts"]);
-            }
-        });
-    }
-    {
         let preferences = preferences.clone();
         device_view.set_on_settings(move || preferences.present_page("synchronization"));
     }
