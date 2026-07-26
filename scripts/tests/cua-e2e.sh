@@ -82,10 +82,9 @@ for pattern in \
   'run_song_visuals_scenario' \
   'run_scrobbling_scenario' \
   'Audio-reactive song visual' \
-  '"Grid"' \
-  '"Bars"' \
-  '"Flow"' \
-  '"Pulse"' \
+  'song-visuals-visual-focus' \
+  '"Play \(Space\)"' \
+  'song-visuals-space-paused' \
   'cua_activate_main_menu_item' \
   'Enable Library Doctor' \
   'safe_change_count' \
@@ -95,6 +94,12 @@ for pattern in \
 do
   if ! rg --quiet -- "$pattern" "$runner"; then
     echo "$runner must contain isolation/coverage pattern: $pattern" >&2
+    exit 1
+  fi
+done
+for obsolete_visual_mode in '"Grid"' '"Bars"' '"Flow"' '"Pulse"'; do
+  if rg --quiet --fixed-strings "$obsolete_visual_mode" "$runner"; then
+    echo "$runner must not require the removed visual mode selector: $obsolete_visual_mode" >&2
     exit 1
   fi
 done
