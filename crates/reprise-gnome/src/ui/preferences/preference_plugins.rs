@@ -159,7 +159,7 @@ impl PreferencesContext {
             let singles_row = (descriptor.id == "new_releases")
                 .then(|| super::preference_new_releases::singles_row(&self.conn, active));
             let concerts_rows = (descriptor.id == "concerts")
-                .then(|| super::preference_concerts::build(&self.conn, active));
+                .then(|| super::preference_concerts::build(&self.conn, &self.concerts, active));
             let syncing = Rc::new(Cell::new(false));
             let weak = Rc::downgrade(self);
             let descriptor = *descriptor;

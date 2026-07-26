@@ -201,6 +201,30 @@ impl ConcertsView {
                 },
             );
         }
+        {
+            let root = root.downgrade();
+            let shared = Rc::downgrade(&shared);
+            runtime.subscribe_settings(
+                move || root.upgrade().is_some(),
+                move || {
+                    let Some(shared) = shared.upgrade() else {
+                        return;
+                    };
+                    if let Err(error) = shared.filter_bar.reload_persisted() {
+                        tracing::warn!(%error, "could not reload Concerts settings");
+                        return;
+                    }
+                    if let Err(error) = render_cache(&shared) {
+                        tracing::warn!(%error, "could not apply Concerts settings");
+                        return;
+                    }
+                    let callback = shared.on_refreshed.borrow().clone();
+                    if let Some(callback) = callback {
+                        callback();
+                    }
+                },
+            );
+        }
         wire_sorting(&column_view, &shared);
         column_view.sort_by_column(Some(&columns.date), gtk4::SortType::Ascending);
 
@@ -286,6 +310,9 @@ fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
 
 fn apply_empty_state(shared: &Shared, state: ConcertsEmptyState, total: usize) {
     shared.empty_state.set(state);
+    shared
+        .fetch_stack
+        .set_visible(state != ConcertsEmptyState::NoCredentials);
     if state == ConcertsEmptyState::List {
         shared.stack.set_visible_child_name(LIST_PAGE);
         return;
@@ -555,5 +582,55 @@ mod tests {
         let fetch_stack = footer.last_child().and_downcast::<gtk4::Stack>().unwrap();
         assert!(fetch_stack.child_by_name(FETCH_BUTTON_PAGE).is_some());
         assert!(fetch_stack.child_by_name(FETCH_SPINNER_PAGE).is_some());
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn conc_4a_settings_changes_re_evaluate_credentials_and_refresh_dependents() {
+        gtk4::init().unwrap();
+        let conn = Rc::new(RefCell::new(Connection::open_in_memory().unwrap()));
+        reprise_core::db::migrate(&conn.borrow()).unwrap();
+        let runtime = ConcertsRuntime::setup(&conn.borrow());
+        let view = ConcertsView::new(conn.clone(), &runtime);
+        let refreshes = Rc::new(Cell::new(0));
+        view.set_on_refreshed({
+            let refreshes = refreshes.clone();
+            move || refreshes.set(refreshes.get() + 1)
+        });
+
+        view.refresh();
+        assert_eq!(
+            view.shared.empty_state.get(),
+            ConcertsEmptyState::NoCredentials
+        );
+        assert!(!view.shared.fetch_stack.is_visible());
+
+        reprise_core::library::settings::set_setting(
+            &conn.borrow(),
+            reprise_core::concerts::config::TICKETMASTER_API_KEY,
+            "stored-key",
+        )
+        .unwrap();
+        runtime.notify_settings_changed();
+        assert_eq!(
+            view.shared.empty_state.get(),
+            ConcertsEmptyState::NeverFetched
+        );
+        assert!(view.shared.fetch_stack.is_visible());
+        assert_eq!(refreshes.get(), 1);
+
+        reprise_core::library::settings::set_setting(
+            &conn.borrow(),
+            reprise_core::concerts::config::TICKETMASTER_API_KEY,
+            "",
+        )
+        .unwrap();
+        runtime.notify_settings_changed();
+        assert_eq!(
+            view.shared.empty_state.get(),
+            ConcertsEmptyState::NoCredentials
+        );
+        assert!(!view.shared.fetch_stack.is_visible());
+        assert_eq!(refreshes.get(), 2);
     }
 }
