@@ -117,6 +117,12 @@ fn build_widgets_for_session(
     let lyrics = LyricsView::new();
     let up_next = UpNextPanel::new(conn, cover_loader);
     let visualizer = SongVisualizer::new();
+    let visual_viewport = gtk4::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk4::PolicyType::Never)
+        .vscrollbar_policy(gtk4::PolicyType::Automatic)
+        .vexpand(true)
+        .child(visualizer.widget())
+        .build();
     let tab_stack = adw::ViewStack::builder().vexpand(true).build();
     tab_stack.add_titled_with_icon(
         up_next.widget(),
@@ -131,7 +137,7 @@ fn build_widgets_for_session(
         "document-edit-symbolic",
     );
     let visual_page = tab_stack.add_titled_with_icon(
-        visualizer.widget(),
+        &visual_viewport,
         Some(VISUAL_PAGE),
         &strings::text(strings::VISUAL),
         "audio-speakers-symbolic",

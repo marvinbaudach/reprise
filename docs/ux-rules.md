@@ -1543,7 +1543,9 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
   keinen späteren größeren Peak erfinden. Nach dem ersten Tiefendurchlauf
   bleibt jeder frei erzeugte positive Rückprall unter zwanzig Prozent des
   auslösenden Hauptpeaks, damit ein einzelner Schlag nicht wie ein zweiter
-  Breakdown-Hit erscheint.
+  Breakdown-Hit erscheint. Bei knapper Panelhöhe bleibt der Visual-Inhalt
+  unter dem Tab-Switcher und scrollt innerhalb seines Tabs, statt den Switcher
+  zu überlagern.
   Flow, Pulse und weitere Modi existieren nicht. Der beschriftete Canvas
   übernimmt den aktuellen Cover-Akzent über denselben globalen
   Ambient-Crossfade wie die Playerleiste; nur ohne brauchbare Coverfarbe gilt
