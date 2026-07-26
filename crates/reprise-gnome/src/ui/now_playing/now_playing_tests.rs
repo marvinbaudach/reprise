@@ -351,6 +351,27 @@ fn ac_20_icons_only_switcher_keeps_three_labeled_keyboard_targets() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn ac_20_visual_page_shrinks_instead_of_overlapping_the_tab_switcher() {
+    gtk4::init().unwrap();
+    let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let widgets = test_widgets(&content, true);
+    let visual_page = widgets.tab_stack.child_by_name(VISUAL_PAGE).unwrap();
+    let viewport = visual_page
+        .downcast::<gtk4::ScrolledWindow>()
+        .expect("the fixed-height visual content must live in a shrinkable viewport");
+
+    assert_eq!(viewport.hscrollbar_policy(), gtk4::PolicyType::Never);
+    assert_eq!(viewport.vscrollbar_policy(), gtk4::PolicyType::Automatic);
+    assert!(viewport.vexpands());
+    let (minimum_height, _, _, _) = viewport.measure(gtk4::Orientation::Vertical, PANEL_WIDTH);
+    assert!(
+        minimum_height < 220,
+        "the Visual page minimum {minimum_height}px still reserves the full canvas height"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn idle_uses_a_placeholder_cover_without_the_accent_glow() {
     gtk4::init().unwrap();
     let (window, panel) = test_panel("org.reprise.Reprise.NowPlayingIdleTest");
