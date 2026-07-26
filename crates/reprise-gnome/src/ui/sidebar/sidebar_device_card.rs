@@ -516,6 +516,7 @@ mod tests {
             last_sync: None,
             tracks: Vec::new(),
             selected_track_count: 0,
+            bytes_per_second: 0,
         }
     }
 

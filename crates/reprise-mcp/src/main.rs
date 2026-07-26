@@ -11,6 +11,12 @@ mod capability;
 mod catalog_resources;
 mod config;
 mod data;
+#[cfg(feature = "mpris")]
+mod device_dto;
+#[cfg(feature = "mpris")]
+mod device_sync;
+#[cfg(feature = "mpris")]
+mod device_tools;
 mod dto;
 mod error;
 #[cfg(feature = "mpris")]
@@ -86,6 +92,8 @@ async fn serve(db_path: PathBuf, staging_path: PathBuf, caps: startup::StartupCa
         caps.playlist_manage,
         caps.ai_create,
         caps.sources_manage,
+        #[cfg(feature = "mpris")]
+        caps.device_sync,
     );
     // Cap stdin per line so a hostile or newline-less client cannot OOM the
     // process through rmcp's unbounded `read_until` (see `stdin_cap`). `serve`
