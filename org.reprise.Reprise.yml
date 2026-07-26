@@ -18,6 +18,23 @@ finish-args:
   - --filesystem=xdg-run/gvfsd
 
 modules:
+  - name: onnxruntime
+    buildsystem: simple
+    only-arches:
+      - x86_64
+    license-files:
+      - LICENSE
+      - ThirdPartyNotices.txt
+    build-commands:
+      - install -Dm755 lib/libonnxruntime.so.1.22.0 /app/lib/reprise/libonnxruntime.so.1.22.0
+      - ln -s libonnxruntime.so.1.22.0 /app/lib/reprise/libonnxruntime.so
+      - install -Dm644 LICENSE /app/share/licenses/org.reprise.Reprise/onnxruntime/LICENSE
+      - install -Dm644 ThirdPartyNotices.txt /app/share/licenses/org.reprise.Reprise/onnxruntime/ThirdPartyNotices.txt
+    sources:
+      - type: archive
+        url: https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-linux-x64-1.22.0.tgz
+        sha512: c49d927a39dc27fcdf3b41436806af74c24c79ead09289d986c359fc1380ea363cf83d4085212b8972cb752a0fa8b9b1a06b82ad19e2d4dd6e22e44c79050386
+
   - name: reprise
     buildsystem: meson
     build-options:
