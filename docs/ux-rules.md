@@ -2285,17 +2285,17 @@ Hörstatistik.
   Favoriten; null bleibt unsichtbar. Radio ist standardmäßig aktiv, weil es
   nur auf Nutzeraktion funkt; verbindliche Bedingung ist ein Radio-Leerzustand
   mit genau einer direkt erreichbaren „Add station"-Aktion.
-- **SRC-2** [geplant] [gtk] — Hinzufügen verwendet in beiden Quellen einen
+- **SRC-2** [aktiv] [gtk] — Hinzufügen verwendet in beiden Quellen einen
   getönten rechteckigen Button mit Plus, Beschriftung und Radius 8, niemals
   die Chip-Form. Die gemeinsame Toolbar-Grammatik lautet Add-Button ·
   „Add filter" · aktive löschbare Filter-Pills · Zählung rechts; Filterzeilen
   behalten bei Zustandswechseln ihre Höhe.
-- **SRC-3** [geplant] [gtk] — Jede Quelle besitzt genau einen Add-Dialog mit
+- **SRC-3** [aktiv] [gtk] — Jede Quelle besitzt genau einen Add-Dialog mit
   genau einem Eingabefeld für Suchbegriffe oder URL. Suche liefert gruppierte
   Ergebnisse mit Zeilenaktionen; eine erkannte URL führt über Preview und
   Optionen zu einer Bestätigung. Netz- und Subprozessarbeit startet nur auf
   Submit und läuft nie auf dem GTK-Main-Loop.
-- **SRC-4** [geplant] [gtk] — Entfernen wirkt sofort, bleibt zehn Sekunden
+- **SRC-4** [aktiv] [gtk] — Entfernen wirkt sofort, bleibt zehn Sekunden
   tombstoned und ist über einen hoch priorisierten Undo-Toast reversibel.
   Kontextmenü und Hover-Star bieten dieselbe destruktive Aktion; „Play Next"
   und „Add to Queue" fehlen vollständig. Podcast-Downloads werden beim
@@ -2328,7 +2328,7 @@ Hörstatistik.
 - **POD-5** [aktiv] [gtk] — Downloads sind pro Abo opt-in, liegen im
   XDG-Datenpfad der App unter einem GUID-stabilen Pfad, folgen der gewählten
   Cleanup-Policy und werden offline bevorzugt lokal abgespielt.
-- **RAD-1** [geplant] [gtk] — Nur die aktuell verbundene Station ist in der
+- **RAD-1** [aktiv] [gtk] — Nur die aktuell verbundene Station ist in der
   Tabelle akzentuiert; ihr Zustandsicon, Name, Now-playing und Zeilentint
   wechseln gemeinsam. Alle anderen sowie eine präsentierte, aber getrennte
   pausierte Station zeigen „—". Nur die Player-Bar darf den letzten ICY-Titel
@@ -2341,11 +2341,11 @@ Hörstatistik.
   Reconnect-Fehler lässt den pausierten Zustand mit Inline-Fehler und Retry
   stehen. Radio erzeugt keine Hörstatistik; erneute Aktivierung der laufenden
   Zeile stoppt.
-- **RAD-3** [geplant] [core] — Radio-browser-Server werden über den
+- **RAD-3** [aktiv] [core] — Radio-browser-Server werden über den
   Discovery-Endpunkt gewählt und bei Fehler rotiert. Jeder Start einer
   UUID-Station meldet den Etikette-Klick; ein toter Stream wird vor der
   Fehleranzeige genau einmal über seine UUID neu aufgelöst.
-- **RAD-4** [geplant] [core] — Eingefügte Radio-URLs werden höchstens eine
+- **RAD-4** [aktiv] [core] — Eingefügte Radio-URLs werden höchstens eine
   Ebene durch PLS oder M3U bis zur Stream-URL aufgelöst; HLS-Manifeste bleiben
   selbst die Stream-URL. Die Preview liest Name, Bitrate, Genre und
   Content-Type ausschließlich aus ICY-/HTTP-Headern und streamt keinen Body.
