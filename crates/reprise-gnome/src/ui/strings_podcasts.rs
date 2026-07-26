@@ -10,7 +10,7 @@ use super::{formatted, plural};
 
 pub const PODCASTS: &str = N_!("Podcasts");
 pub const PODCASTS_DESCRIPTION: &str =
-    N_!("Subscribe to podcast feeds and YouTube sources via yt-dlp");
+    N_!("Contacts publishers and Apple Podcasts for feeds and search; YouTube sources use yt-dlp");
 pub const PODCAST_DATE: &str = N_!("Date");
 pub const PODCAST_EPISODE: &str = N_!("Episode");
 pub const PODCAST_SHOW: &str = N_!("Show");
@@ -78,6 +78,9 @@ pub const PODCAST_CLEANUP_KEEP_ALL: &str = N_!("Keep all");
 pub const PODCAST_CLEANUP_DELETE_PLAYED: &str = N_!("Delete played after 7 days");
 pub const PODCAST_CLEANUP_KEEP_LAST: &str = N_!("Keep last 5 per show");
 pub const PODCAST_YOUTUBE_SOURCES: &str = N_!("YouTube sources");
+pub const PODCAST_YTDLP: &str = N_!("yt-dlp");
+pub const PODCAST_YTDLP_UPDATE: &str = N_!("Update");
+pub const PODCAST_YTDLP_CHECKING: &str = N_!("Checking installed version…");
 pub const PODCAST_REFRESH_INTERVAL: &str = N_!("Refresh every N hours");
 pub const PODCAST_UPDATED_JUST_NOW: &str = N_!("Updated just now");
 
