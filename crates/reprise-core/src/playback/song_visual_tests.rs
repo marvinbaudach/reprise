@@ -103,3 +103,83 @@ fn ac_20_sparse_fft_spikes_cannot_impersonate_a_full_energy_beat() {
         beat.strength
     );
 }
+
+#[test]
+fn ac_20_linear_bass_energy_outranks_a_quiet_decibel_jump() {
+    const LOUD_BEFORE: [f32; 8] = [
+        0.804_264_7,
+        0.763_469_04,
+        0.546_595,
+        0.489_188_9,
+        0.514_759_96,
+        0.404_363_63,
+        0.379_388_87,
+        0.446_077_97,
+    ];
+    const LOUD_HIT: [f32; 8] = [
+        0.736_743_57,
+        0.764_361,
+        0.812_343_5,
+        0.810_467_6,
+        0.655_442_24,
+        0.638_295_35,
+        0.650_547_8,
+        0.541_942,
+    ];
+    const QUIET_BEFORE: [f32; 8] = [
+        0.130_246_83,
+        0.127_244_28,
+        0.127_432_82,
+        0.124_549_01,
+        0.133_240_5,
+        0.339_518_64,
+        0.463_308_16,
+        0.409_167_86,
+    ];
+    const QUIET_HIT: [f32; 8] = [
+        0.588_104_55,
+        0.734_378_7,
+        0.728_922_5,
+        0.545_933_37,
+        0.558_031_7,
+        0.504_200_8,
+        0.221_725_08,
+        0.368_509_92,
+    ];
+
+    fn strength_for_transition(before: [f32; 8], hit: [f32; 8]) -> f32 {
+        let to_db = |normalized: f32| normalized * 80.0 - 80.0;
+        let mut previous = [-64.0; SPECTRUM_ANALYSIS_BAND_COUNT];
+        let mut current = previous;
+        for (bin, value) in previous.iter_mut().zip(before) {
+            *bin = to_db(value);
+        }
+        for (bin, value) in current.iter_mut().zip(hit) {
+            *bin = to_db(value);
+        }
+
+        let mut analyzer = SpectrumAnalyzer::new();
+        for _ in 0..120 {
+            analyzer.ingest(previous);
+        }
+        let beat = analyzer.ingest(current).beat();
+        assert!(beat.fired, "the captured Wake Up transition must fire");
+        beat.strength
+    }
+
+    let loud = strength_for_transition(LOUD_BEFORE, LOUD_HIT);
+    let quiet = strength_for_transition(QUIET_BEFORE, QUIET_HIT);
+
+    assert!(
+        loud > quiet,
+        "a loud bass hit must outrank a smaller jump out of near-silence: loud={loud}, quiet={quiet}"
+    );
+    assert!(
+        quiet < 0.5,
+        "a light bass event must not produce a near-maximum visual hit: {quiet}"
+    );
+    assert!(
+        loud >= 0.75,
+        "the physically larger Wake Up bass hit must drive a strong visual: {loud}"
+    );
+}
