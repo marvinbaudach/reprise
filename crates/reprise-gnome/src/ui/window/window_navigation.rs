@@ -39,6 +39,10 @@ fn sidebar_toggle_is_visible(has_sidebar: bool) -> bool {
     has_sidebar
 }
 
+fn sidebar_toggle_focus_on_click() -> bool {
+    false
+}
+
 fn sync_sidebar_toggle(
     sidebar_toggle: &gtk4::ToggleButton,
     split_view: &adw::OverlaySplitView,
@@ -109,6 +113,12 @@ pub(in crate::ui) fn wire_sidebar_toggle(
     sidebar_page: &adw::NavigationPage,
     conn: &Rc<RefCell<Connection>>,
 ) {
+    sidebar_toggle.add_css_class(crate::ui::shortcuts::SIDEBAR_TOGGLE_CSS_CLASS);
+    // Keep pointer use from moving focus away from the content surface:
+    // the button remains focusable for Enter, while the window-level Space
+    // controller recognizes its dedicated class and routes Space exclusively
+    // to global play/pause.
+    sidebar_toggle.set_focus_on_click(sidebar_toggle_focus_on_click());
     let updating = Rc::new(std::cell::Cell::new(false));
     let manually_hidden = Rc::new(std::cell::Cell::new(false));
     // Restore last session's manual collapse before the initial toggle sync,
@@ -200,6 +210,37 @@ mod tests {
     fn sidebar_toggle_remains_available_whenever_the_sidebar_slot_exists() {
         assert!(sidebar_toggle_is_visible(true));
         assert!(!sidebar_toggle_is_visible(false));
+    }
+
+    #[test]
+    fn sidebar_pointer_activation_preserves_content_focus() {
+        assert!(!sidebar_toggle_focus_on_click());
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn sidebar_toggle_is_marked_as_a_global_space_target() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let sidebar = adw::NavigationPage::builder()
+            .title("Sidebar")
+            .child(&gtk4::Label::new(Some("Sidebar")))
+            .build();
+        let split = adw::OverlaySplitView::builder()
+            .sidebar(&sidebar)
+            .content(&gtk4::Label::new(Some("Content")))
+            .collapsed(false)
+            .show_sidebar(true)
+            .build();
+        let toggle = gtk4::ToggleButton::new();
+
+        wire_sidebar_toggle(&toggle, &split, &sidebar, &test_conn());
+
+        assert!(
+            !toggle.gets_focus_on_click(),
+            "a pointer-clicked sidebar toggle must not own the next global Space shortcut"
+        );
+        assert!(toggle.has_css_class(crate::ui::shortcuts::SIDEBAR_TOGGLE_CSS_CLASS));
     }
 
     #[test]

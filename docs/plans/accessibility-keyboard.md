@@ -98,8 +98,11 @@ sonst vorheriges, sonst stabiler View-Container.
 
 ### Globale Shortcuts sind fokussensitiv
 
-Space darf nur dann Play/Pause auslösen, wenn kein fokussiertes Control Space
-lokal benötigt. Dasselbe gilt für Enter, Escape, Pfeile und Page-Tasten.
+Space löst auf passivem Content, in passiven Collections und selbst bei
+fokussiertem linken Sidebar-Toggle Play/Pause aus; der Toggle klappt die
+Sidebar nur per Pointer oder Enter um. Andere per Tastatur fokussierte
+Buttons, Toggles und Werte-Controls behalten Space lokal. Dasselbe
+Fokusprinzip gilt für Enter, Escape, Pfeile und Page-Tasten.
 Popover/Dialoge und Texteingaben gewinnen immer vor Fenster-Shortcuts. Diese
 Priorität wird mit echten Key-Events getestet, nicht aus Controller-Reihenfolge
 abgeleitet.
@@ -233,8 +236,10 @@ Fokusgraphen.
   Stats, Issues und Device jeweils an deren aktiven Container zurück.
 - Displaytest: Sidebar-Arrow verändert Fokus/Selektion, routet erst auf
   Enter/Space.
-- Key-Delivery-Test: Space toggelt Playback auf passivem Content, aber nie
-  auf Entry, Button, Toggle, Range, Collection oder offenem Popover/Dialog.
+- Key-Delivery-Test: Space toggelt Playback auf passivem Content und in
+  passiven Collections, aber nie auf Entry, per Tastatur fokussiertem
+  Button/Toggle, Range oder offenem Popover/Dialog. Der linke Sidebar-Toggle
+  bleibt davon unabhängig immer ein globales Play/Pause-Ziel.
 - Tests für F10, Ctrl+W, Ctrl+Q und die Synchronität der Help-Liste.
 
 **Green:**
@@ -451,7 +456,7 @@ vollständigen Keyboard-Sweep einklagbar.
 - `acc_2_every_interactive_surface_has_name_role_state_and_action` prüft den
   Widget-/AT-SPI-Vertrag.
 - `acc-3-tab-order-and-roving-collections`,
-  `acc-4-standard-keys-respect-local-controls`,
+  `acc-4a-space-routes-global-and-local-controls`,
   `acc-5-transients-and-navigation_restore_focus`,
   `acc_6_dynamic_updates_preserve_logical_focus`,
   `acc-8-direct-manipulation-has-keyboard-equivalence` und

@@ -303,7 +303,7 @@ fi
 for pattern in \
   'acc-1-keyboard-only-surface-sweep' \
   'acc-3-tab-order-and-roving-collections' \
-  'acc-4-standard-keys-respect-local-controls' \
+  'acc-4a-space-routes-global-and-local-controls' \
   'acc-5-transients-and-navigation-restore-focus' \
   'acc-8-direct-manipulation-has-keyboard-equivalence' \
   'cua_hotkey' \
@@ -332,8 +332,10 @@ if rg --quiet 'focus_active_library_tab|keyboard_(albums|artists)' "$keyboard_ru
   exit 1
 fi
 for pattern in \
-  '"$pid" "$window_id" "Pause (Space)" acc-player-focus' \
-  '"$pid" "$window_id" "Play (Space)" acc-player-paused' \
+  'SPACE_TOGGLE_REGRESSION_COUNT=6' \
+  '"$pid" "$window_id" "Toggle sidebar" acc-player-sidebar-toggle-focus' \
+  'assert_focus_evidence_label "$state_path" "Toggle sidebar"' \
+  'assert_snapshot_contains "$state_path" "Music"' \
   '"$pid" "$window_id" "Music" acc-issues-main-collection' \
   '"$pid" "$window_id" "Missing files" down acc-issues-focus' \
   '"$pid" "$window_id" "Music" acc-stats-main-collection' \
