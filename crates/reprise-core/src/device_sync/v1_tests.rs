@@ -278,6 +278,7 @@ fn transfer_plan_transcodes_only_lossless_sources_and_resolves_name_collisions()
             album_artist: "Artist".into(),
             track_number: Some(1),
             duration_ms: 80_000,
+            bitrate_kbps: None,
             size_bytes: 1_000_000,
             source_mtime: 10,
         },
@@ -291,6 +292,7 @@ fn transfer_plan_transcodes_only_lossless_sources_and_resolves_name_collisions()
             album_artist: "Artist".into(),
             track_number: Some(1),
             duration_ms: 80_000,
+            bitrate_kbps: None,
             size_bytes: 500_000,
             source_mtime: 20,
         },
@@ -317,6 +319,7 @@ fn collision_suffixes_are_stable_when_track_input_order_changes() {
         album_artist: "Artist".into(),
         track_number: Some(1),
         duration_ms: 80_000,
+        bitrate_kbps: None,
         size_bytes: 500_000,
         source_mtime: 10,
     };
@@ -349,6 +352,7 @@ fn collision_suffixes_preserve_selected_and_pinned_inventory_slots() {
         album_artist: "Artist".into(),
         track_number: Some(1),
         duration_ms: 80_000,
+        bitrate_kbps: None,
         size_bytes: 500_000,
         source_mtime: 10,
     };
@@ -397,6 +401,7 @@ fn zero_bitrate_preserves_lossless_files_without_transcoding() {
         album_artist: String::new(),
         track_number: Some(1),
         duration_ms: 80_000,
+        bitrate_kbps: None,
         size_bytes: 1_000_000,
         source_mtime: 10,
     };
@@ -417,6 +422,7 @@ fn unknown_duration_still_produces_a_bitrate_specific_transfer_fingerprint() {
         album_artist: String::new(),
         track_number: Some(1),
         duration_ms: 0,
+        bitrate_kbps: None,
         size_bytes: 1_000_000,
         source_mtime: 10,
     };

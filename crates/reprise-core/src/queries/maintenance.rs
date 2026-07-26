@@ -216,7 +216,7 @@ pub fn query_sync_tracks(
     ids: &[i64],
 ) -> Result<Vec<SyncTrack>, rusqlite::Error> {
     let mut statement = conn.prepare(&format!(
-        "SELECT path,title,artist,album,album_artist,track_no,duration_ms \
+        "SELECT path,title,artist,album,album_artist,track_no,duration_ms,bitrate_kbps \
          FROM tracks WHERE id = ?1 AND {PRESENT}"
     ))?;
     let mut seen = HashSet::new();
@@ -235,10 +235,20 @@ pub fn query_sync_tracks(
                     row.get::<_, String>(4)?,
                     row.get::<_, Option<u32>>(5)?,
                     row.get::<_, i64>(6)?,
+                    row.get::<_, Option<i64>>(7)?,
                 ))
             })
             .optional()?;
-        let Some((path, title, artist, album, album_artist, track_number, duration_ms)) = row
+        let Some((
+            path,
+            title,
+            artist,
+            album,
+            album_artist,
+            track_number,
+            duration_ms,
+            bitrate_kbps,
+        )) = row
         else {
             continue;
         };
@@ -262,6 +272,9 @@ pub fn query_sync_tracks(
             album_artist,
             track_number,
             duration_ms,
+            bitrate_kbps: bitrate_kbps
+                .and_then(|value| u32::try_from(value).ok())
+                .filter(|value| *value > 0),
             size_bytes: metadata.len(),
             source_mtime: metadata
                 .modified()
