@@ -2249,15 +2249,24 @@ Dateien.
   Ticket-Zelle öffnen dasselbe externe Ziel: Offer-URL, sonst Event-Seite.
   Ohne beides ist die Zelle leer und Aktivierung ein No-op mit Tooltip. Es
   gibt keinen Play-Pfad.
-- **CONC-4** [aktiv] [gtk] — Ohne Credential zeigt Concerts eine
-  StatusPage mit Preferences-Deep-Link und startet keinen Fetch. Nie
-  gefetcht bietet genau „Fetch now"; null Treffer mit Filtern genau „Show
-  all". Offline oder Fehler lassen Cache und „Updated X ago" sichtbar und
-  melden den Fehler ausschließlich inline im Footer.
-- **CONC-5** [aktiv] [core] — Netz läuft ausschließlich im Worker. Trigger
-  sind View-Open-Staleness (24 h plus Jitter), der stündliche Due-Check und
-  „Fetch now". Track-Wechsel und Navigation lesen nur Cache; Ergebnisse
-  werden nach MOT-2 ohne Einblendanimation eingespielt.
+- **CONC-4** [ersetzt durch CONC-4a] — Ursprünglicher Zustandsvertrag ohne
+  explizite Live-Neubewertung nach Änderungen der Concerts-Einstellungen.
+- **CONC-4a** [aktiv] [gtk] — Ohne Credential zeigt Concerts eine StatusPage
+  mit Preferences-Deep-Link und bietet nirgends „Fetch now" an. Änderungen an
+  Credentials, Location, Default-Radius, Zeitraum und Similar-Einstellungen
+  bewerten die bereits offene View, ihre Sidebar-Zahl und das Updates-Popover
+  sofort neu. Nie gefetcht bietet genau „Fetch now"; null Treffer mit Filtern
+  genau „Show all". Offline oder Fehler lassen Cache und „Updated X ago"
+  sichtbar und melden den Fehler ausschließlich inline im Footer.
+- **CONC-5** [ersetzt durch CONC-5a] — Ursprünglicher Worker-Vertrag mit
+  View-Open-Staleness, Due-Check und „Fetch now" als einzigen Netz-Triggern.
+- **CONC-5a** [aktiv] [core] — Netz läuft ausschließlich im Worker oder
+  `one_shot_task`. Trigger sind View-Open-Staleness (24 h plus Jitter), der
+  stündliche Due-Check, „Fetch now" und eine explizit bestätigte
+  Credential-Prüfung. Alle Concerts-Anfragen teilen den 1-req/s-Limiter.
+  Track-Wechsel, Navigation und einzelne Credential-Tastendrücke lesen oder
+  schreiben nur lokal; Fetch-Ergebnisse werden nach MOT-2 ohne
+  Einblendanimation eingespielt.
 - **CONC-6** [aktiv] [gtk] — Similar-Zeilen tragen dimm „similar to
   {seed}" und verschwinden mit „Library artists only". Die Source-Pill ist
   sichtbar, sobald Similar aktiviert ist oder Similar-Zeilen existieren.
@@ -2266,6 +2275,12 @@ Dateien.
   Filter-Scopes und „Show all concerts (N) →". Öffnen stempelt die gesamte
   Delta-Menge beider Sektionen. Das Header-Badge summiert ungesehene Einträge
   aller aktiven, fetch-bereiten Feeds nach dem `badge_presentation`-Idiom.
+- **CONC-8** [aktiv] [core] [gtk] — Apply
+  oder Enter an einer Credential-Zeile prüft den gespeicherten Wert genau
+  einmal off-thread über den gemeinsamen Concerts-Limiter. Gültig, abgelehnt
+  und nicht verifizierbar erscheinen inline; leer setzt den Zustand ohne
+  Anfrage zurück. Die Prüfung schreibt Credential-Werte nie in Logs oder
+  Fehlermeldungen.
 
 ## AF. Podcasts & Radio
 

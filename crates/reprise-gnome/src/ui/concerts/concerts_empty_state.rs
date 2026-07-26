@@ -31,7 +31,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn conc_4_empty_state_matrix_has_one_deterministic_next_step() {
+    fn conc_4a_empty_state_matrix_has_one_deterministic_next_step() {
         assert_eq!(
             concerts_empty_state_for(1, false, false, true),
             ConcertsEmptyState::List

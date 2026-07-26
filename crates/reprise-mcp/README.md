@@ -14,7 +14,8 @@ interface). For playback to work, **the Reprise app must be running** (it can be
 in the background) — otherwise playback tools return a clear "no running Reprise
 app" error.
 
-Everything else (search, source management, playlists, instrumentals)
+Everything else (search, source management, playlists, concerts, releases,
+instrumentals)
 reads/writes the library database directly and works whether or not the app is
 running.
 
@@ -139,7 +140,14 @@ codec, bitrate, country, or vote count.
 
 - `reprise://library/summary` — track/artist/album counts and total duration.
 - `reprise://playlists` — the playlist list.
-- `reprise://concerts` — upcoming concerts matched to library artists.
+- `reprise://concerts` — upcoming concerts after the saved UI filters.
+- `reprise://concerts/all` — every cached concert-event field, including past
+  and currently filtered-out events, plus effective non-secret Concerts
+  configuration. Provider keys are represented only as configured/not
+  configured booleans.
+- `reprise://releases` — every durable New Releases history field, including
+  hidden entries, timestamps, MusicBrainz ids, announcement links, and derived
+  local-library presence.
 - `reprise://podcasts` — up to 200 cached subscriptions and recent episodes.
 - `reprise://radio` — up to 200 cached radio favorites.
 

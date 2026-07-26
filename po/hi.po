@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-25 20:24+0200\n"
+"POT-Creation-Date: 2026-07-26 06:52+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Hindi\n"
@@ -17,311 +17,312 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
-#: crates/reprise-gnome/src/ui/strings.rs:87
+#: crates/reprise-gnome/src/ui/strings.rs:97
 msgid "Welcome to Reprise"
 msgstr "Reprise में आपका स्वागत है"
 
-#: crates/reprise-gnome/src/ui/strings.rs:88
+#: crates/reprise-gnome/src/ui/strings.rs:98
 msgid ""
 "Reprise keeps your library local. Missing album covers are retrieved "
 "automatically from MusicBrainz and Cover Art Archive. Music files are "
 "changed only when you explicitly edit tags or move tracks to Trash."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:89
+#: crates/reprise-gnome/src/ui/strings.rs:99
 msgid "Import from Rhythmbox"
 msgstr "Rhythmbox से आयात करें"
 
-#: crates/reprise-gnome/src/ui/strings.rs:91
+#: crates/reprise-gnome/src/ui/strings.rs:101
 msgid "Rhythmbox was found. Choose what Reprise should import."
 msgstr "Rhythmbox मिला। चुनें कि Reprise को क्या आयात करना चाहिए।"
 
-#: crates/reprise-gnome/src/ui/strings.rs:92
+#: crates/reprise-gnome/src/ui/strings.rs:102
 msgid "Column layout"
 msgstr "स्तंभ विन्यास"
 
-#: crates/reprise-gnome/src/ui/strings.rs:98
+#: crates/reprise-gnome/src/ui/strings.rs:108
 msgid "Skip for Now"
 msgstr "अभी छोड़ें"
 
-#: crates/reprise-gnome/src/ui/strings.rs:99
+#: crates/reprise-gnome/src/ui/strings.rs:109
 msgid "Set Up Library"
 msgstr "लाइब्रेरी सेट अप करें"
 
-#: crates/reprise-gnome/src/ui/strings.rs:100
+#: crates/reprise-gnome/src/ui/strings.rs:110
 msgid "Main menu"
 msgstr "मुख्य मेन्यू"
 
-#: crates/reprise-gnome/src/ui/strings.rs:101
+#: crates/reprise-gnome/src/ui/strings.rs:111
 msgid "Compact Mode"
 msgstr "संक्षिप्त मोड"
 
-#: crates/reprise-gnome/src/ui/strings.rs:103
+#: crates/reprise-gnome/src/ui/strings.rs:113
 msgid "Restore Full Window"
 msgstr "पूरी विंडो पुनर्स्थापित करें"
 
-#: crates/reprise-gnome/src/ui/strings.rs:105
+#: crates/reprise-gnome/src/ui/strings.rs:115
 msgid "Repeat Off"
 msgstr "दोहराना बंद"
 
-#: crates/reprise-gnome/src/ui/strings.rs:107
+#: crates/reprise-gnome/src/ui/strings.rs:117
 msgid "Repeat All"
 msgstr "सभी दोहराएं"
 
-#: crates/reprise-gnome/src/ui/strings.rs:109
+#: crates/reprise-gnome/src/ui/strings.rs:119
 msgid "Repeat One"
 msgstr "एक दोहराएँ"
 
-#: crates/reprise-gnome/src/ui/strings.rs:110
+#: crates/reprise-gnome/src/ui/strings.rs:120
 msgid "Could not save the window view"
 msgstr "विंडो दृश्य सहेजा नहीं जा सका"
 
-#: crates/reprise-gnome/src/ui/strings.rs:111
+#: crates/reprise-gnome/src/ui/strings.rs:121
 msgid "Compact player is unavailable"
 msgstr "संक्षिप्त प्लेयर उपलब्ध नहीं है"
 
-#: crates/reprise-gnome/src/ui/strings.rs:112
+#: crates/reprise-gnome/src/ui/strings.rs:122
 msgid "Preferences"
 msgstr "वरीयताएं"
 
-#: crates/reprise-gnome/src/ui/strings.rs:113
+#: crates/reprise-gnome/src/ui/strings.rs:123
 msgid "Appearance"
 msgstr "रूप"
 
-#: crates/reprise-gnome/src/ui/strings.rs:114
+#: crates/reprise-gnome/src/ui/strings.rs:124
 msgid "Layout"
 msgstr "अभिन्यास"
 
-#: crates/reprise-gnome/src/ui/strings.rs:115
+#: crates/reprise-gnome/src/ui/strings.rs:125
 msgid "Player Bar Position"
 msgstr "प्लेयर पट्टी की स्थिति"
 
-#: crates/reprise-gnome/src/ui/strings.rs:116
+#: crates/reprise-gnome/src/ui/strings.rs:126
 msgid "Bottom"
 msgstr "नीचे"
 
-#: crates/reprise-gnome/src/ui/strings.rs:117
+#: crates/reprise-gnome/src/ui/strings.rs:127
 msgid "Top"
 msgstr "ऊपर"
 
-#: crates/reprise-gnome/src/ui/strings.rs:118
+#: crates/reprise-gnome/src/ui/strings.rs:128
 msgid "Show Sidebar"
 msgstr "पार्श्वपट्टी दिखाएं"
 
-#: crates/reprise-gnome/src/ui/strings.rs:119
+#: crates/reprise-gnome/src/ui/strings.rs:129
 msgid "Show Status Line"
 msgstr "स्थिति पंक्ति दिखाएँ"
 
-#: crates/reprise-gnome/src/ui/strings.rs:120
+#: crates/reprise-gnome/src/ui/strings.rs:130
 msgid "List Density"
 msgstr "सूची घनत्व"
 
-#: crates/reprise-gnome/src/ui/strings.rs:121
+#: crates/reprise-gnome/src/ui/strings.rs:131
 msgid "Comfortable"
 msgstr "सुविधाजनक"
 
-#: crates/reprise-gnome/src/ui/strings.rs:122
+#: crates/reprise-gnome/src/ui/strings.rs:132
 msgid "Standard"
 msgstr "मानक"
 
-#: crates/reprise-gnome/src/ui/strings.rs:123
+#: crates/reprise-gnome/src/ui/strings.rs:133
 msgid "Compact"
 msgstr "संक्षिप्त"
 
-#: crates/reprise-gnome/src/ui/strings.rs:124
+#: crates/reprise-gnome/src/ui/strings.rs:134
 msgid "Library"
 msgstr "लाइब्रेरी"
 
-#: crates/reprise-gnome/src/ui/strings.rs:125
+#: crates/reprise-gnome/src/ui/strings.rs:135
 msgid "Plugins"
 msgstr "प्लगइन्स"
 
-#: crates/reprise-gnome/src/ui/strings.rs:126
+#: crates/reprise-gnome/src/ui/strings.rs:136
 msgid "Playback"
 msgstr "प्लेबैक"
 
-#: crates/reprise-gnome/src/ui/strings.rs:127
+#: crates/reprise-gnome/src/ui/strings.rs:137
 msgid "Equalizer"
 msgstr "इक्वलाइज़र"
 
-#: crates/reprise-gnome/src/ui/strings.rs:128
+#: crates/reprise-gnome/src/ui/strings.rs:138
 msgid "Enable Equalizer"
 msgstr "इक्वलाइज़र सक्षम करें"
 
-#: crates/reprise-gnome/src/ui/strings.rs:129
+#: crates/reprise-gnome/src/ui/strings.rs:139
 msgid "Preset"
 msgstr "पूर्वनिश्चित"
 
-#: crates/reprise-gnome/src/ui/strings.rs:130
+#: crates/reprise-gnome/src/ui/strings.rs:140
 msgid "Flat"
 msgstr "समतल"
 
-#: crates/reprise-gnome/src/ui/strings.rs:131
+#: crates/reprise-gnome/src/ui/strings.rs:141
 msgid "Rock"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:132
+#: crates/reprise-gnome/src/ui/strings.rs:142
 msgid "Pop"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:133
+#: crates/reprise-gnome/src/ui/strings.rs:143
 msgid "Bass Boost"
 msgstr "बास बढ़ाएँ"
 
-#: crates/reprise-gnome/src/ui/strings.rs:134
+#: crates/reprise-gnome/src/ui/strings.rs:144
 msgid "ReplayGain"
 msgstr "रीप्लेगेन"
 
-#: crates/reprise-gnome/src/ui/strings.rs:135
+#: crates/reprise-gnome/src/ui/strings.rs:145
 msgid "Volume Normalization"
 msgstr "ध्वनि स्तर सामान्यीकरण"
 
-#: crates/reprise-gnome/src/ui/strings.rs:136
-#: crates/reprise-gnome/src/ui/strings.rs:142
+#: crates/reprise-gnome/src/ui/strings.rs:146
+#: crates/reprise-gnome/src/ui/strings.rs:152
 #: crates/reprise-gnome/src/ui/strings_issues.rs:45
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:55
 msgid "Off"
 msgstr "बंद"
 
-#: crates/reprise-gnome/src/ui/strings.rs:137
+#: crates/reprise-gnome/src/ui/strings.rs:147
 msgid "Per Track"
 msgstr "प्रति ट्रैक"
 
-#: crates/reprise-gnome/src/ui/strings.rs:138
+#: crates/reprise-gnome/src/ui/strings.rs:148
 msgid "Per Album"
 msgstr "प्रति एल्बम"
 
-#: crates/reprise-gnome/src/ui/strings.rs:139
+#: crates/reprise-gnome/src/ui/strings.rs:149
 msgid "Audio Transitions"
 msgstr "ऑडियो संक्रमण"
 
-#: crates/reprise-gnome/src/ui/strings.rs:140
+#: crates/reprise-gnome/src/ui/strings.rs:150
 msgid "Crossfade"
 msgstr "क्रॉसफ़ेड"
 
-#: crates/reprise-gnome/src/ui/strings.rs:141
+#: crates/reprise-gnome/src/ui/strings.rs:151
 msgid "Smoothly blend the end of a track into the next"
 msgstr "एक ट्रैक के अंत को अगले ट्रैक में सहजता से मिलाएँ"
 
-#: crates/reprise-gnome/src/ui/strings.rs:143
+#: crates/reprise-gnome/src/ui/strings.rs:153
 msgid "Gapless Playback"
 msgstr "बिना अंतराल प्लेबैक"
 
-#: crates/reprise-gnome/src/ui/strings.rs:144
+#: crates/reprise-gnome/src/ui/strings.rs:154
 msgid "No silence between tracks of the same album"
 msgstr "एक ही एल्बम के ट्रैक के बीच मौन नहीं"
 
-#: crates/reprise-gnome/src/ui/strings.rs:145
+#: crates/reprise-gnome/src/ui/strings.rs:155
 msgid "Inactive while Crossfade is enabled"
 msgstr "क्रॉसफ़ेड सक्षम होने पर निष्क्रिय"
 
-#: crates/reprise-gnome/src/ui/strings.rs:146
+#: crates/reprise-gnome/src/ui/strings.rs:156
 msgid "Could not apply audio effects"
 msgstr "ऑडियो प्रभाव लागू नहीं किए जा सके"
 
-#: crates/reprise-gnome/src/ui/strings.rs:152
+#: crates/reprise-gnome/src/ui/strings.rs:162
 msgid "Library Folder"
 msgstr "लाइब्रेरी फ़ोल्डर"
 
-#: crates/reprise-gnome/src/ui/strings.rs:153
+#: crates/reprise-gnome/src/ui/strings.rs:163
 msgid "No folder selected"
 msgstr "कोई फ़ोल्डर नहीं चुना गया"
 
-#: crates/reprise-gnome/src/ui/strings.rs:154
+#: crates/reprise-gnome/src/ui/strings.rs:164
 msgid "Choose Folder…"
 msgstr "फ़ोल्डर चुनें…"
 
-#: crates/reprise-gnome/src/ui/strings.rs:155
+#: crates/reprise-gnome/src/ui/strings.rs:165
 msgid "Excluded Files"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:156
+#: crates/reprise-gnome/src/ui/strings.rs:166
 msgid "Restore All"
 msgstr "पुनर्स्थापित करें"
 
-#: crates/reprise-gnome/src/ui/strings.rs:157
+#: crates/reprise-gnome/src/ui/strings.rs:167
 msgid "Could not restore excluded files"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:162
+#: crates/reprise-gnome/src/ui/strings.rs:172
 #, rust-format
 msgid "{count} file ignored during library scans"
 msgid_plural "{count} files ignored during library scans"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:168
+#: crates/reprise-gnome/src/ui/strings.rs:178
 msgid "Restart required"
 msgstr "पुनः आरंभ आवश्यक है"
 
-#: crates/reprise-gnome/src/ui/strings.rs:169
+#: crates/reprise-gnome/src/ui/strings.rs:179
 msgid "Edit column layout…"
 msgstr "स्तंभ विन्यास संपादित करें…"
 
-#: crates/reprise-gnome/src/ui/strings.rs:170
+#: crates/reprise-gnome/src/ui/strings.rs:180
 msgid "Reset to Default"
 msgstr "डिफ़ॉल्ट के लिए रीसेट करें"
 
-#: crates/reprise-gnome/src/ui/strings.rs:171
+#: crates/reprise-gnome/src/ui/strings.rs:181
 msgid "Close"
 msgstr "बंद"
 
-#: crates/reprise-gnome/src/ui/strings.rs:172
+#: crates/reprise-gnome/src/ui/strings.rs:182
 msgid "Drag to reorder"
 msgstr "क्रम बदलने के लिए खींचें"
 
-#: crates/reprise-gnome/src/ui/strings.rs:173
+#: crates/reprise-gnome/src/ui/strings.rs:183
 msgid "Could not save the column layout"
 msgstr "स्तंभ विन्यास सहेजा नहीं जा सका"
 
-#: crates/reprise-gnome/src/ui/strings.rs:174
+#: crates/reprise-gnome/src/ui/strings.rs:184
 msgid "Edit tags…"
 msgstr "टैग संपादित करें…"
 
-#: crates/reprise-gnome/src/ui/strings.rs:175
+#: crates/reprise-gnome/src/ui/strings.rs:185
 msgid "Remove from library…"
 msgstr "लाइब्रेरी से हटाएँ…"
 
-#: crates/reprise-gnome/src/ui/strings.rs:176
+#: crates/reprise-gnome/src/ui/strings.rs:186
 msgid "Move to Trash…"
 msgstr "रद्दी में ले जाएँ…"
 
-#: crates/reprise-gnome/src/ui/strings.rs:177
+#: crates/reprise-gnome/src/ui/strings.rs:187
 msgid "Remove Selected Tracks?"
 msgstr "चुने गए ट्रैक हटाएँ?"
 
-#: crates/reprise-gnome/src/ui/strings.rs:179
+#: crates/reprise-gnome/src/ui/strings.rs:189
 msgid ""
 "Remove only the library entries, or move the music files to Trash as well."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:180
-#: crates/reprise-gnome/src/ui/strings.rs:448
+#: crates/reprise-gnome/src/ui/strings.rs:190
+#: crates/reprise-gnome/src/ui/strings.rs:458
 #: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:30
 #: crates/reprise-gnome/src/ui/sidebar/sidebar_issue_strings.rs:27
 msgid "Cancel"
 msgstr "रद्द करें"
 
-#: crates/reprise-gnome/src/ui/strings.rs:181
+#: crates/reprise-gnome/src/ui/strings.rs:191
 msgid "Remove Only"
 msgstr "केवल हटाएँ"
 
-#: crates/reprise-gnome/src/ui/strings.rs:182
+#: crates/reprise-gnome/src/ui/strings.rs:192
 msgid "Move to Trash"
 msgstr "रद्दी में ले जाएं"
 
-#: crates/reprise-gnome/src/ui/strings.rs:184
+#: crates/reprise-gnome/src/ui/strings.rs:194
 msgid "Could not open the library database for removal"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:185
+#: crates/reprise-gnome/src/ui/strings.rs:195
 msgid "Could not start the removal worker"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:186
+#: crates/reprise-gnome/src/ui/strings.rs:196
 msgid "Track is no longer in the library"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:191
+#: crates/reprise-gnome/src/ui/strings.rs:201
 #, rust-format
 msgid ""
 "Remove {count} track from the library? Its rating, playlist entries, and "
@@ -334,7 +335,7 @@ msgid_plural ""
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:201
+#: crates/reprise-gnome/src/ui/strings.rs:211
 #, rust-format
 msgid "Move {count} music file to Trash and remove the library entry?"
 msgid_plural ""
@@ -342,416 +343,420 @@ msgid_plural ""
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:217
+#: crates/reprise-gnome/src/ui/strings.rs:227
 #, rust-format
 msgid "{removed} track moved to Trash"
 msgid_plural "{removed} tracks moved to Trash"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:223
+#: crates/reprise-gnome/src/ui/strings.rs:233
 #, rust-format
 msgid "{removed} track removed"
 msgid_plural "{removed} tracks removed"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:229
+#: crates/reprise-gnome/src/ui/strings.rs:239
 #, rust-format
 msgid "{removed} track moved to Trash; {failed} failed"
 msgid_plural "{removed} tracks moved to Trash; {failed} failed"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:235
+#: crates/reprise-gnome/src/ui/strings.rs:245
 #, rust-format
 msgid "{removed} track removed; {failed} failed"
 msgid_plural "{removed} tracks removed; {failed} failed"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:258
+#: crates/reprise-gnome/src/ui/strings.rs:268
 #, rust-format
 msgid "Updated {updated} track"
 msgid_plural "Updated {updated} tracks"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:265
+#: crates/reprise-gnome/src/ui/strings.rs:275
 #, rust-format
 msgid "Updated {updated} track; {failed} failed"
 msgid_plural "Updated {updated} tracks; {failed} failed"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:272
+#: crates/reprise-gnome/src/ui/strings.rs:282
 msgid "Search all fields"
 msgstr "सभी फ़ील्ड खोजें"
 
-#: crates/reprise-gnome/src/ui/strings.rs:273
+#: crates/reprise-gnome/src/ui/strings.rs:283
 msgid "Scan folder…"
 msgstr "फ़ोल्डर स्कैन करें…"
 
-#: crates/reprise-gnome/src/ui/strings.rs:274
+#: crates/reprise-gnome/src/ui/strings.rs:284
 msgid "No music yet"
 msgstr "अभी कोई संगीत नहीं"
 
-#: crates/reprise-gnome/src/ui/strings.rs:275
+#: crates/reprise-gnome/src/ui/strings.rs:285
 msgid "Scan a folder to build your library"
 msgstr "अपनी लाइब्रेरी बनाने के लिए फ़ोल्डर स्कैन करें"
 
-#: crates/reprise-gnome/src/ui/strings.rs:276
+#: crates/reprise-gnome/src/ui/strings.rs:286
 msgid "No results"
 msgstr "कोई परिणाम नहीं"
 
-#: crates/reprise-gnome/src/ui/strings.rs:277
+#: crates/reprise-gnome/src/ui/strings.rs:287
 msgid "Try a different search"
 msgstr "भिन्न खोज का प्रयास करें"
 
-#: crates/reprise-gnome/src/ui/strings.rs:283
+#: crates/reprise-gnome/src/ui/strings.rs:293
 msgid "Nothing here"
 msgstr "यहाँ कुछ नहीं है"
 
-#: crates/reprise-gnome/src/ui/strings.rs:284
+#: crates/reprise-gnome/src/ui/strings.rs:294
 msgid "This view has no tracks right now"
 msgstr "इस दृश्य में अभी कोई ट्रैक नहीं है"
 
-#: crates/reprise-gnome/src/ui/strings.rs:287
+#: crates/reprise-gnome/src/ui/strings.rs:297
 msgid "Scanning library"
 msgstr "लाइब्रेरी स्कैन हो रही है"
 
-#: crates/reprise-gnome/src/ui/strings.rs:297
+#: crates/reprise-gnome/src/ui/strings.rs:307
 msgid "Select Music Folder"
 msgstr "संगीत फ़ोल्डर चुनें"
 
-#: crates/reprise-gnome/src/ui/strings.rs:298
+#: crates/reprise-gnome/src/ui/strings.rs:308
 #: crates/reprise-gnome/src/ui/strings_tooltips.rs:38
 msgid "Scanning…"
 msgstr "स्कैनिंग…"
 
-#: crates/reprise-gnome/src/ui/strings.rs:299
+#: crates/reprise-gnome/src/ui/strings.rs:309
 msgid "Finding music files…"
 msgstr "संगीत फ़ाइलें खोजी जा रही हैं…"
 
-#: crates/reprise-gnome/src/ui/strings.rs:305
+#: crates/reprise-gnome/src/ui/strings.rs:315
 #, rust-format
 msgid "{processed} of {total} files scanned"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:311
+#: crates/reprise-gnome/src/ui/strings.rs:321
 msgid "Scan failed: "
 msgstr "स्कैन विफल: "
 
-#: crates/reprise-gnome/src/ui/strings.rs:312
+#: crates/reprise-gnome/src/ui/strings.rs:322
 msgid "covers & lyrics…"
 msgstr "कवर और गीत के बोल…"
 
-#: crates/reprise-gnome/src/ui/strings.rs:319
+#: crates/reprise-gnome/src/ui/strings.rs:329
 msgid "track"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:320
+#: crates/reprise-gnome/src/ui/strings.rs:330
 msgid "tracks"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:323
+#: crates/reprise-gnome/src/ui/strings.rs:333
 msgid " · "
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:326
+#: crates/reprise-gnome/src/ui/strings.rs:336
+#: crates/reprise-gnome/src/ui/strings_releases.rs:13
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:161
 msgid "Title"
 msgstr "शीर्षक"
 
-#: crates/reprise-gnome/src/ui/strings.rs:327
+#: crates/reprise-gnome/src/ui/strings.rs:337
 msgid "Cover"
 msgstr "कवर"
 
-#: crates/reprise-gnome/src/ui/strings.rs:328
+#: crates/reprise-gnome/src/ui/strings.rs:338
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:15
+#: crates/reprise-gnome/src/ui/strings_releases.rs:14
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:162
 #: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:20
 msgid "Artist"
 msgstr "कलाकार"
 
-#: crates/reprise-gnome/src/ui/strings.rs:329
+#: crates/reprise-gnome/src/ui/strings.rs:339
+#: crates/reprise-gnome/src/ui/strings_releases.rs:22
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:163
 #: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:21
 msgid "Album"
 msgstr "एल्बम"
 
-#: crates/reprise-gnome/src/ui/strings.rs:330
+#: crates/reprise-gnome/src/ui/strings.rs:340
 msgid "Track"
 msgstr "ट्रैक"
 
-#: crates/reprise-gnome/src/ui/strings.rs:331
+#: crates/reprise-gnome/src/ui/strings.rs:341
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:167
 #: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:19
 msgid "Genre"
 msgstr "शैली"
 
-#: crates/reprise-gnome/src/ui/strings.rs:332
+#: crates/reprise-gnome/src/ui/strings.rs:342
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:165
 #: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:22
 msgid "Year"
 msgstr "वर्ष"
 
-#: crates/reprise-gnome/src/ui/strings.rs:333
+#: crates/reprise-gnome/src/ui/strings.rs:343
 msgid "Length"
 msgstr "लंबाई"
 
-#: crates/reprise-gnome/src/ui/strings.rs:334
+#: crates/reprise-gnome/src/ui/strings.rs:344
 msgid "Plays"
 msgstr "चलाने की संख्या"
 
-#: crates/reprise-gnome/src/ui/strings.rs:340
+#: crates/reprise-gnome/src/ui/strings.rs:350
 msgid "Playback position"
 msgstr "प्लेबैक स्थिति"
 
-#: crates/reprise-gnome/src/ui/strings.rs:341
+#: crates/reprise-gnome/src/ui/strings.rs:351
 msgid "Volume"
 msgstr "आवाज़"
 
-#: crates/reprise-gnome/src/ui/strings.rs:342
+#: crates/reprise-gnome/src/ui/strings.rs:352
 msgid "Shuffle"
 msgstr "शफ़ल"
 
-#: crates/reprise-gnome/src/ui/strings.rs:343
+#: crates/reprise-gnome/src/ui/strings.rs:353
 msgid "Previous"
 msgstr "पिछला"
 
-#: crates/reprise-gnome/src/ui/strings.rs:344
+#: crates/reprise-gnome/src/ui/strings.rs:354
 msgid "Next"
 msgstr "अगला"
 
-#: crates/reprise-gnome/src/ui/strings.rs:345
+#: crates/reprise-gnome/src/ui/strings.rs:355
 msgid "Repeat"
 msgstr "दोहराएं"
 
-#: crates/reprise-gnome/src/ui/strings.rs:350
+#: crates/reprise-gnome/src/ui/strings.rs:360
 #: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:23
 msgid "Rating"
 msgstr "रेटिंग"
 
-#: crates/reprise-gnome/src/ui/strings.rs:358
+#: crates/reprise-gnome/src/ui/strings.rs:368
 #, rust-format
 msgid "Rate {count} star"
 msgid_plural "Rate {count} stars"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:375
+#: crates/reprise-gnome/src/ui/strings.rs:385
 #, rust-format
 msgid "File not found — marked as missing: {title}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:385
+#: crates/reprise-gnome/src/ui/strings.rs:395
 #, rust-format
 msgid "Could not play {title} — skipping"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:394
+#: crates/reprise-gnome/src/ui/strings.rs:404
 msgid "Playback stopped — too many unplayable tracks"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:405
+#: crates/reprise-gnome/src/ui/strings.rs:415
 #, rust-format
 msgid "Could not save rating for {title}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:415
+#: crates/reprise-gnome/src/ui/strings.rs:425
 msgid "LIBRARY"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:416
+#: crates/reprise-gnome/src/ui/strings.rs:426
 msgid "PLAYLISTS"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:417
+#: crates/reprise-gnome/src/ui/strings.rs:427
 msgid "SMART"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:418
+#: crates/reprise-gnome/src/ui/strings.rs:428
 msgid "ISSUES"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:420
+#: crates/reprise-gnome/src/ui/strings.rs:430
 msgid "Music"
 msgstr "संगीत"
 
-#: crates/reprise-gnome/src/ui/strings.rs:421
+#: crates/reprise-gnome/src/ui/strings.rs:431
 msgid "Queue"
 msgstr "क्यू"
 
-#: crates/reprise-gnome/src/ui/strings.rs:422
+#: crates/reprise-gnome/src/ui/strings.rs:432
 msgid "Now Playing"
 msgstr "अभी बज रहा है"
 
-#: crates/reprise-gnome/src/ui/strings.rs:423
+#: crates/reprise-gnome/src/ui/strings.rs:433
 msgid "Jump to now playing"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:424
+#: crates/reprise-gnome/src/ui/strings.rs:434
 msgid "Go to playing artist"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:425
+#: crates/reprise-gnome/src/ui/strings.rs:435
 msgid "Go to playing album"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:426
+#: crates/reprise-gnome/src/ui/strings.rs:436
 msgid "Reveal playing track"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:427
+#: crates/reprise-gnome/src/ui/strings.rs:437
 #, rust-format
 msgid "Go to album {album}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:428
+#: crates/reprise-gnome/src/ui/strings.rs:438
 msgid "Back to previous view"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:429
+#: crates/reprise-gnome/src/ui/strings.rs:439
 msgid "Forward to next view"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:430
+#: crates/reprise-gnome/src/ui/strings.rs:440
 msgid "Play next"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:431
+#: crates/reprise-gnome/src/ui/strings.rs:441
 msgid "Clear"
 msgstr "साफ करे"
 
-#: crates/reprise-gnome/src/ui/strings.rs:432
+#: crates/reprise-gnome/src/ui/strings.rs:442
 msgid "Play Next"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:435
+#: crates/reprise-gnome/src/ui/strings.rs:445
 msgid "Nothing queued"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:436
+#: crates/reprise-gnome/src/ui/strings.rs:446
 msgid "Play something"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:437
-#: crates/reprise-gnome/src/ui/strings.rs:446
+#: crates/reprise-gnome/src/ui/strings.rs:447
+#: crates/reprise-gnome/src/ui/strings.rs:456
 msgid "New playlist"
 msgstr "नई प्लेलिस्ट"
 
-#: crates/reprise-gnome/src/ui/strings.rs:438
+#: crates/reprise-gnome/src/ui/strings.rs:448
 msgid "Import errors"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:439
+#: crates/reprise-gnome/src/ui/strings.rs:449
 msgid "Missing files"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:440
+#: crates/reprise-gnome/src/ui/strings.rs:450
 msgid "My Stats"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:444
+#: crates/reprise-gnome/src/ui/strings.rs:454
 msgid "Toggle sidebar"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:447
+#: crates/reprise-gnome/src/ui/strings.rs:457
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:68
 msgid "Playlist name"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:449
+#: crates/reprise-gnome/src/ui/strings.rs:459
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:69
 msgid "Create"
 msgstr "बनाऐं"
 
-#: crates/reprise-gnome/src/ui/strings.rs:454
+#: crates/reprise-gnome/src/ui/strings.rs:464
 #, rust-format
 msgid "Could not create playlist “{name}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:465
+#: crates/reprise-gnome/src/ui/strings.rs:475
 msgid "Rescan library"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:471
+#: crates/reprise-gnome/src/ui/strings.rs:481
 msgid "No library folder to rescan yet — use “Scan folder…” first"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:479
+#: crates/reprise-gnome/src/ui/strings.rs:489
 msgid "A scan is already running"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:487
+#: crates/reprise-gnome/src/ui/strings.rs:497
 #, rust-format
 msgid "{count} track removed from library"
 msgid_plural "{count} tracks removed from library"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:497
+#: crates/reprise-gnome/src/ui/strings.rs:507
 msgid "Could not remove tracks from library"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:508
+#: crates/reprise-gnome/src/ui/strings.rs:518
 #: crates/reprise-gnome/src/ui/strings_scan.rs:7
 #: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:15
 msgid "Retry"
 msgstr "फिर कोशिश करें"
 
-#: crates/reprise-gnome/src/ui/strings.rs:511
+#: crates/reprise-gnome/src/ui/strings.rs:521
 #: crates/reprise-gnome/src/ui/strings_news.rs:51
 msgid "Dismiss"
 msgstr "खारिज करें"
 
-#: crates/reprise-gnome/src/ui/strings.rs:517
+#: crates/reprise-gnome/src/ui/strings.rs:527
 msgid "Could not retry — see the log for details"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:526
+#: crates/reprise-gnome/src/ui/strings.rs:536
 #, rust-format
 msgid "{count} track added to queue"
 msgid_plural "{count} tracks added to queue"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:533
+#: crates/reprise-gnome/src/ui/strings.rs:543
 msgid "Move up"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:534
+#: crates/reprise-gnome/src/ui/strings.rs:544
 msgid "Move down"
 msgstr "नीचे जाएँ"
 
-#: crates/reprise-gnome/src/ui/strings.rs:543
+#: crates/reprise-gnome/src/ui/strings.rs:553
 #, rust-format
 msgid "{count} track added to {playlist}"
 msgid_plural "{count} tracks added to {playlist}"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:555
+#: crates/reprise-gnome/src/ui/strings.rs:565
 #, rust-format
 msgid "{count} track removed from playlist"
 msgid_plural "{count} tracks removed from playlist"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:565
+#: crates/reprise-gnome/src/ui/strings.rs:575
 #, rust-format
 msgid "Could not add tracks to “{name}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:571
+#: crates/reprise-gnome/src/ui/strings.rs:581
 msgid "Could not remove tracks from playlist"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:580
+#: crates/reprise-gnome/src/ui/strings.rs:590
 msgid "Could not remove — reload the playlist and try again"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:593
+#: crates/reprise-gnome/src/ui/strings.rs:603
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:267
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:151
 #, rust-format
@@ -760,99 +765,99 @@ msgid_plural "{count} tracks"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:609
+#: crates/reprise-gnome/src/ui/strings.rs:619
 msgid "Could not reorder playlist"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:616
+#: crates/reprise-gnome/src/ui/strings.rs:626
 msgid "Import playlist…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:617
+#: crates/reprise-gnome/src/ui/strings.rs:627
 msgid "Export playlist…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:618
+#: crates/reprise-gnome/src/ui/strings.rs:628
 msgid "Delete playlist…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:619
+#: crates/reprise-gnome/src/ui/strings.rs:629
 msgid "Delete Playlist"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:621
+#: crates/reprise-gnome/src/ui/strings.rs:631
 msgid "The playlist will be deleted. Its tracks will remain in your library."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:623
+#: crates/reprise-gnome/src/ui/strings.rs:633
 #, rust-format
 msgid "Delete “{name}”?"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:626
+#: crates/reprise-gnome/src/ui/strings.rs:636
 #, rust-format
 msgid "Deleted playlist “{name}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:629
+#: crates/reprise-gnome/src/ui/strings.rs:639
 #, rust-format
 msgid "Could not delete playlist “{name}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:631
+#: crates/reprise-gnome/src/ui/strings.rs:641
 msgid "Import Playlist"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:632
+#: crates/reprise-gnome/src/ui/strings.rs:642
 msgid "Export Playlist"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:635
+#: crates/reprise-gnome/src/ui/strings.rs:645
 msgid "M3U Playlists"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:639
+#: crates/reprise-gnome/src/ui/strings.rs:649
 msgid "Imported playlist"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:647
+#: crates/reprise-gnome/src/ui/strings.rs:657
 #, rust-format
 msgid "Imported {name}: {matched} of {total} tracks matched"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:662
+#: crates/reprise-gnome/src/ui/strings.rs:672
 #, rust-format
 msgid "Imported {name}: 0 of {total} tracks matched — nothing added"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:670
+#: crates/reprise-gnome/src/ui/strings.rs:680
 msgid "Could not import playlist"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:676
+#: crates/reprise-gnome/src/ui/strings.rs:686
 #, rust-format
 msgid "One opened audio file is not in the library"
 msgid_plural "{count} opened audio files are not in the library"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:686
+#: crates/reprise-gnome/src/ui/strings.rs:696
 #, rust-format
 msgid "One opened file is not supported"
 msgid_plural "{count} opened files are not supported"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:694
+#: crates/reprise-gnome/src/ui/strings.rs:704
 msgid "Playback is unavailable"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:699
+#: crates/reprise-gnome/src/ui/strings.rs:709
 #, rust-format
 msgid "Exported {name}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:704
+#: crates/reprise-gnome/src/ui/strings.rs:714
 #, rust-format
 msgid "Could not export “{name}”"
 msgstr ""
@@ -1519,6 +1524,7 @@ msgid "Proposed"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:58
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:26
 msgid "Source"
 msgstr "स्रोत"
 
@@ -1847,7 +1853,7 @@ msgid "Open in MusicBrainz"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:36
-#: crates/reprise-gnome/src/ui/strings_news.rs:140
+#: crates/reprise-gnome/src/ui/strings_news.rs:147
 msgid "New Releases"
 msgstr ""
 
@@ -1925,173 +1931,431 @@ msgid "Refresh failed · showing saved releases"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:60
+msgid "UPDATES"
+msgstr "अपडेट"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:61
+msgid "NEW RELEASES"
+msgstr "नई रिलीज़"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:62
+msgid "CONCERTS"
+msgstr "कॉन्सर्ट"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:63
+msgid "new near you"
+msgstr "आपके नज़दीक नया"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:64
+msgid "newly announced"
+msgstr "हाल ही में घोषित"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:65
+msgid "Concerts fetch failed"
+msgstr "कॉन्सर्ट लाने में विफल"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:66
+msgid "Add a concert provider API key in Preferences."
+msgstr "वरीयताओं में कॉन्सर्ट प्रदाता की API कुंजी जोड़ें।"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:67
 msgid "Checking for new releases…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:61
+#: crates/reprise-gnome/src/ui/strings_news.rs:68
 msgid "No upcoming releases from your artists"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:62
+#: crates/reprise-gnome/src/ui/strings_news.rs:69
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:86
 msgid "Updated just now"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:63
+#: crates/reprise-gnome/src/ui/strings_news.rs:70
 msgid "See all"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:64
+#: crates/reprise-gnome/src/ui/strings_news.rs:71
+#: crates/reprise-gnome/src/ui/strings_releases.rs:30
 msgid "Hide"
 msgstr "छिपाऐं"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:69
+#: crates/reprise-gnome/src/ui/strings_news.rs:76
 #, rust-format
 msgid "{count} track selected"
 msgid_plural "{count} tracks selected"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:80
+#: crates/reprise-gnome/src/ui/strings_news.rs:87
 #, rust-format
 msgid "{count} track · {duration}"
 msgid_plural "{count} tracks · {duration}"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:91
+#: crates/reprise-gnome/src/ui/strings_news.rs:98
 #, rust-format
 msgid "Playing from {source} · {count} track"
 msgid_plural "Playing from {source} · {count} tracks"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:100
+#: crates/reprise-gnome/src/ui/strings_news.rs:107
 #, rust-format
 msgid "{type} · {date}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:107
+#: crates/reprise-gnome/src/ui/strings_news.rs:114
 #, rust-format
 msgid "MusicBrainz · Updated {date}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:112
+#: crates/reprise-gnome/src/ui/strings_news.rs:119
 #, rust-format
 msgid "Cached · Updated {date}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:123
+#: crates/reprise-gnome/src/ui/strings_news.rs:130
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:90
 #, rust-format
 msgid "Updated {age} min ago"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:129
+#: crates/reprise-gnome/src/ui/strings_news.rs:136
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:96
 #, rust-format
 msgid "Updated {age} h ago"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:132
+#: crates/reprise-gnome/src/ui/strings_news.rs:139
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:101
 #, rust-format
 msgid "Updated {age} d ago"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:137
+#: crates/reprise-gnome/src/ui/strings_news.rs:144
 #, rust-format
 msgid "{count} hidden · Show"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:141
+#: crates/reprise-gnome/src/ui/strings_news.rs:148
+#: crates/reprise-gnome/src/ui/strings_releases.rs:26
 msgid "released"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:142
+#: crates/reprise-gnome/src/ui/strings_news.rs:149
+#: crates/reprise-gnome/src/ui/strings_releases.rs:25
 msgid "In library"
 msgstr "लाइब्रेरी"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:143
+#: crates/reprise-gnome/src/ui/strings_news.rs:150
 msgid "Single in library"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:144
-msgid "Show history"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_news.rs:145
+#: crates/reprise-gnome/src/ui/strings_news.rs:151
 msgid "Show in library"
 msgstr "लाइब्रेरी स्कैन हो रही है"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:146
+#: crates/reprise-gnome/src/ui/strings_news.rs:152
 msgid "Open announcement"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:147
+#: crates/reprise-gnome/src/ui/strings_news.rs:153
 msgid "Show again"
 msgstr "स्थिति पंक्ति दिखाएँ"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:148
+#: crates/reprise-gnome/src/ui/strings_news.rs:154
 msgid "All caught up"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:149
-msgid "History"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_news.rs:150
+#: crates/reprise-gnome/src/ui/strings_news.rs:155
 msgid "Retention: 6 months"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:156
+#: crates/reprise-gnome/src/ui/strings_news.rs:161
 #, rust-format
 msgid "in {days} d"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:162
+#: crates/reprise-gnome/src/ui/strings_news.rs:167
 #, rust-format
 msgid "{count} new"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:168
+#: crates/reprise-gnome/src/ui/strings_news.rs:172
 #, rust-format
-msgid "Show history ({count})"
-msgstr ""
+msgid "Show all concerts ({count}) →"
+msgstr "सभी कॉन्सर्ट दिखाएं ({count}) →"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:177
+#: crates/reprise-gnome/src/ui/strings_news.rs:179
 #, rust-format
-msgid "({count})"
-msgstr ""
+msgid "Show all releases ({count}) →"
+msgstr "सभी रिलीज़ दिखाएं ({count}) →"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:184
-#, rust-format
-msgid "released on {date}"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_news.rs:190
-#, rust-format
-msgid "hidden on {date}"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_news.rs:195
+#: crates/reprise-gnome/src/ui/strings_news.rs:186
 msgid "unknown date"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:204
+#: crates/reprise-gnome/src/ui/strings_news.rs:195
 msgid "Checking missing album covers…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:205
+#: crates/reprise-gnome/src/ui/strings_news.rs:196
 msgid "Cover check complete"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:206
+#: crates/reprise-gnome/src/ui/strings_news.rs:197
 msgid "Could not check album covers"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:219
+#: crates/reprise-gnome/src/ui/strings_news.rs:210
 #, rust-format
 msgid ""
 "{checked} of {total} checked · {downloaded} downloaded · {unavailable} "
 "unavailable"
 msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:11
+msgid "Concerts"
+msgstr "कॉन्सर्ट"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:13
+msgid "Show upcoming concerts for library artists · contacts event providers"
+msgstr ""
+"लाइब्रेरी के कलाकारों के लिए आगामी कॉन्सर्ट दिखाता है · इवेंट प्रदाताओं से "
+"संपर्क करता है"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:14
+#: crates/reprise-gnome/src/ui/strings_releases.rs:12
+msgid "Date"
+msgstr "दिनांक"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:16
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:46
+msgid "City"
+msgstr "शहर"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:17
+msgid "Venue"
+msgstr "स्थल"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:18
+msgid "Distance"
+msgstr "दूरी"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:19
+msgid "Tickets"
+msgstr "टिकट"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:20
+#: crates/reprise-gnome/src/ui/strings_releases.rs:17
+msgid "+ Add filter"
+msgstr "+ फ़िल्टर जोड़ें"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:21
+#: crates/reprise-gnome/src/ui/strings_releases.rs:18
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:12
+msgid "FILTER"
+msgstr "फिल्टर"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:22
+#: crates/reprise-gnome/src/ui/strings_releases.rs:19
+msgid "Clear all ×"
+msgstr "सभी साफ़ करें ×"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:23
+msgid "Radius"
+msgstr "त्रिज्या"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:24
+msgid "Country"
+msgstr "देश"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:25
+msgid "Date range"
+msgstr "दिनांक सीमा"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:27
+msgid "All upcoming"
+msgstr "सभी आगामी"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:28
+msgid "Next 30 days"
+msgstr "अगले 30 दिन"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:29
+msgid "Next 3 months"
+msgstr "अगले 3 महीने"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:30
+msgid "Next 6 months"
+msgstr "अगले 6 महीने"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:31
+msgid "Library artists only"
+msgstr "केवल लाइब्रेरी के कलाकार"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:32
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:53
+msgid "Include similar artists"
+msgstr "समान कलाकार शामिल करें"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:33
+msgid "Set a location in Preferences"
+msgstr "वरीयताओं में एक स्थान सेट करें।"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:34
+msgid "Concerts needs an API key"
+msgstr "कॉन्सर्ट के लिए API कुंजी आवश्यक है"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:36
+msgid "Add a Bandsintown app_id or Ticketmaster API key in Preferences."
+msgstr "वरीयताओं में एक Bandsintown app_id या Ticketmaster API कुंजी जोड़ें।"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:37
+msgid "Open Preferences"
+msgstr "वरीयताएं खोलें"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:38
+msgid "No concert data yet"
+msgstr "अभी तक कोई कॉन्सर्ट डेटा नहीं"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:39
+msgid "No upcoming concerts for your artists"
+msgstr "आपके कलाकारों के लिए कोई आगामी कॉन्सर्ट नहीं"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:40
+msgid "Concerts fetch failed · showing saved concerts"
+msgstr "कॉन्सर्ट लाने में विफल · सहेजे गए कॉन्सर्ट दिखाए जा रहे हैं"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:41
+msgid "Never updated"
+msgstr "कभी अपडेट नहीं हुआ"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:42
+msgid "No ticket or event link available"
+msgstr "कोई टिकट या इवेंट लिंक उपलब्ध नहीं"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:43
+msgid "Bandsintown app_id"
+msgstr "Bandsintown app_id"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:44
+msgid "Ticketmaster API key"
+msgstr "Ticketmaster API कुंजी"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:45
+msgid "Location"
+msgstr "स्थान"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:47
+msgid "Use current location"
+msgstr "वर्तमान स्थान का उपयोग करें"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:48
+msgid "Clear location"
+msgstr "स्थान साफ़ करें"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:49
+msgid "Current location"
+msgstr "वर्तमान स्थान"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:50
+msgid "Could not find that place"
+msgstr "वह स्थान नहीं मिल सका"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:51
+msgid "Default radius"
+msgstr "डिफ़ॉल्ट त्रिज्या"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:52
+msgid "Consider artists played in the last N days"
+msgstr "पिछले N दिनों में बजाए गए कलाकारों पर विचार करें"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:54
+msgid "Similar artists per top artist"
+msgstr "प्रति शीर्ष कलाकार समान कलाकार"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:59
+#, rust-format
+msgid "{shown} of {total} concerts"
+msgstr "{total} में से {shown} कॉन्सर्ट"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:65
+#, rust-format
+msgid "{total} concerts"
+msgstr "{total} कॉन्सर्ट"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:69
+#, rust-format
+msgid "similar to {artist}"
+msgstr "{artist} के समान"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:74
+#, rust-format
+msgid "Show all {total} concerts"
+msgstr "सभी {total} कॉन्सर्ट दिखाएं"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:80
+#, rust-format
+msgid "{radius} km"
+msgstr "{radius} किमी"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:11
+msgid "Releases"
+msgstr "रिलीज़"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:15
+msgid "Type"
+msgstr "प्रकार"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:16
+msgid "Status"
+msgstr "स्थिति"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:20
+msgid "Not in library"
+msgstr "लाइब्रेरी में नहीं"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:21
+msgid "Hidden"
+msgstr "छिपा हुआ"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:23
+msgid "EP"
+msgstr "EP"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:24
+msgid "Single"
+msgstr "सिंगल"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:27
+msgid "upcoming"
+msgstr "आगामी"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:28
+msgid "No release data yet"
+msgstr "अभी तक कोई रिलीज़ डेटा नहीं"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:29
+msgid "No releases from your artists yet"
+msgstr "आपके कलाकारों से अभी तक कोई रिलीज़ नहीं"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:34
+#, rust-format
+msgid "{shown} of {total} releases"
+msgstr "{total} में से {shown} रिलीज़"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:40
+#, rust-format
+msgid "{total} releases"
+msgstr "{total} रिलीज़"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:45
+#, rust-format
+msgid "Show all {total} releases"
+msgstr "सभी {total} रिलीज़ दिखाएं"
 
 #: crates/reprise-gnome/src/ui/strings_tooltips.rs:9
 msgid "Ctrl+F"
@@ -2836,14 +3100,6 @@ msgstr ""
 msgid "Bars"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:10
-msgid "Flow"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:11
-msgid "Pulse"
-msgstr ""
-
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:16
 msgid "Review changes"
 msgstr ""
@@ -3409,10 +3665,6 @@ msgstr ""
 msgid "Could not save list density"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:12
-msgid "FILTER"
-msgstr "फिल्टर"
-
 #: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:13
 msgid "Add filter"
 msgstr ""
@@ -3588,3 +3840,18 @@ msgstr ""
 
 #~ msgid "Unknown Artist"
 #~ msgstr "अज्ञात कलाकार"
+
+msgid "Saved"
+msgstr "सहेजा गया"
+
+msgid "Checking key…"
+msgstr "कुंजी की जाँच हो रही है…"
+
+msgid "Key works"
+msgstr "कुंजी काम करती है"
+
+msgid "Key was rejected"
+msgstr "कुंजी अस्वीकार कर दी गई"
+
+msgid "Could not verify"
+msgstr "सत्यापित नहीं किया जा सका"
