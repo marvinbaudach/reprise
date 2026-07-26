@@ -7,8 +7,8 @@ const MAX_FULLSCREEN_SCENE_WIDTH: i32 = 512;
 const MAX_FULLSCREEN_SCENE_HEIGHT: i32 = 288;
 
 /// Caps only the expensive scene raster. The finished image is scaled back to
-/// the widget allocation, so fullscreen remains fullscreen while Grid/Bars
-/// geometry and Cairo work stay inside the 60 Hz render budget.
+/// the widget allocation, so fullscreen remains fullscreen while Bars geometry
+/// and Cairo work stay inside the 60 Hz render budget.
 pub(super) fn capped_scene_size(width: i32, height: i32) -> (i32, i32) {
     let width = width.max(1);
     let height = height.max(1);

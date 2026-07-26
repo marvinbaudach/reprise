@@ -1521,9 +1521,9 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
   ausgeschaltetes, live anwendbares Plugin. Eingeschaltet visualisiert der
   dritte Panel-Tab „Visual" ausschließlich lokal berechnete, aus 256 FFT-Bins
   auf 64 logarithmische Anzeigebänder gefaltete und auf den Bereich 0–1
-  begrenzte Spektraldaten wahlweise als „Grid" oder „Bars".
-  „Grid" bleibt die Standardauswahl; „Bars" zeigt zwanzig fein segmentierte,
-  frequenzabhängige Säulen und reagiert auf denselben lokalen Beat-Impuls.
+  begrenzte Spektraldaten als „Bars": zwanzig fein segmentierte,
+  frequenzabhängige Säulen, die auf den lokalen Beat-Impuls reagieren.
+  Eine Modusauswahl und „Grid" existieren nicht.
   Neue Bars-Segmente blenden nahe vollständig transparent ein, starke Impulse
   nutzen nur den verbleibenden Höhenraum statt Säulen hart zu sättigen, und
   steigen im ersten 60-Hz-Schritt höchstens um drei volle Segmente. Beim
@@ -1535,24 +1535,14 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
   Die Impulsgröße folgt der linearen Amplitude der 256 Roh-Bins, nicht dem
   Max-Pooling, einem logarithmischen dB-Sprung oder nur der relativen adaptiven
   Schwelle: große Schläge müssen schwache Transienten sichtbar überragen, auch
-  wenn der schwache Schlag aus nahezu Stille kommt. Gegenüber einem Volltreffer
-  bleibt die Grid-Kuppel eines moderaten Rhythmus unter 55 Prozent; bei Bars
-  hebt ein Volltreffer den Säulendurchschnitt um mehr als 0,36 und mindestens
-  75 Prozent stärker als derselbe moderate Rhythmus. Ein Grid-Impuls setzt
-  unabhängig von der aktuellen Tuchphase sofort die breite, runde
-  Aufwärtsbewegung in Gang,
-  teleportiert aber keine Tuchposition: Die Mittelkuppel baut sich über fünf
-  bis neun 60-Hz-Schritte (höchstens 150 ms) flüssig zum großen Peak auf.
-  Schnelle Beatfolgen berücksichtigen den verbleibenden Hub, statt die
-  Membran am Höhenlimit flach festzudrücken; ihre freie Nachschwingung darf
-  keinen späteren größeren Peak erfinden. Nach dem ersten Tiefendurchlauf
-  bleibt jeder frei erzeugte positive Rückprall unter zwanzig Prozent des
-  auslösenden Hauptpeaks, damit ein einzelner Schlag nicht wie ein zweiter
-  Breakdown-Hit erscheint. Bei knapper Panelhöhe bleibt der Visual-Inhalt
-  unter dem Tab-Switcher und scrollt innerhalb seines Tabs, statt den Switcher
-  zu überlagern.
-  Flow, Pulse und weitere Modi existieren nicht. Der beschriftete Canvas
-  übernimmt den aktuellen Cover-Akzent über denselben globalen
+  wenn der schwache Schlag aus nahezu Stille kommt. Ein Volltreffer hebt den
+  Säulendurchschnitt um mehr als 0,36 und mindestens 75 Prozent stärker als
+  derselbe moderate Rhythmus. Der aus „WAKE UP" erfasste große Bass-Schlag hebt
+  ihn um mehr als 0,45 und mindestens 150 Prozent stärker als der erfasste
+  leichte Rhythmus. Bei knapper Panelhöhe bleibt der Visual-Inhalt unter dem
+  Tab-Switcher und scrollt innerhalb seines Tabs, statt den Switcher zu
+  überlagern. Flow, Pulse und weitere Modi existieren nicht. Der beschriftete
+  Canvas übernimmt den aktuellen Cover-Akzent über denselben globalen
   Ambient-Crossfade wie die Playerleiste; nur ohne brauchbare Coverfarbe gilt
   der Theme-Akzent.
 

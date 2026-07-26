@@ -21,6 +21,12 @@ const PEAK_MIN: f32 = 0.04;
 const REFLECTION_SEGMENTS: usize = 6;
 const BEAT_LIFT_LOW: f32 = 0.88;
 const BEAT_LIFT_HIGH: f32 = 0.62;
+/// Hits below this captured absolute-energy strength remain frequency-shaped
+/// detail instead of lifting the entire analyzer.
+const BREAKDOWN_STRENGTH_FLOOR: f32 = 0.25;
+/// At this strength a hit receives the full whole-analyzer lift. The value is
+/// anchored to the strongest captured bass impact in The Browning's "Wake Up".
+const BREAKDOWN_STRENGTH_FULL: f32 = 0.85;
 const HUE_START: f32 = 188.0;
 const HUE_END: f32 = 315.0;
 const ENVELOPE_EASING: f32 = 0.65;
@@ -41,7 +47,11 @@ fn target_value(bands: &[f32; SPECTRUM_BAND_COUNT], beat: f32, bar: usize) -> f3
     let across = bar as f32 / (BAR_COUNT - 1) as f32;
     let beat_lift = BEAT_LIFT_LOW + (BEAT_LIFT_HIGH - BEAT_LIFT_LOW) * across;
     let spectrum = group_value(bands, bar);
-    let beat = beat * beat_lift;
+    let normalized = ((beat - BREAKDOWN_STRENGTH_FLOOR)
+        / (BREAKDOWN_STRENGTH_FULL - BREAKDOWN_STRENGTH_FLOOR))
+        .clamp(0.0, 1.0);
+    let emphasized = normalized * normalized * (3.0 - 2.0 * normalized);
+    let beat = emphasized * beat_lift;
     // A beat lifts the remaining headroom instead of adding a fixed amount.
     // That preserves the spectrum silhouette and avoids hard clipping whole
     // columns to full height on the first frame of a strong hit.
@@ -304,22 +314,16 @@ mod tests {
 
     #[test]
     fn ac_20_entering_segment_fades_in_from_nearly_transparent() {
-        use crate::visuals::Membrane;
-
-        let bands = [0.0_f32; SPECTRUM_BAND_COUNT];
         let fraction = 1.01_f32;
         let mut bars = [0.0_f32; BAR_COUNT];
         bars[0] = fraction / SEGMENT_COUNT as f32;
         let peaks = [0.0_f32; SPECTRUM_BAND_COUNT];
-        let membrane = Membrane::new();
         let ctx = ModeCtx {
-            bands: &bands,
             peaks: &peaks,
             bars: &bars,
             beat: 0.0,
             accent: (0.2, 0.7, 0.7),
             accent2: (0.7, 0.2, 0.7),
-            membrane: &membrane,
             width: WIDTH,
             height: HEIGHT,
         };
