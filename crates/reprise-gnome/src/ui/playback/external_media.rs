@@ -69,6 +69,23 @@ impl PlayerController {
         }
     }
 
+    pub(in crate::ui) fn play_podcast_episode(self: &Rc<Self>, episode: &EpisodeRow) {
+        if let Err(error) = self.play_external(media_from_episode(episode)) {
+            self.show_toast(&error.to_string());
+        }
+    }
+
+    pub(in crate::ui) fn stop_podcast_subscription(&self, subscription_id: i64) -> bool {
+        let should_stop = self
+            .external
+            .borrow()
+            .plays_podcast_subscription(subscription_id);
+        if should_stop {
+            self.stop_external();
+        }
+        should_stop
+    }
+
     pub(in crate::ui) fn play_external(
         self: &Rc<Self>,
         media: ExternalMedia,
@@ -703,6 +720,10 @@ impl PlayerController {
             callback(snapshot.clone());
         }
     }
+}
+
+pub(in crate::ui) fn media_from_episode(episode: &EpisodeRow) -> ExternalMedia {
+    super::external_media_toast::media_from_episode(episode)
 }
 
 fn podcast_fields(media: &ExternalMedia) -> (String, String, EpisodeSource, i64, Option<i64>) {

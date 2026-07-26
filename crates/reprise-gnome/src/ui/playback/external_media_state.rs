@@ -123,6 +123,14 @@ impl ExternalPlaybackState {
         self.preview_path.clone()
     }
 
+    pub(in crate::ui) fn plays_podcast_subscription(&self, subscription_id: i64) -> bool {
+        matches!(
+            self.session.as_ref(),
+            Some(ExternalSession::Podcast(session))
+                if session.subscription_id == subscription_id
+        )
+    }
+
     pub(in crate::ui) fn begin_preview(&mut self, path: String) {
         self.session = None;
         self.preview_path = Some(path);
@@ -398,5 +406,35 @@ mod tests {
     fn playing_radio_activation_stops_instead_of_pausing() {
         let state = RadioPresentation::connected();
         assert_eq!(state.activation(), RadioCommand::Stop);
+    }
+
+    #[test]
+    fn removing_a_show_matches_only_its_active_podcast_session() {
+        let session = PodcastSession {
+            media: ExternalMedia::Podcast {
+                episode_id: 7,
+                title: "Episode".into(),
+                show: "Show".into(),
+                source: EpisodeSource::Url("https://example.test/episode.mp3".into()),
+                resume_ms: 0,
+                duration_ms: None,
+            },
+            subscription_id: 42,
+            published_at: None,
+            art_url: None,
+            phase: PodcastPhase::Playing,
+            resume: ResumePolicy::new(0),
+            position_ms: 0,
+            last_persisted_ms: 0,
+            duration_known: false,
+            error: None,
+        };
+        let state = ExternalPlaybackState {
+            session: Some(ExternalSession::Podcast(session)),
+            ..ExternalPlaybackState::default()
+        };
+
+        assert!(state.plays_podcast_subscription(42));
+        assert!(!state.plays_podcast_subscription(41));
     }
 }

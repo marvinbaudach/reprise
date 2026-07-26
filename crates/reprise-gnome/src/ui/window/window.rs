@@ -163,6 +163,7 @@ pub fn build(
     super::window_smoke::arm_lastfm(conn, &lastfm);
     let artist_news = super::artist_news_worker::ArtistNewsRuntime::setup(&conn.borrow());
     let concerts_runtime = crate::ui::concerts::ConcertsRuntime::setup(&conn.borrow());
+    let podcasts_runtime = crate::ui::podcasts::PodcastsRuntime::setup(&conn.borrow());
     let artist_portrait =
         super::artist_portrait_worker::ArtistPortraitRuntime::setup(&conn.borrow());
     let device_sync = super::device_sync_smoke::runtime_from_env(conn).unwrap_or_else(|| {
@@ -381,28 +382,24 @@ pub fn build(
     ));
     content_stack.add_named(concerts_view.root(), Some("concerts"));
     content_stack.add_named(releases_view.root(), Some("releases"));
-    {
-        let sidebar = Rc::downgrade(&sidebar);
-        concerts_view.set_on_refreshed(move || {
-            if let Some(sidebar) = sidebar.upgrade() {
-                sidebar.refresh("concerts view refreshed");
-            }
-        });
-    }
-    {
-        let sidebar = Rc::downgrade(&sidebar);
-        releases_view.set_on_refreshed(move || {
-            if let Some(sidebar) = sidebar.upgrade() {
-                sidebar.refresh("releases view refreshed");
-            }
-        });
-    }
+    let source_views = super::source_views::install(
+        conn,
+        &podcasts_runtime,
+        player.as_ref(),
+        &sidebar,
+        &content_stack,
+    );
+    let podcasts_view = source_views.podcasts;
+    let radio_view = source_views.radio;
+    super::source_views::wire_update_sidebar_refresh(&concerts_view, &releases_view, &sidebar);
 
     let bar_position = settings::get_player_bar_position(&conn.borrow());
 
     // The toast layer is attached after the player-bar shell exists so
     // notifications render above the complete library chrome.
     let toast_overlay = adw::ToastOverlay::new();
+    podcasts_view.set_toast_overlay(&toast_overlay);
+    radio_view.set_toast_overlay(&toast_overlay);
     {
         let overlay = toast_overlay.downgrade();
         concerts_view.set_on_launch_error(move |error| {
@@ -567,6 +564,9 @@ pub fn build(
         stats_view,
         concerts_view: &concerts_view,
         releases_view: &releases_view,
+        podcasts_view: &podcasts_view,
+        radio_view: &radio_view,
+        podcasts_runtime: &podcasts_runtime,
         content_stack: &content_stack,
         device_view: &device_view,
         window_title: &window_title,
