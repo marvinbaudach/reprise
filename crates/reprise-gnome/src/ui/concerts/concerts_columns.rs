@@ -12,8 +12,17 @@ use crate::ui::strings;
 
 pub(super) type OnOpenTarget = Rc<dyn Fn(String)>;
 
+/// The first web link the row offers, ticket offer before event page.
+///
+/// Provider JSON decides these strings, so a target that is not an
+/// `http`/`https` URL is skipped and the row falls back to the next candidate
+/// — ending up with no target at all rather than handing the desktop
+/// something it should not open.
 pub(super) fn ticket_target(row: &ConcertRow) -> Option<&str> {
-    row.ticket_url.as_deref().or(row.event_url.as_deref())
+    [row.ticket_url.as_deref(), row.event_url.as_deref()]
+        .into_iter()
+        .flatten()
+        .find(|url| reprise_core::external_link::is_launchable_url(url))
 }
 
 fn city_tooltip(row: &ConcertRow) -> Option<String> {
@@ -319,6 +328,20 @@ mod tests {
         let event = row(None, Some("https://events.example/event"));
         assert_eq!(ticket_target(&event), Some("https://events.example/event"));
         assert_eq!(ticket_target(&row(None, None)), None);
+    }
+
+    #[test]
+    fn non_web_provider_urls_are_treated_as_no_target() {
+        let hostile = row(Some("file:///etc/passwd"), Some("javascript:alert(1)"));
+        assert_eq!(ticket_target(&hostile), None);
+        let fallback = row(
+            Some("file:///etc/passwd"),
+            Some("https://events.example/event"),
+        );
+        assert_eq!(
+            ticket_target(&fallback),
+            Some("https://events.example/event")
+        );
     }
 
     #[test]

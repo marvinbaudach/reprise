@@ -175,16 +175,11 @@ pub(in crate::ui) fn action_button(icon_name: &str, label: &str) -> gtk4::Button
 }
 
 /// Opens an announcement or ticket URL externally and logs any failure.
+///
+/// The URL comes from provider JSON, so it goes through the shared scheme
+/// allowlist: anything that is not a web link is silently not opened.
 pub(in crate::ui) fn launch_uri(url: &str) {
-    gtk4::UriLauncher::new(url).launch(
-        None::<&gtk4::Window>,
-        gtk4::gio::Cancellable::NONE,
-        |result| {
-            if let Err(error) = result {
-                tracing::warn!(%error, "could not open announcement URL");
-            }
-        },
-    );
+    crate::ui::external_link::launch(url, "announcement", None);
 }
 
 fn primary_button(

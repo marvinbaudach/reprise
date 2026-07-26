@@ -52,7 +52,13 @@ pub(super) fn delta_presentations(
             } else {
                 format!("{} · {}", row.city, row.venue)
             };
-            let target = row.ticket_url.as_ref().or(row.event_url.as_ref()).cloned();
+            // Provider JSON decides these URLs, so only web links become a
+            // clickable target; anything else leaves the row inert (CONC-7).
+            let target = [row.ticket_url.as_deref(), row.event_url.as_deref()]
+                .into_iter()
+                .flatten()
+                .find(|url| reprise_core::external_link::is_launchable_url(url))
+                .map(str::to_owned);
             ConcertDeltaPresentation {
                 artist: row.artist_name.clone(),
                 meta: format!("{date} · {location}"),
@@ -217,6 +223,19 @@ mod tests {
             concerts_section_subtitle(false),
             strings::text(strings::UPDATES_NEWLY_ANNOUNCED)
         );
+    }
+
+    #[test]
+    fn non_web_provider_urls_leave_the_delta_row_without_a_ticket_target() {
+        let today = NaiveDate::from_ymd_opt(2026, 7, 25).unwrap();
+        let mut hostile = row(1, "2026-08-01");
+        hostile.ticket_url = Some("javascript:alert(1)".into());
+        hostile.event_url = Some("file:///etc/passwd".into());
+
+        let presentations = delta_presentations(&[hostile], today);
+
+        assert_eq!(presentations[0].target, None);
+        assert_eq!(presentations[0].ticket_label, None);
     }
 
     #[test]
