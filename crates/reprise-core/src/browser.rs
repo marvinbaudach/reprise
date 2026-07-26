@@ -67,6 +67,7 @@ impl ArtistKey {
 pub enum LibraryScope {
     #[default]
     All,
+    RecentlyAdded,
     Album(AlbumKey),
     Artist(ArtistKey),
     Genre(String),
@@ -249,6 +250,7 @@ impl BrowserPlace {
         match self {
             Self::Tracks(place) => match &place.collection {
                 TrackCollection::Library(LibraryScope::All) => ViewSource::Library,
+                TrackCollection::Library(LibraryScope::RecentlyAdded) => ViewSource::RecentlyAdded,
                 TrackCollection::Library(LibraryScope::Album(key)) => ViewSource::Album {
                     album: key.album.clone(),
                     album_artist: key.album_artist.clone(),
@@ -282,6 +284,7 @@ impl From<ViewSource> for BrowserPlace {
     fn from(source: ViewSource) -> Self {
         let collection = match source {
             ViewSource::Library => TrackCollection::Library(LibraryScope::All),
+            ViewSource::RecentlyAdded => TrackCollection::Library(LibraryScope::RecentlyAdded),
             ViewSource::Playlist(id) => TrackCollection::Playlist(id),
             ViewSource::Smart(id) => TrackCollection::Smart(id),
             ViewSource::Queue => TrackCollection::Queue,
@@ -364,6 +367,7 @@ mod tests {
     fn browse_3_view_source_round_trip_preserves_query_identity() {
         let sources = [
             ViewSource::Library,
+            ViewSource::RecentlyAdded,
             ViewSource::Playlist(7),
             ViewSource::Smart(9),
             ViewSource::Queue,

@@ -285,6 +285,12 @@ pub fn query_track_window_browsed_ai(
         ViewSource::Library => library::query_track_window_library(
             conn, sort_field, sort_dir, filter, offset, limit, browse, exclude_ai, project_ai,
         ),
+        ViewSource::RecentlyAdded => {
+            let browse = recently_added_browse(browse);
+            library::query_track_window_library(
+                conn, sort_field, sort_dir, filter, offset, limit, &browse, exclude_ai, project_ai,
+            )
+        }
         ViewSource::Missing => library::query_track_window_missing(
             conn, sort_field, sort_dir, filter, offset, limit, project_ai,
         ),
@@ -359,6 +365,9 @@ pub fn query_track_count_browsed(
 ) -> Result<i64, rusqlite::Error> {
     match source {
         ViewSource::Library => library::query_track_count_library(conn, filter, browse),
+        ViewSource::RecentlyAdded => {
+            library::query_track_count_library(conn, filter, &recently_added_browse(browse))
+        }
         ViewSource::Missing => library::query_track_count_missing(conn, filter),
         ViewSource::Playlist(id) => playlist::query_track_count_playlist(conn, *id, filter),
         ViewSource::Smart(id) => smart::query_track_count_smart(conn, *id, filter),
@@ -433,6 +442,12 @@ pub fn query_track_count_browsed_ai(
             conn,
             filter,
             &genre_browse(genre, browse),
+            exclude_ai,
+        ),
+        ViewSource::RecentlyAdded => library::query_track_count_library_ai(
+            conn,
+            filter,
+            &recently_added_browse(browse),
             exclude_ai,
         ),
         _ => query_track_count_browsed(conn, source, filter, browse, queue_ids),
@@ -512,6 +527,9 @@ pub fn query_track_ids_browsed_ai(
             let rows = stmt.query_map(rusqlite::params_from_iter(params), row_to_id)?;
             rows.collect()
         }
+        ViewSource::RecentlyAdded => {
+            query_track_ids_recently_added(conn, sort_field, sort_dir, filter, browse, exclude_ai)
+        }
         ViewSource::Missing => {
             let has_filter = !filter.trim().is_empty();
             let sql = build_track_ids_query_base(1, sort_field, sort_dir, has_filter);
@@ -575,6 +593,39 @@ fn genre_browse(genre: &str, browse: &BrowseFilter) -> BrowseFilter {
     let mut scoped = browse.clone();
     scoped.genre = Some(genre.trim().to_owned());
     scoped
+}
+
+fn recently_added_browse(browse: &BrowseFilter) -> BrowseFilter {
+    const SEVEN_DAYS_SECONDS: i64 = 7 * 24 * 60 * 60;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_secs() as i64);
+    BrowseFilter {
+        added_since: Some(now.saturating_sub(SEVEN_DAYS_SECONDS).to_string()),
+        ..browse.clone()
+    }
+}
+
+fn query_track_ids_recently_added(
+    conn: &Connection,
+    sort_field: &str,
+    sort_dir: &str,
+    filter: &str,
+    browse: &BrowseFilter,
+    exclude_ai: bool,
+) -> Result<Vec<i64>, rusqlite::Error> {
+    let browse = recently_added_browse(browse);
+    let has_filter = !filter.trim().is_empty();
+    let sql = build_track_ids_query_browsed(sort_field, sort_dir, has_filter, &browse, exclude_ai);
+    let mut stmt = conn.prepare(&sql)?;
+    let mut params = Vec::new();
+    if has_filter {
+        params.push(Value::Text(like_pattern(filter.trim())));
+    }
+    let (_, browse_values) = browse::browse_clause(&browse, params.len() + 1);
+    params.extend(browse_values.into_iter().map(Value::Text));
+    let rows = stmt.query_map(rusqlite::params_from_iter(params), row_to_id)?;
+    rows.collect()
 }
 
 /// Returns the ids represented by the current visible view. This differs

@@ -144,6 +144,10 @@ fn default_sort_for_source(source: &ViewSource) -> Option<SortState> {
             field: PLAYLIST_ORDER_SORT_FIELD.to_string(),
             dir: "asc".to_string(),
         }),
+        ViewSource::RecentlyAdded => Some(SortState {
+            field: "added_at".to_string(),
+            dir: "desc".to_string(),
+        }),
         ViewSource::Library
         | ViewSource::Smart(_)
         | ViewSource::Queue
@@ -208,7 +212,7 @@ mod default_sort_for_source_tests {
         }
     }
 
-    /// Every non-Playlist source has no forced default of its own — the
+    /// Ordinary non-Playlist sources have no forced default of their own — the
     /// caller (`set_source_and_reload`, via `resolve_sort_on_switch`) is
     /// responsible for resetting away from a lingering playlist sentinel in
     /// this case, not this function.
@@ -229,6 +233,28 @@ mod default_sort_for_source_tests {
         assert_eq!(
             default_sort_for_source(&ViewSource::Artist("Björk".into())),
             None
+        );
+    }
+
+    #[test]
+    fn fil_8_recently_added_defaults_to_newest_first() {
+        let expected = SortState {
+            field: "added_at".into(),
+            dir: "desc".into(),
+        };
+        assert_eq!(
+            default_sort_for_source(&ViewSource::RecentlyAdded),
+            Some(expected.clone())
+        );
+        assert_eq!(
+            resolve_sort_on_switch(
+                &SortState {
+                    field: PLAYLIST_ORDER_SORT_FIELD.into(),
+                    dir: "asc".into(),
+                },
+                &ViewSource::RecentlyAdded
+            ),
+            expected
         );
     }
 }

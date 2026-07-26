@@ -230,6 +230,7 @@ pub(super) fn arm_smoke(
 fn to_view_source(source: &SessionSource) -> ViewSource {
     match source {
         SessionSource::Library => ViewSource::Library,
+        SessionSource::RecentlyAdded => ViewSource::RecentlyAdded,
         SessionSource::Playlist(id) => ViewSource::Playlist(*id),
         SessionSource::Smart(id) => ViewSource::Smart(*id),
         SessionSource::Queue => ViewSource::Queue,
@@ -242,6 +243,7 @@ fn parse_smoke_state(value: &str) -> Option<SessionState> {
     let mut fields = value.split('|');
     let source = match fields.next()? {
         "library" => SessionSource::Library,
+        "recently-added" => SessionSource::RecentlyAdded,
         "queue" => SessionSource::Queue,
         "missing" => SessionSource::Missing,
         "import-errors" => SessionSource::ImportErrors,

@@ -21,6 +21,9 @@ pub enum ViewSource {
     /// only source before this task, and still the default.
     #[default]
     Library,
+    /// Present tracks added during the rolling seven-day window. This is a
+    /// Library scope, not a capped user-defined smart playlist.
+    RecentlyAdded,
     /// A manual playlist, ordered by `playlist_tracks.position` by default
     /// (a column-header click temporarily overrides — see `queries.rs`'s
     /// `"playlist_order"` whitelist sentinel). Carries the `playlists.id`.
@@ -88,6 +91,7 @@ impl ViewSource {
     pub fn label(&self) -> String {
         match self {
             Self::Library => "library".to_string(),
+            Self::RecentlyAdded => "recently_added".to_string(),
             Self::Playlist(id) => format!("playlist:{id}"),
             Self::Smart(id) => format!("smart:{id}"),
             Self::Queue => "queue".to_string(),
@@ -122,6 +126,7 @@ mod tests {
     #[test]
     fn label_formats_each_variant() {
         assert_eq!(ViewSource::Library.label(), "library");
+        assert_eq!(ViewSource::RecentlyAdded.label(), "recently_added");
         assert_eq!(ViewSource::Playlist(3).label(), "playlist:3");
         assert_eq!(ViewSource::Smart(7).label(), "smart:7");
         assert_eq!(ViewSource::Queue.label(), "queue");

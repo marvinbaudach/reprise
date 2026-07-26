@@ -23,6 +23,10 @@ pub struct BrowseFilter {
     pub year: Option<String>,
     #[serde(default)]
     pub rating: Option<String>,
+    /// Internal rolling-time constraint used by the Recently Added Library
+    /// scope. It is derived at query time and never persisted as a user facet.
+    #[serde(skip)]
+    pub added_since: Option<String>,
 }
 
 impl BrowseFilter {
@@ -33,6 +37,7 @@ impl BrowseFilter {
             && self.album.is_none()
             && self.year.is_none()
             && self.rating.is_none()
+            && self.added_since.is_none()
     }
 }
 
@@ -159,18 +164,19 @@ pub fn query_browse_values(
 pub(super) fn browse_clause(filter: &BrowseFilter, first_param: usize) -> (String, Vec<String>) {
     let mut clause = String::new();
     let mut values = Vec::new();
-    for (column, value) in [
-        ("genre", &filter.genre),
-        ("artist", &filter.artist),
-        ("album", &filter.album),
-        ("year", &filter.year),
-        ("rating", &filter.rating),
+    for (column, operator, value) in [
+        ("genre", "=", &filter.genre),
+        ("artist", "=", &filter.artist),
+        ("album", "=", &filter.album),
+        ("year", "=", &filter.year),
+        ("rating", "=", &filter.rating),
+        ("added_at", ">=", &filter.added_since),
     ] {
         let Some(value) = value else {
             continue;
         };
         let parameter = first_param + values.len();
-        clause.push_str(&format!(" AND {column} = ?{parameter}"));
+        clause.push_str(&format!(" AND {column} {operator} ?{parameter}"));
         values.push(value.clone());
     }
     (clause, values)

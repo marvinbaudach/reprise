@@ -439,6 +439,7 @@ pub const SIDEBAR_SECTION_SMART: &str = N_!("SMART");
 pub const SIDEBAR_SECTION_ISSUES: &str = N_!("ISSUES");
 
 pub const SIDEBAR_MUSIC: &str = N_!("Music");
+pub const SIDEBAR_RECENTLY_ADDED: &str = N_!("Recently added");
 pub const SIDEBAR_QUEUE: &str = N_!("Queue");
 pub const QUEUE_SECTION_NOW_PLAYING: &str = N_!("Now Playing");
 pub const JUMP_TO_NOW_PLAYING: &str = N_!("Jump to now playing");

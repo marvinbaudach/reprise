@@ -6,6 +6,8 @@
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
 
+use crate::ui::strings;
+
 pub(in crate::ui) fn filters_restrict(
     search: &str,
     browse: &BrowseFilter,
@@ -17,7 +19,10 @@ pub(in crate::ui) fn filters_restrict(
 pub(in crate::ui) fn scope_restricts(source: &ViewSource) -> bool {
     matches!(
         source,
-        ViewSource::Artist(_) | ViewSource::Album { .. } | ViewSource::Genre(_)
+        ViewSource::Artist(_)
+            | ViewSource::Album { .. }
+            | ViewSource::Genre(_)
+            | ViewSource::RecentlyAdded
     )
 }
 
@@ -32,6 +37,7 @@ pub(in crate::ui) fn is_restricted(
 
 pub(in crate::ui) fn scope_chip_label(source: &ViewSource) -> Option<String> {
     match source {
+        ViewSource::RecentlyAdded => Some(strings::text(strings::SIDEBAR_RECENTLY_ADDED)),
         ViewSource::Artist(artist) => Some(artist.clone()),
         ViewSource::Genre(genre) => Some(genre.clone()),
         ViewSource::Album {
@@ -175,5 +181,14 @@ mod tests {
             assert!(!scope_restricts(&source));
             assert_eq!(scope_chip_label(&source), None);
         }
+    }
+
+    #[test]
+    fn fil_8_recently_added_is_a_removable_library_scope_chip() {
+        let source = ViewSource::RecentlyAdded;
+
+        assert!(scope_restricts(&source));
+        assert_eq!(scope_chip_label(&source).as_deref(), Some("Recently added"));
+        assert!(is_restricted("", &BrowseFilter::default(), false, &source));
     }
 }
