@@ -268,6 +268,13 @@ impl ConcertsFilterBar {
         self.rebuild();
     }
 
+    pub(super) fn reload_persisted(self: &Rc<Self>) -> Result<(), rusqlite::Error> {
+        let filter = config::persisted_filter(&self.conn.borrow())?;
+        self.filter.replace(filter);
+        self.rebuild();
+        Ok(())
+    }
+
     pub(super) fn clear_all(self: &Rc<Self>) {
         self.apply_filter(ConcertFilter::default());
     }
@@ -362,8 +369,12 @@ impl ConcertsFilterBar {
 
     fn values(&self, facet: FilterFacet) -> Vec<FilterValue> {
         match facet {
-            FilterFacet::Radius => [None, Some(50.0), Some(100.0), Some(250.0), Some(500.0)]
-                .into_iter()
+            FilterFacet::Radius => std::iter::once(None)
+                .chain(
+                    config::RADIUS_PRESETS_KM
+                        .into_iter()
+                        .map(|radius| Some(f64::from(radius))),
+                )
                 .map(|radius| FilterValue {
                     label: radius.map_or_else(
                         || strings::text(strings::CONCERTS_OFF),

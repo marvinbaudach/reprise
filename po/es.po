@@ -4314,3 +4314,18 @@ msgstr "Barra de título independiente"
 #~ msgid "Based on {count} analyzed plays · {coverage}% coverage"
 #~ msgstr ""
 #~ "Basado en {count} reproducciones analizadas · {coverage}% de cobertura"
+
+msgid "Saved"
+msgstr "Guardado"
+
+msgid "Checking key…"
+msgstr "Verificando clave…"
+
+msgid "Key works"
+msgstr "La clave funciona"
+
+msgid "Key was rejected"
+msgstr "La clave fue rechazada"
+
+msgid "Could not verify"
+msgstr "No se pudo verificar"

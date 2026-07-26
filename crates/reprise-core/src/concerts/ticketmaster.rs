@@ -47,6 +47,13 @@ pub(crate) fn attractions_url(name: &str, api_key: &str) -> String {
     )
 }
 
+pub(crate) fn credential_url(api_key: &str) -> String {
+    format!(
+        "https://app.ticketmaster.com/discovery/v2/attractions.json?keyword=test&size=1&apikey={}",
+        crate::musicbrainz::urlencode(api_key.trim())
+    )
+}
+
 pub(crate) fn events_url(provider_id: &str, api_key: &str) -> String {
     format!(
         "https://app.ticketmaster.com/discovery/v2/events.json?attractionId={}&size=50&apikey={}",

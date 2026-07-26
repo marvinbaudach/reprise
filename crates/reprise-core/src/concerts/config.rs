@@ -15,6 +15,8 @@ pub const FILTER_RADIUS_KEY: &str = "concerts.filter.radius_km";
 pub const FILTER_COUNTRY_KEY: &str = "concerts.filter.country";
 pub const FILTER_HORIZON_KEY: &str = "concerts.filter.horizon";
 pub const FILTER_INCLUDE_SIMILAR_KEY: &str = "concerts.filter.include_similar";
+pub const DEFAULT_RADIUS_KM: f64 = 1_000.0;
+pub const RADIUS_PRESETS_KM: [u32; 4] = [100, 250, 500, 1_000];
 
 const BANDSINTOWN_ENV: &str = "REPRISE_BANDSINTOWN_APP_ID";
 const TICKETMASTER_ENV: &str = "REPRISE_TICKETMASTER_APIKEY";
@@ -85,7 +87,7 @@ pub fn persisted_filter(conn: &Connection) -> Result<ConcertFilter, rusqlite::Er
     let stored_radius = crate::library::settings::get_setting(conn, FILTER_RADIUS_KEY)?;
     let radius_km = match stored_radius {
         Some(value) => value.trim().parse::<f64>().ok(),
-        None => numeric_setting(conn, DEFAULT_RADIUS_KEY)?,
+        None => Some(numeric_setting(conn, DEFAULT_RADIUS_KEY)?.unwrap_or(DEFAULT_RADIUS_KM)),
     }
     .filter(|radius| radius.is_finite() && *radius > 0.0);
     let country = non_empty_setting(conn, FILTER_COUNTRY_KEY)?;

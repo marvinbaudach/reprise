@@ -9,6 +9,76 @@ struct StoredEvent {
     seen_at: Option<i64>,
 }
 
+/// One complete row from the durable concert-event cache.
+///
+/// This is intentionally separate from [`ConcertRow`]: the UI projection
+/// carries derived distance but does not need cache bookkeeping, while
+/// headless read surfaces need the complete stored record without applying
+/// the current UI filters.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CachedConcertEvent {
+    pub id: i64,
+    pub artist_key: String,
+    pub artist_name: String,
+    pub starts_at: String,
+    pub date_key: String,
+    pub venue: String,
+    pub city: String,
+    pub region: Option<String>,
+    pub country: Option<String>,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub ticket_url: Option<String>,
+    pub ticket_source: Option<String>,
+    pub event_url: Option<String>,
+    pub provider: String,
+    pub is_similar: bool,
+    pub similar_to: Option<String>,
+    pub fetched_at: i64,
+    pub seen_at: Option<i64>,
+    pub dedupe_key: String,
+}
+
+/// Reads every durable concert-event field without applying the current UI
+/// date, radius, country, horizon, or similar-artist filters.
+pub fn query_cached_events(conn: &Connection) -> Result<Vec<CachedConcertEvent>, rusqlite::Error> {
+    let mut statement = conn.prepare(
+        "SELECT id, artist_key, artist_name, starts_at, date_key, venue, city,
+                region, country, latitude, longitude, ticket_url, ticket_source,
+                event_url, provider, is_similar, similar_to, fetched_at, seen_at,
+                dedupe_key
+         FROM concert_events
+         ORDER BY date_key ASC, starts_at ASC, lower(artist_name) ASC, id ASC",
+    )?;
+    let events = statement
+        .query_map([], |row| {
+            Ok(CachedConcertEvent {
+                id: row.get(0)?,
+                artist_key: row.get(1)?,
+                artist_name: row.get(2)?,
+                starts_at: row.get(3)?,
+                date_key: row.get(4)?,
+                venue: row.get(5)?,
+                city: row.get(6)?,
+                region: row.get(7)?,
+                country: row.get(8)?,
+                latitude: row.get(9)?,
+                longitude: row.get(10)?,
+                ticket_url: row.get(11)?,
+                ticket_source: row.get(12)?,
+                event_url: row.get(13)?,
+                provider: row.get(14)?,
+                is_similar: row.get::<_, i64>(15)? != 0,
+                similar_to: row.get(16)?,
+                fetched_at: row.get(17)?,
+                seen_at: row.get(18)?,
+                dedupe_key: row.get(19)?,
+            })
+        })?
+        .collect();
+    events
+}
+
 pub fn query_events(
     conn: &Connection,
     filter: &ConcertFilter,

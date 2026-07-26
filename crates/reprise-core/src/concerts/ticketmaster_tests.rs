@@ -1,4 +1,4 @@
-use super::{attractions_url, events_url, parse_attractions, parse_events};
+use super::{attractions_url, credential_url, events_url, parse_attractions, parse_events};
 use crate::concerts::{ProviderError, Resolution};
 
 #[test]
@@ -30,6 +30,10 @@ fn urls_encode_search_terms_identifiers_and_credentials() {
     assert_eq!(
         events_url("artist id", "key"),
         "https://app.ticketmaster.com/discovery/v2/events.json?attractionId=artist%20id&size=50&apikey=key"
+    );
+    assert_eq!(
+        credential_url("api/key"),
+        "https://app.ticketmaster.com/discovery/v2/attractions.json?keyword=test&size=1&apikey=api%2Fkey"
     );
 }
 

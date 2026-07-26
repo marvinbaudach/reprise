@@ -28,6 +28,7 @@ struct WorkerRequest {
 
 type IsAlive = Rc<dyn Fn() -> bool>;
 type OnEnabled = Rc<dyn Fn(bool)>;
+type OnSettings = Rc<dyn Fn()>;
 
 #[derive(Clone)]
 struct EnabledSubscriber {
@@ -99,11 +100,72 @@ impl EnabledSubscribers {
     }
 }
 
+#[derive(Clone)]
+struct SettingsSubscriber {
+    id: u64,
+    is_alive: IsAlive,
+    callback: OnSettings,
+}
+
+#[derive(Default)]
+struct SettingsSubscribers {
+    next_id: Cell<u64>,
+    entries: RefCell<Vec<SettingsSubscriber>>,
+}
+
+impl SettingsSubscribers {
+    fn subscribe(&self, is_alive: impl Fn() -> bool + 'static, callback: impl Fn() + 'static) {
+        self.prune();
+        let is_alive: IsAlive = Rc::new(is_alive);
+        if !is_alive() {
+            return;
+        }
+        let id = self.next_id.get().wrapping_add(1);
+        self.next_id.set(id);
+        self.entries.borrow_mut().push(SettingsSubscriber {
+            id,
+            is_alive,
+            callback: Rc::new(callback),
+        });
+    }
+
+    fn notify(&self) {
+        self.prune();
+        let entries = self.entries.borrow().clone();
+        for entry in entries {
+            if (entry.is_alive)() {
+                (entry.callback)();
+            }
+        }
+        self.prune();
+    }
+
+    fn prune(&self) {
+        let entries = self.entries.borrow().clone();
+        let dead = entries
+            .iter()
+            .filter_map(|entry| (!(entry.is_alive)()).then_some(entry.id))
+            .collect::<Vec<_>>();
+        if dead.is_empty() {
+            return;
+        }
+        self.entries
+            .borrow_mut()
+            .retain(|entry| !dead.contains(&entry.id));
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.entries.borrow().len()
+    }
+}
+
 pub(in crate::ui) struct ConcertsRuntime {
     pub enabled: Rc<Cell<bool>>,
     worker: async_channel::Sender<WorkerRequest>,
     cancellation: RefCell<CancellationToken>,
     subscribers: EnabledSubscribers,
+    settings_subscribers: SettingsSubscribers,
     jitter_seconds: i64,
 }
 
@@ -128,6 +190,7 @@ impl ConcertsRuntime {
             worker: spawn(database_path),
             cancellation: RefCell::new(CancellationToken::default()),
             subscribers: EnabledSubscribers::default(),
+            settings_subscribers: SettingsSubscribers::default(),
             jitter_seconds: concerts::jitter_seconds(&seed),
         })
     }
@@ -161,6 +224,18 @@ impl ConcertsRuntime {
             .subscribe(self.enabled.get(), is_alive, callback);
     }
 
+    pub(in crate::ui) fn subscribe_settings(
+        &self,
+        is_alive: impl Fn() -> bool + 'static,
+        callback: impl Fn() + 'static,
+    ) {
+        self.settings_subscribers.subscribe(is_alive, callback);
+    }
+
+    pub(in crate::ui) fn notify_settings_changed(&self) {
+        self.settings_subscribers.notify();
+    }
+
     pub(in crate::ui) fn request(&self, request: ConcertsRequest) -> bool {
         if !self.enabled.get() {
             return false;
@@ -182,6 +257,11 @@ impl ConcertsRuntime {
     #[cfg(test)]
     fn subscriber_count(&self) -> usize {
         self.subscribers.len()
+    }
+
+    #[cfg(test)]
+    fn settings_subscriber_count(&self) -> usize {
+        self.settings_subscribers.len()
     }
 
     #[cfg(test)]
@@ -269,7 +349,7 @@ mod tests {
     }
 
     #[test]
-    fn conc_5_only_enabled_due_idle_workers_fetch() {
+    fn conc_5a_only_enabled_due_idle_workers_fetch() {
         assert!(request_allowed(true, false, true));
         assert!(!request_allowed(false, false, true));
         assert!(!request_allowed(true, true, true));
@@ -310,6 +390,30 @@ mod tests {
         alive.set(false);
         runtime.set_enabled(&conn, false).unwrap();
         assert_eq!(runtime.subscriber_count(), 0);
+    }
+
+    #[test]
+    fn runtime_notifies_live_settings_subscribers_without_toggling_the_module() {
+        let runtime = ConcertsRuntime::setup(&migrated_conn());
+        let alive = Rc::new(Cell::new(true));
+        let calls = Rc::new(Cell::new(0));
+        runtime.subscribe_settings(
+            {
+                let alive = alive.clone();
+                move || alive.get()
+            },
+            {
+                let calls = calls.clone();
+                move || calls.set(calls.get() + 1)
+            },
+        );
+
+        runtime.notify_settings_changed();
+
+        assert_eq!(calls.get(), 1);
+        alive.set(false);
+        runtime.notify_settings_changed();
+        assert_eq!(runtime.settings_subscriber_count(), 0);
     }
 
     #[test]

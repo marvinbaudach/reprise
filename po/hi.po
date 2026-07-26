@@ -3840,3 +3840,18 @@ msgstr ""
 
 #~ msgid "Unknown Artist"
 #~ msgstr "अज्ञात कलाकार"
+
+msgid "Saved"
+msgstr "सहेजा गया"
+
+msgid "Checking key…"
+msgstr "कुंजी की जाँच हो रही है…"
+
+msgid "Key works"
+msgstr "कुंजी काम करती है"
+
+msgid "Key was rejected"
+msgstr "कुंजी अस्वीकार कर दी गई"
+
+msgid "Could not verify"
+msgstr "सत्यापित नहीं किया जा सका"
