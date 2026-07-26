@@ -471,6 +471,99 @@ mod tests {
     }
 
     #[test]
+    fn ac_20_grid_preserves_large_dynamic_range_between_moderate_and_huge_hits() {
+        use crate::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
+
+        const LOW_KICK_BINS: usize = 8;
+
+        fn peak_for_kick(peak_db: f32) -> f32 {
+            let wall = [-50.0; SPECTRUM_ANALYSIS_BAND_COUNT];
+            let mut analyzer = SpectrumAnalyzer::new();
+            let mut engine = VisualEngine::new();
+            engine.set_playing(true);
+            for _ in 0..120 {
+                engine.ingest(&analyzer.ingest(wall));
+                engine.tick();
+            }
+            let baseline = engine.membrane.sample(0.5, 0.5).max(0.0);
+            let mut kick = wall;
+            kick[..LOW_KICK_BINS].fill(peak_db);
+
+            let hit = analyzer.ingest(kick);
+            assert!(hit.beat().fired, "{peak_db} dB kick must be detected");
+            engine.ingest(&hit);
+
+            let mut peak = baseline;
+            for _ in 0..12 {
+                engine.tick();
+                peak = peak.max(engine.membrane.sample(0.5, 0.5).max(0.0));
+                engine.ingest(&analyzer.ingest(wall));
+            }
+            peak - baseline
+        }
+
+        let moderate = peak_for_kick(-38.0);
+        let huge = peak_for_kick(0.0);
+
+        assert!(
+            huge > 1.5,
+            "a huge Wake-Up-sized hit must use nearly the full Grid stroke, got {huge}"
+        );
+        assert!(
+            moderate < huge * 0.55,
+            "a moderate rhythm must leave visible headroom for huge hits: moderate={moderate}, huge={huge}"
+        );
+    }
+
+    #[test]
+    fn ac_20_bars_make_breakdown_hits_visibly_outrank_moderate_rhythms() {
+        use crate::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
+
+        const LOW_KICK_BINS: usize = 8;
+
+        fn beat_lift_for_kick(peak_db: f32) -> f32 {
+            let wall = [-50.0; SPECTRUM_ANALYSIS_BAND_COUNT];
+            let mut analyzer = SpectrumAnalyzer::new();
+            let mut engine = VisualEngine::new();
+            engine.set_playing(true);
+            for _ in 0..120 {
+                engine.ingest(&analyzer.ingest(wall));
+                engine.tick();
+            }
+            let baseline =
+                engine.bars.values().iter().sum::<f32>() / engine.bars.values().len() as f32;
+
+            let mut kick = wall;
+            kick[..LOW_KICK_BINS].fill(peak_db);
+            let hit = analyzer.ingest(kick);
+            assert!(hit.beat().fired, "{peak_db} dB kick must be detected");
+            engine.ingest(&hit);
+
+            let mut peak = baseline;
+            for _ in 0..8 {
+                engine.tick();
+                let average =
+                    engine.bars.values().iter().sum::<f32>() / engine.bars.values().len() as f32;
+                peak = peak.max(average);
+                engine.ingest(&analyzer.ingest(wall));
+            }
+            peak - baseline
+        }
+
+        let moderate = beat_lift_for_kick(-38.0);
+        let huge = beat_lift_for_kick(0.0);
+
+        assert!(
+            huge > 0.36,
+            "a breakdown must visibly lift the whole analyzer, lift was {huge}"
+        );
+        assert!(
+            huge > moderate * 1.75,
+            "a breakdown must lift the full analyzer far more than a moderate rhythm: moderate={moderate}, huge={huge}"
+        );
+    }
+
+    #[test]
     fn detected_hit_lifts_bars_in_the_same_frame() {
         use crate::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
 

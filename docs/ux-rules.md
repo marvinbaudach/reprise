@@ -1534,10 +1534,13 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
   Szenen-Rasterfläche und skaliert sie auf die unveränderte Canvas-Größe.
   Die Impulsgröße folgt der absoluten Energie der 256 Roh-Bins, nicht dem
   Max-Pooling oder nur der relativen adaptiven Schwelle: große Schläge müssen
-  schwache Transienten sichtbar überragen. Ein Grid-Impuls setzt unabhängig
-  von der aktuellen Tuchphase sofort die breite, runde Aufwärtsbewegung in
-  Gang, teleportiert aber keine Tuchposition: Die Mittelkuppel baut sich über
-  fünf bis neun 60-Hz-Schritte (höchstens 150 ms) flüssig zum großen Peak auf.
+  schwache Transienten sichtbar überragen. Gegenüber einem Volltreffer bleibt
+  die Grid-Kuppel eines moderaten Rhythmus unter 55 Prozent; bei Bars hebt ein
+  Volltreffer den Säulendurchschnitt um mehr als 0,36 und mindestens 75 Prozent
+  stärker als derselbe moderate Rhythmus. Ein Grid-Impuls setzt unabhängig von
+  der aktuellen Tuchphase sofort die breite, runde Aufwärtsbewegung in Gang,
+  teleportiert aber keine Tuchposition: Die Mittelkuppel baut sich über fünf
+  bis neun 60-Hz-Schritte (höchstens 150 ms) flüssig zum großen Peak auf.
   Schnelle Beatfolgen berücksichtigen den verbleibenden Hub, statt die
   Membran am Höhenlimit flach festzudrücken; ihre freie Nachschwingung darf
   keinen späteren größeren Peak erfinden. Nach dem ersten Tiefendurchlauf
