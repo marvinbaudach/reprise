@@ -42,6 +42,7 @@ cmp "$tmp_root/lock-checksums" "$tmp_root/source-checksums"
 test "$(rg -c '^checksum = ' Cargo.lock)" -eq "$(jq '[.[] | select(.type == "archive")] | length' flatpak/cargo-sources.json)"
 bash scripts/check-flatpak-device-permissions.sh org.reprise.Reprise.yml
 bash scripts/check-stem-runtime-packaging.sh
+bash scripts/check-stem-worker-isolation.sh
 if command -v flatpak-builder-lint >/dev/null; then
   flatpak-builder-lint manifest org.reprise.Reprise.yml
 elif flatpak info org.flatpak.Builder >/dev/null 2>&1; then
@@ -70,6 +71,7 @@ meson setup "$tmp_root/build" . --prefix=/usr -Dprofile=release
 meson compile -C "$tmp_root/build"
 DESTDIR="$tmp_root/root" meson install -C "$tmp_root/build"
 test -x "$tmp_root/root/usr/bin/reprise"
+test -x "$tmp_root/root/usr/libexec/reprise-worker"
 test -f "$tmp_root/root/usr/share/applications/org.reprise.Reprise.desktop"
 test -f "$tmp_root/root/usr/share/metainfo/org.reprise.Reprise.metainfo.xml"
 test -f "$tmp_root/root/usr/share/icons/hicolor/scalable/apps/org.reprise.Reprise.svg"

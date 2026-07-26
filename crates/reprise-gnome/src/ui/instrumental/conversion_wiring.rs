@@ -1,12 +1,12 @@
 //! Window-side wiring for the instrumental slice (INST-6/INST-7): constructs
-//! the worker host and the conversion view, drives the view off the worker's
-//! coalesced progress ticks, and connects the save/discard/save-all/clear
+//! the worker-process supervisor and the conversion view, drives the view off
+//! the supervisor's coalesced progress ticks, and connects save/discard/save-all/clear
 //! affordances to the `ai_promotion`/`ai_jobs` core facades, and plays a
 //! finished render — a staging file by path, a promoted render as a library
 //! track (INST-4b/5b).
 //!
 //! Everything here is gated on the experimental switch (INST-11): with the
-//! switch off, no worker thread starts and no view page is added.
+//! switch off, no worker process starts and no view page is added.
 
 use std::cell::RefCell;
 use std::path::Path;
@@ -70,17 +70,17 @@ pub(in crate::ui) fn install(deps: &ConversionWiring<'_>) {
         tracing::warn!(%error, "instrumental: could not create staging dir");
     }
 
-    let Some(backend) = super::app_backend() else {
-        tracing::warn!("instrumental: production stem backend is not compiled in");
+    if !super::production_backend_compiled() {
+        tracing::warn!("instrumental: packaged stem worker is not compiled in");
         return;
+    }
+    let worker = match InstrumentalWorker::new(deps.db_path, &staging) {
+        Ok(worker) => worker,
+        Err(error) => {
+            tracing::error!(%error, "instrumental: could not start worker supervisor");
+            return;
+        }
     };
-    let worker = InstrumentalWorker::new(
-        deps.db_path.to_path_buf(),
-        backend,
-        staging.clone(),
-        super::db_source_resolver(),
-        std::process::id() as i64,
-    );
     // The enqueue paths (context menu) nudge the worker through this hook so a
     // freshly queued render starts immediately rather than after the next event.
     super::set_wake_hook({
@@ -122,9 +122,9 @@ pub(in crate::ui) fn install(deps: &ConversionWiring<'_>) {
         }
     });
 
-    // The close handler owns the sole strong refs to the worker and view, so
-    // both live exactly as long as the window; the worker thread is joined on
-    // close (its Drop is the backstop).
+    // The close handler owns the sole strong refs to the supervisor and view,
+    // so both live exactly as long as the window. An active finite worker is
+    // detached to finish its render safely when the UI closes.
     deps.window.connect_close_request(move |_| {
         let _keep_view_alive = &view;
         worker.shutdown();

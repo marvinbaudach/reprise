@@ -6,8 +6,9 @@
 //! 1. **Weights** ([`ensure_weights`]): download-on-first-use with SHA-256
 //!    verification and a licence notice written beside the file (plan 2.4.9).
 //!    The network fetch is injected, so tests drive it from local bytes; the
-//!    real `ureq` fetcher (`http_fetcher`) is compiled only with the `ort`
-//!    feature. A tampered download is rejected and never written.
+//!    real `ureq` fetcher (`http_fetcher`) is compiled only with the
+//!    `provision-http` feature. A tampered download is rejected and never
+//!    written.
 //! 2. **onnxruntime library** ([`resolve_library`]): the default build loads
 //!    onnxruntime dynamically (`load-dynamic`), so at runtime a
 //!    `libonnxruntime.so` must be located from an explicit, optionally
@@ -321,15 +322,15 @@ pub fn onnxruntime_location() -> LibraryLocation {
 }
 
 /// The memory cap for a model download — generous so a mispointed URL cannot
-/// exhaust RAM (htdemucs fp32 is ~316 MB). Only the real fetcher (`ort`) uses it.
-#[cfg(feature = "ort")]
+/// exhaust RAM (htdemucs fp32 is ~316 MB). Only the real fetcher uses it.
+#[cfg(feature = "provision-http")]
 const MAX_DOWNLOAD_BYTES: u64 = 512 * 1024 * 1024;
 
 /// Reads `reader` to its end in 64 KiB chunks, reporting cumulative bytes read
 /// (and the server-declared total, when known) after each chunk and enforcing
 /// `max_bytes`. Pure over any [`Read`], so the progress accounting is unit-tested
-/// without touching the network. Part of the `ort` download machinery.
-#[cfg(feature = "ort")]
+/// without touching the network. Part of the model-provisioning machinery.
+#[cfg(feature = "provision-http")]
 fn read_reporting(
     mut reader: impl Read,
     content_length: Option<u64>,
@@ -355,11 +356,11 @@ fn read_reporting(
     Ok(bytes)
 }
 
-/// The real network fetcher (blocking `ureq`), compiled only with the `ort`
-/// feature, reporting progress through `on_progress` (cumulative bytes,
+/// The real network fetcher (blocking `ureq`), compiled only with the
+/// `provision-http` feature, reporting progress through `on_progress` (cumulative bytes,
 /// optional server total) after every chunk. Enforces [`MAX_DOWNLOAD_BYTES`].
 /// Tests never use this — they inject a local-bytes fetcher.
-#[cfg(feature = "ort")]
+#[cfg(feature = "provision-http")]
 pub fn http_fetcher_with_progress(
     url: &str,
     on_progress: &mut dyn FnMut(u64, Option<u64>),
@@ -382,7 +383,7 @@ pub fn http_fetcher_with_progress(
 
 /// The real network fetcher without progress — [`http_fetcher_with_progress`]
 /// with a no-op sink. Kept so existing callers stay unchanged.
-#[cfg(feature = "ort")]
+#[cfg(feature = "provision-http")]
 pub fn http_fetcher(url: &str) -> Result<Vec<u8>, String> {
     http_fetcher_with_progress(url, &mut |_, _| {})
 }
@@ -721,7 +722,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "ort")]
+    #[cfg(feature = "provision-http")]
     #[test]
     fn read_reporting_streams_all_bytes_and_reports_cumulative_progress() {
         let data = vec![7u8; 200_000];
@@ -751,7 +752,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "ort")]
+    #[cfg(feature = "provision-http")]
     #[test]
     fn read_reporting_enforces_the_size_cap() {
         let data = vec![0u8; 10_000];

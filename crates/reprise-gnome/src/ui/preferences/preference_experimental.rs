@@ -4,13 +4,13 @@
 //!
 //! ## INST-12 — real flow vs honest placeholder
 //!
-//! When this build links the stem-separation backend (`stem-backend` cargo
-//! feature), the Download button runs the production provisioning path on a
-//! background thread — `reprise_stems::provision::ensure_weights` (SHA-256
-//! checksum + atomic write + a licence notice beside the file), streaming byte
-//! progress back to the row, with clear failure text (offline, checksum). When
-//! the build was compiled **without** that feature, the row is an honest,
-//! disabled placeholder that says so — never a functionless enabled button.
+//! When this build packages the stem worker (`stem-backend` cargo feature), the
+//! Download button runs the production provisioning path on a background thread
+//! — `reprise_stems::provision::ensure_weights` (SHA-256 checksum + atomic write
+//! + a licence notice beside the file), streaming byte progress back to the row,
+//! with clear failure text (offline, checksum). GTK links only that provisioning
+//! slice; inference stays in the worker process. Without the feature, the row
+//! is an honest, disabled placeholder — never a functionless enabled button.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -173,7 +173,7 @@ fn build_model_row(row: &adw::ActionRow, availability: ModelAvailability) {
 #[cfg(not(feature = "stem-backend"))]
 fn wire_download(_row: &adw::ActionRow, _button: &gtk4::Button, _progress: &gtk4::ProgressBar) {}
 
-/// One progress/terminal event the worker thread streams to the UI thread.
+/// One progress/terminal event the provisioning thread streams to the UI.
 #[cfg(feature = "stem-backend")]
 enum ProvisionEvent {
     Progress { read: u64, total: Option<u64> },
