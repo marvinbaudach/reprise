@@ -22,6 +22,9 @@ pub const MAX_CAVA_BAR_COUNT: usize = 256;
 const DEFAULT_LOW_CUTOFF_HZ: u32 = 50;
 const DEFAULT_HIGH_CUTOFF_HZ: u32 = 10_000;
 const DEFAULT_NOISE_REDUCTION: f32 = 0.77;
+const DEFAULT_NOISE_FLOOR: f32 = 0.04;
+const DEFAULT_AUTOSENSITIVITY: u32 = 1;
+const PCM_SILENCE_EPSILON: f32 = 1.0e-6;
 
 /// Configuration for [`CavaBarProcessor`].
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -31,6 +34,8 @@ pub struct CavaConfig {
     pub low_cutoff_hz: u32,
     pub high_cutoff_hz: u32,
     pub noise_reduction: f32,
+    pub noise_floor: f32,
+    pub autosensitivity: u32,
 }
 
 impl CavaConfig {
@@ -41,6 +46,8 @@ impl CavaConfig {
             low_cutoff_hz: DEFAULT_LOW_CUTOFF_HZ,
             high_cutoff_hz: DEFAULT_HIGH_CUTOFF_HZ.min(sample_rate_hz / 2),
             noise_reduction: DEFAULT_NOISE_REDUCTION,
+            noise_floor: DEFAULT_NOISE_FLOOR,
+            autosensitivity: DEFAULT_AUTOSENSITIVITY,
         }
     }
 }
@@ -58,6 +65,8 @@ pub enum CavaError {
     HighCutoffAboveNyquist,
     #[error("noise reduction must be finite and between 0 and 1")]
     InvalidNoiseReduction,
+    #[error("noise floor must be finite and between 0 and 1")]
+    InvalidNoiseFloor,
 }
 
 /// Converts successive mono PCM chunks into bounded visualizer bars.
@@ -90,6 +99,9 @@ impl CavaBarProcessor {
         if !config.noise_reduction.is_finite() || !(0.0..=1.0).contains(&config.noise_reduction) {
             return Err(CavaError::InvalidNoiseReduction);
         }
+        if !config.noise_floor.is_finite() || !(0.0..=1.0).contains(&config.noise_floor) {
+            return Err(CavaError::InvalidNoiseFloor);
+        }
         let band_plan = BandPlan::new(config)?;
         let fft_size = fft_size_for_rate(config.sample_rate_hz);
         Ok(Self {
@@ -98,7 +110,12 @@ impl CavaBarProcessor {
             input_buffer: vec![0.0; fft_size * 2],
             main_fft: FftWorkspace::new(fft_size),
             bass_fft: FftWorkspace::new(fft_size * 2),
-            smoother: Smoother::new(config.bar_count, config.noise_reduction),
+            smoother: Smoother::new(
+                config.bar_count,
+                config.noise_reduction,
+                config.noise_floor,
+                config.autosensitivity,
+            ),
         })
     }
 
@@ -113,7 +130,7 @@ impl CavaBarProcessor {
 
     /// Adds normalized mono PCM samples and returns one CAVA band value per bar.
     pub fn process(&mut self, mono_samples: &[f32]) -> Vec<f32> {
-        self.push_samples(mono_samples);
+        let signal_present = self.push_samples(mono_samples);
         self.main_fft
             .process(&self.input_buffer[..self.main_fft.len()]);
         self.bass_fft.process(&self.input_buffer);
@@ -137,22 +154,40 @@ impl CavaBarProcessor {
             })
             .collect();
         let new_samples = mono_samples.len().min(self.input_buffer.len());
-        self.smoother
-            .apply(&mut bars, new_samples, self.config.sample_rate_hz);
+        self.smoother.apply(
+            &mut bars,
+            new_samples,
+            self.config.sample_rate_hz,
+            signal_present,
+        );
         bars
     }
 
-    fn push_samples(&mut self, mono_samples: &[f32]) {
+    /// Clears all buffered audio, smoothing history, and dynamic gain state.
+    pub fn reset(&mut self) {
+        self.input_buffer.fill(0.0);
+        self.smoother.reset();
+    }
+
+    fn push_samples(&mut self, mono_samples: &[f32]) -> bool {
         let buffer_len = self.input_buffer.len();
         let kept = mono_samples.len().min(buffer_len);
         self.input_buffer.copy_within(..buffer_len - kept, kept);
+        let mut signal_present = false;
         for (target, sample) in self.input_buffer[..kept]
             .iter_mut()
             .rev()
             .zip(mono_samples[mono_samples.len() - kept..].iter())
         {
-            *target = if sample.is_finite() { *sample } else { 0.0 };
+            let sample = if sample.is_finite() {
+                sample.clamp(-1.0, 1.0)
+            } else {
+                0.0
+            };
+            signal_present |= sample.abs() > PCM_SILENCE_EPSILON;
+            *target = sample;
         }
+        signal_present
     }
 }
 
