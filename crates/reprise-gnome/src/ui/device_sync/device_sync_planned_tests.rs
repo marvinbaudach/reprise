@@ -148,6 +148,7 @@ fn different_devices_sync_concurrently_while_each_device_stays_single_operation(
         ));
         let (started, releases) = backend.gate_copies(&["a", "b"]);
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
         let (_subscription, completed) = signal_when(&runtime, |state| {
             state.devices.len() == 2
                 && state
@@ -185,6 +186,7 @@ fn cancelling_one_device_does_not_cancel_an_independent_sync() {
         ));
         let (started, releases) = backend.gate_copies(&["a", "b"]);
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
         let (_subscription, completed) = signal_when(&runtime, |state| {
             let a = state.devices.iter().find(|device| device.id == "a");
             let b = state.devices.iter().find(|device| device.id == "b");
@@ -260,6 +262,7 @@ fn replacement_inventory_is_committed_before_the_old_device_path_is_deleted() {
             observed_paths.borrow_mut().push(current);
         }));
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
         let (_subscription, completed) =
             signal_when(&runtime, |state| state.devices[0].last_sync.is_some());
 
@@ -306,6 +309,7 @@ fn failed_replacement_inventory_preserves_the_old_device_path() {
             .unwrap();
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
         let (_subscription, completed) = signal_when(&runtime, |state| {
             state.devices[0].sync_phase == PlannedSyncPhase::Idle
                 && state.devices[0].sync_error.is_some()
@@ -453,7 +457,7 @@ fn planned_sync_refreshes_available_space_after_finishing() {
 }
 
 #[test]
-fn sync_now_removes_unselected_files_but_preserves_pins() {
+fn sync_now_mirrors_the_selection_without_legacy_pin_exceptions() {
     run(async {
         let (_temp, conn) = fixture();
         select_road_playlist(&conn, &[1]);
@@ -484,14 +488,14 @@ fn sync_now_removes_unselected_files_but_preserves_pins() {
 
         assert_eq!(
             backend.state.deleted.borrow().as_slice(),
-            ["Old/Three.flac"]
+            ["Old/Three.flac", "Keep/Four.flac"]
         );
         let ids = reprise_core::device_sync::settings::load_device_files(&conn.borrow(), "a")
             .unwrap()
             .into_iter()
             .map(|file| file.track_id)
             .collect::<Vec<_>>();
-        assert_eq!(ids, [1, 4]);
+        assert_eq!(ids, [1]);
     });
 }
 

@@ -776,5 +776,7 @@ fn local_gio_cancel_removes_partial_and_runs_the_waiting_job() {
     });
 }
 
+#[path = "device_sync_compact_tests.rs"]
+mod compact_tests;
 #[path = "device_sync_planned_tests.rs"]
 mod planned_tests;

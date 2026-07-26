@@ -103,7 +103,6 @@ fn agent_state(state: DeviceSyncState) -> AgentDeviceSyncState {
 }
 
 fn agent_device(device: DeviceView) -> AgentDeviceSyncDevice {
-    let delta = device.delta.unwrap_or_default();
     let (phase, bytes_done, bytes_total, current_track) = agent_phase(device.sync_phase);
     AgentDeviceSyncDevice {
         name: device.name,
@@ -116,9 +115,9 @@ fn agent_device(device: DeviceView) -> AgentDeviceSyncDevice {
             .filter(|track| track.status != DeviceTrackStatus::Queued)
             .count(),
         selected_tracks: device.selected_track_count,
-        tracks_to_copy: delta.to_copy.len(),
-        tracks_to_remove: delta.to_remove.len(),
-        bytes_to_copy: delta.bytes,
+        tracks_to_copy: device.page.changes.additions + device.page.changes.replacements,
+        tracks_to_remove: device.page.changes.removals,
+        bytes_to_copy: device.page.changes.transfer_bytes,
         phase,
         bytes_done,
         bytes_total,

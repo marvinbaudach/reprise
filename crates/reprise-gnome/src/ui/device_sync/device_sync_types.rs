@@ -89,6 +89,7 @@ pub struct DeviceView {
     pub tracks: Vec<DeviceTrackView>,
     pub selected_track_count: usize,
     pub bytes_per_second: u64,
+    pub page: SyncPageState,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
