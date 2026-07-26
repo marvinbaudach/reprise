@@ -173,6 +173,8 @@ impl PlayerController {
             Some(track) => MprisState {
                 status,
                 track_id: Some(track.id),
+                external_ref: None,
+                live_stream: false,
                 title: track.title,
                 artist: track.artist,
                 album: track.album,
@@ -188,6 +190,8 @@ impl PlayerController {
             None => MprisState {
                 status,
                 track_id: None,
+                external_ref: None,
+                live_stream: false,
                 title: String::new(),
                 artist: String::new(),
                 album: String::new(),
@@ -347,11 +351,20 @@ impl PlayerController {
     /// — the same method `Seek` (via `mpris_seek_relative`) and the bar's
     /// seek scale all funnel through. `PlayTrackIds` goes straight to
     /// `play_from_view` — see that arm's own comment below.
-    pub(super) fn handle_mpris_command(&self, command: MprisCommand) {
+    pub(super) fn handle_mpris_command(self: &Rc<Self>, command: MprisCommand) {
         match command {
             MprisCommand::Play => self.mpris_play(),
             MprisCommand::Pause => self.mpris_pause(),
             MprisCommand::PlayPause => self.toggle_pause(),
+            MprisCommand::Stop
+                if matches!(
+                    self.playback_mode(),
+                    crate::ui::playback::preview::PlaybackMode::Podcast
+                        | crate::ui::playback::preview::PlaybackMode::Radio
+                ) =>
+            {
+                self.stop_external();
+            }
             MprisCommand::Stop => self.reset_to_stopped(),
             MprisCommand::Next => self.next(),
             MprisCommand::Previous => self.previous(),
@@ -385,7 +398,7 @@ impl PlayerController {
     /// this: paused resumes via `toggle_pause`; stopped starts the queue's
     /// current track via `play_track_id`, if there is one; already playing
     /// is a no-op.
-    fn mpris_play(&self) {
+    fn mpris_play(self: &Rc<Self>) {
         match self.mpris_status() {
             MprisPlaybackStatus::Playing => {}
             MprisPlaybackStatus::Paused => self.toggle_pause(),
@@ -414,7 +427,7 @@ impl PlayerController {
     /// (unlike `PlayPause`, must not *resume* a paused track). See `mpris_
     /// play`'s doc comment for why this reads the mirror rather than adding
     /// a new `Player` query method.
-    fn mpris_pause(&self) {
+    fn mpris_pause(self: &Rc<Self>) {
         if self.mpris_status() == MprisPlaybackStatus::Playing {
             self.toggle_pause();
         }

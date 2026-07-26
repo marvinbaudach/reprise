@@ -132,6 +132,16 @@ impl CompactMenu {
         self.popover.set_menu_model(Some(&model));
     }
 
+    pub(in crate::ui) fn set_queue_navigation_enabled(&self, enabled: bool) {
+        for name in [ACTION_PREVIOUS, ACTION_NEXT] {
+            if let Some(action) = self.action_group.lookup_action(name) {
+                if let Ok(action) = action.downcast::<gio::SimpleAction>() {
+                    action.set_enabled(enabled);
+                }
+            }
+        }
+    }
+
     pub(in crate::ui) fn set_on_restore(&self, callback: Rc<dyn Fn()>) {
         *self.on_restore.borrow_mut() = Some(callback);
     }

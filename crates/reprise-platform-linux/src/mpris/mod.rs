@@ -96,7 +96,10 @@ mod control;
 mod state;
 
 use control::RepriseControl;
-use state::{build_metadata, loop_status_to_repeat, repeat_to_loop_status, track_object_path};
+use state::{
+    build_metadata, loop_status_to_repeat, next_command, previous_command, repeat_to_loop_status,
+    seek_command, set_position_command,
+};
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -111,9 +114,9 @@ use zbus::zvariant::{ObjectPath, OwnedValue, Value};
 use zbus::{fdo, interface};
 
 use reprise_core::media_integration::{
-    can_pause, can_play, can_seek, metadata_differs, micros_to_ms, ms_to_micros, read_state,
-    AgentQueueState, MediaIntegrationHandles, MprisCommand, MprisState, SharedAgentQueueState,
-    SharedMprisState,
+    can_go_next, can_go_previous, can_pause, can_play, can_seek, metadata_differs, ms_to_micros,
+    read_state, AgentQueueState, MediaIntegrationHandles, MprisCommand, MprisState,
+    SharedAgentQueueState, SharedMprisState,
 };
 
 /// Well-known bus name this app claims — must match the MPRIS spec's
@@ -315,11 +318,11 @@ fn emit_property_changes(
     if metadata_differs(previous, current) {
         changed.insert("Metadata", Value::from(build_metadata(current)));
     }
-    if previous.can_next != current.can_next {
-        changed.insert("CanGoNext", Value::from(current.can_next));
+    if can_go_next(previous) != can_go_next(current) {
+        changed.insert("CanGoNext", Value::from(can_go_next(current)));
     }
-    if previous.can_prev != current.can_prev {
-        changed.insert("CanGoPrevious", Value::from(current.can_prev));
+    if can_go_previous(previous) != can_go_previous(current) {
+        changed.insert("CanGoPrevious", Value::from(can_go_previous(current)));
     }
     if can_play(previous) != can_play(current) {
         changed.insert("CanPlay", Value::from(can_play(current)));
@@ -484,16 +487,16 @@ impl MprisPlayer {
 
     #[zbus(property)]
     fn can_go_next(&self) -> bool {
-        self.snapshot().can_next
+        can_go_next(&self.snapshot())
     }
 
     #[zbus(property)]
     fn can_go_previous(&self) -> bool {
-        self.snapshot().can_prev
+        can_go_previous(&self.snapshot())
     }
 
-    /// Stage 3 Task 10: `CanSeek` is intrinsic to "is a track loaded",
-    /// exactly like `can_pause` — see [`can_seek`]'s doc comment.
+    /// `CanSeek` reflects the loaded media kind: tracks and podcast episodes
+    /// are seekable, while live external streams are not.
     #[zbus(property)]
     fn can_seek(&self) -> bool {
         can_seek(&self.snapshot())
@@ -652,11 +655,17 @@ impl MprisPlayer {
     }
 
     fn next(&self) {
-        self.dispatch(MprisCommand::Next);
+        let snapshot = self.snapshot();
+        if let Some(command) = next_command(&snapshot) {
+            self.dispatch(command);
+        }
     }
 
     fn previous(&self) {
-        self.dispatch(MprisCommand::Previous);
+        let snapshot = self.snapshot();
+        if let Some(command) = previous_command(&snapshot) {
+            self.dispatch(command);
+        }
     }
 
     /// `Seek(offset_µs)`: a *relative* seek. Converts to ms via
@@ -668,7 +677,10 @@ impl MprisPlayer {
     /// in the app (see its doc comment), which is also what emits `Seeked`
     /// afterward.
     fn seek(&self, offset: i64) {
-        self.dispatch(MprisCommand::Seek(micros_to_ms(offset)));
+        let snapshot = self.snapshot();
+        if let Some(command) = seek_command(&snapshot, offset) {
+            self.dispatch(command);
+        }
     }
 
     /// `SetPosition(TrackId, Position_µs)`: an *absolute* seek, but only if
@@ -689,21 +701,14 @@ impl MprisPlayer {
     #[allow(clippy::needless_pass_by_value)]
     fn set_position(&self, track_id: ObjectPath<'_>, position: i64) {
         let snapshot = self.snapshot();
-        let Some(current_id) = snapshot.track_id else {
-            tracing::debug!("MPRIS SetPosition: no current track; ignoring");
-            return;
-        };
-        let expected = track_object_path(current_id);
-        if track_id.as_str() != expected {
+        if let Some(command) = set_position_command(&snapshot, track_id.as_str(), position) {
+            self.dispatch(command);
+        } else {
             tracing::debug!(
                 requested = track_id.as_str(),
-                expected,
-                "MPRIS SetPosition: trackid mismatch; ignoring per spec"
+                "MPRIS SetPosition: media is not seekable or trackid is stale; ignoring"
             );
-            return;
         }
-        let position_ms = micros_to_ms(position).clamp(0, snapshot.duration_ms.max(0));
-        self.dispatch(MprisCommand::SetPosition(position_ms));
     }
 
     /// Emitted after every successful seek — app-internal (the bar's seek
