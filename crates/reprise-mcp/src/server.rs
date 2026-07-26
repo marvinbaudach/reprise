@@ -61,7 +61,9 @@ const SERVER_INSTRUCTIONS: &str = "Reprise local music library and player. \
     safe rename/append operations use separate opt-in capabilities. Playback \
     tools expose transport, live state, \
     volume, seek, shuffle, repeat, targeted play, and a bounded Play Next queue; \
-    they require the running Reprise app. \
+    they require the running Reprise app. Device-sync status exposes path-free \
+    capacity, delta, progress, and transfer-rate data; configuration/start/cancel \
+    require the opt-in 'device:sync' capability. \
     `music_create_instrumental` queues experimental vocal-removal renders of \
     explicit tracks (requires the 'ai:create' capability, off by default) and \
     returns immediately with job ids; `music_get_job_status` reports their \
@@ -76,6 +78,8 @@ pub struct RepriseServer {
     playlist_manage_granted_at_startup: bool,
     ai_create_granted_at_startup: bool,
     sources_manage_granted_at_startup: bool,
+    #[cfg(feature = "mpris")]
+    device_sync_granted_at_startup: bool,
     tool_router: ToolRouter<Self>,
 }
 
@@ -104,6 +108,7 @@ impl RepriseServer {
         playlist_manage_granted_at_startup: bool,
         ai_create_granted_at_startup: bool,
         sources_manage_granted_at_startup: bool,
+        #[cfg(feature = "mpris")] device_sync_granted_at_startup: bool,
     ) -> Self {
         Self {
             db_path: Arc::new(db_path),
@@ -112,6 +117,8 @@ impl RepriseServer {
             playlist_manage_granted_at_startup,
             ai_create_granted_at_startup,
             sources_manage_granted_at_startup,
+            #[cfg(feature = "mpris")]
+            device_sync_granted_at_startup,
             tool_router: Self::build_tool_router(),
         }
     }
@@ -125,7 +132,10 @@ impl RepriseServer {
     /// router (`playback_tool_router`) merged in only for that build.
     #[cfg(feature = "mpris")]
     fn build_tool_router() -> ToolRouter<Self> {
-        Self::tool_router() + Self::source_tool_router() + Self::playback_tool_router()
+        Self::tool_router()
+            + Self::source_tool_router()
+            + Self::playback_tool_router()
+            + Self::device_tool_router()
     }
 
     #[cfg(not(feature = "mpris"))]
@@ -139,6 +149,11 @@ impl RepriseServer {
 
     pub(crate) fn sources_manage_granted_at_startup(&self) -> bool {
         self.sources_manage_granted_at_startup
+    }
+
+    #[cfg(feature = "mpris")]
+    pub(crate) fn device_sync_granted_at_startup(&self) -> bool {
+        self.device_sync_granted_at_startup
     }
 }
 
@@ -499,7 +514,7 @@ impl RepriseServer {
             Ok(setting) => setting,
             Err(message) => return Ok(error::tool_error(message)),
         };
-        let result = tokio::task::spawn_blocking(move || crate::playback::set(setting))
+        let result = tokio::task::spawn_blocking(move || crate::playback::set(&setting))
             .await
             .map_err(|error| error::join_error(&error))?;
         match result {

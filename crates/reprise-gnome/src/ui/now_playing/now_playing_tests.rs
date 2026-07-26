@@ -351,6 +351,27 @@ fn ac_20_icons_only_switcher_keeps_three_labeled_keyboard_targets() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn ac_20_visual_page_shrinks_instead_of_overlapping_the_tab_switcher() {
+    gtk4::init().unwrap();
+    let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let widgets = test_widgets(&content, true);
+    let visual_page = widgets.tab_stack.child_by_name(VISUAL_PAGE).unwrap();
+    let viewport = visual_page
+        .downcast::<gtk4::ScrolledWindow>()
+        .expect("the fixed-height visual content must live in a shrinkable viewport");
+
+    assert_eq!(viewport.hscrollbar_policy(), gtk4::PolicyType::Never);
+    assert_eq!(viewport.vscrollbar_policy(), gtk4::PolicyType::Automatic);
+    assert!(viewport.vexpands());
+    let (minimum_height, _, _, _) = viewport.measure(gtk4::Orientation::Vertical, PANEL_WIDTH);
+    assert!(
+        minimum_height < 220,
+        "the Visual page minimum {minimum_height}px still reserves the full canvas height"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn idle_uses_a_placeholder_cover_without_the_accent_glow() {
     gtk4::init().unwrap();
     let (window, panel) = test_panel("org.reprise.Reprise.NowPlayingIdleTest");
@@ -471,7 +492,8 @@ fn fixed_panel_owner_survives_and_header_toggle_reopens_it() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn npp_10_track_change_uses_one_shared_crossfade() {
+fn npp_13_cold_cover_resolves_before_the_outgoing_cover_fades() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let widgets = test_widgets(&content, true);
@@ -487,7 +509,15 @@ fn npp_10_track_change_uses_one_shared_crossfade() {
     );
     assert!(widgets.track_content.next_sibling().is_none());
 
-    let (window, panel) = test_panel("org.reprise.Reprise.NowPlayingCrossfadeTest");
+    let (worker, requests) = async_channel::unbounded();
+    let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::CoverDownloadRuntime {
+        enabled: Rc::new(Cell::new(true)),
+        worker,
+    });
+    let (window, panel) = test_panel_with_cover_loader(
+        "org.reprise.Reprise.NowPlayingCoverTransitionTest",
+        cover_loader,
+    );
     panel.retain_for_window(&window);
     panel.widgets.column.set_visible(true);
     window.present();
@@ -496,26 +526,82 @@ fn npp_10_track_change_uses_one_shared_crossfade() {
     let settings = gtk4::Settings::default().unwrap();
     let animations_were_enabled = settings.is_gtk_enable_animations();
     settings.set_gtk_enable_animations(true);
-    panel.set_loaded_track(Some(loaded_track()));
-    assert!(panel.has_track_animation());
+    let bytes = gtk4::glib::Bytes::from_owned(vec![0x80_u8; 4 * 4 * 4]);
+    let old_cover =
+        gtk4::gdk::MemoryTexture::new(4, 4, gtk4::gdk::MemoryFormat::R8g8b8a8, &bytes, 4 * 4);
+    panel.widgets.cover.set_paintable(Some(&old_cover));
+
+    let mut next = loaded_track();
+    next.id = 8;
+    next.title = "Next title".into();
+    panel.set_loaded_track(Some(next));
+    assert_eq!(panel.widgets.title.text(), "Next title");
+    assert!(panel.has_cover_transition());
+    assert!(panel.widgets.outgoing_cover.is_visible());
+    assert_eq!(panel.widgets.outgoing_cover.opacity(), 1.0);
+    assert_eq!(panel.widgets.track_content.opacity(), 1.0);
+
+    wait_for_layout(u64::from(crate::ui::motion::STANDARD_MS) + 40);
+    assert_eq!(
+        panel.widgets.outgoing_cover.opacity(),
+        1.0,
+        "the outgoing cover must not expose a cold-cache placeholder"
+    );
+
+    let context = gtk4::glib::MainContext::default();
+    let request = (0..10_000)
+        .find_map(|_| {
+            while context.pending() {
+                context.iteration(false);
+            }
+            std::thread::yield_now();
+            requests.try_recv().ok()
+        })
+        .expect("the cold-cache cover request should reach the controlled worker");
+    let downloaded = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../docs/images/similar-mix/01-context-menu.png");
+    request
+        .response
+        .try_send(crate::ui::cover_download_worker::DownloadOutcome::Downloaded(downloaded))
+        .unwrap();
+    let resolved_before_fade = (0..200).any(|_| {
+        wait_for_layout(10);
+        panel
+            .widgets
+            .cover
+            .paintable()
+            .and_downcast::<gtk4::gdk::Texture>()
+            .is_some()
+            && panel.widgets.outgoing_cover.opacity() < 1.0
+    });
+    assert!(
+        resolved_before_fade,
+        "the decoded new cover must be underneath before the outgoing cover fades"
+    );
 
     settings.set_gtk_enable_animations(false);
     let mut next = loaded_track();
-    next.id = 8;
+    next.id = 9;
     next.title = "Hard-switched title".into();
     panel.set_loaded_track(Some(next));
     assert_eq!(panel.widgets.title.text(), "Hard-switched title");
     assert_eq!(panel.widgets.track_content.opacity(), 1.0);
-    assert!(!panel.has_track_animation());
+    assert!(!panel.has_cover_transition());
     settings.set_gtk_enable_animations(animations_were_enabled);
 }
 
 fn test_panel(application_id: &str) -> (adw::ApplicationWindow, Rc<NowPlayingPanel>) {
+    let cover_runtime = crate::ui::cover_download_worker::setup_for_test();
+    test_panel_with_cover_loader(application_id, CoverLoader::new(cover_runtime))
+}
+
+fn test_panel_with_cover_loader(
+    application_id: &str,
+    cover_loader: Rc<CoverLoader>,
+) -> (adw::ApplicationWindow, Rc<NowPlayingPanel>) {
     let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
     reprise_core::db::migrate(&conn.borrow()).unwrap();
     let runtime = ArtistNewsRuntime::setup(&conn.borrow());
-    let cover_runtime = crate::ui::cover_download_worker::setup_for_test();
-    let cover_loader = CoverLoader::new(cover_runtime);
     let app = adw::Application::builder()
         .application_id(application_id)
         .build();

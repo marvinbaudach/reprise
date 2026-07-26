@@ -371,6 +371,11 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   anbieterspezifisch. Mit gebündelten App-Zugangsdaten bietet Last.fm den
   normalen Browser-Login direkt an; eigene API-Zugangsdaten liegen
   eingeklappt unter „Advanced setup".
+- **SET-7** [aktiv] [gtk] — „New Releases" und „Concerts" sind gleichrangige
+  Preferences-Hauptseiten in der vertikalen Navigation. Für diese beiden
+  Features behält die Plugins-Seite nur die Aktivierungsschalter; Scope-,
+  Provider-, Location- und Similar-Optionen stehen ausschließlich auf den
+  jeweiligen Hauptseiten und sind bei deaktiviertem Modul nicht bedienbar.
 
 ## G. Feedback-Vokabular
 
@@ -385,10 +390,10 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Relink-Vertrag (2a) und die noch nicht einheitlich gelieferte Karte der
   übrigen Langläufer (2b) gesplittet.
 - **FB-2a** [aktiv] [gtk] — Der Relink-Suchlauf läuft off-thread in der
-  bestehenden, mit Scan/Sync stapelbaren Fortschrittskarte im Sidebar-
-  Bottom-Slot: Spinner + Titel + % rechts (tabular) + 3-px-Balken +
-  ellipsierte Detailzeile. Klick auf die Karte → Missing files; der sichtbare
-  Cancel-Button prüft den Abbruch vor jeder Audiodatei.
+  bestehenden, mit Scan/Sync stapelbaren Fortschrittskarte direkt über dem
+  unten fixierten Issues-Bereich: Spinner + Titel + % rechts (tabular) +
+  3-px-Balken + ellipsierte Detailzeile. Klick auf die Karte → Missing files;
+  der sichtbare Cancel-Button prüft den Abbruch vor jeder Audiodatei.
 - **FB-2b** [geplant] [gtk] — Scan, Sync und Playlist-Import verwenden für
   jeden Lauf > ~1 s denselben vollständigen Kartenvertrag aus FB-2a,
   einschließlich sichtbarem Cancel und Navigation zur zugehörigen Ansicht.
@@ -675,6 +680,12 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Antworten: Keep editing (Default) und Discard (destruktiv). Kein Save im
   Prompt: Speichern ist nie der Ausweg aus einer Schließen-Geste.
 
+  <!-- REVIEW: Regelvorschlag -->
+- **TAG-9** [geplant] [manuell] — Das Autocomplete-Popover verwendet
+  durchgehend die erhöhte, vom Theme gelieferte Popover-Fläche. Innere
+  Listen malen keine eigene dunkle View-Fläche darüber; Auswahl und
+  Akzent-Hervorhebung bleiben auf hellen und dunklen Themes lesbar.
+
 ## M. Tooltips
 
 <!-- Die Sektionsbuchstaben K (Filter- & Such-Sichtbarkeit) und L (Tag-Editor)
@@ -939,7 +950,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   „lyrics · tags"; keine Lyrics → dezenter Leerzustand ohne Such-CTA;
   Fehler → Inline-Retry im Tab. Instrumental-Gap (> 10 s ohne Zeile) hält
   die aktive Zeile und dimmt sie auf 60 %, statt das Highlight zu verlieren.
-- **NPP-10** [aktiv] [gtk] — Trackwechsel ist kein Ortswechsel: Cover,
+- **NPP-10** [ersetzt durch NPP-13] — Trackwechsel ist kein Ortswechsel: Cover,
   Titelblock, Glow und Tab-Inhalt crossfaden **gemeinsam** in einem
   Übergang (Standard-Token, MOT-5), niemals als Slide; die Lyrics starten
   danach bei Zeile 0 und positionieren sie gemäß LYR-4.
@@ -1163,14 +1174,21 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   denselben Befehl. Sidebar, Liste und Grid sind je **ein** Tab-Stop; Pfeile
   bewegen darin den aktiven Eintrag. Reines Fokussieren/Selektieren löst
   keine Navigation, Wiedergabe oder andere Aktion aus — erst Aktivierung.
-- **ACC-4** [aktiv] [e2e] — Standardtasten gelten überall konsistent:
+- **ACC-4** [ersetzt durch ACC-4a] — Standardtasten gelten überall konsistent;
+  die globale Space-Ausnahme des linken Sidebar-Toggles ist jetzt in ACC-4a
+  explizit.
+- **ACC-4a** [aktiv] [e2e] — Standardtasten gelten überall konsistent:
   Pfeile navigieren räumlich bzw. zeilenweise, Home/End springen in langen
   Collections an Anfang/Ende, Page Up/Down bewegen seitenweise, Enter
-  aktiviert den fokussierten Eintrag, Space schaltet den fokussierten
-  Button/Toggle bzw. die Selektion, Menü-Taste/Shift+F10 öffnet dessen
-  Kontextmenü, F10 das Primärmenü und Esc schließt den obersten transienten
-  Container. Ein globaler Shortcut darf nie Texteingabe oder die lokale
-  Semantik des fokussierten Controls stehlen.
+  aktiviert den fokussierten Eintrag. Space bleibt in passiven Collections
+  sowie auf einem bereits ausgewählten, passiven View-Tab global Play/Pause.
+  Dasselbe gilt für den fokussierten linken Sidebar-Toggle; er klappt die
+  Sidebar nur per Pointer oder Enter ein und aus. Andere fokussierte
+  Buttons/Toggles mit echter lokaler Aktion behalten Space, Textfelder tippen
+  ein Leerzeichen. Menü-Taste/Shift+F10 öffnet das Kontextmenü, F10 das
+  Primärmenü und Esc schließt den obersten transienten Container. Ein globaler
+  Shortcut darf nie Texteingabe oder die lokale Semantik eines fokussierten
+  Controls stehlen.
 - **ACC-5** [aktiv] [e2e] — Fokus hat einen nachvollziehbaren Lebenszyklus:
   Start und Navigation setzen ihn in die aktive Zielansicht; Ctrl+F setzt ihn
   ins Suchfeld, dessen Esc-Kaskade gibt ihn an die **aktuelle** Content-View
@@ -1341,6 +1359,17 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   öffnet oder schließt, gewinnt dieser persistierte Zustand bei allen
   folgenden Starts (NPP-4); der neue Default überschreibt keine bestehende
   Präferenz.
+- **NPP-13** [aktiv] [gtk] — Ein Trackwechsel baut die rechte Spalte nicht
+  sichtbar neu auf: Tabs, Queue bzw. aktiver Tab, Footer und Panel-Fläche
+  bleiben durchgehend stehen. Nur das Album-Cover wechselt mit dem
+  Standard-Token; das alte Cover liegt dafür über dem vollständig
+  aufgelösten neuen Cover oder Platzhalter und blendet erst dann aus. Die
+  Queue aktualisiert ihre Zeilen unabhängig davon, sodass der abgespielte
+  Titel nach oben aus der Liste rückt. Der vom Cover abgeleitete
+  Playback-Akzent folgt weiterhin separat der Ambient-Transition aus MOT-1;
+  Unterbrechungen folgen MOT-6. Neu geladene synchronisierte Lyrics starten
+  bei Zeile 0 und positionieren sie gemäß LYR-4. Ohne Animationen wechseln
+  Cover und Inhalt hart (MOT-7).
 
 ## V. My Stats
 
@@ -1690,13 +1719,49 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
   ausgeschaltetes, live anwendbares Plugin. Eingeschaltet visualisiert der
   dritte Panel-Tab „Visual" ausschließlich lokal berechnete, aus 256 FFT-Bins
   auf 64 logarithmische Anzeigebänder gefaltete und auf den Bereich 0–1
-  begrenzte Spektraldaten wahlweise als „Grid" oder „Bars".
-  „Grid" bleibt die Standardauswahl; „Bars" zeigt zwanzig fein segmentierte,
-  frequenzabhängige Säulen und reagiert auf denselben lokalen Beat-Impuls.
-  Flow, Pulse und weitere Modi existieren nicht. Der beschriftete Canvas
-  übernimmt den aktuellen Cover-Akzent über denselben globalen
-  Ambient-Crossfade wie die Playerleiste; nur ohne brauchbare Coverfarbe gilt
-  der Theme-Akzent.
+  begrenzte Spektraldaten als „Bars": zwanzig fein segmentierte,
+  frequenzabhängige Säulen, die auf den lokalen Beat-Impuls und anhaltenden,
+  bassdominanten Energiedruck reagieren.
+  Track- und Album-ReplayGain normalisieren erst hinter dem Analyzer die
+  hörbare Ausgabe; dieselbe musikalische Energie erzeugt deshalb unabhängig
+  vom gespeicherten Gain-Wert denselben visuellen Ausschlag.
+  Eine Modusauswahl und „Grid" existieren nicht.
+  Das reine Frequenzbild reserviert das obere Drittel der Säulen für echte
+  Beat- und Breakdown-Energie. Anhaltender Druck darf diesen Höhenraum nur
+  nutzen, wenn Basspräsenz, Gesamtenergie und der Bassvorsprung gegenüber der
+  Gesamtenergie gleichzeitig hoch sind; ein gewöhnliches komprimiertes
+  Metal-Bett bleibt darunter.
+  Neue Bars-Segmente blenden nahe vollständig transparent ein, starke Impulse
+  nutzen nur den verbleibenden Höhenraum statt Säulen hart zu sättigen, und
+  steigen im ersten 60-Hz-Schritt höchstens um drei volle Segmente. Beim
+  Abklingen fällt keine Säule um mehr als ein volles Segment pro Schritt.
+  Unter Renderlast gelten aufeinanderfolgende Spektren als „latest wins";
+  ein unmittelbar übersprungener Beat-Impuls bleibt gedämpft erhalten, ohne
+  veraltete Spektren nachzuspielen. Fullscreen begrenzt dafür nur die interne
+  Szenen-Rasterfläche und skaliert sie auf die unveränderte Canvas-Größe.
+  Die Impulsgröße folgt der linearen Amplitude der 256 Roh-Bins, nicht dem
+  Max-Pooling, einem logarithmischen dB-Sprung oder nur der relativen adaptiven
+  Schwelle: große Schläge müssen schwache Transienten sichtbar überragen, auch
+  wenn der schwache Schlag aus nahezu Stille kommt. Ein Volltreffer hebt den
+  Säulendurchschnitt um mehr als 0,36 und mindestens 75 Prozent stärker als
+  derselbe moderate Rhythmus. Der aus „WAKE UP" erfasste große Bass-Schlag hebt
+  ihn um mehr als 0,45 und mindestens 150 Prozent stärker als der erfasste
+  leichte Rhythmus. Eine vollständige, schneller als Echtzeit laufende
+  Korpusanalyse durchläuft dafür denselben Analyzer und dieselbe Scene-Engine
+  wie die Anwendung. Bei „WAKE UP" bleibt das Fenster 11,5–13,0 Sekunden bei
+  etwa 24 Prozent mittlerer Säulenhöhe; in den Fenstern 15,5–17,5 und
+  35,0–37,5 Sekunden steigen die mittleren Spitzen auf etwa 80 bzw. 82 Prozent
+  und die höchste Säule auf etwa 88 Prozent. In der leiseren Hälfte des Songs
+  liegen weniger als ein Prozent der Frames fälschlich über 75 Prozent. Für
+  „To the Hellfire" und „Sun//Eater" bleibt diese Rate trotz durchgehend
+  komprimiertem Metal unter sieben Prozent. Die beste gemessene zeitliche
+  Zuordnung zwischen Rohbass und sichtbarer Antwort liegt im Korpus bei
+  höchstens 32 Millisekunden.
+  Bei knapper Panelhöhe bleibt der Visual-Inhalt unter dem Tab-Switcher und
+  scrollt innerhalb seines Tabs, statt den Switcher zu überlagern. Flow, Pulse
+  und weitere Modi existieren nicht. Der beschriftete Canvas übernimmt den
+  aktuellen Cover-Akzent über denselben globalen Ambient-Crossfade wie die
+  Playerleiste; nur ohne brauchbare Coverfarbe gilt der Theme-Akzent.
 
 
 ## Y. Library Doctor / Tag Cleanup
@@ -2192,6 +2257,13 @@ Dateien.
   der „Experimental features"-Schalter an ist** (INST-11) — dieselbe Gatung, die
   auch die Inhaltsseite anlegt, sodass der Eintrag nie eine fehlende Seite
   auswählt. (Plan 2.4/7, Paket F)
+- **INST-14** [geplant] [gtk] — Der Sidebar-Eintrag „Instrumental conversions"
+  ist ein Drop-Ziel für Tracks aus der Library. Eine Mehrfachauswahl wird als
+  ein Batch eingereiht; fehlende oder entfernte Tracks werden übersprungen,
+  bestehende Arbeit wird nach INST-9 referenziert statt dupliziert. Fehlen die
+  verifizierten Modell-/Runtime-Assets, öffnet die Aktion die Experimental-
+  Einstellungen und legt keinen sicher scheiternden Job an.
+  <!-- REVIEW: Regelvorschlag -->
 ## AD. Kompaktmodus / Mini-Player
 
 <!-- Sektionsbuchstabe: Z (Einteiliger Track-Browser) ist die letzte
@@ -2266,13 +2338,17 @@ Dateien.
   gibt keinen Play-Pfad.
 - **CONC-4** [ersetzt durch CONC-4a] — Ursprünglicher Zustandsvertrag ohne
   explizite Live-Neubewertung nach Änderungen der Concerts-Einstellungen.
-- **CONC-4a** [aktiv] [gtk] — Ohne Credential zeigt Concerts eine StatusPage
-  mit Preferences-Deep-Link und bietet nirgends „Fetch now" an. Änderungen an
-  Credentials, Location, Default-Radius, Zeitraum und Similar-Einstellungen
-  bewerten die bereits offene View, ihre Sidebar-Zahl und das Updates-Popover
-  sofort neu. Nie gefetcht bietet genau „Fetch now"; null Treffer mit Filtern
-  genau „Show all". Offline oder Fehler lassen Cache und „Updated X ago"
-  sichtbar und melden den Fehler ausschließlich inline im Footer.
+- **CONC-4a** [ersetzt durch CONC-4b] — Ursprünglicher Zustandsvertrag mit
+  Credential-Eingabehinweis und Preferences-Deep-Link.
+- **CONC-4b** [aktiv] [gtk] — Ohne Credential zeigt Concerts neutral „No
+  concert data yet" ohne Aktion; die Concerts-Sektion im Updates-Popover ist
+  nicht sichtbar. Es gibt keinen Credential-Eingabehinweis und keinen
+  Preferences-Deep-Link. Änderungen an Credentials, Location, Default-Radius,
+  Zeitraum und Similar-Einstellungen bewerten die bereits offene View, ihre
+  Sidebar-Zahl und das Updates-Popover sofort neu. Nie gefetcht bietet genau
+  „Fetch now"; null Treffer mit Filtern genau „Show all". Offline oder Fehler
+  lassen Cache und „Updated X ago" sichtbar und melden den Fehler
+  ausschließlich inline im Footer.
 - **CONC-5** [ersetzt durch CONC-5a] — Ursprünglicher Worker-Vertrag mit
   View-Open-Staleness, Due-Check und „Fetch now" als einzigen Netz-Triggern.
 - **CONC-5a** [aktiv] [core] — Netz läuft ausschließlich im Worker oder
@@ -2296,7 +2372,12 @@ Dateien.
   und nicht verifizierbar erscheinen inline; leer setzt den Zustand ohne
   Anfrage zurück. Die Prüfung schreibt Credential-Werte nie in Logs oder
   Fehlermeldungen.
-- **CONC-9** [aktiv] [gtk] — Jede Concerts-Zeile besitzt eine gemeinsame
+- **CONC-9** [aktiv] [core] [gtk] — Ticketmaster-Credentials sind in der UI
+  weder sichtbar noch editierbar. Der Core bevorzugt einen gespeicherten
+  Altwert vor der Laufzeitumgebung und dem eingebetteten Build-Wert; leere
+  Werte zählen nicht. Bandsintown bleibt als optionale Credential-Zeile
+  unabhängig davon verfügbar.
+- **CONC-10** [aktiv] [gtk] — Jede Concerts-Zeile besitzt eine gemeinsame
   vertikale Mitte. Der Interpret steht als einzeilige Gruppe auf derselben
   Grundachse wie Datum, Ort, Venue, Distanz und Ticket; eine optionale
   „similar to …"-Caption erweitert und zentriert die Interpretengruppe als

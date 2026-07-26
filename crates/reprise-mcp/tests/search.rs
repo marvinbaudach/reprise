@@ -53,8 +53,8 @@ fn tool_discovery_lists_the_expected_tools() {
 
     // `music_create_instrumental` is listed even though `ai:create` is off by
     // default: write tools stay listed-but-refused (Beschluss 7). No playlist
-    // delete surface exists in the MCP (Beschluss 2). The playback tools only
-    // exist under the `mpris` feature.
+    // delete surface exists in the MCP (Beschluss 2). Playback and live device
+    // synchronization tools only exist under the `mpris` feature.
     let mut expected = vec![
         "music_create_instrumental",
         "music_create_playlist",
@@ -69,6 +69,8 @@ fn tool_discovery_lists_the_expected_tools() {
     ];
     if cfg!(feature = "mpris") {
         expected.extend([
+            "music_device_sync",
+            "music_get_device_sync_state",
             "music_get_playback_state",
             "music_play",
             "music_playback_control",
