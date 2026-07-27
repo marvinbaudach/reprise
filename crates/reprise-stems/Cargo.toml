@@ -20,7 +20,7 @@ reprise-core = { path = "../reprise-core" }
 # (chunking, overlap-add stitching, PCM conversion) build and are unit-tested
 # WITHOUT onnxruntime, so `cargo test -p reprise-stems` needs no model, no
 # network and no native lib. All tiny pure-Rust crates.
-sha2 = "0.10"
+sha2 = "0.11"
 dirs = "6"
 thiserror = "2"
 
