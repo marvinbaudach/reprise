@@ -17,6 +17,13 @@
 
 pub(in crate::ui) fn css() -> String {
     "\
+    /* Give the overlay a stable button-sized anchor. The badge itself does \
+       not contribute to natural size, so this keeps it attached to the \
+       sparkle instead of allocating as a separate-looking pill. */\
+    .updates-trigger {\
+        min-width: 32px;\
+        min-height: 32px;\
+    }\
     /* Header-bar badge (NR-9): a small accent pill with a ring that keeps it \
        readable when it overlaps the ✦ glyph. */\
     .new-release-badge {\
@@ -26,8 +33,14 @@ pub(in crate::ui) fn css() -> String {
         min-width: 16px;\
         min-height: 16px;\
         font-size: 10px;\
-        padding: 0 4px;\
+        padding: 0 3px;\
         box-shadow: 0 0 0 2px @headerbar_bg_color;\
+    }\
+    .new-release-badge:dir(ltr) {\
+        transform: translate(5px, -5px);\
+    }\
+    .new-release-badge:dir(rtl) {\
+        transform: translate(-5px, -5px);\
     }\
     /* Popover chrome: a light hairline edge instead of a heavy shadow. */\
     .new-release-popover > contents {\
@@ -192,6 +205,22 @@ mod tests {
         // Beschluss 7: no hardcoded blurple.
         assert!(!css.contains("#5e5cff"));
         assert!(!css.contains("rgb(94, 92, 255)"));
+    }
+
+    #[test]
+    fn nr_9a_badge_overlaps_the_compact_updates_trigger() {
+        let css = super::css();
+        assert!(css.contains(".updates-trigger"));
+        assert!(css.contains("min-width: 32px"));
+        assert!(css.contains("min-height: 32px"));
+        assert!(css.contains(
+            ".new-release-badge:dir(ltr) {\
+                transform: translate(5px, -5px);"
+        ));
+        assert!(css.contains(
+            ".new-release-badge:dir(rtl) {\
+                transform: translate(-5px, -5px);"
+        ));
     }
 
     #[test]

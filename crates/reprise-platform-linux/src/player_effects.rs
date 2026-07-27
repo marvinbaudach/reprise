@@ -1,11 +1,11 @@
 use gstreamer as gst;
 use gstreamer::prelude::*;
+use gstreamer_app as gst_app;
 
 use reprise_core::playback::{AudioEffects, PlaybackError};
 
-const SPECTRUM_ELEMENT_NAME: &str = "reprise-spectrum";
-const SPECTRUM_INTERVAL_NS: u64 = reprise_core::playback::SPECTRUM_INTERVAL_MS * 1_000_000;
-const SPECTRUM_THRESHOLD_DB: i32 = -80;
+pub(super) const CAVA_SINK_NAME: &str = "reprise-cava-sink";
+pub(super) const CAVA_SAMPLE_RATE_HZ: i32 = 44_100;
 
 pub(super) fn build_audio_filter(
     effects: &AudioEffects,
@@ -15,52 +15,90 @@ pub(super) fn build_audio_filter(
     let first = gst::ElementFactory::make("audioconvert")
         .build()
         .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
-    let mut elements = vec![first];
     let equalizer = gst::ElementFactory::make("equalizer-10bands")
         .name("reprise-equalizer")
         .build()
         .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
     set_equalizer_bands(&equalizer, effects);
-    elements.push(equalizer);
-    let spectrum = gst::ElementFactory::make("spectrum")
-        .name(SPECTRUM_ELEMENT_NAME)
-        .property(
-            "bands",
-            u32::try_from(reprise_core::playback::SPECTRUM_ANALYSIS_BAND_COUNT)
-                .expect("the fixed analysis spectrum band count fits u32"),
-        )
-        .property("threshold", SPECTRUM_THRESHOLD_DB)
-        .property("interval", SPECTRUM_INTERVAL_NS)
-        .property("message-phase", false)
-        .property("post-messages", false)
+    let tee = gst::ElementFactory::make("tee")
+        .name("reprise-analysis-tee")
+        .build()
+        .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
+    let playback_queue = gst::ElementFactory::make("queue")
+        .name("reprise-playback-queue")
+        .build()
+        .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
+    let cava_queue = gst::ElementFactory::make("queue")
+        .name("reprise-cava-queue")
+        .build()
+        .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
+    let cava_convert = gst::ElementFactory::make("audioconvert")
+        .build()
+        .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
+    let cava_resample = gst::ElementFactory::make("audioresample")
+        .build()
+        .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
+    let cava_caps = gst::Caps::builder("audio/x-raw")
+        .field("format", "F32LE")
+        .field("channels", 1_i32)
+        .field("rate", CAVA_SAMPLE_RATE_HZ)
+        .field("layout", "interleaved")
         .build();
-    match spectrum {
-        Ok(spectrum) => elements.push(spectrum),
-        Err(error) => {
-            tracing::warn!(%error, "GStreamer spectrum analyzer unavailable; song visuals disabled");
-        }
-    }
+    let cava_sink = gst_app::AppSink::builder()
+        .caps(&cava_caps)
+        .sync(true)
+        .max_buffers(2)
+        .drop(true)
+        .enable_last_sample(false)
+        .build();
+    cava_sink.set_property("name", CAVA_SINK_NAME);
+
+    let mut playback_elements = vec![playback_queue];
     if effects.replay_gain != ReplayGainMode::Off {
         let replaygain = gst::ElementFactory::make("rgvolume")
             .name("reprise-replaygain")
             .build()
             .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
         replaygain.set_property("album-mode", effects.replay_gain == ReplayGainMode::Album);
-        elements.push(replaygain);
+        playback_elements.push(replaygain);
     }
-    elements.push(
+    playback_elements.push(
         gst::ElementFactory::make("audioconvert")
             .build()
             .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?,
     );
-    bin.add_many(elements.iter().collect::<Vec<_>>())
+    let all_elements = [
+        vec![first.clone(), equalizer.clone(), tee.clone()],
+        playback_elements.clone(),
+        vec![
+            cava_queue.clone(),
+            cava_convert.clone(),
+            cava_resample.clone(),
+            cava_sink.clone().upcast(),
+        ],
+    ]
+    .concat();
+    bin.add_many(all_elements.iter().collect::<Vec<_>>())
         .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
-    gst::Element::link_many(elements.iter().collect::<Vec<_>>())
+    gst::Element::link_many([&first, &equalizer, &tee])
         .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
-    let sink = elements[0]
+    let playback_chain = std::iter::once(&tee)
+        .chain(playback_elements.iter())
+        .collect::<Vec<_>>();
+    gst::Element::link_many(playback_chain)
+        .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
+    gst::Element::link_many([
+        &tee,
+        &cava_queue,
+        &cava_convert,
+        &cava_resample,
+        cava_sink.upcast_ref(),
+    ])
+    .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
+    let sink = first
         .static_pad("sink")
         .ok_or_else(|| PlaybackError::Backend("GStreamer: filter has no sink pad".into()))?;
-    let src = elements
+    let src = playback_elements
         .last()
         .and_then(|element| element.static_pad("src"))
         .ok_or_else(|| PlaybackError::Backend("GStreamer: filter has no src pad".into()))?;
@@ -85,16 +123,15 @@ pub(super) fn set_spectrum_messages(
         .clone()
         .downcast::<gst::Bin>()
         .map_err(|_| PlaybackError::Backend("GStreamer: audio filter is not a bin".into()))?;
-    let Some(spectrum) = bin.by_name(SPECTRUM_ELEMENT_NAME) else {
+    let Some(_cava_sink) = bin.by_name(CAVA_SINK_NAME) else {
         return if enabled {
             Err(PlaybackError::Backend(
-                "GStreamer: audio filter has no spectrum analyzer".into(),
+                "GStreamer: audio filter has no CAVA PCM sink".into(),
             ))
         } else {
             Ok(())
         };
     };
-    spectrum.set_property("post-messages", enabled);
     Ok(())
 }
 
