@@ -307,29 +307,32 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 
 ## E. MTP / Sync
 
-- **MTP-1** [geplant] [gtk] — Einstecken: Toast „Pixel 8 connected",
-  Gerätekarte faded in die Sidebar. Keine Auto-Navigation — der User wird nie
-  aus seiner Ansicht gerissen.
-- **MTP-2** [geplant] [gtk] — Karte: Klick auf Karte → Device-View (push).
-  Klick auf „Sync"-Pill → startet Sync sofort, ohne Navigation
-  (stopPropagation). Hover-Tooltip zeigt Details.
-- **MTP-3** [geplant] [core] — Sync läuft: Karte und (falls offen)
-  Device-View zeigen denselben Fortschritt (ein State). Cancel überall =
-  gleiche Aktion: aktuelle Datei sauber beenden, Toast „Sync cancelled · 28
-  copied".
-- **MTP-4** [geplant] [gtk] — Unmount/Eject in der Device-View: Eject-Klick →
-  Button wird Spinner → unmount → Toast „Pixel 8 can be unplugged" → View
-  poppt selbst zur vorherigen Ansicht (150 ms Crossfade), Karte verschwindet.
-  Eject während Sync: disabled + Tooltip „Sync in progress".
-- **MTP-5** [geplant] [gtk] — Kabel gezogen (ohne Eject): Toast „Pixel 8
-  disconnected" (+ „— sync incomplete (54 of 82)" falls mitten im Sync). Ist
-  die Device-View offen, wechselt sie auf eine StatusPage „Device
-  disconnected" mit Button „Back to Library" — sie schließt sich nicht selbst
-  (der User soll lesen können, was passiert ist). Karte verschwindet.
-  Nächster Sync resumt via .part-Regel.
-- **MTP-6** [geplant] [gtk] — Sync-Ende: Toast „Sync complete · 82 copied, 14
-  removed" (+ „· 3 failed" mit „Details"). Karte morpht zu Idle („synced ✓"),
-  Delta-Karte zeigt „Everything in sync ✓". Kein 100 %-Haltezustand.
+- **MTP-1** [aktiv] [gtk] — Ein neues verbundenes Android-MTP-Gerät erzeugt
+  einen gerätenamenspezifischen Connected-Toast und eine Gerätekarte in der
+  Sidebar. Es navigiert nie automatisch aus der aktuellen Ansicht.
+- **MTP-2** [aktiv] [gtk] — Die gesamte Gerätekarte ist genau ein nativer
+  Tastatur- und Pointer-Einstieg in den kompakten Playlist-Sync-Dialog; sie
+  startet keinen Sync direkt. Der primäre Menüeintrag öffnet bei einem Gerät
+  denselben Dialog und bei mehreren Geräten zuerst eine kompakte Auswahl.
+- **MTP-3** [aktiv] [gtk] — Gerätekarte und offener Dialog projizieren
+  denselben gerätebezogenen Runtime-State. Syncs verschiedener Geräte dürfen
+  parallel laufen; Start und Cancel wirken ausschließlich auf das benannte
+  Gerät, und ein spätes Progress-Event eines abgebrochenen Laufs wird durch
+  dessen Generation verworfen.
+- **MTP-4** [aktiv] [gtk] — Eject lebt ausschließlich im kompakten
+  Geräte-Dialog. Es ist nur bei einem verbundenen, nicht synchronisierenden
+  Gerät aktiv; während Sync und Finishing ist es deaktiviert und erklärt den
+  Grund im Tooltip.
+- **MTP-5** [aktiv] [gtk] — Beim Abziehen verschwindet die Gerätekarte, der
+  offene Dialog bleibt als „Device disconnected"-Status lesbar, und ein
+  laufender gerätebezogener Sync wird abgebrochen. Ein reconnect-fähiges Gerät
+  setzt beim Wiederverbinden den verbleibenden sicheren Mirror-Plan fort;
+  unvollständige `.part`-Dateien werden vor der nächsten Veröffentlichung
+  bereinigt.
+- **MTP-6** [aktiv] [gtk] — Finishing wird als vollständiger Fortschritt
+  projiziert. Danach zeigt der Lifecycle-Toast den Abschluss oder Fehlerstatus,
+  und die Gerätekarte wechselt ohne separaten 100-%-Haltezustand zurück in den
+  aktuellen Idle-/Synced-Zustand.
 
 ## F. Einstellungen & Modale
 

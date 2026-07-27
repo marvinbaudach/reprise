@@ -4,10 +4,10 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use libadwaita::prelude::*;
 use reprise_core::device_sync::{
-    DeviceQueue, DeviceSelection, DeviceSettings, DeviceStorageProjection, DeviceStorageSnapshot,
-    MirrorBlocker, Mp3Quality, SelectionSource, StorageComposition, StorageKnowledge,
-    StorageProjectionState, SyncChangeSummary, SyncPageControls, SyncPageState, SyncPageWarning,
-    SyncPlaylistRow, TransferProfile,
+    DeviceSelection, DeviceSettings, DeviceStorageProjection, DeviceStorageSnapshot, MirrorBlocker,
+    Mp3Quality, SelectionSource, StorageComposition, StorageKnowledge, StorageProjectionState,
+    SyncChangeSummary, SyncPageControls, SyncPageState, SyncPageWarning, SyncPlaylistRow,
+    TransferProfile,
 };
 
 use super::*;
@@ -52,11 +52,7 @@ fn device() -> DeviceView {
             reprise_music_bytes: 32 * 1_024,
             other_music_bytes: 16 * 1_024,
         },
-        scanning: false,
         scan_error: None,
-        draft_playlists: Vec::new(),
-        last_enqueue: None,
-        snapshot: DeviceQueue::new().snapshot(),
         settings: DeviceSettings {
             device_serial: "phone".into(),
             device_name: "Pixel 8".into(),
@@ -66,12 +62,10 @@ fn device() -> DeviceView {
             ratings_back: false,
             remove_deleted: false,
         },
-        delta: None,
         sync_phase: PlannedSyncPhase::Idle,
         sync_error: None::<SyncFailure>,
         last_sync: None,
-        tracks: Vec::new(),
-        selected_track_count: 2,
+        managed_track_count: 0,
         bytes_per_second: 0,
         page: SyncPageState {
             quality_options: Mp3Quality::ALL.to_vec(),
@@ -172,11 +166,32 @@ fn compact_dialog_projects_storage_blockers_and_control_mode() {
             can_cancel: true,
         }),
         DialogActionCopy {
-            label: "Cancel",
+            label: "_Cancel",
             sensitive: true,
             destructive: true,
         }
     );
+}
+
+#[test]
+fn mtp_4_eject_is_available_only_for_an_idle_connected_device() {
+    let mut device = device();
+    assert!(eject_sensitive(&device));
+
+    device.sync_phase = PlannedSyncPhase::Syncing {
+        step: crate::ui::device_sync_runtime::SyncStep::Copying,
+        done: 0,
+        total: 1,
+        current_track: "Track".into(),
+        bytes_done: 0,
+        bytes_total: 1,
+    };
+    assert!(!eject_sensitive(&device));
+    device.sync_phase = PlannedSyncPhase::Finishing;
+    assert!(!eject_sensitive(&device));
+    device.sync_phase = PlannedSyncPhase::Idle;
+    device.connected = false;
+    assert!(!eject_sensitive(&device));
 }
 
 #[test]
@@ -200,7 +215,7 @@ fn compact_dialog_warning_copy_is_grammatical_and_path_free() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn compact_dialog_renders_and_wires_only_the_playlist_mirroring_controls() {
+fn mtp_2_compact_dialog_renders_and_wires_only_the_playlist_mirroring_controls() {
     gtk4::init().expect("GTK test display");
     let quality_events = Rc::new(RefCell::new(Vec::new()));
     let playlist_events = Rc::new(RefCell::new(Vec::new()));
@@ -236,7 +251,8 @@ fn compact_dialog_renders_and_wires_only_the_playlist_mirroring_controls() {
     );
     assert_eq!(surface.quality.selected(), 2);
     assert_eq!(surface.playlist_rows.borrow().len(), 1);
-    assert_eq!(surface.primary.label().as_deref(), Some("Sync now"));
+    assert_eq!(surface.primary.label().as_deref(), Some("_Sync now"));
+    assert!(surface.primary.uses_underline());
     assert!(surface.primary.is_sensitive());
     assert!(!surface.root_text().contains("Entire library"));
     assert!(!surface.root_text().contains("ratings"));
@@ -259,7 +275,7 @@ fn compact_dialog_renders_and_wires_only_the_playlist_mirroring_controls() {
     };
     surface.update(&device);
     surface.primary.emit_clicked();
-    assert_eq!(surface.primary.label().as_deref(), Some("Cancel"));
+    assert_eq!(surface.primary.label().as_deref(), Some("_Cancel"));
     assert!(surface.primary.has_css_class("destructive-action"));
     assert_eq!(*cancels.borrow(), 1);
 }

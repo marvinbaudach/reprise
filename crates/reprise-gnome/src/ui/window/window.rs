@@ -176,7 +176,6 @@ pub fn build(
     });
     device_sync
         .bind_agent_device_sync(&media.device_sync_state, media.device_sync_commands.clone());
-    super::device_sync_actions::install(app, &device_sync);
     super::device_sync_smoke::arm(&device_sync);
 
     let player = match build_player_backends(waveform_backend.clone(), media) {
@@ -330,14 +329,11 @@ pub fn build(
     super::current_track_selection::wire(player.as_ref(), &track_list);
     let stats_view = super::stats_view::StatsView::new(track_list.shared_cover_loader());
     stats_view.wire_year_selector(conn);
-    let device_view = super::device_view::DeviceViewPage::new(&device_sync);
     let content_stack = super::content_stack::build();
-    // Size to the visible page in both axes: Stats/Device pages must not
-    // inherit the library's minimum size, nor vice versa, or a hidden tall
-    // device list can push the sidebar activity below the window edge.
+    // Size to the visible page in both axes: dedicated content pages must not
+    // inherit the library's minimum size, nor vice versa.
     content_stack.add_named(&track_content, Some("library"));
     content_stack.add_named(stats_view.widget(), Some("stats"));
-    content_stack.add_named(device_view.widget(), Some("device"));
     content_stack.set_visible_child_name("library");
     toolbar_view.set_content(Some(&content_stack));
 
@@ -527,12 +523,7 @@ pub fn build(
         &cover_download,
         &artist_portrait,
         &decorations,
-        &device_sync,
     );
-    {
-        let preferences = preferences.clone();
-        device_view.set_on_settings(move || preferences.present_page("synchronization"));
-    }
     {
         let preferences = Rc::downgrade(&preferences);
         info_panel.lyrics_view().set_on_settings(move || {
@@ -562,7 +553,7 @@ pub fn build(
         radio_view: &radio_view,
         podcasts_runtime: &podcasts_runtime,
         content_stack: &content_stack,
-        device_view: &device_view,
+        device_sync: &device_sync,
         window_title: &window_title,
         scan_controls: &scan_controls,
         toast_overlay: &toast_overlay,

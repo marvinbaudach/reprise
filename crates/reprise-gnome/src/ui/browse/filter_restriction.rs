@@ -55,10 +55,7 @@ pub(in crate::ui) fn scope_chip_label(source: &ViewSource) -> Option<String> {
 pub(in crate::ui) fn is_track_source(source: &ViewSource) -> bool {
     !matches!(
         source,
-        ViewSource::ImportErrors
-            | ViewSource::MyStats
-            | ViewSource::Conversions
-            | ViewSource::Device { .. }
+        ViewSource::ImportErrors | ViewSource::MyStats | ViewSource::Conversions
     )
 }
 
@@ -96,7 +93,6 @@ mod tests {
     fn fil_1a_row_never_shows_for_panel_sources() {
         assert!(!is_track_source(&ViewSource::ImportErrors));
         assert!(!is_track_source(&ViewSource::MyStats));
-        assert!(!is_track_source(&ViewSource::Device { serial: "x".into() }));
         assert!(is_track_source(&ViewSource::Library));
         assert!(is_track_source(&ViewSource::Playlist(3)));
         assert!(is_track_source(&ViewSource::Queue));

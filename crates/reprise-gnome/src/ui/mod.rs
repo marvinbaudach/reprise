@@ -30,7 +30,6 @@ mod concerts;
 mod cover;
 pub mod delete_tracks;
 mod device_sync;
-mod device_view;
 pub mod dialogs;
 pub(crate) mod ellipsis_tooltip;
 pub(crate) mod eq_bars;
@@ -111,7 +110,7 @@ use cover::{cover_download_batch, main_cover_download_progress};
 pub(crate) use cover::{cover_download_worker, cover_loader};
 #[allow(unused_imports)]
 use device_sync::{
-    device_sync_actions, device_sync_backend, device_sync_feedback, device_sync_runtime,
+    device_sync_backend, device_sync_feedback, device_sync_launcher, device_sync_runtime,
     device_sync_smoke, device_sync_strings,
 };
 #[allow(unused_imports)]
@@ -141,8 +140,8 @@ use playlists::{playlist_import_navigation, playlist_io_names};
 use preferences::{
     preference_appearance, preference_choice_cards, preference_dependencies, preference_effects,
     preference_lastfm, preference_layout, preference_library, preference_listenbrainz,
-    preference_playback, preference_plugins, preference_rhythmbox, preference_sync,
-    preference_visual_strings, preference_window_decorations, preferences_window,
+    preference_playback, preference_plugins, preference_rhythmbox, preference_visual_strings,
+    preference_window_decorations, preferences_window,
 };
 #[allow(unused_imports)]
 pub(crate) use scan::{scan_card_css, scan_flow};

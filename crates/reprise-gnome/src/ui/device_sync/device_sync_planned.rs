@@ -575,7 +575,6 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, mut failures
     }
     runtime.notify();
     runtime.refresh_contents_after_sync(&work.device_id);
-    runtime.release_and_start_next(&work.device_id);
 }
 
 fn syncing_phase(

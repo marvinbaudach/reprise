@@ -7,7 +7,6 @@ use std::sync::Arc;
 
 use gtk4::gio;
 use reprise_core::device_sync::DeviceStorageInspection;
-use reprise_core::library::m3u::M3uEntry;
 use reprise_platform_linux::device_sync::{
     CopyOutcome, DeviceDescriptor, DeviceMonitor, DeviceStorage,
 };
@@ -62,15 +61,6 @@ impl DeviceBackend for GioDeviceBackend {
                     &cancellable,
                     move |copied, total| progress(copied, total),
                 )
-                .await
-                .map_err(|error| error.to_string())
-        })
-    }
-
-    fn read_playlist(&self, root_uri: String, name: String) -> BackendFuture<Vec<M3uEntry>> {
-        Box::pin(async move {
-            DeviceStorage::from_uri(&root_uri)
-                .read_playlist(&name)
                 .await
                 .map_err(|error| error.to_string())
         })

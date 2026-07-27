@@ -292,7 +292,7 @@ impl NewReleasesPopover {
         button.connect_clicked(move |_| {
             if let Some(state) = weak.upgrade() {
                 state.popover.popdown();
-                (state.on_open_view)(target.clone());
+                (state.on_open_view)(target);
             }
         });
     }

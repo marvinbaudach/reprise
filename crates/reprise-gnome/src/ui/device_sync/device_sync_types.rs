@@ -56,7 +56,6 @@ pub trait DeviceBackend {
         let _ = (request, cancelled);
         Box::pin(async { Err("MP3 transcoding is unavailable".into()) })
     }
-    fn read_playlist(&self, root_uri: String, name: String) -> BackendFuture<Vec<M3uEntry>>;
     fn replace_playlist(
         &self,
         device_id: String,
@@ -76,39 +75,14 @@ pub struct DeviceView {
     pub icon: gio::Icon,
     pub connected: bool,
     pub storage: DeviceStorageSnapshot,
-    pub scanning: bool,
     pub scan_error: Option<String>,
-    pub draft_playlists: Vec<String>,
-    pub last_enqueue: Option<EnqueueReceipt>,
-    pub snapshot: SyncSnapshot,
     pub settings: DeviceSettings,
-    pub delta: Option<SyncDelta>,
     pub sync_phase: PlannedSyncPhase,
     pub sync_error: Option<SyncFailure>,
     pub last_sync: Option<chrono::DateTime<chrono::Utc>>,
-    pub tracks: Vec<DeviceTrackView>,
-    pub selected_track_count: usize,
+    pub managed_track_count: usize,
     pub bytes_per_second: u64,
     pub page: SyncPageState,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DeviceTrackStatus {
-    Queued,
-    Remove,
-    Synced,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DeviceTrackView {
-    pub track_id: i64,
-    pub title: String,
-    pub artist: String,
-    pub device_path: String,
-    pub size: u64,
-    pub duration_ms: i64,
-    pub status: DeviceTrackStatus,
-    pub pinned: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -148,51 +122,10 @@ pub struct DeviceSelectionOption {
     pub smart: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct EnqueueReceipt {
-    pub playlist: String,
-    pub track_count: usize,
-    pub queue_position: usize,
-}
-
 #[derive(Clone, Debug, Default)]
 pub struct DeviceSyncState {
     pub devices: Vec<DeviceView>,
 }
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum EnqueueError {
-    UnknownDevice,
-    Busy,
-    NoUsableTracks,
-    InsufficientSpace {
-        required_bytes: u64,
-        available_bytes: u64,
-    },
-    Database(String),
-}
-
-impl fmt::Display for EnqueueError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnknownDevice => formatter.write_str("device is not connected"),
-            Self::Busy => formatter.write_str("device synchronization is already active"),
-            Self::NoUsableTracks => formatter.write_str("no available tracks were selected"),
-            Self::InsufficientSpace {
-                required_bytes,
-                available_bytes,
-            } => write!(
-                formatter,
-                "copy needs {required_bytes} bytes but only {available_bytes} bytes are available"
-            ),
-            Self::Database(error) => {
-                write!(formatter, "could not resolve selected tracks: {error}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for EnqueueError {}
 
 pub struct Subscription {
     pub(super) cancel: RefCell<Option<Box<dyn FnOnce()>>>,

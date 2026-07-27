@@ -222,8 +222,7 @@ fn apply_view_snapshot(state: &mut SessionState, view: TrackViewSnapshot) {
         | ViewSource::Conversions
         | ViewSource::Album { .. }
         | ViewSource::Artist(_)
-        | ViewSource::Genre(_)
-        | ViewSource::Device { .. } => SessionSource::Library,
+        | ViewSource::Genre(_) => SessionSource::Library,
     };
     state.search = view.search;
     state.browse = view.browse;
