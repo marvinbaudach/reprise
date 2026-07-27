@@ -98,12 +98,13 @@ Die pure Core-Schicht besitzt die plattformneutralen Verträge:
 
 ## Persistenz und Migration
 
-Der zusammengeführte Schema-Stand ist `user_version = 37`:
+Der zusammengeführte Schema-Stand ist `user_version = 38`:
 
 - v34: Podcasts/Radio;
 - v35: Recently Added;
 - v36: Android-Sync-Inventar;
-- v37: modernes Transferprofil.
+- v37: modernes Transferprofil;
+- v38: letzter verifizierter Sync pro Geräte-Playlist.
 
 v36:
 
@@ -123,6 +124,11 @@ bereits unter v36 konfigurierte Geräte werden konservativ auf `mp3_256`
 migriert, damit ein Upgrade ihr bisheriges Ausgabeformat nicht still ändert.
 Die alten Spalten `mp3_quality` und `opus_bitrate` bleiben ausschließlich
 als inerte DB-Kompatibilitätsfelder ohne Benutzeroberfläche erhalten.
+v38 ergänzt `device_playlists.last_synced_at` als optionalen Unix-Zeitstempel.
+Bestehende Inventare migrieren ehrlich mit unbekanntem Zeitpunkt. Reprise
+setzt den Wert für jede ausgewählte Playlist erst nach erfolgreichem
+Geräte-Readback; die vorherige Zeit überlebt fehlgeschlagene oder nur
+teilweise veröffentlichte Läufe.
 Inventarzeilen kaskadieren absichtlich nicht mit Bibliothekstracks: Ein lokal
 vorübergehend fehlender Track darf keine Information über die vorhandene
 Gerätedatei vernichten.
@@ -198,8 +204,8 @@ Der Dialog zeigt:
 - Transferprofil Opus 160 kbit/s, MP3 256 kbit/s oder Original;
 - die sichtbare Garantie, dass verlustbehaftete und unbekannte Quellen nie in
   ein anderes verlustbehaftetes Format transkodiert werden;
-- jede manuelle und smarte Playlist mit Entry-, Unique-, Missing- und
-  Größenprojektion;
+- jede manuelle und smarte Playlist mit Entry-, Unique-, Missing-,
+  Größenprojektion und dem letzten verifizierten Sync-Zeitpunkt;
 - deduplizierte Gesamttracks und physische Zielgröße;
 - verständliche Change-, Blocker- und Warning-Zusammenfassungen ohne Pfade;
 - eine Storage-Zusammenfassung und Segmentleiste für Music, After-sync-Delta,

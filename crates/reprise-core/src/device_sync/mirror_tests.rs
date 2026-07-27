@@ -413,12 +413,14 @@ fn playlist_renames_write_the_new_path_and_remove_old_or_deselected_snapshots() 
             source: selected,
             source_name: "Road Trip".into(),
             device_path: "Road Trip.m3u8".into(),
+            last_synced_at: None,
         },
         DevicePlaylistRecord {
             device_serial: "phone".into(),
             source: deselected,
             source_name: "Old Smart".into(),
             device_path: "Old Smart.m3u8".into(),
+            last_synced_at: None,
         },
     ];
 

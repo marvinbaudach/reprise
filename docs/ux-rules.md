@@ -363,6 +363,12 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   mit dem bekannten Schreibstatus („Writable“, „Read-only“ oder „Write access
   unknown“) und nennt den freien Speicher; echte Scan-, Sync-, Warn- oder
   Auswahlfehler behalten stattdessen „Needs attention“.
+- **MTP-12** [aktiv] [gtk] — Jede verfügbare Playlist-Zeile im kompakten
+  Sync-Dialog nennt ihren letzten auf diesem Gerät verifizierten
+  Sync-Zeitpunkt in lokaler Zeit. Ohne belastbaren Zeitpunkt steht dort
+  ausdrücklich „No verified sync time“. Ein Zeitpunkt wird erst nach
+  erfolgreichem Geräte-Readback gespeichert; fehlgeschlagene oder nur
+  teilweise veröffentlichte Läufe überschreiben ihn nicht.
 
 ## F. Einstellungen & Modale
 

@@ -20,6 +20,7 @@ pub struct SyncPlaylistRow {
     pub unique_track_count: usize,
     pub unavailable_count: usize,
     pub target_bytes: u64,
+    pub last_synced_at: Option<i64>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -114,6 +115,11 @@ pub fn project_sync_page(input: SyncPageInput) -> SyncPageProjection {
         .iter()
         .map(|file| (file.track_id, file))
         .collect::<HashMap<_, _>>();
+    let playlist_inventory_by_source = input
+        .playlist_inventory
+        .iter()
+        .map(|playlist| (playlist.source.clone(), playlist))
+        .collect::<HashMap<_, _>>();
     let mut rows = input
         .playlists
         .iter()
@@ -123,6 +129,9 @@ pub fn project_sync_page(input: SyncPageInput) -> SyncPageProjection {
                 selected.contains(&playlist.source),
                 input.profile,
                 &inventory_by_id,
+                playlist_inventory_by_source
+                    .get(&playlist.source)
+                    .and_then(|record| record.last_synced_at),
             )
         })
         .collect::<Vec<_>>();
@@ -151,6 +160,9 @@ pub fn project_sync_page(input: SyncPageInput) -> SyncPageProjection {
             unique_track_count: 0,
             unavailable_count: 0,
             target_bytes: 0,
+            last_synced_at: playlist_inventory_by_source
+                .get(source)
+                .and_then(|record| record.last_synced_at),
         });
     }
     rows.sort_by(|left, right| {
@@ -217,6 +229,7 @@ fn playlist_row(
     selected: bool,
     profile: TransferProfile,
     inventory: &HashMap<i64, &DeviceFileRecord>,
+    last_synced_at: Option<i64>,
 ) -> SyncPlaylistRow {
     let mut unique = HashSet::new();
     let mut target_bytes = 0_u64;
@@ -246,6 +259,7 @@ fn playlist_row(
         unique_track_count: unique.len(),
         unavailable_count,
         target_bytes,
+        last_synced_at,
     }
 }
 

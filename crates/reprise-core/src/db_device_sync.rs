@@ -79,6 +79,12 @@ ALTER TABLE device_settings
 const PRESERVE_EXISTING_MP3_BEHAVIOR: &str =
     "UPDATE device_settings SET transfer_profile = 'mp3_256';";
 
+const ADD_PLAYLIST_LAST_SYNC: &str = r#"
+ALTER TABLE device_playlists
+  ADD COLUMN last_synced_at INTEGER
+  CHECK (last_synced_at IS NULL OR last_synced_at >= 0);
+"#;
+
 pub(crate) fn migrate_v36(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version >= 36 {
@@ -111,6 +117,20 @@ pub(crate) fn migrate_v37(conn: &Connection) -> Result<(), rusqlite::Error> {
         transaction.execute_batch(PRESERVE_EXISTING_MP3_BEHAVIOR)?;
     }
     transaction.pragma_update(None, "user_version", 37)?;
+    transaction.commit()
+}
+
+pub(crate) fn migrate_v38(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    let has_last_sync = has_column(conn, "device_playlists", "last_synced_at")?;
+    if version >= 38 && has_last_sync {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    if !has_last_sync {
+        transaction.execute_batch(ADD_PLAYLIST_LAST_SYNC)?;
+    }
+    transaction.pragma_update(None, "user_version", version.max(38))?;
     transaction.commit()
 }
 
