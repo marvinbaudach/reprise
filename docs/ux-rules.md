@@ -858,8 +858,9 @@ Ort und Stelle (MOT-2, die Motion-Lesart von P-4).
 - **MOT-4** [aktiv] [manuell] — Listen bewegen sich nicht: kein
   Stagger/Fade-in pro Row (windowed Model, 200er-Fenster, Bibliotheken
   jenseits 1 600 Rows). Erlaubt: ein Crossfade der gesamten Fläche beim
-  View-Wechsel; benannte Ausnahme: die Queue darf DnD-Drop und
-  Einzel-Remove animieren.
+  View-Wechsel, solange nicht zwei dichte Quellen gleichzeitig lesbar
+  werden; Podcasts⇄Music schaltet deshalb hart. Benannte Ausnahme: die Queue
+  darf DnD-Drop und Einzel-Remove animieren.
   <!-- Die Queue-Ausnahme ist erlaubend, nicht fordernd; ihre Umsetzung
        liegt im Folge-Branch und blockiert den MOT-4-Flip nicht. -->
 - **MOT-5** [aktiv] [gtk] — Player-Leiste lebt, aber leise: Play→Pause =
