@@ -44,7 +44,11 @@ pub(in crate::ui) fn build_button() -> (gtk4::MenuButton, gtk4::Label) {
     badge.set_halign(gtk4::Align::End);
     badge.set_valign(gtk4::Align::Start);
     badge.set_visible(false);
+    badge.set_can_target(false);
     let overlay = gtk4::Overlay::new();
+    overlay.add_css_class("updates-trigger");
+    overlay.set_size_request(32, 32);
+    overlay.set_overflow(gtk4::Overflow::Visible);
     overlay.set_child(Some(&glyph));
     overlay.add_overlay(&badge);
     let button = gtk4::MenuButton::builder()
@@ -53,6 +57,7 @@ pub(in crate::ui) fn build_button() -> (gtk4::MenuButton, gtk4::Label) {
         .css_classes(["flat"])
         .visible(false)
         .build();
+    button.set_overflow(gtk4::Overflow::Visible);
     button.update_property(&[gtk4::accessible::Property::Label(&strings::text(
         strings::UPDATES_HEADER,
     ))]);

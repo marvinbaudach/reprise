@@ -472,6 +472,117 @@ mod tests {
         window.close();
     }
 
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn fil_9_filter_changes_center_the_visible_playing_track() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let mut conn = Connection::open_in_memory().unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        let tx = conn.transaction().unwrap();
+        for id in 1..=100 {
+            let title = if (31..=60).contains(&id) {
+                format!("Match Track {id:03}")
+            } else {
+                format!("Other Track {id:03}")
+            };
+            tx.execute(
+                "INSERT INTO tracks (id, path, title, artist, added_at) \
+                 VALUES (?1, ?2, ?3, 'Synthetic Artist', 0)",
+                (id, format!("/synthetic/{id:03}.flac"), title),
+            )
+            .unwrap();
+        }
+        tx.commit().unwrap();
+        let track_list = TrackList::new(
+            Rc::new(RefCell::new(conn)),
+            Box::new(|_, _, _, _| {}),
+            |_, _, _, _| {},
+            super::super::queue_sections::QueueViewModel::default,
+            crate::ui::cover_download_worker::setup_for_test(),
+        );
+        let window = gtk4::Window::builder()
+            .default_width(900)
+            .default_height(320)
+            .child(track_list.widget())
+            .build();
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        let adjustment = track_list.shared.column_view.vadjustment().unwrap();
+        let playing_id = 51;
+        let unfiltered_ids = track_list.shared.current_view_ids();
+        let unfiltered_position = unfiltered_ids
+            .iter()
+            .position(|id| *id == playing_id)
+            .and_then(|position| u32::try_from(position).ok())
+            .unwrap();
+        let unfiltered_row_height =
+            adjustment.upper() / f64::from(track_list.shared.model.n_items());
+        adjustment.set_value(f64::from(unfiltered_position) * unfiltered_row_height);
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        track_list.update_current_track(playing_id, None, CurrentTrackChange::PlaybackStarted);
+
+        track_list.set_filter("Match");
+        assert_eq!(track_list.shared.model.n_items(), 30);
+        assert_playing_track_centered(&track_list, playing_id, &adjustment);
+
+        let filtered_ids = track_list.shared.current_view_ids();
+        let filtered_position = filtered_ids
+            .iter()
+            .position(|id| *id == playing_id)
+            .and_then(|position| u32::try_from(position).ok())
+            .unwrap();
+        let filtered_row_height = adjustment.upper() / f64::from(track_list.shared.model.n_items());
+        adjustment.set_value(f64::from(filtered_position) * filtered_row_height);
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        track_list.set_filter("");
+        assert_eq!(track_list.shared.model.n_items(), 100);
+        assert_playing_track_centered(&track_list, playing_id, &adjustment);
+
+        window.close();
+    }
+
+    fn assert_playing_track_centered(
+        track_list: &TrackList,
+        playing_id: i64,
+        adjustment: &gtk4::Adjustment,
+    ) {
+        let current_ids = track_list.shared.current_view_ids();
+        let playing_position = current_ids
+            .iter()
+            .position(|id| *id == playing_id)
+            .and_then(|position| u32::try_from(position).ok())
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+        while std::time::Instant::now() < deadline {
+            while gtk4::glib::MainContext::default().iteration(false) {}
+            let expected = scroll_center::centered_scroll_value(
+                playing_position,
+                track_list.shared.model.n_items(),
+                adjustment.upper(),
+                adjustment.page_size(),
+            );
+            if expected.is_some_and(|target| (adjustment.value() - target).abs() < 0.5) {
+                break;
+            }
+        }
+        let expected = scroll_center::centered_scroll_value(
+            playing_position,
+            track_list.shared.model.n_items(),
+            adjustment.upper(),
+            adjustment.page_size(),
+        )
+        .expect("expanded list must have centering geometry");
+        assert!(
+            (adjustment.value() - expected).abs() < 0.5,
+            "filter change must center playing track {playing_id}: \
+             actual {}, expected {expected}",
+            adjustment.value()
+        );
+    }
+
     /// Counts the widgets in `widget`'s subtree carrying the `.now-playing`
     /// marker class — the visible footprint of the now-playing row's cells.
     fn count_now_playing(widget: &gtk4::Widget) -> usize {

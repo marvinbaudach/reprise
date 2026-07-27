@@ -54,6 +54,20 @@ use reprise_core::view_source::ViewSource;
 /// allocation pass" issue.
 const SCROLL_RESTORE_MAX_ATTEMPTS: u8 = 8;
 
+#[derive(Clone, Copy)]
+enum ReloadViewport {
+    PreserveAnchor,
+    CenterPlayingTrack,
+}
+
+fn filter_change_viewport(previous: &str, current: &str) -> ReloadViewport {
+    if previous == current {
+        ReloadViewport::PreserveAnchor
+    } else {
+        ReloadViewport::CenterPlayingTrack
+    }
+}
+
 fn source_snapshot(source: &RefCell<ViewSource>) -> ViewSource {
     source.borrow().clone()
 }
@@ -117,17 +131,35 @@ pub(in crate::ui) fn capture_reload_anchor(shared: &Shared) -> ReloadAnchor {
 /// exist as soon as `set_query_browsed` returned) and schedules the scroll
 /// restore on idle, since a freshly rebuilt list needs at least one
 /// allocation pass before its adjustment reports usable geometry.
-fn restore_reload_anchor(shared: &Shared, captured: &ReloadAnchor) {
+fn restore_reload_anchor(shared: &Shared, captured: &ReloadAnchor, viewport: ReloadViewport) {
     // Resolving positions costs a sorted full-table id query; skip it when
-    // the capture side already established there is nothing to put back.
-    if reload_restore::is_noop(captured) {
+    // the capture side already established there is nothing to put back and
+    // the caller did not request a playing-track reveal.
+    let reveal_playing_track = matches!(viewport, ReloadViewport::CenterPlayingTrack)
+        && shared.playing_track_id.get().is_some();
+    if reload_restore::is_noop(captured) && !reveal_playing_track {
         return;
     }
     let current_ids = shared.current_view_ids();
-    let positions = reload_restore::positions_for_ids(&captured.selected_ids, &current_ids);
-    shared.selection.unselect_all();
-    for position in positions {
-        shared.selection.select_item(position, false);
+    if !reload_restore::is_noop(captured) {
+        let positions = reload_restore::positions_for_ids(&captured.selected_ids, &current_ids);
+        shared.selection.unselect_all();
+        for position in positions {
+            shared.selection.select_item(position, false);
+        }
+    }
+
+    if matches!(viewport, ReloadViewport::CenterPlayingTrack) {
+        let playing_track_id = shared.playing_track_id.get();
+        if playing_track_id.is_some_and(|track_id| current_ids.contains(&track_id)) {
+            schedule_centered_scroll_restore(
+                shared.column_view.clone(),
+                playing_track_id,
+                current_ids,
+                SCROLL_RESTORE_MAX_ATTEMPTS,
+            );
+            return;
+        }
     }
     schedule_scroll_restore(
         shared.column_view.clone(),
@@ -135,6 +167,56 @@ fn restore_reload_anchor(shared: &Shared, captured: &ReloadAnchor) {
         current_ids,
         SCROLL_RESTORE_MAX_ATTEMPTS,
     );
+}
+
+fn schedule_centered_scroll_restore(
+    column_view: gtk4::ColumnView,
+    track_id: Option<i64>,
+    current_ids: Vec<i64>,
+    attempts: u8,
+) {
+    let anchor = track_id.map(|track_id| (track_id, 0.0));
+    let Some(position) = reload_restore::prepaint_position(anchor, &current_ids) else {
+        return;
+    };
+    let scroll = gtk4::ScrollInfo::new();
+    scroll.set_enable_vertical(true);
+    column_view.scroll_to(position, None, gtk4::ListScrollFlags::NONE, Some(scroll));
+    schedule_centered_scroll_refinement(column_view, track_id, current_ids, attempts);
+}
+
+fn schedule_centered_scroll_refinement(
+    column_view: gtk4::ColumnView,
+    track_id: Option<i64>,
+    current_ids: Vec<i64>,
+    attempts: u8,
+) {
+    gtk4::glib::idle_add_local_once(move || {
+        if let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&column_view) {
+            let (upper, page) = (adjustment.upper(), adjustment.page_size());
+            if upper > page {
+                let height = upper / current_ids.len() as f64;
+                if let Some(value) = reload_restore::centered_track_scroll_target(
+                    track_id,
+                    &current_ids,
+                    height,
+                    page,
+                ) {
+                    adjustment.set_value(value);
+                }
+            }
+        }
+        if attempts > 0 {
+            gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(16), move || {
+                schedule_centered_scroll_refinement(
+                    column_view,
+                    track_id,
+                    current_ids,
+                    attempts - 1,
+                );
+            });
+        }
+    });
 }
 
 fn schedule_scroll_restore(
@@ -178,8 +260,16 @@ fn schedule_scroll_restore(
 /// `REPRISE_SMOKE_FILTER` dev hook (`arm_smoke_filter`), so both apply a new
 /// filter through the identical code path.
 pub(in crate::ui) fn set_filter_and_reload(shared: &Rc<Shared>, text: &str) {
+    let viewport = filter_change_viewport(shared.filter.borrow().as_str(), text);
     *shared.filter.borrow_mut() = text.to_string();
-    reload(shared);
+    reload_with_viewport(shared, viewport);
+}
+
+/// Re-runs the current query while centering the loaded track when it remains
+/// visible. Browse-facet and AI-filter callbacks use this because their filter
+/// state is owned by `BrowseBar`, not by the search string above.
+pub(in crate::ui) fn reload_centering_playing_track(shared: &Rc<Shared>) {
+    reload_with_viewport(shared, ReloadViewport::CenterPlayingTrack);
 }
 
 /// Sets `shared.source` and reloads — the one place that mutates the source
@@ -224,8 +314,12 @@ pub(in crate::ui) fn set_source_and_reload(shared: &Rc<Shared>, source: &ViewSou
 /// anchor (TAG-1) — see this module's doc comment. Every caller except
 /// `set_source_and_reload`'s source-switch branch goes through here.
 pub(in crate::ui) fn reload(shared: &Rc<Shared>) {
+    reload_with_viewport(shared, ReloadViewport::PreserveAnchor);
+}
+
+fn reload_with_viewport(shared: &Rc<Shared>, viewport: ReloadViewport) {
     let captured = capture_reload_anchor(shared);
-    reload_with_anchor(shared, &captured);
+    reload_with_anchor_and_viewport(shared, &captured, viewport);
 }
 
 /// Re-runs the current query while restoring a snapshot captured before an
@@ -233,8 +327,16 @@ pub(in crate::ui) fn reload(shared: &Rc<Shared>) {
 /// capturing only when its worker finishes is too late: the closing dialog
 /// and focus restoration may already have disturbed GTK's live adjustment.
 pub(in crate::ui) fn reload_with_anchor(shared: &Rc<Shared>, captured: &ReloadAnchor) {
+    reload_with_anchor_and_viewport(shared, captured, ReloadViewport::PreserveAnchor);
+}
+
+fn reload_with_anchor_and_viewport(
+    shared: &Rc<Shared>,
+    captured: &ReloadAnchor,
+    viewport: ReloadViewport,
+) {
     run_query(shared);
-    restore_reload_anchor(shared, captured);
+    restore_reload_anchor(shared, captured, viewport);
 }
 
 /// The bare query/model-swap/empty-state work, with no selection/scroll
@@ -435,6 +537,8 @@ mod tests {
 
     use reprise_core::view_source::ViewSource;
 
+    use super::{filter_change_viewport, ReloadViewport};
+
     #[test]
     fn source_snapshot_releases_the_borrow_before_reentrant_work() {
         let source = RefCell::new(ViewSource::Library);
@@ -444,5 +548,21 @@ mod tests {
 
         assert!(matches!(snapshot, ViewSource::Library));
         assert!(matches!(*source.borrow(), ViewSource::Queue));
+    }
+
+    #[test]
+    fn fil_9_any_search_change_requests_playing_track_centering() {
+        assert!(matches!(
+            filter_change_viewport("", "Match"),
+            ReloadViewport::CenterPlayingTrack
+        ));
+        assert!(matches!(
+            filter_change_viewport("Match", ""),
+            ReloadViewport::CenterPlayingTrack
+        ));
+        assert!(matches!(
+            filter_change_viewport("Match", "Match"),
+            ReloadViewport::PreserveAnchor
+        ));
     }
 }
