@@ -29,7 +29,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn nr_14_releases_empty_state_matrix_has_one_next_step() {
+    fn nr_17_releases_empty_state_matrix_has_one_next_step() {
         assert_eq!(
             releases_empty_state_for(1, false, true),
             ReleasesEmptyState::List
