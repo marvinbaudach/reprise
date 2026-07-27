@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use chrono::TimeZone;
 use gtk4::prelude::*;
 use libadwaita::prelude::*;
 use reprise_core::device_sync::{
@@ -24,6 +25,7 @@ fn row() -> SyncPlaylistRow {
         unique_track_count: 2,
         unavailable_count: 0,
         target_bytes: 32 * 1_024,
+        last_synced_at: None,
     }
 }
 
@@ -116,7 +118,7 @@ fn compact_dialog_names_each_modern_transfer_profile() {
 fn compact_dialog_playlist_copy_keeps_snapshot_repeats_and_physical_size_distinct() {
     assert_eq!(
         playlist_subtitle(&row()),
-        "Smart snapshot · 3 entries · 2 unique tracks · 32.0 KiB"
+        "Smart snapshot · 3 entries · 2 unique tracks · 32.0 KiB · No verified sync time"
     );
 
     let mut missing = row();
@@ -127,6 +129,28 @@ fn compact_dialog_playlist_copy_keeps_snapshot_repeats_and_physical_size_distinc
     assert_eq!(
         playlist_subtitle(&missing),
         "Playlist no longer exists — deselect it to continue"
+    );
+}
+
+#[test]
+fn mtp_12_playlist_copy_reports_its_last_verified_sync_time() {
+    let mut playlist = row();
+    assert_eq!(
+        playlist_subtitle(&playlist),
+        "Smart snapshot · 3 entries · 2 unique tracks · 32.0 KiB · No verified sync time"
+    );
+
+    playlist.last_synced_at = Some(1_753_612_496);
+    let local = chrono::Local
+        .timestamp_opt(1_753_612_496, 0)
+        .single()
+        .unwrap();
+    assert_eq!(
+        playlist_subtitle(&playlist),
+        format!(
+            "Smart snapshot · 3 entries · 2 unique tracks · 32.0 KiB · Last synced {}",
+            local.format("%b %-d, %Y at %H:%M")
+        )
     );
 }
 

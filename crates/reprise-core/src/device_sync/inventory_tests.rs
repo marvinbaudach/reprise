@@ -2,8 +2,8 @@ use rusqlite::Connection;
 
 use super::settings::{
     delete_device_playlist, load_device_files, load_device_playlists, load_or_create_settings,
-    save_settings, upsert_device_file, upsert_device_playlist, DeviceFileRecord,
-    DevicePlaylistRecord,
+    mark_device_playlists_synced, save_settings, upsert_device_file, upsert_device_playlist,
+    DeviceFileRecord, DevicePlaylistRecord,
 };
 use super::{DeviceSelection, Mp3Quality, SelectionSource, TransferProfile, REPRISE_DEVICE_DIR};
 
@@ -261,13 +261,14 @@ fn managed_playlist_inventory_tracks_renames_and_deletes_by_source_identity() {
         source: SelectionSource::Playlist(42),
         source_name: "Road Trip".into(),
         device_path: format!("{REPRISE_DEVICE_DIR}/Playlists/Road Trip.m3u8"),
+        last_synced_at: None,
     };
     upsert_device_playlist(&conn, &original).unwrap();
 
     let renamed = DevicePlaylistRecord {
         source_name: "Road Trip 2026".into(),
         device_path: format!("{REPRISE_DEVICE_DIR}/Playlists/Road Trip 2026.m3u8"),
-        ..original
+        ..original.clone()
     };
     upsert_device_playlist(&conn, &renamed).unwrap();
     assert_eq!(
@@ -275,6 +276,96 @@ fn managed_playlist_inventory_tracks_renames_and_deletes_by_source_identity() {
         vec![renamed.clone()]
     );
 
+    mark_device_playlists_synced(
+        &conn,
+        "phone",
+        &[SelectionSource::Playlist(42)],
+        1_753_612_496,
+    )
+    .unwrap();
+    assert_eq!(
+        load_device_playlists(&conn, "phone")
+            .unwrap()
+            .remove(0)
+            .last_synced_at,
+        Some(1_753_612_496)
+    );
+
+    upsert_device_playlist(&conn, &renamed).unwrap();
+    assert_eq!(
+        load_device_playlists(&conn, "phone")
+            .unwrap()
+            .remove(0)
+            .last_synced_at,
+        Some(1_753_612_496),
+        "rewriting the playlist before verification must preserve the previous timestamp"
+    );
+
     assert!(delete_device_playlist(&conn, "phone", &SelectionSource::Playlist(42)).unwrap());
     assert!(load_device_playlists(&conn, "phone").unwrap().is_empty());
+}
+
+#[test]
+fn managed_playlist_inventory_has_a_nullable_verified_sync_timestamp() {
+    let conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+
+    let column_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('device_playlists') \
+             WHERE name = 'last_synced_at'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(column_count, 1);
+
+    let nullability: i64 = conn
+        .query_row(
+            "SELECT \"notnull\" FROM pragma_table_info('device_playlists') \
+             WHERE name = 'last_synced_at'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(nullability, 0);
+}
+
+#[test]
+fn v38_migration_preserves_playlist_inventory_with_an_unknown_sync_time() {
+    let conn = crate::db::open(None).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE device_playlists (
+           device_serial TEXT NOT NULL,
+           source_kind   TEXT NOT NULL CHECK (source_kind IN ('playlist', 'smart')),
+           source_id     INTEGER NOT NULL CHECK (source_id > 0),
+           source_name   TEXT NOT NULL,
+           device_path   TEXT NOT NULL,
+           PRIMARY KEY (device_serial, source_kind, source_id),
+           UNIQUE (device_serial, device_path)
+         );
+         INSERT INTO device_playlists (
+           device_serial, source_kind, source_id, source_name, device_path
+         ) VALUES ('phone', 'playlist', 42, 'Road Trip', 'Playlists/Road Trip.m3u8');
+         PRAGMA user_version = 37;",
+    )
+    .unwrap();
+
+    crate::db_device_sync::migrate_v38(&conn).unwrap();
+
+    assert_eq!(
+        load_device_playlists(&conn, "phone").unwrap(),
+        vec![DevicePlaylistRecord {
+            device_serial: "phone".into(),
+            source: SelectionSource::Playlist(42),
+            source_name: "Road Trip".into(),
+            device_path: "Playlists/Road Trip.m3u8".into(),
+            last_synced_at: None,
+        }]
+    );
+    assert_eq!(
+        conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+            .unwrap(),
+        38
+    );
 }

@@ -14,6 +14,7 @@ fn select_playlist(device: &mut DeviceView) {
         unique_track_count: 1,
         unavailable_count: 0,
         target_bytes: 1,
+        last_synced_at: None,
     }];
 }
 

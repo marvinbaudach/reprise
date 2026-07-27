@@ -77,6 +77,7 @@ pub struct DevicePlaylistRecord {
     pub source: SelectionSource,
     pub source_name: String,
     pub device_path: String,
+    pub last_synced_at: Option<i64>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -255,7 +256,7 @@ pub fn load_device_playlists(
     serial: &str,
 ) -> Result<Vec<DevicePlaylistRecord>, rusqlite::Error> {
     let mut statement = conn.prepare(
-        "SELECT source_kind, source_id, source_name, device_path \
+        "SELECT source_kind, source_id, source_name, device_path, last_synced_at \
          FROM device_playlists \
          WHERE device_serial = ?1 \
          ORDER BY source_kind, source_id",
@@ -268,6 +269,7 @@ pub fn load_device_playlists(
             source: decode_source_columns(&kind, id)?,
             source_name: row.get(2)?,
             device_path: row.get(3)?,
+            last_synced_at: row.get(4)?,
         })
     })?;
     rows.collect()
@@ -280,19 +282,46 @@ pub fn upsert_device_playlist(
     let (kind, id) = source_columns(&playlist.source);
     conn.execute(
         "INSERT INTO device_playlists \
-         (device_serial, source_kind, source_id, source_name, device_path) \
-         VALUES (?1, ?2, ?3, ?4, ?5) \
+         (device_serial, source_kind, source_id, source_name, device_path, last_synced_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
          ON CONFLICT(device_serial, source_kind, source_id) DO UPDATE SET \
-           source_name = excluded.source_name, device_path = excluded.device_path",
+           source_name = excluded.source_name, device_path = excluded.device_path, \
+           last_synced_at = COALESCE(excluded.last_synced_at, device_playlists.last_synced_at)",
         params![
             playlist.device_serial,
             kind,
             id,
             playlist.source_name,
-            playlist.device_path
+            playlist.device_path,
+            playlist.last_synced_at,
         ],
     )?;
     Ok(())
+}
+
+pub fn mark_device_playlists_synced(
+    conn: &Connection,
+    serial: &str,
+    sources: &[SelectionSource],
+    timestamp: i64,
+) -> Result<(), rusqlite::Error> {
+    let transaction = conn.unchecked_transaction()?;
+    let mut seen = HashSet::new();
+    for source in sources {
+        if !seen.insert(source) {
+            continue;
+        }
+        let (kind, id) = source_columns(source);
+        let updated = transaction.execute(
+            "UPDATE device_playlists SET last_synced_at = ?4 \
+             WHERE device_serial = ?1 AND source_kind = ?2 AND source_id = ?3",
+            params![serial, kind, id, timestamp],
+        )?;
+        if updated == 0 {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+    }
+    transaction.commit()
 }
 
 pub fn delete_device_playlist(

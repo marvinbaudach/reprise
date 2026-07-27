@@ -59,6 +59,7 @@ fn cancellation_during_playlist_publication_skips_later_playlist_deletions() {
                 source: SelectionSource::Smart(99),
                 source_name: "Old".into(),
                 device_path: "Old.m3u8".into(),
+                last_synced_at: None,
             },
         )
         .unwrap();

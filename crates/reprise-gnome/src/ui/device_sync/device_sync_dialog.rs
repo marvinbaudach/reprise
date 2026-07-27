@@ -3,6 +3,7 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+use chrono::TimeZone;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
@@ -55,7 +56,21 @@ fn playlist_subtitle(row: &SyncPlaylistRow) -> String {
         ));
     }
     parts.push(device_sync_strings::file_size(row.target_bytes));
+    parts.push(playlist_last_sync_copy(row.last_synced_at));
     parts.join(" · ")
+}
+
+fn playlist_last_sync_copy(last_synced_at: Option<i64>) -> String {
+    let Some(last_synced_at) = last_synced_at else {
+        return "No verified sync time".into();
+    };
+    chrono::Local
+        .timestamp_opt(last_synced_at, 0)
+        .single()
+        .map_or_else(
+            || "Verified sync time unavailable".into(),
+            |timestamp| format!("Last synced {}", timestamp.format("%b %-d, %Y at %H:%M")),
+        )
 }
 
 fn change_summary(changes: &SyncChangeSummary) -> String {

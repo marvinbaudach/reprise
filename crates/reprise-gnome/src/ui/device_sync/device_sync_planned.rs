@@ -522,6 +522,7 @@ async fn run_playlists(
                     source: playlist.source.clone(),
                     source_name: playlist.source_name.clone(),
                     device_path: playlist.device_path.clone(),
+                    last_synced_at: None,
                 };
                 match upsert_device_playlist(&runtime.conn.borrow(), &record) {
                     Ok(()) => {
@@ -601,7 +602,14 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, mut failures
     }
     if successful {
         runtime.notify();
-        runtime.refresh_contents_after_sync(&work.device_id);
+        runtime.refresh_contents_after_sync(
+            &work.device_id,
+            work.plan
+                .playlist_writes
+                .iter()
+                .map(|playlist| playlist.source.clone())
+                .collect(),
+        );
         return;
     }
     let planning_error = runtime.recompute_delta_silent(&work.device_id).err();

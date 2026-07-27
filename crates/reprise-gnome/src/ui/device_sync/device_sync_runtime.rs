@@ -10,10 +10,10 @@ use std::sync::Arc;
 
 use gtk4::gio;
 use gtk4::gio::prelude::*;
-use reprise_core::device_sync::settings::load_or_create_settings;
+use reprise_core::device_sync::settings::{load_or_create_settings, mark_device_playlists_synced};
 use reprise_core::device_sync::{
     DeviceSelection, DeviceSettings, DeviceStorageInspection, DeviceStorageSnapshot,
-    ManagedDeviceFile, MirrorPlan, SyncPageState,
+    ManagedDeviceFile, MirrorPlan, SelectionSource, SyncPageState,
 };
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor, DeviceMonitor};
 use reprise_platform_linux::device_transfer::{TranscodeProfile, TranscodeRequest, TranscodedFile};
@@ -190,8 +190,12 @@ impl DeviceSyncRuntime {
         self.refresh_contents_with_delta(device_id, true, RefreshPurpose::Normal);
     }
 
-    fn refresh_contents_after_sync(self: &Rc<Self>, device_id: &str) {
-        self.refresh_contents_with_delta(device_id, true, RefreshPurpose::VerifySync);
+    fn refresh_contents_after_sync(
+        self: &Rc<Self>,
+        device_id: &str,
+        sources: Vec<SelectionSource>,
+    ) {
+        self.refresh_contents_with_delta(device_id, true, RefreshPurpose::VerifySync(sources));
     }
 
     fn refresh_contents_with_delta(
@@ -257,27 +261,60 @@ impl DeviceSyncRuntime {
                 runtime.notify();
             } else {
                 let planning_error = runtime.recompute_delta_silent(&id).err();
+                let mut playlist_timestamp_error = None;
+                let verified_at = match &purpose {
+                    RefreshPurpose::VerifySync(sources)
+                        if inspection_error.is_none() && planning_error.is_none() =>
+                    {
+                        let verified_at = chrono::Utc::now();
+                        if let Err(error) = mark_device_playlists_synced(
+                            &runtime.conn.borrow(),
+                            &id,
+                            sources,
+                            verified_at.timestamp(),
+                        ) {
+                            playlist_timestamp_error = Some(format!(
+                                "could not record verified playlist synchronization: {error}"
+                            ));
+                            None
+                        } else {
+                            Some(verified_at)
+                        }
+                    }
+                    _ => None,
+                };
                 if let Some(device) = runtime
                     .device_states
                     .borrow_mut()
                     .iter_mut()
                     .find(|device| device.descriptor.id == id)
                 {
-                    match purpose {
-                        RefreshPurpose::VerifySync
-                            if inspection_error.is_none() && planning_error.is_none() =>
+                    match &purpose {
+                        RefreshPurpose::VerifySync(sources)
+                            if inspection_error.is_none()
+                                && planning_error.is_none()
+                                && playlist_timestamp_error.is_none() =>
                         {
-                            device.last_sync = Some(chrono::Utc::now());
-                            device.verified_managed_track_count = verified_track_count;
-                            device.sync_error = None;
+                            if let Some(verified_at) = verified_at {
+                                for row in &mut device.page.playlists {
+                                    if sources.contains(&row.source) {
+                                        row.last_synced_at = Some(verified_at.timestamp());
+                                    }
+                                }
+                                device.last_sync = Some(verified_at);
+                                device.verified_managed_track_count = verified_track_count;
+                                device.sync_error = None;
+                            }
                         }
-                        RefreshPurpose::VerifySync => {
+                        RefreshPurpose::VerifySync(_) => {
                             device.sync_phase = PlannedSyncPhase::Idle;
                             device.sync_error = Some(SyncFailure {
                                 message: inspection_error.clone().map_or_else(
                                     || {
                                         planning_error.clone().unwrap_or_else(|| {
-                                            "device content verification failed".into()
+                                            playlist_timestamp_error.clone().unwrap_or_else(|| {
+                                                "device content verification failed".into()
+                                            })
                                         })
                                     },
                                     |error| {
@@ -423,10 +460,10 @@ impl DeviceSyncRuntime {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum RefreshPurpose {
     Normal,
-    VerifySync,
+    VerifySync(Vec<SelectionSource>),
 }
 
 #[path = "device_sync_agent.rs"]

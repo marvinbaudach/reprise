@@ -350,6 +350,7 @@ fn successful_playlist_rename_writes_inventory_before_removing_the_old_m3u() {
                 source: SelectionSource::Playlist(10),
                 source_name: "Old Road".into(),
                 device_path: "Old Road.m3u8".into(),
+                last_synced_at: None,
             },
         )
         .unwrap();

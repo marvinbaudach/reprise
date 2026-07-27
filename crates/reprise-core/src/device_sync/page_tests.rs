@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
 use super::{
-    project_sync_page, DeviceFileRecord, DeviceStorageAccess, DeviceStorageSnapshot, MirrorBlocker,
-    MirrorPlaylistSnapshot, MirrorTrack, Mp3Quality, SelectionSource, SyncPageInput, SyncTrack,
-    TransferProfile,
+    project_sync_page, DeviceFileRecord, DevicePlaylistRecord, DeviceStorageAccess,
+    DeviceStorageSnapshot, MirrorBlocker, MirrorPlaylistSnapshot, MirrorTrack, Mp3Quality,
+    SelectionSource, SyncPageInput, SyncTrack, TransferProfile,
 };
 
 fn track(id: i64) -> SyncTrack {
@@ -79,6 +79,49 @@ fn empty_selection_keeps_controls_destructive_work_and_storage_projection_blocke
     );
     assert_eq!(projection.page.changes.removals, 0);
     assert!(!projection.page.controls.can_start);
+}
+
+#[test]
+fn mtp_12_page_projects_the_verified_sync_time_for_each_playlist() {
+    let road = SelectionSource::Playlist(1);
+    let mix = SelectionSource::Playlist(2);
+    let projection = project_sync_page(SyncPageInput {
+        playlists: vec![
+            MirrorPlaylistSnapshot {
+                source: road.clone(),
+                name: "Road".into(),
+                entries: Vec::new(),
+            },
+            MirrorPlaylistSnapshot {
+                source: mix,
+                name: "Mix".into(),
+                entries: Vec::new(),
+            },
+        ],
+        playlist_inventory: vec![DevicePlaylistRecord {
+            device_serial: "phone".into(),
+            source: road,
+            source_name: "Road".into(),
+            device_path: "Road.m3u8".into(),
+            last_synced_at: Some(1_753_612_496),
+        }],
+        ..SyncPageInput::default()
+    });
+
+    let road = projection
+        .page
+        .playlists
+        .iter()
+        .find(|row| row.name.as_deref() == Some("Road"))
+        .unwrap();
+    let mix = projection
+        .page
+        .playlists
+        .iter()
+        .find(|row| row.name.as_deref() == Some("Mix"))
+        .unwrap();
+    assert_eq!(road.last_synced_at, Some(1_753_612_496));
+    assert_eq!(mix.last_synced_at, None);
 }
 
 #[test]
