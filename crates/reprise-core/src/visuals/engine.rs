@@ -16,7 +16,8 @@ const STOP_RELEASE: f32 = 0.12;
 const SETTLE_EPSILON: f32 = 0.002;
 const FALLBACK_ACCENT2_HUE_SHIFT: f32 = 42.0;
 const BASS_GLOW_BAND_COUNT: usize = 12;
-const BASS_GLOW_THRESHOLD: f32 = 0.42;
+const BASS_GLOW_THRESHOLD: f32 = 0.36;
+const BASS_GLOW_FULL_SCALE: f32 = 0.49;
 const BASS_GLOW_DECAY: f32 = 0.024;
 
 /// Borrowed render inputs for the Bars scene builder.
@@ -175,8 +176,9 @@ fn bass_glow_target(bars: &[f32; SPECTRUM_BAND_COUNT]) -> f32 {
         .map(|bar| bar * bar)
         .sum::<f32>()
         / BASS_GLOW_BAND_COUNT as f32;
-    let normalized =
-        ((mean_square.sqrt() - BASS_GLOW_THRESHOLD) / (1.0 - BASS_GLOW_THRESHOLD)).clamp(0.0, 1.0);
+    let normalized = ((mean_square.sqrt() - BASS_GLOW_THRESHOLD)
+        / (BASS_GLOW_FULL_SCALE - BASS_GLOW_THRESHOLD))
+        .clamp(0.0, 1.0);
     normalized * normalized * (3.0 - 2.0 * normalized)
 }
 
@@ -319,12 +321,12 @@ mod tests {
             (alphas.len(), alphas.iter().sum::<f32>())
         };
         let mut regular_bass = [0.0; SPECTRUM_BAND_COUNT];
-        regular_bass[..12].fill(0.62);
+        regular_bass[..12].fill(0.39);
         let mut strong_beat = [0.0; SPECTRUM_BAND_COUNT];
-        strong_beat[..12].fill(0.75);
+        strong_beat[..12].fill(0.446);
         let mut breakdown = [0.0; SPECTRUM_BAND_COUNT];
-        breakdown[..12].fill(0.98);
-        breakdown[12..24].fill(0.82);
+        breakdown[..12].fill(0.519);
+        breakdown[12..24].fill(0.46);
 
         let regular = glow_stats(regular_bass);
         let strong = glow_stats(strong_beat);
@@ -335,6 +337,32 @@ mod tests {
         assert_eq!(extreme.0, 4);
         assert!(extreme.1 > regular.1 * 4.0);
         assert!(extreme.1 > 1.4);
+    }
+
+    #[test]
+    fn ac_22_realistic_breakdown_waves_span_glow_and_aura_range() {
+        let bass_wave = |level: f32| {
+            let mut bars = [0.0; SPECTRUM_BAND_COUNT];
+            bars[..BASS_GLOW_BAND_COUNT].fill(level);
+            bass_glow_target(&bars)
+        };
+
+        let early_wave = bass_wave(0.39);
+        let recurring_wave = bass_wave(0.446);
+        let strongest_wave = bass_wave(0.519);
+
+        assert!(
+            early_wave > 0.0 && early_wave < 0.25,
+            "smaller lead-in wave should add only broad glow, got {early_wave:.3}"
+        );
+        assert!(
+            recurring_wave > 0.7,
+            "recurring breakdown wave should clearly reach the inner aura, got {recurring_wave:.3}"
+        );
+        assert!(
+            strongest_wave > 0.95,
+            "strongest breakdown wave should nearly fill the glow range, got {strongest_wave:.3}"
+        );
     }
 
     #[test]
