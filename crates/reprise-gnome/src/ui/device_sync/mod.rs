@@ -4,6 +4,7 @@ pub(in crate::ui) mod device_sync_feedback;
 pub(in crate::ui) mod device_sync_launcher;
 pub(in crate::ui) mod device_sync_runtime;
 pub(in crate::ui) mod device_sync_smoke;
+pub(in crate::ui) mod device_sync_storage_bar;
 pub(in crate::ui) mod device_sync_strings;
 
 #[cfg(test)]

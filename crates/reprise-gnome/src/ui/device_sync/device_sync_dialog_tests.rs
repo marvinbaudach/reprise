@@ -144,16 +144,31 @@ fn compact_dialog_summarizes_every_mirror_change_without_paths() {
 
 #[test]
 fn compact_dialog_projects_storage_blockers_and_control_mode() {
+    let mut after = composition(Some(48 * 1_024));
+    after.reprise_music_bytes = 48 * 1_024;
+    after.other_used_bytes = Some(16 * 1_024);
     let projection = DeviceStorageProjection {
         target_name: Some("Internal storage".into()),
         current: composition(Some(64 * 1_024)),
-        after_sync: Some(composition(Some(48 * 1_024))),
+        after_sync: Some(after),
         transfer_bytes: 16 * 1_024,
         state: StorageProjectionState::Fits,
     };
     assert_eq!(
         storage_summary(&projection),
-        "After sync: 32.0 KiB Reprise · 16.0 KiB other music · 48.0 KiB free"
+        "Music 48.0 KiB · after sync +16.0 KiB · Other 16.0 KiB · Free 48.0 KiB"
+    );
+    assert_eq!(
+        crate::ui::device_sync::device_sync_storage_bar::segments(&projection),
+        Some(
+            crate::ui::device_sync::device_sync_storage_bar::StorageSegments {
+                music: 48 * 1_024,
+                after_sync: 16 * 1_024,
+                other: 16 * 1_024,
+                free: 48 * 1_024,
+                total: 128 * 1_024,
+            }
+        )
     );
     assert_eq!(
         blocker_summary(&[MirrorBlocker::NoPlaylistsSelected]),
@@ -170,6 +185,56 @@ fn compact_dialog_projects_storage_blockers_and_control_mode() {
             sensitive: true,
             destructive: true,
         }
+    );
+}
+
+#[test]
+fn storage_segments_never_invent_unknown_capacity_or_negative_growth() {
+    let mut after = composition(Some(80 * 1_024));
+    after.reprise_music_bytes = 16 * 1_024;
+    let mut projection = DeviceStorageProjection {
+        target_name: Some("Internal storage".into()),
+        current: composition(Some(64 * 1_024)),
+        after_sync: Some(after),
+        transfer_bytes: 0,
+        state: StorageProjectionState::Fits,
+    };
+
+    assert_eq!(
+        crate::ui::device_sync::device_sync_storage_bar::segments(&projection),
+        Some(
+            crate::ui::device_sync::device_sync_storage_bar::StorageSegments {
+                music: 32 * 1_024,
+                after_sync: 0,
+                other: 16 * 1_024,
+                free: 80 * 1_024,
+                total: 128 * 1_024,
+            }
+        )
+    );
+    assert_eq!(
+        storage_summary(&projection),
+        "Music 48.0 KiB · after sync −16.0 KiB · Other 16.0 KiB · Free 80.0 KiB"
+    );
+
+    projection.state = StorageProjectionState::CapacityUnknown;
+    assert_eq!(
+        crate::ui::device_sync::device_sync_storage_bar::segments(&projection),
+        None
+    );
+    projection.state = StorageProjectionState::Fits;
+    projection.after_sync.as_mut().unwrap().total_bytes = None;
+    projection.after_sync.as_mut().unwrap().knowledge = StorageKnowledge::CapacityUnknown;
+    assert_eq!(
+        crate::ui::device_sync::device_sync_storage_bar::segments(&projection),
+        None
+    );
+
+    projection.after_sync.as_mut().unwrap().total_bytes = Some(256 * 1_024);
+    projection.after_sync.as_mut().unwrap().knowledge = StorageKnowledge::Complete;
+    assert_eq!(
+        crate::ui::device_sync::device_sync_storage_bar::segments(&projection),
+        None
     );
 }
 

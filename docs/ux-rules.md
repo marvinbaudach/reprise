@@ -333,6 +333,12 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   projiziert. Danach zeigt der Lifecycle-Toast den Abschluss oder Fehlerstatus,
   und die Gerätekarte wechselt ohne separaten 100-%-Haltezustand zurück in den
   aktuellen Idle-/Synced-Zustand.
+  <!-- REVIEW: Regelvorschlag -->
+- **MTP-7** [geplant] [gtk] — Der kompakte Sync-Dialog stellt vollständig
+  bekannten Speicher als themenfarbene Segmentleiste aus Music, geplantem
+  After-sync-Zuwachs, Other und Free dar; dieselben Werte bleiben textuell
+  verfügbar. Bei unvollständiger oder inkonsistenter Kapazität verschwindet
+  die Leiste, und der Text benennt „unknown“, statt Anteile zu erfinden.
 
 ## F. Einstellungen & Modale
 
