@@ -4,13 +4,14 @@
 //! callers keep using `artist_news::{refresh, RefreshReport, NewsError}`.
 
 use chrono::NaiveDate;
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 use crate::artist_news::{include_singles, normalize, AlbumNews};
 use crate::artist_news_candidates::{artists_for_fetch, ArtistCandidate, FetchScope};
 use crate::artist_news_parsing::{
-    artist_payload_valid, artist_search_url, parse_artist_mbid, parse_release_groups,
-    release_groups_url, release_payload_valid, ArtistMatch,
+    artist_payload_valid, artist_search_url, parse_artist_mbid, parse_release_group_page,
+    parse_release_track_count, release_group_detail_url, release_groups_page_url,
+    sort_release_groups, ArtistMatch,
 };
 use crate::musicbrainz::{self, FetchError};
 
@@ -94,6 +95,8 @@ where
         ..RefreshReport::default()
     };
     let include_singles = include_singles(conn).map_err(database_error)?;
+    let local_track_counts =
+        crate::artist_news_query::local_album_track_counts(conn).map_err(database_error)?;
     for candidate in candidates {
         // `normalize()` is the authoritative form of the ledger key: every
         // runtime read and write (`record_attempt`, `last_attempt_at`,
@@ -145,9 +148,9 @@ where
                 continue;
             }
         };
-        let body = match fetch(&release_groups_url(&mbid)) {
-            Ok(body) if release_payload_valid(&body) => body,
-            Ok(_) | Err(_) => {
+        let items = match fetch_release_discography(&mbid, today, include_singles, fetch) {
+            Some(items) => items,
+            None => {
                 report.failed += 1;
                 crate::artist_news_ledger::record_attempt(
                     conn,
@@ -161,10 +164,17 @@ where
                 continue;
             }
         };
-        let items = parse_release_groups(&body, today, include_singles);
         let accent = normalize_fallback_accent(fallback_accent(conn, &candidate.name));
         upsert_releases(conn, &candidate.name, &mbid, now, &accent, &items)
             .map_err(database_error)?;
+        enrich_local_release_track_counts(
+            conn,
+            &candidate.name,
+            &items,
+            &local_track_counts,
+            fetch,
+        )
+        .map_err(database_error)?;
         crate::artist_news_ledger::record_attempt(
             conn,
             &artist_key,
@@ -179,6 +189,85 @@ where
     }
     crate::artist_news_history::enforce_retention(conn, now).map_err(database_error)?;
     Ok(report)
+}
+
+fn fetch_release_discography<F>(
+    artist_mbid: &str,
+    today: NaiveDate,
+    include_singles: bool,
+    fetch: &mut F,
+) -> Option<Vec<AlbumNews>>
+where
+    F: FnMut(&str) -> Result<String, FetchError>,
+{
+    let mut offset = 0;
+    let mut items = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    loop {
+        let body = fetch(&release_groups_page_url(artist_mbid, offset)).ok()?;
+        let page = parse_release_group_page(&body, today, include_singles)?;
+        items.extend(
+            page.items
+                .into_iter()
+                .filter(|item| seen.insert(item.release_group_mbid.clone())),
+        );
+        let Some(next_offset) = page.next_offset else {
+            break;
+        };
+        if next_offset <= offset {
+            return None;
+        }
+        offset = next_offset;
+    }
+    sort_release_groups(&mut items);
+    Some(items)
+}
+
+fn enrich_local_release_track_counts<F>(
+    conn: &Connection,
+    artist: &str,
+    items: &[AlbumNews],
+    local_track_counts: &std::collections::HashMap<(String, String), i64>,
+    fetch: &mut F,
+) -> Result<(), rusqlite::Error>
+where
+    F: FnMut(&str) -> Result<String, FetchError>,
+{
+    for item in items {
+        if !matches!(
+            item.primary_type.to_ascii_lowercase().as_str(),
+            "album" | "ep"
+        ) || crate::artist_news_query::local_track_count(local_track_counts, artist, &item.title)
+            == 0
+            || stored_track_count(conn, &item.release_group_mbid)?.is_some()
+        {
+            continue;
+        }
+        let Ok(body) = fetch(&release_group_detail_url(&item.release_group_mbid)) else {
+            continue;
+        };
+        let Some(track_count) = parse_release_track_count(&body) else {
+            continue;
+        };
+        conn.execute(
+            "UPDATE new_releases SET track_count = ?1 WHERE release_group_mbid = ?2",
+            rusqlite::params![track_count, item.release_group_mbid],
+        )?;
+    }
+    Ok(())
+}
+
+fn stored_track_count(
+    conn: &Connection,
+    release_group_mbid: &str,
+) -> Result<Option<i64>, rusqlite::Error> {
+    conn.query_row(
+        "SELECT track_count FROM new_releases WHERE release_group_mbid = ?1",
+        [release_group_mbid],
+        |row| row.get(0),
+    )
+    .optional()
+    .map(Option::flatten)
 }
 
 fn resolve_artist_mbid<F>(

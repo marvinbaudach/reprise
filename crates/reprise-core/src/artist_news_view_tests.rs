@@ -32,11 +32,13 @@ fn entry(
         hidden_at: hidden.then_some(2),
         presence,
         announce_url: None,
+        track_count: None,
+        local_track_count: 0,
     }
 }
 
 #[test]
-fn release_status_prefers_complete_presence_and_handles_partial_dates() {
+fn nr_17_release_status_distinguishes_upcoming_incomplete_and_missing() {
     assert_eq!(
         release_status(
             &entry(
@@ -72,17 +74,31 @@ fn release_status_prefers_complete_presence_and_handles_partial_dates() {
                 "Broken",
                 "Album",
                 "unknown",
+                LibraryPresence::Partial,
+                false,
+            ),
+            today(),
+        ),
+        ReleaseStatus::Incomplete
+    );
+    assert_eq!(
+        release_status(
+            &entry(
+                "missing",
+                "Missing",
+                "Album",
+                "2026-01-01",
                 LibraryPresence::Absent,
                 false,
             ),
             today(),
         ),
-        ReleaseStatus::Released
+        ReleaseStatus::Missing
     );
 }
 
 #[test]
-fn release_filters_are_exclusive_and_composable() {
+fn nr_16_release_filters_always_exclude_complete_releases_and_singles() {
     let rows = vec![
         entry(
             "owned",
@@ -108,9 +124,16 @@ fn release_filters_are_exclusive_and_composable() {
             LibraryPresence::Absent,
             true,
         ),
+        entry(
+            "single",
+            "Visible Single",
+            "Single",
+            "2026-07-04",
+            LibraryPresence::Absent,
+            false,
+        ),
     ];
     let filter = ReleasesFilter {
-        not_in_library: true,
         release_type: Some(ReleaseTypeFilter::Ep),
         hidden: false,
     };
@@ -123,7 +146,7 @@ fn release_filters_are_exclusive_and_composable() {
     );
     assert_eq!(
         filter_release_rows(
-            rows,
+            rows.clone(),
             &ReleasesFilter {
                 hidden: true,
                 ..filter
@@ -133,6 +156,14 @@ fn release_filters_are_exclusive_and_composable() {
         .map(|row| row.release_group_mbid)
         .collect::<Vec<_>>(),
         ["hidden"]
+    );
+    assert_eq!(
+        filter_release_rows(rows.clone(), &ReleasesFilter::default())
+            .into_iter()
+            .map(|row| row.release_group_mbid)
+            .collect::<Vec<_>>(),
+        ["ep"],
+        "owned releases and singles never belong to the discography-gap view"
     );
 }
 
@@ -193,7 +224,6 @@ fn persisted_release_filter_tolerates_unknown_type() {
     assert_eq!(
         persisted_releases_filter(&conn).unwrap(),
         ReleasesFilter {
-            not_in_library: true,
             release_type: None,
             hidden: true,
         }
@@ -201,9 +231,15 @@ fn persisted_release_filter_tolerates_unknown_type() {
 }
 
 #[test]
-fn releases_view_count_matches_query_length() {
+fn nr_18_sidebar_badge_count_matches_visible_gap_rows() {
     let conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, album, added_at)
+         VALUES ('/music/one.flac', 'Track', 'Artist', 'Local', 0)",
+        [],
+    )
+    .unwrap();
     conn.execute(
         "INSERT INTO new_releases (
            release_group_mbid, artist_name, artist_mbid, title, release_type,
@@ -225,4 +261,36 @@ fn releases_view_count_matches_query_length() {
         rows.len() as i64
     );
     assert_eq!(rows[0].release_group_mbid, "one");
+}
+
+#[test]
+fn nr_16_releases_view_is_limited_to_current_library_artists() {
+    let conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, album_artist, album, added_at)
+         VALUES ('/music/local.flac', 'Track', 'Guest', 'Library Artist', 'Local', 0)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO new_releases (
+           release_group_mbid, artist_name, artist_mbid, title, release_type,
+           first_release_date, fetched_at, fallback_accent, first_seen
+         ) VALUES
+           ('local', 'Library Artist', 'artist-id', 'Missing Album', 'Album',
+            '2020-01-01', 1, '#123456', 1),
+           ('foreign', 'Former Artist', 'former-id', 'Foreign Album', 'Album',
+            '2020-01-01', 1, '#123456', 1)",
+        [],
+    )
+    .unwrap();
+
+    let rows = query_releases_view(&conn, &ReleasesFilter::default(), today()).unwrap();
+    assert_eq!(
+        rows.into_iter()
+            .map(|row| row.release_group_mbid)
+            .collect::<Vec<_>>(),
+        ["local"]
+    );
 }

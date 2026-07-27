@@ -1171,12 +1171,12 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   gesamte Delta-Menge beider Sektionen im aktuellen Scope. Vollständig in der
   Bibliothek vorhandene Releases werden gelistet und gestempelt, zählen aber
   nie in den Unseen-Badge.
-- **NR-12a** [aktiv] [gtk] — Die persistente Historie aller je gezeigten
+- **NR-12a** [ersetzt durch NR-16] [gtk] — Die persistente Historie aller je gezeigten
   Meldungen lebt in der Releases-Vollansicht als eigenem Sidebar-Ort.
   Ausgeblendete Einträge sind dort über den Hidden-Filter einzeln mit „Show
   again" rückholbar. Retention bleibt: sechs Monate UND höchstens 200
   Einträge, hartes Löschen, nie innerhalb des 90-Tage-Fetch-Fensters.
-- **NR-14** [aktiv] [gtk] — Die Releases-Vollansicht ist eine Tabelle
+- **NR-14** [ersetzt durch NR-17] [gtk] — Die Releases-Vollansicht ist eine Tabelle
   `Date · Title · Artist · Type · Status`, standardmäßig nach Datum
   absteigend. Status ist `In library`, sonst `upcoming` oder `released`.
   Aktivierung führt immer die Dreiweg-Primäraktion aus: Hidden → Show again;
@@ -1184,10 +1184,48 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   announcement. Die permanente Filterzeile bietet sticky Chips für Not in
   library, Type und Hidden samt „X of Y releases", „Clear all" und genau
   einem „Show all"-Schritt bei null Treffern.
-- **NR-15** [aktiv] [gtk] — „Releases" ist ein Sidebar-Ort in SMART, vor
+- **NR-15** [ersetzt durch NR-18] [gtk] — „Releases" ist ein Sidebar-Ort in SMART, vor
   Concerts und nur bei aktivem `new_releases`-Modul. Sein Badge entspricht
   exakt der Anzahl der nach persistenten Filtern beim Öffnen sichtbaren
   Zeilen; 0 rendert keinen Badge.
+- **NR-16** [aktiv] [core] [gtk] — Die Releases-Vollansicht ist ein
+  Discography-Gap-Katalog für aktuell in der Bibliothek vertretene Artists.
+  Sie enthält reguläre Alben und EPs unabhängig vom Alter, aber niemals
+  Singles oder vollständig vorhandene Releases. Einzelne Vorab-Singles oder
+  unvollständige Albumtitel zählen nicht als Besitz; vollständig ist ein
+  erschienenes Release erst, wenn seine distinct lokalen Track-Identitäten
+  mindestens die kleinste offizielle MusicBrainz-Edition abdecken.
+  Ausgeblendete Lücken bleiben über den Hidden-Filter rückholbar; Album- und
+  EP-Katalogzeilen unterliegen keiner zeitlichen Retention.
+- **NR-17** [aktiv] [gtk] — Die Gap-Ansicht bleibt die Tabelle
+  `Date · Title · Artist · Type · Status`, standardmäßig nach Datum
+  absteigend. Status ist `upcoming`, `Missing`, `Incomplete` oder — bei
+  bekannter Länge — `X of Y tracks`. Die permanente Filterzeile bietet nur
+  noch sticky Type- und Hidden-Chips; Aktivierung öffnet die externe
+  Release-URL, Hidden aktiviert `Show again`. Ein leerer Standardfilter
+  bestätigt „No missing albums or EPs"; die Fußzeile enthält keine
+  Sechs-Monats-Retention.
+- **NR-18** [aktiv] [core] [gtk] — „Releases" bleibt ein nur bei aktivem
+  `new_releases`-Modul sichtbarer Sidebar-Ort in SMART vor Concerts. Sein
+  Badge entspricht exakt der Anzahl der mit den persistenten Type-/Hidden-
+  Filtern sichtbaren Discography-Lücken; 0 rendert keinen Badge.
+- **NR-19** [geplant] [gtk] — Eine Releases-Lücke darf zusätzlich einen
+  klar als Affiliate-Link gekennzeichneten Kaufpfad anbieten, aber nur für
+  einen vertraglich für installierbare Linux-Desktop-Apps freigegebenen
+  Partner. Die Offenlegung steht direkt am Kauflink; ohne Freigabe oder
+  echte Kaufrelation bleibt die unveränderte externe MusicBrainz-Relation
+  provisionsfrei. Bibliotheksdaten und geheime Schlüssel gelangen nie in
+  die URL. <!-- REVIEW: Regelvorschlag -->
+- **NR-20** [aktiv] [core] [gtk] — Die Releases-Tabelle erweitert NR-17 um
+  die Spalte `Buy`. Nur wenn MusicBrainz für die Release-Group eine echte
+  HTTP(S)-Relation auf eine `/album/…`-Seite bei `bandcamp.com` oder einer
+  Subdomain liefert, zeigt die Zeile dort `Bandcamp` und öffnet exakt diese
+  URL im Standardbrowser. Lookalike-Domains, Artist-Homepages, geratene
+  Such-URLs und alle anderen Ziele erzeugen keinen Kaufknopf. Der Direktlink
+  ist provisionsfrei, enthält keine
+  Trackingparameter und wird nicht als Affiliate-Link bezeichnet; NR-19
+  bleibt einer späteren vertraglich freigegebenen Monetarisierung
+  vorbehalten.
 
 ## S. Flächen & Geometrie
 
