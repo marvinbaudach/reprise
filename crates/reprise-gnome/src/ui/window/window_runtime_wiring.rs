@@ -58,6 +58,7 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) podcasts_runtime: &'a Rc<crate::ui::podcasts::PodcastsRuntime>,
     pub(in crate::ui) content_stack: &'a gtk4::Stack,
     pub(in crate::ui) device_sync: &'a Rc<DeviceSyncRuntime>,
+    pub(in crate::ui) open_device: &'a super::device_sync_launcher::OpenDevice,
     pub(in crate::ui) window_title: &'a adw::WindowTitle,
     pub(in crate::ui) scan_controls: &'a ScanControls,
     pub(in crate::ui) toast_overlay: &'a adw::ToastOverlay,
@@ -100,6 +101,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         podcasts_runtime,
         content_stack,
         device_sync,
+        open_device,
         window_title,
         scan_controls,
         toast_overlay,
@@ -172,6 +174,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     let rescan_watcher_state = watcher_state.clone();
     let sync_window = window.clone();
     let sync_runtime = device_sync.clone();
+    let open_device = open_device.clone();
     let menu_preferences = preferences.clone();
     let cancel_scan_controls = scan_controls.clone();
     let menu_library_doctor = library_doctor;
@@ -203,7 +206,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             on_cancel_scan: Rc::new(move || cancel_scan_controls.request_cancel()),
             on_library_doctor: Rc::new(move || menu_library_doctor.open()),
             on_sync_device: Rc::new(move || {
-                super::device_sync_launcher::present(&sync_window, &sync_runtime);
+                super::device_sync_launcher::present(&sync_window, &sync_runtime, &open_device);
             }),
             on_stop_playback: stop_player,
             on_preferences: Rc::new(move || menu_preferences.present()),

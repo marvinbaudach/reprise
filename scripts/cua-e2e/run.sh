@@ -33,10 +33,10 @@ required_command() {
 
 assert_clean_app_log() {
   local log_path=$1 scenario=$2
-  local failures='Gtk-CRITICAL|GLib-CRITICAL|GLib-GObject-CRITICAL|panicked at|BorrowError|BorrowMutError|already borrowed'
+  local failures='Gtk-CRITICAL|GLib-CRITICAL|GLib-GObject-CRITICAL|panicked at|BorrowError|BorrowMutError|already borrowed|Failed to set text .* from markup|Entity did not end with a semicolon'
 
   if rg -i "$failures" "$log_path" >/dev/null; then
-    echo "$scenario emitted a GTK/GLib critical, panic, or RefCell failure ($log_path)" >&2
+    echo "$scenario emitted a GTK/GLib critical, markup failure, panic, or RefCell failure ($log_path)" >&2
     rg -i "$failures" "$log_path" >&2
     return 1
   fi
@@ -305,6 +305,56 @@ run_populated_library_secondary_scenario() {
   finish_scenario populated-library-secondary \
     "dev scan complete" \
     "first-run decision"
+}
+
+run_android_sync_page_scenario() {
+  local fixture_dir="$CUA_E2E_SCRATCH_ROOT/android-sync-fixture-music"
+  local device_root="$CUA_E2E_SCRATCH_ROOT/android-sync-device"
+  local card_path page_path
+
+  echo "[cua-e2e] mtp-13: simulated device opens the full synchronization page"
+  mkdir -p "$fixture_dir" "$device_root"
+  ffmpeg -hide_banner -loglevel error -y \
+    -f lavfi -i sine=frequency=440:duration=120 \
+    -metadata title="Simulated Sync Track" \
+    -metadata artist="Reprise E2E" \
+    -metadata album="Android Sync" \
+    -c:a flac "$fixture_dir/simulated_sync.flac"
+  REPRISE_SMOKE_DEVICE_ROOT="$device_root" \
+  REPRISE_SMOKE_DEVICE_PLAYLIST="Recently added" \
+    start_scenario_app \
+      android-sync-page "$fixture_dir" "" 25
+
+  wait_for_label \
+    "$APP_PID" "$WINDOW_ID" "Toggle sidebar" android-sync-sidebar-toggle-visible \
+    >/dev/null
+  cua_click_label \
+    "$APP_PID" "$WINDOW_ID" "Toggle sidebar" android-sync-sidebar-open
+  card_path=$(wait_for_label \
+    "$APP_PID" "$WINDOW_ID" "Simulated MTP Phone" android-sync-device-card)
+  assert_snapshot_contains "$card_path" "Simulated MTP Phone"
+  cua_click_label \
+    "$APP_PID" "$WINDOW_ID" "Open Simulated MTP Phone" android-sync-open-page
+  page_path=$(wait_for_label \
+    "$APP_PID" "$WINDOW_ID" "Transfer profile" android-sync-page)
+  for label in \
+    "Playlists" \
+    "Recently added" \
+    "Next synchronization" \
+    "Last synchronization"; do
+    assert_snapshot_contains "$page_path" "$label"
+  done
+  assert_snapshot_absent "$page_path" "Device files"
+  assert_snapshot_absent "$page_path" "Entire library"
+
+  finish_scenario android-sync-page \
+    "dev scan complete" \
+    "device sync smoke started"
+  if ! find "$device_root/Music/Reprise" -type f -name '*.opus' -print -quit \
+    | rg --quiet .; then
+    echo "android-sync-page did not publish the simulated Opus track" >&2
+    return 1
+  fi
 }
 
 run_song_visuals_scenario() {
@@ -590,6 +640,9 @@ run_private_session() {
     populated-library-secondary)
       run_populated_library_secondary_scenario
       ;;
+    android-sync-page)
+      run_android_sync_page_scenario
+      ;;
     fresh-install)
       run_fresh_install_scenario
       ;;
@@ -747,6 +800,7 @@ case "${CUA_E2E_ONLY:-all}" in
       fresh-install
       populated-library
       populated-library-secondary
+      android-sync-page
       tag-1-no-jump-after-save
       tag-3-multi-dialog-structure
       tag-autocomplete-surface
@@ -760,7 +814,8 @@ case "${CUA_E2E_ONLY:-all}" in
   populated-library)
     scenario_groups=(populated-library populated-library-secondary)
     ;;
-  fresh-install | populated-library-secondary | tag-1-no-jump-after-save \
+  fresh-install | populated-library-secondary | android-sync-page \
+    | tag-1-no-jump-after-save \
     | tag-3-multi-dialog-structure | tag-autocomplete-surface \
     | library-doctor | song-visuals \
     | track-sort-playing-marker | scrobbling | responsive-window)

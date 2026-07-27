@@ -310,21 +310,18 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **MTP-1** [aktiv] [gtk] — Ein neues verbundenes Android-MTP-Gerät erzeugt
   einen gerätenamenspezifischen Connected-Toast und eine Gerätekarte in der
   Sidebar. Es navigiert nie automatisch aus der aktuellen Ansicht.
-- **MTP-2** [aktiv] [gtk] — Die gesamte Gerätekarte ist genau ein nativer
-  Tastatur- und Pointer-Einstieg in den kompakten Playlist-Sync-Dialog; sie
-  startet keinen Sync direkt. Der primäre Menüeintrag öffnet bei einem Gerät
-  denselben Dialog und bei mehreren Geräten zuerst eine kompakte Auswahl.
-- **MTP-3** [aktiv] [gtk] — Gerätekarte und offener Dialog projizieren
+- **MTP-2** [ersetzt durch MTP-13]
+- **MTP-3** [aktiv] [gtk] — Gerätekarte und offene Geräte-Seite projizieren
   denselben gerätebezogenen Runtime-State. Syncs verschiedener Geräte dürfen
   parallel laufen; Start und Cancel wirken ausschließlich auf das benannte
   Gerät, und ein spätes Progress-Event eines abgebrochenen Laufs wird durch
   dessen Generation verworfen.
-- **MTP-4** [aktiv] [gtk] — Eject lebt ausschließlich im kompakten
-  Geräte-Dialog. Es ist nur bei einem verbundenen, nicht synchronisierenden
+- **MTP-4** [aktiv] [gtk] — Eject lebt ausschließlich auf der
+  Geräte-Seite. Es ist nur bei einem verbundenen, nicht synchronisierenden
   Gerät aktiv; während Sync und Finishing ist es deaktiviert und erklärt den
   Grund im Tooltip.
 - **MTP-5** [aktiv] [gtk] — Beim Abziehen verschwindet die Gerätekarte, der
-  offene Dialog bleibt als „Device disconnected"-Status lesbar, und ein
+  offene Geräte-Seite bleibt als „Device disconnected"-Status lesbar, und ein
   laufender gerätebezogener Sync wird abgebrochen. Ein reconnect-fähiges Gerät
   setzt beim Wiederverbinden den verbleibenden sicheren Mirror-Plan fort;
   unvollständige `.part`-Dateien werden vor der nächsten Veröffentlichung
@@ -333,18 +330,18 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   projiziert. Danach zeigt der Lifecycle-Toast den Abschluss oder Fehlerstatus,
   und die Gerätekarte wechselt ohne separaten 100-%-Haltezustand zurück in den
   aktuellen Idle-/Synced-Zustand.
-- **MTP-7** [aktiv] [gtk] — Der kompakte Sync-Dialog stellt vollständig
+- **MTP-7** [aktiv] [gtk] — Die Geräte-Seite stellt vollständig
   bekannten Speicher als themenfarbene Segmentleiste aus Music, geplantem
   After-sync-Zuwachs, Other und Free dar; dieselben Werte bleiben textuell
   verfügbar. Bei unvollständiger oder inkonsistenter Kapazität verschwindet
   die Leiste, und der Text benennt „unknown“, statt Anteile zu erfinden.
-- **MTP-8** [aktiv] [gtk] — Der kompakte Sync-Dialog bietet genau drei
+- **MTP-8** [aktiv] [gtk] — Die Geräte-Seite bietet genau drei
   Transferprofile: Opus mit 160 kbit/s als Empfehlung und Standard, MP3 mit
   256 kbit/s als Kompatibilitäts-Fallback sowie unveränderte Originaldateien.
   Ein verlustbehaftetes oder nicht eindeutig als verlustfrei erkanntes
   Quellformat wird unter jedem Profil unverändert kopiert und nie in ein
   anderes verlustbehaftetes Format transkodiert.
-- **MTP-9** [aktiv] [gtk] — Der kompakte Sync-Dialog benennt den von GIO
+- **MTP-9** [aktiv] [gtk] — Die Geräte-Seite benennt den von GIO
   gemeldeten Schreibzugriff des gewählten Zielspeichers als „Writable“,
   „Read-only“ oder „Write access unknown“. Ein sicher schreibgeschütztes Ziel
   sperrt den Sync-Start und erklärt den Grund; unbekannte Angaben werden nicht
@@ -352,19 +349,28 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **MTP-10** [aktiv] [gtk] — Ein fehlerfreier Transfer bleibt „Finishing“,
   bis Reprise den verwalteten Geräteordner erneut gelesen hat. Erst dieses
   erfolgreiche Rücklesen erzeugt den Abschluss-Toast und eine als „Verified“
-  bezeichnete Dialog-Zusammenfassung mit der tatsächlich gefundenen Anzahl
+  bezeichnete Seiten-Zusammenfassung mit der tatsächlich gefundenen Anzahl
   verwalteter Tracks; ein fehlgeschlagenes Rücklesen behauptet keinen Erfolg.
 - **MTP-11** [aktiv] [gtk] — Eine untätige Gerätekarte ohne gültige
   Playlist-Auswahl zeigt keine Handlungsaufforderung. Ihre Detailzeile beginnt
   mit dem bekannten Schreibstatus („Writable“, „Read-only“ oder „Write access
   unknown“) und nennt den freien Speicher; echte Scan-, Sync-, Warn- oder
   Auswahlfehler behalten stattdessen „Needs attention“.
-- **MTP-12** [aktiv] [gtk] — Jede verfügbare Playlist-Zeile im kompakten
-  Sync-Dialog nennt ihren letzten auf diesem Gerät verifizierten
+- **MTP-12** [aktiv] [gtk] — Jede verfügbare Playlist-Zeile auf der
+  Geräte-Seite nennt ihren letzten auf diesem Gerät verifizierten
   Sync-Zeitpunkt in lokaler Zeit. Ohne belastbaren Zeitpunkt steht dort
   ausdrücklich „No verified sync time“. Ein Zeitpunkt wird erst nach
   erfolgreichem Geräte-Readback gespeichert; fehlgeschlagene oder nur
   teilweise veröffentlichte Läufe überschreiben ihn nicht.
+- **MTP-13** [aktiv] [gtk] — Die gesamte Gerätekarte ist genau ein nativer
+  Tastatur- und Pointer-Einstieg in eine nicht-modale Geräte-Vollseite im
+  Hauptfenster und startet keinen Sync direkt. Der primäre Menüeintrag öffnet
+  bei einem Gerät dieselbe Seite und bei mehreren Geräten zuerst eine kompakte
+  Auswahl. Die Seite enthält keine Song- oder Geräte-Dateiliste und als einzige
+  Einstellung das Transferprofil; sie zeigt jede Playlist mit sichtbarem,
+  markup-sicherem Namen, Auswahl, letztem verifiziertem Sync und der für das
+  aktive Profil projizierten Zielgröße sowie bei einem laufenden Sync
+  Fortschrittsbalken und aktuelle geglättete MTP-Transferrate.
 
 ## F. Einstellungen & Modale
 

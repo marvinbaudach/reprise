@@ -218,7 +218,6 @@ pub fn build(
         let queue_model = queue_model.clone();
         move || queue_model.borrow().sidebar_count()
     }));
-    sidebar.bind_device_sync(&device_sync);
 
     // Stage 3 Task 8: at most one folder watcher runs at a time. `None`
     // until either the startup check below finds a persisted `library_root`
@@ -444,6 +443,22 @@ pub fn build(
     let split_view = library_shell.split_view;
     let content_nav = library_shell.content_nav;
     let info_panel = library_shell.info_panel;
+    let open_device: super::device_sync_launcher::OpenDevice = Rc::new({
+        let content_stack = content_stack.clone();
+        let window_title = window_title.clone();
+        let runtime = device_sync.clone();
+        let split_view = split_view.clone();
+        move |device_id, _| {
+            if !super::device_sync_page::open(&content_stack, &window_title, &device_id, &runtime) {
+                tracing::warn!(device_id, "could not open Android sync page");
+                return;
+            }
+            if split_view.is_collapsed() {
+                split_view.set_show_sidebar(false);
+            }
+        }
+    });
+    sidebar.bind_device_sync(&device_sync, open_device.clone());
     super::device_sync_feedback::install(&header, &split_view, &toast_overlay, &device_sync);
     info_panel.retain_for_window(&window);
     if let Some(player) = &player {
@@ -556,6 +571,7 @@ pub fn build(
         podcasts_runtime: &podcasts_runtime,
         content_stack: &content_stack,
         device_sync: &device_sync,
+        open_device: &open_device,
         window_title: &window_title,
         scan_controls: &scan_controls,
         toast_overlay: &toast_overlay,
