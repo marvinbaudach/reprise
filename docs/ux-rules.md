@@ -390,10 +390,12 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Relink-Vertrag (2a) und die noch nicht einheitlich gelieferte Karte der
   übrigen Langläufer (2b) gesplittet.
 - **FB-2a** [aktiv] [gtk] — Der Relink-Suchlauf läuft off-thread in der
-  bestehenden, mit Scan/Sync stapelbaren Fortschrittskarte direkt über dem
-  unten fixierten Issues-Bereich: Spinner + Titel + % rechts (tabular) +
-  3-px-Balken + ellipsierte Detailzeile. Klick auf die Karte → Missing files;
-  der sichtbare Cancel-Button prüft den Abbruch vor jeder Audiodatei.
+  bestehenden, mit Scan/Sync stapelbaren Fortschrittskarte **innerhalb** des
+  unten fixierten Issues-Bereichs. Seine Reihenfolge ist: Überschrift
+  „ISSUES“ → laufende Karten → Import errors / Missing files. Karte: Spinner
+  + Titel + % rechts (tabular) + 3-px-Balken + ellipsierte Detailzeile. Klick
+  auf die Karte → Missing files; der sichtbare Cancel-Button prüft den
+  Abbruch vor jeder Audiodatei.
 - **FB-2b** [geplant] [gtk] — Scan, Sync und Playlist-Import verwenden für
   jeden Lauf > ~1 s denselben vollständigen Kartenvertrag aus FB-2a,
   einschließlich sichtbarem Cancel und Navigation zur zugehörigen Ansicht.
@@ -590,6 +592,12 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   eine löschbare Scope-Pille nach FIL-1c. Deren × verlässt den Scope über den
   normalen History-Push und stellt die gemerkte, uneingeschränkte Library
   wieder her.
+- **FIL-9** [aktiv] [gtk] — Wird eine Suche oder ein Facettenfilter gesetzt,
+  geändert oder entfernt und der geladene Track gehört zur neuen
+  Ergebnismenge, wird seine markierte Zeile vertikal zentriert statt an der
+  oberen Tabellenkante verankert. Selektion und Tastaturfokus bleiben
+  unverändert. Ohne geladenen oder im Ziel sichtbaren Track bleibt der
+  bisherige ID-plus-Offset-Anker erhalten.
 
 ## L. Tag-Editor
 
@@ -858,8 +866,9 @@ Ort und Stelle (MOT-2, die Motion-Lesart von P-4).
 - **MOT-4** [aktiv] [manuell] — Listen bewegen sich nicht: kein
   Stagger/Fade-in pro Row (windowed Model, 200er-Fenster, Bibliotheken
   jenseits 1 600 Rows). Erlaubt: ein Crossfade der gesamten Fläche beim
-  View-Wechsel; benannte Ausnahme: die Queue darf DnD-Drop und
-  Einzel-Remove animieren.
+  View-Wechsel, solange nicht zwei dichte Quellen gleichzeitig lesbar
+  werden; Podcasts⇄Music schaltet deshalb hart. Benannte Ausnahme: die Queue
+  darf DnD-Drop und Einzel-Remove animieren.
   <!-- Die Queue-Ausnahme ist erlaubend, nicht fordernd; ihre Umsetzung
        liegt im Folge-Branch und blockiert den MOT-4-Flip nicht. -->
 - **MOT-5** [aktiv] [gtk] — Player-Leiste lebt, aber leise: Play→Pause =
