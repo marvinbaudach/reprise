@@ -114,10 +114,63 @@ impl DeviceBackend for GioDeviceBackend {
         })
     }
 
+    fn cleanup_managed_partials(
+        &self,
+        root_uri: String,
+        root: reprise_core::device_sync::ManagedRoot,
+    ) -> BackendFuture<u32> {
+        Box::pin(async move {
+            DeviceStorage::from_uri(&root_uri)
+                .cleanup_partials_in(root)
+                .await
+                .map_err(|error| error.to_string())
+        })
+    }
+
     fn delete_track(&self, root_uri: String, relative_target: String) -> BackendFuture<bool> {
         Box::pin(async move {
             DeviceStorage::from_uri(&root_uri)
                 .delete_track(&relative_target)
+                .await
+                .map_err(|error| error.to_string())
+        })
+    }
+
+    fn delete_managed(
+        &self,
+        root_uri: String,
+        root: reprise_core::device_sync::ManagedRoot,
+        relative_target: String,
+    ) -> BackendFuture<bool> {
+        Box::pin(async move {
+            DeviceStorage::from_uri(&root_uri)
+                .delete_managed(root, &relative_target)
+                .await
+                .map_err(|error| error.to_string())
+        })
+    }
+
+    fn replace_managed(
+        &self,
+        _device_id: String,
+        root_uri: String,
+        root: reprise_core::device_sync::ManagedRoot,
+        source_path: PathBuf,
+        relative_target: String,
+        expected_size: u64,
+        cancellable: gio::Cancellable,
+        progress: Rc<dyn Fn(u64, u64)>,
+    ) -> BackendFuture<CopyOutcome> {
+        Box::pin(async move {
+            DeviceStorage::from_uri(&root_uri)
+                .replace_managed(
+                    root,
+                    &gio::File::for_path(source_path),
+                    &relative_target,
+                    expected_size,
+                    &cancellable,
+                    move |copied, total| progress(copied, total),
+                )
                 .await
                 .map_err(|error| error.to_string())
         })

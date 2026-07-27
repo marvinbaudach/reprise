@@ -1,26 +1,33 @@
 //! Podcasts table, status states, actions, and refresh wiring.
 
 use std::cell::{Cell, RefCell};
-use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use gtk4::gio;
 use gtk4::glib::{self};
 use gtk4::prelude::*;
 use libadwaita as adw;
-use reprise_core::podcasts::{self, EpisodeRow};
+use reprise_core::podcasts::download_state::DownloadState;
+use reprise_core::podcasts::{self, EpisodeRow, PodcastKind, SourceGroup};
 use rusqlite::Connection;
 
 use super::add_dialog;
-use super::podcasts_columns::{self, IsPlaying, OnUnsubscribe};
 use super::podcasts_context_menu;
+use super::podcasts_download_presentation::refreshed_download_states;
 use super::podcasts_empty_state::{podcasts_empty_state_for, PodcastsEmptyState};
 use super::podcasts_filter_bar::PodcastsFilterBar;
-use super::podcasts_model::{PodcastEpisodeObject, PodcastsModel};
+use super::podcasts_groups;
 use super::podcasts_presentation::{active as filter_active, apply_filter, sort_newest_first};
+use super::podcasts_removal::{
+    download_commit_action, download_request_allowed, download_toggle_action, DownloadCommitAction,
+    DownloadToggleAction, KeptDownloads,
+};
+use super::podcasts_scroller::build_episode_scroller;
+use super::podcasts_view_data::{last_updated_text, unique};
 use super::podcasts_worker::{
-    PodcastsOperation, PodcastsRequest, PodcastsResponse, PodcastsRuntime,
+    podcasts_response_channel, request_generation, PodcastsOperation, PodcastsRequest,
+    PodcastsRuntime, PodcastsWorkerResult,
 };
 use crate::ui::strings;
 
@@ -59,72 +66,28 @@ impl PodcastsCallbacks {
     }
 }
 
-#[derive(Default)]
-struct KeptDownloads {
-    shows: BTreeMap<i64, Vec<PathBuf>>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum DownloadCommitAction {
-    Keep,
-    Trash,
-}
-
-fn download_commit_action(delete_requested: bool) -> DownloadCommitAction {
-    if delete_requested {
-        DownloadCommitAction::Trash
-    } else {
-        DownloadCommitAction::Keep
-    }
-}
-
-impl KeptDownloads {
-    fn add(&mut self, subscription_id: i64, paths: Vec<String>) {
-        if paths.is_empty() {
-            return;
-        }
-        self.shows
-            .entry(subscription_id)
-            .or_default()
-            .extend(paths.into_iter().map(PathBuf::from));
-    }
-
-    fn take(&mut self) -> (usize, Vec<PathBuf>) {
-        let shows = self.shows.len();
-        let paths = std::mem::take(&mut self.shows)
-            .into_values()
-            .flatten()
-            .collect();
-        (shows, paths)
-    }
-}
-
 pub(in crate::ui) struct PodcastsView {
     root: gtk4::Box,
     conn: Rc<RefCell<Connection>>,
     runtime: Rc<PodcastsRuntime>,
     callbacks: PodcastsCallbacks,
-    model: PodcastsModel,
+    kind: PodcastKind,
     filter_bar: Rc<PodcastsFilterBar>,
+    group_container: gtk4::Box,
     stack: gtk4::Stack,
     status: adw::StatusPage,
     status_button: gtk4::Button,
     footer_status: gtk4::Label,
     footer_spinner: gtk4::Spinner,
+    groups: RefCell<Vec<SourceGroup>>,
     rows: RefCell<Vec<EpisodeRow>>,
+    expanded_sources: Rc<RefCell<BTreeSet<i64>>>,
+    download_states: Rc<RefCell<BTreeMap<i64, DownloadState>>>,
+    download_widgets: RefCell<BTreeMap<i64, podcasts_groups::DownloadRowWidgets>>,
     playing_episode: Cell<Option<i64>>,
     generation: Cell<u64>,
     toast_overlay: glib::WeakRef<adw::ToastOverlay>,
     kept_downloads: RefCell<KeptDownloads>,
-}
-
-fn build_episode_scroller(column_view: &gtk4::ColumnView) -> gtk4::ScrolledWindow {
-    gtk4::ScrolledWindow::builder()
-        .child(column_view)
-        .hexpand(true)
-        .vexpand(true)
-        .propagate_natural_height(false)
-        .build()
 }
 
 impl PodcastsView {
@@ -132,17 +95,20 @@ impl PodcastsView {
         conn: Rc<RefCell<Connection>>,
         runtime: Rc<PodcastsRuntime>,
         callbacks: PodcastsCallbacks,
+        kind: PodcastKind,
     ) -> Rc<Self> {
-        let model = PodcastsModel::new();
-        let column_view = gtk4::ColumnView::new(Some(model.selection().clone()));
-        column_view.add_css_class("reprise-podcasts-table");
-        column_view.set_hexpand(true);
-        column_view.set_vexpand(true);
-
-        let filter_bar = PodcastsFilterBar::new(conn.clone());
+        let filter_bar = PodcastsFilterBar::new(conn.clone(), kind);
+        let group_container = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
+        group_container.set_margin_top(8);
+        group_container.set_margin_bottom(8);
+        group_container.set_margin_start(12);
+        group_container.set_margin_end(12);
+        group_container.set_hexpand(true);
         let list_box = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         list_box.append(filter_bar.widget());
-        list_box.append(&build_episode_scroller(&column_view));
+        list_box.append(&build_episode_scroller(
+            group_container.upcast_ref::<gtk4::Widget>(),
+        ));
 
         let status = adw::StatusPage::new();
         let status_button = gtk4::Button::new();
@@ -180,22 +146,26 @@ impl PodcastsView {
             conn,
             runtime,
             callbacks,
-            model,
+            kind,
             filter_bar,
+            group_container,
             stack,
             status,
             status_button,
             footer_status,
             footer_spinner,
+            groups: RefCell::new(Vec::new()),
             rows: RefCell::new(Vec::new()),
+            expanded_sources: Rc::new(RefCell::new(BTreeSet::new())),
+            download_states: Rc::new(RefCell::new(BTreeMap::new())),
+            download_widgets: RefCell::new(BTreeMap::new()),
             playing_episode: Cell::new(None),
             generation: Cell::new(0),
             toast_overlay: glib::WeakRef::new(),
             kept_downloads: RefCell::new(KeptDownloads::default()),
         });
         view.install_actions();
-        view.wire_columns(&column_view);
-        view.wire_controls(&column_view, &refresh);
+        view.wire_controls(&refresh);
         view.refresh();
         view
     }
@@ -214,12 +184,27 @@ impl PodcastsView {
     }
 
     pub(in crate::ui) fn refresh(&self) {
-        match podcasts::query::list_episodes(&self.conn.borrow()) {
-            Ok(mut rows) => {
+        let result = {
+            let conn = self.conn.borrow();
+            podcasts::query::list_source_groups(&conn, self.kind)
+        };
+        match result {
+            Ok(groups) => {
+                let mut rows = groups
+                    .iter()
+                    .flat_map(|group| group.episodes.iter().cloned())
+                    .collect::<Vec<_>>();
                 sort_newest_first(&mut rows);
+                let previous = self.download_states.borrow().clone();
+                self.download_states
+                    .replace(refreshed_download_states(&rows, &previous));
+                self.groups.replace(groups);
                 self.rows.replace(rows);
-                self.footer_status
-                    .set_text(&last_updated_text(&self.conn.borrow()));
+                let last_updated = {
+                    let conn = self.conn.borrow();
+                    last_updated_text(&conn)
+                };
+                self.footer_status.set_text(&last_updated);
                 self.render();
             }
             Err(error) => self.footer_status.set_text(&error.to_string()),
@@ -227,13 +212,14 @@ impl PodcastsView {
     }
 
     pub(in crate::ui) fn request_refresh(self: &Rc<Self>, force: bool) -> bool {
-        let generation = self.generation.get().wrapping_add(1);
+        let operation = PodcastsOperation::Refresh { force };
+        let generation = request_generation(self.generation.get(), operation);
         self.generation.set(generation);
-        let (sender, receiver) = async_channel::bounded::<PodcastsResponse>(1);
+        let (response, receiver) = podcasts_response_channel();
         let queued = self.runtime.request(PodcastsRequest {
             generation,
-            operation: PodcastsOperation::Refresh { force },
-            response: sender,
+            operation,
+            response,
         });
         if !queued {
             return false;
@@ -243,65 +229,48 @@ impl PodcastsView {
             .set_text(&strings::text(strings::PODCAST_REFRESHING));
         let weak = Rc::downgrade(self);
         glib::spawn_future_local(async move {
-            let Ok(response) = receiver.recv().await else {
-                return;
-            };
-            let Some(view) = weak.upgrade() else {
-                return;
-            };
-            if view.generation.get() != response.generation {
-                return;
-            }
-            view.footer_spinner.stop();
-            match response.result {
-                Ok(_) => {
-                    view.refresh();
-                    (view.callbacks.on_sidebar_refresh)();
+            while let Ok(response) = receiver.recv().await {
+                let Some(view) = weak.upgrade() else {
+                    return;
+                };
+                if view.generation.get() != response.generation {
+                    return;
                 }
-                Err(error) => view.footer_status.set_text(&format!(
-                    "{} · {error}",
-                    strings::text(strings::PODCAST_REFRESH_FAILED)
-                )),
+                match response.result {
+                    Ok(PodcastsWorkerResult::DownloadState { episode_id, state }) => {
+                        let known = {
+                            let rows = view.rows.borrow();
+                            rows.iter().any(|row| row.id == episode_id)
+                        };
+                        if !known {
+                            view.refresh();
+                            view.footer_status
+                                .set_text(&strings::text(strings::PODCAST_REFRESHING));
+                        }
+                        view.set_download_state(episode_id, &state);
+                    }
+                    Ok(PodcastsWorkerResult::Refreshed(_)) => {
+                        view.footer_spinner.stop();
+                        view.refresh();
+                        (view.callbacks.on_sidebar_refresh)();
+                        break;
+                    }
+                    Err(error) => {
+                        view.footer_spinner.stop();
+                        view.refresh();
+                        view.footer_status.set_text(&format!(
+                            "{} · {error}",
+                            strings::text(strings::PODCAST_REFRESH_FAILED)
+                        ));
+                        break;
+                    }
+                }
             }
         });
         true
     }
 
-    fn wire_columns(self: &Rc<Self>, column_view: &gtk4::ColumnView) {
-        let weak = Rc::downgrade(self);
-        let unsubscribe: OnUnsubscribe = Rc::new(move |subscription_id| {
-            if let Some(view) = weak.upgrade() {
-                view.unsubscribe(subscription_id);
-            }
-        });
-        let weak = Rc::downgrade(self);
-        let playing: IsPlaying = Rc::new(move |episode_id| {
-            weak.upgrade()
-                .is_some_and(|view| view.playing_episode.get() == Some(episode_id))
-        });
-        let columns = podcasts_columns::append_columns(column_view, &unsubscribe, &playing);
-        columns.date.set_resizable(false);
-        self.model.enable_sorting(column_view.sorter());
-    }
-
-    fn wire_controls(
-        self: &Rc<Self>,
-        column_view: &gtk4::ColumnView,
-        refresh_button: &gtk4::Button,
-    ) {
-        let weak = Rc::downgrade(self);
-        column_view.connect_activate(move |view, position| {
-            let Some(podcasts) = weak.upgrade() else {
-                return;
-            };
-            let Some(model) = view.model() else {
-                return;
-            };
-            let Some(row) = model.item(position).and_downcast::<PodcastEpisodeObject>() else {
-                return;
-            };
-            (podcasts.callbacks.on_episode_activated)(row.row());
-        });
+    fn wire_controls(self: &Rc<Self>, refresh_button: &gtk4::Button) {
         let weak = Rc::downgrade(self);
         refresh_button.connect_clicked(move |_| {
             if let Some(view) = weak.upgrade() {
@@ -319,8 +288,7 @@ impl PodcastsView {
             let Some(view) = weak.upgrade() else {
                 return;
             };
-            let subscriptions =
-                podcasts::store::count_subscriptions(&view.conn.borrow()).unwrap_or_default();
+            let subscriptions = view.groups.borrow().len();
             if subscriptions == 0 {
                 view.open_add_dialog();
             } else if filter_active(&view.filter_bar.filter()) {
@@ -384,6 +352,25 @@ impl PodcastsView {
             podcasts_context_menu::ACTION_UNSUBSCRIBE,
             PodcastsView::unsubscribe,
         );
+        self.add_target_action(
+            &group,
+            podcasts_context_menu::ACTION_TOGGLE_PHONE_SYNC,
+            |view, subscription_id| {
+                let Ok(Some(subscription)) =
+                    podcasts::store::subscription(&view.conn.borrow(), subscription_id)
+                else {
+                    return;
+                };
+                if let Err(error) = podcasts::store::set_sync_to_phone(
+                    &view.conn.borrow(),
+                    subscription_id,
+                    !subscription.sync_to_phone,
+                ) {
+                    view.show_error(&error.to_string());
+                }
+                view.refresh();
+            },
+        );
         let add = gio::SimpleAction::new("open-add", None);
         let weak = Rc::downgrade(self);
         add.connect_activate(move |_, _| {
@@ -417,7 +404,7 @@ impl PodcastsView {
 
     fn open_add_dialog(self: &Rc<Self>) {
         let weak = Rc::downgrade(self);
-        add_dialog::present(&self.root, &self.conn, move |import_latest| {
+        add_dialog::present(&self.root, &self.conn, self.kind, move |import_latest| {
             if let Some(view) = weak.upgrade() {
                 view.refresh();
                 if import_latest {
@@ -429,25 +416,58 @@ impl PodcastsView {
     }
 
     fn render(&self) {
-        let rows = self.rows.borrow();
+        let rows = self.rows.borrow().clone();
+        let groups = self.groups.borrow().clone();
+        let download_states = self.download_states.borrow().clone();
         let filter = self.filter_bar.filter();
         let filtered = apply_filter(&rows, &filter);
         let total = rows.len();
-        let shows = rows.iter().map(|row| row.show.clone()).collect::<Vec<_>>();
-        self.model.replace(filtered.clone());
+        let shows = groups
+            .iter()
+            .map(|group| group.title.clone())
+            .collect::<Vec<_>>();
+        let rendered_groups = groups
+            .iter()
+            .filter_map(|group| {
+                let episodes = apply_filter(&group.episodes, &filter);
+                if episodes.is_empty() && filter_active(&filter) {
+                    None
+                } else {
+                    let mut rendered = group.clone();
+                    rendered.episodes = episodes;
+                    Some(rendered)
+                }
+            })
+            .collect::<Vec<_>>();
+        let download_widgets = podcasts_groups::replace(
+            &self.group_container,
+            &rendered_groups,
+            self.playing_episode.get(),
+            &self.expanded_sources,
+            &download_states,
+        );
+        self.download_widgets.replace(download_widgets);
         self.filter_bar
             .set_context(unique(shows), filtered.len(), total);
-        let subscriptions =
-            podcasts::store::count_subscriptions(&self.conn.borrow()).unwrap_or_default();
+        let subscriptions = groups.len();
         match podcasts_empty_state_for(subscriptions, total, filtered.len(), filter_active(&filter))
         {
             PodcastsEmptyState::List => self.stack.set_visible_child_name("list"),
             state => {
                 let (title, description, button) = match state {
                     PodcastsEmptyState::Empty => (
-                        strings::PODCAST_NO_PODCASTS,
-                        strings::PODCAST_NO_PODCASTS_DESCRIPTION,
-                        strings::text(strings::PODCAST_ADD),
+                        match self.kind {
+                            PodcastKind::Rss => strings::PODCAST_NO_PODCASTS,
+                            PodcastKind::Youtube => strings::YOUTUBE_NO_CHANNELS,
+                        },
+                        match self.kind {
+                            PodcastKind::Rss => strings::PODCAST_NO_PODCASTS_DESCRIPTION,
+                            PodcastKind::Youtube => strings::YOUTUBE_NO_CHANNELS_DESCRIPTION,
+                        },
+                        strings::text(match self.kind {
+                            PodcastKind::Rss => strings::PODCAST_ADD,
+                            PodcastKind::Youtube => strings::YOUTUBE_ADD,
+                        }),
                     ),
                     PodcastsEmptyState::NoEpisodes => (
                         strings::PODCAST_NO_EPISODES,
@@ -471,46 +491,94 @@ impl PodcastsView {
     }
 
     fn toggle_download(self: &Rc<Self>, episode_id: i64) {
+        let allowed = {
+            let states = self.download_states.borrow();
+            download_request_allowed(states.get(&episode_id))
+        };
+        if !allowed {
+            return;
+        }
         let Ok(Some(row)) = podcasts::store::episode(&self.conn.borrow(), episode_id) else {
             return;
         };
-        if let Some(path) = row.downloaded_path {
-            let file = gio::File::for_path(path);
-            if let Err(error) = file.trash(None::<&gio::Cancellable>) {
-                self.show_error(&error.to_string());
-                return;
+        if let Some(path) = row.downloaded_path.as_deref() {
+            let file_exists = std::path::Path::new(path).is_file();
+            if download_toggle_action(Some(path), file_exists) == DownloadToggleAction::Trash {
+                let file = gio::File::for_path(path);
+                if let Err(error) = file.trash(None::<&gio::Cancellable>) {
+                    self.show_error(&error.to_string());
+                    return;
+                }
             }
             if let Err(error) =
                 podcasts::store::set_downloaded_path(&self.conn.borrow(), episode_id, None)
             {
                 self.show_error(&error.to_string());
+                return;
             }
-            self.refresh();
-            return;
+            self.download_states
+                .borrow_mut()
+                .insert(episode_id, DownloadState::NotDownloaded);
+            if file_exists {
+                self.refresh();
+                return;
+            }
         }
-        let generation = self.generation.get().wrapping_add(1);
-        self.generation.set(generation);
-        let (sender, receiver) = async_channel::bounded(1);
+        let operation = PodcastsOperation::Download { episode_id };
+        let generation = request_generation(self.generation.get(), operation);
+        let (response, receiver) = podcasts_response_channel();
         if !self.runtime.request(PodcastsRequest {
             generation,
-            operation: PodcastsOperation::Download { episode_id },
-            response: sender,
+            operation,
+            response,
         }) {
             return;
         }
+        self.set_download_state(episode_id, &DownloadState::Queued);
         let weak = Rc::downgrade(self);
         glib::spawn_future_local(async move {
-            let Ok(response) = receiver.recv().await else {
-                return;
-            };
-            let Some(view) = weak.upgrade() else {
-                return;
-            };
-            match response.result {
-                Ok(_) => view.refresh(),
-                Err(error) => view.show_error(&error),
+            while let Ok(response) = receiver.recv().await {
+                let Some(view) = weak.upgrade() else {
+                    return;
+                };
+                match response.result {
+                    Ok(PodcastsWorkerResult::DownloadState { episode_id, state }) => {
+                        let terminal = matches!(
+                            state,
+                            DownloadState::Downloaded { .. } | DownloadState::Failed { .. }
+                        );
+                        view.set_download_state(episode_id, &state);
+                        if matches!(state, DownloadState::Downloaded { .. }) {
+                            view.refresh();
+                        }
+                        if terminal {
+                            break;
+                        }
+                    }
+                    Ok(PodcastsWorkerResult::Refreshed(_)) => {}
+                    Err(error) => {
+                        view.set_download_state(
+                            episode_id,
+                            &DownloadState::Failed {
+                                message: error.clone(),
+                            },
+                        );
+                        view.show_error(&error);
+                        break;
+                    }
+                }
             }
         });
+    }
+
+    fn set_download_state(&self, episode_id: i64, state: &DownloadState) {
+        self.download_states
+            .borrow_mut()
+            .insert(episode_id, state.clone());
+        let widgets = self.download_widgets.borrow().get(&episode_id).cloned();
+        if let Some(widgets) = widgets {
+            podcasts_groups::update_download_state(&widgets, state);
+        }
     }
 
     fn unsubscribe(self: &Rc<Self>, subscription_id: i64) {
@@ -700,55 +768,5 @@ impl PodcastsView {
         } else {
             tracing::warn!(%message, "podcast action failed");
         }
-    }
-}
-
-fn unique(mut values: Vec<String>) -> Vec<String> {
-    values.sort_by_key(|value| value.to_lowercase());
-    values.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
-    values
-}
-
-fn last_updated_text(conn: &Connection) -> String {
-    let last = podcasts::store::active_subscriptions(conn)
-        .ok()
-        .and_then(|rows| rows.into_iter().filter_map(|row| row.last_fetch_at).max());
-    super::podcasts_presentation::updated_ago(last, chrono::Utc::now().timestamp())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn play_7b_podcast_episode_table_scrolls_inside_the_player_bar_boundary() {
-        gtk4::init().unwrap();
-        let table = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
-        let scroller = build_episode_scroller(&table);
-
-        assert_eq!(
-            scroller.child(),
-            Some(table.clone().upcast::<gtk4::Widget>())
-        );
-        assert!(scroller.vexpands());
-        assert!(!scroller.propagates_natural_height());
-    }
-
-    #[test]
-    fn unsubscribe_aggregation_skips_empty_download_sets_and_coalesces_shows() {
-        let mut aggregate = KeptDownloads::default();
-        aggregate.add(1, Vec::new());
-        aggregate.add(2, vec!["a.mp3".into(), "b.mp3".into()]);
-        aggregate.add(3, vec!["c.mp3".into()]);
-        let (shows, paths) = aggregate.take();
-        assert_eq!(shows, 2);
-        assert_eq!(paths.len(), 3);
-    }
-
-    #[test]
-    fn src_4_unsubscribe_commit_toast_trashes_never_hard_deletes() {
-        assert_eq!(download_commit_action(false), DownloadCommitAction::Keep);
-        assert_eq!(download_commit_action(true), DownloadCommitAction::Trash);
     }
 }

@@ -184,6 +184,7 @@ fn intent_for(place: &BrowserPlace) -> NavigationIntent {
         BrowserPlace::Releases => NavigationIntent::Sidebar(SidebarTarget::Releases),
         BrowserPlace::Concerts => NavigationIntent::Sidebar(SidebarTarget::Concerts),
         BrowserPlace::Podcasts => NavigationIntent::Sidebar(SidebarTarget::Podcasts),
+        BrowserPlace::Youtube => NavigationIntent::Sidebar(SidebarTarget::Youtube),
         BrowserPlace::Radio => NavigationIntent::Sidebar(SidebarTarget::Radio),
         BrowserPlace::Conversions => NavigationIntent::Sidebar(SidebarTarget::Conversions),
         BrowserPlace::Device { serial } => {

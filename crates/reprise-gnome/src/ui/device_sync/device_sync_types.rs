@@ -45,8 +45,62 @@ pub trait DeviceBackend {
     fn cleanup_partials(&self, _root_uri: String) -> BackendFuture<u32> {
         Box::pin(async { Ok(0) })
     }
+    fn cleanup_managed_partials(
+        &self,
+        root_uri: String,
+        root: reprise_core::device_sync::ManagedRoot,
+    ) -> BackendFuture<u32> {
+        match root {
+            reprise_core::device_sync::ManagedRoot::Music => self.cleanup_partials(root_uri),
+            reprise_core::device_sync::ManagedRoot::Podcasts => {
+                Box::pin(async { Err("podcast cleanup is unavailable".into()) })
+            }
+        }
+    }
     fn delete_track(&self, _root_uri: String, _relative_target: String) -> BackendFuture<bool> {
         Box::pin(async { Err("device deletion is unavailable".into()) })
+    }
+    fn delete_managed(
+        &self,
+        root_uri: String,
+        root: reprise_core::device_sync::ManagedRoot,
+        relative_target: String,
+    ) -> BackendFuture<bool> {
+        match root {
+            reprise_core::device_sync::ManagedRoot::Music => {
+                self.delete_track(root_uri, relative_target)
+            }
+            reprise_core::device_sync::ManagedRoot::Podcasts => {
+                Box::pin(async { Err("podcast deletion is unavailable".into()) })
+            }
+        }
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn replace_managed(
+        &self,
+        device_id: String,
+        root_uri: String,
+        root: reprise_core::device_sync::ManagedRoot,
+        source_path: PathBuf,
+        relative_target: String,
+        expected_size: u64,
+        cancellable: gio::Cancellable,
+        progress: Rc<dyn Fn(u64, u64)>,
+    ) -> BackendFuture<CopyOutcome> {
+        match root {
+            reprise_core::device_sync::ManagedRoot::Music => self.replace_track(
+                device_id,
+                root_uri,
+                source_path,
+                relative_target,
+                expected_size,
+                cancellable,
+                progress,
+            ),
+            reprise_core::device_sync::ManagedRoot::Podcasts => {
+                Box::pin(async { Err("podcast transfer is unavailable".into()) })
+            }
+        }
     }
     fn start_transcodes(
         &self,
@@ -90,7 +144,35 @@ pub struct DeviceView {
     pub last_sync: Option<chrono::DateTime<chrono::Utc>>,
     pub tracks: Vec<DeviceTrackView>,
     pub selected_track_count: usize,
+    pub podcast_sync: PodcastSyncSummary,
     pub bytes_per_second: u64,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PodcastSyncSummary {
+    pub selected: usize,
+    pub to_copy: usize,
+    pub to_remove: usize,
+    pub bytes: u64,
+}
+
+impl DeviceView {
+    pub fn has_sync_selection(&self) -> bool {
+        matches!(self.settings.selection, DeviceSelection::EntireLibrary)
+            || matches!(
+                &self.settings.selection,
+                DeviceSelection::Sources(sources) if !sources.is_empty()
+            )
+            || self.podcast_sync.selected > 0
+    }
+
+    pub fn has_pending_sync(&self) -> bool {
+        self.delta
+            .as_ref()
+            .is_some_and(|delta| !delta.to_copy.is_empty() || !delta.to_remove.is_empty())
+            || self.podcast_sync.to_copy > 0
+            || self.podcast_sync.to_remove > 0
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

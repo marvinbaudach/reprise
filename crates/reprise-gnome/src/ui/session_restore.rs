@@ -218,6 +218,7 @@ fn apply_view_snapshot(state: &mut SessionState, view: TrackViewSnapshot) {
         | ViewSource::Releases
         | ViewSource::Concerts
         | ViewSource::Podcasts
+        | ViewSource::Youtube
         | ViewSource::Radio
         | ViewSource::Conversions
         | ViewSource::Album { .. }

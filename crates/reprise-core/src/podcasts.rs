@@ -1,6 +1,7 @@
 //! Podcast subscriptions, episodes, refresh, and provider boundaries.
 
 pub mod config;
+pub mod download_state;
 pub mod downloads;
 pub mod feed;
 pub mod http;
@@ -9,11 +10,14 @@ pub mod phone_sync;
 pub mod pipeline;
 pub mod query;
 pub mod refresh;
+pub mod source_artwork;
 pub mod status;
 pub mod store;
 pub mod url_detect;
 pub mod youtube;
 pub mod ytdlp;
+mod ytdlp_download;
+pub mod ytdlp_search;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PodcastKind {
@@ -64,6 +68,17 @@ pub struct EpisodeRow {
     pub played_at: Option<i64>,
     pub position_ms: i64,
     pub first_seen_at: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourceGroup {
+    pub subscription_id: i64,
+    pub title: String,
+    pub author: Option<String>,
+    pub image_url: Option<String>,
+    pub kind: PodcastKind,
+    pub sync_to_phone: bool,
+    pub episodes: Vec<EpisodeRow>,
 }
 
 #[derive(Debug, thiserror::Error)]

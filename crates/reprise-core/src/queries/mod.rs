@@ -338,6 +338,7 @@ pub fn query_track_window_browsed_ai(
         | ViewSource::Releases
         | ViewSource::Concerts
         | ViewSource::Podcasts
+        | ViewSource::Youtube
         | ViewSource::Radio
         | ViewSource::Conversions
         | ViewSource::Device { .. } => Ok(Vec::new()),
@@ -398,6 +399,7 @@ pub fn query_track_count_browsed(
         | ViewSource::Releases
         | ViewSource::Concerts
         | ViewSource::Podcasts
+        | ViewSource::Youtube
         | ViewSource::Radio
         | ViewSource::Conversions
         | ViewSource::Device { .. } => Ok(0),
@@ -583,6 +585,7 @@ pub fn query_track_ids_browsed_ai(
         | ViewSource::Releases
         | ViewSource::Concerts
         | ViewSource::Podcasts
+        | ViewSource::Youtube
         | ViewSource::Radio
         | ViewSource::Conversions
         | ViewSource::Device { .. } => Ok(Vec::new()),

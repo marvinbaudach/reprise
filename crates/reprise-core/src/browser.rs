@@ -176,6 +176,7 @@ pub enum BrowserPlace {
     Releases,
     Concerts,
     Podcasts,
+    Youtube,
     Radio,
     Conversions,
     Device { serial: String },
@@ -204,6 +205,7 @@ impl BrowserPlace {
             | Self::Releases
             | Self::Concerts
             | Self::Podcasts
+            | Self::Youtube
             | Self::Radio
             | Self::Conversions
             | Self::Device { .. } => None,
@@ -224,6 +226,7 @@ impl BrowserPlace {
             | Self::Releases
             | Self::Concerts
             | Self::Podcasts
+            | Self::Youtube
             | Self::Radio
             | Self::Conversions
             | Self::Device { .. } => None,
@@ -239,6 +242,7 @@ impl BrowserPlace {
             | Self::Releases
             | Self::Concerts
             | Self::Podcasts
+            | Self::Youtube
             | Self::Radio
             | Self::Conversions
             | Self::Device { .. } => None,
@@ -271,6 +275,7 @@ impl BrowserPlace {
             Self::Releases => ViewSource::Releases,
             Self::Concerts => ViewSource::Concerts,
             Self::Podcasts => ViewSource::Podcasts,
+            Self::Youtube => ViewSource::Youtube,
             Self::Radio => ViewSource::Radio,
             Self::Conversions => ViewSource::Conversions,
             Self::Device { serial } => ViewSource::Device {
@@ -304,6 +309,7 @@ impl From<ViewSource> for BrowserPlace {
             ViewSource::Releases => return Self::Releases,
             ViewSource::Concerts => return Self::Concerts,
             ViewSource::Podcasts => return Self::Podcasts,
+            ViewSource::Youtube => return Self::Youtube,
             ViewSource::Radio => return Self::Radio,
             ViewSource::Conversions => return Self::Conversions,
             ViewSource::Device { serial } => return Self::Device { serial },
@@ -383,6 +389,7 @@ mod tests {
             ViewSource::Genre("Metalcore".into()),
             ViewSource::MyStats,
             ViewSource::Podcasts,
+            ViewSource::Youtube,
             ViewSource::Radio,
             ViewSource::Device {
                 serial: "pixel-8".into(),

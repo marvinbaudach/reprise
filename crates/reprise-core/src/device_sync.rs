@@ -11,6 +11,7 @@ use crate::library::m3u::{M3uEntry, M3uExportEntry};
 
 pub mod delta;
 pub mod m3u;
+pub mod podcasts;
 pub mod sanitize;
 pub mod settings;
 pub mod transfer;
@@ -19,6 +20,21 @@ pub use delta::{compute_delta, SyncCandidate, SyncDelta};
 pub use settings::{DeviceFileRecord, DeviceSelection, DeviceSettings, SelectionSource};
 
 pub const REPRISE_DEVICE_DIR: &str = "Reprise";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ManagedRoot {
+    Music,
+    Podcasts,
+}
+
+impl ManagedRoot {
+    pub const fn components(self) -> [&'static str; 2] {
+        match self {
+            Self::Music => ["Music", REPRISE_DEVICE_DIR],
+            Self::Podcasts => ["Podcasts", REPRISE_DEVICE_DIR],
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SyncTrack {

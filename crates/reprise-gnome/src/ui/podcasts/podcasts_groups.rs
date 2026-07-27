@@ -1,0 +1,347 @@
+//! Channel/show-grouped podcast and YouTube rows.
+
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet};
+use std::rc::Rc;
+
+use chrono::Local;
+use gtk4::glib::variant::ToVariant;
+use gtk4::prelude::*;
+use reprise_core::podcasts::download_state::DownloadState;
+use reprise_core::podcasts::{EpisodeRow, PodcastKind, SourceGroup};
+
+use super::podcasts_context_menu;
+use super::podcasts_presentation::{
+    duration, file_size, relative_date, source_summary, status_pill,
+};
+use crate::ui::strings;
+
+#[derive(Clone)]
+pub(super) struct DownloadRowWidgets {
+    status: gtk4::Box,
+    action: gtk4::Button,
+}
+
+pub(super) fn replace(
+    container: &gtk4::Box,
+    groups: &[SourceGroup],
+    playing_episode: Option<i64>,
+    expanded_sources: &Rc<RefCell<BTreeSet<i64>>>,
+    download_states: &BTreeMap<i64, DownloadState>,
+) -> BTreeMap<i64, DownloadRowWidgets> {
+    while let Some(child) = container.first_child() {
+        container.remove(&child);
+    }
+    let mut download_widgets = BTreeMap::new();
+    for group in groups {
+        container.append(&build_group(
+            group,
+            playing_episode,
+            expanded_sources,
+            download_states,
+            &mut download_widgets,
+        ));
+    }
+    download_widgets
+}
+
+fn build_group(
+    group: &SourceGroup,
+    playing_episode: Option<i64>,
+    expanded_sources: &Rc<RefCell<BTreeSet<i64>>>,
+    download_states: &BTreeMap<i64, DownloadState>,
+    download_widgets: &mut BTreeMap<i64, DownloadRowWidgets>,
+) -> gtk4::Expander {
+    let expander = gtk4::Expander::new(None);
+    expander.set_expanded(expanded_sources.borrow().contains(&group.subscription_id));
+    let subscription_id = group.subscription_id;
+    let expanded_sources = expanded_sources.clone();
+    expander.connect_expanded_notify(move |expander| {
+        if expander.is_expanded() {
+            expanded_sources.borrow_mut().insert(subscription_id);
+        } else {
+            expanded_sources.borrow_mut().remove(&subscription_id);
+        }
+    });
+    expander.add_css_class("reprise-podcast-group");
+    expander.set_label_widget(Some(&group_header(group, download_states)));
+
+    let episodes = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    episodes.add_css_class("reprise-podcast-episodes");
+    for episode in &group.episodes {
+        let state = download_states
+            .get(&episode.id)
+            .cloned()
+            .unwrap_or(DownloadState::NotDownloaded);
+        episodes.append(&episode_row(
+            episode,
+            playing_episode == Some(episode.id),
+            &state,
+            download_widgets,
+        ));
+    }
+    expander.set_child(Some(&episodes));
+    expander
+}
+
+fn group_header(
+    group: &SourceGroup,
+    download_states: &BTreeMap<i64, DownloadState>,
+) -> gtk4::Widget {
+    let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+    header.set_hexpand(true);
+    header.set_margin_top(10);
+    header.set_margin_bottom(10);
+    header.set_margin_start(6);
+    header.set_margin_end(6);
+
+    let artwork = super::source_image::SourceImage::new(
+        group.image_url.as_deref(),
+        match group.kind {
+            PodcastKind::Rss => "audio-input-microphone-symbolic",
+            PodcastKind::Youtube => "video-x-generic-symbolic",
+        },
+        40,
+    );
+    artwork
+        .widget()
+        .add_css_class("reprise-podcast-group-artwork");
+    header.append(artwork.widget());
+
+    let identity = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+    identity.set_hexpand(true);
+    let title = gtk4::Label::new(Some(&group.title));
+    title.set_xalign(0.0);
+    title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    title.add_css_class("heading");
+    identity.append(&title);
+    if let Some(author) = group
+        .author
+        .as_deref()
+        .filter(|author| !author.trim().is_empty())
+    {
+        let author = gtk4::Label::new(Some(author));
+        author.set_xalign(0.0);
+        author.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+        author.add_css_class("caption");
+        author.add_css_class("dim-label");
+        identity.append(&author);
+    }
+    header.append(&identity);
+
+    let summary = source_summary(group, download_states);
+    let facts = strings::podcast_group_facts(
+        &strings::podcast_episode_count(summary.episode_count),
+        summary.unplayed_count,
+        &relative_date(summary.latest_published_at, Local::now().date_naive()),
+        &file_size(Some(summary.downloaded_bytes)),
+    );
+    let facts = gtk4::Label::new(Some(&facts));
+    facts.add_css_class("caption");
+    facts.add_css_class("dim-label");
+    header.append(&facts);
+    if group.kind == PodcastKind::Rss && group.sync_to_phone {
+        let sync = gtk4::Image::from_icon_name("phone-symbolic");
+        sync.set_tooltip_text(Some(&strings::text(strings::PODCAST_SYNC_PHONE)));
+        header.append(&sync);
+    }
+    let unsubscribe = gtk4::Button::from_icon_name("edit-delete-symbolic");
+    unsubscribe.add_css_class("flat");
+    unsubscribe.set_tooltip_text(Some(&strings::text(strings::PODCAST_UNSUBSCRIBE)));
+    unsubscribe.set_action_name(Some("podcasts.unsubscribe"));
+    unsubscribe.set_action_target_value(Some(&group.subscription_id.to_variant()));
+    header.append(&unsubscribe);
+
+    let menu = gtk4::MenuButton::builder()
+        .icon_name("view-more-symbolic")
+        .menu_model(&podcasts_context_menu::build_source(group))
+        .build();
+    menu.add_css_class("flat");
+    menu.set_tooltip_text(Some(&strings::text(strings::PODCAST_MORE_SOURCE_OPTIONS)));
+    header.append(&menu);
+    header.upcast()
+}
+
+fn episode_row(
+    row: &EpisodeRow,
+    playing: bool,
+    download_state: &DownloadState,
+    download_widgets: &mut BTreeMap<i64, DownloadRowWidgets>,
+) -> gtk4::Widget {
+    let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
+    root.add_css_class("reprise-podcast-episode-row");
+    if playing {
+        root.add_css_class("reprise-podcast-playing");
+    }
+    root.set_margin_start(20);
+    root.set_margin_end(8);
+    root.set_margin_top(7);
+    root.set_margin_bottom(7);
+
+    let play = gtk4::Button::from_icon_name(if playing {
+        "media-playback-pause-symbolic"
+    } else {
+        "media-playback-start-symbolic"
+    });
+    play.add_css_class("flat");
+    play.set_tooltip_text(Some(&strings::text(strings::PLAY_OR_PAUSE)));
+    play.set_action_name(Some("podcasts.play"));
+    play.set_action_target_value(Some(&row.id.to_variant()));
+    root.append(&play);
+
+    let identity = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+    identity.set_hexpand(true);
+    let title = gtk4::Label::new(Some(&row.title));
+    title.set_xalign(0.0);
+    title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    identity.append(&title);
+    let detail = format!(
+        "{} · {} · {}",
+        relative_date(row.published_at, Local::now().date_naive()),
+        duration(row.duration_secs),
+        status_pill(row).label
+    );
+    let detail = gtk4::Label::new(Some(&detail));
+    detail.set_xalign(0.0);
+    detail.add_css_class("caption");
+    detail.add_css_class("dim-label");
+    identity.append(&detail);
+    root.append(&identity);
+
+    let status = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    status.append(&download_status(download_state));
+    root.append(&status);
+
+    let download = gtk4::Button::new();
+    download.add_css_class("flat");
+    download.set_action_name(Some("podcasts.toggle-download"));
+    download.set_action_target_value(Some(&row.id.to_variant()));
+    let widgets = DownloadRowWidgets {
+        status,
+        action: download.clone(),
+    };
+    update_download_state(&widgets, download_state);
+    download_widgets.insert(row.id, widgets);
+    root.append(&download);
+
+    let menu = gtk4::MenuButton::builder()
+        .icon_name("view-more-symbolic")
+        .menu_model(&podcasts_context_menu::build(row))
+        .build();
+    menu.add_css_class("flat");
+    menu.set_tooltip_text(Some(&strings::text(strings::PODCAST_MORE_OPTIONS)));
+    root.append(&menu);
+    root.upcast()
+}
+
+pub(super) fn update_download_state(widgets: &DownloadRowWidgets, state: &DownloadState) {
+    while let Some(child) = widgets.status.first_child() {
+        widgets.status.remove(&child);
+    }
+    widgets.status.append(&download_status(state));
+    widgets
+        .action
+        .set_icon_name(if matches!(state, DownloadState::Downloaded { .. }) {
+            "object-select-symbolic"
+        } else {
+            "folder-download-symbolic"
+        });
+    widgets.action.set_tooltip_text(Some(&strings::text(
+        if matches!(state, DownloadState::Downloaded { .. }) {
+            strings::PODCAST_DELETE_DOWNLOAD
+        } else {
+            strings::PODCAST_DOWNLOAD
+        },
+    )));
+    widgets.action.set_sensitive(!matches!(
+        state,
+        DownloadState::Queued | DownloadState::Downloading { .. }
+    ));
+}
+
+fn download_status(state: &DownloadState) -> gtk4::Widget {
+    let root = gtk4::Box::new(gtk4::Orientation::Vertical, 3);
+    root.set_size_request(130, -1);
+
+    let label = gtk4::Label::new(None);
+    label.set_xalign(1.0);
+    label.add_css_class("caption");
+    label.add_css_class("dim-label");
+    match state {
+        DownloadState::NotDownloaded => {
+            label.set_text(&strings::text(strings::PODCAST_NOT_DOWNLOADED));
+        }
+        DownloadState::Queued => {
+            label.set_text(&strings::text(strings::PODCAST_DOWNLOAD_QUEUED));
+        }
+        DownloadState::Downloading {
+            received_bytes,
+            total_bytes,
+        } => {
+            label.set_text(&format!(
+                "{} · {}",
+                strings::text(strings::PODCAST_DOWNLOADING),
+                file_size(Some((*received_bytes).try_into().unwrap_or(i64::MAX)))
+            ));
+            match total_bytes {
+                Some(total) if *total > 0 => {
+                    let progress = gtk4::ProgressBar::new();
+                    progress.set_fraction((*received_bytes as f64 / *total as f64).clamp(0.0, 1.0));
+                    root.append(&progress);
+                }
+                _ => {
+                    let spinner = gtk4::Spinner::new();
+                    spinner.start();
+                    spinner.set_halign(gtk4::Align::End);
+                    root.append(&spinner);
+                }
+            }
+        }
+        DownloadState::Downloaded { bytes } => {
+            label.set_text(&file_size(Some((*bytes).try_into().unwrap_or(i64::MAX))));
+        }
+        DownloadState::Missing => {
+            label.set_text(&strings::text(strings::PODCAST_DOWNLOAD_MISSING));
+        }
+        DownloadState::Failed { message } => {
+            label.set_text(&strings::text(strings::PODCAST_DOWNLOAD_FAILED));
+            label.set_tooltip_text(Some(message));
+        }
+    }
+    root.prepend(&label);
+    root.upcast()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn src_5_one_expander_is_rendered_per_source_group() {
+        gtk4::init().unwrap();
+        let container = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        let group = SourceGroup {
+            subscription_id: 1,
+            title: "Show".into(),
+            author: None,
+            image_url: None,
+            kind: PodcastKind::Rss,
+            sync_to_phone: false,
+            episodes: Vec::new(),
+        };
+        let widgets = replace(
+            &container,
+            &[group],
+            None,
+            &Rc::new(RefCell::new(BTreeSet::new())),
+            &BTreeMap::new(),
+        );
+        assert!(widgets.is_empty());
+        assert!(container.first_child().is_some());
+        assert!(container
+            .first_child()
+            .and_downcast::<gtk4::Expander>()
+            .is_some());
+    }
+}

@@ -915,7 +915,7 @@ Ort und Stelle (MOT-2, die Motion-Lesart von P-4).
 - **MOT-8** [aktiv] [gtk] — Listen bewegen sich nicht: kein Stagger/Fade-in
   pro Row (windowed Model, 200er-Fenster, Bibliotheken jenseits 1 600 Rows).
   View-Wechsel behalten das Standard-Token. Zwischen zwei dichten Quellen
-  (Podcasts⇄Music) wird die ausgehende Fläche vor dem Stack-Wechsel
+  (Podcasts/YouTube⇄Music) wird die ausgehende Fläche vor dem Stack-Wechsel
   vollständig ausgeblendet und nur die eingehende Fläche über die
   Standarddauer eingeblendet: sichtbare Bewegung ohne harten Schnitt und
   ohne zwei gleichzeitig lesbare Tabellen. Die Queue-Ausnahme aus MOT-4
@@ -2452,16 +2452,14 @@ Hörstatistik.
   Unsubscribe nie still gelöscht: der Commit-Toast meldet behaltene Dateien
   und bietet ausschließlich Verschieben in den Papierkorb an; mehrere
   Unsubscribes werden aggregiert.
-- **SRC-5** [geplant] [gtk] — RSS-Podcasts und YouTube sind getrennte
+- **SRC-5** [aktiv] [gtk] — RSS-Podcasts und YouTube sind getrennte
   Library-Orte. Beide beginnen mit kanal- bzw. showgruppierten Quellzeilen,
   die ihre Episoden aufklappen; Radio bleibt eine Senderliste. Die
   Hinzufügen-Dialoge zeigen echte Quellbilder, gruppieren YouTube-Treffer
   kanalweise und blenden bereits abonnierte Podcasts, Kanäle und Sender aus.
-  <!-- REVIEW: Regelvorschlag -->
 - **POD-1** [aktiv] [core] — Episodenstatus ist pure Ableitung: Played
   genau bei gesetztem `played_at`, sonst Resume bei `position_ms > 0`, sonst
-  New. Ein Episodenende setzt Played und löscht die Position. Die Tabelle
-  lautet Date · Episode · Show · Length · Source · Status und sortiert
+  New. Ein Episodenende setzt Played und löscht die Position.
   standardmäßig nach Datum absteigend.
 - **POD-2** [aktiv] [core] — RSS ist die Daten-API:
   enclosure/guid/pubDate/itunes:duration; GUID, ersatzweise Enclosure-URL und
@@ -2490,18 +2488,22 @@ Hörstatistik.
   seine quellstabile GUID dauerhaft gegen erneuten Feed-Import; eine
   heruntergeladene Datei bleibt erhalten und kann ausschließlich über die
   angebotene Papierkorb-Aktion entfernt werden.
-- **POD-7** [geplant] [core] [gtk] — Der Downloadzustand einer Episode ist
+- **POD-7** [aktiv] [core] [gtk] — Der Downloadzustand einer Episode ist
   im Zeilenkontext sichtbar: nicht geladen, laufend mit Bytes und
   Fortschrittsbalken, lokal mit Dateigröße, fehlgeschlagen oder lokal
   verschwunden. Fortschritt bleibt transient; abgeschlossene Pfade und
   Größen werden gemeinsam persistiert und gemeinsam gelöscht.
-  <!-- REVIEW: Regelvorschlag -->
-- **POD-8** [geplant] [core] [gtk] — Nur heruntergeladene Episoden aus
+- **POD-8** [aktiv] [core] [gtk] — Nur heruntergeladene Episoden aus
   explizit ausgewählten RSS-Abos sind für Android-Sync geeignet. Sie landen
   unter `Podcasts/Reprise/<Show>/`; YouTube-Quellen werden unabhängig von
   ihrem Downloadzustand nie auf ein Gerät synchronisiert. Musik-Playlisten
   bleiben unverändert unter `Music/Reprise`.
-  <!-- REVIEW: Regelvorschlag -->
+- **POD-9** [aktiv] [core] [gtk] — Episodenstatus ist pure Ableitung:
+  Played genau bei gesetztem `played_at`, sonst Resume bei `position_ms > 0`,
+  sonst New. Ein Episodenende setzt Played und löscht die Position. Innerhalb
+  jeder nach stabiler Subscription-ID gruppierten Show beziehungsweise jedes
+  Kanals stehen Episoden nach Datum absteigend; die Gruppenzeile zeigt
+  Gesamt-/Ungespielt-Zahl, neueste Episode und lokale Datenmenge.
 - **RAD-1** [aktiv] [gtk] — Nur die aktuell verbundene Station ist in der
   Tabelle akzentuiert; ihr Zustandsicon, Name, Now-playing und Zeilentint
   wechseln gemeinsam. Alle anderen sowie eine präsentierte, aber getrennte

@@ -31,6 +31,7 @@ pub(in crate::ui) enum NavIcon {
     Releases,
     Concerts,
     Podcasts,
+    Youtube,
     Radio,
     MyStats,
     Conversions,
@@ -51,6 +52,7 @@ impl NavIcon {
             Self::Releases => "star-new-symbolic",
             Self::Concerts => "ticket-symbolic",
             Self::Podcasts => "audio-input-microphone-symbolic",
+            Self::Youtube => "video-x-generic-symbolic",
             Self::Radio => "network-wireless-symbolic",
             // Unused: My Stats renders a drawn three-bar chart via `nav_icon`,
             // not a theme symbolic (so it never collides with `TopRated`'s
@@ -348,6 +350,7 @@ mod tests {
             NavIcon::Podcasts.icon_name(),
             "audio-input-microphone-symbolic"
         );
+        assert_eq!(NavIcon::Youtube.icon_name(), "video-x-generic-symbolic");
         assert_eq!(NavIcon::Radio.icon_name(), "network-wireless-symbolic");
         assert_eq!(
             NavIcon::Radio.fallback_icon_name(),

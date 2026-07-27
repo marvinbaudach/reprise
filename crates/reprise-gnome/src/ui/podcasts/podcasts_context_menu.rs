@@ -3,7 +3,7 @@
 use gtk4::gio;
 use gtk4::glib::variant::ToVariant;
 use gtk4::prelude::*;
-use reprise_core::podcasts::EpisodeRow;
+use reprise_core::podcasts::{EpisodeRow, PodcastKind, SourceGroup};
 
 use crate::ui::strings;
 
@@ -13,6 +13,7 @@ pub(super) const ACTION_TOGGLE_PLAYED: &str = "toggle-played";
 pub(super) const ACTION_TOGGLE_DOWNLOAD: &str = "toggle-download";
 pub(super) const ACTION_REMOVE_EPISODE: &str = "remove-episode";
 pub(super) const ACTION_UNSUBSCRIBE: &str = "unsubscribe";
+pub(super) const ACTION_TOGGLE_PHONE_SYNC: &str = "toggle-phone-sync";
 const ACTIONS: &[&str] = &[
     ACTION_PLAY,
     ACTION_COPY_URL,
@@ -20,6 +21,7 @@ const ACTIONS: &[&str] = &[
     ACTION_TOGGLE_DOWNLOAD,
     ACTION_REMOVE_EPISODE,
     ACTION_UNSUBSCRIBE,
+    ACTION_TOGGLE_PHONE_SYNC,
 ];
 
 pub(super) fn build(row: &EpisodeRow) -> gio::Menu {
@@ -72,6 +74,29 @@ pub(super) fn build(row: &EpisodeRow) -> gio::Menu {
         row.subscription_id,
     );
     menu.append_section(None, &destructive);
+    menu
+}
+
+pub(super) fn build_source(group: &SourceGroup) -> gio::Menu {
+    let menu = gio::Menu::new();
+    if group.kind == PodcastKind::Rss {
+        append_targeted(
+            &menu,
+            if group.sync_to_phone {
+                strings::PODCAST_STOP_SYNC_PHONE
+            } else {
+                strings::PODCAST_SYNC_PHONE
+            },
+            ACTION_TOGGLE_PHONE_SYNC,
+            group.subscription_id,
+        );
+    }
+    append_targeted(
+        &menu,
+        &strings::podcast_unsubscribe_from(&group.title),
+        ACTION_UNSUBSCRIBE,
+        group.subscription_id,
+    );
     menu
 }
 
@@ -147,5 +172,20 @@ mod tests {
     #[test]
     fn pod_6_context_menu_exposes_individual_episode_removal() {
         assert!(ACTIONS.contains(&ACTION_REMOVE_EPISODE));
+    }
+
+    #[test]
+    fn pod_8_youtube_never_exposes_phone_sync_action() {
+        let group = SourceGroup {
+            subscription_id: 1,
+            title: "Channel".into(),
+            author: None,
+            image_url: None,
+            kind: PodcastKind::Youtube,
+            sync_to_phone: false,
+            episodes: Vec::new(),
+        };
+        let menu = build_source(&group);
+        assert_eq!(menu.n_items(), 1);
     }
 }

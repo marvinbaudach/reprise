@@ -42,6 +42,7 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         smart_rows,
         podcasts_enabled,
         podcasts_count,
+        youtube_count,
         radio_enabled,
         radio_count,
         releases_enabled,
@@ -125,13 +126,25 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
             .collect();
         let podcasts_enabled = modules::is_enabled(&conn, &PODCASTS_MODULE).unwrap_or(false);
         let podcasts_count = if podcasts_enabled {
-            podcasts::query::count_unplayed(&conn).map_or_else(
+            podcasts::query::count_unplayed_for_kind(&conn, podcasts::PodcastKind::Rss).map_or_else(
                 |error| {
                     tracing::error!(%error, "failed to count unplayed podcast episodes");
                     0
                 },
                 |count| i64::try_from(count).unwrap_or(i64::MAX),
             )
+        } else {
+            0
+        };
+        let youtube_count = if podcasts_enabled {
+            podcasts::query::count_unplayed_for_kind(&conn, podcasts::PodcastKind::Youtube)
+                .map_or_else(
+                    |error| {
+                        tracing::error!(%error, "failed to count unplayed YouTube episodes");
+                        0
+                    },
+                    |count| i64::try_from(count).unwrap_or(i64::MAX),
+                )
         } else {
             0
         };
@@ -183,6 +196,7 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
             smart_rows,
             podcasts_enabled,
             podcasts_count,
+            youtube_count,
             radio_enabled,
             radio_count,
             releases_enabled,
@@ -218,6 +232,13 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
             &strings::text(strings::PODCASTS),
             sidebar_presentation::nonzero_count(podcasts_count),
             NavIcon::Podcasts,
+        );
+        add_row(
+            shared,
+            ViewSource::Youtube,
+            &strings::text(strings::YOUTUBE),
+            sidebar_presentation::nonzero_count(youtube_count),
+            NavIcon::Youtube,
         );
     }
     if radio_enabled {

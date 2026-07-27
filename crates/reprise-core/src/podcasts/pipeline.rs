@@ -4,6 +4,7 @@ use std::path::Path;
 
 use rusqlite::Connection;
 
+use super::download_state::{DownloadProgress, DownloadState};
 use super::feed::{ParsedEpisode, ParsedFeed};
 use super::http::Response;
 use super::store::FetchSuccess;
@@ -14,11 +15,29 @@ const MAX_AUTO_DOWNLOADS_PER_SUBSCRIPTION: usize = 3;
 pub trait FeedFetcher {
     fn fetch(&self, subscription: &SubscriptionRow) -> Result<Response, PodcastError>;
     fn download(&self, url: &str, destination: &Path) -> Result<(), PodcastError>;
+
+    fn download_with_progress(
+        &self,
+        url: &str,
+        destination: &Path,
+        _on_progress: &mut dyn FnMut(DownloadProgress),
+    ) -> Result<(), PodcastError> {
+        self.download(url, destination)
+    }
 }
 
 pub trait YoutubeFetcher {
     fn list(&self, url: &str, limit: usize) -> Result<ParsedFeed, PodcastError>;
     fn download(&self, url: &str, destination: &Path) -> Result<(), PodcastError>;
+
+    fn download_with_progress(
+        &self,
+        url: &str,
+        destination: &Path,
+        _on_progress: &mut dyn FnMut(DownloadProgress),
+    ) -> Result<(), PodcastError> {
+        self.download(url, destination)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -36,6 +55,15 @@ impl FeedFetcher for HttpFeedFetcher {
     fn download(&self, url: &str, destination: &Path) -> Result<(), PodcastError> {
         super::http::download(url, destination)
     }
+
+    fn download_with_progress(
+        &self,
+        url: &str,
+        destination: &Path,
+        on_progress: &mut dyn FnMut(DownloadProgress),
+    ) -> Result<(), PodcastError> {
+        super::http::download_with_progress(url, destination, on_progress)
+    }
 }
 
 impl YoutubeFetcher for super::ytdlp::YtDlp {
@@ -46,6 +74,15 @@ impl YoutubeFetcher for super::ytdlp::YtDlp {
 
     fn download(&self, url: &str, destination: &Path) -> Result<(), PodcastError> {
         super::ytdlp::YtDlp::download(self, url, destination)
+    }
+
+    fn download_with_progress(
+        &self,
+        url: &str,
+        destination: &Path,
+        on_progress: &mut dyn FnMut(DownloadProgress),
+    ) -> Result<(), PodcastError> {
+        super::ytdlp::YtDlp::download_with_progress(self, url, destination, on_progress)
     }
 }
 
@@ -97,13 +134,32 @@ pub fn refresh(
     now: i64,
     force: bool,
 ) -> Result<RefreshSummary, PipelineError> {
-    refresh_to_root(
+    refresh_with_download_progress(
+        conn,
+        feed_fetcher,
+        youtube_fetcher,
+        now,
+        force,
+        &mut |_, _| {},
+    )
+}
+
+pub fn refresh_with_download_progress(
+    conn: &Connection,
+    feed_fetcher: &dyn FeedFetcher,
+    youtube_fetcher: &dyn YoutubeFetcher,
+    now: i64,
+    force: bool,
+    on_download: &mut dyn FnMut(i64, DownloadState),
+) -> Result<RefreshSummary, PipelineError> {
+    refresh_to_root_with_download_progress(
         conn,
         feed_fetcher,
         youtube_fetcher,
         now,
         force,
         &super::downloads::default_download_root(),
+        on_download,
     )
 }
 
@@ -114,6 +170,26 @@ pub fn refresh_to_root(
     now: i64,
     force: bool,
     download_root: &Path,
+) -> Result<RefreshSummary, PipelineError> {
+    refresh_to_root_with_download_progress(
+        conn,
+        feed_fetcher,
+        youtube_fetcher,
+        now,
+        force,
+        download_root,
+        &mut |_, _| {},
+    )
+}
+
+fn refresh_to_root_with_download_progress(
+    conn: &Connection,
+    feed_fetcher: &dyn FeedFetcher,
+    youtube_fetcher: &dyn YoutubeFetcher,
+    now: i64,
+    force: bool,
+    download_root: &Path,
+    on_download: &mut dyn FnMut(i64, DownloadState),
 ) -> Result<RefreshSummary, PipelineError> {
     let config = super::config::load(conn)?;
     let jitter = super::refresh::jitter_seconds(&database_seed(conn)?);
@@ -224,40 +300,93 @@ pub fn refresh_to_root(
                     &episode.guid,
                     extension,
                 );
-                let download = super::downloads::prepare_destination(&destination)
-                    .map_err(|error| PodcastError::Body(error.to_string()))
-                    .and_then(|()| match subscription.kind {
-                        PodcastKind::Rss => feed_fetcher.download(&episode.audio_url, &destination),
-                        PodcastKind::Youtube => {
-                            youtube_fetcher.download(&episode.audio_url, &destination)
-                        }
-                    });
+                on_download(episode_id, DownloadState::Queued);
+                let mut state = DownloadState::Downloading {
+                    received_bytes: 0,
+                    total_bytes: None,
+                };
+                on_download(episode_id, state.clone());
+                let download = super::downloads::download_atomically(&destination, |temporary| {
+                    let mut report = |progress: DownloadProgress| {
+                        state = super::download_state::downloading(
+                            &state,
+                            progress.received_bytes,
+                            progress.total_bytes,
+                        );
+                        on_download(episode_id, state.clone());
+                    };
+                    match subscription.kind {
+                        PodcastKind::Rss => feed_fetcher.download_with_progress(
+                            &episode.audio_url,
+                            temporary,
+                            &mut report,
+                        ),
+                        PodcastKind::Youtube => youtube_fetcher.download_with_progress(
+                            &episode.audio_url,
+                            temporary,
+                            &mut report,
+                        ),
+                    }
+                });
                 match download {
-                    Ok(()) if destination.is_file() => {
-                        let bytes = std::fs::metadata(&destination)
-                            .map_err(super::downloads::CleanupError::from)?
-                            .len()
-                            .min(i64::MAX as u64) as i64;
-                        super::store::set_downloaded_file(
+                    Ok(bytes) => {
+                        let Some(destination_path) = destination.to_str() else {
+                            remove_completed_download(&destination);
+                            tracing::warn!(episode_id, "podcast download path is not valid UTF-8");
+                            summary.downloads_failed += 1;
+                            on_download(
+                                episode_id,
+                                DownloadState::Failed {
+                                    message: "podcast download path is not valid UTF-8".to_owned(),
+                                },
+                            );
+                            continue;
+                        };
+                        let persisted = match super::downloads::persist_completed_if_active(
                             conn,
                             episode_id,
-                            destination.to_str(),
-                            Some(bytes),
-                        )?;
-                        summary.downloads_completed += 1;
-                    }
-                    Ok(()) => {
-                        remove_partial_download(&destination);
-                        summary.downloads_failed += 1;
+                            destination_path,
+                            bytes,
+                        ) {
+                            Ok(persisted) => persisted,
+                            Err(error) => {
+                                remove_completed_download(&destination);
+                                on_download(
+                                    episode_id,
+                                    DownloadState::Failed {
+                                        message: error.to_string(),
+                                    },
+                                );
+                                return Err(error.into());
+                            }
+                        };
+                        if persisted {
+                            summary.downloads_completed += 1;
+                            on_download(episode_id, DownloadState::Downloaded { bytes });
+                        } else {
+                            remove_completed_download(&destination);
+                            summary.downloads_failed += 1;
+                            on_download(
+                                episode_id,
+                                DownloadState::Failed {
+                                    message: "podcast episode no longer exists".to_owned(),
+                                },
+                            );
+                        }
                     }
                     Err(error) => {
-                        remove_partial_download(&destination);
                         tracing::warn!(
                             episode_id,
                             %error,
                             "podcast auto-download failed"
                         );
                         summary.downloads_failed += 1;
+                        on_download(
+                            episode_id,
+                            DownloadState::Failed {
+                                message: error.to_string(),
+                            },
+                        );
                     }
                 }
             }
@@ -267,13 +396,13 @@ pub fn refresh_to_root(
     Ok(summary)
 }
 
-fn remove_partial_download(path: &Path) {
+fn remove_completed_download(path: &Path) {
     if let Err(error) = std::fs::remove_file(path) {
         if error.kind() != std::io::ErrorKind::NotFound {
             tracing::warn!(
                 path = %path.display(),
                 %error,
-                "could not remove partial podcast download"
+                "could not remove unclaimed podcast download"
             );
         }
     }
@@ -543,6 +672,42 @@ mod tests {
             .filter(|episode| episode.downloaded_path.is_some())
             .count();
         assert_eq!(downloaded, 3);
+    }
+
+    #[test]
+    fn pod_7_auto_download_reports_episode_states_during_refresh() {
+        let conn = conn();
+        add_subscription(&conn, "https://example.test/feed", true);
+        let feed = FakeFeed {
+            responses: RefCell::new(vec![Ok(feed_response("Show", 1, None))]),
+            ..FakeFeed::default()
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let mut events = Vec::new();
+
+        refresh_to_root_with_download_progress(
+            &conn,
+            &feed,
+            &FakeYoutube,
+            10,
+            true,
+            directory.path(),
+            &mut |episode_id, state| events.push((episode_id, state)),
+        )
+        .unwrap();
+
+        assert!(matches!(events[0].1, DownloadState::Queued));
+        assert!(matches!(
+            events[1].1,
+            DownloadState::Downloading {
+                received_bytes: 0,
+                total_bytes: None,
+            }
+        ));
+        assert!(matches!(
+            events.last(),
+            Some((_, DownloadState::Downloaded { bytes: 5 }))
+        ));
     }
 
     #[test]

@@ -12,6 +12,7 @@ use std::{
 
 use serde_json::Value;
 
+pub use super::ytdlp_search::YtDlpChannel;
 use super::PodcastError;
 
 const BLOCKED_MESSAGE: &str = "YouTube blocked the request — update yt-dlp (Preferences)";
@@ -59,6 +60,9 @@ pub struct YtDlpVideo {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct YtDlpPlaylist {
     pub title: Option<String>,
+    /// Stable channel URL when yt-dlp reports a channel identity.
+    pub source_url: Option<String>,
+    pub image_url: Option<String>,
     pub entries: Vec<YtDlpVideo>,
 }
 
@@ -129,6 +133,20 @@ impl YtDlp {
         parse_playlist(&output)
     }
 
+    pub fn search_channels(&self, terms: &str) -> Result<Vec<YtDlpChannel>, PodcastError> {
+        let target = format!("ytsearch20:{terms}");
+        let output = self.run(
+            [
+                OsString::from("--no-warnings"),
+                OsString::from("--flat-playlist"),
+                OsString::from("-J"),
+                OsString::from(target),
+            ],
+            self.timeouts.search,
+        )?;
+        super::ytdlp_search::parse_search_channels(&output)
+    }
+
     pub fn resolve(&self, video_url: &str) -> Result<ResolvedAudio, PodcastError> {
         let output = self.run(
             ["--no-warnings", "-f", "bestaudio", "-j", video_url],
@@ -138,21 +156,22 @@ impl YtDlp {
     }
 
     pub fn download(&self, video_url: &str, output: &Path) -> Result<(), PodcastError> {
-        let produced_path = self.run(
-            [
-                OsString::from("--no-warnings"),
-                OsString::from("-f"),
-                OsString::from("bestaudio"),
-                OsString::from("-x"),
-                OsString::from("--print"),
-                OsString::from("after_move:filepath"),
-                OsString::from("-o"),
-                output.as_os_str().to_os_string(),
-                OsString::from(video_url),
-            ],
+        self.download_with_progress(video_url, output, &mut |_| {})
+    }
+
+    pub fn download_with_progress(
+        &self,
+        video_url: &str,
+        output: &Path,
+        on_progress: &mut dyn FnMut(super::download_state::DownloadProgress),
+    ) -> Result<(), PodcastError> {
+        super::ytdlp_download::download(
+            &self.binary,
             self.timeouts.download,
-        )?;
-        finalize_download(&produced_path, output)
+            video_url,
+            output,
+            on_progress,
+        )
     }
 
     fn run<I, S>(&self, arguments: I, timeout: Duration) -> Result<String, PodcastError>
@@ -239,7 +258,7 @@ pub fn classify_stderr(stderr: &str) -> String {
     line.chars().take(MAX_ERROR_CHARS).collect()
 }
 
-fn read_in_background(
+pub(super) fn read_in_background(
     mut stream: impl Read + Send + 'static,
 ) -> Receiver<std::io::Result<Vec<u8>>> {
     let (sender, receiver) = mpsc::sync_channel(1);
@@ -251,7 +270,7 @@ fn read_in_background(
     receiver
 }
 
-fn collect_output(
+pub(super) fn collect_output(
     reader: &Receiver<std::io::Result<Vec<u8>>>,
     deadline: Instant,
 ) -> Result<Vec<u8>, PodcastError> {
@@ -266,23 +285,23 @@ fn collect_output(
 }
 
 #[cfg(unix)]
-fn configure_process_group(command: &mut Command) {
+pub(super) fn configure_process_group(command: &mut Command) {
     use std::os::unix::process::CommandExt;
 
     command.process_group(0);
 }
 
 #[cfg(not(unix))]
-fn configure_process_group(_command: &mut Command) {}
+pub(super) fn configure_process_group(_command: &mut Command) {}
 
-fn terminate_process_tree(child: &mut Child) {
+pub(super) fn terminate_process_tree(child: &mut Child) {
     terminate_process_group(child.id());
     let _ = child.kill();
     let _ = child.wait();
 }
 
 #[cfg(unix)]
-fn terminate_process_group(process_group: u32) {
+pub(super) fn terminate_process_group(process_group: u32) {
     const SIGKILL: i32 = 9;
 
     unsafe extern "C" {
@@ -299,9 +318,9 @@ fn terminate_process_group(process_group: u32) {
 }
 
 #[cfg(not(unix))]
-fn terminate_process_group(_process_group: u32) {}
+pub(super) fn terminate_process_group(_process_group: u32) {}
 
-fn map_spawn_error(error: &std::io::Error) -> PodcastError {
+pub(super) fn map_spawn_error(error: &std::io::Error) -> PodcastError {
     if error.kind() == std::io::ErrorKind::NotFound {
         PodcastError::YtDlp(MISSING_MESSAGE.to_string())
     } else {
@@ -323,7 +342,7 @@ fn output_from_status(
     }
 }
 
-fn finalize_download(stdout: &str, destination: &Path) -> Result<(), PodcastError> {
+pub(super) fn finalize_download(stdout: &str, destination: &Path) -> Result<(), PodcastError> {
     let produced = stdout
         .lines()
         .rev()
@@ -405,6 +424,8 @@ fn parse_playlist(body: &str) -> Result<YtDlpPlaylist, PodcastError> {
             .get("title")
             .and_then(Value::as_str)
             .map(str::to_string),
+        source_url: super::ytdlp_search::stable_source_url(&value),
+        image_url: super::ytdlp_search::entry_image_url(&value),
         entries,
     })
 }
@@ -516,7 +537,7 @@ case "$*" in
     printf '%s\n' '{"title":"search","entries":[{"id":"s1","title":"Search hit","duration":30}]}'
     ;;
   "--no-warnings --flat-playlist -J https://youtube.test/@show")
-    printf '%s\n' '{"title":"Channel title","entries":[{"id":"v1","title":"One","duration":12.8},{"id":"","title":"Blank ID"},{"id":"v2","title":"Two","duration":null},{"id":"blank-title","title":"   "}]}'
+    printf '%s\n' '{"title":"Channel title","channel_id":"UC-stable","channel_url":"https://youtube.test/@show","thumbnail":"https://img.test/channel.jpg","entries":[{"id":"v1","title":"One","duration":12.8},{"id":"","title":"Blank ID"},{"id":"v2","title":"Two","duration":null},{"id":"blank-title","title":"   "}]}'
     ;;
   *) printf '%s\n' "unexpected arguments: $*" >&2; exit 2 ;;
 esac
@@ -528,6 +549,14 @@ esac
 
         let playlist = runner.list("https://youtube.test/@show").unwrap();
         assert_eq!(playlist.title.as_deref(), Some("Channel title"));
+        assert_eq!(
+            playlist.source_url.as_deref(),
+            Some("https://www.youtube.com/channel/UC-stable")
+        );
+        assert_eq!(
+            playlist.image_url.as_deref(),
+            Some("https://img.test/channel.jpg")
+        );
         assert_eq!(playlist.entries.len(), 2);
         assert_eq!(playlist.entries[0].id, "v1");
         assert_eq!(playlist.entries[0].duration_secs, Some(12));
@@ -601,9 +630,13 @@ printf '%s\n' '{"url":"https://googlevideo.test/ephemeral","duration":93.4}'
             args.lines().collect::<Vec<_>>(),
             vec![
                 "--no-warnings",
+                "--newline",
+                "--progress-template",
+                "download:reprise-progress:%(progress.downloaded_bytes)s\t%(progress.total_bytes)s\t%(progress.total_bytes_estimate)s",
                 "-f",
                 "bestaudio",
                 "-x",
+                "--no-part",
                 "--print",
                 "after_move:filepath",
                 "-o",
@@ -613,6 +646,47 @@ printf '%s\n' '{"url":"https://googlevideo.test/ephemeral","duration":93.4}'
         );
         assert_eq!(fs::read_to_string(&output).unwrap(), "downloaded");
         assert!(!postprocessed.exists());
+    }
+
+    #[test]
+    fn pod_7_download_reports_machine_readable_progress_with_unknown_totals() {
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("episode.audio");
+        let binary = fake_binary(
+            directory.path(),
+            &format!(
+                "printf '%s\\n' 'reprise-progress:5\tNA\tNA'\n\
+                 printf '%s\\n' 'reprise-progress:8\t10\tNA'\n\
+                 printf downloaded > '{}'\n\
+                 printf '%s\\n' '{}'",
+                output.display(),
+                output.display()
+            ),
+        );
+        let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
+        let mut progress = Vec::new();
+
+        runner
+            .download_with_progress(
+                "https://www.youtube.com/watch?v=v1",
+                &output,
+                &mut |event| progress.push(event),
+            )
+            .unwrap();
+
+        assert_eq!(
+            progress,
+            [
+                crate::podcasts::download_state::DownloadProgress {
+                    received_bytes: 5,
+                    total_bytes: None,
+                },
+                crate::podcasts::download_state::DownloadProgress {
+                    received_bytes: 8,
+                    total_bytes: Some(10),
+                },
+            ]
+        );
     }
 
     #[test]

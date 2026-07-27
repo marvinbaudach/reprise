@@ -174,12 +174,9 @@ pub(super) fn delta_group(device: &DeviceView) -> adw::PreferencesGroup {
     );
     button.add_css_class("suggested-action");
     button.set_valign(gtk4::Align::Center);
-    let has_delta = device
-        .delta
-        .as_ref()
-        .is_some_and(|delta| !delta.to_copy.is_empty() || !delta.to_remove.is_empty());
-    button
-        .set_sensitive(has_delta || matches!(device.sync_phase, PlannedSyncPhase::Syncing { .. }));
+    button.set_sensitive(
+        device.has_pending_sync() || matches!(device.sync_phase, PlannedSyncPhase::Syncing { .. }),
+    );
     button.set_action_name(Some("app.sync-device"));
     button.set_action_target_value(Some(&device.id.to_variant()));
     row.add_suffix(&button);
@@ -322,29 +319,24 @@ fn delta_copy(device: &DeviceView) -> (String, String, f64) {
         ),
         // Fresh device with nothing selected: prompt to choose rather than
         // claim it is already in sync (empty selection → empty delta).
-        PlannedSyncPhase::Idle
-            if matches!(
-                &device.settings.selection,
-                DeviceSelection::Sources(sources) if sources.is_empty()
-            ) =>
-        {
-            (
-                "Nothing selected to sync yet".into(),
-                "Tick a playlist or Entire library above to get started.".into(),
-                0.0,
-            )
-        }
+        PlannedSyncPhase::Idle if !device.has_sync_selection() => (
+            "Nothing selected to sync yet".into(),
+            "Tick a playlist or Entire library above to get started.".into(),
+            0.0,
+        ),
         PlannedSyncPhase::Idle => device.delta.as_ref().map_or_else(
             || ("Ready to synchronize".into(), String::new(), 0.0),
             |delta| {
-                if delta.to_copy.is_empty() && delta.to_remove.is_empty() {
+                if !device.has_pending_sync() {
                     ("Everything in sync ✓".into(), String::new(), 0.0)
                 } else {
                     (
                         format!(
-                            "Next sync: +{} tracks · −{} removed",
+                            "Music +{} · −{} · Podcasts +{} · −{}",
                             delta.to_copy.len(),
-                            delta.to_remove.len()
+                            delta.to_remove.len(),
+                            device.podcast_sync.to_copy,
+                            device.podcast_sync.to_remove
                         ),
                         format!(
                             "{} will be copied · about {} s via USB",

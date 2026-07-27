@@ -10,7 +10,7 @@ use gtk4::gio;
 use gtk4::gio::prelude::*;
 use reprise_core::device_sync::settings::save_settings;
 use reprise_core::device_sync::{
-    DeviceSelection, DeviceSettings, SelectionSource, SyncPhase, SyncSnapshot,
+    DeviceSelection, DeviceSettings, ManagedRoot, SelectionSource, SyncPhase, SyncSnapshot,
 };
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceContents, DeviceDescriptor};
 use rusqlite::Connection;
@@ -32,6 +32,9 @@ struct FakeState {
     max_total: Cell<usize>,
     playlists: RefCell<Vec<(String, String, Vec<u8>)>>,
     deleted: RefCell<Vec<String>>,
+    managed_copies: RefCell<Vec<(ManagedRoot, String)>>,
+    managed_deleted: RefCell<Vec<(ManagedRoot, String)>>,
+    contents: RefCell<DeviceContents>,
     available_bytes: Cell<Option<u64>>,
     total_bytes: Cell<Option<u64>>,
 }
@@ -81,7 +84,8 @@ impl DeviceBackend for FakeBackend {
     fn inspect(&self, _root_uri: String) -> TestFuture<(DeviceContents, Option<u64>, Option<u64>)> {
         let available_bytes = self.state.available_bytes.get();
         let total_bytes = self.state.total_bytes.get();
-        Box::pin(async move { Ok((DeviceContents::default(), available_bytes, total_bytes)) })
+        let contents = self.state.contents.borrow().clone();
+        Box::pin(async move { Ok((contents, available_bytes, total_bytes)) })
     }
 
     fn copy_track(
@@ -146,6 +150,44 @@ impl DeviceBackend for FakeBackend {
         Box::pin(async move {
             state.deleted.borrow_mut().push(relative_target);
             Ok(true)
+        })
+    }
+
+    fn delete_managed(
+        &self,
+        _root_uri: String,
+        root: ManagedRoot,
+        relative_target: String,
+    ) -> TestFuture<bool> {
+        let state = self.state.clone();
+        Box::pin(async move {
+            state
+                .managed_deleted
+                .borrow_mut()
+                .push((root, relative_target));
+            Ok(true)
+        })
+    }
+
+    fn replace_managed(
+        &self,
+        _device_id: String,
+        _root_uri: String,
+        root: ManagedRoot,
+        _source_path: PathBuf,
+        relative_target: String,
+        expected_size: u64,
+        _cancellable: gio::Cancellable,
+        progress: Rc<dyn Fn(u64, u64)>,
+    ) -> TestFuture<CopyOutcome> {
+        let state = self.state.clone();
+        Box::pin(async move {
+            progress(expected_size, expected_size);
+            state
+                .managed_copies
+                .borrow_mut()
+                .push((root, relative_target));
+            Ok(CopyOutcome::Copied)
         })
     }
 
@@ -641,6 +683,77 @@ fn local_gio_cancel_removes_partial_and_runs_the_waiting_job() {
             .path()
             .join("Music/Reprise/Cancel/4-4.flac.reprise-part")
             .exists());
+    });
+}
+
+#[test]
+fn pod_8_planned_sync_copies_selected_rss_and_removes_only_podcast_inventory() {
+    run(async {
+        let (downloads, conn) = fixture();
+        let rss_path = downloads.path().join("rss.mp3");
+        let youtube_path = downloads.path().join("youtube.mp3");
+        std::fs::write(&rss_path, b"rss audio").unwrap();
+        std::fs::write(&youtube_path, b"youtube").unwrap();
+        conn.borrow()
+            .execute_batch(
+                "INSERT INTO podcast_subscriptions
+                 (id, kind, feed_url, title, auto_download, sync_to_phone, added_at)
+                 VALUES
+                 (10, 'rss', 'https://example.test/rss', 'RSS Show', 0, 1, 1),
+                 (11, 'youtube', 'https://example.test/youtube', 'Video', 0, 1, 1);",
+            )
+            .unwrap();
+        conn.borrow()
+            .execute(
+                "INSERT INTO podcast_episodes
+                 (id, subscription_id, guid, title, audio_url, downloaded_path,
+                  downloaded_bytes, first_seen_at)
+                 VALUES (100, 10, 'rss-100', 'Episode', 'https://example.test/rss.mp3',
+                         ?1, 9, 1)",
+                [rss_path.to_string_lossy().as_ref()],
+            )
+            .unwrap();
+        conn.borrow()
+            .execute(
+                "INSERT INTO podcast_episodes
+                 (id, subscription_id, guid, title, audio_url, downloaded_path,
+                  downloaded_bytes, first_seen_at)
+                 VALUES (101, 11, 'yt-101', 'Video', 'https://example.test/youtube.webm',
+                         ?1, 7, 1)",
+                [youtube_path.to_string_lossy().as_ref()],
+            )
+            .unwrap();
+
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        backend.state.contents.replace(DeviceContents {
+            podcast_files: vec![reprise_platform_linux::device_sync::DeviceFile {
+                relative_path: "Old Show/99-Old.mp3".into(),
+                name: "99-Old.mp3".into(),
+                size_bytes: 4,
+            }],
+            ..DeviceContents::default()
+        });
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        settle().await;
+
+        runtime.sync_now("a").unwrap();
+        settle().await;
+
+        assert_eq!(
+            backend.state.managed_copies.borrow().as_slice(),
+            [(ManagedRoot::Podcasts, "RSS Show/100-Episode.mp3".into())]
+        );
+        assert_eq!(
+            backend.state.managed_deleted.borrow().as_slice(),
+            [(ManagedRoot::Podcasts, "Old Show/99-Old.mp3".into())]
+        );
+        assert!(backend
+            .state
+            .copy_order
+            .borrow()
+            .iter()
+            .all(|(_, path)| !path.contains("Episode") && !path.contains("Video")));
+        assert!(backend.state.playlists.borrow().is_empty());
     });
 }
 

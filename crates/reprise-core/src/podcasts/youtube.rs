@@ -48,6 +48,8 @@ mod tests {
     fn flat_playlist_projects_stable_episode_identity_in_source_order() {
         let listing = project_playlist(YtDlpPlaylist {
             title: Some("The Channel".to_owned()),
+            source_url: None,
+            image_url: None,
             entries: vec![
                 YtDlpVideo {
                     id: "second".to_owned(),

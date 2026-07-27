@@ -391,6 +391,7 @@ pub fn build(
         &content_stack,
     );
     let podcasts_view = source_views.podcasts;
+    let youtube_view = source_views.youtube;
     let radio_view = source_views.radio;
     super::source_views::wire_update_sidebar_refresh(&concerts_view, &releases_view, &sidebar);
 
@@ -400,6 +401,7 @@ pub fn build(
     // notifications render above the complete library chrome.
     let toast_overlay = adw::ToastOverlay::new();
     podcasts_view.set_toast_overlay(&toast_overlay);
+    youtube_view.set_toast_overlay(&toast_overlay);
     radio_view.set_toast_overlay(&toast_overlay);
     {
         let overlay = toast_overlay.downgrade();
@@ -559,6 +561,7 @@ pub fn build(
         concerts_view: &concerts_view,
         releases_view: &releases_view,
         podcasts_view: &podcasts_view,
+        youtube_view: &youtube_view,
         radio_view: &radio_view,
         podcasts_runtime: &podcasts_runtime,
         content_stack: &content_stack,

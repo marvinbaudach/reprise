@@ -2,8 +2,9 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use reprise_core::device_sync::m3u::{render_named_playlist, DevicePlaylistEntry};
+use reprise_core::device_sync::podcasts::PodcastSyncPlan;
 use reprise_core::device_sync::settings::{
-    delete_device_file, upsert_device_file, DeviceFileRecord,
+    delete_device_file, load_device_files, upsert_device_file, DeviceFileRecord,
 };
 
 use super::*;
@@ -49,6 +50,7 @@ struct PlannedWork {
     settings: DeviceSettings,
     delta: SyncDelta,
     transfers: Vec<TransferPlanEntry>,
+    podcasts: PodcastSyncPlan,
     cancelled: Arc<AtomicBool>,
     cancellable: gio::Cancellable,
 }
@@ -108,6 +110,7 @@ impl DeviceSyncRuntime {
                 settings: device.settings.clone(),
                 delta,
                 transfers: device.transfer_plan.clone(),
+                podcasts: device.podcast_plan.clone(),
                 cancelled,
                 cancellable,
             }
@@ -137,12 +140,14 @@ async fn run_planned_sync(weak: Weak<DeviceSyncRuntime>, work: PlannedWork) {
         return;
     };
     let mut failures = Vec::new();
-    if let Err(error) = runtime
-        .backend
-        .cleanup_partials(work.root_uri.clone())
-        .await
-    {
-        tracing::warn!(device_id = work.device_id, %error, "could not clean partial sync files");
+    for root in [ManagedRoot::Music, ManagedRoot::Podcasts] {
+        if let Err(error) = runtime
+            .backend
+            .cleanup_managed_partials(work.root_uri.clone(), root)
+            .await
+        {
+            tracing::warn!(device_id = work.device_id, ?root, %error, "could not clean partial sync files");
+        }
     }
     let files = load_device_files(&runtime.conn.borrow(), &work.device_id).unwrap_or_default();
     let files_by_id = files
@@ -152,7 +157,14 @@ async fn run_planned_sync(weak: Weak<DeviceSyncRuntime>, work: PlannedWork) {
 
     run_removals(&runtime, &work, &files_by_id, &mut failures).await;
     if !work.cancelled.load(Ordering::SeqCst) {
-        run_transfers(&runtime, &work, &files_by_id, &mut failures).await;
+        run_podcast_removals(&runtime, &work, &mut failures).await;
+    }
+    let mut completed_bytes = 0;
+    if !work.cancelled.load(Ordering::SeqCst) {
+        completed_bytes = run_transfers(&runtime, &work, &files_by_id, &mut failures).await;
+    }
+    if !work.cancelled.load(Ordering::SeqCst) {
+        run_podcast_transfers(&runtime, &work, completed_bytes, &mut failures).await;
     }
     if !work.cancelled.load(Ordering::SeqCst) {
         run_playlists(&runtime, &work, &mut failures).await;
@@ -212,7 +224,7 @@ async fn run_transfers(
     work: &PlannedWork,
     existing: &HashMap<i64, DeviceFileRecord>,
     failures: &mut Vec<i64>,
-) {
+) -> u64 {
     let copy_ids = work.delta.to_copy.iter().copied().collect::<HashSet<_>>();
     let transfers = work
         .transfers
@@ -362,6 +374,7 @@ async fn run_transfers(
         }
         completed_bytes = completed_bytes.saturating_add(entry.expected_bytes);
     }
+    completed_bytes
 }
 
 async fn receive_ready(
@@ -636,6 +649,10 @@ fn update_copy_bytes(
     }
     runtime.notify();
 }
+
+#[path = "device_sync_podcast_transfer.rs"]
+mod podcast_transfer;
+use podcast_transfer::{run_podcast_removals, run_podcast_transfers};
 
 fn temporary_opus_path(device_id: &str, track_id: i64) -> PathBuf {
     let sequence = TEMP_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);

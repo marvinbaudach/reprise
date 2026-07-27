@@ -298,3 +298,80 @@ fn non_mtp_root_is_used_verbatim_without_storage_resolution() {
         "copy lands directly under the fixture root's Music/Reprise"
     );
 }
+
+#[test]
+fn pod_8_podcast_io_is_scoped_to_podcasts_reprise_and_inspected_separately() {
+    let (temp, storage) = fixture();
+    let source_path = temp.path().join("episode.mp3");
+    fs::write(&source_path, b"podcast").unwrap();
+    fs::create_dir_all(temp.path().join("Music/Reprise/Album")).unwrap();
+    fs::write(temp.path().join("Music/Reprise/Album/track.mp3"), b"music").unwrap();
+
+    run(storage.replace_managed(
+        reprise_core::device_sync::ManagedRoot::Podcasts,
+        &gio::File::for_path(&source_path),
+        "Show/1-Episode.mp3",
+        7,
+        &gio::Cancellable::new(),
+        |_, _| {},
+    ))
+    .unwrap();
+    assert_eq!(
+        fs::read(temp.path().join("Podcasts/Reprise/Show/1-Episode.mp3")).unwrap(),
+        b"podcast"
+    );
+    assert!(matches!(
+        run(storage.delete_managed(
+            reprise_core::device_sync::ManagedRoot::Podcasts,
+            "Music/Reprise/Album/track.mp3"
+        )),
+        Ok(false)
+    ));
+    assert!(temp.path().join("Music/Reprise/Album/track.mp3").is_file());
+
+    let contents = run(storage.inspect()).unwrap();
+    assert_eq!(
+        contents
+            .podcast_files
+            .iter()
+            .map(|file| file.relative_path.as_str())
+            .collect::<Vec<_>>(),
+        ["Show/1-Episode.mp3"]
+    );
+    assert!(run(storage.delete_managed(
+        reprise_core::device_sync::ManagedRoot::Podcasts,
+        "Show/1-Episode.mp3"
+    ))
+    .unwrap());
+}
+
+#[test]
+fn pod_8_podcast_partial_cleanup_cannot_touch_music_or_other_podcast_apps() {
+    let (temp, storage) = fixture();
+    for path in [
+        "Podcasts/Reprise/Show/episode.mp3.part",
+        "Music/Reprise/Album/track.mp3.part",
+        "Podcasts/Other App/episode.mp3.part",
+    ] {
+        let path = temp.path().join(path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, b"partial").unwrap();
+    }
+
+    assert_eq!(
+        run(storage.cleanup_partials_in(reprise_core::device_sync::ManagedRoot::Podcasts)).unwrap(),
+        1
+    );
+    assert!(!temp
+        .path()
+        .join("Podcasts/Reprise/Show/episode.mp3.part")
+        .exists());
+    assert!(temp
+        .path()
+        .join("Music/Reprise/Album/track.mp3.part")
+        .exists());
+    assert!(temp
+        .path()
+        .join("Podcasts/Other App/episode.mp3.part")
+        .exists());
+}

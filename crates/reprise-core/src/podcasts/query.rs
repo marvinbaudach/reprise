@@ -2,7 +2,7 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
-use super::EpisodeRow;
+use super::{EpisodeRow, PodcastKind, SourceGroup};
 
 const EPISODE_COLUMNS: &str =
     "e.id, e.subscription_id, e.guid, e.title, s.title, s.image_url, s.kind,
@@ -41,6 +41,28 @@ pub fn episodes_for_subscription(
     rows.collect::<Result<Vec<_>, _>>()
 }
 
+pub fn list_source_groups(
+    conn: &Connection,
+    kind: PodcastKind,
+) -> Result<Vec<SourceGroup>, rusqlite::Error> {
+    let subscriptions = super::store::active_subscriptions(conn)?;
+    subscriptions
+        .into_iter()
+        .filter(|subscription| subscription.kind == kind)
+        .map(|subscription| {
+            Ok(SourceGroup {
+                subscription_id: subscription.id,
+                title: subscription.title,
+                author: subscription.author,
+                image_url: subscription.image_url,
+                kind: subscription.kind,
+                sync_to_phone: subscription.sync_to_phone,
+                episodes: episodes_for_subscription(conn, subscription.id)?,
+            })
+        })
+        .collect()
+}
+
 pub fn count_unplayed(conn: &Connection) -> Result<usize, rusqlite::Error> {
     conn.query_row(
         "SELECT COUNT(*)
@@ -50,6 +72,27 @@ pub fn count_unplayed(conn: &Connection) -> Result<usize, rusqlite::Error> {
            AND e.removed_at IS NULL
            AND e.played_at IS NULL",
         [],
+        |row| row.get::<_, i64>(0),
+    )
+    .map(|count| count.max(0) as usize)
+}
+
+pub fn count_unplayed_for_kind(
+    conn: &Connection,
+    kind: PodcastKind,
+) -> Result<usize, rusqlite::Error> {
+    conn.query_row(
+        "SELECT COUNT(*)
+         FROM podcast_episodes e
+         JOIN podcast_subscriptions s ON s.id = e.subscription_id
+         WHERE s.removed_at IS NULL
+           AND e.removed_at IS NULL
+           AND e.played_at IS NULL
+           AND s.kind = ?1",
+        [match kind {
+            PodcastKind::Rss => "rss",
+            PodcastKind::Youtube => "youtube",
+        }],
         |row| row.get::<_, i64>(0),
     )
     .map(|count| count.max(0) as usize)
@@ -89,8 +132,6 @@ mod tests {
     use super::*;
     use crate::podcasts::feed::ParsedEpisode;
     use crate::podcasts::store::{self, NewSubscription};
-    use crate::podcasts::PodcastKind;
-
     fn conn() -> Connection {
         crate::db::open_migrated(None).unwrap()
     }
@@ -188,5 +229,62 @@ mod tests {
             .map(|episode| episode.title)
             .collect::<Vec<_>>();
         assert_eq!(titles, ["newer", "older", "undated"]);
+    }
+
+    #[test]
+    fn src_5_groups_episodes_by_source_identity_and_keeps_episode_order() {
+        let conn = conn();
+        let first = add_show(&conn, "https://example.test/first", "Same title");
+        let second = add_show(&conn, "https://example.test/second", "Same title");
+        add_episode(&conn, first, "first-old", Some(10));
+        add_episode(&conn, first, "first-new", Some(20));
+        add_episode(&conn, second, "second", Some(30));
+
+        let groups = list_source_groups(&conn, PodcastKind::Rss).unwrap();
+
+        assert_eq!(groups.len(), 2);
+        assert_ne!(groups[0].subscription_id, groups[1].subscription_id);
+        let first_group = groups
+            .iter()
+            .find(|group| group.subscription_id == first)
+            .unwrap();
+        assert_eq!(
+            first_group
+                .episodes
+                .iter()
+                .map(|episode| episode.title.as_str())
+                .collect::<Vec<_>>(),
+            ["first-new", "first-old"]
+        );
+    }
+
+    #[test]
+    fn src_5_rss_and_youtube_groups_are_separate_library_queries() {
+        let conn = conn();
+        add_show(&conn, "https://example.test/rss", "RSS");
+        store::add_or_restore(
+            &conn,
+            &NewSubscription {
+                kind: PodcastKind::Youtube,
+                feed_url: "https://youtube.test/@channel".into(),
+                title: "YouTube".into(),
+                author: None,
+                image_url: None,
+                auto_download: false,
+            },
+            1,
+        )
+        .unwrap();
+
+        assert_eq!(
+            list_source_groups(&conn, PodcastKind::Rss).unwrap().len(),
+            1
+        );
+        assert_eq!(
+            list_source_groups(&conn, PodcastKind::Youtube)
+                .unwrap()
+                .len(),
+            1
+        );
     }
 }

@@ -38,6 +38,7 @@ pub(in crate::ui) enum ActiveContentTarget {
     Concerts,
     Releases,
     Podcasts,
+    Youtube,
     Radio,
 }
 
@@ -48,6 +49,7 @@ fn active_content_target(content_name: Option<&str>) -> Option<ActiveContentTarg
         Some("concerts") => Some(ActiveContentTarget::Concerts),
         Some("releases") => Some(ActiveContentTarget::Releases),
         Some("podcasts") => Some(ActiveContentTarget::Podcasts),
+        Some("youtube") => Some(ActiveContentTarget::Youtube),
         Some("radio") => Some(ActiveContentTarget::Radio),
         Some("library") => Some(ActiveContentTarget::Tracks),
         _ => None,
@@ -91,6 +93,7 @@ impl ActiveContentFocus {
                 | ActiveContentTarget::Concerts
                 | ActiveContentTarget::Releases
                 | ActiveContentTarget::Podcasts
+                | ActiveContentTarget::Youtube
                 | ActiveContentTarget::Radio,
             ) => content_stack
                 .visible_child()
@@ -140,6 +143,7 @@ fn arm_smoke_detail_view(sidebar: &Rc<Sidebar>) {
         | ViewSource::Concerts
         | ViewSource::Releases
         | ViewSource::Podcasts
+        | ViewSource::Youtube
         | ViewSource::Radio),
     ) = crate::ui::track_list::track_list_smoke::parse_smoke_source(&value)
     else {
@@ -161,6 +165,7 @@ pub(in crate::ui) fn wire_source_routing(
     concerts_view: &Rc<crate::ui::concerts::ConcertsView>,
     releases_view: &Rc<crate::ui::releases::ReleasesView>,
     podcasts_view: &Rc<crate::ui::podcasts::PodcastsView>,
+    youtube_view: &Rc<crate::ui::podcasts::PodcastsView>,
     radio_view: &Rc<crate::ui::radio::RadioView>,
     conn: &Rc<RefCell<Connection>>,
     content_stack: &gtk4::Stack,
@@ -176,6 +181,7 @@ pub(in crate::ui) fn wire_source_routing(
     let concerts_view = concerts_view.clone();
     let releases_view = releases_view.clone();
     let podcasts_view = podcasts_view.clone();
+    let youtube_view = youtube_view.clone();
     let radio_view = radio_view.clone();
     let device_view = device_view.clone();
     let conn = conn.clone();
@@ -222,6 +228,9 @@ pub(in crate::ui) fn wire_source_routing(
         } else if matches!(source, ViewSource::Podcasts) {
             podcasts_view.refresh();
             super::content_stack::show_page(&content_stack, "podcasts");
+        } else if matches!(source, ViewSource::Youtube) {
+            youtube_view.refresh();
+            super::content_stack::show_page(&content_stack, "youtube");
         } else if matches!(source, ViewSource::Radio) {
             radio_view.refresh();
             super::content_stack::show_page(&content_stack, "radio");

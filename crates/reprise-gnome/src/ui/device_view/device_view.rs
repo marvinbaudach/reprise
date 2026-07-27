@@ -144,7 +144,7 @@ impl DeviceViewPage {
         } else {
             "suggested-action"
         });
-        sync.set_sensitive(syncing || device.delta.as_ref().is_some_and(has_delta));
+        sync.set_sensitive(syncing || device.has_pending_sync());
         let id = device.id.clone();
         sync.set_action_name(Some("app.sync-device"));
         sync.set_action_target_value(Some(&id.to_variant()));
@@ -387,10 +387,6 @@ fn is_syncing(phase: &PlannedSyncPhase) -> bool {
     )
 }
 
-fn has_delta(delta: &reprise_core::device_sync::SyncDelta) -> bool {
-    !delta.to_copy.is_empty() || !delta.to_remove.is_empty()
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct StorageSummary {
     music: u64,
@@ -522,27 +518,22 @@ fn phase_copy(device: &DeviceView) -> (String, String, f64) {
         // to Sync settings instead of the misleading "Everything in sync ✓" —
         // an empty selection produces an empty delta, which is not the same as
         // "already up to date". Keyed on the selection itself, not the delta.
-        PlannedSyncPhase::Idle
-            if matches!(
-                &device.settings.selection,
-                reprise_core::device_sync::DeviceSelection::Sources(sources) if sources.is_empty()
-            ) =>
-        {
-            (
-                "Nothing selected to sync yet".into(),
-                "Open Sync settings to choose playlists or the entire library.".into(),
-                0.0,
-            )
-        }
+        PlannedSyncPhase::Idle if !device.has_sync_selection() => (
+            "Nothing selected to sync yet".into(),
+            "Open Sync settings to choose playlists or the entire library.".into(),
+            0.0,
+        ),
         PlannedSyncPhase::Idle => device.delta.as_ref().map_or_else(
             || ("Ready to synchronize".into(), String::new(), 0.0),
             |delta| {
-                if has_delta(delta) {
+                if device.has_pending_sync() {
                     (
                         format!(
-                            "Next sync: +{} tracks · −{} removed",
+                            "Music +{} · −{} · Podcasts +{} · −{}",
                             delta.to_copy.len(),
-                            delta.to_remove.len()
+                            delta.to_remove.len(),
+                            device.podcast_sync.to_copy,
+                            device.podcast_sync.to_remove
                         ),
                         format!(
                             "{} will be copied · about {} s via USB",

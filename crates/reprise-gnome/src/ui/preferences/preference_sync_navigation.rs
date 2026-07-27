@@ -88,6 +88,7 @@ mod tests {
             last_sync: None,
             tracks: Vec::new(),
             selected_track_count: 0,
+            podcast_sync: crate::ui::device_sync_runtime::PodcastSyncSummary::default(),
             bytes_per_second: 0,
         }
     }

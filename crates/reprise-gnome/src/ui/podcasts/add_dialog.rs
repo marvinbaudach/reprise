@@ -12,6 +12,11 @@ use rusqlite::Connection;
 use crate::ui::one_shot_task;
 use crate::ui::strings;
 
+use super::search_results::{
+    active_source_keys, filter_unsubscribed, preferred_provider_order, source_is_subscribed,
+    Candidate,
+};
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum AddInput {
     Empty,
@@ -43,16 +48,6 @@ pub(super) fn classify_input(input: &str) -> AddInput {
 }
 
 #[derive(Clone)]
-struct Candidate {
-    kind: PodcastKind,
-    title: String,
-    subtitle: String,
-    author: Option<String>,
-    image_url: Option<String>,
-    url: String,
-}
-
-#[derive(Clone)]
 struct Preview {
     kind: PodcastKind,
     title: String,
@@ -64,6 +59,15 @@ struct Preview {
 }
 
 type OnAdded = Rc<dyn Fn(bool)>;
+
+struct SearchContext<'a> {
+    generation: &'a Rc<Cell<u64>>,
+    status: &'a gtk4::Label,
+    results: &'a gtk4::Box,
+    conn: &'a Rc<RefCell<Connection>>,
+    on_added: &'a OnAdded,
+    preferred_kind: PodcastKind,
+}
 
 struct AddDialogSurface {
     dialog: adw::Dialog,
@@ -149,6 +153,7 @@ fn build_surface() -> AddDialogSurface {
 pub(super) fn present(
     parent: &impl IsA<gtk4::Widget>,
     conn: &Rc<RefCell<Connection>>,
+    preferred_kind: PodcastKind,
     on_added: impl Fn(bool) + 'static,
 ) {
     let conn = conn.clone();
@@ -178,11 +183,14 @@ pub(super) fn present(
                     search(
                         next,
                         terms,
-                        &generation,
-                        &status,
-                        &results,
-                        &conn,
-                        &on_added,
+                        &SearchContext {
+                            generation: &generation,
+                            status: &status,
+                            results: &results,
+                            conn: &conn,
+                            on_added: &on_added,
+                            preferred_kind,
+                        },
                     );
                 }
                 AddInput::FeedUrl(url) => {
@@ -233,21 +241,21 @@ pub(super) fn present(
     entry.grab_focus();
 }
 
-fn search(
-    request_generation: u64,
-    terms: String,
-    generation: &Rc<Cell<u64>>,
-    status: &gtk4::Label,
-    results: &gtk4::Box,
-    conn: &Rc<RefCell<Connection>>,
-    on_added: &OnAdded,
-) {
-    let config = podcasts::config::load(&conn.borrow()).ok();
+fn search(request_generation: u64, terms: String, context: &SearchContext<'_>) {
+    let config = podcasts::config::load(&context.conn.borrow()).ok();
     let auto_download_default = configured_auto_download_default(config.as_ref());
     let locale = std::env::var("LC_ALL")
         .or_else(|_| std::env::var("LANG"))
         .unwrap_or_else(|_| "C".into());
     let apple_terms = terms.clone();
+    let apple_results = result_section();
+    let youtube_results = result_section();
+    for kind in preferred_provider_order(context.preferred_kind) {
+        context.results.append(match kind {
+            PodcastKind::Rss => &apple_results,
+            PodcastKind::Youtube => &youtube_results,
+        });
+    }
     let apple = one_shot_task::spawn("reprise-podcast-search", move || {
         podcasts::itunes::search(&apple_terms, &locale)
             .map(|rows| {
@@ -257,8 +265,9 @@ fn search(
                         title: row.title,
                         subtitle: row.author.clone().unwrap_or_default(),
                         author: row.author,
-                        image_url: None,
+                        image_url: row.image_url,
                         url: row.feed_url,
+                        identity_guids: Vec::new(),
                     })
                     .collect::<Vec<_>>()
             })
@@ -267,11 +276,11 @@ fn search(
     attach_candidates(
         apple,
         request_generation,
-        generation,
-        status,
-        results,
-        conn,
-        on_added,
+        context.generation,
+        context.status,
+        &apple_results,
+        context.conn,
+        context.on_added,
         strings::PODCAST_APPLE_RESULTS,
         auto_download_default,
     );
@@ -280,17 +289,19 @@ fn search(
         let ytdlp_path = config.and_then(|value| value.ytdlp_path);
         let youtube = one_shot_task::spawn("reprise-youtube-search", move || {
             podcasts::ytdlp::YtDlp::discover(ytdlp_path.as_deref())
-                .search(&terms)
+                .search_channels(&terms)
                 .map(|rows| {
-                    rows.entries
-                        .into_iter()
+                    rows.into_iter()
                         .map(|row| Candidate {
                             kind: PodcastKind::Youtube,
                             title: row.title,
-                            subtitle: strings::text(strings::PODCAST_YOUTUBE_FOOTNOTE),
+                            subtitle: strings::podcast_youtube_channel_matches(
+                                row.matching_video_count,
+                            ),
                             author: None,
-                            image_url: None,
-                            url: format!("https://www.youtube.com/watch?v={}", row.id),
+                            image_url: row.image_url,
+                            url: row.url,
+                            identity_guids: row.matching_video_ids,
                         })
                         .collect::<Vec<_>>()
                 })
@@ -299,15 +310,21 @@ fn search(
         attach_candidates(
             youtube,
             request_generation,
-            generation,
-            status,
-            results,
-            conn,
-            on_added,
+            context.generation,
+            context.status,
+            &youtube_results,
+            context.conn,
+            context.on_added,
             strings::PODCAST_YOUTUBE_RESULTS,
             auto_download_default,
         );
     }
+}
+
+fn result_section() -> gtk4::Box {
+    let section = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
+    section.add_css_class("reprise-podcast-result-section");
+    section
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -338,6 +355,11 @@ fn attach_candidates(
         match response.and_then(|value| value) {
             Ok(rows) => {
                 status.set_text("");
+                let subscribed = active_source_keys(&conn.borrow());
+                let rows = filter_unsubscribed(rows, &subscribed);
+                if rows.is_empty() {
+                    return;
+                }
                 append_heading(&results, heading);
                 for candidate in rows {
                     append_candidate(&results, candidate, &conn, &on_added, auto_download_default);
@@ -407,9 +429,9 @@ fn preview(
                         kind,
                         title: listing.title.unwrap_or_else(|| task_url.clone()),
                         author: None,
-                        image_url: None,
+                        image_url: listing.image_url,
                         count,
-                        url: task_url,
+                        url: listing.source_url.unwrap_or(task_url),
                         guids,
                     })
                 }
@@ -431,6 +453,11 @@ fn preview(
         }
         match response.and_then(|value| value) {
             Ok(preview) => {
+                let subscribed = active_source_keys(&conn.borrow());
+                if source_is_subscribed(preview.kind, &preview.url, &preview.guids, &subscribed) {
+                    status.set_text(&strings::text(strings::PODCAST_ALREADY_SUBSCRIBED));
+                    return;
+                }
                 status.set_text("");
                 append_preview(
                     &results,
@@ -461,7 +488,12 @@ fn append_candidate(
     on_added: &OnAdded,
     auto_download_default: bool,
 ) {
-    let row = candidate_row(&candidate.title, &candidate.subtitle, candidate.kind);
+    let row = candidate_row(
+        &candidate.title,
+        &candidate.subtitle,
+        candidate.kind,
+        candidate.image_url.as_deref(),
+    );
     let button = gtk4::Button::with_label(&strings::text(strings::PODCAST_SUBSCRIBE));
     button.add_css_class("suggested-action");
     let conn = conn.clone();
@@ -490,7 +522,12 @@ fn append_preview(
 ) {
     clear(parent);
     let subtitle = strings::podcast_episode_count(preview.count);
-    let row = candidate_row(&preview.title, &subtitle, preview.kind);
+    let row = candidate_row(
+        &preview.title,
+        &subtitle,
+        preview.kind,
+        preview.image_url.as_deref(),
+    );
     parent.append(&row);
     let import = gtk4::CheckButton::with_label(&strings::podcast_import_latest_count(import_count));
     import.set_active(true);
@@ -508,6 +545,7 @@ fn append_preview(
         author: preview.author,
         image_url: preview.image_url,
         url: preview.url,
+        identity_guids: preview.guids.clone(),
     };
     let conn = conn.clone();
     let on_added = on_added.clone();
@@ -531,15 +569,23 @@ fn append_preview(
     parent.append(&subscribe_button);
 }
 
-fn candidate_row(title: &str, subtitle: &str, kind: PodcastKind) -> gtk4::Box {
+fn candidate_row(
+    title: &str,
+    subtitle: &str,
+    kind: PodcastKind,
+    image_url: Option<&str>,
+) -> gtk4::Box {
     let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
     row.add_css_class("reprise-podcast-result");
-    let icon = gtk4::Image::from_icon_name(match kind {
-        PodcastKind::Rss => "audio-input-microphone-symbolic",
-        PodcastKind::Youtube => "video-x-generic-symbolic",
-    });
-    icon.add_css_class("reprise-podcast-glyph-tile");
-    row.append(&icon);
+    let image = super::source_image::SourceImage::new(
+        image_url,
+        match kind {
+            PodcastKind::Rss => "audio-input-microphone-symbolic",
+            PodcastKind::Youtube => "video-x-generic-symbolic",
+        },
+        40,
+    );
+    row.append(image.widget());
     let labels = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
     labels.set_hexpand(true);
     let title = gtk4::Label::new(Some(title));
@@ -627,6 +673,21 @@ mod tests {
         surface.entry.set_text("https://example.test/feed.xml");
         assert_eq!(surface.primary.label().as_deref(), Some(preview.as_str()));
         assert!(surface.primary.is_sensitive());
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn src_5_result_rows_use_the_source_artwork_surface() {
+        gtk4::init().unwrap();
+        let row = candidate_row("Show", "Publisher", PodcastKind::Rss, None);
+        let image = row
+            .first_child()
+            .and_downcast::<gtk4::Stack>()
+            .expect("source image stack");
+
+        assert!(image.has_css_class("reprise-source-image"));
+        assert_eq!(image.width_request(), 40);
+        assert_eq!(image.height_request(), 40);
     }
 
     #[test]

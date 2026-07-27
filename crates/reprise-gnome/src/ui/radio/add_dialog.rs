@@ -424,6 +424,18 @@ impl RadioAddDialog {
     }
 
     fn render_results(self: &Rc<Self>, rows: Vec<StationCandidate>) {
+        let favorites = radio::station::list(&self.conn.borrow()).map_or_else(
+            |error| {
+                tracing::warn!(%error, "could not load radio favorites for search filtering");
+                Vec::new()
+            },
+            |rows| {
+                rows.into_iter()
+                    .map(|row| (row.uuid.unwrap_or_default(), row.stream_url))
+                    .collect()
+            },
+        );
+        let rows = filter_new_stations(rows, &favorites);
         self.widgets.status.remove_css_class("error");
         self.widgets.status.set_text(&format!(
             "{} · {}",
@@ -434,8 +446,11 @@ impl RadioAddDialog {
         for candidate in rows {
             let row = gtk4::ListBoxRow::new();
             let content = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
-            let tile = gtk4::Image::from_icon_name("network-wireless-symbolic");
-            tile.set_pixel_size(40);
+            let tile = crate::ui::podcasts::source_image::SourceImage::new(
+                candidate.favicon_url.as_deref(),
+                "network-wireless-symbolic",
+                40,
+            );
             let copy = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
             copy.set_hexpand(true);
             let title = gtk4::Label::new(Some(&candidate.name));
@@ -464,7 +479,7 @@ impl RadioAddDialog {
                     }
                 }
             });
-            content.append(&tile);
+            content.append(tile.widget());
             content.append(&copy);
             content.append(&add);
             row.set_child(Some(&content));
@@ -476,18 +491,40 @@ impl RadioAddDialog {
         while let Some(child) = self.widgets.preview.first_child() {
             self.widgets.preview.remove(&child);
         }
+        let favorites = radio::station::list(&self.conn.borrow()).map_or_else(
+            |error| {
+                tracing::warn!(%error, "could not load radio favorites for preview filtering");
+                Vec::new()
+            },
+            |rows| {
+                rows.into_iter()
+                    .map(|row| (row.uuid.unwrap_or_default(), row.stream_url))
+                    .collect()
+            },
+        );
+        if preview_is_favorite(preview, &favorites) {
+            self.widgets
+                .status
+                .set_text(&strings::text(strings::RADIO_ALREADY_FAVORITE));
+            self.widgets.status.set_visible(true);
+            self.widgets.confirm.set_sensitive(false);
+            return;
+        }
         let kind = gtk4::Label::new(Some(&strings::text(if preview.playlist_kind.is_some() {
             strings::RADIO_PLAYLIST_DETECTED
         } else {
             strings::RADIO_STREAM_DETECTED
         })));
         kind.set_xalign(0.0);
-        let tile = gtk4::Image::from_icon_name("network-wireless-symbolic");
-        tile.set_pixel_size(40);
+        let tile = crate::ui::podcasts::source_image::SourceImage::new(
+            preview.favicon_url.as_deref(),
+            "network-wireless-symbolic",
+            40,
+        );
         let name = gtk4::Label::new(Some(&preview.name));
         name.set_xalign(0.0);
         let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
-        row.append(&tile);
+        row.append(tile.widget());
         row.append(&name);
         self.widgets.preview.append(&kind);
         self.widgets.preview.append(&row);
@@ -518,6 +555,37 @@ impl RadioAddDialog {
             }
         }
     }
+}
+
+fn filter_new_stations(
+    candidates: Vec<StationCandidate>,
+    favorites: &[(String, String)],
+) -> Vec<StationCandidate> {
+    candidates
+        .into_iter()
+        .filter(|candidate| {
+            let stream_url = normalized_stream_url(&candidate.url_resolved);
+            !favorites.iter().any(|(uuid, url)| {
+                (!uuid.is_empty() && uuid == &candidate.uuid)
+                    || normalized_stream_url(url) == stream_url
+            })
+        })
+        .collect()
+}
+
+fn preview_is_favorite(preview: &StationPreview, favorites: &[(String, String)]) -> bool {
+    let stream_url = normalized_stream_url(&preview.stream_url);
+    favorites.iter().any(|(uuid, url)| {
+        preview
+            .uuid
+            .as_deref()
+            .is_some_and(|candidate| !uuid.is_empty() && uuid == candidate)
+            || normalized_stream_url(url) == stream_url
+    })
+}
+
+fn normalized_stream_url(value: &str) -> String {
+    value.trim().trim_end_matches('/').to_owned()
 }
 
 fn station_from_candidate(candidate: StationCandidate) -> radio::station::NewStation {
@@ -605,6 +673,53 @@ mod tests {
         let accepted = state.accept(second, AddResult::Preview(preview));
         assert!(matches!(accepted.phase, AddDialogPhase::Preview(_)));
         assert!(accepted.can_confirm());
+    }
+
+    #[test]
+    fn src_5_radio_search_hides_existing_favorites() {
+        let candidates = vec![
+            StationCandidate {
+                uuid: "existing".into(),
+                name: "Existing".into(),
+                url_resolved: "https://radio.test/existing/".into(),
+                codec: None,
+                bitrate_kbps: None,
+                country_code: None,
+                genre: None,
+                tags: Vec::new(),
+                votes: 1,
+                favicon_url: Some("https://radio.test/existing.png".into()),
+            },
+            StationCandidate {
+                uuid: "new".into(),
+                name: "New".into(),
+                url_resolved: "https://radio.test/new".into(),
+                codec: None,
+                bitrate_kbps: None,
+                country_code: None,
+                genre: None,
+                tags: Vec::new(),
+                votes: 2,
+                favicon_url: Some("https://radio.test/new.png".into()),
+            },
+        ];
+
+        let visible = filter_new_stations(
+            candidates,
+            &[("existing".into(), "https://radio.test/existing".into())],
+        );
+
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].uuid, "new");
+    }
+
+    #[test]
+    fn src_5_radio_url_preview_hides_an_existing_favorite() {
+        let preview = StationPreview::manual("Existing", "https://radio.test/live/");
+        assert!(preview_is_favorite(
+            &preview,
+            &[("".into(), "https://radio.test/live".into())]
+        ));
     }
 
     #[test]

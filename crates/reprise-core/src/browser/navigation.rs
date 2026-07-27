@@ -24,6 +24,7 @@ pub enum SidebarTarget {
     Releases,
     Concerts,
     Podcasts,
+    Youtube,
     Radio,
     Conversions,
     Device(String),
@@ -211,6 +212,7 @@ impl BrowserNavigation {
             SidebarTarget::Releases => BrowserPlace::Releases,
             SidebarTarget::Concerts => BrowserPlace::Concerts,
             SidebarTarget::Podcasts => BrowserPlace::Podcasts,
+            SidebarTarget::Youtube => BrowserPlace::Youtube,
             SidebarTarget::Radio => BrowserPlace::Radio,
             SidebarTarget::Conversions => BrowserPlace::Conversions,
             SidebarTarget::Device(serial) if !serial.trim().is_empty() => BrowserPlace::Device {

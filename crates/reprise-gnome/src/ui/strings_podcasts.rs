@@ -9,6 +9,7 @@ macro_rules! N_ {
 use super::{formatted, plural};
 
 pub const PODCASTS: &str = N_!("Podcasts");
+pub const YOUTUBE: &str = N_!("YouTube");
 pub const PODCASTS_DESCRIPTION: &str =
     N_!("Contacts publishers and Apple Podcasts for feeds and search; YouTube sources use yt-dlp");
 pub const PODCAST_DATE: &str = N_!("Date");
@@ -25,13 +26,19 @@ pub const PODCAST_STATUS_PLAYED: &str = N_!("Played");
 pub const PODCAST_TODAY: &str = N_!("Today");
 pub const PODCAST_YESTERDAY: &str = N_!("Yesterday");
 pub const PODCAST_ADD: &str = N_!("Add podcast");
+pub const YOUTUBE_ADD: &str = N_!("Add YouTube channel");
 pub const PODCAST_ADD_FILTER: &str = N_!("Add filter");
 pub const PODCAST_FILTER_UNPLAYED: &str = N_!("Unplayed");
 pub const PODCAST_FILTER_SHOW: &str = N_!("Show");
 pub const PODCAST_FILTER_SOURCE: &str = N_!("Source");
 pub const PODCAST_CLEAR_ALL: &str = N_!("Clear all");
+pub const PODCAST_GROUP_FACTS: &str =
+    N_!("{episodes} · {unplayed} new · latest {latest} · {downloaded}");
 pub const PODCAST_NO_PODCASTS: &str = N_!("No podcasts yet");
 pub const PODCAST_NO_PODCASTS_DESCRIPTION: &str = N_!("Add a show to receive its latest episodes.");
+pub const YOUTUBE_NO_CHANNELS: &str = N_!("No YouTube channels yet");
+pub const YOUTUBE_NO_CHANNELS_DESCRIPTION: &str =
+    N_!("Subscribe to a channel to receive its latest videos.");
 pub const PODCAST_NO_EPISODES: &str = N_!("No episodes yet");
 pub const PODCAST_NO_EPISODES_DESCRIPTION: &str =
     N_!("Refresh subscriptions to check for new episodes.");
@@ -57,6 +64,7 @@ pub const PODCAST_YOUTUBE_FOOTNOTE: &str =
 pub const PODCAST_PREVIEW_FAILED: &str = N_!("Could not preview this podcast");
 pub const PODCAST_SEARCH_FAILED: &str = N_!("Could not search for podcasts");
 pub const PODCAST_SUBSCRIBE_FAILED: &str = N_!("Could not subscribe to this podcast");
+pub const PODCAST_ALREADY_SUBSCRIBED: &str = N_!("This source is already subscribed");
 pub const PODCAST_YTDLP_MISSING: &str =
     N_!("yt-dlp is not installed — YouTube sources are disabled");
 pub const PODCAST_YTDLP_BLOCKED: &str =
@@ -68,8 +76,17 @@ pub const PODCAST_MARK_PLAYED: &str = N_!("Mark as played");
 pub const PODCAST_MARK_UNPLAYED: &str = N_!("Mark as unplayed");
 pub const PODCAST_DOWNLOAD: &str = N_!("Download episode");
 pub const PODCAST_DELETE_DOWNLOAD: &str = N_!("Delete download");
+pub const PODCAST_NOT_DOWNLOADED: &str = N_!("Not downloaded");
+pub const PODCAST_DOWNLOAD_QUEUED: &str = N_!("Queued");
+pub const PODCAST_DOWNLOADING: &str = N_!("Downloading");
+pub const PODCAST_DOWNLOAD_MISSING: &str = N_!("File missing");
+pub const PODCAST_DOWNLOAD_FAILED: &str = N_!("Download failed");
 pub const PODCAST_REMOVE_EPISODE: &str = N_!("Remove episode");
+pub const PODCAST_MORE_OPTIONS: &str = N_!("More episode options");
+pub const PODCAST_MORE_SOURCE_OPTIONS: &str = N_!("More source options");
 pub const PODCAST_UNSUBSCRIBE: &str = N_!("Unsubscribe");
+pub const PODCAST_SYNC_PHONE: &str = N_!("Sync downloaded episodes to phone");
+pub const PODCAST_STOP_SYNC_PHONE: &str = N_!("Stop syncing episodes to phone");
 pub const PODCAST_UNDO: &str = N_!("Undo");
 pub const PODCAST_DELETE_FILES: &str = N_!("Delete files");
 pub const PODCAST_PLAY_NEXT_EPISODE: &str = N_!("Play next episode");
@@ -94,6 +111,24 @@ pub fn podcast_episode_count(count: usize) -> String {
         "{count} episodes",
         count,
         &[("count", &count_text)],
+    )
+}
+
+pub fn podcast_group_facts(
+    episodes: &str,
+    unplayed: usize,
+    latest: &str,
+    downloaded: &str,
+) -> String {
+    let unplayed = unplayed.to_string();
+    formatted(
+        PODCAST_GROUP_FACTS,
+        &[
+            ("episodes", episodes),
+            ("unplayed", &unplayed),
+            ("latest", latest),
+            ("downloaded", downloaded),
+        ],
     )
 }
 
@@ -150,6 +185,16 @@ pub fn podcast_import_latest_count(count: usize) -> String {
     )
 }
 
+pub fn podcast_youtube_channel_matches(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} matching video · audio only",
+        "{count} matching videos · audio only",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
 pub fn podcast_updated_minutes_ago(minutes: i64) -> String {
     formatted(
         N_!("Updated {minutes} min ago"),
@@ -171,5 +216,13 @@ mod tests {
     fn unsubscribe_download_summary_distinguishes_one_and_many_shows() {
         assert_eq!(podcast_downloads_kept(1, 2), "2 downloads kept");
         assert_eq!(podcast_downloads_kept(3, 12), "3 shows — 12 downloads kept");
+    }
+
+    #[test]
+    fn youtube_search_count_describes_channel_matches() {
+        assert_eq!(
+            podcast_youtube_channel_matches(2),
+            "2 matching videos · audio only"
+        );
     }
 }

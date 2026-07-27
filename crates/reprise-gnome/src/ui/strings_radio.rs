@@ -39,6 +39,7 @@ pub const RADIO_PLAYLIST_DETECTED: &str = N_!("Playlist file detected");
 pub const RADIO_PREVIEW_FAILED: &str = N_!("Could not preview this station");
 pub const RADIO_SEARCH_FAILED: &str = N_!("Could not search for stations");
 pub const RADIO_ADD_FAILED: &str = N_!("Could not add this station");
+pub const RADIO_ALREADY_FAVORITE: &str = N_!("This station is already in Radio");
 pub const RADIO_PLAY: &str = N_!("Play");
 pub const RADIO_STOP: &str = N_!("Stop");
 pub const RADIO_COPY_URL: &str = N_!("Copy stream URL");

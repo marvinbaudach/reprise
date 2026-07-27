@@ -161,6 +161,7 @@ fn default_sort_for_source(source: &ViewSource) -> Option<SortState> {
         | ViewSource::Releases
         | ViewSource::Concerts
         | ViewSource::Podcasts
+        | ViewSource::Youtube
         | ViewSource::Radio
         | ViewSource::Conversions => None,
     }

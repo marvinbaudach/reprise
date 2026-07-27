@@ -77,7 +77,6 @@ fn settle_until_active(window: &gtk4::Window) {
         gtk4::glib::MainContext::default().iteration(true);
     }
 }
-
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn queue_row_installs_a_drop_target_but_library_row_does_not() {
@@ -96,7 +95,6 @@ fn queue_row_installs_a_drop_target_but_library_row_does_not() {
         "the Library nav row must not accept drops"
     );
 }
-
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn handle_queue_drop_dispatches_ids_to_the_wired_callback() {
@@ -114,13 +112,11 @@ fn handle_queue_drop_dispatches_ids_to_the_wired_callback() {
     assert!(crate::ui::sidebar_dnd::handle_queue_drop(&shared, &[7, 9]));
     assert_eq!(*seen.borrow(), vec![7, 9]);
 }
-
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn handle_queue_drop_is_a_noop_without_ids_or_callback() {
     gtk4::init().unwrap();
     let shared = test_shared();
-
     // No callback wired at all: report failure, don't panic.
     assert!(!crate::ui::sidebar_dnd::handle_queue_drop(&shared, &[7]));
 
@@ -726,8 +722,8 @@ fn src_1_podcast_and_radio_rows_are_gated_ordered_and_live_counted() {
 
     rebuild(&shared, None, "source defaults");
     assert!(find_row(&shared, &ViewSource::Podcasts).is_none());
+    assert!(find_row(&shared, &ViewSource::Youtube).is_none());
     assert!(find_row(&shared, &ViewSource::Radio).is_some());
-
     {
         let conn = shared.conn.borrow();
         reprise_core::modules::set_enabled(&conn, &reprise_core::modules::PODCASTS_MODULE, true)
@@ -746,6 +742,15 @@ fn src_1_podcast_and_radio_rows_are_gated_ordered_and_live_counted() {
             [],
         )
         .unwrap();
+        conn.execute_batch(
+            "INSERT INTO podcast_subscriptions
+               (kind, feed_url, title, auto_download, added_at)
+             VALUES ('youtube', 'https://youtube.test/@channel', 'Channel', 0, 1);
+             INSERT INTO podcast_episodes
+               (subscription_id, guid, title, audio_url, position_ms, first_seen_at)
+             VALUES (2, 'video', 'Video', 'https://youtube.test/watch?v=video', 0, 1);",
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO radio_stations (name, stream_url, added_at)
              VALUES ('Station', 'https://example.test/live', 1)",
@@ -753,7 +758,6 @@ fn src_1_podcast_and_radio_rows_are_gated_ordered_and_live_counted() {
         )
         .unwrap();
     }
-
     rebuild(&shared, None, "source data changed");
     let rows = shared.rows.borrow();
     let music = rows
@@ -764,6 +768,10 @@ fn src_1_podcast_and_radio_rows_are_gated_ordered_and_live_counted() {
         .iter()
         .position(|(_, source, _)| matches!(source, ViewSource::Podcasts))
         .unwrap();
+    let youtube = rows
+        .iter()
+        .position(|(_, source, _)| matches!(source, ViewSource::Youtube))
+        .unwrap();
     let radio = rows
         .iter()
         .position(|(_, source, _)| matches!(source, ViewSource::Radio))
@@ -772,9 +780,13 @@ fn src_1_podcast_and_radio_rows_are_gated_ordered_and_live_counted() {
         .iter()
         .position(|(_, source, _)| matches!(source, ViewSource::Queue))
         .unwrap();
-    assert!(music < podcasts && podcasts < radio && radio < queue);
+    assert!(music < podcasts && podcasts < youtube && youtube < radio && radio < queue);
     assert_eq!(
         numeric_badge_text(rows[podcasts].0.upcast_ref()),
+        Some("1".to_string())
+    );
+    assert_eq!(
+        numeric_badge_text(rows[youtube].0.upcast_ref()),
         Some("1".to_string())
     );
     assert_eq!(

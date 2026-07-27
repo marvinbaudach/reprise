@@ -22,6 +22,13 @@ pub struct SyncDelta {
     pub est_secs: u32,
 }
 
+impl SyncDelta {
+    pub fn add_transfer_bytes(&mut self, bytes: u64) {
+        self.bytes = self.bytes.saturating_add(bytes);
+        self.est_secs = estimated_seconds(self.bytes);
+    }
+}
+
 pub fn compute_delta(
     selected: &[SyncCandidate],
     files: &[DeviceFileRecord],
@@ -63,17 +70,21 @@ pub fn compute_delta(
     } else {
         Vec::new()
     };
-    let est_secs = if bytes == 0 {
-        0
-    } else {
-        bytes
-            .div_ceil(ESTIMATED_USB_BYTES_PER_SECOND)
-            .min(u64::from(u32::MAX)) as u32
-    };
+    let est_secs = estimated_seconds(bytes);
     SyncDelta {
         to_copy,
         to_remove,
         bytes,
         est_secs,
+    }
+}
+
+fn estimated_seconds(bytes: u64) -> u32 {
+    if bytes == 0 {
+        0
+    } else {
+        bytes
+            .div_ceil(ESTIMATED_USB_BYTES_PER_SECOND)
+            .min(u64::from(u32::MAX)) as u32
     }
 }

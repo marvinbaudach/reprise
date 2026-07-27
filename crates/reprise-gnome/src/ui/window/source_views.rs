@@ -10,6 +10,7 @@ use super::sidebar::Sidebar;
 
 pub(in crate::ui) struct SourceViews {
     pub(in crate::ui) podcasts: Rc<crate::ui::podcasts::PodcastsView>,
+    pub(in crate::ui) youtube: Rc<crate::ui::podcasts::PodcastsView>,
     pub(in crate::ui) radio: Rc<crate::ui::radio::RadioView>,
 }
 
@@ -20,43 +21,52 @@ pub(in crate::ui) fn install(
     sidebar: &Rc<Sidebar>,
     content_stack: &gtk4::Stack,
 ) -> SourceViews {
+    let callbacks = crate::ui::podcasts::PodcastsCallbacks::new(
+        {
+            let player = player.map(Rc::downgrade);
+            move |episode| {
+                if let Some(player) = player.as_ref().and_then(std::rc::Weak::upgrade) {
+                    player.play_podcast_episode(&episode);
+                } else {
+                    tracing::warn!(
+                        episode_id = episode.id,
+                        "podcast playback unavailable: player backend is not running"
+                    );
+                }
+            }
+        },
+        {
+            let player = player.map(Rc::downgrade);
+            move |subscription_id| {
+                if let Some(player) = player.as_ref().and_then(std::rc::Weak::upgrade) {
+                    player.stop_podcast_subscription(subscription_id);
+                }
+            }
+        },
+        {
+            let sidebar = Rc::downgrade(sidebar);
+            move || {
+                if let Some(sidebar) = sidebar.upgrade() {
+                    sidebar.refresh("podcasts changed");
+                }
+            }
+        },
+    );
     let podcasts = crate::ui::podcasts::install(
         conn.clone(),
         podcasts_runtime.clone(),
-        crate::ui::podcasts::PodcastsCallbacks::new(
-            {
-                let player = player.map(Rc::downgrade);
-                move |episode| {
-                    if let Some(player) = player.as_ref().and_then(std::rc::Weak::upgrade) {
-                        player.play_podcast_episode(&episode);
-                    } else {
-                        tracing::warn!(
-                            episode_id = episode.id,
-                            "podcast playback unavailable: player backend is not running"
-                        );
-                    }
-                }
-            },
-            {
-                let player = player.map(Rc::downgrade);
-                move |subscription_id| {
-                    if let Some(player) = player.as_ref().and_then(std::rc::Weak::upgrade) {
-                        player.stop_podcast_subscription(subscription_id);
-                    }
-                }
-            },
-            {
-                let sidebar = Rc::downgrade(sidebar);
-                move || {
-                    if let Some(sidebar) = sidebar.upgrade() {
-                        sidebar.refresh("podcasts changed");
-                    }
-                }
-            },
-        ),
+        callbacks.clone(),
+        reprise_core::podcasts::PodcastKind::Rss,
+    );
+    let youtube = crate::ui::podcasts::install(
+        conn.clone(),
+        podcasts_runtime.clone(),
+        callbacks,
+        reprise_core::podcasts::PodcastKind::Youtube,
     );
     let radio = Rc::new(crate::ui::radio::install(conn.clone(), player));
     content_stack.add_named(podcasts.root(), Some("podcasts"));
+    content_stack.add_named(youtube.root(), Some("youtube"));
     content_stack.add_named(radio.root(), Some("radio"));
 
     {
@@ -69,6 +79,7 @@ pub(in crate::ui) fn install(
     }
     if let Some(player) = player {
         let podcasts = Rc::downgrade(&podcasts);
+        let youtube = Rc::downgrade(&youtube);
         player.add_on_external_changed(move |snapshot| {
             let episode_id = snapshot.and_then(|snapshot| match snapshot.media {
                 crate::ui::playback::external_media::ExternalMedia::Podcast {
@@ -79,10 +90,17 @@ pub(in crate::ui) fn install(
             if let Some(view) = podcasts.upgrade() {
                 view.set_playing_episode(episode_id);
             }
+            if let Some(view) = youtube.upgrade() {
+                view.set_playing_episode(episode_id);
+            }
         });
     }
 
-    SourceViews { podcasts, radio }
+    SourceViews {
+        podcasts,
+        youtube,
+        radio,
+    }
 }
 
 pub(in crate::ui) fn wire_update_sidebar_refresh(

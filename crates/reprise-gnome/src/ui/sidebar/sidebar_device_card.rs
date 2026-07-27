@@ -266,14 +266,11 @@ impl DeviceCard {
         self.indicator
             .set_visible_child_name(if syncing { "syncing" } else { "device" });
 
-        let has_selection = matches!(
-            &device.settings.selection,
-            reprise_core::device_sync::DeviceSelection::EntireLibrary
-        ) || matches!(
-            &device.settings.selection,
-            reprise_core::device_sync::DeviceSelection::Sources(sources) if !sources.is_empty()
-        );
-        match detail_mode(&device.sync_phase, device.delta.as_ref(), has_selection) {
+        match detail_mode(
+            &device.sync_phase,
+            device.has_pending_sync(),
+            device.has_sync_selection(),
+        ) {
             DetailMode::Delta => {
                 self.delta_detail.set_text(&card_subtitle(device));
                 self.detail_stack.set_visible_child_name("delta");
@@ -383,22 +380,12 @@ enum DetailMode {
     Synced,
 }
 
-fn detail_mode(
-    phase: &PlannedSyncPhase,
-    delta: Option<&reprise_core::device_sync::SyncDelta>,
-    has_selection: bool,
-) -> DetailMode {
+fn detail_mode(phase: &PlannedSyncPhase, has_delta: bool, has_selection: bool) -> DetailMode {
     match phase {
         PlannedSyncPhase::Syncing { .. } | PlannedSyncPhase::Finishing => DetailMode::Progress,
-        PlannedSyncPhase::Idle if has_selection && delta.is_some_and(|delta| !has_delta(delta)) => {
-            DetailMode::Synced
-        }
+        PlannedSyncPhase::Idle if has_selection && !has_delta => DetailMode::Synced,
         PlannedSyncPhase::Idle | PlannedSyncPhase::ComputingDelta => DetailMode::Delta,
     }
-}
-
-fn has_delta(delta: &reprise_core::device_sync::SyncDelta) -> bool {
-    !delta.to_copy.is_empty() || !delta.to_remove.is_empty()
 }
 
 fn sync_fraction(bytes_done: u64, bytes_total: u64) -> f64 {
@@ -457,9 +444,10 @@ fn card_subtitle(device: &DeviceView) -> String {
         } => device_sync_strings::sync_activity(step_glyph(step), current_track),
         PlannedSyncPhase::Finishing => "Finishing…".into(),
         PlannedSyncPhase::Idle => {
-            let queued = device.delta.as_ref().map_or(0, |delta| delta.to_copy.len());
+            let music = device.delta.as_ref().map_or(0, |delta| delta.to_copy.len());
             format!(
-                "{queued} queued · {}",
+                "Music {music} · Podcasts {} · {}",
+                device.podcast_sync.to_copy,
                 device_sync_strings::available_space(device.available_bytes)
             )
         }
@@ -508,20 +496,15 @@ mod tests {
             last_sync: None,
             tracks: Vec::new(),
             selected_track_count: 0,
+            podcast_sync: crate::ui::device_sync_runtime::PodcastSyncSummary::default(),
             bytes_per_second: 0,
         }
     }
 
     #[test]
     fn card_detail_mode_distinguishes_delta_progress_and_synced_states() {
-        let pending = reprise_core::device_sync::SyncDelta {
-            to_copy: vec![1],
-            ..Default::default()
-        };
-        let empty = reprise_core::device_sync::SyncDelta::default();
-
         assert_eq!(
-            detail_mode(&PlannedSyncPhase::Idle, Some(&pending), true),
+            detail_mode(&PlannedSyncPhase::Idle, true, true),
             DetailMode::Delta
         );
         assert_eq!(
@@ -534,17 +517,17 @@ mod tests {
                     bytes_done: 0,
                     bytes_total: 1,
                 },
-                Some(&pending),
+                true,
                 true,
             ),
             DetailMode::Progress
         );
         assert_eq!(
-            detail_mode(&PlannedSyncPhase::Idle, Some(&empty), true),
+            detail_mode(&PlannedSyncPhase::Idle, false, true),
             DetailMode::Synced
         );
         assert_eq!(
-            detail_mode(&PlannedSyncPhase::Idle, Some(&empty), false),
+            detail_mode(&PlannedSyncPhase::Idle, false, false),
             DetailMode::Delta
         );
     }
@@ -554,6 +537,26 @@ mod tests {
         assert_eq!(sync_fraction(50, 100), 0.5);
         assert_eq!(sync_fraction(150, 100), 1.0);
         assert_eq!(sync_fraction(50, 0), 0.0);
+    }
+
+    #[test]
+    fn pod_8_podcast_only_delta_is_selected_pending_and_named_separately() {
+        let mut device = view(PlannedSyncPhase::Idle);
+        device.settings.selection = reprise_core::device_sync::DeviceSelection::Sources(Vec::new());
+        device.podcast_sync = crate::ui::device_sync_runtime::PodcastSyncSummary {
+            selected: 3,
+            to_copy: 2,
+            to_remove: 1,
+            bytes: 42,
+        };
+
+        assert!(device.has_sync_selection());
+        assert!(device.has_pending_sync());
+        assert_eq!(
+            detail_mode(&device.sync_phase, device.has_pending_sync(), true),
+            DetailMode::Delta
+        );
+        assert!(card_subtitle(&device).starts_with("Music 0 · Podcasts 2"));
     }
 
     #[test]

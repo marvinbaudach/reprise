@@ -12,16 +12,12 @@ use std::time::Instant;
 use gtk4::gio;
 use gtk4::gio::prelude::*;
 use reprise_core::device_sync::settings::{
-    load_device_files, load_or_create_settings, resolve_selection_track_ids, save_settings,
-    set_file_pinned,
+    load_or_create_settings, resolve_selection_track_ids, save_settings, set_file_pinned,
 };
-use reprise_core::device_sync::transfer::{
-    build_transfer_plan_with_inventory, TransferMode, TransferPlanEntry,
-};
+use reprise_core::device_sync::transfer::{TransferMode, TransferPlanEntry};
 use reprise_core::device_sync::{
-    compute_delta, merge_playlist_entries, track_relative_path, DeviceQueue, DeviceSelection,
-    DeviceSettings, SyncCandidate, SyncDelta, SyncJob, SyncPhase, SyncSnapshot, SyncTrack,
-    TrackOutcome,
+    merge_playlist_entries, track_relative_path, DeviceQueue, DeviceSelection, DeviceSettings,
+    ManagedRoot, SyncDelta, SyncJob, SyncPhase, SyncSnapshot, SyncTrack, TrackOutcome,
 };
 use reprise_core::library::m3u::{M3uEntry, M3uExportEntry};
 use reprise_platform_linux::device_sync::{
@@ -63,6 +59,7 @@ struct DeviceState {
     settings: DeviceSettings,
     delta: Option<SyncDelta>,
     transfer_plan: Vec<TransferPlanEntry>,
+    podcast_plan: reprise_core::device_sync::podcasts::PodcastSyncPlan,
     sync_phase: PlannedSyncPhase,
     sync_error: Option<SyncFailure>,
     planned_cancel: Option<Arc<AtomicBool>>,
@@ -97,6 +94,7 @@ impl DeviceState {
             settings,
             delta: None,
             transfer_plan: Vec::new(),
+            podcast_plan: reprise_core::device_sync::podcasts::PodcastSyncPlan::default(),
             sync_phase: PlannedSyncPhase::ComputingDelta,
             sync_error: None,
             planned_cancel: None,
@@ -130,6 +128,12 @@ impl DeviceState {
             last_sync: self.last_sync,
             tracks: self.tracks.clone(),
             selected_track_count: self.selected_track_count,
+            podcast_sync: PodcastSyncSummary {
+                selected: self.podcast_plan.selected,
+                to_copy: self.podcast_plan.to_copy.len(),
+                to_remove: self.podcast_plan.to_remove.len(),
+                bytes: self.podcast_plan.bytes,
+            },
             bytes_per_second: self.bytes_per_second,
         }
     }
@@ -377,59 +381,12 @@ impl DeviceSyncRuntime {
         Ok(options)
     }
 
-    pub fn recompute_delta(self: &Rc<Self>, device_id: &str) -> Result<(), String> {
-        let settings = self
-            .device_states
-            .borrow()
-            .iter()
-            .find(|device| device.descriptor.id == device_id)
-            .map(|device| device.settings.clone())
-            .ok_or_else(|| "device is not connected".to_string())?;
-        let (delta, transfer_plan, tracks) = {
-            let conn = self.conn.borrow();
-            let ids = resolve_selection_track_ids(&conn, &settings.selection)
-                .map_err(|error| error.to_string())?;
-            let tracks = reprise_core::queries::query_sync_tracks(&conn, &ids)
-                .map_err(|error| error.to_string())?;
-            let files = load_device_files(&conn, device_id).map_err(|error| error.to_string())?;
-            let transfer_plan =
-                build_transfer_plan_with_inventory(tracks, settings.opus_bitrate, &files);
-            let candidates = transfer_plan
-                .iter()
-                .map(|entry| SyncCandidate {
-                    track_id: entry.track.id,
-                    device_path: entry.device_path.clone(),
-                    transfer_bytes: entry.expected_bytes,
-                    source_mtime: entry.track.source_mtime,
-                })
-                .collect::<Vec<_>>();
-            let delta = compute_delta(&candidates, &files, settings.remove_deleted);
-            let tracks = build_device_tracks(&conn, &transfer_plan, &files, &delta);
-            (delta, transfer_plan, tracks)
-        };
-        if let Some(device) = self
-            .device_states
-            .borrow_mut()
-            .iter_mut()
-            .find(|device| device.descriptor.id == device_id)
-        {
-            device.delta = Some(delta);
-            device.transfer_plan = transfer_plan;
-            device.tracks = tracks;
-            device.selected_track_count = device.transfer_plan.len();
-            device.sync_phase = PlannedSyncPhase::Idle;
-            device.sync_error = None;
-        }
-        self.notify();
-        Ok(())
-    }
-
     pub fn refresh_contents(self: &Rc<Self>, device_id: &str) {
         self.refresh_contents_with_delta(device_id, true);
     }
 
     fn refresh_contents_after_sync(self: &Rc<Self>, device_id: &str) {
-        self.refresh_contents_with_delta(device_id, false);
+        self.refresh_contents_with_delta(device_id, true);
     }
 
     fn refresh_contents_with_delta(self: &Rc<Self>, device_id: &str, recompute_delta: bool) {
@@ -786,6 +743,8 @@ mod agent;
 mod legacy_queue;
 #[path = "device_sync_planned.rs"]
 mod planned;
+#[path = "device_sync_planning.rs"]
+mod planning;
 
 use legacy_queue::{remaining_work_bytes, run_work};
 #[cfg(test)]
