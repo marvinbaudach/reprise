@@ -4,10 +4,10 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use libadwaita::prelude::*;
 use reprise_core::device_sync::{
-    DeviceSelection, DeviceSettings, DeviceStorageProjection, DeviceStorageSnapshot, MirrorBlocker,
-    Mp3Quality, SelectionSource, StorageComposition, StorageKnowledge, StorageProjectionState,
-    SyncChangeSummary, SyncPageControls, SyncPageState, SyncPageWarning, SyncPlaylistRow,
-    TransferProfile,
+    DeviceSelection, DeviceSettings, DeviceStorageAccess, DeviceStorageProjection,
+    DeviceStorageSnapshot, MirrorBlocker, Mp3Quality, SelectionSource, StorageComposition,
+    StorageKnowledge, StorageProjectionState, SyncChangeSummary, SyncPageControls, SyncPageState,
+    SyncPageWarning, SyncPlaylistRow, TransferProfile,
 };
 
 use super::*;
@@ -47,6 +47,7 @@ fn device() -> DeviceView {
         connected: true,
         storage: DeviceStorageSnapshot {
             target_name: Some("Internal storage".into()),
+            access: DeviceStorageAccess::Writable,
             total_bytes: Some(128 * 1_024),
             free_bytes: Some(64 * 1_024),
             reprise_music_bytes: 32 * 1_024,
@@ -81,6 +82,7 @@ fn device() -> DeviceView {
             },
             storage: DeviceStorageProjection {
                 target_name: Some("Internal storage".into()),
+                access: DeviceStorageAccess::Writable,
                 current: composition(Some(64 * 1_024)),
                 after_sync: Some(composition(Some(48 * 1_024))),
                 transfer_bytes: 32 * 1_024,
@@ -153,6 +155,7 @@ fn compact_dialog_projects_storage_blockers_and_control_mode() {
     after.other_used_bytes = Some(16 * 1_024);
     let projection = DeviceStorageProjection {
         target_name: Some("Internal storage".into()),
+        access: DeviceStorageAccess::Writable,
         current: composition(Some(64 * 1_024)),
         after_sync: Some(after),
         transfer_bytes: 16 * 1_024,
@@ -160,7 +163,7 @@ fn compact_dialog_projects_storage_blockers_and_control_mode() {
     };
     assert_eq!(
         storage_summary(&projection),
-        "Music 48.0 KiB · after sync +16.0 KiB · Other 16.0 KiB · Free 48.0 KiB"
+        "Writable · Music 48.0 KiB · after sync +16.0 KiB · Other 16.0 KiB · Free 48.0 KiB"
     );
     assert_eq!(
         crate::ui::device_sync::device_sync_storage_bar::segments(&projection),
@@ -193,11 +196,33 @@ fn compact_dialog_projects_storage_blockers_and_control_mode() {
 }
 
 #[test]
+fn mtp_9_known_read_only_target_is_explicit_and_blocks_sync() {
+    let mut device = device();
+    device.page.storage.access = DeviceStorageAccess::ReadOnly;
+    device.page.update_controls(true, true, false);
+
+    assert_eq!(
+        storage_summary(&device.page.storage),
+        "Read-only · Music 48.0 KiB · after sync no change · Other 16.0 KiB · Free 48.0 KiB"
+    );
+    assert_eq!(
+        storage_access_notice(device.page.storage.access),
+        Some("The selected device storage is read-only.".into())
+    );
+    assert!(!device.page.controls.can_start);
+
+    device.page.storage.access = DeviceStorageAccess::Unknown;
+    assert!(storage_summary(&device.page.storage).starts_with("Write access unknown ·"));
+    assert_eq!(storage_access_notice(device.page.storage.access), None);
+}
+
+#[test]
 fn storage_segments_never_invent_unknown_capacity_or_negative_growth() {
     let mut after = composition(Some(80 * 1_024));
     after.reprise_music_bytes = 16 * 1_024;
     let mut projection = DeviceStorageProjection {
         target_name: Some("Internal storage".into()),
+        access: DeviceStorageAccess::Writable,
         current: composition(Some(64 * 1_024)),
         after_sync: Some(after),
         transfer_bytes: 0,
@@ -218,7 +243,7 @@ fn storage_segments_never_invent_unknown_capacity_or_negative_growth() {
     );
     assert_eq!(
         storage_summary(&projection),
-        "Music 48.0 KiB · after sync −16.0 KiB · Other 16.0 KiB · Free 80.0 KiB"
+        "Writable · Music 48.0 KiB · after sync −16.0 KiB · Other 16.0 KiB · Free 80.0 KiB"
     );
 
     projection.state = StorageProjectionState::CapacityUnknown;

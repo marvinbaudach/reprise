@@ -1,7 +1,7 @@
 use super::*;
 use reprise_core::agent_device_sync::{
     agent_device_sync_request, read_agent_device_sync_state, AgentDeviceSyncCommand,
-    AgentDeviceSyncState,
+    AgentDeviceSyncState, AgentDeviceSyncStorageAccess,
 };
 use std::sync::{Arc, Mutex};
 
@@ -420,6 +420,10 @@ fn agent_bridge_reports_the_compact_mirror_page_and_applies_multi_source_configu
         assert_eq!(
             snapshot.devices[0].storage.current.free_bytes,
             Some(1_000_000)
+        );
+        assert_eq!(
+            snapshot.devices[0].storage.access,
+            AgentDeviceSyncStorageAccess::Unknown
         );
         assert!(snapshot.devices[0].controls.can_start);
         assert!(snapshot.devices[0]

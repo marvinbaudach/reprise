@@ -1,6 +1,6 @@
 use super::{
-    project_storage, DeviceStorageSnapshot, MirrorBlocker, MirrorPlan, StorageKnowledge,
-    StorageProjectionState,
+    project_storage, DeviceStorageAccess, DeviceStorageSnapshot, MirrorBlocker, MirrorPlan,
+    StorageKnowledge, StorageProjectionState,
 };
 
 fn snapshot(
@@ -15,6 +15,7 @@ fn snapshot(
         free_bytes,
         reprise_music_bytes,
         other_music_bytes,
+        ..DeviceStorageSnapshot::default()
     }
 }
 
@@ -110,4 +111,14 @@ fn a_blocked_mirror_plan_never_projects_an_empty_device() {
 
     assert_eq!(projection.state, StorageProjectionState::Blocked);
     assert_eq!(projection.after_sync, None);
+}
+
+#[test]
+fn storage_projection_preserves_the_reported_target_access() {
+    let mut snapshot = snapshot(Some(1_000), Some(500), 100, 100);
+    snapshot.access = DeviceStorageAccess::ReadOnly;
+
+    let projection = project_storage(&snapshot, &plan(100, 0));
+
+    assert_eq!(projection.access, DeviceStorageAccess::ReadOnly);
 }

@@ -39,8 +39,9 @@ pub use settings::{
 };
 pub use snapshot::load_mirror_playlist_snapshots;
 pub use storage::{
-    project_storage, storage_composition, DeviceStorageInspection, DeviceStorageProjection,
-    DeviceStorageSnapshot, StorageComposition, StorageKnowledge, StorageProjectionState,
+    project_storage, storage_composition, DeviceStorageAccess, DeviceStorageInspection,
+    DeviceStorageProjection, DeviceStorageSnapshot, StorageComposition, StorageKnowledge,
+    StorageProjectionState,
 };
 
 pub const REPRISE_DEVICE_DIR: &str = "Reprise";

@@ -2,9 +2,18 @@
 
 use super::{ManagedDeviceFile, MirrorPlan};
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DeviceStorageAccess {
+    Writable,
+    ReadOnly,
+    #[default]
+    Unknown,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DeviceStorageSnapshot {
     pub target_name: Option<String>,
+    pub access: DeviceStorageAccess,
     pub total_bytes: Option<u64>,
     pub free_bytes: Option<u64>,
     pub reprise_music_bytes: u64,
@@ -47,6 +56,7 @@ pub enum StorageProjectionState {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeviceStorageProjection {
     pub target_name: Option<String>,
+    pub access: DeviceStorageAccess,
     pub current: StorageComposition,
     pub after_sync: Option<StorageComposition>,
     pub transfer_bytes: u64,
@@ -60,6 +70,7 @@ pub fn project_storage(
     let current = storage_composition(snapshot);
     let base = DeviceStorageProjection {
         target_name: snapshot.target_name.clone(),
+        access: snapshot.access,
         current: current.clone(),
         after_sync: None,
         transfer_bytes: plan.transfer_bytes,
