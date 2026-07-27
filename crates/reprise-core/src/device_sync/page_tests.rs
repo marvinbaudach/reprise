@@ -58,7 +58,7 @@ fn page_projection_deduplicates_selected_tracks_but_keeps_playlist_repeats() {
     });
 
     assert_eq!(projection.page.unique_track_count, 3);
-    assert_eq!(projection.page.target_bytes, 96_000);
+    assert_eq!(projection.page.target_bytes, 292_908);
     assert_eq!(projection.page.playlists[1].entry_count, 3);
     assert_eq!(projection.page.playlists[1].unique_track_count, 2);
 }
@@ -107,7 +107,7 @@ fn controls_do_not_offer_a_start_when_transfers_exceed_current_free_space() {
     });
     projection.page.update_controls(true, true, false);
 
-    assert_eq!(projection.page.changes.transfer_bytes, 32_000);
+    assert_eq!(projection.page.changes.transfer_bytes, 97_636);
     assert!(matches!(
         projection.page.storage.state,
         super::StorageProjectionState::Fits

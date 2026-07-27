@@ -100,12 +100,12 @@ fn overlap_and_playlist_repeats_are_deduplicated_only_for_physical_storage() {
     assert_eq!(plan.desired_files.len(), 3);
     assert_eq!(plan.copy.len(), 3);
     assert!(plan.replace.is_empty());
-    assert_eq!(plan.transfer_bytes, 720_000);
-    assert_eq!(plan.target_bytes, 720_000);
+    assert_eq!(plan.transfer_bytes, 2_051_072);
+    assert_eq!(plan.target_bytes, 2_051_072);
     assert_eq!(plan.per_playlist[0].entry_count, 3);
     assert_eq!(plan.per_playlist[0].unique_track_count, 2);
-    assert_eq!(plan.per_playlist[0].target_bytes, 560_000);
-    assert_eq!(plan.per_playlist[1].target_bytes, 400_000);
+    assert_eq!(plan.per_playlist[0].target_bytes, 1_625_536);
+    assert_eq!(plan.per_playlist[1].target_bytes, 665_536);
     assert_eq!(plan.playlist_writes[0].entries.len(), 3);
     assert_eq!(
         plan.playlist_writes[0].entries[0].relative_path,
@@ -300,7 +300,7 @@ fn a_profile_change_is_an_explicit_replacement_not_a_size_guess() {
         plan.replace[0].desired.profile_fingerprint,
         "mp3-cbr-256-v1"
     );
-    assert_eq!(plan.transfer_bytes, 320_000);
+    assert_eq!(plan.transfer_bytes, 1_385_536);
 }
 
 #[test]

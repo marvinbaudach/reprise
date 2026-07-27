@@ -4,6 +4,10 @@ use std::collections::HashSet;
 
 use super::{SelectionSource, SyncTrack};
 
+/// Room for MP3 frame rounding and ID3 container structures in addition to
+/// every source-derived byte (including an embedded cover) reserved below.
+const MP3_CONTAINER_RESERVE_BYTES: u64 = 64 * 1_024;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Mp3Quality {
     Kbps128,
@@ -90,14 +94,21 @@ impl TransferProfile {
             TransferAction::CopyOriginal => track.size_bytes,
             TransferAction::TranscodeMp3(quality) => {
                 let Ok(duration_ms) = u64::try_from(track.duration_ms) else {
-                    return track.size_bytes;
+                    return u64::MAX;
                 };
                 if duration_ms == 0 {
-                    return track.size_bytes;
+                    return u64::MAX;
                 }
-                duration_ms
+                let audio_payload = duration_ms
                     .saturating_mul(u64::from(quality.kbps()))
-                    .div_ceil(8)
+                    .div_ceil(8);
+                // Tags and cover art are copied from the source. Reserving the
+                // complete source size bounds all of that source-derived data
+                // without parsing files in the pure planner. The fixed tail
+                // covers ID3/frame structure and encoder rounding.
+                audio_payload
+                    .saturating_add(track.size_bytes)
+                    .saturating_add(MP3_CONTAINER_RESERVE_BYTES)
             }
         }
     }

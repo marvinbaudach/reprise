@@ -84,18 +84,18 @@ fn mp3_at_or_below_the_profile_is_copied_and_everything_else_is_transcoded() {
 }
 
 #[test]
-fn target_size_uses_source_bytes_for_copy_and_duration_for_transcoding() {
+fn target_size_reserves_source_derived_metadata_and_mux_overhead_for_transcoding() {
     let profile = TransferProfile::Mp3(Mp3Quality::Kbps256);
     let copied = track(1, "/music/low.mp3", Some(192), 10_000, 240_000);
     let transcoded = track(2, "/music/high.mp3", Some(320), 10_000, 400_000);
     let unknown_duration = track(3, "/music/high.mp3", Some(320), 0, 444_000);
 
     assert_eq!(profile.estimated_target_bytes(&copied), 240_000);
-    assert_eq!(profile.estimated_target_bytes(&transcoded), 320_000);
+    assert_eq!(profile.estimated_target_bytes(&transcoded), 785_536);
     assert_eq!(
         profile.estimated_target_bytes(&unknown_duration),
-        444_000,
-        "unknown durations use the source size as a conservative estimate"
+        u64::MAX,
+        "an unknown duration cannot produce a bounded conservative estimate"
     );
 }
 
@@ -122,12 +122,12 @@ fn playlist_projection_preserves_entries_but_deduplicates_physical_tracks() {
     assert_eq!(projection.playlists.len(), 2);
     assert_eq!(projection.playlists[0].entry_count, 3);
     assert_eq!(projection.playlists[0].unique_track_count, 2);
-    assert_eq!(projection.playlists[0].target_bytes, 560_000);
+    assert_eq!(projection.playlists[0].target_bytes, 1_625_536);
     assert_eq!(projection.playlists[1].entry_count, 2);
     assert_eq!(projection.playlists[1].unique_track_count, 2);
-    assert_eq!(projection.playlists[1].target_bytes, 400_000);
+    assert_eq!(projection.playlists[1].target_bytes, 665_536);
     assert_eq!(projection.unique_track_count, 3);
-    assert_eq!(projection.target_bytes, 720_000);
+    assert_eq!(projection.target_bytes, 2_051_072);
 }
 
 #[test]

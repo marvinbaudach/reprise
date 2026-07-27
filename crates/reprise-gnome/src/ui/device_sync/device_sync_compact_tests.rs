@@ -112,18 +112,18 @@ fn compact_page_projects_quality_playlist_sizes_deduplicated_delta_and_storage()
         assert_eq!(page.quality_options, Mp3Quality::ALL);
         assert_eq!(page.quality, Mp3Quality::Kbps256);
         assert_eq!(page.unique_track_count, 3);
-        assert_eq!(page.target_bytes, 96_000);
+        assert_eq!(page.target_bytes, 292_908);
         assert_eq!(page.changes.additions, 3);
         assert_eq!(page.changes.replacements, 0);
         assert_eq!(page.changes.removals, 0);
-        assert_eq!(page.changes.transfer_bytes, 96_000);
+        assert_eq!(page.changes.transfer_bytes, 292_908);
         assert_eq!(page.storage.state, StorageProjectionState::Fits);
         assert_eq!(
             page.storage
                 .after_sync
                 .as_ref()
                 .and_then(|composition| composition.free_bytes),
-            Some(904_000)
+            Some(707_092)
         );
         assert_eq!(
             page.playlists
@@ -138,8 +138,8 @@ fn compact_page_projects_quality_playlist_sizes_deduplicated_delta_and_storage()
                 ))
                 .collect::<Vec<_>>(),
             [
-                (Some("Mix"), true, 2, 2, 64_000),
-                (Some("Road"), true, 3, 2, 64_000),
+                (Some("Mix"), true, 2, 2, 195_272),
+                (Some("Road"), true, 3, 2, 195_272),
             ]
         );
         assert!(page
@@ -170,14 +170,14 @@ fn quality_and_playlist_changes_persist_and_recompute_the_page_immediately() {
         runtime.set_mp3_quality("a", Mp3Quality::Kbps128).unwrap();
         let page = runtime.devices().remove(0).page;
         assert_eq!(page.quality, Mp3Quality::Kbps128);
-        assert_eq!(page.target_bytes, 48_000);
+        assert_eq!(page.target_bytes, 244_908);
 
         runtime
             .set_playlist_selected("a", SelectionSource::Playlist(11), false)
             .unwrap();
         let page = runtime.devices().remove(0).page;
         assert_eq!(page.unique_track_count, 2);
-        assert_eq!(page.target_bytes, 32_000);
+        assert_eq!(page.target_bytes, 163_272);
         assert!(
             !page
                 .playlists

@@ -29,6 +29,12 @@ struct CopyGate {
     releases: HashMap<String, async_channel::Receiver<()>>,
 }
 
+#[derive(Clone)]
+struct PlaylistGate {
+    started: async_channel::Sender<()>,
+    release: async_channel::Receiver<()>,
+}
+
 #[derive(Default)]
 struct FakeState {
     devices: RefCell<Vec<DeviceDescriptor>>,
@@ -46,6 +52,8 @@ struct FakeState {
     total_bytes: Cell<Option<u64>>,
     mp3_probe_error: RefCell<Option<String>>,
     copy_gate: RefCell<Option<CopyGate>>,
+    playlist_error: RefCell<Option<String>>,
+    playlist_gate: RefCell<Option<PlaylistGate>>,
     delete_observer: RefCell<Option<DeleteObserver>>,
 }
 
@@ -71,6 +79,11 @@ impl FakeBackend {
 
     fn with_mp3_probe_error(self, error: &str) -> Self {
         self.state.mp3_probe_error.replace(Some(error.into()));
+        self
+    }
+
+    fn with_playlist_error(self, error: &str) -> Self {
+        self.state.playlist_error.replace(Some(error.into()));
         self
     }
 
@@ -105,6 +118,16 @@ impl FakeBackend {
             .copy_gate
             .replace(Some(CopyGate { started, releases }));
         (started_rx, release_senders)
+    }
+
+    fn gate_playlist(&self) -> (async_channel::Receiver<()>, async_channel::Sender<()>) {
+        let (started, started_rx) = async_channel::bounded(1);
+        let (release, release_rx) = async_channel::bounded(1);
+        self.state.playlist_gate.replace(Some(PlaylistGate {
+            started,
+            release: release_rx,
+        }));
+        (started_rx, release)
     }
 
     fn observe_deletes(&self, observer: DeleteObserver) {
@@ -251,6 +274,20 @@ impl DeviceBackend for FakeBackend {
     ) -> TestFuture<()> {
         let state = self.state.clone();
         Box::pin(async move {
+            if let Some(error) = state.playlist_error.borrow().clone() {
+                return Err(error);
+            }
+            let gate = state.playlist_gate.borrow().clone();
+            if let Some(gate) = gate {
+                gate.started
+                    .send(())
+                    .await
+                    .map_err(|_| "playlist-start observer was dropped".to_string())?;
+                gate.release
+                    .recv()
+                    .await
+                    .map_err(|_| "playlist gate was dropped".to_string())?;
+            }
             state
                 .playlists
                 .borrow_mut()
@@ -333,7 +370,43 @@ fn signal_when(
     (subscription, receiver)
 }
 
+fn select_road_playlist(conn: &Rc<RefCell<Connection>>, ids: &[i64]) {
+    conn.borrow()
+        .execute(
+            "INSERT INTO playlists (id, name, position) VALUES (10, 'Road', 0)",
+            [],
+        )
+        .unwrap();
+    for (position, track_id) in ids.iter().enumerate() {
+        conn.borrow()
+            .execute(
+                "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (10, ?1, ?2)",
+                rusqlite::params![track_id, position as i64],
+            )
+            .unwrap();
+    }
+    save_road_settings(conn, "a");
+}
+
+fn save_road_settings(conn: &Rc<RefCell<Connection>>, device_id: &str) {
+    save_settings(
+        &conn.borrow(),
+        &DeviceSettings {
+            device_serial: device_id.into(),
+            device_name: format!("Phone {device_id}"),
+            selection: DeviceSelection::Sources(vec![SelectionSource::Playlist(10)]),
+            profile: reprise_core::device_sync::TransferProfile::default(),
+            opus_bitrate: 0,
+            ratings_back: false,
+            remove_deleted: true,
+        },
+    )
+    .unwrap();
+}
+
 #[path = "device_sync_compact_tests.rs"]
 mod compact_tests;
 #[path = "device_sync_planned_tests.rs"]
 mod planned_tests;
+#[path = "device_sync_safety_tests.rs"]
+mod safety_tests;
