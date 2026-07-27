@@ -81,7 +81,7 @@ fn storage_access_prefers_read_only_evidence_and_preserves_unknowns() {
 }
 
 #[test]
-fn inspection_aggregates_music_and_returns_only_reprise_managed_paths() {
+fn inspection_aggregates_music_and_returns_every_authoritative_reprise_file() {
     let (temp, storage) = fixture();
     fs::create_dir_all(temp.path().join("Music/Reprise/Road")).unwrap();
     fs::write(temp.path().join("Music/Reprise/Road/1-song.flac"), b"audio").unwrap();
@@ -99,8 +99,8 @@ fn inspection_aggregates_music_and_returns_only_reprise_managed_paths() {
         .iter()
         .map(|file| file.relative_path.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(paths, ["Road/1-song.flac"]);
-    assert_eq!(inspection.snapshot.reprise_music_bytes, 5);
+    assert_eq!(paths, ["Road.m3u8", "Road/1-song.flac"]);
+    assert_eq!(inspection.snapshot.reprise_music_bytes, 30);
     assert_eq!(inspection.snapshot.other_music_bytes, 6);
     assert_eq!(
         inspection.snapshot.target_name.as_deref(),
@@ -137,9 +137,9 @@ fn managed_readback_keeps_byte_preserved_originals_with_unlisted_extensions() {
             .iter()
             .map(|file| file.relative_path.as_str())
             .collect::<Vec<_>>(),
-        ["Artist/Album/01 Original.aiff"]
+        ["Artist/Album/01 Original.aiff", "Originals.m3u8"]
     );
-    assert_eq!(inspection.snapshot.reprise_music_bytes, 8);
+    assert_eq!(inspection.snapshot.reprise_music_bytes, 46);
 }
 
 #[test]
@@ -188,7 +188,7 @@ fn copy_creates_managed_directories_and_reports_progress() {
 }
 
 #[test]
-fn same_size_destination_is_skipped_without_overwrite() {
+fn mtp_17_same_size_untracked_destination_is_overwritten() {
     let (temp, storage) = fixture();
     fs::create_dir_all(temp.path().join("Music/Reprise/Road")).unwrap();
     fs::write(temp.path().join("source.flac"), b"new!").unwrap();
@@ -205,10 +205,10 @@ fn same_size_destination_is_skipped_without_overwrite() {
         |_copied, _total| {},
     ))
     .unwrap();
-    assert_eq!(outcome, CopyOutcome::Skipped);
+    assert_eq!(outcome, CopyOutcome::Copied);
     assert_eq!(
         fs::read(temp.path().join("Music/Reprise/Road/7-source.flac")).unwrap(),
-        b"old!"
+        b"new!"
     );
 }
 

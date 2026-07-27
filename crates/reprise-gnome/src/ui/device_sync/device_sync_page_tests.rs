@@ -391,7 +391,7 @@ fn full_page_warning_copy_is_grammatical_and_path_free() {
         ]),
         [
             "2 tracks will be skipped because they are unavailable and not already on the device.",
-            "An unrecognized managed item will be left untouched.",
+            "An unsafe managed path will be left untouched.",
         ]
     );
 }

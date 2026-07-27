@@ -222,7 +222,6 @@ mod inspection;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CopyOutcome {
     Copied,
-    Skipped,
 }
 
 #[derive(Debug)]
@@ -399,15 +398,8 @@ impl DeviceStorage {
     where
         P: FnMut(u64, u64) + 'static,
     {
-        self.transfer_track(
-            source,
-            relative_path,
-            expected_size,
-            cancellable,
-            progress,
-            true,
-        )
-        .await
+        self.transfer_track(source, relative_path, expected_size, cancellable, progress)
+            .await
     }
 
     /// Copies a track selected by a fresh DB delta, replacing any existing
@@ -423,15 +415,8 @@ impl DeviceStorage {
     where
         P: FnMut(u64, u64) + 'static,
     {
-        self.transfer_track(
-            source,
-            relative_path,
-            expected_size,
-            cancellable,
-            progress,
-            false,
-        )
-        .await
+        self.transfer_track(source, relative_path, expected_size, cancellable, progress)
+            .await
     }
 
     async fn transfer_track<P>(
@@ -441,7 +426,6 @@ impl DeviceStorage {
         expected_size: u64,
         cancellable: &gio::Cancellable,
         progress: P,
-        skip_matching_size: bool,
     ) -> Result<CopyOutcome, DeviceIoError>
     where
         P: FnMut(u64, u64) + 'static,
@@ -451,9 +435,6 @@ impl DeviceStorage {
         self.ensure_managed_directories(&storage, &components[..components.len() - 1])
             .await?;
         let target = Self::managed_child(&storage, &components);
-        if skip_matching_size && target_size(&target).await? == Some(expected_size) {
-            return Ok(CopyOutcome::Skipped);
-        }
         let target_name = components.last().expect("validated nonempty path");
         let partial_components = components[..components.len() - 1]
             .iter()

@@ -388,6 +388,18 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   eigene beschriftete Zeile neben dem Tracktext. Die Sidebar-Gerätekarte nennt
   den freien Gerätespeicher auch während Checking, Sync und Finishing so früh,
   dass Ellipsize ihn nicht verdeckt.
+- **MTP-16** [aktiv] [gtk] — Eine Änderung des Transferprofils wird sofort
+  gerätebezogen gespeichert und für dasselbe Gerät sowohl nach einem Reconnect
+  als auch nach einem App-Neustart wiederhergestellt. Ein neues Gerät beginnt
+  weiterhin mit Opus 160 kbit/s.
+- **MTP-17** [aktiv] [core] — `Music/Reprise` ist der einzige und vollständig
+  autoritative Gerätebereich von Reprise. Nach erfolgreicher Veröffentlichung
+  aller gewünschten Tracks und Playlists werden dort sämtliche übrigen
+  sicheren Dateien entfernt, auch wenn sie nicht im Reprise-Inventar stehen;
+  gewünschte Track- und Playlist-Pfade bleiben erhalten. Außerhalb dieses
+  Unterordners wird nichts geschrieben, verschoben oder gelöscht, und ein
+  fehlender oder ungültiger Playlist-Sollzustand plant keine destruktive
+  Arbeit.
 
 ## F. Einstellungen & Modale
 

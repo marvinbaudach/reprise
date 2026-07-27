@@ -39,8 +39,14 @@ verbundene Android-MTP-Geräte. Die Bedienung bleibt absichtlich klein:
 - Lokale Playlist-Optionen werden vor der asynchronen MTP-Speicherprüfung
   projiziert und bleiben während „Checking device“ auswählbar. Erst der
   tatsächliche Sync-Start wartet auf ein belastbares Prüfergebnis.
-- Änderungen werden sofort gerätebezogen persistiert; es gibt keinen Apply-
-  Schritt und keine zweite Sync-Oberfläche.
+- Änderungen werden sofort gerätebezogen persistiert; das gewählte
+  Transferprofil wird nach Reconnect und App-Neustart für dasselbe Gerät
+  wiederhergestellt. Es gibt keinen Apply-Schritt und keine zweite
+  Sync-Oberfläche.
+- `Music/Reprise` ist ein vollständig von Reprise verwalteter Mirror-Root.
+  Nach vollständiger Veröffentlichung des neuen Sollzustands werden dort alle
+  nicht mehr benötigten Dateien entfernt. Außerhalb dieses Unterordners wird
+  nichts geschrieben, verschoben oder gelöscht.
 
 Nicht Teil dieser Stage sind:
 
@@ -68,8 +74,10 @@ Die pure Core-Schicht besitzt die plattformneutralen Verträge:
 - `device_sync/snapshot.rs`: manuelle und smarte Playlist-Snapshots,
   Wiederholungen in M3U-Reihenfolge sowie explizite Verfügbarkeit.
 - `device_sync/mirror.rs`: deterministischer Mirror-Plan mit Add, Replace,
-  Remove, Playlist-Write und Playlist-Remove; unsichere oder unbekannte
-  verwaltete Einträge werden nie gelöscht.
+  Remove, Playlist-Write und Playlist-Remove. Sichere physische Einträge unter
+  dem autoritativen Mirror-Root, die weder zum neuen Track- noch
+  Playlist-Sollzustand gehören, werden als Orphans entfernt; unsichere Pfade
+  bleiben unangetastet und werden gemeldet.
 - `device_sync/storage.rs`: aktuelle und projizierte Zusammensetzung aus
   Reprise-Musik, anderer Musik, sonstigem belegtem Platz und freiem Platz,
   jeweils mit vollständigem, unbekanntem oder inkonsistentem Wissensstand.
@@ -167,7 +175,9 @@ Gerätedatei vernichten.
    - geändert oder altes Profil: ersetzen;
    - nicht mehr ausgewählt: entfernen;
    - lokal nicht verfügbar, aber auf dem Gerät inventarisiert: behalten;
-   - unbekannt/unsicher: warnen und unangetastet lassen.
+   - sicherer unbekannter physischer Eintrag unter `Music/Reprise`: als Orphan
+     entfernen;
+   - unsicherer Pfad: warnen und unangetastet lassen.
 6. Root-Level-M3U-Snapshots planen und alte verwaltete Playlist-Dateien
    explizit entfernen.
 7. Delta, Transferbytes und Speicherzustand projizieren. Blocker enthalten
@@ -200,6 +210,9 @@ Die Reihenfolge eines gerätebezogenen Laufs ist:
 Weitere Invarianten:
 
 - Nie Dateien außerhalb `Music/Reprise` löschen oder überschreiben.
+- Innerhalb `Music/Reprise` gilt der vollständig veröffentlichte Track- und
+  Playlist-Sollzustand als autoritativ; erst danach werden alle übrigen
+  sicheren Dateien entfernt.
 - Nie die echte Reprise-Datenbank oder Musikbibliothek in Tests verwenden.
 - Pro Gerät höchstens eine Dateioperation; geräteübergreifende Parallelität
   ist erlaubt.
@@ -304,7 +317,9 @@ Playlist-Veröffentlichung, Fortschritts- und Cancel-Zustände sowie den
 abschließenden Geräte-Readback.
 
 Die Simulation prüft Opus 160, MP3 256 und bytegenaues Original-Passthrough,
-unabhängige parallele Geräte sowie fremde, nicht inventarisierte Dateien. Sie
+unabhängige parallele Geräte sowie die vollständige Bereinigung fremder,
+nicht inventarisierter Audio-, Playlist- und sonstiger Dateien ausschließlich
+unter `Music/Reprise`. Sie
 besitzt außerdem den isolierten Hintergrund-CUA-Lauf `android-sync-page`: Er
 öffnet die Gerätekarte des simulierten Telefons, verifiziert die nicht-modale
 Vollseite mit Hero-Kopf, Transferprofil, Playlist-Auswahl, profilabhängiger

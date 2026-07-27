@@ -190,7 +190,7 @@ fn warning_summary(warnings: &[SyncPageWarning]) -> Vec<String> {
         ));
     }
     if warnings.contains(&SyncPageWarning::UnsafeManagedItem) {
-        summary.push("An unrecognized managed item will be left untouched.".into());
+        summary.push("An unsafe managed path will be left untouched.".into());
     }
     summary
 }
