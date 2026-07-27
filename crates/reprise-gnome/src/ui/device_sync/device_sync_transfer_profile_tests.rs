@@ -6,7 +6,7 @@ fn save_smoke_profile(conn: &Rc<RefCell<Connection>>, playlist_id: i64, profile:
         &conn.borrow(),
         &DeviceSettings {
             device_serial: crate::ui::device_sync_smoke::DEVICE_ID.into(),
-            device_name: "Android Smoke Device".into(),
+            device_name: crate::ui::device_sync_smoke::DEVICE_NAME.into(),
             selection: DeviceSelection::Sources(vec![SelectionSource::Playlist(playlist_id)]),
             profile,
             opus_bitrate: 0,
@@ -22,7 +22,8 @@ async fn smoke_runtime(
 ) -> (tempfile::TempDir, Rc<DeviceSyncRuntime>) {
     let device_root = tempfile::tempdir().unwrap();
     let backend = Rc::new(
-        crate::ui::device_sync_smoke::SmokeDeviceBackend::for_root(device_root.path()).unwrap(),
+        crate::ui::device_sync_smoke::SimulatedMtpDeviceBackend::for_root(device_root.path())
+            .unwrap(),
     );
     let runtime = DeviceSyncRuntime::with_backend(conn, backend);
     for _ in 0..1_000 {
@@ -53,7 +54,7 @@ async fn run_to_completion(runtime: &Rc<DeviceSyncRuntime>) -> DeviceView {
 }
 
 #[test]
-fn local_gio_sync_transcodes_lossless_selection_to_opus_160() {
+fn simulated_mtp_phone_transcodes_lossless_selection_to_opus_160() {
     run(async {
         let (sources, conn) = fixture();
         let wav = sources.path().join("transcode.wav");
@@ -115,7 +116,7 @@ fn local_gio_sync_transcodes_lossless_selection_to_opus_160() {
 }
 
 #[test]
-fn local_gio_sync_preserves_original_flac_bytes_and_extension() {
+fn simulated_mtp_phone_preserves_original_flac_bytes_and_extension() {
     run(async {
         let (sources, conn) = fixture();
         conn.borrow()
@@ -142,7 +143,7 @@ fn local_gio_sync_preserves_original_flac_bytes_and_extension() {
 }
 
 #[test]
-fn local_gio_sync_transcodes_lossless_selection_to_mp3_256() {
+fn simulated_mtp_phone_transcodes_lossless_selection_to_mp3_256() {
     run(async {
         let (sources, conn) = fixture();
         let wav = sources.path().join("fallback.wav");

@@ -1,4 +1,10 @@
-//! Explicit local-root hook for isolated device synchronization smoke runs.
+//! Deterministic MTP-phone simulation for isolated synchronization E2E runs.
+//!
+//! The simulator substitutes the production MTP/GIO backend at its application
+//! boundary while keeping the real storage, transcode, inventory, playlist,
+//! progress, cancellation, and post-sync readback code paths. Its storage is
+//! an explicitly guarded temporary directory, so it needs neither USB
+//! hardware nor access to the user's library or Reprise database.
 
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
@@ -21,18 +27,19 @@ use super::device_sync_runtime::{BackendFuture, DeviceBackend, DeviceSyncRuntime
 pub(in crate::ui) const ROOT_ENV: &str = "REPRISE_SMOKE_DEVICE_ROOT";
 const PLAYLIST_ENV: &str = "REPRISE_SMOKE_DEVICE_PLAYLIST";
 pub(in crate::ui) const DEVICE_ID: &str = "reprise-smoke-device";
+pub(in crate::ui) const DEVICE_NAME: &str = "Simulated MTP Phone";
 
-pub(in crate::ui) struct SmokeDeviceBackend {
+pub(in crate::ui) struct SimulatedMtpDeviceBackend {
     descriptor: DeviceDescriptor,
 }
 
-impl SmokeDeviceBackend {
+impl SimulatedMtpDeviceBackend {
     pub(in crate::ui) fn for_root(root: &Path) -> Option<Self> {
         let root = safe_smoke_root(root)?;
         Some(Self {
             descriptor: DeviceDescriptor {
                 id: DEVICE_ID.into(),
-                name: "Android Smoke Device".into(),
+                name: DEVICE_NAME.into(),
                 root_uri: gio::File::for_path(root).uri().into(),
                 icon: gio::ThemedIcon::new("phone-symbolic").upcast(),
                 reconnectable: true,
@@ -45,7 +52,7 @@ impl SmokeDeviceBackend {
     }
 }
 
-impl DeviceBackend for SmokeDeviceBackend {
+impl DeviceBackend for SimulatedMtpDeviceBackend {
     fn devices(&self) -> Vec<DeviceDescriptor> {
         vec![self.descriptor.clone()]
     }
@@ -174,7 +181,7 @@ pub(in crate::ui) fn runtime_from_env(
     conn: &Rc<RefCell<Connection>>,
 ) -> Option<Rc<DeviceSyncRuntime>> {
     let root = std::env::var_os(ROOT_ENV).map(PathBuf::from)?;
-    let backend = Rc::new(SmokeDeviceBackend::for_root(&root)?);
+    let backend = Rc::new(SimulatedMtpDeviceBackend::for_root(&root)?);
     Some(DeviceSyncRuntime::with_backend(conn, backend))
 }
 
@@ -271,5 +278,17 @@ mod tests {
         assert!(safe_smoke_root(root.path()).is_some());
         assert!(safe_smoke_root(Path::new("/")).is_none());
         assert!(safe_smoke_root(&root.path().join("missing")).is_none());
+    }
+
+    #[test]
+    fn smoke_backend_exposes_a_connected_simulated_mtp_phone() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = SimulatedMtpDeviceBackend::for_root(root.path()).unwrap();
+        let devices = backend.devices();
+
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0].name, "Simulated MTP Phone");
+        assert!(devices[0].reconnectable);
+        assert_eq!(devices[0].root_uri, gio::File::for_path(root.path()).uri());
     }
 }
