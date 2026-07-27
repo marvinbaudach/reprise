@@ -5,10 +5,8 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::time::Duration;
 
-use gtk4::gio;
 use gtk4::gio::prelude::*;
 use gtk4::glib;
-use thiserror::Error;
 
 use reprise_core::library::settings::{self, COLUMN_WIDTHS_KEY};
 
@@ -30,17 +28,19 @@ pub enum ColumnId {
     Album,
     Genre,
     Year,
+    Added,
     Duration,
     Rating,
     PlayCount,
 }
 
-const DEFAULT_ORDER: [ColumnId; 10] = [
+const DEFAULT_ORDER: [ColumnId; 11] = [
     ColumnId::Cover,
     ColumnId::Title,
     ColumnId::Artist,
     ColumnId::Album,
     ColumnId::Year,
+    ColumnId::Added,
     ColumnId::Duration,
     ColumnId::Rating,
     ColumnId::PlayCount,
@@ -52,6 +52,7 @@ fn cell_alignment(id: ColumnId) -> CellAlignment {
     match id {
         ColumnId::TrackNumber
         | ColumnId::Year
+        | ColumnId::Added
         | ColumnId::Duration
         | ColumnId::Rating
         | ColumnId::PlayCount => CellAlignment::Numeric,
@@ -81,6 +82,7 @@ fn column_width_policy(id: ColumnId) -> ColumnWidthPolicy {
         ColumnId::Album => 300,
         ColumnId::Genre => 180,
         ColumnId::Year => 90,
+        ColumnId::Added => 160,
         ColumnId::Duration => 100,
         ColumnId::Rating => COMPACT_RATING_COLUMN_WIDTH,
         ColumnId::PlayCount => 90,
@@ -151,6 +153,7 @@ impl ColumnId {
             Self::Album => "album",
             Self::Genre => "genre",
             Self::Year => "year",
+            Self::Added => "added",
             Self::Duration => "duration",
             Self::Rating => "rating",
             Self::PlayCount => "play-count",
@@ -166,6 +169,7 @@ impl ColumnId {
             "album" => Some(Self::Album),
             "genre" => Some(Self::Genre),
             "year" => Some(Self::Year),
+            "added" => Some(Self::Added),
             "duration" => Some(Self::Duration),
             "rating" => Some(Self::Rating),
             "play-count" => Some(Self::PlayCount),
@@ -181,6 +185,7 @@ impl ColumnId {
             "album" => Some(Self::Album),
             "genre" => Some(Self::Genre),
             "year" => Some(Self::Year),
+            "added_at" => Some(Self::Added),
             "duration_ms" => Some(Self::Duration),
             "rating" => Some(Self::Rating),
             "play_count" => Some(Self::PlayCount),
@@ -198,6 +203,7 @@ pub(in crate::ui) fn column_label(id: ColumnId) -> String {
         ColumnId::Album => strings::COLUMN_ALBUM,
         ColumnId::Genre => strings::COLUMN_GENRE,
         ColumnId::Year => strings::COLUMN_YEAR,
+        ColumnId::Added => strings::COLUMN_ADDED,
         ColumnId::Duration => strings::COLUMN_LENGTH,
         ColumnId::Rating => strings::RATING,
         ColumnId::PlayCount => strings::COLUMN_PLAY_COUNT,
@@ -252,30 +258,6 @@ pub fn load_layout(conn: &rusqlite::Connection) -> ColumnLayout {
     layout
 }
 
-pub fn import_rhythmbox_tokens(tokens: &[String]) -> ColumnLayout {
-    // Rhythmbox has no Cover/Title columns in this list; a fresh import always
-    // leads with our artwork + title columns, then the mapped Rhythmbox tokens.
-    let mut order = vec![ColumnId::Cover, ColumnId::Title];
-    let mut visible = HashSet::from([ColumnId::Cover, ColumnId::Title]);
-    for token in tokens {
-        let id = match token.as_str() {
-            "track-number" => ColumnId::TrackNumber,
-            "artist" => ColumnId::Artist,
-            "album" => ColumnId::Album,
-            "genre" => ColumnId::Genre,
-            "duration" => ColumnId::Duration,
-            "date" => ColumnId::Year,
-            "rating" => ColumnId::Rating,
-            "play-count" => ColumnId::PlayCount,
-            _ => continue,
-        };
-        if visible.insert(id) {
-            order.push(id);
-        }
-    }
-    normalize(order, visible)
-}
-
 pub fn set_column_visible(layout: &ColumnLayout, id: ColumnId, visible: bool) -> ColumnLayout {
     let mut next = layout.clone();
     if visible {
@@ -313,40 +295,6 @@ fn move_column_relative(
     };
     order.insert(target_index + usize::from(after), id);
     normalize(order, layout.visible.clone())
-}
-
-const RHYTHMBOX_SCHEMA: &str = "org.gnome.rhythmbox.sources";
-const RHYTHMBOX_VISIBLE_COLUMNS_KEY: &str = "visible-columns";
-
-#[derive(Debug, Error)]
-pub enum ImportError {
-    #[error("the system GSettings schema source is unavailable")]
-    SchemaSourceUnavailable,
-    #[error("Rhythmbox GSettings schema is not installed")]
-    SchemaMissing,
-    #[error("Rhythmbox visible-columns setting is unavailable")]
-    KeyMissing,
-}
-
-pub fn read_rhythmbox_visible_columns() -> Result<Vec<String>, ImportError> {
-    let source =
-        gio::SettingsSchemaSource::default().ok_or(ImportError::SchemaSourceUnavailable)?;
-    let schema = source
-        .lookup(RHYTHMBOX_SCHEMA, true)
-        .ok_or(ImportError::SchemaMissing)?;
-    if !schema.has_key(RHYTHMBOX_VISIBLE_COLUMNS_KEY) {
-        return Err(ImportError::KeyMissing);
-    }
-    let settings = gio::Settings::new_full(&schema, gio::SettingsBackend::NONE, None);
-    Ok(settings
-        .strv(RHYTHMBOX_VISIBLE_COLUMNS_KEY)
-        .iter()
-        .map(ToString::to_string)
-        .collect())
-}
-
-pub fn should_offer_rhythmbox_import(available: bool) -> bool {
-    available
 }
 
 fn parse_ids(value: &str) -> Option<Vec<ColumnId>> {
@@ -699,6 +647,14 @@ pub(super) fn build_columns(
         cell_alignment(ColumnId::Duration),
         |t| format_duration(t.duration_ms),
     );
+    let added = append_column(
+        view,
+        shared,
+        "added_at",
+        &strings::text(strings::COLUMN_ADDED),
+        cell_alignment(ColumnId::Added),
+        |track| reprise_core::format::format_unix_timestamp(track.added_at),
+    );
     let rating = append_rating_column(view, shared);
     let play_count = append_column(
         view,
@@ -717,6 +673,7 @@ pub(super) fn build_columns(
         (ColumnId::Album, album),
         (ColumnId::Genre, genre),
         (ColumnId::Year, year),
+        (ColumnId::Added, added),
         (ColumnId::Duration, duration),
         (ColumnId::Rating, rating),
         (ColumnId::PlayCount, play_count),

@@ -26,8 +26,8 @@ use reprise_core::up_next::UpNextQueue;
 enum ToggleAction {
     StartCurrent,
     StartPending,
+    StartRandom,
     TogglePipeline,
-    Noop,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -63,11 +63,19 @@ fn toggle_action(
     match (status, current_track, has_pending) {
         (MprisPlaybackStatus::Stopped, Some(_), _) => ToggleAction::StartCurrent,
         (MprisPlaybackStatus::Stopped, None, true) => ToggleAction::StartPending,
-        (MprisPlaybackStatus::Stopped, None, false) => ToggleAction::Noop,
+        (MprisPlaybackStatus::Stopped, None, false) => ToggleAction::StartRandom,
         (MprisPlaybackStatus::Playing | MprisPlaybackStatus::Paused, _, _) => {
             ToggleAction::TogglePipeline
         }
     }
+}
+
+pub(super) fn initial_library_availability(conn: &rusqlite::Connection) -> bool {
+    reprise_core::queries::query_has_live_tracks(conn)
+        .inspect_err(
+            |error| tracing::warn!(%error, "could not determine idle playback availability"),
+        )
+        .unwrap_or(false)
 }
 
 fn move_rows_to_front(
@@ -164,6 +172,7 @@ impl PlayerController {
 
     pub(in crate::ui) fn notify_queue_changed(&self) {
         tracing::info!(up_next_len = self.up_next.borrow().len(), "up next changed");
+        self.update_agent_queue_mirror();
         let callbacks = self.queue_changed.borrow().clone();
         for callback in callbacks {
             callback();
@@ -179,7 +188,10 @@ impl PlayerController {
     /// Starts the restored queue's current track while stopped; otherwise
     /// toggles the already-loaded pipeline. Shared by the bar, Space, and
     /// MPRIS PlayPause, without ever introducing startup autoplay.
-    pub(in crate::ui) fn toggle_pause(&self) {
+    pub(in crate::ui) fn toggle_pause(self: &Rc<Self>) {
+        if self.toggle_external_pause() {
+            return;
+        }
         let status = self
             .mpris_state
             .lock()
@@ -215,6 +227,26 @@ impl PlayerController {
                 }
             }
             ToggleAction::StartPending => self.advance_playback(AdvanceReason::Manual),
+            ToggleAction::StartRandom => {
+                let snapshot = {
+                    let conn = self.conn.borrow();
+                    reprise_core::queries::query_random_live_track_ids(&conn)
+                };
+                match snapshot {
+                    Ok(ids) if ids.is_empty() => {
+                        self.library_has_tracks.set(false);
+                        self.sync_transport_enabled(false);
+                        tracing::debug!("play/pause: library is empty; nothing to play");
+                    }
+                    Ok(ids) => {
+                        self.library_has_tracks.set(true);
+                        self.play_from_view(ids, 0, super::play_origin::PlayOrigin::library());
+                    }
+                    Err(error) => {
+                        tracing::error!(%error, "could not build random library playback snapshot");
+                    }
+                }
+            }
             ToggleAction::TogglePipeline => {
                 if let Err(error) = self.player.toggle_pause() {
                     tracing::error!(%error, "toggle play/pause failed");
@@ -224,8 +256,28 @@ impl PlayerController {
                     );
                 }
             }
-            ToggleAction::Noop => tracing::debug!("play/pause: queue is empty; nothing to play"),
         }
+    }
+
+    /// Refreshes whether the idle Play action can seed a library snapshot.
+    /// Track-list reloads call this after scans and library mutations.
+    pub(in crate::ui) fn refresh_library_availability(&self) {
+        let available = {
+            let conn = self.conn.borrow();
+            reprise_core::queries::query_has_live_tracks(&conn)
+        };
+        let available = match available {
+            Ok(available) => available,
+            Err(error) => {
+                tracing::warn!(%error, "could not refresh idle playback availability");
+                return;
+            }
+        };
+        self.library_has_tracks.set(available);
+        let queue_has_tracks = self.current_up_next.get().is_some()
+            || !self.queue.borrow().is_empty()
+            || !self.up_next.borrow().is_empty();
+        self.sync_transport_enabled(queue_has_tracks);
     }
 
     /// Steps the queue to the previous track and plays it (or resets to
@@ -234,6 +286,9 @@ impl PlayerController {
     /// inside this one `let` statement, so the borrow drops before
     /// `play_track_id`/`reset_to_stopped` run.
     pub(in crate::ui) fn previous(&self) {
+        if self.playback_mode() != super::preview::PlaybackMode::Queue {
+            return;
+        }
         self.previous_with_up_next();
     }
 
@@ -241,6 +296,9 @@ impl PlayerController {
     /// if there is none) — shared by the bar's next button and MPRIS's
     /// `Next` method. Same borrow discipline as `previous`.
     pub(in crate::ui) fn next(&self) {
+        if self.playback_mode() != super::preview::PlaybackMode::Queue {
+            return;
+        }
         self.advance_playback(AdvanceReason::Manual);
     }
 
@@ -318,7 +376,16 @@ impl PlayerController {
             .map(|np| np.id)
             .filter(|id| Some(*id) != deferred);
         let play_next = self.up_next.borrow().ids().to_vec();
-        let context_count = self.queue.borrow().remaining_len();
+        let (context_count, context_sequence, context_start) = {
+            let queue = self.queue.borrow();
+            (
+                queue.remaining_len(),
+                queue.sequence_identity(),
+                queue
+                    .current_order_position()
+                    .map_or(0, |position| position + 1),
+            )
+        };
         let origin_label = self
             .play_origin
             .borrow()
@@ -326,8 +393,10 @@ impl PlayerController {
             .map(|origin| origin.label.clone());
         let player = Rc::downgrade(self);
         let context = (context_count > 0).then(|| {
-            VirtualContextTail::new(
+            VirtualContextTail::identified(
                 context_count,
+                context_sequence,
+                context_start,
                 Rc::new(move |offset, limit| {
                     player.upgrade().map_or_else(Vec::new, |player| {
                         player.queue.borrow().remaining_window(offset, limit)

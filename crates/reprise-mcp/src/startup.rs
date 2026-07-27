@@ -28,12 +28,19 @@ pub enum StartupError {
 pub struct StartupCaps {
     /// Whether `playlist:create` was granted at startup.
     pub playlist_create: bool,
+    /// Whether `playlist:manage` was granted at startup.
+    pub playlist_manage: bool,
     /// Whether `ai:create` was granted at startup.
     pub ai_create: bool,
+    /// Whether `sources:manage` was granted at startup.
+    pub sources_manage: bool,
+    #[cfg(feature = "mpris")]
+    pub device_sync: bool,
 }
 
 /// Opens and migrates the database, then snapshots the write-class capabilities
-/// (`playlist:create`, `ai:create`) as they stood at startup.
+/// (`playlist:create`, `playlist:manage`, `ai:create`, `sources:manage`) as they
+/// stood at startup.
 pub fn prepare(db_path: &Path) -> Result<StartupCaps, StartupError> {
     let conn = match db::open_migrated(Some(db_path)) {
         Ok(conn) => conn,
@@ -44,6 +51,10 @@ pub fn prepare(db_path: &Path) -> Result<StartupCaps, StartupError> {
     };
     Ok(StartupCaps {
         playlist_create: capability::playlist_create_granted(&conn).map_err(StartupError::Query)?,
+        playlist_manage: capability::playlist_manage_granted(&conn).map_err(StartupError::Query)?,
         ai_create: capability::ai_create_granted(&conn).map_err(StartupError::Query)?,
+        sources_manage: capability::sources_manage_granted(&conn).map_err(StartupError::Query)?,
+        #[cfg(feature = "mpris")]
+        device_sync: capability::device_sync_granted(&conn).map_err(StartupError::Query)?,
     })
 }

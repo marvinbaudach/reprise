@@ -1,7 +1,7 @@
 //! Display tests for the My Stats composer.
 
 use super::*;
-use reprise_core::library::stats_snapshot::{ComparisonDirection, ComparisonFactor};
+use reprise_core::library::stats_snapshot::ComparisonPresentation;
 use std::sync::{Arc, Mutex};
 
 fn view_and_conn() -> (StatsView, Rc<RefCell<Connection>>) {
@@ -11,59 +11,33 @@ fn view_and_conn() -> (StatsView, Rc<RefCell<Connection>>) {
     (StatsView::new(loader), conn)
 }
 
-/// Presses the real CheckButtons of the Customize menu — a test that calls
-/// the handler behind them proves nothing about the menu (STYLE-1) — and
-/// reads the section order off the live widget tree.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_7_customize_toggles_sections() {
+fn stats_10_page_orders_header_hero_chart_row_genres() {
     gtk4::init().unwrap();
-    let (view, conn) = view_and_conn();
-    view.wire_year_selector(&conn);
-    let [clock_check, genres_check, highlights_check] = view.render.customize.checks();
-    assert_eq!(view.render.customize.check_count(), 3);
-    assert!(clock_check.is_active());
-    assert!(view.render.clock_section.is_visible());
-    assert!(view.render.genres_section.is_visible());
-    assert!(view.render.highlights_section.is_visible());
+    let (view, _) = view_and_conn();
+
     assert_eq!(view.section_order(), SECTION_ORDER);
+    assert!(!view.page_stack.is_vhomogeneous());
+    assert!(!view.render.trend_stack.is_vhomogeneous());
+}
 
-    clock_check.activate();
+#[test]
+fn section_spacing_stays_in_the_compact_design_range() {
+    assert!((16..=24).contains(&SECTION_SPACING));
+}
 
-    assert!(!clock_check.is_active());
-    assert!(!view.render.clock_section.is_visible());
-    assert!(view.render.genres_section.is_visible());
-    assert!(view.render.highlights_section.is_visible());
-    // Hiding a section never reorders the page.
-    assert_eq!(view.section_order(), SECTION_ORDER);
-    assert_eq!(
-        settings::get_stats_layout(&conn.borrow()),
-        StatsLayout {
-            clock: false,
-            genres: true,
-            highlights: true,
-        }
-    );
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_10_no_clock_highlights_or_customize_widgets() {
+    gtk4::init().unwrap();
+    let (view, _) = view_and_conn();
+    let page = view.page.upgrade().unwrap();
+    let copy = descendant_copy(page.upcast_ref());
 
-    genres_check.activate();
-    highlights_check.activate();
-
-    assert!(!view.render.genres_section.is_visible());
-    assert!(!view.render.highlights_section.is_visible());
-    assert_eq!(view.section_order(), SECTION_ORDER);
-    assert_eq!(
-        settings::get_stats_layout(&conn.borrow()),
-        StatsLayout {
-            clock: false,
-            genres: false,
-            highlights: false,
-        }
-    );
-
-    clock_check.activate();
-
-    assert!(view.render.clock_section.is_visible());
-    assert_eq!(view.section_order(), SECTION_ORDER);
+    assert!(!copy.iter().any(|text| text.contains("LISTENING CLOCK")));
+    assert!(!copy.iter().any(|text| text.contains("HIGHLIGHTS")));
+    assert!(!copy.iter().any(|text| text.contains("Customize")));
 }
 
 #[test]
@@ -178,7 +152,8 @@ fn stats_6c_empty_state_disappears_when_real_events_exist() {
     );
     assert!(view
         .render
-        .hero_subline
+        .hero
+        .subline
         .label()
         .starts_with("5 plays \u{00b7}"));
     let snapshot = view.current_snapshot.borrow();
@@ -218,14 +193,22 @@ fn stats_6a_unreadable_history_shows_the_failure_page() {
         view.page_stack.visible_child_name().as_deref(),
         Some("failed")
     );
+    assert!(!view.render.hero.root.is_visible());
+    assert!(!view.render.header.new_badge.is_visible());
+    assert!(view.render.hero.time.label().is_empty());
+    assert!(view.render.hero.subline.label().is_empty());
 }
 
 /// Responsive wrapping only settles after a real allocation, so the test has
 /// to let a layout cycle run instead of merely draining pending sources.
 fn wait_for_layout() {
+    wait_for(150);
+}
+
+fn wait_for(milliseconds: u64) {
     let main_loop = gtk4::glib::MainLoop::new(None, false);
     let quit = main_loop.clone();
-    gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(150), move || {
+    gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(milliseconds), move || {
         quit.quit();
     });
     main_loop.run();
@@ -236,6 +219,25 @@ fn wait_for_layout() {
 /// allocated, and an unallocated row cannot prove responsive wrapping.
 fn seed_one_play(conn: &Connection) {
     seed_play_at(conn, now_unix());
+}
+
+fn seed_plays(conn: &Connection, count: i64) {
+    seed_play_at(conn, now_unix());
+    for offset in 1..count {
+        conn.execute(
+            "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, 200000)",
+            rusqlite::params![now_unix() - offset],
+        )
+        .unwrap();
+    }
+}
+
+fn seed_previous_year_play(conn: &Connection) {
+    conn.execute(
+        "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, 100000)",
+        rusqlite::params![now_unix() - 365 * 24 * 60 * 60],
+    )
+    .unwrap();
 }
 
 fn seed_play_at(conn: &Connection, played_at: i64) {
@@ -264,6 +266,24 @@ fn seed_imported_plays(conn: &Connection, play_count: i64) {
         rusqlite::params![play_count],
     )
     .unwrap();
+}
+
+fn descendant_copy(root: &gtk4::Widget) -> Vec<String> {
+    let mut copy = Vec::new();
+    let mut child = root.first_child();
+    while let Some(widget) = child {
+        if let Some(label) = widget.downcast_ref::<gtk4::Label>() {
+            copy.push(label.label().to_string());
+        }
+        if let Some(button) = widget.downcast_ref::<gtk4::Button>() {
+            if let Some(label) = button.label() {
+                copy.push(label.to_string());
+            }
+        }
+        copy.extend(descendant_copy(&widget));
+        child = widget.next_sibling();
+    }
+    copy
 }
 
 fn presented(width: i32) -> (StatsView, adw::Window) {
@@ -366,12 +386,9 @@ fn stats_view_present_refresh_and_teardown_emit_no_criticals() {
     assert!(criticals.is_empty(), "GTK criticals: {criticals:?}");
 }
 
-/// STATS-1: the pill names the compared span, and that span is seasonally
-/// congruent. "2026 so far" is measured against Jan–Jul 2025, so the pill has
-/// to say so instead of naming an equally long stretch ("previous 200 days")
-/// that reaches back into the previous winter.
+/// STATS-11: the trend tooltip names the seasonally congruent compared span.
 #[test]
-fn stats_1_pill_names_the_seasonally_congruent_compared_span() {
+fn stats_11_trend_tooltip_names_the_seasonally_congruent_compared_span() {
     let tooltip = |period| {
         strings::comparison_copy(ComparisonPresentation::Percentage(12), period)
             .unwrap()
@@ -394,59 +411,79 @@ fn stats_1_pill_names_the_seasonally_congruent_compared_span() {
     );
 }
 
-/// Between the two numbers lies a band of window widths where the row is
-/// still side by side but already narrower than the two sections need —
-/// GTK then under-allocates them. The band has to stay empty.
+/// The natural wrap point must never under-allocate either story card.
 #[test]
-fn asymmetric_row_minimums_fit_the_natural_line_length() {
-    let minimum = CLOCK_MIN_WIDTH + HIGHLIGHTS_MIN_WIDTH + ASYMMETRIC_SPACING;
+#[ignore = "requires a display; run via xvfb-run"]
+fn story_row_minimums_fit_the_natural_line_length() {
+    gtk4::init().unwrap();
+    crate::ui::style::install_css_string_for_test(&super::super::stats_css::css());
+    let (view, _) = view_and_conn();
+    let (band_minimum, _, _, _) = view
+        .render
+        .band_section
+        .measure(gtk4::Orientation::Horizontal, -1);
+    let (songs_minimum, _, _, _) = view
+        .render
+        .songs_section
+        .measure(gtk4::Orientation::Horizontal, -1);
+    let minimum = band_minimum + songs_minimum + STORY_SPACING;
+
     assert!(
-        minimum <= ASYMMETRIC_NATURAL_LINE_LENGTH,
-        "side-by-side minimum {minimum} exceeds the natural line length \
-         {ASYMMETRIC_NATURAL_LINE_LENGTH}"
+        minimum <= STORY_NATURAL_LINE_LENGTH,
+        "measured side-by-side minimum {minimum} exceeds the natural line length \
+         {STORY_NATURAL_LINE_LENGTH} (band {band_minimum}, songs {songs_minimum})"
     );
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_view_narrow_width_stacks_the_asymmetric_row() {
+fn stats_10_narrow_window_stacks_band_before_songs() {
     gtk4::init().unwrap();
     let (view, window) = presented(600);
-    let asymmetric_row = view.asymmetric_row.upgrade().unwrap();
+    let story_row = view.story_row.upgrade().unwrap();
 
-    assert!(asymmetric_row.width() > 0);
+    assert!(story_row.width() > 0);
     assert_ne!(
         view.render
-            .clock_section
-            .compute_bounds(&asymmetric_row)
+            .band_section
+            .compute_bounds(&story_row)
             .unwrap()
             .y(),
         view.render
-            .highlights_section
-            .compute_bounds(&asymmetric_row)
+            .songs_section
+            .compute_bounds(&story_row)
             .unwrap()
             .y(),
-        "narrow sections must wrap onto separate lines"
+        "narrow story cards must wrap onto separate lines"
+    );
+    assert!(
+        view.render
+            .band_section
+            .compute_bounds(&story_row)
+            .unwrap()
+            .y()
+            < view
+                .render
+                .songs_section
+                .compute_bounds(&story_row)
+                .unwrap()
+                .y(),
+        "the band card must remain before the songs card"
     );
     window.close();
 }
 
-/// STATS-1: a realistic Stats-pane allocation (the center column of a
-/// 1200-pixel app window with both side columns present) must reflow controls
-/// before either the hours anchor or the named comparison period ellipsizes.
+/// STATS-11: a realistic Stats-pane allocation must reflow the KPI row before
+/// the listening-time anchor or trend reference ellipsizes.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_1_realistic_width_keeps_the_hero_copy_unellipsized() {
+fn stats_11_realistic_width_keeps_the_hero_copy_unellipsized() {
     gtk4::init().unwrap();
     crate::ui::style::install();
     let (view, conn) = view_and_conn();
     seed_one_play(&conn.borrow());
+    seed_previous_year_play(&conn.borrow());
     view.wire_year_selector(&conn);
-    view.render.hero_time.set_label("34 hours");
-    view.render
-        .comparison_pill
-        .set_label("\u{25b2} 955% vs same period 2025");
-    view.render.comparison_pill.set_visible(true);
 
     let window = adw::Window::builder()
         .default_width(600)
@@ -458,7 +495,6 @@ fn stats_1_realistic_width_keeps_the_hero_copy_unellipsized() {
     wait_for_layout();
 
     let hero_row = view.hero_row.upgrade().unwrap();
-    let hero_time_row = view.hero_time_row.upgrade().unwrap();
     let first = hero_row.first_child().unwrap();
     let last = hero_row.last_child().unwrap();
     assert_ne!(
@@ -466,55 +502,32 @@ fn stats_1_realistic_width_keeps_the_hero_copy_unellipsized() {
         last.compute_bounds(&hero_row).unwrap().y(),
         "hero controls must wrap below the copy at a realistic width"
     );
-    assert_eq!(
-        view.render
-            .hero_time
-            .compute_bounds(&hero_time_row)
-            .unwrap()
-            .y(),
-        view.render
-            .comparison_pill
-            .compute_bounds(&hero_time_row)
-            .unwrap()
-            .y(),
-        "the hours and compact pill still fit on one line"
-    );
-    assert!(view.render.hero_time.is_mapped());
-    assert!(view.render.comparison_pill.is_mapped());
+    assert!(view.render.hero.time.is_mapped());
+    assert!(view.render.hero.kpis.trend.root.is_mapped());
     assert!(
-        !view.render.hero_time.layout().is_ellipsized(),
+        !view.render.hero.time.layout().is_ellipsized(),
         "hours anchor was ellipsized at {} px",
-        view.render.hero_time.width()
+        view.render.hero.time.width()
     );
     assert!(
-        !view.render.comparison_pill.layout().is_ellipsized(),
+        !view.render.hero.kpis.trend.value.layout().is_ellipsized(),
         "comparison reference was ellipsized at {} px",
-        view.render.comparison_pill.width()
+        view.render.hero.kpis.trend.value.width()
     );
 
     window.close();
 }
 
-/// STATS-1a: the pill owns compact copy and the tooltip owns the fully named
-/// seasonal reference. At a realistic center-pane width the compact label is
-/// allocated in full; ellipsization is never an accepted fallback.
+/// STATS-11a: a zero baseline moves the new-history message into the header
+/// badge and never leaves a meaningless delta in the KPI row.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_1a_comparison_pill_is_not_ellipsized_at_a_realistic_width() {
+fn stats_11a_new_badge_is_not_ellipsized_at_a_realistic_width() {
     gtk4::init().unwrap();
     crate::ui::style::install();
     let (view, conn) = view_and_conn();
     seed_one_play(&conn.borrow());
     view.wire_year_selector(&conn);
-    view.render.hero_time.set_label("34 hours");
-    render_comparison(
-        &view.render,
-        Some(ComparisonPresentation::Factor {
-            direction: ComparisonDirection::Up,
-            value: ComparisonFactor::Whole(11),
-        }),
-        StatsPeriod::YearToDate(2026),
-    );
 
     let window = adw::Window::builder()
         .default_width(600)
@@ -525,46 +538,184 @@ fn stats_1a_comparison_pill_is_not_ellipsized_at_a_realistic_width() {
     window.present();
     wait_for_layout();
 
+    assert_eq!(view.render.header.new_badge.label(), "New this year");
     assert_eq!(
-        view.render.comparison_pill.label(),
-        "\u{25b2} \u{00d7}11 vs 2025"
-    );
-    assert_eq!(
-        view.render.comparison_pill.tooltip_text().as_deref(),
-        Some("\u{25b2} \u{00d7}11 vs same period 2025")
-    );
-    assert_eq!(
-        view.render.comparison_pill.ellipsize(),
+        view.render.header.new_badge.ellipsize(),
         gtk4::pango::EllipsizeMode::None
     );
     assert!(
-        !view.render.comparison_pill.layout().is_ellipsized(),
-        "comparison pill was ellipsized at {} px",
-        view.render.comparison_pill.width()
+        !view.render.header.new_badge.layout().is_ellipsized(),
+        "new badge was ellipsized at {} px",
+        view.render.header.new_badge.width()
     );
+    assert!(!view.render.hero.kpis.trend.root.is_visible());
 
     window.close();
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_view_wide_width_keeps_the_asymmetric_row_side_by_side() {
+fn stats_11_hero_renders_kpi_pairs_without_placeholders() {
+    gtk4::init().unwrap();
+    let (view, conn) = view_and_conn();
+    seed_one_play(&conn.borrow());
+    seed_previous_year_play(&conn.borrow());
+    view.wire_year_selector(&conn);
+
+    assert!(view.render.hero.kpis.per_day.root.is_visible());
+    assert!(view.render.hero.kpis.trend.root.is_visible());
+    assert!(view.render.hero.kpis.pace.root.is_visible());
+    assert!(view.render.hero.kpis.best_week.root.is_visible());
+    assert!(view.render.hero.subline.label().contains("plays"));
+    assert!(view.render.hero.subline.label().contains("artists"));
+
+    let all_time = view
+        .periods
+        .borrow()
+        .iter()
+        .position(|period| *period == StatsPeriod::AllTime)
+        .unwrap() as u32;
+    view.period_dropdown.set_selected(all_time);
+    while glib::MainContext::default().iteration(false) {}
+
+    assert!(!view.render.hero.kpis.trend.root.is_visible());
+    assert!(!view.render.hero.kpis.pace.root.is_visible());
+    assert!(view.render.hero.kpis.per_day.root.is_visible());
+    assert!(view.render.hero.kpis.best_week.root.is_visible());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_11a_zero_baseline_shows_new_badge_not_a_delta() {
+    gtk4::init().unwrap();
+    let (view, conn) = view_and_conn();
+    seed_one_play(&conn.borrow());
+    view.wire_year_selector(&conn);
+
+    assert!(view.render.header.new_badge.is_visible());
+    assert_eq!(view.render.header.new_badge.label(), "New this year");
+    assert!(!view.render.hero.kpis.trend.root.is_visible());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_16_thin_history_swaps_chart_for_hint() {
+    gtk4::init().unwrap();
+    let (view, conn) = view_and_conn();
+    seed_plays(&conn.borrow(), 9);
+    view.wire_year_selector(&conn);
+
+    assert_eq!(
+        view.render.trend_stack.visible_child_name().as_deref(),
+        Some("hint")
+    );
+    assert!(view.render.hero.subline.label().starts_with("9 plays"));
+
+    conn.borrow()
+        .execute(
+            "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, 200000)",
+            rusqlite::params![now_unix() - 10],
+        )
+        .unwrap();
+    view.refresh(&conn);
+
+    assert_eq!(
+        view.render.trend_stack.visible_child_name().as_deref(),
+        Some("chart")
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_10_wide_window_keeps_band_and_songs_side_by_side() {
     gtk4::init().unwrap();
     let (view, window) = presented(1_000);
-    let asymmetric_row = view.asymmetric_row.upgrade().unwrap();
+    let story_row = view.story_row.upgrade().unwrap();
 
     assert_eq!(
         view.render
-            .clock_section
-            .compute_bounds(&asymmetric_row)
+            .band_section
+            .compute_bounds(&story_row)
             .unwrap()
             .y(),
         view.render
-            .highlights_section
-            .compute_bounds(&asymmetric_row)
+            .songs_section
+            .compute_bounds(&story_row)
             .unwrap()
             .y(),
-        "wide sections must remain side by side"
+        "wide story cards must remain side by side"
     );
     window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_10_section_gaps_stay_equal_when_top_tracks_expand_and_collapse() {
+    gtk4::init().unwrap();
+    crate::ui::style::install_css_string_for_test(&super::super::stats_css::css());
+    let (view, window) = presented(1_000);
+    let sections = view
+        .page_stack
+        .child_by_name("sections")
+        .unwrap()
+        .downcast::<gtk4::Box>()
+        .unwrap();
+
+    assert!(!view.render.top_tracks_section.is_visible());
+    assert_eq!(occupied_section_gaps(&sections), vec![20, 20]);
+
+    let reveal = descendant_button(
+        view.render.songs_card.widget().upcast_ref(),
+        "Show all top tracks",
+    );
+    reveal.emit_clicked();
+    wait_for(400);
+
+    assert!(view.render.top_tracks_section.is_visible());
+    assert!(view.render.top_tracks_section.is_child_revealed());
+    assert_eq!(occupied_section_gaps(&sections), vec![20, 20, 20]);
+
+    reveal.emit_clicked();
+    wait_for(400);
+
+    assert!(!view.render.top_tracks_section.is_visible());
+    assert_eq!(occupied_section_gaps(&sections), vec![20, 20]);
+    window.close();
+}
+
+fn occupied_section_gaps(sections: &gtk4::Box) -> Vec<i32> {
+    let mut bounds = Vec::new();
+    let mut child = sections.first_child();
+    while let Some(widget) = child {
+        let widget_bounds = widget.compute_bounds(sections).unwrap();
+        if widget.is_visible() && widget_bounds.height() > 0.0 {
+            bounds.push(widget_bounds);
+        }
+        child = widget.next_sibling();
+    }
+    bounds
+        .windows(2)
+        .map(|pair| (pair[1].y() - pair[0].y() - pair[0].height()).round() as i32)
+        .collect()
+}
+
+fn descendant_button(root: &gtk4::Widget, label: &str) -> gtk4::Button {
+    descendant_button_or_none(root, label)
+        .unwrap_or_else(|| panic!("missing button labeled {label}"))
+}
+
+fn descendant_button_or_none(root: &gtk4::Widget, label: &str) -> Option<gtk4::Button> {
+    let mut child = root.first_child();
+    while let Some(widget) = child {
+        if let Some(button) = widget.downcast_ref::<gtk4::Button>() {
+            if button.label().as_deref() == Some(label) {
+                return Some(button.clone());
+            }
+        }
+        if let Some(button) = descendant_button_or_none(&widget, label) {
+            return Some(button);
+        }
+        child = widget.next_sibling();
+    }
+    None
 }

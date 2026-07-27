@@ -10,6 +10,9 @@ use serde::{Deserialize, Serialize};
 
 pub use super::playlist_delete::delete;
 
+pub const RECENTLY_ADDED_NAME: &str = "Recently added";
+pub const RECENTLY_ADDED_ROLE: &str = "recently_added";
+
 /// Summary of a manual playlist (name, id, track count).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlaylistSummary {
@@ -27,6 +30,7 @@ pub struct SmartPlaylist {
     /// `PlaylistSummary.name`; `queries.rs`'s `ViewSource::Smart` handling
     /// itself only needs `rules_json`/`sort_field`/`sort_dir`/`limit_count`.
     pub name: String,
+    pub role: Option<String>,
     pub rules_json: String,
     pub sort_field: String,
     pub sort_dir: String,
@@ -695,7 +699,8 @@ pub fn create_smart(
 /// Lists all smart playlists.
 pub fn list_smart(conn: &Connection) -> Result<Vec<SmartPlaylist>, rusqlite::Error> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, rules_json, sort_field, sort_dir, limit_count FROM smart_playlists",
+        "SELECT id, name, rules_json, sort_field, sort_dir, limit_count, role
+         FROM smart_playlists",
     )?;
     let smart_playlists = stmt.query_map([], |row| {
         Ok(SmartPlaylist {
@@ -705,6 +710,7 @@ pub fn list_smart(conn: &Connection) -> Result<Vec<SmartPlaylist>, rusqlite::Err
             sort_field: row.get(3)?,
             sort_dir: row.get(4)?,
             limit_count: row.get(5)?,
+            role: row.get(6)?,
         })
     })?;
 

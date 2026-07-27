@@ -1,11 +1,12 @@
 //! User-pause state and injectable timing for synchronized-lyrics scrolling.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Duration;
 
 pub(in crate::ui) const USER_PAUSE_MS: u64 = 4_000;
 const MIN_CONTENT_MARGIN: i32 = 18;
+const STABLE_TARGET_TOLERANCE: f64 = 0.5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::ui) enum ScrollMode {
@@ -101,6 +102,28 @@ pub(in crate::ui) fn centered_scroll_value(
 pub(in crate::ui) fn content_margins(viewport_height: i32, row_height: i32) -> (i32, i32) {
     let trailing = ((viewport_height - row_height) / 2).max(MIN_CONTENT_MARGIN);
     (MIN_CONTENT_MARGIN, trailing)
+}
+
+/// Accepts a centering target only after GTK reported the same allocation
+/// across consecutive frames.
+#[derive(Debug, Default)]
+pub(in crate::ui) struct StableScrollTarget {
+    previous: Cell<Option<f64>>,
+}
+
+impl StableScrollTarget {
+    pub(in crate::ui) fn observe(&self, target: f64) -> Option<f64> {
+        if !target.is_finite() {
+            self.previous.set(None);
+            return None;
+        }
+        let stable = self
+            .previous
+            .get()
+            .is_some_and(|previous| (target - previous).abs() <= STABLE_TARGET_TOLERANCE);
+        self.previous.set(Some(target));
+        stable.then_some(target)
+    }
 }
 
 pub(in crate::ui) trait ScrollTimerHandle {
@@ -257,5 +280,14 @@ mod tests {
         state.external_seek();
         assert_eq!(state.mode(), ScrollMode::Auto);
         assert!(state.should_follow_active_line());
+    }
+
+    #[test]
+    fn centering_waits_until_the_highlighted_row_target_is_stable() {
+        let target = StableScrollTarget::default();
+
+        assert_eq!(target.observe(120.0), None);
+        assert_eq!(target.observe(138.0), None);
+        assert_eq!(target.observe(138.25), Some(138.25));
     }
 }

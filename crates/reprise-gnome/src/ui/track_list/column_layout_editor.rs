@@ -341,7 +341,7 @@ fn build_surface(
 }
 
 pub(in crate::ui) fn build_navigation_page(track_list: &Rc<TrackList>) -> adw::NavigationPage {
-    let title = strings::text(strings::ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT);
+    let title = strings::text(strings::COLUMN_LAYOUT);
     let surface = build_surface(track_list, &title, true);
     let serialized = column_layout::serialize_layout(&surface.state.layout.borrow());
     tracing::info!(layout = %serialized, "column layout editor opened in preferences");
@@ -496,14 +496,14 @@ mod tests {
         // Cover is a fixed leading column — never listed, so it can't be
         // reordered or hidden from the editor.
         assert!(!editor_lists_column(ColumnId::Cover));
-        for id in [ColumnId::Title, ColumnId::Artist] {
+        for id in [ColumnId::Title, ColumnId::Artist, ColumnId::Added] {
             assert!(editor_lists_column(id), "{id:?} should be listed");
         }
     }
 
     #[test]
     fn every_listed_column_is_draggable_and_toggleable() {
-        for id in [ColumnId::Title, ColumnId::Artist] {
+        for id in [ColumnId::Title, ColumnId::Artist, ColumnId::Added] {
             let caps = row_capabilities(id);
             assert!(caps.toggleable, "{id:?} should be toggleable");
             assert!(caps.draggable, "{id:?} should be draggable");
@@ -618,10 +618,7 @@ mod tests {
 
         let page = build_navigation_page(&track_list);
 
-        assert_eq!(
-            page.title(),
-            strings::text(strings::ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT)
-        );
+        assert_eq!(page.title(), strings::text(strings::COLUMN_LAYOUT));
         assert!(page.can_pop());
         assert!(page
             .child()

@@ -81,13 +81,6 @@ pub struct ListenEventSnapshot {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HourlyListens {
-    pub hour: i32,
-    pub listens: i64,
-    pub total_ms: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RankedGroup {
     pub group: Group,
     pub representative_track_path: String,
@@ -107,6 +100,12 @@ pub(crate) struct NamedRow {
     pub ms: i64,
     pub last_played_at: i64,
     pub path: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct GenreArtistRow {
+    pub genre_raw: String,
+    pub artist: NamedRow,
 }
 
 #[derive(Debug, Clone)]
@@ -266,6 +265,43 @@ pub(crate) fn genre_rows(
     query_named_rows(conn, &sql, start_unix, end_unix)
 }
 
+pub(crate) fn genre_artist_rows(
+    conn: &Connection,
+    start_unix: i64,
+    end_unix: i64,
+) -> Result<Vec<GenreArtistRow>, rusqlite::Error> {
+    let sql = format!(
+        "SELECT le.genre, {RAW_EFFECTIVE_ALBUM_ARTIST} AS raw, le.artist, le.album_artist, \
+                NULLIF(TRIM(le.artist_mbid), ''), COUNT(le.id), \
+                COALESCE(SUM({CLAMPED_MS}), 0), MAX(le.played_at), MAX(le.path) \
+         FROM listen_events le \
+         WHERE le.played_at >= ?1 AND le.played_at < ?2 \
+           AND TRIM(le.genre) <> '' \
+         GROUP BY le.genre, raw, le.artist, le.album_artist, le.artist_mbid"
+    );
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement
+        .query_map(params![start_unix, end_unix], |row| {
+            let artist: String = row.get(2)?;
+            let album_artist: String = row.get(3)?;
+            let mbid: Option<String> = row.get(4)?;
+            Ok(GenreArtistRow {
+                genre_raw: row.get(0)?,
+                artist: NamedRow {
+                    raw: row.get(1)?,
+                    mbid: eligible_artist_mbid(&artist, &album_artist, mbid.as_deref())
+                        .map(str::to_string),
+                    plays: row.get(5)?,
+                    ms: row.get(6)?,
+                    last_played_at: row.get(7)?,
+                    path: row.get(8)?,
+                },
+            })
+        })?
+        .collect();
+    rows
+}
+
 pub(crate) fn album_rows(
     conn: &Connection,
     start_unix: i64,
@@ -342,22 +378,6 @@ pub(crate) fn track_rows(
         })?
         .collect();
     rows
-}
-
-pub(crate) fn discovered_count(
-    conn: &Connection,
-    start_unix: i64,
-    end_unix: i64,
-) -> Result<i64, rusqlite::Error> {
-    conn.query_row(
-        "SELECT COUNT(*) FROM ( \
-           SELECT track_id, MIN(played_at) AS first_played_at \
-           FROM listen_events GROUP BY track_id \
-           HAVING first_played_at >= ?1 AND first_played_at < ?2 \
-         )",
-        params![start_unix, end_unix],
-        |row| row.get(0),
-    )
 }
 
 /// Track ids belonging to an exact runtime metadata group.

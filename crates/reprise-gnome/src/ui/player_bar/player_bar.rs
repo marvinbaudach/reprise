@@ -12,7 +12,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gtk4::prelude::*;
 use libadwaita::prelude::AnimationExt;
@@ -35,6 +35,14 @@ pub(in crate::ui) const ICON_PREVIOUS: &str = "media-skip-backward-symbolic";
 pub(in crate::ui) const ICON_NEXT: &str = "media-skip-forward-symbolic";
 pub(in crate::ui) const ICON_REPEAT_ALL: &str = "media-playlist-repeat-symbolic";
 pub(in crate::ui) const ICON_REPEAT_ONE: &str = "media-playlist-repeat-song-symbolic";
+
+fn repeat_indicator(repeat: Repeat) -> (&'static str, &'static str) {
+    match repeat {
+        Repeat::Off => (ICON_REPEAT_ALL, strings::TOOLTIP_REPEAT_OFF),
+        Repeat::All => (ICON_REPEAT_ALL, strings::TOOLTIP_REPEAT_ALL),
+        Repeat::One => (ICON_REPEAT_ONE, strings::TOOLTIP_REPEAT_ONE),
+    }
+}
 
 /// Volume icon names indexed by loudness tier.
 const ICON_VOLUME_MUTED: &str = "audio-volume-muted-symbolic";
@@ -70,21 +78,23 @@ pub struct PlayerBar {
     /// itself (see `cover_loader.rs`).
     cover: gtk4::Image,
     cover_button: gtk4::Button,
-    title_label: gtk4::Label,
+    pub(in crate::ui) title_label: gtk4::Label,
     title_button: gtk4::Button,
-    artist_label: gtk4::Label,
+    pub(in crate::ui) artist_label: gtk4::Label,
     artist_button: gtk4::Button,
     /// Three-bar animated equalizer indicator — `playing` CSS class toggled by
     /// `set_mini_eq_playing`.
     mini_eq: gtk4::Box,
-    shuffle_button: gtk4::ToggleButton,
-    prev_button: gtk4::Button,
+    pub(in crate::ui) shuffle_button: gtk4::ToggleButton,
+    pub(in crate::ui) prev_button: gtk4::Button,
     play_pause_button: gtk4::Button,
-    next_button: gtk4::Button,
-    repeat_button: gtk4::ToggleButton,
-    position_label: gtk4::Label,
-    duration_label: gtk4::Label,
-    waveform: WaveformSeek,
+    pub(in crate::ui) next_button: gtk4::Button,
+    pub(in crate::ui) repeat_button: gtk4::ToggleButton,
+    pub(in crate::ui) play_next_episode_button: gtk4::Button,
+    pub(in crate::ui) retry_external_button: gtk4::Button,
+    pub(in crate::ui) position_label: gtk4::Label,
+    pub(in crate::ui) duration_label: gtk4::Label,
+    pub(in crate::ui) waveform: WaveformSeek,
     /// Inline volume slider (replaces the old `ScaleButton`).
     volume_scale: gtk4::Scale,
     /// Volume icon button — click toggles mute.
@@ -92,8 +102,13 @@ pub struct PlayerBar {
     /// Current track duration (ms) from the latest `set_position`, so
     /// `connect_seek` can turn the waveform's 0..1 fraction into a target ms.
     duration_ms: Rc<Cell<i64>>,
+    pub(in crate::ui) seek_enabled: Rc<Cell<bool>>,
+    pub(in crate::ui) live_started_at: RefCell<Option<Instant>>,
+    pub(in crate::ui) external_podcast: Cell<bool>,
+    pub(in crate::ui) play_next_available: Cell<bool>,
     playback_state: Cell<PlaybackState>,
-    queue_has_tracks: Cell<bool>,
+    pub(in crate::ui) queue_has_tracks: Cell<bool>,
+    library_has_tracks: Cell<bool>,
     /// True for the duration of `set_shuffle_indicator`'s `set_active`
     /// call, so `connect_shuffle_toggled`'s handler can tell a programmatic
     /// set (MPRIS `Shuffle` write) apart from a real user click. See the
@@ -146,6 +161,8 @@ impl PlayerBar {
             play_pause_button,
             next_button,
             repeat_button,
+            play_next_episode_button,
+            retry_external_button,
             position_label,
             duration_label,
             waveform,
@@ -223,14 +240,21 @@ impl PlayerBar {
             play_pause_button,
             next_button,
             repeat_button,
+            play_next_episode_button,
+            retry_external_button,
             position_label,
             duration_label,
             waveform,
             volume_scale,
             volume_icon,
             duration_ms: Rc::new(Cell::new(0)),
+            seek_enabled: Rc::new(Cell::new(true)),
+            live_started_at: RefCell::new(None),
+            external_podcast: Cell::new(false),
+            play_next_available: Cell::new(false),
             playback_state: Cell::new(PlaybackState::Stopped),
             queue_has_tracks: Cell::new(false),
+            library_has_tracks: Cell::new(false),
             updating_shuffle: Rc::new(Cell::new(false)),
             updating_volume: Rc::new(Cell::new(false)),
             muted: Cell::new(false),
@@ -490,6 +514,14 @@ impl PlayerBar {
     /// `Position` event. The position label shows elapsed time; the duration
     /// label shows remaining time (negative, using `format_remaining`).
     pub fn set_position(&self, position_ms: i64, duration_ms: i64) {
+        if let Some(started) = *self.live_started_at.borrow() {
+            self.position_label
+                .set_text(&super::player_bar_state::format_live_elapsed(
+                    started.elapsed().as_millis() as i64,
+                ));
+            self.duration_label.set_text("");
+            return;
+        }
         let duration_ms = duration_ms.max(0);
         let position_ms = position_ms.clamp(0, duration_ms);
         self.duration_ms.set(duration_ms);
@@ -501,8 +533,12 @@ impl PlayerBar {
         };
         self.waveform.set_fraction_smooth(fraction);
         self.position_label.set_text(&format_duration(position_ms));
-        self.duration_label
-            .set_text(&format_remaining(position_ms, duration_ms));
+        if self.external_podcast.get() {
+            self.duration_label.set_text(&format_duration(duration_ms));
+        } else {
+            self.duration_label
+                .set_text(&format_remaining(position_ms, duration_ms));
+        }
     }
 
     pub fn set_mini_eq_playing(&self, playing: bool) {
@@ -545,7 +581,11 @@ impl PlayerBar {
     /// the waveform never emits on a position tick, only on a real click.
     pub fn connect_seek<F: Fn(i64) + 'static>(&self, f: F) {
         let duration_ms = self.duration_ms.clone();
+        let seek_enabled = self.seek_enabled.clone();
         self.waveform.connect_seek(move |fraction| {
+            if !seek_enabled.get() {
+                return;
+            }
             let target_ms = (fraction * duration_ms.get() as f64).round() as i64;
             f(target_ms);
         });
@@ -686,29 +726,33 @@ impl PlayerBar {
         self.repeat_button.connect_clicked(move |_| f());
     }
 
-    /// Updates queue-dependent controls and the stopped bar's resumability.
+    /// Updates transport-dependent controls and the stopped bar's reachability.
     /// Previous/next remain insensitive without a current queue position;
-    /// Play remains usable while stopped when a queue can be resumed.
-    pub fn set_transport_enabled(&self, enabled: bool) {
-        self.queue_has_tracks.set(enabled);
-        self.prev_button.set_sensitive(enabled);
-        self.next_button.set_sensitive(enabled);
+    /// Play remains usable when either a queue can resume or the library can
+    /// seed a random snapshot.
+    pub fn set_transport_enabled(&self, queue_has_tracks: bool, library_has_tracks: bool) {
+        self.queue_has_tracks.set(queue_has_tracks);
+        self.library_has_tracks.set(library_has_tracks);
+        self.prev_button.set_sensitive(queue_has_tracks);
+        self.next_button.set_sensitive(queue_has_tracks);
         self.refresh_sensitivity();
     }
 
-    fn refresh_sensitivity(&self) {
+    pub(in crate::ui) fn refresh_sensitivity(&self) {
         let state = self.playback_state.get();
         let queue_has_tracks = self.queue_has_tracks.get();
-        self.root
-            .set_sensitive(super::player_bar_state::bar_should_be_sensitive(
-                state,
-                queue_has_tracks,
-            ));
-        self.play_pause_button
-            .set_sensitive(state != PlaybackState::Stopped || queue_has_tracks);
+        let library_has_tracks = self.library_has_tracks.get();
+        let playback_available = super::player_bar_state::bar_should_be_sensitive(
+            state,
+            queue_has_tracks,
+            library_has_tracks,
+            self.play_next_available.get(),
+        );
+        self.root.set_sensitive(playback_available);
+        self.play_pause_button.set_sensitive(playback_available);
         self.waveform
             .widget()
-            .set_sensitive(state != PlaybackState::Stopped);
+            .set_sensitive(state != PlaybackState::Stopped && self.seek_enabled.get());
     }
 
     /// Reflects the queue's repeat mode on the repeat button. Repeat is a
@@ -721,11 +765,10 @@ impl PlayerBar {
     /// connected to the repeat button's `toggled` signal, and the click cycle
     /// runs off `clicked`, which `set_active` does not emit.
     pub fn set_repeat_indicator(&self, repeat: Repeat) {
-        let icon = match repeat {
-            Repeat::Off | Repeat::All => ICON_REPEAT_ALL,
-            Repeat::One => ICON_REPEAT_ONE,
-        };
+        let (icon, tooltip) = repeat_indicator(repeat);
         self.repeat_button.set_icon_name(icon);
+        self.repeat_button
+            .set_tooltip_text(Some(&strings::text(tooltip)));
         self.repeat_button.set_active(repeat != Repeat::Off);
     }
 }

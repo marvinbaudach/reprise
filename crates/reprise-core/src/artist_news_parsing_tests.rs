@@ -21,12 +21,6 @@ fn date() -> NaiveDate {
     NaiveDate::from_ymd_opt(2026, 7, 13).unwrap()
 }
 
-fn migrated_conn() -> rusqlite::Connection {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn
-}
-
 #[test]
 fn urls_encode_artist_and_bound_release_group_browse() {
     let search = artist_search_url("AC/DC & Friends");
@@ -73,11 +67,12 @@ fn artist_match_rejects_ambiguous_exact_candidates_and_bad_json() {
 }
 
 #[test]
-fn release_parser_keeps_regular_albums_and_eps_but_not_local_albums() {
-    let items = parse_release_groups(RELEASES, &[" recent   ep ".into()], date(), false);
-    assert_eq!(items.len(), 1);
+fn release_parser_keeps_regular_albums_eps_and_owned_titles() {
+    let items = parse_release_groups(RELEASES, date(), false);
+    assert_eq!(items.len(), 2);
     assert_eq!(items[0].title, "Future Album");
     assert_eq!(items[0].kind, NewsKind::Upcoming);
+    assert_eq!(items[1].title, "Recent EP");
 }
 
 #[test]
@@ -88,7 +83,7 @@ fn release_parser_excludes_secondary_and_non_album_types() {
       {"id":"3","title":"Single","first-release-date":"2026-07-01","primary-type":"Single","secondary-types":[]},
       {"id":"4","title":"Regular","first-release-date":"2026-07-01","primary-type":"Album","secondary-types":[]}
     ]}"#;
-    let items = parse_release_groups(json, &[], date(), false);
+    let items = parse_release_groups(json, date(), false);
     assert_eq!(
         items
             .iter()
@@ -107,7 +102,7 @@ fn date_filter_keeps_current_albums_and_ignores_missing_dates() {
       {"id":"too-old","title":"Too Old","first-release-date":"2026-04-13","primary-type":"Album"},
       {"id":"unknown","title":"Unknown","primary-type":"Album"}
     ]}"#;
-    let items = parse_release_groups(json, &[], date(), false);
+    let items = parse_release_groups(json, date(), false);
     assert_eq!(items.len(), 3);
     assert!(items
         .iter()
@@ -125,7 +120,7 @@ fn nr_1a_album_and_ep_window_starts_ninety_days_ago() {
       {"id":"future","title":"Distant Future","first-release-date":"2028-01-01","primary-type":"Album"}
     ]}"#;
 
-    let titles = parse_release_groups(json, &[], date(), false)
+    let titles = parse_release_groups(json, date(), false)
         .into_iter()
         .map(|item| item.title)
         .collect::<Vec<_>>();
@@ -143,7 +138,7 @@ fn nr_1a_singles_require_a_complete_future_date() {
       {"id":"year","title":"Year Single","first-release-date":"2027","primary-type":"Single"}
     ]}"#;
 
-    let titles = parse_release_groups(json, &[], date(), false)
+    let titles = parse_release_groups(json, date(), false)
         .into_iter()
         .map(|item| item.title)
         .collect::<Vec<_>>();
@@ -161,7 +156,7 @@ fn nr_1a_singles_window_starts_ninety_days_ago() {
       {"id":"too-old","title":"Too Old Single","first-release-date":"2026-04-13","primary-type":"Single"}
     ]}"#;
 
-    let titles = parse_release_groups(json, &[], date(), true)
+    let titles = parse_release_groups(json, date(), true)
         .into_iter()
         .map(|item| item.title)
         .collect::<Vec<_>>();
@@ -184,7 +179,7 @@ fn nr_1a_secondary_types_are_excluded_before_the_twenty_item_cap() {
     }
     let json = format!(r#"{{"release-groups":[{}]}}"#, groups.join(","));
 
-    let items = parse_release_groups(&json, &[], date(), false);
+    let items = parse_release_groups(&json, date(), false);
 
     assert_eq!(items.len(), 20);
     assert!(items.iter().all(|item| item.title != "Live"));
@@ -203,7 +198,7 @@ fn releases_sort_upcoming_ascending_then_new_descending() {
       {"id":"u2","title":"Upcoming 2","first-release-date":"2026-09-01","primary-type":"Album"},
       {"id":"n2","title":"New 2","first-release-date":"2026-05-01","primary-type":"Album"}
     ]}"#;
-    let titles = parse_release_groups(json, &[], date(), false)
+    let titles = parse_release_groups(json, date(), false)
         .into_iter()
         .map(|item| item.title)
         .collect::<Vec<_>>();
@@ -223,109 +218,32 @@ fn upcoming_album_survives_a_local_title_match() {
     let json = r#"{"release-groups":[
       {"id":"1","title":"Eclipse","first-release-date":"2026-09-01","primary-type":"Album","secondary-types":[]}
     ]}"#;
-    let items = parse_release_groups(json, &["Eclipse".into()], date(), false);
+    let items = parse_release_groups(json, date(), false);
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].title, "Eclipse");
     assert_eq!(items[0].kind, NewsKind::Upcoming);
 }
 
 #[test]
-fn released_album_is_filtered_only_when_the_local_album_is_really_owned() {
-    let conn = migrated_conn();
-    // Two tracks under "Owned Album" — that counts as owned.
-    for index in 1..=2 {
-        conn.execute(
-            "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
-             VALUES (?1, 'T', 'Pink Floyd', 'Owned Album', 1, 0)",
-            [format!("/music/owned-{index}.flac")],
-        )
-        .unwrap();
-    }
-    // One track under "Single Only" — a single, not the album.
-    conn.execute(
-        "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
-         VALUES ('/music/single.flac', 'S', 'Pink Floyd', 'Single Only', 1, 0)",
-        [],
-    )
-    .unwrap();
-
-    let owned = crate::artist_news::local_albums_for_test(&conn, "Pink Floyd").unwrap();
-    assert!(owned.iter().any(|album| album == "Owned Album"));
-    assert!(
-        !owned.iter().any(|album| album == "Single Only"),
-        "one track must not make the whole album count as owned"
-    );
-
+fn released_owned_album_is_retained_for_query_time_presence() {
     let json = r#"{"release-groups":[
       {"id":"1","title":"Owned Album","first-release-date":"2026-07-01","primary-type":"Album","secondary-types":[]},
       {"id":"2","title":"Single Only","first-release-date":"2026-07-01","primary-type":"Album","secondary-types":[]}
     ]}"#;
-    let items = parse_release_groups(json, &owned, date(), false);
+    let items = parse_release_groups(json, date(), false);
     let titles = items
         .iter()
         .map(|item| item.title.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(titles, ["Single Only"]);
+    assert_eq!(titles, ["Owned Album", "Single Only"]);
 }
 
 #[test]
-fn released_album_is_owned_despite_internal_whitespace_tagging_drift() {
-    // Two tracks of the same album, tagged with an internal whitespace run
-    // that differs ("The  Wall" vs "The Wall"). SQL's `lower(trim(x))` only
-    // trims the ends, so grouping in SQL would split these into two groups
-    // of one track each and neither would reach `OWNED_ALBUM_MIN_TRACKS`.
-    // `normalize()` additionally collapses internal whitespace runs, so both
-    // tracks must land in the same group and the album must count as owned.
-    let conn = migrated_conn();
-    conn.execute(
-        "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
-         VALUES ('/music/wall-1.flac', 'T', 'Pink Floyd', 'The  Wall', 1, 0)",
-        [],
-    )
-    .unwrap();
-    conn.execute(
-        "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
-         VALUES ('/music/wall-2.flac', 'T', 'Pink Floyd', 'The Wall', 1, 0)",
-        [],
-    )
-    .unwrap();
-
-    let owned = crate::artist_news::local_albums_for_test(&conn, "Pink Floyd").unwrap();
-    assert!(
-        owned
-            .iter()
-            .any(|album| crate::artist_news::normalize(album) == crate::artist_news::normalize("The Wall")),
-        "two tracks differing only by an internal whitespace run must count as one owned album, got {owned:?}"
-    );
-}
-
-#[test]
-fn upcoming_album_bypasses_the_owned_threshold_even_when_two_local_tracks_match() {
-    // The user owns the lead single *and* a B-side, both mis-tagged with the
-    // forthcoming album's name — two local tracks, which is exactly
-    // `OWNED_ALBUM_MIN_TRACKS`. By the threshold's own measure this album
-    // looks owned. But the album has not been released yet, so an unreleased
-    // album cannot be owned: the bypass must let it through regardless.
-    let conn = migrated_conn();
-    for index in 1..=2 {
-        conn.execute(
-            "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
-             VALUES (?1, 'T', 'Pink Floyd', 'Eclipse', 1, 0)",
-            [format!("/music/eclipse-{index}.flac")],
-        )
-        .unwrap();
-    }
-
-    let owned = crate::artist_news::local_albums_for_test(&conn, "Pink Floyd").unwrap();
-    assert!(
-        owned.iter().any(|album| album == "Eclipse"),
-        "two local tracks must meet the owned-album threshold"
-    );
-
+fn upcoming_album_is_retained_without_fetch_time_library_input() {
     let json = r#"{"release-groups":[
       {"id":"1","title":"Eclipse","first-release-date":"2026-09-01","primary-type":"Album","secondary-types":[]}
     ]}"#;
-    let items = parse_release_groups(json, &owned, date(), false);
+    let items = parse_release_groups(json, date(), false);
 
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].title, "Eclipse");
@@ -340,7 +258,7 @@ const SINGLES: &str = r#"{"release-groups":[
 
 #[test]
 fn released_singles_are_dropped_while_the_switch_is_off() {
-    let items = parse_release_groups(SINGLES, &[], date(), false);
+    let items = parse_release_groups(SINGLES, date(), false);
     let titles = items
         .iter()
         .map(|item| item.title.as_str())
@@ -354,7 +272,7 @@ fn released_singles_are_dropped_while_the_switch_is_off() {
 
 #[test]
 fn released_singles_pass_within_the_window_while_the_switch_is_on() {
-    let items = parse_release_groups(SINGLES, &[], date(), true);
+    let items = parse_release_groups(SINGLES, date(), true);
     let mut titles = items
         .iter()
         .map(|item| item.title.as_str())

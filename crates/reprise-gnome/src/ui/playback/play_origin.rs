@@ -65,11 +65,17 @@ fn resolve_label(conn: &Connection, source: &ViewSource) -> String {
             ),
         ViewSource::Album { album, .. } => album.clone(),
         ViewSource::Artist(artist) => artist.clone(),
+        ViewSource::Genre(genre) => genre.clone(),
+        ViewSource::RecentlyAdded => strings::text(strings::SIDEBAR_RECENTLY_ADDED),
         ViewSource::Missing => strings::text(strings::SIDEBAR_MISSING_FILES),
         ViewSource::ImportErrors => strings::text(strings::SIDEBAR_IMPORT_ERRORS),
         ViewSource::Library
         | ViewSource::Queue
         | ViewSource::MyStats
+        | ViewSource::Releases
+        | ViewSource::Concerts
+        | ViewSource::Podcasts
+        | ViewSource::Radio
         | ViewSource::Conversions
         | ViewSource::Device { .. } => strings::text(strings::SIDEBAR_MUSIC),
     }
@@ -93,6 +99,7 @@ pub(crate) fn to_session(
     let source = match origin.place.view_source() {
         ViewSource::Playlist(id) => SessionSource::Playlist(id),
         ViewSource::Smart(id) => SessionSource::Smart(id),
+        ViewSource::RecentlyAdded => SessionSource::RecentlyAdded,
         ViewSource::Missing => SessionSource::Missing,
         ViewSource::ImportErrors => SessionSource::ImportErrors,
         _ => SessionSource::Library,
@@ -119,6 +126,7 @@ pub(crate) fn from_session(
     }
     let source = match source? {
         SessionSource::Library | SessionSource::Queue => ViewSource::Library,
+        SessionSource::RecentlyAdded => ViewSource::RecentlyAdded,
         SessionSource::Playlist(id) => ViewSource::Playlist(id),
         SessionSource::Smart(id) => ViewSource::Smart(id),
         SessionSource::Missing => ViewSource::Missing,

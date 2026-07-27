@@ -6,12 +6,11 @@ use std::rc::{Rc, Weak};
 
 use gtk4::prelude::*;
 use libadwaita as adw;
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 use reprise_core::browser::navigation::NavigationIntent;
 use reprise_core::browser::{AlbumKey, ArtistKey};
 use reprise_core::library::watcher::WatcherHandle;
-use reprise_core::library::{group_key::GroupKind, playlists, stats_screen::group_track_ids};
 use reprise_core::view_source::ViewSource;
 
 use super::player_controller::PlayerController;
@@ -20,7 +19,6 @@ use super::sidebar::Sidebar;
 use super::stats_view::StatsView;
 use super::track_list::TrackList;
 use crate::ui::playback::play_origin;
-use crate::ui::stats::stats_highlights::TopGenre;
 use crate::ui::stats::stats_metadata_links::StatsMetadataTarget;
 
 #[derive(Clone, Copy)]
@@ -137,22 +135,6 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
     super::tag_edit_flow::wire_refresh(track_list, sidebar, player);
 
     {
-        let player = player.as_ref().map(Rc::downgrade);
-        let conn = conn.clone();
-        stats_view.set_on_spotlight_play(move |artist, key| {
-            let Some(player) = player.as_ref().and_then(Weak::upgrade) else {
-                return;
-            };
-            match stats_spotlight_track_ids(&conn, &key) {
-                Ok(ids) if !ids.is_empty() => {
-                    player.play_from_view(ids, 0, play_origin::from_artist(&artist));
-                }
-                Ok(_) => {}
-                Err(error) => tracing::warn!(%error, "stats spotlight track query failed"),
-            }
-        });
-    }
-    {
         let navigator = metadata_navigator.clone();
         stats_view.set_on_go_to_artist(move |artist| {
             navigator.navigate(
@@ -162,6 +144,40 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
                 },
                 "stats artist link",
             );
+        });
+    }
+    {
+        let player = player.as_ref().map(Rc::downgrade);
+        let conn = conn.clone();
+        stats_view.set_on_play_track(move |track_id| {
+            let Some(player) = player.as_ref().and_then(Weak::upgrade) else {
+                return;
+            };
+            let artist = {
+                let conn = conn.borrow();
+                reprise_core::queries::query_track_summary(&conn, track_id)
+                    .ok()
+                    .flatten()
+                    .map(|track| track.artist)
+            }
+            .unwrap_or_else(|| "My Stats".to_string());
+            player.play_from_view(vec![track_id], 0, play_origin::from_artist(&artist));
+        });
+    }
+    {
+        let player = player.as_ref().map(Rc::downgrade);
+        stats_view.set_on_play_next(move |track_id| {
+            if let Some(player) = player.as_ref().and_then(Weak::upgrade) {
+                player.play_next(&[track_id]);
+            }
+        });
+    }
+    {
+        let player = player.as_ref().map(Rc::downgrade);
+        stats_view.set_on_add_to_queue(move |track_id| {
+            if let Some(player) = player.as_ref().and_then(Weak::upgrade) {
+                player.append_to_queue(&[track_id]);
+            }
         });
     }
     {
@@ -202,21 +218,29 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
     }
     {
         let conn = conn.clone();
-        let sidebar = Rc::downgrade(sidebar);
-        stats_view.set_on_create_smart_mix(move |genre| {
-            let created = {
-                let mut conn = conn.borrow_mut();
-                create_stats_smart_mix(&mut conn, &genre)
+        let navigator = metadata_navigator.clone();
+        stats_view.set_on_genre_album(move |path| {
+            let target = {
+                let conn = conn.borrow();
+                stats_album_target_for_path(&conn, &path)
             };
-            match created {
-                Ok(Some(source)) => {
-                    if let Some(sidebar) = sidebar.upgrade() {
-                        sidebar.refresh_and_select(source, "stats smart mix created");
-                    }
-                }
+            match target {
+                Ok(Some((track_id, album, album_artist))) => navigator.navigate(
+                    NavigationIntent::OpenAlbum {
+                        album: AlbumKey::new(album, album_artist),
+                        anchor_track_id: Some(track_id),
+                    },
+                    "stats genre album",
+                ),
                 Ok(None) => {}
-                Err(error) => tracing::warn!(%error, "stats smart mix creation failed"),
+                Err(error) => tracing::warn!(%error, "stats genre album lookup failed"),
             }
+        });
+    }
+    {
+        let navigator = metadata_navigator.clone();
+        stats_view.set_on_go_to_genre(move |genre| {
+            navigator.navigate(NavigationIntent::OpenGenre { genre }, "stats genre link");
         });
     }
     // Stage 3 Task 5: context menu action wiring. `track_list` stays
@@ -422,69 +446,18 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
     }
 }
 
-fn stats_spotlight_track_ids(
-    conn: &Rc<RefCell<Connection>>,
-    key: &str,
-) -> Result<Vec<i64>, rusqlite::Error> {
-    group_track_ids(&conn.borrow(), GroupKind::Artist, key)
-}
-
-/// Builds the mix the My Stats CTA promises, starting from the genre group's
-/// **key** — the displayed label is only the group's most common raw spelling
-/// (STATS-9), and `genre = '<label>'` misses every other spelling because
-/// `tracks.genre` has no `COLLATE NOCASE`.
-///
-/// The smart-rule engine joins its rules with `AND` and knows neither `OR` nor
-/// `IN` (`playlists::smart_rules_to_sql`), so it can only express a genre
-/// group that has exactly one spelling. That is the common case and it becomes
-/// a real, self-updating smart playlist. When the group folds several
-/// spellings, no rule set can express it: the mix is then created as a regular
-/// playlist holding exactly the group's tracks, so the playlist and the number
-/// on screen agree instead of quietly disagreeing.
-fn create_stats_smart_mix(
-    conn: &mut Connection,
-    genre: &TopGenre,
-) -> Result<Option<ViewSource>, rusqlite::Error> {
-    if genre.key.trim().is_empty() {
-        return Ok(None);
-    }
-    let ids = group_track_ids(conn, GroupKind::Genre, &genre.key)?;
-    if ids.is_empty() {
-        tracing::warn!(key = %genre.key, "stats smart mix found no tracks for the genre group");
-        return Ok(None);
-    }
-    let name = format!("My Stats \u{2014} {} Mix", genre.label);
-    let spellings = group_genre_spellings(conn, &ids)?;
-    let Some(single) = spellings.first().filter(|_| spellings.len() == 1) else {
-        return playlists::create_with_tracks(conn, &name, &ids)
-            .map(|id| Some(ViewSource::Playlist(id)));
-    };
-    let rules = serde_json::json!([{
-        "field": "genre",
-        "op": "=",
-        "value": single,
-    }])
-    .to_string();
-    playlists::create_smart(conn, &name, &rules, "play_count", "desc", Some(50))
-        .map(|id| Some(ViewSource::Smart(id)))
-}
-
-/// The distinct raw `genre` spellings behind a set of tracks — the values a
-/// rule would have to match.
-fn group_genre_spellings(
+fn stats_album_target_for_path(
     conn: &Connection,
-    track_ids: &[i64],
-) -> Result<Vec<String>, rusqlite::Error> {
-    let placeholders = vec!["?"; track_ids.len()].join(",");
-    let mut statement = conn.prepare(&format!(
-        "SELECT DISTINCT genre FROM tracks \
-         WHERE id IN ({placeholders}) AND TRIM(COALESCE(genre, '')) <> '' \
-         ORDER BY genre"
-    ))?;
-    let spellings = statement
-        .query_map(rusqlite::params_from_iter(track_ids), |row| row.get(0))?
-        .collect::<Result<Vec<String>, _>>()?;
-    Ok(spellings)
+    path: &str,
+) -> Result<Option<(i64, String, String)>, rusqlite::Error> {
+    conn.query_row(
+        "SELECT id, album, \
+                CASE WHEN TRIM(album_artist) <> '' THEN TRIM(album_artist) ELSE TRIM(artist) END \
+         FROM tracks WHERE path = ?1",
+        [path],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )
+    .optional()
 }
 
 #[cfg(test)]

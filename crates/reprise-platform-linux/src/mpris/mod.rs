@@ -92,9 +92,16 @@
 //! `main.rs`, and the rest of the app runs exactly as if this module didn't
 //! exist.
 
+mod control;
+mod device_sync_control;
 mod state;
 
-use state::{build_metadata, loop_status_to_repeat, repeat_to_loop_status, track_object_path};
+use control::RepriseControl;
+use device_sync_control::DeviceSyncControl;
+use state::{
+    build_metadata, loop_status_to_repeat, next_command, previous_command, repeat_to_loop_status,
+    seek_command, set_position_command,
+};
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -108,9 +115,13 @@ use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{ObjectPath, OwnedValue, Value};
 use zbus::{fdo, interface};
 
+use reprise_core::agent_device_sync::{
+    AgentDeviceSyncRequest, AgentDeviceSyncState, SharedAgentDeviceSyncState,
+};
 use reprise_core::media_integration::{
-    can_pause, can_play, can_seek, metadata_differs, micros_to_ms, ms_to_micros, read_state,
-    MediaIntegrationHandles, MprisCommand, MprisState, SharedMprisState,
+    can_go_next, can_go_previous, can_pause, can_play, can_seek, metadata_differs, ms_to_micros,
+    read_state, AgentQueueState, MediaIntegrationHandles, MprisCommand, MprisState,
+    SharedAgentQueueState, SharedMprisState,
 };
 
 /// Well-known bus name this app claims — must match the MPRIS spec's
@@ -153,16 +164,35 @@ const FIXED_RATE: f64 = 1.0;
 /// poll loop.
 pub fn start(desktop_entry: &'static str) -> MediaIntegrationHandles {
     let state: SharedMprisState = Arc::new(Mutex::new(MprisState::default()));
+    let queue_state: SharedAgentQueueState = Arc::new(Mutex::new(AgentQueueState::default()));
     let (sender, receiver) = async_channel::unbounded::<MprisCommand>();
     let (seek_sender, seek_receiver) = async_channel::unbounded::<i64>();
+    let device_sync_state = Arc::new(Mutex::new(AgentDeviceSyncState::default()));
+    let (device_sync_sender, device_sync_receiver) =
+        async_channel::unbounded::<AgentDeviceSyncRequest>();
 
     let thread_state = state.clone();
-    std::thread::spawn(move || run(&thread_state, sender, seek_receiver, desktop_entry));
+    let thread_queue_state = queue_state.clone();
+    let thread_device_sync_state = device_sync_state.clone();
+    std::thread::spawn(move || {
+        run(
+            &thread_state,
+            thread_queue_state,
+            sender,
+            seek_receiver,
+            thread_device_sync_state,
+            device_sync_sender,
+            desktop_entry,
+        );
+    });
 
     MediaIntegrationHandles {
         shared_state: state,
+        queue_state,
         commands: receiver,
         seek_notify: seek_sender,
+        device_sync_state,
+        device_sync_commands: device_sync_receiver,
     }
 }
 
@@ -175,21 +205,26 @@ pub fn start(desktop_entry: &'static str) -> MediaIntegrationHandles {
 /// itself — the owning `Arc` stays with `start`'s thread closure.
 fn run(
     state: &SharedMprisState,
+    queue_state: SharedAgentQueueState,
     commands: async_channel::Sender<MprisCommand>,
     seek_receiver: async_channel::Receiver<i64>,
+    device_sync_state: SharedAgentDeviceSyncState,
+    device_sync_commands: async_channel::Sender<AgentDeviceSyncRequest>,
     desktop_entry: &'static str,
 ) {
     let player_iface = MprisPlayer {
         state: state.clone(),
         commands: commands.clone(),
     };
-    let reprise_control = RepriseControl { commands };
+    let reprise_control = RepriseControl::new(commands, queue_state);
+    let device_sync_control = DeviceSyncControl::new(device_sync_commands, device_sync_state);
 
     let connection = connection::Builder::session()
         .and_then(|builder| builder.name(BUS_NAME))
         .and_then(|builder| builder.serve_at(OBJECT_PATH, MprisRoot { desktop_entry }))
         .and_then(|builder| builder.serve_at(OBJECT_PATH, player_iface))
         .and_then(|builder| builder.serve_at(OBJECT_PATH, reprise_control))
+        .and_then(|builder| builder.serve_at(OBJECT_PATH, device_sync_control))
         .and_then(connection::Builder::build);
     let connection = match connection {
         Ok(connection) => connection,
@@ -300,11 +335,11 @@ fn emit_property_changes(
     if metadata_differs(previous, current) {
         changed.insert("Metadata", Value::from(build_metadata(current)));
     }
-    if previous.can_next != current.can_next {
-        changed.insert("CanGoNext", Value::from(current.can_next));
+    if can_go_next(previous) != can_go_next(current) {
+        changed.insert("CanGoNext", Value::from(can_go_next(current)));
     }
-    if previous.can_prev != current.can_prev {
-        changed.insert("CanGoPrevious", Value::from(current.can_prev));
+    if can_go_previous(previous) != can_go_previous(current) {
+        changed.insert("CanGoPrevious", Value::from(can_go_previous(current)));
     }
     if can_play(previous) != can_play(current) {
         changed.insert("CanPlay", Value::from(can_play(current)));
@@ -469,16 +504,16 @@ impl MprisPlayer {
 
     #[zbus(property)]
     fn can_go_next(&self) -> bool {
-        self.snapshot().can_next
+        can_go_next(&self.snapshot())
     }
 
     #[zbus(property)]
     fn can_go_previous(&self) -> bool {
-        self.snapshot().can_prev
+        can_go_previous(&self.snapshot())
     }
 
-    /// Stage 3 Task 10: `CanSeek` is intrinsic to "is a track loaded",
-    /// exactly like `can_pause` — see [`can_seek`]'s doc comment.
+    /// `CanSeek` reflects the loaded media kind: tracks and podcast episodes
+    /// are seekable, while live external streams are not.
     #[zbus(property)]
     fn can_seek(&self) -> bool {
         can_seek(&self.snapshot())
@@ -637,11 +672,17 @@ impl MprisPlayer {
     }
 
     fn next(&self) {
-        self.dispatch(MprisCommand::Next);
+        let snapshot = self.snapshot();
+        if let Some(command) = next_command(&snapshot) {
+            self.dispatch(command);
+        }
     }
 
     fn previous(&self) {
-        self.dispatch(MprisCommand::Previous);
+        let snapshot = self.snapshot();
+        if let Some(command) = previous_command(&snapshot) {
+            self.dispatch(command);
+        }
     }
 
     /// `Seek(offset_µs)`: a *relative* seek. Converts to ms via
@@ -653,7 +694,10 @@ impl MprisPlayer {
     /// in the app (see its doc comment), which is also what emits `Seeked`
     /// afterward.
     fn seek(&self, offset: i64) {
-        self.dispatch(MprisCommand::Seek(micros_to_ms(offset)));
+        let snapshot = self.snapshot();
+        if let Some(command) = seek_command(&snapshot, offset) {
+            self.dispatch(command);
+        }
     }
 
     /// `SetPosition(TrackId, Position_µs)`: an *absolute* seek, but only if
@@ -674,21 +718,14 @@ impl MprisPlayer {
     #[allow(clippy::needless_pass_by_value)]
     fn set_position(&self, track_id: ObjectPath<'_>, position: i64) {
         let snapshot = self.snapshot();
-        let Some(current_id) = snapshot.track_id else {
-            tracing::debug!("MPRIS SetPosition: no current track; ignoring");
-            return;
-        };
-        let expected = track_object_path(current_id);
-        if track_id.as_str() != expected {
+        if let Some(command) = set_position_command(&snapshot, track_id.as_str(), position) {
+            self.dispatch(command);
+        } else {
             tracing::debug!(
                 requested = track_id.as_str(),
-                expected,
-                "MPRIS SetPosition: trackid mismatch; ignoring per spec"
+                "MPRIS SetPosition: media is not seekable or trackid is stale; ignoring"
             );
-            return;
         }
-        let position_ms = micros_to_ms(position).clamp(0, snapshot.duration_ms.max(0));
-        self.dispatch(MprisCommand::SetPosition(position_ms));
     }
 
     /// Emitted after every successful seek — app-internal (the bar's seek
@@ -700,58 +737,4 @@ impl MprisPlayer {
     /// jumps.
     #[zbus(signal)]
     async fn seeked(emitter: &SignalEmitter<'_>, position: i64) -> zbus::Result<()>;
-}
-
-/// Reprise-specific control surface, served on the same object alongside
-/// MPRIS, for commands MPRIS has no vocabulary for. Today: play an explicit
-/// ordered list of library track ids (a single track = one id; a playlist =
-/// its ids, resolved by the caller). Kept minimal on purpose — the app stays
-/// a dumb command sink; callers own any library resolution.
-struct RepriseControl {
-    commands: async_channel::Sender<MprisCommand>,
-}
-
-#[interface(name = "org.reprise.Player1")]
-impl RepriseControl {
-    /// Seed the queue from `ids` (in order) and start playing. An empty list
-    /// is a no-op (never clears the current queue).
-    ///
-    /// Send idiom matches `MprisPlayer::dispatch` exactly (see its doc
-    /// comment): `MprisCommand` isn't `Copy`, so `try_send` genuinely moves
-    /// `ids` in; on failure `TrySendError::into_inner` hands the never-sent
-    /// value back for the log line instead of cloning it up front.
-    fn play_track_ids(&self, ids: Vec<i64>) {
-        if ids.is_empty() {
-            return;
-        }
-        if let Err(error) = self.commands.try_send(MprisCommand::PlayTrackIds(ids)) {
-            let message = error.to_string();
-            let command = error.into_inner();
-            tracing::warn!(error = %message, ?command, "MPRIS command dropped: controller receiver is gone");
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn reprise_control_play_track_ids_dispatches_the_command() {
-        let (sender, receiver) = async_channel::unbounded::<MprisCommand>();
-        let control = RepriseControl { commands: sender };
-        control.play_track_ids(vec![3, 1, 2]);
-        assert_eq!(
-            receiver.try_recv().unwrap(),
-            MprisCommand::PlayTrackIds(vec![3, 1, 2])
-        );
-    }
-
-    #[test]
-    fn reprise_control_play_track_ids_empty_list_is_a_no_op() {
-        let (sender, receiver) = async_channel::unbounded::<MprisCommand>();
-        let control = RepriseControl { commands: sender };
-        control.play_track_ids(vec![]);
-        assert!(receiver.try_recv().is_err());
-    }
 }

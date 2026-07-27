@@ -27,10 +27,11 @@
 //!   and [`provision`] (checksummed download + licence notice + onnxruntime
 //!   library resolution, the network fetch injected). Dependencies: `sha2`,
 //!   `dirs` — both tiny and pure-Rust.
-//! * **`ort`**: the real `OrtStemBackend`, audio decode/resample/encode, and
-//!   the `ureq` model fetcher. Pulls `ort`, `symphonia` (MPL-2.0), `flacenc`
-//!   (Apache-2.0), `rubato` (MIT), `ndarray` and `ureq`. Binary hosts (the GTK
-//!   app; the CLI behind its own `worker` feature) enable this.
+//! * **`provision-http`**: the blocking `ureq` model fetcher without inference.
+//! * **`ort`**: the real `OrtStemBackend` plus audio
+//!   decode/resample/encode; it also enables `provision-http`. Pulls `ort`,
+//!   `symphonia` (MPL-2.0), `flacenc` (Apache-2.0), `rubato` (MIT), `ndarray`
+//!   and `ureq`. Only the dedicated worker binary enables this.
 //!
 //! ## onnxruntime linkage — the Flatpak-offline story
 //!
@@ -42,9 +43,9 @@
 //! optionally checksummed candidate list ([`provision::onnxruntime_location`]):
 //! `ORT_DYLIB_PATH` first, then a host-bundled `libonnxruntime.so` beside the
 //! models; if none exists it fails with a clear message. A Flatpak ships the
-//! library as a checksum-declared source and points `ORT_DYLIB_PATH` at it
-//! (optionally pinning `REPRISE_ORT_DYLIB_SHA256`). onnxruntime is pinned to
-//! **1.22.0** (ort 2.0-rc.10).
+//! library as a checksum-declared source, installs it under `/app/lib/reprise`,
+//! and embeds its path plus SHA-256 into the app build. onnxruntime is pinned
+//! to **1.22.0** (ort 2.0-rc.10).
 //!
 //! For local development, point `ORT_DYLIB_PATH` at any onnxruntime 1.22.0
 //! `libonnxruntime.so` (e.g. the official

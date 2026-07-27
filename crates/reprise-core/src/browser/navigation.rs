@@ -14,12 +14,17 @@ pub const MAX_HISTORY: usize = 50;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SidebarTarget {
     Music,
+    RecentlyAdded,
     Queue,
     Playlist(i64),
     Smart(i64),
     Missing,
     ImportErrors,
     MyStats,
+    Releases,
+    Concerts,
+    Podcasts,
+    Radio,
     Conversions,
     Device(String),
 }
@@ -34,6 +39,9 @@ pub enum NavigationIntent {
     OpenArtist {
         artist: ArtistKey,
         anchor_track_id: Option<i64>,
+    },
+    OpenGenre {
+        genre: String,
     },
     RevealTrack {
         origin: Box<BrowserPlace>,
@@ -163,6 +171,16 @@ impl BrowserNavigation {
                     fresh_target_state(anchor_track_id),
                 ))
             }
+            NavigationIntent::OpenGenre { genre } => {
+                let genre = genre.trim();
+                if genre.is_empty() {
+                    return None;
+                }
+                self.go_metadata_scope(BrowserPlace::tracks(
+                    TrackCollection::Library(LibraryScope::Genre(genre.to_owned())),
+                    TrackViewState::default(),
+                ))
+            }
             NavigationIntent::RevealTrack { origin, track_id } => {
                 if track_id <= 0 {
                     return None;
@@ -181,12 +199,19 @@ impl BrowserNavigation {
     fn sidebar_place(&self, target: SidebarTarget) -> BrowserPlace {
         match target {
             SidebarTarget::Music => self.library_root.clone(),
+            SidebarTarget::RecentlyAdded => {
+                fresh_tracks(TrackCollection::Library(LibraryScope::RecentlyAdded))
+            }
             SidebarTarget::Queue => fresh_tracks(TrackCollection::Queue),
             SidebarTarget::Playlist(id) if id > 0 => fresh_tracks(TrackCollection::Playlist(id)),
             SidebarTarget::Smart(id) if id > 0 => fresh_tracks(TrackCollection::Smart(id)),
             SidebarTarget::Missing => fresh_tracks(TrackCollection::Missing),
             SidebarTarget::ImportErrors => BrowserPlace::ImportErrors,
             SidebarTarget::MyStats => BrowserPlace::MyStats,
+            SidebarTarget::Releases => BrowserPlace::Releases,
+            SidebarTarget::Concerts => BrowserPlace::Concerts,
+            SidebarTarget::Podcasts => BrowserPlace::Podcasts,
+            SidebarTarget::Radio => BrowserPlace::Radio,
             SidebarTarget::Conversions => BrowserPlace::Conversions,
             SidebarTarget::Device(serial) if !serial.trim().is_empty() => BrowserPlace::Device {
                 serial: serial.trim().to_owned(),
@@ -299,7 +324,12 @@ fn same_destination(left: &BrowserPlace, right: &BrowserPlace) -> bool {
             left.collection == right.collection
         }
         (BrowserPlace::ImportErrors, BrowserPlace::ImportErrors)
-        | (BrowserPlace::MyStats, BrowserPlace::MyStats) => true,
+        | (BrowserPlace::MyStats, BrowserPlace::MyStats)
+        | (BrowserPlace::Releases, BrowserPlace::Releases)
+        | (BrowserPlace::Concerts, BrowserPlace::Concerts)
+        | (BrowserPlace::Podcasts, BrowserPlace::Podcasts)
+        | (BrowserPlace::Radio, BrowserPlace::Radio)
+        | (BrowserPlace::Conversions, BrowserPlace::Conversions) => true,
         (BrowserPlace::Device { serial: left }, BrowserPlace::Device { serial: right }) => {
             left == right
         }
@@ -327,6 +357,22 @@ mod tests {
             TrackCollection::Library(LibraryScope::All),
             TrackViewState::default(),
         )
+    }
+
+    #[test]
+    fn concerts_and_releases_are_independent_sidebar_places() {
+        let mut navigation = BrowserNavigation::new(library());
+
+        let releases = navigation
+            .navigate(NavigationIntent::Sidebar(SidebarTarget::Releases))
+            .unwrap();
+        assert_eq!(releases.to, BrowserPlace::Releases);
+
+        let concerts = navigation
+            .navigate(NavigationIntent::Sidebar(SidebarTarget::Concerts))
+            .unwrap();
+        assert_eq!(concerts.to, BrowserPlace::Concerts);
+        assert_eq!(navigation.back_len(), 2);
     }
 
     #[test]
@@ -402,6 +448,16 @@ mod tests {
             .navigate(NavigationIntent::Sidebar(SidebarTarget::MyStats))
             .unwrap();
         assert_eq!(stats.to, BrowserPlace::MyStats);
+
+        let podcasts = navigation
+            .navigate(NavigationIntent::Sidebar(SidebarTarget::Podcasts))
+            .unwrap();
+        assert_eq!(podcasts.to, BrowserPlace::Podcasts);
+
+        let radio = navigation
+            .navigate(NavigationIntent::Sidebar(SidebarTarget::Radio))
+            .unwrap();
+        assert_eq!(radio.to, BrowserPlace::Radio);
     }
 
     #[test]
@@ -433,6 +489,32 @@ mod tests {
             )))
         );
         assert_eq!(artist.track_state(), Some(&TrackViewState::default()));
+    }
+
+    #[test]
+    fn fil_1c_genre_scope_uses_the_same_history_path_as_other_library_scopes() {
+        let mut navigation = BrowserNavigation::new(library());
+        let genre = navigation
+            .navigate(NavigationIntent::OpenGenre {
+                genre: "  Metalcore  ".into(),
+            })
+            .unwrap()
+            .to;
+
+        assert_eq!(
+            genre.collection(),
+            Some(&TrackCollection::Library(LibraryScope::Genre(
+                "Metalcore".into()
+            )))
+        );
+        assert_eq!(
+            navigation.navigate(NavigationIntent::Back).unwrap().to,
+            library()
+        );
+        assert_eq!(
+            navigation.navigate(NavigationIntent::Forward).unwrap().to,
+            genre
+        );
     }
 
     #[test]

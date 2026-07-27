@@ -4,56 +4,16 @@
 //! frontend drives playback through. The concrete implementations live in the
 //! per-OS platform crates (Linux: GStreamer `playbin3` in `player.rs`).
 
+mod fault_policy;
+
+pub use fault_policy::{playback_fault_policy, PlaybackFaultNotice, PlaybackFaultPolicy};
+
 /// Coarse playback state, mirrored from the underlying GStreamer pipeline state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlaybackState {
     Playing,
     Paused,
     Stopped,
-}
-
-/// The one user-facing notice a playback fault is allowed to produce.
-/// Frontends translate these semantic variants at their presentation edge;
-/// keeping the cardinality in [`PlaybackFaultPolicy`] makes FB-6's "one
-/// toast" rule a core policy rather than an accident of one GTK branch.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PlaybackFaultNotice {
-    /// The file vanished while it was playing: mark it missing, skip, and
-    /// explain that availability—not decoding—caused the skip.
-    TrackUnavailableSkipped,
-    /// The file still exists but the backend could not play it.
-    CouldNotPlaySkipped,
-}
-
-/// Complete effect policy for one fault of the currently playing track.
-/// Background watcher events never construct this value and therefore stay
-/// silent; only the player fault path consumes it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PlaybackFaultPolicy {
-    pub mark_missing: bool,
-    pub skip: bool,
-    /// Exactly one notice by construction. An array is deliberate: a future
-    /// edit cannot silently add a second toast without changing this API and
-    /// its FB-6 acceptance test.
-    pub notices: [PlaybackFaultNotice; 1],
-}
-
-/// Resolves a player backend fault from the strongest evidence available at
-/// that moment: whether the track's path still names a file.
-pub fn playback_fault_policy(file_exists: bool) -> PlaybackFaultPolicy {
-    if file_exists {
-        PlaybackFaultPolicy {
-            mark_missing: false,
-            skip: true,
-            notices: [PlaybackFaultNotice::CouldNotPlaySkipped],
-        }
-    } else {
-        PlaybackFaultPolicy {
-            mark_missing: true,
-            skip: true,
-            notices: [PlaybackFaultNotice::TrackUnavailableSkipped],
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -84,10 +44,16 @@ pub const SPECTRUM_BAND_COUNT: usize = 64;
 /// display refresh. Envelope time constants derive from it.
 pub const SPECTRUM_INTERVAL_MS: u64 = 16;
 const SPECTRUM_FLOOR_DB: f32 = -80.0;
+/// One skipped analyzer frame ages an onset instead of replaying it at full
+/// strength. Repeated burst coalescing applies this once per skipped frame,
+/// so old hits disappear quickly while a hit immediately before the freshest
+/// frame remains visible.
+const COALESCED_BEAT_DECAY: f32 = 0.72;
+const COALESCED_BEAT_MIN_STRENGTH: f32 = 0.05;
 
-/// A detected onset for the current frame. `fired` is the event edge; `strength`
-/// (`0..=1`) is how far the spectral flux overshot the adaptive threshold, so
-/// the frontend can scale impact visuals to how hard the hit landed.
+/// A detected onset for the current frame. `fired` is the adaptive event edge;
+/// `strength` (`0..=1`) combines its relative threshold overshoot with absolute
+/// raw-bin energy so the frontend can scale visuals to how hard the hit landed.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Beat {
     pub fired: bool,
@@ -118,6 +84,10 @@ fn normalize_db<const N: usize>(decibels: [f32; N]) -> [f32; N] {
         }
         ((value - SPECTRUM_FLOOR_DB) / -SPECTRUM_FLOOR_DB).clamp(0.0, 1.0)
     })
+}
+
+fn linear_amplitude(normalized_db: f32) -> f32 {
+    10.0_f32.powf((SPECTRUM_FLOOR_DB + normalized_db * -SPECTRUM_FLOOR_DB) / 20.0)
 }
 
 impl SpectrumFrame {
@@ -157,6 +127,27 @@ impl SpectrumFrame {
     pub fn dynamics(&self) -> f32 {
         self.dynamics
     }
+
+    /// Replaces this frame's continuous spectrum data with `latest` while
+    /// retaining a sufficiently recent onset edge.
+    ///
+    /// UI consumers use this when render load lets analyzer frames accumulate:
+    /// continuous values must be latest-wins so the picture cannot lag behind
+    /// playback, but dropping the preceding frame outright would make short
+    /// kick/snare transients invisible. Folding a burst through this method
+    /// preserves that edge with per-frame decay and never replays stale bands.
+    pub fn coalesce_latest(self, mut latest: Self) -> Self {
+        let carried_strength = self.beat.strength * COALESCED_BEAT_DECAY;
+        if carried_strength >= COALESCED_BEAT_MIN_STRENGTH
+            && carried_strength > latest.beat.strength
+        {
+            latest.beat = Beat {
+                fired: true,
+                strength: carried_strength,
+            };
+        }
+        latest
+    }
 }
 
 // --- Reactivity derivation (see `Beat` / `SpectrumFrame`) --------------------
@@ -168,6 +159,11 @@ const BASS_BAND_COUNT: usize = 4;
 const FLUX_LOW_BANDS: usize = 8;
 const FLUX_LOW_WEIGHT: f32 = 1.6;
 const FLUX_HIGH_WEIGHT: f32 = 1.0;
+/// Parallel low-frequency onset path. A kick inside an already loud,
+/// compressed mix may barely move the broad average while still producing a
+/// clear local bass transient. Keep this below unity so broadband impacts
+/// retain comparable strength.
+const FLUX_LOW_PATH_GAIN: f32 = 0.75;
 /// Envelope release time constants (ms). Attack is near-instant.
 const LEVEL_RELEASE_MS: f32 = 180.0;
 const BASS_RELEASE_MS: f32 = 140.0;
@@ -179,12 +175,21 @@ const DYN_LONG_MS: f32 = 2200.0;
 const DYN_SCALE: f32 = 1.5;
 /// Beat fires when flux exceeds `mean + K*std + floor`, is above a minimum, and
 /// the refractory window has elapsed.
-const BEAT_K: f32 = 1.8;
-const BEAT_FLOOR: f32 = 0.02;
-const BEAT_MIN_FLUX: f32 = 0.05;
+const BEAT_K: f32 = 1.4;
+const BEAT_FLOOR: f32 = 0.01;
+const BEAT_MIN_FLUX: f32 = 0.03;
 const BEAT_REFRACTORY_MS: f32 = 90.0;
-/// Flux overshoot above threshold that maps to full `strength`.
-const BEAT_STRENGTH_OVERSHOOT: f32 = 0.35;
+/// Flux overshoot above threshold that maps the relative confidence term to 1.
+const BEAT_STRENGTH_OVERSHOOT: f32 = 0.12;
+/// Linear-amplitude range that maps a detected onset to a full-size visual
+/// impact. Onset detection remains logarithmic; sizing must be linear so a
+/// quiet jump spanning many decibels cannot outrank a loud breakdown kick.
+const BEAT_STRENGTH_ENERGY_FLOOR: f32 = 0.005;
+const BEAT_STRENGTH_ABSOLUTE_SPAN: f32 = 0.08;
+const BEAT_STRENGTH_RELATIVE_MIX: f32 = 0.15;
+const BEAT_ENERGY_LOW_RAW_BINS: usize = 8;
+const BEAT_ENERGY_LOW_GAIN: f32 = 0.9;
+const BEAT_ENERGY_BROAD_GAIN: f32 = 0.3;
 // --- Display-band mapping: honest to loudness, no per-band auto-gain ---------
 //
 // Each band's magnitude is mapped through a *fixed* decibel window so the
@@ -334,7 +339,7 @@ impl SpectrumAnalyzer {
         self.level_env = level;
         let bass = envelope(self.bass_env, bass_input, self.bass_release);
         self.bass_env = bass;
-        let beat = self.detect_beat(&folded);
+        let beat = self.detect_beat(&folded, &raw);
         self.prev_bands = folded;
         let dynamics = self.detect_dynamics(overall);
 
@@ -362,27 +367,54 @@ impl SpectrumAnalyzer {
         }
     }
 
-    fn detect_beat(&mut self, bands: &[f32; SPECTRUM_BAND_COUNT]) -> Beat {
-        let mut flux = 0.0_f32;
+    fn detect_beat(
+        &mut self,
+        bands: &[f32; SPECTRUM_BAND_COUNT],
+        raw: &[f32; SPECTRUM_ANALYSIS_BAND_COUNT],
+    ) -> Beat {
+        let mut weighted_flux = 0.0_f32;
+        let mut low_flux = 0.0_f32;
         let mut total_weight = 0.0_f32;
         for (index, (&band, &prev)) in bands.iter().zip(self.prev_bands.iter()).enumerate() {
+            let positive_delta = (band - prev).max(0.0);
             let weight = if index < FLUX_LOW_BANDS {
+                low_flux += positive_delta;
                 FLUX_LOW_WEIGHT
             } else {
                 FLUX_HIGH_WEIGHT
             };
-            flux += (band - prev).max(0.0) * weight;
+            weighted_flux += positive_delta * weight;
             total_weight += weight;
         }
-        flux /= total_weight.max(1.0);
+        let broad_flux = weighted_flux / total_weight.max(1.0);
+        let bass_flux = low_flux / FLUX_LOW_BANDS as f32 * FLUX_LOW_PATH_GAIN;
+        let flux = broad_flux.max(bass_flux);
+        let overall_energy = raw.iter().map(|bin| linear_amplitude(*bin)).sum::<f32>()
+            / raw.len() as f32
+            * BEAT_ENERGY_BROAD_GAIN;
+        let low_energy = raw[..BEAT_ENERGY_LOW_RAW_BINS]
+            .iter()
+            .map(|bin| linear_amplitude(*bin))
+            .sum::<f32>()
+            / BEAT_ENERGY_LOW_RAW_BINS as f32
+            * BEAT_ENERGY_LOW_GAIN;
+        let absolute_energy = overall_energy.max(low_energy);
 
         let variance = (self.flux_sq_mean - self.flux_mean * self.flux_mean).max(0.0);
         let threshold = self.flux_mean + BEAT_K * variance.sqrt() + BEAT_FLOOR;
         let fired = flux > threshold
             && flux > BEAT_MIN_FLUX
-            && self.frames_since_beat >= self.refractory_frames;
+            // `frames_since_beat` counts completed frames after the hit. The
+            // current candidate frame contributes the final interval, so add
+            // it before comparing; otherwise a hit exactly at the documented
+            // refractory boundary is swallowed for one extra frame.
+            && self.frames_since_beat.saturating_add(1) >= self.refractory_frames;
         let strength = if fired {
-            ((flux - threshold) / BEAT_STRENGTH_OVERSHOOT).clamp(0.0, 1.0)
+            let relative = ((flux - threshold) / BEAT_STRENGTH_OVERSHOOT).clamp(0.0, 1.0);
+            let absolute = ((absolute_energy - BEAT_STRENGTH_ENERGY_FLOOR)
+                / BEAT_STRENGTH_ABSOLUTE_SPAN)
+                .clamp(0.0, 1.0);
+            absolute * (1.0 - BEAT_STRENGTH_RELATIVE_MIX + relative * BEAT_STRENGTH_RELATIVE_MIX)
         } else {
             0.0
         };
@@ -440,48 +472,20 @@ pub enum PlayerEvent {
     /// `TrackFinished`, which fires on a real end-of-stream (no next track was
     /// pre-fed) and is the frontend's cue to *start* the next track.
     AdvancedToNext,
+    /// Metadata carried by a remote stream. Radio uses the title as its live
+    /// now-playing value and the organization as the station label.
+    StreamTags {
+        title: Option<String>,
+        organization: Option<String>,
+    },
     /// A local-only, normalized audio spectrum for optional visual rendering.
     Spectrum(SpectrumFrame),
     Error(String),
 }
 
 #[cfg(test)]
-mod song_visual_tests {
-    use super::*;
-
-    #[test]
-    fn ac_10_spectrum_frame_normalizes_decibels_and_rejects_non_finite_input() {
-        let mut decibels = [-80.0_f32; SPECTRUM_BAND_COUNT];
-        decibels[..16].copy_from_slice(&[
-            -80.0,
-            -72.0,
-            -64.0,
-            -56.0,
-            -48.0,
-            -40.0,
-            -32.0,
-            -24.0,
-            -16.0,
-            -8.0,
-            0.0,
-            -120.0,
-            12.0,
-            f32::NAN,
-            f32::INFINITY,
-            f32::NEG_INFINITY,
-        ]);
-        let frame = SpectrumFrame::from_decibels(decibels);
-
-        assert_eq!(frame.bands()[0], 0.0);
-        assert_eq!(frame.bands()[5], 0.5);
-        assert_eq!(frame.bands()[10], 1.0);
-        assert_eq!(frame.bands()[11], 0.0);
-        assert_eq!(frame.bands()[12], 1.0);
-        assert_eq!(&frame.bands()[13..16], &[0.0, 0.0, 0.0]);
-        // Bands beyond the explicit prefix sit at the floor.
-        assert!(frame.bands()[16..].iter().all(|&value| value == 0.0));
-    }
-}
+#[path = "playback/song_visual_tests.rs"]
+mod song_visual_tests;
 
 #[cfg(test)]
 mod spectrum_analyzer_tests {
@@ -578,6 +582,60 @@ mod spectrum_analyzer_tests {
     }
 
     #[test]
+    fn breakdown_hits_at_the_refractory_boundary_both_fire() {
+        let mut analyzer = SpectrumAnalyzer::new();
+        ingest_n(&mut analyzer, SILENCE, 20);
+        assert!(analyzer.ingest(FULL).beat().fired);
+
+        let interval_frames = (BEAT_REFRACTORY_MS / SPECTRUM_INTERVAL_MS as f32).ceil() as usize;
+        for _ in 1..interval_frames {
+            analyzer.ingest(SILENCE);
+        }
+
+        let second = analyzer.ingest(FULL);
+        assert!(
+            second.beat().fired,
+            "a second hit after {interval_frames} analysis intervals must not be swallowed"
+        );
+    }
+
+    #[test]
+    fn localized_kick_inside_a_loud_mix_still_fires() {
+        let mut analyzer = SpectrumAnalyzer::new();
+        let wall = [-24.0; SPECTRUM_ANALYSIS_BAND_COUNT];
+        ingest_n(&mut analyzer, wall, 120);
+
+        let mut kick = wall;
+        kick[..FLUX_LOW_BANDS].fill(-12.0);
+        let hit = analyzer.ingest(kick);
+
+        assert!(
+            hit.beat().fired,
+            "a bass-localized transient must survive a compressed loud background"
+        );
+        assert!(
+            hit.beat().strength > 0.3,
+            "a genuine kick must report a meaningful onset, got {}",
+            hit.beat().strength
+        );
+    }
+
+    #[test]
+    fn minor_bass_shimmer_inside_a_loud_mix_does_not_fire() {
+        let mut analyzer = SpectrumAnalyzer::new();
+        let wall = [-24.0; SPECTRUM_ANALYSIS_BAND_COUNT];
+        ingest_n(&mut analyzer, wall, 120);
+
+        let mut shimmer = wall;
+        shimmer[..FLUX_LOW_BANDS].fill(-22.0);
+
+        assert!(
+            !analyzer.ingest(shimmer).beat().fired,
+            "small low-band fluctuations must not become a beat storm"
+        );
+    }
+
+    #[test]
     fn level_releases_gradually_after_impulse() {
         let mut analyzer = SpectrumAnalyzer::new();
         ingest_n(&mut analyzer, SILENCE, 20);
@@ -656,6 +714,9 @@ mod spectrum_analyzer_tests {
 /// constructor and may invoke it from any thread; frontends marshal.
 pub trait PlaybackBackend {
     fn play(&self, path: &str) -> Result<(), PlaybackError>;
+    /// Starts a non-local media URI. Implementations must accept `http`,
+    /// `https`, and `file`; local-path callers continue to use [`Self::play`].
+    fn play_uri(&self, uri: &str) -> Result<(), PlaybackError>;
     fn toggle_pause(&self) -> Result<PlaybackState, PlaybackError>;
     fn seek_to(&self, position_ms: i64) -> Result<(), PlaybackError>;
     fn set_volume(&self, volume: f64);

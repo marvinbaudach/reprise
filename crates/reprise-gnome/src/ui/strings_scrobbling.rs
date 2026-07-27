@@ -12,6 +12,15 @@ pub const PLUGIN_LISTENBRAINZ_DESCRIPTION: &str =
     N_!("Scrobble completed listens to ListenBrainz (network; off by default)");
 pub const PLUGIN_LASTFM_DESCRIPTION: &str =
     N_!("Scrobble completed listens to Last.fm (network; off by default)");
+pub const SCROBBLING: &str = N_!("Scrobbling");
+pub const SCROBBLING_OPEN_SETTINGS: &str = N_!("Open Scrobbling Settings");
+pub const SCROBBLING_CONNECT_SERVICES: &str = N_!("Connect ListenBrainz, Last.fm, or both");
+pub const SCROBBLING_LISTENBRAINZ_ENABLED: &str = N_!("ListenBrainz enabled");
+pub const SCROBBLING_LASTFM_ENABLED: &str = N_!("Last.fm enabled");
+pub const SCROBBLING_BOTH_ENABLED: &str = N_!("ListenBrainz and Last.fm enabled");
+pub const LOCAL_FEATURES: &str = N_!("Local Features");
+pub const ONLINE_CONTENT: &str = N_!("Online Content");
+pub const CONNECTED_SERVICES: &str = N_!("Connected Services");
 pub const LISTENBRAINZ: &str = N_!("ListenBrainz");
 pub const LISTENBRAINZ_ACCOUNT: &str = N_!("ListenBrainz Account");
 pub const LISTENBRAINZ_NOT_CONNECTED: &str = N_!("Not connected");
@@ -55,7 +64,9 @@ pub const OPEN_BROWSER: &str = N_!("Open Browser");
 pub const BROWSER_REQUIRES_CREDENTIALS: &str = N_!("Requires API key and shared secret");
 pub const LASTFM_SIGN_IN: &str = N_!("Sign in with Last.fm");
 pub const LASTFM_BUNDLED_HINT: &str = N_!("Sign in with your Last.fm account. No API key needed.");
-pub const LASTFM_BYO_KEY: &str = N_!("Use your own API key");
+pub const LASTFM_ADVANCED_SETUP: &str = N_!("Advanced setup");
+pub const LASTFM_ADVANCED_SETUP_DESCRIPTION: &str =
+    N_!("Use credentials from your own Last.fm API application");
 pub const TEST_CONNECTION: &str = N_!("Test connection");
 pub const TEST_CONNECTION_FAILED: &str = N_!("Test failed — try again later.");
 

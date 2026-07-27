@@ -1,9 +1,10 @@
 //! The portable visual engine: owns every piece of reactive state a
-//! visualizer needs (eased bands, envelopes, water, impact overlay, accent
-//! palette) and turns [`SpectrumFrame`]s into a resolution-independent
-//! [`Scene`] a frontend can draw however it likes. No frontend ever touches
-//! easing constants or per-mode geometry directly — it only feeds frames in
-//! via [`VisualEngine::ingest`], steps the clock via [`VisualEngine::tick`],
+//! visualizer needs (eased bands, peak hold, beat pulse, drop flash, accent
+//! palette) and turns [`SpectrumFrame`]s into a
+//! resolution-independent [`Scene`] a frontend can draw however it likes.
+//! No frontend ever touches easing constants or mode geometry directly — it
+//! only feeds frames in
+//! via [`VisualEngine::ingest`], advances via [`VisualEngine::tick`],
 //! and reads a [`Scene`] back out via [`VisualEngine::scene`].
 //!
 //! The tick loop always advances by a fixed `1/60` s step, never a
@@ -12,11 +13,10 @@
 
 use crate::playback::{SpectrumFrame, SPECTRUM_BAND_COUNT};
 
-use super::color::{hsla_to_rgb, hue_shift, secondary_accent};
+use super::color::{hue_shift, secondary_accent};
 use super::impact::ImpactState;
-use super::modes;
+use super::modes::{self, BarsEnvelope};
 use super::scene::{Fill, Geom, Rgba, Scene, Shape};
-use super::water::WaterGrid;
 
 /// Bands rise fast (attack) and fall slowly (release): the asymmetry is what
 /// makes transients punch instead of averaging away. Fast so the visuals stay
@@ -29,88 +29,34 @@ const BAND_ATTACK: f32 = 0.75;
 /// smoothly between values.
 const BAND_RELEASE_MIN: f32 = 0.13;
 const BAND_RELEASE_SPAN: f32 = 0.15;
+/// Classic analyzer peak caps fall slowly enough to remain legible but never
+/// keep stale song energy around for more than about one second.
+const PEAK_DECAY: f32 = 0.018;
 const SCALAR_ATTACK: f32 = 0.9;
 const SCALAR_RELEASE: f32 = 0.22;
-/// Peak-hold markers fall slowly so the frequency picture stays legible.
-const PEAK_DECAY: f32 = 0.02;
-/// `mid`/`high` envelopes: instant rise, slow release, same shape as `kick`.
-const MID_HIGH_RELEASE: f32 = 0.22;
+/// Same-frame beat ornament for Bars. The hit is installed during `ingest`
+/// and releases over several display frames so segmented columns visibly
+/// travel back down instead of dropping whole blocks between two frames.
+const BEAT_PULSE_DECAY: f32 = 0.85;
 /// Below this an eased value reads as "arrived" for settle detection.
 const SETTLE_EPSILON: f32 = 0.002;
-/// Fixed physics step: the tick loop always advances by this much, never by
-/// a wall-clock delta.
-const DT: f32 = 1.0 / 60.0;
-/// Resting band profile used before any cover-derived static profile is set.
-/// Zero (not a faint idle shimmer): the water surface is driven by the
-/// current bands every tick, so anything above [`super::water::WaterGrid`]'s
-/// rest epsilon would keep it perpetually "live" and the engine would never
-/// settle once playback stops.
+/// Resting band profile. Zero keeps stopped playback visually still.
 const NEUTRAL_PROFILE: [f32; SPECTRUM_BAND_COUNT] = [0.0; SPECTRUM_BAND_COUNT];
-/// `mid` folds this band range of the (eased) current spectrum.
-const MID_RANGE: std::ops::Range<usize> = 20..44;
-/// `high` folds this band range of the (eased) current spectrum.
-const HIGH_RANGE: std::ops::Range<usize> = 44..64;
-/// Number of `set_static_profile` dimension bytes folded per band group.
-const PROFILE_GROUP: usize = SPECTRUM_BAND_COUNT / 4;
 /// Secondary accent hue offset when no cover-derived accent is available.
 const FALLBACK_ACCENT2_HUE_SHIFT: f32 = 42.0;
 
-/// Which of the 4 visual treatments the engine currently renders.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum VisualMode {
-    #[default]
-    Grid,
-    Bars,
-    Flow,
-    Pulse,
-}
-
-impl VisualMode {
-    pub const ALL: [Self; 4] = [Self::Grid, Self::Bars, Self::Flow, Self::Pulse];
-
-    /// Stable, lowercase identifier: used for widget names and persisted
-    /// settings, so it must never change once shipped.
-    pub fn id(self) -> &'static str {
-        match self {
-            Self::Grid => "grid",
-            Self::Bars => "bars",
-            Self::Flow => "flow",
-            Self::Pulse => "pulse",
-        }
-    }
-}
-
-/// The per-frame render inputs a mode's `scene` builder needs. Borrowed from
-/// the engine for the lifetime of one [`VisualEngine::scene`] call — modes
-/// never own or mutate engine state, they only read it.
+/// Borrowed per-frame render inputs for the Bars scene builder.
 pub struct ModeCtx<'a> {
-    /// UI-smoothed, post-AGC display bands (`0..=1`).
-    pub bands: &'a [f32; SPECTRUM_BAND_COUNT],
-    /// Slow-falling peak-hold markers for `bands`.
     pub peaks: &'a [f32; SPECTRUM_BAND_COUNT],
-    pub level: f32,
-    pub bass: f32,
-    pub mid: f32,
-    pub high: f32,
-    pub kick: f32,
-    pub clock: f32,
+    pub bars: &'a [f32; modes::BAR_COUNT],
+    pub beat: f32,
     pub accent: (f32, f32, f32),
     pub accent2: (f32, f32, f32),
-    pub water: &'a WaterGrid,
-    pub impact: &'a ImpactState,
     pub width: f32,
     pub height: f32,
 }
 
 impl ModeCtx<'_> {
-    /// Sample `bands` at a fractional position `0.0..=1.0` across the full
-    /// spectrum width.
-    pub fn band(&self, f: f32) -> f32 {
-        let last = self.bands.len() - 1;
-        let index = (f.clamp(0.0, 1.0) * last as f32).round() as usize;
-        self.bands[index.min(last)]
-    }
-
     /// Solid fill in the primary (app cover) accent color.
     pub fn accent_fill(&self, alpha: f32) -> Fill {
         let (r, g, b) = self.accent;
@@ -122,51 +68,22 @@ impl ModeCtx<'_> {
         let (r, g, b) = self.accent2;
         Fill::Solid(Rgba { r, g, b, a: alpha })
     }
-
-    pub fn hsla_fill(&self, hue: f32, sat: f32, light: f32, alpha: f32) -> Fill {
-        let (r, g, b) = hsla_to_rgb(hue, sat, light);
-        Fill::Solid(Rgba { r, g, b, a: alpha })
-    }
 }
 
-fn mean_range(bands: &[f32; SPECTRUM_BAND_COUNT], range: std::ops::Range<usize>) -> f32 {
-    let slice = &bands[range];
-    slice.iter().sum::<f32>() / slice.len() as f32
-}
-
-/// Instant-up, slow-release envelope: jumps straight to a louder reading,
-/// eases back down otherwise. Shared shape for `mid`/`high`.
-fn envelope_up(current: f32, raw: f32, release: f32) -> f32 {
-    if raw > current {
-        raw
-    } else {
-        current + (raw - current) * release
-    }
-}
-
-/// Owns every piece of state a visualizer needs across frames: eased spectrum
-/// bands and their peak-hold markers, the `level`/`mid`/`high` envelopes, the
-/// water surface, and impact overlay, plus the accent palette. Frontends
-/// drive it with [`ingest`](Self::ingest)/[`tick`](Self::tick) and
-/// read a [`Scene`] back with [`scene`](Self::scene) — no frontend ever
-/// touches easing constants or per-mode geometry directly.
+/// Owns every piece of Bars state across frames. Frontends drive it with
+/// [`ingest`](Self::ingest)/[`tick`](Self::tick) and read a [`Scene`] back
+/// with [`scene`](Self::scene).
 pub struct VisualEngine {
-    mode: VisualMode,
     bands_current: [f32; SPECTRUM_BAND_COUNT],
     bands_target: [f32; SPECTRUM_BAND_COUNT],
     bands_peaks: [f32; SPECTRUM_BAND_COUNT],
-    /// Resting band profile used whenever playback is stopped/paused —
-    /// either the neutral default or a cover-derived shape from
-    /// [`set_static_profile`](Self::set_static_profile).
-    static_profile: [f32; SPECTRUM_BAND_COUNT],
     level_current: f32,
     level_target: f32,
-    bass: f32,
-    mid: f32,
-    high: f32,
+    bass_current: f32,
+    bass_target: f32,
+    beat_pulse: f32,
+    bars: BarsEnvelope,
     playing: bool,
-    clock: f32,
-    water: WaterGrid,
     impact: ImpactState,
     accent: (f32, f32, f32),
     cover_accent2: Option<(f32, f32, f32)>,
@@ -181,41 +98,31 @@ impl Default for VisualEngine {
 impl VisualEngine {
     pub fn new() -> Self {
         Self {
-            mode: VisualMode::default(),
             bands_current: [0.0; SPECTRUM_BAND_COUNT],
             bands_target: [0.0; SPECTRUM_BAND_COUNT],
             bands_peaks: [0.0; SPECTRUM_BAND_COUNT],
-            static_profile: NEUTRAL_PROFILE,
             level_current: 0.0,
             level_target: 0.0,
-            bass: 0.0,
-            mid: 0.0,
-            high: 0.0,
+            bass_current: 0.0,
+            bass_target: 0.0,
+            beat_pulse: 0.0,
+            bars: BarsEnvelope::new(),
             playing: false,
-            clock: 0.0,
-            water: WaterGrid::new(),
             impact: ImpactState::new(),
             accent: (0.5, 0.5, 0.5),
             cover_accent2: None,
         }
     }
 
-    pub fn set_mode(&mut self, mode: VisualMode) {
-        self.mode = mode;
-    }
-
-    pub fn mode(&self) -> VisualMode {
-        self.mode
-    }
-
     /// Pauses drift (the tick loop stops feeding fresh frames in) and
-    /// retargets the bands toward the resting static profile so a paused or
-    /// stopped visual settles instead of freezing mid-motion.
+    /// retargets the bands toward rest so a paused or stopped visual settles
+    /// instead of freezing mid-motion.
     pub fn set_playing(&mut self, playing: bool) {
         self.playing = playing;
         if !playing {
-            self.bands_target = self.static_profile;
+            self.bands_target = NEUTRAL_PROFILE;
             self.level_target = 0.0;
+            self.bass_target = 0.0;
         }
     }
 
@@ -234,54 +141,36 @@ impl VisualEngine {
         self.cover_accent2 = None;
     }
 
-    /// Derives a resting band profile from 4 cover-art-adjacent percentage
-    /// bytes (`0..=100`), spreading each byte across an equal quarter of the
-    /// display bands. Used so the idle/paused visual reflects the track's
-    /// character instead of going perfectly flat.
-    pub fn set_static_profile(&mut self, dimensions: &[u8; 4]) {
-        let profile: [f32; SPECTRUM_BAND_COUNT] = std::array::from_fn(|index| {
-            let group = (index / PROFILE_GROUP).min(dimensions.len() - 1);
-            let dimension = f32::from(dimensions[group]) / 100.0;
-            (0.08 + dimension * 0.34).clamp(0.0, 1.0)
-        });
-        self.static_profile = profile;
-        self.bands_target = profile;
-    }
-
-    pub fn clear_static_profile(&mut self) {
-        self.static_profile = NEUTRAL_PROFILE;
-        self.bands_target = NEUTRAL_PROFILE;
-    }
-
-    /// Track switched: reset the clock, water surface and impact overlay so
-    /// leftover ripples/sparks from the previous track don't bleed in.
+    /// Track switched: reset the Bars envelope and drop flash so leftover
+    /// motion from the previous track does not bleed in.
     pub fn note_track_changed(&mut self) {
-        self.clock = 0.0;
-        self.water = WaterGrid::new();
+        self.bands_peaks = [0.0; SPECTRUM_BAND_COUNT];
+        self.bass_current = 0.0;
+        self.bass_target = 0.0;
+        self.beat_pulse = 0.0;
+        self.bars.reset();
         self.impact = ImpactState::new();
     }
 
     /// Feed one enriched spectrum frame in: retargets the eased bands/level
-    /// and fires the discrete impact/water side effects for beats and drops.
+    /// and fires the discrete beat/drop side effects.
     pub fn ingest(&mut self, frame: &SpectrumFrame) {
         self.bands_target = *frame.bands();
         self.level_target = frame.level();
-        self.bass = frame.bass();
+        self.bass_target = frame.bass();
         let beat = frame.beat();
         if beat.fired {
-            self.impact.spawn_beat(beat.strength);
-            // Scale the water eruption by how hard the beat landed, so big beats
-            // throw a real splash and soft ones barely ripple.
-            self.water.splash(beat.strength);
+            self.beat_pulse = self.beat_pulse.max(beat.strength);
         }
         self.impact.spawn_drop(frame.dynamics());
     }
 
     /// One 60 Hz step. Returns `true` once every eased value has arrived at
-    /// its target, the impact overlay and water surface are at rest, and
-    /// playback is stopped — the frontend may stop ticking at that point.
+    /// its target, the impact overlay is at rest, and playback is stopped —
+    /// the frontend may stop ticking at that point.
     pub fn tick(&mut self) -> bool {
         let mut bands_settled = true;
+        let mut peaks_settled = true;
         let last = (SPECTRUM_BAND_COUNT - 1) as f32;
         for (index, ((current, &target), peak)) in self
             .bands_current
@@ -296,7 +185,9 @@ impl VisualEngine {
             let next = *current + delta * coeff;
             bands_settled &= (target - next).abs() < SETTLE_EPSILON;
             *current = next;
-            *peak = (peak.max(next) - PEAK_DECAY).max(next);
+            let next_peak = (*peak - PEAK_DECAY).max(next);
+            peaks_settled &= (next_peak - next).abs() < SETTLE_EPSILON;
+            *peak = next_peak;
         }
 
         let level_delta = self.level_target - self.level_current;
@@ -308,34 +199,51 @@ impl VisualEngine {
         self.level_current += level_delta * level_coeff;
         let level_settled = (self.level_target - self.level_current).abs() < SETTLE_EPSILON;
 
-        let mid_raw = mean_range(&self.bands_current, MID_RANGE);
-        self.mid = envelope_up(self.mid, mid_raw, MID_HIGH_RELEASE);
-        let high_raw = mean_range(&self.bands_current, HIGH_RANGE);
-        self.high = envelope_up(self.high, high_raw, MID_HIGH_RELEASE);
+        let bass_delta = self.bass_target - self.bass_current;
+        let bass_coeff = if bass_delta > 0.0 {
+            SCALAR_ATTACK
+        } else {
+            SCALAR_RELEASE
+        };
+        self.bass_current += bass_delta * bass_coeff;
+        let bass_settled = (self.bass_target - self.bass_current).abs() < SETTLE_EPSILON;
 
         self.impact.advance();
-        self.water.advance(&self.bands_current);
-
-        if self.playing {
-            self.clock += DT;
+        let bars_settled = self.bars.advance(
+            &self.bands_current,
+            self.beat_pulse,
+            self.bass_current,
+            self.level_current,
+        );
+        self.beat_pulse *= BEAT_PULSE_DECAY;
+        if self.beat_pulse < SETTLE_EPSILON {
+            self.beat_pulse = 0.0;
         }
 
         bands_settled
+            && peaks_settled
             && level_settled
+            && bass_settled
+            && bars_settled
+            && self.beat_pulse == 0.0
             && self.impact.is_idle()
-            && self.water.is_still()
             && !self.playing
     }
 
     /// Snaps every eased value straight to rest for reduced-motion
-    /// frontends: no interpolation, no lingering water/impact ornaments.
+    /// frontends: no interpolation and no lingering impact ornaments.
     pub fn snap_to_static(&mut self) {
         self.bands_current = self.bands_target;
         self.bands_peaks = self.bands_current;
         self.level_current = self.level_target;
-        self.mid = mean_range(&self.bands_current, MID_RANGE);
-        self.high = mean_range(&self.bands_current, HIGH_RANGE);
-        self.water.reset();
+        self.bass_current = self.bass_target;
+        self.beat_pulse = 0.0;
+        self.bars.snap(
+            &self.bands_current,
+            self.beat_pulse,
+            self.bass_current,
+            self.level_current,
+        );
         self.impact = ImpactState::new();
     }
 
@@ -348,26 +256,19 @@ impl VisualEngine {
 
     fn make_ctx(&self, width: f32, height: f32) -> ModeCtx<'_> {
         ModeCtx {
-            bands: &self.bands_current,
             peaks: &self.bands_peaks,
-            level: self.level_current,
-            bass: self.bass,
-            mid: self.mid,
-            high: self.high,
-            kick: self.impact.kick(),
-            clock: self.clock,
+            bars: self.bars.values(),
+            beat: self.beat_pulse,
             accent: self.accent,
             accent2: self.accent2(),
-            water: &self.water,
-            impact: &self.impact,
             width,
             height,
         }
     }
 
-    /// Builds the resolution-independent scene for this instant: an accent
-    /// wash first, then the current mode's shapes, then a soft flash overlay
-    /// while a drop/slam is still decaying.
+    /// Builds the resolution-independent Bars scene for this instant: an
+    /// accent wash first, then the columns, then a soft flash overlay while a
+    /// drop/slam is still decaying.
     pub fn scene(&self, width: f32, height: f32) -> Scene {
         let ctx = self.make_ctx(width, height);
         let mut shapes = Vec::new();
@@ -382,7 +283,7 @@ impl VisualEngine {
             glow: 0.0,
             dash: None,
         });
-        shapes.extend(modes::build_scene(self.mode, &ctx));
+        shapes.extend(modes::build_scene(&ctx));
         let flash = self.impact.flash();
         if flash > 0.0 {
             shapes.push(Shape {
@@ -401,11 +302,12 @@ impl VisualEngine {
     }
 }
 
-/// Builds an engine that has just been hammered by a beat-then-slam: playing,
-/// accented, 20 silent frames (settles the envelopes at rest) followed by 10
-/// full-scale frames (fires a beat, a kick, and pins the bands high). Shared
-/// by every mode's tests (Tasks 11–17) so each one can exercise a "lively"
-/// scene without re-deriving this fixture.
+/// Builds an engine during the short fluid attack after a beat-then-slam:
+/// playing, accented, 20 silent frames (settles the envelopes at rest), one
+/// full-scale frame and five more physics steps. The first frame already moves,
+/// while this fixture captures the rounded crest instead of the old teleported
+/// position. Shared by mode tests so they can exercise a "lively" scene
+/// without re-deriving this fixture.
 #[cfg(test)]
 pub(crate) fn lively_engine() -> VisualEngine {
     use crate::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
@@ -418,16 +320,14 @@ pub(crate) fn lively_engine() -> VisualEngine {
         engine.ingest(&analyzer.ingest([-80.0; SPECTRUM_ANALYSIS_BAND_COUNT]));
         engine.tick();
     }
-    for _ in 0..10 {
-        engine.ingest(&analyzer.ingest([0.0; SPECTRUM_ANALYSIS_BAND_COUNT]));
+    engine.ingest(&analyzer.ingest([0.0; SPECTRUM_ANALYSIS_BAND_COUNT]));
+    for _ in 0..6 {
         engine.tick();
     }
     engine
 }
 
-/// Borrows a [`ModeCtx`] out of an engine for direct per-mode testing
-/// (Tasks 11–17), without going through the full [`VisualEngine::scene`]
-/// wash + flash wrapping.
+/// Borrows a [`ModeCtx`] out of an engine for direct mode testing.
 #[cfg(test)]
 pub(crate) fn test_ctx(engine: &VisualEngine, width: f32, height: f32) -> ModeCtx<'_> {
     engine.make_ctx(width, height)
@@ -439,36 +339,11 @@ mod tests {
     use crate::visuals::color;
 
     #[test]
-    fn every_mode_builds_a_finite_sane_nonempty_scene() {
-        let mut engine = lively_engine();
-        for mode in VisualMode::ALL {
-            engine.set_mode(mode);
-            let scene = engine.scene(548.0, 300.0);
-            assert!(scene.shapes.len() > 1, "{mode:?} must draw beyond the wash");
-            assert!(scene.is_finite_and_sane(548.0, 300.0), "{mode:?}");
-        }
-    }
-
-    #[test]
-    fn engine_reacts_to_a_slam_with_full_bars_and_kick() {
-        let mut engine = lively_engine();
-        engine.set_mode(VisualMode::Bars);
+    fn bars_builds_a_finite_sane_nonempty_scene() {
+        let engine = lively_engine();
         let scene = engine.scene(548.0, 300.0);
-        // Bars mode: with AGC + snap attack, a slam reaches large bar lengths.
-        let max_len = scene
-            .shapes
-            .iter()
-            .filter_map(|s| match &s.geom {
-                Geom::Polyline { points, .. } if points.len() == 2 => {
-                    Some((points[0].1 - points[1].1).abs())
-                }
-                _ => None,
-            })
-            .fold(0.0_f32, f32::max);
-        assert!(
-            max_len > 150.0,
-            "slam should nearly fill the canvas, got {max_len}"
-        );
+        assert!(scene.shapes.len() > 1, "Bars must draw beyond the wash");
+        assert!(scene.is_finite_and_sane(548.0, 300.0));
     }
 
     /// AC-11: continuous motion exists only during playback. A playing engine
@@ -494,7 +369,6 @@ mod tests {
         );
 
         engine.set_playing(false);
-        engine.clear_static_profile();
         let mut settled = false;
         for _ in 0..5000 {
             if engine.tick() {
@@ -515,15 +389,225 @@ mod tests {
         assert!(delta < 3.0);
     }
 
-    /// Exercises the `test_ctx` helper future mode tasks (11-17) will reuse
-    /// to build a `ModeCtx` directly, without going through `scene`'s wash
-    /// and flash wrapping.
+    /// Exercises the `test_ctx` helper mode tests reuse.
     #[test]
     fn test_ctx_borrows_a_matching_mode_ctx() {
         let engine = lively_engine();
         let ctx = test_ctx(&engine, 548.0, 300.0);
         assert_eq!((ctx.width, ctx.height), (548.0, 300.0));
-        assert_eq!(ctx.bands.len(), SPECTRUM_BAND_COUNT);
         assert_eq!(ctx.accent, engine.accent);
+    }
+
+    #[test]
+    fn ac_20_bars_make_breakdown_hits_visibly_outrank_moderate_rhythms() {
+        use crate::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
+
+        const LOW_KICK_BINS: usize = 8;
+
+        fn beat_lift_for_kick(peak_db: f32) -> f32 {
+            let wall = [-50.0; SPECTRUM_ANALYSIS_BAND_COUNT];
+            let mut analyzer = SpectrumAnalyzer::new();
+            let mut engine = VisualEngine::new();
+            engine.set_playing(true);
+            for _ in 0..120 {
+                engine.ingest(&analyzer.ingest(wall));
+                engine.tick();
+            }
+            let baseline =
+                engine.bars.values().iter().sum::<f32>() / engine.bars.values().len() as f32;
+
+            let mut kick = wall;
+            kick[..LOW_KICK_BINS].fill(peak_db);
+            let hit = analyzer.ingest(kick);
+            assert!(hit.beat().fired, "{peak_db} dB kick must be detected");
+            engine.ingest(&hit);
+
+            let mut peak = baseline;
+            for _ in 0..8 {
+                engine.tick();
+                let average =
+                    engine.bars.values().iter().sum::<f32>() / engine.bars.values().len() as f32;
+                peak = peak.max(average);
+                engine.ingest(&analyzer.ingest(wall));
+            }
+            peak - baseline
+        }
+
+        let moderate = beat_lift_for_kick(-38.0);
+        let huge = beat_lift_for_kick(0.0);
+
+        assert!(
+            huge > 0.36,
+            "a breakdown must visibly lift the whole analyzer, lift was {huge}"
+        );
+        assert!(
+            huge > moderate * 1.75,
+            "a breakdown must lift the full analyzer far more than a moderate rhythm: moderate={moderate}, huge={huge}"
+        );
+    }
+
+    #[test]
+    fn ac_20_bars_turn_the_captured_wake_up_bass_hit_into_a_dominant_lift() {
+        use crate::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
+
+        const LOUD_BEFORE: [f32; 8] = [
+            0.804_264_7,
+            0.763_469_04,
+            0.546_595,
+            0.489_188_9,
+            0.514_759_96,
+            0.404_363_63,
+            0.379_388_87,
+            0.446_077_97,
+        ];
+        const LOUD_HIT: [f32; 8] = [
+            0.736_743_57,
+            0.764_361,
+            0.812_343_5,
+            0.810_467_6,
+            0.655_442_24,
+            0.638_295_35,
+            0.650_547_8,
+            0.541_942,
+        ];
+        const LIGHT_BEFORE: [f32; 8] = [
+            0.130_246_83,
+            0.127_244_28,
+            0.127_432_82,
+            0.124_549_01,
+            0.133_240_5,
+            0.339_518_64,
+            0.463_308_16,
+            0.409_167_86,
+        ];
+        const LIGHT_HIT: [f32; 8] = [
+            0.588_104_55,
+            0.734_378_7,
+            0.728_922_5,
+            0.545_933_37,
+            0.558_031_7,
+            0.504_200_8,
+            0.221_725_08,
+            0.368_509_92,
+        ];
+
+        fn lift_for_transition(before: [f32; 8], hit: [f32; 8]) -> f32 {
+            let to_db = |normalized: f32| normalized * 80.0 - 80.0;
+            let mut previous = [-64.0; SPECTRUM_ANALYSIS_BAND_COUNT];
+            let mut current = previous;
+            for (bin, value) in previous.iter_mut().zip(before) {
+                *bin = to_db(value);
+            }
+            for (bin, value) in current.iter_mut().zip(hit) {
+                *bin = to_db(value);
+            }
+
+            let mut analyzer = SpectrumAnalyzer::new();
+            let mut engine = VisualEngine::new();
+            engine.set_playing(true);
+            for _ in 0..120 {
+                engine.ingest(&analyzer.ingest(previous));
+                engine.tick();
+            }
+            let baseline =
+                engine.bars.values().iter().sum::<f32>() / engine.bars.values().len() as f32;
+            let frame = analyzer.ingest(current);
+            assert!(frame.beat().fired, "captured Wake Up transition must fire");
+            engine.ingest(&frame);
+
+            let mut peak = baseline;
+            for _ in 0..8 {
+                engine.tick();
+                let average =
+                    engine.bars.values().iter().sum::<f32>() / engine.bars.values().len() as f32;
+                peak = peak.max(average);
+                engine.ingest(&analyzer.ingest(previous));
+            }
+            peak - baseline
+        }
+
+        let loud = lift_for_transition(LOUD_BEFORE, LOUD_HIT);
+        let light = lift_for_transition(LIGHT_BEFORE, LIGHT_HIT);
+
+        assert!(
+            loud > 0.45,
+            "the captured Wake Up bass hit must lift Bars through most of its range: light={light}, loud={loud}"
+        );
+        assert!(
+            loud > light * 2.5,
+            "the captured bass hit must dominate the light rhythm: light={light}, loud={loud}"
+        );
+    }
+
+    #[test]
+    fn ac_20_wake_up_breakdown_energy_keeps_bars_near_full_between_onsets() {
+        use crate::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
+
+        let mut analyzer = SpectrumAnalyzer::new();
+        let mut engine = VisualEngine::new();
+        engine.set_playing(true);
+
+        // Captured envelope shape from "WAKE UP": a compressed metal bed sits
+        // around bass=0.46/level=0.30, while the breakdown reaches roughly
+        // bass=0.75/level=0.52. The broad values keep this fixture independent
+        // of one exceptional onset; sustained bass pressure must remain visible
+        // after the first beat pulse has decayed.
+        let mut metal_bed = [-56.0; SPECTRUM_ANALYSIS_BAND_COUNT];
+        metal_bed[..8].fill(-43.2);
+        for _ in 0..120 {
+            engine.ingest(&analyzer.ingest(metal_bed));
+            engine.tick();
+        }
+        let bed_average =
+            engine.bars.values().iter().sum::<f32>() / engine.bars.values().len() as f32;
+
+        let mut breakdown = [-38.4; SPECTRUM_ANALYSIS_BAND_COUNT];
+        breakdown[..8].fill(-19.7);
+        let mut last_frame = analyzer.ingest(breakdown);
+        engine.ingest(&last_frame);
+        engine.tick();
+        for _ in 0..120 {
+            last_frame = analyzer.ingest(breakdown);
+            engine.ingest(&last_frame);
+            engine.tick();
+        }
+        let breakdown_average =
+            engine.bars.values().iter().sum::<f32>() / engine.bars.values().len() as f32;
+
+        assert!(
+            !last_frame.beat().fired,
+            "the sustained fixture must verify breakdown energy, not a fresh onset"
+        );
+        assert!(
+            bed_average < 0.60,
+            "ordinary compressed metal must preserve visible headroom, average={bed_average}"
+        );
+        assert!(
+            breakdown_average > 0.82,
+            "sustained Wake Up breakdown energy must keep Bars near full height, average={breakdown_average}"
+        );
+    }
+
+    #[test]
+    fn detected_hit_lifts_bars_in_the_same_frame() {
+        use crate::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
+
+        let mut analyzer = SpectrumAnalyzer::new();
+        let mut engine = VisualEngine::new();
+        engine.set_playing(true);
+        for _ in 0..20 {
+            engine.ingest(&analyzer.ingest([-80.0; SPECTRUM_ANALYSIS_BAND_COUNT]));
+            engine.tick();
+        }
+
+        let hit = analyzer.ingest([0.0; SPECTRUM_ANALYSIS_BAND_COUNT]);
+        assert!(hit.beat().fired);
+        engine.ingest(&hit);
+        engine.tick();
+
+        assert!(
+            engine.make_ctx(548.0, 300.0).beat > 0.5,
+            "Bars must receive a strong same-frame beat pulse"
+        );
     }
 }

@@ -1,15 +1,9 @@
-//! Persistent history of every New Releases entry ever shown, plus the hard
-//! retention that keeps the underlying `new_releases` table bounded.
-//!
-//! This is the data layer behind the popover history sub-page (NR-12,
-//! `[aktiv]` in `docs/ux-rules.md`; the UI lives in
-//! `crates/reprise-gnome/src/ui/new_releases/history_page.rs`). It reads
-//! the same table `artist_news.rs` writes and reuses that module's
-//! date-parsing and hide/show primitives rather than re-deriving them.
+//! Persistent history for the Releases full view, plus the hard retention
+//! that keeps the underlying `new_releases` table bounded.
 
 use std::cmp::Ordering;
 
-use chrono::{Datelike, NaiveDate, TimeZone};
+use chrono::{NaiveDate, TimeZone};
 use rusqlite::Connection;
 
 /// 6 months, approximated as flat 30-day months so the constant is a plain
@@ -49,6 +43,42 @@ pub struct HistoryEntry {
     pub announce_url: Option<String>,
 }
 
+/// One complete row from the durable New Releases history, plus its derived
+/// local-library presence.
+///
+/// Unlike [`HistoryEntry`], this record retains every stored column so
+/// headless read surfaces can expose the complete cache contract without SQL
+/// outside `reprise-core`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReleaseHistoryRecord {
+    pub release_group_mbid: String,
+    pub artist_name: String,
+    pub artist_mbid: String,
+    pub title: String,
+    pub release_type: String,
+    pub first_release_date: String,
+    pub fetched_at: i64,
+    pub seen_at: Option<i64>,
+    pub hidden: bool,
+    pub fallback_accent: String,
+    pub first_seen: Option<i64>,
+    pub hidden_at: Option<i64>,
+    pub announce_url: Option<String>,
+    pub presence: crate::artist_news::LibraryPresence,
+}
+
+impl ReleaseHistoryRecord {
+    pub fn history_status(&self) -> HistoryStatus {
+        if self.hidden {
+            HistoryStatus::Hidden
+        } else if self.seen_at.is_some() {
+            HistoryStatus::Seen
+        } else {
+            HistoryStatus::New
+        }
+    }
+}
+
 impl HistoryEntry {
     pub fn status(&self) -> HistoryStatus {
         if self.hidden {
@@ -61,27 +91,6 @@ impl HistoryEntry {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HistoryGroup {
-    pub label: String,
-    pub entries: Vec<HistoryEntry>,
-}
-
-const MONTH_NAMES: [&str; 12] = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-];
-
 /// All rows ever recorded, newest first. Sorted by `first_seen` (rows
 /// without one — should not happen once A3's insert path runs, but the
 /// column is nullable — sort last), with `first_release_date` as the
@@ -92,25 +101,52 @@ pub fn query_history(
     conn: &Connection,
     today: NaiveDate,
 ) -> Result<Vec<HistoryEntry>, rusqlite::Error> {
+    Ok(query_complete_history(conn, today)?
+        .into_iter()
+        .map(|record| HistoryEntry {
+            release_group_mbid: record.release_group_mbid,
+            artist_name: record.artist_name,
+            title: record.title,
+            release_type: record.release_type,
+            first_release_date: record.first_release_date,
+            first_seen: record.first_seen,
+            seen_at: record.seen_at,
+            hidden: record.hidden,
+            hidden_at: record.hidden_at,
+            presence: record.presence,
+            announce_url: record.announce_url,
+        })
+        .collect())
+}
+
+/// Reads every durable New Releases field, including hidden history, without
+/// applying the current Releases UI filters.
+pub fn query_complete_history(
+    conn: &Connection,
+    today: NaiveDate,
+) -> Result<Vec<ReleaseHistoryRecord>, rusqlite::Error> {
     let mut statement = conn.prepare(
-        "SELECT release_group_mbid, artist_name, title, release_type,
-                first_release_date, first_seen, seen_at, hidden, hidden_at,
-                announce_url
+        "SELECT release_group_mbid, artist_name, artist_mbid, title,
+                release_type, first_release_date, fetched_at, seen_at, hidden,
+                fallback_accent, first_seen, hidden_at, announce_url
          FROM new_releases",
     )?;
     let mut entries = statement
         .query_map([], |row| {
-            Ok(HistoryEntry {
+            Ok(ReleaseHistoryRecord {
                 release_group_mbid: row.get(0)?,
                 artist_name: row.get(1)?,
-                title: row.get(2)?,
-                release_type: row.get(3)?,
-                first_release_date: row.get(4)?,
-                first_seen: row.get(5)?,
-                seen_at: row.get(6)?,
-                hidden: row.get::<_, i64>(7)? != 0,
-                hidden_at: row.get(8)?,
-                announce_url: row.get(9)?,
+                artist_mbid: row.get(2)?,
+                title: row.get(3)?,
+                release_type: row.get(4)?,
+                first_release_date: row.get(5)?,
+                fetched_at: row.get(6)?,
+                seen_at: row.get(7)?,
+                hidden: row.get::<_, i64>(8)? != 0,
+                fallback_accent: row.get(9)?,
+                first_seen: row.get(10)?,
+                hidden_at: row.get(11)?,
+                announce_url: row.get(12)?,
                 presence: crate::artist_news::LibraryPresence::Absent,
             })
         })?
@@ -139,64 +175,6 @@ pub fn query_history(
     });
 
     Ok(entries)
-}
-
-/// Pure grouping of already-sorted (newest first) history entries into
-/// time-based buckets for the popover sub-page. Entries whose `first_seen`
-/// is `None` cannot be placed on the timeline at all, so — rather than
-/// guessing a date for them — they are collected into one trailing group
-/// labeled "Earlier", after every dated group.
-pub fn group_history(entries: Vec<HistoryEntry>, today: NaiveDate) -> Vec<HistoryGroup> {
-    let this_week = today.iso_week();
-    let mut groups: Vec<HistoryGroup> = Vec::new();
-    let mut undated: Vec<HistoryEntry> = Vec::new();
-
-    for entry in entries {
-        let Some(local_date) = local_date_of_first_seen(entry.first_seen) else {
-            undated.push(entry);
-            continue;
-        };
-        let label = history_group_label(local_date, today, this_week);
-        match groups.last_mut() {
-            Some(group) if group.label == label => group.entries.push(entry),
-            _ => groups.push(HistoryGroup {
-                label,
-                entries: vec![entry],
-            }),
-        }
-    }
-
-    if !undated.is_empty() {
-        groups.push(HistoryGroup {
-            label: "Earlier".to_string(),
-            entries: undated,
-        });
-    }
-
-    groups
-}
-
-fn local_date_of_first_seen(first_seen: Option<i64>) -> Option<NaiveDate> {
-    let timestamp = first_seen?;
-    Some(
-        chrono::Local
-            .timestamp_opt(timestamp, 0)
-            .single()
-            .map_or_else(|| chrono::Utc::now().date_naive(), |dt| dt.date_naive()),
-    )
-}
-
-fn history_group_label(date: NaiveDate, today: NaiveDate, this_week: chrono::IsoWeek) -> String {
-    let date_week = date.iso_week();
-    if date_week.year() == this_week.year() && date_week.week() == this_week.week() {
-        return "This week".to_string();
-    }
-    let month_name = MONTH_NAMES[date.month0() as usize];
-    if date.year() == today.year() {
-        month_name.to_string()
-    } else {
-        format!("{month_name} {}", date.year())
-    }
 }
 
 /// Derives "today" in local time from a fetch-time Unix timestamp, the same
@@ -281,9 +259,8 @@ fn is_protected_by_fetch_window(first_release_date: &str, window_start: NaiveDat
 
 /// Un-hides exactly one release. Reuses `set_release_hidden`'s `hidden = 0`
 /// path (which also nulls `hidden_at`) so there is a single place that
-/// defines what "un-hidden" means. Replaces the former blanket
-/// `show_hidden_releases` (removed; see the history sub-page's Restore
-/// action in `history_page.rs`, its only real caller).
+/// defines what "un-hidden" means. The Releases full view calls this for
+/// its per-row "Show again" action.
 pub fn restore_release(conn: &Connection, release_group_mbid: &str) -> Result<(), rusqlite::Error> {
     crate::artist_news::set_release_hidden(conn, release_group_mbid, false)
 }
@@ -291,41 +268,11 @@ pub fn restore_release(conn: &Connection, release_group_mbid: &str) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Weekday;
 
     fn migrated_conn() -> Connection {
         let conn = crate::db::open(None).unwrap();
         crate::db::migrate(&conn).unwrap();
         conn
-    }
-
-    fn history_entry(mbid: &str, first_seen: Option<i64>) -> HistoryEntry {
-        HistoryEntry {
-            release_group_mbid: mbid.to_string(),
-            artist_name: "Artist".to_string(),
-            title: "Title".to_string(),
-            release_type: "Album".to_string(),
-            first_release_date: "2026-01-01".to_string(),
-            first_seen,
-            seen_at: None,
-            hidden: false,
-            hidden_at: None,
-            presence: crate::artist_news::LibraryPresence::Absent,
-            announce_url: None,
-        }
-    }
-
-    /// Round-trips a calendar date through the same `chrono::Local` zone
-    /// `local_date_of_first_seen` uses, at noon to stay well clear of any
-    /// DST transition — so this is stable regardless of the test runner's
-    /// timezone.
-    fn local_timestamp(date: NaiveDate) -> i64 {
-        date.and_hms_opt(12, 0, 0)
-            .unwrap()
-            .and_local_timezone(chrono::Local)
-            .single()
-            .unwrap()
-            .timestamp()
     }
 
     fn insert_history_row(
@@ -355,61 +302,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_12_history_groups_by_week_and_month() {
-        let today = NaiveDate::from_ymd_opt(2026, 7, 21).unwrap();
-        let monday_this_week = NaiveDate::from_isoywd_opt(
-            today.iso_week().year(),
-            today.iso_week().week(),
-            Weekday::Mon,
-        )
-        .unwrap();
-        let last_month = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
-        let last_year = NaiveDate::from_ymd_opt(2025, 5, 10).unwrap();
-
-        let entries = vec![
-            history_entry("this-week-new", Some(local_timestamp(today))),
-            history_entry("this-week-old", Some(local_timestamp(monday_this_week))),
-            history_entry("last-month", Some(local_timestamp(last_month))),
-            history_entry("last-year", Some(local_timestamp(last_year))),
-        ];
-
-        let groups = group_history(entries, today);
-
-        assert_eq!(groups.len(), 3);
-        assert_eq!(groups[0].label, "This week");
-        assert_eq!(
-            groups[0]
-                .entries
-                .iter()
-                .map(|entry| entry.release_group_mbid.as_str())
-                .collect::<Vec<_>>(),
-            ["this-week-new", "this-week-old"],
-            "entries within a group keep the order they arrived in"
-        );
-        assert_eq!(groups[1].label, "June");
-        assert_eq!(groups[1].entries[0].release_group_mbid, "last-month");
-        assert_eq!(groups[2].label, "May 2025");
-        assert_eq!(groups[2].entries[0].release_group_mbid, "last-year");
-    }
-
-    #[test]
-    fn nr_12_undated_entries_land_in_a_trailing_earlier_group() {
-        let today = NaiveDate::from_ymd_opt(2026, 7, 21).unwrap();
-        let entries = vec![
-            history_entry("dated", Some(local_timestamp(today))),
-            history_entry("undated", None),
-        ];
-
-        let groups = group_history(entries, today);
-
-        assert_eq!(groups.len(), 2);
-        assert_eq!(groups[0].label, "This week");
-        assert_eq!(groups[1].label, "Earlier");
-        assert_eq!(groups[1].entries[0].release_group_mbid, "undated");
-    }
-
-    #[test]
-    fn nr_12_restore_returns_a_single_hidden_entry() {
+    fn nr_12a_restore_returns_a_single_hidden_entry() {
         let conn = migrated_conn();
         insert_history_row(&conn, "one", 1_000, "2026-01-01");
         insert_history_row(&conn, "two", 1_000, "2026-01-01");

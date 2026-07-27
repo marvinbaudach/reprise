@@ -48,6 +48,16 @@ pub use scan::*;
 mod news;
 pub use news::*;
 
+#[path = "strings_concerts.rs"]
+mod concerts;
+#[allow(unused_imports)]
+pub use concerts::*;
+
+#[path = "strings_releases.rs"]
+mod releases;
+#[allow(unused_imports)]
+pub use releases::*;
+
 #[path = "strings_filter.rs"]
 mod filter;
 pub use filter::*;
@@ -84,14 +94,22 @@ pub use stats::*;
 mod library_doctor;
 pub use library_doctor::*;
 
+#[path = "strings_podcasts.rs"]
+mod podcasts;
+#[allow(unused_imports)]
+pub use podcasts::*;
+
+#[path = "strings_radio.rs"]
+mod radio;
+#[allow(unused_imports)]
+pub use radio::*;
+
 pub const ONBOARDING_WELCOME: &str = N_!("Welcome to Reprise");
 pub const ONBOARDING_PRIVACY: &str = N_!("Reprise keeps your library local. Missing album covers are retrieved automatically from MusicBrainz and Cover Art Archive. Music files are changed only when you explicitly edit tags or move tracks to Trash.");
 pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX: &str = N_!("Import from Rhythmbox");
 pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX_DESCRIPTION: &str =
     N_!("Rhythmbox was found. Choose what Reprise should import.");
-pub const ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT: &str = N_!("Column layout");
-pub const ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT_SUBTITLE: &str =
-    N_!("Read the layout without changing Rhythmbox settings");
+pub const COLUMN_LAYOUT: &str = N_!("Column layout");
 
 #[path = "strings_rhythmbox.rs"]
 mod rhythmbox;
@@ -154,15 +172,16 @@ pub use scrobbling::*;
 pub const LIBRARY_FOLDER: &str = N_!("Library Folder");
 pub const NO_LIBRARY_FOLDER: &str = N_!("No folder selected");
 pub const CHOOSE_FOLDER: &str = N_!("Choose Folder…");
-pub const EXCLUDED_FILES: &str = N_!("Excluded Files");
+pub const EXCLUDED_FILES: &str = N_!("Removed from Library");
 pub const RESTORE_EXCLUDED_FILES: &str = N_!("Restore All");
-pub const RESTORE_EXCLUDED_FILES_FAILED: &str = N_!("Could not restore excluded files");
+pub const RESTORE_EXCLUDED_FILES_FAILED: &str =
+    N_!("Could not restore removed files to the library");
 
 pub fn excluded_files_subtitle(count: usize) -> String {
     let count_text = count.to_string();
     plural(
-        "{count} file ignored during library scans",
-        "{count} files ignored during library scans",
+        "{count} file removed from the library and ignored during scans",
+        "{count} files removed from the library and ignored during scans",
         count,
         &[("count", &count_text)],
     )
@@ -173,16 +192,6 @@ pub const RESET_TO_DEFAULT: &str = N_!("Reset to Default");
 pub const CLOSE: &str = N_!("Close");
 pub const DRAG_TO_REORDER: &str = N_!("Drag to reorder");
 pub const COLUMN_LAYOUT_SAVE_FAILED: &str = N_!("Could not save the column layout");
-pub const RHYTHMBOX_COLUMNS_IMPORTED: &str = N_!("Rhythmbox column layout imported");
-pub const RHYTHMBOX_COLUMNS_IMPORT_SAVE_FAILED: &str =
-    N_!("Could not save the imported column layout");
-
-pub fn rhythmbox_columns_import_failed(error: &str) -> String {
-    formatted(
-        N_!("Could not import Rhythmbox columns: {error}"),
-        &[("error", error)],
-    )
-}
 pub const EDIT_TAGS: &str = N_!("Edit tags…");
 pub const REMOVE_FROM_LIBRARY: &str = N_!("Remove from library…");
 pub const MOVE_TO_TRASH: &str = N_!("Move to Trash…");
@@ -342,6 +351,7 @@ pub const COLUMN_ALBUM: &str = N_!("Album");
 pub const COLUMN_TRACK_NUMBER: &str = N_!("Track");
 pub const COLUMN_GENRE: &str = N_!("Genre");
 pub const COLUMN_YEAR: &str = N_!("Year");
+pub const COLUMN_ADDED: &str = N_!("Added");
 pub const COLUMN_LENGTH: &str = N_!("Length");
 pub const COLUMN_PLAY_COUNT: &str = N_!("Plays");
 // The Rating column's header reuses `RATING` below rather than having its
@@ -430,6 +440,7 @@ pub const SIDEBAR_SECTION_SMART: &str = N_!("SMART");
 pub const SIDEBAR_SECTION_ISSUES: &str = N_!("ISSUES");
 
 pub const SIDEBAR_MUSIC: &str = N_!("Music");
+pub const SIDEBAR_RECENTLY_ADDED: &str = N_!("Recently added");
 pub const SIDEBAR_QUEUE: &str = N_!("Queue");
 pub const QUEUE_SECTION_NOW_PLAYING: &str = N_!("Now Playing");
 pub const JUMP_TO_NOW_PLAYING: &str = N_!("Jump to now playing");
@@ -748,11 +759,12 @@ mod tests {
         assert!(body.contains("Listening history stays in My Stats"));
         assert_eq!(
             excluded_files_subtitle(0),
-            "0 files ignored during library scans"
+            "0 files removed from the library and ignored during scans"
         );
         assert_eq!(
             excluded_files_subtitle(1),
-            "1 file ignored during library scans"
+            "1 file removed from the library and ignored during scans"
         );
+        assert_eq!(text(EXCLUDED_FILES), "Removed from Library");
     }
 }

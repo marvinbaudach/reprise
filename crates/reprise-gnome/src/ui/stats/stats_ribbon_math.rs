@@ -1,3 +1,8 @@
+use chrono::{Datelike, NaiveDate, Weekday};
+use reprise_core::library::stats_period::Granularity;
+
+const HEADROOM_FACTOR: f64 = 1.12;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(in crate::ui) struct Point {
     pub x: f64,
@@ -7,17 +12,22 @@ pub(in crate::ui) struct Point {
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::ui) struct RibbonLayout {
     pub points: Vec<Point>,
-    pub peak_index: Option<usize>,
     pub open_index: Option<usize>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::ui) struct MonthTick {
+    pub index: usize,
+    pub label: String,
+}
+
 pub(in crate::ui) fn ribbon_layout(
-    values: &[i64],
+    values: &[f64],
     width: f64,
     height: f64,
     open_index: Option<usize>,
 ) -> RibbonLayout {
-    let maximum = values.iter().copied().max().unwrap_or(0).max(0);
+    let maximum = values.iter().copied().fold(0.0, f64::max);
     let points = values
         .iter()
         .enumerate()
@@ -27,31 +37,137 @@ pub(in crate::ui) fn ribbon_layout(
             } else {
                 index as f64 * width / (values.len() - 1) as f64
             };
-            let magnitude = if maximum == 0 {
-                0.0
-            } else {
-                (*value).max(0) as f64 / maximum as f64
-            };
             Point {
                 x,
-                y: height - magnitude * height,
+                y: point_y(*value, maximum, height),
             }
         })
         .collect();
-    let peak_index = (maximum > 0).then(|| {
-        values
-            .iter()
-            .enumerate()
-            .max_by(|(left_index, left), (right_index, right)| {
-                left.cmp(right).then_with(|| right_index.cmp(left_index))
-            })
-            .map_or(0, |(index, _)| index)
-    });
     RibbonLayout {
         points,
-        peak_index,
         open_index: open_index.filter(|index| *index < values.len()),
     }
+}
+
+pub(in crate::ui) fn bar_layout(
+    values: &[f64],
+    width: f64,
+    height: f64,
+    open_index: Option<usize>,
+) -> RibbonLayout {
+    let maximum = values.iter().copied().fold(0.0, f64::max);
+    bar_layout_for_max(values, maximum, width, height, open_index)
+}
+
+pub(in crate::ui) fn bar_layout_for_max(
+    values: &[f64],
+    maximum: f64,
+    width: f64,
+    height: f64,
+    open_index: Option<usize>,
+) -> RibbonLayout {
+    let slot_width = if values.is_empty() {
+        0.0
+    } else {
+        width / values.len() as f64
+    };
+    let points = values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| Point {
+            x: (index as f64 + 0.5) * slot_width,
+            y: point_y(*value, maximum, height),
+        })
+        .collect();
+    RibbonLayout {
+        points,
+        open_index: open_index.filter(|index| *index < values.len()),
+    }
+}
+
+pub(in crate::ui) fn bar_width(slot_width: f64) -> f64 {
+    (slot_width * 0.40).clamp(2.0, 48.0).min(slot_width)
+}
+
+fn point_y(value: f64, maximum: f64, height: f64) -> f64 {
+    let magnitude = if maximum == 0.0 {
+        0.0
+    } else {
+        value.max(0.0) / (maximum * HEADROOM_FACTOR)
+    };
+    height - magnitude * height
+}
+
+pub(in crate::ui) fn best_week_bucket_index(
+    bucket_starts: &[Option<NaiveDate>],
+    granularity: Granularity,
+    best_week_start: Option<NaiveDate>,
+) -> Option<usize> {
+    if granularity != Granularity::Week {
+        return None;
+    }
+    let best_week_start = best_week_start?;
+    bucket_starts.iter().position(|start| {
+        start.is_some_and(|start| start.week(Weekday::Mon).first_day() == best_week_start)
+    })
+}
+
+pub(in crate::ui) fn month_ticks(
+    bucket_starts: &[Option<NaiveDate>],
+    granularity: Granularity,
+) -> Vec<MonthTick> {
+    let mut dated = bucket_starts.iter().flatten();
+    let first_year = dated.next().map(NaiveDate::year);
+    let last_year = bucket_starts
+        .iter()
+        .rev()
+        .flatten()
+        .next()
+        .map(NaiveDate::year);
+    let spans_years = first_year != last_year;
+    let mut previous = None;
+    let mut ticks = Vec::new();
+    for (index, date) in bucket_starts.iter().enumerate() {
+        let Some(date) = date else { continue };
+        let starts_month = previous.is_none_or(|previous: NaiveDate| {
+            previous.month() != date.month() || previous.year() != date.year()
+        });
+        let should_draw = if granularity == Granularity::Month {
+            ticks.is_empty() || date.month() == 1
+        } else {
+            starts_month
+        };
+        if should_draw {
+            ticks.push(MonthTick {
+                index,
+                label: date
+                    .format(if spans_years { "%b %Y" } else { "%b" })
+                    .to_string()
+                    .to_uppercase(),
+            });
+        }
+        previous = Some(*date);
+    }
+    ticks
+}
+
+pub(in crate::ui) fn axis_ticks(
+    bucket_starts: &[Option<NaiveDate>],
+    granularity: Granularity,
+) -> Vec<MonthTick> {
+    if granularity == Granularity::Week && bucket_starts.len() < 10 {
+        return bucket_starts
+            .iter()
+            .enumerate()
+            .filter_map(|(index, date)| {
+                date.map(|date| MonthTick {
+                    index,
+                    label: format!("W{}", date.iso_week().week()),
+                })
+            })
+            .collect();
+    }
+    month_ticks(bucket_starts, granularity)
 }
 
 pub(in crate::ui) fn bucket_at_x(x: f64, width: f64, bucket_count: usize) -> Option<usize> {
@@ -67,7 +183,7 @@ mod tests {
 
     #[test]
     fn ribbon_area_path_spans_every_bucket() {
-        let layout = ribbon_layout(&[10, 20, 5], 300.0, 100.0, None);
+        let layout = ribbon_layout(&[10.0, 20.0, 5.0], 300.0, 100.0, None);
 
         assert_eq!(layout.points.len(), 3);
         assert_eq!(layout.points[0].x, 0.0);
@@ -77,15 +193,33 @@ mod tests {
 
     #[test]
     fn ribbon_marks_the_open_bucket_and_the_peak() {
-        let layout = ribbon_layout(&[10, 30, 20], 300.0, 100.0, Some(2));
+        let layout = ribbon_layout(&[10.0, 30.0, 20.0], 300.0, 100.0, Some(2));
 
-        assert_eq!(layout.peak_index, Some(1));
+        assert_eq!(layout.open_index, Some(2));
+        assert!((layout.points[1].y - 10.714).abs() < 0.01);
+    }
+
+    #[test]
+    fn sparse_week_bars_are_centered_in_equal_slots_with_headroom() {
+        let layout = bar_layout(&[10.0, 30.0, 20.0], 300.0, 100.0, Some(2));
+
+        assert_eq!(layout.points.len(), 3);
+        assert_eq!(layout.points[0].x, 50.0);
+        assert_eq!(layout.points[1].x, 150.0);
+        assert_eq!(layout.points[2].x, 250.0);
+        assert!((layout.points[1].y - 10.714).abs() < 0.01);
         assert_eq!(layout.open_index, Some(2));
     }
 
     #[test]
+    fn sparse_week_bars_use_forty_percent_of_each_slot_up_to_forty_eight_pixels() {
+        assert_eq!(bar_width(100.0), 40.0);
+        assert_eq!(bar_width(200.0), 48.0);
+    }
+
+    #[test]
     fn ribbon_with_all_zero_values_draws_a_flat_baseline() {
-        let layout = ribbon_layout(&[0, 0, 0], 300.0, 100.0, None);
+        let layout = ribbon_layout(&[0.0, 0.0, 0.0], 300.0, 100.0, None);
 
         assert!(layout.points.iter().all(|point| point.y == 100.0));
     }
@@ -98,5 +232,156 @@ mod tests {
         assert_eq!(bucket_at_x(299.0, 300.0, 3), Some(2));
         assert_eq!(bucket_at_x(-1.0, 300.0, 3), None);
         assert_eq!(bucket_at_x(300.0, 300.0, 3), None);
+        assert_eq!(bucket_at_x(529.0, 530.0, 53), Some(52));
+    }
+
+    #[test]
+    fn stats_12_marker_sits_on_the_best_week_bucket() {
+        let starts = [
+            Some(NaiveDate::from_ymd_opt(2026, 3, 2).unwrap()),
+            Some(NaiveDate::from_ymd_opt(2026, 3, 9).unwrap()),
+            Some(NaiveDate::from_ymd_opt(2026, 3, 16).unwrap()),
+        ];
+
+        assert_eq!(
+            best_week_bucket_index(&starts, Granularity::Week, starts[1]),
+            Some(1)
+        );
+        assert_eq!(
+            best_week_bucket_index(&starts, Granularity::Day, starts[1]),
+            None
+        );
+    }
+
+    #[test]
+    fn stats_12_marker_matches_a_week_clipped_by_the_period_start() {
+        let clipped_period_start = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+        let next_week = NaiveDate::from_ymd_opt(2026, 1, 5).unwrap();
+        let aligned_best_week = NaiveDate::from_ymd_opt(2025, 12, 29).unwrap();
+
+        assert_eq!(
+            best_week_bucket_index(
+                &[Some(clipped_period_start), Some(next_week)],
+                Granularity::Week,
+                Some(aligned_best_week)
+            ),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn month_ticks_derive_from_bucket_starts() {
+        let starts = [
+            Some(NaiveDate::from_ymd_opt(2026, 1, 26).unwrap()),
+            Some(NaiveDate::from_ymd_opt(2026, 2, 2).unwrap()),
+            Some(NaiveDate::from_ymd_opt(2026, 2, 9).unwrap()),
+            Some(NaiveDate::from_ymd_opt(2026, 3, 2).unwrap()),
+        ];
+
+        assert_eq!(
+            month_ticks(&starts, Granularity::Week),
+            vec![
+                MonthTick {
+                    index: 0,
+                    label: "JAN".into()
+                },
+                MonthTick {
+                    index: 1,
+                    label: "FEB".into()
+                },
+                MonthTick {
+                    index: 3,
+                    label: "MAR".into()
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn short_week_axis_labels_every_equal_slot() {
+        let starts = [
+            Some(NaiveDate::from_ymd_opt(2026, 6, 29).unwrap()),
+            Some(NaiveDate::from_ymd_opt(2026, 7, 6).unwrap()),
+            Some(NaiveDate::from_ymd_opt(2026, 7, 13).unwrap()),
+            Some(NaiveDate::from_ymd_opt(2026, 7, 20).unwrap()),
+        ];
+
+        assert_eq!(
+            axis_ticks(&starts, Granularity::Week),
+            vec![
+                MonthTick {
+                    index: 0,
+                    label: "W27".into()
+                },
+                MonthTick {
+                    index: 1,
+                    label: "W28".into()
+                },
+                MonthTick {
+                    index: 2,
+                    label: "W29".into()
+                },
+                MonthTick {
+                    index: 3,
+                    label: "W30".into()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn missing_local_dates_keep_month_tick_indices_aligned_with_values() {
+        let starts = [
+            Some(NaiveDate::from_ymd_opt(2026, 1, 26).unwrap()),
+            None,
+            Some(NaiveDate::from_ymd_opt(2026, 2, 9).unwrap()),
+        ];
+
+        assert_eq!(
+            month_ticks(&starts, Granularity::Week),
+            vec![
+                MonthTick {
+                    index: 0,
+                    label: "JAN".into()
+                },
+                MonthTick {
+                    index: 2,
+                    label: "FEB".into()
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn monthly_buckets_draw_one_year_labeled_tick_per_year() {
+        let starts = (2021..=2025)
+            .flat_map(|year| (1..=12).map(move |month| NaiveDate::from_ymd_opt(year, month, 1)))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            month_ticks(&starts, Granularity::Month),
+            vec![
+                MonthTick {
+                    index: 0,
+                    label: "JAN 2021".into()
+                },
+                MonthTick {
+                    index: 12,
+                    label: "JAN 2022".into()
+                },
+                MonthTick {
+                    index: 24,
+                    label: "JAN 2023".into()
+                },
+                MonthTick {
+                    index: 36,
+                    label: "JAN 2024".into()
+                },
+                MonthTick {
+                    index: 48,
+                    label: "JAN 2025".into()
+                },
+            ]
+        );
     }
 }

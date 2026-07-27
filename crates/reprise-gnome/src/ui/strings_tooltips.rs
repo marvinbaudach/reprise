@@ -23,6 +23,9 @@ pub const TOOLTIP_PLAY: &str = N_!("Play (Space)");
 pub const TOOLTIP_PAUSE: &str = N_!("Pause (Space)");
 pub const TOOLTIP_PREVIOUS: &str = N_!("Play previous track");
 pub const TOOLTIP_NEXT: &str = N_!("Play next track");
+pub const TOOLTIP_REPEAT_OFF: &str = N_!("Repeat off — playback stops after the queue");
+pub const TOOLTIP_REPEAT_ALL: &str = N_!("Repeat all — the entire queue repeats");
+pub const TOOLTIP_REPEAT_ONE: &str = N_!("Repeat one — the current track repeats");
 
 // Scan sidebar-toggle and card tooltips (dynamic values allowed per TIP-5).
 

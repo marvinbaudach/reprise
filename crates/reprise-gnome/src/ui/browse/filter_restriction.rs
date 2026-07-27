@@ -6,8 +6,50 @@
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
 
-pub(in crate::ui) fn is_restricted(search: &str, browse: &BrowseFilter, exclude_ai: bool) -> bool {
+use crate::ui::strings;
+
+pub(in crate::ui) fn filters_restrict(
+    search: &str,
+    browse: &BrowseFilter,
+    exclude_ai: bool,
+) -> bool {
     !search.trim().is_empty() || !browse.is_empty() || exclude_ai
+}
+
+pub(in crate::ui) fn scope_restricts(source: &ViewSource) -> bool {
+    matches!(
+        source,
+        ViewSource::Artist(_)
+            | ViewSource::Album { .. }
+            | ViewSource::Genre(_)
+            | ViewSource::RecentlyAdded
+    )
+}
+
+pub(in crate::ui) fn is_restricted(
+    search: &str,
+    browse: &BrowseFilter,
+    exclude_ai: bool,
+    source: &ViewSource,
+) -> bool {
+    filters_restrict(search, browse, exclude_ai) || scope_restricts(source)
+}
+
+pub(in crate::ui) fn scope_chip_label(source: &ViewSource) -> Option<String> {
+    match source {
+        ViewSource::RecentlyAdded => Some(strings::text(strings::SIDEBAR_RECENTLY_ADDED)),
+        ViewSource::Artist(artist) => Some(artist.clone()),
+        ViewSource::Genre(genre) => Some(genre.clone()),
+        ViewSource::Album {
+            album,
+            album_artist,
+        } if album_artist.trim().is_empty() => Some(album.clone()),
+        ViewSource::Album {
+            album,
+            album_artist,
+        } => Some(format!("{album} — {album_artist}")),
+        _ => None,
+    }
 }
 
 pub(in crate::ui) fn is_track_source(source: &ViewSource) -> bool {
@@ -70,13 +112,23 @@ mod tests {
     // trim in reload's has_filter).
     #[test]
     fn fil_2_whitespace_search_does_not_restrict() {
-        assert!(!is_restricted("   ", &BrowseFilter::default(), false));
-        assert!(is_restricted("falling", &BrowseFilter::default(), false));
+        assert!(!is_restricted(
+            "   ",
+            &BrowseFilter::default(),
+            false,
+            &ViewSource::Library
+        ));
+        assert!(is_restricted(
+            "falling",
+            &BrowseFilter::default(),
+            false,
+            &ViewSource::Library
+        ));
         let browse = BrowseFilter {
             genre: Some("Metal".into()),
             ..BrowseFilter::default()
         };
-        assert!(is_restricted("", &browse, false));
+        assert!(is_restricted("", &browse, false, &ViewSource::Library));
     }
 
     // UX FIL-7: the AI-exclude filter is a restriction on its own — the row
@@ -84,7 +136,59 @@ mod tests {
     // search and no facet.
     #[test]
     fn fil_7_exclude_ai_restricts_on_its_own() {
-        assert!(is_restricted("", &BrowseFilter::default(), true));
-        assert!(!is_restricted("", &BrowseFilter::default(), false));
+        assert!(is_restricted(
+            "",
+            &BrowseFilter::default(),
+            true,
+            &ViewSource::Library
+        ));
+        assert!(!is_restricted(
+            "",
+            &BrowseFilter::default(),
+            false,
+            &ViewSource::Library
+        ));
+    }
+
+    #[test]
+    fn fil_1c_artist_scope_restricts_and_renders_a_chip() {
+        let source = ViewSource::Artist("Lorna Shore".into());
+
+        assert!(scope_restricts(&source));
+        assert_eq!(scope_chip_label(&source).as_deref(), Some("Lorna Shore"));
+        assert_eq!(
+            scope_chip_label(&ViewSource::Album {
+                album: "Pain Remains".into(),
+                album_artist: "Lorna Shore".into(),
+            })
+            .as_deref(),
+            Some("Pain Remains — Lorna Shore")
+        );
+    }
+
+    #[test]
+    fn fil_1c_genre_scope_restricts_and_renders_its_own_chip() {
+        let source = ViewSource::Genre("Metalcore".into());
+
+        assert!(scope_restricts(&source));
+        assert_eq!(scope_chip_label(&source).as_deref(), Some("Metalcore"));
+        assert!(is_restricted("", &BrowseFilter::default(), false, &source));
+    }
+
+    #[test]
+    fn fil_1c_playlist_and_queue_carry_no_scope_chip() {
+        for source in [ViewSource::Playlist(7), ViewSource::Queue] {
+            assert!(!scope_restricts(&source));
+            assert_eq!(scope_chip_label(&source), None);
+        }
+    }
+
+    #[test]
+    fn fil_8_recently_added_is_a_removable_library_scope_chip() {
+        let source = ViewSource::RecentlyAdded;
+
+        assert!(scope_restricts(&source));
+        assert_eq!(scope_chip_label(&source).as_deref(), Some("Recently added"));
+        assert!(is_restricted("", &BrowseFilter::default(), false, &source));
     }
 }

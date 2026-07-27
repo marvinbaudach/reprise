@@ -48,6 +48,7 @@ struct Inner {
     /// Last-known playback duration, used to convert waveform seek fractions
     /// to absolute millisecond positions for the controller.
     current_duration_ms: Cell<i64>,
+    seek_enabled: Cell<bool>,
     /// Last-known volume (0.0–1.0), used as the scroll base for the next step.
     current_volume: Cell<f64>,
     /// Pending hide-timer handle for the volume bar.
@@ -92,6 +93,7 @@ impl CompactPlayer {
             widgets,
             menu,
             current_duration_ms: Cell::new(0),
+            seek_enabled: Cell::new(true),
             current_volume: Cell::new(1.0),
             vol_bar_hide_source: RefCell::new(None),
             current_track_animation: Rc::new(RefCell::new(None)),
@@ -186,6 +188,50 @@ impl CompactPlayer {
         self.0.widgets.waveform.set_peaks(peaks);
     }
 
+    pub(in crate::ui) fn set_external_snapshot(
+        &self,
+        snapshot: Option<&crate::ui::playback::external_media::ExternalPlaybackSnapshot>,
+    ) {
+        let Some(snapshot) = snapshot else {
+            self.0.seek_enabled.set(true);
+            self.0.widgets.waveform.widget().set_opacity(1.0);
+            self.0
+                .widgets
+                .waveform
+                .widget()
+                .set_sensitive(self.0.current_duration_ms.get() > 0);
+            self.0.widgets.title_label.remove_css_class("dim-label");
+            self.0.widgets.title_label.set_tooltip_text(None);
+            self.0.menu.set_queue_navigation_enabled(true);
+            return;
+        };
+        let display = crate::ui::player_bar_state::external_bar_display(snapshot);
+        self.set_track(&display.title, &display.subtitle);
+        self.set_state(display.playback);
+        self.0.widgets.waveform.set_peaks(Vec::new());
+        self.0.seek_enabled.set(!display.live);
+        self.0
+            .widgets
+            .waveform
+            .widget()
+            .set_sensitive(!display.live);
+        self.0
+            .widgets
+            .waveform
+            .widget()
+            .set_opacity(if display.live { 0.0 } else { 1.0 });
+        self.0.menu.set_queue_navigation_enabled(false);
+        if display.title_dimmed {
+            self.0.widgets.title_label.add_css_class("dim-label");
+        } else {
+            self.0.widgets.title_label.remove_css_class("dim-label");
+        }
+        self.0
+            .widgets
+            .title_label
+            .set_tooltip_text(display.inline_error.as_deref());
+    }
+
     /// Enables or disables the play/pause button.
     pub(in crate::ui) fn set_transport_enabled(&self, enabled: bool) {
         self.0.widgets.play_pause_button.set_sensitive(enabled);
@@ -259,6 +305,9 @@ impl CompactPlayer {
     pub(in crate::ui) fn connect_seek(&self, callback: impl Fn(i64) + 'static) {
         let inner = Rc::clone(&self.0);
         self.0.widgets.waveform.connect_seek(move |fraction| {
+            if !inner.seek_enabled.get() {
+                return;
+            }
             let dur_ms = inner.current_duration_ms.get();
             if dur_ms > 0 {
                 callback((fraction * dur_ms as f64) as i64);

@@ -60,7 +60,7 @@ impl TrackList {
             )
         };
         if let Some(column) = column {
-            self.shared.column_view.sort_by_column(Some(column), order);
+            super::track_list_sort::sort_by_column(&self.shared.column_view, column, order);
         }
         Ok(())
     }

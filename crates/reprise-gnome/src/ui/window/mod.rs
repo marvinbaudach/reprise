@@ -1,7 +1,10 @@
+mod content_stack;
 pub(in crate::ui) mod focus_evidence;
 pub(in crate::ui) mod library_chrome;
 pub(in crate::ui) mod library_shell;
 pub(in crate::ui) mod metadata_navigation;
+pub(in crate::ui) mod podcast_refresh_scheduler;
+pub(in crate::ui) mod source_views;
 #[path = "window.rs"]
 mod surface;
 pub(in crate::ui) mod window_action_wiring;

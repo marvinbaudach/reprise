@@ -21,6 +21,9 @@ pub enum ViewSource {
     /// only source before this task, and still the default.
     #[default]
     Library,
+    /// Present tracks added during the rolling seven-day window. This is a
+    /// Library scope, not a capped user-defined smart playlist.
+    RecentlyAdded,
     /// A manual playlist, ordered by `playlist_tracks.position` by default
     /// (a column-header click temporarily overrides — see `queries.rs`'s
     /// `"playlist_order"` whitelist sentinel). Carries the `playlists.id`.
@@ -52,11 +55,24 @@ pub enum ViewSource {
     /// Artist identity is the trimmed, case-insensitive effective album
     /// artist used by the summary query.
     Artist(String),
+    /// A read-only genre scope reached from My Stats. The value remains a
+    /// durable scope independent of clearable Library browse facets.
+    Genre(String),
     /// The "My Stats" screen — a dedicated view backed by
     /// `library::stats_screen` rather than the shared track list. The
     /// sidebar routes to it; the content area shows the stats view widget
     /// instead of the `ColumnView`.
     MyStats,
+    /// The full releases table backed by the New Releases cache.
+    Releases,
+    /// The full upcoming-concerts table backed by the Concerts cache.
+    Concerts,
+    /// The Podcasts source — a dedicated episode table rather than the
+    /// shared local-track list.
+    Podcasts,
+    /// The Internet Radio source — a dedicated station table rather than the
+    /// shared local-track list.
+    Radio,
     /// The instrumental conversion/staging view (experimental) — a dedicated
     /// view backed by `ai_jobs` + the staging store rather than the shared
     /// track list. The sidebar routes to it only while the experimental switch
@@ -75,6 +91,7 @@ impl ViewSource {
     pub fn label(&self) -> String {
         match self {
             Self::Library => "library".to_string(),
+            Self::RecentlyAdded => "recently_added".to_string(),
             Self::Playlist(id) => format!("playlist:{id}"),
             Self::Smart(id) => format!("smart:{id}"),
             Self::Queue => "queue".to_string(),
@@ -85,7 +102,12 @@ impl ViewSource {
                 album_artist,
             } => format!("album:{album}:{album_artist}"),
             Self::Artist(artist) => format!("artist:{artist}"),
+            Self::Genre(genre) => format!("genre:{genre}"),
             Self::MyStats => "my_stats".to_string(),
+            Self::Releases => "releases".to_string(),
+            Self::Concerts => "concerts".to_string(),
+            Self::Podcasts => "podcasts".to_string(),
+            Self::Radio => "radio".to_string(),
             Self::Conversions => "conversions".to_string(),
             Self::Device { serial } => format!("device:{serial}"),
         }
@@ -104,13 +126,18 @@ mod tests {
     #[test]
     fn label_formats_each_variant() {
         assert_eq!(ViewSource::Library.label(), "library");
+        assert_eq!(ViewSource::RecentlyAdded.label(), "recently_added");
         assert_eq!(ViewSource::Playlist(3).label(), "playlist:3");
         assert_eq!(ViewSource::Smart(7).label(), "smart:7");
         assert_eq!(ViewSource::Queue.label(), "queue");
         assert_eq!(ViewSource::Missing.label(), "missing");
         assert_eq!(ViewSource::ImportErrors.label(), "import_errors");
+        assert_eq!(ViewSource::Releases.label(), "releases");
+        assert_eq!(ViewSource::Concerts.label(), "concerts");
         assert_eq!(ViewSource::MyStats.label(), "my_stats");
         assert_eq!(ViewSource::Conversions.label(), "conversions");
+        assert_eq!(ViewSource::Podcasts.label(), "podcasts");
+        assert_eq!(ViewSource::Radio.label(), "radio");
         assert_eq!(
             ViewSource::Device {
                 serial: "pixel-8".into(),
@@ -127,5 +154,9 @@ mod tests {
             "album:Blue:Joni Mitchell"
         );
         assert_eq!(ViewSource::Artist("Björk".into()).label(), "artist:Björk");
+        assert_eq!(
+            ViewSource::Genre("Metalcore".into()).label(),
+            "genre:Metalcore"
+        );
     }
 }

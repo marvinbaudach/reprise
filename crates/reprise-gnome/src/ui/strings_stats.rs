@@ -2,16 +2,24 @@
 //! empty/failure states. The rest of the page's text is English-only chrome
 //! built in `ui::stats`; everything a user reads as a sentence lives here.
 
+use chrono::{Datelike, NaiveDate};
+use reprise_core::format::format_thousands;
+
 use super::{formatted, plural, text};
 use reprise_core::library::stats_period::{StatsPeriod, ROLLING_WINDOW_DAYS};
 use reprise_core::library::stats_snapshot::{
     ComparisonDirection, ComparisonFactor, ComparisonPresentation,
 };
 
-const HERO_HOURS_ONE: &str = N_!("1 hour");
-const HERO_HOURS: &str = N_!("{count} hours");
-const HERO_MINUTES_ONE: &str = N_!("1 minute");
-const HERO_MINUTES: &str = N_!("{count} minutes");
+const STATS_DURATION_HOURS_MINUTES: &str = N_!("{hours} h {minutes}");
+const STATS_DURATION_HOURS: &str = N_!("{hours} h");
+const STATS_DURATION_MINUTES: &str = N_!("{minutes} min");
+const STATS_HERO_SUBLINE: &str = N_!("{plays} plays · {artists} artists");
+const STATS_PACE: &str = N_!("PACE FOR {year}");
+const STATS_BEST_WEEK: &str = N_!("{date} · {time}");
+const STATS_TREND_DELTA: &str = N_!("{sign}{time}");
+const STATS_VS_YEAR: &str = N_!("vs {year}");
+const STATS_VS_PREVIOUS_DAYS: &str = N_!("vs previous {count} days");
 const COMPARISON_UP: &str = N_!("\u{25b2} {percent}% vs {period}");
 const COMPARISON_DOWN: &str = N_!("\u{25bc} {percent}% vs {period}");
 const COMPARISON_FACTOR_UP: &str = N_!("\u{25b2} \u{00d7}{factor} vs {period}");
@@ -29,32 +37,86 @@ const NEAR_ZERO_PREVIOUS_DAYS: &str = N_!("Less than one minute in the previous 
 const SPELLINGS_MERGED_ONE: &str = N_!("1 spelling merged \u{2014} unify it in the tag editor?");
 const SPELLINGS_MERGED: &str =
     N_!("{count} spellings merged \u{2014} unify them in the tag editor?");
-const MIX_FROM_GENRE: &str = N_!("Mix from {genre} \u{00b7} Create");
-pub const MIX_FROM_TOP_GENRE: &str = N_!("Mix from your top genre \u{00b7} Create");
 pub const STATS_EMPTY: &str = N_!("Start listening to see your stats");
 pub const STATS_UNAVAILABLE: &str = N_!("Your stats could not be read");
 pub const STATS_UNAVAILABLE_DESCRIPTION: &str =
     N_!("Reading the listening history failed. Nothing is missing from it — this view just could not load it.");
+pub const STATS_THIN_HISTORY: &str = N_!("Keep listening — stats grow with you");
 
-/// The hero figure, rounded to whole hours as the editorial layout calls for.
-/// Below an hour it names minutes rather than claiming "0 hours".
-pub fn hero_listening_time(milliseconds: i64) -> String {
+/// The single compact duration presentation used throughout My Stats.
+pub fn stats_duration(milliseconds: i64) -> String {
     let minutes = milliseconds.max(0) / 60_000;
     if minutes < 60 {
-        return plural(
-            HERO_MINUTES_ONE,
-            HERO_MINUTES,
-            minutes as usize,
-            &[("count", &minutes.to_string())],
-        );
+        return formatted(STATS_DURATION_MINUTES, &[("minutes", &minutes.to_string())]);
     }
     let hours = minutes / 60;
-    plural(
-        HERO_HOURS_ONE,
-        HERO_HOURS,
-        hours as usize,
-        &[("count", &hours.to_string())],
+    let remaining_minutes = minutes % 60;
+    if remaining_minutes == 0 {
+        return formatted(STATS_DURATION_HOURS, &[("hours", &hours.to_string())]);
+    }
+    formatted(
+        STATS_DURATION_HOURS_MINUTES,
+        &[
+            ("hours", &hours.to_string()),
+            ("minutes", &remaining_minutes.to_string()),
+        ],
     )
+}
+
+pub fn stats_hero_subline(plays: i64, artists: i64) -> String {
+    formatted(
+        STATS_HERO_SUBLINE,
+        &[
+            ("plays", &format_thousands(plays)),
+            ("artists", &format_thousands(artists)),
+        ],
+    )
+}
+
+pub fn stats_per_day(milliseconds: i64) -> String {
+    stats_duration(milliseconds)
+}
+
+pub fn stats_pace_label(year: i32) -> String {
+    formatted(STATS_PACE, &[("year", &year.to_string())])
+}
+
+pub fn stats_best_week(start: NaiveDate, milliseconds: i64) -> String {
+    formatted(
+        STATS_BEST_WEEK,
+        &[
+            ("date", &format!("{} {}", start.format("%b"), start.day())),
+            ("time", &stats_duration(milliseconds)),
+        ],
+    )
+}
+
+pub fn stats_trend_delta(milliseconds: i64) -> String {
+    formatted(
+        STATS_TREND_DELTA,
+        &[
+            ("sign", if milliseconds >= 0 { "+" } else { "−" }),
+            ("time", &stats_duration(milliseconds.saturating_abs())),
+        ],
+    )
+}
+
+pub fn stats_trend_reference(period: StatsPeriod) -> Option<String> {
+    match period {
+        StatsPeriod::YearToDate(year) | StatsPeriod::Year(year) => Some(formatted(
+            STATS_VS_YEAR,
+            &[("year", &year.saturating_sub(1).to_string())],
+        )),
+        StatsPeriod::Last30Days => Some(formatted(
+            STATS_VS_PREVIOUS_DAYS,
+            &[("count", &ROLLING_WINDOW_DAYS.to_string())],
+        )),
+        StatsPeriod::AllTime => None,
+    }
+}
+
+pub fn stats_new_badge() -> String {
+    text(NEW_THIS_YEAR)
 }
 
 /// The comparison pill. `period` names the span that was compared against —
@@ -204,14 +266,6 @@ pub fn spellings_merged_hint(count: usize) -> String {
     )
 }
 
-pub fn mix_from_genre(genre: &str) -> String {
-    formatted(MIX_FROM_GENRE, &[("genre", genre)])
-}
-
-pub fn mix_from_top_genre() -> String {
-    text(MIX_FROM_TOP_GENRE)
-}
-
 pub fn stats_empty_title() -> String {
     text(STATS_EMPTY)
 }
@@ -224,15 +278,22 @@ pub fn stats_unavailable_description() -> String {
     text(STATS_UNAVAILABLE_DESCRIPTION)
 }
 
+pub fn stats_thin_history_hint() -> String {
+    text(STATS_THIN_HISTORY)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn hero_time_names_hours_and_falls_back_to_minutes() {
-        assert_eq!(hero_listening_time(245_000_000), "68 hours");
-        assert_eq!(hero_listening_time(3_600_000), "1 hour");
-        assert_eq!(hero_listening_time(2_400_000), "40 minutes");
+    fn stats_duration_uses_one_compact_page_wide_format() {
+        assert_eq!(stats_duration(25_080_000), "6 h 58");
+        assert_eq!(stats_duration(3_600_000), "1 h");
+        assert_eq!(stats_duration(2_400_000), "40 min");
+        assert_eq!(stats_per_day(180_000), "3 min");
+        assert_eq!(stats_trend_delta(-25_080_000), "−6 h 58");
+        assert_eq!(stats_trend_delta(-2_400_000), "−40 min");
     }
 
     #[test]
@@ -249,7 +310,7 @@ mod tests {
     }
 
     #[test]
-    fn stats_1a_comparison_copy_renders_every_presentation_without_decimal_noise() {
+    fn stats_11a_comparison_copy_renders_every_presentation_without_decimal_noise() {
         let copy =
             |presentation| comparison_copy(presentation, StatsPeriod::YearToDate(2026)).unwrap();
 

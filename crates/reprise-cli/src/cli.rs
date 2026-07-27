@@ -51,6 +51,11 @@ pub enum Command {
         #[command(subcommand)]
         action: LibraryAction,
     },
+    /// Read upcoming concerts from the local cache.
+    Concerts {
+        #[command(subcommand)]
+        action: ConcertsAction,
+    },
     /// Scan a folder into the library.
     Scan {
         /// Folder to scan. Defaults to the configured library root.
@@ -133,6 +138,19 @@ pub enum PlaylistAction {
 pub enum LibraryAction {
     /// Show track count and total duration.
     Summary,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ConcertsAction {
+    /// List upcoming concert events.
+    List {
+        /// Ignore the saved Concerts filters.
+        #[arg(long)]
+        all: bool,
+        /// Return at most this many events.
+        #[arg(long)]
+        limit: Option<usize>,
+    },
 }
 
 #[derive(Subcommand, Debug)]

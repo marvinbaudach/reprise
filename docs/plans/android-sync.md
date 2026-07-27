@@ -120,7 +120,7 @@ CREATE TABLE device_settings (
     -- selection_json: ["playlist:42", "playlist:7", "smart:3"]
     -- oder: "entire_library"
     opus_bitrate  INTEGER NOT NULL DEFAULT 0,
-    -- 0 = kein Transcode, sonst kbit/s (64, 96, 128, 160, 192)
+    -- 0 = kein Transcode, sonst kbit/s (64, 96, 128, 160, 192, 256)
     ratings_back  INTEGER NOT NULL DEFAULT 0,
     -- V1: immer 0 (disabled), V2: 1 = enabled
     remove_deleted INTEGER NOT NULL DEFAULT 1
@@ -318,7 +318,7 @@ Music/
 - Delta-Karte (s.o.)
 - Sync Settings:
   - „Sync Ratings & Play Counts back" — Toggle (V1: disabled, Tooltip „Requires companion app")
-  - „Convert to Opus" — Dropdown: 128 kbit/s (default), 64/96/160/192
+  - „Convert to Opus" — Dropdown: kein Transcode, 64/96/128/160/192/256 kbit/s
   - „Remove deleted tracks from device" — Toggle (default: on)
 
 ### Error-States

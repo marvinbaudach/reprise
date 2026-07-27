@@ -24,6 +24,20 @@ entries have materially changed. Keep the presentation concise, precise, visuall
 and suitable for a senior engineering portfolio. Every claim must map to code, a test, an
 accepted benchmark report, or the progress ledger.
 
+Refresh the screenshots as part of every run, not only the prose. Compare every screenshot under
+`docs/images/` and every screenshot embedded in the showroom against the current build, retake the
+ones that no longer match what ships, and add a shot whenever a shipped UI highlight has no
+picture yet. The showroom should show the current highlights, not the state of an earlier week.
+
+Treat the player as the fastest-ageing screenshot: its layout, visualizer, and controls keep
+changing, so assume a committed player shot is stale until it has been checked against the current
+build in that run. A wrong player screenshot misrepresents the product more than a missing one —
+if no retake is possible in a run, remove the outdated shot instead of keeping it.
+
+Screenshots must come from a real run after a native GNOME visual pass, keep useful Markdown alt
+text, and never be fabricated or reconstructed. Do not screenshot real music, a real library, or
+user data; use the isolated test profile.
+
 Public showroom languages: English and German only. Do not create, restore, or maintain additional
 translations; their review cost is not justified by the target audience.
 

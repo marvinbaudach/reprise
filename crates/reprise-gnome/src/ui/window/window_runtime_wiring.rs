@@ -51,6 +51,11 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) sidebar: &'a Rc<Sidebar>,
     pub(in crate::ui) player: &'a Option<Rc<PlayerController>>,
     pub(in crate::ui) stats_view: StatsView,
+    pub(in crate::ui) concerts_view: &'a Rc<crate::ui::concerts::ConcertsView>,
+    pub(in crate::ui) releases_view: &'a Rc<crate::ui::releases::ReleasesView>,
+    pub(in crate::ui) podcasts_view: &'a Rc<crate::ui::podcasts::PodcastsView>,
+    pub(in crate::ui) radio_view: &'a Rc<crate::ui::radio::RadioView>,
+    pub(in crate::ui) podcasts_runtime: &'a Rc<crate::ui::podcasts::PodcastsRuntime>,
     pub(in crate::ui) content_stack: &'a gtk4::Stack,
     pub(in crate::ui) device_view: &'a Rc<DeviceViewPage>,
     pub(in crate::ui) window_title: &'a adw::WindowTitle,
@@ -88,6 +93,11 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         sidebar,
         player,
         stats_view,
+        concerts_view,
+        releases_view,
+        podcasts_view,
+        radio_view,
+        podcasts_runtime,
         content_stack,
         device_view,
         window_title,
@@ -307,6 +317,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             let sidebar = sidebar.clone();
             let track_list = track_list.clone();
             let content_stack = content_stack.clone();
+            let window_title = window_title.clone();
             let active_content_focus = active_content_focus.clone();
             back_action.connect_activate(move |_, _| {
                 let Some(place) = nav_history.go_back_from(track_list.browser_place()) else {
@@ -324,6 +335,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                     &sidebar,
                     &track_list,
                     &content_stack,
+                    &window_title,
                     &active_content_focus,
                     "nav back",
                 );
@@ -341,6 +353,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             let sidebar = sidebar.clone();
             let track_list = track_list.clone();
             let content_stack = content_stack.clone();
+            let window_title = window_title.clone();
             let active_content_focus = active_content_focus.clone();
             forward_action.connect_activate(move |_, _| {
                 let Some(place) = nav_history.go_forward_from(track_list.browser_place()) else {
@@ -358,6 +371,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                     &sidebar,
                     &track_list,
                     &content_stack,
+                    &window_title,
                     &active_content_focus,
                     "nav forward",
                 );
@@ -453,6 +467,12 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             gtk4::prelude::ActionGroupExt::activate_action(&window, "clear-all-filters", None);
         });
     }
+    {
+        let navigator = metadata_navigator.clone();
+        track_list.set_on_scope_cleared(move || {
+            navigator.leave_scope();
+        });
+    }
 
     cover_batch.start();
     app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);
@@ -468,6 +488,10 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         nav_history,
         track_list,
         stats_view,
+        concerts_view,
+        releases_view,
+        podcasts_view,
+        radio_view,
         conn,
         content_stack,
         device_view,
@@ -475,12 +499,59 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         show_content_if_collapsed,
         &active_content_focus,
     );
+    super::podcast_refresh_scheduler::arm(conn, db_path, podcasts_runtime, podcasts_view);
 
     let track_list_weak = Rc::downgrade(track_list);
     sidebar.set_on_tracks_added(move || match track_list_weak.upgrade() {
         Some(track_list) => track_list.reload(),
         None => tracing::warn!("track list reload skipped: track list is gone"),
     });
+    crate::ui::instrumental::set_settings_hook({
+        let preferences = Rc::downgrade(preferences);
+        Rc::new(move || {
+            if let Some(preferences) = preferences.upgrade() {
+                preferences.present_page("experimental");
+            }
+        })
+    });
+    {
+        let conn = conn.clone();
+        let overlay = toast_overlay.downgrade();
+        sidebar.set_on_conversion_drop(move |ids| {
+            let outcome = crate::ui::instrumental::enqueue_present_tracks(&conn.borrow(), ids);
+            match outcome {
+                Ok(summary) if summary.accepted() > 0 => {
+                    crate::ui::instrumental::wake_worker();
+                    if let Some(overlay) = overlay.upgrade() {
+                        overlay.add_toast(adw::Toast::new(
+                            &crate::ui::strings::create_instrumental_toast(
+                                summary.created,
+                                summary.deduplicated,
+                            ),
+                        ));
+                    }
+                    true
+                }
+                Ok(_) => false,
+                Err(
+                    crate::ui::instrumental::EnqueueError::ModelRequired
+                    | crate::ui::instrumental::EnqueueError::RuntimeUnavailable(_),
+                ) => {
+                    crate::ui::instrumental::open_settings();
+                    true
+                }
+                Err(error) => {
+                    tracing::error!(%error, "conversion drop could not queue instrumentals");
+                    if let Some(overlay) = overlay.upgrade() {
+                        overlay.add_toast(adw::Toast::new(
+                            &crate::ui::strings::create_instrumental_failed_toast(),
+                        ));
+                    }
+                    false
+                }
+            }
+        });
+    }
     let sidebar_weak = Rc::downgrade(sidebar);
     track_list.set_on_sidebar_playlist_drop(move |playlist_id, playlist_name, ids| {
         match sidebar_weak.upgrade() {
@@ -594,6 +665,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         sidebar,
         track_list,
         content_stack,
+        window_title,
         &active_content_focus,
         "session restore",
     );
@@ -608,7 +680,22 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         nav_history,
     );
     super::session_restore::arm_seed_close(window);
-    super::first_run::run(window, scan_button, conn, first_run_decision);
+    let present_rhythmbox_import = {
+        let preferences = Rc::downgrade(preferences);
+        Rc::new(move || {
+            if let Some(preferences) = preferences.upgrade() {
+                preferences.present_rhythmbox_import_dialog();
+            }
+        }) as Rc<dyn Fn()>
+    };
+    super::first_run::run(
+        window,
+        scan_button,
+        scan_controls,
+        conn,
+        first_run_decision,
+        &present_rhythmbox_import,
+    );
     active_content_focus.focus_later_if_unset(window);
     minimal_view.apply_initial();
     arm_smoke_quit(window);
@@ -677,10 +764,10 @@ fn start_external_changes_refresh(
                 }
             }
             if plan.conversion {
-                // An MCP/CLI process enqueued an instrumental job. The app-hosted
-                // worker idles until woken, so nudge it to claim and render the
-                // new job. A no-op when the experimental feature is off (no
-                // worker, no wake hook).
+                // An MCP/CLI process enqueued an instrumental job. The packaged
+                // worker-process supervisor idles until woken, so nudge it to
+                // claim and render the new job. A no-op when the experimental
+                // feature is off (no supervisor, no wake hook).
                 crate::ui::instrumental::wake_worker();
             }
         }),

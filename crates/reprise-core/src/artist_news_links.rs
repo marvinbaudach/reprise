@@ -62,10 +62,12 @@ fn find_link<'a>(
 
 /// Persistierte URL oder Fallback auf die MB-Release-Group-Seite.
 pub fn announce_url_or_fallback(stored: Option<&str>, release_group_mbid: &str) -> String {
-    stored.map_or_else(
-        || format!("https://musicbrainz.org/release-group/{release_group_mbid}"),
-        str::to_owned,
-    )
+    stored
+        .filter(|url| crate::external_link::is_launchable_url(url))
+        .map_or_else(
+            || format!("https://musicbrainz.org/release-group/{release_group_mbid}"),
+            str::to_owned,
+        )
 }
 
 #[cfg(test)]
@@ -125,6 +127,24 @@ mod tests {
             announce_url_or_fallback(None, "abc"),
             "https://musicbrainz.org/release-group/abc"
         );
-        assert_eq!(announce_url_or_fallback(Some("x"), "abc"), "x");
+        assert_eq!(
+            announce_url_or_fallback(Some("https://artist.example/release"), "abc"),
+            "https://artist.example/release"
+        );
+    }
+
+    #[test]
+    fn nr_11_announce_url_or_fallback_rejects_non_web_stored_url() {
+        for stored in [
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "reprise://play/1",
+            "",
+        ] {
+            assert_eq!(
+                announce_url_or_fallback(Some(stored), "abc"),
+                "https://musicbrainz.org/release-group/abc"
+            );
+        }
     }
 }

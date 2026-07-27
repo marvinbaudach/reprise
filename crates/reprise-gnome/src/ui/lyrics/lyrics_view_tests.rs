@@ -315,6 +315,72 @@ fn active_lines_center_and_clamp_in_a_mapped_panel() {
     window.close();
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn npp_6_highlight_reflow_does_not_snap_after_centering() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let view = LyricsView::new();
+    let lines = (0..40)
+        .map(|index| TimedLine::new(i64::from(index) * 1_000, "short synthetic line"))
+        .collect();
+    view.show_result(&LyricsBody::Synced(lines));
+    let window = gtk4::Window::builder()
+        .default_width(300)
+        .default_height(240)
+        .child(view.widget())
+        .build();
+    window.present();
+    assert!(settle_until(1_000, || view.widget().height() > 0));
+
+    view.set_active_line(Some(19));
+    wait_for_scroll_value(&view, |value, maximum| value > 0.0 && value < maximum);
+    assert!(settle_until(1_000, || !view.has_scroll_animation()));
+
+    view.set_active_line(Some(20));
+    assert!(settle_until(1_000, || view.has_scroll_animation()));
+    let highlighted = view.line_labels()[20].clone();
+    let pre_reflow_height = highlighted.height();
+    // Font metrics differ across themes and CI images, so a text string
+    // cannot reliably wrap only after the active-line style is applied.
+    // Force the same late row-allocation growth while the highlight scroll is
+    // running. The previous completion callback then exposed its hard snap.
+    highlighted.set_height_request(pre_reflow_height + 18);
+    assert!(settle_until(1_000, || highlighted.height() > pre_reflow_height));
+    let active_height = view.line_labels()[20].height();
+    assert!(
+        active_height > pre_reflow_height,
+        "fixture must make the highlighted line reflow: before={pre_reflow_height}, active={active_height}"
+    );
+
+    let mut samples = vec![view.scroll_values().0];
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    while view.has_scroll_animation() && std::time::Instant::now() < deadline {
+        gtk4::glib::MainContext::default().iteration(true);
+        let value = view.scroll_values().0;
+        if samples
+            .last()
+            .is_none_or(|previous| (value - previous).abs() > f64::EPSILON)
+        {
+            samples.push(value);
+        }
+    }
+    assert!(
+        !view.has_scroll_animation(),
+        "scroll animation did not finish"
+    );
+    assert!(
+        samples.len() >= 3,
+        "scroll animation produced too few samples: {samples:?}"
+    );
+    let terminal_step = (samples[samples.len() - 1] - samples[samples.len() - 2]).abs();
+    assert!(
+        terminal_step <= 2.0,
+        "highlight reflow caused a terminal {terminal_step:.2}px scroll snap: {samples:?}"
+    );
+    window.close();
+}
+
 fn wait_for_scroll_value(view: &LyricsView, predicate: impl Fn(f64, f64) -> bool) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
     loop {
@@ -370,7 +436,7 @@ fn lyr_4_start_of_song_is_not_centered() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn npp_10_new_lyrics_begin_at_line_zero() {
+fn npp_13_new_lyrics_begin_at_line_zero() {
     gtk4::init().unwrap();
     let view = LyricsView::new();
     let lines = (0..20)

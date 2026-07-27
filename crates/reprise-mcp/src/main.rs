@@ -8,13 +8,25 @@
 //! or raw listen event).
 
 mod capability;
+mod catalog_resources;
 mod config;
 mod data;
+mod data_concerts;
+#[cfg(feature = "mpris")]
+mod device_dto;
+#[cfg(feature = "mpris")]
+mod device_sync;
+#[cfg(feature = "mpris")]
+mod device_tools;
 mod dto;
 mod error;
 #[cfg(feature = "mpris")]
 mod playback;
+mod playlist_update;
 mod server;
+mod source_actions;
+mod source_data;
+mod source_tools;
 mod startup;
 mod stdin_cap;
 
@@ -74,8 +86,16 @@ fn main() -> ExitCode {
 }
 
 async fn serve(db_path: PathBuf, staging_path: PathBuf, caps: startup::StartupCaps) -> ExitCode {
-    let handler =
-        server::RepriseServer::new(db_path, staging_path, caps.playlist_create, caps.ai_create);
+    let handler = server::RepriseServer::new(
+        db_path,
+        staging_path,
+        caps.playlist_create,
+        caps.playlist_manage,
+        caps.ai_create,
+        caps.sources_manage,
+        #[cfg(feature = "mpris")]
+        caps.device_sync,
+    );
     // Cap stdin per line so a hostile or newline-less client cannot OOM the
     // process through rmcp's unbounded `read_until` (see `stdin_cap`). `serve`
     // accepts an `(AsyncRead, AsyncWrite)` pair as its transport, so we swap the
