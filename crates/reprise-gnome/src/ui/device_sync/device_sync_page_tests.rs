@@ -3,7 +3,6 @@ use std::rc::Rc;
 
 use chrono::TimeZone;
 use gtk4::prelude::*;
-use libadwaita::prelude::*;
 use reprise_core::device_sync::{
     DeviceSelection, DeviceSettings, DeviceStorageAccess, DeviceStorageProjection,
     DeviceStorageSnapshot, MirrorBlocker, Mp3Quality, SelectionSource, StorageComposition,
@@ -283,6 +282,27 @@ fn mtp_10_verification_summary_claims_only_post_sync_readback() {
 }
 
 #[test]
+fn mtp_14_device_header_reports_the_last_device_sync_without_claiming_one() {
+    let mut device = device();
+    assert_eq!(device_last_sync_copy(&device), "Never synchronized");
+
+    device.last_sync = Some(
+        chrono::Utc
+            .timestamp_opt(1_753_612_496, 0)
+            .single()
+            .unwrap(),
+    );
+    let local = chrono::Local
+        .timestamp_opt(1_753_612_496, 0)
+        .single()
+        .unwrap();
+    assert_eq!(
+        device_last_sync_copy(&device),
+        format!("Last synced {}", local.format("%b %-d, %Y at %H:%M"))
+    );
+}
+
+#[test]
 fn mtp_7_storage_segments_never_invent_unknown_capacity_or_negative_growth() {
     let mut after = composition(Some(80 * 1_024));
     after.reprise_music_bytes = 16 * 1_024;
@@ -375,6 +395,60 @@ fn full_page_warning_copy_is_grammatical_and_path_free() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn mtp_14_full_page_uses_a_device_dashboard_instead_of_preferences_chrome() {
+    gtk4::init().expect("GTK test display");
+    let (surface, root) = DeviceSyncPage::new(
+        &device(),
+        PageActions {
+            set_profile: Rc::new(|_| {}),
+            set_playlist: Rc::new(|_, _| {}),
+            start: Rc::new(|| {}),
+            cancel: Rc::new(|| {}),
+            eject: Rc::new(|| {}),
+        },
+    );
+
+    fn count_descendants<T: IsA<gtk4::Widget> + StaticType>(widget: &gtk4::Widget) -> usize {
+        let mut count = usize::from(widget.is::<T>());
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            count += count_descendants::<T>(&current);
+            child = current.next_sibling();
+        }
+        count
+    }
+
+    let text = surface.root_text();
+    let identity = text.find("Pixel 8").expect("device identity");
+    let connection = text.find("MTP connected").expect("connection status");
+    let last_sync = text
+        .find("Never synchronized")
+        .expect("device sync history");
+    let storage = text.find("Internal storage").expect("device storage");
+    let playlists = text.find("Playlists").expect("playlist workspace");
+    let overview = text.find("Sync overview").expect("sync overview");
+    assert!(identity < connection);
+    assert!(connection < last_sync);
+    assert!(last_sync < storage);
+    assert!(storage < playlists);
+    assert!(identity < overview);
+    assert!(
+        !text.contains("Last synchronization"),
+        "the header owns device sync history; the overview must not duplicate it"
+    );
+    assert_eq!(
+        count_descendants::<adw::PreferencesPage>(root.upcast_ref()),
+        0
+    );
+    assert_eq!(surface.playlist_rows.borrow().len(), 1);
+    assert_eq!(
+        surface.playlist_rows.borrow()[0].button.accessible_role(),
+        gtk4::AccessibleRole::ToggleButton
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn mtp_13_full_page_renders_and_wires_only_the_playlist_mirroring_controls() {
     gtk4::init().expect("GTK test display");
     let profile_events = Rc::new(RefCell::new(Vec::new()));
@@ -402,12 +476,9 @@ fn mtp_13_full_page_renders_and_wires_only_the_playlist_mirroring_controls() {
     };
     let mut device = device();
     device.page.playlists[0].name = Some("Lorna Shore & Similar".into());
-    let surface = Rc::new(DeviceSyncPage::new(&device, actions));
+    let (surface, root) = DeviceSyncPage::new(&device, actions);
 
-    assert_eq!(
-        surface.root.visible_child_name().as_deref(),
-        Some("connected")
-    );
+    assert_eq!(root.visible_child_name().as_deref(), Some("connected"));
     assert_eq!(
         surface.profile.model().map(|model| model.n_items()),
         Some(3)
@@ -415,10 +486,10 @@ fn mtp_13_full_page_renders_and_wires_only_the_playlist_mirroring_controls() {
     assert_eq!(surface.profile.selected(), 1);
     assert_eq!(surface.playlist_rows.borrow().len(), 1);
     assert_eq!(
-        surface.playlist_rows.borrow()[0].1.title(),
+        surface.playlist_rows.borrow()[0].title.label(),
         "Lorna Shore & Similar"
     );
-    assert!(!surface.playlist_rows.borrow()[0].1.uses_markup());
+    assert!(!surface.playlist_rows.borrow()[0].title.uses_markup());
     assert_eq!(surface.primary.label().as_deref(), Some("_Sync now"));
     assert!(surface.primary.uses_underline());
     assert!(surface.primary.is_sensitive());
@@ -429,7 +500,7 @@ fn mtp_13_full_page_renders_and_wires_only_the_playlist_mirroring_controls() {
     assert!(!surface.root_text().contains("Remove unselected"));
 
     surface.profile.set_selected(2);
-    surface.playlist_rows.borrow()[0].1.set_active(false);
+    surface.playlist_rows.borrow()[0].button.set_active(false);
     surface.primary.emit_clicked();
     assert_eq!(*profile_events.borrow(), [TransferProfile::Original]);
     assert_eq!(
@@ -449,8 +520,8 @@ fn mtp_13_full_page_renders_and_wires_only_the_playlist_mirroring_controls() {
     device.bytes_per_second = 2 * 1_024 * 1_024;
     surface.update(&device);
     assert_eq!(
-        surface.progress.subtitle().as_deref(),
-        Some("Immortal — Lorna Shore · 2.0 MiB/s")
+        surface.progress_detail.label(),
+        "Immortal — Lorna Shore · 2.0 MiB/s"
     );
     assert_eq!(surface.progress_bar.fraction(), 0.5);
 
@@ -468,6 +539,14 @@ fn mtp_13_full_page_renders_and_wires_only_the_playlist_mirroring_controls() {
     let weak_surface = Rc::downgrade(&surface);
     let callback = page_state_callback(weak_surface.clone(), "phone".into());
     drop(surface);
+    assert!(
+        weak_surface.upgrade().is_some(),
+        "the page widget must retain its live update controller"
+    );
+    callback(DeviceSyncState {
+        devices: vec![device],
+    });
+    drop(root);
     assert!(
         weak_surface.upgrade().is_none(),
         "the runtime callback must not retain a removed device page"

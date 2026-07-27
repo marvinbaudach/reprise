@@ -371,6 +371,15 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   markup-sicherem Namen, Auswahl, letztem verifiziertem Sync und der für das
   aktive Profil projizierten Zielgröße sowie bei einem laufenden Sync
   Fortschrittsbalken und aktuelle geglättete MTP-Transferrate.
+- **MTP-14** [aktiv] [gtk] — Die Geräte-Vollseite besitzt die
+  Informationshierarchie eines Geräte-Dashboards und nicht die einer
+  Preferences-Seite: Geräteidentität, MTP-Status, letzter Geräte-Sync,
+  Gerätespeicher und Aktionen bilden einen gemeinsamen, einfachen Hero-Kopf.
+  Playlists mit profilabhängiger Zielgröße und letztem Playlist-Sync bilden
+  den Hauptinhalt; Transferprofil, Delta und laufender Fortschritt bleiben
+  eine kompakte Nebenübersicht. Lokal bekannte Playlists erscheinen und bleiben
+  auswählbar, während Reprise den MTP-Speicher noch prüft; nur der
+  Sync-Start wartet auf diese Prüfung.
 
 ## F. Einstellungen & Modale
 

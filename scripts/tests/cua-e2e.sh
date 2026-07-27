@@ -153,8 +153,11 @@ for android_sync_contract in \
   '"Simulated MTP Phone"' \
   '"Transfer profile"' \
   '"Recently added"' \
+  '"Sync overview"' \
   '"Next synchronization"' \
-  '"Last synchronization"' \
+  '"Never synchronized"' \
+  '"1 unique track · 2.4 MiB on device"' \
+  '"Sync now"' \
   '"Device files"' \
   '"Entire library"'; do
   if ! rg --quiet --fixed-strings "$android_sync_contract" "$runner"; then

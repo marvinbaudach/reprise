@@ -152,6 +152,41 @@ fn compact_page_projects_profile_playlist_sizes_deduplicated_delta_and_storage()
 }
 
 #[test]
+fn mtp_14_playlists_are_selectable_while_device_storage_is_still_being_checked() {
+    run(async {
+        let (_temp, conn) = fixture();
+        add_playlist(&conn, 10, "Road", &[1, 2]);
+        save_sources(&conn, "a", Vec::new());
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let (inspection_started, release_inspection) = backend.gate_next_inspection();
+
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        inspection_started.recv().await.unwrap();
+
+        let device = runtime.devices().remove(0);
+        assert_eq!(device.sync_phase, PlannedSyncPhase::ComputingDelta);
+        assert_eq!(
+            device
+                .page
+                .playlists
+                .iter()
+                .map(|row| row.name.as_deref())
+                .collect::<Vec<_>>(),
+            [
+                Some("Recently added"),
+                Some("Recently played"),
+                Some("Road"),
+                Some("Top rated")
+            ]
+        );
+        assert!(device.page.controls.editable);
+        assert!(!device.page.controls.can_start);
+
+        release_inspection.send(()).await.unwrap();
+    });
+}
+
+#[test]
 fn profile_and_playlist_changes_persist_and_recompute_the_page_immediately() {
     run(async {
         let (_temp, conn) = fixture();
