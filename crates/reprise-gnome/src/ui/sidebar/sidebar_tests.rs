@@ -152,6 +152,16 @@ fn fb_8_bottom_region_replaces_issues_instead_of_stacking_progress() {
         IssuesSurface::Activity,
         "a visible scanner must hide both the Issues heading and its source rows"
     );
+    let placement = bottom_region_placement();
+    assert!(
+        !placement.vexpand,
+        "the replacement region must leave flexible height to navigation"
+    );
+    assert_eq!(
+        placement.valign,
+        gtk4::Align::End,
+        "the replacement region must stay pinned directly above the player"
+    );
 }
 
 #[test]
@@ -187,6 +197,8 @@ fn fb_8_scanner_visibility_switches_the_whole_bottom_region() {
         Some("issues"),
         "the persistent Issues surface is the idle state"
     );
+    assert!(!region.vexpands());
+    assert_eq!(region.valign(), gtk4::Align::End);
     scanner.set_visible(true);
     scanner.set_reveal_child(true);
     assert_eq!(
