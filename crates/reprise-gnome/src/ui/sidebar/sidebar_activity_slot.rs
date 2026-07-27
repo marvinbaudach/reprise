@@ -14,6 +14,7 @@ pub(super) struct SidebarActivitySlot {
     root: gtk4::Box,
     /// Long-running cards temporarily replace Issues while any is visible.
     progress_root: gtk4::Box,
+    progress_spacer: gtk4::Box,
     device_section: RefCell<Option<gtk4::Widget>>,
     scan_card: RefCell<Option<gtk4::Widget>>,
     doctor_card: RefCell<Option<gtk4::Widget>>,
@@ -25,9 +26,14 @@ pub(super) struct SidebarActivitySlot {
 impl SidebarActivitySlot {
     pub(super) fn new() -> Self {
         let issues_stack = gtk4::glib::WeakRef::new();
+        let progress_root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        let progress_spacer = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        progress_spacer.set_vexpand(true);
+        progress_root.append(&progress_spacer);
         Self {
             root: gtk4::Box::new(gtk4::Orientation::Vertical, 0),
-            progress_root: gtk4::Box::new(gtk4::Orientation::Vertical, 0),
+            progress_root,
+            progress_spacer,
             device_section: RefCell::new(None),
             scan_card: RefCell::new(None),
             doctor_card: RefCell::new(None),
@@ -55,8 +61,10 @@ impl SidebarActivitySlot {
     pub(super) fn set_scan_card(&self, card: &impl IsA<gtk4::Widget>) {
         replace_child(&self.progress_root, &self.scan_card, card);
         let card = card.upcast_ref::<gtk4::Widget>();
-        self.progress_root
-            .reorder_child_after(card, None::<&gtk4::Widget>);
+        self.progress_root.reorder_child_after(
+            card,
+            Some(self.progress_spacer.upcast_ref::<gtk4::Widget>()),
+        );
         self.track_progress_visibility(card);
     }
 
@@ -67,7 +75,8 @@ impl SidebarActivitySlot {
             .doctor_card
             .borrow()
             .clone()
-            .or_else(|| self.scan_card.borrow().clone());
+            .or_else(|| self.scan_card.borrow().clone())
+            .or_else(|| Some(self.progress_spacer.clone().upcast()));
         self.progress_root
             .reorder_child_after(card, predecessor.as_ref());
         self.track_progress_visibility(card);
@@ -76,7 +85,11 @@ impl SidebarActivitySlot {
     pub(super) fn set_doctor_card(&self, card: &impl IsA<gtk4::Widget>) {
         replace_child(&self.progress_root, &self.doctor_card, card);
         let card = card.upcast_ref::<gtk4::Widget>();
-        let predecessor = self.scan_card.borrow().clone();
+        let predecessor = self
+            .scan_card
+            .borrow()
+            .clone()
+            .or_else(|| Some(self.progress_spacer.clone().upcast()));
         self.progress_root
             .reorder_child_after(card, predecessor.as_ref());
         self.track_progress_visibility(card);
@@ -103,15 +116,29 @@ impl SidebarActivitySlot {
         if let Some(revealer) = card.downcast_ref::<gtk4::Revealer>() {
             revealer.connect_reveal_child_notify({
                 let refresh = refresh.clone();
-                move |_| refresh()
+                move |revealer| {
+                    sync_revealer_visibility(revealer);
+                    refresh();
+                }
             });
-            revealer.connect_child_revealed_notify(move |_| refresh());
+            revealer.connect_child_revealed_notify(move |revealer| {
+                sync_revealer_visibility(revealer);
+                refresh();
+            });
+            sync_revealer_visibility(revealer);
         }
         self.show_surface_for_progress();
     }
 
     fn show_surface_for_progress(&self) {
         show_surface_for_progress(&self.issues_stack, &self.progress_cards);
+    }
+}
+
+fn sync_revealer_visibility(revealer: &gtk4::Revealer) {
+    let should_be_visible = revealer.reveals_child() || revealer.is_child_revealed();
+    if revealer.is_visible() != should_be_visible {
+        revealer.set_visible(should_be_visible);
     }
 }
 
@@ -207,14 +234,20 @@ mod tests {
             slot.widget().last_child().as_ref(),
             Some(device.upcast_ref())
         );
-        assert_eq!(
-            slot.progress_widget().first_child().as_ref(),
-            Some(scan.upcast_ref())
-        );
+        let spacer = slot
+            .progress_widget()
+            .first_child()
+            .expect("progress root must reserve flexible space above its cards");
+        assert!(spacer.is_visible());
+        assert!(spacer.vexpands());
+        assert_eq!(spacer.next_sibling().as_ref(), Some(scan.upcast_ref()));
         assert_eq!(
             slot.progress_widget().last_child().as_ref(),
             Some(relink.upcast_ref())
         );
+        assert!(!scan.is_visible());
+        assert!(!doctor.is_visible());
+        assert!(!relink.is_visible());
 
         device.set_visible(true);
         scan.set_reveal_child(true);
@@ -224,5 +257,8 @@ mod tests {
         assert!(scan.reveals_child());
         assert!(relink.reveals_child());
         assert!(doctor.reveals_child());
+        assert!(scan.is_visible());
+        assert!(relink.is_visible());
+        assert!(doctor.is_visible());
     }
 }

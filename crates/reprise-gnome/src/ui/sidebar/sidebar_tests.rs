@@ -162,10 +162,9 @@ fn fb_8_bottom_region_replaces_issues_instead_of_stacking_progress() {
         gtk4::Align::End,
         "the replacement region must prefer the bottom of any parent allocation"
     );
-    assert_eq!(
-        progress_page_order(),
-        &[ProgressPageChild::FlexibleSpace, ProgressPageChild::Cards],
-        "extra page allocation must stay above the progress cards"
+    assert!(
+        !placement.vhomogeneous,
+        "the replacement region must measure only its visible surface"
     );
 }
 
@@ -192,6 +191,8 @@ fn fb_8_scanner_visibility_switches_the_whole_bottom_region() {
     window.present();
     while gtk4::glib::MainContext::default().iteration(false) {}
 
+    assert!(root.vexpands());
+    assert!(root.is_vexpand_set());
     let region = root
         .last_child()
         .and_then(|widget| widget.downcast::<gtk4::Stack>().ok())
@@ -211,17 +212,17 @@ fn fb_8_scanner_visibility_switches_the_whole_bottom_region() {
         Some("activity"),
         "scanner progress must replace the heading and issue rows"
     );
-    let activity_page = region
+    let progress_root = region
         .visible_child()
         .and_then(|widget| widget.downcast::<gtk4::Box>().ok())
-        .expect("the activity surface must be a vertical page");
-    let spacer = activity_page
+        .expect("the activity surface must be the shared progress root");
+    let spacer = progress_root
         .first_child()
-        .expect("the activity page must reserve flexible space above its cards");
+        .expect("the progress root must reserve flexible space above its cards");
     assert!(spacer.vexpands());
     assert_eq!(
-        activity_page.last_child().as_ref(),
-        Some(activity.progress_widget().upcast_ref())
+        progress_root.last_child().as_ref(),
+        Some(scanner.upcast_ref())
     );
     scanner.set_reveal_child(false);
     scanner.set_visible(false);
