@@ -31,6 +31,7 @@ timeout 15s dbus-run-session -- xvfb-run -a env \
   REPRISE_SMOKE_LYRICS=1 REPRISE_SMOKE_QUIT=1 \
   REPRISE_SMOKE_QUIT_DELAY_SECS=4 REPRISE_LOG=info \
   cargo run --manifest-path "$repo_root/Cargo.toml" -p reprise-gnome \
+  --features test-fixtures \
   >"$app_log" 2>&1
 
 grep -F 'phase="first-line" line_count=2 active_line=Some(0) latest=true' "$app_log"

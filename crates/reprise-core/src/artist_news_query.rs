@@ -71,9 +71,8 @@ pub(crate) fn local_album_track_counts(
     Ok(counts)
 }
 
-/// Maps a track count onto the presence states. `OWNED_ALBUM_MIN_TRACKS` is
-/// the same threshold `local_albums` filters by, so "counts as owned" means
-/// the same thing on both sides.
+/// Maps a track count onto the presence states. `OWNED_ALBUM_MIN_TRACKS`
+/// defines the sole query-time meaning of "counts as owned".
 pub(crate) fn presence_for(
     counts: &std::collections::HashMap<(String, String), i64>,
     artist: &str,
@@ -129,11 +128,18 @@ pub fn query_releases(
 }
 
 pub fn unseen_release_count(conn: &Connection) -> Result<i64, rusqlite::Error> {
-    conn.query_row(
-        "SELECT COUNT(*) FROM new_releases WHERE seen_at IS NULL",
-        [],
-        |row| row.get(0),
-    )
+    let mut statement =
+        conn.prepare("SELECT artist_name, title FROM new_releases WHERE seen_at IS NULL")?;
+    let releases = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let counts = local_album_track_counts(conn)?;
+    Ok(releases
+        .into_iter()
+        .filter(|(artist, title)| presence_for(&counts, artist, title) != LibraryPresence::Complete)
+        .count() as i64)
 }
 
 pub fn hidden_release_count(conn: &Connection) -> Result<i64, rusqlite::Error> {

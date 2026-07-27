@@ -12,11 +12,13 @@ use rusqlite::Connection;
 
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
+use crate::ui::concerts::ConcertsRuntime;
 use crate::ui::cover_download_worker::CoverDownloadRuntime;
 use crate::ui::device_sync_runtime::DeviceSyncRuntime;
 use crate::ui::library_player_bar::LibraryPlayerBarShell;
 use crate::ui::now_playing::NowPlayingPanel;
 use crate::ui::player_controller::PlayerController;
+use crate::ui::podcasts::PodcastsRuntime;
 use crate::ui::preference_playback::build_equalizer_surface;
 use crate::ui::scan_flow::ScanControls;
 use crate::ui::scan_progress::ScanProgressView;
@@ -115,6 +117,8 @@ pub(in crate::ui) struct PreferencesContext {
     pub(in crate::ui) syncing_lastfm: Cell<bool>,
     pub(in crate::ui) lastfm_activation_pending: Cell<bool>,
     pub(in crate::ui) artist_news: Rc<ArtistNewsRuntime>,
+    pub(in crate::ui) concerts: Rc<ConcertsRuntime>,
+    pub(in crate::ui) podcasts: Rc<PodcastsRuntime>,
     pub(in crate::ui) cover_download: CoverDownloadRuntime,
     pub(in crate::ui) artist_portrait: Rc<ArtistPortraitRuntime>,
     pub(in crate::ui) decorations: Rc<WindowDecorations>,
@@ -146,6 +150,8 @@ impl PreferencesContext {
         listenbrainz: &Rc<ScrobbleRuntime>,
         lastfm: &Rc<ScrobbleRuntime>,
         artist_news: &Rc<ArtistNewsRuntime>,
+        concerts: &Rc<ConcertsRuntime>,
+        podcasts: &Rc<PodcastsRuntime>,
         cover_download: &CoverDownloadRuntime,
         artist_portrait: &Rc<ArtistPortraitRuntime>,
         decorations: &Rc<WindowDecorations>,
@@ -176,6 +182,8 @@ impl PreferencesContext {
             syncing_lastfm: Cell::new(false),
             lastfm_activation_pending: Cell::new(false),
             artist_news: artist_news.clone(),
+            concerts: concerts.clone(),
+            podcasts: podcasts.clone(),
             cover_download: cover_download.clone(),
             artist_portrait: artist_portrait.clone(),
             decorations: decorations.clone(),
@@ -254,8 +262,14 @@ impl PreferencesContext {
                 PageId::Synchronization => {
                     super::preference_sync::build_page(&self.device_sync, &self.track_list)
                 }
+                PageId::NewReleases => {
+                    super::preference_new_releases::build_page(&self.conn, &self.artist_news)
+                }
+                PageId::Concerts => {
+                    super::preference_concerts::build_page(&self.conn, &self.concerts)
+                }
                 PageId::Plugins => self.plugins_page(),
-                PageId::Experimental => super::preference_experimental::build_page(&self.conn),
+                PageId::Experimental => super::preference_experimental::build_page(self),
             };
             (id, page)
         });
@@ -290,7 +304,6 @@ impl PreferencesContext {
         let smoke = std::env::var(SMOKE_ENV).ok();
         let smoke_page = match smoke.as_deref() {
             Some("columns") => Some("layout"),
-            Some("rhythmbox") => Some("library"),
             Some(page) if super::preferences_window::page_index_by_name(page).is_some() => {
                 Some(page)
             }
@@ -400,10 +413,6 @@ impl PreferencesContext {
         };
         let page = super::column_layout_editor::build_navigation_page(&self.track_list);
         navigation.push(&page);
-    }
-
-    pub(in crate::ui) fn open_rhythmbox_import(self: &Rc<Self>) {
-        self.present_rhythmbox_import_dialog();
     }
 
     pub(in crate::ui) fn preferences_dialog(&self) -> Option<adw::Dialog> {

@@ -1,4 +1,4 @@
-use chrono::{FixedOffset, MappedLocalTime, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use chrono::{FixedOffset, NaiveDate, TimeZone, Utc};
 use rusqlite::{params, Connection};
 
 use super::{compute, SortBy};
@@ -29,6 +29,10 @@ fn stats_0_play_definition_consistent_time_and_count() {
             .map(|track| track.play_count)
             .sum::<i64>(),
         snapshot.hero.plays
+    );
+    assert_eq!(
+        snapshot.best_week.as_ref().map(|week| week.total_ms),
+        Some(snapshot.hero.total_ms)
     );
 }
 
@@ -88,7 +92,8 @@ fn stats_6_sparse_uses_finer_granularity() {
     }
     let sparse_snapshot =
         compute(&sparse, StatsPeriod::YearToDate(2026), NOW_2026_07_19, &Utc).unwrap();
-    assert_eq!(sparse_snapshot.period.granularity, Granularity::Day);
+    assert_eq!(sparse_snapshot.period.granularity, Granularity::Week);
+    assert!(sparse_snapshot.period.sparse_weeks);
 
     let dense = migrated_conn();
     insert_track(&dense, 1, "Dense", "Artist", "", "Rock", 60_000, 0, None);
@@ -98,7 +103,7 @@ fn stats_6_sparse_uses_finer_granularity() {
     }
     let dense_snapshot =
         compute(&dense, StatsPeriod::YearToDate(2026), NOW_2026_07_19, &Utc).unwrap();
-    assert_eq!(dense_snapshot.period.granularity, Granularity::Month);
+    assert_eq!(dense_snapshot.period.granularity, Granularity::Week);
 
     let empty = migrated_conn();
     let empty_snapshot =
@@ -108,7 +113,92 @@ fn stats_6_sparse_uses_finer_granularity() {
 }
 
 #[test]
-fn stats_2_spotlight_reports_share_and_top_tracks() {
+fn stats_12_sparse_year_axis_starts_at_first_play_week_but_eight_weeks_keep_the_year() {
+    let sparse = migrated_conn();
+    insert_track(&sparse, 1, "Sparse", "Artist", "", "Rock", 60_000, 0, None);
+    for day in [1, 8, 15, 22] {
+        insert_event(&sparse, 1, timestamp(2026, 7, day, 12, 0), 30_000);
+    }
+    let sparse_snapshot =
+        compute(&sparse, StatsPeriod::YearToDate(2026), NOW_2026_07_19, &Utc).unwrap();
+    assert_eq!(sparse_snapshot.period.granularity, Granularity::Week);
+    assert_eq!(
+        sparse_snapshot.period.buckets[0].start_unix,
+        timestamp(2026, 7, 1, 12, 0)
+    );
+    assert_eq!(sparse_snapshot.period.buckets[0].label, "Week of Jun 29");
+
+    let threshold = migrated_conn();
+    insert_track(
+        &threshold,
+        1,
+        "Threshold",
+        "Artist",
+        "",
+        "Rock",
+        60_000,
+        0,
+        None,
+    );
+    for week in 0..8 {
+        insert_event(
+            &threshold,
+            1,
+            timestamp(2026, 5, 4, 12, 0) + week * 7 * 86_400,
+            30_000,
+        );
+    }
+    let threshold_snapshot = compute(
+        &threshold,
+        StatsPeriod::YearToDate(2026),
+        NOW_2026_07_19,
+        &Utc,
+    )
+    .unwrap();
+    assert_eq!(
+        threshold_snapshot.period.buckets[0].start_unix,
+        timestamp(2026, 1, 1, 0, 0)
+    );
+    assert!(!threshold_snapshot.period.sparse_weeks);
+}
+
+#[test]
+fn stats_12_best_week_is_zone_aware() {
+    let conn = migrated_conn();
+    insert_track(
+        &conn, 1, "Boundary", "Artist", "", "Rock", 1_000_000, 0, None,
+    );
+    insert_event(&conn, 1, timestamp(2026, 3, 1, 21, 30), 100_000);
+    insert_event(&conn, 1, timestamp(2026, 3, 1, 22, 30), 200_000);
+    insert_event(&conn, 1, timestamp(2026, 3, 3, 12, 0), 300_000);
+    let zone = FixedOffset::east_opt(7_200).unwrap();
+
+    let snapshot = compute(&conn, StatsPeriod::Year(2026), NOW_2026_07_19, &zone).unwrap();
+
+    assert_eq!(
+        snapshot.best_week,
+        Some(super::BestWeek {
+            start: NaiveDate::from_ymd_opt(2026, 3, 2).unwrap(),
+            total_ms: 500_000,
+        })
+    );
+}
+
+#[test]
+fn best_week_is_none_for_an_empty_period() {
+    let snapshot = compute(
+        &migrated_conn(),
+        StatsPeriod::Year(2026),
+        NOW_2026_07_19,
+        &Utc,
+    )
+    .unwrap();
+
+    assert_eq!(snapshot.best_week, None);
+}
+
+#[test]
+fn stats_13_band_card_data_reports_share_and_ranked_artists() {
     let conn = migrated_conn();
     let artists = [
         ("Alpha", 5),
@@ -161,7 +251,7 @@ fn stats_2_spotlight_reports_share_and_top_tracks() {
 }
 
 #[test]
-fn stats_3_genre_spectrum_buckets_other() {
+fn stats_15_genre_card_buckets_other() {
     let conn = migrated_conn();
     for (index, genre) in ["Rock", "Jazz", "Folk", "Pop", "Metal", "Soul", "Punk"]
         .into_iter()
@@ -199,23 +289,34 @@ fn stats_3_genre_spectrum_buckets_other() {
 }
 
 #[test]
-fn stats_4_highlights_streak_and_discovered() {
+fn stats_15_genre_top_artist_uses_the_page_wide_artist_resolver() {
     let conn = migrated_conn();
-    insert_track(&conn, 1, "Known", "Artist", "", "Rock", 60_000, 0, None);
-    insert_track(&conn, 2, "New", "Artist", "", "Rock", 60_000, 0, None);
-    insert_event(&conn, 1, timestamp(2025, 12, 1, 12, 0), 30_000);
-    insert_event(&conn, 1, timestamp(2026, 1, 1, 23, 30), 30_000);
-    insert_event(&conn, 2, timestamp(2026, 1, 2, 23, 30), 30_000);
-    let zone = FixedOffset::east_opt(3_600).unwrap();
+    for (id, artist, genre, mbid, plays) in [
+        (1, "Old Name", "Metal", None, 3),
+        (2, "New Name", "Metal", None, 3),
+        (3, "Other Band", "Metal", None, 5),
+        (4, "Old Name", "Rock", Some("band-mbid"), 1),
+        (5, "New Name", "Rock", Some("band-mbid"), 1),
+    ] {
+        insert_track(&conn, id, artist, artist, "", genre, 100_000, 0, mbid);
+        for play in 0..plays {
+            insert_event(&conn, id, timestamp(2026, 3, id as u32, 12, play), 100_000);
+        }
+    }
 
-    let snapshot = compute(&conn, StatsPeriod::Year(2026), NOW_2026_07_19, &zone).unwrap();
+    let snapshot = compute(&conn, StatsPeriod::Year(2026), NOW_2026_07_19, &Utc).unwrap();
+    let metal = snapshot
+        .genres
+        .segments
+        .iter()
+        .find(|segment| segment.label == "Metal")
+        .unwrap();
 
-    assert_eq!(snapshot.highlights.streak_days, 2);
-    assert_eq!(snapshot.highlights.discovered_tracks, 1);
+    assert_eq!(metal.top_artist.as_deref(), Some("New Name"));
 }
 
 #[test]
-fn stats_5_top_tracks_sort_toggle_orders_by_time() {
+fn stats_14_top_tracks_sort_toggle_orders_by_time() {
     let conn = migrated_conn();
     insert_track(&conn, 1, "Frequent", "Artist", "", "Rock", 10_000, 0, None);
     insert_track(&conn, 2, "Long", "Artist", "", "Rock", 1_000_000, 0, None);
@@ -231,39 +332,6 @@ fn stats_5_top_tracks_sort_toggle_orders_by_time() {
         "Frequent"
     );
     assert_eq!(snapshot.top_tracks_sorted(SortBy::Time)[0].title, "Long");
-}
-
-#[test]
-fn stats_streak_survives_dst_change() {
-    let conn = migrated_conn();
-    insert_track(&conn, 1, "DST", "Artist", "", "Rock", 60_000, 0, None);
-    for played_at in [
-        1_774_567_800,
-        1_774_654_200,
-        1_774_740_600,
-        1_774_823_400,
-        1_774_909_800,
-    ] {
-        insert_event(&conn, 1, played_at, 30_000);
-    }
-
-    let dst = compute(
-        &conn,
-        StatsPeriod::Year(2026),
-        timestamp(2026, 4, 1, 0, 0),
-        &DstZone,
-    )
-    .unwrap();
-    let utc = compute(
-        &conn,
-        StatsPeriod::Year(2026),
-        timestamp(2026, 4, 1, 0, 0),
-        &Utc,
-    )
-    .unwrap();
-
-    assert_eq!(dst.highlights.streak_days, 5);
-    assert_eq!(utc.highlights.streak_days, 5);
 }
 
 #[test]
@@ -537,41 +605,6 @@ fn stats_9_album_titles_fold_like_artist_names() {
     assert_eq!(snapshot.top_albums[0].plays, 3);
 }
 
-/// A single peak hour is not a span, and scattered peaks are not one either.
-#[test]
-fn stats_4_peak_caption_never_invents_a_span() {
-    let single = migrated_conn();
-    insert_track(&single, 1, "Solo", "Artist", "", "Rock", 100_000, 0, None);
-    insert_event(&single, 1, timestamp(2026, 6, 1, 15, 0), 100_000);
-    let snapshot = compute(&single, StatsPeriod::Year(2026), NOW_2026_07_19, &Utc).unwrap();
-    assert_eq!(
-        snapshot.clock.caption,
-        "Peak 3 PM \u{00b7} afternoon listener"
-    );
-
-    let scattered = migrated_conn();
-    insert_track(
-        &scattered, 1, "Solo", "Artist", "", "Rock", 100_000, 0, None,
-    );
-    insert_event(&scattered, 1, timestamp(2026, 6, 1, 1, 0), 100_000);
-    insert_event(&scattered, 1, timestamp(2026, 6, 1, 23, 0), 100_000);
-    let snapshot = compute(&scattered, StatsPeriod::Year(2026), NOW_2026_07_19, &Utc).unwrap();
-    assert_eq!(
-        snapshot.clock.caption,
-        "Peak 1 AM, 11 PM \u{00b7} night owl"
-    );
-
-    let run = migrated_conn();
-    insert_track(&run, 1, "Solo", "Artist", "", "Rock", 100_000, 0, None);
-    insert_event(&run, 1, timestamp(2026, 6, 1, 13, 0), 100_000);
-    insert_event(&run, 1, timestamp(2026, 6, 1, 14, 0), 100_000);
-    let snapshot = compute(&run, StatsPeriod::Year(2026), NOW_2026_07_19, &Utc).unwrap();
-    assert_eq!(
-        snapshot.clock.caption,
-        "Peak 1 PM\u{2013}2 PM \u{00b7} afternoon listener"
-    );
-}
-
 #[test]
 fn dedup_does_not_mutate_tags() {
     let conn = migrated_conn();
@@ -606,7 +639,7 @@ fn dedup_does_not_mutate_tags() {
 /// equally long stretch that ends where the selection starts. A November 2025
 /// binge lies in that stretch and must not move the percentage.
 #[test]
-fn stats_1_comparison_uses_the_same_span_of_the_previous_year() {
+fn stats_11_comparison_uses_the_same_span_of_the_previous_year() {
     let conn = migrated_conn();
     insert_track(&conn, 1, "Track", "Artist", "", "Rock", 1_000_000, 0, None);
     insert_event(&conn, 1, timestamp(2026, 3, 1, 12, 0), 200_000);
@@ -621,7 +654,7 @@ fn stats_1_comparison_uses_the_same_span_of_the_previous_year() {
 
 /// A period without a compared span keeps the pill hidden.
 #[test]
-fn stats_1_all_time_reports_no_comparison() {
+fn stats_11_all_time_reports_no_comparison() {
     let conn = migrated_conn();
     insert_track(&conn, 1, "Track", "Artist", "", "Rock", 1_000_000, 0, None);
     insert_event(&conn, 1, timestamp(2026, 3, 1, 12, 0), 200_000);
@@ -720,45 +753,4 @@ fn timestamp(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> i64 {
         .single()
         .unwrap()
         .timestamp()
-}
-
-/// Test-only European spring-forward transition without `chrono-tz`.
-#[derive(Clone, Copy)]
-struct DstZone;
-
-impl DstZone {
-    const SWITCH_UNIX: i64 = 1_774_746_000;
-
-    fn offset_at(utc: &NaiveDateTime) -> FixedOffset {
-        let seconds = if utc.and_utc().timestamp() < Self::SWITCH_UNIX {
-            3_600
-        } else {
-            7_200
-        };
-        FixedOffset::east_opt(seconds).expect("valid fixed offset")
-    }
-}
-
-impl TimeZone for DstZone {
-    type Offset = FixedOffset;
-
-    fn from_offset(_: &FixedOffset) -> Self {
-        DstZone
-    }
-
-    fn offset_from_local_date(&self, date: &NaiveDate) -> MappedLocalTime<FixedOffset> {
-        MappedLocalTime::Single(Self::offset_at(&date.and_hms_opt(0, 0, 0).unwrap()))
-    }
-
-    fn offset_from_local_datetime(&self, datetime: &NaiveDateTime) -> MappedLocalTime<FixedOffset> {
-        MappedLocalTime::Single(Self::offset_at(datetime))
-    }
-
-    fn offset_from_utc_date(&self, date: &NaiveDate) -> FixedOffset {
-        Self::offset_at(&date.and_hms_opt(0, 0, 0).unwrap())
-    }
-
-    fn offset_from_utc_datetime(&self, datetime: &NaiveDateTime) -> FixedOffset {
-        Self::offset_at(datetime)
-    }
 }

@@ -52,6 +52,29 @@ pub fn path_to_uri(path: &str) -> Result<String, PlaybackError> {
         .map_err(|e| PlaybackError::BadPath(e.to_string()))
 }
 
+pub fn validated_playback_uri(uri: &str) -> Result<String, PlaybackError> {
+    let accepted = ["http://", "https://", "file://"]
+        .iter()
+        .any(|prefix| uri.starts_with(prefix) && uri.len() > prefix.len());
+    if accepted {
+        Ok(uri.to_owned())
+    } else {
+        Err(PlaybackError::BadPath(uri.into()))
+    }
+}
+
+fn merge_stream_tags(
+    previous: &(Option<String>, Option<String>),
+    title: Option<String>,
+    organization: Option<String>,
+) -> Option<(Option<String>, Option<String>)> {
+    let next = (
+        title.or_else(|| previous.0.clone()),
+        organization.or_else(|| previous.1.clone()),
+    );
+    (next != *previous).then_some(next)
+}
+
 /// Environment variable that, when set, overrides playbin's audio sink
 /// element (e.g. `fakesink`). Used for headless verification in environments
 /// without a real audio device.
@@ -188,6 +211,7 @@ pub(crate) fn attach_bus_watch(
     // each stream start so one track's dynamics baseline never bleeds into the
     // next.
     let mut spectrum_analyzer = SpectrumAnalyzer::new();
+    let mut stream_tags = (None::<String>, None::<String>);
     bus.add_watch(move |_, msg| {
         use gst::MessageView;
         match msg.view() {
@@ -206,7 +230,24 @@ pub(crate) fn attach_bus_watch(
                 // Fires on every stream start; only a gapless handoff (flagged
                 // by the `about-to-finish` handler) turns into `AdvancedToNext`.
                 spectrum_analyzer = SpectrumAnalyzer::new();
+                stream_tags = (None, None);
                 note_stream_start(&handoff_pending, on_event.as_ref());
+            }
+            MessageView::Tag(message) => {
+                let tags = message.tags();
+                let title = tags
+                    .get::<gst::tags::Title>()
+                    .map(|value| value.get().to_string());
+                let organization = tags
+                    .get::<gst::tags::Organization>()
+                    .map(|value| value.get().to_string());
+                if let Some(next) = merge_stream_tags(&stream_tags, title, organization) {
+                    stream_tags = next.clone();
+                    (*on_event)(PlayerEvent::StreamTags {
+                        title: next.0,
+                        organization: next.1,
+                    });
+                }
             }
             MessageView::Element(element) => {
                 if let Some(structure) = element.structure() {
@@ -401,6 +442,24 @@ impl Player {
         Ok(())
     }
 
+    fn play_resolved_uri(&self, uri: &str, source: &str) -> Result<(), PlaybackError> {
+        // A manual jump invalidates every gapless/crossfade transition. This
+        // applies equally to local paths and external media.
+        self.reset_transition();
+        match self.try_play(uri) {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    source,
+                    "playback failed; rebuilding pipeline and retrying once"
+                );
+                self.rebuild_playbin()?;
+                self.try_play(uri)
+            }
+        }
+    }
+
     /// Discards the current playbin element and replaces it with a freshly
     /// built one (see `play`'s `## Wedged-pipeline recovery` doc section),
     /// re-attaching an equivalent bus watch. The position ticker picks up
@@ -480,22 +539,12 @@ impl PlaybackBackend for Player {
     /// to guarantee (a deleted file must never crash *or dead-end* the app).
     fn play(&self, path: &str) -> Result<(), PlaybackError> {
         let uri = path_to_uri(path)?;
-        // A manual jump (new selection / skip) invalidates any gaplessly
-        // pre-fed successor and aborts any in-flight crossfade; the frontend
-        // re-feeds after this play() settles.
-        self.reset_transition();
-        match self.try_play(&uri) {
-            Ok(()) => Ok(()),
-            Err(error) => {
-                tracing::warn!(
-                    %error,
-                    path,
-                    "playback failed; rebuilding pipeline and retrying once"
-                );
-                self.rebuild_playbin()?;
-                self.try_play(&uri)
-            }
-        }
+        self.play_resolved_uri(&uri, path)
+    }
+
+    fn play_uri(&self, uri: &str) -> Result<(), PlaybackError> {
+        let uri = validated_playback_uri(uri)?;
+        self.play_resolved_uri(&uri, uri.as_str())
     }
 
     fn toggle_pause(&self) -> Result<PlaybackState, PlaybackError> {

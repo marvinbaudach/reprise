@@ -28,6 +28,10 @@ pub(in crate::ui) enum NavIcon {
     GenericSmart,
     ImportErrors,
     Missing,
+    Releases,
+    Concerts,
+    Podcasts,
+    Radio,
     MyStats,
     Conversions,
 }
@@ -44,12 +48,25 @@ impl NavIcon {
             Self::TopRated => "starred-symbolic",
             Self::ImportErrors => "dialog-warning-symbolic",
             Self::Missing => "edit-delete-symbolic",
+            Self::Releases => "star-new-symbolic",
+            Self::Concerts => "ticket-symbolic",
+            Self::Podcasts => "audio-input-microphone-symbolic",
+            Self::Radio => "network-wireless-symbolic",
             // Unused: My Stats renders a drawn three-bar chart via `nav_icon`,
             // not a theme symbolic (so it never collides with `TopRated`'s
             // star). Kept only to satisfy the exhaustive match.
             Self::MyStats => "starred-symbolic",
             // INST-13: the experimental instrumental-conversions view.
             Self::Conversions => "applications-science-symbolic",
+        }
+    }
+
+    pub(in crate::ui) const fn fallback_icon_name(self) -> &'static str {
+        match self {
+            Self::Releases => "starred-symbolic",
+            Self::Concerts => "x-office-calendar-symbolic",
+            Self::Radio => "network-cellular-symbolic",
+            _ => self.icon_name(),
         }
     }
 }
@@ -274,7 +291,18 @@ fn nav_icon(icon: NavIcon) -> gtk4::Widget {
         bars.set_valign(gtk4::Align::Center);
         return bars.upcast();
     }
-    let image = gtk4::Image::from_icon_name(icon.icon_name());
+    let icon_name = gtk4::gdk::Display::default().map_or_else(
+        || icon.fallback_icon_name(),
+        |display| {
+            let theme = gtk4::IconTheme::for_display(&display);
+            if theme.has_icon(icon.icon_name()) {
+                icon.icon_name()
+            } else {
+                icon.fallback_icon_name()
+            }
+        },
+    );
+    let image = gtk4::Image::from_icon_name(icon_name);
     image.set_width_request(ICON_WIDTH);
     image.set_pixel_size(ICON_WIDTH);
     image.set_valign(gtk4::Align::Center);
@@ -310,6 +338,22 @@ mod tests {
         assert_eq!(NavIcon::ImportErrors.icon_name(), "dialog-warning-symbolic");
         assert_eq!(NavIcon::Missing.icon_name(), "edit-delete-symbolic");
         assert_eq!(NavIcon::MyStats.icon_name(), "starred-symbolic");
+        assert_eq!(NavIcon::Releases.icon_name(), "star-new-symbolic");
+        assert_eq!(NavIcon::Concerts.icon_name(), "ticket-symbolic");
+        assert_eq!(
+            NavIcon::Podcasts.icon_name(),
+            "audio-input-microphone-symbolic"
+        );
+        assert_eq!(NavIcon::Radio.icon_name(), "network-wireless-symbolic");
+        assert_eq!(
+            NavIcon::Radio.fallback_icon_name(),
+            "network-cellular-symbolic"
+        );
+        assert_eq!(NavIcon::Releases.fallback_icon_name(), "starred-symbolic");
+        assert_eq!(
+            NavIcon::Concerts.fallback_icon_name(),
+            "x-office-calendar-symbolic"
+        );
     }
 
     #[test]

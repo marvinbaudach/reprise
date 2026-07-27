@@ -57,6 +57,12 @@ pub const NEW_RELEASES_INCLUDE_SINGLES_DESCRIPTION: &str =
     N_!("Also report singles that have already been released");
 pub const FETCH_NOW: &str = N_!("Fetch now");
 pub const FETCH_FAILED_INLINE: &str = N_!("Refresh failed · showing saved releases");
+pub const UPDATES_HEADER: &str = N_!("UPDATES");
+pub const UPDATES_NEW_RELEASES_HEADER: &str = N_!("NEW RELEASES");
+pub const UPDATES_CONCERTS_HEADER: &str = N_!("CONCERTS");
+pub const UPDATES_NEW_NEAR_YOU: &str = N_!("new near you");
+pub const UPDATES_NEWLY_ANNOUNCED: &str = N_!("newly announced");
+pub const UPDATES_CONCERTS_FETCH_FAILED: &str = N_!("Concerts fetch failed");
 pub const NEW_RELEASES_CHECKING: &str = N_!("Checking for new releases…");
 pub const NEW_RELEASES_NONE: &str = N_!("No upcoming releases from your artists");
 pub const UPDATED_JUST_NOW: &str = N_!("Updated just now");
@@ -141,12 +147,10 @@ pub const NEW_RELEASES_HEADER: &str = N_!("New Releases");
 pub const RELEASED: &str = N_!("released");
 pub const IN_LIBRARY: &str = N_!("In library");
 pub const NEW_RELEASES_PARTIALLY_OWNED: &str = N_!("Single in library");
-pub const SHOW_HISTORY: &str = N_!("Show history");
 pub const SHOW_IN_LIBRARY: &str = N_!("Show in library");
 pub const OPEN_ANNOUNCEMENT: &str = N_!("Open announcement");
 pub const SHOW_AGAIN: &str = N_!("Show again");
 pub const ALL_CAUGHT_UP: &str = N_!("All caught up");
-pub const HISTORY_HEADER: &str = N_!("History");
 pub const RETENTION_SIX_MONTHS: &str = N_!("Retention: 6 months");
 
 /// „in N d" for a release that is still `days` days out. Only meant for
@@ -162,32 +166,18 @@ pub fn new_releases_new_count(count: i64) -> String {
     formatted(N_!("{count} new"), &[("count", &count.to_string())])
 }
 
-/// „Show history (N)" row label at the foot of the New Releases list page.
-pub fn new_releases_show_history_count(count: usize) -> String {
+pub fn updates_show_all_concerts(count: usize) -> String {
     formatted(
-        N_!("Show history ({count})"),
+        N_!("Show all concerts ({count}) →"),
         &[("count", &count.to_string())],
     )
 }
 
-/// The parenthesized count fragment split out from the "Show history" row's
-/// label (#7) so it can render one opacity step quieter than the row text
-/// itself — see `SHOW_HISTORY`, which supplies the label part.
-pub fn new_releases_history_count_suffix(count: usize) -> String {
-    formatted(N_!("({count})"), &[("count", &count.to_string())])
-}
-
-/// Formats a release date already known to be released as-is (dates from
-/// `first_release_date` come pre-formatted from MusicBrainz, including the
-/// partial year/year-month forms `release_row::parse_release_date` accepts).
-pub fn new_releases_released_on(date: &str) -> String {
-    formatted(N_!("released on {date}"), &[("date", date)])
-}
-
-/// Formats a history entry's hidden date, already resolved from its
-/// `hidden_at` Unix timestamp via `news_timestamp_date`.
-pub fn new_releases_hidden_on(date: &str) -> String {
-    formatted(N_!("hidden on {date}"), &[("date", date)])
+pub fn updates_show_all_releases(count: usize) -> String {
+    formatted(
+        N_!("Show all releases ({count}) →"),
+        &[("count", &count.to_string())],
+    )
 }
 
 pub fn news_timestamp_date(timestamp: i64) -> String {
@@ -243,25 +233,8 @@ mod tests {
     }
 
     #[test]
-    fn new_releases_show_history_count_formats_count() {
-        assert_eq!(new_releases_show_history_count(12), "Show history (12)");
-    }
-
-    #[test]
-    fn new_releases_history_count_suffix_formats_count() {
-        assert_eq!(new_releases_history_count_suffix(12), "(12)");
-    }
-
-    #[test]
-    fn new_releases_released_on_formats_the_given_date() {
-        assert_eq!(
-            new_releases_released_on("2026-07-01"),
-            "released on 2026-07-01"
-        );
-    }
-
-    #[test]
-    fn new_releases_hidden_on_formats_the_given_date() {
-        assert_eq!(new_releases_hidden_on("2026-07-01"), "hidden on 2026-07-01");
+    fn updates_jump_rows_format_feed_counts() {
+        assert_eq!(updates_show_all_concerts(14), "Show all concerts (14) →");
+        assert_eq!(updates_show_all_releases(8), "Show all releases (8) →");
     }
 }

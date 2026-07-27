@@ -114,6 +114,41 @@ network.
 scripts/check-lyrics-smoke.sh
 ```
 
+## Bundled Ticketmaster credential
+
+To bundle a Ticketmaster Discovery API key in a local release, inject it into
+the environment as `REPRISE_TICKETMASTER_APIKEY` before running the release
+build. Meson passes its build environment to Cargo:
+
+```sh
+# Populate REPRISE_TICKETMASTER_APIKEY through a secret manager first.
+export REPRISE_TICKETMASTER_APIKEY
+meson setup target/meson-release . --prefix=/usr -Dprofile=release
+meson compile -C target/meson-release
+unset REPRISE_TICKETMASTER_APIKEY
+```
+
+For a GitHub Actions release build, create an Actions repository secret named
+exactly `REPRISE_TICKETMASTER_APIKEY` and pass it only to the build step:
+
+```yaml
+- name: Build release
+  env:
+    REPRISE_TICKETMASTER_APIKEY: ${{ secrets.REPRISE_TICKETMASTER_APIKEY }}
+  run: meson compile -C target/meson-release
+```
+
+Never print the variable or enable shell tracing around the build. Keeping a
+build credential out of the repository does not make it secret after
+distribution: a bundled key is fundamentally extractable from a published
+binary.
+
+Do not add an Impact wrapper or a separate Impact API key. Ticketmaster
+Discovery event links receive affiliate tracking when the Ticketmaster
+Developer Portal associates the key with an Impact Publisher ID. Before any
+public release, review as a separate product/legal question where a visible
+affiliate disclosure must appear.
+
 ## Build artifacts
 
 Create a clean optimized install tree without writing to `/usr`:
@@ -157,23 +192,24 @@ Do not point development hooks at the maintainer's real library.
 
 - Confirm first-run copy/layout, Skip, Set Up Library, and the portal folder
   chooser. The copy must disclose automatic cover lookup without showing a
-  disable switch. A detected Rhythmbox installation must show a clearly
-  default-off `Column layout` choice in the one-time import section; no false
-  offer appears without it and no later menu/Preferences entry exists.
+  disable switch. A detected `rhythmdb.xml` must show a clearly default-off,
+  one-time Rhythmbox data-import choice; after the initial library scan it must
+  offer ratings, play history, dates, and playlists, but no column-layout
+  import. No false offer or later menu/Preferences entry may exist.
 - Check English and German UI for clipping, untranslated text, natural plurals,
   keyboard mnemonics, narrow-window adaptation, touch/pointer interaction, and
   light/dark appearance.
-- My Stats editorial pass (UX STATS-1, STATS-2, STATS-3, STATS-4): open My Stats
+- My Stats editorial pass (UX STATS-10 through STATS-16): open My Stats
   on a populated library. Hero time and play count must agree with the top-track
   list; the ribbon axis must match the selected period with the running bucket
   drawn open and the peak marked; hover must name an exact value. Play the
-  spotlight artist and follow "Go to artist", then use Back. Check that axis
+  top song and follow its band to the artist, then use Back. Check that axis
   labels, eyebrows and sublines stay readable against the view background in all
-  three dark themes, and narrow the window until the clock/highlights row stacks.
+  three dark themes, and narrow the window until the band/songs row stacks.
 - My Stats grouping (UX STATS-9): on a library with a deliberately mis-tagged
   artist ("Lorna Shore" / "lorna shore" / "Lorna Shore "), Top Artists must show
   one entry with the summed plays and hours, labelled in the clean spelling, and
-  the spotlight Play must queue every merged track. Two genuinely different
+  the band card must show one merged artist. Two genuinely different
   artists must never merge. Follow the "unify spellings" hint into the tag editor
   and cancel it, then confirm with a tag dump that the files and DB rows are
   unchanged by merely opening My Stats.
@@ -188,9 +224,11 @@ Do not point development hooks at the maintainer's real library.
   the upper third, fades into the neutral-dark stage, and disappears in the idle state.
 - NPP-5/NPP-6: Play copied music with synchronized lyrics and inspect the 100/45/32/28
   line hierarchy, centered accent underline, 150 ms line fades, and calm centered glide.
-- NPP-10: Change tracks with animations enabled and disabled; cover, title, glow, and
-  tab content must use one shared crossfade or one immediate hard switch respectively,
-  and new synchronized lyrics must start with line zero centered.
+- NPP-13: Change tracks with animations enabled and disabled; the right panel, active
+  tab, queue, and footer must remain visible while only the outgoing cover fades over
+  the resolved new cover. The queue advances independently, the cover-derived accent
+  follows its ambient transition, and new synchronized lyrics start with line zero
+  centered.
 - For the reduced-motion variants above, toggle GNOME's system animation
   setting for the duration of the test and restore its previous value after
   closing Reprise. A per-profile GTK `settings.ini` can be overridden by the
@@ -205,9 +243,9 @@ Do not point development hooks at the maintainer's real library.
 - Verify MPRIS quick settings, media keys, notifications, lock screen, metadata,
   cover art, shuffle/repeat writes, and clean shutdown on a real GNOME session.
 - Exercise browse facets, search, the column-layout editor (switches, buttons,
-  whole-row drag, insertion lines, reset and restart persistence), a real read-only
-  first-run Rhythmbox column import plus second-start suppression, playlists, M3U
-  import/export, and drag/reorder gestures.
+  whole-row drag, insertion lines, reset and restart persistence), a real
+  read-only first-run Rhythmbox data import plus second-start suppression,
+  playlists, M3U import/export, and drag/reorder gestures.
 - With a disposable Android device unlocked in File transfer/MTP mode, verify
   detection, device music browsing, phone-playlist creation, drag-to-copy,
   per-file/overall progress, same-device FIFO ordering, cancellation, and safe

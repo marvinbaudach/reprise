@@ -3,10 +3,16 @@
 use std::rc::Rc;
 
 use gtk4::prelude::*;
+use reprise_core::artist_news;
+use reprise_core::concerts;
 use reprise_core::library::playlists;
 use reprise_core::library::settings;
+use reprise_core::modules::{
+    self, CONCERTS_MODULE, NEW_RELEASES_MODULE, PODCASTS_MODULE, RADIO_MODULE,
+};
 use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
+use reprise_core::{podcasts, radio};
 
 use super::sidebar_dnd;
 use super::sidebar_export;
@@ -34,8 +40,17 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         new_import_error_count,
         playlist_rows,
         smart_rows,
+        podcasts_enabled,
+        podcasts_count,
+        radio_enabled,
+        radio_count,
+        releases_enabled,
+        releases_count,
+        concerts_enabled,
+        concerts_count,
     ) = {
         let conn = shared.conn.borrow();
+        let today = chrono::Local::now().date_naive();
         let music_count =
             queries::query_track_count(&conn, &ViewSource::Library, "", &[]).unwrap_or(0);
         let missing_count = queries::count_missing(&conn).unwrap_or_else(|error| {
@@ -91,19 +106,72 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
             })
             .into_iter()
             .map(|smart| {
+                let source = if smart.role.as_deref() == Some(playlists::RECENTLY_ADDED_ROLE) {
+                    ViewSource::RecentlyAdded
+                } else {
+                    ViewSource::Smart(smart.id)
+                };
                 let count =
-                    queries::query_track_count(&conn, &ViewSource::Smart(smart.id), "", &[])
-                        .unwrap_or_else(|error| {
-                            tracing::error!(
-                                %error,
-                                smart_id = smart.id,
-                                "failed to count smart playlist tracks for sidebar badge"
-                            );
-                            0
-                        });
+                    queries::query_track_count(&conn, &source, "", &[]).unwrap_or_else(|error| {
+                        tracing::error!(
+                            %error,
+                            smart_id = smart.id,
+                            "failed to count smart playlist tracks for sidebar badge"
+                        );
+                        0
+                    });
                 (smart, count)
             })
             .collect();
+        let podcasts_enabled = modules::is_enabled(&conn, &PODCASTS_MODULE).unwrap_or(false);
+        let podcasts_count = if podcasts_enabled {
+            podcasts::query::count_unplayed(&conn).map_or_else(
+                |error| {
+                    tracing::error!(%error, "failed to count unplayed podcast episodes");
+                    0
+                },
+                |count| i64::try_from(count).unwrap_or(i64::MAX),
+            )
+        } else {
+            0
+        };
+        let radio_enabled = modules::is_enabled(&conn, &RADIO_MODULE).unwrap_or(false);
+        let radio_count = if radio_enabled {
+            radio::station::count_stations(&conn).map_or_else(
+                |error| {
+                    tracing::error!(%error, "failed to count favorite radio stations");
+                    0
+                },
+                |count| i64::try_from(count).unwrap_or(i64::MAX),
+            )
+        } else {
+            0
+        };
+        let releases_enabled = modules::is_enabled(&conn, &NEW_RELEASES_MODULE).unwrap_or(false);
+        let releases_count = if releases_enabled {
+            artist_news::persisted_releases_filter(&conn)
+                .and_then(|filter| artist_news::count_releases_view(&conn, &filter, today))
+                .unwrap_or_else(|error| {
+                    tracing::error!(%error, "failed to count Releases rows for sidebar badge");
+                    0
+                })
+        } else {
+            0
+        };
+        let concerts_enabled = modules::is_enabled(&conn, &CONCERTS_MODULE).unwrap_or(false);
+        let concerts_count = if concerts_enabled {
+            concerts::config::persisted_filter(&conn)
+                .and_then(|filter| {
+                    let location = concerts::config::location(&conn)?;
+                    concerts::count_upcoming(&conn, &filter, location.as_ref(), today)
+                })
+                .unwrap_or_else(|error| {
+                    tracing::error!(%error, "failed to count Concerts rows for sidebar badge");
+                    0
+                })
+        } else {
+            0
+        };
         (
             music_count,
             missing_count,
@@ -113,6 +181,14 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
             new_import_error_count,
             playlist_rows,
             smart_rows,
+            podcasts_enabled,
+            podcasts_count,
+            radio_enabled,
+            radio_count,
+            releases_enabled,
+            releases_count,
+            concerts_enabled,
+            concerts_count,
         )
     };
     let queue_count = (shared.queue_len_provider)() as i64;
@@ -135,6 +211,24 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         sidebar_presentation::nonzero_count(music_count),
         NavIcon::Library,
     );
+    if podcasts_enabled {
+        add_row(
+            shared,
+            ViewSource::Podcasts,
+            &strings::text(strings::PODCASTS),
+            sidebar_presentation::nonzero_count(podcasts_count),
+            NavIcon::Podcasts,
+        );
+    }
+    if radio_enabled {
+        add_row(
+            shared,
+            ViewSource::Radio,
+            &strings::text(strings::RADIO),
+            sidebar_presentation::nonzero_count(radio_count),
+            NavIcon::Radio,
+        );
+    }
     add_row(
         shared,
         ViewSource::Queue,
@@ -165,12 +259,35 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         &strings::text(strings::SIDEBAR_SECTION_SMART),
     );
     for (smart, count) in &smart_rows {
+        let source = if smart.role.as_deref() == Some(playlists::RECENTLY_ADDED_ROLE) {
+            ViewSource::RecentlyAdded
+        } else {
+            ViewSource::Smart(smart.id)
+        };
         add_row(
             shared,
-            ViewSource::Smart(smart.id),
+            source,
             &smart.name,
             sidebar_presentation::nonzero_count(*count),
             sidebar_presentation::smart_icon(&smart.sort_field),
+        );
+    }
+    if releases_enabled {
+        add_row(
+            shared,
+            ViewSource::Releases,
+            &strings::text(strings::RELEASES),
+            sidebar_presentation::nonzero_count(releases_count),
+            NavIcon::Releases,
+        );
+    }
+    if concerts_enabled {
+        add_row(
+            shared,
+            ViewSource::Concerts,
+            &strings::text(strings::CONCERTS),
+            sidebar_presentation::nonzero_count(concerts_count),
+            NavIcon::Concerts,
         );
     }
     add_row(
@@ -266,6 +383,9 @@ fn add_row(
         }
         ViewSource::Queue => {
             sidebar_dnd::wire_queue_drop_target(shared, &row);
+        }
+        ViewSource::Conversions => {
+            sidebar_dnd::wire_conversion_drop_target(shared, &row);
         }
         ViewSource::ImportErrors | ViewSource::Missing => {
             sidebar_issue_cleanup::wire_issue_context_menu(shared, &row, source.clone());

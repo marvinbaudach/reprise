@@ -166,7 +166,7 @@ fn prepare_track_view(
         } else {
             gtk4::SortType::Ascending
         };
-        shared.column_view.sort_by_column(Some(column), order);
+        crate::ui::track_list_sort::sort_by_column(&shared.column_view, column, order);
     }
     shared.restoring_view.set(false);
 }
@@ -230,6 +230,7 @@ pub(super) fn arm_smoke(
 fn to_view_source(source: &SessionSource) -> ViewSource {
     match source {
         SessionSource::Library => ViewSource::Library,
+        SessionSource::RecentlyAdded => ViewSource::RecentlyAdded,
         SessionSource::Playlist(id) => ViewSource::Playlist(*id),
         SessionSource::Smart(id) => ViewSource::Smart(*id),
         SessionSource::Queue => ViewSource::Queue,
@@ -242,6 +243,7 @@ fn parse_smoke_state(value: &str) -> Option<SessionState> {
     let mut fields = value.split('|');
     let source = match fields.next()? {
         "library" => SessionSource::Library,
+        "recently-added" => SessionSource::RecentlyAdded,
         "queue" => SessionSource::Queue,
         "missing" => SessionSource::Missing,
         "import-errors" => SessionSource::ImportErrors,

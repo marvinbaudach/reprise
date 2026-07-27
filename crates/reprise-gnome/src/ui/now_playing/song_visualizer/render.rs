@@ -1,6 +1,112 @@
 //! Cairo renderer for a portable `reprise_core::visuals::Scene`.
 use reprise_core::visuals::{Fill, Geom, Scene, Shape};
 
+const MAX_INLINE_WIDTH: i32 = 640;
+const MAX_INLINE_HEIGHT: i32 = 360;
+const MAX_FULLSCREEN_SCENE_WIDTH: i32 = 512;
+const MAX_FULLSCREEN_SCENE_HEIGHT: i32 = 288;
+
+/// Caps only the expensive scene raster. The finished image is scaled back to
+/// the widget allocation, so fullscreen remains fullscreen while Bars geometry
+/// and Cairo work stay inside the 60 Hz render budget.
+pub(super) fn capped_scene_size(width: i32, height: i32) -> (i32, i32) {
+    let width = width.max(1);
+    let height = height.max(1);
+    if width <= MAX_INLINE_WIDTH && height <= MAX_INLINE_HEIGHT {
+        return (width, height);
+    }
+
+    let scale = (f64::from(MAX_FULLSCREEN_SCENE_WIDTH) / f64::from(width))
+        .min(f64::from(MAX_FULLSCREEN_SCENE_HEIGHT) / f64::from(height));
+    (
+        (f64::from(width) * scale).round() as i32,
+        (f64::from(height) * scale).round() as i32,
+    )
+}
+
+#[derive(Default)]
+pub(super) struct SceneRenderer {
+    surface: Option<gtk4::cairo::ImageSurface>,
+    surface_size: (i32, i32),
+}
+
+impl SceneRenderer {
+    fn surface(
+        &mut self,
+        width: i32,
+        height: i32,
+    ) -> Result<&gtk4::cairo::ImageSurface, gtk4::cairo::Error> {
+        if self.surface.is_none() || self.surface_size != (width, height) {
+            self.surface = Some(gtk4::cairo::ImageSurface::create(
+                gtk4::cairo::Format::ARgb32,
+                width,
+                height,
+            )?);
+            self.surface_size = (width, height);
+        }
+        Ok(self.surface.as_ref().expect("surface was just initialized"))
+    }
+
+    pub(super) fn draw(
+        &mut self,
+        cr: &gtk4::cairo::Context,
+        scene: &Scene,
+        output_width: i32,
+        output_height: i32,
+    ) {
+        if output_width <= 0 || output_height <= 0 {
+            return;
+        }
+        let scene_size = capped_scene_size(output_width, output_height);
+        if scene_size == (output_width, output_height) {
+            draw_scene(cr, scene);
+            return;
+        }
+
+        let Ok(surface) = self.surface(scene_size.0, scene_size.1) else {
+            draw_scaled_scene(cr, scene, scene_size, (output_width, output_height));
+            return;
+        };
+        let Ok(buffer_cr) = gtk4::cairo::Context::new(surface) else {
+            draw_scaled_scene(cr, scene, scene_size, (output_width, output_height));
+            return;
+        };
+        let _ = buffer_cr.save();
+        buffer_cr.set_operator(gtk4::cairo::Operator::Clear);
+        let _ = buffer_cr.paint();
+        buffer_cr.set_operator(gtk4::cairo::Operator::Over);
+        draw_scene(&buffer_cr, scene);
+        let _ = buffer_cr.restore();
+        surface.flush();
+
+        let _ = cr.save();
+        cr.scale(
+            f64::from(output_width) / f64::from(scene_size.0),
+            f64::from(output_height) / f64::from(scene_size.1),
+        );
+        if cr.set_source_surface(surface, 0.0, 0.0).is_ok() {
+            cr.source().set_filter(gtk4::cairo::Filter::Bilinear);
+            let _ = cr.paint();
+        }
+        let _ = cr.restore();
+    }
+}
+
+fn draw_scaled_scene(
+    cr: &gtk4::cairo::Context,
+    scene: &Scene,
+    scene_size: (i32, i32),
+    output_size: (i32, i32),
+) {
+    let _ = cr.save();
+    cr.scale(
+        f64::from(output_size.0) / f64::from(scene_size.0),
+        f64::from(output_size.1) / f64::from(scene_size.1),
+    );
+    draw_scene(cr, scene);
+    let _ = cr.restore();
+}
+
 fn apply_fill(cr: &gtk4::cairo::Context, fill: &Fill, alpha_scale: f64) {
     match fill {
         Fill::Solid(c) => cr.set_source_rgba(
@@ -13,7 +119,6 @@ fn apply_fill(cr: &gtk4::cairo::Context, fill: &Fill, alpha_scale: f64) {
 }
 
 fn trace(cr: &gtk4::cairo::Context, geom: &Geom) {
-    use std::f64::consts::TAU;
     match geom {
         Geom::Polyline { points, closed } => {
             let Some(first) = points.first() else {
@@ -26,16 +131,6 @@ fn trace(cr: &gtk4::cairo::Context, geom: &Geom) {
             if *closed {
                 cr.close_path();
             }
-        }
-        Geom::Arc { cx, cy, r, a0, a1 } => cr.arc(
-            f64::from(*cx),
-            f64::from(*cy),
-            f64::from(*r),
-            f64::from(*a0),
-            f64::from(*a1),
-        ),
-        Geom::Disc { cx, cy, r } => {
-            cr.arc(f64::from(*cx), f64::from(*cy), f64::from(*r), 0.0, TAU);
         }
         Geom::Rect { x, y, w, h } => {
             cr.rectangle(f64::from(*x), f64::from(*y), f64::from(*w), f64::from(*h));
@@ -105,4 +200,17 @@ pub(super) fn draw_scene(cr: &gtk4::cairo::Context, scene: &Scene) {
         draw_shape(cr, shape, 1.0);
     }
     cr.set_dash(&[], 0.0);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ac_20_fullscreen_render_size_is_capped_without_upscaling_inline_canvases() {
+        assert_eq!(capped_scene_size(548, 300), (548, 300));
+        assert_eq!(capped_scene_size(640, 360), (640, 360));
+        assert_eq!(capped_scene_size(1920, 1080), (512, 288));
+        assert_eq!(capped_scene_size(2560, 1080), (512, 216));
+    }
 }

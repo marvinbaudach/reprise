@@ -2,13 +2,6 @@
 
 use gtk4::prelude::*;
 
-pub(super) fn section(title: &str, content: &impl IsA<gtk4::Widget>) -> gtk4::Box {
-    let root = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
-    root.append(&label(title, "stats-section-title"));
-    root.append(content);
-    root
-}
-
 pub(super) fn card(content: &impl IsA<gtk4::Widget>) -> gtk4::Box {
     let card = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     card.add_css_class("stats-card");
@@ -21,6 +14,7 @@ pub(super) fn label(text: &str, class: &str) -> gtk4::Label {
     label.add_css_class(class);
     label.set_xalign(0.0);
     label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    label.set_max_width_chars(40);
     label
 }
 

@@ -43,6 +43,7 @@ const MIN_HEIGHT: i32 = 400;
 
 fn build_player_backends(
     waveform: Arc<dyn WaveformBackend>,
+    media: reprise_core::media_integration::MediaIntegrationHandles,
 ) -> Result<PlayerControllerBackends, PlaybackError> {
     let (sender, playback_events) = async_channel::unbounded::<PlayerEvent>();
     let player = Player::new(Box::new(move |event| {
@@ -54,7 +55,7 @@ fn build_player_backends(
     Ok(PlayerControllerBackends {
         playback: Box::new(player),
         playback_events,
-        media: reprise_platform_linux::mpris::start(crate::APP_ID),
+        media,
         waveform,
     })
 }
@@ -162,18 +163,23 @@ pub fn build(
     super::window_smoke::arm_listenbrainz(conn, &listenbrainz);
     super::window_smoke::arm_lastfm(conn, &lastfm);
     let artist_news = super::artist_news_worker::ArtistNewsRuntime::setup(&conn.borrow());
+    let concerts_runtime = crate::ui::concerts::ConcertsRuntime::setup(&conn.borrow());
+    let podcasts_runtime = crate::ui::podcasts::PodcastsRuntime::setup(&conn.borrow());
     let artist_portrait =
         super::artist_portrait_worker::ArtistPortraitRuntime::setup(&conn.borrow());
+    let media = reprise_platform_linux::mpris::start(crate::APP_ID);
     let device_sync = super::device_sync_smoke::runtime_from_env(conn).unwrap_or_else(|| {
         super::device_sync_runtime::DeviceSyncRuntime::new(
             conn,
             reprise_platform_linux::device_sync::DeviceMonitor::new(),
         )
     });
+    device_sync
+        .bind_agent_device_sync(&media.device_sync_state, media.device_sync_commands.clone());
     super::device_sync_actions::install(app, &device_sync);
     super::device_sync_smoke::arm(&device_sync);
 
-    let player = match build_player_backends(waveform_backend.clone()) {
+    let player = match build_player_backends(waveform_backend.clone(), media) {
         Ok(backends) => Some(PlayerController::new(
             conn.clone(),
             cover_download.clone(),
@@ -258,22 +264,27 @@ pub fn build(
     let track_list = {
         let status_bar = status_bar.clone();
         let conn_for_status = conn.clone();
+        let player_for_reload = player.clone();
         // This `on_reload` hook fires on *every* reload — initial load,
         // search-filter debounce, sort-header click, and plain source
-        // switch, besides the scan-completion one — so it's kept to the one
-        // thing that's cheap and correct at that frequency: the status
-        // line. Stage 3 Task 4's review (finding #2) caught an earlier
-        // version of this closure also calling `sidebar.refresh()` here,
-        // which meant a full `ListBox` teardown/rebuild plus five DB queries
-        // on every debounced keystroke and every column-sort click. The
-        // sidebar now refreshes only from its own specific triggers — see
-        // `Sidebar::refresh`'s doc comment for the trigger inventory, and
-        // `spawn_scan`'s success arm / the `player.set_track_list_reload`
-        // closure just below for two of the three call sites.
+        // switch, besides the scan-completion one — so it is limited to two
+        // cheap reads: the status line and a SELECT EXISTS that keeps idle
+        // Play availability current after scans/library mutations. Stage 3
+        // Task 4's review (finding #2) caught an earlier version of this
+        // closure also calling `sidebar.refresh()` here, which meant a full
+        // `ListBox` teardown/rebuild plus five DB queries on every debounced
+        // keystroke and every column-sort click. The sidebar now refreshes
+        // only from its own specific triggers — see `Sidebar::refresh`'s doc
+        // comment for the trigger inventory, and `spawn_scan`'s success arm /
+        // the `player.set_track_list_reload` closure just below for two of
+        // the three call sites.
         Rc::new(TrackList::new(
             conn.clone(),
             on_activate,
             move |source, _count, _filter, _browse| {
+                if let Some(player) = &player_for_reload {
+                    player.refresh_library_availability();
+                }
                 if matches!(source, ViewSource::Library) {
                     status_bar.refresh(&conn_for_status);
                 } else {
@@ -320,13 +331,10 @@ pub fn build(
     let stats_view = super::stats_view::StatsView::new(track_list.shared_cover_loader());
     stats_view.wire_year_selector(conn);
     let device_view = super::device_view::DeviceViewPage::new(&device_sync);
-    let content_stack = gtk4::Stack::new();
-    // Size to the visible page (see the library stack's `set_hhomogeneous`):
-    // Stats/Device pages must not inherit the library's minimum width, nor vice
-    // versa, or the whole content is forced past the window edge (QA #3/#4).
-    content_stack.set_hhomogeneous(false);
-    content_stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
-    content_stack.set_transition_duration(crate::ui::motion::STANDARD_MS);
+    let content_stack = super::content_stack::build();
+    // Size to the visible page in both axes: Stats/Device pages must not
+    // inherit the library's minimum size, nor vice versa, or a hidden tall
+    // device list can push the sidebar activity below the window edge.
     content_stack.add_named(&track_content, Some("library"));
     content_stack.add_named(stats_view.widget(), Some("stats"));
     content_stack.add_named(device_view.widget(), Some("device"));
@@ -337,17 +345,78 @@ pub fn build(
         super::library_shell::ActiveContentFocus::new(&content_stack, &track_list);
     let metadata_navigator = super::metadata_navigation::MetadataNavigator::new(
         nav_history.clone(),
-        sidebar.clone(),
-        track_list.clone(),
+        &sidebar,
+        &track_list,
         content_stack.clone(),
+        window_title.clone(),
         active_content_focus.clone(),
     );
+    let on_show_album: crate::ui::updates::release_row::OnShowAlbum = {
+        let navigator = metadata_navigator.clone();
+        Rc::new(move |album: &str, artist: &str| {
+            navigator.navigate(
+                reprise_core::browser::navigation::NavigationIntent::OpenAlbum {
+                    album: reprise_core::browser::AlbumKey::new(album, artist),
+                    anchor_track_id: None,
+                },
+                "new releases",
+            );
+        })
+    };
+    let on_open_updates_view: crate::ui::updates::popover::OnOpenView = {
+        let navigator = metadata_navigator.clone();
+        Rc::new(move |target| {
+            navigator.navigate(
+                reprise_core::browser::navigation::NavigationIntent::Sidebar(target),
+                "updates jump",
+            );
+        })
+    };
+    let concerts_view = Rc::new(crate::ui::concerts::install(
+        conn.clone(),
+        &concerts_runtime,
+    ));
+    let releases_view = Rc::new(crate::ui::releases::install(
+        conn.clone(),
+        db_path.to_path_buf(),
+        on_show_album.clone(),
+    ));
+    content_stack.add_named(concerts_view.root(), Some("concerts"));
+    content_stack.add_named(releases_view.root(), Some("releases"));
+    let source_views = super::source_views::install(
+        conn,
+        &podcasts_runtime,
+        player.as_ref(),
+        &sidebar,
+        &content_stack,
+    );
+    let podcasts_view = source_views.podcasts;
+    let radio_view = source_views.radio;
+    super::source_views::wire_update_sidebar_refresh(&concerts_view, &releases_view, &sidebar);
 
     let bar_position = settings::get_player_bar_position(&conn.borrow());
 
     // The toast layer is attached after the player-bar shell exists so
     // notifications render above the complete library chrome.
     let toast_overlay = adw::ToastOverlay::new();
+    podcasts_view.set_toast_overlay(&toast_overlay);
+    radio_view.set_toast_overlay(&toast_overlay);
+    {
+        let overlay = toast_overlay.downgrade();
+        concerts_view.set_on_launch_error(move |error| {
+            if let Some(overlay) = overlay.upgrade() {
+                crate::ui::toasts::show(&overlay, &error);
+            }
+        });
+    }
+    {
+        let overlay = toast_overlay.downgrade();
+        releases_view.set_on_launch_error(move |error| {
+            if let Some(overlay) = overlay.upgrade() {
+                crate::ui::toasts::show(&overlay, &error);
+            }
+        });
+    }
 
     super::window_action_wiring::wire(super::window_action_wiring::ActionWiring {
         conn,
@@ -394,28 +463,17 @@ pub fn build(
     toast_overlay.set_child(Some(library_player_bar.widget()));
     let library_chrome =
         super::library_chrome::build(&header, &toast_overlay, &search_entry, &window);
-    // New Releases' "Show in library" (NR-13) navigates and focuses through
-    // the same edge every other metadata link uses; the popover module
-    // itself stays navigation-agnostic behind this closure.
-    let on_show_album: crate::ui::new_releases::release_row::OnShowAlbum = {
-        let navigator = metadata_navigator.clone();
-        Rc::new(move |album: &str, artist: &str| {
-            navigator.navigate(
-                reprise_core::browser::navigation::NavigationIntent::OpenAlbum {
-                    album: reprise_core::browser::AlbumKey::new(album, artist),
-                    anchor_track_id: None,
-                },
-                "new releases",
-            );
-        })
-    };
-    crate::ui::new_releases::popover::install(
+    crate::ui::updates::popover::install(
         &header,
         &window,
         conn,
         db_path,
         &artist_news,
-        on_show_album,
+        &concerts_runtime,
+        crate::ui::updates::popover::UpdatesCallbacks {
+            on_show_album,
+            on_open_view: on_open_updates_view,
+        },
     );
     let compact_root = player
         .as_ref()
@@ -464,6 +522,8 @@ pub fn build(
         &listenbrainz,
         &lastfm,
         &artist_news,
+        &concerts_runtime,
+        &podcasts_runtime,
         &cover_download,
         &artist_portrait,
         &decorations,
@@ -496,6 +556,11 @@ pub fn build(
         sidebar: &sidebar,
         player: &player,
         stats_view,
+        concerts_view: &concerts_view,
+        releases_view: &releases_view,
+        podcasts_view: &podcasts_view,
+        radio_view: &radio_view,
+        podcasts_runtime: &podcasts_runtime,
         content_stack: &content_stack,
         device_view: &device_view,
         window_title: &window_title,

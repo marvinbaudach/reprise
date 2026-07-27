@@ -41,7 +41,7 @@ fn settings_default_then_round_trip_selection_and_supported_bitrate() {
             SelectionSource::Playlist(42),
             SelectionSource::Smart(3),
         ]),
-        opus_bitrate: 128,
+        opus_bitrate: 256,
         remove_deleted: false,
         ratings_back: true,
         ..defaults
@@ -50,7 +50,7 @@ fn settings_default_then_round_trip_selection_and_supported_bitrate() {
     let loaded = load_or_create_settings(&conn, "serial-1", "ignored").unwrap();
     assert_eq!(loaded.device_name, "Pixel 8 Pro");
     assert_eq!(loaded.selection, changed.selection);
-    assert_eq!(loaded.opus_bitrate, 128);
+    assert_eq!(loaded.opus_bitrate, 256);
     assert!(!loaded.remove_deleted);
     assert!(!loaded.ratings_back, "ratings-back remains disabled in V1");
 }

@@ -219,7 +219,7 @@ fn nr_2_accent_source_uses_the_most_played_album() {
 }
 
 #[test]
-fn nr_3_seen_item_not_rebadged() {
+fn nr_3a_seen_item_not_rebadged() {
     let conn = migrated_conn();
     conn.execute(
         "INSERT INTO tracks (path, title, artist, artist_mbid, added_at) \

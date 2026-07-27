@@ -257,7 +257,8 @@ setsid env \
   REPRISE_LOG=debug \
   dbus-run-session -- sh -c \
   'printf "%s" "$DBUS_SESSION_BUS_ADDRESS" > "$REPRISE_DBUS_ADDRESS_FILE"; exec "$@"' sh \
-  cargo run --quiet --manifest-path "$REPO_ROOT/Cargo.toml" "${CARGO_PROFILE_FLAG[@]}" \
+  cargo run --quiet --manifest-path "$REPO_ROOT/Cargo.toml" \
+  -p reprise-gnome --features test-fixtures "${CARGO_PROFILE_FLAG[@]}" \
   >"$APP_LOG" 2>&1 &
 APP_LAUNCH_PID=$!
 

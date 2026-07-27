@@ -44,6 +44,18 @@ pub(in crate::ui) fn restored_sort(field: &str, dir: &str) -> SortState {
     }
 }
 
+/// Applies one primary column sort and synchronizes the app-owned header
+/// indicator before GTK's delayed internal style-class update can expose both
+/// the old and new arrows in the same frame.
+pub(in crate::ui) fn sort_by_column(
+    view: &gtk4::ColumnView,
+    column: &gtk4::ColumnViewColumn,
+    order: gtk4::SortType,
+) {
+    view.sort_by_column(Some(column), order);
+    super::track_list_header_style::sync_primary_sort_indicator(view);
+}
+
 /// Observes the `ColumnView`'s aggregate sorter for header clicks and maps
 /// them back to a whitelisted sort field + direction, then reloads.
 pub(in crate::ui) fn wire_sort_clicks(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
@@ -132,14 +144,25 @@ fn default_sort_for_source(source: &ViewSource) -> Option<SortState> {
             field: PLAYLIST_ORDER_SORT_FIELD.to_string(),
             dir: "asc".to_string(),
         }),
+        ViewSource::RecentlyAdded => Some(SortState {
+            field: "added_at".to_string(),
+            dir: "desc".to_string(),
+        }),
         ViewSource::Library
         | ViewSource::Smart(_)
         | ViewSource::Queue
         | ViewSource::Missing
         | ViewSource::Album { .. }
         | ViewSource::Artist(_)
+        | ViewSource::Genre(_)
         | ViewSource::Device { .. } => None,
-        ViewSource::ImportErrors | ViewSource::MyStats | ViewSource::Conversions => None,
+        ViewSource::ImportErrors
+        | ViewSource::MyStats
+        | ViewSource::Releases
+        | ViewSource::Concerts
+        | ViewSource::Podcasts
+        | ViewSource::Radio
+        | ViewSource::Conversions => None,
     }
 }
 
@@ -189,7 +212,7 @@ mod default_sort_for_source_tests {
         }
     }
 
-    /// Every non-Playlist source has no forced default of its own — the
+    /// Ordinary non-Playlist sources have no forced default of their own — the
     /// caller (`set_source_and_reload`, via `resolve_sort_on_switch`) is
     /// responsible for resetting away from a lingering playlist sentinel in
     /// this case, not this function.
@@ -210,6 +233,28 @@ mod default_sort_for_source_tests {
         assert_eq!(
             default_sort_for_source(&ViewSource::Artist("Björk".into())),
             None
+        );
+    }
+
+    #[test]
+    fn fil_8_recently_added_defaults_to_newest_first() {
+        let expected = SortState {
+            field: "added_at".into(),
+            dir: "desc".into(),
+        };
+        assert_eq!(
+            default_sort_for_source(&ViewSource::RecentlyAdded),
+            Some(expected.clone())
+        );
+        assert_eq!(
+            resolve_sort_on_switch(
+                &SortState {
+                    field: PLAYLIST_ORDER_SORT_FIELD.into(),
+                    dir: "asc".into(),
+                },
+                &ViewSource::RecentlyAdded
+            ),
+            expected
         );
     }
 }

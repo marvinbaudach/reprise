@@ -133,6 +133,7 @@ pub(super) fn wire_close(
             }
         }
         if let Some(player) = player.as_ref().and_then(std::rc::Weak::upgrade) {
+            player.persist_external_on_quit();
             state.queue = player.session_queue_snapshot();
             let (up_next, current_up_next) = player.session_up_next_snapshot();
             state.up_next = up_next;
@@ -207,15 +208,21 @@ fn geometry_for_save(
 fn apply_view_snapshot(state: &mut SessionState, view: TrackViewSnapshot) {
     state.source = match view.source {
         ViewSource::Library => SessionSource::Library,
+        ViewSource::RecentlyAdded => SessionSource::RecentlyAdded,
         ViewSource::Playlist(id) => SessionSource::Playlist(id),
         ViewSource::Smart(id) => SessionSource::Smart(id),
         ViewSource::Queue => SessionSource::Queue,
         ViewSource::Missing => SessionSource::Missing,
         ViewSource::ImportErrors => SessionSource::ImportErrors,
         ViewSource::MyStats
+        | ViewSource::Releases
+        | ViewSource::Concerts
+        | ViewSource::Podcasts
+        | ViewSource::Radio
         | ViewSource::Conversions
         | ViewSource::Album { .. }
         | ViewSource::Artist(_)
+        | ViewSource::Genre(_)
         | ViewSource::Device { .. } => SessionSource::Library,
     };
     state.search = view.search;

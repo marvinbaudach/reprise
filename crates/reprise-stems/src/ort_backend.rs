@@ -63,9 +63,15 @@ impl OrtStemBackend {
     /// `jobs work` / app launch never blocks on a 316 MB network fetch and the
     /// hermetic test suite never touches the network.
     pub fn from_provisioned_default() -> Result<Option<Self>, StemError> {
-        let model_dir = provision::default_model_dir()
-            .map_err(|error| StemError::Backend(error.to_string()))?;
-        Self::from_provisioned_in(&model_dir)
+        match provision::runtime_readiness() {
+            provision::RuntimeReadiness::Ready(assets) => {
+                Self::from_verified_runtime(&assets).map(Some)
+            }
+            provision::RuntimeReadiness::ModelRequired { .. } => Ok(None),
+            provision::RuntimeReadiness::Unavailable { detail, .. } => {
+                Err(StemError::Backend(detail))
+            }
+        }
     }
 
     /// [`from_provisioned_default`](Self::from_provisioned_default) with the
@@ -85,6 +91,18 @@ impl OrtStemBackend {
     /// a clear error surfaces here if no library is available.
     pub fn from_model_file(model_path: &Path, model_id: &str) -> Result<Self, StemError> {
         configure_onnxruntime()?;
+        Self::from_configured_model_file(model_path, model_id)
+    }
+
+    /// Constructs the backend from paths already verified by the shared
+    /// readiness probe. Production hosts use this so their go/no-go decision
+    /// and the backend initialization consume the same assets.
+    pub fn from_verified_runtime(assets: &provision::RuntimeAssets) -> Result<Self, StemError> {
+        std::env::set_var(provision::ORT_DYLIB_ENV, &assets.library_path);
+        Self::from_configured_model_file(&assets.model_path, &assets.model_id)
+    }
+
+    fn from_configured_model_file(model_path: &Path, model_id: &str) -> Result<Self, StemError> {
         let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
         let session = Session::builder()
             .map_err(|e| session_error(&e))?

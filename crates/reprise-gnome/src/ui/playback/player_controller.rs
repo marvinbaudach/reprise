@@ -24,12 +24,13 @@
 //! pattern the gtk4-rs book recommends: the player callback does a
 //! non-blocking `try_send` into an unbounded `async_channel`, and a single
 //! future spawned on the default (main) `glib::MainContext` drains the
-//! receiver and applies each event to the bar. Compared to the alternative —
+//! receiver and applies events to the bar. Compared to the alternative —
 //! `glib::idle_add` from the callback thread per event — this keeps one
-//! long-lived drain loop with strict FIFO ordering instead of allocating a
-//! GSource per event, and it makes the thread boundary explicit in the
-//! types: only `PlayerEvent` (plain `Send` data) crosses it, exactly the
-//! runtime-safety property the player was designed around.
+//! long-lived drain loop instead of allocating a GSource per event, and it
+//! makes the thread boundary explicit in the types: only `PlayerEvent` (plain
+//! `Send` data) crosses it. Semantic playback events retain strict FIFO order;
+//! consecutive high-rate spectrum frames are collapsed latest-wins so a busy
+//! renderer cannot replay stale audio.
 //!
 //! ## Lifetime
 //!
@@ -175,7 +176,8 @@ use crate::ui::player_controller_wiring;
 use crate::ui::player_lyrics::{lyrics_query_for, start_track_for_lyrics, PlayerLyrics};
 use crate::ui::style::cover_accent::Rgb as AccentRgb;
 use reprise_core::media_integration::{
-    MediaIntegrationHandles, MprisPlaybackStatus, SharedMprisState, DEFAULT_VOLUME,
+    MediaIntegrationHandles, MprisPlaybackStatus, SharedAgentQueueState, SharedMprisState,
+    DEFAULT_VOLUME,
 };
 use reprise_core::playback::{PlaybackBackend, PlaybackState, PlayerEvent, SpectrumFrame};
 use reprise_core::queries;
@@ -255,6 +257,9 @@ pub struct PlayerController {
     /// `## Queue borrow discipline` doc section for the rule every call site
     /// (in any of the three files) follows.
     pub(in crate::ui) queue: RefCell<Queue>,
+    /// Cached library availability used to keep idle Play reachable without
+    /// enabling it for a genuinely empty library.
+    pub(in crate::ui) library_has_tracks: Cell<bool>,
     pub(in crate::ui) up_next: RefCell<UpNextQueue>,
     pub(in crate::ui) current_up_next: Cell<Option<i64>>,
     /// Catalog id removed while its player-owned snapshot remains loaded.
@@ -264,12 +269,11 @@ pub struct PlayerController {
     /// Queue view's named virtual context tail and NAV-9b's jump target.
     /// `None` before the first play and after a stop cleared the context.
     pub(in crate::ui) play_origin: RefCell<Option<super::play_origin::PlayOrigin>>,
-    /// Staging path of the render currently PREVIEWING, else `None` — the single
-    /// source of truth for the preview mode (`preview.rs`, INST-4b).
-    pub(in crate::ui) preview_path: RefCell<Option<String>>,
+    /// One state owner for preview, podcast, and live-radio playback.
+    pub(in crate::ui) external: RefCell<super::external_media::ExternalPlaybackState>,
     /// See the module's `## Toast + track-list-reload seam` doc section.
     /// Empty (`WeakRef::new()`) until `set_toast_overlay` is called.
-    toast_overlay: glib::WeakRef<adw::ToastOverlay>,
+    pub(in crate::ui) toast_overlay: glib::WeakRef<adw::ToastOverlay>,
     /// See the module's `## Toast + track-list-reload seam` doc section.
     /// `None` until `set_track_list_reload` is called.
     reload_track_list: RefCell<Option<Rc<dyn Fn()>>>,
@@ -314,6 +318,8 @@ pub struct PlayerController {
     /// never read directly here (the MPRIS thread is the only reader).
     /// `pub(in crate::ui)` so that sibling module can reach it.
     pub(in crate::ui) mpris_state: SharedMprisState,
+    /// Bounded live queue mirror read by the local Reprise D-Bus interface.
+    pub(in crate::ui) agent_queue_state: SharedAgentQueueState,
     /// Title/artist/album/duration of the currently-loaded track, for
     /// `mpris_mirror.rs`'s `update_mpris_mirror` to build `mpris::MprisState`'s
     /// `Metadata` fields from — see the module's `## MPRIS` doc section for
@@ -421,6 +427,8 @@ impl PlayerController {
             waveform,
         } = backends;
         let initial_effects = super::audio_effects::apply_initial(player.as_ref(), &conn);
+        let library_has_tracks =
+            super::queue_transport::initial_library_availability(&conn.borrow());
         {
             // Apply the stored transition mode to the backend up front so
             // Gapless/Crossfade is active from the first track (feed_next then
@@ -435,8 +443,11 @@ impl PlayerController {
         // Media integration is always on. Its platform handles are assembled
         // by the window composition root and remain failure-tolerant.
         let mpris_state = handles.shared_state;
+        let agent_queue_state = handles.queue_state;
         let mpris_receiver = handles.commands;
         let mpris_seek_notify = handles.seek_notify;
+        let _device_sync_state = handles.device_sync_state;
+        let _device_sync_commands = handles.device_sync_commands;
 
         let lyrics = PlayerLyrics::new(&conn.borrow());
         let controller = Rc::new(Self {
@@ -451,11 +462,12 @@ impl PlayerController {
             lastfm,
             scrobble_session: RefCell::new(ScrobbleSession::default()),
             queue: RefCell::new(Queue::new()),
+            library_has_tracks: Cell::new(library_has_tracks),
             up_next: RefCell::new(UpNextQueue::default()),
             current_up_next: Cell::new(None),
             deferred_queue_purge_id: Cell::new(None),
             play_origin: RefCell::new(None),
-            preview_path: RefCell::new(None),
+            external: RefCell::new(super::external_media::ExternalPlaybackState::default()),
             toast_overlay: glib::WeakRef::new(),
             reload_track_list: RefCell::new(None),
             listen_event_recorded: RefCell::new(None),
@@ -469,6 +481,7 @@ impl PlayerController {
             consecutive_skips: Cell::new(0),
             failure_skip_limit: Cell::new(0),
             mpris_state,
+            agent_queue_state,
             now_playing: Rc::new(RefCell::new(None)),
             volume: Cell::new(DEFAULT_VOLUME),
             mpris_seek_notify,
@@ -490,6 +503,7 @@ impl PlayerController {
         player_controller_wiring::wire_bar_controls(&controller);
         player_controller_wiring::wire_compact_controls(&controller);
         player_controller_wiring::arm_smoke_repeat(&controller);
+        controller.sync_transport_enabled(false);
 
         let song_visuals_enabled = reprise_core::modules::is_enabled(
             &controller.conn.borrow(),
@@ -500,15 +514,7 @@ impl PlayerController {
             tracing::warn!(%error, "could not restore live song visuals; using the static profile");
         }
 
-        let weak = Rc::downgrade(&controller);
-        glib::spawn_future_local(async move {
-            while let Ok(event) = receiver.recv().await {
-                let Some(controller) = weak.upgrade() else {
-                    break;
-                };
-                controller.apply_event(event);
-            }
-        });
+        crate::ui::player_event_handling::spawn_event_drain(&controller, receiver);
 
         // MPRIS-command drain: see `mpris_mirror.rs`'s `spawn_command_drain`
         // doc comment (moved there — Stage-3 close-out — to keep this file's
@@ -609,7 +615,7 @@ impl PlayerController {
         self.evaluate_play_tracking();
         self.sync_lyrics_track(None);
         // Ordinary queue playback leaves preview mode (INST-4b).
-        *self.preview_path.borrow_mut() = None;
+        self.leave_external_for_queue();
 
         let summary = {
             let conn = self.conn.borrow();

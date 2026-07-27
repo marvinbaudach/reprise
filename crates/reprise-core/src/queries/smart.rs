@@ -8,8 +8,7 @@ use crate::library::playlists::{self, SmartPlaylist};
 use crate::models::Track;
 
 use super::clauses::{
-    ai_projection, filter_clause, like_pattern, order_expr_and_dir, row_to_id, row_to_track,
-    PRESENT,
+    ai_projection, filter_clause, like_pattern, order_clause, row_to_id, row_to_track, PRESENT,
 };
 use super::queue::QUEUE_LIMIT;
 use super::MAX_WINDOW_LIMIT;
@@ -38,13 +37,16 @@ fn load_smart_playlist(
 /// treat that as "no rows" rather than propagating it as a SQL failure.
 fn build_smart_window_query(
     smart: &SmartPlaylist,
+    sort_field: &str,
+    sort_dir: &str,
     filter: &str,
     offset: i64,
     limit: i64,
     project_ai: bool,
 ) -> Result<(String, Vec<rusqlite::types::Value>), playlists::SmartRulesError> {
     let has_filter = !filter.trim().is_empty();
-    let (order_expr, dir) = order_expr_and_dir(&smart.sort_field, &smart.sort_dir);
+    let member_order = order_clause(&smart.sort_field, &smart.sort_dir);
+    let view_order = order_clause(sort_field, sort_dir);
     let (rules_frag, mut params) = playlists::smart_rules_to_sql(&smart.rules_json)?;
 
     let mut next_idx = params.len() as u8 + 1;
@@ -61,7 +63,7 @@ fn build_smart_window_query(
         params.push(rusqlite::types::Value::Text(like_pattern(filter.trim())));
         next_idx += 1;
     }
-    inner_sql.push_str(&format!(" ORDER BY {order_expr} {dir}"));
+    inner_sql.push_str(&format!(" ORDER BY {member_order}"));
     if let Some(limit_count) = smart.limit_count {
         inner_sql.push_str(&format!(" LIMIT ?{next_idx}"));
         params.push(rusqlite::types::Value::Integer(limit_count));
@@ -71,7 +73,8 @@ fn build_smart_window_query(
     let limit_idx = next_idx;
     let offset_idx = next_idx + 1;
     let sql = format!(
-        "SELECT * FROM ({inner_sql}) ORDER BY {order_expr} {dir} LIMIT ?{limit_idx} OFFSET ?{offset_idx}"
+        "SELECT * FROM ({inner_sql}) ORDER BY {view_order} \
+         LIMIT ?{limit_idx} OFFSET ?{offset_idx}"
     );
     params.push(rusqlite::types::Value::Integer(limit));
     params.push(rusqlite::types::Value::Integer(offset));
@@ -82,6 +85,7 @@ fn build_smart_window_query(
 pub(super) fn query_track_window_smart(
     conn: &mut Connection,
     smart_id: i64,
+    view_sort: (&str, &str),
     filter: &str,
     offset: i64,
     limit: i64,
@@ -95,8 +99,30 @@ pub(super) fn query_track_window_smart(
         );
         return Ok(Vec::new());
     };
+    if smart.role.as_deref() == Some(playlists::RECENTLY_ADDED_ROLE) {
+        let browse = super::recently_added_browse(&super::BrowseFilter::default());
+        return super::library::query_track_window_library(
+            conn,
+            view_sort.0,
+            view_sort.1,
+            filter,
+            offset,
+            limit,
+            &browse,
+            false,
+            project_ai,
+        );
+    }
 
-    let (sql, params) = match build_smart_window_query(&smart, filter, offset, limit, project_ai) {
+    let (sql, params) = match build_smart_window_query(
+        &smart,
+        view_sort.0,
+        view_sort.1,
+        filter,
+        offset,
+        limit,
+        project_ai,
+    ) {
         Ok(v) => v,
         Err(error) => {
             tracing::error!(%error, smart_id, "invalid smart playlist rules; returning empty window");
@@ -121,6 +147,13 @@ pub(super) fn query_track_count_smart(
         );
         return Ok(0);
     };
+    if smart.role.as_deref() == Some(playlists::RECENTLY_ADDED_ROLE) {
+        return super::library::query_track_count_library(
+            conn,
+            filter,
+            &super::recently_added_browse(&super::BrowseFilter::default()),
+        );
+    }
     let has_filter = !filter.trim().is_empty();
     let (rules_frag, mut params) = match playlists::smart_rules_to_sql(&smart.rules_json) {
         Ok(v) => v,
@@ -147,6 +180,8 @@ pub(super) fn query_track_count_smart(
 pub(super) fn query_track_ids_smart(
     conn: &Connection,
     smart_id: i64,
+    sort_field: &str,
+    sort_dir: &str,
     filter: &str,
 ) -> Result<Vec<i64>, rusqlite::Error> {
     let Some(smart) = load_smart_playlist(conn, smart_id)? else {
@@ -156,8 +191,19 @@ pub(super) fn query_track_ids_smart(
         );
         return Ok(Vec::new());
     };
+    if smart.role.as_deref() == Some(playlists::RECENTLY_ADDED_ROLE) {
+        return super::query_track_ids_recently_added(
+            conn,
+            sort_field,
+            sort_dir,
+            filter,
+            &super::BrowseFilter::default(),
+            false,
+        );
+    }
     let has_filter = !filter.trim().is_empty();
-    let (order_expr, dir) = order_expr_and_dir(&smart.sort_field, &smart.sort_dir);
+    let member_order = order_clause(&smart.sort_field, &smart.sort_dir);
+    let view_order = order_clause(sort_field, sort_dir);
     let (rules_frag, mut params) = match playlists::smart_rules_to_sql(&smart.rules_json) {
         Ok(v) => v,
         Err(error) => {
@@ -166,9 +212,12 @@ pub(super) fn query_track_ids_smart(
         }
     };
     let next_idx = params.len() as u8 + 1;
-    let mut sql = format!("SELECT id FROM tracks WHERE {PRESENT} AND ({rules_frag})");
+    let mut inner_sql = format!(
+        "SELECT id, title, artist, album, year, track_no, genre, duration_ms, \
+         rating, play_count, added_at FROM tracks WHERE {PRESENT} AND ({rules_frag})"
+    );
     if has_filter {
-        sql.push_str(&filter_clause(true, next_idx));
+        inner_sql.push_str(&filter_clause(true, next_idx));
         params.push(rusqlite::types::Value::Text(like_pattern(filter.trim())));
     }
     // The smart playlist's own limit bounds the queue too (capped by
@@ -176,9 +225,8 @@ pub(super) fn query_track_ids_smart(
     // query); a literal, not a bound parameter — both operands are
     // Rust-side i64s, never caller-supplied text.
     let effective_limit = smart.limit_count.unwrap_or(QUEUE_LIMIT).min(QUEUE_LIMIT);
-    sql.push_str(&format!(
-        " ORDER BY {order_expr} {dir} LIMIT {effective_limit}"
-    ));
+    inner_sql.push_str(&format!(" ORDER BY {member_order} LIMIT {effective_limit}"));
+    let sql = format!("SELECT id FROM ({inner_sql}) ORDER BY {view_order}");
 
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), row_to_id)?;

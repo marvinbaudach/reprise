@@ -1,18 +1,86 @@
 //! Player-event application and stopped-state recovery for PlayerController.
 
+use std::rc::Rc;
+
 use crate::ui::mpris_mirror::mpris_status_from_playback_state;
 use crate::ui::player_controller::PlayerController;
 use reprise_core::media_integration::MprisPlaybackStatus;
-use reprise_core::playback::{PlaybackState, PlayerEvent};
+use reprise_core::playback::{PlaybackState, PlayerEvent, SpectrumFrame};
+
+/// Prevent one busy drain iteration from starving the rest of GTK's main loop.
+const MAX_PLAYER_EVENT_BURST: usize = 64;
+
+/// Collapses consecutive analyzer frames without moving them across semantic
+/// playback events. This keeps transport/state ordering exact while making
+/// spectrum delivery latest-wins under GTK render load.
+pub(super) fn coalesce_player_event_burst(
+    events: impl IntoIterator<Item = PlayerEvent>,
+) -> Vec<PlayerEvent> {
+    let mut coalesced = Vec::new();
+    let mut pending_spectrum: Option<SpectrumFrame> = None;
+
+    for event in events {
+        match event {
+            PlayerEvent::Spectrum(frame) => {
+                pending_spectrum = Some(match pending_spectrum {
+                    Some(previous) => previous.coalesce_latest(frame),
+                    None => frame,
+                });
+            }
+            event => {
+                if let Some(frame) = pending_spectrum.take() {
+                    coalesced.push(PlayerEvent::Spectrum(frame));
+                }
+                coalesced.push(event);
+            }
+        }
+    }
+    if let Some(frame) = pending_spectrum {
+        coalesced.push(PlayerEvent::Spectrum(frame));
+    }
+    coalesced
+}
+
+pub(super) fn spawn_event_drain(
+    controller: &Rc<PlayerController>,
+    receiver: async_channel::Receiver<PlayerEvent>,
+) {
+    let weak = Rc::downgrade(controller);
+    gtk4::glib::spawn_future_local(async move {
+        while let Ok(first_event) = receiver.recv().await {
+            let Some(controller) = weak.upgrade() else {
+                break;
+            };
+            let mut burst = Vec::with_capacity(MAX_PLAYER_EVENT_BURST);
+            burst.push(first_event);
+            while burst.len() < MAX_PLAYER_EVENT_BURST {
+                let Ok(event) = receiver.try_recv() else {
+                    break;
+                };
+                burst.push(event);
+            }
+            for event in coalesce_player_event_burst(burst) {
+                controller.apply_event(event);
+            }
+        }
+    });
+}
 
 impl PlayerController {
     /// Applies one marshalled `PlayerEvent` to the bar. Runs on the GTK main
     /// thread (called only from the drain loop in `new`).
-    pub(in crate::ui) fn apply_event(&self, event: PlayerEvent) {
+    pub(in crate::ui) fn apply_event(self: &std::rc::Rc<Self>, event: PlayerEvent) {
         match event {
             PlayerEvent::StateChanged(state) => {
                 tracing::info!(?state, "player bar: applying state change");
-                self.sync_state(state);
+                match self.playback_mode() {
+                    super::preview::PlaybackMode::Podcast | super::preview::PlaybackMode::Radio => {
+                        self.external_state_changed(state);
+                    }
+                    super::preview::PlaybackMode::Queue | super::preview::PlaybackMode::Preview => {
+                        self.sync_state(state);
+                    }
+                }
                 if state == PlaybackState::Stopped {
                     // Defensive, before `sync_clear_track()` fans out the
                     // empty loaded-track snapshot:
@@ -20,15 +88,23 @@ impl PlayerController {
                     // already clears `now_playing` itself before this event
                     // even has a chance to drain, but a stray `Stopped` from
                     // elsewhere must not leave stale metadata mirrored.
-                    *self.now_playing.borrow_mut() = None;
-                    self.sync_clear_track();
+                    if self.playback_mode() == super::preview::PlaybackMode::Queue {
+                        *self.now_playing.borrow_mut() = None;
+                        self.sync_clear_track();
+                    }
                     // Now-playing observers (the track table's + the Artists
                     // view's mini-EQ) are turned off via the
                     // `playback_state_changed(Stopped)` fan-out that
                     // `sync_state` above already fires — see
                     // `current_track_selection::wire`.
                 }
-                self.update_mpris_mirror(mpris_status_from_playback_state(state));
+                match self.playback_mode() {
+                    super::preview::PlaybackMode::Podcast | super::preview::PlaybackMode::Radio => {
+                    }
+                    super::preview::PlaybackMode::Queue | super::preview::PlaybackMode::Preview => {
+                        self.update_mpris_mirror(mpris_status_from_playback_state(state));
+                    }
+                }
             }
             PlayerEvent::Position {
                 position_ms,
@@ -42,6 +118,7 @@ impl PlayerController {
                 );
                 self.max_position_ms
                     .set(self.max_position_ms.get().max(position_ms));
+                self.handle_external_position(position_ms, duration_ms);
                 self.sync_position(position_ms, duration_ms);
                 // Stage 3 Task 10: keeps MPRIS's `Position` current between
                 // `update_mpris_mirror` rebuilds — see `update_mpris_
@@ -53,20 +130,20 @@ impl PlayerController {
                 // advancing the queue (so a stale gapless pre-feed / queue
                 // snapshot can't start playing after it, and no play is credited
                 // to the wrong track); an ordinary queue track advances.
-                let mode = if self.is_previewing() {
-                    super::preview::PlaybackMode::Preview
-                } else {
-                    super::preview::PlaybackMode::Queue
-                };
+                let mode = self.playback_mode();
                 if mode.advances_queue_on_finish() {
                     tracing::info!("track finished: advancing queue");
                     self.advance_playback(super::up_next_transport::AdvanceReason::Automatic);
                 } else {
-                    tracing::info!("instrumental preview finished: stopping without advancing");
-                    self.end_preview();
+                    tracing::info!(?mode, "external media finished: stopping without advancing");
+                    self.finish_external();
                 }
             }
             PlayerEvent::AdvancedToNext => {
+                if self.playback_mode() != super::preview::PlaybackMode::Queue {
+                    tracing::warn!("ignoring gapless hand-off during external playback");
+                    return;
+                }
                 // Gapless hand-off: the pre-fed next track is already playing.
                 // Advance the queue model and reflect the new track WITHOUT
                 // restarting the pipeline. (Real handler wired in below.)
@@ -79,6 +156,13 @@ impl PlayerController {
                     callback(frame);
                 }
             }
+            PlayerEvent::StreamTags {
+                title,
+                organization,
+            } => {
+                tracing::debug!(?title, ?organization, "received stream metadata");
+                self.on_stream_tags(title, organization);
+            }
             PlayerEvent::Error(message) => {
                 // Stage 2 Task 5: this can fire asynchronously for the
                 // *currently loaded* queue track (e.g. GStreamer resolving a
@@ -88,6 +172,19 @@ impl PlayerController {
                 // toast + auto-skip) when there is a current track to
                 // attribute it to; otherwise fall back to the pre-Task-5
                 // behavior (log + reset) rather than guessing.
+                match self.playback_mode() {
+                    super::preview::PlaybackMode::Podcast | super::preview::PlaybackMode::Radio => {
+                        tracing::error!(%message, "player error during external playback");
+                        self.handle_external_error(message);
+                        return;
+                    }
+                    super::preview::PlaybackMode::Preview => {
+                        tracing::error!(%message, "player error during preview playback");
+                        self.reset_to_stopped();
+                        return;
+                    }
+                    super::preview::PlaybackMode::Queue => {}
+                }
                 match self.current_track.get() {
                     Some((id, _)) => {
                         tracing::error!(%message, track_id = id, "player error during queue track playback");
@@ -114,8 +211,8 @@ impl PlayerController {
     /// mirror.rs` and `playback_faults.rs` can call it too.
     pub(in crate::ui) fn reset_to_stopped(&self) {
         self.evaluate_play_tracking();
-        // A hard stop also leaves any instrumental-preview mode (INST-4b).
-        *self.preview_path.borrow_mut() = None;
+        // A hard stop leaves every preview/external mode.
+        self.leave_external_for_queue();
         self.consecutive_skips.set(0);
         self.failure_skip_limit.set(0);
         // QUE-3: the playback snapshot lives exactly as long as playback —
@@ -161,5 +258,49 @@ impl PlayerController {
                 self.sync_clear_track();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod spectrum_coalescing_tests {
+    use super::*;
+    use reprise_core::playback::{SpectrumFrame, SPECTRUM_BAND_COUNT};
+
+    fn spectrum(db: f32) -> PlayerEvent {
+        PlayerEvent::Spectrum(SpectrumFrame::from_decibels([db; SPECTRUM_BAND_COUNT]))
+    }
+
+    #[test]
+    fn ac_20_spectrum_burst_keeps_only_the_freshest_frame() {
+        let events =
+            coalesce_player_event_burst([spectrum(-60.0), spectrum(-40.0), spectrum(-20.0)]);
+        assert_eq!(events.len(), 1);
+        let PlayerEvent::Spectrum(frame) = &events[0] else {
+            panic!("expected the coalesced spectrum");
+        };
+        assert_eq!(
+            frame.bands(),
+            SpectrumFrame::from_decibels([-20.0; SPECTRUM_BAND_COUNT]).bands()
+        );
+    }
+
+    #[test]
+    fn non_spectrum_events_keep_order_and_bound_coalescing_windows() {
+        let events = coalesce_player_event_burst([
+            spectrum(-60.0),
+            spectrum(-40.0),
+            PlayerEvent::StateChanged(PlaybackState::Paused),
+            spectrum(-20.0),
+            spectrum(0.0),
+            PlayerEvent::TrackFinished,
+        ]);
+        assert_eq!(events.len(), 4);
+        assert!(matches!(events[0], PlayerEvent::Spectrum(_)));
+        assert!(matches!(
+            events[1],
+            PlayerEvent::StateChanged(PlaybackState::Paused)
+        ));
+        assert!(matches!(events[2], PlayerEvent::Spectrum(_)));
+        assert!(matches!(events[3], PlayerEvent::TrackFinished));
     }
 }

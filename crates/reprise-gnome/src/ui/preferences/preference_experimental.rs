@@ -4,23 +4,21 @@
 //!
 //! ## INST-12 — real flow vs honest placeholder
 //!
-//! When this build links the stem-separation backend (`stem-backend` cargo
-//! feature), the Download button runs the production provisioning path on a
-//! background thread — `reprise_stems::provision::ensure_weights` (SHA-256
-//! checksum + atomic write + a licence notice beside the file), streaming byte
-//! progress back to the row, with clear failure text (offline, checksum). When
-//! the build was compiled **without** that feature, the row is an honest,
-//! disabled placeholder that says so — never a functionless enabled button.
+//! When this build packages the stem worker (`stem-backend` cargo feature), the
+//! Download button runs `reprise_stems::provision::ensure_weights` on a
+//! background thread with SHA-256 verification, an atomic write, a licence
+//! notice, streaming byte progress, and clear failure text. GTK links only that
+//! provisioning slice; inference stays in the worker process. Without the
+//! feature, the row is an honest, disabled placeholder.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use rusqlite::Connection;
 
 use crate::ui::instrumental;
+use crate::ui::preferences::PreferencesContext;
 use crate::ui::strings;
 
 /// What the model-download row can offer, given whether this build linked the
@@ -30,6 +28,8 @@ use crate::ui::strings;
 pub(in crate::ui) enum ModelAvailability {
     /// This build has no stem-separation backend: an honest, disabled row.
     Unavailable,
+    /// The backend was compiled, but its native runtime is absent or unverified.
+    RuntimeUnavailable,
     /// Backend present, weights absent: the download button is live.
     Downloadable,
     /// Backend present, weights already provisioned: nothing to download.
@@ -41,40 +41,44 @@ pub(in crate::ui) enum ModelAvailability {
 pub(in crate::ui) fn model_availability(
     backend_compiled: bool,
     model_present: bool,
+    runtime_ready: bool,
 ) -> ModelAvailability {
-    match (backend_compiled, model_present) {
-        (false, _) => ModelAvailability::Unavailable,
-        (true, false) => ModelAvailability::Downloadable,
-        (true, true) => ModelAvailability::Ready,
+    match (backend_compiled, model_present, runtime_ready) {
+        (false, _, _) => ModelAvailability::Unavailable,
+        (true, _, false) => ModelAvailability::RuntimeUnavailable,
+        (true, false, true) => ModelAvailability::Downloadable,
+        (true, true, true) => ModelAvailability::Ready,
     }
 }
 
-/// Whether the pinned htdemucs weights already sit in the model directory. A
-/// cheap presence + size check (the backend re-verifies the SHA-256 on load and
-/// the download itself is atomic + checksummed, so a present, full-size file is
-/// trustworthy for the row's initial hint).
+/// Projects the shared verified readiness into the two booleans consumed by
+/// the pure row decision. The worker and this UI now consult the same probe.
 #[cfg(feature = "stem-backend")]
-fn model_present() -> bool {
-    use reprise_stems::model::HTDEMUCS_FP32;
-    use reprise_stems::provision::{default_model_dir, weights_path};
-    default_model_dir().is_ok_and(|dir| {
-        std::fs::metadata(weights_path(&dir, &HTDEMUCS_FP32))
-            .is_ok_and(|meta| meta.len() == HTDEMUCS_FP32.size_bytes)
-    })
+fn runtime_assets_state() -> (bool, bool) {
+    use reprise_stems::provision::{RuntimeComponent, RuntimeReadiness};
+    match reprise_stems::provision::runtime_readiness() {
+        RuntimeReadiness::Ready(_) => (true, true),
+        RuntimeReadiness::ModelRequired { .. } => (false, true),
+        RuntimeReadiness::Unavailable {
+            component: RuntimeComponent::Model,
+            ..
+        } => (false, true),
+        RuntimeReadiness::Unavailable {
+            component: RuntimeComponent::NativeRuntime,
+            ..
+        } => (false, false),
+    }
 }
 
 #[cfg(not(feature = "stem-backend"))]
-fn model_present() -> bool {
-    false
+fn runtime_assets_state() -> (bool, bool) {
+    (false, false)
 }
 
-/// Builds the Experimental page. The switch persists the
-/// `experimental_features.enabled` key; the model group's visibility follows it
-/// live (mirroring the Song Visuals gate). Toggling takes effect for already-
-/// running surfaces on the next app start (the worker host reads the switch at
-/// launch) — an accepted experimental rough edge; the settings key itself is
-/// authoritative immediately.
-pub(in crate::ui) fn build_page(conn: &Rc<RefCell<Connection>>) -> adw::PreferencesPage {
+/// Builds the Experimental page. A successful switch write immediately applies
+/// the master gate to the running worker, conversion page, sidebar, browse bar,
+/// query projection, and visible AI badges.
+pub(in crate::ui) fn build_page(context: &Rc<PreferencesContext>) -> adw::PreferencesPage {
     let page = adw::PreferencesPage::builder()
         .title(strings::text(strings::EXPERIMENTAL_PAGE_TITLE))
         .build();
@@ -86,11 +90,13 @@ pub(in crate::ui) fn build_page(conn: &Rc<RefCell<Connection>>) -> adw::Preferen
     let model_row = adw::ActionRow::builder()
         .title(strings::text(strings::MODEL_DOWNLOAD_TITLE))
         .build();
-    let availability = model_availability(cfg!(feature = "stem-backend"), model_present());
+    let (model_present, runtime_ready) = runtime_assets_state();
+    let availability =
+        model_availability(cfg!(feature = "stem-backend"), model_present, runtime_ready);
     build_model_row(&model_row, availability);
     model_group.add(&model_row);
 
-    let enabled = instrumental::experimental_enabled(&conn.borrow());
+    let enabled = instrumental::experimental_enabled(&context.conn.borrow());
     model_group.set_visible(enabled);
 
     // INST-11: the master switch.
@@ -104,14 +110,22 @@ pub(in crate::ui) fn build_page(conn: &Rc<RefCell<Connection>>) -> adw::Preferen
         .active(enabled)
         .build();
     {
-        let conn = conn.clone();
+        let context = Rc::downgrade(context);
         let model_group = model_group.clone();
         toggle.connect_active_notify(move |row| {
             let active = row.is_active();
-            if let Err(error) = instrumental::set_experimental_enabled(&conn.borrow(), active) {
+            let Some(context) = context.upgrade() else {
+                return;
+            };
+            let persisted = instrumental::set_experimental_enabled(&context.conn.borrow(), active);
+            if let Err(error) = persisted {
                 tracing::warn!(%error, "could not save the experimental-features switch");
+                return;
             }
             model_group.set_visible(active);
+            instrumental::apply_enabled(active);
+            context.sidebar.refresh("experimental features toggled");
+            context.track_list.reload();
         });
     }
     switch_group.add(&toggle);
@@ -141,6 +155,10 @@ fn build_model_row(row: &adw::ActionRow, availability: ModelAvailability) {
             row.set_subtitle(&strings::text(strings::MODEL_UNAVAILABLE_SUBTITLE));
             button.set_sensitive(false);
         }
+        ModelAvailability::RuntimeUnavailable => {
+            row.set_subtitle(&strings::text(strings::MODEL_RUNTIME_UNAVAILABLE_SUBTITLE));
+            button.set_sensitive(false);
+        }
         ModelAvailability::Ready => {
             row.set_subtitle(&strings::text(strings::MODEL_READY_SUBTITLE));
             button.set_visible(false);
@@ -158,7 +176,7 @@ fn build_model_row(row: &adw::ActionRow, availability: ModelAvailability) {
 #[cfg(not(feature = "stem-backend"))]
 fn wire_download(_row: &adw::ActionRow, _button: &gtk4::Button, _progress: &gtk4::ProgressBar) {}
 
-/// One progress/terminal event the worker thread streams to the UI thread.
+/// One progress/terminal event the provisioning thread streams to the UI.
 #[cfg(feature = "stem-backend")]
 enum ProvisionEvent {
     Progress { read: u64, total: Option<u64> },
@@ -322,20 +340,28 @@ mod tests {
     fn inst_12_model_flow_is_real_behind_the_backend_and_a_placeholder_without_it() {
         // No backend compiled → honest placeholder regardless of any on-disk file.
         assert_eq!(
-            model_availability(false, false),
+            model_availability(false, false, false),
             ModelAvailability::Unavailable
         );
         assert_eq!(
-            model_availability(false, true),
+            model_availability(false, true, true),
             ModelAvailability::Unavailable
+        );
+        assert_eq!(
+            model_availability(true, false, false),
+            ModelAvailability::RuntimeUnavailable,
+            "a missing or unverified native runtime is a packaging error, not a model download"
         );
         // Backend compiled → the real flow: downloadable when absent, ready when
         // the weights are already provisioned.
         assert_eq!(
-            model_availability(true, false),
+            model_availability(true, false, true),
             ModelAvailability::Downloadable
         );
-        assert_eq!(model_availability(true, true), ModelAvailability::Ready);
+        assert_eq!(
+            model_availability(true, true, true),
+            ModelAvailability::Ready
+        );
     }
 
     // UX INST-12: the download entrypoint verifies the pinned SHA-256 before

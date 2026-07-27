@@ -34,11 +34,17 @@ impl MenuContext {
             ViewSource::Playlist(_) => Self::Playlist,
             ViewSource::Queue => Self::Queue,
             ViewSource::Library
+            | ViewSource::RecentlyAdded
             | ViewSource::Smart(_)
             | ViewSource::Missing
             | ViewSource::ImportErrors
             | ViewSource::MyStats
+            | ViewSource::Releases
+            | ViewSource::Concerts
+            | ViewSource::Podcasts
+            | ViewSource::Radio
             | ViewSource::Conversions
+            | ViewSource::Genre(_)
             | ViewSource::Device { .. } => Self::LibraryTracks,
         }
     }

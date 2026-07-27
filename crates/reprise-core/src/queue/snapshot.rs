@@ -60,6 +60,7 @@ impl Queue {
         self.pos = snapshot.position;
         self.repeat = snapshot.repeat;
         self.shuffled = snapshot.shuffled;
+        self.note_sequence_changed();
         Ok(())
     }
 }

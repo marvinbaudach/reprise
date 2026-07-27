@@ -9,6 +9,7 @@ if [[ ! -x "$runner" ]]; then
   exit 1
 fi
 sort_scenario="$repo_root/scripts/cua-e2e/track_sort.sh"
+tag_autocomplete_scenario="$repo_root/scripts/cua-e2e/tag_autocomplete.sh"
 helper_library="$repo_root/scripts/cua-e2e/lib.sh"
 if [[ ! -f "$sort_scenario" ]]; then
   echo "$sort_scenario must exist" >&2
@@ -26,13 +27,39 @@ do
     exit 1
   fi
 done
+if [[ ! -f "$tag_autocomplete_scenario" ]]; then
+  echo "$tag_autocomplete_scenario must exist" >&2
+  exit 1
+fi
+for pattern in \
+  'run_tag_autocomplete_surface_scenario' \
+  'Cogitations' \
+  'Cognitive Dissonance' \
+  'Radio Cognac' \
+  'cua_hotkey_focused' \
+  'backspace tag-autocomplete-clear' \
+  'cua_type_text_window' \
+  'tag-autocomplete-open-display.png' \
+  'import -window root'
+do
+  if ! rg --quiet --fixed-strings "$pattern" "$tag_autocomplete_scenario"; then
+    echo "$tag_autocomplete_scenario must contain autocomplete rendering contract: $pattern" >&2
+    exit 1
+  fi
+done
 window_point_helper=$(sed -n '/^cua_click_window_point() {/,/^}/p' "$helper_library")
 if ! rg --quiet --fixed-strings 'delivery_mode: "foreground"' \
   <<<"$window_point_helper"; then
   echo "window-point clicks must use foreground delivery for non-actionable headers" >&2
   exit 1
 fi
+scrobbling_runner="$repo_root/scripts/cua-e2e/scrobbling.sh"
+if [[ ! -f "$scrobbling_runner" ]]; then
+  echo "$scrobbling_runner must exist" >&2
+  exit 1
+fi
 for pattern in \
+  'source "\$repo_root/scripts/cua-e2e/scrobbling.sh"' \
   'dbus-run-session' \
   '-u GNOME_KEYRING_CONTROL' \
   '-u GNOME_KEYRING_PID' \
@@ -54,7 +81,7 @@ for pattern in \
   'run_private_scenario_group' \
   'CUA_E2E_PRIVATE_GROUP=' \
   'for scenario_group in' \
-  'dbus-run-session ffmpeg jq rg timeout wmctrl' \
+  'dbus-run-session ffmpeg gdbus gnome-keyring-daemon import jq python3 rg timeout wmctrl' \
   'CUA_DRIVER_SOCKET=' \
   'CUA_DRIVER_RS_UPDATE_CHECK=0' \
   'CUA_E2E_DRIVER_TIMEOUT_SECS=' \
@@ -72,13 +99,14 @@ for pattern in \
   'CUA_E2E_APP_PID=""' \
   'run_tag_1_no_jump_after_save_scenario' \
   'run_tag_3_multi_dialog_structure_scenario' \
+  'run_tag_autocomplete_surface_scenario' \
   'run_library_doctor_scenario' \
   'run_song_visuals_scenario' \
+  'run_scrobbling_scenario' \
   'Audio-reactive song visual' \
-  '"Grid"' \
-  '"Bars"' \
-  '"Flow"' \
-  '"Pulse"' \
+  'song-visuals-visual-focus' \
+  '"Play \(Space\)"' \
+  'song-visuals-space-paused' \
   'cua_activate_main_menu_item' \
   'Enable Library Doctor' \
   'safe_change_count' \
@@ -91,6 +119,12 @@ do
     exit 1
   fi
 done
+for obsolete_visual_mode in '"Grid"' '"Bars"' '"Flow"' '"Pulse"'; do
+  if rg --quiet --fixed-strings "$obsolete_visual_mode" "$runner"; then
+    echo "$runner must not require the removed visual mode selector: $obsolete_visual_mode" >&2
+    exit 1
+  fi
+done
 for obsolete_song_visuals_contract in \
   '"Rings"' \
   '"F11 Fullscreen · color follows the cover accent"' \
@@ -100,6 +134,24 @@ for obsolete_song_visuals_contract in \
     exit 1
   fi
 done
+for pattern in \
+  'start_scrobbling_keyring' \
+  'start_scrobbling_api' \
+  'REPRISE_SMOKE_LISTENBRAINZ_API_ROOT=' \
+  'REPRISE_SMOKE_LASTFM_API_ROOT=' \
+  'REPRISE_SMOKE_LASTFM_AUTH_ROOT=' \
+  'ListenBrainz connected after restart' \
+  'Last.fm connected after restart' \
+  'Reprise Smoke Track' \
+  'Reprise Last.fm Smoke Track' \
+  'ListenBrainz disconnected after restart' \
+  'Last.fm disconnected after restart'; do
+  if ! rg --quiet --fixed-strings "$pattern" "$scrobbling_runner"; then
+    echo "$scrobbling_runner must cover the provider lifecycle: $pattern" >&2
+    exit 1
+  fi
+done
+python3 "$repo_root/scripts/cua-e2e/scrobbling_api.py" --self-test
 if rg --quiet 'cua_click_label .*"Main menu"' "$runner"; then
   echo "$runner must open the main menu through its F10 keyboard contract" >&2
   exit 1
@@ -162,12 +214,12 @@ for pattern in \
 done
 doctor_scenario=$(sed -n '/^run_library_doctor_scenario() {/,/^}/p' "$runner")
 for pattern in \
-  'doctor-disable' \
-  'doctor-disabled-close' \
-  'doctor-disabled-entry' \
+  'doctor-plugin-no-toggle' \
+  'doctor-tool-close' \
+  'doctor-tool-entry' \
   'doctor-revert-available'; do
   if ! rg --quiet --fixed-strings "$pattern" <<<"$doctor_scenario"; then
-    echo "the disabled Library Doctor path must reopen its expanding entry: $pattern" >&2
+    echo "the always-available Library Doctor path must reopen its tool page: $pattern" >&2
     exit 1
   fi
 done
@@ -175,12 +227,12 @@ line_for_doctor_step() {
   rg --line-number --max-count 1 --fixed-strings "$1" <<<"$doctor_scenario" \
     | sed 's/:.*//'
 }
-disable_line=$(line_for_doctor_step doctor-disable)
-close_line=$(line_for_doctor_step doctor-disabled-close)
-entry_line=$(line_for_doctor_step doctor-disabled-entry)
+no_toggle_line=$(line_for_doctor_step doctor-plugin-no-toggle)
+close_line=$(line_for_doctor_step doctor-tool-close)
+entry_line=$(line_for_doctor_step doctor-tool-entry)
 revert_line=$(line_for_doctor_step doctor-revert-available)
-if ! ((disable_line < close_line && close_line < entry_line && entry_line < revert_line)); then
-  echo "the disabled Library Doctor path must close, reopen, then expose Revert" >&2
+if ! ((no_toggle_line < close_line && close_line < entry_line && entry_line < revert_line)); then
+  echo "the Library Doctor path must verify no toggle, close, reopen, then expose Revert" >&2
   exit 1
 fi
 for scenario_case in \
@@ -202,6 +254,10 @@ if ! rg --quiet --fixed-strings 'song-visuals)' "$runner"; then
 fi
 if ! rg --quiet --fixed-strings 'track-sort-playing-marker)' "$runner"; then
   echo "$runner must support isolated scenario: track-sort-playing-marker)" >&2
+  exit 1
+fi
+if ! rg --quiet --fixed-strings 'scrobbling)' "$runner"; then
+  echo "$runner must support isolated scenario: scrobbling)" >&2
   exit 1
 fi
 if ! rg --quiet --fixed-strings 'cargo build --locked -p reprise-gnome' "$runner"; then
@@ -247,7 +303,7 @@ fi
 for pattern in \
   'acc-1-keyboard-only-surface-sweep' \
   'acc-3-tab-order-and-roving-collections' \
-  'acc-4-standard-keys-respect-local-controls' \
+  'acc-4a-space-routes-global-and-local-controls' \
   'acc-5-transients-and-navigation-restore-focus' \
   'acc-8-direct-manipulation-has-keyboard-equivalence' \
   'cua_hotkey' \
@@ -276,8 +332,10 @@ if rg --quiet 'focus_active_library_tab|keyboard_(albums|artists)' "$keyboard_ru
   exit 1
 fi
 for pattern in \
-  '"$pid" "$window_id" "Pause (Space)" acc-player-focus' \
-  '"$pid" "$window_id" "Play (Space)" acc-player-paused' \
+  'SPACE_TOGGLE_REGRESSION_COUNT=6' \
+  '"$pid" "$window_id" "Toggle sidebar" acc-player-sidebar-toggle-focus' \
+  'assert_focus_evidence_label "$state_path" "Toggle sidebar"' \
+  'assert_snapshot_contains "$state_path" "Music"' \
   '"$pid" "$window_id" "Music" acc-issues-main-collection' \
   '"$pid" "$window_id" "Missing files" down acc-issues-focus' \
   '"$pid" "$window_id" "Music" acc-stats-main-collection' \

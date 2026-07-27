@@ -1,5 +1,7 @@
 /// Queue engine: a pure Rust module (no GTK, no DB) for track queuing, playback order,
 /// shuffle, and repeat modes. Uses Fisher-Yates shuffle via fastrand for determinism.
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+
 use tracing::warn;
 
 mod snapshot;
@@ -14,6 +16,8 @@ pub enum Repeat {
     One,
 }
 
+static NEXT_QUEUE_LINEAGE: AtomicU64 = AtomicU64::new(1);
+
 /// Queue state: tracks, playback order (possibly shuffled), current position, and repeat mode.
 ///
 /// Invariant: if pos is Some(idx), then idx < order.len(), and order.len() == ids.len().
@@ -25,6 +29,8 @@ pub struct Queue {
     pos: Option<usize>,
     repeat: Repeat,
     shuffled: bool,
+    lineage: u64,
+    sequence_revision: u64,
 }
 
 impl Queue {
@@ -36,7 +42,20 @@ impl Queue {
             pos: None,
             repeat: Repeat::default(),
             shuffled: false,
+            lineage: NEXT_QUEUE_LINEAGE.fetch_add(1, AtomicOrdering::Relaxed),
+            sequence_revision: 0,
         }
+    }
+
+    fn note_sequence_changed(&mut self) {
+        self.sequence_revision = self.sequence_revision.wrapping_add(1);
+    }
+
+    /// Stable identity for the current play-order sequence. Moving only the
+    /// playhead keeps this pair unchanged; replacing, reordering, shuffling,
+    /// appending, or removing tracks changes it.
+    pub fn sequence_identity(&self) -> (u64, u64) {
+        (self.lineage, self.sequence_revision)
     }
 
     /// Set the queue to a list of track IDs and start playback at `start_index`.
@@ -82,6 +101,7 @@ impl Queue {
                 }
             }
         }
+        self.note_sequence_changed();
     }
 
     /// Get the ID of the currently playing track, if any.
@@ -214,6 +234,7 @@ impl Queue {
     /// When enabling: Fisher-Yates shuffle the order, keeping the current track at its current position.
     /// When disabling: restore linear order, keeping the current track at its linear index.
     pub fn set_shuffle(&mut self, on: bool) {
+        let before = self.shuffled;
         if on && !self.shuffled {
             // Currently linear; shuffle while keeping current track in place.
             if let Some(current_pos) = self.pos {
@@ -271,6 +292,9 @@ impl Queue {
             if let Some(id_idx) = current_track_slot {
                 self.pos = Some(id_idx);
             }
+        }
+        if self.shuffled != before {
+            self.note_sequence_changed();
         }
     }
 
@@ -336,6 +360,7 @@ impl Queue {
         if was_empty {
             self.pos = Some(0);
         }
+        self.note_sequence_changed();
     }
 
     /// Moves the track at `order` index `from` to index `to` (Stage 3 Task 6:
@@ -386,6 +411,7 @@ impl Queue {
         if let Some(track_slot) = current_track_slot {
             self.pos = self.order.iter().position(|&idx| idx == track_slot);
         }
+        self.note_sequence_changed();
         true
     }
 
@@ -467,6 +493,7 @@ impl Queue {
         self.ids = new_ids;
         self.order = new_order;
         self.pos = new_pos;
+        self.note_sequence_changed();
         true
     }
 
@@ -550,6 +577,7 @@ impl Queue {
         self.ids = new_ids;
         self.order = new_order;
         self.pos = new_pos;
+        self.note_sequence_changed();
         true
     }
 
@@ -683,3 +711,7 @@ mod remove_tests;
 #[cfg(test)]
 #[path = "queue_ux_rules_tests.rs"]
 mod ux_rules_tests;
+
+#[cfg(test)]
+#[path = "queue_sequence_tests.rs"]
+mod sequence_tests;

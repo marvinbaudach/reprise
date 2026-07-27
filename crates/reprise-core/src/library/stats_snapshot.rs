@@ -1,13 +1,15 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use chrono::{NaiveDate, TimeZone};
+use chrono::{Datelike, NaiveDate, TimeZone};
 use rusqlite::Connection;
 
 use super::group_key::KeyResolver;
-use super::stats_period::{apply_activity_granularity, local_parts, PeriodRange, StatsPeriod};
+use super::stats_period::{
+    apply_activity_granularity, local_parts, week_start, PeriodRange, StatsPeriod,
+};
 use super::stats_screen::{
-    album_rows, artist_rows, discovered_count, first_event_unix, fold_album_rows, genre_rows,
-    key_resolver, listen_rows, ranked_groups, total_ms_in_range, track_rows, HourlyListens,
+    album_rows, artist_rows, first_event_unix, fold_album_rows, genre_artist_rows, genre_rows,
+    key_resolver, listen_rows, ranked_groups, total_ms_in_range, track_rows, GenreArtistRow,
     RankedGroup, TopAlbum, TopTrack, TrackAggregate,
 };
 
@@ -20,9 +22,6 @@ pub const COMPARISON_FACTOR_PERCENT_THRESHOLD: i64 = 1_000;
 pub const COMPARISON_FACTOR_DECLINE_PERCENT_THRESHOLD: i64 = -50;
 /// Baselines below the UI's one-minute display granularity are qualitative.
 pub const COMPARISON_EFFECTIVELY_ZERO_MS: i64 = 60_000;
-/// Scattered peak hours are listed rather than spanned; beyond this many the
-/// caption says "+N" instead of growing past the clock's width.
-const PEAK_HOURS_LISTED: usize = 3;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SortBy {
@@ -59,6 +58,8 @@ pub struct HeroSection {
     pub plays: i64,
     pub average_ms_per_day: i64,
     pub artists: i64,
+    pub previous_ms: Option<i64>,
+    pub pace_projection_ms: Option<i64>,
     pub comparison_percent: Option<i64>,
     pub comparison_presentation: Option<ComparisonPresentation>,
 }
@@ -86,6 +87,8 @@ pub struct GenreSegment {
     pub total_ms: i64,
     pub share_percent: i64,
     pub variant_count: usize,
+    pub top_artist: Option<String>,
+    pub representative_track_path: String,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -95,24 +98,9 @@ pub struct GenreSection {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ClockSection {
-    pub hours: Vec<HourlyListens>,
-    pub peak_hours: Vec<i32>,
-    pub caption: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BusiestDay {
-    pub day: NaiveDate,
+pub struct BestWeek {
+    pub start: NaiveDate,
     pub total_ms: i64,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct HighlightsSection {
-    pub streak_days: i64,
-    pub discovered_tracks: i64,
-    pub busiest_day: Option<BusiestDay>,
-    pub on_repeat: Option<TopTrack>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -120,10 +108,9 @@ pub struct StatsSnapshot {
     pub period: PeriodRange,
     pub hero: HeroSection,
     pub ribbon: Vec<RibbonPoint>,
+    pub best_week: Option<BestWeek>,
     pub spotlight: Option<SpotlightSection>,
     pub genres: GenreSection,
-    pub clock: ClockSection,
-    pub highlights: HighlightsSection,
     pub top_artists: Vec<RankedGroup>,
     pub top_albums: Vec<TopAlbum>,
     pub top_tracks: Vec<TopTrack>,
@@ -166,8 +153,8 @@ pub fn compute<Tz: TimeZone>(
     let artists = artist_rows(conn, range.start_unix, range.end_unix)?; // 4
     let albums = album_rows(conn, range.start_unix, range.end_unix)?; // 5
     let genres = genre_rows(conn, range.start_unix, range.end_unix)?; // 6
-    let track_aggregates = track_rows(conn, range.start_unix, range.end_unix)?; // 7
-    let discovered_tracks = discovered_count(conn, range.start_unix, range.end_unix)?; // 8
+    let genre_artists = genre_artist_rows(conn, range.start_unix, range.end_unix)?; // 7
+    let track_aggregates = track_rows(conn, range.start_unix, range.end_unix)?; // 8
 
     if listen_rows.is_empty() {
         range.buckets.clear();
@@ -176,7 +163,22 @@ pub fn compute<Tz: TimeZone>(
             .iter()
             .filter_map(|row| local_parts(tz, row.played_at).map(|(day, _)| day))
             .collect::<BTreeSet<_>>();
-        apply_activity_granularity(&mut range, tz, active_days.len() as i64);
+        let active_weeks = listen_rows
+            .iter()
+            .filter_map(|row| week_start(tz, row.played_at))
+            .collect::<BTreeSet<_>>();
+        let first_active_unix = listen_rows
+            .iter()
+            .map(|row| row.played_at)
+            .min()
+            .unwrap_or(range.start_unix);
+        apply_activity_granularity(
+            &mut range,
+            tz,
+            active_days.len() as i64,
+            active_weeks.len(),
+            first_active_unix,
+        );
     }
 
     let total_ms = listen_rows.iter().map(|row| row.ms).sum::<i64>();
@@ -191,11 +193,25 @@ pub fn compute<Tz: TimeZone>(
     let comparison_percent = previous_ms
         .filter(|value| *value >= COMPARISON_EFFECTIVELY_ZERO_MS)
         .and_then(|value| comparison_percent(total_ms, value));
+    let elapsed_days = elapsed_days(tz, &range).max(1);
+    let pace_projection_ms = match period {
+        StatsPeriod::YearToDate(year)
+            if tz
+                .timestamp_opt(now_unix, 0)
+                .earliest()
+                .is_some_and(|now| now.year() == year) =>
+        {
+            days_in_year(year).map(|days| (total_ms / elapsed_days).saturating_mul(days))
+        }
+        _ => None,
+    };
     let hero = HeroSection {
         total_ms,
         plays: listen_rows.len() as i64,
-        average_ms_per_day: total_ms / elapsed_days(tz, &range).max(1),
+        average_ms_per_day: total_ms / elapsed_days,
         artists: top_artists.len() as i64,
+        previous_ms,
+        pace_projection_ms,
         comparison_percent,
         comparison_presentation: previous_ms
             .and_then(|value| comparison_presentation(total_ms, value, comparison_percent)),
@@ -213,28 +229,40 @@ pub fn compute<Tz: TimeZone>(
             open: bucket.open,
         })
         .collect();
-    let spotlight = spotlight(&top_artists, &key_resolver(&artists), &track_aggregates);
-    let genres = genre_section(&genres);
-    let (clock, busiest_day, streak_days) = time_sections(&listen_rows, tz);
-    let on_repeat = top_tracks.first().cloned();
+    let best_week = best_week(&listen_rows, tz);
+    let artist_resolver = key_resolver(&artists);
+    let spotlight = spotlight(&top_artists, &artist_resolver, &track_aggregates);
+    let genres = genre_section(&genres, &genre_artists, &artist_resolver, &top_artists);
 
     Ok(StatsSnapshot {
         period: range,
         hero,
         ribbon,
+        best_week,
         spotlight,
         genres,
-        clock,
-        highlights: HighlightsSection {
-            streak_days,
-            discovered_tracks,
-            busiest_day,
-            on_repeat,
-        },
         top_artists,
         top_albums,
         top_tracks,
     })
+}
+
+fn best_week<Tz: TimeZone>(rows: &[super::stats_screen::ListenRow], tz: &Tz) -> Option<BestWeek> {
+    let mut totals = BTreeMap::<NaiveDate, i64>::new();
+    for row in rows {
+        let Some(start) = week_start(tz, row.played_at) else {
+            continue;
+        };
+        *totals.entry(start).or_default() += row.ms;
+    }
+    totals
+        .into_iter()
+        .max_by(|(left_start, left_ms), (right_start, right_ms)| {
+            left_ms
+                .cmp(right_ms)
+                .then_with(|| right_start.cmp(left_start))
+        })
+        .map(|(start, total_ms)| BestWeek { start, total_ms })
 }
 
 fn comparison_percent(current_ms: i64, previous_ms: i64) -> Option<i64> {
@@ -315,19 +343,44 @@ fn spotlight(
 /// without a genre are neither a segment nor "Other" (STATS-3), so counting
 /// them in the denominator would make the bar add up to less than 100 %.
 /// The spotlight follows the same rule against the artist population.
-fn genre_section(rows: &[super::stats_screen::NamedRow]) -> GenreSection {
+fn genre_section(
+    rows: &[super::stats_screen::NamedRow],
+    genre_artists: &[GenreArtistRow],
+    artist_resolver: &KeyResolver,
+    top_artists: &[RankedGroup],
+) -> GenreSection {
     let groups = ranked_groups(rows);
+    let resolver = key_resolver(rows);
+    let mut artist_rows_by_genre = HashMap::<String, Vec<&GenreArtistRow>>::new();
+    for row in genre_artists {
+        artist_rows_by_genre
+            .entry(resolver.key_for(&row.genre_raw))
+            .or_default()
+            .push(row);
+    }
     let denominator_ms = groups.iter().map(|row| row.group.ms).sum::<i64>();
     let mut segments = groups
         .iter()
         .take(GENRE_LIMIT)
-        .map(|row| GenreSegment {
-            label: row.group.label.clone(),
-            key: row.group.key.clone(),
-            plays: row.group.plays,
-            total_ms: row.group.ms,
-            share_percent: percent(row.group.ms, denominator_ms),
-            variant_count: row.group.variant_count,
+        .map(|row| {
+            let (top_artist, representative_track_path) = genre_tile_metadata(
+                artist_resolver,
+                top_artists,
+                artist_rows_by_genre
+                    .get(&row.group.key)
+                    .map(Vec::as_slice)
+                    .unwrap_or_default(),
+            );
+            GenreSegment {
+                label: row.group.label.clone(),
+                key: row.group.key.clone(),
+                plays: row.group.plays,
+                total_ms: row.group.ms,
+                share_percent: percent(row.group.ms, denominator_ms),
+                variant_count: row.group.variant_count,
+                top_artist,
+                representative_track_path,
+            }
         })
         .collect::<Vec<_>>();
     if groups.len() > GENRE_LIMIT {
@@ -341,6 +394,8 @@ fn genre_section(rows: &[super::stats_screen::NamedRow]) -> GenreSection {
             total_ms,
             share_percent: percent(total_ms, denominator_ms),
             variant_count: 1,
+            top_artist: None,
+            representative_track_path: String::new(),
         });
     }
     GenreSection {
@@ -349,122 +404,50 @@ fn genre_section(rows: &[super::stats_screen::NamedRow]) -> GenreSection {
     }
 }
 
-fn time_sections<Tz: TimeZone>(
-    rows: &[super::stats_screen::ListenRow],
-    tz: &Tz,
-) -> (ClockSection, Option<BusiestDay>, i64) {
-    let mut hour_plays = [0_i64; 24];
-    let mut hour_ms = [0_i64; 24];
-    let mut days = BTreeMap::<NaiveDate, i64>::new();
+fn genre_tile_metadata(
+    artist_resolver: &KeyResolver,
+    top_artists: &[RankedGroup],
+    rows: &[&GenreArtistRow],
+) -> (Option<String>, String) {
+    let mut artist_totals = HashMap::<String, (i64, i64, i64)>::new();
     for row in rows {
-        let Some((day, hour)) = local_parts(tz, row.played_at) else {
-            continue;
-        };
-        let hour = hour as usize;
-        hour_plays[hour] += 1;
-        hour_ms[hour] += row.ms;
-        *days.entry(day).or_default() += row.ms;
+        let totals = artist_totals
+            .entry(artist_resolver.key_for(&row.artist.raw))
+            .or_default();
+        totals.0 = totals.0.saturating_add(row.artist.ms);
+        totals.1 = totals.1.saturating_add(row.artist.plays);
+        totals.2 = totals.2.max(row.artist.last_played_at);
     }
-    let peak_ms = hour_ms.iter().copied().max().unwrap_or(0);
-    let peak_hours = if peak_ms == 0 {
-        Vec::new()
-    } else {
-        hour_ms
-            .iter()
-            .enumerate()
-            .filter_map(|(hour, ms)| (*ms == peak_ms).then_some(hour as i32))
-            .collect::<Vec<_>>()
-    };
-    let caption = peak_caption(&peak_hours);
-    let hours = (0..24)
-        .map(|hour| HourlyListens {
-            hour,
-            listens: hour_plays[hour as usize],
-            total_ms: hour_ms[hour as usize],
+    let top_artist_key = artist_totals
+        .into_iter()
+        .max_by(|(left_key, left), (right_key, right)| {
+            left.0
+                .cmp(&right.0)
+                .then_with(|| left.1.cmp(&right.1))
+                .then_with(|| left.2.cmp(&right.2))
+                .then_with(|| right_key.cmp(left_key))
         })
-        .collect();
-    let busiest_day = days
+        .map(|(key, _)| key);
+    let top_artist = top_artist_key.and_then(|key| {
+        top_artists
+            .iter()
+            .find(|artist| artist.group.key == key)
+            .map(|artist| artist.group.label.clone())
+    });
+    let representative_track_path = rows
         .iter()
-        .max_by(|(left_day, left_ms), (right_day, right_ms)| {
-            left_ms.cmp(right_ms).then_with(|| right_day.cmp(left_day))
+        .copied()
+        .max_by(|left, right| {
+            left.artist
+                .ms
+                .cmp(&right.artist.ms)
+                .then_with(|| left.artist.plays.cmp(&right.artist.plays))
+                .then_with(|| left.artist.last_played_at.cmp(&right.artist.last_played_at))
+                .then_with(|| right.artist.path.cmp(&left.artist.path))
         })
-        .map(|(day, total_ms)| BusiestDay {
-            day: *day,
-            total_ms: *total_ms,
-        });
-    let streak_days = longest_streak(days.keys().copied());
-    (
-        ClockSection {
-            hours,
-            peak_hours,
-            caption,
-        },
-        busiest_day,
-        streak_days,
-    )
-}
-
-fn longest_streak(days: impl Iterator<Item = NaiveDate>) -> i64 {
-    let mut previous: Option<NaiveDate> = None;
-    let mut current = 0;
-    let mut longest = 0;
-    for day in days {
-        current = match previous {
-            Some(previous_day) if (day - previous_day).num_days() == 1 => current + 1,
-            _ => 1,
-        };
-        longest = longest.max(current);
-        previous = Some(day);
-    }
-    longest
-}
-
-/// Peaks that are not one block of hours must not be captioned as if they
-/// were: a play at 1 AM and one at 11 PM is not a "1 AM–11 PM" peak, and a
-/// single peak hour is not a span at all. Only a contiguous run becomes one.
-fn peak_caption(hours: &[i32]) -> String {
-    let Some(first) = hours.first().copied() else {
-        return "No peak yet".to_string();
-    };
-    let last = hours.last().copied().unwrap_or(first);
-    let is_contiguous_run = hours.len() as i32 == last - first + 1;
-    let peak = if hours.len() == 1 {
-        format_hour(first)
-    } else if is_contiguous_run {
-        format!("{}\u{2013}{}", format_hour(first), format_hour(last))
-    } else {
-        let listed = hours
-            .iter()
-            .take(PEAK_HOURS_LISTED)
-            .map(|hour| format_hour(*hour))
-            .collect::<Vec<_>>()
-            .join(", ");
-        match hours.len().saturating_sub(PEAK_HOURS_LISTED) {
-            0 => listed,
-            rest => format!("{listed} +{rest}"),
-        }
-    };
-    // Every listed hour carries the same maximum, so no one of them is "the"
-    // peak. The earliest names the trait; that is a display choice, not a rank.
-    let trait_name = if first < 6 {
-        "night owl"
-    } else if first < 12 {
-        "morning listener"
-    } else if first < 18 {
-        "afternoon listener"
-    } else {
-        "night owl"
-    };
-    format!("Peak {peak} \u{00b7} {trait_name}")
-}
-
-fn format_hour(hour: i32) -> String {
-    match hour {
-        0 => "12 AM".to_string(),
-        1..=11 => format!("{hour} AM"),
-        12 => "12 PM".to_string(),
-        _ => format!("{} PM", hour - 12),
-    }
+        .map(|row| row.artist.path.clone())
+        .unwrap_or_default();
+    (top_artist, representative_track_path)
 }
 
 fn sort_tracks(tracks: &mut [TopTrack], sort_by: SortBy) {
@@ -491,6 +474,12 @@ fn elapsed_days<Tz: TimeZone>(tz: &Tz, range: &PeriodRange) -> i64 {
     (end - start).num_days().saturating_add(1)
 }
 
+fn days_in_year(year: i32) -> Option<i64> {
+    let start = NaiveDate::from_ymd_opt(year, 1, 1)?;
+    let end = NaiveDate::from_ymd_opt(year.checked_add(1)?, 1, 1)?;
+    Some((end - start).num_days())
+}
+
 fn percent(value: i64, total: i64) -> i64 {
     if total <= 0 {
         0
@@ -506,3 +495,11 @@ mod tests;
 #[cfg(test)]
 #[path = "stats_comparison_tests.rs"]
 mod comparison_tests;
+
+#[cfg(test)]
+#[path = "stats_snapshot_hero_tests.rs"]
+mod hero_tests;
+
+#[cfg(test)]
+#[path = "stats_snapshot_genre_tests.rs"]
+mod genre_tests;

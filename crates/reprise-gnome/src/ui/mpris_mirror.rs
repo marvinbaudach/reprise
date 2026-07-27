@@ -78,6 +78,8 @@ use reprise_core::media_integration::{self, MprisCommand, MprisPlaybackStatus, M
 use reprise_core::playback::PlaybackState;
 use reprise_core::queue::Repeat;
 
+const AGENT_QUEUE_WINDOW: usize = 200;
+
 /// Spawns the MPRIS-command drain loop: `controller`'s `new` (Stage-3
 /// close-out: moved here from that function to keep `player_controller.rs`
 /// under the split-file line gate) calls this once, right after starting the
@@ -146,6 +148,7 @@ impl PlayerController {
     /// `## Queue borrow discipline` section — the shape is kept consistent
     /// anyway.
     pub(super) fn update_mpris_mirror(&self, status: MprisPlaybackStatus) {
+        self.update_agent_queue_mirror();
         let queue_has_tracks = !self.queue.borrow().is_empty()
             || !self.up_next.borrow().is_empty()
             || self.current_up_next.get().is_some();
@@ -170,6 +173,8 @@ impl PlayerController {
             Some(track) => MprisState {
                 status,
                 track_id: Some(track.id),
+                external_ref: None,
+                live_stream: false,
                 title: track.title,
                 artist: track.artist,
                 album: track.album,
@@ -185,6 +190,8 @@ impl PlayerController {
             None => MprisState {
                 status,
                 track_id: None,
+                external_ref: None,
+                live_stream: false,
                 title: String::new(),
                 artist: String::new(),
                 album: String::new(),
@@ -197,6 +204,36 @@ impl PlayerController {
                 repeat,
                 volume,
             },
+        };
+    }
+
+    /// Refreshes the bounded queue mirror consumed by the local agent D-Bus
+    /// interface. Values are cloned before locking so no `RefCell` borrow is
+    /// held across the cross-thread mutex boundary.
+    pub(super) fn update_agent_queue_mirror(&self) {
+        let current_track_id = self.now_playing.borrow().as_ref().map(|track| track.id);
+        let play_next_total = self.up_next.borrow().len();
+        let play_next_track_ids = self
+            .up_next
+            .borrow()
+            .ids()
+            .iter()
+            .take(AGENT_QUEUE_WINDOW)
+            .copied()
+            .collect();
+        let context_total = self.queue.borrow().remaining_len();
+        let context_track_ids = self.queue.borrow().remaining_window(0, AGENT_QUEUE_WINDOW);
+
+        let mut mirror = self
+            .agent_queue_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *mirror = media_integration::AgentQueueState {
+            current_track_id,
+            play_next_track_ids,
+            context_track_ids,
+            play_next_total,
+            context_total,
         };
     }
 
@@ -314,11 +351,20 @@ impl PlayerController {
     /// — the same method `Seek` (via `mpris_seek_relative`) and the bar's
     /// seek scale all funnel through. `PlayTrackIds` goes straight to
     /// `play_from_view` — see that arm's own comment below.
-    pub(super) fn handle_mpris_command(&self, command: MprisCommand) {
+    pub(super) fn handle_mpris_command(self: &Rc<Self>, command: MprisCommand) {
         match command {
             MprisCommand::Play => self.mpris_play(),
             MprisCommand::Pause => self.mpris_pause(),
             MprisCommand::PlayPause => self.toggle_pause(),
+            MprisCommand::Stop
+                if matches!(
+                    self.playback_mode(),
+                    crate::ui::playback::preview::PlaybackMode::Podcast
+                        | crate::ui::playback::preview::PlaybackMode::Radio
+                ) =>
+            {
+                self.stop_external();
+            }
             MprisCommand::Stop => self.reset_to_stopped(),
             MprisCommand::Next => self.next(),
             MprisCommand::Previous => self.previous(),
@@ -339,6 +385,9 @@ impl PlayerController {
                 0,
                 crate::ui::playback::play_origin::PlayOrigin::library(),
             ),
+            MprisCommand::QueueAddNext(ids) => self.play_next(&ids),
+            MprisCommand::QueueAddLast(ids) => self.append_to_queue(&ids),
+            MprisCommand::QueueClear => self.clear_play_next(),
         }
     }
 
@@ -349,7 +398,7 @@ impl PlayerController {
     /// this: paused resumes via `toggle_pause`; stopped starts the queue's
     /// current track via `play_track_id`, if there is one; already playing
     /// is a no-op.
-    fn mpris_play(&self) {
+    fn mpris_play(self: &Rc<Self>) {
         match self.mpris_status() {
             MprisPlaybackStatus::Playing => {}
             MprisPlaybackStatus::Paused => self.toggle_pause(),
@@ -378,7 +427,7 @@ impl PlayerController {
     /// (unlike `PlayPause`, must not *resume* a paused track). See `mpris_
     /// play`'s doc comment for why this reads the mirror rather than adding
     /// a new `Player` query method.
-    fn mpris_pause(&self) {
+    fn mpris_pause(self: &Rc<Self>) {
         if self.mpris_status() == MprisPlaybackStatus::Playing {
             self.toggle_pause();
         }

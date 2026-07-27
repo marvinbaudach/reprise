@@ -1,6 +1,7 @@
 //! Command implementations. Each function opens the database through the core
 //! facade, calls into `reprise-core`, and renders text or JSON.
 
+pub mod concerts;
 pub mod events;
 pub mod instrumental;
 pub mod instrumental_wait;

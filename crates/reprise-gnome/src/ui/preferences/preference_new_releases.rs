@@ -7,7 +7,35 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 use rusqlite::Connection;
 
+use crate::ui::artist_news_worker::ArtistNewsRuntime;
+
 use super::strings;
+
+pub(in crate::ui) fn build_page(
+    conn: &Rc<RefCell<Connection>>,
+    runtime: &Rc<ArtistNewsRuntime>,
+) -> adw::PreferencesPage {
+    let page = adw::PreferencesPage::builder()
+        .title(strings::text(strings::NEW_RELEASES))
+        .icon_name("starred-symbolic")
+        .build();
+    let group = adw::PreferencesGroup::new();
+    let scope = scope_row(conn, runtime.enabled.get());
+    let singles = singles_row(conn, runtime.enabled.get());
+    group.add(&scope);
+    group.add(&singles);
+    page.add(&group);
+
+    let alive = page.downgrade();
+    runtime.subscribe_enabled(
+        move || alive.upgrade().is_some(),
+        move |enabled| {
+            scope.set_sensitive(enabled);
+            singles.set_sensitive(enabled);
+        },
+    );
+    page
+}
 
 pub(in crate::ui) fn scope_row(conn: &Rc<RefCell<Connection>>, enabled: bool) -> adw::ComboRow {
     let selected =
