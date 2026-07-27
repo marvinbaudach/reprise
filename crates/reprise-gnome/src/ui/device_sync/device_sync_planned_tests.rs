@@ -27,9 +27,8 @@ fn device_view_projects_descriptor_scan_and_idle_state() {
         );
         assert_eq!(device.storage.reprise_music_bytes, 0);
         assert_eq!(device.storage.other_music_bytes, 0);
-        assert!(!device.scanning);
         assert!(device.scan_error.is_none());
-        assert_eq!(device.snapshot.phase, SyncPhase::Idle);
+        assert_eq!(device.sync_phase, PlannedSyncPhase::Idle);
     });
 }
 
@@ -47,13 +46,9 @@ fn connected_device_computes_its_persisted_selection_delta() {
             device.settings.selection,
             DeviceSelection::Sources(vec![SelectionSource::Playlist(10)])
         );
-        assert_eq!(device.delta.unwrap().to_copy, [1, 2]);
+        assert_eq!(device.page.changes.additions, 2);
         assert_eq!(device.sync_phase, PlannedSyncPhase::Idle);
-        assert_eq!(device.tracks.len(), 2);
-        assert!(device
-            .tracks
-            .iter()
-            .all(|track| track.status == DeviceTrackStatus::Queued));
+        assert_eq!(device.page.unique_track_count, 2);
     });
 }
 
@@ -89,17 +84,24 @@ fn planned_paths_preserve_existing_collision_slots_across_selection_changes() {
             .unwrap();
         }
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
-        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
         gtk4::glib::timeout_future(Duration::from_millis(2)).await;
-        let device = runtime.devices().remove(0);
-        let paths = device
-            .tracks
+        let (_subscription, completed) =
+            signal_when(&runtime, |state| state.devices[0].last_sync.is_some());
+        runtime.sync_now("a").unwrap();
+        completed.recv().await.unwrap();
+        let paths = backend
+            .state
+            .copy_order
+            .borrow()
             .iter()
-            .map(|track| (track.track_id, track.device_path.clone()))
-            .collect::<std::collections::HashMap<_, _>>();
+            .map(|(_, path)| path.clone())
+            .collect::<Vec<_>>();
 
-        assert_eq!(paths[&2], "Artist/Album/01 Same.mp3");
-        assert_eq!(paths[&1], "Artist/Album/01 Same (3).mp3");
+        assert!(paths.iter().any(|path| path == "Artist/Album/01 Same.mp3"));
+        assert!(paths
+            .iter()
+            .any(|path| path == "Artist/Album/01 Same (3).mp3"));
     });
 }
 
@@ -130,7 +132,8 @@ fn sync_now_copies_the_selection_and_commits_the_device_inventory() {
             2
         );
         let device = runtime.devices().remove(0);
-        assert!(device.delta.unwrap().to_copy.is_empty());
+        assert_eq!(device.page.changes.additions, 0);
+        assert_eq!(device.page.changes.replacements, 0);
         assert_eq!(device.sync_phase, PlannedSyncPhase::Idle);
         assert!(device.last_sync.is_some());
     });
@@ -175,7 +178,7 @@ fn different_devices_sync_concurrently_while_each_device_stays_single_operation(
 }
 
 #[test]
-fn cancelling_one_device_does_not_cancel_an_independent_sync() {
+fn mtp_3_cancelling_one_device_does_not_cancel_an_independent_sync() {
     run(async {
         let (_temp, conn) = fixture();
         select_road_playlist(&conn, &[1]);
@@ -543,7 +546,7 @@ fn cancelling_planned_sync_keeps_remaining_delta_without_failure() {
         assert_eq!(device.sync_phase, PlannedSyncPhase::Idle);
         assert!(device.last_sync.is_none());
         assert!(device.sync_error.is_none());
-        assert_eq!(device.delta.unwrap().to_copy, [1, 2]);
+        assert_eq!(device.page.changes.additions, 2);
         assert!(backend.state.copy_order.borrow().is_empty());
     });
 }
@@ -584,26 +587,6 @@ fn stale_progress_from_a_cancelled_run_does_not_update_its_replacement() {
 }
 
 #[test]
-fn enqueue_is_rejected_while_a_planned_sync_owns_the_device() {
-    run(async {
-        let (_temp, conn) = fixture();
-        select_road_playlist(&conn, &[1]);
-        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 20));
-        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
-        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
-
-        runtime.sync_now("a").unwrap();
-
-        assert_eq!(
-            runtime.enqueue("a", "Dropped", &[2]),
-            Err(EnqueueError::Busy)
-        );
-        settle().await;
-        assert_eq!(backend.state.max_by_device.borrow().get("a"), Some(&1));
-    });
-}
-
-#[test]
 fn settings_updates_are_rejected_before_persistence_while_syncing() {
     run(async {
         let (_temp, conn) = fixture();
@@ -635,7 +618,7 @@ fn settings_updates_are_rejected_before_persistence_while_syncing() {
 }
 
 #[test]
-fn reconnect_resumes_planned_sync_from_the_remaining_delta() {
+fn mtp_5_reconnect_resumes_planned_sync_from_the_remaining_delta() {
     run(async {
         let (_temp, conn) = fixture();
         select_road_playlist(&conn, &[1]);
@@ -656,7 +639,8 @@ fn reconnect_resumes_planned_sync_from_the_remaining_delta() {
         let device = runtime.devices().remove(0);
         assert!(device.connected);
         assert!(device.last_sync.is_some());
-        assert!(device.delta.unwrap().to_copy.is_empty());
+        assert_eq!(device.page.changes.additions, 0);
+        assert_eq!(device.page.changes.replacements, 0);
         assert_eq!(backend.state.copy_order.borrow().len(), 1);
     });
 }
@@ -728,7 +712,8 @@ fn local_gio_sync_transcodes_lossless_selection_to_mp3() {
         let device = runtime.devices().remove(0);
         assert!(device.last_sync.is_some(), "device state: {device:?}");
         assert!(device.sync_error.is_none());
-        assert!(device.delta.unwrap().to_copy.is_empty());
+        assert_eq!(device.page.changes.additions, 0);
+        assert_eq!(device.page.changes.replacements, 0);
         assert!(observed.borrow().iter().any(|phase| matches!(
             phase,
             PlannedSyncPhase::Syncing {

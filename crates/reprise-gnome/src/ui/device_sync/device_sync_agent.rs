@@ -109,12 +109,8 @@ fn agent_device(device: DeviceView) -> AgentDeviceSyncDevice {
         connected: device.connected,
         available_bytes: device.storage.free_bytes,
         total_bytes: device.storage.total_bytes,
-        managed_tracks: device
-            .tracks
-            .iter()
-            .filter(|track| track.status != DeviceTrackStatus::Queued)
-            .count(),
-        selected_tracks: device.selected_track_count,
+        managed_tracks: device.managed_track_count,
+        selected_tracks: device.page.unique_track_count,
         tracks_to_copy: device.page.changes.additions + device.page.changes.replacements,
         tracks_to_remove: device.page.changes.removals,
         bytes_to_copy: device.page.changes.transfer_bytes,

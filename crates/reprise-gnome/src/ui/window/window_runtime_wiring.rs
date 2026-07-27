@@ -20,7 +20,7 @@ use reprise_core::view_source::ViewSource;
 use rusqlite::Connection;
 
 use super::cover_download_batch::CoverDownloadBatch;
-use super::device_view::DeviceViewPage;
+use super::device_sync_runtime::DeviceSyncRuntime;
 use super::first_run::FirstRunDecision;
 use super::library_player_bar::LibraryPlayerBarShell;
 use super::minimal_view::MinimalView;
@@ -57,7 +57,7 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) radio_view: &'a Rc<crate::ui::radio::RadioView>,
     pub(in crate::ui) podcasts_runtime: &'a Rc<crate::ui::podcasts::PodcastsRuntime>,
     pub(in crate::ui) content_stack: &'a gtk4::Stack,
-    pub(in crate::ui) device_view: &'a Rc<DeviceViewPage>,
+    pub(in crate::ui) device_sync: &'a Rc<DeviceSyncRuntime>,
     pub(in crate::ui) window_title: &'a adw::WindowTitle,
     pub(in crate::ui) scan_controls: &'a ScanControls,
     pub(in crate::ui) toast_overlay: &'a adw::ToastOverlay,
@@ -99,7 +99,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         radio_view,
         podcasts_runtime,
         content_stack,
-        device_view,
+        device_sync,
         window_title,
         scan_controls,
         toast_overlay,
@@ -169,7 +169,8 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     let rescan_track_list = track_list.clone();
     let rescan_sidebar = sidebar.clone();
     let rescan_watcher_state = watcher_state.clone();
-    let sync_preferences = preferences.clone();
+    let sync_window = window.clone();
+    let sync_runtime = device_sync.clone();
     let menu_preferences = preferences.clone();
     let cancel_scan_controls = scan_controls.clone();
     let menu_library_doctor = library_doctor;
@@ -201,7 +202,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             on_cancel_scan: Rc::new(move || cancel_scan_controls.request_cancel()),
             on_library_doctor: Rc::new(move || menu_library_doctor.open()),
             on_sync_device: Rc::new(move || {
-                sync_preferences.present_page("synchronization");
+                super::device_sync_launcher::present(&sync_window, &sync_runtime);
             }),
             on_stop_playback: stop_player,
             on_preferences: Rc::new(move || menu_preferences.present()),
@@ -494,7 +495,6 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         radio_view,
         conn,
         content_stack,
-        device_view,
         window_title,
         show_content_if_collapsed,
         &active_content_focus,

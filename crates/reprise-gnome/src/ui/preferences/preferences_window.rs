@@ -1,7 +1,6 @@
 use gtk4::prelude::*;
 use libadwaita as adw;
 
-use super::device_sync_strings;
 use super::strings;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -10,19 +9,17 @@ pub(in crate::ui) enum PageId {
     Appearance,
     Layout,
     Library,
-    Synchronization,
     NewReleases,
     Concerts,
     Plugins,
     Experimental,
 }
 
-pub(in crate::ui) const PAGE_ORDER: [PageId; 9] = [
+pub(in crate::ui) const PAGE_ORDER: [PageId; 8] = [
     PageId::Playback,
     PageId::Appearance,
     PageId::Layout,
     PageId::Library,
-    PageId::Synchronization,
     PageId::NewReleases,
     PageId::Concerts,
     PageId::Plugins,
@@ -36,7 +33,6 @@ impl PageId {
             Self::Appearance => "appearance",
             Self::Layout => "layout",
             Self::Library => "library",
-            Self::Synchronization => "synchronization",
             Self::NewReleases => "new_releases",
             Self::Concerts => "concerts",
             Self::Plugins => "plugins",
@@ -50,7 +46,6 @@ impl PageId {
             Self::Appearance => strings::PREFERENCES_APPEARANCE,
             Self::Layout => strings::PREFERENCES_LAYOUT,
             Self::Library => strings::PREFERENCES_LIBRARY,
-            Self::Synchronization => device_sync_strings::SYNCHRONIZATION,
             Self::NewReleases => strings::NEW_RELEASES,
             Self::Concerts => strings::CONCERTS,
             Self::Plugins => strings::PREFERENCES_PLUGINS,
@@ -65,7 +60,6 @@ impl PageId {
             Self::Appearance => "applications-graphics-symbolic",
             Self::Layout => "view-grid-symbolic",
             Self::Library => "folder-music-symbolic",
-            Self::Synchronization => "phone-symbolic",
             Self::NewReleases => "starred-symbolic",
             Self::Concerts => "x-office-calendar-symbolic",
             Self::Plugins => "application-x-addon-symbolic",
@@ -125,7 +119,7 @@ pub(in crate::ui) fn selected_sidebar_focus_target(sidebar: &gtk4::ListBox) -> g
 }
 
 pub(in crate::ui) fn build(
-    pages: [(PageId, adw::PreferencesPage); 9],
+    pages: [(PageId, adw::PreferencesPage); 8],
     foreground_top_bar: Option<&gtk4::Widget>,
 ) -> PreferencesShell {
     let stack = adw::ViewStack::new();
@@ -270,15 +264,14 @@ mod tests {
                 PageId::Appearance,
                 PageId::Layout,
                 PageId::Library,
-                PageId::Synchronization,
                 PageId::NewReleases,
                 PageId::Concerts,
                 PageId::Plugins,
                 PageId::Experimental,
             ]
         );
-        assert_eq!(page_index_by_name("new_releases"), Some(5));
-        assert_eq!(page_index_by_name("concerts"), Some(6));
+        assert_eq!(page_index_by_name("new_releases"), Some(4));
+        assert_eq!(page_index_by_name("concerts"), Some(5));
     }
 
     #[test]

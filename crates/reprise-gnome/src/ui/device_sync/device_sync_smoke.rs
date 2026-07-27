@@ -9,8 +9,7 @@ use std::time::Duration;
 
 use gtk4::gio;
 use gtk4::gio::prelude::*;
-use reprise_core::device_sync::{DeviceStorageInspection, SyncPhase};
-use reprise_core::library::m3u::M3uEntry;
+use reprise_core::device_sync::DeviceStorageInspection;
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor, DeviceStorage};
 use reprise_platform_linux::device_transfer::{
     probe_mp3_transcode_capability, transcode_to_mp3, Mp3TranscodeRequest, TranscodedFile,
@@ -20,7 +19,6 @@ use rusqlite::Connection;
 use super::device_sync_runtime::{BackendFuture, DeviceBackend, DeviceSyncRuntime, Subscription};
 
 pub(in crate::ui) const ROOT_ENV: &str = "REPRISE_SMOKE_DEVICE_ROOT";
-const IDS_ENV: &str = "REPRISE_SMOKE_DEVICE_TRACK_IDS";
 const PLAYLIST_ENV: &str = "REPRISE_SMOKE_DEVICE_PLAYLIST";
 pub(in crate::ui) const DEVICE_ID: &str = "reprise-smoke-device";
 
@@ -80,15 +78,6 @@ impl DeviceBackend for SmokeDeviceBackend {
                     &cancellable,
                     move |copied, total| progress(copied, total),
                 )
-                .await
-                .map_err(|error| error.to_string())
-        })
-    }
-
-    fn read_playlist(&self, root_uri: String, name: String) -> BackendFuture<Vec<M3uEntry>> {
-        Box::pin(async move {
-            Self::storage(&root_uri)
-                .read_playlist(&name)
                 .await
                 .map_err(|error| error.to_string())
         })
@@ -193,23 +182,16 @@ pub(in crate::ui) fn arm(runtime: &Rc<DeviceSyncRuntime>) {
     if std::env::var_os(ROOT_ENV).is_none() {
         return;
     }
-    let Some(ids) = std::env::var(IDS_ENV)
-        .ok()
-        .and_then(|value| parse_ids(&value))
-    else {
-        tracing::warn!("device sync smoke not armed: no valid track ids");
-        return;
-    };
     let playlist = std::env::var(PLAYLIST_ENV).unwrap_or_else(|_| "Smoke Playlist".into());
     let started = Rc::new(Cell::new(false));
     let log_subscription = runtime.subscribe(Rc::new(move |state| {
         if let Some(device) = state.devices.iter().find(|device| device.id == DEVICE_ID) {
             tracing::info!(
-                phase = ?device.snapshot.phase,
-                file = ?device.snapshot.current_name,
-                current_bytes = device.snapshot.current_bytes,
-                completed_tracks = device.snapshot.completed_tracks,
-                queued_jobs = device.snapshot.queued_jobs,
+                phase = ?device.sync_phase,
+                changes = device.page.changes.additions
+                    + device.page.changes.replacements
+                    + device.page.changes.removals,
+                bytes_per_second = device.bytes_per_second,
                 "device sync smoke progress"
             );
         }
@@ -217,19 +199,33 @@ pub(in crate::ui) fn arm(runtime: &Rc<DeviceSyncRuntime>) {
     retain_until_terminal(runtime, log_subscription, &started);
 
     let runtime = runtime.clone();
-    let started_for_enqueue = started.clone();
+    let started_for_sync = started.clone();
     gtk4::glib::timeout_add_local_once(Duration::from_secs(2), move || {
-        let split = ids.len().div_ceil(2);
-        let first = &ids[..split];
-        let second = &ids[split..];
-        let first_result = runtime.enqueue(DEVICE_ID, &playlist, first);
-        let second_result = if second.is_empty() {
-            Ok(0)
-        } else {
-            runtime.enqueue(DEVICE_ID, &playlist, second)
+        started_for_sync.set(true);
+        let options = match runtime.selection_options() {
+            Ok(options) => options,
+            Err(error) => {
+                tracing::warn!(%error, "device sync smoke could not list playlists");
+                return;
+            }
         };
-        started_for_enqueue.set(first_result.is_ok() && second_result.is_ok());
-        tracing::info!(?first_result, ?second_result, "device sync smoke enqueued");
+        let mut matches = options.into_iter().filter(|option| option.name == playlist);
+        let Some(option) = matches.next() else {
+            tracing::warn!(playlist, "device sync smoke playlist does not exist");
+            return;
+        };
+        if matches.next().is_some() {
+            tracing::warn!(playlist, "device sync smoke playlist name is ambiguous");
+            return;
+        }
+        let result = runtime
+            .set_playlist_selected(DEVICE_ID, option.source, true)
+            .and_then(|()| {
+                runtime
+                    .sync_now(DEVICE_ID)
+                    .map_err(|error| error.to_string())
+            });
+        tracing::info!(?result, "device sync smoke started");
     });
 }
 
@@ -248,11 +244,7 @@ fn retain_until_terminal(
         };
         let terminal = runtime.devices().into_iter().any(|device| {
             device.id == DEVICE_ID
-                && device.snapshot.queued_jobs == 0
-                && matches!(
-                    device.snapshot.phase,
-                    SyncPhase::Complete | SyncPhase::Failed
-                )
+                && device.sync_phase == super::device_sync_runtime::PlannedSyncPhase::Idle
         });
         if started.get() && terminal {
             subscription.borrow_mut().take();
@@ -269,16 +261,6 @@ fn safe_smoke_root(root: &Path) -> Option<PathBuf> {
     (root != temp && root.starts_with(temp) && root.is_dir()).then_some(root)
 }
 
-fn parse_ids(value: &str) -> Option<Vec<i64>> {
-    let ids = value
-        .split(',')
-        .map(str::trim)
-        .map(str::parse::<i64>)
-        .collect::<Result<Vec<_>, _>>()
-        .ok()?;
-    (!ids.is_empty() && ids.iter().all(|id| *id > 0)).then_some(ids)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -289,13 +271,5 @@ mod tests {
         assert!(safe_smoke_root(root.path()).is_some());
         assert!(safe_smoke_root(Path::new("/")).is_none());
         assert!(safe_smoke_root(&root.path().join("missing")).is_none());
-    }
-
-    #[test]
-    fn smoke_track_ids_must_be_nonempty_positive_integers() {
-        assert_eq!(parse_ids("1, 2,3"), Some(vec![1, 2, 3]));
-        assert!(parse_ids("").is_none());
-        assert!(parse_ids("0,1").is_none());
-        assert!(parse_ids("a,1").is_none());
     }
 }

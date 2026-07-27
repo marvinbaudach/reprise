@@ -10,14 +10,11 @@ use std::sync::Arc;
 
 use gtk4::gio;
 use gtk4::gio::prelude::*;
-use reprise_core::device_sync::settings::{load_or_create_settings, set_file_pinned};
-use reprise_core::device_sync::transfer::TransferPlanEntry;
+use reprise_core::device_sync::settings::load_or_create_settings;
 use reprise_core::device_sync::{
-    merge_playlist_entries, track_relative_path, DeviceQueue, DeviceSelection, DeviceSettings,
-    DeviceStorageInspection, DeviceStorageSnapshot, ManagedDeviceFile, MirrorPlan, SyncDelta,
-    SyncJob, SyncPageState, SyncPhase, SyncSnapshot, SyncTrack, TrackOutcome,
+    DeviceSelection, DeviceSettings, DeviceStorageInspection, DeviceStorageSnapshot,
+    ManagedDeviceFile, MirrorPlan, SyncPageState,
 };
-use reprise_core::library::m3u::{M3uEntry, M3uExportEntry};
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor, DeviceMonitor};
 use reprise_platform_linux::device_transfer::{Mp3TranscodeRequest, TranscodedFile};
 use rusqlite::Connection;
@@ -30,40 +27,24 @@ mod types;
 use rate::MtpRateMeter;
 use types::StateCallback;
 pub use types::*;
-#[derive(Clone)]
-struct Work {
-    job: SyncJob,
-    next_track: usize,
-    appended: Vec<M3uExportEntry>,
-}
 
 struct DeviceState {
     descriptor: DeviceDescriptor,
     connected: bool,
-    queue: DeviceQueue,
-    running: bool,
     generation: u64,
     cancellable: Option<gio::Cancellable>,
-    interrupted_disconnect: bool,
-    paused_work: Option<Work>,
     storage: DeviceStorageSnapshot,
     managed_files: Vec<ManagedDeviceFile>,
+    managed_track_count: usize,
     scanning: bool,
     scan_generation: u64,
     scan_error: Option<String>,
-    draft_playlists: Vec<String>,
-    last_enqueue: Option<EnqueueReceipt>,
-    reserved_bytes: u64,
     settings: DeviceSettings,
-    delta: Option<SyncDelta>,
-    transfer_plan: Vec<TransferPlanEntry>,
     sync_phase: PlannedSyncPhase,
     sync_error: Option<SyncFailure>,
     planned_cancel: Option<Arc<AtomicBool>>,
     resume_planned: bool,
     last_sync: Option<chrono::DateTime<chrono::Utc>>,
-    tracks: Vec<DeviceTrackView>,
-    selected_track_count: usize,
     mtp_rate: MtpRateMeter,
     mirror_plan: MirrorPlan,
     page: SyncPageState,
@@ -74,30 +55,20 @@ impl DeviceState {
         Self {
             descriptor,
             connected: true,
-            queue: DeviceQueue::new(),
-            running: false,
             generation: 0,
             cancellable: None,
-            interrupted_disconnect: false,
-            paused_work: None,
             storage: DeviceStorageSnapshot::default(),
             managed_files: Vec::new(),
+            managed_track_count: 0,
             scanning: false,
             scan_generation: 0,
             scan_error: None,
-            draft_playlists: Vec::new(),
-            last_enqueue: None,
-            reserved_bytes: 0,
             settings,
-            delta: None,
-            transfer_plan: Vec::new(),
             sync_phase: PlannedSyncPhase::ComputingDelta,
             sync_error: None,
             planned_cancel: None,
             resume_planned: false,
             last_sync: None,
-            tracks: Vec::new(),
-            selected_track_count: 0,
             mtp_rate: MtpRateMeter::default(),
             mirror_plan: MirrorPlan::default(),
             page: SyncPageState::default(),
@@ -119,25 +90,19 @@ impl DeviceState {
             icon: self.descriptor.icon.clone(),
             connected: self.connected,
             storage: self.storage.clone(),
-            scanning: self.scanning,
             scan_error: self.scan_error.clone(),
-            draft_playlists: self.draft_playlists.clone(),
-            last_enqueue: self.last_enqueue.clone(),
-            snapshot: self.queue.snapshot(),
             settings: self.settings.clone(),
-            delta: self.delta.clone(),
             sync_phase: self.sync_phase.clone(),
             sync_error: self.sync_error.clone(),
             last_sync: self.last_sync,
-            tracks: self.tracks.clone(),
-            selected_track_count: self.selected_track_count,
+            managed_track_count: self.managed_track_count,
             bytes_per_second: self.mtp_rate.bytes_per_second(),
             page,
         }
     }
 
     fn is_active(&self) -> bool {
-        self.running || self.planned_cancel.is_some()
+        self.planned_cancel.is_some()
     }
 }
 
@@ -147,7 +112,6 @@ pub struct DeviceSyncRuntime {
     device_states: RefCell<Vec<DeviceState>>,
     subscribers: RefCell<HashMap<u64, StateCallback>>,
     next_subscription_id: Cell<u64>,
-    next_job_id: Cell<u64>,
     weak_self: RefCell<Weak<Self>>,
     agent_subscription: RefCell<Option<Subscription>>,
 }
@@ -170,7 +134,6 @@ impl DeviceSyncRuntime {
             device_states: RefCell::new(Vec::new()),
             subscribers: RefCell::new(HashMap::new()),
             next_subscription_id: Cell::new(1),
-            next_job_id: Cell::new(1),
             weak_self: RefCell::new(Weak::new()),
             agent_subscription: RefCell::new(None),
         });
@@ -196,126 +159,21 @@ impl DeviceSyncRuntime {
         devices
     }
 
-    pub fn enqueue(
-        self: &Rc<Self>,
-        device_id: &str,
-        playlist: &str,
-        ids: &[i64],
-    ) -> Result<usize, EnqueueError> {
-        let status = self
-            .device_states
-            .borrow()
-            .iter()
-            .find(|device| device.descriptor.id == device_id)
-            .map(|device| (device.connected, device.planned_cancel.is_some()));
-        match status {
-            Some((true, false)) => {}
-            Some((true, true)) => return Err(EnqueueError::Busy),
-            Some((false, _)) | None => return Err(EnqueueError::UnknownDevice),
-        }
-        let tracks = reprise_core::queries::query_sync_tracks(&self.conn.borrow(), ids)
-            .map_err(|error| EnqueueError::Database(error.to_string()))?;
-        if tracks.is_empty() {
-            return Err(EnqueueError::NoUsableTracks);
-        }
-        let count = tracks.len();
-        let required_bytes = tracks
-            .iter()
-            .fold(0_u64, |total, track| total.saturating_add(track.size_bytes));
-        let job_id = self.next_job_id.get();
-        let mut devices = self.device_states.borrow_mut();
-        let device = devices
-            .iter_mut()
-            .find(|device| device.descriptor.id == device_id)
-            .ok_or(EnqueueError::UnknownDevice)?;
-        if let Some(available_bytes) = device.storage.free_bytes {
-            let unreserved_bytes = available_bytes.saturating_sub(device.reserved_bytes);
-            if required_bytes > unreserved_bytes {
-                return Err(EnqueueError::InsufficientSpace {
-                    required_bytes,
-                    available_bytes: unreserved_bytes,
-                });
-            }
-        }
-        self.next_job_id.set(job_id.saturating_add(1));
-        let playlist = reprise_core::device_sync::safe_component(playlist, "Playlist");
-        device.reserved_bytes = device.reserved_bytes.saturating_add(required_bytes);
-        device.queue.enqueue(SyncJob {
-            id: job_id,
-            playlist: playlist.clone(),
-            tracks,
-        });
-        let snapshot = device.queue.snapshot();
-        device.last_enqueue = Some(EnqueueReceipt {
-            playlist,
-            track_count: count,
-            queue_position: snapshot.queued_jobs + usize::from(device.running),
-        });
-        drop(devices);
-        self.notify();
-        self.start_or_resume(device_id);
-        Ok(count)
-    }
-
     pub fn cancel_current(self: &Rc<Self>, device_id: &str) {
-        let mut start_next = false;
         if let Some(device) = self
             .device_states
             .borrow_mut()
             .iter_mut()
             .find(|device| device.descriptor.id == device_id)
         {
-            device.interrupted_disconnect = false;
             if let Some(cancelled) = &device.planned_cancel {
                 cancelled.store(true, std::sync::atomic::Ordering::SeqCst);
             }
-            device.queue.request_cancel();
-            if let Some(cancellable) = device.cancellable.take() {
+            if let Some(cancellable) = &device.cancellable {
                 cancellable.cancel();
-            } else if let Some(work) = device.paused_work.take() {
-                device.reserved_bytes = device
-                    .reserved_bytes
-                    .saturating_sub(remaining_work_bytes(&work));
-                device.queue.resume();
-                device.queue.finish_job();
-                start_next = device.connected;
             }
         }
         self.notify();
-        if start_next {
-            self.start_or_resume(device_id);
-        }
-    }
-
-    pub fn create_playlist_draft(self: &Rc<Self>, device_id: &str, name: &str) -> Option<String> {
-        let name = reprise_core::device_sync::safe_component(name, "Playlist");
-        let created = {
-            let mut devices = self.device_states.borrow_mut();
-            let device = devices
-                .iter_mut()
-                .find(|device| device.descriptor.id == device_id)?;
-            if !device.draft_playlists.contains(&name) {
-                device.draft_playlists.push(name.clone());
-                device.draft_playlists.sort();
-            }
-            name
-        };
-        self.notify();
-        Some(created)
-    }
-
-    pub fn set_pinned(
-        self: &Rc<Self>,
-        device_id: &str,
-        track_id: i64,
-        pinned: bool,
-    ) -> Result<bool, String> {
-        let changed = set_file_pinned(&self.conn.borrow(), device_id, track_id, pinned)
-            .map_err(|error| error.to_string())?;
-        if changed {
-            self.recompute_delta(device_id)?;
-        }
-        Ok(changed)
     }
 
     pub fn refresh_contents(self: &Rc<Self>, device_id: &str) {
@@ -438,7 +296,6 @@ impl DeviceSyncRuntime {
             .into_iter()
             .map(|descriptor| (descriptor.id.clone(), descriptor))
             .collect::<HashMap<_, _>>();
-        let mut resume = Vec::new();
         let mut refresh = Vec::new();
         {
             let mut states = self.device_states.borrow_mut();
@@ -456,40 +313,17 @@ impl DeviceSyncRuntime {
                         cancellable.cancel();
                     }
                 }
-                if state.running {
-                    state.interrupted_disconnect = true;
-                    if state.descriptor.reconnectable {
-                        state.queue.pause_disconnected();
-                    } else {
-                        state
-                            .queue
-                            .fail_job("Device disconnected; reconnect and enqueue again");
-                    }
-                    if let Some(cancellable) = &state.cancellable {
-                        cancellable.cancel();
-                    }
-                }
             }
             states.retain(|state| {
                 incoming.contains_key(&state.descriptor.id)
-                    || state.running
-                    || state.paused_work.is_some()
                     || state.planned_cancel.is_some()
                     || state.resume_planned
-                    || state.queue.snapshot().queued_jobs > 0
-                    || matches!(
-                        state.queue.snapshot().phase,
-                        SyncPhase::PausedDisconnected | SyncPhase::Failed
-                    )
             });
             for (id, descriptor) in incoming {
                 if let Some(state) = states.iter_mut().find(|state| state.descriptor.id == id) {
                     let was_connected = state.connected;
                     state.descriptor = descriptor;
                     state.connected = true;
-                    if !was_connected && state.paused_work.is_some() && !state.running {
-                        resume.push(id.clone());
-                    }
                     if !was_connected {
                         refresh.push(id.clone());
                     }
@@ -520,56 +354,6 @@ impl DeviceSyncRuntime {
         for id in refresh {
             self.refresh_contents(&id);
         }
-        for id in resume {
-            self.start_or_resume(&id);
-        }
-    }
-
-    fn start_or_resume(self: &Rc<Self>, device_id: &str) {
-        let start = {
-            let mut states = self.device_states.borrow_mut();
-            let Some(device) = states
-                .iter_mut()
-                .find(|device| device.descriptor.id == device_id)
-            else {
-                return;
-            };
-            if device.running || device.planned_cancel.is_some() || !device.connected {
-                return;
-            }
-            let work = if let Some(work) = device.paused_work.take() {
-                device.queue.resume();
-                work
-            } else {
-                let Some(job) = device.queue.start_next() else {
-                    return;
-                };
-                Work {
-                    job,
-                    next_track: 0,
-                    appended: Vec::new(),
-                }
-            };
-            device.running = true;
-            device.interrupted_disconnect = false;
-            device.generation = device.generation.saturating_add(1);
-            let cancellable = gio::Cancellable::new();
-            device.cancellable = Some(cancellable.clone());
-            Some((device.generation, work, cancellable))
-        };
-        self.notify();
-        let Some((generation, work, cancellable)) = start else {
-            return;
-        };
-        let weak = Rc::downgrade(self);
-        let id = device_id.to_string();
-        gtk4::glib::MainContext::ref_thread_default().spawn_local(async move {
-            run_work(weak, id, generation, work, cancellable).await;
-        });
-    }
-
-    fn release_and_start_next(self: &Rc<Self>, device_id: &str) {
-        self.start_or_resume(device_id);
     }
 
     fn notify(&self) {
@@ -592,11 +376,8 @@ impl DeviceSyncRuntime {
 mod agent;
 #[path = "device_sync_compact.rs"]
 mod compact;
-#[path = "device_sync_legacy_queue.rs"]
-mod legacy_queue;
 #[path = "device_sync_planned.rs"]
 mod planned;
 
-use legacy_queue::{remaining_work_bytes, run_work};
 #[cfg(test)]
 pub(super) use planned::SyncStartError;

@@ -27,14 +27,6 @@ impl TransientFocusGuard {
         }
     }
 
-    pub(super) fn for_invoker<W: IsA<gtk4::Widget>>(invoker: &W) -> Self {
-        let invoker = invoker.clone().upcast::<gtk4::Widget>();
-        Self {
-            invoker: invoker.downgrade(),
-            fallback: invoker.downgrade(),
-        }
-    }
-
     /// Applies initial focus after libadwaita has mapped the dialog and
     /// restores the captured invoker after its close animation completes.
     pub(super) fn bind_dialog<W: IsA<gtk4::Widget>>(&self, dialog: &adw::Dialog, initial: &W) {

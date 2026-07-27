@@ -186,17 +186,25 @@ fn warning_summary(warnings: &[SyncPageWarning]) -> Vec<String> {
 fn action_copy(controls: SyncPageControls) -> DialogActionCopy {
     if controls.can_cancel {
         DialogActionCopy {
-            label: "Cancel",
+            label: "_Cancel",
             sensitive: true,
             destructive: true,
         }
     } else {
         DialogActionCopy {
-            label: "Sync now",
+            label: "_Sync now",
             sensitive: controls.can_start,
             destructive: false,
         }
     }
+}
+
+fn eject_sensitive(device: &DeviceView) -> bool {
+    device.connected
+        && !matches!(
+            device.sync_phase,
+            PlannedSyncPhase::Syncing { .. } | PlannedSyncPhase::Finishing
+        )
 }
 
 fn counted(count: usize, singular: &str, plural: &str) -> String {
@@ -342,7 +350,7 @@ impl SyncDialogSurface {
         )]);
         status_group.add(&progress_bar);
 
-        let primary = gtk4::Button::with_label("Sync now");
+        let primary = gtk4::Button::with_mnemonic("_Sync now");
         primary.add_css_class("suggested-action");
         let buttons = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
         buttons.set_halign(gtk4::Align::End);
@@ -480,13 +488,22 @@ impl SyncDialogSurface {
             .iter()
             .map(|playlist| playlist.source.clone())
             .collect::<Vec<_>>();
-        let current = self
+        let existing_rows = self
             .playlist_rows
             .borrow()
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let current = existing_rows
             .iter()
             .map(|(source, _)| source.clone())
             .collect::<Vec<_>>();
         if sources != current {
+            let focused = existing_rows
+                .iter()
+                .enumerate()
+                .find(|(_, (_, row))| row.is_focus() || row.has_focus())
+                .map(|(index, (source, _))| (index, source.clone()));
             let old_rows = self
                 .playlist_rows
                 .borrow_mut()
@@ -511,13 +528,31 @@ impl SyncDialogSurface {
                     .borrow_mut()
                     .push((playlist.source.clone(), row));
             }
+            if let Some((old_index, focused_source)) = focused {
+                let rebuilt_rows = self
+                    .playlist_rows
+                    .borrow()
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>();
+                let target = rebuilt_rows
+                    .iter()
+                    .find(|(source, _)| source == &focused_source)
+                    .or_else(|| {
+                        rebuilt_rows.get(old_index.min(rebuilt_rows.len().saturating_sub(1)))
+                    });
+                if let Some((_, row)) = target {
+                    row.grab_focus();
+                }
+            }
         }
-        for ((_, row), playlist) in self
+        let rows = self
             .playlist_rows
             .borrow()
             .iter()
-            .zip(&device.page.playlists)
-        {
+            .cloned()
+            .collect::<Vec<_>>();
+        for ((_, row), playlist) in rows.iter().zip(&device.page.playlists) {
             row.set_title(playlist.name.as_deref().unwrap_or("Unavailable playlist"));
             row.set_subtitle(&playlist_subtitle(playlist));
             row.set_active(playlist.selected);
@@ -580,13 +615,7 @@ impl SyncDialogSurface {
         } else {
             "suggested-action"
         });
-        self.eject.set_sensitive(
-            device.connected
-                && !matches!(
-                    device.sync_phase,
-                    PlannedSyncPhase::Syncing { .. } | PlannedSyncPhase::Finishing
-                ),
-        );
+        self.eject.set_sensitive(eject_sensitive(device));
         self.eject
             .set_tooltip_text(Some(&device_sync_strings::eject_tooltip(
                 !self.eject.is_sensitive(),

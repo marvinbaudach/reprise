@@ -540,11 +540,7 @@ mod tests {
             icon: gtk4::gio::ThemedIcon::new("phone-symbolic").upcast(),
             connected: true,
             storage: Default::default(),
-            scanning: false,
             scan_error: None,
-            draft_playlists: Vec::new(),
-            last_enqueue: None,
-            snapshot: reprise_core::device_sync::DeviceQueue::new().snapshot(),
             settings: reprise_core::device_sync::DeviceSettings {
                 device_serial: "pixel".into(),
                 device_name: "Pixel 8".into(),
@@ -554,12 +550,10 @@ mod tests {
                 ratings_back: false,
                 remove_deleted: true,
             },
-            delta: Some(reprise_core::device_sync::SyncDelta::default()),
             sync_phase: phase,
             sync_error: None,
             last_sync: None,
-            tracks: Vec::new(),
-            selected_track_count: 0,
+            managed_track_count: 0,
             bytes_per_second: 0,
             page: Default::default(),
         }
@@ -595,7 +589,7 @@ mod tests {
     }
 
     #[test]
-    fn sidebar_device_card_has_no_direct_sync_action() {
+    fn mtp_2_sidebar_device_card_has_no_direct_sync_action() {
         let direct_sync_action = ["app", "sync-device"].join(".");
 
         assert!(!include_str!("sidebar_device_card.rs").contains(&direct_sync_action));

@@ -45,14 +45,6 @@ impl DeviceBackend for FailingCopyBackend {
         Box::pin(async { Err("injected copy failure".into()) })
     }
 
-    fn read_playlist(
-        &self,
-        _root_uri: String,
-        _name: String,
-    ) -> TestFuture<Vec<reprise_core::library::m3u::M3uEntry>> {
-        Box::pin(async { Ok(Vec::new()) })
-    }
-
     fn replace_playlist(
         &self,
         _device_id: String,
