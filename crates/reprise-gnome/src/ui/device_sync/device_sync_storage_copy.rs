@@ -19,7 +19,7 @@ pub(super) fn storage_access_notice(access: DeviceStorageAccess) -> Option<Strin
         .then(|| "The selected device storage is read-only.".into())
 }
 
-fn storage_access_label(access: DeviceStorageAccess) -> &'static str {
+pub(in crate::ui) fn storage_access_label(access: DeviceStorageAccess) -> &'static str {
     match access {
         DeviceStorageAccess::Writable => "Writable",
         DeviceStorageAccess::ReadOnly => "Read-only",

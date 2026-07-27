@@ -358,6 +358,11 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   erfolgreiche Rücklesen erzeugt den Abschluss-Toast und eine als „Verified“
   bezeichnete Dialog-Zusammenfassung mit der tatsächlich gefundenen Anzahl
   verwalteter Tracks; ein fehlgeschlagenes Rücklesen behauptet keinen Erfolg.
+- **MTP-11** [aktiv] [gtk] — Eine untätige Gerätekarte ohne gültige
+  Playlist-Auswahl zeigt keine Handlungsaufforderung. Ihre Detailzeile beginnt
+  mit dem bekannten Schreibstatus („Writable“, „Read-only“ oder „Write access
+  unknown“) und nennt den freien Speicher; echte Scan-, Sync-, Warn- oder
+  Auswahlfehler behalten stattdessen „Needs attention“.
 
 ## F. Einstellungen & Modale
 

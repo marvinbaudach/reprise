@@ -425,6 +425,17 @@ fn mirror_needs_attention(device: &DeviceView) -> bool {
         || device.sync_error.is_some()
 }
 
+fn mirror_needs_attention_beyond_selection(device: &DeviceView) -> bool {
+    device
+        .page
+        .blockers
+        .iter()
+        .any(|blocker| blocker != &reprise_core::device_sync::MirrorBlocker::NoPlaylistsSelected)
+        || !device.page.warnings.is_empty()
+        || device.scan_error.is_some()
+        || device.sync_error.is_some()
+}
+
 fn sync_fraction(bytes_done: u64, bytes_total: u64) -> f64 {
     if bytes_total == 0 {
         0.0
@@ -491,17 +502,20 @@ fn card_subtitle(device: &DeviceView) -> String {
         }
         PlannedSyncPhase::Finishing => "Finishing…".into(),
         PlannedSyncPhase::Idle => {
-            let space = device_sync_strings::available_space(device.storage.free_bytes);
             if !has_mirror_selection(device) {
-                let prompt = if device.page.blockers.iter().any(|blocker| {
-                    blocker == &reprise_core::device_sync::MirrorBlocker::NoPlaylistsSelected
-                }) {
-                    "Choose playlists"
-                } else {
-                    "Needs attention"
-                };
-                return format!("{prompt} · {space}");
+                let space = device_sync_strings::available_space(device.storage.free_bytes);
+                if mirror_needs_attention_beyond_selection(device) {
+                    return format!("Needs attention · {space}");
+                }
+                return format!(
+                    "{} · {}",
+                    crate::ui::device_sync::device_sync_storage_copy::storage_access_label(
+                        device.storage.access,
+                    ),
+                    device_sync_strings::free_space(device.storage.free_bytes)
+                );
             }
+            let space = device_sync_strings::available_space(device.storage.free_bytes);
             if mirror_needs_attention(device) {
                 return format!("Needs attention · {space}");
             }
