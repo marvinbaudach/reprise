@@ -150,3 +150,10 @@ Task QA-80: complete (this commit, base 066d2abcb6, made Podcasts⇄Music atomic
 Task QA-78: complete (this commit, base 5a9e8b985b, queued the stable-ID scroll anchor before GTK can paint a reload's transient position-zero state, then retained the exact offset restore for metadata and rating saves)
 Task QA-79: complete (this commit, base d757e13293, moved the shared progress activity inside the bottom-pinned Issues section between its heading and the Missing files / Import errors sources)
 Task FIL-9: complete (this commit, base 179f00f3e6, centered the loaded track after setting, changing, or clearing search and facet filters whenever it remains visible; fmt, strict clippy, every non-socket workspace test, audit with only accepted RUSTSEC-2024-0436, architecture, QA linters, core purity, UX traceability, and file-size checks passed; the isolated display regression compiled but sandbox socket permissions blocked its Xvfb execution)
+# Album-cover consistency follow-up
+
+Base: `066d2abcb6`
+
+Task COV-1: complete (this commit, base 066d2abcb6, activated BROWSE-10, detected divergent embedded artwork by normalized album identity in the opt-in cover worker, and made the resulting shared downloaded cover canonical without writing to music files; format, strict clippy, 1412 core + 978 GNOME non-display + 88 Linux platform + 49 stems tests, architecture, UX traceability, core purity, file-size checks, and audit with only accepted RUSTSEC-2024-0436 passed; two inherited MCP Radio tests requiring local TCP listeners were blocked by sandbox EPERM while the otherwise complete workspace run passed with those exact tests filtered)
+Assumption COV-1: album identity remains the existing normalized file-tag pair of Album Artist plus Album; intentional disc-specific artwork under that same identity is unified only when the user-enabled cover-download batch can obtain a shared cover.
+Manual COV-1: real Cover Art Archive retrieval and the visible post-restart convergence remain a native-desktop/network check because validation used synthetic FLACs, isolated XDG state, and no real library or database.
