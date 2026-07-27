@@ -201,21 +201,21 @@ pub(in crate::ui) fn wire_source_routing(
             Err(error) => tracing::error!(%error, "failed to record issue view as viewed"),
         }
         if matches!(source, ViewSource::MyStats) {
-            content_stack.set_visible_child_name("stats");
+            super::content_stack::show_page(&content_stack, "stats");
             stats_view.prepare_entrance();
             stats_view.refresh(&conn);
         } else if matches!(source, ViewSource::Concerts) {
             concerts_view.refresh();
-            content_stack.set_visible_child_name("concerts");
+            super::content_stack::show_page(&content_stack, "concerts");
         } else if matches!(source, ViewSource::Releases) {
             releases_view.refresh();
-            content_stack.set_visible_child_name("releases");
+            super::content_stack::show_page(&content_stack, "releases");
         } else if matches!(source, ViewSource::Podcasts) {
             podcasts_view.refresh();
-            content_stack.set_visible_child_name("podcasts");
+            super::content_stack::show_page(&content_stack, "podcasts");
         } else if matches!(source, ViewSource::Radio) {
             radio_view.refresh();
-            content_stack.set_visible_child_name("radio");
+            super::content_stack::show_page(&content_stack, "radio");
         } else if matches!(source, ViewSource::Conversions) {
             // INST-13: the conversion/staging view lives on its own page. Ensure
             // it is installed (under the same experimental gate as the sidebar
@@ -223,9 +223,9 @@ pub(in crate::ui) fn wire_source_routing(
             // toggle-on, so without this the selection would land on a missing
             // page and the content would silently stay put.
             crate::ui::instrumental::conversion_wiring::ensure_page_installed();
-            content_stack.set_visible_child_name("conversions");
+            super::content_stack::show_page(&content_stack, "conversions");
         } else {
-            content_stack.set_visible_child_name("library");
+            super::content_stack::show_page(&content_stack, "library");
             track_list.set_source(source);
         }
         source_title.set_title(&source_name);
@@ -279,7 +279,7 @@ pub(in crate::ui) fn route_to_place(
     let source = place.view_source();
     match &source {
         ViewSource::Album { .. } | ViewSource::Artist(_) | ViewSource::Genre(_) => {
-            content_stack.set_visible_child_name("library");
+            super::content_stack::show_page(content_stack, "library");
             let _ = track_list.restore_browser_place(place.browser_place());
             crate::ui::sidebar_session::sync_current_source(&sidebar.shared, &source);
             source_title.set_title(&scope_title(&source));
