@@ -70,6 +70,7 @@ enum FixtureRequest {
     Artist(String),
     ReleaseGroups(String),
     NewReleases(String),
+    ReleaseGroupDetail(String),
 }
 
 #[cfg(any(test, feature = "test-fixtures"))]
@@ -79,6 +80,7 @@ impl FixtureRequest {
             Self::Artist(artist) => format!("artist-{artist}.json"),
             Self::ReleaseGroups(mbid) => format!("release-groups-{mbid}.json"),
             Self::NewReleases(mbid) => format!("new-releases-{mbid}.json"),
+            Self::ReleaseGroupDetail(mbid) => format!("release-group-detail-{mbid}.json"),
         }
     }
 
@@ -87,6 +89,7 @@ impl FixtureRequest {
             Self::Artist(artist) => ("artist", artist),
             Self::ReleaseGroups(mbid) => ("release-group", mbid),
             Self::NewReleases(mbid) => ("new-releases", mbid),
+            Self::ReleaseGroupDetail(mbid) => ("release-group-detail", mbid),
         }
     }
 }
@@ -99,6 +102,12 @@ fn fixture_request(url: &str) -> Option<FixtureRequest> {
         return value
             .split_once("%22")
             .map(|(artist, _)| FixtureRequest::Artist(artist.to_owned()));
+    }
+    const RELEASE_GROUP_DETAIL_PREFIX: &str = "https://musicbrainz.org/ws/2/release-group/";
+    if let Some(value) = url.strip_prefix(RELEASE_GROUP_DETAIL_PREFIX) {
+        return value
+            .split_once('?')
+            .map(|(mbid, _)| FixtureRequest::ReleaseGroupDetail(mbid.to_owned()));
     }
     if url.contains("/release-group?") {
         let value = url.split_once("artist=")?.1;
@@ -319,6 +328,12 @@ mod tests {
             Some(FixtureRequest::ReleaseGroups(
                 "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa".into()
             ))
+        );
+        assert_eq!(
+            fixture_request(
+                "https://musicbrainz.org/ws/2/release-group/release-id?inc=releases%2Bmedia&fmt=json"
+            ),
+            Some(FixtureRequest::ReleaseGroupDetail("release-id".into()))
         );
         assert_eq!(fixture_request("https://example.test/private/path"), None);
     }

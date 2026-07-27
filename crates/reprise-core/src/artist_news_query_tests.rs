@@ -54,6 +54,13 @@ fn nr_9a_unseen_badge_excludes_complete_albums_but_keeps_partial_ones() {
     insert_named_release(&conn, "partial", "Partial Album", None);
     insert_named_release(&conn, "absent", "Absent Album", None);
     insert_named_release(&conn, "seen", "Seen Album", Some(20));
+    conn.execute(
+        "UPDATE new_releases
+         SET track_count = 2, first_release_date = '2026-06-01'
+         WHERE release_group_mbid = 'owned'",
+        [],
+    )
+    .unwrap();
     for (path, title, album) in [
         ("/music/owned-one.flac", "Owned One", "Owned Album"),
         ("/music/owned-two.flac", "Owned Two", "Owned Album"),
@@ -68,7 +75,7 @@ fn nr_9a_unseen_badge_excludes_complete_albums_but_keeps_partial_ones() {
     }
 
     assert_eq!(
-        unseen_release_count(&conn).unwrap(),
+        unseen_release_count(&conn, date()).unwrap(),
         2,
         "only absent and partial unseen releases contribute to the badge"
     );
@@ -80,11 +87,11 @@ fn nr_3a_opening_marks_seen_clears_badge() {
     insert_release(&conn, "one", None);
     insert_release(&conn, "two", None);
     insert_release(&conn, "already-seen", Some(50));
-    assert_eq!(unseen_release_count(&conn).unwrap(), 2);
+    assert_eq!(unseen_release_count(&conn, date()).unwrap(), 2);
 
     mark_releases_seen(&conn, &["one".into(), "two".into()], 100).unwrap();
 
-    assert_eq!(unseen_release_count(&conn).unwrap(), 0);
+    assert_eq!(unseen_release_count(&conn, date()).unwrap(), 0);
     let seen_at: Vec<Option<i64>> = ["one", "two", "already-seen"]
         .into_iter()
         .map(|id| {
@@ -97,6 +104,57 @@ fn nr_3a_opening_marks_seen_clears_badge() {
         })
         .collect();
     assert_eq!(seen_at, [Some(100), Some(100), Some(50)]);
+}
+
+#[test]
+fn nr_16_updates_query_excludes_historical_catalog_releases() {
+    let conn = migrated_conn();
+    for (id, title, first_release_date) in [
+        ("catalog-album", "Older Album", "2024-10-18"),
+        ("recent-album", "Recent Album", "2026-06-01"),
+    ] {
+        conn.execute(
+            "INSERT INTO new_releases (
+               release_group_mbid, artist_name, artist_mbid, title, release_type,
+               first_release_date, fetched_at, fallback_accent, first_seen
+             ) VALUES (?1, 'Artist', 'artist-id', ?2, 'Album', ?3, 1, '#123456', 1)",
+            rusqlite::params![id, title, first_release_date],
+        )
+        .unwrap();
+    }
+
+    let rows = query_releases(&conn, false, date()).unwrap();
+
+    assert_eq!(
+        rows.into_iter()
+            .map(|release| release.release_group_mbid)
+            .collect::<Vec<_>>(),
+        ["recent-album"]
+    );
+    assert_eq!(
+        unseen_release_count(&conn, date()).unwrap(),
+        1,
+        "historical catalog rows do not inflate the Updates badge"
+    );
+}
+
+#[test]
+fn nr_1a_updates_query_caps_each_artist_after_catalog_filtering() {
+    let conn = migrated_conn();
+    for index in 0..21 {
+        conn.execute(
+            "INSERT INTO new_releases (
+               release_group_mbid, artist_name, artist_mbid, title, release_type,
+               first_release_date, fetched_at, fallback_accent, first_seen
+             ) VALUES (?1, 'Artist', 'artist-id', ?2, 'Album', '2026-08-01', 1, '#123456', 1)",
+            rusqlite::params![format!("release-{index:02}"), format!("Release {index:02}")],
+        )
+        .unwrap();
+    }
+
+    let rows = query_releases(&conn, false, date()).unwrap();
+
+    assert_eq!(rows.len(), 20);
 }
 
 #[test]
@@ -161,8 +219,8 @@ fn nr_13_query_marks_local_albums_instead_of_dropping_them() {
     conn.execute(
         "INSERT INTO new_releases (
            release_group_mbid, artist_name, artist_mbid, title, release_type,
-           first_release_date, fetched_at, fallback_accent
-         ) VALUES ('owned', 'Pink Floyd', 'artist-id', 'Local Album', 'Album', '2026-08-01', 1, '#123456')",
+           first_release_date, fetched_at, fallback_accent, track_count
+         ) VALUES ('owned', 'Pink Floyd', 'artist-id', 'Local Album', 'Album', '2026-06-01', 1, '#123456', 2)",
         [],
     )
     .unwrap();
@@ -170,7 +228,7 @@ fn nr_13_query_marks_local_albums_instead_of_dropping_them() {
         "INSERT INTO new_releases (
            release_group_mbid, artist_name, artist_mbid, title, release_type,
            first_release_date, fetched_at, fallback_accent
-         ) VALUES ('new', 'Pink Floyd', 'artist-id', 'Brand New Album', 'Album', '2026-08-01', 1, '#123456')",
+         ) VALUES ('new', 'Pink Floyd', 'artist-id', 'Brand New Album', 'Album', '2026-06-01', 1, '#123456')",
         [],
     )
     .unwrap();
@@ -199,6 +257,8 @@ fn nr_13_query_marks_local_albums_instead_of_dropping_them() {
         crate::artist_news::LibraryPresence::Complete,
         "matching local album (two tracks) is marked fully owned"
     );
+    assert_eq!(owned.track_count, Some(2));
+    assert_eq!(owned.local_track_count, 2);
     let brand_new = releases
         .iter()
         .find(|release| release.release_group_mbid == "new")
@@ -219,17 +279,22 @@ fn presence_distinguishes_absent_partial_and_complete() {
     counts.insert(("pink floyd".to_string(), "just a single".to_string()), 1);
 
     assert_eq!(
-        presence_for(&counts, "Pink Floyd", "Owned Album"),
+        presence_for(&counts, "Pink Floyd", "Owned Album", Some(2)),
         LibraryPresence::Complete
     );
     assert_eq!(
-        presence_for(&counts, " PINK   FLOYD ", " just a single "),
+        presence_for(&counts, " PINK   FLOYD ", " just a single ", Some(10)),
         LibraryPresence::Partial,
         "normalization must match query_releases' own"
     );
     assert_eq!(
-        presence_for(&counts, "Pink Floyd", "Never Heard Of It"),
+        presence_for(&counts, "Pink Floyd", "Never Heard Of It", Some(10)),
         LibraryPresence::Absent
+    );
+    assert_eq!(
+        presence_for(&counts, "Pink Floyd", "Owned Album", None),
+        LibraryPresence::Partial,
+        "unknown official length must never hide a release as complete"
     );
 }
 
@@ -255,6 +320,38 @@ fn query_releases_reports_partial_ownership_for_a_single_track() {
 
     let releases = query_releases(&conn, false, date()).unwrap();
     assert_eq!(releases.len(), 1);
+    assert_eq!(releases[0].presence, LibraryPresence::Partial);
+    assert_eq!(releases[0].local_track_count, 1);
+    assert_eq!(releases[0].track_count, None);
+}
+
+#[test]
+fn dg_2_future_release_cannot_be_hidden_as_already_complete() {
+    use crate::artist_news::LibraryPresence;
+
+    let conn = migrated_conn();
+    conn.execute(
+        "INSERT INTO new_releases (
+           release_group_mbid, artist_name, artist_mbid, title, release_type,
+           first_release_date, fetched_at, fallback_accent, track_count
+         ) VALUES ('future-ep', 'Ocean Sleeper', 'artist-id', 'Future EP',
+                   'EP', '2027-01-01', 1, '#123456', 2)",
+        [],
+    )
+    .unwrap();
+    for track_no in 1..=2 {
+        conn.execute(
+            "INSERT INTO tracks (
+               path, title, artist, album, track_no, play_count, added_at
+             ) VALUES (?1, ?2, 'Ocean Sleeper', 'Future EP', ?2, 0, 0)",
+            rusqlite::params![format!("/music/future-{track_no}.flac"), track_no],
+        )
+        .unwrap();
+    }
+
+    let releases = query_releases(&conn, false, date()).unwrap();
+
+    assert_eq!(releases[0].local_track_count, 2);
     assert_eq!(releases[0].presence, LibraryPresence::Partial);
 }
 
@@ -283,8 +380,43 @@ fn track_counts_survive_internal_whitespace_tagging_drift() {
 
     let counts = local_album_track_counts(&conn).unwrap();
     assert_eq!(
-        presence_for(&counts, "Pink Floyd", "Eclipse"),
+        presence_for(&counts, "Pink Floyd", "Eclipse", Some(2)),
         LibraryPresence::Complete,
         "two tracks tagged with an internal-whitespace-only artist variant must still count as one owned album"
+    );
+}
+
+#[test]
+fn dg_2_duplicate_files_do_not_fake_complete_release_ownership() {
+    use crate::artist_news::{local_album_track_counts, presence_for, LibraryPresence};
+
+    let conn = migrated_conn();
+    for (path, track_no) in [
+        ("/music/one.flac", 1),
+        ("/music/duplicate-one.flac", 1),
+        ("/music/two.flac", 2),
+    ] {
+        let title = format!("Track {track_no}");
+        conn.execute(
+            "INSERT INTO tracks (
+               path, title, artist, album_artist, album, track_no, play_count, added_at
+             ) VALUES (?1, ?2, 'Guest Singer', 'Ocean Sleeper',
+                       'Maybe Death Is All I Need', ?3, 0, 0)",
+            rusqlite::params![path, title, track_no],
+        )
+        .unwrap();
+    }
+
+    let counts = local_album_track_counts(&conn).unwrap();
+
+    assert_eq!(
+        presence_for(
+            &counts,
+            "Ocean Sleeper",
+            "Maybe Death Is All I Need",
+            Some(3)
+        ),
+        LibraryPresence::Partial,
+        "album artist matching and distinct track slots must report two, not three, tracks"
     );
 }

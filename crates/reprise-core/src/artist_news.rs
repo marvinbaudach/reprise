@@ -12,6 +12,7 @@
 pub enum NewsKind {
     Upcoming,
     New,
+    Catalog,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,12 +33,6 @@ pub struct ArtistNews {
     pub items: Vec<AlbumNews>,
     pub stale: bool,
 }
-
-/// How many tracks of an album must be present before the album counts as
-/// owned. One track is a single, not an album — treating it as ownership is
-/// what used to suppress the very album the single announces. The query
-/// layer's `presence_for` applies this threshold without filtering rows.
-pub(crate) const OWNED_ALBUM_MIN_TRACKS: i64 = 2;
 
 /// Fetch-scope configuration and candidate selection for a refresh run live
 /// in `artist_news_candidates`; re-exported here so existing callers keep
@@ -63,9 +58,14 @@ pub(crate) use crate::artist_news_parsing::parse_partial_date;
 /// `artist_news_parsing`; re-exported here so existing callers keep using
 /// `artist_news::{parse_release_groups, ArtistMatch, ...}`.
 pub use crate::artist_news_parsing::{
-    artist_search_url, parse_artist_mbid, parse_release_groups, release_groups_url, ArtistMatch,
+    artist_search_url, parse_artist_mbid, parse_release_group_page, parse_release_groups,
+    parse_release_track_count, release_group_detail_url, release_groups_page_url,
+    release_groups_url, ArtistMatch, ReleaseGroupPage,
 };
 
+pub(crate) use crate::artist_news_query::local_album_track_counts;
+#[cfg(test)]
+pub(crate) use crate::artist_news_query::presence_for;
 /// The query layer that reads releases back out and annotates library
 /// presence lives in `artist_news_query`; re-exported here so existing
 /// callers keep using `artist_news::{query_releases, StoredRelease, ...}`.
@@ -74,14 +74,13 @@ pub use crate::artist_news_query::{
     query_artist_news_by_name, query_releases, set_release_hidden, unseen_release_count,
     LibraryPresence, StoredRelease,
 };
-pub(crate) use crate::artist_news_query::{local_album_track_counts, presence_for};
 
 /// Decisions and queries for the persistent Releases full view.
 pub use crate::artist_news_view::{
     count_releases_view, filter_rows as filter_release_rows, persisted_releases_filter,
     query_releases_view, release_status, sort_rows as sort_release_rows, ReleaseSortDirection,
     ReleaseStatus, ReleaseTypeFilter, ReleasesFilter, RELEASES_FILTER_HIDDEN_KEY,
-    RELEASES_FILTER_NOT_IN_LIBRARY_KEY, RELEASES_FILTER_TYPE_KEY,
+    RELEASES_FILTER_TYPE_KEY,
 };
 
 /// Staleness policy (when a refresh is due, the per-install jitter, and the

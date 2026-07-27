@@ -26,6 +26,7 @@ fn reset_to_v31(conn: &Connection) {
          DROP TABLE podcast_episodes;
          DROP TABLE podcast_subscriptions;
          DROP TABLE radio_stations;
+         ALTER TABLE new_releases DROP COLUMN track_count;
          PRAGMA user_version = 31;",
     )
     .unwrap();

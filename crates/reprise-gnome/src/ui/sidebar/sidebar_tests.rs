@@ -660,6 +660,12 @@ fn assert_update_feed_rows_are_module_gated_ordered_and_badged() {
         reprise_core::modules::set_enabled(&conn, &reprise_core::modules::CONCERTS_MODULE, true)
             .unwrap();
         conn.execute(
+            "INSERT INTO tracks (path, title, artist, album, added_at)
+             VALUES ('/music/track.flac', 'Track', 'Artist', 'Local Album', 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
             "INSERT INTO new_releases (
                release_group_mbid, artist_name, artist_mbid, title, release_type,
                first_release_date, fetched_at, fallback_accent, first_seen
@@ -713,7 +719,7 @@ fn conc_1_concerts_row_is_module_gated_and_badged_from_the_filtered_view() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn nr_15_releases_row_is_module_gated_before_concerts_and_badged_from_the_filtered_view() {
+fn nr_18_releases_row_is_module_gated_before_concerts_and_badged_from_the_filtered_view() {
     assert_update_feed_rows_are_module_gated_ordered_and_badged();
 }
 

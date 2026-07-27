@@ -35,7 +35,7 @@ pub const NEWS_REFRESH: &str = N_!("Refresh Artist News");
 pub const NEWS_OPEN_MUSICBRAINZ: &str = N_!("Open in MusicBrainz");
 pub const NEW_RELEASES: &str = N_!("New Releases");
 pub const NEW_RELEASES_DESCRIPTION: &str =
-    N_!("Show upcoming and newly released albums · contacts MusicBrainz");
+    N_!("Show upcoming releases and missing albums or EPs · contacts MusicBrainz");
 pub const COVER_DOWNLOAD: &str = N_!("Album Covers");
 pub const COVER_DOWNLOAD_DESCRIPTION: &str =
     N_!("Download missing album covers · contacts MusicBrainz and coverartarchive.org");
