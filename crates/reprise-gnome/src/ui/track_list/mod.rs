@@ -13,6 +13,7 @@ pub(crate) mod queue_sections;
 pub(crate) mod rating;
 pub(in crate::ui) mod rating_cell_refresh;
 pub(in crate::ui) mod reload_restore;
+mod responsive_columns;
 #[path = "track_list.rs"]
 mod surface;
 pub(in crate::ui) mod tag_mutation_refresh;

@@ -22,6 +22,7 @@ use crate::ui::player_controller::NowPlaying;
 use crate::ui::style::tokens;
 
 type OnVoid = Rc<dyn Fn()>;
+const TAB_SWITCHER_MIN_HEIGHT: i32 = 50;
 
 #[path = "now_playing_effects.rs"]
 mod now_playing_effects;
@@ -167,6 +168,7 @@ fn build_widgets_for_session(
         .build();
     tab_switcher.add_css_class("reprise-now-playing-tabs");
     let tabs = adw::BreakpointBin::new();
+    tabs.set_size_request(1, TAB_SWITCHER_MIN_HEIGHT);
     tabs.set_child(Some(&tab_switcher));
     let narrow = adw::BreakpointCondition::new_length(
         adw::BreakpointConditionLengthType::MaxWidth,

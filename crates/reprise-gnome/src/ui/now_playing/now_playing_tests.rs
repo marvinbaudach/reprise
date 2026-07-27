@@ -337,6 +337,13 @@ fn ac_20_icons_only_switcher_keeps_three_labeled_keyboard_targets() {
     widgets
         .tab_switcher
         .set_display_mode(adw::InlineViewSwitcherDisplayMode::Icons);
+    let responsive_tabs = widgets
+        .tab_switcher
+        .parent()
+        .and_downcast::<adw::BreakpointBin>()
+        .expect("the tab switcher lives in its responsive bin");
+    assert_eq!(responsive_tabs.width_request(), 1);
+    assert_eq!(responsive_tabs.height_request(), 50);
 
     let buttons = widget_tree(widgets.tab_switcher.upcast_ref())
         .into_iter()

@@ -11,6 +11,8 @@ source "$repo_root/scripts/cua-e2e/track_sort.sh"
 source "$repo_root/scripts/cua-e2e/tag_autocomplete.sh"
 # shellcheck source=scrobbling.sh
 source "$repo_root/scripts/cua-e2e/scrobbling.sh"
+# shellcheck source=responsive_window.sh
+source "$repo_root/scripts/cua-e2e/responsive_window.sh"
 
 APP_ID=org.reprise.Reprise
 WINDOW_CLASS_MATCH=reprise
@@ -612,6 +614,9 @@ run_private_session() {
     scrobbling)
       run_scrobbling_scenario
       ;;
+    responsive-window)
+      run_responsive_window_scenario
+      ;;
     *)
       echo "unknown private CUA scenario group: $private_group" >&2
       return 2
@@ -749,6 +754,7 @@ case "${CUA_E2E_ONLY:-all}" in
       song-visuals
       track-sort-playing-marker
       scrobbling
+      responsive-window
     )
     ;;
   populated-library)
@@ -757,7 +763,7 @@ case "${CUA_E2E_ONLY:-all}" in
   fresh-install | populated-library-secondary | tag-1-no-jump-after-save \
     | tag-3-multi-dialog-structure | tag-autocomplete-surface \
     | library-doctor | song-visuals \
-    | track-sort-playing-marker | scrobbling)
+    | track-sort-playing-marker | scrobbling | responsive-window)
     scenario_groups=("$CUA_E2E_ONLY")
     ;;
   *)
