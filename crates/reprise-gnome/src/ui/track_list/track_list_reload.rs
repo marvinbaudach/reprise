@@ -105,7 +105,7 @@ fn row_height(column_view: &gtk4::ColumnView, n_rows: u32) -> Option<f64> {
 /// scanning the whole old model into an id array — `TrackListModel` lazily
 /// windows its rows from SQL (see that module's doc comment), so iterating
 /// every position here would force-load an entire library on every reload.
-fn capture_reload_anchor(shared: &Shared) -> ReloadAnchor {
+pub(in crate::ui) fn capture_reload_anchor(shared: &Shared) -> ReloadAnchor {
     let selected = selected_ids_before_swap(shared);
     let old_total = shared.model.n_items();
     let scroll_value = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view)
@@ -182,20 +182,39 @@ fn schedule_centered_scroll_restore(
     let scroll = gtk4::ScrollInfo::new();
     scroll.set_enable_vertical(true);
     column_view.scroll_to(position, None, gtk4::ListScrollFlags::NONE, Some(scroll));
+    schedule_centered_scroll_refinement(column_view, track_id, current_ids, attempts);
+}
+
+fn schedule_centered_scroll_refinement(
+    column_view: gtk4::ColumnView,
+    track_id: Option<i64>,
+    current_ids: Vec<i64>,
+    attempts: u8,
+) {
     gtk4::glib::idle_add_local_once(move || {
-        let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&column_view) else {
-            return;
-        };
-        let (upper, page) = (adjustment.upper(), adjustment.page_size());
-        if upper > page {
-            let height = upper / current_ids.len() as f64;
-            if let Some(value) =
-                reload_restore::centered_track_scroll_target(track_id, &current_ids, height, page)
-            {
-                adjustment.set_value(value);
+        if let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&column_view) {
+            let (upper, page) = (adjustment.upper(), adjustment.page_size());
+            if upper > page {
+                let height = upper / current_ids.len() as f64;
+                if let Some(value) = reload_restore::centered_track_scroll_target(
+                    track_id,
+                    &current_ids,
+                    height,
+                    page,
+                ) {
+                    adjustment.set_value(value);
+                }
             }
-        } else if attempts > 0 {
-            schedule_centered_scroll_restore(column_view, track_id, current_ids, attempts - 1);
+        }
+        if attempts > 0 {
+            gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(16), move || {
+                schedule_centered_scroll_refinement(
+                    column_view,
+                    track_id,
+                    current_ids,
+                    attempts - 1,
+                );
+            });
         }
     });
 }
@@ -300,8 +319,24 @@ pub(in crate::ui) fn reload(shared: &Rc<Shared>) {
 
 fn reload_with_viewport(shared: &Rc<Shared>, viewport: ReloadViewport) {
     let captured = capture_reload_anchor(shared);
+    reload_with_anchor_and_viewport(shared, &captured, viewport);
+}
+
+/// Re-runs the current query while restoring a snapshot captured before an
+/// asynchronous interaction began. The Tag Editor uses this seam because
+/// capturing only when its worker finishes is too late: the closing dialog
+/// and focus restoration may already have disturbed GTK's live adjustment.
+pub(in crate::ui) fn reload_with_anchor(shared: &Rc<Shared>, captured: &ReloadAnchor) {
+    reload_with_anchor_and_viewport(shared, captured, ReloadViewport::PreserveAnchor);
+}
+
+fn reload_with_anchor_and_viewport(
+    shared: &Rc<Shared>,
+    captured: &ReloadAnchor,
+    viewport: ReloadViewport,
+) {
     run_query(shared);
-    restore_reload_anchor(shared, &captured, viewport);
+    restore_reload_anchor(shared, captured, viewport);
 }
 
 /// The bare query/model-swap/empty-state work, with no selection/scroll
@@ -407,6 +442,93 @@ fn run_query(shared: &Rc<Shared>) {
     );
 
     (shared.on_reload)(&source, count, &filter, &browse);
+}
+
+#[cfg(test)]
+mod display_tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn tag_1_query_reloading_metadata_save_keeps_the_live_viewport() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let mut conn = Connection::open_in_memory().unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        let tx = conn.transaction().unwrap();
+        for id in 1..=100 {
+            tx.execute(
+                "INSERT INTO tracks (id, path, title, artist, added_at) \
+                 VALUES (?1, ?2, ?3, 'Synthetic Artist', 0)",
+                (
+                    id,
+                    format!("/synthetic/{id:03}.flac"),
+                    format!("Track {id:03}"),
+                ),
+            )
+            .unwrap();
+        }
+        tx.commit().unwrap();
+        let track_list = super::super::TrackList::new(
+            Rc::new(RefCell::new(conn)),
+            Box::new(|_, _, _, _| {}),
+            |_, _, _, _| {},
+            super::super::queue_sections::QueueViewModel::default,
+            crate::ui::cover_download_worker::setup_for_test(),
+        );
+        let window = gtk4::Window::builder()
+            .default_width(900)
+            .default_height(320)
+            .child(track_list.widget())
+            .build();
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        let position = 60;
+        track_list
+            .shared
+            .column_view
+            .scroll_to(position, None, gtk4::ListScrollFlags::FOCUS, None);
+        let adjustment = track_list.shared.column_view.vadjustment().unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+        while adjustment.value() <= 0.0 && std::time::Instant::now() < deadline {
+            gtk4::glib::MainContext::default().iteration(false);
+        }
+        let before = adjustment.value();
+        assert!(
+            before > 0.0,
+            "precondition: the list must be scrolled away from the top"
+        );
+
+        let opened_anchor = capture_reload_anchor(&track_list.shared);
+        // Reproduce the asynchronous Tag Editor boundary: by the time the
+        // worker completes, GTK may already report position zero while the
+        // closing dialog restores focus. Capturing at completion would
+        // therefore preserve the wrong position.
+        adjustment.set_value(0.0);
+        track_list.shared.selection.unselect_all();
+        let written_id = track_list.shared.model.track_at(position).unwrap().id;
+        let mut save_anchor = opened_anchor;
+        save_anchor.selected_ids = vec![written_id];
+        reload_with_anchor(&track_list.shared, &save_anchor);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+        while (adjustment.value() - before).abs() >= 1.0 && std::time::Instant::now() < deadline {
+            gtk4::glib::MainContext::default().iteration(false);
+        }
+
+        assert!(
+            adjustment.value() > 0.0,
+            "rating save must not leave the viewport at the table top"
+        );
+        assert!(
+            (adjustment.value() - before).abs() < 1.0,
+            "rating save moved the viewport: before={before}, after={}",
+            adjustment.value()
+        );
+        assert!(track_list.shared.selection.is_selected(position));
+        window.close();
+    }
 }
 
 #[cfg(test)]

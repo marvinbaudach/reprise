@@ -127,6 +127,10 @@ pub(in crate::ui) struct Shared {
     /// remove+insert snapped the viewport to the top on a double-click-to-play.
     pub(in crate::ui) now_playing_markers:
         RefCell<Vec<super::now_playing_marker::NowPlayingMarker>>,
+    /// Realised rating-cell re-appliers. Rating-only Tag Editor saves use
+    /// these to update stars without an `items_changed` row replacement,
+    /// which would re-anchor the viewport.
+    pub(in crate::ui) rating_cells: RefCell<Vec<super::rating_cell_refresh::RatingCellMarker>>,
     pub(in crate::ui) last_scroll_activity: Cell<Option<std::time::Instant>>,
     /// View position an in-app single-row reorder drag started from — set at
     /// drag-prepare, cleared on drag end/cancel. `None` while no reorder-
