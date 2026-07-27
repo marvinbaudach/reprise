@@ -100,6 +100,8 @@ mod tests {
             hidden_at: None,
             presence: LibraryPresence::Absent,
             announce_url: None,
+            track_count: None,
+            local_track_count: 0,
         }
     }
 

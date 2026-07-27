@@ -397,6 +397,8 @@ mod tests {
             fallback_accent: "#123456".into(),
             presence: LibraryPresence::Absent,
             announce_url: None,
+            track_count: None,
+            local_track_count: 0,
         }
     }
 

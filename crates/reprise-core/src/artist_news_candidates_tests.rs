@@ -45,15 +45,21 @@ fn nr_1a_fetch_queue_prioritizes_top_artists_and_includes_the_never_checked_rest
 }
 
 #[test]
-fn nr_7_fetch_scope_defaults_to_top_and_round_trips_all_artists() {
+fn dg_3_fetch_scope_defaults_to_all_and_round_trips_top_artists() {
     let conn = migrated_conn();
+    assert_eq!(
+        configured_fetch_scope(&conn).unwrap(),
+        FetchScope::AllArtists
+    );
+
+    set_fetch_all_artists(&conn, false).unwrap();
+
     assert_eq!(
         configured_fetch_scope(&conn).unwrap(),
         FetchScope::TopArtists
     );
 
     set_fetch_all_artists(&conn, true).unwrap();
-
     assert_eq!(
         configured_fetch_scope(&conn).unwrap(),
         FetchScope::AllArtists
@@ -204,12 +210,12 @@ fn configured_scope_round_trips_without_a_date() {
     let conn = migrated_conn();
     assert_eq!(
         configured_fetch_scope(&conn).unwrap(),
-        FetchScope::TopArtists
+        FetchScope::AllArtists
     );
-    set_fetch_all_artists(&conn, true).unwrap();
+    set_fetch_all_artists(&conn, false).unwrap();
     assert_eq!(
         configured_fetch_scope(&conn).unwrap(),
-        FetchScope::AllArtists
+        FetchScope::TopArtists
     );
 }
 
