@@ -80,6 +80,7 @@ pub struct DeviceView {
     pub sync_phase: PlannedSyncPhase,
     pub sync_error: Option<SyncFailure>,
     pub last_sync: Option<chrono::DateTime<chrono::Utc>>,
+    pub verified_managed_track_count: Option<usize>,
     pub managed_track_count: usize,
     pub bytes_per_second: u64,
     pub page: SyncPageState,

@@ -45,6 +45,7 @@ struct DeviceState {
     planned_cancel: Option<Arc<AtomicBool>>,
     resume_planned: bool,
     last_sync: Option<chrono::DateTime<chrono::Utc>>,
+    verified_managed_track_count: Option<usize>,
     mtp_rate: MtpRateMeter,
     mirror_plan: MirrorPlan,
     page: SyncPageState,
@@ -69,6 +70,7 @@ impl DeviceState {
             planned_cancel: None,
             resume_planned: false,
             last_sync: None,
+            verified_managed_track_count: None,
             mtp_rate: MtpRateMeter::default(),
             mirror_plan: MirrorPlan::default(),
             page: SyncPageState::default(),
@@ -84,6 +86,9 @@ impl DeviceState {
                 && self.sync_phase != PlannedSyncPhase::ComputingDelta,
             self.is_active(),
         );
+        if self.sync_phase == PlannedSyncPhase::Finishing {
+            page.controls = reprise_core::device_sync::SyncPageControls::default();
+        }
         DeviceView {
             id: self.descriptor.id.clone(),
             name: self.descriptor.name.clone(),
@@ -95,6 +100,7 @@ impl DeviceState {
             sync_phase: self.sync_phase.clone(),
             sync_error: self.sync_error.clone(),
             last_sync: self.last_sync,
+            verified_managed_track_count: self.verified_managed_track_count,
             managed_track_count: self.managed_track_count,
             bytes_per_second: self.mtp_rate.bytes_per_second(),
             page,
@@ -103,6 +109,10 @@ impl DeviceState {
 
     fn is_active(&self) -> bool {
         self.planned_cancel.is_some()
+    }
+
+    fn is_busy(&self) -> bool {
+        self.is_active() || self.sync_phase == PlannedSyncPhase::Finishing
     }
 }
 
@@ -177,14 +187,19 @@ impl DeviceSyncRuntime {
     }
 
     pub fn refresh_contents(self: &Rc<Self>, device_id: &str) {
-        self.refresh_contents_with_delta(device_id, true);
+        self.refresh_contents_with_delta(device_id, true, RefreshPurpose::Normal);
     }
 
     fn refresh_contents_after_sync(self: &Rc<Self>, device_id: &str) {
-        self.refresh_contents_with_delta(device_id, true);
+        self.refresh_contents_with_delta(device_id, true, RefreshPurpose::VerifySync);
     }
 
-    fn refresh_contents_with_delta(self: &Rc<Self>, device_id: &str, recompute_delta: bool) {
+    fn refresh_contents_with_delta(
+        self: &Rc<Self>,
+        device_id: &str,
+        recompute_delta: bool,
+        purpose: RefreshPurpose,
+    ) {
         let request = {
             let mut devices = self.device_states.borrow_mut();
             let Some(device) = devices
@@ -213,6 +228,11 @@ impl DeviceSyncRuntime {
             let Some(runtime) = weak.upgrade() else {
                 return;
             };
+            let verified_track_count = result
+                .as_ref()
+                .ok()
+                .map(|inspection| inspection.managed_files.len());
+            let inspection_error = result.as_ref().err().cloned();
             {
                 let mut devices = runtime.device_states.borrow_mut();
                 if let Some(device) = devices.iter_mut().find(|device| device.descriptor.id == id) {
@@ -235,21 +255,52 @@ impl DeviceSyncRuntime {
             }
             if !recompute_delta {
                 runtime.notify();
-            } else if let Err(error) = runtime.recompute_delta(&id) {
+            } else {
+                let planning_error = runtime.recompute_delta_silent(&id).err();
                 if let Some(device) = runtime
                     .device_states
                     .borrow_mut()
                     .iter_mut()
                     .find(|device| device.descriptor.id == id)
                 {
-                    device.sync_phase = PlannedSyncPhase::Idle;
-                    device.sync_error = Some(SyncFailure {
-                        message: error,
-                        failed_tracks: Vec::new(),
-                    });
+                    match purpose {
+                        RefreshPurpose::VerifySync
+                            if inspection_error.is_none() && planning_error.is_none() =>
+                        {
+                            device.last_sync = Some(chrono::Utc::now());
+                            device.verified_managed_track_count = verified_track_count;
+                            device.sync_error = None;
+                        }
+                        RefreshPurpose::VerifySync => {
+                            device.sync_phase = PlannedSyncPhase::Idle;
+                            device.sync_error = Some(SyncFailure {
+                                message: inspection_error.clone().map_or_else(
+                                    || {
+                                        planning_error.clone().unwrap_or_else(|| {
+                                            "device content verification failed".into()
+                                        })
+                                    },
+                                    |error| {
+                                        format!(
+                                            "could not verify device contents after synchronization: {error}"
+                                        )
+                                    },
+                                ),
+                                failed_tracks: Vec::new(),
+                            });
+                        }
+                        RefreshPurpose::Normal => {
+                            if let Some(error) = planning_error.clone() {
+                                device.sync_phase = PlannedSyncPhase::Idle;
+                                device.sync_error = Some(SyncFailure {
+                                    message: error,
+                                    failed_tracks: Vec::new(),
+                                });
+                            }
+                        }
+                    }
                 }
                 runtime.notify();
-            } else {
                 let should_resume = {
                     let mut devices = runtime.device_states.borrow_mut();
                     devices
@@ -370,6 +421,12 @@ impl DeviceSyncRuntime {
             callback(state.clone());
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RefreshPurpose {
+    Normal,
+    VerifySync,
 }
 
 #[path = "device_sync_agent.rs"]

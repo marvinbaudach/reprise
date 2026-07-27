@@ -16,7 +16,7 @@ impl DeviceSyncRuntime {
                 .iter()
                 .find(|device| device.descriptor.id == settings.device_serial)
                 .ok_or_else(|| "device is not connected".to_string())?;
-            if device.is_active() {
+            if device.is_busy() {
                 return Err("device synchronization is active".into());
             }
         }
@@ -99,6 +99,14 @@ impl DeviceSyncRuntime {
     }
 
     pub fn recompute_delta(self: &Rc<Self>, device_id: &str) -> Result<(), String> {
+        let result = self.recompute_delta_silent(device_id);
+        if result.is_ok() {
+            self.notify();
+        }
+        result
+    }
+
+    pub(super) fn recompute_delta_silent(self: &Rc<Self>, device_id: &str) -> Result<(), String> {
         let (settings, storage, managed_files) = self
             .device_states
             .borrow()
@@ -148,7 +156,6 @@ impl DeviceSyncRuntime {
             device.page = projection.page;
             device.sync_phase = PlannedSyncPhase::Idle;
         }
-        self.notify();
         Ok(())
     }
 

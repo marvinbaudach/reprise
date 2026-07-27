@@ -111,7 +111,7 @@ impl DeviceSyncRuntime {
                 .iter()
                 .find(|device| device.descriptor.id == device_id && device.connected)
                 .ok_or(SyncStartError::UnknownDevice)?;
-            if device.is_active() {
+            if device.is_busy() {
                 return Err(SyncStartError::Busy);
             }
             if device.scanning {
@@ -122,6 +122,11 @@ impl DeviceSyncRuntime {
             if device.scan_error.is_some() {
                 return Err(SyncStartError::Planning(
                     "device storage inspection is unavailable".into(),
+                ));
+            }
+            if device.storage.access == reprise_core::device_sync::DeviceStorageAccess::ReadOnly {
+                return Err(SyncStartError::Planning(
+                    "device storage is read-only".into(),
                 ));
             }
         }
@@ -154,7 +159,7 @@ impl DeviceSyncRuntime {
                 .iter_mut()
                 .find(|device| device.descriptor.id == device_id && device.connected)
                 .ok_or(SyncStartError::UnknownDevice)?;
-            if device.is_active() {
+            if device.is_busy() {
                 return Err(SyncStartError::Busy);
             }
             if !device.mirror_plan.blockers.is_empty() {
@@ -579,6 +584,7 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, mut failures
         work.generation,
         PlannedSyncPhase::Finishing,
     );
+    let successful = failures.is_empty() && !work.cancelled.load(Ordering::SeqCst);
     {
         let mut devices = runtime.device_states.borrow_mut();
         if let Some(device) = devices
@@ -587,13 +593,18 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, mut failures
         {
             device.cancellable = None;
             device.planned_cancel = None;
-            if failures.is_empty() && !work.cancelled.load(Ordering::SeqCst) {
-                device.last_sync = Some(chrono::Utc::now());
+            if successful {
                 device.resume_planned = false;
+                device.sync_error = None;
             }
         }
     }
-    let planning_error = runtime.recompute_delta(&work.device_id).err();
+    if successful {
+        runtime.notify();
+        runtime.refresh_contents_after_sync(&work.device_id);
+        return;
+    }
+    let planning_error = runtime.recompute_delta_silent(&work.device_id).err();
     if let Some(device) = runtime
         .device_states
         .borrow_mut()
@@ -612,7 +623,7 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, mut failures
             });
     }
     runtime.notify();
-    runtime.refresh_contents_after_sync(&work.device_id);
+    runtime.refresh_contents(&work.device_id);
 }
 
 fn syncing_phase(

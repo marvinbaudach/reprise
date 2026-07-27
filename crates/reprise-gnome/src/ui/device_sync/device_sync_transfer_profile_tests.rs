@@ -91,6 +91,7 @@ fn local_gio_sync_transcodes_lossless_selection_to_opus_160() {
             .join("Music/Reprise/Artist/Album/01 Encoded.opus");
         assert!(std::fs::read(output).unwrap().starts_with(b"OggS"));
         assert!(device.last_sync.is_some(), "device state: {device:?}");
+        assert_eq!(device.verified_managed_track_count, Some(1));
         assert!(device.sync_error.is_none());
         assert_eq!(device.page.changes.additions, 0);
         assert_eq!(device.page.changes.replacements, 0);
@@ -133,6 +134,7 @@ fn local_gio_sync_preserves_original_flac_bytes_and_extension() {
             .join("Music/Reprise/Artist/Unknown Album/00 Track 1.flac");
         assert_eq!(std::fs::read(output).unwrap(), expected);
         assert!(device.last_sync.is_some(), "device state: {device:?}");
+        assert_eq!(device.verified_managed_track_count, Some(1));
         assert!(device.sync_error.is_none());
         assert_eq!(device.page.changes.additions, 0);
         assert_eq!(device.page.changes.replacements, 0);
@@ -167,6 +169,7 @@ fn local_gio_sync_transcodes_lossless_selection_to_mp3_256() {
             .join("Music/Reprise/Artist/Album/02 Fallback.mp3");
         assert!(std::fs::read(output).unwrap().starts_with(b"ID3"));
         assert!(device.last_sync.is_some(), "device state: {device:?}");
+        assert_eq!(device.verified_managed_track_count, Some(1));
         assert!(device.sync_error.is_none());
         assert_eq!(device.page.changes.additions, 0);
         assert_eq!(device.page.changes.replacements, 0);
