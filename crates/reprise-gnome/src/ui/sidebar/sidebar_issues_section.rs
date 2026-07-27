@@ -15,6 +15,16 @@ pub(super) enum IssuesSurface {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ProgressPageChild {
+    FlexibleSpace,
+    Cards,
+}
+
+pub(super) fn progress_page_order() -> &'static [ProgressPageChild] {
+    &[ProgressPageChild::FlexibleSpace, ProgressPageChild::Cards]
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct BottomRegionPlacement {
     pub(super) vexpand: bool,
     pub(super) valign: gtk4::Align,
@@ -59,6 +69,21 @@ pub(super) fn build_issues_section(
     let activity = activity_slot.progress_widget();
     activity.set_vexpand(false);
     activity.set_valign(gtk4::Align::End);
+    let activity_page = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    // GtkStack allocates its active page at the page size even when the
+    // child itself requests natural height. Keep any surplus allocation
+    // above the cards explicitly; aligning the direct page child alone does
+    // not move a vertical Box's own children away from its start edge.
+    for child in progress_page_order() {
+        match child {
+            ProgressPageChild::FlexibleSpace => {
+                let spacer = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+                spacer.set_vexpand(true);
+                activity_page.append(&spacer);
+            }
+            ProgressPageChild::Cards => activity_page.append(activity),
+        }
+    }
 
     let placement = bottom_region_placement();
     let stack = gtk4::Stack::builder()
@@ -71,7 +96,7 @@ pub(super) fn build_issues_section(
         .transition_type(gtk4::StackTransitionType::None)
         .build();
     stack.add_named(&issues, Some(ISSUES_PAGE));
-    stack.add_named(activity, Some(ACTIVITY_PAGE));
+    stack.add_named(&activity_page, Some(ACTIVITY_PAGE));
     show_issues_surface(&stack, IssuesSurface::Issues);
     activity_slot.attach_issues_stack(&stack);
     stack
