@@ -51,7 +51,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # tree stays core-only and the feature stays surgically removable. `signal-hook`
 # gives the worker loop a safe (no `unsafe`) SIGINT flag for clean shutdown.
 reprise-stems = { path = "../reprise-stems", optional = true }
-signal-hook = { version = "0.3", optional = true }
+signal-hook = { version = "0.4", optional = true }
 
 # --- Feature `mpris` only (Linux MPRIS transport client) --------------------
 # zbus DIRECTLY — the sanctioned Beschluss-3 exception. Never pulls
