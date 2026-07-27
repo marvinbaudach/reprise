@@ -18,7 +18,7 @@ pub struct DeviceSyncParams {
     /// Whether managed tracks outside the selection should be removed.
     #[serde(default)]
     pub remove_unselected: Option<bool>,
-    /// Opus conversion bitrate in kbit/s. Supported: 0, 64, 96, 128, 160, 192, 256.
+    /// MP3 CBR quality in kbit/s. Supported: 128, 192, 256, 320. Defaults to 256.
     #[serde(default)]
     pub bitrate_kbps: Option<u32>,
 }

@@ -46,12 +46,10 @@ impl DeviceSyncAction {
         let device_name = required_text(&params.device_name, "device_name")?;
         match params.action.as_str() {
             "configure_playlist" => {
-                let bitrate_kbps = params.bitrate_kbps.unwrap_or(0);
-                if !reprise_core::device_sync::settings::SUPPORTED_OPUS_BITRATES
-                    .contains(&bitrate_kbps)
-                {
+                let bitrate_kbps = params.bitrate_kbps.unwrap_or(256);
+                if reprise_core::device_sync::Mp3Quality::try_from(bitrate_kbps).is_err() {
                     return Err(format!(
-                        "bitrate_kbps must be one of 0, 64, 96, 128, 160, 192, 256; got {bitrate_kbps}"
+                        "bitrate_kbps must be one of 128, 192, 256, 320; got {bitrate_kbps}"
                     ));
                 }
                 Ok(Self::ConfigurePlaylist {
@@ -210,7 +208,7 @@ mod tests {
             device_name: "Pixel".into(),
             playlist_name: Some("Lorna Shore & Similar".into()),
             remove_unselected: Some(true),
-            bitrate_kbps: Some(256),
+            bitrate_kbps: Some(320),
         })
         .unwrap();
         assert_eq!(
@@ -219,7 +217,7 @@ mod tests {
                 device_name: "Pixel".into(),
                 playlist_name: "Lorna Shore & Similar".into(),
                 remove_unselected: true,
-                bitrate_kbps: 256,
+                bitrate_kbps: 320,
             }
         );
     }
@@ -231,11 +229,33 @@ mod tests {
             device_name: "Pixel".into(),
             playlist_name: Some("Lorna Shore & Similar".into()),
             remove_unselected: Some(true),
-            bitrate_kbps: Some(320),
+            bitrate_kbps: Some(160),
         })
         .unwrap_err();
 
         assert!(error.contains("bitrate_kbps must be one of"));
-        assert!(error.contains("got 320"));
+        assert!(error.contains("got 160"));
+    }
+
+    #[test]
+    fn configure_defaults_to_mp3_256_quality() {
+        let action = DeviceSyncAction::from_params(&DeviceSyncParams {
+            action: "configure_playlist".into(),
+            device_name: "Pixel".into(),
+            playlist_name: Some("Road".into()),
+            remove_unselected: None,
+            bitrate_kbps: None,
+        })
+        .unwrap();
+
+        assert_eq!(
+            action,
+            DeviceSyncAction::ConfigurePlaylist {
+                device_name: "Pixel".into(),
+                playlist_name: "Road".into(),
+                remove_unselected: false,
+                bitrate_kbps: 256,
+            }
+        );
     }
 }

@@ -32,7 +32,8 @@ impl RepriseServer {
         name = "music_device_sync",
         description = "Configure or control Android synchronization in the \
             running Reprise app. Actions: configure_playlist (device_name, \
-            playlist_name, remove_unselected, bitrate_kbps), start, cancel. Configuration \
+            playlist_name, remove_unselected, bitrate_kbps), start, cancel. MP3 \
+            bitrate_kbps accepts 128, 192, 256 or 320 and defaults to 256. Configuration \
             and start are separate so the destructive delta can be inspected \
             with music_get_device_sync_state before transfer. Only files \
             managed by Reprise under Music/Reprise are eligible for removal. \

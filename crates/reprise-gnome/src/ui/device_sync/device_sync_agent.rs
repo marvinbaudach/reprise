@@ -4,6 +4,7 @@ use reprise_core::agent_device_sync::{
     AgentDeviceSyncCommand, AgentDeviceSyncDevice, AgentDeviceSyncPhase, AgentDeviceSyncRequest,
     AgentDeviceSyncState, SharedAgentDeviceSyncState,
 };
+use reprise_core::device_sync::{Mp3Quality, TransferProfile};
 
 use super::*;
 
@@ -59,9 +60,12 @@ impl DeviceSyncRuntime {
                 if matches.next().is_some() {
                     return Err(format!("playlist name '{playlist_name}' is ambiguous"));
                 }
+                let quality =
+                    Mp3Quality::try_from(bitrate_kbps).map_err(|error| error.to_string())?;
                 settings.selection = DeviceSelection::Sources(vec![option.source]);
                 settings.remove_deleted = remove_unselected;
-                settings.opus_bitrate = bitrate_kbps;
+                settings.profile = TransferProfile::Mp3(quality);
+                settings.opus_bitrate = 0;
                 self.update_settings(settings)
             }
             AgentDeviceSyncCommand::Start { device_name } => {
