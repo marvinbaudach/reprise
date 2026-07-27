@@ -30,7 +30,7 @@ type DeviceSyncProgressRow = (u64, u64, u64);
 type DeviceSyncRow = (
     String,
     bool,
-    u32,
+    String,
     u64,
     u64,
     u64,
@@ -50,7 +50,7 @@ pub enum DeviceSyncAction {
     Configure {
         device_name: String,
         sources: Vec<DeviceSyncSourceSelection>,
-        quality_kbps: u32,
+        profile: String,
     },
     Start {
         device_name: String,
@@ -65,12 +65,16 @@ impl DeviceSyncAction {
         let device_name = required_text(&params.device_name, "device_name")?;
         match params.action.as_str() {
             "configure" => {
-                let quality_kbps = params.quality_kbps.unwrap_or(256);
-                if reprise_core::device_sync::Mp3Quality::try_from(quality_kbps).is_err() {
-                    return Err(format!(
-                        "quality_kbps must be one of 128, 192, 256, 320; got {quality_kbps}"
-                    ));
-                }
+                let profile = params.profile.as_deref().unwrap_or("opus_160");
+                let profile =
+                    reprise_core::device_sync::TransferProfile::from_storage_value(profile)
+                        .ok_or_else(|| {
+                            format!(
+                                "profile must be one of opus_160, mp3_256, original; got {profile}"
+                            )
+                        })?
+                        .storage_value()
+                        .to_owned();
                 let sources = params
                     .sources
                     .as_ref()
@@ -88,7 +92,7 @@ impl DeviceSyncAction {
                 Ok(Self::Configure {
                     device_name,
                     sources,
-                    quality_kbps,
+                    profile,
                 })
             }
             "start" => {
@@ -105,8 +109,8 @@ impl DeviceSyncAction {
 }
 
 fn reject_configuration_fields(params: &DeviceSyncParams) -> Result<(), String> {
-    if params.sources.is_some() || params.quality_kbps.is_some() {
-        Err("sources and quality_kbps are only valid for configure".into())
+    if params.sources.is_some() || params.profile.is_some() {
+        Err("sources and profile are only valid for configure".into())
     } else {
         Ok(())
     }
@@ -167,7 +171,7 @@ fn map_row(row: DeviceSyncRow) -> DeviceSyncDeviceDto {
     let (
         name,
         connected,
-        quality_kbps,
+        profile,
         managed_tracks,
         unique_track_count,
         target_bytes,
@@ -184,7 +188,7 @@ fn map_row(row: DeviceSyncRow) -> DeviceSyncDeviceDto {
     DeviceSyncDeviceDto {
         name,
         connected,
-        quality_kbps,
+        profile,
         managed_tracks,
         unique_track_count,
         target_bytes,
@@ -264,14 +268,13 @@ pub fn mutate(action: DeviceSyncAction) -> Result<String, PlaybackError> {
         DeviceSyncAction::Configure {
             device_name,
             sources,
-            quality_kbps,
+            profile,
         } => {
             let _: () = proxy
-                .call("Configure", &(&device_name, &sources, quality_kbps))
+                .call("Configure", &(&device_name, &sources, &profile))
                 .map_err(|error| map_zbus_error(&error))?;
             format!(
-                "Configured {device_name} to mirror {} playlist source(s) at \
-                 {quality_kbps} kbit/s MP3",
+                "Configured {device_name} to mirror {} playlist source(s) with profile {profile}",
                 sources.len()
             )
         }
@@ -300,7 +303,7 @@ mod tests {
         let dto = map_row((
             "Pixel".into(),
             true,
-            320,
+            "original".into(),
             75,
             200,
             80,
@@ -336,7 +339,7 @@ mod tests {
             "Sun//Eater — Lorna Shore".into(),
         ));
 
-        assert_eq!(dto.quality_kbps, 320);
+        assert_eq!(dto.profile, "original");
         assert_eq!(dto.unique_track_count, 200);
         assert_eq!(dto.playlists[0].kind, "smart");
         assert_eq!(dto.playlists[0].entry_count, 220);
@@ -351,7 +354,7 @@ mod tests {
     }
 
     #[test]
-    fn configure_accepts_multiple_stable_sources_and_defaults_to_mp3_256() {
+    fn configure_accepts_multiple_stable_sources_and_defaults_to_opus_160() {
         let action = DeviceSyncAction::from_params(&DeviceSyncParams {
             action: "configure".into(),
             device_name: "Pixel".into(),
@@ -365,7 +368,7 @@ mod tests {
                     id: 7,
                 },
             ]),
-            quality_kbps: None,
+            profile: None,
         })
         .unwrap();
         assert_eq!(
@@ -373,22 +376,22 @@ mod tests {
             DeviceSyncAction::Configure {
                 device_name: "Pixel".into(),
                 sources: vec![("playlist".into(), 3), ("smart".into(), 7)],
-                quality_kbps: 256,
+                profile: "opus_160".into(),
             }
         );
     }
 
     #[test]
-    fn configure_rejects_unsupported_quality_and_duplicate_or_invalid_sources() {
+    fn configure_rejects_unsupported_profile_and_duplicate_or_invalid_sources() {
         let error = DeviceSyncAction::from_params(&DeviceSyncParams {
             action: "configure".into(),
             device_name: "Pixel".into(),
             sources: Some(Vec::new()),
-            quality_kbps: Some(160),
+            profile: Some("opus_320".into()),
         })
         .unwrap_err();
-        assert!(error.contains("quality_kbps must be one of"));
-        assert!(error.contains("got 160"));
+        assert!(error.contains("profile must be one of"));
+        assert!(error.contains("got opus_320"));
 
         let duplicate = DeviceSyncSourceParam {
             kind: "playlist".into(),
@@ -398,7 +401,7 @@ mod tests {
             action: "configure".into(),
             device_name: "Pixel".into(),
             sources: Some(vec![duplicate.clone(), duplicate]),
-            quality_kbps: Some(320),
+            profile: Some("mp3_256".into()),
         })
         .unwrap_err();
         assert!(error.contains("duplicates"));
@@ -410,7 +413,7 @@ mod tests {
                 kind: "podcast".into(),
                 id: 1,
             }]),
-            quality_kbps: Some(320),
+            profile: Some("original".into()),
         })
         .unwrap_err();
         assert!(error.contains("playlist"));
@@ -424,7 +427,7 @@ mod tests {
                 action: action.into(),
                 device_name: "Pixel".into(),
                 sources: Some(Vec::new()),
-                quality_kbps: None,
+                profile: None,
             })
             .unwrap_err();
             assert!(error.contains("only valid for configure"));

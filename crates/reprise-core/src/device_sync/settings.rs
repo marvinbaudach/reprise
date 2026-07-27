@@ -98,8 +98,8 @@ pub fn load_or_create_settings(
 ) -> Result<DeviceSettings, DeviceSettingsError> {
     let existing = conn
         .query_row(
-            "SELECT device_name, selection_json, mp3_quality, opus_bitrate, ratings_back, \
-                    remove_deleted \
+            "SELECT device_name, selection_json, mp3_quality, transfer_profile, opus_bitrate, \
+                    ratings_back, remove_deleted \
              FROM device_settings WHERE device_serial = ?1",
             [serial],
             |row| {
@@ -107,26 +107,30 @@ pub fn load_or_create_settings(
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, i64>(2)?,
-                    row.get::<_, i64>(3)?,
-                    row.get::<_, bool>(4)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, i64>(4)?,
                     row.get::<_, bool>(5)?,
+                    row.get::<_, bool>(6)?,
                 ))
             },
         )
         .optional()?;
-    if let Some((device_name, selection, mp3_quality, bitrate, _ratings_back, remove_deleted)) =
-        existing
+    if let Some((
+        device_name,
+        selection,
+        _mp3_quality,
+        transfer_profile,
+        bitrate,
+        _ratings_back,
+        remove_deleted,
+    )) = existing
     {
         let bitrate = u32::try_from(bitrate).unwrap_or(0);
-        let mp3_quality = u32::try_from(mp3_quality)
-            .ok()
-            .and_then(|quality| Mp3Quality::try_from(quality).ok())
-            .unwrap_or_default();
         return Ok(DeviceSettings {
             device_serial: serial.to_string(),
             device_name,
             selection: decode_selection(&selection)?,
-            profile: TransferProfile::Mp3(mp3_quality),
+            profile: TransferProfile::from_storage_value(&transfer_profile).unwrap_or_default(),
             opus_bitrate: normalized_bitrate(bitrate),
             ratings_back: false,
             remove_deleted,
@@ -158,16 +162,20 @@ pub fn save_settings(
         ));
     }
     let selection = encode_selection(&settings.selection)?;
-    let TransferProfile::Mp3(mp3_quality) = settings.profile;
+    let mp3_quality = match settings.profile {
+        TransferProfile::Mp3(quality) => quality,
+        TransferProfile::Opus160 | TransferProfile::Original => Mp3Quality::default(),
+    };
     conn.execute(
         "INSERT INTO device_settings \
-         (device_serial, device_name, selection_json, mp3_quality, opus_bitrate, ratings_back, \
-          remove_deleted) \
-         VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6) \
+         (device_serial, device_name, selection_json, mp3_quality, transfer_profile, \
+          opus_bitrate, ratings_back, remove_deleted) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7) \
          ON CONFLICT(device_serial) DO UPDATE SET \
            device_name = excluded.device_name, \
            selection_json = excluded.selection_json, \
            mp3_quality = excluded.mp3_quality, \
+           transfer_profile = excluded.transfer_profile, \
            opus_bitrate = excluded.opus_bitrate, \
            ratings_back = 0, \
            remove_deleted = excluded.remove_deleted",
@@ -176,6 +184,7 @@ pub fn save_settings(
             settings.device_name,
             selection,
             mp3_quality.kbps(),
+            settings.profile.storage_value(),
             settings.opus_bitrate,
             settings.remove_deleted
         ],

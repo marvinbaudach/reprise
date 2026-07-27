@@ -3,8 +3,7 @@ use reprise_core::device_sync::settings::{
     load_device_playlists, load_or_create_settings, upsert_device_file, upsert_device_playlist,
 };
 use reprise_core::device_sync::{
-    DeviceFileRecord, DevicePlaylistRecord, MirrorBlocker, Mp3Quality, StorageProjectionState,
-    TransferProfile,
+    DeviceFileRecord, DevicePlaylistRecord, MirrorBlocker, StorageProjectionState, TransferProfile,
 };
 
 struct FailingCopyBackend {
@@ -94,7 +93,7 @@ fn save_sources(conn: &Rc<RefCell<Connection>>, device_id: &str, sources: Vec<Se
 }
 
 #[test]
-fn compact_page_projects_quality_playlist_sizes_deduplicated_delta_and_storage() {
+fn compact_page_projects_profile_playlist_sizes_deduplicated_delta_and_storage() {
     run(async {
         let (_temp, conn) = fixture();
         add_playlist(&conn, 10, "Road", &[1, 2, 1]);
@@ -109,21 +108,21 @@ fn compact_page_projects_quality_playlist_sizes_deduplicated_delta_and_storage()
         gtk4::glib::timeout_future(Duration::from_millis(2)).await;
 
         let page = runtime.devices().remove(0).page;
-        assert_eq!(page.quality_options, Mp3Quality::ALL);
-        assert_eq!(page.quality, Mp3Quality::Kbps256);
+        assert_eq!(page.profile_options, TransferProfile::ALL);
+        assert_eq!(page.profile, TransferProfile::Opus160);
         assert_eq!(page.unique_track_count, 3);
-        assert_eq!(page.target_bytes, 292_908);
+        assert_eq!(page.target_bytes, 256_908);
         assert_eq!(page.changes.additions, 3);
         assert_eq!(page.changes.replacements, 0);
         assert_eq!(page.changes.removals, 0);
-        assert_eq!(page.changes.transfer_bytes, 292_908);
+        assert_eq!(page.changes.transfer_bytes, 256_908);
         assert_eq!(page.storage.state, StorageProjectionState::Fits);
         assert_eq!(
             page.storage
                 .after_sync
                 .as_ref()
                 .and_then(|composition| composition.free_bytes),
-            Some(707_092)
+            Some(743_092)
         );
         assert_eq!(
             page.playlists
@@ -138,8 +137,8 @@ fn compact_page_projects_quality_playlist_sizes_deduplicated_delta_and_storage()
                 ))
                 .collect::<Vec<_>>(),
             [
-                (Some("Mix"), true, 2, 2, 195_272),
-                (Some("Road"), true, 3, 2, 195_272),
+                (Some("Mix"), true, 2, 2, 171_272),
+                (Some("Road"), true, 3, 2, 171_272),
             ]
         );
         assert!(page
@@ -153,7 +152,7 @@ fn compact_page_projects_quality_playlist_sizes_deduplicated_delta_and_storage()
 }
 
 #[test]
-fn quality_and_playlist_changes_persist_and_recompute_the_page_immediately() {
+fn profile_and_playlist_changes_persist_and_recompute_the_page_immediately() {
     run(async {
         let (_temp, conn) = fixture();
         add_playlist(&conn, 10, "Road", &[1, 2]);
@@ -167,17 +166,19 @@ fn quality_and_playlist_changes_persist_and_recompute_the_page_immediately() {
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
         gtk4::glib::timeout_future(Duration::from_millis(2)).await;
 
-        runtime.set_mp3_quality("a", Mp3Quality::Kbps128).unwrap();
+        runtime
+            .set_transfer_profile("a", TransferProfile::Original)
+            .unwrap();
         let page = runtime.devices().remove(0).page;
-        assert_eq!(page.quality, Mp3Quality::Kbps128);
-        assert_eq!(page.target_bytes, 244_908);
+        assert_eq!(page.profile, TransferProfile::Original);
+        assert_eq!(page.target_bytes, 300);
 
         runtime
             .set_playlist_selected("a", SelectionSource::Playlist(11), false)
             .unwrap();
         let page = runtime.devices().remove(0).page;
         assert_eq!(page.unique_track_count, 2);
-        assert_eq!(page.target_bytes, 163_272);
+        assert_eq!(page.target_bytes, 200);
         assert!(
             !page
                 .playlists
@@ -188,7 +189,7 @@ fn quality_and_playlist_changes_persist_and_recompute_the_page_immediately() {
         );
 
         let persisted = load_or_create_settings(&conn.borrow(), "a", "Phone a").unwrap();
-        assert_eq!(persisted.profile, TransferProfile::Mp3(Mp3Quality::Kbps128));
+        assert_eq!(persisted.profile, TransferProfile::Original);
         assert_eq!(
             persisted.selection,
             DeviceSelection::Sources(vec![SelectionSource::Playlist(10)])

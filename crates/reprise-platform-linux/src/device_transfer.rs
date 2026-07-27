@@ -1,4 +1,4 @@
-//! Sequential MP3 transcoding for Android device synchronization.
+//! Sequential lossy transcoding for Android device synchronization.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -8,8 +8,13 @@ use gstreamer as gst;
 use gstreamer::prelude::*;
 use reprise_core::device_sync::{Mp3Quality, SyncTrack};
 
-const PIPELINE_DESCRIPTION: &str = "uridecodebin name=decoder ! audioconvert ! audioresample ! \
+const MP3_PIPELINE_DESCRIPTION: &str =
+    "uridecodebin name=decoder ! audioconvert ! audioresample ! \
     lamemp3enc name=encoder target=bitrate cbr=true ! id3v2mux name=mux ! \
+    filesink name=output";
+const OPUS_PIPELINE_DESCRIPTION: &str =
+    "uridecodebin name=decoder ! audioconvert ! audioresample ! \
+    opusenc name=encoder bitrate=160000 bitrate-type=vbr ! oggmux name=mux ! \
     filesink name=output";
 const BUS_POLL_INTERVAL: gst::ClockTime = gst::ClockTime::from_mseconds(100);
 
@@ -23,8 +28,46 @@ pub const REQUIRED_MP3_FACTORIES: [&str; 6] = [
     "filesink",
 ];
 
+pub const REQUIRED_OPUS_FACTORIES: [&str; 6] = [
+    "uridecodebin",
+    "audioconvert",
+    "audioresample",
+    "opusenc",
+    "oggmux",
+    "filesink",
+];
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub enum TranscodeProfile {
+    Opus160,
+    Mp3(Mp3Quality),
+}
+
+impl TranscodeProfile {
+    fn required_factories(self) -> &'static [&'static str] {
+        match self {
+            Self::Opus160 => &REQUIRED_OPUS_FACTORIES,
+            Self::Mp3(_) => &REQUIRED_MP3_FACTORIES,
+        }
+    }
+
+    fn pipeline_description(self) -> &'static str {
+        match self {
+            Self::Opus160 => OPUS_PIPELINE_DESCRIPTION,
+            Self::Mp3(_) => MP3_PIPELINE_DESCRIPTION,
+        }
+    }
+
+    fn tag_element(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Opus160 => ("encoder", "Opus encoder"),
+            Self::Mp3(_) => ("mux", "ID3v2 muxer"),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Mp3Metadata {
+pub struct AudioMetadata {
     pub title: String,
     pub artist: String,
     pub album: String,
@@ -33,7 +76,7 @@ pub struct Mp3Metadata {
     pub cover: Option<Vec<u8>>,
 }
 
-impl Mp3Metadata {
+impl AudioMetadata {
     pub fn for_track(track: &SyncTrack) -> Self {
         Self {
             title: track.title.clone(),
@@ -47,11 +90,11 @@ impl Mp3Metadata {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Mp3TranscodeRequest {
+pub struct TranscodeRequest {
     pub source: PathBuf,
     pub output: PathBuf,
-    pub quality: Mp3Quality,
-    pub metadata: Mp3Metadata,
+    pub profile: TranscodeProfile,
+    pub metadata: AudioMetadata,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -103,10 +146,11 @@ impl From<std::io::Error> for TranscodeError {
     }
 }
 
-/// Proves that the fixed MP3/ID3 pipeline can be constructed on this host.
-pub fn probe_mp3_transcode_capability() -> Result<(), TranscodeError> {
+/// Proves that the selected fixed pipeline can be constructed on this host.
+pub fn probe_transcode_capability(profile: TranscodeProfile) -> Result<(), TranscodeError> {
     gst::init().map_err(|error| TranscodeError::Gstreamer(error.to_string()))?;
-    let missing = REQUIRED_MP3_FACTORIES
+    let missing = profile
+        .required_factories()
         .iter()
         .filter(|factory| gst::ElementFactory::find(factory).is_none())
         .map(|factory| (*factory).to_string())
@@ -118,13 +162,13 @@ pub fn probe_mp3_transcode_capability() -> Result<(), TranscodeError> {
     }
 }
 
-/// Decodes one local source into one CBR MP3 with an ID3v2 header.
+/// Decodes one local lossless source into the selected lossy profile.
 ///
 /// This function is blocking and must run on a dedicated worker. Its one-file
 /// API is deliberate: the caller completes transcode, MTP copy, verification,
 /// finalization and inventory before starting the next track.
-pub fn transcode_to_mp3(
-    request: &Mp3TranscodeRequest,
+pub fn transcode_audio(
+    request: &TranscodeRequest,
     cancelled: &AtomicBool,
 ) -> Result<TranscodedFile, TranscodeError> {
     if cancelled.load(Ordering::SeqCst) {
@@ -133,12 +177,12 @@ pub fn transcode_to_mp3(
     if request.output.exists() {
         return Err(TranscodeError::OutputExists(request.output.clone()));
     }
-    probe_mp3_transcode_capability()?;
+    probe_transcode_capability(request.profile)?;
     let source_uri = gst::glib::filename_to_uri(&request.source, None)
         .map_err(|_| TranscodeError::InvalidPath)?
         .to_string();
     let output_path = request.output.to_str().ok_or(TranscodeError::InvalidPath)?;
-    let pipeline = gst::parse::launch(PIPELINE_DESCRIPTION)
+    let pipeline = gst::parse::launch(request.profile.pipeline_description())
         .map_err(|error| TranscodeError::Gstreamer(error.to_string()))?
         .downcast::<gst::Pipeline>()
         .map_err(|_| TranscodeError::Gstreamer("parser did not create a pipeline".into()))?;
@@ -148,20 +192,19 @@ pub fn transcode_to_mp3(
         .by_name("decoder")
         .ok_or_else(|| TranscodeError::Gstreamer("missing decoder".into()))?
         .set_property("uri", source_uri);
-    cleanup
-        .0
-        .by_name("encoder")
-        .ok_or_else(|| TranscodeError::Gstreamer("missing MP3 encoder".into()))?
-        .set_property(
-            "bitrate",
-            i32::try_from(request.quality.kbps()).unwrap_or(i32::MAX),
-        );
+    if let TranscodeProfile::Mp3(quality) = request.profile {
+        cleanup
+            .0
+            .by_name("encoder")
+            .ok_or_else(|| TranscodeError::Gstreamer("missing MP3 encoder".into()))?
+            .set_property("bitrate", i32::try_from(quality.kbps()).unwrap_or(i32::MAX));
+    }
     cleanup
         .0
         .by_name("output")
         .ok_or_else(|| TranscodeError::Gstreamer("missing file output".into()))?
         .set_property("location", output_path);
-    apply_metadata(&cleanup.0, &request.metadata)?;
+    apply_metadata(&cleanup.0, request.profile, &request.metadata)?;
 
     finish_output(&request.output, run_pipeline(&cleanup.0, cancelled))
 }
@@ -195,28 +238,33 @@ impl Drop for PipelineCleanup {
     }
 }
 
-fn apply_metadata(pipeline: &gst::Pipeline, metadata: &Mp3Metadata) -> Result<(), TranscodeError> {
-    let mux = pipeline
-        .by_name("mux")
-        .ok_or_else(|| TranscodeError::Gstreamer("missing ID3v2 muxer".into()))?
+fn apply_metadata(
+    pipeline: &gst::Pipeline,
+    profile: TranscodeProfile,
+    metadata: &AudioMetadata,
+) -> Result<(), TranscodeError> {
+    let (element_name, element_label) = profile.tag_element();
+    let tag_setter = pipeline
+        .by_name(element_name)
+        .ok_or_else(|| TranscodeError::Gstreamer(format!("missing {element_label}")))?
         .dynamic_cast::<gst::TagSetter>()
-        .map_err(|_| TranscodeError::Gstreamer("ID3v2 muxer cannot accept tags".into()))?;
-    mux.set_tag_merge_mode(gst::TagMergeMode::Replace);
-    mux.add_tag::<gst::tags::Title>(&metadata.title.as_str(), gst::TagMergeMode::Replace);
-    mux.add_tag::<gst::tags::Artist>(&metadata.artist.as_str(), gst::TagMergeMode::Replace);
-    mux.add_tag::<gst::tags::Album>(&metadata.album.as_str(), gst::TagMergeMode::Replace);
-    mux.add_tag::<gst::tags::AlbumArtist>(
+        .map_err(|_| TranscodeError::Gstreamer(format!("{element_label} cannot accept tags")))?;
+    tag_setter.set_tag_merge_mode(gst::TagMergeMode::Replace);
+    tag_setter.add_tag::<gst::tags::Title>(&metadata.title.as_str(), gst::TagMergeMode::Replace);
+    tag_setter.add_tag::<gst::tags::Artist>(&metadata.artist.as_str(), gst::TagMergeMode::Replace);
+    tag_setter.add_tag::<gst::tags::Album>(&metadata.album.as_str(), gst::TagMergeMode::Replace);
+    tag_setter.add_tag::<gst::tags::AlbumArtist>(
         &metadata.album_artist.as_str(),
         gst::TagMergeMode::Replace,
     );
     if let Some(track_number) = metadata.track_number {
-        mux.add_tag::<gst::tags::TrackNumber>(&track_number, gst::TagMergeMode::Replace);
+        tag_setter.add_tag::<gst::tags::TrackNumber>(&track_number, gst::TagMergeMode::Replace);
     }
     if let Some(cover) = &metadata.cover {
         let caps = gst::Caps::builder(cover_mime_type(cover)).build();
         let buffer = gst::Buffer::from_slice(cover.clone());
         let sample = gst::Sample::builder().buffer(&buffer).caps(&caps).build();
-        mux.add_tag::<gst::tags::Image>(&sample, gst::TagMergeMode::Replace);
+        tag_setter.add_tag::<gst::tags::Image>(&sample, gst::TagMergeMode::Replace);
     }
     Ok(())
 }

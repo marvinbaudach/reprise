@@ -8,7 +8,7 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::device_sync::{
     DeviceStorageProjection, MirrorBlocker, Mp3Quality, StorageProjectionState, SyncChangeSummary,
-    SyncPageControls, SyncPageWarning, SyncPlaylistRow,
+    SyncPageControls, SyncPageWarning, SyncPlaylistRow, TransferProfile,
 };
 
 use super::device_sync_runtime::{
@@ -24,12 +24,11 @@ struct DialogActionCopy {
     destructive: bool,
 }
 
-fn quality_label(quality: Mp3Quality) -> &'static str {
-    match quality {
-        Mp3Quality::Kbps128 => "128 kbit/s",
-        Mp3Quality::Kbps192 => "192 kbit/s",
-        Mp3Quality::Kbps256 => "256 kbit/s",
-        Mp3Quality::Kbps320 => "320 kbit/s",
+fn profile_label(profile: TransferProfile) -> &'static str {
+    match profile {
+        TransferProfile::Opus160 => "Opus · 160 kbit/s (Recommended)",
+        TransferProfile::Mp3(Mp3Quality::Kbps256) => "MP3 · 256 kbit/s (Compatibility)",
+        TransferProfile::Original => "Original files (no conversion)",
     }
 }
 
@@ -249,7 +248,7 @@ fn counted(count: usize, singular: &str, plural: &str) -> String {
 
 #[derive(Clone)]
 struct DialogActions {
-    set_quality: Rc<dyn Fn(Mp3Quality)>,
+    set_profile: Rc<dyn Fn(TransferProfile)>,
     set_playlist: Rc<dyn Fn(reprise_core::device_sync::SelectionSource, bool)>,
     start: Rc<dyn Fn()>,
     cancel: Rc<dyn Fn()>,
@@ -258,14 +257,14 @@ struct DialogActions {
 
 impl DialogActions {
     fn for_runtime(runtime: &Rc<DeviceSyncRuntime>, device_id: &str) -> Self {
-        let set_quality = {
+        let set_profile = {
             let runtime = runtime.clone();
             let device_id = device_id.to_string();
-            Rc::new(move |quality| {
-                if let Err(error) = runtime.set_mp3_quality(&device_id, quality) {
-                    tracing::warn!(%error, "could not update Android sync quality");
+            Rc::new(move |profile| {
+                if let Err(error) = runtime.set_transfer_profile(&device_id, profile) {
+                    tracing::warn!(%error, "could not update Android sync transfer profile");
                 }
-            }) as Rc<dyn Fn(Mp3Quality)>
+            }) as Rc<dyn Fn(TransferProfile)>
         };
         let set_playlist = {
             let runtime = runtime.clone();
@@ -296,7 +295,7 @@ impl DialogActions {
             Rc::new(move || runtime.eject(&device_id)) as Rc<dyn Fn()>
         };
         Self {
-            set_quality,
+            set_profile,
             set_playlist,
             start,
             cancel,
@@ -309,7 +308,7 @@ struct SyncDialogSurface {
     root: adw::ToolbarView,
     title: adw::WindowTitle,
     connected_stack: gtk4::Stack,
-    quality: adw::ComboRow,
+    profile: adw::ComboRow,
     playlist_group: adw::PreferencesGroup,
     playlist_rows: RefCell<Vec<(reprise_core::device_sync::SelectionSource, adw::SwitchRow)>>,
     changes: adw::ActionRow,
@@ -341,15 +340,17 @@ impl SyncDialogSurface {
 
         let format_group = adw::PreferencesGroup::builder()
             .title("Audio format")
-            .description("Tracks are mirrored as broadly compatible MP3 files.")
+            .description(
+                "Lossless files use the selected encoder. Lossy and unknown formats are always copied unchanged.",
+            )
             .build();
-        let labels = Mp3Quality::ALL.map(quality_label);
-        let quality_model = gtk4::StringList::new(&labels);
-        let quality = adw::ComboRow::builder()
-            .title("MP3 quality")
-            .model(&quality_model)
+        let labels = TransferProfile::ALL.map(profile_label);
+        let profile_model = gtk4::StringList::new(&labels);
+        let profile = adw::ComboRow::builder()
+            .title("Transfer profile")
+            .model(&profile_model)
             .build();
-        format_group.add(&quality);
+        format_group.add(&profile);
         page.add(&format_group);
 
         let playlist_group = adw::PreferencesGroup::builder().title("Playlists").build();
@@ -407,15 +408,16 @@ impl SyncDialogSurface {
         let updating = Rc::new(Cell::new(false));
         {
             let updating = updating.clone();
-            let set_quality = actions.set_quality.clone();
-            quality.connect_selected_notify(move |row| {
+            let set_profile = actions.set_profile.clone();
+            profile.connect_selected_notify(move |row| {
                 if updating.get() {
                     return;
                 }
-                let Some(quality) = Mp3Quality::ALL.get(row.selected() as usize).copied() else {
+                let Some(profile) = TransferProfile::ALL.get(row.selected() as usize).copied()
+                else {
                     return;
                 };
-                set_quality(quality);
+                set_profile(profile);
             });
         }
         let cancelling = Rc::new(Cell::new(false));
@@ -440,7 +442,7 @@ impl SyncDialogSurface {
             root,
             title,
             connected_stack,
-            quality,
+            profile,
             playlist_group,
             playlist_rows: RefCell::new(Vec::new()),
             changes,
@@ -469,12 +471,12 @@ impl SyncDialogSurface {
             } else {
                 "disconnected"
             });
-        let selected = Mp3Quality::ALL
+        let selected = TransferProfile::ALL
             .iter()
-            .position(|quality| quality == &device.page.quality)
+            .position(|profile| profile == &device.page.profile)
             .unwrap_or(0);
-        self.quality.set_selected(selected as u32);
-        self.quality.set_sensitive(device.page.controls.editable);
+        self.profile.set_selected(selected as u32);
+        self.profile.set_sensitive(device.page.controls.editable);
         self.update_playlists(device);
         self.playlist_group.set_description(Some(&format!(
             "{} · {} on device",

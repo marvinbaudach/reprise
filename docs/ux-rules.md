@@ -339,6 +339,13 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   After-sync-Zuwachs, Other und Free dar; dieselben Werte bleiben textuell
   verfügbar. Bei unvollständiger oder inkonsistenter Kapazität verschwindet
   die Leiste, und der Text benennt „unknown“, statt Anteile zu erfinden.
+  <!-- REVIEW: Regelvorschlag -->
+- **MTP-8** [geplant] [gtk] — Der kompakte Sync-Dialog bietet genau drei
+  Transferprofile: Opus mit 160 kbit/s als Empfehlung und Standard, MP3 mit
+  256 kbit/s als Kompatibilitäts-Fallback sowie unveränderte Originaldateien.
+  Ein verlustbehaftetes oder nicht eindeutig als verlustfrei erkanntes
+  Quellformat wird unter jedem Profil unverändert kopiert und nie in ein
+  anderes verlustbehaftetes Format transkodiert.
 
 ## F. Einstellungen & Modale
 

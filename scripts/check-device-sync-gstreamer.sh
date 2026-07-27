@@ -5,6 +5,8 @@ required=(
   uridecodebin
   audioconvert
   audioresample
+  opusenc
+  oggmux
   lamemp3enc
   id3v2mux
   filesink
@@ -18,9 +20,9 @@ for factory in "${required[@]}"; do
 done
 
 if ((${#missing[@]} > 0)); then
-  echo "Missing GStreamer factories required for Android MP3 sync: ${missing[*]}" >&2
-  echo "Install GStreamer Good Plug-ins (gst-plugins-good on Arch Linux)." >&2
+  echo "Missing GStreamer factories required for Android Opus/MP3 sync: ${missing[*]}" >&2
+  echo "Install the GStreamer base and good plug-in sets for this distribution." >&2
   exit 1
 fi
 
-echo "Android MP3 sync GStreamer factories are available"
+echo "Android Opus/MP3 sync GStreamer factories are available"

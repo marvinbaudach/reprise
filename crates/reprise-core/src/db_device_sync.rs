@@ -70,6 +70,15 @@ CREATE TABLE IF NOT EXISTS device_playlists (
 CREATE INDEX IF NOT EXISTS idx_device_playlists_serial ON device_playlists(device_serial);
 "#;
 
+const ADD_TRANSFER_PROFILE: &str = r#"
+ALTER TABLE device_settings
+  ADD COLUMN transfer_profile TEXT NOT NULL DEFAULT 'opus_160'
+  CHECK (transfer_profile IN ('opus_160', 'mp3_256', 'original'));
+"#;
+
+const PRESERVE_EXISTING_MP3_BEHAVIOR: &str =
+    "UPDATE device_settings SET transfer_profile = 'mp3_256';";
+
 pub(crate) fn migrate_v36(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version >= 36 {
@@ -87,6 +96,21 @@ pub(crate) fn migrate_v36(conn: &Connection) -> Result<(), rusqlite::Error> {
     }
     transaction.execute_batch(CREATE_DEVICE_PLAYLISTS)?;
     transaction.pragma_update(None, "user_version", 36)?;
+    transaction.commit()
+}
+
+pub(crate) fn migrate_v37(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= 37 {
+        return Ok(());
+    }
+    let has_transfer_profile = has_column(conn, "device_settings", "transfer_profile")?;
+    let transaction = conn.unchecked_transaction()?;
+    if !has_transfer_profile {
+        transaction.execute_batch(ADD_TRANSFER_PROFILE)?;
+        transaction.execute_batch(PRESERVE_EXISTING_MP3_BEHAVIOR)?;
+    }
+    transaction.pragma_update(None, "user_version", 37)?;
     transaction.commit()
 }
 

@@ -6,7 +6,7 @@ use std::path::{Component, Path};
 use super::m3u::{render_named_playlist, DevicePlaylistEntry};
 use super::sanitize::sanitize_component;
 use super::settings::{DeviceFileRecord, DevicePlaylistRecord, SelectionSource};
-use super::transfer::stable_device_paths;
+use super::transfer::build_transfer_plan_with_inventory;
 use super::{SyncTrack, TransferAction, TransferProfile};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -209,20 +209,20 @@ fn build_plan(
 
     let mut available_tracks = available.values().cloned().collect::<Vec<_>>();
     available_tracks.sort_by_key(|track| track.id);
-    let paths = stable_device_paths(&available_tracks, "mp3", &inventory);
-    let mut desired_files = available_tracks
-        .into_iter()
-        .map(|track| {
-            let action = profile.action_for(&track);
-            DesiredManagedFile {
-                device_path: paths.get(&track.id).cloned().unwrap_or_default(),
-                target_bytes: profile.estimated_target_bytes(&track),
-                profile_fingerprint: profile.output_fingerprint(&track).into(),
-                track,
-                action,
-            }
-        })
-        .collect::<Vec<_>>();
+    let mut desired_files =
+        build_transfer_plan_with_inventory(available_tracks, profile, &inventory)
+            .into_iter()
+            .map(|entry| {
+                let action = profile.action_for(&entry.track);
+                DesiredManagedFile {
+                    track: entry.track,
+                    device_path: entry.device_path,
+                    target_bytes: entry.expected_bytes,
+                    profile_fingerprint: entry.mode.fingerprint(),
+                    action,
+                }
+            })
+            .collect::<Vec<_>>();
     desired_files.sort_by_key(|file| file.track.id);
     let desired_by_id = desired_files
         .iter()

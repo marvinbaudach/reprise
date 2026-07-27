@@ -55,7 +55,7 @@ enum Recorded {
     ConfigureDevice {
         device_name: String,
         sources: Vec<(String, i64)>,
-        quality_kbps: u32,
+        profile: String,
     },
     StartDevice(String),
     CancelDevice(String),
@@ -81,7 +81,7 @@ type DeviceSyncProgressRow = (u64, u64, u64);
 type DeviceSyncRow = (
     String,
     bool,
-    u32,
+    String,
     u64,
     u64,
     u64,
@@ -230,7 +230,7 @@ impl DeviceSyncStub {
         vec![(
             "Pixel".into(),
             true,
-            320,
+            "original".into(),
             75,
             200,
             80,
@@ -281,14 +281,14 @@ impl DeviceSyncStub {
         )]
     }
 
-    fn configure(&self, device_name: &str, sources: Vec<(String, i64)>, quality_kbps: u32) {
+    fn configure(&self, device_name: &str, sources: Vec<(String, i64)>, profile: &str) {
         self.calls
             .lock()
             .expect("calls lock")
             .push(Recorded::ConfigureDevice {
                 device_name: device_name.to_owned(),
                 sources,
-                quality_kbps,
+                profile: profile.to_owned(),
             });
     }
 
@@ -398,7 +398,7 @@ fn device_sync_state_and_commands_round_trip_without_internal_identity() {
     let state = client.call_tool("music_get_device_sync_state", json!({}));
     let body = structured_ok(&state);
     assert_eq!(body["devices"][0]["name"], "Pixel");
-    assert_eq!(body["devices"][0]["quality_kbps"], 320);
+    assert_eq!(body["devices"][0]["profile"], "original");
     assert_eq!(body["devices"][0]["playlists"][0]["kind"], "playlist");
     assert_eq!(body["devices"][0]["playlists"][1]["kind"], "smart");
     assert_eq!(body["devices"][0]["changes"]["replacements"], 5);
@@ -417,7 +417,7 @@ fn device_sync_state_and_commands_round_trip_without_internal_identity() {
                 { "kind": "playlist", "id": 3 },
                 { "kind": "smart", "id": 7 }
             ],
-            "quality_kbps": 320
+            "profile": "mp3_256"
         }),
         json!({ "action": "start", "device_name": "Pixel" }),
         json!({ "action": "cancel", "device_name": "Pixel" }),
@@ -432,7 +432,7 @@ fn device_sync_state_and_commands_round_trip_without_internal_identity() {
             Recorded::ConfigureDevice {
                 device_name: "Pixel".into(),
                 sources: vec![("playlist".into(), 3), ("smart".into(), 7)],
-                quality_kbps: 320,
+                profile: "mp3_256".into(),
             },
             Recorded::StartDevice("Pixel".into()),
             Recorded::CancelDevice("Pixel".into()),

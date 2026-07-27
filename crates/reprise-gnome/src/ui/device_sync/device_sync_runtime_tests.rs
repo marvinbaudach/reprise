@@ -14,7 +14,7 @@ use reprise_core::device_sync::{
     SelectionSource,
 };
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor};
-use reprise_platform_linux::device_transfer::{Mp3TranscodeRequest, TranscodedFile};
+use reprise_platform_linux::device_transfer::{TranscodeProfile, TranscodeRequest, TranscodedFile};
 use rusqlite::Connection;
 
 use super::device_sync_runtime::*;
@@ -50,7 +50,7 @@ struct FakeState {
     planned_operations: RefCell<Vec<(String, &'static str)>>,
     available_bytes: Cell<Option<u64>>,
     total_bytes: Cell<Option<u64>>,
-    mp3_probe_error: RefCell<Option<String>>,
+    transcode_probe_error: RefCell<Option<String>>,
     copy_gate: RefCell<Option<CopyGate>>,
     playlist_error: RefCell<Option<String>>,
     playlist_gate: RefCell<Option<PlaylistGate>>,
@@ -77,8 +77,8 @@ impl FakeBackend {
         self
     }
 
-    fn with_mp3_probe_error(self, error: &str) -> Self {
-        self.state.mp3_probe_error.replace(Some(error.into()));
+    fn with_transcode_probe_error(self, error: &str) -> Self {
+        self.state.transcode_probe_error.replace(Some(error.into()));
         self
     }
 
@@ -227,9 +227,9 @@ impl DeviceBackend for FakeBackend {
         })
     }
 
-    fn probe_mp3_transcode(&self) -> Result<(), String> {
+    fn probe_transcode(&self, _profile: TranscodeProfile) -> Result<(), String> {
         self.state
-            .mp3_probe_error
+            .transcode_probe_error
             .borrow()
             .clone()
             .map_or(Ok(()), Err)
@@ -237,7 +237,7 @@ impl DeviceBackend for FakeBackend {
 
     fn transcode_track(
         &self,
-        request: Mp3TranscodeRequest,
+        request: TranscodeRequest,
         _cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
     ) -> TestFuture<TranscodedFile> {
         let state = self.state.clone();
@@ -410,3 +410,5 @@ mod compact_tests;
 mod planned_tests;
 #[path = "device_sync_safety_tests.rs"]
 mod safety_tests;
+#[path = "device_sync_transfer_profile_tests.rs"]
+mod transfer_profile_tests;

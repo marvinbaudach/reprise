@@ -326,15 +326,15 @@ fn transfer_plan_applies_the_mp3_profile_and_resolves_name_collisions() {
         },
     ];
 
-    let plan = build_transfer_plan(tracks, TransferProfile::Mp3(Mp3Quality::Kbps128));
+    let plan = build_transfer_plan(tracks, TransferProfile::Mp3(Mp3Quality::Kbps256));
     assert_eq!(
         plan[0].mode,
         TransferMode::TranscodeMp3 {
-            quality: Mp3Quality::Kbps128
+            quality: Mp3Quality::Kbps256
         }
     );
     assert_eq!(plan[0].device_path, "Artist/Album/01 same.mp3");
-    assert_eq!(plan[0].expected_bytes, 2_345_536);
+    assert_eq!(plan[0].expected_bytes, 3_625_536);
     assert_eq!(plan[1].mode, TransferMode::Copy);
     assert_eq!(plan[1].device_path, "Artist/Album/01 Same (2).mp3");
     assert_eq!(plan[1].expected_bytes, 500_000);
@@ -429,7 +429,7 @@ fn collision_suffixes_preserve_selected_and_pinned_inventory_slots() {
 }
 
 #[test]
-fn default_profile_transcodes_lossless_files_to_mp3() {
+fn default_profile_transcodes_lossless_files_to_opus() {
     let track = SyncTrack {
         id: 1,
         source_path: "/library/one.flac".into(),
@@ -445,17 +445,12 @@ fn default_profile_transcodes_lossless_files_to_mp3() {
         source_mtime: 10,
     };
     let plan = build_transfer_plan(vec![track], TransferProfile::default());
-    assert_eq!(
-        plan[0].mode,
-        TransferMode::TranscodeMp3 {
-            quality: Mp3Quality::Kbps256
-        }
-    );
-    assert_eq!(plan[0].device_path, "Artist/Album/01 One.mp3");
+    assert_eq!(plan[0].mode, TransferMode::TranscodeOpus160);
+    assert_eq!(plan[0].device_path, "Artist/Album/01 One.opus");
 }
 
 #[test]
-fn unknown_duration_has_no_bounded_conservative_mp3_estimate() {
+fn unknown_duration_has_no_bounded_conservative_transcode_estimate() {
     let track = SyncTrack {
         id: 1,
         source_path: "/library/one.flac".into(),
@@ -471,16 +466,13 @@ fn unknown_duration_has_no_bounded_conservative_mp3_estimate() {
         source_mtime: 10,
     };
 
-    let at_128 = build_transfer_plan(
-        vec![track.clone()],
-        TransferProfile::Mp3(Mp3Quality::Kbps128),
-    )[0]
-    .expected_bytes;
-    let at_320 = build_transfer_plan(vec![track], TransferProfile::Mp3(Mp3Quality::Kbps320))[0]
+    let at_opus =
+        build_transfer_plan(vec![track.clone()], TransferProfile::Opus160)[0].expected_bytes;
+    let at_mp3 = build_transfer_plan(vec![track], TransferProfile::Mp3(Mp3Quality::Kbps256))[0]
         .expected_bytes;
 
-    assert_eq!(at_128, u64::MAX);
-    assert_eq!(at_320, u64::MAX);
+    assert_eq!(at_opus, u64::MAX);
+    assert_eq!(at_mp3, u64::MAX);
 }
 
 #[test]

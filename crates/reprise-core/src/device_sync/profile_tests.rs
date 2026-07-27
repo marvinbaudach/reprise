@@ -29,57 +29,87 @@ fn track(
 }
 
 #[test]
-fn mp3_profile_defaults_to_256_and_only_accepts_supported_qualities() {
+fn transfer_profiles_are_exactly_opus_160_mp3_256_and_original() {
+    assert_eq!(Mp3Quality::ALL, [Mp3Quality::Kbps256]);
+    assert_eq!(TransferProfile::default(), TransferProfile::Opus160);
     assert_eq!(
-        Mp3Quality::ALL,
+        TransferProfile::ALL,
         [
-            Mp3Quality::Kbps128,
-            Mp3Quality::Kbps192,
-            Mp3Quality::Kbps256,
-            Mp3Quality::Kbps320,
+            TransferProfile::Opus160,
+            TransferProfile::Mp3(Mp3Quality::Kbps256),
+            TransferProfile::Original,
         ]
     );
-    assert_eq!(
-        TransferProfile::default(),
-        TransferProfile::Mp3(Mp3Quality::Kbps256)
-    );
-    assert_eq!(Mp3Quality::try_from(192), Ok(Mp3Quality::Kbps192));
+    assert_eq!(Mp3Quality::try_from(256), Ok(Mp3Quality::Kbps256));
     assert!(Mp3Quality::try_from(0).is_err());
     assert!(Mp3Quality::try_from(160).is_err());
-    assert_eq!(Mp3Quality::Kbps320.kbps(), 320);
+    assert!(Mp3Quality::try_from(320).is_err());
+    assert_eq!(Mp3Quality::Kbps256.kbps(), 256);
     assert_eq!(
-        TransferProfile::Mp3(Mp3Quality::Kbps256).fingerprint(),
-        "mp3-cbr-256-v1"
+        TransferProfile::from_storage_value("opus_160"),
+        Some(TransferProfile::Opus160)
+    );
+    assert_eq!(
+        TransferProfile::from_storage_value("mp3_256"),
+        Some(TransferProfile::Mp3(Mp3Quality::Kbps256))
+    );
+    assert_eq!(
+        TransferProfile::from_storage_value("original"),
+        Some(TransferProfile::Original)
+    );
+    assert_eq!(TransferProfile::from_storage_value("mp3_320"), None);
+    assert_eq!(TransferProfile::Opus160.storage_value(), "opus_160");
+    assert_eq!(
+        TransferProfile::Mp3(Mp3Quality::Kbps256).storage_value(),
+        "mp3_256"
+    );
+    assert_eq!(TransferProfile::Original.storage_value(), "original");
+}
+
+#[test]
+fn lossy_and_ambiguous_sources_are_never_transcoded_to_another_lossy_format() {
+    let opus = TransferProfile::Opus160;
+    let mp3 = TransferProfile::Mp3(Mp3Quality::Kbps256);
+
+    assert_eq!(
+        opus.action_for(&track(1, "/music/low.mp3", Some(96), 10_000, 120_000)),
+        TransferAction::CopyOriginal
+    );
+    assert_eq!(
+        opus.action_for(&track(2, "/music/high.mp3", Some(320), 10_000, 400_000)),
+        TransferAction::CopyOriginal
+    );
+    assert_eq!(
+        mp3.action_for(&track(3, "/music/source.opus", Some(160), 10_000, 200_000)),
+        TransferAction::CopyOriginal
+    );
+    assert_eq!(
+        opus.action_for(&track(4, "/music/source.m4a", None, 10_000, 400_000)),
+        TransferAction::CopyOriginal,
+        "an ambiguous MP4 audio container is copied conservatively"
+    );
+    assert_eq!(
+        mp3.action_for(&track(5, "/music/source.unknown", None, 10_000, 400_000)),
+        TransferAction::CopyOriginal,
+        "unknown source encodings must never be assumed lossless"
     );
 }
 
 #[test]
-fn mp3_at_or_below_the_profile_is_copied_and_everything_else_is_transcoded() {
-    let profile = TransferProfile::Mp3(Mp3Quality::Kbps256);
+fn only_known_lossless_sources_are_encoded_and_original_always_copies() {
+    let flac = track(1, "/music/lossless.flac", None, 10_000, 1_000_000);
 
     assert_eq!(
-        profile.action_for(&track(1, "/music/low.mp3", Some(192), 10_000, 240_000)),
+        TransferProfile::Opus160.action_for(&flac),
+        TransferAction::TranscodeOpus160
+    );
+    assert_eq!(
+        TransferProfile::Mp3(Mp3Quality::Kbps256).action_for(&flac),
+        TransferAction::TranscodeMp3(Mp3Quality::Kbps256)
+    );
+    assert_eq!(
+        TransferProfile::Original.action_for(&flac),
         TransferAction::CopyOriginal
-    );
-    assert_eq!(
-        profile.action_for(&track(2, "/music/exact.MP3", Some(256), 10_000, 320_000)),
-        TransferAction::CopyOriginal
-    );
-    assert_eq!(
-        profile.action_for(&track(3, "/music/high.mp3", Some(320), 10_000, 400_000)),
-        TransferAction::TranscodeMp3(Mp3Quality::Kbps256)
-    );
-    assert_eq!(
-        profile.action_for(&track(4, "/music/unknown.mp3", None, 10_000, 400_000)),
-        TransferAction::TranscodeMp3(Mp3Quality::Kbps256)
-    );
-    assert_eq!(
-        profile.action_for(&track(5, "/music/invalid.mp3", Some(0), 10_000, 400_000)),
-        TransferAction::TranscodeMp3(Mp3Quality::Kbps256)
-    );
-    assert_eq!(
-        profile.action_for(&track(6, "/music/lossless.flac", None, 10_000, 1_000_000)),
-        TransferAction::TranscodeMp3(Mp3Quality::Kbps256)
     );
 }
 
@@ -87,8 +117,8 @@ fn mp3_at_or_below_the_profile_is_copied_and_everything_else_is_transcoded() {
 fn target_size_reserves_source_derived_metadata_and_mux_overhead_for_transcoding() {
     let profile = TransferProfile::Mp3(Mp3Quality::Kbps256);
     let copied = track(1, "/music/low.mp3", Some(192), 10_000, 240_000);
-    let transcoded = track(2, "/music/high.mp3", Some(320), 10_000, 400_000);
-    let unknown_duration = track(3, "/music/high.mp3", Some(320), 0, 444_000);
+    let transcoded = track(2, "/music/lossless.flac", None, 10_000, 400_000);
+    let unknown_duration = track(3, "/music/lossless.flac", None, 0, 444_000);
 
     assert_eq!(profile.estimated_target_bytes(&copied), 240_000);
     assert_eq!(profile.estimated_target_bytes(&transcoded), 785_536);
@@ -96,6 +126,14 @@ fn target_size_reserves_source_derived_metadata_and_mux_overhead_for_transcoding
         profile.estimated_target_bytes(&unknown_duration),
         u64::MAX,
         "an unknown duration cannot produce a bounded conservative estimate"
+    );
+    assert_eq!(
+        TransferProfile::Opus160.estimated_target_bytes(&transcoded),
+        665_536
+    );
+    assert_eq!(
+        TransferProfile::Original.estimated_target_bytes(&transcoded),
+        400_000
     );
 }
 
@@ -125,9 +163,9 @@ fn playlist_projection_preserves_entries_but_deduplicates_physical_tracks() {
     assert_eq!(projection.playlists[0].target_bytes, 1_625_536);
     assert_eq!(projection.playlists[1].entry_count, 2);
     assert_eq!(projection.playlists[1].unique_track_count, 2);
-    assert_eq!(projection.playlists[1].target_bytes, 665_536);
+    assert_eq!(projection.playlists[1].target_bytes, 440_000);
     assert_eq!(projection.unique_track_count, 3);
-    assert_eq!(projection.target_bytes, 2_051_072);
+    assert_eq!(projection.target_bytes, 1_825_536);
 }
 
 #[test]
