@@ -134,3 +134,4 @@ Task R6: complete (this commit, base bc5c6beda5, applied descending direction to
 
 Task QA-80: complete (this commit, base 066d2abcb6, made Podcasts⇄Music atomic so outgoing and incoming dense source tables never overlap while other outer page switches retain the Standard crossfade)
 Task QA-78: complete (this commit, base 5a9e8b985b, queued the stable-ID scroll anchor before GTK can paint a reload's transient position-zero state, then retained the exact offset restore for metadata and rating saves)
+Task QA-79: complete (this commit, base d757e13293, moved the shared progress activity inside the bottom-pinned Issues section between its heading and the Missing files / Import errors sources)

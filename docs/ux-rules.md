@@ -390,10 +390,12 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Relink-Vertrag (2a) und die noch nicht einheitlich gelieferte Karte der
   übrigen Langläufer (2b) gesplittet.
 - **FB-2a** [aktiv] [gtk] — Der Relink-Suchlauf läuft off-thread in der
-  bestehenden, mit Scan/Sync stapelbaren Fortschrittskarte direkt über dem
-  unten fixierten Issues-Bereich: Spinner + Titel + % rechts (tabular) +
-  3-px-Balken + ellipsierte Detailzeile. Klick auf die Karte → Missing files;
-  der sichtbare Cancel-Button prüft den Abbruch vor jeder Audiodatei.
+  bestehenden, mit Scan/Sync stapelbaren Fortschrittskarte **innerhalb** des
+  unten fixierten Issues-Bereichs. Seine Reihenfolge ist: Überschrift
+  „ISSUES“ → laufende Karten → Import errors / Missing files. Karte: Spinner
+  + Titel + % rechts (tabular) + 3-px-Balken + ellipsierte Detailzeile. Klick
+  auf die Karte → Missing files; der sichtbare Cancel-Button prüft den
+  Abbruch vor jeder Audiodatei.
 - **FB-2b** [geplant] [gtk] — Scan, Sync und Playlist-Import verwenden für
   jeden Lauf > ~1 s denselben vollständigen Kartenvertrag aus FB-2a,
   einschließlich sichtbarem Cancel und Navigation zur zugehörigen Ansicht.
