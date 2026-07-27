@@ -2107,6 +2107,14 @@ deterministisch und hoch-konfident, nie „ohne Review".
   Spalte beim Normalisieren ebenfalls ausgeblendet, ohne ihre gespeicherte
   Reihenfolge oder Sichtbarkeit zu verlieren.
 
+- **BROWSE-10** [aktiv] [core] — **Widersprüchliche eingebettete Album-Cover
+  werden kanonisiert.** Ist der Cover-Download aktiviert, erkennt der
+  Bibliothekslauf verschiedene eingebettete Bilder für denselben
+  normalisierten Album-Interpreten und Albumnamen und beschafft genau ein
+  gemeinsames Cache-Cover. Dieses gewinnt danach für alle Tracks der
+  Album-Identität; die Musikdateien bleiben unverändert. Bei deaktiviertem
+  Modul oder nicht verfügbarem Netz bleibt die rein lokale Auflösung erhalten.
+
 ## AA. Externe Änderungen (Live-Refresh von CLI/MCP)
 
 <!-- Sektionsbuchstabe: A–Z sind auf main bereits vergeben (T doppelt); die
