@@ -400,6 +400,43 @@ fn mot_7_waveform_completes_build_up_when_animations_disabled_mid_build() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn style_5_waveform_peaks_set_before_mapping_complete_on_the_first_frame() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let settings = gtk4::Settings::default().unwrap();
+    let previous = settings.is_gtk_enable_animations();
+    settings.set_gtk_enable_animations(true);
+
+    let waveform = WaveformSeek::new();
+    assert!(
+        waveform.widget().frame_clock().is_none(),
+        "the regression requires peaks to arrive before a frame clock exists"
+    );
+    waveform.set_peaks(vec![128u8; 1_000]);
+
+    let window = gtk4::Window::builder()
+        .default_width(600)
+        .default_height(80)
+        .child(waveform.widget())
+        .build();
+    window.present();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    while waveform.state.borrow().build_progress < 1.0 && std::time::Instant::now() < deadline {
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+
+    assert_eq!(
+        waveform.state.borrow().build_progress,
+        1.0,
+        "a pre-map waveform must not remain invisible with only its playhead drawn"
+    );
+    window.close();
+    settings.set_gtk_enable_animations(previous);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn mot_5_waveform_crossfades_to_the_new_track_instead_of_rebuilding() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();

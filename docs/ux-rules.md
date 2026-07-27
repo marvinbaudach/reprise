@@ -1353,6 +1353,15 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   „Show columns" stellt die Nutzerkonfiguration im schmalen Fenster wieder
   her; zusätzliche Breite wird dann ausschließlich innerhalb der Tabelle
   horizontal gescrollt.
+- **STYLE-7** [aktiv] [gtk] — Wird das Library-Fenster auf eine Breite
+  verkleinert oder gesnappt, bei der beide Flanken den Hauptinhalt sichtbar
+  verdrängen, schließen linke Library-Sidebar und rechtes Now-Playing-Panel
+  gemeinsam in derselben responsiven Transition. Ein 10-s-Undo-Toast stellt
+  exakt den Zustand beider Flanken vor dem Verkleinern wieder her; auch das
+  spätere Verbreitern restauriert diesen Zustand, sofern der User die Flanken
+  im schmalen Fenster nicht selbst geändert hat. Responsive Änderungen
+  überschreiben keine gespeicherte Sidebar- oder Panel-Präferenz, und beide
+  Header-Toggles bleiben zum manuellen Wiederöffnen erreichbar.
 - **CONTRAST-1** [aktiv] [gtk] — Es gibt drei zentrale Textstufen: Primär
   ungefähr 0,95 für Titel und Werte, Sekundär ungefähr 0,7 für Artist,
   Status, Metadaten und Spaltenköpfe, Hint ungefähr 0,5 für Platzhalter,

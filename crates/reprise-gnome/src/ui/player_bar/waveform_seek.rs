@@ -360,8 +360,12 @@ impl WaveformSeek {
     /// animation (gated on `gtk-enable-animations`). Use this whenever the
     /// track changes.
     pub(in crate::ui) fn set_peaks(&self, peaks: Vec<u8>) {
-        let build_start_us = self.area.frame_clock().map_or(0, |c| c.frame_time());
-        let crossfade_start_us = gtk4::glib::monotonic_time();
+        // Peaks can arrive before the player bar is mapped, when the drawing
+        // area has no frame clock yet. Monotonic time uses the same timescale
+        // as `GdkFrameClock::frame_time`, so the first mapped frame can always
+        // advance the build instead of leaving every bar at zero height.
+        let build_start_us = gtk4::glib::monotonic_time();
+        let crossfade_start_us = build_start_us;
         let animate = motion::animations_enabled();
         if !animate {
             let existing_tick = self.tick_id.borrow_mut().take();

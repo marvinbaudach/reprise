@@ -581,6 +581,7 @@ pub fn build(
         active_content_focus: &active_content_focus,
         metadata_navigator: &metadata_navigator,
     });
+    super::responsive_side_panels::install(&window, &toast_overlay, &split_view, &info_panel, conn);
 
     tracing::info!("main window built");
     window.present();

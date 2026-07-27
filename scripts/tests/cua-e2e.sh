@@ -35,11 +35,13 @@ fi
 for pattern in \
   'run_responsive_window_scenario' \
   '720 760 responsive-narrow' \
-  '1200 420 responsive-short' \
+  '1600 420 responsive-short' \
   '720 420 responsive-combined' \
   'assert_full_player_controls_are_reachable' \
   'assert_only_track_table_overflows' \
   'responsive-play-long-title' \
+  'Side panels were closed to fit the window' \
+  'responsive-undo-side-panels' \
   'Show columns' \
   'Use Compact Mode' \
   'responsive-short-panel' \
