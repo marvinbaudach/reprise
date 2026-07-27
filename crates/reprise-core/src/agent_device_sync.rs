@@ -2,6 +2,8 @@
 
 use std::sync::{mpsc, Arc, Mutex};
 
+use crate::device_sync::{SelectionSource, TransferProfile};
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AgentDeviceSyncState {
     pub devices: Vec<AgentDeviceSyncDevice>,
@@ -11,18 +13,115 @@ pub struct AgentDeviceSyncState {
 pub struct AgentDeviceSyncDevice {
     pub name: String,
     pub connected: bool,
-    pub available_bytes: Option<u64>,
-    pub total_bytes: Option<u64>,
+    pub last_synced_at: Option<i64>,
     pub managed_tracks: usize,
-    pub selected_tracks: usize,
-    pub tracks_to_copy: usize,
-    pub tracks_to_remove: usize,
-    pub bytes_to_copy: u64,
+    pub profile: TransferProfile,
+    pub playlists: Vec<AgentDeviceSyncPlaylist>,
+    pub unique_track_count: usize,
+    pub target_bytes: u64,
+    pub changes: AgentDeviceSyncChanges,
+    pub storage: AgentDeviceSyncStorage,
+    pub blockers: Vec<AgentDeviceSyncBlocker>,
+    pub warnings: Vec<AgentDeviceSyncWarning>,
+    pub controls: AgentDeviceSyncControls,
     pub phase: AgentDeviceSyncPhase,
     pub bytes_done: u64,
     pub bytes_total: u64,
     pub bytes_per_second: u64,
     pub current_track: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentDeviceSyncPlaylist {
+    pub source: SelectionSource,
+    pub name: Option<String>,
+    pub selected: bool,
+    pub available: bool,
+    pub entry_count: usize,
+    pub unique_track_count: usize,
+    pub unavailable_count: usize,
+    pub target_bytes: u64,
+    pub last_synced_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AgentDeviceSyncChanges {
+    pub additions: usize,
+    pub replacements: usize,
+    pub removals: usize,
+    pub retained_unavailable: usize,
+    pub playlist_writes: usize,
+    pub playlist_removals: usize,
+    pub transfer_bytes: u64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AgentDeviceSyncStorage {
+    pub target_name: Option<String>,
+    pub access: AgentDeviceSyncStorageAccess,
+    pub state: AgentDeviceSyncStorageState,
+    pub transfer_bytes: u64,
+    pub current: AgentDeviceSyncStorageComposition,
+    pub after_sync: Option<AgentDeviceSyncStorageComposition>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum AgentDeviceSyncStorageAccess {
+    Writable,
+    ReadOnly,
+    #[default]
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum AgentDeviceSyncStorageState {
+    Fits,
+    Insufficient {
+        shortfall_bytes: u64,
+    },
+    #[default]
+    CapacityUnknown,
+    Inconsistent,
+    Blocked,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AgentDeviceSyncStorageComposition {
+    pub total_bytes: Option<u64>,
+    pub reprise_music_bytes: u64,
+    pub other_music_bytes: u64,
+    pub other_used_bytes: Option<u64>,
+    pub free_bytes: Option<u64>,
+    pub knowledge: AgentDeviceSyncStorageKnowledge,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum AgentDeviceSyncStorageKnowledge {
+    Complete,
+    #[default]
+    CapacityUnknown,
+    Inconsistent,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AgentDeviceSyncBlocker {
+    NoPlaylistsSelected,
+    MissingPlaylist(SelectionSource),
+    DuplicatePlaylist(SelectionSource),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentDeviceSyncWarning {
+    UnavailableNotOnDevice,
+    UnsafeManagedItem,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AgentDeviceSyncControls {
+    pub editable: bool,
+    pub can_start: bool,
+    pub can_cancel: bool,
+    pub can_eject: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -39,16 +138,18 @@ pub enum AgentDeviceSyncPhase {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentDeviceSyncCommand {
-    ConfigurePlaylist {
+    Configure {
         device_name: String,
-        playlist_name: String,
-        remove_unselected: bool,
-        bitrate_kbps: u32,
+        sources: Vec<SelectionSource>,
+        profile: TransferProfile,
     },
     Start {
         device_name: String,
     },
     Cancel {
+        device_name: String,
+    },
+    Eject {
         device_name: String,
     },
 }
@@ -79,20 +180,69 @@ pub fn read_agent_device_sync_state(state: &SharedAgentDeviceSyncState) -> Agent
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::device_sync::SelectionSource;
 
     #[test]
-    fn agent_snapshot_exposes_live_capacity_delta_and_transfer_rate() {
+    fn agent_snapshot_exposes_the_complete_path_free_playlist_mirror_state() {
         let state = Arc::new(Mutex::new(AgentDeviceSyncState {
             devices: vec![AgentDeviceSyncDevice {
                 name: "Pixel".into(),
                 connected: true,
-                available_bytes: Some(40),
-                total_bytes: Some(100),
+                last_synced_at: Some(1_721_234_890),
                 managed_tracks: 75,
-                selected_tracks: 200,
-                tracks_to_copy: 125,
-                tracks_to_remove: 0,
-                bytes_to_copy: 60,
+                profile: TransferProfile::Original,
+                playlists: vec![AgentDeviceSyncPlaylist {
+                    source: SelectionSource::Smart(7),
+                    name: Some("Heavy rotation".into()),
+                    selected: true,
+                    available: true,
+                    entry_count: 220,
+                    unique_track_count: 200,
+                    unavailable_count: 2,
+                    target_bytes: 80,
+                    last_synced_at: Some(1_721_234_567),
+                }],
+                unique_track_count: 200,
+                target_bytes: 80,
+                changes: AgentDeviceSyncChanges {
+                    additions: 120,
+                    replacements: 5,
+                    removals: 0,
+                    retained_unavailable: 2,
+                    playlist_writes: 1,
+                    playlist_removals: 0,
+                    transfer_bytes: 60,
+                },
+                storage: AgentDeviceSyncStorage {
+                    target_name: Some("Internal storage".into()),
+                    access: AgentDeviceSyncStorageAccess::Writable,
+                    state: AgentDeviceSyncStorageState::Fits,
+                    transfer_bytes: 60,
+                    current: AgentDeviceSyncStorageComposition {
+                        total_bytes: Some(100),
+                        reprise_music_bytes: 20,
+                        other_music_bytes: 10,
+                        other_used_bytes: Some(30),
+                        free_bytes: Some(40),
+                        knowledge: AgentDeviceSyncStorageKnowledge::Complete,
+                    },
+                    after_sync: Some(AgentDeviceSyncStorageComposition {
+                        total_bytes: Some(100),
+                        reprise_music_bytes: 80,
+                        other_music_bytes: 10,
+                        other_used_bytes: Some(10),
+                        free_bytes: Some(0),
+                        knowledge: AgentDeviceSyncStorageKnowledge::Complete,
+                    }),
+                },
+                blockers: Vec::new(),
+                warnings: vec![AgentDeviceSyncWarning::UnavailableNotOnDevice],
+                controls: AgentDeviceSyncControls {
+                    editable: false,
+                    can_start: false,
+                    can_cancel: true,
+                    can_eject: false,
+                },
                 phase: AgentDeviceSyncPhase::Copying,
                 bytes_done: 20,
                 bytes_total: 60,
@@ -103,10 +253,43 @@ mod tests {
 
         let snapshot = read_agent_device_sync_state(&state);
         let device = &snapshot.devices[0];
-        assert_eq!(device.available_bytes, Some(40));
-        assert_eq!(device.total_bytes, Some(100));
-        assert_eq!(device.selected_tracks, 200);
+        assert_eq!(device.profile, TransferProfile::Original);
+        assert_eq!(device.last_synced_at, Some(1_721_234_890));
+        assert_eq!(device.playlists[0].source, SelectionSource::Smart(7));
+        assert_eq!(device.playlists[0].entry_count, 220);
+        assert_eq!(device.playlists[0].last_synced_at, Some(1_721_234_567));
+        assert_eq!(device.changes.replacements, 5);
+        assert_eq!(
+            device.storage.access,
+            AgentDeviceSyncStorageAccess::Writable
+        );
+        assert_eq!(device.storage.current.free_bytes, Some(40));
+        assert_eq!(
+            device.storage.after_sync.as_ref().unwrap().free_bytes,
+            Some(0)
+        );
+        assert_eq!(
+            device.warnings,
+            [AgentDeviceSyncWarning::UnavailableNotOnDevice]
+        );
+        assert!(device.controls.can_cancel);
         assert_eq!(device.bytes_per_second, 10);
         assert_eq!(device.current_track, "Sun//Eater — Lorna Shore");
+    }
+
+    #[test]
+    fn configure_command_uses_stable_manual_and_smart_playlist_identity() {
+        assert_eq!(
+            AgentDeviceSyncCommand::Configure {
+                device_name: "Pixel".into(),
+                sources: vec![SelectionSource::Playlist(3), SelectionSource::Smart(7),],
+                profile: TransferProfile::Opus160,
+            },
+            AgentDeviceSyncCommand::Configure {
+                device_name: "Pixel".into(),
+                sources: vec![SelectionSource::Playlist(3), SelectionSource::Smart(7),],
+                profile: TransferProfile::Opus160,
+            }
+        );
     }
 }

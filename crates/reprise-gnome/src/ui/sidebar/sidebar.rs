@@ -61,12 +61,14 @@ use rusqlite::Connection;
 
 use super::sidebar_activity_slot::SidebarActivitySlot;
 use super::sidebar_boundary_navigation::wire_collection_boundary_navigation;
-use super::sidebar_issues_section::build_issues_section;
 #[cfg(test)]
 use super::sidebar_issues_section::{
     bottom_region_placement, issues_surface_for_progress, IssuesSurface,
 };
 use super::sidebar_navigation_scroller::build_navigation_scroller;
+use super::sidebar_root::build_root;
+#[cfg(test)]
+use super::sidebar_root::{sidebar_root_order, SidebarRootChild};
 use reprise_core::view_source::ViewSource;
 
 /// One row's identity: the built widget, the `ViewSource` selecting it
@@ -380,20 +382,9 @@ impl Sidebar {
     pub fn bind_device_sync(
         &self,
         runtime: &Rc<crate::ui::device_sync_runtime::DeviceSyncRuntime>,
+        on_open: Rc<dyn Fn(String, String)>,
     ) {
-        let shared = Rc::downgrade(&self.shared);
-        let section = super::sidebar_device_card::bind(
-            runtime,
-            Rc::new(move |serial, name| {
-                let Some(shared) = shared.upgrade() else {
-                    return;
-                };
-                let callback = shared.on_select.borrow().clone();
-                if let Some(callback) = callback {
-                    callback(ViewSource::Device { serial }, name);
-                }
-            }),
-        );
+        let section = super::sidebar_device_card::bind(runtime, on_open);
         self.activity_slot.set_device_section(&section);
     }
 }
@@ -413,43 +404,6 @@ pub(in crate::ui) fn remember_issue_focus_entry(listbox: &gtk4::ListBox, row: &g
     if listbox.focus_child().is_none() {
         listbox.set_focus_child(Some(row));
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum SidebarRootChild {
-    Navigation,
-    Activity,
-    Issues,
-}
-
-fn sidebar_root_order() -> [SidebarRootChild; 3] {
-    [
-        SidebarRootChild::Navigation,
-        SidebarRootChild::Activity,
-        SidebarRootChild::Issues,
-    ]
-}
-
-/// Assembles the sidebar's vertical root. The scrolling navigation list
-/// expands to fill the top. The bottom region shows persistent Issues while
-/// idle; active scanner progress replaces its heading and source rows until
-/// the scanner's own revealer has fully hidden (FB-8).
-fn build_root(
-    scrolled: &gtk4::ScrolledWindow,
-    activity_slot: &SidebarActivitySlot,
-    issues_listbox: &gtk4::ListBox,
-) -> gtk4::Box {
-    let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    root.set_vexpand(true);
-    let issues_section = build_issues_section(activity_slot, issues_listbox);
-    for child in sidebar_root_order() {
-        match child {
-            SidebarRootChild::Navigation => root.append(scrolled),
-            SidebarRootChild::Activity => root.append(activity_slot.widget()),
-            SidebarRootChild::Issues => root.append(&issues_section),
-        }
-    }
-    root
 }
 
 /// Re-runs the count/list queries and rebuilds every row. `force_select`

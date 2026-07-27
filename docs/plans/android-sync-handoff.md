@@ -38,11 +38,12 @@ code, run `probe_copy` — and **clean up after it** (`gio remove …/Music/Repr
   off the volume, plus a top-level **shadowed** `GDaemonMount` named just `mtp`. Enumerating raw
   mounts is order-dependent — it once showed "mtp" with an iPod icon, and once showed nothing.
   Devices are projected **volume-first**; do not go back to `monitor.mounts()`.
-- **Reprise manages `Music/Reprise` only.** The maintainer has ~30 GB of Rhythmbox music directly
-  in `Music/` — it must never be written, moved, or deleted. `inspect()` deliberately lists *all*
-  audio under `Music/` (display only, see its doc comment and the test that pins it); removals are
-  driven by the `device_files` DB inventory and scoped to `Music/Reprise`. **Do not "fix" this
-  asymmetry** — a previous attempt was reverted after a test showed it was intentional.
+- **Reprise owns `Music/Reprise` completely and nothing else.** The maintainer has ~30 GB of
+  Rhythmbox music directly in `Music/` — it must never be written, moved, or deleted. `inspect()`
+  deliberately aggregates audio outside `Music/Reprise` for display only. Inside
+  `Music/Reprise`, the fully published selected-playlist state is authoritative: every safe file
+  absent from the desired track and playlist paths is removed after publication, including
+  untracked files. Never widen this ownership boundary to `Music/`.
 - **Cards must update in place.** `render()` used to rebuild the sidebar section on every state
   update; during a sync `notify()` fires per progress callback, so the card was destroyed between
   a click's press and release and was permanently unclickable. Cards now live in a registry keyed

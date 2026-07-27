@@ -2700,6 +2700,7 @@ dependencies = [
  "gio",
  "gstreamer",
  "gstreamer-app",
+ "lofty",
  "reprise-core",
  "tempfile",
  "tracing",

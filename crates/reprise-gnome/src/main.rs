@@ -54,6 +54,7 @@ const SCAN_DIR_ENV_VAR: &str = "REPRISE_SCAN_DIR";
 /// Usage: `REPRISE_SCAN_DIR=/path/to/music REPRISE_SMOKE_SEED_PLAYLIST="My
 /// Mix" cargo run`.
 const SEED_PLAYLIST_ENV_VAR: &str = "REPRISE_SMOKE_SEED_PLAYLIST";
+pub(crate) const SMOKE_MPRIS_BUS_ENV_VAR: &str = "REPRISE_SMOKE_MPRIS_BUS_NAME";
 
 /// Initializes tracing to stderr. Level defaults to `info` and can be
 /// overridden via the `REPRISE_LOG` environment variable (e.g.
@@ -83,7 +84,15 @@ fn seed_playlist_from_library(
 }
 
 fn application_flags() -> gio::ApplicationFlags {
-    gio::ApplicationFlags::HANDLES_OPEN
+    application_flags_for_smoke_bus(std::env::var_os(SMOKE_MPRIS_BUS_ENV_VAR).is_some())
+}
+
+fn application_flags_for_smoke_bus(has_smoke_bus: bool) -> gio::ApplicationFlags {
+    let mut flags = gio::ApplicationFlags::HANDLES_OPEN;
+    if has_smoke_bus {
+        flags |= gio::ApplicationFlags::NON_UNIQUE;
+    }
+    flags
 }
 
 type SharedFileOpenHandler = Rc<RefCell<Option<ui::file_open::FileOpenHandler>>>;
@@ -236,6 +245,14 @@ mod tests {
 
     #[test]
     fn application_accepts_forwarded_file_open_requests() {
-        assert!(application_flags().contains(gio::ApplicationFlags::HANDLES_OPEN));
+        assert!(
+            application_flags_for_smoke_bus(false).contains(gio::ApplicationFlags::HANDLES_OPEN)
+        );
+    }
+
+    #[test]
+    fn an_explicit_smoke_bus_runs_as_an_isolated_non_unique_instance() {
+        assert!(!application_flags_for_smoke_bus(false).contains(gio::ApplicationFlags::NON_UNIQUE));
+        assert!(application_flags_for_smoke_bus(true).contains(gio::ApplicationFlags::NON_UNIQUE));
     }
 }

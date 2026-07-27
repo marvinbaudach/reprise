@@ -147,6 +147,11 @@ const POLL_INTERVAL: Duration = Duration::from_millis(500);
 /// comment.
 const FIXED_RATE: f64 = 1.0;
 
+struct MprisIdentity {
+    desktop_entry: &'static str,
+    bus_name: String,
+}
+
 /// Starts the MPRIS integration: spawns the dedicated D-Bus thread (see the
 /// module's `## Thread model` doc section) and returns the shared state
 /// mirror, the command receiver, and a sender for seek notifications —
@@ -163,6 +168,17 @@ const FIXED_RATE: f64 = 1.0;
 /// comment for why that's a separate thread from the `PropertiesChanged`
 /// poll loop.
 pub fn start(desktop_entry: &'static str) -> MediaIntegrationHandles {
+    start_with_bus_name(desktop_entry, BUS_NAME.to_string())
+}
+
+/// Starts the integration on an explicit well-known bus name.
+///
+/// Isolated smoke instances use this while sharing the desktop session bus
+/// for host services without claiming the production Reprise identity.
+pub fn start_with_bus_name(
+    desktop_entry: &'static str,
+    bus_name: String,
+) -> MediaIntegrationHandles {
     let state: SharedMprisState = Arc::new(Mutex::new(MprisState::default()));
     let queue_state: SharedAgentQueueState = Arc::new(Mutex::new(AgentQueueState::default()));
     let (sender, receiver) = async_channel::unbounded::<MprisCommand>();
@@ -182,7 +198,10 @@ pub fn start(desktop_entry: &'static str) -> MediaIntegrationHandles {
             seek_receiver,
             thread_device_sync_state,
             device_sync_sender,
-            desktop_entry,
+            MprisIdentity {
+                desktop_entry,
+                bus_name,
+            },
         );
     });
 
@@ -210,8 +229,12 @@ fn run(
     seek_receiver: async_channel::Receiver<i64>,
     device_sync_state: SharedAgentDeviceSyncState,
     device_sync_commands: async_channel::Sender<AgentDeviceSyncRequest>,
-    desktop_entry: &'static str,
+    identity: MprisIdentity,
 ) {
+    let MprisIdentity {
+        desktop_entry,
+        bus_name,
+    } = identity;
     let player_iface = MprisPlayer {
         state: state.clone(),
         commands: commands.clone(),
@@ -220,7 +243,7 @@ fn run(
     let device_sync_control = DeviceSyncControl::new(device_sync_commands, device_sync_state);
 
     let connection = connection::Builder::session()
-        .and_then(|builder| builder.name(BUS_NAME))
+        .and_then(|builder| builder.name(bus_name.clone()))
         .and_then(|builder| builder.serve_at(OBJECT_PATH, MprisRoot { desktop_entry }))
         .and_then(|builder| builder.serve_at(OBJECT_PATH, player_iface))
         .and_then(|builder| builder.serve_at(OBJECT_PATH, reprise_control))
@@ -231,7 +254,7 @@ fn run(
         Err(error) => {
             tracing::warn!(
                 %error,
-                bus_name = BUS_NAME,
+                bus_name,
                 "MPRIS unavailable: could not claim the session bus name; \
                  continuing without media-key/lock-screen integration"
             );
@@ -255,7 +278,7 @@ fn run(
     };
 
     tracing::info!(
-        bus_name = BUS_NAME,
+        bus_name,
         path = OBJECT_PATH,
         "MPRIS: bus name claimed, serving org.mpris.MediaPlayer2 and .Player"
     );

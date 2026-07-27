@@ -11,12 +11,38 @@ use crate::library::m3u::{M3uEntry, M3uExportEntry};
 
 pub mod delta;
 pub mod m3u;
+pub mod mirror;
+pub mod page;
+pub mod profile;
 pub mod sanitize;
 pub mod settings;
+pub mod snapshot;
+pub mod storage;
 pub mod transfer;
 
 pub use delta::{compute_delta, SyncCandidate, SyncDelta};
-pub use settings::{DeviceFileRecord, DeviceSelection, DeviceSettings, SelectionSource};
+pub use mirror::{
+    plan_mirror, DesiredManagedFile, ManagedDeviceFile, ManagedRemoval, MirrorBlocker, MirrorInput,
+    MirrorPlan, MirrorPlaylistProjection, MirrorPlaylistSnapshot, MirrorReplacement, MirrorTrack,
+    MirrorWarning, PlaylistWrite, UnavailableTrack,
+};
+pub use page::{
+    project_sync_page, SyncChangeSummary, SyncPageControls, SyncPageInput, SyncPageProjection,
+    SyncPageState, SyncPageWarning, SyncPlaylistRow,
+};
+pub use profile::{
+    project_playlist_sizes, Mp3Quality, PlaylistSizeProjection, PlaylistTargetSize, PlaylistTracks,
+    TransferAction, TransferProfile, UnsupportedMp3Quality,
+};
+pub use settings::{
+    DeviceFileRecord, DevicePlaylistRecord, DeviceSelection, DeviceSettings, SelectionSource,
+};
+pub use snapshot::load_mirror_playlist_snapshots;
+pub use storage::{
+    project_storage, storage_composition, DeviceStorageAccess, DeviceStorageInspection,
+    DeviceStorageProjection, DeviceStorageSnapshot, StorageComposition, StorageKnowledge,
+    StorageProjectionState,
+};
 
 pub const REPRISE_DEVICE_DIR: &str = "Reprise";
 
@@ -31,6 +57,7 @@ pub struct SyncTrack {
     pub album_artist: String,
     pub track_number: Option<u32>,
     pub duration_ms: i64,
+    pub bitrate_kbps: Option<u32>,
     pub size_bytes: u64,
     pub source_mtime: i64,
 }
@@ -323,6 +350,24 @@ fn safe_playlist_path(path: &str) -> bool {
 mod v1_tests;
 
 #[cfg(test)]
+#[path = "device_sync/page_tests.rs"]
+mod page_tests;
+#[cfg(test)]
+#[path = "device_sync/profile_tests.rs"]
+mod profile_tests;
+#[cfg(test)]
+#[path = "device_sync/storage_tests.rs"]
+mod storage_tests;
+
+#[cfg(test)]
+#[path = "device_sync/inventory_tests.rs"]
+mod inventory_tests;
+
+#[cfg(test)]
+#[path = "device_sync/mirror_tests.rs"]
+mod mirror_tests;
+
+#[cfg(test)]
 mod tests {
     use std::path::{Component, Path};
 
@@ -340,6 +385,7 @@ mod tests {
             album_artist: "Artist".to_string(),
             track_number: Some(id.max(0) as u32),
             duration_ms: 42_000,
+            bitrate_kbps: None,
             size_bytes,
             source_mtime: 1,
         }

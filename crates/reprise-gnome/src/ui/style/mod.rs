@@ -49,7 +49,6 @@ fn app_css() -> String {
         super::eq_bars::css(),
         super::playing_marker::css(),
         super::sidebar_device_card::css(),
-        super::device_view::css(),
         super::list_density::css(),
         super::library_chrome::css(),
         super::now_playing::css(),
@@ -270,7 +269,6 @@ mod tests {
             ".issue-card",
             ".mini-player-card",
             ".scan-card",
-            ".device-storage-music progress",
         ] {
             assert!(css.contains(marker), "missing section marker: {marker}");
         }
