@@ -1,5 +1,5 @@
-//! Shared home for long-running sidebar activity, directly above the
-//! bottom-pinned Issues list so progress grows upward (FB-2a).
+//! Shared home for long-running sidebar activity, inside the bottom-pinned
+//! Issues section between its heading and source rows (FB-2a).
 //!
 //! Scan and device sync own their cards and update loops. This module owns
 //! only their stable layout relationship, so construction order cannot move

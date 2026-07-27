@@ -317,7 +317,6 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
     let has_issues = has_import_errors || missing_count > 0;
     shared.issues_listbox.set_visible(has_issues);
     if has_issues {
-        sidebar_presentation::append_problem_header(&shared.issues_listbox);
         if has_import_errors {
             add_issue_row(
                 shared,
