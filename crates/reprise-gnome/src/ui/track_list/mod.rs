@@ -55,7 +55,6 @@ pub(in crate::ui) use surface::{
     notify_import_errors_mutated_and_reload, reload, set_filter_and_reload, set_source_and_reload,
     show_toast, OnActivate, Shared, TrackList,
 };
-pub(in crate::ui) use tag_mutation_refresh::refresh_after_tag_mutation;
 pub(in crate::ui) use track_list_layout::{
     STACK_PAGE_EMPTY, STACK_PAGE_IMPORT_ERRORS, STACK_PAGE_LIST, STACK_PAGE_MISSING,
 };

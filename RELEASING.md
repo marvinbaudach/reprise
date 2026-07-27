@@ -281,11 +281,13 @@ Do not point development hooks at the maintainer's real library.
   item shows a tooltip (TIP-4). Tooltips use stock GTK behavior: no custom
   delays, no rich content; dynamic values (percent, time, elided full text)
   are fine (TIP-5).
-- Motion discipline (UX MOT-4): with a copied library of at least 10,000
+- Motion discipline (UX MOT-8): with a copied library of at least 10,000
   tracks, reload, scroll, filter, and drag rows in Library, Playlist, and Queue
   views. Individual rows must never stagger, fade in, or move during reloads;
-  only the whole surface may crossfade when switching views. Queue drop and
-  single-remove motion is an allowed exception, not a release requirement.
+  only the whole surface may transition when switching views. Podcasts ↔ Music
+  must retain the standard-duration motion without a hard cut or a frame where
+  both dense tables are readable. Queue drop and single-remove motion is an
+  allowed exception, not a release requirement.
 - STYLE-1 "floating" check: reveal every collapsible bar (search bar, banners,
   the scan card) once. If it lays flat over the content without its own surface
   and edge, the background is missing — `ToolbarStyle::Flat` swallowed it.

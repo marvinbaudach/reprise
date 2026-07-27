@@ -113,7 +113,7 @@ pub(super) fn install_conversions_page(
 /// Removes the gated surface and leaves it safely when it was selected.
 pub(super) fn remove_conversions_page(content_stack: &gtk4::Stack) {
     if content_stack.visible_child_name().as_deref() == Some(CONVERSION_PAGE) {
-        content_stack.set_visible_child_name("library");
+        crate::ui::window::content_stack::show_page(content_stack, "library");
     }
     if let Some(page) = content_stack.child_by_name(CONVERSION_PAGE) {
         content_stack.remove(&page);

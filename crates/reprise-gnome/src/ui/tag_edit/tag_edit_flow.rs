@@ -41,10 +41,10 @@ use crate::ui::sidebar::Sidebar;
 use crate::ui::strings;
 use crate::ui::tag_editor;
 use crate::ui::tag_editor_failures;
+use crate::ui::track_list::tag_mutation_refresh::refresh_after_tag_mutation_with_anchor;
 use crate::ui::track_list::track_list_activation::current_queue_ids;
-use crate::ui::track_list::{
-    refresh_after_tag_mutation, reload, reload_restore, show_toast, Shared, TrackList,
-};
+use crate::ui::track_list::track_list_reload::{capture_reload_anchor, reload_with_anchor};
+use crate::ui::track_list::{reload_restore, show_toast, Shared, TrackList};
 use crate::ui::track_list_context_menu::current_selection_positions;
 
 pub(in crate::ui) const ACTION_EDIT_TAGS: &str = "edit-tags";
@@ -297,6 +297,7 @@ fn open_editor(shared: &Rc<Shared>, tracks: Vec<SessionTrack>, bitrates: &[Optio
     let conn = shared.conn.clone();
     let shared_for_saved = shared.clone();
     let browse = browsable_snapshot(shared);
+    let opened_anchor = capture_reload_anchor(shared);
     tag_editor::present(
         &window,
         &conn,
@@ -305,7 +306,13 @@ fn open_editor(shared: &Rc<Shared>, tracks: Vec<SessionTrack>, bitrates: &[Optio
         browse,
         shared.tag_write_gate.clone(),
         move |writes, report| {
-            finish_apply(&shared_for_saved, &writes, &report, ApplyOrigin::TrackList);
+            finish_apply(
+                &shared_for_saved,
+                &writes,
+                &report,
+                ApplyOrigin::TrackList,
+                Some(opened_anchor.clone()),
+            );
         },
     );
     tracing::debug!("tag editor presented");
@@ -377,7 +384,13 @@ pub(in crate::ui) fn begin_for_path(shared: &Rc<Shared>, path: &str) {
         None,
         shared.tag_write_gate.clone(),
         move |writes, report| {
-            finish_apply(&shared_for_saved, &writes, &report, ApplyOrigin::ImportHint);
+            finish_apply(
+                &shared_for_saved,
+                &writes,
+                &report,
+                ApplyOrigin::ImportHint,
+                None,
+            );
         },
     );
 }
@@ -494,23 +507,12 @@ pub(in crate::ui) fn spawn_save(
     });
 }
 
-/// TAG-1 (G2): forces the live selection to `updated_ids`, position-mapped
-/// against the *current* (pre-reload) view, right before `reload(shared)`
-/// runs. `reload()`'s own TAG-1 restore mechanic (Task A) then captures and
-/// carries exactly this selection across the model swap, so the net effect
-/// once `reload()` returns is "selection = the tracks this save actually
-/// wrote" — never whatever was selected before the dialog opened, and never
-/// a track this save left untouched. An id no longer in the current view
-/// (deleted, filtered out) drops out silently, the same TAG-1 "no side
-/// effect" rule `reload_restore::positions_for_ids` already applies to a
-/// plain reload.
-fn select_written_tracks(shared: &Shared, updated_ids: &[i64]) {
-    let current_ids = shared.current_view_ids();
-    let positions = reload_restore::positions_for_ids(updated_ids, &current_ids);
-    shared.selection.unselect_all();
-    for position in positions {
-        shared.selection.select_item(position, false);
-    }
+fn post_save_reload_anchor(
+    mut opened: reload_restore::ReloadAnchor,
+    updated_ids: &[i64],
+) -> reload_restore::ReloadAnchor {
+    opened.selected_ids = updated_ids.to_vec();
+    opened
 }
 
 fn finish_apply(
@@ -518,6 +520,7 @@ fn finish_apply(
     writes: &[TrackWrite],
     report: &TagBatchReport,
     origin: ApplyOrigin,
+    opened_anchor: Option<reload_restore::ReloadAnchor>,
 ) {
     let updated = report.updated_ids.len();
     let failed = report.failures.len();
@@ -527,7 +530,8 @@ fn finish_apply(
             .filter(|write| !write.patch.tags.is_empty() && report.updated_ids.contains(&write.id))
             .map(|write| write.path.clone())
             .collect();
-        select_written_tracks(shared, &report.updated_ids);
+        let live_anchor = opened_anchor.unwrap_or_else(|| capture_reload_anchor(shared));
+        let save_anchor = post_save_reload_anchor(live_anchor, &report.updated_ids);
         if !tag_changed_paths.is_empty() {
             let tag_changed_ids: Vec<i64> = writes
                 .iter()
@@ -536,9 +540,14 @@ fn finish_apply(
                 })
                 .map(|write| write.id)
                 .collect();
-            refresh_after_tag_mutation(shared, &tag_changed_ids, &tag_changed_paths);
+            refresh_after_tag_mutation_with_anchor(
+                shared,
+                &tag_changed_ids,
+                &tag_changed_paths,
+                save_anchor,
+            );
         } else {
-            reload(shared);
+            reload_with_anchor(shared, &save_anchor);
         }
     }
     tracing::info!(updated, failed, "tag-edit batch completed");
@@ -649,7 +658,16 @@ pub(in crate::ui) fn arm_smoke(shared: &Rc<Shared>) {
         let report = reprise_core::db::open_migrated(Some(&db_path))
             .map(|mut worker_conn| apply_track_writes(&mut worker_conn, &writes, &mut |_, _| {}));
         match report {
-            Ok(report) => finish_apply(&shared, &writes, &report, ApplyOrigin::TrackList),
+            Ok(report) => {
+                let anchor = capture_reload_anchor(&shared);
+                finish_apply(
+                    &shared,
+                    &writes,
+                    &report,
+                    ApplyOrigin::TrackList,
+                    Some(anchor),
+                );
+            }
             Err(error) => tracing::warn!(%error, "tag-edit smoke: could not open database"),
         }
     });
@@ -719,6 +737,19 @@ mod tests {
             reload_restore::positions_for_ids(&updated_ids, &narrowed_view),
             vec![0],
             "a written id no longer in the current view drops out silently"
+        );
+    }
+
+    #[test]
+    fn tag_1_rating_save_keeps_the_scroll_anchor_from_editor_open() {
+        let opened = reload_restore::capture(vec![61], Some((61, 7.5)));
+        let restored = post_save_reload_anchor(opened, &[61]);
+
+        assert_eq!(restored.selected_ids, vec![61]);
+        assert_eq!(
+            restored.anchor,
+            Some((61, 7.5)),
+            "the async save must reuse the viewport captured before the dialog opened"
         );
     }
 }

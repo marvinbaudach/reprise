@@ -150,6 +150,11 @@ fn fb_2a_progress_follows_the_issues_heading_before_issue_sources() {
             IssuesSectionChild::Sources,
         ]
     );
+    assert_eq!(
+        issues_activity_alignment(),
+        gtk4::Align::End,
+        "an expanding activity slot must pin its cards directly above the issue rows"
+    );
 }
 
 #[test]
@@ -158,6 +163,7 @@ fn fb_2a_progress_sits_inside_issues_before_sources() {
     gtk4::init().unwrap();
     let scrolled = gtk4::ScrolledWindow::builder().vexpand(true).build();
     let activity = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    activity.set_vexpand(true);
     activity.append(&gtk4::Label::new(Some("Cover check complete")));
     let issues = gtk4::ListBox::new();
     issues.append(&gtk4::Label::new(Some("Missing files")));
@@ -186,6 +192,8 @@ fn fb_2a_progress_sits_inside_issues_before_sources() {
     assert_eq!(root.first_child().as_ref(), Some(scrolled.upcast_ref()));
     assert_eq!(heading.next_sibling().as_ref(), Some(activity.upcast_ref()));
     assert_eq!(activity.next_sibling().as_ref(), Some(issues.upcast_ref()));
+    assert!(!activity.vexpands());
+    assert_eq!(activity.valign(), gtk4::Align::End);
     assert_eq!(
         issues_section.last_child().as_ref(),
         Some(issues.upcast_ref())
