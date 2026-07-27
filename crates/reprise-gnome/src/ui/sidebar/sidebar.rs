@@ -3,11 +3,11 @@
 //! Queue — both with a track-count label), PLAYLISTS (`library::playlists::
 //! list`, each with its track count, plus grouped create/import actions), and
 //! SMART (`library::playlists::list_smart`, no counts — the mockup doesn't
-//! show any), then a shared activity slot for connected-device sync and
-//! library scans, and finally the "problem sources" — Import errors / Missing
-//! files, each shown only while its count is non-zero. Problem sources are
-//! pinned last so they stay flush with the sidebar's bottom edge; active
-//! progress stacks directly above them (FB-2a).
+//! show any), then a bottom-pinned Issues section: its heading, a shared
+//! activity slot for connected-device sync and library scans, and finally the
+//! "problem sources" — Import errors / Missing files, each shown only while
+//! its count is non-zero. Active progress therefore sits inside Issues,
+//! directly above those sources (FB-2a).
 //!
 //! ## Row identity: a plain `Vec`, not GObject data
 //!
@@ -61,6 +61,9 @@ use libadwaita as adw;
 use rusqlite::Connection;
 
 use super::sidebar_activity_slot::SidebarActivitySlot;
+use super::sidebar_issues_section::build_issues_section;
+#[cfg(test)]
+use super::sidebar_issues_section::{issues_section_order, IssuesSectionChild};
 use super::sidebar_boundary_navigation::wire_collection_boundary_navigation;
 use super::sidebar_navigation_scroller::build_navigation_scroller;
 use reprise_core::view_source::ViewSource;
@@ -85,12 +88,13 @@ use super::sidebar_row_wiring::{wire_focus_leave_resync, wire_row_activated, wir
 pub(in crate::ui) struct Shared {
     pub(in crate::ui) conn: Rc<RefCell<Connection>>,
     pub(in crate::ui) listbox: gtk4::ListBox,
-    /// The non-scrolling "Issues" list (Import errors / Missing files),
-    /// pinned at the very bottom below the shared activity slot (design
-    /// mockup 14a; QA #6). A single `ListBox` can't bottom-pin a subset of
-    /// its rows, so this is its own list, with selection mirrored against `listbox`
-    /// (`wire_row_selected` clears the sibling on select). Hidden entirely
-    /// when there are no issues.
+    /// The non-scrolling issue-source list (Import errors / Missing files),
+    /// pinned at the very bottom of the Issues section below its shared
+    /// activity slot (design mockup 14a; QA #6). A single `ListBox` can't
+    /// bottom-pin a subset of the main navigation rows, so this is its own
+    /// list, with selection mirrored against `listbox` (`wire_row_selected`
+    /// clears the sibling on select). Hidden entirely when there are no issue
+    /// sources; the separate Issues heading mirrors that visibility.
     pub(in crate::ui) issues_listbox: gtk4::ListBox,
     /// Supplies the current queue's length for the "Queue" row's counter.
     /// Wired once at construction (mirrors `TrackList`'s `queue_ids_
@@ -190,8 +194,8 @@ pub(in crate::ui) struct Shared {
     pub(in crate::ui) refresh_count: Cell<u64>,
 }
 
-/// Handle to the built sidebar widget: scrolling navigation, the shared
-/// activity slot, then the bottom-pinned non-scrolling issues list.
+/// Handle to the built sidebar widget: scrolling navigation, then the
+/// bottom-pinned Issues section (heading, activity, issue sources).
 pub struct Sidebar {
     pub(in crate::ui) shared: Rc<Shared>,
     root: gtk4::Box,
@@ -413,35 +417,29 @@ pub(in crate::ui) fn remember_issue_focus_entry(listbox: &gtk4::ListBox, row: &g
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SidebarRootChild {
     Navigation,
-    Activity,
     Issues,
 }
 
-fn sidebar_root_order() -> [SidebarRootChild; 3] {
-    [
-        SidebarRootChild::Navigation,
-        SidebarRootChild::Activity,
-        SidebarRootChild::Issues,
-    ]
+fn sidebar_root_order() -> [SidebarRootChild; 2] {
+    [SidebarRootChild::Navigation, SidebarRootChild::Issues]
 }
 
 /// Assembles the sidebar's vertical root. The scrolling navigation list
-/// expands to fill the top; the shared activity slot (device sync / scan /
-/// relink cards) claims height only while something is active; and the issues
-/// list (Import errors / Missing files) is appended last so it stays flush
-/// with the sidebar's bottom edge. Active progress therefore grows upward
-/// without moving Issues away from the bottom (FB-2a).
+/// expands to fill the top. The Issues section is appended last so its sources
+/// stay flush with the bottom edge; within it, the shared activity slot
+/// (device sync / scan / relink cards) sits after the heading and before the
+/// Import errors / Missing files rows (FB-2a).
 fn build_root(
     scrolled: &gtk4::ScrolledWindow,
     activity_slot: &gtk4::Box,
     issues_listbox: &gtk4::ListBox,
 ) -> gtk4::Box {
     let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let issues_section = build_issues_section(activity_slot, issues_listbox);
     for child in sidebar_root_order() {
         match child {
             SidebarRootChild::Navigation => root.append(scrolled),
-            SidebarRootChild::Activity => root.append(activity_slot),
-            SidebarRootChild::Issues => root.append(issues_listbox),
+            SidebarRootChild::Issues => root.append(&issues_section),
         }
     }
     root
