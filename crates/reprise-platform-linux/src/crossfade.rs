@@ -99,6 +99,7 @@ pub(crate) struct CrossfadeEngine {
     pub(crate) generation: Arc<AtomicU64>,
     pub(crate) incoming: IncomingSlot,
     pub(crate) spectrum_enabled: Arc<AtomicBool>,
+    pub(crate) cava_stream_generation: Arc<AtomicU64>,
 }
 
 impl CrossfadeEngine {
@@ -227,6 +228,8 @@ impl CrossfadeEngine {
             self.on_event.clone(),
             self.handoff_pending.clone(),
             self.crossfading.clone(),
+            self.spectrum_enabled.clone(),
+            self.cava_stream_generation.clone(),
         ) {
             Ok(watch) => watch,
             Err(error) => {
