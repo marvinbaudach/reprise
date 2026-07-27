@@ -143,9 +143,18 @@ fn schedule_scroll_restore(
     current_ids: Vec<i64>,
     attempts: u8,
 ) {
-    if anchor.is_none() || current_ids.is_empty() {
+    let Some(position) = reload_restore::prepaint_position(anchor, &current_ids) else {
         return;
-    }
+    };
+    // `items_changed(0, old, new)` resets GtkColumnView's adjustment to zero
+    // synchronously. Queue a stable-id scroll before returning to the main
+    // loop, so GTK never paints that transient top-of-table state. This API
+    // also works while the tag dialog is still closing or the table is not
+    // mapped yet. The idle retry below refines the result to the captured
+    // within-row pixel offset once the rebuilt list has usable geometry.
+    let scroll = gtk4::ScrollInfo::new();
+    scroll.set_enable_vertical(true);
+    column_view.scroll_to(position, None, gtk4::ListScrollFlags::NONE, Some(scroll));
     gtk4::glib::idle_add_local_once(move || {
         let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&column_view) else {
             return;
