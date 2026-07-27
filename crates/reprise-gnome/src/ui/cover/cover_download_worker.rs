@@ -4,10 +4,11 @@
 
 use std::cell::Cell;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use reprise_core::cover::{read_cover_tag, resolve_source, CoverTag};
+use reprise_core::cover::{read_cover_tag, resolve_source, CoverSource, CoverTag};
 use reprise_core::cover_download::{album_key, fetch_and_cache};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -15,6 +16,12 @@ pub(in crate::ui) enum DownloadOutcome {
     AlreadyCovered,
     Downloaded(PathBuf),
     Unavailable,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CoverStatus {
+    Covered,
+    NeedsSharedCover,
 }
 
 pub struct DownloadRequest {
@@ -83,11 +90,13 @@ pub(in crate::ui) fn spawn() -> async_channel::Sender<DownloadRequest> {
         .name("reprise-cover-download".into())
         .spawn(move || {
             let mut attempted = HashMap::new();
+            let mut observed_embedded = HashMap::new();
             while let Ok(request) = receiver.recv_blocking() {
                 let result = result_for_path(
                     Path::new(&request.track_path),
                     request.skip_if_covered,
                     &mut attempted,
+                    &mut observed_embedded,
                 );
                 let _ = request.response.try_send(result);
             }
@@ -102,14 +111,49 @@ fn result_for_path(
     track_path: &Path,
     skip_if_covered: bool,
     attempted: &mut HashMap<String, Option<PathBuf>>,
+    observed_embedded: &mut HashMap<String, u64>,
 ) -> DownloadOutcome {
-    if skip_if_covered && resolve_source(track_path).is_some() {
-        return DownloadOutcome::AlreadyCovered;
-    }
     let tag = read_cover_tag(track_path);
+    if skip_if_covered {
+        if let Some(source) = resolve_source(track_path) {
+            if cover_status(&tag, &source, observed_embedded) == CoverStatus::Covered {
+                return DownloadOutcome::AlreadyCovered;
+            }
+        }
+    }
     match result_for_tag(tag, attempted) {
         Some(path) => DownloadOutcome::Downloaded(path),
         None => DownloadOutcome::Unavailable,
+    }
+}
+
+fn cover_status(
+    tag: &CoverTag,
+    source: &CoverSource,
+    observed_embedded: &mut HashMap<String, u64>,
+) -> CoverStatus {
+    let CoverSource::Embedded(bytes) = source else {
+        return CoverStatus::Covered;
+    };
+    let (Some(album_artist), Some(album)) = (tag.album_artist.as_deref(), tag.album.as_deref())
+    else {
+        return CoverStatus::Covered;
+    };
+    if album_artist.trim().is_empty() || album.trim().is_empty() {
+        return CoverStatus::Covered;
+    }
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    let fingerprint = hasher.finish();
+    match observed_embedded.entry(album_key(album_artist, album)) {
+        std::collections::hash_map::Entry::Vacant(entry) => {
+            entry.insert(fingerprint);
+            CoverStatus::Covered
+        }
+        std::collections::hash_map::Entry::Occupied(entry) if *entry.get() == fingerprint => {
+            CoverStatus::Covered
+        }
+        std::collections::hash_map::Entry::Occupied(_) => CoverStatus::NeedsSharedCover,
     }
 }
 
@@ -142,12 +186,12 @@ mod tests {
     use std::rc::Rc;
     use std::task::{Context, Poll, Waker};
 
-    use reprise_core::cover::CoverTag;
+    use reprise_core::cover::{CoverSource, CoverTag};
     use reprise_core::cover_download::album_key;
 
     use super::{
-        result_for_path, result_for_tag, setup, CoverDownloadRuntime, DownloadOutcome,
-        DownloadRequest,
+        cover_status, result_for_path, result_for_tag, setup, CoverDownloadRuntime, CoverStatus,
+        DownloadOutcome, DownloadRequest,
     };
 
     #[test]
@@ -199,9 +243,10 @@ mod tests {
         )
         .unwrap();
         let mut attempted = HashMap::new();
+        let mut observed = HashMap::new();
 
         assert_eq!(
-            result_for_path(&track, true, &mut attempted),
+            result_for_path(&track, true, &mut attempted, &mut observed),
             DownloadOutcome::AlreadyCovered
         );
         assert!(attempted.is_empty());
@@ -210,11 +255,13 @@ mod tests {
     #[test]
     fn batch_request_reports_unavailable_for_missing_tags() {
         let mut attempted = HashMap::new();
+        let mut observed = HashMap::new();
         assert_eq!(
             result_for_path(
                 std::path::Path::new("/does/not/exist.mp3"),
                 true,
-                &mut attempted
+                &mut attempted,
+                &mut observed
             ),
             DownloadOutcome::Unavailable
         );
@@ -241,5 +288,53 @@ mod tests {
         };
         assert_eq!(result_for_tag(tag, &mut attempted), Some(cached));
         assert_eq!(attempted.len(), 1);
+    }
+
+    #[test]
+    fn browse_10_same_album_with_different_embedded_art_requires_a_shared_cover() {
+        let mut observed = HashMap::new();
+        let first_tag = CoverTag {
+            picture: Some(vec![1, 2, 3]),
+            album_artist: Some("Consistency Artist".into()),
+            album: Some("Consistency Album".into()),
+            release_mbid: None,
+        };
+        let matching_tag = CoverTag {
+            picture: Some(vec![1, 2, 3]),
+            album_artist: Some("  consistency   artist ".into()),
+            album: Some("CONSISTENCY ALBUM".into()),
+            release_mbid: None,
+        };
+        let second_tag = CoverTag {
+            picture: Some(vec![4, 5, 6]),
+            album_artist: Some("consistency artist".into()),
+            album: Some(" consistency  album ".into()),
+            release_mbid: None,
+        };
+
+        assert_eq!(
+            cover_status(
+                &first_tag,
+                &CoverSource::Embedded(vec![1, 2, 3]),
+                &mut observed
+            ),
+            CoverStatus::Covered
+        );
+        assert_eq!(
+            cover_status(
+                &matching_tag,
+                &CoverSource::Embedded(vec![1, 2, 3]),
+                &mut observed
+            ),
+            CoverStatus::Covered
+        );
+        assert_eq!(
+            cover_status(
+                &second_tag,
+                &CoverSource::Embedded(vec![4, 5, 6]),
+                &mut observed
+            ),
+            CoverStatus::NeedsSharedCover
+        );
     }
 }
