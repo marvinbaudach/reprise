@@ -2637,6 +2637,7 @@ dependencies = [
  "md-5 0.11.0",
  "notify",
  "quick-xml",
+ "realfft",
  "rusqlite",
  "serde",
  "serde_json",
