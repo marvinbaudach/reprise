@@ -334,7 +334,7 @@ fn transfer_plan_applies_the_mp3_profile_and_resolves_name_collisions() {
         }
     );
     assert_eq!(plan[0].device_path, "Artist/Album/01 same.mp3");
-    assert_eq!(plan[0].expected_bytes, 1_280_000);
+    assert_eq!(plan[0].expected_bytes, 2_345_536);
     assert_eq!(plan[1].mode, TransferMode::Copy);
     assert_eq!(plan[1].device_path, "Artist/Album/01 Same (2).mp3");
     assert_eq!(plan[1].expected_bytes, 500_000);
@@ -455,7 +455,7 @@ fn default_profile_transcodes_lossless_files_to_mp3() {
 }
 
 #[test]
-fn unknown_duration_uses_the_source_size_for_every_mp3_quality() {
+fn unknown_duration_has_no_bounded_conservative_mp3_estimate() {
     let track = SyncTrack {
         id: 1,
         source_path: "/library/one.flac".into(),
@@ -479,8 +479,8 @@ fn unknown_duration_uses_the_source_size_for_every_mp3_quality() {
     let at_320 = build_transfer_plan(vec![track], TransferProfile::Mp3(Mp3Quality::Kbps320))[0]
         .expected_bytes;
 
-    assert_eq!(at_128, 1_000_000);
-    assert_eq!(at_320, 1_000_000);
+    assert_eq!(at_128, u64::MAX);
+    assert_eq!(at_320, u64::MAX);
 }
 
 #[test]

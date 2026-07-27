@@ -516,7 +516,7 @@ fn insufficient_space_is_projected_as_a_device_warning() {
         assert!(matches!(
             runtime.sync_now("a"),
             Err(SyncStartError::InsufficientSpace {
-                required_bytes: 64_000,
+                required_bytes: 195_272,
                 available_bytes: 50_000,
             })
         ));
@@ -578,7 +578,7 @@ fn stale_progress_from_a_cancelled_run_does_not_update_its_replacement() {
             runtime.devices()[0].sync_phase,
             PlannedSyncPhase::Syncing {
                 bytes_done: 50,
-                bytes_total: 32_000,
+                bytes_total: 97_636,
                 ..
             }
         ));
@@ -682,7 +682,17 @@ fn local_gio_sync_transcodes_lossless_selection_to_mp3() {
             crate::ui::device_sync_smoke::SmokeDeviceBackend::for_root(device_root.path()).unwrap(),
         );
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
-        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+        for _ in 0..1_000 {
+            if runtime.devices()[0].sync_phase != PlannedSyncPhase::ComputingDelta {
+                break;
+            }
+            gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+        }
+        assert_ne!(
+            runtime.devices()[0].sync_phase,
+            PlannedSyncPhase::ComputingDelta,
+            "storage inspection must settle before the transfer starts"
+        );
         let observed = Rc::new(RefCell::new(Vec::new()));
         let phases = observed.clone();
         let _subscription = runtime.subscribe(Rc::new(move |state| {
@@ -731,38 +741,4 @@ fn local_gio_sync_transcodes_lossless_selection_to_mp3() {
             } if current_track == "Encoded — Artist"
         )));
     });
-}
-
-fn select_road_playlist(conn: &Rc<RefCell<Connection>>, ids: &[i64]) {
-    conn.borrow()
-        .execute(
-            "INSERT INTO playlists (id, name, position) VALUES (10, 'Road', 0)",
-            [],
-        )
-        .unwrap();
-    for (position, track_id) in ids.iter().enumerate() {
-        conn.borrow()
-            .execute(
-                "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (10, ?1, ?2)",
-                rusqlite::params![track_id, position as i64],
-            )
-            .unwrap();
-    }
-    save_road_settings(conn, "a");
-}
-
-fn save_road_settings(conn: &Rc<RefCell<Connection>>, device_id: &str) {
-    save_settings(
-        &conn.borrow(),
-        &DeviceSettings {
-            device_serial: device_id.into(),
-            device_name: format!("Phone {device_id}"),
-            selection: DeviceSelection::Sources(vec![SelectionSource::Playlist(10)]),
-            profile: reprise_core::device_sync::TransferProfile::default(),
-            opus_bitrate: 0,
-            ratings_back: false,
-            remove_deleted: true,
-        },
-    )
-    .unwrap();
 }

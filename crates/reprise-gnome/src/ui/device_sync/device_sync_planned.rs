@@ -225,12 +225,22 @@ async fn run_planned_sync(weak: Weak<DeviceSyncRuntime>, work: PlannedWork) {
     {
         tracing::warn!(device_id = work.device_id, %error, "could not clean partial sync files");
     }
-    run_removals(&runtime, &work, &mut failures).await;
-    if !work.cancelled.load(Ordering::SeqCst) {
-        run_transfers(&runtime, &work, &mut failures).await;
-    }
+    let deferred_replacement_removals = if work.cancelled.load(Ordering::SeqCst) {
+        Vec::new()
+    } else {
+        run_transfers(&runtime, &work, &mut failures).await
+    };
     if !work.cancelled.load(Ordering::SeqCst) && failures.is_empty() {
         run_playlists(&runtime, &work, &mut failures).await;
+    }
+    if !work.cancelled.load(Ordering::SeqCst) && failures.is_empty() {
+        run_removals(
+            &runtime,
+            &work,
+            &deferred_replacement_removals,
+            &mut failures,
+        )
+        .await;
     }
     finish_sync(&runtime, &work, failures);
 }
@@ -238,6 +248,7 @@ async fn run_planned_sync(weak: Weak<DeviceSyncRuntime>, work: PlannedWork) {
 async fn run_removals(
     runtime: &Rc<DeviceSyncRuntime>,
     work: &PlannedWork,
+    deferred_replacements: &[(String, i64)],
     failures: &mut Vec<i64>,
 ) {
     for (index, removal) in work.plan.remove.iter().enumerate() {
@@ -282,15 +293,32 @@ async fn run_removals(
             }
         }
     }
+    for (path, track_id) in deferred_replacements {
+        if work.cancelled.load(Ordering::SeqCst) {
+            break;
+        }
+        match runtime
+            .backend
+            .delete_track(work.root_uri.clone(), path.clone())
+            .await
+        {
+            Ok(_) => {}
+            Err(error) => {
+                tracing::warn!(%error, "could not remove replaced device track");
+                failures.push(*track_id);
+            }
+        }
+    }
 }
 
 async fn run_transfers(
     runtime: &Rc<DeviceSyncRuntime>,
     work: &PlannedWork,
     failures: &mut Vec<i64>,
-) {
+) -> Vec<(String, i64)> {
     let transfers = transfer_operations(&work.plan);
     let mut completed_bytes = 0_u64;
+    let mut deferred_replacement_removals = Vec::new();
     for (token, operation) in transfers.iter().enumerate() {
         if work.cancelled.load(Ordering::SeqCst) {
             break;
@@ -407,18 +435,8 @@ async fn run_transfers(
                     Ok(()) => {
                         if let Some(old) = &operation.previous {
                             if old.device_path != entry.device_path {
-                                if let Err(error) = runtime
-                                    .backend
-                                    .delete_track(work.root_uri.clone(), old.device_path.clone())
-                                    .await
-                                {
-                                    tracing::warn!(
-                                        track_id = entry.track.id,
-                                        %error,
-                                        "could not remove replaced device track"
-                                    );
-                                    failures.push(entry.track.id);
-                                }
+                                deferred_replacement_removals
+                                    .push((old.device_path.clone(), entry.track.id));
                             }
                         }
                     }
@@ -437,6 +455,7 @@ async fn run_transfers(
         }
         completed_bytes = completed_bytes.saturating_add(entry.target_bytes);
     }
+    deferred_replacement_removals
 }
 
 async fn run_playlists(
@@ -452,6 +471,9 @@ async fn run_playlists(
         .map(|write| write.source.clone())
         .collect::<HashSet<_>>();
     for (index, playlist) in work.plan.playlist_writes.iter().enumerate() {
+        if work.cancelled.load(Ordering::SeqCst) {
+            break;
+        }
         set_phase(
             runtime,
             &work.device_id,
@@ -499,10 +521,13 @@ async fn run_playlists(
             }
         }
     }
-    if !failures.is_empty() {
+    if work.cancelled.load(Ordering::SeqCst) || !failures.is_empty() {
         return;
     }
     for playlist in &work.plan.playlist_removals {
+        if work.cancelled.load(Ordering::SeqCst) {
+            break;
+        }
         if planned_sources.contains(&playlist.source)
             && !successful_sources.contains(&playlist.source)
         {
