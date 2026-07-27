@@ -52,7 +52,7 @@ default-features = false
 
 # Pure-Rust sample-rate conversion to the model's native 44.1 kHz. MIT.
 [dependencies.rubato]
-version = "0.16"
+version = "4.0"
 optional = true
 
 # ONNX tensor plumbing, matched to `ort`'s ndarray feature. MIT OR Apache-2.0.
