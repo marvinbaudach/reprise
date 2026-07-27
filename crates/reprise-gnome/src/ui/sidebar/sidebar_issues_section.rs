@@ -14,6 +14,19 @@ pub(super) enum IssuesSurface {
     Activity,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct BottomRegionPlacement {
+    pub(super) vexpand: bool,
+    pub(super) valign: gtk4::Align,
+}
+
+pub(super) fn bottom_region_placement() -> BottomRegionPlacement {
+    BottomRegionPlacement {
+        vexpand: false,
+        valign: gtk4::Align::End,
+    }
+}
+
 pub(super) fn issues_surface_for_progress(progress_visible: bool) -> IssuesSurface {
     if progress_visible {
         IssuesSurface::Activity
@@ -47,7 +60,10 @@ pub(super) fn build_issues_section(
     activity.set_vexpand(false);
     activity.set_valign(gtk4::Align::End);
 
+    let placement = bottom_region_placement();
     let stack = gtk4::Stack::builder()
+        .vexpand(placement.vexpand)
+        .valign(placement.valign)
         .vhomogeneous(true)
         // The scanner's own Revealer owns its fade. Switch the surrounding
         // region atomically so the Issues heading and rows never remain

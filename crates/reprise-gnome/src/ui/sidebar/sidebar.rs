@@ -62,7 +62,9 @@ use rusqlite::Connection;
 use super::sidebar_activity_slot::SidebarActivitySlot;
 use super::sidebar_issues_section::build_issues_section;
 #[cfg(test)]
-use super::sidebar_issues_section::{issues_surface_for_progress, IssuesSurface};
+use super::sidebar_issues_section::{
+    bottom_region_placement, issues_surface_for_progress, IssuesSurface,
+};
 use super::sidebar_navigation_scroller::build_navigation_scroller;
 use reprise_core::view_source::ViewSource;
 
