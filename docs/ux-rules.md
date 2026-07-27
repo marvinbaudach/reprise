@@ -352,6 +352,12 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   „Read-only“ oder „Write access unknown“. Ein sicher schreibgeschütztes Ziel
   sperrt den Sync-Start und erklärt den Grund; unbekannte Angaben werden nicht
   als Schreibfähigkeit ausgegeben und blockieren nicht vorsorglich.
+  <!-- REVIEW: Regelvorschlag -->
+- **MTP-10** [geplant] [gtk] — Ein fehlerfreier Transfer bleibt „Finishing“,
+  bis Reprise den verwalteten Geräteordner erneut gelesen hat. Erst dieses
+  erfolgreiche Rücklesen erzeugt den Abschluss-Toast und eine als „Verified“
+  bezeichnete Dialog-Zusammenfassung mit der tatsächlich gefundenen Anzahl
+  verwalteter Tracks; ein fehlgeschlagenes Rücklesen behauptet keinen Erfolg.
 
 ## F. Einstellungen & Modale
 

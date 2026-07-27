@@ -86,6 +86,20 @@ fn change_summary(changes: &SyncChangeSummary) -> String {
     .join(" · ")
 }
 
+fn verification_summary(device: &DeviceView) -> String {
+    if device.sync_phase == PlannedSyncPhase::Finishing {
+        return "Verifying device contents…".into();
+    }
+    match (device.last_sync, device.verified_managed_track_count) {
+        (Some(_), Some(count)) => format!(
+            "Verified · {} on device",
+            counted(count, "Reprise track", "Reprise tracks")
+        ),
+        (Some(_), None) => "Verified after synchronization".into(),
+        (None, _) => "Not verified in this session".into(),
+    }
+}
+
 fn blocker_summary(blockers: &[MirrorBlocker]) -> Option<String> {
     if blockers.is_empty() {
         return None;
@@ -241,6 +255,7 @@ struct SyncDialogSurface {
     changes: adw::ActionRow,
     storage: adw::ActionRow,
     storage_bar: StorageBar,
+    verification: adw::ActionRow,
     notice: adw::ActionRow,
     progress: adw::ActionRow,
     progress_bar: gtk4::ProgressBar,
@@ -295,6 +310,10 @@ impl SyncDialogSurface {
         page.add(&summary_group);
 
         let status_group = adw::PreferencesGroup::builder().title("Status").build();
+        let verification = adw::ActionRow::builder()
+            .title("Last synchronization")
+            .build();
+        status_group.add(&verification);
         let notice = adw::ActionRow::new();
         notice.set_visible(false);
         status_group.add(&notice);
@@ -375,6 +394,7 @@ impl SyncDialogSurface {
             changes,
             storage,
             storage_bar,
+            verification,
             notice,
             progress,
             progress_bar,
@@ -427,6 +447,8 @@ impl SyncDialogSurface {
         self.storage
             .set_subtitle(&storage_summary(&device.page.storage));
         self.storage_bar.update(&device.page.storage);
+        self.verification
+            .set_subtitle(&verification_summary(device));
         self.update_notice(device);
         self.update_progress(&device.sync_phase);
         self.update_actions(device);

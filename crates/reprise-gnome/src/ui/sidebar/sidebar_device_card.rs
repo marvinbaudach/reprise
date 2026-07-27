@@ -553,6 +553,7 @@ mod tests {
             sync_phase: phase,
             sync_error: None,
             last_sync: None,
+            verified_managed_track_count: None,
             managed_track_count: 0,
             bytes_per_second: 0,
             page: Default::default(),

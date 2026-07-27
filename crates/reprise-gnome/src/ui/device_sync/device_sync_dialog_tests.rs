@@ -66,6 +66,7 @@ fn device() -> DeviceView {
         sync_phase: PlannedSyncPhase::Idle,
         sync_error: None::<SyncFailure>,
         last_sync: None,
+        verified_managed_track_count: None,
         managed_track_count: 0,
         bytes_per_second: 0,
         page: SyncPageState {
@@ -214,6 +215,26 @@ fn mtp_9_known_read_only_target_is_explicit_and_blocks_sync() {
     device.page.storage.access = DeviceStorageAccess::Unknown;
     assert!(storage_summary(&device.page.storage).starts_with("Write access unknown ·"));
     assert_eq!(storage_access_notice(device.page.storage.access), None);
+}
+
+#[test]
+fn mtp_10_verification_summary_claims_only_post_sync_readback() {
+    let mut device = device();
+    assert_eq!(
+        verification_summary(&device),
+        "Not verified in this session"
+    );
+
+    device.sync_phase = PlannedSyncPhase::Finishing;
+    assert_eq!(verification_summary(&device), "Verifying device contents…");
+
+    device.sync_phase = PlannedSyncPhase::Idle;
+    device.last_sync = Some(chrono::Utc::now());
+    device.verified_managed_track_count = Some(2);
+    assert_eq!(
+        verification_summary(&device),
+        "Verified · 2 Reprise tracks on device"
+    );
 }
 
 #[test]

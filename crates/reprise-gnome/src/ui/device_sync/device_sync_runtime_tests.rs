@@ -10,8 +10,8 @@ use gtk4::gio;
 use gtk4::gio::prelude::*;
 use reprise_core::device_sync::settings::save_settings;
 use reprise_core::device_sync::{
-    DeviceSelection, DeviceSettings, DeviceStorageInspection, DeviceStorageSnapshot,
-    SelectionSource,
+    DeviceSelection, DeviceSettings, DeviceStorageAccess, DeviceStorageInspection,
+    DeviceStorageSnapshot, SelectionSource,
 };
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor};
 use reprise_platform_linux::device_transfer::{TranscodeProfile, TranscodeRequest, TranscodedFile};
@@ -35,6 +35,12 @@ struct PlaylistGate {
     release: async_channel::Receiver<()>,
 }
 
+#[derive(Clone)]
+struct InspectionGate {
+    started: async_channel::Sender<()>,
+    release: async_channel::Receiver<()>,
+}
+
 #[derive(Default)]
 struct FakeState {
     devices: RefCell<Vec<DeviceDescriptor>>,
@@ -50,10 +56,13 @@ struct FakeState {
     planned_operations: RefCell<Vec<(String, &'static str)>>,
     available_bytes: Cell<Option<u64>>,
     total_bytes: Cell<Option<u64>>,
+    storage_access: Cell<DeviceStorageAccess>,
     transcode_probe_error: RefCell<Option<String>>,
     copy_gate: RefCell<Option<CopyGate>>,
     playlist_error: RefCell<Option<String>>,
     playlist_gate: RefCell<Option<PlaylistGate>>,
+    inspection_gate: RefCell<Option<InspectionGate>>,
+    inspection_error: RefCell<Option<String>>,
     delete_observer: RefCell<Option<DeleteObserver>>,
 }
 
@@ -74,6 +83,11 @@ impl FakeBackend {
 
     fn with_available_bytes(self, available_bytes: Option<u64>) -> Self {
         self.state.available_bytes.set(available_bytes);
+        self
+    }
+
+    fn with_storage_access(self, access: DeviceStorageAccess) -> Self {
+        self.state.storage_access.set(access);
         self
     }
 
@@ -130,6 +144,20 @@ impl FakeBackend {
         (started_rx, release)
     }
 
+    fn gate_next_inspection(&self) -> (async_channel::Receiver<()>, async_channel::Sender<()>) {
+        let (started, started_rx) = async_channel::bounded(1);
+        let (release, release_rx) = async_channel::bounded(1);
+        self.state.inspection_gate.replace(Some(InspectionGate {
+            started,
+            release: release_rx,
+        }));
+        (started_rx, release)
+    }
+
+    fn fail_next_inspection(&self, error: &str) {
+        self.state.inspection_error.replace(Some(error.into()));
+    }
+
     fn observe_deletes(&self, observer: DeleteObserver) {
         self.state.delete_observer.replace(Some(observer));
     }
@@ -147,10 +175,27 @@ impl DeviceBackend for FakeBackend {
     fn inspect(&self, _root_uri: String) -> TestFuture<DeviceStorageInspection> {
         let available_bytes = self.state.available_bytes.get();
         let total_bytes = self.state.total_bytes.get();
+        let storage_access = self.state.storage_access.get();
+        let gate = self.state.inspection_gate.borrow_mut().take();
+        let inspection_error = self.state.inspection_error.borrow_mut().take();
         Box::pin(async move {
+            if let Some(gate) = gate {
+                gate.started
+                    .send(())
+                    .await
+                    .map_err(|_| "inspection-start observer was dropped".to_string())?;
+                gate.release
+                    .recv()
+                    .await
+                    .map_err(|_| "inspection gate was dropped".to_string())?;
+            }
+            if let Some(error) = inspection_error {
+                return Err(error);
+            }
             Ok(DeviceStorageInspection {
                 snapshot: DeviceStorageSnapshot {
                     target_name: Some("Internal shared storage".into()),
+                    access: storage_access,
                     free_bytes: available_bytes,
                     total_bytes,
                     ..DeviceStorageSnapshot::default()
