@@ -195,6 +195,10 @@ impl MinimalView {
         self.geometry_suppressed.clone()
     }
 
+    pub(in crate::ui) fn is_library_mode(&self) -> bool {
+        self.transition.get().mode == WindowViewMode::Library
+    }
+
     pub(in crate::ui) fn toggle(&self) {
         let current = self.transition.get();
         let desired = toggled_transition(current);
