@@ -48,6 +48,7 @@ mod db_mix_planner;
 mod db_new_releases_history;
 mod db_podcasts_radio;
 mod db_recently_added;
+mod db_release_discography;
 mod db_tag_write_jobs;
 pub mod device_sync;
 pub mod events;

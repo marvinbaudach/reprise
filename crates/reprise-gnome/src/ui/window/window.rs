@@ -378,7 +378,6 @@ pub fn build(
     let releases_view = Rc::new(crate::ui::releases::install(
         conn.clone(),
         db_path.to_path_buf(),
-        on_show_album.clone(),
     ));
     content_stack.add_named(concerts_view.root(), Some("concerts"));
     content_stack.add_named(releases_view.root(), Some("releases"));

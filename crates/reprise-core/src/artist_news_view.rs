@@ -9,11 +9,10 @@ use std::cmp::Ordering;
 use chrono::NaiveDate;
 use rusqlite::Connection;
 
-use crate::artist_news::{parse_partial_date, LibraryPresence};
+use crate::artist_news::{normalize, parse_partial_date, LibraryPresence};
 use crate::artist_news_history::{query_history, HistoryEntry};
 use crate::library::settings::{get_bool, get_setting};
 
-pub const RELEASES_FILTER_NOT_IN_LIBRARY_KEY: &str = "releases.filter.not_in_library";
 pub const RELEASES_FILTER_TYPE_KEY: &str = "releases.filter.type";
 pub const RELEASES_FILTER_HIDDEN_KEY: &str = "releases.filter.hidden";
 
@@ -21,7 +20,6 @@ pub const RELEASES_FILTER_HIDDEN_KEY: &str = "releases.filter.hidden";
 pub enum ReleaseTypeFilter {
     Album,
     Ep,
-    Single,
 }
 
 impl ReleaseTypeFilter {
@@ -29,7 +27,6 @@ impl ReleaseTypeFilter {
         match self {
             Self::Album => "album",
             Self::Ep => "ep",
-            Self::Single => "single",
         }
     }
 
@@ -37,7 +34,6 @@ impl ReleaseTypeFilter {
         match value.trim().to_ascii_lowercase().as_str() {
             "album" => Some(Self::Album),
             "ep" => Some(Self::Ep),
-            "single" => Some(Self::Single),
             _ => None,
         }
     }
@@ -45,7 +41,6 @@ impl ReleaseTypeFilter {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ReleasesFilter {
-    pub not_in_library: bool,
     pub release_type: Option<ReleaseTypeFilter>,
     pub hidden: bool,
 }
@@ -54,7 +49,8 @@ pub struct ReleasesFilter {
 pub enum ReleaseStatus {
     InLibrary,
     Upcoming,
-    Released,
+    Incomplete,
+    Missing,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,7 +61,6 @@ pub enum ReleaseSortDirection {
 
 pub fn persisted_releases_filter(conn: &Connection) -> Result<ReleasesFilter, rusqlite::Error> {
     Ok(ReleasesFilter {
-        not_in_library: get_bool(conn, RELEASES_FILTER_NOT_IN_LIBRARY_KEY, false)?,
         release_type: get_setting(conn, RELEASES_FILTER_TYPE_KEY)?
             .as_deref()
             .and_then(ReleaseTypeFilter::parse),
@@ -79,15 +74,23 @@ pub fn release_status(entry: &HistoryEntry, today: NaiveDate) -> ReleaseStatus {
     }
     if parse_partial_date(&entry.first_release_date).is_some_and(|date| date > today) {
         ReleaseStatus::Upcoming
+    } else if entry.presence == LibraryPresence::Partial {
+        ReleaseStatus::Incomplete
     } else {
-        ReleaseStatus::Released
+        ReleaseStatus::Missing
     }
 }
 
 pub fn filter_rows(rows: Vec<HistoryEntry>, filter: &ReleasesFilter) -> Vec<HistoryEntry> {
     rows.into_iter()
         .filter(|entry| entry.hidden == filter.hidden)
-        .filter(|entry| !filter.not_in_library || entry.presence != LibraryPresence::Complete)
+        .filter(|entry| entry.presence != LibraryPresence::Complete)
+        .filter(|entry| {
+            matches!(
+                ReleaseTypeFilter::parse(&entry.release_type),
+                Some(ReleaseTypeFilter::Album | ReleaseTypeFilter::Ep)
+            )
+        })
         .filter(|entry| {
             filter
                 .release_type
@@ -134,11 +137,38 @@ pub fn query_releases_view(
     filter: &ReleasesFilter,
     today: NaiveDate,
 ) -> Result<Vec<HistoryEntry>, rusqlite::Error> {
-    let rows = query_history(conn, today)?;
+    let artists = current_library_artist_keys(conn)?;
+    let rows = query_history(conn, today)?
+        .into_iter()
+        .filter(|entry| artists.contains(&normalize(&entry.artist_name)))
+        .collect();
     Ok(sort_rows(
         filter_rows(rows, filter),
         ReleaseSortDirection::Descending,
     ))
+}
+
+fn current_library_artist_keys(
+    conn: &Connection,
+) -> Result<std::collections::HashSet<String>, rusqlite::Error> {
+    let mut statement = conn.prepare(
+        "SELECT artist, album_artist
+         FROM tracks
+         WHERE removed_at IS NULL AND missing_since IS NULL",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    let mut artists = std::collections::HashSet::new();
+    for row in rows {
+        let (artist, album_artist) = row?;
+        for name in [artist, album_artist] {
+            if !name.trim().is_empty() {
+                artists.insert(normalize(&name));
+            }
+        }
+    }
+    Ok(artists)
 }
 
 pub fn count_releases_view(

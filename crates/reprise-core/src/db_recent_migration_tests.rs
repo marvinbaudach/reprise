@@ -513,6 +513,7 @@ fn assert_new_releases_schema(conn: &Connection) {
             "first_seen",
             "hidden_at",
             "announce_url",
+            "track_count",
         ]
     );
 }

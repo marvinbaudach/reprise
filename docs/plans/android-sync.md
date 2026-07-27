@@ -98,13 +98,14 @@ Die pure Core-Schicht besitzt die plattformneutralen Verträge:
 
 ## Persistenz und Migration
 
-Der zusammengeführte Schema-Stand ist `user_version = 38`:
+Der zusammengeführte Schema-Stand ist `user_version = 39`:
 
 - v34: Podcasts/Radio;
 - v35: Recently Added;
 - v36: Android-Sync-Inventar;
 - v37: modernes Transferprofil;
-- v38: letzter verifizierter Sync pro Geräte-Playlist.
+- v38: letzter verifizierter Sync pro Geräte-Playlist;
+- v39: offizielle Track-Anzahl für Discography-Lücken.
 
 v36:
 
