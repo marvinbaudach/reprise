@@ -1,7 +1,7 @@
-//! Compact per-device surface for Android playlist mirroring.
+//! Full-page per-device surface for Android playlist mirroring.
 
 use std::cell::{Cell, RefCell};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use chrono::TimeZone;
 use gtk4::prelude::*;
@@ -20,7 +20,7 @@ use super::device_sync_storage_copy::{storage_access_notice, storage_summary};
 use super::device_sync_strings;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct DialogActionCopy {
+struct PageActionCopy {
     label: &'static str,
     sensitive: bool,
     destructive: bool,
@@ -173,15 +173,15 @@ fn warning_summary(warnings: &[SyncPageWarning]) -> Vec<String> {
     summary
 }
 
-fn action_copy(controls: SyncPageControls) -> DialogActionCopy {
+fn action_copy(controls: SyncPageControls) -> PageActionCopy {
     if controls.can_cancel {
-        DialogActionCopy {
+        PageActionCopy {
             label: "_Cancel",
             sensitive: true,
             destructive: true,
         }
     } else {
-        DialogActionCopy {
+        PageActionCopy {
             label: "_Sync now",
             sensitive: controls.can_start,
             destructive: false,
@@ -203,7 +203,7 @@ fn counted(count: usize, singular: &str, plural: &str) -> String {
 }
 
 #[derive(Clone)]
-struct DialogActions {
+struct PageActions {
     set_profile: Rc<dyn Fn(TransferProfile)>,
     set_playlist: Rc<dyn Fn(reprise_core::device_sync::SelectionSource, bool)>,
     start: Rc<dyn Fn()>,
@@ -211,7 +211,7 @@ struct DialogActions {
     eject: Rc<dyn Fn()>,
 }
 
-impl DialogActions {
+impl PageActions {
     fn for_runtime(runtime: &Rc<DeviceSyncRuntime>, device_id: &str) -> Self {
         let set_profile = {
             let runtime = runtime.clone();
@@ -260,9 +260,8 @@ impl DialogActions {
     }
 }
 
-struct SyncDialogSurface {
-    root: adw::ToolbarView,
-    title: adw::WindowTitle,
+struct DeviceSyncPage {
+    root: gtk4::Stack,
     connected_stack: gtk4::Stack,
     profile: adw::ComboRow,
     playlist_group: adw::PreferencesGroup,
@@ -278,25 +277,22 @@ struct SyncDialogSurface {
     eject: gtk4::Button,
     updating: Rc<Cell<bool>>,
     cancelling: Rc<Cell<bool>>,
-    actions: DialogActions,
+    actions: PageActions,
 }
 
-impl SyncDialogSurface {
-    fn new(device: &DeviceView, actions: DialogActions) -> Self {
-        let title = adw::WindowTitle::new(&device.name, "Android playlist sync");
-        let header = adw::HeaderBar::new();
-        header.set_title_widget(Some(&title));
+impl DeviceSyncPage {
+    fn new(device: &DeviceView, actions: PageActions) -> Self {
         let eject = gtk4::Button::builder()
             .icon_name("media-eject-symbolic")
+            .label("Eject")
             .tooltip_text(device_sync_strings::eject_tooltip(false))
             .build();
-        header.pack_end(&eject);
 
         let page = adw::PreferencesPage::new();
-        page.add_css_class("reprise-device-sync-dialog");
+        page.add_css_class("reprise-device-sync-page");
 
         let format_group = adw::PreferencesGroup::builder()
-            .title("Audio format")
+            .title("Transfer")
             .description(
                 "Lossless files use the selected encoder. Lossy and unknown formats are always copied unchanged.",
             )
@@ -348,6 +344,7 @@ impl SyncDialogSurface {
         let buttons = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
         buttons.set_halign(gtk4::Align::End);
         buttons.set_margin_top(6);
+        buttons.append(&eject);
         buttons.append(&primary);
         status_group.add(&buttons);
         page.add(&status_group);
@@ -357,14 +354,10 @@ impl SyncDialogSurface {
             .title("Device disconnected")
             .description("Reconnect the device to continue synchronization.")
             .build();
-        let connected_stack = gtk4::Stack::new();
-        connected_stack.add_named(&page, Some("connected"));
-        connected_stack.add_named(&disconnected, Some("disconnected"));
-        connected_stack.set_visible_child_name("connected");
-
-        let root = adw::ToolbarView::new();
-        root.add_top_bar(&header);
-        root.set_content(Some(&connected_stack));
+        let root = gtk4::Stack::new();
+        root.add_named(&page, Some("connected"));
+        root.add_named(&disconnected, Some("disconnected"));
+        root.set_visible_child_name("connected");
 
         let updating = Rc::new(Cell::new(false));
         {
@@ -400,9 +393,8 @@ impl SyncDialogSurface {
         }
 
         let surface = Self {
+            connected_stack: root.clone(),
             root,
-            title,
-            connected_stack,
             profile,
             playlist_group,
             playlist_rows: RefCell::new(Vec::new()),
@@ -425,8 +417,6 @@ impl SyncDialogSurface {
 
     fn update(&self, device: &DeviceView) {
         self.updating.set(true);
-        self.title.set_title(&device.name);
-        self.title.set_subtitle("Android playlist sync");
         self.connected_stack
             .set_visible_child_name(if device.connected {
                 "connected"
@@ -465,7 +455,7 @@ impl SyncDialogSurface {
         self.verification
             .set_subtitle(&verification_summary(device));
         self.update_notice(device);
-        self.update_progress(&device.sync_phase);
+        self.update_progress(&device.sync_phase, device.bytes_per_second);
         self.update_actions(device);
         self.updating.set(false);
     }
@@ -504,6 +494,7 @@ impl SyncDialogSurface {
             }
             for playlist in &device.page.playlists {
                 let row = adw::SwitchRow::new();
+                row.set_use_markup(false);
                 let source = playlist.source.clone();
                 let updating = self.updating.clone();
                 let set_playlist = self.actions.set_playlist.clone();
@@ -584,8 +575,8 @@ impl SyncDialogSurface {
         );
     }
 
-    fn update_progress(&self, phase: &PlannedSyncPhase) {
-        let Some((title, subtitle, fraction)) = progress_copy(phase) else {
+    fn update_progress(&self, phase: &PlannedSyncPhase, bytes_per_second: u64) {
+        let Some((title, subtitle, fraction)) = progress_copy(phase, bytes_per_second) else {
             self.progress.set_visible(false);
             self.progress_bar.set_visible(false);
             return;
@@ -618,7 +609,6 @@ impl SyncDialogSurface {
 
     fn show_disconnected(&self) {
         self.connected_stack.set_visible_child_name("disconnected");
-        self.title.set_subtitle("Disconnected");
     }
 
     #[cfg(test)]
@@ -646,7 +636,7 @@ impl SyncDialogSurface {
     }
 }
 
-fn progress_copy(phase: &PlannedSyncPhase) -> Option<(String, String, f64)> {
+fn progress_copy(phase: &PlannedSyncPhase, bytes_per_second: u64) -> Option<(String, String, f64)> {
     match phase {
         PlannedSyncPhase::Idle => None,
         PlannedSyncPhase::ComputingDelta => Some((
@@ -667,6 +657,7 @@ fn progress_copy(phase: &PlannedSyncPhase) -> Option<(String, String, f64)> {
             bytes_done,
             bytes_total,
         } => {
+            let is_copying = *step == SyncStep::Copying;
             let step = match step {
                 SyncStep::Removing => "Removing",
                 SyncStep::Transcoding => "Converting",
@@ -680,48 +671,67 @@ fn progress_copy(phase: &PlannedSyncPhase) -> Option<(String, String, f64)> {
             } else {
                 0.0
             };
+            let subtitle = if is_copying && bytes_per_second > 0 {
+                format!(
+                    "{current_track} · {}/s",
+                    device_sync_strings::file_size(bytes_per_second)
+                )
+            } else {
+                current_track.clone()
+            };
             Some((
                 format!("{step} · {done} of {total}"),
-                current_track.clone(),
+                subtitle,
                 fraction.clamp(0.0, 1.0),
             ))
         }
     }
 }
 
-fn dialog_for_surface(surface: &SyncDialogSurface) -> adw::Dialog {
-    adw::Dialog::builder()
-        .child(&surface.root)
-        .title("Android playlist sync")
-        .content_width(560)
-        .content_height(660)
-        .build()
+fn page_state_callback(
+    surface: Weak<DeviceSyncPage>,
+    device_id: String,
+) -> Rc<dyn Fn(DeviceSyncState)> {
+    Rc::new(move |state| {
+        let Some(surface) = surface.upgrade() else {
+            return;
+        };
+        if let Some(device) = state.devices.iter().find(|device| device.id == device_id) {
+            surface.update(device);
+        } else {
+            surface.show_disconnected();
+        }
+    })
 }
 
-pub(in crate::ui) fn present(
-    parent: &impl IsA<gtk4::Widget>,
+pub(in crate::ui) fn open(
+    content_stack: &gtk4::Stack,
+    window_title: &adw::WindowTitle,
     device_id: &str,
     runtime: &Rc<DeviceSyncRuntime>,
-) -> Option<adw::Dialog> {
+) -> bool {
     let device = runtime
         .devices()
         .into_iter()
-        .find(|device| device.id == device_id)?;
-    let surface = Rc::new(SyncDialogSurface::new(
+        .find(|device| device.id == device_id);
+    let Some(device) = device else {
+        return false;
+    };
+    let surface = Rc::new(DeviceSyncPage::new(
         &device,
-        DialogActions::for_runtime(runtime, device_id),
+        PageActions::for_runtime(runtime, device_id),
     ));
-    let dialog = dialog_for_surface(&surface);
-    let update_surface = surface.clone();
-    let update_id = device_id.to_string();
-    let subscription = runtime.subscribe(Rc::new(move |state: DeviceSyncState| {
-        if let Some(device) = state.devices.iter().find(|device| device.id == update_id) {
-            update_surface.update(device);
-        } else {
-            update_surface.show_disconnected();
-        }
-    }));
-    subscription.retain_for_widget(&dialog);
+    if let Some(previous) = content_stack.child_by_name("device-sync") {
+        content_stack.remove(&previous);
+    }
+    content_stack.add_named(&surface.root, Some("device-sync"));
+    window_title.set_title(&device.name);
+
+    let subscription = runtime.subscribe(page_state_callback(
+        Rc::downgrade(&surface),
+        device_id.to_string(),
+    ));
+    subscription.retain_for_widget(&surface.root);
     let focus = surface
         .playlist_rows
         .borrow()
@@ -735,12 +745,13 @@ pub(in crate::ui) fn present(
                 .then(|| surface.primary.clone().upcast::<gtk4::Widget>())
         })
         .unwrap_or_else(|| surface.eject.clone().upcast::<gtk4::Widget>());
-    let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(parent);
-    focus_guard.bind_closable_dialog(&dialog, &focus);
-    dialog.present(Some(parent));
-    Some(dialog)
+    crate::ui::window::content_stack::show_page(content_stack, "device-sync");
+    gtk4::glib::idle_add_local_once(move || {
+        focus.grab_focus();
+    });
+    true
 }
 
 #[cfg(test)]
-#[path = "device_sync_dialog_tests.rs"]
+#[path = "device_sync_page_tests.rs"]
 mod tests;

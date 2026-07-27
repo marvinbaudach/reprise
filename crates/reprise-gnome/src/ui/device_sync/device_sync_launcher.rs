@@ -1,4 +1,4 @@
-//! Entry point for opening compact Android synchronization from the main menu.
+//! Main-menu entry point for the Android synchronization page.
 
 use std::rc::Rc;
 
@@ -7,10 +7,15 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
-use super::device_sync_dialog;
 use super::device_sync_runtime::{DeviceSyncRuntime, DeviceView};
 
-pub(in crate::ui) fn present(parent: &impl IsA<gtk4::Widget>, runtime: &Rc<DeviceSyncRuntime>) {
+pub(in crate::ui) type OpenDevice = Rc<dyn Fn(String, String)>;
+
+pub(in crate::ui) fn present(
+    parent: &impl IsA<gtk4::Widget>,
+    runtime: &Rc<DeviceSyncRuntime>,
+    open_device: &OpenDevice,
+) {
     let devices = runtime
         .devices()
         .into_iter()
@@ -18,12 +23,8 @@ pub(in crate::ui) fn present(parent: &impl IsA<gtk4::Widget>, runtime: &Rc<Devic
         .collect::<Vec<_>>();
     match devices.as_slice() {
         [] => present_no_device(parent),
-        [device] => {
-            if device_sync_dialog::present(parent, &device.id, runtime).is_none() {
-                tracing::warn!(device_id = device.id, "could not open Android sync dialog");
-            }
-        }
-        _ => present_chooser(parent, runtime, &devices),
+        [device] => open_device(device.id.clone(), device.name.clone()),
+        _ => present_chooser(parent, &devices, open_device),
     }
 }
 
@@ -39,8 +40,8 @@ fn present_no_device(parent: &impl IsA<gtk4::Widget>) {
 
 fn present_chooser(
     parent: &impl IsA<gtk4::Widget>,
-    runtime: &Rc<DeviceSyncRuntime>,
     devices: &[DeviceView],
+    open_device: &OpenDevice,
 ) {
     let list = gtk4::ListBox::new();
     list.add_css_class("boxed-list");
@@ -65,6 +66,7 @@ fn present_chooser(
     for device in devices {
         let row = adw::ActionRow::builder()
             .title(&device.name)
+            .use_markup(false)
             .subtitle("MTP · connected")
             .activatable(true)
             .build();
@@ -76,18 +78,16 @@ fn present_chooser(
             initial_focus = Some(row.clone().upcast::<gtk4::Widget>());
         }
         let chooser = dialog.clone();
-        let parent = parent.clone();
-        let runtime = runtime.clone();
+        let open_device = open_device.clone();
         let device_id = device.id.clone();
+        let device_name = device.name.clone();
         row.connect_activated(move |_| {
             chooser.force_close();
-            let parent = parent.clone();
-            let runtime = runtime.clone();
+            let open_device = open_device.clone();
             let device_id = device_id.clone();
+            let device_name = device_name.clone();
             gtk4::glib::idle_add_local_once(move || {
-                if device_sync_dialog::present(&parent, &device_id, &runtime).is_none() {
-                    tracing::warn!(device_id, "could not open Android sync dialog");
-                }
+                open_device(device_id, device_name);
             });
         });
         list.append(&row);

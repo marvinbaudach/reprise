@@ -1,14 +1,14 @@
 # Vereinfachter Android-Sync (MTP) — gepflegter Implementierungsplan
 
 Status: **Stage implementiert; manuelle Geräteprüfung offen**
-Branch: `feature/simplified-android-sync`
+Branch: `feature/android-sync-transfer-profiles`
 Feature-Basis: `ea1b3dc7c1`
-Integriertes `dev`: `73bb12dcd2`
+Integriertes `dev`: `6cdb1af33e`
 Stand: 2026-07-27
 
-Dieser Plan ersetzt den früheren Entwurf für Device-View, Preferences-Sync-Tab,
-„Entire Library“, Pins, Ratings-Back, frei konfigurierbare Encoder und einen
-globalen Sync. Der
+Dieser Plan ersetzt den früheren Entwurf für einen Geräte-Dateibrowser,
+Preferences-Sync-Tab, „Entire Library“, Pins, Ratings-Back, frei
+konfigurierbare Encoder und einen globalen Sync. Der
 verbindliche Ausführungsstand steht in `.superpowers/sdd/progress.md`; die
 Commits bleiben Ground Truth.
 
@@ -18,20 +18,24 @@ Reprise spiegelt eine explizite Auswahl manueller und smarter Playlists auf
 verbundene Android-MTP-Geräte. Die Bedienung bleibt absichtlich klein:
 
 - Eine Gerätekarte in der Sidebar zeigt Zustand, Delta und Fortschritt.
-- Ein Klick öffnet einen kompakten gerätebezogenen Dialog.
-- Der Hauptmenü-Eintrag öffnet bei einem Gerät direkt diesen Dialog und bei
-  mehreren Geräten zuerst eine Geräteauswahl.
-- Im Dialog werden Playlists und eines von drei Transferprofilen gewählt:
+- Ein Klick öffnet die gerätebezogene Vollseite im Hauptfenster.
+- Der Hauptmenü-Eintrag öffnet bei einem Gerät direkt diese Seite und bei
+  mehreren Geräten zuerst eine kompakte Geräteauswahl.
+- Auf der Seite werden Playlists und eines von drei Transferprofilen gewählt:
   Opus 160 kbit/s als Standard, MP3 256 kbit/s als Kompatibilitäts-Fallback
   oder unveränderte Originaldateien. Delta und Speicherprojektion werden
   geprüft sowie Sync, Cancel und Eject ausgelöst.
+- Jede Playlist zeigt ihren Namen, ihren letzten verifizierten Sync und ihre
+  für das aktive Transferprofil projizierte Zielgröße. Ein laufender Sync zeigt
+  Fortschritt und geglättete MTP-Transferrate.
 - Änderungen werden sofort gerätebezogen persistiert; es gibt keinen Apply-
   Schritt und keine zweite Sync-Oberfläche.
 
 Nicht Teil dieser Stage sind:
 
 - gesamte Bibliothek als Sync-Quelle;
-- Device-View im Hauptfenster;
+- Auflistung oder Browsing einzelner Dateien beziehungsweise Songs auf dem
+  Gerät;
 - Sync-Seite in Preferences;
 - Keep-on-device-Pins und Ratings-/Playcount-Rücksync;
 - frei konfigurierbare Bitraten oder parallele Encoder;
@@ -58,7 +62,8 @@ Die pure Core-Schicht besitzt die plattformneutralen Verträge:
 - `device_sync/storage.rs`: aktuelle und projizierte Zusammensetzung aus
   Reprise-Musik, anderer Musik, sonstigem belegtem Platz und freiem Platz,
   jeweils mit vollständigem, unbekanntem oder inkonsistentem Wissensstand.
-- `device_sync/page.rs`: toolkit-neutrale Projektion für Dialog und Sidebar.
+- `device_sync/page.rs`: toolkit-neutrale Projektion für Geräte-Seite und
+  Sidebar.
 - `device_sync/settings.rs`: gerätebezogene Auswahl sowie Track- und
   Playlist-Inventare.
 
@@ -87,7 +92,8 @@ Die pure Core-Schicht besitzt die plattformneutralen Verträge:
   Storage-Snapshot, Inventar, Mirror-Plan und Projektion.
 - `device_sync_planned.rs` führt pro Gerät seriell aus; verschiedene Geräte
   dürfen unabhängig parallel laufen.
-- `device_sync_dialog.rs` ist die einzige editierbare Sync-Oberfläche.
+- `device_sync_page.rs` ist die einzige editierbare Sync-Oberfläche und lebt
+  als normale Vollseite im Content-Stack des Hauptfensters.
 - `device_sync_launcher.rs` ist der Hauptmenü-Einstieg und die
   Mehrgeräteauswahl.
 - `sidebar_device_card.rs` projiziert denselben State in-place, ohne Widgets
@@ -199,14 +205,15 @@ Weitere Invarianten:
 
 ## UI-Vertrag
 
-Der Dialog zeigt:
+Die Geräte-Seite zeigt:
 
 - Gerätename und MTP-Verbindung;
 - Transferprofil Opus 160 kbit/s, MP3 256 kbit/s oder Original;
 - die sichtbare Garantie, dass verlustbehaftete und unbekannte Quellen nie in
   ein anderes verlustbehaftetes Format transkodiert werden;
 - jede manuelle und smarte Playlist mit Entry-, Unique-, Missing-,
-  Größenprojektion und dem letzten verifizierten Sync-Zeitpunkt;
+  profilabhängiger Größenprojektion und dem letzten verifizierten
+  Sync-Zeitpunkt;
 - deduplizierte Gesamttracks und physische Zielgröße;
 - verständliche Change-, Blocker- und Warning-Zusammenfassungen ohne Pfade;
 - eine Storage-Zusammenfassung und Segmentleiste für Music, After-sync-Delta,
@@ -230,7 +237,7 @@ Kompatibilitätsfeld bleibt dabei null.
 
 Die Tasks 1 bis 13, beide Dev-Integrationen und die adversarialen
 Safety-/Storage-Follow-ups sind abgeschlossen. Der Agent-, D-Bus- und
-MCP-Vertrag entspricht dem kompakten Dialog:
+MCP-Vertrag entspricht der Geräte-Seite:
 
 - `music_get_device_sync_state` liefert manuelle und smarte
   Playlist-Identitäten, Transferprofil, deduplizierte Summen, Änderungen,
@@ -246,7 +253,7 @@ MCP-Vertrag entspricht dem kompakten Dialog:
 Die Commits und Gate-Ergebnisse sind im Fortschrittsledger einzeln
 nachgewiesen. Offen bleiben ausschließlich die unten aufgeführten Prüfungen
 mit einem ausdrücklich freigegebenen Testgerät. Die UX-Regeln MTP-7 bis
-MTP-10 sind mit ihren regelbenannten Tests aktiv.
+MTP-13 sind mit ihren regelbenannten Tests aktiv.
 
 ## Verifikation
 
@@ -281,6 +288,14 @@ abschließenden Geräte-Readback.
 
 Die Simulation prüft Opus 160, MP3 256 und bytegenaues Original-Passthrough,
 unabhängige parallele Geräte sowie fremde, nicht inventarisierte Dateien. Sie
+besitzt außerdem den isolierten Hintergrund-CUA-Lauf `android-sync-page`: Er
+öffnet die Gerätekarte des simulierten Telefons, verifiziert die nicht-modale
+Vollseite mit Transferprofil, Playlist-Auswahl, letztem Sync, Delta und
+Speicher und weist anschließend eine tatsächlich veröffentlichte Opus-Datei
+im temporären Geräte-Root nach. Markup-Parserfehler in dynamischen Namen
+machen diesen Lauf rot.
+
+Die Simulation
 emuliert absichtlich weder USB noch `libmtp` oder die GVfs-Geräteerkennung:
 Diese Schichten hängen von Host und Hardware ab und bleiben zusätzliche
 manuelle Akzeptanzchecks, nicht Voraussetzungen der reproduzierbaren Suite.

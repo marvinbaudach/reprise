@@ -110,8 +110,8 @@ use cover::{cover_download_batch, main_cover_download_progress};
 pub(crate) use cover::{cover_download_worker, cover_loader};
 #[allow(unused_imports)]
 use device_sync::{
-    device_sync_backend, device_sync_feedback, device_sync_launcher, device_sync_runtime,
-    device_sync_smoke, device_sync_strings,
+    device_sync_backend, device_sync_feedback, device_sync_launcher, device_sync_page,
+    device_sync_runtime, device_sync_smoke, device_sync_strings,
 };
 #[allow(unused_imports)]
 use library_views::artist_avatar;

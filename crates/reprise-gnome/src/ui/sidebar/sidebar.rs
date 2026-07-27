@@ -382,26 +382,9 @@ impl Sidebar {
     pub fn bind_device_sync(
         &self,
         runtime: &Rc<crate::ui::device_sync_runtime::DeviceSyncRuntime>,
+        on_open: Rc<dyn Fn(String, String)>,
     ) {
-        let window = self.shared.window.clone();
-        let runtime_for_open = runtime.clone();
-        let section = super::sidebar_device_card::bind(
-            runtime,
-            Rc::new(move |serial, _| {
-                let Some(window) = window.upgrade() else {
-                    return;
-                };
-                if crate::ui::device_sync::device_sync_dialog::present(
-                    &window,
-                    &serial,
-                    &runtime_for_open,
-                )
-                .is_none()
-                {
-                    tracing::warn!(device_id = serial, "could not open Android sync dialog");
-                }
-            }),
-        );
+        let section = super::sidebar_device_card::bind(runtime, on_open);
         self.activity_slot.set_device_section(&section);
     }
 }

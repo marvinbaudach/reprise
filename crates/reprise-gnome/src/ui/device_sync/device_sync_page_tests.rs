@@ -103,7 +103,7 @@ fn device() -> DeviceView {
 }
 
 #[test]
-fn mtp_8_compact_dialog_names_each_modern_transfer_profile() {
+fn mtp_8_full_page_names_each_modern_transfer_profile() {
     assert_eq!(
         TransferProfile::ALL.map(profile_label),
         [
@@ -115,7 +115,7 @@ fn mtp_8_compact_dialog_names_each_modern_transfer_profile() {
 }
 
 #[test]
-fn compact_dialog_playlist_copy_keeps_snapshot_repeats_and_physical_size_distinct() {
+fn full_page_playlist_copy_keeps_snapshot_repeats_and_physical_size_distinct() {
     assert_eq!(
         playlist_subtitle(&row()),
         "Smart snapshot · 3 entries · 2 unique tracks · 32.0 KiB · No verified sync time"
@@ -155,7 +155,28 @@ fn mtp_12_playlist_copy_reports_its_last_verified_sync_time() {
 }
 
 #[test]
-fn compact_dialog_summarizes_every_mirror_change_without_paths() {
+fn mtp_13_copy_progress_includes_the_live_mtp_rate() {
+    let phase = PlannedSyncPhase::Syncing {
+        step: crate::ui::device_sync_runtime::SyncStep::Copying,
+        done: 1,
+        total: 2,
+        current_track: "Immortal — Lorna Shore".into(),
+        bytes_done: 50,
+        bytes_total: 100,
+    };
+
+    assert_eq!(
+        progress_copy(&phase, 2 * 1_024 * 1_024),
+        Some((
+            "Copying · 1 of 2".into(),
+            "Immortal — Lorna Shore · 2.0 MiB/s".into(),
+            0.5,
+        ))
+    );
+}
+
+#[test]
+fn full_page_summarizes_every_mirror_change_without_paths() {
     let summary = change_summary(&SyncChangeSummary {
         additions: 2,
         replacements: 1,
@@ -174,7 +195,7 @@ fn compact_dialog_summarizes_every_mirror_change_without_paths() {
 }
 
 #[test]
-fn mtp_7_compact_dialog_projects_complete_storage_segments() {
+fn mtp_7_full_page_projects_complete_storage_segments() {
     let mut after = composition(Some(48 * 1_024));
     after.reprise_music_bytes = 48 * 1_024;
     after.other_used_bytes = Some(16 * 1_024);
@@ -212,7 +233,7 @@ fn mtp_7_compact_dialog_projects_complete_storage_segments() {
             can_start: false,
             can_cancel: true,
         }),
-        DialogActionCopy {
+        PageActionCopy {
             label: "_Cancel",
             sensitive: true,
             destructive: true,
@@ -334,7 +355,7 @@ fn mtp_4_eject_is_available_only_for_an_idle_connected_device() {
 }
 
 #[test]
-fn compact_dialog_warning_copy_is_grammatical_and_path_free() {
+fn full_page_warning_copy_is_grammatical_and_path_free() {
     assert_eq!(
         warning_summary(&[SyncPageWarning::UnavailableNotOnDevice { track_id: 7 }]),
         ["1 track will be skipped because it is unavailable and not already on the device."]
@@ -354,13 +375,13 @@ fn compact_dialog_warning_copy_is_grammatical_and_path_free() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn mtp_2_compact_dialog_renders_and_wires_only_the_playlist_mirroring_controls() {
+fn mtp_13_full_page_renders_and_wires_only_the_playlist_mirroring_controls() {
     gtk4::init().expect("GTK test display");
     let profile_events = Rc::new(RefCell::new(Vec::new()));
     let playlist_events = Rc::new(RefCell::new(Vec::new()));
     let starts = Rc::new(RefCell::new(0));
     let cancels = Rc::new(RefCell::new(0));
-    let actions = DialogActions {
+    let actions = PageActions {
         set_profile: {
             let events = profile_events.clone();
             Rc::new(move |profile| events.borrow_mut().push(profile))
@@ -380,20 +401,30 @@ fn mtp_2_compact_dialog_renders_and_wires_only_the_playlist_mirroring_controls()
         eject: Rc::new(|| {}),
     };
     let mut device = device();
-    let surface = SyncDialogSurface::new(&device, actions);
-    let _dialog = dialog_for_surface(&surface);
+    device.page.playlists[0].name = Some("Lorna Shore & Similar".into());
+    let surface = Rc::new(DeviceSyncPage::new(&device, actions));
 
-    assert_eq!(surface.title.title(), "Pixel 8");
+    assert_eq!(
+        surface.root.visible_child_name().as_deref(),
+        Some("connected")
+    );
     assert_eq!(
         surface.profile.model().map(|model| model.n_items()),
         Some(3)
     );
     assert_eq!(surface.profile.selected(), 1);
     assert_eq!(surface.playlist_rows.borrow().len(), 1);
+    assert_eq!(
+        surface.playlist_rows.borrow()[0].1.title(),
+        "Lorna Shore & Similar"
+    );
+    assert!(!surface.playlist_rows.borrow()[0].1.uses_markup());
     assert_eq!(surface.primary.label().as_deref(), Some("_Sync now"));
     assert!(surface.primary.uses_underline());
     assert!(surface.primary.is_sensitive());
     assert!(!surface.root_text().contains("Entire library"));
+    assert!(!surface.root_text().contains("Device files"));
+    assert!(!surface.root_text().contains("Songs"));
     assert!(!surface.root_text().contains("ratings"));
     assert!(!surface.root_text().contains("Remove unselected"));
 
@@ -407,6 +438,22 @@ fn mtp_2_compact_dialog_renders_and_wires_only_the_playlist_mirroring_controls()
     );
     assert_eq!(*starts.borrow(), 1);
 
+    device.sync_phase = PlannedSyncPhase::Syncing {
+        step: crate::ui::device_sync_runtime::SyncStep::Copying,
+        done: 1,
+        total: 2,
+        current_track: "Immortal — Lorna Shore".into(),
+        bytes_done: 50,
+        bytes_total: 100,
+    };
+    device.bytes_per_second = 2 * 1_024 * 1_024;
+    surface.update(&device);
+    assert_eq!(
+        surface.progress.subtitle().as_deref(),
+        Some("Immortal — Lorna Shore · 2.0 MiB/s")
+    );
+    assert_eq!(surface.progress_bar.fraction(), 0.5);
+
     device.page.controls = SyncPageControls {
         editable: false,
         can_start: false,
@@ -417,4 +464,13 @@ fn mtp_2_compact_dialog_renders_and_wires_only_the_playlist_mirroring_controls()
     assert_eq!(surface.primary.label().as_deref(), Some("_Cancel"));
     assert!(surface.primary.has_css_class("destructive-action"));
     assert_eq!(*cancels.borrow(), 1);
+
+    let weak_surface = Rc::downgrade(&surface);
+    let callback = page_state_callback(weak_surface.clone(), "phone".into());
+    drop(surface);
+    assert!(
+        weak_surface.upgrade().is_none(),
+        "the runtime callback must not retain a removed device page"
+    );
+    callback(DeviceSyncState::default());
 }

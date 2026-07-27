@@ -127,12 +127,22 @@ fn estimated_transcode_bytes(track: &SyncTrack, bitrate_kbps: u32) -> u64 {
     let audio_payload = duration_ms
         .saturating_mul(u64::from(bitrate_kbps))
         .div_ceil(8);
-    // Tags and cover art are copied from the source. Reserving the complete
-    // source size bounds all of that source-derived data without parsing
-    // files in the pure planner. The fixed tail covers container structure
-    // and encoder rounding.
+    // Tags and cover art are copied from the source. When the scanner knows
+    // the source bitrate, subtract its estimated audio payload from the file
+    // size so the projection retains only plausible non-audio data. Reserving
+    // the whole FLAC made a 160 kbit/s target look almost as large as its
+    // lossless source. Unknown source bitrates keep the conservative fallback.
+    let source_derived_metadata = track
+        .bitrate_kbps
+        .map_or(track.size_bytes, |source_bitrate| {
+            let source_audio_payload = duration_ms
+                .saturating_mul(u64::from(source_bitrate))
+                .div_ceil(8);
+            track.size_bytes.saturating_sub(source_audio_payload)
+        });
+    // The fixed tail covers container structure and encoder rounding.
     audio_payload
-        .saturating_add(track.size_bytes)
+        .saturating_add(source_derived_metadata)
         .saturating_add(TRANSCODE_CONTAINER_RESERVE_BYTES)
 }
 

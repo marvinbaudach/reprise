@@ -51,8 +51,22 @@ fn mtp_1_connected_devices_appear_without_automatic_navigation() {
 }
 
 #[test]
-fn mtp_2_primary_menu_routes_to_the_compact_device_launcher() {
+fn mtp_13_device_entry_points_route_to_a_non_modal_main_window_page() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     let wiring = ui_source("window/window_runtime_wiring.rs");
+    let sidebar = ui_source("sidebar/sidebar.rs");
+    let launcher = ui_source("device_sync/device_sync_launcher.rs");
+    let window = ui_source("window/window.rs");
+
     assert!(wiring.contains("device_sync_launcher::present"));
-    assert!(!wiring.contains("present_page(\"synchronization\")"));
+    assert!(window.contains("device_sync_page::open"));
+    assert!(window.contains("content_stack"));
+    assert!(!sidebar.contains("device_sync_dialog::present"));
+    assert!(!launcher.contains("device_sync_dialog::present"));
+    assert!(!manifest
+        .join("src/ui/device_sync/device_sync_dialog.rs")
+        .exists());
+    assert!(manifest
+        .join("src/ui/device_sync/device_sync_page.rs")
+        .exists());
 }

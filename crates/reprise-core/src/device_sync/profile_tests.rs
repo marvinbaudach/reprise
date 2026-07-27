@@ -138,6 +138,24 @@ fn target_size_reserves_source_derived_metadata_and_mux_overhead_for_transcoding
 }
 
 #[test]
+fn playlist_size_projection_uses_profile_bitrate_instead_of_reserving_the_whole_flac() {
+    let flac = track(1, "/music/lossless.flac", Some(1_000), 240_000, 31_000_000);
+
+    assert_eq!(
+        TransferProfile::Opus160.estimated_target_bytes(&flac),
+        5_865_536
+    );
+    assert_eq!(
+        TransferProfile::Mp3(Mp3Quality::Kbps256).estimated_target_bytes(&flac),
+        8_745_536
+    );
+    assert_eq!(
+        TransferProfile::Original.estimated_target_bytes(&flac),
+        31_000_000
+    );
+}
+
+#[test]
 fn playlist_projection_preserves_entries_but_deduplicates_physical_tracks() {
     let low_mp3 = track(1, "/music/one.mp3", Some(192), 10_000, 240_000);
     let flac = track(2, "/music/two.flac", None, 10_000, 1_000_000);

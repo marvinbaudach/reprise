@@ -604,7 +604,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_2_sidebar_device_card_has_no_direct_sync_action() {
+    fn mtp_13_sidebar_device_card_has_no_direct_sync_action() {
         let direct_sync_action = ["app", "sync-device"].join(".");
 
         assert!(!include_str!("sidebar_device_card.rs").contains(&direct_sync_action));

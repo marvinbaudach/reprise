@@ -123,7 +123,8 @@ fn mtp_11_idle_device_card_shows_storage_information_instead_of_a_playlist_promp
 }
 
 #[test]
-fn sidebar_device_card_opens_the_compact_dialog() {
+fn mtp_13_sidebar_device_card_delegates_to_the_main_window_page() {
     let source = include_str!("sidebar.rs");
-    assert!(source.contains("device_sync_dialog::present"));
+    assert!(source.contains("on_open: Rc<dyn Fn(String, String)>"));
+    assert!(!source.contains("device_sync_dialog::present"));
 }
