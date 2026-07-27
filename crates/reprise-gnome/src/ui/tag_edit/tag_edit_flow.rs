@@ -39,6 +39,7 @@ use crate::ui::one_shot_task;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::sidebar::Sidebar;
 use crate::ui::strings;
+use crate::ui::tag_edit::tag_save_refresh::{self, TagSaveRefresh};
 use crate::ui::tag_editor;
 use crate::ui::tag_editor_failures;
 use crate::ui::track_list::tag_mutation_refresh::refresh_after_tag_mutation_with_anchor;
@@ -547,7 +548,16 @@ fn finish_apply(
                 save_anchor,
             );
         } else {
-            reload_with_anchor(shared, &save_anchor);
+            let source = shared.source.borrow().clone();
+            let sort_field = shared.sort.borrow().field.clone();
+            let browse = shared.browse_filter.borrow().clone();
+            match tag_save_refresh::plan(writes, &report.updated_ids, &source, &sort_field, &browse)
+            {
+                TagSaveRefresh::InPlaceRatings(ratings) => {
+                    tag_save_refresh::apply_in_place(shared, &ratings);
+                }
+                TagSaveRefresh::Reload => reload_with_anchor(shared, &save_anchor),
+            }
         }
     }
     tracing::info!(updated, failed, "tag-edit batch completed");
@@ -741,7 +751,7 @@ mod tests {
     }
 
     #[test]
-    fn tag_1_rating_save_keeps_the_scroll_anchor_from_editor_open() {
+    fn tag_1_query_reload_keeps_the_scroll_anchor_from_editor_open() {
         let opened = reload_restore::capture(vec![61], Some((61, 7.5)));
         let restored = post_save_reload_anchor(opened, &[61]);
 

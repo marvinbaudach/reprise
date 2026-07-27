@@ -219,11 +219,11 @@ mod tests {
         relink_progress_state, RelinkCancellation, RelinkProgressActivation, RelinkProgressView,
     };
 
-    // UX FB-2a: Relink uses the shared sidebar-bottom progress
+    // UX FB-8: Relink uses the shared sidebar-bottom progress
     // card contract with spinner, title, percent, 3px bar, detail, view
     // navigation, and cancellation.
     #[test]
-    fn fb_2a_relink_search_uses_the_complete_sidebar_progress_card_contract() {
+    fn fb_8_relink_search_uses_the_complete_sidebar_progress_card_contract() {
         let state = relink_progress_state(4, 9, 3);
 
         assert_eq!(state.title, "Searching for missing tracks");

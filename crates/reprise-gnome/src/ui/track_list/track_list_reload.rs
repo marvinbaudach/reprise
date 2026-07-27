@@ -349,7 +349,7 @@ mod display_tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn tag_1_rating_metadata_save_keeps_the_live_viewport() {
+    fn tag_1_query_reloading_metadata_save_keeps_the_live_viewport() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let mut conn = Connection::open_in_memory().unwrap();
