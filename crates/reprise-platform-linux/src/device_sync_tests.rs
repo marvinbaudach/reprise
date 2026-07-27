@@ -109,6 +109,40 @@ fn inspection_aggregates_music_and_returns_only_reprise_managed_paths() {
 }
 
 #[test]
+fn managed_readback_keeps_byte_preserved_originals_with_unlisted_extensions() {
+    let (temp, storage) = fixture();
+    fs::create_dir_all(temp.path().join("Music/Reprise/Artist/Album")).unwrap();
+    fs::write(
+        temp.path()
+            .join("Music/Reprise/Artist/Album/01 Original.aiff"),
+        b"original",
+    )
+    .unwrap();
+    fs::write(
+        temp.path().join("Music/Reprise/Originals.m3u8"),
+        b"#EXTM3U\nArtist/Album/01 Original.aiff\n",
+    )
+    .unwrap();
+    fs::write(
+        temp.path()
+            .join("Music/Reprise/Artist/Album/unfinished.aiff.part"),
+        b"partial",
+    )
+    .unwrap();
+
+    let inspection = run(storage.inspect()).unwrap();
+    assert_eq!(
+        inspection
+            .managed_files
+            .iter()
+            .map(|file| file.relative_path.as_str())
+            .collect::<Vec<_>>(),
+        ["Artist/Album/01 Original.aiff"]
+    );
+    assert_eq!(inspection.snapshot.reprise_music_bytes, 8);
+}
+
+#[test]
 fn storage_volume_choice_prefers_internal_storage_and_otherwise_stays_deterministic() {
     let volumes = vec!["SD Card".to_string(), "Internal shared storage".to_string()];
     assert_eq!(

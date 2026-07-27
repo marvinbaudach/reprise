@@ -1,12 +1,18 @@
 use super::*;
-use reprise_core::device_sync::{Mp3Quality, TransferProfile};
+use reprise_core::device_sync::{Mp3Quality, SyncPageWarning, TransferProfile};
 
-fn save_smoke_profile(conn: &Rc<RefCell<Connection>>, playlist_id: i64, profile: TransferProfile) {
+fn save_profile(
+    conn: &Rc<RefCell<Connection>>,
+    device_id: &str,
+    device_name: &str,
+    playlist_id: i64,
+    profile: TransferProfile,
+) {
     save_settings(
         &conn.borrow(),
         &DeviceSettings {
-            device_serial: crate::ui::device_sync_smoke::DEVICE_ID.into(),
-            device_name: crate::ui::device_sync_smoke::DEVICE_NAME.into(),
+            device_serial: device_id.into(),
+            device_name: device_name.into(),
             selection: DeviceSelection::Sources(vec![SelectionSource::Playlist(playlist_id)]),
             profile,
             opus_bitrate: 0,
@@ -15,6 +21,34 @@ fn save_smoke_profile(conn: &Rc<RefCell<Connection>>, playlist_id: i64, profile:
         },
     )
     .unwrap();
+}
+
+fn save_smoke_profile(conn: &Rc<RefCell<Connection>>, playlist_id: i64, profile: TransferProfile) {
+    save_profile(
+        conn,
+        crate::ui::device_sync_smoke::DEVICE_ID,
+        crate::ui::device_sync_smoke::DEVICE_NAME,
+        playlist_id,
+        profile,
+    );
+}
+
+async fn wait_for_storage(runtime: &Rc<DeviceSyncRuntime>, expected_devices: usize) {
+    for _ in 0..1_000 {
+        let devices = runtime.devices();
+        if devices.len() == expected_devices
+            && devices
+                .iter()
+                .all(|device| device.sync_phase != PlannedSyncPhase::ComputingDelta)
+        {
+            return;
+        }
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+    }
+    panic!(
+        "storage inspection must settle before the transfer starts: {:?}",
+        runtime.devices()
+    );
 }
 
 async fn smoke_runtime(
@@ -26,31 +60,32 @@ async fn smoke_runtime(
             .unwrap(),
     );
     let runtime = DeviceSyncRuntime::with_backend(conn, backend);
-    for _ in 0..1_000 {
-        if runtime.devices()[0].sync_phase != PlannedSyncPhase::ComputingDelta {
-            break;
-        }
-        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
-    }
-    assert_ne!(
-        runtime.devices()[0].sync_phase,
-        PlannedSyncPhase::ComputingDelta,
-        "storage inspection must settle before the transfer starts"
-    );
+    wait_for_storage(&runtime, 1).await;
     (device_root, runtime)
+}
+
+async fn wait_for_completion(runtime: &Rc<DeviceSyncRuntime>, device_id: &str) -> DeviceView {
+    for _ in 0..1_000 {
+        if let Some(device) = runtime
+            .devices()
+            .into_iter()
+            .find(|device| device.id == device_id && device.last_sync.is_some())
+        {
+            return device;
+        }
+        gtk4::glib::timeout_future(Duration::from_millis(5)).await;
+    }
+    panic!(
+        "device sync must complete with verified readback: {device_id}: {:?}",
+        runtime.devices()
+    );
 }
 
 async fn run_to_completion(runtime: &Rc<DeviceSyncRuntime>) -> DeviceView {
     runtime
         .sync_now(crate::ui::device_sync_smoke::DEVICE_ID)
         .unwrap();
-    for _ in 0..1_000 {
-        if runtime.devices()[0].last_sync.is_some() {
-            break;
-        }
-        gtk4::glib::timeout_future(Duration::from_millis(5)).await;
-    }
-    runtime.devices().remove(0)
+    wait_for_completion(runtime, crate::ui::device_sync_smoke::DEVICE_ID).await
 }
 
 #[test]
@@ -174,5 +209,117 @@ fn simulated_mtp_phone_transcodes_lossless_selection_to_mp3_256() {
         assert!(device.sync_error.is_none());
         assert_eq!(device.page.changes.additions, 0);
         assert_eq!(device.page.changes.replacements, 0);
+    });
+}
+
+#[test]
+fn simulated_mtp_phones_sync_independently_in_parallel() {
+    run(async {
+        const FIRST_ID: &str = "simulated-phone-a";
+        const SECOND_ID: &str = "simulated-phone-b";
+        let (sources, conn) = fixture();
+        conn.borrow()
+            .execute_batch(
+                "INSERT INTO playlists (id, name, position) VALUES (23, 'Parallel', 0);
+                 INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (23, 1, 0);",
+            )
+            .unwrap();
+        save_profile(
+            &conn,
+            FIRST_ID,
+            "Simulated Phone A",
+            23,
+            TransferProfile::Original,
+        );
+        save_profile(
+            &conn,
+            SECOND_ID,
+            "Simulated Phone B",
+            23,
+            TransferProfile::Original,
+        );
+        let first_root = tempfile::tempdir().unwrap();
+        let second_root = tempfile::tempdir().unwrap();
+        let backend = Rc::new(
+            crate::ui::device_sync_smoke::SimulatedMtpDeviceBackend::for_devices(vec![
+                (
+                    FIRST_ID.into(),
+                    "Simulated Phone A".into(),
+                    first_root.path().to_path_buf(),
+                ),
+                (
+                    SECOND_ID.into(),
+                    "Simulated Phone B".into(),
+                    second_root.path().to_path_buf(),
+                ),
+            ])
+            .unwrap(),
+        );
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        wait_for_storage(&runtime, 2).await;
+
+        runtime.sync_now(FIRST_ID).unwrap();
+        runtime.sync_now(SECOND_ID).unwrap();
+        assert!(
+            runtime
+                .devices()
+                .iter()
+                .all(|device| device.page.controls.can_cancel),
+            "both device operations must be active before the main context advances"
+        );
+
+        let first = wait_for_completion(&runtime, FIRST_ID).await;
+        let second = wait_for_completion(&runtime, SECOND_ID).await;
+        let relative = "Music/Reprise/Artist/Unknown Album/00 Track 1.flac";
+        let expected = std::fs::read(sources.path().join("1.flac")).unwrap();
+        assert_eq!(
+            std::fs::read(first_root.path().join(relative)).unwrap(),
+            expected
+        );
+        assert_eq!(
+            std::fs::read(second_root.path().join(relative)).unwrap(),
+            expected
+        );
+        assert_eq!(first.verified_managed_track_count, Some(1));
+        assert_eq!(second.verified_managed_track_count, Some(1));
+    });
+}
+
+#[test]
+fn simulated_mtp_phone_preserves_untracked_files_in_managed_storage() {
+    run(async {
+        let (_sources, conn) = fixture();
+        conn.borrow()
+            .execute_batch(
+                "INSERT INTO playlists (id, name, position) VALUES (24, 'Preserve', 0);
+                 INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (24, 1, 0);",
+            )
+            .unwrap();
+        save_smoke_profile(&conn, 24, TransferProfile::Original);
+        let device_root = tempfile::tempdir().unwrap();
+        let foreign = device_root
+            .path()
+            .join("Music/Reprise/Foreign/Existing.aiff");
+        std::fs::create_dir_all(foreign.parent().unwrap()).unwrap();
+        let expected_foreign = b"untracked device audio";
+        std::fs::write(&foreign, expected_foreign).unwrap();
+        let backend = Rc::new(
+            crate::ui::device_sync_smoke::SimulatedMtpDeviceBackend::for_root(device_root.path())
+                .unwrap(),
+        );
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        wait_for_storage(&runtime, 1).await;
+
+        let device = run_to_completion(&runtime).await;
+
+        assert_eq!(std::fs::read(foreign).unwrap(), expected_foreign);
+        assert!(
+            device
+                .page
+                .warnings
+                .contains(&SyncPageWarning::UnsafeManagedItem),
+            "the preserved untracked item must remain visible as a path-free warning"
+        );
+        assert_eq!(device.verified_managed_track_count, Some(2));
     });
 }

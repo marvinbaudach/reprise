@@ -244,8 +244,8 @@ MCP-Vertrag entspricht dem kompakten Dialog:
 
 Die Commits und Gate-Ergebnisse sind im Fortschrittsledger einzeln
 nachgewiesen. Offen bleiben ausschließlich die unten aufgeführten Prüfungen
-mit einem ausdrücklich freigegebenen Testgerät sowie die Owner-Entscheidung
-über die geplanten UX-Regelvorschläge MTP-7 und MTP-8.
+mit einem ausdrücklich freigegebenen Testgerät. Die UX-Regeln MTP-7 bis
+MTP-10 sind mit ihren regelbenannten Tests aktiv.
 
 ## Verifikation
 

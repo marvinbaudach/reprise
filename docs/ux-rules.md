@@ -333,27 +333,23 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   projiziert. Danach zeigt der Lifecycle-Toast den Abschluss oder Fehlerstatus,
   und die Gerätekarte wechselt ohne separaten 100-%-Haltezustand zurück in den
   aktuellen Idle-/Synced-Zustand.
-  <!-- REVIEW: Regelvorschlag -->
-- **MTP-7** [geplant] [gtk] — Der kompakte Sync-Dialog stellt vollständig
+- **MTP-7** [aktiv] [gtk] — Der kompakte Sync-Dialog stellt vollständig
   bekannten Speicher als themenfarbene Segmentleiste aus Music, geplantem
   After-sync-Zuwachs, Other und Free dar; dieselben Werte bleiben textuell
   verfügbar. Bei unvollständiger oder inkonsistenter Kapazität verschwindet
   die Leiste, und der Text benennt „unknown“, statt Anteile zu erfinden.
-  <!-- REVIEW: Regelvorschlag -->
-- **MTP-8** [geplant] [gtk] — Der kompakte Sync-Dialog bietet genau drei
+- **MTP-8** [aktiv] [gtk] — Der kompakte Sync-Dialog bietet genau drei
   Transferprofile: Opus mit 160 kbit/s als Empfehlung und Standard, MP3 mit
   256 kbit/s als Kompatibilitäts-Fallback sowie unveränderte Originaldateien.
   Ein verlustbehaftetes oder nicht eindeutig als verlustfrei erkanntes
   Quellformat wird unter jedem Profil unverändert kopiert und nie in ein
   anderes verlustbehaftetes Format transkodiert.
-  <!-- REVIEW: Regelvorschlag -->
-- **MTP-9** [geplant] [gtk] — Der kompakte Sync-Dialog benennt den von GIO
+- **MTP-9** [aktiv] [gtk] — Der kompakte Sync-Dialog benennt den von GIO
   gemeldeten Schreibzugriff des gewählten Zielspeichers als „Writable“,
   „Read-only“ oder „Write access unknown“. Ein sicher schreibgeschütztes Ziel
   sperrt den Sync-Start und erklärt den Grund; unbekannte Angaben werden nicht
   als Schreibfähigkeit ausgegeben und blockieren nicht vorsorglich.
-  <!-- REVIEW: Regelvorschlag -->
-- **MTP-10** [geplant] [gtk] — Ein fehlerfreier Transfer bleibt „Finishing“,
+- **MTP-10** [aktiv] [gtk] — Ein fehlerfreier Transfer bleibt „Finishing“,
   bis Reprise den verwalteten Geräteordner erneut gelesen hat. Erst dieses
   erfolgreiche Rücklesen erzeugt den Abschluss-Toast und eine als „Verified“
   bezeichnete Dialog-Zusammenfassung mit der tatsächlich gefundenen Anzahl

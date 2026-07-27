@@ -67,7 +67,7 @@ fn transfer_profiles_are_exactly_opus_160_mp3_256_and_original() {
 }
 
 #[test]
-fn lossy_and_ambiguous_sources_are_never_transcoded_to_another_lossy_format() {
+fn mtp_8_lossy_and_ambiguous_sources_are_never_transcoded_to_another_lossy_format() {
     let opus = TransferProfile::Opus160;
     let mp3 = TransferProfile::Mp3(Mp3Quality::Kbps256);
 

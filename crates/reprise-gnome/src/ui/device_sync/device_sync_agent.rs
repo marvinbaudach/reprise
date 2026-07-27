@@ -167,7 +167,7 @@ fn agent_device(device: DeviceView) -> AgentDeviceSyncDevice {
             after_sync: page.storage.after_sync.as_ref().map(storage_composition),
         },
         blockers: page.blockers.into_iter().map(agent_blocker).collect(),
-        warnings: page.warnings.into_iter().map(agent_warning).collect(),
+        warnings: agent_warnings(page.warnings),
         controls: AgentDeviceSyncControls {
             editable: page.controls.editable,
             can_start: page.controls.can_start,
@@ -235,6 +235,16 @@ fn agent_warning(warning: SyncPageWarning) -> AgentDeviceSyncWarning {
     }
 }
 
+fn agent_warnings(warnings: Vec<SyncPageWarning>) -> Vec<AgentDeviceSyncWarning> {
+    let mut projected = Vec::new();
+    for warning in warnings.into_iter().map(agent_warning) {
+        if !projected.contains(&warning) {
+            projected.push(warning);
+        }
+    }
+    projected
+}
+
 fn agent_phase(phase: PlannedSyncPhase) -> (AgentDeviceSyncPhase, u64, u64, String) {
     match phase {
         PlannedSyncPhase::Idle => (AgentDeviceSyncPhase::Idle, 0, 0, String::new()),
@@ -259,5 +269,26 @@ fn agent_phase(phase: PlannedSyncPhase) -> (AgentDeviceSyncPhase, u64, u64, Stri
             bytes_total,
             current_track,
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn path_free_agent_warnings_are_unique_by_category() {
+        assert_eq!(
+            agent_warnings(vec![
+                SyncPageWarning::UnavailableNotOnDevice { track_id: 1 },
+                SyncPageWarning::UnavailableNotOnDevice { track_id: 2 },
+                SyncPageWarning::UnsafeManagedItem,
+                SyncPageWarning::UnsafeManagedItem,
+            ]),
+            vec![
+                AgentDeviceSyncWarning::UnavailableNotOnDevice,
+                AgentDeviceSyncWarning::UnsafeManagedItem,
+            ]
+        );
     }
 }

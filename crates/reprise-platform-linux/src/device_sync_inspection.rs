@@ -65,11 +65,14 @@ impl DeviceStorage {
                         pending.push_back((directory.child(&name), relative_path));
                         continue;
                     }
-                    if !is_audio_file(&name) {
+                    if info.file_type() != gio::FileType::Regular {
                         continue;
                     }
                     let size_bytes = info.size().max(0) as u64;
                     if let Some(managed_path) = relative_path.strip_prefix("Reprise/") {
+                        if !is_managed_track_file(&name) {
+                            continue;
+                        }
                         inspection.snapshot.reprise_music_bytes = inspection
                             .snapshot
                             .reprise_music_bytes
@@ -78,7 +81,7 @@ impl DeviceStorage {
                             relative_path: managed_path.to_string(),
                             size_bytes,
                         });
-                    } else {
+                    } else if is_audio_file(&name) {
                         inspection.snapshot.other_music_bytes = inspection
                             .snapshot
                             .other_music_bytes
@@ -112,6 +115,11 @@ impl DeviceStorage {
         };
         Ok((available, total))
     }
+}
+
+fn is_managed_track_file(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    !name.ends_with(".m3u8") && !name.ends_with(".part")
 }
 
 async fn storage_access(storage: &gio::File) -> DeviceStorageAccess {

@@ -103,7 +103,7 @@ fn device() -> DeviceView {
 }
 
 #[test]
-fn compact_dialog_names_each_modern_transfer_profile() {
+fn mtp_8_compact_dialog_names_each_modern_transfer_profile() {
     assert_eq!(
         TransferProfile::ALL.map(profile_label),
         [
@@ -174,7 +174,7 @@ fn compact_dialog_summarizes_every_mirror_change_without_paths() {
 }
 
 #[test]
-fn compact_dialog_projects_storage_blockers_and_control_mode() {
+fn mtp_7_compact_dialog_projects_complete_storage_segments() {
     let mut after = composition(Some(48 * 1_024));
     after.reprise_music_bytes = 48 * 1_024;
     after.other_used_bytes = Some(16 * 1_024);
@@ -262,7 +262,7 @@ fn mtp_10_verification_summary_claims_only_post_sync_readback() {
 }
 
 #[test]
-fn storage_segments_never_invent_unknown_capacity_or_negative_growth() {
+fn mtp_7_storage_segments_never_invent_unknown_capacity_or_negative_growth() {
     let mut after = composition(Some(80 * 1_024));
     after.reprise_music_bytes = 16 * 1_024;
     let mut projection = DeviceStorageProjection {
