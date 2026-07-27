@@ -39,7 +39,7 @@ default-features = false
 # proprietary frontends (MPL is FSF-listed GPL-compatible and links freely into
 # larger works). Passes the LICENSING.md model/dependency gate.
 [dependencies.symphonia]
-version = "0.5"
+version = "0.6"
 optional = true
 default-features = false
 features = ["flac", "mp3", "isomp4", "aac", "alac", "ogg", "vorbis", "wav", "pcm", "adpcm", "aiff"]
