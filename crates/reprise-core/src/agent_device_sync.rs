@@ -13,6 +13,7 @@ pub struct AgentDeviceSyncState {
 pub struct AgentDeviceSyncDevice {
     pub name: String,
     pub connected: bool,
+    pub last_synced_at: Option<i64>,
     pub managed_tracks: usize,
     pub profile: TransferProfile,
     pub playlists: Vec<AgentDeviceSyncPlaylist>,
@@ -40,6 +41,7 @@ pub struct AgentDeviceSyncPlaylist {
     pub unique_track_count: usize,
     pub unavailable_count: usize,
     pub target_bytes: u64,
+    pub last_synced_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -119,6 +121,7 @@ pub struct AgentDeviceSyncControls {
     pub editable: bool,
     pub can_start: bool,
     pub can_cancel: bool,
+    pub can_eject: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -144,6 +147,9 @@ pub enum AgentDeviceSyncCommand {
         device_name: String,
     },
     Cancel {
+        device_name: String,
+    },
+    Eject {
         device_name: String,
     },
 }
@@ -182,6 +188,7 @@ mod tests {
             devices: vec![AgentDeviceSyncDevice {
                 name: "Pixel".into(),
                 connected: true,
+                last_synced_at: Some(1_721_234_890),
                 managed_tracks: 75,
                 profile: TransferProfile::Original,
                 playlists: vec![AgentDeviceSyncPlaylist {
@@ -193,6 +200,7 @@ mod tests {
                     unique_track_count: 200,
                     unavailable_count: 2,
                     target_bytes: 80,
+                    last_synced_at: Some(1_721_234_567),
                 }],
                 unique_track_count: 200,
                 target_bytes: 80,
@@ -233,6 +241,7 @@ mod tests {
                     editable: false,
                     can_start: false,
                     can_cancel: true,
+                    can_eject: false,
                 },
                 phase: AgentDeviceSyncPhase::Copying,
                 bytes_done: 20,
@@ -245,8 +254,10 @@ mod tests {
         let snapshot = read_agent_device_sync_state(&state);
         let device = &snapshot.devices[0];
         assert_eq!(device.profile, TransferProfile::Original);
+        assert_eq!(device.last_synced_at, Some(1_721_234_890));
         assert_eq!(device.playlists[0].source, SelectionSource::Smart(7));
         assert_eq!(device.playlists[0].entry_count, 220);
+        assert_eq!(device.playlists[0].last_synced_at, Some(1_721_234_567));
         assert_eq!(device.changes.replacements, 5);
         assert_eq!(
             device.storage.access,

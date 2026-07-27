@@ -53,6 +53,7 @@ struct FakeState {
     max_total: Cell<usize>,
     playlists: RefCell<Vec<(String, String, Vec<u8>)>>,
     deleted: RefCell<Vec<String>>,
+    ejected: RefCell<Vec<String>>,
     planned_operations: RefCell<Vec<(String, &'static str)>>,
     available_bytes: Cell<Option<u64>>,
     total_bytes: Cell<Option<u64>>,
@@ -338,6 +339,14 @@ impl DeviceBackend for FakeBackend {
                 .borrow_mut()
                 .push((device_id, name, contents));
             Ok(())
+        })
+    }
+
+    fn eject(&self, device_id: String) -> TestFuture<bool> {
+        let state = self.state.clone();
+        Box::pin(async move {
+            state.ejected.borrow_mut().push(device_id);
+            Ok(true)
         })
     }
 }

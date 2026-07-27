@@ -32,6 +32,10 @@ verbundene Android-MTP-Geräte. Die Bedienung bleibt absichtlich klein:
   und Speicher stehen vor dem Playlist-Arbeitsbereich; Transferprofil und
   Sync-Zusammenfassung bleiben eine kompakte Nebenübersicht statt einer
   Preferences-Seite.
+- Playlist- und Overview-Karte behalten unabhängig von dynamischem Statustext
+  dieselben Kanten. Track und beschriftete MTP-Transfergeschwindigkeit stehen
+  in getrennten Zeilen; der freie Gerätespeicher bleibt auch während eines
+  laufenden Syncs am Anfang der Sidebar-Detailzeile sichtbar.
 - Lokale Playlist-Optionen werden vor der asynchronen MTP-Speicherprüfung
   projiziert und bleiben während „Checking device“ auswählbar. Erst der
   tatsächliche Sync-Start wartet auf ein belastbares Prüfergebnis.
@@ -248,20 +252,25 @@ Safety-/Storage-Follow-ups sind abgeschlossen. Der Agent-, D-Bus- und
 MCP-Vertrag entspricht der Geräte-Seite:
 
 - `music_get_device_sync_state` liefert manuelle und smarte
-  Playlist-Identitäten, Transferprofil, deduplizierte Summen, Änderungen,
-  Storage-Zusammensetzung, Blocker, Warnungen, Controls und Fortschritt ohne
+  Playlist-Identitäten samt verifiziertem letztem Sync, den letzten Geräte-Sync,
+  Transferprofil, deduplizierte Summen, Änderungen, Storage-Zusammensetzung
+  samt Schreibzugriff, Blocker, Warnungen, Controls und Fortschritt ohne
   Seriennummern oder Pfade.
-- `music_device_sync` akzeptiert `configure`, `start` und `cancel`.
+- `music_device_sync` akzeptiert `configure`, `start`, `cancel` und `eject`.
   `configure` erhält Quellen als stabile Paare aus `kind`
   (`playlist` oder `smart`) und `id` sowie `profile`; ohne Angabe gilt
-  `opus_160`. Alle Mutationen benötigen `device:sync`.
+  `opus_160`. `eject` ist nur für ein verbundenes, inaktives Gerät verfügbar.
+  Alle Mutationen benötigen `device:sync`.
+- Überlappende Playlist-Quellen benutzen denselben deduplizierten Mirror-Plan:
+  jeder physische Track wird nur einmal übertragen, während jede geschriebene
+  Playlist ihre Reihenfolge und absichtliche Wiederholungen behält.
 - Die kompatiblen alten Bitratenfelder bleiben inert und werden von der neuen
   Konfiguration nicht als Produktfunktion reaktiviert.
 
 Die Commits und Gate-Ergebnisse sind im Fortschrittsledger einzeln
 nachgewiesen. Offen bleiben ausschließlich die unten aufgeführten Prüfungen
 mit einem ausdrücklich freigegebenen Testgerät. Die UX-Regeln MTP-7 bis
-MTP-13 sind mit ihren regelbenannten Tests aktiv.
+MTP-15 sind mit ihren regelbenannten Tests aktiv.
 
 ## Verifikation
 

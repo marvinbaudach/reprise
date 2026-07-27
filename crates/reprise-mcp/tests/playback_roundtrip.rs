@@ -59,10 +59,24 @@ enum Recorded {
     },
     StartDevice(String),
     CancelDevice(String),
+    EjectDevice(String),
 }
 
 type Calls = Arc<Mutex<Vec<Recorded>>>;
-type DeviceSyncSourceRow = (String, i64, bool, String, bool, bool, u64, u64, u64, u64);
+type DeviceSyncSourceRow = (
+    String,
+    i64,
+    bool,
+    String,
+    bool,
+    bool,
+    u64,
+    u64,
+    u64,
+    u64,
+    bool,
+    i64,
+);
 type DeviceSyncChangesRow = (u64, u64, u64, u64, u64, u64, u64);
 type DeviceSyncStorageCompositionRow = (bool, u64, u64, u64, bool, u64, bool, u64, String);
 type DeviceSyncStorageRow = (
@@ -75,9 +89,11 @@ type DeviceSyncStorageRow = (
     DeviceSyncStorageCompositionRow,
     bool,
     DeviceSyncStorageCompositionRow,
+    String,
 );
-type DeviceSyncControlsRow = (bool, bool, bool);
+type DeviceSyncControlsRow = (bool, bool, bool, bool);
 type DeviceSyncProgressRow = (u64, u64, u64);
+type DeviceSyncTimestampRow = (bool, i64);
 type DeviceSyncRow = (
     String,
     bool,
@@ -94,6 +110,7 @@ type DeviceSyncRow = (
     String,
     DeviceSyncProgressRow,
     String,
+    DeviceSyncTimestampRow,
 );
 
 /// Stub for the standard MPRIS `Player` interface. Each Rust method maps to its
@@ -246,18 +263,22 @@ impl DeviceSyncStub {
                     200,
                     2,
                     80,
+                    true,
+                    1_721_234_567,
                 ),
                 (
                     "smart".into(),
                     7,
                     true,
                     "Heavy rotation".into(),
-                    false,
+                    true,
                     true,
                     50,
                     50,
                     0,
                     20,
+                    false,
+                    0,
                 ),
             ],
             (120, 5, 75, 2, 1, 0, 60),
@@ -271,13 +292,15 @@ impl DeviceSyncStub {
                 (true, 100, 20, 10, true, 30, true, 40, "complete".into()),
                 true,
                 (true, 100, 80, 10, true, 10, true, 0, "complete".into()),
+                "writable".into(),
             ),
             Vec::new(),
             vec!["unavailable_not_on_device".into()],
-            (false, false, true),
+            (false, false, true, false),
             "copying".into(),
             (20, 60, 10),
             "Sun//Eater — Lorna Shore".into(),
+            (true, 1_721_234_890),
         )]
     }
 
@@ -304,6 +327,13 @@ impl DeviceSyncStub {
             .lock()
             .expect("calls lock")
             .push(Recorded::CancelDevice(device_name.to_owned()));
+    }
+
+    fn eject(&self, device_name: &str) {
+        self.calls
+            .lock()
+            .expect("calls lock")
+            .push(Recorded::EjectDevice(device_name.to_owned()));
     }
 }
 
@@ -399,13 +429,38 @@ fn device_sync_state_and_commands_round_trip_without_internal_identity() {
     let body = structured_ok(&state);
     assert_eq!(body["devices"][0]["name"], "Pixel");
     assert_eq!(body["devices"][0]["profile"], "original");
+    assert_eq!(body["devices"][0]["last_synced_at"], 1_721_234_890_i64);
+    assert_eq!(body["devices"][0]["unique_track_count"], 200);
+    assert_eq!(
+        body["devices"][0]["playlists"][0]["unique_track_count"],
+        200
+    );
+    assert_eq!(body["devices"][0]["playlists"][1]["unique_track_count"], 50);
+    assert_eq!(body["devices"][0]["playlists"][1]["selected"], true);
+    assert!(
+        body["devices"][0]["playlists"][0]["unique_track_count"]
+            .as_u64()
+            .unwrap()
+            + body["devices"][0]["playlists"][1]["unique_track_count"]
+                .as_u64()
+                .unwrap()
+            > body["devices"][0]["unique_track_count"].as_u64().unwrap(),
+        "overlapping selected playlists must expose a smaller deduplicated device total"
+    );
+    assert_eq!(
+        body["devices"][0]["playlists"][0]["last_synced_at"],
+        1_721_234_567_i64
+    );
+    assert!(body["devices"][0]["playlists"][1]["last_synced_at"].is_null());
     assert_eq!(body["devices"][0]["playlists"][0]["kind"], "playlist");
     assert_eq!(body["devices"][0]["playlists"][1]["kind"], "smart");
     assert_eq!(body["devices"][0]["changes"]["replacements"], 5);
     assert_eq!(body["devices"][0]["storage"]["current"]["free_bytes"], 40);
     assert_eq!(body["devices"][0]["storage"]["after_sync"]["free_bytes"], 0);
+    assert_eq!(body["devices"][0]["storage"]["access"], "writable");
     assert_eq!(body["devices"][0]["progress"]["bytes_per_second"], 10);
     assert_eq!(body["devices"][0]["controls"]["can_cancel"], true);
+    assert_eq!(body["devices"][0]["controls"]["can_eject"], false);
     assert!(!state.to_string().contains("serial"));
     assert!(!state.to_string().contains("path"));
 
@@ -421,6 +476,7 @@ fn device_sync_state_and_commands_round_trip_without_internal_identity() {
         }),
         json!({ "action": "start", "device_name": "Pixel" }),
         json!({ "action": "cancel", "device_name": "Pixel" }),
+        json!({ "action": "eject", "device_name": "Pixel" }),
     ] {
         let response = client.call_tool("music_device_sync", params);
         assert!(!tool_success_text(&response).is_empty());
@@ -436,6 +492,7 @@ fn device_sync_state_and_commands_round_trip_without_internal_identity() {
             },
             Recorded::StartDevice("Pixel".into()),
             Recorded::CancelDevice("Pixel".into()),
+            Recorded::EjectDevice("Pixel".into()),
         ]
     );
 }

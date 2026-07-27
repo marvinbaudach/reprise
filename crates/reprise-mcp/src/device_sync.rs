@@ -11,7 +11,20 @@ const BUS_NAME: &str = "org.mpris.MediaPlayer2.reprise";
 const OBJECT_PATH: &str = "/org/mpris/MediaPlayer2";
 const DEVICE_SYNC_INTERFACE: &str = "org.reprise.DeviceSync1";
 type DeviceSyncSourceSelection = (String, i64);
-type DeviceSyncSourceRow = (String, i64, bool, String, bool, bool, u64, u64, u64, u64);
+type DeviceSyncSourceRow = (
+    String,
+    i64,
+    bool,
+    String,
+    bool,
+    bool,
+    u64,
+    u64,
+    u64,
+    u64,
+    bool,
+    i64,
+);
 type DeviceSyncChangesRow = (u64, u64, u64, u64, u64, u64, u64);
 type DeviceSyncStorageCompositionRow = (bool, u64, u64, u64, bool, u64, bool, u64, String);
 type DeviceSyncStorageRow = (
@@ -24,9 +37,11 @@ type DeviceSyncStorageRow = (
     DeviceSyncStorageCompositionRow,
     bool,
     DeviceSyncStorageCompositionRow,
+    String,
 );
-type DeviceSyncControlsRow = (bool, bool, bool);
+type DeviceSyncControlsRow = (bool, bool, bool, bool);
 type DeviceSyncProgressRow = (u64, u64, u64);
+type DeviceSyncTimestampRow = (bool, i64);
 type DeviceSyncRow = (
     String,
     bool,
@@ -43,6 +58,7 @@ type DeviceSyncRow = (
     String,
     DeviceSyncProgressRow,
     String,
+    DeviceSyncTimestampRow,
 );
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,6 +72,9 @@ pub enum DeviceSyncAction {
         device_name: String,
     },
     Cancel {
+        device_name: String,
+    },
+    Eject {
         device_name: String,
     },
 }
@@ -102,6 +121,10 @@ impl DeviceSyncAction {
             "cancel" => {
                 reject_configuration_fields(params)?;
                 Ok(Self::Cancel { device_name })
+            }
+            "eject" => {
+                reject_configuration_fields(params)?;
+                Ok(Self::Eject { device_name })
             }
             other => Err(format!("unknown action '{other}'")),
         }
@@ -184,10 +207,12 @@ fn map_row(row: DeviceSyncRow) -> DeviceSyncDeviceDto {
         phase,
         progress,
         current_track,
+        last_synced_at,
     ) = row;
     DeviceSyncDeviceDto {
         name,
         connected,
+        last_synced_at: last_synced_at.0.then_some(last_synced_at.1),
         profile,
         managed_tracks,
         unique_track_count,
@@ -201,6 +226,7 @@ fn map_row(row: DeviceSyncRow) -> DeviceSyncDeviceDto {
             editable: controls.0,
             can_start: controls.1,
             can_cancel: controls.2,
+            can_eject: controls.3,
         },
         phase,
         progress: DeviceSyncProgressDto {
@@ -223,6 +249,7 @@ fn map_source_row(row: DeviceSyncSourceRow) -> DeviceSyncPlaylistDto {
         unique_track_count: row.7,
         unavailable_count: row.8,
         target_bytes: row.9,
+        last_synced_at: row.10.then_some(row.11),
     }
 }
 
@@ -241,6 +268,7 @@ fn map_changes_row(row: DeviceSyncChangesRow) -> DeviceSyncChangesDto {
 fn map_storage_row(row: DeviceSyncStorageRow) -> DeviceSyncStorageDto {
     DeviceSyncStorageDto {
         target_name: row.0.then_some(row.1),
+        access: row.9,
         state: row.2,
         shortfall_bytes: row.3.then_some(row.4),
         transfer_bytes: row.5,
@@ -290,6 +318,12 @@ pub fn mutate(action: DeviceSyncAction) -> Result<String, PlaybackError> {
                 .map_err(|error| map_zbus_error(&error))?;
             format!("Requested synchronization cancellation for {device_name}")
         }
+        DeviceSyncAction::Eject { device_name } => {
+            let _: () = proxy
+                .call("Eject", &(&device_name,))
+                .map_err(|error| map_zbus_error(&error))?;
+            format!("Requested ejection for {device_name}")
+        }
     };
     Ok(summary)
 }
@@ -318,6 +352,8 @@ mod tests {
                 200,
                 2,
                 80,
+                true,
+                1_721_234_567,
             )],
             (125, 5, 0, 2, 1, 0, 60),
             (
@@ -330,21 +366,26 @@ mod tests {
                 (true, 100, 20, 10, true, 30, true, 40, "complete".into()),
                 true,
                 (true, 100, 80, 10, true, 10, true, 0, "complete".into()),
+                "writable".into(),
             ),
             Vec::new(),
             vec!["unavailable_not_on_device".into()],
-            (false, false, true),
+            (false, false, true, false),
             "copying".into(),
             (20, 60, 10),
             "Sun//Eater — Lorna Shore".into(),
+            (true, 1_721_234_890),
         ));
 
         assert_eq!(dto.profile, "original");
+        assert_eq!(dto.last_synced_at, Some(1_721_234_890));
         assert_eq!(dto.unique_track_count, 200);
         assert_eq!(dto.playlists[0].kind, "smart");
         assert_eq!(dto.playlists[0].entry_count, 220);
+        assert_eq!(dto.playlists[0].last_synced_at, Some(1_721_234_567));
         assert_eq!(dto.changes.replacements, 5);
         assert_eq!(dto.storage.current.free_bytes, Some(40));
+        assert_eq!(dto.storage.access, "writable");
         assert_eq!(dto.storage.after_sync.as_ref().unwrap().free_bytes, Some(0));
         assert!(dto.controls.can_cancel);
         assert_eq!(dto.progress.bytes_per_second, 10);
@@ -421,8 +462,8 @@ mod tests {
     }
 
     #[test]
-    fn start_and_cancel_reject_configuration_only_fields() {
-        for action in ["start", "cancel"] {
+    fn headless_actions_reject_configuration_only_fields() {
+        for action in ["start", "cancel", "eject"] {
             let error = DeviceSyncAction::from_params(&DeviceSyncParams {
                 action: action.into(),
                 device_name: "Pixel".into(),

@@ -424,7 +424,7 @@ fn agent_bridge_reports_the_compact_mirror_page_and_applies_multi_source_configu
         let (_temp, conn) = fixture();
         select_road_playlist(&conn, &[1, 2]);
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 20));
-        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
         gtk4::glib::timeout_future(Duration::from_millis(2)).await;
 
         let state = Arc::new(Mutex::new(AgentDeviceSyncState::default()));
@@ -510,6 +510,15 @@ fn agent_bridge_reports_the_compact_mirror_page_and_applies_multi_source_configu
             .unwrap()
             .unwrap_err()
             .contains("absent, disconnected, or ambiguous"));
+
+        let (request, reply) = agent_device_sync_request(AgentDeviceSyncCommand::Eject {
+            device_name: "Phone a".into(),
+        });
+        sender.send(request).await.unwrap();
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+        assert_eq!(reply.try_recv(), Ok(Ok(())));
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+        assert_eq!(backend.state.ejected.borrow().as_slice(), ["a"]);
     });
 }
 

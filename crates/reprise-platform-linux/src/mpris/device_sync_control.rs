@@ -6,13 +6,27 @@ use reprise_core::agent_device_sync::{
     agent_device_sync_request, read_agent_device_sync_state, AgentDeviceSyncBlocker,
     AgentDeviceSyncChanges, AgentDeviceSyncCommand, AgentDeviceSyncControls, AgentDeviceSyncDevice,
     AgentDeviceSyncPhase, AgentDeviceSyncPlaylist, AgentDeviceSyncRequest, AgentDeviceSyncStorage,
-    AgentDeviceSyncStorageComposition, AgentDeviceSyncStorageKnowledge,
-    AgentDeviceSyncStorageState, AgentDeviceSyncWarning, SharedAgentDeviceSyncState,
+    AgentDeviceSyncStorageAccess, AgentDeviceSyncStorageComposition,
+    AgentDeviceSyncStorageKnowledge, AgentDeviceSyncStorageState, AgentDeviceSyncWarning,
+    SharedAgentDeviceSyncState,
 };
 use reprise_core::device_sync::{SelectionSource, TransferProfile};
 
 pub(super) type DeviceSyncSourceSelection = (String, i64);
-pub(super) type DeviceSyncSourceRow = (String, i64, bool, String, bool, bool, u64, u64, u64, u64);
+pub(super) type DeviceSyncSourceRow = (
+    String,
+    i64,
+    bool,
+    String,
+    bool,
+    bool,
+    u64,
+    u64,
+    u64,
+    u64,
+    bool,
+    i64,
+);
 pub(super) type DeviceSyncChangesRow = (u64, u64, u64, u64, u64, u64, u64);
 pub(super) type DeviceSyncStorageCompositionRow =
     (bool, u64, u64, u64, bool, u64, bool, u64, String);
@@ -26,9 +40,11 @@ pub(super) type DeviceSyncStorageRow = (
     DeviceSyncStorageCompositionRow,
     bool,
     DeviceSyncStorageCompositionRow,
+    String,
 );
-pub(super) type DeviceSyncControlsRow = (bool, bool, bool);
+pub(super) type DeviceSyncControlsRow = (bool, bool, bool, bool);
 pub(super) type DeviceSyncProgressRow = (u64, u64, u64);
+pub(super) type DeviceSyncTimestampRow = (bool, i64);
 pub(super) type DeviceSyncRow = (
     String,
     bool,
@@ -45,6 +61,7 @@ pub(super) type DeviceSyncRow = (
     String,
     DeviceSyncProgressRow,
     String,
+    DeviceSyncTimestampRow,
 );
 
 pub(super) struct DeviceSyncControl {
@@ -120,6 +137,12 @@ impl DeviceSyncControl {
             device_name: device_name.to_owned(),
         })
     }
+
+    fn eject(&self, device_name: &str) -> zbus::fdo::Result<()> {
+        self.dispatch(AgentDeviceSyncCommand::Eject {
+            device_name: device_name.to_owned(),
+        })
+    }
 }
 
 fn device_row(device: AgentDeviceSyncDevice) -> DeviceSyncRow {
@@ -143,6 +166,7 @@ fn device_row(device: AgentDeviceSyncDevice) -> DeviceSyncRow {
             device.bytes_per_second,
         ),
         device.current_track,
+        optional_timestamp(device.last_synced_at),
     )
 }
 
@@ -159,6 +183,8 @@ fn source_row(source: AgentDeviceSyncPlaylist) -> DeviceSyncSourceRow {
         count(source.unique_track_count),
         count(source.unavailable_count),
         source.target_bytes,
+        source.last_synced_at.is_some(),
+        source.last_synced_at.unwrap_or_default(),
     )
 }
 
@@ -188,7 +214,20 @@ fn storage_row(storage: &AgentDeviceSyncStorage) -> DeviceSyncStorageRow {
         storage_composition_row(&storage.current),
         after_sync.is_some(),
         storage_composition_row(after_sync.unwrap_or(&empty)),
+        storage_access_name(storage.access).to_owned(),
     )
+}
+
+fn optional_timestamp(timestamp: Option<i64>) -> DeviceSyncTimestampRow {
+    (timestamp.is_some(), timestamp.unwrap_or_default())
+}
+
+fn storage_access_name(access: AgentDeviceSyncStorageAccess) -> &'static str {
+    match access {
+        AgentDeviceSyncStorageAccess::Writable => "writable",
+        AgentDeviceSyncStorageAccess::ReadOnly => "read_only",
+        AgentDeviceSyncStorageAccess::Unknown => "unknown",
+    }
 }
 
 fn storage_composition_row(
@@ -213,7 +252,12 @@ fn storage_composition_row(
 }
 
 fn controls_row(controls: AgentDeviceSyncControls) -> DeviceSyncControlsRow {
-    (controls.editable, controls.can_start, controls.can_cancel)
+    (
+        controls.editable,
+        controls.can_start,
+        controls.can_cancel,
+        controls.can_eject,
+    )
 }
 
 fn storage_state_name(state: AgentDeviceSyncStorageState) -> (&'static str, bool, u64) {
@@ -304,6 +348,7 @@ mod tests {
             devices: vec![AgentDeviceSyncDevice {
                 name: "Pixel".into(),
                 connected: true,
+                last_synced_at: Some(1_721_234_890),
                 profile: TransferProfile::Original,
                 unique_track_count: 200,
                 target_bytes: 80,
@@ -316,6 +361,7 @@ mod tests {
                     unique_track_count: 200,
                     unavailable_count: 2,
                     target_bytes: 80,
+                    last_synced_at: Some(1_721_234_567),
                 }],
                 changes: AgentDeviceSyncChanges {
                     additions: 125,
@@ -336,6 +382,7 @@ mod tests {
                     editable: false,
                     can_start: false,
                     can_cancel: true,
+                    can_eject: false,
                 },
                 bytes_per_second: 12,
                 phase: AgentDeviceSyncPhase::Copying,
@@ -352,10 +399,14 @@ mod tests {
         assert_eq!(rows[0].6[0].0, "smart");
         assert_eq!(rows[0].6[0].1, 7);
         assert_eq!(rows[0].6[0].6, 220);
+        assert!(rows[0].6[0].10);
+        assert_eq!(rows[0].6[0].11, 1_721_234_567);
         assert_eq!(rows[0].7 .0, 125);
         assert_eq!(rows[0].8 .6 .7, 80);
         assert!(rows[0].11 .2);
+        assert!(!rows[0].11 .3);
         assert_eq!(rows[0].13 .2, 12);
+        assert_eq!(rows[0].15, (true, 1_721_234_890));
 
         let responder = std::thread::spawn(move || {
             let request = receiver.recv_blocking().unwrap();
@@ -406,6 +457,26 @@ mod tests {
 
         let error = control.start("Missing").unwrap_err();
         assert!(error.to_string().contains("device 'Missing' is absent"));
+        responder.join().unwrap();
+    }
+
+    #[test]
+    fn eject_dispatches_the_path_free_device_identity() {
+        let state = Arc::new(Mutex::new(AgentDeviceSyncState::default()));
+        let (sender, receiver) = async_channel::unbounded();
+        let control = DeviceSyncControl::new(sender, state);
+        let responder = std::thread::spawn(move || {
+            let request = receiver.recv_blocking().unwrap();
+            assert_eq!(
+                request.command,
+                AgentDeviceSyncCommand::Eject {
+                    device_name: "Pixel".into(),
+                }
+            );
+            request.reply.send(Ok(())).unwrap();
+        });
+
+        control.eject("Pixel").unwrap();
         responder.join().unwrap();
     }
 }

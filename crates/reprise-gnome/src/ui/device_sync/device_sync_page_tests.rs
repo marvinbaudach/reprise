@@ -96,6 +96,7 @@ fn device() -> DeviceView {
                 editable: true,
                 can_start: true,
                 can_cancel: false,
+                can_eject: true,
             },
         },
     }
@@ -154,7 +155,7 @@ fn mtp_12_playlist_copy_reports_its_last_verified_sync_time() {
 }
 
 #[test]
-fn mtp_13_copy_progress_includes_the_live_mtp_rate() {
+fn mtp_15_copy_progress_separates_the_live_mtp_rate_from_track_text() {
     let phase = PlannedSyncPhase::Syncing {
         step: crate::ui::device_sync_runtime::SyncStep::Copying,
         done: 1,
@@ -168,7 +169,8 @@ fn mtp_13_copy_progress_includes_the_live_mtp_rate() {
         progress_copy(&phase, 2 * 1_024 * 1_024),
         Some((
             "Copying · 1 of 2".into(),
-            "Immortal — Lorna Shore · 2.0 MiB/s".into(),
+            "Immortal — Lorna Shore".into(),
+            "2.0 MiB/s".into(),
             0.5,
         ))
     );
@@ -231,6 +233,7 @@ fn mtp_7_full_page_projects_complete_storage_segments() {
             editable: false,
             can_start: false,
             can_cancel: true,
+            can_eject: false,
         }),
         PageActionCopy {
             label: "_Cancel",
@@ -449,6 +452,127 @@ fn mtp_14_full_page_uses_a_device_dashboard_instead_of_preferences_chrome() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn mtp_15_sync_status_text_does_not_resize_the_playlist_workspace() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().expect("GTK test display");
+    let mut device = device();
+    device.sync_phase = PlannedSyncPhase::Syncing {
+        step: crate::ui::device_sync_runtime::SyncStep::Transcoding,
+        done: 8,
+        total: 278,
+        current_track: "Claw Marks — Brand of Sacrifice".into(),
+        bytes_done: 8,
+        bytes_total: 278,
+    };
+    let (surface, root) = DeviceSyncPage::new(
+        &device,
+        PageActions {
+            set_profile: Rc::new(|_| {}),
+            set_playlist: Rc::new(|_, _| {}),
+            start: Rc::new(|| {}),
+            cancel: Rc::new(|| {}),
+            eject: Rc::new(|| {}),
+        },
+    );
+    let window = gtk4::Window::new();
+    window.set_default_size(968, 800);
+    window.set_child(Some(&root));
+    window.present();
+    gtk4::glib::MainContext::default().block_on(gtk4::glib::timeout_future(
+        std::time::Duration::from_millis(50),
+    ));
+    let converting_width = surface.playlist_list.width();
+    let converting_status_width = surface
+        .progress_detail
+        .measure(gtk4::Orientation::Horizontal, -1)
+        .1;
+
+    device.sync_phase = PlannedSyncPhase::Syncing {
+        step: crate::ui::device_sync_runtime::SyncStep::Copying,
+        done: 16,
+        total: 278,
+        current_track: "Lifeblood (feat. Will Ramos) — Brand of Sacrifice".into(),
+        bytes_done: 16,
+        bytes_total: 278,
+    };
+    device.bytes_per_second = 29_200_000;
+    surface.update(&device);
+    gtk4::glib::MainContext::default().block_on(gtk4::glib::timeout_future(
+        std::time::Duration::from_millis(50),
+    ));
+    let copying_width = surface.playlist_list.width();
+    let copying_status_width = surface
+        .progress_detail
+        .measure(gtk4::Orientation::Horizontal, -1)
+        .1;
+
+    assert_eq!(
+        copying_width, converting_width,
+        "dynamic status copy must wrap inside a stable overview column"
+    );
+    assert_eq!(
+        copying_status_width, converting_status_width,
+        "dynamic status copy must not change the overview's natural width"
+    );
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn mtp_15_playlist_and_sync_overview_cards_share_the_same_edges() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().expect("GTK test display");
+    let (_surface, root) = DeviceSyncPage::new(
+        &device(),
+        PageActions {
+            set_profile: Rc::new(|_| {}),
+            set_playlist: Rc::new(|_, _| {}),
+            start: Rc::new(|| {}),
+            cancel: Rc::new(|| {}),
+            eject: Rc::new(|| {}),
+        },
+    );
+    let window = gtk4::Window::new();
+    window.set_default_size(968, 800);
+    window.set_child(Some(&root));
+    window.present();
+    gtk4::glib::MainContext::default().block_on(gtk4::glib::timeout_future(
+        std::time::Duration::from_millis(50),
+    ));
+
+    fn collect_cards(widget: &gtk4::Widget, cards: &mut Vec<gtk4::Widget>) {
+        if widget.has_css_class("card") {
+            cards.push(widget.clone());
+        }
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            collect_cards(&current, cards);
+            child = current.next_sibling();
+        }
+    }
+
+    let mut cards = Vec::new();
+    collect_cards(root.upcast_ref(), &mut cards);
+    assert_eq!(
+        cards.len(),
+        3,
+        "hero, playlist workspace and sync overview must be cards"
+    );
+    let body = cards[1].parent().expect("shared dashboard body");
+    assert_eq!(cards[2].parent().as_ref(), Some(&body));
+    let playlist = cards[1].compute_bounds(&body).expect("playlist bounds");
+    let overview = cards[2].compute_bounds(&body).expect("overview bounds");
+    assert_eq!(playlist.y(), overview.y(), "top edges must align");
+    assert_eq!(
+        playlist.height(),
+        overview.height(),
+        "bottom edges must align"
+    );
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn mtp_13_full_page_renders_and_wires_only_the_playlist_mirroring_controls() {
     gtk4::init().expect("GTK test display");
     let profile_events = Rc::new(RefCell::new(Vec::new()));
@@ -519,16 +643,15 @@ fn mtp_13_full_page_renders_and_wires_only_the_playlist_mirroring_controls() {
     };
     device.bytes_per_second = 2 * 1_024 * 1_024;
     surface.update(&device);
-    assert_eq!(
-        surface.progress_detail.label(),
-        "Immortal — Lorna Shore · 2.0 MiB/s"
-    );
+    assert_eq!(surface.progress_detail.label(), "Immortal — Lorna Shore");
+    assert_eq!(surface.progress_speed.label(), "2.0 MiB/s");
     assert_eq!(surface.progress_bar.fraction(), 0.5);
 
     device.page.controls = SyncPageControls {
         editable: false,
         can_start: false,
         can_cancel: true,
+        can_eject: false,
     };
     surface.update(&device);
     surface.primary.emit_clicked();

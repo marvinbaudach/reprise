@@ -9,7 +9,7 @@ pub struct GetDeviceSyncStateParams {}
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DeviceSyncParams {
-    /// One of: configure, start, cancel.
+    /// One of: configure, start, cancel, eject.
     pub action: String,
     /// Exact display name from music_get_device_sync_state.
     pub device_name: String,
@@ -39,6 +39,8 @@ pub struct DeviceSyncStateDto {
 pub struct DeviceSyncDeviceDto {
     pub name: String,
     pub connected: bool,
+    /// Last verified device synchronization as Unix UTC seconds.
+    pub last_synced_at: Option<i64>,
     pub profile: String,
     pub managed_tracks: u64,
     pub unique_track_count: u64,
@@ -65,6 +67,8 @@ pub struct DeviceSyncPlaylistDto {
     pub unique_track_count: u64,
     pub unavailable_count: u64,
     pub target_bytes: u64,
+    /// Last verified synchronization of this playlist as Unix UTC seconds.
+    pub last_synced_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -81,6 +85,7 @@ pub struct DeviceSyncChangesDto {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct DeviceSyncStorageDto {
     pub target_name: Option<String>,
+    pub access: String,
     pub state: String,
     pub shortfall_bytes: Option<u64>,
     pub transfer_bytes: u64,
@@ -103,6 +108,7 @@ pub struct DeviceSyncControlsDto {
     pub editable: bool,
     pub can_start: bool,
     pub can_cancel: bool,
+    pub can_eject: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]

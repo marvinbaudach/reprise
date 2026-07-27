@@ -380,6 +380,14 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   eine kompakte Nebenübersicht. Lokal bekannte Playlists erscheinen und bleiben
   auswählbar, während Reprise den MTP-Speicher noch prüft; nur der
   Sync-Start wartet auf diese Prüfung.
+- **MTP-15** [aktiv] [gtk] — Playlist-Arbeitsbereich und Sync-Übersicht
+  besitzen unabhängig von Delta-, Track- und Geschwindigkeitstext dieselben
+  stabilen oberen und unteren Kartenkanten; wechselnder Statustext wird
+  innerhalb einer begrenzten Overview-Breite umgebrochen und verschiebt keine
+  Spalte. Die aktuelle MTP-Transfergeschwindigkeit steht während Copy als
+  eigene beschriftete Zeile neben dem Tracktext. Die Sidebar-Gerätekarte nennt
+  den freien Gerätespeicher auch während Checking, Sync und Finishing so früh,
+  dass Ellipsize ihn nicht verdeckt.
 
 ## F. Einstellungen & Modale
 

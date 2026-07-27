@@ -65,3 +65,20 @@ fn mutation_is_fail_closed_before_any_bus_call() {
     let text = tool_error_text(&response);
     assert!(text.contains("device:sync"), "{text}");
 }
+
+#[test]
+fn readme_documents_the_complete_playlist_mirroring_contract() {
+    let readme = include_str!("../README.md");
+
+    assert!(readme.contains("`action` = `configure`\\|`start`\\|`cancel`\\|`eject`"));
+    assert!(readme.contains("`sources`"));
+    assert!(readme.contains("`profile`"));
+    assert!(readme.contains("`opus_160`\\|`mp3_256`\\|`original`"));
+    assert!(readme.contains("deduplicated"));
+    assert!(readme.contains("`last_synced_at`"));
+    assert!(readme.contains("`access`"));
+    assert!(!readme.contains("configure_playlist"));
+    assert!(!readme.contains("bitrate_kbps"));
+    assert!(!readme.contains("tracks_to_copy"));
+    assert!(!readme.contains("bytes_to_copy"));
+}

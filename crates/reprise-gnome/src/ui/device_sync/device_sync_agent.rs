@@ -99,6 +99,18 @@ impl DeviceSyncRuntime {
                 self.cancel_current(&device_id);
                 Ok(())
             }
+            AgentDeviceSyncCommand::Eject { device_name } => {
+                let device = self.unique_connected_device(&device_name).ok_or_else(|| {
+                    format!("device '{device_name}' is absent, disconnected, or ambiguous")
+                })?;
+                if !device.page.controls.can_eject {
+                    return Err(format!(
+                        "device '{device_name}' cannot be ejected while busy"
+                    ));
+                }
+                self.eject(&device.id);
+                Ok(())
+            }
         }
     }
 
@@ -131,6 +143,7 @@ fn agent_device(device: DeviceView) -> AgentDeviceSyncDevice {
     AgentDeviceSyncDevice {
         name: device.name,
         connected: device.connected,
+        last_synced_at: device.last_sync.map(|last_sync| last_sync.timestamp()),
         managed_tracks: device.managed_track_count,
         profile: device.settings.profile,
         playlists: page
@@ -145,6 +158,7 @@ fn agent_device(device: DeviceView) -> AgentDeviceSyncDevice {
                 unique_track_count: playlist.unique_track_count,
                 unavailable_count: playlist.unavailable_count,
                 target_bytes: playlist.target_bytes,
+                last_synced_at: playlist.last_synced_at,
             })
             .collect(),
         unique_track_count: page.unique_track_count,
@@ -172,6 +186,7 @@ fn agent_device(device: DeviceView) -> AgentDeviceSyncDevice {
             editable: page.controls.editable,
             can_start: page.controls.can_start,
             can_cancel: page.controls.can_cancel,
+            can_eject: page.controls.can_eject,
         },
         phase,
         bytes_done,
