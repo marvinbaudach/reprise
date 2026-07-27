@@ -34,6 +34,7 @@ impl MenuContext {
             ViewSource::Playlist(_) => Self::Playlist,
             ViewSource::Queue => Self::Queue,
             ViewSource::Library
+            | ViewSource::RecentlyAdded
             | ViewSource::Smart(_)
             | ViewSource::Missing
             | ViewSource::ImportErrors

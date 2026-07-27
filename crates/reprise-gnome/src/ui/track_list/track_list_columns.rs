@@ -268,10 +268,6 @@ pub(in crate::ui) fn append_title_column(
 ) -> gtk4::ColumnViewColumn {
     let factory = gtk4::SignalListItemFactory::new();
 
-    // INST-10/INST-11: the AI badge is instrumental UI, so it appears only while
-    // the experimental switch is on. Read once at column build — the switch
-    // takes effect for running surfaces on the next launch (accepted rough edge).
-    let experimental_on = crate::ui::instrumental::experimental_enabled(&shared.conn.borrow());
     let shared_for_bind = shared.clone();
     let shared_for_unbind_title = shared.clone();
     let shared = shared.clone();
@@ -364,8 +360,10 @@ pub(in crate::ui) fn append_title_column(
         eq.set_visible(playing);
         toggle_class(&label, NOW_PLAYING_TITLE_CLASS, playing);
         // INST-10: the AI badge (the label's trailing sibling) follows the row's
-        // provenance flag, gated on the experimental switch (INST-11).
+        // provenance flag, gated on the live experimental switch (INST-11).
         if let Some(ai_badge) = label.next_sibling() {
+            let experimental_on =
+                crate::ui::instrumental::experimental_enabled(&shared_for_bind.conn.borrow());
             ai_badge.set_visible(ai_badge_visible(experimental_on, track.is_ai));
         }
         now_playing_marker::register_cell(&shared_for_bind, item, {

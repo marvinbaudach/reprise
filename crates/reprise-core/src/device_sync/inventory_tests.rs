@@ -40,7 +40,7 @@ fn open_legacy_v33() -> Connection {
 }
 
 #[test]
-fn v34_migration_preserves_managed_files_without_the_track_cascade() {
+fn v36_migration_preserves_managed_files_without_the_track_cascade() {
     let conn = open_legacy_v33();
     conn.execute(
         "INSERT INTO device_settings (
@@ -64,12 +64,12 @@ fn v34_migration_preserves_managed_files_without_the_track_cascade() {
     )
     .unwrap();
 
-    crate::db::migrate(&conn).unwrap();
+    crate::db_device_sync::migrate_v36(&conn).unwrap();
 
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 34);
+    assert_eq!(version, 36);
     let settings = load_or_create_settings(&conn, "phone", "ignored").unwrap();
     assert_eq!(settings.selection, DeviceSelection::Sources(Vec::new()));
     assert_eq!(settings.profile, TransferProfile::Mp3(Mp3Quality::Kbps256));
@@ -95,7 +95,7 @@ fn v34_migration_preserves_managed_files_without_the_track_cascade() {
 }
 
 #[test]
-fn v34_migration_preserves_legacy_orphans_even_if_foreign_keys_were_disabled() {
+fn v36_migration_preserves_legacy_orphans_even_if_foreign_keys_were_disabled() {
     let conn = open_legacy_v33();
     conn.pragma_update(None, "foreign_keys", "OFF").unwrap();
     conn.execute(
@@ -109,7 +109,7 @@ fn v34_migration_preserves_legacy_orphans_even_if_foreign_keys_were_disabled() {
     .unwrap();
     conn.pragma_update(None, "foreign_keys", "ON").unwrap();
 
-    crate::db::migrate(&conn).unwrap();
+    crate::db_device_sync::migrate_v36(&conn).unwrap();
 
     assert_eq!(
         load_device_files(&conn, "phone").unwrap(),
@@ -128,7 +128,7 @@ fn v34_migration_preserves_legacy_orphans_even_if_foreign_keys_were_disabled() {
 }
 
 #[test]
-fn v34_migration_keeps_valid_playlist_selection_and_marks_it_unconfigured_only_when_empty() {
+fn v36_migration_keeps_valid_playlist_selection_and_marks_it_unconfigured_only_when_empty() {
     let conn = open_legacy_v33();
     conn.execute_batch(
         "INSERT INTO device_settings (
@@ -139,7 +139,7 @@ fn v34_migration_keeps_valid_playlist_selection_and_marks_it_unconfigured_only_w
     )
     .unwrap();
 
-    crate::db::migrate(&conn).unwrap();
+    crate::db_device_sync::migrate_v36(&conn).unwrap();
 
     assert_eq!(
         load_or_create_settings(&conn, "configured", "ignored")

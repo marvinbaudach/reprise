@@ -1,19 +1,15 @@
-//! GTK instrumental-fassungen UX (experimental) — the app-hosted stem-
-//! separation worker host, the conversion/staging view, AI badges, the
-//! wait-state, and the "Experimental features" gate (docs/ux-rules.md
-//! Section AB; plan `docs/plans/multi-frontend-core.md` §2.4/3.2).
+//! GTK instrumental-fassungen UX (experimental) — the out-of-process worker
+//! supervisor, conversion/staging view, AI badges, wait-state, and the
+//! "Experimental features" gate (docs/ux-rules.md Section AB; plan
+//! `docs/plans/multi-frontend-core.md` §2.4/3.2).
 //!
 //! ## Dependency boundary
 //!
-//! This module consumes the **reprise-core** facades — `ai_jobs`, `ai_staging`,
-//! `ai_promotion`, `ai_conversion`, `provenance`, `stem_separation` (the trait +
-//! the deterministic `FakeStemBackend`). The worker host is generic over the
-//! `StemSeparationBackend` trait, so the **default build never links
-//! reprise-stems** and runs the Fake (the enforced architecture probe + CI
-//! check). P3b wires the real backend behind the **`stem-backend` cargo
-//! feature**: the GTK app is a sanctioned binary host for reprise-stems
-//! (LICENSING.md; `scripts/check-architecture.sh`), so under that feature
-//! [`app_backend`] returns the real, lazily-provisioned `OrtStemBackend`.
+//! This module consumes only **reprise-core** facades. The native ONNX Runtime
+//! stack lives in the separately packaged `reprise-worker` executable. The
+//! `stem-backend` feature enables the GTK client surface and model provisioner,
+//! then embeds the worker's libexec path; it never links the `ort` inference
+//! feature into the music-player process.
 //!
 //! ## Progress numbers
 //!
@@ -24,16 +20,19 @@
 pub(in crate::ui) mod conversion_model;
 pub(in crate::ui) mod conversion_view;
 pub(in crate::ui) mod conversion_wiring;
+mod runtime;
 pub(in crate::ui) mod worker_host;
 
 use std::cell::RefCell;
-use std::path::PathBuf;
+use std::collections::HashSet;
 use std::rc::Rc;
-use std::sync::Arc;
 
+use reprise_core::ai_jobs::EnqueueOutcome;
+use reprise_core::ai_staging::StagingStore;
 use reprise_core::library::settings;
-use reprise_core::stem_separation::StemSeparationBackend;
 use rusqlite::Connection;
+
+type EnabledHook = Rc<dyn Fn(bool)>;
 
 /// The persisted settings key gating **all** instrumental UI (INST-11,
 /// Beschluss 11). A bespoke key rather than a `reprise_core::modules`
@@ -60,42 +59,118 @@ pub(in crate::ui) fn set_experimental_enabled(
     settings::set_bool(conn, EXPERIMENTAL_ENABLED_KEY, enabled)
 }
 
-/// Resolves a job's `source_track_id` to the absolute source file path the
-/// backend reads. Injected into the worker host so the render logic stays pure
-/// and testable (the tests hand it a closure over a temp file).
+/// Whether this build contains the packaged production worker client.
 ///
-/// It takes the worker's own `&Connection` so the production resolver
-/// ([`db_source_resolver`]) can look the path up through the core facade
-/// [`reprise_core::queries::track_source_path`] — no SQL in frontend code.
-pub(in crate::ui) type SourceResolver =
-    Arc<dyn Fn(&Connection, i64) -> Option<PathBuf> + Send + Sync>;
-
-/// The stem-separation backend this app build runs. The default build uses the
-/// deterministic [`reprise_core::stem_separation::FakeStemBackend`]; the
-/// `stem-backend` feature swaps in the real, lazily-provisioned
-/// `stem_backend::LazyOrtBackend`. The worker host is generic over the trait,
-/// so only this constructor and [`app_model_id`] differ between builds.
-#[cfg(not(feature = "stem-backend"))]
-pub(in crate::ui) fn app_backend() -> Box<dyn StemSeparationBackend + Send> {
-    Box::new(reprise_core::stem_separation::FakeStemBackend::new())
-}
-
-#[cfg(feature = "stem-backend")]
-pub(in crate::ui) fn app_backend() -> Box<dyn StemSeparationBackend + Send> {
-    Box::new(stem_backend::LazyOrtBackend::new())
+/// This is deliberately a compile-time capability: a normal build must not
+/// expose a conversion action that can silently fall back to test behavior.
+pub(in crate::ui) const fn production_backend_compiled() -> bool {
+    cfg!(feature = "stem-backend")
 }
 
 /// The model id every enqueue stamps as the job's `params_fingerprint`. It must
-/// match the id of the backend [`app_backend`] produces output with, so dedup
-/// (Beschluss 16) and the `REPRISE_AI_MODEL` provenance tag stay consistent.
+/// match the worker backend, so dedup (Beschluss 16) and the
+/// `REPRISE_AI_MODEL` provenance tag stay consistent. Core owns the stable
+/// cross-process identity; the GTK client never imports the backend crate.
 #[cfg(not(feature = "stem-backend"))]
-pub(in crate::ui) fn app_model_id() -> String {
-    reprise_core::stem_separation::FakeStemBackend::new().model_id()
+pub(in crate::ui) fn app_model_id() -> Option<String> {
+    None
 }
 
 #[cfg(feature = "stem-backend")]
-pub(in crate::ui) fn app_model_id() -> String {
-    reprise_stems::model::HTDEMUCS_FP32.model_id.to_string()
+pub(in crate::ui) fn app_model_id() -> Option<String> {
+    Some(reprise_core::stem_separation::CURRENT_MODEL_ID.to_string())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::ui) struct EnqueueSummary {
+    pub created: usize,
+    pub deduplicated: usize,
+    pub skipped_unavailable: usize,
+}
+
+impl EnqueueSummary {
+    pub(in crate::ui) fn accepted(self) -> usize {
+        self.created + self.deduplicated
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[cfg_attr(not(feature = "stem-backend"), allow(dead_code))]
+pub(in crate::ui) enum EnqueueError {
+    #[error("this build has no production instrumental backend")]
+    BackendUnavailable,
+    #[error("the instrumental model must be downloaded first")]
+    ModelRequired,
+    #[error("the packaged instrumental runtime is unavailable: {0}")]
+    RuntimeUnavailable(String),
+    #[error(transparent)]
+    Database(#[from] rusqlite::Error),
+}
+
+/// Enqueues the present subset of a drag/selection through the same batch and
+/// dedup facade. Missing, removed, repeated, and unknown ids never become jobs.
+pub(in crate::ui) fn enqueue_present_tracks(
+    conn: &Connection,
+    ids: &[i64],
+) -> Result<EnqueueSummary, EnqueueError> {
+    if ids.is_empty() {
+        return Ok(EnqueueSummary {
+            created: 0,
+            deduplicated: 0,
+            skipped_unavailable: 0,
+        });
+    }
+    #[cfg(feature = "stem-backend")]
+    match reprise_stems::provision::runtime_readiness() {
+        reprise_stems::provision::RuntimeReadiness::Ready(_) => {}
+        reprise_stems::provision::RuntimeReadiness::ModelRequired { .. } => {
+            return Err(EnqueueError::ModelRequired);
+        }
+        reprise_stems::provision::RuntimeReadiness::Unavailable { detail, .. } => {
+            return Err(EnqueueError::RuntimeUnavailable(detail));
+        }
+    }
+    let model = app_model_id().ok_or(EnqueueError::BackendUnavailable)?;
+    enqueue_present_tracks_with_model(
+        conn,
+        &StagingStore::with_default_dir(),
+        ids,
+        &model,
+        now_unix(),
+    )
+    .map_err(EnqueueError::Database)
+}
+
+fn enqueue_present_tracks_with_model(
+    conn: &Connection,
+    staging: &StagingStore,
+    ids: &[i64],
+    model: &str,
+    now: i64,
+) -> Result<EnqueueSummary, rusqlite::Error> {
+    let unique_requested = ids.iter().copied().collect::<HashSet<_>>().len();
+    let present = reprise_core::queries::filter_present(conn, ids)?;
+    let skipped_unavailable = unique_requested.saturating_sub(present.len());
+    if present.is_empty() {
+        return Ok(EnqueueSummary {
+            created: 0,
+            deduplicated: 0,
+            skipped_unavailable,
+        });
+    }
+    let batch = reprise_core::ai_conversion::add_batch_to_conversion(
+        conn, staging, &present, model, false, now,
+    )?;
+    let created = batch
+        .jobs
+        .iter()
+        .filter(|outcome| matches!(outcome, EnqueueOutcome::Created { .. }))
+        .count();
+    Ok(EnqueueSummary {
+        created,
+        deduplicated: batch.jobs.len() - created,
+        skipped_unavailable,
+    })
 }
 
 thread_local! {
@@ -106,11 +181,21 @@ thread_local! {
     /// keeps the worker handle out of unrelated widgets' state — everything here
     /// runs single-threaded on the UI thread.
     static WAKE_HOOK: RefCell<Option<Rc<dyn Fn()>>> = const { RefCell::new(None) };
+    /// Window-runtime hook for applying the persisted master gate immediately.
+    /// Preferences owns persistence; conversion wiring owns process/UI lifetime.
+    static ENABLED_HOOK: RefCell<Option<EnabledHook>> = const { RefCell::new(None) };
+    /// Opens the Experimental preferences page when first-use assets need work.
+    static SETTINGS_HOOK: RefCell<Option<Rc<dyn Fn()>>> = const { RefCell::new(None) };
 }
 
 /// Registers the worker-wake hook (called once by the conversion wiring).
 pub(in crate::ui) fn set_wake_hook(hook: Rc<dyn Fn()>) {
     WAKE_HOOK.with(|hook_cell| *hook_cell.borrow_mut() = Some(hook));
+}
+
+/// Removes the wake target before a live disable drops its supervisor.
+pub(in crate::ui) fn clear_wake_hook() {
+    WAKE_HOOK.with(|hook_cell| hook_cell.borrow_mut().take());
 }
 
 /// Nudges the worker to re-poll the queue, if one is running. A no-op when the
@@ -122,6 +207,39 @@ pub(in crate::ui) fn wake_worker() {
     }
 }
 
+/// Registers the current window's live master-gate handler.
+fn set_enabled_hook(hook: Rc<dyn Fn(bool)>) {
+    ENABLED_HOOK.with(|hook_cell| *hook_cell.borrow_mut() = Some(hook));
+}
+
+/// Applies a persisted master-gate transition to the running window.
+pub(in crate::ui) fn apply_enabled(enabled: bool) {
+    let hook = ENABLED_HOOK.with(|hook_cell| hook_cell.borrow().clone());
+    if let Some(hook) = hook {
+        hook(enabled);
+    }
+}
+
+/// Drops the current window's live gate handler during teardown.
+fn clear_enabled_hook() {
+    ENABLED_HOOK.with(|hook_cell| hook_cell.borrow_mut().take());
+}
+
+pub(in crate::ui) fn set_settings_hook(hook: Rc<dyn Fn()>) {
+    SETTINGS_HOOK.with(|hook_cell| *hook_cell.borrow_mut() = Some(hook));
+}
+
+pub(in crate::ui) fn open_settings() {
+    let hook = SETTINGS_HOOK.with(|hook_cell| hook_cell.borrow().clone());
+    if let Some(hook) = hook {
+        hook();
+    }
+}
+
+fn clear_settings_hook() {
+    SETTINGS_HOOK.with(|hook_cell| hook_cell.borrow_mut().take());
+}
+
 /// Unix seconds — the clock every facade call (`enqueue`, `promote`, `discard`)
 /// on the UI thread feeds `ai_jobs`/`ai_promotion`.
 pub(in crate::ui) fn now_unix() -> i64 {
@@ -130,111 +248,98 @@ pub(in crate::ui) fn now_unix() -> i64 {
         .map_or(0, |elapsed| elapsed.as_secs() as i64)
 }
 
-/// The production source-path resolver: looks the job's `source_track_id` up
-/// through the core facade [`reprise_core::queries::track_source_path`]. A
-/// missing row (or a query error) resolves to `None`, so the worker fails the
-/// job with a clear `source-unavailable` error rather than rendering from a
-/// bogus path.
-pub(in crate::ui) fn db_source_resolver() -> SourceResolver {
-    Arc::new(
-        |conn: &Connection, source_track_id: i64| -> Option<PathBuf> {
-            match reprise_core::queries::track_source_path(conn, source_track_id) {
-                Ok(path) => path,
-                Err(error) => {
-                    tracing::error!(%error, source_track_id, "instrumental: source path lookup failed");
-                    None
-                }
-            }
-        },
-    )
-}
-
-/// The real stem-separation backend, behind the `stem-backend` feature so the
-/// default build never links reprise-stems.
-#[cfg(feature = "stem-backend")]
-mod stem_backend {
-    use std::cell::RefCell;
-    use std::path::Path;
-
-    use reprise_core::stem_separation::{ProgressPermille, StemError, StemSeparationBackend};
-    use reprise_stems::OrtStemBackend;
-
-    /// The real `OrtStemBackend`, constructed **lazily from a provisioned model
-    /// on first render** — it never downloads inline, so app launch never blocks
-    /// on a 316 MB fetch. Until the model is provisioned, each render fails with
-    /// a clear `StemError::Backend` (the job's normal failure path, and the
-    /// worker's panic/failure guard keeps the thread alive); the feature stays
-    /// usable and a render after the model is downloaded picks it up. A single
-    /// worker thread owns the backend and drives one job at a time, so a
-    /// `RefCell` (Send, not Sync — like `OrtStemBackend` itself) is enough.
-    pub(super) struct LazyOrtBackend {
-        inner: RefCell<Option<OrtStemBackend>>,
-    }
-
-    impl LazyOrtBackend {
-        pub(super) fn new() -> Self {
-            Self {
-                inner: RefCell::new(None),
-            }
-        }
-    }
-
-    impl StemSeparationBackend for LazyOrtBackend {
-        fn separate_instrumental(
-            &self,
-            source: &Path,
-            output: &Path,
-            progress: &mut dyn FnMut(ProgressPermille),
-            cancel: &dyn Fn() -> bool,
-        ) -> Result<(), StemError> {
-            if self.inner.borrow().is_none() {
-                match OrtStemBackend::from_provisioned_default()? {
-                    Some(backend) => *self.inner.borrow_mut() = Some(backend),
-                    None => {
-                        return Err(StemError::Backend(
-                            "the stem-separation model is not provisioned yet; \
-                             download it to enable instrumental rendering"
-                                .to_string(),
-                        ))
-                    }
-                }
-            }
-            let guard = self.inner.borrow();
-            guard
-                .as_ref()
-                .expect("constructed above")
-                .separate_instrumental(source, output, progress, cancel)
-        }
-
-        fn model_id(&self) -> String {
-            reprise_stems::model::HTDEMUCS_FP32.model_id.to_string()
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn db_source_resolver_resolves_a_seeded_track_and_none_for_a_missing_one() {
-        // P3b wiring: the production resolver now returns the real source path
-        // (it used to be a hard-coded None), so the app-hosted worker can render.
-        let conn = reprise_core::db::open(None).unwrap();
+    #[cfg(not(feature = "stem-backend"))]
+    fn user_build_without_stem_backend_exposes_no_model() {
+        assert_eq!(
+            app_model_id(),
+            None,
+            "a user build without a production backend cannot stamp a fake model identity"
+        );
+    }
+
+    #[test]
+    fn live_toggle_hook_observes_every_runtime_transition() {
+        let transitions = Rc::new(RefCell::new(Vec::new()));
+        set_enabled_hook({
+            let transitions = transitions.clone();
+            Rc::new(move |enabled| transitions.borrow_mut().push(enabled))
+        });
+
+        apply_enabled(true);
+        apply_enabled(false);
+
+        assert_eq!(
+            *transitions.borrow(),
+            vec![true, false],
+            "the running window must receive both live feature transitions"
+        );
+        clear_enabled_hook();
+    }
+
+    #[test]
+    fn disabling_clears_the_worker_wake_target() {
+        let wakes = Rc::new(std::cell::Cell::new(0));
+        set_wake_hook({
+            let wakes = wakes.clone();
+            Rc::new(move || wakes.set(wakes.get() + 1))
+        });
+
+        wake_worker();
+        clear_wake_hook();
+        wake_worker();
+
+        assert_eq!(
+            wakes.get(),
+            1,
+            "queued work must not reach a stopped supervisor after live disable"
+        );
+    }
+
+    #[test]
+    fn conversion_drop_filters_missing_tracks_and_reuses_batch_dedup() {
+        let conn = Connection::open_in_memory().unwrap();
         reprise_core::db::migrate(&conn).unwrap();
         conn.execute(
-            "INSERT INTO tracks (id, path, title, artist, added_at, file_mtime, file_size) \
-             VALUES (1, '/music/x.flac', 'X', 'A', 1, 1, 1)",
+            "INSERT INTO tracks (id, path, title, artist, added_at) VALUES
+             (1, '/music/live.flac', 'Live', 'Artist', 0),
+             (2, '/music/missing.flac', 'Missing', 'Artist', 0)",
             [],
         )
         .unwrap();
+        conn.execute(
+            "UPDATE tracks SET missing_since = 1, missing_reason = 'deleted' WHERE id = 2",
+            [],
+        )
+        .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let staging = reprise_core::ai_staging::StagingStore::new(dir.path());
 
-        let resolve = db_source_resolver();
-        assert_eq!(resolve(&conn, 1), Some(PathBuf::from("/music/x.flac")));
+        let first =
+            enqueue_present_tracks_with_model(&conn, &staging, &[1, 2, 1], "model@1", 10).unwrap();
         assert_eq!(
-            resolve(&conn, 999),
-            None,
-            "a missing track resolves to None"
+            first,
+            EnqueueSummary {
+                created: 1,
+                deduplicated: 0,
+                skipped_unavailable: 1,
+            }
+        );
+
+        let second =
+            enqueue_present_tracks_with_model(&conn, &staging, &[1, 2], "model@1", 20).unwrap();
+        assert_eq!(
+            second,
+            EnqueueSummary {
+                created: 0,
+                deduplicated: 1,
+                skipped_unavailable: 1,
+            },
+            "a second drop references the existing job instead of duplicating it"
         );
     }
 }

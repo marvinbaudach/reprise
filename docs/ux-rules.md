@@ -390,10 +390,10 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Relink-Vertrag (2a) und die noch nicht einheitlich gelieferte Karte der
   übrigen Langläufer (2b) gesplittet.
 - **FB-2a** [aktiv] [gtk] — Der Relink-Suchlauf läuft off-thread in der
-  bestehenden, mit Scan/Sync stapelbaren Fortschrittskarte im Sidebar-
-  Bottom-Slot: Spinner + Titel + % rechts (tabular) + 3-px-Balken +
-  ellipsierte Detailzeile. Klick auf die Karte → Missing files; der sichtbare
-  Cancel-Button prüft den Abbruch vor jeder Audiodatei.
+  bestehenden, mit Scan/Sync stapelbaren Fortschrittskarte direkt über dem
+  unten fixierten Issues-Bereich: Spinner + Titel + % rechts (tabular) +
+  3-px-Balken + ellipsierte Detailzeile. Klick auf die Karte → Missing files;
+  der sichtbare Cancel-Button prüft den Abbruch vor jeder Audiodatei.
 - **FB-2b** [geplant] [gtk] — Scan, Sync und Playlist-Import verwenden für
   jeden Lauf > ~1 s denselben vollständigen Kartenvertrag aus FB-2a,
   einschließlich sichtbarem Cancel und Navigation zur zugehörigen Ansicht.
@@ -583,6 +583,14 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Sonderregel** in v1: das Queue-Nachfüllen folgt der sichtbaren Ansicht — bei
   aktivem Filter sind KI-Titel nicht sichtbar und werden nicht nachgefüllt. Nur
   verfügbar, solange der Experimental-Schalter an ist (INST-11). (Beschluss 17)
+- **FIL-8** [aktiv] [core] [gtk] — „Recently added" ist ein eigener
+  Library-Scope über alle gegenwärtig vorhandenen Tracks, deren `added_at`
+  höchstens sieben Tage zurückliegt; es gibt kein 50-Track-Limit. Die Quelle
+  sortiert initial nach `added_at` absteigend und trägt in der Filter-Zeile
+  eine löschbare Scope-Pille nach FIL-1c. Deren × verlässt den Scope über den
+  normalen History-Push und stellt die gemerkte, uneingeschränkte Library
+  wieder her.
+
 ## L. Tag-Editor
 
 - **TAG-1** [aktiv] [gtk] — Save ist navigationsneutral: Speichern ändert
@@ -1166,16 +1174,21 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   denselben Befehl. Sidebar, Liste und Grid sind je **ein** Tab-Stop; Pfeile
   bewegen darin den aktiven Eintrag. Reines Fokussieren/Selektieren löst
   keine Navigation, Wiedergabe oder andere Aktion aus — erst Aktivierung.
-- **ACC-4** [aktiv] [e2e] — Standardtasten gelten überall konsistent:
+- **ACC-4** [ersetzt durch ACC-4a] — Standardtasten gelten überall konsistent;
+  die globale Space-Ausnahme des linken Sidebar-Toggles ist jetzt in ACC-4a
+  explizit.
+- **ACC-4a** [aktiv] [e2e] — Standardtasten gelten überall konsistent:
   Pfeile navigieren räumlich bzw. zeilenweise, Home/End springen in langen
   Collections an Anfang/Ende, Page Up/Down bewegen seitenweise, Enter
   aktiviert den fokussierten Eintrag. Space bleibt in passiven Collections
-  sowie auf einem bereits ausgewählten, passiven View-Tab global Play/Pause,
-  schaltet aber einen fokussierten Button/Toggle mit echter lokaler Aktion und
-  tippt in Textfeldern ein Leerzeichen. Menü-Taste/Shift+F10 öffnet das
-  Kontextmenü, F10 das Primärmenü und Esc schließt den obersten transienten
-  Container. Ein globaler Shortcut darf nie Texteingabe oder die lokale
-  Semantik eines fokussierten Controls stehlen.
+  sowie auf einem bereits ausgewählten, passiven View-Tab global Play/Pause.
+  Dasselbe gilt für den fokussierten linken Sidebar-Toggle; er klappt die
+  Sidebar nur per Pointer oder Enter ein und aus. Andere fokussierte
+  Buttons/Toggles mit echter lokaler Aktion behalten Space, Textfelder tippen
+  ein Leerzeichen. Menü-Taste/Shift+F10 öffnet das Kontextmenü, F10 das
+  Primärmenü und Esc schließt den obersten transienten Container. Ein globaler
+  Shortcut darf nie Texteingabe oder die lokale Semantik eines fokussierten
+  Controls stehlen.
 - **ACC-5** [aktiv] [e2e] — Fokus hat einen nachvollziehbaren Lebenszyklus:
   Start und Navigation setzen ihn in die aktive Zielansicht; Ctrl+F setzt ihn
   ins Suchfeld, dessen Esc-Kaskade gibt ihn an die **aktuelle** Content-View
@@ -2089,6 +2102,13 @@ deterministisch und hoch-konfident, nie „ohne Review".
   fällt Auswahl und Fokus auf die nächste, am Listenende auf die vorherige
   Zeile und bei leerer Liste auf den stabilen Content-Container.
 
+- **BROWSE-9** [aktiv] [gtk] — **Das Aufnahmedatum ist eine normale
+  Library-Spalte.** „Added" ist im Spalteneditor wählbar, verschiebbar,
+  breitenpersistierbar und nach `added_at` sortierbar. Die ISO-formatierte
+  Zeit ist standardmäßig ausgeblendet; bestehende Layouts erhalten die neue
+  Spalte beim Normalisieren ebenfalls ausgeblendet, ohne ihre gespeicherte
+  Reihenfolge oder Sichtbarkeit zu verlieren.
+
 ## AA. Externe Änderungen (Live-Refresh von CLI/MCP)
 
 <!-- Sektionsbuchstabe: A–Z sind auf main bereits vergeben (T doppelt); die
@@ -2237,6 +2257,13 @@ Dateien.
   der „Experimental features"-Schalter an ist** (INST-11) — dieselbe Gatung, die
   auch die Inhaltsseite anlegt, sodass der Eintrag nie eine fehlende Seite
   auswählt. (Plan 2.4/7, Paket F)
+- **INST-14** [geplant] [gtk] — Der Sidebar-Eintrag „Instrumental conversions"
+  ist ein Drop-Ziel für Tracks aus der Library. Eine Mehrfachauswahl wird als
+  ein Batch eingereiht; fehlende oder entfernte Tracks werden übersprungen,
+  bestehende Arbeit wird nach INST-9 referenziert statt dupliziert. Fehlen die
+  verifizierten Modell-/Runtime-Assets, öffnet die Aktion die Experimental-
+  Einstellungen und legt keinen sicher scheiternden Job an.
+  <!-- REVIEW: Regelvorschlag -->
 ## AD. Kompaktmodus / Mini-Player
 
 <!-- Sektionsbuchstabe: Z (Einteiliger Track-Browser) ist die letzte
@@ -2350,6 +2377,11 @@ Dateien.
   Altwert vor der Laufzeitumgebung und dem eingebetteten Build-Wert; leere
   Werte zählen nicht. Bandsintown bleibt als optionale Credential-Zeile
   unabhängig davon verfügbar.
+- **CONC-10** [aktiv] [gtk] — Jede Concerts-Zeile besitzt eine gemeinsame
+  vertikale Mitte. Der Interpret steht als einzeilige Gruppe auf derselben
+  Grundachse wie Datum, Ort, Venue, Distanz und Ticket; eine optionale
+  „similar to …"-Caption erweitert und zentriert die Interpretengruppe als
+  Einheit, statt den Interpreten am oberen Zeilenrand festzuhalten.
 
 ## AF. Podcasts & Radio
 
@@ -2412,6 +2444,12 @@ Hörstatistik.
 - **POD-5** [aktiv] [gtk] — Downloads sind pro Abo opt-in, liegen im
   XDG-Datenpfad der App unter einem GUID-stabilen Pfad, folgen der gewählten
   Cleanup-Policy und werden offline bevorzugt lokal abgespielt.
+- **POD-6** [aktiv] [core] [gtk] — Einzelne RSS- und YouTube-Episoden lassen
+  sich im Kontextmenü entfernen, verschwinden sofort und bleiben zehn Sekunden
+  per Undo reversibel. Der Commit löscht nur den Datenbankeintrag und sperrt
+  seine quellstabile GUID dauerhaft gegen erneuten Feed-Import; eine
+  heruntergeladene Datei bleibt erhalten und kann ausschließlich über die
+  angebotene Papierkorb-Aktion entfernt werden.
 - **RAD-1** [aktiv] [gtk] — Nur die aktuell verbundene Station ist in der
   Tabelle akzentuiert; ihr Zustandsicon, Name, Now-playing und Zeilentint
   wechseln gemeinsam. Alle anderen sowie eine präsentierte, aber getrennte

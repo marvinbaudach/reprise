@@ -756,7 +756,8 @@ fn list_smart_recently_added_seed() {
     assert_eq!(recently_added.rules_json, "[]");
     assert_eq!(recently_added.sort_field, "added_at");
     assert_eq!(recently_added.sort_dir, "desc");
-    assert_eq!(recently_added.limit_count, Some(50));
+    assert_eq!(recently_added.role.as_deref(), Some(RECENTLY_ADDED_ROLE));
+    assert_eq!(recently_added.limit_count, None);
 }
 
 #[test]

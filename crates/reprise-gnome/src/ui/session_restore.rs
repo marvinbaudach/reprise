@@ -208,6 +208,7 @@ fn geometry_for_save(
 fn apply_view_snapshot(state: &mut SessionState, view: TrackViewSnapshot) {
     state.source = match view.source {
         ViewSource::Library => SessionSource::Library,
+        ViewSource::RecentlyAdded => SessionSource::RecentlyAdded,
         ViewSource::Playlist(id) => SessionSource::Playlist(id),
         ViewSource::Smart(id) => SessionSource::Smart(id),
         ViewSource::Queue => SessionSource::Queue,

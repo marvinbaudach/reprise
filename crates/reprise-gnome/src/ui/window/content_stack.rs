@@ -2,8 +2,7 @@
 
 pub(super) fn build() -> gtk4::Stack {
     let stack = gtk4::Stack::new();
-    stack.set_hhomogeneous(false);
-    stack.set_vhomogeneous(false);
+    super::library_player_bar::configure_content_stack(&stack);
     stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
     stack.set_transition_duration(crate::ui::motion::STANDARD_MS);
     stack

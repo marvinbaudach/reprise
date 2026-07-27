@@ -23,16 +23,24 @@ const ACTION: &str = "create-instrumental";
 /// testable without a display.
 pub(in crate::ui) fn create_instrumental_visible(
     instrumental_enabled: bool,
+    production_backend_available: bool,
     selection: &SelectionSummary,
 ) -> bool {
-    instrumental_enabled && selection.count > 0 && !selection.all_missing
+    instrumental_enabled
+        && production_backend_available
+        && selection.count > 0
+        && !selection.all_missing
 }
 
 /// Appends the "Create instrumental" section to the context menu when the gate
 /// permits it.
 pub(super) fn append_section(menu: &gio::Menu, shared: &Rc<Shared>, summary: &SelectionSummary) {
     let instrumental_enabled = crate::ui::instrumental::experimental_enabled(&shared.conn.borrow());
-    if !create_instrumental_visible(instrumental_enabled, summary) {
+    if !create_instrumental_visible(
+        instrumental_enabled,
+        crate::ui::instrumental::production_backend_compiled(),
+        summary,
+    ) {
         return;
     }
     let section = gio::Menu::new();
@@ -64,43 +72,29 @@ fn handle(shared: &Rc<Shared>) {
         tracing::debug!("context menu: create-instrumental with no present selection; ignoring");
         return;
     }
-    let staging = reprise_core::ai_staging::StagingStore::with_default_dir();
-    let model_id = crate::ui::instrumental::app_model_id();
-    let now = crate::ui::instrumental::now_unix();
     let outcome = {
         let conn = shared.conn.borrow();
-        // `auto_promote = false`: the context-menu/drop path stages every render
-        // for a manual save decision and never auto-promotes (decision 15; see
-        // `ai_jobs::enqueue_instrumental`). Only the MCP/CLI batch path saves by
-        // default.
-        reprise_core::ai_conversion::add_batch_to_conversion(
-            &conn, &staging, &ids, &model_id, false, now,
-        )
+        crate::ui::instrumental::enqueue_present_tracks(&conn, &ids)
     };
     match outcome {
-        Ok(batch) => {
+        Ok(summary) if summary.accepted() > 0 => {
             crate::ui::instrumental::wake_worker();
-            let created = batch
-                .jobs
-                .iter()
-                .filter(|outcome| {
-                    matches!(
-                        outcome,
-                        reprise_core::ai_jobs::EnqueueOutcome::Created { .. }
-                    )
-                })
-                .count();
-            let deduped = batch.jobs.len() - created;
             tracing::info!(
-                created,
-                deduped,
+                created = summary.created,
+                deduplicated = summary.deduplicated,
+                skipped_unavailable = summary.skipped_unavailable,
                 "context menu: instrumental conversions queued"
             );
             show_toast(
                 shared,
-                &strings::create_instrumental_toast(created, deduped),
+                &strings::create_instrumental_toast(summary.created, summary.deduplicated),
             );
         }
+        Ok(_) => {}
+        Err(
+            crate::ui::instrumental::EnqueueError::ModelRequired
+            | crate::ui::instrumental::EnqueueError::RuntimeUnavailable(_),
+        ) => crate::ui::instrumental::open_settings(),
         Err(error) => {
             tracing::error!(%error, "context menu: create instrumental failed");
             show_toast(shared, &strings::create_instrumental_failed_toast());
@@ -129,25 +123,29 @@ mod tests {
     fn inst_1_create_instrumental_visible_iff_experimental_and_present_selection() {
         let present = selection(2);
         assert!(
-            create_instrumental_visible(true, &present),
+            create_instrumental_visible(true, true, &present),
             "shown for a present selection when experimental is on"
         );
         assert!(
-            !create_instrumental_visible(false, &present),
+            !create_instrumental_visible(false, true, &present),
             "hidden while the experimental switch is off (INST-11)"
+        );
+        assert!(
+            !create_instrumental_visible(true, false, &present),
+            "a user build without a production backend never offers a fake conversion"
         );
         let all_missing = SelectionSummary {
             all_missing: true,
             ..present
         };
         assert!(
-            !create_instrumental_visible(true, &all_missing),
+            !create_instrumental_visible(true, true, &all_missing),
             "a missing file cannot be separated"
         );
         let empty = SelectionSummary {
             count: 0,
             ..present
         };
-        assert!(!create_instrumental_visible(true, &empty));
+        assert!(!create_instrumental_visible(true, true, &empty));
     }
 }

@@ -8,6 +8,7 @@ mod sidebar_navigation_scroller;
 pub(in crate::ui) mod sidebar_playlist_creation;
 pub(in crate::ui) mod sidebar_presentation;
 pub(in crate::ui) mod sidebar_rebuild;
+mod sidebar_root;
 mod sidebar_row_wiring;
 pub(crate) mod sidebar_session;
 #[path = "sidebar.rs"]

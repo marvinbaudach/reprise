@@ -65,13 +65,24 @@ struct Preview {
 
 type OnAdded = Rc<dyn Fn(bool)>;
 
-pub(super) fn present(
-    parent: &impl IsA<gtk4::Widget>,
-    conn: &Rc<RefCell<Connection>>,
-    on_added: impl Fn(bool) + 'static,
-) {
-    let conn = conn.clone();
-    let on_added: OnAdded = Rc::new(on_added);
+struct AddDialogSurface {
+    dialog: adw::Dialog,
+    entry: gtk4::SearchEntry,
+    status: gtk4::Label,
+    results: gtk4::Box,
+    cancel: gtk4::Button,
+    primary: gtk4::Button,
+}
+
+fn primary_action(input: &str) -> (&'static str, bool) {
+    match classify_input(input) {
+        AddInput::Empty => (strings::PODCAST_SEARCH, false),
+        AddInput::Search(_) => (strings::PODCAST_SEARCH, true),
+        AddInput::YoutubeUrl(_) | AddInput::FeedUrl(_) => (strings::PODCAST_PREVIEW, true),
+    }
+}
+
+fn build_surface() -> AddDialogSurface {
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
     content.set_margin_top(18);
     content.set_margin_bottom(18);
@@ -93,6 +104,23 @@ pub(super) fn present(
         .build();
     content.append(&scroller);
 
+    let cancel = gtk4::Button::with_label(&strings::text(strings::PODCAST_CANCEL));
+    let primary = gtk4::Button::with_label(&strings::text(strings::PODCAST_SEARCH));
+    primary.add_css_class("suggested-action");
+    primary.set_sensitive(false);
+    let footer = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    footer.set_halign(gtk4::Align::End);
+    footer.append(&cancel);
+    footer.append(&primary);
+    content.append(&footer);
+
+    let primary_for_entry = primary.clone();
+    entry.connect_changed(move |entry| {
+        let (label, sensitive) = primary_action(&entry.text());
+        primary_for_entry.set_label(&strings::text(label));
+        primary_for_entry.set_sensitive(sensitive);
+    });
+
     let header = adw::HeaderBar::new();
     header.set_title_widget(Some(&adw::WindowTitle::new(
         &strings::text(strings::PODCAST_DIALOG_TITLE),
@@ -107,9 +135,33 @@ pub(super) fn present(
         .content_height(560)
         .child(&toolbar)
         .build();
+
+    AddDialogSurface {
+        dialog,
+        entry,
+        status,
+        results,
+        cancel,
+        primary,
+    }
+}
+
+pub(super) fn present(
+    parent: &impl IsA<gtk4::Widget>,
+    conn: &Rc<RefCell<Connection>>,
+    on_added: impl Fn(bool) + 'static,
+) {
+    let conn = conn.clone();
+    let on_added: OnAdded = Rc::new(on_added);
+    let surface = build_surface();
+    let dialog = surface.dialog;
+    let entry = surface.entry;
+    let status = surface.status;
+    let results = surface.results;
+    let cancel = surface.cancel;
+    let primary = surface.primary;
     let generation = Rc::new(Cell::new(0_u64));
-    let weak_dialog = dialog.downgrade();
-    let submit = {
+    let submit: Rc<dyn Fn(String)> = Rc::new({
         let conn = conn.clone();
         let results = results.clone();
         let status = status.clone();
@@ -161,11 +213,24 @@ pub(super) fn present(
                 }
             }
         }
-    };
-    entry.connect_activate(move |entry| submit(entry.text().to_string()));
-    if weak_dialog.upgrade().is_some() {
-        dialog.present(Some(parent));
-    }
+    });
+    let submit_on_activate = submit.clone();
+    entry.connect_activate(move |entry| submit_on_activate(entry.text().to_string()));
+    let submit_on_click = submit.clone();
+    let entry_for_click = entry.downgrade();
+    primary.connect_clicked(move |_| {
+        if let Some(entry) = entry_for_click.upgrade() {
+            submit_on_click(entry.text().to_string());
+        }
+    });
+    let dialog_for_cancel = dialog.downgrade();
+    cancel.connect_clicked(move |_| {
+        if let Some(dialog) = dialog_for_cancel.upgrade() {
+            dialog.close();
+        }
+    });
+    dialog.present(Some(parent));
+    entry.grab_focus();
 }
 
 fn search(
@@ -543,6 +608,25 @@ mod tests {
             classify_input("https://youtube.com/@show"),
             AddInput::YoutubeUrl(_)
         ));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn src_3_add_dialog_has_fixed_cancel_and_primary_actions() {
+        gtk4::init().unwrap();
+        let surface = build_surface();
+        let cancel = strings::text(strings::PODCAST_CANCEL);
+        let search = strings::text(strings::PODCAST_SEARCH);
+        let preview = strings::text(strings::PODCAST_PREVIEW);
+
+        assert_eq!(surface.cancel.label().as_deref(), Some(cancel.as_str()));
+        assert_eq!(surface.primary.label().as_deref(), Some(search.as_str()));
+        assert!(surface.primary.has_css_class("suggested-action"));
+        assert!(!surface.primary.is_sensitive());
+
+        surface.entry.set_text("https://example.test/feed.xml");
+        assert_eq!(surface.primary.label().as_deref(), Some(preview.as_str()));
+        assert!(surface.primary.is_sensitive());
     }
 
     #[test]

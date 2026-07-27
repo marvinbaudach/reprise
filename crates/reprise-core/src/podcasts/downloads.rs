@@ -230,7 +230,8 @@ mod tests {
             },
             number,
         )
-        .unwrap();
+        .unwrap()
+        .expect("episode should be imported");
         let path = download_path(root, "https://example.test/feed", &guid, "mp3");
         prepare_destination(&path).unwrap();
         std::fs::write(&path, [0_u8; 4]).unwrap();

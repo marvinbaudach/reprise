@@ -68,6 +68,21 @@ CREATE TABLE IF NOT EXISTS podcast_subscription_baselines (
 );
 "#;
 
+const SCHEMA_V34: &str = r#"
+CREATE TABLE IF NOT EXISTS podcast_episode_dismissals (
+  subscription_id INTEGER NOT NULL
+                  REFERENCES podcast_subscriptions(id) ON DELETE CASCADE,
+  guid            TEXT NOT NULL,
+  removed_at      INTEGER NOT NULL,
+  PRIMARY KEY(subscription_id, guid)
+);
+
+DROP INDEX IF EXISTS idx_podcast_episodes_unplayed;
+CREATE INDEX idx_podcast_episodes_unplayed
+  ON podcast_episodes(played_at)
+  WHERE played_at IS NULL AND removed_at IS NULL;
+"#;
+
 pub(crate) fn migrate_v32(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version >= 32 {
@@ -87,6 +102,38 @@ pub(crate) fn migrate_v33(conn: &Connection) -> Result<(), rusqlite::Error> {
     let transaction = conn.unchecked_transaction()?;
     transaction.execute_batch(SCHEMA_V33)?;
     transaction.pragma_update(None, "user_version", 33)?;
+    transaction.commit()
+}
+
+pub(crate) fn migrate_v34(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    let has_removed_at = {
+        let mut statement = conn.prepare("PRAGMA table_info(podcast_episodes)")?;
+        let columns = statement
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<Result<Vec<_>, _>>()?;
+        columns.into_iter().any(|column| column == "removed_at")
+    };
+    let has_dismissals: bool = conn.query_row(
+        "SELECT EXISTS(
+           SELECT 1 FROM sqlite_schema
+           WHERE type = 'table' AND name = 'podcast_episode_dismissals'
+         )",
+        [],
+        |row| row.get(0),
+    )?;
+    if version >= 34 && has_removed_at && has_dismissals {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    if !has_removed_at {
+        transaction.execute(
+            "ALTER TABLE podcast_episodes ADD COLUMN removed_at INTEGER",
+            [],
+        )?;
+    }
+    transaction.execute_batch(SCHEMA_V34)?;
+    transaction.pragma_update(None, "user_version", version.max(34))?;
     transaction.commit()
 }
 

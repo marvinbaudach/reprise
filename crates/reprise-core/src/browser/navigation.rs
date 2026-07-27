@@ -14,6 +14,7 @@ pub const MAX_HISTORY: usize = 50;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SidebarTarget {
     Music,
+    RecentlyAdded,
     Queue,
     Playlist(i64),
     Smart(i64),
@@ -198,6 +199,9 @@ impl BrowserNavigation {
     fn sidebar_place(&self, target: SidebarTarget) -> BrowserPlace {
         match target {
             SidebarTarget::Music => self.library_root.clone(),
+            SidebarTarget::RecentlyAdded => {
+                fresh_tracks(TrackCollection::Library(LibraryScope::RecentlyAdded))
+            }
             SidebarTarget::Queue => fresh_tracks(TrackCollection::Queue),
             SidebarTarget::Playlist(id) if id > 0 => fresh_tracks(TrackCollection::Playlist(id)),
             SidebarTarget::Smart(id) if id > 0 => fresh_tracks(TrackCollection::Smart(id)),
