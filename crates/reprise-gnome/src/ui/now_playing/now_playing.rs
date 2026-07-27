@@ -376,6 +376,14 @@ impl NowPlayingPanel {
     }
 
     pub(in crate::ui) fn apply_persisted_visibility(&self, visible: bool) {
+        self.set_transient_visibility(visible);
+    }
+
+    pub(in crate::ui) fn is_panel_visible(&self) -> bool {
+        self.widgets.column.is_visible()
+    }
+
+    pub(in crate::ui) fn set_transient_visibility(&self, visible: bool) {
         self.syncing_visibility.set(true);
         self.widgets.column.set_visible(visible);
         self.toggle.set_active(visible);

@@ -112,6 +112,8 @@ pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX_DESCRIPTION: &str =
 pub const COLUMN_LAYOUT: &str = N_!("Column layout");
 pub const COLUMNS_FOLDED: &str = N_!("Some columns were folded to fit the window");
 pub const SHOW_COLUMNS: &str = N_!("Show columns");
+pub const SIDE_PANELS_CLOSED: &str = N_!("Side panels were closed to fit the window");
+pub const UNDO: &str = N_!("Undo");
 
 #[path = "strings_rhythmbox.rs"]
 mod rhythmbox;
