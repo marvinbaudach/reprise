@@ -1724,54 +1724,43 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
   Tick-Callback. Das ist die in MOT-2 erlaubte, audiofunktionale Ausnahme für
   Dauerbewegung.
 - **AC-19** [ersetzt durch AC-20]
-- **AC-20** [aktiv] [core] [gtk] — „Song Visuals" ist ein standardmäßig
-  ausgeschaltetes, live anwendbares Plugin. Eingeschaltet visualisiert der
-  dritte Panel-Tab „Visual" ausschließlich lokal berechnete, aus 256 FFT-Bins
-  auf 64 logarithmische Anzeigebänder gefaltete und auf den Bereich 0–1
-  begrenzte Spektraldaten als „Bars": zwanzig fein segmentierte,
-  frequenzabhängige Säulen, die auf den lokalen Beat-Impuls und anhaltenden,
-  bassdominanten Energiedruck reagieren.
-  Track- und Album-ReplayGain normalisieren erst hinter dem Analyzer die
-  hörbare Ausgabe; dieselbe musikalische Energie erzeugt deshalb unabhängig
-  vom gespeicherten Gain-Wert denselben visuellen Ausschlag.
-  Eine Modusauswahl und „Grid" existieren nicht.
-  Das reine Frequenzbild reserviert das obere Drittel der Säulen für echte
-  Beat- und Breakdown-Energie. Anhaltender Druck darf diesen Höhenraum nur
-  nutzen, wenn Basspräsenz, Gesamtenergie und der Bassvorsprung gegenüber der
-  Gesamtenergie gleichzeitig hoch sind; ein gewöhnliches komprimiertes
-  Metal-Bett bleibt darunter.
-  Neue Bars-Segmente blenden nahe vollständig transparent ein, starke Impulse
-  nutzen nur den verbleibenden Höhenraum statt Säulen hart zu sättigen, und
-  steigen im ersten 60-Hz-Schritt höchstens um drei volle Segmente. Beim
-  Abklingen fällt keine Säule um mehr als ein volles Segment pro Schritt.
-  Unter Renderlast gelten aufeinanderfolgende Spektren als „latest wins";
-  ein unmittelbar übersprungener Beat-Impuls bleibt gedämpft erhalten, ohne
-  veraltete Spektren nachzuspielen. Fullscreen begrenzt dafür nur die interne
-  Szenen-Rasterfläche und skaliert sie auf die unveränderte Canvas-Größe.
-  Die Impulsgröße folgt der linearen Amplitude der 256 Roh-Bins, nicht dem
-  Max-Pooling, einem logarithmischen dB-Sprung oder nur der relativen adaptiven
-  Schwelle: große Schläge müssen schwache Transienten sichtbar überragen, auch
-  wenn der schwache Schlag aus nahezu Stille kommt. Ein Volltreffer hebt den
-  Säulendurchschnitt um mehr als 0,36 und mindestens 75 Prozent stärker als
-  derselbe moderate Rhythmus. Der aus „WAKE UP" erfasste große Bass-Schlag hebt
-  ihn um mehr als 0,45 und mindestens 150 Prozent stärker als der erfasste
-  leichte Rhythmus. Eine vollständige, schneller als Echtzeit laufende
-  Korpusanalyse durchläuft dafür denselben Analyzer und dieselbe Scene-Engine
-  wie die Anwendung. Bei „WAKE UP" bleibt das Fenster 11,5–13,0 Sekunden bei
-  etwa 24 Prozent mittlerer Säulenhöhe; in den Fenstern 15,5–17,5 und
-  35,0–37,5 Sekunden steigen die mittleren Spitzen auf etwa 80 bzw. 82 Prozent
-  und die höchste Säule auf etwa 88 Prozent. In der leiseren Hälfte des Songs
-  liegen weniger als ein Prozent der Frames fälschlich über 75 Prozent. Für
-  „To the Hellfire" und „Sun//Eater" bleibt diese Rate trotz durchgehend
-  komprimiertem Metal unter sieben Prozent. Die beste gemessene zeitliche
-  Zuordnung zwischen Rohbass und sichtbarer Antwort liegt im Korpus bei
-  höchstens 32 Millisekunden.
-  Bei knapper Panelhöhe bleibt der Visual-Inhalt unter dem Tab-Switcher und
-  scrollt innerhalb seines Tabs, statt den Switcher zu überlagern. Flow, Pulse
-  und weitere Modi existieren nicht. Der beschriftete Canvas übernimmt den
-  aktuellen Cover-Akzent über denselben globalen Ambient-Crossfade wie die
-  Playerleiste; nur ohne brauchbare Coverfarbe gilt der Theme-Akzent.
-
+- **AC-20** [ersetzt durch AC-21]
+- **AC-21** [ersetzt durch AC-22]
+- **AC-22** [aktiv] [core] [gtk] — „Song Visuals" ist ein standardmäßig
+  ausgeschaltetes, live anwendbares Plugin. Eingeschaltet zweigt die
+  Linux-Pipeline vor ReplayGain lokal normalisiertes Mono-PCM ab; CAVA-Mathematik
+  erzeugt daraus 64 logarithmische, auf 0–1 begrenzte Anzeigebänder. Der
+  portable Core verwendet CAVAs doppelte FFT-Auflösung unter 100 Hz,
+  quantisierte Cutoff-Frequenzen und festen Frequenz-EQ sowie Noise-Floor-Gate,
+  Auto-Sensitivität, Integral und Gravity. Digitale Stille erhöht die
+  Sensitivität nicht; nicht-endliche Eingaben und Ausgaben werden neutralisiert,
+  und alle internen Rückkopplungen bleiben begrenzt.
+  Die Scene-Engine übernimmt jedes CAVA-Band im selben Frame ohne zweite
+  Lautstärkeabbildung, Normalisierung oder Live-Hüllkurve. Sie zeichnet
+  64 frequenzabhängige, fein segmentierte Neon-Säulen eins zu eins, mit dem
+  bestehenden Cyan-zu-Magenta-Verlauf, Reflexionen, Glühen und langsam
+  sinkenden Peak-Kappen. Unter Renderlast gilt strikt „latest wins"; alte
+  Impulse werden nicht in neuere CAVA-Frames übertragen. Pause und Stop dürfen
+  ausschließlich für das nach AC-11 geforderte statische Ausklingen eine
+  visuelle Absenkung anwenden.
+  Unabhängig von den Balkenhöhen steuert die quadratische Energie der zwölf
+  tiefsten CAVA-Bänder eine reine Darstellungsschicht: kräftiger Bass zündet
+  sofort zwei breite Neon-Glows hinter den Säulen, die nach dem Impuls weich
+  ausklingen. Ein extremer, breit anliegender Breakdown-Bass ergänzt
+  nichtlinear zwei hellere innere Auren; ausschließlich hohe Frequenzenergie
+  löst den Effekt nicht aus. Diese Bass-Aura verändert weder CAVA-Werte noch
+  Peak-Kappen oder Balkenhöhen. Bei ausgeschalteten Animationen springt sie
+  ohne Nachlauf auf den statischen Wert des aktuellen Frames.
+  Track- und Album-ReplayGain normalisieren erst hinter dem PCM-Abzweig die
+  hörbare Ausgabe; dieselbe Eingangswellenform erzeugt deshalb unabhängig vom
+  gespeicherten Gain-Wert denselben visuellen Ausschlag. Eine Modusauswahl und
+  „Grid" existieren nicht. Fullscreen begrenzt nur die interne
+  Szenen-Rasterfläche und skaliert sie auf die unveränderte Canvas-Größe. Bei
+  knapper Panelhöhe bleibt der Visual-Inhalt unter dem Tab-Switcher und scrollt
+  innerhalb seines Tabs, statt den Switcher zu überlagern. Der beschriftete
+  Canvas übernimmt den aktuellen Cover-Akzent über denselben globalen
+  Ambient-Crossfade wie die Playerleiste; nur ohne brauchbare Coverfarbe gilt
+  der Theme-Akzent.
 
 ## Y. Library Doctor / Tag Cleanup
 

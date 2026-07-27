@@ -65,6 +65,15 @@ permissive (`flacenc` Apache-2.0; `rubato`, `ndarray`, `ort` itself MIT or
 Apache-2.0), so they raise no additional copyleft; the `ort`/htdemucs runtime and
 weights are cleared separately in the stem-separation section below.
 
+## Third-party DSP note — CAVA (MIT)
+
+`reprise-core` contains an idiomatic Rust port of the frequency-band planning
+and temporal signal-processing formulas from CAVA's `cavacore`. CAVA is
+MIT-licensed and compatible with Reprise's portable engine. Reprise does not
+copy CAVA's FFTW integration, audio backends, threading, or renderers. The
+upstream copyright and permission notice is preserved in
+[`LICENSES/CAVA-MIT.txt`](LICENSES/CAVA-MIT.txt).
+
 ## Ownership / contributions
 Marvin Baudach is the sole copyright holder and may relicense his own code. **Before accepting
 external contributions, add a CLA or DCO** so the relicensing option (and the proprietary ports)

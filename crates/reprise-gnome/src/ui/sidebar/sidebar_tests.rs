@@ -1,3 +1,4 @@
+use super::super::sidebar_boundary_navigation::{first_issue_row, last_main_row};
 use super::*;
 
 /// Builds a bare `Shared` over a fresh in-memory database — enough for
