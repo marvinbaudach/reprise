@@ -30,21 +30,40 @@ pub(in crate::ui) const DEVICE_ID: &str = "reprise-smoke-device";
 pub(in crate::ui) const DEVICE_NAME: &str = "Simulated MTP Phone";
 
 pub(in crate::ui) struct SimulatedMtpDeviceBackend {
-    descriptor: DeviceDescriptor,
+    descriptors: Vec<DeviceDescriptor>,
 }
 
 impl SimulatedMtpDeviceBackend {
     pub(in crate::ui) fn for_root(root: &Path) -> Option<Self> {
-        let root = safe_smoke_root(root)?;
-        Some(Self {
-            descriptor: DeviceDescriptor {
-                id: DEVICE_ID.into(),
-                name: DEVICE_NAME.into(),
+        Self::for_devices(vec![(
+            DEVICE_ID.into(),
+            DEVICE_NAME.into(),
+            root.to_path_buf(),
+        )])
+    }
+
+    pub(in crate::ui) fn for_devices(devices: Vec<(String, String, PathBuf)>) -> Option<Self> {
+        let mut ids = std::collections::HashSet::new();
+        let mut roots = std::collections::HashSet::new();
+        let mut descriptors = Vec::with_capacity(devices.len());
+        for (id, name, root) in devices {
+            let root = safe_smoke_root(&root)?;
+            if id.trim().is_empty()
+                || name.trim().is_empty()
+                || !ids.insert(id.clone())
+                || !roots.insert(root.clone())
+            {
+                return None;
+            }
+            descriptors.push(DeviceDescriptor {
+                id,
+                name,
                 root_uri: gio::File::for_path(root).uri().into(),
                 icon: gio::ThemedIcon::new("phone-symbolic").upcast(),
                 reconnectable: true,
-            },
-        })
+            });
+        }
+        (!descriptors.is_empty()).then_some(Self { descriptors })
     }
 
     fn storage(root_uri: &str) -> DeviceStorage {
@@ -54,7 +73,7 @@ impl SimulatedMtpDeviceBackend {
 
 impl DeviceBackend for SimulatedMtpDeviceBackend {
     fn devices(&self) -> Vec<DeviceDescriptor> {
-        vec![self.descriptor.clone()]
+        self.descriptors.clone()
     }
 
     fn subscribe_devices(&self, _callback: Rc<dyn Fn(Vec<DeviceDescriptor>)>) {}
@@ -290,5 +309,37 @@ mod tests {
         assert_eq!(devices[0].name, "Simulated MTP Phone");
         assert!(devices[0].reconnectable);
         assert_eq!(devices[0].root_uri, gio::File::for_path(root.path()).uri());
+    }
+
+    #[test]
+    fn simulator_projects_multiple_independent_mtp_phones() {
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        let backend = SimulatedMtpDeviceBackend::for_devices(vec![
+            (
+                "simulated-phone-a".into(),
+                "Simulated Phone A".into(),
+                first.path().to_path_buf(),
+            ),
+            (
+                "simulated-phone-b".into(),
+                "Simulated Phone B".into(),
+                second.path().to_path_buf(),
+            ),
+        ])
+        .unwrap();
+
+        let devices = backend.devices();
+        assert_eq!(
+            devices
+                .iter()
+                .map(|device| (device.id.as_str(), device.name.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                ("simulated-phone-a", "Simulated Phone A"),
+                ("simulated-phone-b", "Simulated Phone B"),
+            ]
+        );
+        assert_ne!(devices[0].root_uri, devices[1].root_uri);
     }
 }
