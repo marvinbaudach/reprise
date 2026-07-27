@@ -5,6 +5,7 @@ pub mod downloads;
 pub mod feed;
 pub mod http;
 pub mod itunes;
+pub mod phone_sync;
 pub mod pipeline;
 pub mod query;
 pub mod refresh;
@@ -40,6 +41,7 @@ pub struct SubscriptionRow {
     pub last_fetch_at: Option<i64>,
     pub last_outcome: Option<String>,
     pub auto_download: bool,
+    pub sync_to_phone: bool,
     pub added_at: i64,
     pub removed_at: Option<i64>,
 }
@@ -58,6 +60,7 @@ pub struct EpisodeRow {
     pub published_at: Option<i64>,
     pub duration_secs: Option<i64>,
     pub downloaded_path: Option<String>,
+    pub downloaded_bytes: Option<i64>,
     pub played_at: Option<i64>,
     pub position_ms: i64,
     pub first_seen_at: i64,

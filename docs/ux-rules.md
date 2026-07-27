@@ -2452,6 +2452,12 @@ Hörstatistik.
   Unsubscribe nie still gelöscht: der Commit-Toast meldet behaltene Dateien
   und bietet ausschließlich Verschieben in den Papierkorb an; mehrere
   Unsubscribes werden aggregiert.
+- **SRC-5** [geplant] [gtk] — RSS-Podcasts und YouTube sind getrennte
+  Library-Orte. Beide beginnen mit kanal- bzw. showgruppierten Quellzeilen,
+  die ihre Episoden aufklappen; Radio bleibt eine Senderliste. Die
+  Hinzufügen-Dialoge zeigen echte Quellbilder, gruppieren YouTube-Treffer
+  kanalweise und blenden bereits abonnierte Podcasts, Kanäle und Sender aus.
+  <!-- REVIEW: Regelvorschlag -->
 - **POD-1** [aktiv] [core] — Episodenstatus ist pure Ableitung: Played
   genau bei gesetztem `played_at`, sonst Resume bei `position_ms > 0`, sonst
   New. Ein Episodenende setzt Played und löscht die Position. Die Tabelle
@@ -2484,6 +2490,18 @@ Hörstatistik.
   seine quellstabile GUID dauerhaft gegen erneuten Feed-Import; eine
   heruntergeladene Datei bleibt erhalten und kann ausschließlich über die
   angebotene Papierkorb-Aktion entfernt werden.
+- **POD-7** [geplant] [core] [gtk] — Der Downloadzustand einer Episode ist
+  im Zeilenkontext sichtbar: nicht geladen, laufend mit Bytes und
+  Fortschrittsbalken, lokal mit Dateigröße, fehlgeschlagen oder lokal
+  verschwunden. Fortschritt bleibt transient; abgeschlossene Pfade und
+  Größen werden gemeinsam persistiert und gemeinsam gelöscht.
+  <!-- REVIEW: Regelvorschlag -->
+- **POD-8** [geplant] [core] [gtk] — Nur heruntergeladene Episoden aus
+  explizit ausgewählten RSS-Abos sind für Android-Sync geeignet. Sie landen
+  unter `Podcasts/Reprise/<Show>/`; YouTube-Quellen werden unabhängig von
+  ihrem Downloadzustand nie auf ein Gerät synchronisiert. Musik-Playlisten
+  bleiben unverändert unter `Music/Reprise`.
+  <!-- REVIEW: Regelvorschlag -->
 - **RAD-1** [aktiv] [gtk] — Nur die aktuell verbundene Station ist in der
   Tabelle akzentuiert; ihr Zustandsicon, Name, Now-playing und Zeilentint
   wechseln gemeinsam. Alle anderen sowie eine präsentierte, aber getrennte

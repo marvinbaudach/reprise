@@ -234,7 +234,16 @@ pub fn refresh_to_root(
                     });
                 match download {
                     Ok(()) if destination.is_file() => {
-                        super::store::set_downloaded_path(conn, episode_id, destination.to_str())?;
+                        let bytes = std::fs::metadata(&destination)
+                            .map_err(super::downloads::CleanupError::from)?
+                            .len()
+                            .min(i64::MAX as u64) as i64;
+                        super::store::set_downloaded_file(
+                            conn,
+                            episode_id,
+                            destination.to_str(),
+                            Some(bytes),
+                        )?;
                         summary.downloads_completed += 1;
                     }
                     Ok(()) => {
@@ -287,7 +296,11 @@ fn reclaim_download(
         super::downloads::reclaim_existing(download_root, &subscription.feed_url, &episode.guid)
             .map_err(super::downloads::CleanupError::from)?
     {
-        super::store::set_downloaded_path(conn, episode_id, path.to_str())?;
+        let bytes = std::fs::metadata(&path)
+            .map_err(super::downloads::CleanupError::from)?
+            .len()
+            .min(i64::MAX as u64) as i64;
+        super::store::set_downloaded_file(conn, episode_id, path.to_str(), Some(bytes))?;
     }
     Ok(())
 }

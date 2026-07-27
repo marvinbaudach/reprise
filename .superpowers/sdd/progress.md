@@ -165,3 +165,9 @@ Assumption COV-1: album identity remains the existing normalized file-tag pair o
 Manual COV-1: real Cover Art Archive retrieval and the visible post-restart convergence remain a native-desktop/network check because validation used synthetic FLACs, isolated XDG state, and no real library or database.
 Badge/filter follow-up: complete (commit fb16b8bc73, base 492ea733f6, PR #85 merged into remote dev as 348c419351; anchored the compact Updates badge and refreshed its scope through persisted Concerts filter changes; local gates passed, while GitHub Actions contained no steps and returned BlobNotFound for its log archive)
 QA/dev integration: complete (this merge commit, base 393e2822d4, retained Standard-duration non-overlapping Music/Podcasts motion, pre-dialog metadata anchors, rating-only in-place refresh, and the bottom-pinned Issues/progress replacement while integrating current dev; stabilized FIL-9 centering across GTK's delayed post-reload scroll by refining the target through settled frames; format, strict clippy, rustdoc, full host-isolated workspace tests, 161 rule-named display tests, 26 motion display tests, 11 CSS display tests, core purity, architecture, accessibility, input, motion, UX traceability, QA linters, file-size checks, and audit with only accepted RUSTSEC-2024-0436 passed; the operator visually accepted the QA behaviors before publication)
+
+# Podcast, YouTube, and Radio channel redesign
+
+Base: `144672eaef`
+
+Task PCR-1: complete (this commit, base 144672eaef, added schema-v36 download byte metadata and an RSS-only per-subscription phone-sync opt-in that is cleared defensively for YouTube sources; finished and reclaimed downloads persist their actual size while paths and sizes clear atomically; format, strict clippy, full workspace tests, cached audit with only accepted RUSTSEC-2024-0436, core purity, architecture, UX traceability, diff purity, and file-size checks passed)

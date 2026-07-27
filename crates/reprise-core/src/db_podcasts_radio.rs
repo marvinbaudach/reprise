@@ -129,6 +129,37 @@ pub(crate) fn migrate_v34(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.commit()
 }
 
+pub(crate) fn migrate_v36(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= 36 {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    if !has_column(&transaction, "podcast_subscriptions", "sync_to_phone")? {
+        transaction.execute(
+            "ALTER TABLE podcast_subscriptions
+             ADD COLUMN sync_to_phone INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+    if !has_column(&transaction, "podcast_episodes", "downloaded_bytes")? {
+        transaction.execute(
+            "ALTER TABLE podcast_episodes ADD COLUMN downloaded_bytes INTEGER",
+            [],
+        )?;
+    }
+    transaction.pragma_update(None, "user_version", 36)?;
+    transaction.commit()
+}
+
+fn has_column(conn: &Connection, table: &str, expected: &str) -> Result<bool, rusqlite::Error> {
+    let mut statement = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(columns.iter().any(|column| column == expected))
+}
+
 #[cfg(test)]
 #[path = "db_podcasts_radio_migration_tests.rs"]
 mod tests;

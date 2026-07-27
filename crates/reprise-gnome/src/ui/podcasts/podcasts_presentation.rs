@@ -144,6 +144,7 @@ mod tests {
             published_at,
             duration_secs: Some(4_533),
             downloaded_path: None,
+            downloaded_bytes: None,
             played_at: None,
             position_ms: 0,
             first_seen_at: id,

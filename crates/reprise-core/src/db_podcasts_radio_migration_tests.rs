@@ -132,6 +132,44 @@ fn v34_adds_episode_tombstones_and_dismissals_with_subscription_cascade() {
 }
 
 #[test]
+fn v36_adds_download_sizes_and_rss_phone_sync_defaults() {
+    let conn = db::open(None).unwrap();
+    db::migrate(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO podcast_subscriptions
+         (id, kind, feed_url, title, added_at)
+         VALUES (1, 'rss', 'https://example.test/feed', 'Show', 1)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO podcast_episodes
+         (id, subscription_id, guid, title, audio_url, first_seen_at)
+         VALUES (1, 1, 'episode', 'Episode', 'https://example.test/e.mp3', 1)",
+        [],
+    )
+    .unwrap();
+
+    let sync_to_phone = conn
+        .query_row(
+            "SELECT sync_to_phone FROM podcast_subscriptions WHERE id = 1",
+            [],
+            |row| row.get::<_, bool>(0),
+        )
+        .unwrap();
+    let downloaded_bytes = conn
+        .query_row(
+            "SELECT downloaded_bytes FROM podcast_episodes WHERE id = 1",
+            [],
+            |row| row.get::<_, Option<i64>>(0),
+        )
+        .unwrap();
+
+    assert!(!sync_to_phone);
+    assert_eq!(downloaded_bytes, None);
+}
+
+#[test]
 fn migration_is_idempotent() {
     let conn = db::open(None).unwrap();
     db::migrate(&conn).unwrap();
@@ -140,6 +178,7 @@ fn migration_is_idempotent() {
     migrate_v32(&conn).unwrap();
     migrate_v33(&conn).unwrap();
     migrate_v34(&conn).unwrap();
+    migrate_v36(&conn).unwrap();
 
     assert_eq!(object_schema(&conn, "podcast_episodes"), before);
 }

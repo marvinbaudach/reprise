@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 
 use super::config::CleanupPolicy;
 
@@ -13,6 +13,54 @@ const KEEP_EPISODES_PER_SHOW: usize = 5;
 pub struct CleanupSummary {
     pub files_deleted: usize,
     pub bytes_deleted: u64,
+}
+
+pub fn set_downloaded_path(
+    conn: &Connection,
+    episode_id: i64,
+    path: Option<&str>,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE podcast_episodes
+         SET downloaded_path = ?2,
+             downloaded_bytes = CASE WHEN ?2 IS NULL THEN NULL ELSE downloaded_bytes END
+         WHERE id = ?1",
+        params![episode_id, path],
+    )?;
+    Ok(())
+}
+
+pub fn set_downloaded_file(
+    conn: &Connection,
+    episode_id: i64,
+    path: Option<&str>,
+    downloaded_bytes: Option<i64>,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE podcast_episodes
+         SET downloaded_path = ?2,
+             downloaded_bytes = CASE
+               WHEN ?2 IS NULL THEN NULL
+               WHEN ?3 IS NULL THEN NULL
+               ELSE MAX(?3, 0)
+             END
+         WHERE id = ?1",
+        params![episode_id, path, downloaded_bytes],
+    )?;
+    Ok(())
+}
+
+pub fn downloaded_paths_for_subscription(
+    conn: &Connection,
+    subscription_id: i64,
+) -> Result<Vec<String>, rusqlite::Error> {
+    let mut statement = conn.prepare(
+        "SELECT downloaded_path FROM podcast_episodes
+         WHERE subscription_id = ?1 AND downloaded_path IS NOT NULL
+         ORDER BY id",
+    )?;
+    let rows = statement.query_map([subscription_id], |row| row.get(0))?;
+    rows.collect::<Result<Vec<_>, _>>()
 }
 
 #[must_use]

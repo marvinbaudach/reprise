@@ -71,6 +71,7 @@ mod tests {
             published_at: Some(20),
             duration_secs: Some(60),
             downloaded_path: Some("/data/next.mp3".into()),
+            downloaded_bytes: Some(1_024),
             played_at: None,
             position_ms: 5_000,
             first_seen_at: 10,

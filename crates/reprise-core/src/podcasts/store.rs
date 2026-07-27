@@ -5,6 +5,11 @@ use rusqlite::{params, Connection, OptionalExtension};
 use super::feed::ParsedEpisode;
 use super::{EpisodeRow, PodcastKind, SubscriptionRow};
 
+pub use super::downloads::{
+    downloaded_paths_for_subscription, set_downloaded_file, set_downloaded_path,
+};
+pub use super::phone_sync::set_enabled as set_sync_to_phone;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NewSubscription {
     pub kind: PodcastKind,
@@ -70,6 +75,10 @@ fn add_or_restore_in(
            author = excluded.author,
            image_url = COALESCE(excluded.image_url, podcast_subscriptions.image_url),
            auto_download = excluded.auto_download,
+           sync_to_phone = CASE
+             WHEN excluded.kind = 'rss' THEN podcast_subscriptions.sync_to_phone
+             ELSE 0
+           END,
            removed_at = NULL
          RETURNING id",
         params![
@@ -89,7 +98,7 @@ pub fn active_subscriptions(conn: &Connection) -> Result<Vec<SubscriptionRow>, r
     let mut statement = conn.prepare(
         "SELECT id, kind, feed_url, title, author, image_url, etag,
                 last_modified, last_fetch_at, last_outcome, auto_download,
-                added_at, removed_at
+                sync_to_phone, added_at, removed_at
          FROM podcast_subscriptions
          WHERE removed_at IS NULL
          ORDER BY title COLLATE NOCASE, id",
@@ -105,7 +114,7 @@ pub fn subscription(
     conn.query_row(
         "SELECT id, kind, feed_url, title, author, image_url, etag,
                 last_modified, last_fetch_at, last_outcome, auto_download,
-                added_at, removed_at
+                sync_to_phone, added_at, removed_at
          FROM podcast_subscriptions
          WHERE id = ?1",
         [id],
@@ -254,7 +263,7 @@ pub fn episode(conn: &Connection, id: i64) -> Result<Option<EpisodeRow>, rusqlit
     conn.query_row(
         "SELECT e.id, e.subscription_id, e.guid, e.title, s.title,
                 s.image_url, s.kind, e.audio_url, e.page_url, e.published_at,
-                e.duration_secs, e.downloaded_path, e.played_at,
+                e.duration_secs, e.downloaded_path, e.downloaded_bytes, e.played_at,
                 e.position_ms, e.first_seen_at
          FROM podcast_episodes e
          JOIN podcast_subscriptions s ON s.id = e.subscription_id
@@ -362,31 +371,6 @@ pub fn mark_unplayed(conn: &Connection, episode_id: i64) -> Result<(), rusqlite:
     Ok(())
 }
 
-pub fn set_downloaded_path(
-    conn: &Connection,
-    episode_id: i64,
-    path: Option<&str>,
-) -> Result<(), rusqlite::Error> {
-    conn.execute(
-        "UPDATE podcast_episodes SET downloaded_path = ?2 WHERE id = ?1",
-        params![episode_id, path],
-    )?;
-    Ok(())
-}
-
-pub fn downloaded_paths_for_subscription(
-    conn: &Connection,
-    subscription_id: i64,
-) -> Result<Vec<String>, rusqlite::Error> {
-    let mut statement = conn.prepare(
-        "SELECT downloaded_path FROM podcast_episodes
-         WHERE subscription_id = ?1 AND downloaded_path IS NOT NULL
-         ORDER BY id",
-    )?;
-    let rows = statement.query_map([subscription_id], |row| row.get(0))?;
-    rows.collect::<Result<Vec<_>, _>>()
-}
-
 pub fn tombstone_episode(conn: &Connection, id: i64, now: i64) -> Result<bool, rusqlite::Error> {
     Ok(conn.execute(
         "UPDATE podcast_episodes
@@ -479,8 +463,9 @@ fn subscription_from_row(row: &rusqlite::Row<'_>) -> Result<SubscriptionRow, rus
         last_fetch_at: row.get(8)?,
         last_outcome: row.get(9)?,
         auto_download: row.get(10)?,
-        added_at: row.get(11)?,
-        removed_at: row.get(12)?,
+        sync_to_phone: row.get(11)?,
+        added_at: row.get(12)?,
+        removed_at: row.get(13)?,
     })
 }
 
@@ -499,9 +484,10 @@ pub(crate) fn episode_from_row(row: &rusqlite::Row<'_>) -> Result<EpisodeRow, ru
         published_at: row.get(9)?,
         duration_secs: row.get(10)?,
         downloaded_path: row.get(11)?,
-        played_at: row.get(12)?,
-        position_ms: row.get(13)?,
-        first_seen_at: row.get(14)?,
+        downloaded_bytes: row.get(12)?,
+        played_at: row.get(13)?,
+        position_ms: row.get(14)?,
+        first_seen_at: row.get(15)?,
     })
 }
 
@@ -680,6 +666,34 @@ mod tests {
         let row = episode(&conn, result.episode_id).unwrap().unwrap();
         assert_eq!(row.played_at, Some(30));
         assert_eq!(row.position_ms, 0);
+    }
+
+    #[test]
+    fn pod_7_download_metadata_persists_and_clears_path_with_size() {
+        let conn = conn();
+        let subscription_id = add_or_restore(&conn, &subscription_draft(), 10).unwrap();
+        let episode = upsert_episode(&conn, subscription_id, &parsed_episode("Episode"), 20)
+            .unwrap()
+            .expect("episode should be imported");
+
+        set_downloaded_file(
+            &conn,
+            episode.episode_id,
+            Some("/downloads/episode.mp3"),
+            Some(41_943_040),
+        )
+        .unwrap();
+        let downloaded = super::episode(&conn, episode.episode_id).unwrap().unwrap();
+        assert_eq!(
+            downloaded.downloaded_path.as_deref(),
+            Some("/downloads/episode.mp3")
+        );
+        assert_eq!(downloaded.downloaded_bytes, Some(41_943_040));
+
+        set_downloaded_file(&conn, episode.episode_id, None, None).unwrap();
+        let cleared = super::episode(&conn, episode.episode_id).unwrap().unwrap();
+        assert_eq!(cleared.downloaded_path, None);
+        assert_eq!(cleared.downloaded_bytes, None);
     }
 
     #[test]

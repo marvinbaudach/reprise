@@ -199,7 +199,11 @@ fn download_episode(conn: &rusqlite::Connection, episode_id: i64) -> Result<(), 
                 .map_err(|error| error.to_string())?;
         }
     }
-    podcasts::store::set_downloaded_path(conn, episode.id, destination.to_str())
+    let bytes = std::fs::metadata(&destination)
+        .map_err(|error| error.to_string())?
+        .len()
+        .min(i64::MAX as u64) as i64;
+    podcasts::store::set_downloaded_file(conn, episode.id, destination.to_str(), Some(bytes))
         .map_err(|error| error.to_string())
 }
 
