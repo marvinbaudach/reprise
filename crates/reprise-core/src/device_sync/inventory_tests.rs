@@ -70,6 +70,7 @@ fn v36_migration_preserves_managed_files_without_the_track_cascade() {
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
     assert_eq!(version, 36);
+    crate::db_device_sync::migrate_v37(&conn).unwrap();
     let settings = load_or_create_settings(&conn, "phone", "ignored").unwrap();
     assert_eq!(settings.selection, DeviceSelection::Sources(Vec::new()));
     assert_eq!(settings.profile, TransferProfile::Mp3(Mp3Quality::Kbps256));
@@ -110,6 +111,7 @@ fn v36_migration_preserves_legacy_orphans_even_if_foreign_keys_were_disabled() {
     conn.pragma_update(None, "foreign_keys", "ON").unwrap();
 
     crate::db_device_sync::migrate_v36(&conn).unwrap();
+    crate::db_device_sync::migrate_v37(&conn).unwrap();
 
     assert_eq!(
         load_device_files(&conn, "phone").unwrap(),
@@ -140,6 +142,7 @@ fn v36_migration_keeps_valid_playlist_selection_and_marks_it_unconfigured_only_w
     .unwrap();
 
     crate::db_device_sync::migrate_v36(&conn).unwrap();
+    crate::db_device_sync::migrate_v37(&conn).unwrap();
 
     assert_eq!(
         load_or_create_settings(&conn, "configured", "ignored")
@@ -159,20 +162,73 @@ fn v36_migration_keeps_valid_playlist_selection_and_marks_it_unconfigured_only_w
 }
 
 #[test]
-fn settings_default_to_mp3_256_and_round_trip_a_supported_profile() {
+fn v37_migration_preserves_existing_mp3_behavior_while_fresh_devices_default_to_opus() {
+    let conn = open_legacy_v33();
+    crate::db_device_sync::migrate_v36(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO device_settings (device_serial, device_name, mp3_quality)
+         VALUES ('existing', 'Existing phone', 320)",
+        [],
+    )
+    .unwrap();
+
+    crate::db_device_sync::migrate_v37(&conn).unwrap();
+
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 37);
+    assert_eq!(
+        load_or_create_settings(&conn, "existing", "ignored")
+            .unwrap()
+            .profile,
+        TransferProfile::Mp3(Mp3Quality::Kbps256)
+    );
+    assert_eq!(
+        load_or_create_settings(&conn, "fresh", "Fresh phone")
+            .unwrap()
+            .profile,
+        TransferProfile::Opus160
+    );
+}
+
+#[test]
+fn v37_repair_keeps_an_existing_transfer_profile_column_and_value() {
+    let conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    let mut settings = load_or_create_settings(&conn, "phone", "Phone").unwrap();
+    settings.profile = TransferProfile::Original;
+    save_settings(&conn, &settings).unwrap();
+    conn.pragma_update(None, "user_version", 36).unwrap();
+
+    crate::db_device_sync::migrate_v37(&conn).unwrap();
+
+    assert_eq!(
+        load_or_create_settings(&conn, "phone", "ignored")
+            .unwrap()
+            .profile,
+        TransferProfile::Original
+    );
+}
+
+#[test]
+fn settings_round_trip_each_modern_transfer_profile() {
     let conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
     let mut settings = load_or_create_settings(&conn, "new-phone", "New Phone").unwrap();
-    assert_eq!(settings.profile, TransferProfile::default());
+    assert_eq!(settings.profile, TransferProfile::Opus160);
 
     settings.selection = DeviceSelection::Sources(vec![SelectionSource::Playlist(42)]);
-    settings.profile = TransferProfile::Mp3(Mp3Quality::Kbps320);
-    save_settings(&conn, &settings).unwrap();
-
-    assert_eq!(
-        load_or_create_settings(&conn, "new-phone", "ignored").unwrap(),
-        settings
-    );
+    for profile in TransferProfile::ALL {
+        settings.profile = profile;
+        save_settings(&conn, &settings).unwrap();
+        assert_eq!(
+            load_or_create_settings(&conn, "new-phone", "ignored")
+                .unwrap()
+                .profile,
+            profile
+        );
+    }
 }
 
 #[test]

@@ -9,7 +9,7 @@ use reprise_core::agent_device_sync::{
     AgentDeviceSyncStorageComposition, AgentDeviceSyncStorageKnowledge,
     AgentDeviceSyncStorageState, AgentDeviceSyncWarning, SharedAgentDeviceSyncState,
 };
-use reprise_core::device_sync::SelectionSource;
+use reprise_core::device_sync::{SelectionSource, TransferProfile};
 
 pub(super) type DeviceSyncSourceSelection = (String, i64);
 pub(super) type DeviceSyncSourceRow = (String, i64, bool, String, bool, bool, u64, u64, u64, u64);
@@ -32,7 +32,7 @@ pub(super) type DeviceSyncProgressRow = (u64, u64, u64);
 pub(super) type DeviceSyncRow = (
     String,
     bool,
-    u32,
+    String,
     u64,
     u64,
     u64,
@@ -91,16 +91,21 @@ impl DeviceSyncControl {
         &self,
         device_name: &str,
         sources: Vec<DeviceSyncSourceSelection>,
-        quality_kbps: u32,
+        profile: &str,
     ) -> zbus::fdo::Result<()> {
         let sources = sources
             .into_iter()
             .map(decode_source)
             .collect::<zbus::fdo::Result<Vec<_>>>()?;
+        let profile = TransferProfile::from_storage_value(profile).ok_or_else(|| {
+            zbus::fdo::Error::InvalidArgs(format!(
+                "unknown transfer profile '{profile}'; expected opus_160, mp3_256 or original"
+            ))
+        })?;
         self.dispatch(AgentDeviceSyncCommand::Configure {
             device_name: device_name.to_owned(),
             sources,
-            quality_kbps,
+            profile,
         })
     }
 
@@ -121,7 +126,7 @@ fn device_row(device: AgentDeviceSyncDevice) -> DeviceSyncRow {
     (
         device.name,
         device.connected,
-        device.quality_kbps,
+        device.profile.storage_value().to_owned(),
         count(device.managed_tracks),
         count(device.unique_track_count),
         device.target_bytes,
@@ -299,7 +304,7 @@ mod tests {
             devices: vec![AgentDeviceSyncDevice {
                 name: "Pixel".into(),
                 connected: true,
-                quality_kbps: 320,
+                profile: TransferProfile::Original,
                 unique_track_count: 200,
                 target_bytes: 80,
                 playlists: vec![AgentDeviceSyncPlaylist {
@@ -342,7 +347,7 @@ mod tests {
 
         let rows = control.snapshot();
         assert_eq!(rows[0].0, "Pixel");
-        assert_eq!(rows[0].2, 320);
+        assert_eq!(rows[0].2, "original");
         assert_eq!(rows[0].4, 200);
         assert_eq!(rows[0].6[0].0, "smart");
         assert_eq!(rows[0].6[0].1, 7);
@@ -359,7 +364,7 @@ mod tests {
                 AgentDeviceSyncCommand::Configure {
                     device_name: "Pixel".into(),
                     sources: vec![SelectionSource::Playlist(3), SelectionSource::Smart(7),],
-                    quality_kbps: 256,
+                    profile: TransferProfile::Opus160,
                 }
             );
             request.reply.send(Ok(())).unwrap();
@@ -368,7 +373,7 @@ mod tests {
             .configure(
                 "Pixel",
                 vec![("playlist".into(), 3), ("smart".into(), 7)],
-                256,
+                "opus_160",
             )
             .unwrap();
         responder.join().unwrap();

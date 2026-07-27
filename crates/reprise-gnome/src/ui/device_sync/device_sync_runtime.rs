@@ -16,7 +16,7 @@ use reprise_core::device_sync::{
     ManagedDeviceFile, MirrorPlan, SyncPageState,
 };
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor, DeviceMonitor};
-use reprise_platform_linux::device_transfer::{Mp3TranscodeRequest, TranscodedFile};
+use reprise_platform_linux::device_transfer::{TranscodeProfile, TranscodeRequest, TranscodedFile};
 use rusqlite::Connection;
 
 #[path = "device_sync_rate.rs"]

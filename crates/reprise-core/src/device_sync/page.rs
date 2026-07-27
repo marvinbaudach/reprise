@@ -5,8 +5,8 @@ use std::collections::{HashMap, HashSet};
 use super::{
     plan_mirror, project_storage, DeviceFileRecord, DevicePlaylistRecord, DeviceStorageProjection,
     DeviceStorageSnapshot, ManagedDeviceFile, MirrorBlocker, MirrorInput, MirrorPlan,
-    MirrorPlaylistSnapshot, MirrorTrack, MirrorWarning, Mp3Quality, SelectionSource,
-    StorageProjectionState, TransferProfile,
+    MirrorPlaylistSnapshot, MirrorTrack, MirrorWarning, SelectionSource, StorageProjectionState,
+    TransferProfile,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -48,8 +48,8 @@ pub enum SyncPageWarning {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SyncPageState {
-    pub quality_options: Vec<Mp3Quality>,
-    pub quality: Mp3Quality,
+    pub profile_options: Vec<TransferProfile>,
+    pub profile: TransferProfile,
     pub playlists: Vec<SyncPlaylistRow>,
     pub unique_track_count: usize,
     pub target_bytes: u64,
@@ -179,10 +179,8 @@ pub fn project_sync_page(input: SyncPageInput) -> SyncPageProjection {
     });
     let storage = project_storage(&input.storage, &plan);
     let page = SyncPageState {
-        quality_options: Mp3Quality::ALL.to_vec(),
-        quality: match input.profile {
-            TransferProfile::Mp3(quality) => quality,
-        },
+        profile_options: TransferProfile::ALL.to_vec(),
+        profile: input.profile,
         playlists: rows,
         unique_track_count,
         target_bytes: plan.target_bytes,

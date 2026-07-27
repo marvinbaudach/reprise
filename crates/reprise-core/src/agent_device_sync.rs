@@ -2,7 +2,7 @@
 
 use std::sync::{mpsc, Arc, Mutex};
 
-use crate::device_sync::SelectionSource;
+use crate::device_sync::{SelectionSource, TransferProfile};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AgentDeviceSyncState {
@@ -14,7 +14,7 @@ pub struct AgentDeviceSyncDevice {
     pub name: String,
     pub connected: bool,
     pub managed_tracks: usize,
-    pub quality_kbps: u32,
+    pub profile: TransferProfile,
     pub playlists: Vec<AgentDeviceSyncPlaylist>,
     pub unique_track_count: usize,
     pub target_bytes: u64,
@@ -129,7 +129,7 @@ pub enum AgentDeviceSyncCommand {
     Configure {
         device_name: String,
         sources: Vec<SelectionSource>,
-        quality_kbps: u32,
+        profile: TransferProfile,
     },
     Start {
         device_name: String,
@@ -174,7 +174,7 @@ mod tests {
                 name: "Pixel".into(),
                 connected: true,
                 managed_tracks: 75,
-                quality_kbps: 320,
+                profile: TransferProfile::Original,
                 playlists: vec![AgentDeviceSyncPlaylist {
                     source: SelectionSource::Smart(7),
                     name: Some("Heavy rotation".into()),
@@ -234,7 +234,7 @@ mod tests {
 
         let snapshot = read_agent_device_sync_state(&state);
         let device = &snapshot.devices[0];
-        assert_eq!(device.quality_kbps, 320);
+        assert_eq!(device.profile, TransferProfile::Original);
         assert_eq!(device.playlists[0].source, SelectionSource::Smart(7));
         assert_eq!(device.playlists[0].entry_count, 220);
         assert_eq!(device.changes.replacements, 5);
@@ -258,12 +258,12 @@ mod tests {
             AgentDeviceSyncCommand::Configure {
                 device_name: "Pixel".into(),
                 sources: vec![SelectionSource::Playlist(3), SelectionSource::Smart(7),],
-                quality_kbps: 128,
+                profile: TransferProfile::Opus160,
             },
             AgentDeviceSyncCommand::Configure {
                 device_name: "Pixel".into(),
                 sources: vec![SelectionSource::Playlist(3), SelectionSource::Smart(7),],
-                quality_kbps: 128,
+                profile: TransferProfile::Opus160,
             }
         );
     }

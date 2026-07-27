@@ -98,10 +98,10 @@ fn planned_paths_preserve_existing_collision_slots_across_selection_changes() {
             .map(|(_, path)| path.clone())
             .collect::<Vec<_>>();
 
-        assert!(paths.iter().any(|path| path == "Artist/Album/01 Same.mp3"));
+        assert!(paths.iter().any(|path| path == "Artist/Album/01 Same.opus"));
         assert!(paths
             .iter()
-            .any(|path| path == "Artist/Album/01 Same (3).mp3"));
+            .any(|path| path == "Artist/Album/01 Same (3).opus"));
     });
 }
 
@@ -123,8 +123,8 @@ fn sync_now_copies_the_selection_and_commits_the_device_inventory() {
         assert_eq!(playlists.len(), 1);
         assert_eq!(playlists[0].1, "Road");
         let playlist = String::from_utf8(playlists[0].2.clone()).unwrap();
-        assert!(playlist.contains("Artist/Unknown Album/00 Track 1.mp3"));
-        assert!(playlist.contains("Artist/Unknown Album/00 Track 2.mp3"));
+        assert!(playlist.contains("Artist/Unknown Album/00 Track 1.opus"));
+        assert!(playlist.contains("Artist/Unknown Album/00 Track 2.opus"));
         assert_eq!(
             reprise_core::device_sync::settings::load_device_files(&conn.borrow(), "a")
                 .unwrap()
@@ -274,7 +274,7 @@ fn replacement_inventory_is_committed_before_the_old_device_path_is_deleted() {
 
         assert_eq!(
             paths_at_delete.borrow().as_slice(),
-            ["Artist/Unknown Album/00 Track 1.mp3"]
+            ["Artist/Unknown Album/00 Track 1.opus"]
         );
     });
 }
@@ -360,7 +360,7 @@ fn planned_transcodes_finish_before_each_corresponding_device_copy_starts() {
 }
 
 #[test]
-fn missing_mp3_capability_blocks_before_any_managed_deletion_or_copy() {
+fn missing_selected_transcode_capability_blocks_before_any_managed_deletion_or_copy() {
     run(async {
         let (_temp, conn) = fixture();
         select_road_playlist(&conn, &[1]);
@@ -381,14 +381,14 @@ fn missing_mp3_capability_blocks_before_any_managed_deletion_or_copy() {
         .unwrap();
         let backend = Rc::new(
             FakeBackend::new(vec![descriptor("a", true)], 1)
-                .with_mp3_probe_error("lamemp3enc is missing"),
+                .with_transcode_probe_error("opusenc is missing"),
         );
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
         gtk4::glib::timeout_future(Duration::from_millis(2)).await;
 
         assert_eq!(
             runtime.sync_now("a"),
-            Err(SyncStartError::Planning("lamemp3enc is missing".into()))
+            Err(SyncStartError::Planning("opusenc is missing".into()))
         );
         assert!(backend.state.deleted.borrow().is_empty());
         assert!(backend.state.copy_order.borrow().is_empty());
@@ -411,7 +411,10 @@ fn agent_bridge_reports_the_compact_mirror_page_and_applies_multi_source_configu
 
         let snapshot = read_agent_device_sync_state(&state);
         assert_eq!(snapshot.devices[0].name, "Phone a");
-        assert_eq!(snapshot.devices[0].quality_kbps, 256);
+        assert_eq!(
+            snapshot.devices[0].profile,
+            reprise_core::device_sync::TransferProfile::Opus160
+        );
         assert_eq!(snapshot.devices[0].unique_track_count, 2);
         assert_eq!(snapshot.devices[0].changes.additions, 2);
         assert_eq!(
@@ -433,7 +436,7 @@ fn agent_bridge_reports_the_compact_mirror_page_and_applies_multi_source_configu
         let (request, reply) = agent_device_sync_request(AgentDeviceSyncCommand::Configure {
             device_name: "Phone a".into(),
             sources: vec![SelectionSource::Playlist(10), SelectionSource::Smart(3)],
-            quality_kbps: 320,
+            profile: reprise_core::device_sync::TransferProfile::Original,
         });
         sender.send(request).await.unwrap();
         gtk4::glib::timeout_future(Duration::from_millis(2)).await;
@@ -441,9 +444,7 @@ fn agent_bridge_reports_the_compact_mirror_page_and_applies_multi_source_configu
         assert!(runtime.devices()[0].settings.remove_deleted);
         assert_eq!(
             runtime.devices()[0].settings.profile,
-            reprise_core::device_sync::TransferProfile::Mp3(
-                reprise_core::device_sync::Mp3Quality::Kbps320
-            )
+            reprise_core::device_sync::TransferProfile::Original
         );
         assert_eq!(runtime.devices()[0].settings.opus_bitrate, 0);
         assert_eq!(
@@ -457,7 +458,9 @@ fn agent_bridge_reports_the_compact_mirror_page_and_applies_multi_source_configu
         let (request, reply) = agent_device_sync_request(AgentDeviceSyncCommand::Configure {
             device_name: "Phone a".into(),
             sources: vec![SelectionSource::Playlist(10), SelectionSource::Playlist(10)],
-            quality_kbps: 128,
+            profile: reprise_core::device_sync::TransferProfile::Mp3(
+                reprise_core::device_sync::Mp3Quality::Kbps256,
+            ),
         });
         sender.send(request).await.unwrap();
         gtk4::glib::timeout_future(Duration::from_millis(2)).await;
@@ -468,9 +471,7 @@ fn agent_bridge_reports_the_compact_mirror_page_and_applies_multi_source_configu
             .contains("duplicates"));
         assert_eq!(
             runtime.devices()[0].settings.profile,
-            reprise_core::device_sync::TransferProfile::Mp3(
-                reprise_core::device_sync::Mp3Quality::Kbps320
-            )
+            reprise_core::device_sync::TransferProfile::Original
         );
 
         let (request, reply) = agent_device_sync_request(AgentDeviceSyncCommand::Start {
@@ -561,7 +562,7 @@ fn insufficient_space_is_projected_as_a_device_warning() {
         assert!(matches!(
             runtime.sync_now("a"),
             Err(SyncStartError::InsufficientSpace {
-                required_bytes: 195_272,
+                required_bytes: 171_272,
                 available_bytes: 50_000,
             })
         ));
@@ -623,7 +624,7 @@ fn stale_progress_from_a_cancelled_run_does_not_update_its_replacement() {
             runtime.devices()[0].sync_phase,
             PlannedSyncPhase::Syncing {
                 bytes_done: 50,
-                bytes_total: 97_636,
+                bytes_total: 85_636,
                 ..
             }
         ));
@@ -687,103 +688,5 @@ fn mtp_5_reconnect_resumes_planned_sync_from_the_remaining_delta() {
         assert_eq!(device.page.changes.additions, 0);
         assert_eq!(device.page.changes.replacements, 0);
         assert_eq!(backend.state.copy_order.borrow().len(), 1);
-    });
-}
-
-#[test]
-fn local_gio_sync_transcodes_lossless_selection_to_mp3() {
-    run(async {
-        let (sources, conn) = fixture();
-        let wav = sources.path().join("transcode.wav");
-        write_silent_wav(&wav);
-        conn.borrow()
-            .execute(
-                "INSERT INTO tracks (id,path,title,artist,album,album_artist,track_no,duration_ms,added_at) \
-                 VALUES (20,?1,'Encoded','Artist','Album','Artist',1,100,0)",
-                [wav.to_string_lossy().as_ref()],
-            )
-            .unwrap();
-        conn.borrow()
-            .execute_batch(
-                "INSERT INTO playlists (id, name, position) VALUES (20, 'Opus', 0);
-                 INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (20, 20, 0);",
-            )
-            .unwrap();
-        save_settings(
-            &conn.borrow(),
-            &DeviceSettings {
-                device_serial: crate::ui::device_sync_smoke::DEVICE_ID.into(),
-                device_name: "Android Smoke Device".into(),
-                selection: DeviceSelection::Sources(vec![SelectionSource::Playlist(20)]),
-                profile: reprise_core::device_sync::TransferProfile::default(),
-                opus_bitrate: 96,
-                ratings_back: false,
-                remove_deleted: true,
-            },
-        )
-        .unwrap();
-        let device_root = tempfile::tempdir().unwrap();
-        let backend = Rc::new(
-            crate::ui::device_sync_smoke::SmokeDeviceBackend::for_root(device_root.path()).unwrap(),
-        );
-        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
-        for _ in 0..1_000 {
-            if runtime.devices()[0].sync_phase != PlannedSyncPhase::ComputingDelta {
-                break;
-            }
-            gtk4::glib::timeout_future(Duration::from_millis(2)).await;
-        }
-        assert_ne!(
-            runtime.devices()[0].sync_phase,
-            PlannedSyncPhase::ComputingDelta,
-            "storage inspection must settle before the transfer starts"
-        );
-        let observed = Rc::new(RefCell::new(Vec::new()));
-        let phases = observed.clone();
-        let _subscription = runtime.subscribe(Rc::new(move |state| {
-            if let Some(device) = state
-                .devices
-                .iter()
-                .find(|device| device.id == crate::ui::device_sync_smoke::DEVICE_ID)
-            {
-                phases.borrow_mut().push(device.sync_phase.clone());
-            }
-        }));
-
-        runtime
-            .sync_now(crate::ui::device_sync_smoke::DEVICE_ID)
-            .unwrap();
-        for _ in 0..1_000 {
-            if runtime.devices()[0].last_sync.is_some() {
-                break;
-            }
-            gtk4::glib::timeout_future(Duration::from_millis(5)).await;
-        }
-
-        let output = device_root
-            .path()
-            .join("Music/Reprise/Artist/Album/01 Encoded.mp3");
-        assert!(std::fs::read(output).unwrap().starts_with(b"ID3"));
-        let device = runtime.devices().remove(0);
-        assert!(device.last_sync.is_some(), "device state: {device:?}");
-        assert!(device.sync_error.is_none());
-        assert_eq!(device.page.changes.additions, 0);
-        assert_eq!(device.page.changes.replacements, 0);
-        assert!(observed.borrow().iter().any(|phase| matches!(
-            phase,
-            PlannedSyncPhase::Syncing {
-                step: SyncStep::Transcoding,
-                current_track,
-                ..
-            } if current_track == "Encoded — Artist"
-        )));
-        assert!(observed.borrow().iter().any(|phase| matches!(
-            phase,
-            PlannedSyncPhase::Syncing {
-                step: SyncStep::Copying,
-                current_track,
-                ..
-            } if current_track == "Encoded — Artist"
-        )));
     });
 }

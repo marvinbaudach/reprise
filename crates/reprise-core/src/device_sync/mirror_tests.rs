@@ -100,12 +100,12 @@ fn overlap_and_playlist_repeats_are_deduplicated_only_for_physical_storage() {
     assert_eq!(plan.desired_files.len(), 3);
     assert_eq!(plan.copy.len(), 3);
     assert!(plan.replace.is_empty());
-    assert_eq!(plan.transfer_bytes, 2_051_072);
-    assert_eq!(plan.target_bytes, 2_051_072);
+    assert_eq!(plan.transfer_bytes, 1_825_536);
+    assert_eq!(plan.target_bytes, 1_825_536);
     assert_eq!(plan.per_playlist[0].entry_count, 3);
     assert_eq!(plan.per_playlist[0].unique_track_count, 2);
     assert_eq!(plan.per_playlist[0].target_bytes, 1_625_536);
-    assert_eq!(plan.per_playlist[1].target_bytes, 665_536);
+    assert_eq!(plan.per_playlist[1].target_bytes, 440_000);
     assert_eq!(plan.playlist_writes[0].entries.len(), 3);
     assert_eq!(
         plan.playlist_writes[0].entries[0].relative_path,
@@ -227,16 +227,16 @@ fn removed_library_rows_pins_and_orphans_mirror_only_inside_the_managed_scope() 
         )],
     );
     mirror_input.inventory = vec![
-        inventory(&wanted, wanted_path, "copy-original-mp3-v1"),
+        inventory(&wanted, wanted_path, "copy-original-v1"),
         DeviceFileRecord {
             pinned: true,
             ..inventory(
                 &deleted,
                 "Album Artist/Album/02 Track 2.mp3",
-                "copy-original-mp3-v1",
+                "copy-original-v1",
             )
         },
-        inventory(&unsafe_track, "../outside.mp3", "copy-original-mp3-v1"),
+        inventory(&unsafe_track, "../outside.mp3", "copy-original-v1"),
     ];
     mirror_input.managed_files = vec![
         ManagedDeviceFile {
@@ -304,7 +304,7 @@ fn a_profile_change_is_an_explicit_replacement_not_a_size_guess() {
 }
 
 #[test]
-fn changing_the_quality_does_not_replace_an_original_mp3_that_still_passes_through() {
+fn changing_the_profile_does_not_replace_a_lossy_original_that_still_passes_through() {
     let source = SelectionSource::Playlist(10);
     let available = track(1, "/music/one.mp3", Some(128), 10_000, 160_000);
     let desired_path = "Album Artist/Album/01 Track 1.mp3";
@@ -316,16 +316,59 @@ fn changing_the_quality_does_not_replace_an_original_mp3_that_still_passes_throu
             vec![MirrorTrack::Available(available.clone())],
         )],
     );
-    mirror_input.profile = TransferProfile::Mp3(Mp3Quality::Kbps320);
+    mirror_input.profile = TransferProfile::Opus160;
     mirror_input
         .inventory
-        .push(inventory(&available, desired_path, "copy-original-mp3-v1"));
+        .push(inventory(&available, desired_path, "copy-original-v1"));
 
     let plan = plan_mirror(mirror_input);
 
     assert!(plan.copy.is_empty());
     assert!(plan.replace.is_empty());
     assert_eq!(plan.target_bytes, available.size_bytes);
+}
+
+#[test]
+fn mirror_paths_follow_the_actual_output_instead_of_the_selected_profile_name() {
+    let source = SelectionSource::Playlist(10);
+    let flac = track(1, "/music/lossless.flac", None, 10_000, 1_000_000);
+    let aac = track(2, "/music/lossy.m4a", Some(128), 10_000, 160_000);
+    let playlist = |tracks: Vec<SyncTrack>| {
+        vec![playlist(
+            source.clone(),
+            "Profiles",
+            tracks.into_iter().map(MirrorTrack::Available).collect(),
+        )]
+    };
+
+    let opus = plan_mirror(MirrorInput {
+        profile: TransferProfile::Opus160,
+        ..input(
+            vec![source.clone()],
+            playlist(vec![flac.clone(), aac.clone()]),
+        )
+    });
+    assert_eq!(
+        opus.desired_files[0].device_path,
+        "Album Artist/Album/01 Track 1.opus"
+    );
+    assert_eq!(
+        opus.desired_files[1].device_path,
+        "Album Artist/Album/02 Track 2.m4a"
+    );
+
+    let original = plan_mirror(MirrorInput {
+        profile: TransferProfile::Original,
+        ..input(vec![source.clone()], playlist(vec![flac, aac]))
+    });
+    assert_eq!(
+        original.desired_files[0].device_path,
+        "Album Artist/Album/01 Track 1.flac"
+    );
+    assert_eq!(
+        original.desired_files[1].device_path,
+        "Album Artist/Album/02 Track 2.m4a"
+    );
 }
 
 #[test]

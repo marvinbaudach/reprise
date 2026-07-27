@@ -8,8 +8,8 @@ use reprise_core::agent_device_sync::{
     AgentDeviceSyncStorageState, AgentDeviceSyncWarning, SharedAgentDeviceSyncState,
 };
 use reprise_core::device_sync::{
-    MirrorBlocker, Mp3Quality, SelectionSource, StorageComposition, StorageKnowledge,
-    StorageProjectionState, SyncPageWarning, TransferProfile,
+    MirrorBlocker, SelectionSource, StorageComposition, StorageKnowledge, StorageProjectionState,
+    SyncPageWarning,
 };
 
 use super::*;
@@ -45,7 +45,7 @@ impl DeviceSyncRuntime {
             AgentDeviceSyncCommand::Configure {
                 device_name,
                 sources,
-                quality_kbps,
+                profile,
             } => {
                 let mut settings = self
                     .unique_connected_device(&device_name)
@@ -73,11 +73,9 @@ impl DeviceSyncRuntime {
                         source_name(source)
                     ));
                 }
-                let quality =
-                    Mp3Quality::try_from(quality_kbps).map_err(|error| error.to_string())?;
                 settings.selection = DeviceSelection::Sources(sources);
                 settings.remove_deleted = true;
-                settings.profile = TransferProfile::Mp3(quality);
+                settings.profile = profile;
                 settings.opus_bitrate = 0;
                 self.update_settings(settings)
             }
@@ -128,13 +126,12 @@ fn agent_state(state: DeviceSyncState) -> AgentDeviceSyncState {
 
 fn agent_device(device: DeviceView) -> AgentDeviceSyncDevice {
     let (phase, bytes_done, bytes_total, current_track) = agent_phase(device.sync_phase);
-    let TransferProfile::Mp3(quality) = device.settings.profile;
     let page = device.page;
     AgentDeviceSyncDevice {
         name: device.name,
         connected: device.connected,
         managed_tracks: device.managed_track_count,
-        quality_kbps: quality.kbps(),
+        profile: device.settings.profile,
         playlists: page
             .playlists
             .into_iter()

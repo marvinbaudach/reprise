@@ -83,6 +83,14 @@ fn transfer_operations(plan: &MirrorPlan) -> Vec<TransferOperation> {
     operations
 }
 
+fn transcode_profile(action: TransferAction) -> Option<TranscodeProfile> {
+    match action {
+        TransferAction::CopyOriginal => None,
+        TransferAction::TranscodeOpus160 => Some(TranscodeProfile::Opus160),
+        TransferAction::TranscodeMp3(quality) => Some(TranscodeProfile::Mp3(quality)),
+    }
+}
+
 fn blocker_message(plan: &MirrorPlan) -> String {
     format!("playlist mirror is blocked: {:?}", plan.blockers)
 }
@@ -119,7 +127,7 @@ impl DeviceSyncRuntime {
         }
         self.recompute_delta(device_id)
             .map_err(SyncStartError::Planning)?;
-        let requires_mp3_transcode = {
+        let required_transcode_profiles = {
             let devices = self.device_states.borrow();
             let device = devices
                 .iter()
@@ -132,13 +140,12 @@ impl DeviceSyncRuntime {
             }
             transfer_operations(&device.mirror_plan)
                 .iter()
-                .any(|operation| {
-                    matches!(operation.desired.action, TransferAction::TranscodeMp3(_))
-                })
+                .filter_map(|operation| transcode_profile(operation.desired.action))
+                .collect::<HashSet<_>>()
         };
-        if requires_mp3_transcode {
+        for profile in required_transcode_profiles {
             self.backend
-                .probe_mp3_transcode()
+                .probe_transcode(profile)
                 .map_err(SyncStartError::Planning)?;
         }
         let work = {
@@ -329,7 +336,7 @@ async fn run_transfers(
             TransferAction::CopyOriginal => {
                 Some((entry.track.source_path.clone(), entry.target_bytes, false))
             }
-            TransferAction::TranscodeMp3(quality) => {
+            action @ (TransferAction::TranscodeOpus160 | TransferAction::TranscodeMp3(_)) => {
                 set_phase(
                     runtime,
                     &work.device_id,
@@ -343,11 +350,17 @@ async fn run_transfers(
                         work.plan.transfer_bytes,
                     ),
                 );
-                let request = Mp3TranscodeRequest {
+                let profile =
+                    transcode_profile(action).expect("transcode action must provide a profile");
+                let extension = match profile {
+                    TranscodeProfile::Opus160 => "opus",
+                    TranscodeProfile::Mp3(_) => "mp3",
+                };
+                let request = TranscodeRequest {
                     source: entry.track.source_path.clone(),
-                    output: temporary_mp3_path(&work.device_id, entry.track.id),
-                    quality,
-                    metadata: reprise_platform_linux::device_transfer::Mp3Metadata::for_track(
+                    output: temporary_transcode_path(&work.device_id, entry.track.id, extension),
+                    profile,
+                    metadata: reprise_platform_linux::device_transfer::AudioMetadata::for_track(
                         &entry.track,
                     ),
                 };
@@ -358,7 +371,7 @@ async fn run_transfers(
                 {
                     Ok(file) => Some((file.path, file.size_bytes, true)),
                     Err(error) => {
-                        tracing::warn!(track_id = entry.track.id, %error, "device MP3 transcode failed");
+                        tracing::warn!(track_id = entry.track.id, %error, "device audio transcode failed");
                         None
                     }
                 }
@@ -683,11 +696,11 @@ fn update_copy_bytes(
     runtime.notify();
 }
 
-fn temporary_mp3_path(device_id: &str, track_id: i64) -> PathBuf {
+fn temporary_transcode_path(device_id: &str, track_id: i64, extension: &str) -> PathBuf {
     let sequence = TEMP_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     let safe_device = reprise_core::device_sync::safe_component(device_id, "device");
     std::env::temp_dir().join(format!(
-        "reprise-sync-{safe_device}-{}-{track_id}-{sequence}.mp3",
-        std::process::id()
+        "reprise-sync-{safe_device}-{}-{track_id}-{sequence}.{extension}",
+        std::process::id(),
     ))
 }

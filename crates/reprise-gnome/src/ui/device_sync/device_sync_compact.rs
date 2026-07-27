@@ -2,8 +2,8 @@ use reprise_core::device_sync::settings::{
     load_device_files, load_device_playlists, resolve_selection_track_ids, save_settings,
 };
 use reprise_core::device_sync::{
-    load_mirror_playlist_snapshots, project_sync_page, DeviceSelection, Mp3Quality,
-    SelectionSource, SyncPageInput, TransferProfile,
+    load_mirror_playlist_snapshots, project_sync_page, DeviceSelection, SelectionSource,
+    SyncPageInput, TransferProfile,
 };
 
 use super::*;
@@ -38,13 +38,13 @@ impl DeviceSyncRuntime {
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
-    pub fn set_mp3_quality(
+    pub fn set_transfer_profile(
         self: &Rc<Self>,
         device_id: &str,
-        quality: Mp3Quality,
+        profile: TransferProfile,
     ) -> Result<(), String> {
         let mut settings = self.settings_for_update(device_id)?;
-        settings.profile = TransferProfile::Mp3(quality);
+        settings.profile = profile;
         self.update_settings(settings)
     }
 

@@ -7,13 +7,15 @@ use std::collections::{HashMap, HashSet};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TransferMode {
     Copy,
+    TranscodeOpus160,
     TranscodeMp3 { quality: Mp3Quality },
 }
 
 impl TransferMode {
     pub fn fingerprint(self) -> String {
         match self {
-            Self::Copy => "copy-original-mp3-v1".into(),
+            Self::Copy => "copy-original-v1".into(),
+            Self::TranscodeOpus160 => TransferProfile::Opus160.fingerprint().into(),
             Self::TranscodeMp3 { quality } => TransferProfile::Mp3(quality).fingerprint().into(),
         }
     }
@@ -47,6 +49,7 @@ pub fn build_transfer_plan_with_inventory(
         .map(|(index, track)| {
             let mode = match profile.action_for(&track) {
                 TransferAction::CopyOriginal => TransferMode::Copy,
+                TransferAction::TranscodeOpus160 => TransferMode::TranscodeOpus160,
                 TransferAction::TranscodeMp3(quality) => TransferMode::TranscodeMp3 { quality },
             };
             let metadata = DevicePathMetadata {
@@ -62,7 +65,12 @@ pub fn build_transfer_plan_with_inventory(
                 .entry(collision_key)
                 .or_insert_with_key(|key| CollisionSlots::from_inventory(key, inventory))
                 .assign(track.id);
-            let device_path = device_track_path(&metadata, Some("mp3"), collision_index);
+            let forced_extension = match mode {
+                TransferMode::Copy => None,
+                TransferMode::TranscodeOpus160 => Some("opus"),
+                TransferMode::TranscodeMp3 { .. } => Some("mp3"),
+            };
+            let device_path = device_track_path(&metadata, forced_extension, collision_index);
             let expected_bytes = profile.estimated_target_bytes(&track);
             (
                 index,
@@ -77,40 +85,6 @@ pub fn build_transfer_plan_with_inventory(
         .collect::<Vec<_>>();
     plan.sort_by_key(|(index, _)| *index);
     plan.into_iter().map(|(_, entry)| entry).collect()
-}
-
-pub(super) fn stable_device_paths(
-    tracks: &[SyncTrack],
-    forced_extension: &str,
-    inventory: &[super::settings::DeviceFileRecord],
-) -> HashMap<i64, String> {
-    let mut collisions = HashMap::<String, CollisionSlots>::new();
-    let mut tracks = tracks.iter().collect::<Vec<_>>();
-    tracks.sort_by_key(|track| track.id);
-    let mut paths = HashMap::new();
-    for track in tracks {
-        if paths.contains_key(&track.id) {
-            continue;
-        }
-        let metadata = DevicePathMetadata {
-            album_artist: track.album_artist.clone(),
-            artist: track.artist.clone(),
-            album: track.album.clone(),
-            track_number: track.track_number,
-            title: track.title.clone(),
-            source_path: track.source_path.clone(),
-        };
-        let collision_key = path_stem_key(&metadata);
-        let collision_index = collisions
-            .entry(collision_key)
-            .or_insert_with_key(|key| CollisionSlots::from_inventory(key, inventory))
-            .assign(track.id);
-        paths.insert(
-            track.id,
-            device_track_path(&metadata, Some(forced_extension), collision_index),
-        );
-    }
-    paths
 }
 
 #[derive(Default)]

@@ -31,7 +31,7 @@ fn tools_advertise_read_and_mutation_surfaces() {
 }
 
 #[test]
-fn mutation_schema_exposes_multi_source_mp3_configuration_only() {
+fn mutation_schema_exposes_multi_source_transfer_profile_configuration_only() {
     let (_dir, path) = empty_db();
     let mut client = McpClient::start(&path);
     let response = client.request("tools/list", json!({}));
@@ -44,7 +44,8 @@ fn mutation_schema_exposes_multi_source_mp3_configuration_only() {
     let properties = tool["inputSchema"]["properties"].as_object().unwrap();
 
     assert!(properties.contains_key("sources"));
-    assert!(properties.contains_key("quality_kbps"));
+    assert!(properties.contains_key("profile"));
+    assert!(!properties.contains_key("quality_kbps"));
     assert!(!properties.contains_key("playlist_name"));
     assert!(!properties.contains_key("remove_unselected"));
     assert!(!properties.contains_key("bitrate_kbps"));

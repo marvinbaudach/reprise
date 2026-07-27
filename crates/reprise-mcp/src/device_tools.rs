@@ -12,7 +12,7 @@ impl RepriseServer {
         name = "music_get_device_sync_state",
         description = "Read connected Android devices and live synchronization \
             state from the running Reprise app: manual and smart playlist rows, \
-            MP3 quality, deduplicated target totals, change summary, current and \
+            transfer profile, deduplicated target totals, change summary, current and \
             projected storage composition, blockers, warnings, controls, progress, \
             current title and effective bytes per second. Never returns serials \
             or filesystem/device paths."
@@ -33,8 +33,9 @@ impl RepriseServer {
         name = "music_device_sync",
         description = "Configure or control Android synchronization in the \
             running Reprise app. Actions: configure (device_name, sources with \
-            kind playlist/smart plus id, quality_kbps), start, cancel. MP3 \
-            quality_kbps accepts 128, 192, 256 or 320 and defaults to 256. Configuration \
+            kind playlist/smart plus id, profile), start, cancel. Profile accepts \
+            opus_160, mp3_256 or original and defaults to opus_160. Lossy inputs are \
+            copied unchanged instead of being transcoded to another lossy format. Configuration \
             and start are separate so the destructive delta can be inspected \
             with music_get_device_sync_state before transfer. Only files \
             managed by Reprise under Music/Reprise are eligible for removal. \

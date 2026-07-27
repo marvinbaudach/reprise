@@ -12,7 +12,7 @@ use gtk4::gio::prelude::*;
 use reprise_core::device_sync::DeviceStorageInspection;
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor, DeviceStorage};
 use reprise_platform_linux::device_transfer::{
-    probe_mp3_transcode_capability, transcode_to_mp3, Mp3TranscodeRequest, TranscodedFile,
+    probe_transcode_capability, transcode_audio, TranscodeProfile, TranscodeRequest, TranscodedFile,
 };
 use rusqlite::Connection;
 
@@ -125,23 +125,23 @@ impl DeviceBackend for SmokeDeviceBackend {
         })
     }
 
-    fn probe_mp3_transcode(&self) -> Result<(), String> {
-        probe_mp3_transcode_capability().map_err(|error| error.to_string())
+    fn probe_transcode(&self, profile: TranscodeProfile) -> Result<(), String> {
+        probe_transcode_capability(profile).map_err(|error| error.to_string())
     }
 
     fn transcode_track(
         &self,
-        request: Mp3TranscodeRequest,
+        request: TranscodeRequest,
         cancelled: Arc<AtomicBool>,
     ) -> BackendFuture<TranscodedFile> {
         Box::pin(async move {
             let (sender, receiver) = async_channel::bounded(1);
             std::thread::Builder::new()
-                .name("reprise-smoke-device-mp3-encoder".into())
+                .name("reprise-smoke-device-audio-encoder".into())
                 .spawn(move || {
                     let output = request.output.clone();
                     let result =
-                        transcode_to_mp3(&request, &cancelled).map_err(|error| error.to_string());
+                        transcode_audio(&request, &cancelled).map_err(|error| error.to_string());
                     if sender.send_blocking(result).is_err() {
                         let _ = std::fs::remove_file(output);
                     }
@@ -150,7 +150,7 @@ impl DeviceBackend for SmokeDeviceBackend {
             receiver
                 .recv()
                 .await
-                .map_err(|_| "MP3 encoder stopped without a result".to_string())?
+                .map_err(|_| "audio encoder stopped without a result".to_string())?
         })
     }
 

@@ -16,9 +16,9 @@ pub struct DeviceSyncParams {
     /// Exact path-free source identities from music_get_device_sync_state.
     #[serde(default)]
     pub sources: Option<Vec<DeviceSyncSourceParam>>,
-    /// MP3 CBR quality in kbit/s. Supported: 128, 192, 256, 320. Defaults to 256.
+    /// Transfer profile: opus_160, mp3_256 or original. Defaults to opus_160.
     #[serde(default)]
-    pub quality_kbps: Option<u32>,
+    pub profile: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema, PartialEq, Eq)]
@@ -39,7 +39,7 @@ pub struct DeviceSyncStateDto {
 pub struct DeviceSyncDeviceDto {
     pub name: String,
     pub connected: bool,
-    pub quality_kbps: u32,
+    pub profile: String,
     pub managed_tracks: u64,
     pub unique_track_count: u64,
     pub target_bytes: u64,

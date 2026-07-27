@@ -68,8 +68,8 @@ fn device() -> DeviceView {
         managed_track_count: 0,
         bytes_per_second: 0,
         page: SyncPageState {
-            quality_options: Mp3Quality::ALL.to_vec(),
-            quality: Mp3Quality::Kbps256,
+            profile_options: TransferProfile::ALL.to_vec(),
+            profile: TransferProfile::Mp3(Mp3Quality::Kbps256),
             playlists: vec![playlist],
             unique_track_count: 2,
             target_bytes: 32 * 1_024,
@@ -98,10 +98,14 @@ fn device() -> DeviceView {
 }
 
 #[test]
-fn compact_dialog_names_every_supported_mp3_quality() {
+fn compact_dialog_names_each_modern_transfer_profile() {
     assert_eq!(
-        Mp3Quality::ALL.map(quality_label),
-        ["128 kbit/s", "192 kbit/s", "256 kbit/s", "320 kbit/s"]
+        TransferProfile::ALL.map(profile_label),
+        [
+            "Opus · 160 kbit/s (Recommended)",
+            "MP3 · 256 kbit/s (Compatibility)",
+            "Original files (no conversion)",
+        ]
     );
 }
 
@@ -282,14 +286,14 @@ fn compact_dialog_warning_copy_is_grammatical_and_path_free() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn mtp_2_compact_dialog_renders_and_wires_only_the_playlist_mirroring_controls() {
     gtk4::init().expect("GTK test display");
-    let quality_events = Rc::new(RefCell::new(Vec::new()));
+    let profile_events = Rc::new(RefCell::new(Vec::new()));
     let playlist_events = Rc::new(RefCell::new(Vec::new()));
     let starts = Rc::new(RefCell::new(0));
     let cancels = Rc::new(RefCell::new(0));
     let actions = DialogActions {
-        set_quality: {
-            let events = quality_events.clone();
-            Rc::new(move |quality| events.borrow_mut().push(quality))
+        set_profile: {
+            let events = profile_events.clone();
+            Rc::new(move |profile| events.borrow_mut().push(profile))
         },
         set_playlist: {
             let events = playlist_events.clone();
@@ -311,10 +315,10 @@ fn mtp_2_compact_dialog_renders_and_wires_only_the_playlist_mirroring_controls()
 
     assert_eq!(surface.title.title(), "Pixel 8");
     assert_eq!(
-        surface.quality.model().map(|model| model.n_items()),
-        Some(4)
+        surface.profile.model().map(|model| model.n_items()),
+        Some(3)
     );
-    assert_eq!(surface.quality.selected(), 2);
+    assert_eq!(surface.profile.selected(), 1);
     assert_eq!(surface.playlist_rows.borrow().len(), 1);
     assert_eq!(surface.primary.label().as_deref(), Some("_Sync now"));
     assert!(surface.primary.uses_underline());
@@ -323,10 +327,10 @@ fn mtp_2_compact_dialog_renders_and_wires_only_the_playlist_mirroring_controls()
     assert!(!surface.root_text().contains("ratings"));
     assert!(!surface.root_text().contains("Remove unselected"));
 
-    surface.quality.set_selected(3);
+    surface.profile.set_selected(2);
     surface.playlist_rows.borrow()[0].1.set_active(false);
     surface.primary.emit_clicked();
-    assert_eq!(*quality_events.borrow(), [Mp3Quality::Kbps320]);
+    assert_eq!(*profile_events.borrow(), [TransferProfile::Original]);
     assert_eq!(
         *playlist_events.borrow(),
         [(SelectionSource::Smart(7), false)]

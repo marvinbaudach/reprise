@@ -3,11 +3,12 @@
 Status: **Stage implementiert; manuelle Geräteprüfung offen**
 Branch: `feature/simplified-android-sync`
 Feature-Basis: `ea1b3dc7c1`
-Integriertes `dev`: `066d2abcb6`
+Integriertes `dev`: `73bb12dcd2`
 Stand: 2026-07-27
 
 Dieser Plan ersetzt den früheren Entwurf für Device-View, Preferences-Sync-Tab,
-„Entire Library“, Pins, Ratings-Back, Opus und einen globalen Sync. Der
+„Entire Library“, Pins, Ratings-Back, frei konfigurierbare Encoder und einen
+globalen Sync. Der
 verbindliche Ausführungsstand steht in `.superpowers/sdd/progress.md`; die
 Commits bleiben Ground Truth.
 
@@ -20,8 +21,10 @@ verbundene Android-MTP-Geräte. Die Bedienung bleibt absichtlich klein:
 - Ein Klick öffnet einen kompakten gerätebezogenen Dialog.
 - Der Hauptmenü-Eintrag öffnet bei einem Gerät direkt diesen Dialog und bei
   mehreren Geräten zuerst eine Geräteauswahl.
-- Im Dialog werden Playlists und MP3-Qualität gewählt, Delta und
-  Speicherprojektion geprüft sowie Sync, Cancel und Eject ausgelöst.
+- Im Dialog werden Playlists und eines von drei Transferprofilen gewählt:
+  Opus 160 kbit/s als Standard, MP3 256 kbit/s als Kompatibilitäts-Fallback
+  oder unveränderte Originaldateien. Delta und Speicherprojektion werden
+  geprüft sowie Sync, Cancel und Eject ausgelöst.
 - Änderungen werden sofort gerätebezogen persistiert; es gibt keinen Apply-
   Schritt und keine zweite Sync-Oberfläche.
 
@@ -31,7 +34,7 @@ Nicht Teil dieser Stage sind:
 - Device-View im Hauptfenster;
 - Sync-Seite in Preferences;
 - Keep-on-device-Pins und Ratings-/Playcount-Rücksync;
-- Opus-Profile oder parallele Encoder;
+- frei konfigurierbare Bitraten oder parallele Encoder;
 - Zugriff auf beliebige Telefoninhalte außerhalb des von Reprise verwalteten
   Bereichs;
 - Companion-App oder bidirektionale Synchronisation.
@@ -42,9 +45,11 @@ Nicht Teil dieser Stage sind:
 
 Die pure Core-Schicht besitzt die plattformneutralen Verträge:
 
-- `device_sync/profile.rs`: MP3 128/192/256/320 kbit/s, Standard 256 kbit/s,
-  Copy-vs.-Transcode-Entscheidung, konservative Zielgröße und stabiler
-  Profil-Fingerprint.
+- `device_sync/profile.rs`: genau Opus 160, MP3 256 und Original, mit Opus als
+  Standard, konservativer Copy-vs.-Transcode-Entscheidung, Zielgröße und
+  stabilem Profil-Fingerprint. Nur eindeutig verlustfreie Quellen werden
+  transkodiert; bekannte verlustbehaftete sowie unbekannte oder mehrdeutige
+  Formate werden unverändert kopiert.
 - `device_sync/snapshot.rs`: manuelle und smarte Playlist-Snapshots,
   Wiederholungen in M3U-Reihenfolge sowie explizite Verfügbarkeit.
 - `device_sync/mirror.rs`: deterministischer Mirror-Plan mit Add, Replace,
@@ -64,11 +69,14 @@ Die pure Core-Schicht besitzt die plattformneutralen Verträge:
 - `device_sync.rs` erkennt ausschließlich MTP-Ziele, löst den verwalteten
   `Music/Reprise`-Bereich auf, inspiziert nur diesen Bereich und liefert andere
   Musik ausschließlich aggregiert.
-- `device_transfer.rs` kopiert vorhandene passende MP3-Dateien oder
-  transkodiert genau eine Datei zur Zeit über
-  `uridecodebin → audioconvert → audioresample → lamemp3enc → id3v2mux`.
-- Die Pipeline benötigt GStreamer Good Plug-ins. Fehlt eine Factory, wird der
-  gesamte Plan vor dem ersten destruktiven Schritt blockiert.
+- `device_transfer.rs` transkodiert genau eine eindeutig verlustfreie Datei
+  zur Zeit entweder über `opusenc → oggmux` mit 160 kbit/s VBR oder über
+  `lamemp3enc → id3v2mux` mit 256 kbit/s CBR. Tags und eingebettete Cover
+  werden in beiden Resultaten erhalten. Original- und Lossy-Passthrough
+  benötigen keinen Encoder.
+- Vor einem Lauf werden nur die tatsächlich benötigten GStreamer-Pipelines
+  geprüft. Fehlt eine Factory, wird der Plan vor dem ersten destruktiven
+  Schritt blockiert.
 - Der MTP-Transfer schreibt zuerst `<Ziel>.part`, prüft die erwartete Größe und
   veröffentlicht erst danach atomar auf den finalen verwalteten Pfad.
 - Partials werden ausschließlich unter `Music/Reprise` bereinigt.
@@ -90,11 +98,12 @@ Die pure Core-Schicht besitzt die plattformneutralen Verträge:
 
 ## Persistenz und Migration
 
-Der zusammengeführte Schema-Stand ist `user_version = 36`:
+Der zusammengeführte Schema-Stand ist `user_version = 37`:
 
 - v34: Podcasts/Radio;
 - v35: Recently Added;
-- v36: Android-Sync-Inventar.
+- v36: Android-Sync-Inventar;
+- v37: modernes Transferprofil.
 
 v36:
 
@@ -108,8 +117,12 @@ v36:
 - markiert altes Opus-Inventar mit `legacy-opus-v1`, damit es beim nächsten
   ausgewählten Sync sicher ersetzt wird.
 
-Alte Felder und Enum-Varianten dürfen für DB-/API-Kompatibilität noch
-dekodierbar sein, sind aber inert und besitzen keine Benutzeroberfläche.
+v37 ergänzt `device_settings.transfer_profile` mit den stabilen Werten
+`opus_160`, `mp3_256` und `original`. Neue Geräte beginnen mit `opus_160`;
+bereits unter v36 konfigurierte Geräte werden konservativ auf `mp3_256`
+migriert, damit ein Upgrade ihr bisheriges Ausgabeformat nicht still ändert.
+Die alten Spalten `mp3_quality` und `opus_bitrate` bleiben ausschließlich
+als inerte DB-Kompatibilitätsfelder ohne Benutzeroberfläche erhalten.
 Inventarzeilen kaskadieren absichtlich nicht mit Bibliothekstracks: Ein lokal
 vorübergehend fehlender Track darf keine Information über die vorhandene
 Gerätedatei vernichten.
@@ -121,7 +134,9 @@ Gerätedatei vernichten.
 3. Physische Tracks über alle Playlists deduplizieren; M3U-Wiederholungen
    bleiben erhalten.
 4. Zielpfade FAT-sicher und kollisionsstabil unter
-   `Music/Reprise/<Album Artist>/<Album>/<NN Title>.mp3` ableiten.
+   `Music/Reprise/<Album Artist>/<Album>/<NN Title>.<ext>` ableiten. Die
+   Endung folgt dem tatsächlichen Output: `.opus`, `.mp3` oder die
+   kleingeschriebene Originalendung.
 5. Source-Fingerprint, Profil und Inventar vergleichen:
    - unverändert und passend: behalten;
    - neu: kopieren/transkodieren;
@@ -134,15 +149,17 @@ Gerätedatei vernichten.
 7. Delta, Transferbytes und Speicherzustand projizieren. Blocker enthalten
    keine lokalen oder Gerätepfade.
 
-Für Transcodes reserviert die Projektion den nominellen MP3-Audiostrom, die
-vollständige Source-Größe für source-abgeleitete Tags/Cover und zusätzlichen
-Container-/Frame-Overhead. Eine unbekannte Dauer hat deshalb keine künstlich
-kleine, begrenzte Schätzung.
+Für Transcodes reserviert die Projektion den nominellen Opus- beziehungsweise
+MP3-Audiostrom, die vollständige Source-Größe für source-abgeleitete
+Tags/Cover und zusätzlichen Container-/Frame-Overhead. Passthrough verwendet
+die echte Source-Größe. Eine unbekannte Dauer hat deshalb keine künstlich
+kleine, begrenzte Transcode-Schätzung.
 
 ## Ausführungsreihenfolge und Sicherheitsinvarianten
 
 Vor destruktiver Arbeit werden Geräteidentität, Verbindung, Mirror-Plan,
-MP3-Pipeline und aktueller freier Speicher erneut geprüft.
+die tatsächlich benötigte Encoder-Pipeline und aktueller freier Speicher
+erneut geprüft.
 
 Die Reihenfolge eines gerätebezogenen Laufs ist:
 
@@ -165,7 +182,7 @@ Weitere Invarianten:
 - Cancel wirkt nur auf das benannte Gerät und stoppt auch weitere
   Playlist-Veröffentlichungen und -Löschungen.
 - Generationen verwerfen verspätete Scan-, Progress- und Completion-Events.
-- Während eines Laufs sind Playlist- und Qualitätsänderungen vor der
+- Während eines Laufs sind Playlist- und Profiländerungen vor der
   Persistenz gesperrt.
 - Eine fehlgeschlagene Inventar-Transaktion darf einen alten abweichenden
   Zielpfad nicht löschen.
@@ -178,7 +195,9 @@ Weitere Invarianten:
 Der Dialog zeigt:
 
 - Gerätename und MTP-Verbindung;
-- MP3-Qualität 128/192/256/320 kbit/s;
+- Transferprofil Opus 160 kbit/s, MP3 256 kbit/s oder Original;
+- die sichtbare Garantie, dass verlustbehaftete und unbekannte Quellen nie in
+  ein anderes verlustbehaftetes Format transkodiert werden;
 - jede manuelle und smarte Playlist mit Entry-, Unique-, Missing- und
   Größenprojektion;
 - deduplizierte Gesamttracks und physische Zielgröße;
@@ -195,31 +214,32 @@ Dabei wird der aktuelle Fokus auf derselben Quelle oder der nächstgelegenen
 verbleibenden Zeile wiederhergestellt. Kein `RefCell`-Borrow bleibt über
 GTK-Setter oder Signalpfade bestehen.
 
-Die lokale Agent-/MCP-Schnittstelle verwendet dieselben MP3-Qualitäten. Eine
-Konfiguration ändert den expliziten Transfer-Profile-State; das alte
-`opus_bitrate`-Kompatibilitätsfeld bleibt dabei null.
+Die lokale Agent-/D-Bus-/MCP-Schnittstelle verwendet dieselben drei stabilen
+Profilwerte `opus_160`, `mp3_256` und `original`. Eine Konfiguration ändert
+den expliziten Transfer-Profile-State; das alte `opus_bitrate`-
+Kompatibilitätsfeld bleibt dabei null.
 
 ## Abschlussstand
 
-Die Tasks 1 bis 11 sowie die Dev-Integration und die beiden adversarialen
+Die Tasks 1 bis 13, beide Dev-Integrationen und die adversarialen
 Safety-/Storage-Follow-ups sind abgeschlossen. Der Agent-, D-Bus- und
 MCP-Vertrag entspricht dem kompakten Dialog:
 
 - `music_get_device_sync_state` liefert manuelle und smarte
-  Playlist-Identitäten, MP3-Qualität, deduplizierte Summen, Änderungen,
+  Playlist-Identitäten, Transferprofil, deduplizierte Summen, Änderungen,
   Storage-Zusammensetzung, Blocker, Warnungen, Controls und Fortschritt ohne
   Seriennummern oder Pfade.
 - `music_device_sync` akzeptiert `configure`, `start` und `cancel`.
   `configure` erhält Quellen als stabile Paare aus `kind`
-  (`playlist` oder `smart`) und `id` sowie `quality_kbps` mit
-  128/192/256/320. Alle Mutationen benötigen `device:sync`.
-- Die kompatiblen alten Opus-Felder bleiben inert und werden von der neuen
+  (`playlist` oder `smart`) und `id` sowie `profile`; ohne Angabe gilt
+  `opus_160`. Alle Mutationen benötigen `device:sync`.
+- Die kompatiblen alten Bitratenfelder bleiben inert und werden von der neuen
   Konfiguration nicht als Produktfunktion reaktiviert.
 
 Die Commits und Gate-Ergebnisse sind im Fortschrittsledger einzeln
 nachgewiesen. Offen bleiben ausschließlich die unten aufgeführten Prüfungen
 mit einem ausdrücklich freigegebenen Testgerät sowie die Owner-Entscheidung
-über den geplanten UX-Regelvorschlag MTP-7.
+über die geplanten UX-Regelvorschläge MTP-7 und MTP-8.
 
 ## Verifikation
 
@@ -248,7 +268,8 @@ Diese Checks benötigen ausdrückliche Freigabe und ein Testgerät; sie sind nic
 durch Headless-Tests ersetzbar:
 
 1. reales Android-Gerät verbinden und Connected-Toast/Karte prüfen;
-2. 128/192/256/320-kbit/s-MP3-Resultate und eingebettete Tags/Cover prüfen;
+2. Opus-160- und MP3-256-Resultate samt Tags/Cover sowie bytegenauen
+   FLAC-Passthrough im Originalprofil prüfen;
 3. Copy-Fortschritt und Rate auf dem realen GVfs-MTP-Backend beobachten;
 4. Kabelverlust während Copy sowie Reconnect/Partial-Cleanup prüfen;
 5. Eject im Idle und Disabled-Zustand während Sync prüfen;
