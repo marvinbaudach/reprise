@@ -5,8 +5,7 @@ use rusqlite::types::Value;
 use rusqlite::Connection;
 
 use super::clauses::{
-    ai_projection, filter_clause, like_pattern, order_expr_and_dir, row_to_id, row_to_track,
-    PRESENT,
+    ai_projection, filter_clause, like_pattern, order_clause, row_to_id, row_to_track, PRESENT,
 };
 use super::queue::QUEUE_LIMIT;
 use super::{browse::browse_clause, BrowseFilter, MAX_WINDOW_LIMIT};
@@ -162,7 +161,7 @@ pub(super) fn query_album_track_window(
 ) -> Result<Vec<Track>, rusqlite::Error> {
     let limit = limit.clamp(0, MAX_WINDOW_LIMIT);
     let has_filter = !filter.trim().is_empty();
-    let (order, direction) = order_expr_and_dir(sort_field, sort_dir);
+    let order = order_clause(sort_field, sort_dir);
     let filter_sql = filter_clause(has_filter, 5);
     let browse_first_param = if has_filter { 6 } else { 5 };
     let (browse_sql, browse_values) = browse_clause(browse, browse_first_param);
@@ -175,7 +174,7 @@ pub(super) fn query_album_track_window(
          FROM tracks WHERE {PRESENT} \
          AND TRIM(album) = ?3 COLLATE NOCASE \
          AND {EFFECTIVE_ALBUM_ARTIST} = ?4 COLLATE NOCASE{filter_sql}{browse_sql} \
-         ORDER BY {order} {direction} LIMIT ?1 OFFSET ?2"
+         ORDER BY {order} LIMIT ?1 OFFSET ?2"
     );
     let mut params = vec![
         Value::Integer(limit),
@@ -249,7 +248,7 @@ pub(super) fn query_album_track_ids_browsed(
     browse: &BrowseFilter,
 ) -> Result<Vec<i64>, rusqlite::Error> {
     let has_filter = !filter.trim().is_empty();
-    let (order, direction) = order_expr_and_dir(sort_field, sort_dir);
+    let order = order_clause(sort_field, sort_dir);
     let filter_sql = filter_clause(has_filter, 3);
     let browse_first_param = if has_filter { 4 } else { 3 };
     let (browse_sql, browse_values) = browse_clause(browse, browse_first_param);
@@ -257,7 +256,7 @@ pub(super) fn query_album_track_ids_browsed(
         "SELECT id FROM tracks WHERE {PRESENT} \
          AND TRIM(album) = ?1 COLLATE NOCASE \
          AND {EFFECTIVE_ALBUM_ARTIST} = ?2 COLLATE NOCASE{filter_sql}{browse_sql} \
-         ORDER BY {order} {direction} LIMIT {QUEUE_LIMIT}"
+         ORDER BY {order} LIMIT {QUEUE_LIMIT}"
     );
     let mut params = vec![
         Value::Text(album.trim().to_string()),
@@ -351,7 +350,7 @@ pub(super) fn query_artist_track_window(
 ) -> Result<Vec<Track>, rusqlite::Error> {
     let limit = limit.clamp(0, MAX_WINDOW_LIMIT);
     let has_filter = !filter.trim().is_empty();
-    let (order, direction) = order_expr_and_dir(sort_field, sort_dir);
+    let order = order_clause(sort_field, sort_dir);
     let filter_sql = filter_clause(has_filter, 4);
     let browse_first_param = if has_filter { 5 } else { 4 };
     let (browse_sql, browse_values) = browse_clause(browse, browse_first_param);
@@ -363,7 +362,7 @@ pub(super) fn query_artist_track_window(
          {is_ai} AS is_ai \
          FROM tracks WHERE {PRESENT} \
          AND {EFFECTIVE_ALBUM_ARTIST} = ?3 COLLATE NOCASE{filter_sql}{browse_sql} \
-         ORDER BY {order} {direction} LIMIT ?1 OFFSET ?2"
+         ORDER BY {order} LIMIT ?1 OFFSET ?2"
     );
     let mut params = vec![
         Value::Integer(limit),
@@ -410,14 +409,14 @@ pub(super) fn query_artist_track_ids(
     browse: &BrowseFilter,
 ) -> Result<Vec<i64>, rusqlite::Error> {
     let has_filter = !filter.trim().is_empty();
-    let (order, direction) = order_expr_and_dir(sort_field, sort_dir);
+    let order = order_clause(sort_field, sort_dir);
     let filter_sql = filter_clause(has_filter, 2);
     let browse_first_param = if has_filter { 3 } else { 2 };
     let (browse_sql, browse_values) = browse_clause(browse, browse_first_param);
     let sql = format!(
         "SELECT id FROM tracks WHERE {PRESENT} \
          AND {EFFECTIVE_ALBUM_ARTIST} = ?1 COLLATE NOCASE{filter_sql}{browse_sql} \
-         ORDER BY {order} {direction} LIMIT {QUEUE_LIMIT}"
+         ORDER BY {order} LIMIT {QUEUE_LIMIT}"
     );
     let mut params = vec![Value::Text(artist.trim().to_string())];
     if has_filter {

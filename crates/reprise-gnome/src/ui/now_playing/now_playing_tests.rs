@@ -500,14 +500,14 @@ fn npp_13_cold_cover_resolves_before_the_outgoing_cover_fades() {
     let shared_tree = widget_tree(widgets.track_content.upcast_ref());
     assert!(shared_tree.iter().any(|widget| widget == &widgets.cover));
     assert!(shared_tree.iter().any(|widget| widget == &widgets.title));
-    assert!(shared_tree
+    assert!(!shared_tree
         .iter()
         .any(|widget| widget == &widgets.tab_stack));
     assert_eq!(
         widgets.stage.first_child(),
         Some(widgets.track_content.clone().upcast())
     );
-    assert!(widgets.track_content.next_sibling().is_none());
+    assert!(widgets.track_content.next_sibling().is_some());
 
     let (worker, requests) = async_channel::unbounded();
     let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::CoverDownloadRuntime {
