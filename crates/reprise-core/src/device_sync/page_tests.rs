@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use super::{
-    project_sync_page, DeviceFileRecord, DeviceStorageSnapshot, MirrorBlocker,
+    project_sync_page, DeviceFileRecord, DeviceStorageAccess, DeviceStorageSnapshot, MirrorBlocker,
     MirrorPlaylistSnapshot, MirrorTrack, Mp3Quality, SelectionSource, SyncPageInput, SyncTrack,
     TransferProfile,
 };
@@ -117,5 +117,29 @@ fn controls_do_not_offer_a_start_when_transfers_exceed_current_free_space() {
         projection.page.storage.state,
         super::StorageProjectionState::Fits
     ));
+    assert!(!projection.page.controls.can_start);
+}
+
+#[test]
+fn controls_do_not_offer_a_start_for_a_known_read_only_target() {
+    let source = SelectionSource::Playlist(1);
+    let mut projection = project_sync_page(SyncPageInput {
+        selected: vec![source.clone()],
+        playlists: vec![MirrorPlaylistSnapshot {
+            source,
+            name: "Road".into(),
+            entries: vec![MirrorTrack::Available(track(1))],
+        }],
+        storage: DeviceStorageSnapshot {
+            access: DeviceStorageAccess::ReadOnly,
+            total_bytes: Some(1_000_000),
+            free_bytes: Some(500_000),
+            ..DeviceStorageSnapshot::default()
+        },
+        ..SyncPageInput::default()
+    });
+
+    projection.page.update_controls(true, true, false);
+
     assert!(!projection.page.controls.can_start);
 }

@@ -56,10 +56,19 @@ pub struct AgentDeviceSyncChanges {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AgentDeviceSyncStorage {
     pub target_name: Option<String>,
+    pub access: AgentDeviceSyncStorageAccess,
     pub state: AgentDeviceSyncStorageState,
     pub transfer_bytes: u64,
     pub current: AgentDeviceSyncStorageComposition,
     pub after_sync: Option<AgentDeviceSyncStorageComposition>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum AgentDeviceSyncStorageAccess {
+    Writable,
+    ReadOnly,
+    #[default]
+    Unknown,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -198,6 +207,7 @@ mod tests {
                 },
                 storage: AgentDeviceSyncStorage {
                     target_name: Some("Internal storage".into()),
+                    access: AgentDeviceSyncStorageAccess::Writable,
                     state: AgentDeviceSyncStorageState::Fits,
                     transfer_bytes: 60,
                     current: AgentDeviceSyncStorageComposition {
@@ -238,6 +248,10 @@ mod tests {
         assert_eq!(device.playlists[0].source, SelectionSource::Smart(7));
         assert_eq!(device.playlists[0].entry_count, 220);
         assert_eq!(device.changes.replacements, 5);
+        assert_eq!(
+            device.storage.access,
+            AgentDeviceSyncStorageAccess::Writable
+        );
         assert_eq!(device.storage.current.free_bytes, Some(40));
         assert_eq!(
             device.storage.after_sync.as_ref().unwrap().free_bytes,

@@ -346,6 +346,12 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Ein verlustbehaftetes oder nicht eindeutig als verlustfrei erkanntes
   Quellformat wird unter jedem Profil unverändert kopiert und nie in ein
   anderes verlustbehaftetes Format transkodiert.
+  <!-- REVIEW: Regelvorschlag -->
+- **MTP-9** [geplant] [gtk] — Der kompakte Sync-Dialog benennt den von GIO
+  gemeldeten Schreibzugriff des gewählten Zielspeichers als „Writable“,
+  „Read-only“ oder „Write access unknown“. Ein sicher schreibgeschütztes Ziel
+  sperrt den Sync-Start und erklärt den Grund; unbekannte Angaben werden nicht
+  als Schreibfähigkeit ausgegeben und blockieren nicht vorsorglich.
 
 ## F. Einstellungen & Modale
 

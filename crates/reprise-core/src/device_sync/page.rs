@@ -3,10 +3,10 @@
 use std::collections::{HashMap, HashSet};
 
 use super::{
-    plan_mirror, project_storage, DeviceFileRecord, DevicePlaylistRecord, DeviceStorageProjection,
-    DeviceStorageSnapshot, ManagedDeviceFile, MirrorBlocker, MirrorInput, MirrorPlan,
-    MirrorPlaylistSnapshot, MirrorTrack, MirrorWarning, SelectionSource, StorageProjectionState,
-    TransferProfile,
+    plan_mirror, project_storage, DeviceFileRecord, DevicePlaylistRecord, DeviceStorageAccess,
+    DeviceStorageProjection, DeviceStorageSnapshot, ManagedDeviceFile, MirrorBlocker, MirrorInput,
+    MirrorPlan, MirrorPlaylistSnapshot, MirrorTrack, MirrorWarning, SelectionSource,
+    StorageProjectionState, TransferProfile,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -65,7 +65,7 @@ impl SyncPageState {
         let storage_blocks = matches!(
             self.storage.state,
             StorageProjectionState::Blocked | StorageProjectionState::Insufficient { .. }
-        );
+        ) || self.storage.access == DeviceStorageAccess::ReadOnly;
         let transfer_blocks = self
             .storage
             .current

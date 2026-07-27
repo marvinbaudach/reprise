@@ -7,14 +7,15 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::device_sync::{
-    DeviceStorageProjection, MirrorBlocker, Mp3Quality, StorageProjectionState, SyncChangeSummary,
-    SyncPageControls, SyncPageWarning, SyncPlaylistRow, TransferProfile,
+    DeviceStorageAccess, MirrorBlocker, Mp3Quality, SyncChangeSummary, SyncPageControls,
+    SyncPageWarning, SyncPlaylistRow, TransferProfile,
 };
 
 use super::device_sync_runtime::{
     DeviceSyncRuntime, DeviceSyncState, DeviceView, PlannedSyncPhase, SyncStep,
 };
 use super::device_sync_storage_bar::StorageBar;
+use super::device_sync_storage_copy::{storage_access_notice, storage_summary};
 use super::device_sync_strings;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -83,80 +84,6 @@ fn change_summary(changes: &SyncChangeSummary) -> String {
         ),
     ]
     .join(" · ")
-}
-
-fn storage_summary(storage: &DeviceStorageProjection) -> String {
-    match storage.state {
-        StorageProjectionState::Blocked => {
-            "Storage projection is unavailable until the selection is valid.".into()
-        }
-        StorageProjectionState::Inconsistent => {
-            "The device reported inconsistent storage information.".into()
-        }
-        StorageProjectionState::Insufficient { shortfall_bytes } => format!(
-            "Not enough space · {} more needed",
-            device_sync_strings::file_size(shortfall_bytes)
-        ),
-        StorageProjectionState::CapacityUnknown => {
-            let Some(after) = &storage.after_sync else {
-                return "Storage capacity and after-sync composition are unknown.".into();
-            };
-            format!(
-                "Music {} · after sync {} · Other unknown · Free {}",
-                device_sync_strings::file_size(
-                    storage
-                        .current
-                        .reprise_music_bytes
-                        .saturating_add(storage.current.other_music_bytes)
-                ),
-                storage_delta(
-                    storage.current.reprise_music_bytes,
-                    after.reprise_music_bytes
-                ),
-                after
-                    .free_bytes
-                    .map_or_else(|| "unknown".into(), device_sync_strings::file_size)
-            )
-        }
-        StorageProjectionState::Fits => {
-            let Some(after) = &storage.after_sync else {
-                return "After-sync storage is unavailable.".into();
-            };
-            let free = after
-                .free_bytes
-                .map_or_else(|| "unknown".into(), device_sync_strings::file_size);
-            format!(
-                "Music {} · after sync {} · Other {} · Free {free}",
-                device_sync_strings::file_size(
-                    storage
-                        .current
-                        .reprise_music_bytes
-                        .saturating_add(storage.current.other_music_bytes)
-                ),
-                storage_delta(
-                    storage.current.reprise_music_bytes,
-                    after.reprise_music_bytes
-                ),
-                after
-                    .other_used_bytes
-                    .map_or_else(|| "unknown".into(), device_sync_strings::file_size),
-            )
-        }
-    }
-}
-
-fn storage_delta(current_reprise: u64, after_reprise: u64) -> String {
-    match after_reprise.cmp(&current_reprise) {
-        std::cmp::Ordering::Greater => format!(
-            "+{}",
-            device_sync_strings::file_size(after_reprise - current_reprise)
-        ),
-        std::cmp::Ordering::Less => format!(
-            "−{}",
-            device_sync_strings::file_size(current_reprise - after_reprise)
-        ),
-        std::cmp::Ordering::Equal => "no change".into(),
-    }
 }
 
 fn blocker_summary(blockers: &[MirrorBlocker]) -> Option<String> {
@@ -590,6 +517,9 @@ impl SyncDialogSurface {
         if let Some(blocker) = blocker_summary(&device.page.blockers) {
             notices.push(blocker);
         }
+        if let Some(access_notice) = storage_access_notice(device.page.storage.access) {
+            notices.push(access_notice);
+        }
         notices.extend(warning_summary(&device.page.warnings));
         if let Some(error) = &device.scan_error {
             notices.push(format!("Could not inspect device storage: {error}"));
@@ -598,19 +528,21 @@ impl SyncDialogSurface {
             notices.push(error.message.clone());
         }
         self.notice.set_visible(!notices.is_empty());
-        self.notice.set_title(if device.page.blockers.is_empty() {
-            "Attention"
-        } else {
-            "Synchronization blocked"
-        });
+        let storage_blocks = device.page.storage.access == DeviceStorageAccess::ReadOnly;
+        self.notice
+            .set_title(if !device.page.blockers.is_empty() || storage_blocks {
+                "Synchronization blocked"
+            } else {
+                "Attention"
+            });
         self.notice.set_subtitle(&notices.join("\n"));
         self.notice.remove_css_class("error");
         self.notice.remove_css_class("warning");
         self.notice.add_css_class(
-            if device.page.blockers.is_empty() && device.sync_error.is_none() {
-                "warning"
-            } else {
+            if !device.page.blockers.is_empty() || storage_blocks || device.sync_error.is_some() {
                 "error"
+            } else {
+                "warning"
             },
         );
     }

@@ -4,12 +4,13 @@ use reprise_core::agent_device_sync::{
     AgentDeviceSyncBlocker, AgentDeviceSyncChanges, AgentDeviceSyncCommand,
     AgentDeviceSyncControls, AgentDeviceSyncDevice, AgentDeviceSyncPhase, AgentDeviceSyncPlaylist,
     AgentDeviceSyncRequest, AgentDeviceSyncState, AgentDeviceSyncStorage,
-    AgentDeviceSyncStorageComposition, AgentDeviceSyncStorageKnowledge,
-    AgentDeviceSyncStorageState, AgentDeviceSyncWarning, SharedAgentDeviceSyncState,
+    AgentDeviceSyncStorageAccess, AgentDeviceSyncStorageComposition,
+    AgentDeviceSyncStorageKnowledge, AgentDeviceSyncStorageState, AgentDeviceSyncWarning,
+    SharedAgentDeviceSyncState,
 };
 use reprise_core::device_sync::{
-    MirrorBlocker, SelectionSource, StorageComposition, StorageKnowledge, StorageProjectionState,
-    SyncPageWarning,
+    DeviceStorageAccess, MirrorBlocker, SelectionSource, StorageComposition, StorageKnowledge,
+    StorageProjectionState, SyncPageWarning,
 };
 
 use super::*;
@@ -159,6 +160,7 @@ fn agent_device(device: DeviceView) -> AgentDeviceSyncDevice {
         },
         storage: AgentDeviceSyncStorage {
             target_name: page.storage.target_name,
+            access: storage_access(page.storage.access),
             state: storage_state(page.storage.state),
             transfer_bytes: page.storage.transfer_bytes,
             current: storage_composition(&page.storage.current),
@@ -176,6 +178,14 @@ fn agent_device(device: DeviceView) -> AgentDeviceSyncDevice {
         bytes_total,
         bytes_per_second: device.bytes_per_second,
         current_track,
+    }
+}
+
+fn storage_access(access: DeviceStorageAccess) -> AgentDeviceSyncStorageAccess {
+    match access {
+        DeviceStorageAccess::Writable => AgentDeviceSyncStorageAccess::Writable,
+        DeviceStorageAccess::ReadOnly => AgentDeviceSyncStorageAccess::ReadOnly,
+        DeviceStorageAccess::Unknown => AgentDeviceSyncStorageAccess::Unknown,
     }
 }
 

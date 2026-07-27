@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use gio::prelude::*;
-use reprise_core::device_sync::ManagedDeviceFile;
+use reprise_core::device_sync::{DeviceStorageAccess, ManagedDeviceFile};
 
 use super::{
     is_audio_file, join_relative, DeviceIoError, DeviceStorage, DeviceStorageInspection,
@@ -19,6 +19,7 @@ impl DeviceStorage {
                 target_name: storage
                     .basename()
                     .map(|name| name.to_string_lossy().into_owned()),
+                access: storage_access(&storage).await,
                 free_bytes: optional_filesystem_bytes(
                     &storage,
                     gio::FILE_ATTRIBUTE_FILESYSTEM_FREE,
@@ -110,6 +111,60 @@ impl DeviceStorage {
             }
         };
         Ok((available, total))
+    }
+}
+
+async fn storage_access(storage: &gio::File) -> DeviceStorageAccess {
+    let filesystem_readonly =
+        optional_filesystem_boolean(storage, gio::FILE_ATTRIBUTE_FILESYSTEM_READONLY).await;
+    let can_write = optional_file_boolean(storage, gio::FILE_ATTRIBUTE_ACCESS_CAN_WRITE).await;
+    storage_access_from_attributes(filesystem_readonly, can_write)
+}
+
+pub(super) fn storage_access_from_attributes(
+    filesystem_readonly: Option<bool>,
+    can_write: Option<bool>,
+) -> DeviceStorageAccess {
+    if filesystem_readonly == Some(true) || can_write == Some(false) {
+        DeviceStorageAccess::ReadOnly
+    } else if can_write == Some(true) {
+        DeviceStorageAccess::Writable
+    } else {
+        DeviceStorageAccess::Unknown
+    }
+}
+
+async fn optional_filesystem_boolean(storage: &gio::File, attribute: &str) -> Option<bool> {
+    match storage
+        .query_filesystem_info_future(attribute, gio::glib::Priority::DEFAULT)
+        .await
+    {
+        Ok(info) => info
+            .has_attribute(attribute)
+            .then(|| info.boolean(attribute)),
+        Err(error) => {
+            tracing::debug!(%error, attribute, "device sync: storage capability attribute is unavailable");
+            None
+        }
+    }
+}
+
+async fn optional_file_boolean(storage: &gio::File, attribute: &str) -> Option<bool> {
+    match storage
+        .query_info_future(
+            attribute,
+            gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS,
+            gio::glib::Priority::DEFAULT,
+        )
+        .await
+    {
+        Ok(info) => info
+            .has_attribute(attribute)
+            .then(|| info.boolean(attribute)),
+        Err(error) => {
+            tracing::debug!(%error, attribute, "device sync: target access attribute is unavailable");
+            None
+        }
     }
 }
 

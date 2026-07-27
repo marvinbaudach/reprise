@@ -4,9 +4,11 @@ use std::future::Future;
 use std::rc::Rc;
 
 use gio::prelude::*;
+use reprise_core::device_sync::DeviceStorageAccess;
 use reprise_core::library::m3u::M3uEntry;
 use tempfile::TempDir;
 
+use super::inspection::storage_access_from_attributes;
 use super::*;
 
 fn run<T>(future: impl Future<Output = T>) -> T {
@@ -52,6 +54,30 @@ fn missing_music_directory_inspects_as_empty() {
     assert_eq!(inspection.snapshot.other_music_bytes, 0);
     assert!(inspection.snapshot.free_bytes.is_some());
     assert!(inspection.snapshot.total_bytes.is_some());
+}
+
+#[test]
+fn storage_access_prefers_read_only_evidence_and_preserves_unknowns() {
+    assert_eq!(
+        storage_access_from_attributes(Some(true), Some(true)),
+        DeviceStorageAccess::ReadOnly
+    );
+    assert_eq!(
+        storage_access_from_attributes(Some(false), Some(false)),
+        DeviceStorageAccess::ReadOnly
+    );
+    assert_eq!(
+        storage_access_from_attributes(None, Some(true)),
+        DeviceStorageAccess::Writable
+    );
+    assert_eq!(
+        storage_access_from_attributes(Some(false), None),
+        DeviceStorageAccess::Unknown
+    );
+    assert_eq!(
+        storage_access_from_attributes(None, None),
+        DeviceStorageAccess::Unknown
+    );
 }
 
 #[test]
