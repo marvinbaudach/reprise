@@ -25,7 +25,7 @@
 //!
 //! - [`wire_playlist_drop_target`]'s `connect_drop` closure — the real
 //!   pointer-drag path.
-//! - `Sidebar::handle_playlist_drop` (in `sidebar.rs`), which `window.rs`
+//! - `Sidebar::handle_playlist_drop` (below), which `window.rs`
 //!   wires to `TrackList::set_on_sidebar_playlist_drop` — the seam `ui::
 //!   track_list_dnd_smoke`'s `REPRISE_SMOKE_DND=addplaylist:<name>` hook
 //!   calls, so headless verification exercises this exact function instead
@@ -36,7 +36,7 @@ use std::rc::Rc;
 use gtk4::glib;
 use gtk4::prelude::*;
 
-use crate::ui::sidebar::{rebuild, show_toast, Shared};
+use crate::ui::sidebar::{rebuild, show_toast, Shared, Sidebar};
 use crate::ui::strings;
 use crate::ui::track_list_dnd;
 use reprise_core::library::playlist_membership;
@@ -46,6 +46,18 @@ use reprise_core::library::playlist_membership;
 /// (relocated from `sidebar.rs`, orchestrator size rule).
 pub(in crate::ui) type OnQueueDrop = std::rc::Rc<dyn Fn(&[i64]) -> bool>;
 pub(in crate::ui) type OnConversionDrop = std::rc::Rc<dyn Fn(&[i64]) -> bool>;
+
+impl Sidebar {
+    pub fn set_on_conversion_drop(&self, callback: impl Fn(&[i64]) -> bool + 'static) {
+        *self.shared.on_conversion_drop.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    /// Drives the same drop-handling sequence as the real playlist-row drop
+    /// target for callers that cannot synthesize a pointer drag.
+    pub fn handle_playlist_drop(&self, playlist_id: i64, playlist_name: &str, ids: &[i64]) -> bool {
+        handle_playlist_drop(&self.shared, playlist_id, playlist_name, ids)
+    }
+}
 
 fn drop_added_rows(inserted: u32) -> bool {
     inserted > 0

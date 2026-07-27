@@ -118,6 +118,15 @@ pub(in crate::ui) struct PodcastsView {
     kept_downloads: RefCell<KeptDownloads>,
 }
 
+fn build_episode_scroller(column_view: &gtk4::ColumnView) -> gtk4::ScrolledWindow {
+    gtk4::ScrolledWindow::builder()
+        .child(column_view)
+        .hexpand(true)
+        .vexpand(true)
+        .propagate_natural_height(false)
+        .build()
+}
+
 impl PodcastsView {
     pub(in crate::ui) fn install(
         conn: Rc<RefCell<Connection>>,
@@ -133,7 +142,7 @@ impl PodcastsView {
         let filter_bar = PodcastsFilterBar::new(conn.clone());
         let list_box = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         list_box.append(filter_bar.widget());
-        list_box.append(&column_view);
+        list_box.append(&build_episode_scroller(&column_view));
 
         let status = adw::StatusPage::new();
         let status_button = gtk4::Button::new();
@@ -710,6 +719,21 @@ fn last_updated_text(conn: &Connection) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn play_7b_podcast_episode_table_scrolls_inside_the_player_bar_boundary() {
+        gtk4::init().unwrap();
+        let table = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
+        let scroller = build_episode_scroller(&table);
+
+        assert_eq!(
+            scroller.child(),
+            Some(table.clone().upcast::<gtk4::Widget>())
+        );
+        assert!(scroller.vexpands());
+        assert!(!scroller.propagates_natural_height());
+    }
 
     #[test]
     fn unsubscribe_aggregation_skips_empty_download_sets_and_coalesces_shows() {

@@ -63,7 +63,6 @@ use rusqlite::Connection;
 use super::sidebar_activity_slot::SidebarActivitySlot;
 use super::sidebar_boundary_navigation::wire_collection_boundary_navigation;
 use super::sidebar_navigation_scroller::build_navigation_scroller;
-use crate::ui::sidebar_dnd;
 use reprise_core::view_source::ViewSource;
 
 /// One row's identity: the built widget, the `ViewSource` selecting it
@@ -309,26 +308,11 @@ impl Sidebar {
         *self.shared.on_remove_missing.borrow_mut() = Some(Rc::new(callback));
     }
 
-    pub fn set_on_conversion_drop(&self, callback: impl Fn(&[i64]) -> bool + 'static) {
-        *self.shared.on_conversion_drop.borrow_mut() = Some(Rc::new(callback));
-    }
-
     /// Injects the window's toast overlay, once it exists (built after the
     /// sidebar — same post-construction seam as `TrackList::set_toast_
     /// overlay`).
     pub fn set_toast_overlay(&self, overlay: &adw::ToastOverlay) {
         self.shared.toast_overlay.set(Some(overlay));
-    }
-
-    /// Drives the same drop-handling sequence `sidebar_dnd::wire_playlist_
-    /// drop_target`'s real `connect_drop` closure runs (see `sidebar_dnd::
-    /// handle_playlist_drop`'s doc comment) for callers that can't
-    /// synthesize a pointer drag. `window.rs` wires this to `TrackList::
-    /// set_on_sidebar_playlist_drop`, which `ui::track_list_dnd_smoke`'s
-    /// `REPRISE_SMOKE_DND=addplaylist:<name>` hook calls (Stage 3 Task 6
-    /// review finding #1). Returns whether anything was actually added.
-    pub fn handle_playlist_drop(&self, playlist_id: i64, playlist_name: &str, ids: &[i64]) -> bool {
-        sidebar_dnd::handle_playlist_drop(&self.shared, playlist_id, playlist_name, ids)
     }
 
     /// Re-runs every count/list query and rebuilds the row set, preserving
