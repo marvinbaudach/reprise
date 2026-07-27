@@ -212,7 +212,8 @@ fn action_copy(controls: SyncPageControls) -> PageActionCopy {
 }
 
 fn eject_sensitive(device: &DeviceView) -> bool {
-    device.connected
+    device.page.controls.can_eject
+        && device.connected
         && !matches!(
             device.sync_phase,
             PlannedSyncPhase::Syncing { .. } | PlannedSyncPhase::Finishing
@@ -311,6 +312,7 @@ struct DeviceSyncPage {
     progress_box: gtk4::Box,
     progress_title: gtk4::Label,
     progress_detail: gtk4::Label,
+    progress_speed: gtk4::Label,
     progress_bar: gtk4::ProgressBar,
     primary: gtk4::Button,
     eject: gtk4::Button,
@@ -391,6 +393,7 @@ impl DeviceSyncPage {
             progress_box: dashboard.progress_box,
             progress_title: dashboard.progress_title,
             progress_detail: dashboard.progress_detail,
+            progress_speed: dashboard.progress_speed,
             progress_bar: dashboard.progress_bar,
             primary: dashboard.primary,
             eject: dashboard.eject,
@@ -603,12 +606,14 @@ impl DeviceSyncPage {
     }
 
     fn update_progress(&self, phase: &PlannedSyncPhase, bytes_per_second: u64) {
-        let Some((title, subtitle, fraction)) = progress_copy(phase, bytes_per_second) else {
+        let Some((title, subtitle, speed, fraction)) = progress_copy(phase, bytes_per_second)
+        else {
             self.progress_box.set_visible(false);
             return;
         };
         self.progress_title.set_label(&title);
         self.progress_detail.set_label(&subtitle);
+        self.progress_speed.set_label(&speed);
         self.progress_box.set_visible(true);
         self.progress_bar.set_fraction(fraction);
     }
@@ -665,17 +670,22 @@ impl DeviceSyncPage {
     }
 }
 
-fn progress_copy(phase: &PlannedSyncPhase, bytes_per_second: u64) -> Option<(String, String, f64)> {
+fn progress_copy(
+    phase: &PlannedSyncPhase,
+    bytes_per_second: u64,
+) -> Option<(String, String, String, f64)> {
     match phase {
         PlannedSyncPhase::Idle => None,
         PlannedSyncPhase::ComputingDelta => Some((
             "Checking device…".into(),
             "Reading storage and preparing the mirror plan".into(),
+            "—".into(),
             0.0,
         )),
         PlannedSyncPhase::Finishing => Some((
             "Finishing synchronization…".into(),
             "Refreshing the device inventory".into(),
+            "—".into(),
             1.0,
         )),
         PlannedSyncPhase::Syncing {
@@ -700,17 +710,15 @@ fn progress_copy(phase: &PlannedSyncPhase, bytes_per_second: u64) -> Option<(Str
             } else {
                 0.0
             };
-            let subtitle = if is_copying && bytes_per_second > 0 {
-                format!(
-                    "{current_track} · {}/s",
-                    device_sync_strings::file_size(bytes_per_second)
-                )
+            let speed = if is_copying && bytes_per_second > 0 {
+                format!("{}/s", device_sync_strings::file_size(bytes_per_second))
             } else {
-                current_track.clone()
+                "—".into()
             };
             Some((
                 format!("{step} · {done} of {total}"),
-                subtitle,
+                current_track.clone(),
+                speed,
                 fraction.clamp(0.0, 1.0),
             ))
         }

@@ -45,7 +45,7 @@ fn card_detail_mode_distinguishes_delta_progress_and_synced_states() {
 }
 
 #[test]
-fn independent_cards_use_their_own_mirror_delta_and_mtp_rate() {
+fn mtp_15_sidebar_keeps_free_space_visible_during_sync() {
     let mut copying = view(PlannedSyncPhase::Syncing {
         step: SyncStep::Copying,
         done: 1,
@@ -66,8 +66,16 @@ fn independent_cards_use_their_own_mirror_delta_and_mtp_rate() {
     idle.page.changes.removals = 1;
     idle.page.changes.transfer_bytes = 1_024 * 1_024;
 
+    copying.storage.free_bytes = Some(8 * 1_024 * 1_024);
     assert_eq!(card_title(&copying), "Syncing Phone A");
-    assert_eq!(card_subtitle(&copying), "↑ Track A · 2.0 MiB/s");
+    assert_eq!(
+        card_subtitle(&copying),
+        "8.0 MiB free · ↑ Track A · 2.0 MiB/s"
+    );
+    copying.sync_phase = PlannedSyncPhase::ComputingDelta;
+    assert_eq!(card_subtitle(&copying), "8.0 MiB free · Checking…");
+    copying.sync_phase = PlannedSyncPhase::Finishing;
+    assert_eq!(card_subtitle(&copying), "8.0 MiB free · Finishing…");
     assert_eq!(card_title(&idle), "Phone B");
     assert_eq!(
         card_subtitle(&idle),

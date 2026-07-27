@@ -7,6 +7,8 @@ use reprise_core::device_sync::TransferProfile;
 use super::device_sync_runtime::DeviceView;
 use super::device_sync_storage_bar::StorageBar;
 
+const OVERVIEW_WIDTH_CHARS: i32 = 42;
+
 pub(super) struct DeviceDashboard {
     pub(super) root: gtk4::ScrolledWindow,
     pub(super) device_name: gtk4::Label,
@@ -25,6 +27,7 @@ pub(super) struct DeviceDashboard {
     pub(super) progress_box: gtk4::Box,
     pub(super) progress_title: gtk4::Label,
     pub(super) progress_detail: gtk4::Label,
+    pub(super) progress_speed: gtk4::Label,
     pub(super) progress_bar: gtk4::ProgressBar,
     pub(super) primary: gtk4::Button,
     pub(super) eject: gtk4::Button,
@@ -86,13 +89,14 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
     playlist_summary.set_hexpand(true);
     playlist_header.append(&playlist_summary);
     let playlist_list = gtk4::ListBox::new();
-    playlist_list.add_css_class("boxed-list");
+    playlist_list.set_show_separators(true);
     playlist_list.set_selection_mode(gtk4::SelectionMode::None);
-    let playlists = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
+    let playlist_content = card_content();
+    playlist_content.set_spacing(12);
+    playlist_content.append(&playlist_header);
+    playlist_content.append(&playlist_list);
+    let playlists = card(&playlist_content);
     playlists.set_hexpand(true);
-    playlists.set_valign(gtk4::Align::Start);
-    playlists.append(&playlist_header);
-    playlists.append(&playlist_list);
 
     let overview_title = label("Sync overview", "title-2");
     let profile_title = label("Transfer profile", "heading");
@@ -107,12 +111,15 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
         "dim-label",
     );
     policy.set_wrap(true);
+    constrain_overview_width(&policy);
 
     let changes_heading = label("Next synchronization", "heading");
     let changes = detail_label();
+    constrain_overview_width(&changes);
 
     let notice_title = label("", "heading");
     let notice_detail = detail_label();
+    constrain_overview_width(&notice_detail);
     let notice_box = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
     notice_box.add_css_class("error");
     notice_box.set_visible(false);
@@ -121,6 +128,16 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
 
     let progress_title = label("", "heading");
     let progress_detail = detail_label();
+    constrain_overview_width(&progress_detail);
+    let speed_title = label("Transfer speed", "dim-label");
+    let progress_speed = label("—", "dim-label");
+    progress_speed.set_xalign(1.0);
+    progress_speed.set_width_chars(10);
+    progress_speed.add_css_class("numeric");
+    let speed_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+    speed_title.set_hexpand(true);
+    speed_row.append(&speed_title);
+    speed_row.append(&progress_speed);
     let progress_bar = gtk4::ProgressBar::new();
     progress_bar.set_show_text(false);
     progress_bar.update_property(&[gtk4::accessible::Property::Label(
@@ -130,6 +147,7 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
     progress_box.set_visible(false);
     progress_box.append(&progress_title);
     progress_box.append(&progress_detail);
+    progress_box.append(&speed_row);
     progress_box.append(&progress_bar);
 
     let overview_content = card_content();
@@ -144,7 +162,6 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
     overview_content.append(&progress_box);
     let overview = card(&overview_content);
     overview.set_size_request(340, -1);
-    overview.set_valign(gtk4::Align::Start);
 
     let body = gtk4::Box::new(gtk4::Orientation::Horizontal, 24);
     body.append(&playlists);
@@ -187,6 +204,7 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
         progress_box,
         progress_title,
         progress_detail,
+        progress_speed,
         progress_bar,
         primary,
         eject,
@@ -220,6 +238,11 @@ fn detail_label() -> gtk4::Label {
     label.set_wrap(true);
     label.set_wrap_mode(gtk4::pango::WrapMode::WordChar);
     label
+}
+
+fn constrain_overview_width(label: &gtk4::Label) {
+    label.set_width_chars(OVERVIEW_WIDTH_CHARS);
+    label.set_max_width_chars(OVERVIEW_WIDTH_CHARS);
 }
 
 pub(super) fn profile_labels(label: impl Fn(TransferProfile) -> &'static str) -> [&'static str; 3] {

@@ -39,6 +39,7 @@ pub struct SyncPageControls {
     pub editable: bool,
     pub can_start: bool,
     pub can_cancel: bool,
+    pub can_eject: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -81,6 +82,7 @@ impl SyncPageState {
                 && !storage_blocks
                 && !transfer_blocks,
             can_cancel: active,
+            can_eject: connected && !active,
         };
     }
 }

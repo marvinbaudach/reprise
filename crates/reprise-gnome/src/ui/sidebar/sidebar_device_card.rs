@@ -482,7 +482,10 @@ fn card_title(device: &DeviceView) -> String {
 
 fn card_subtitle(device: &DeviceView) -> String {
     match &device.sync_phase {
-        PlannedSyncPhase::ComputingDelta => "Checking…".into(),
+        PlannedSyncPhase::ComputingDelta => format!(
+            "{} · Checking…",
+            device_sync_strings::free_space(device.storage.free_bytes)
+        ),
         // The percentage lives in its own fixed-width label; keeping it out of
         // here stops the track name from shifting the number around.
         PlannedSyncPhase::Syncing {
@@ -493,14 +496,21 @@ fn card_subtitle(device: &DeviceView) -> String {
             let activity = device_sync_strings::sync_activity(step_glyph(step), current_track);
             if matches!(step, SyncStep::Copying) && device.bytes_per_second > 0 {
                 format!(
-                    "{activity} · {}/s",
+                    "{} · {activity} · {}/s",
+                    device_sync_strings::free_space(device.storage.free_bytes),
                     device_sync_strings::file_size(device.bytes_per_second)
                 )
             } else {
-                activity
+                format!(
+                    "{} · {activity}",
+                    device_sync_strings::free_space(device.storage.free_bytes)
+                )
             }
         }
-        PlannedSyncPhase::Finishing => "Finishing…".into(),
+        PlannedSyncPhase::Finishing => format!(
+            "{} · Finishing…",
+            device_sync_strings::free_space(device.storage.free_bytes)
+        ),
         PlannedSyncPhase::Idle => {
             if !has_mirror_selection(device) {
                 let space = device_sync_strings::available_space(device.storage.free_bytes);

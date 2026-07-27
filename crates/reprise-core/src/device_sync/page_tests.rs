@@ -79,6 +79,11 @@ fn empty_selection_keeps_controls_destructive_work_and_storage_projection_blocke
     );
     assert_eq!(projection.page.changes.removals, 0);
     assert!(!projection.page.controls.can_start);
+    assert!(projection.page.controls.can_eject);
+    projection.page.update_controls(true, true, true);
+    assert!(!projection.page.controls.can_eject);
+    projection.page.update_controls(false, true, false);
+    assert!(!projection.page.controls.can_eject);
 }
 
 #[test]
