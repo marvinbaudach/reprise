@@ -206,6 +206,7 @@ fn edits_and_removes_a_subscription_without_deleting_downloads() {
         210,
     )
     .unwrap()
+    .expect("episode should be imported")
     .episode_id;
     store::set_downloaded_path(&conn, episode_id, download.to_str()).unwrap();
     drop(conn);

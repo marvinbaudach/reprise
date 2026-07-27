@@ -147,6 +147,9 @@ fn intent_for(place: &BrowserPlace) -> NavigationIntent {
                 reprise_core::browser::LibraryScope::All,
             ) => NavigationIntent::Sidebar(SidebarTarget::Music),
             reprise_core::browser::TrackCollection::Library(
+                reprise_core::browser::LibraryScope::RecentlyAdded,
+            ) => NavigationIntent::Sidebar(SidebarTarget::RecentlyAdded),
+            reprise_core::browser::TrackCollection::Library(
                 reprise_core::browser::LibraryScope::Album(key),
             ) => NavigationIntent::OpenAlbum {
                 album: AlbumKey::new(&key.album, &key.album_artist),

@@ -14,7 +14,7 @@ pub fn list_episodes(conn: &Connection) -> Result<Vec<EpisodeRow>, rusqlite::Err
         "SELECT {EPISODE_COLUMNS}
          FROM podcast_episodes e
          JOIN podcast_subscriptions s ON s.id = e.subscription_id
-         WHERE s.removed_at IS NULL
+         WHERE s.removed_at IS NULL AND e.removed_at IS NULL
          ORDER BY e.published_at IS NULL, e.published_at DESC, e.first_seen_at DESC, e.id DESC"
     );
     let mut statement = conn.prepare(&sql)?;
@@ -30,7 +30,9 @@ pub fn episodes_for_subscription(
         "SELECT {EPISODE_COLUMNS}
          FROM podcast_episodes e
          JOIN podcast_subscriptions s ON s.id = e.subscription_id
-         WHERE s.removed_at IS NULL AND e.subscription_id = ?1
+         WHERE s.removed_at IS NULL
+           AND e.removed_at IS NULL
+           AND e.subscription_id = ?1
          ORDER BY e.published_at IS NULL, e.published_at DESC, e.first_seen_at DESC, e.id DESC"
     );
     let mut statement = conn.prepare(&sql)?;
@@ -43,7 +45,9 @@ pub fn count_unplayed(conn: &Connection) -> Result<usize, rusqlite::Error> {
         "SELECT COUNT(*)
          FROM podcast_episodes e
          JOIN podcast_subscriptions s ON s.id = e.subscription_id
-         WHERE s.removed_at IS NULL AND e.played_at IS NULL",
+         WHERE s.removed_at IS NULL
+           AND e.removed_at IS NULL
+           AND e.played_at IS NULL",
         [],
         |row| row.get::<_, i64>(0),
     )
@@ -64,6 +68,7 @@ pub fn next_unplayed_of_show(
          FROM podcast_episodes e
          JOIN podcast_subscriptions s ON s.id = e.subscription_id
          WHERE s.removed_at IS NULL
+           AND e.removed_at IS NULL
            AND e.subscription_id = ?1
            AND e.played_at IS NULL
            AND (?2 IS NULL OR e.published_at > ?2)
@@ -125,6 +130,7 @@ mod tests {
             published_at.unwrap_or_default() + 1_000,
         )
         .unwrap()
+        .expect("episode should be imported")
         .episode_id
     }
 

@@ -172,15 +172,16 @@ pub use scrobbling::*;
 pub const LIBRARY_FOLDER: &str = N_!("Library Folder");
 pub const NO_LIBRARY_FOLDER: &str = N_!("No folder selected");
 pub const CHOOSE_FOLDER: &str = N_!("Choose Folder…");
-pub const EXCLUDED_FILES: &str = N_!("Excluded Files");
+pub const EXCLUDED_FILES: &str = N_!("Removed from Library");
 pub const RESTORE_EXCLUDED_FILES: &str = N_!("Restore All");
-pub const RESTORE_EXCLUDED_FILES_FAILED: &str = N_!("Could not restore excluded files");
+pub const RESTORE_EXCLUDED_FILES_FAILED: &str =
+    N_!("Could not restore removed files to the library");
 
 pub fn excluded_files_subtitle(count: usize) -> String {
     let count_text = count.to_string();
     plural(
-        "{count} file ignored during library scans",
-        "{count} files ignored during library scans",
+        "{count} file removed from the library and ignored during scans",
+        "{count} files removed from the library and ignored during scans",
         count,
         &[("count", &count_text)],
     )
@@ -350,6 +351,7 @@ pub const COLUMN_ALBUM: &str = N_!("Album");
 pub const COLUMN_TRACK_NUMBER: &str = N_!("Track");
 pub const COLUMN_GENRE: &str = N_!("Genre");
 pub const COLUMN_YEAR: &str = N_!("Year");
+pub const COLUMN_ADDED: &str = N_!("Added");
 pub const COLUMN_LENGTH: &str = N_!("Length");
 pub const COLUMN_PLAY_COUNT: &str = N_!("Plays");
 // The Rating column's header reuses `RATING` below rather than having its
@@ -438,6 +440,7 @@ pub const SIDEBAR_SECTION_SMART: &str = N_!("SMART");
 pub const SIDEBAR_SECTION_ISSUES: &str = N_!("ISSUES");
 
 pub const SIDEBAR_MUSIC: &str = N_!("Music");
+pub const SIDEBAR_RECENTLY_ADDED: &str = N_!("Recently added");
 pub const SIDEBAR_QUEUE: &str = N_!("Queue");
 pub const QUEUE_SECTION_NOW_PLAYING: &str = N_!("Now Playing");
 pub const JUMP_TO_NOW_PLAYING: &str = N_!("Jump to now playing");
@@ -756,11 +759,12 @@ mod tests {
         assert!(body.contains("Listening history stays in My Stats"));
         assert_eq!(
             excluded_files_subtitle(0),
-            "0 files ignored during library scans"
+            "0 files removed from the library and ignored during scans"
         );
         assert_eq!(
             excluded_files_subtitle(1),
-            "1 file ignored during library scans"
+            "1 file removed from the library and ignored during scans"
         );
+        assert_eq!(text(EXCLUDED_FILES), "Removed from Library");
     }
 }

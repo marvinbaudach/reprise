@@ -23,6 +23,7 @@ fn test_shared() -> Rc<Shared> {
         on_tracks_added: RefCell::new(None),
         on_remove_missing: RefCell::new(None),
         on_queue_drop: RefCell::new(None),
+        on_conversion_drop: RefCell::new(None),
         window: glib::WeakRef::new(),
         toast_overlay: glib::WeakRef::new(),
         refresh_count: Cell::new(0),
@@ -136,8 +137,20 @@ fn handle_queue_drop_is_a_noop_without_ids_or_callback() {
 }
 
 #[test]
+fn issues_collection_is_the_sidebar_bottom_slot() {
+    assert_eq!(
+        sidebar_root_order(),
+        [
+            SidebarRootChild::Navigation,
+            SidebarRootChild::Activity,
+            SidebarRootChild::Issues,
+        ]
+    );
+}
+
+#[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn fb_2a_progress_activity_is_pinned_to_the_sidebar_bottom() {
+fn fb_2a_issues_stay_pinned_below_progress_activity() {
     gtk4::init().unwrap();
     let scrolled = gtk4::ScrolledWindow::builder().vexpand(true).build();
     let activity = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
@@ -154,22 +167,25 @@ fn fb_2a_progress_activity_is_pinned_to_the_sidebar_bottom() {
     window.present();
     while gtk4::glib::MainContext::default().iteration(false) {}
 
-    // FB-2a: the shared progress activity is the sidebar's bottom slot.
-    // Issues remain directly above it, so cover/scan/relink progress never
-    // floats in the middle of a tall sidebar.
+    // FB-2a: activity and Issues share the bottom region, with Issues fixed
+    // last so progress grows upward without lifting the persistent problem
+    // entry away from the bottom edge.
     let activity_bounds = activity.compute_bounds(&root).unwrap();
     let issues_bounds = issues.compute_bounds(&root).unwrap();
     assert_eq!(root.first_child().as_ref(), Some(scrolled.upcast_ref()));
-    assert_eq!(scrolled.next_sibling().as_ref(), Some(issues.upcast_ref()));
-    assert_eq!(root.last_child().as_ref(), Some(activity.upcast_ref()));
+    assert_eq!(
+        scrolled.next_sibling().as_ref(),
+        Some(activity.upcast_ref())
+    );
+    assert_eq!(root.last_child().as_ref(), Some(issues.upcast_ref()));
     assert!(
-        (activity_bounds.y() + activity_bounds.height() - root.height() as f32).abs() < 0.5,
-        "the progress activity must touch the sidebar bottom edge: activity={activity_bounds:?}, root_height={}",
+        (issues_bounds.y() + issues_bounds.height() - root.height() as f32).abs() < 0.5,
+        "Issues must touch the sidebar bottom edge: issues={issues_bounds:?}, root_height={}",
         root.height()
     );
     assert!(
-        (issues_bounds.y() + issues_bounds.height() - activity_bounds.y()).abs() < 0.5,
-        "issues must sit directly above the progress activity: issues={issues_bounds:?}, activity={activity_bounds:?}"
+        (activity_bounds.y() + activity_bounds.height() - issues_bounds.y()).abs() < 0.5,
+        "progress activity must sit directly above Issues: activity={activity_bounds:?}, issues={issues_bounds:?}"
     );
     window.close();
 }
@@ -458,8 +474,9 @@ fn smart_playlist_rows_badge_their_live_track_count() {
 
     // Seed five present tracks; the default "Recently added" smart list has an
     // empty rule set, so it matches every present track — the badge must read 5.
-    let smart_id = {
+    let _smart_id = {
         let conn = shared.conn.borrow();
+        let now = chrono::Utc::now().timestamp();
         for id in 1..=5i64 {
             conn.execute(
                 "INSERT INTO tracks (path, title, artist, added_at) \
@@ -467,7 +484,7 @@ fn smart_playlist_rows_badge_their_live_track_count() {
                 (
                     format!("/synthetic/{id:03}.flac"),
                     format!("Track {id:03}"),
-                    id,
+                    now - id,
                 ),
             )
             .unwrap();
@@ -482,7 +499,7 @@ fn smart_playlist_rows_badge_their_live_track_count() {
 
     rebuild(&shared, None, "test build");
 
-    let row = find_row(&shared, &ViewSource::Smart(smart_id))
+    let row = find_row(&shared, &ViewSource::RecentlyAdded)
         .expect("the 'Recently added' smart list must have a sidebar row");
     assert_eq!(
         numeric_badge_text(row.upcast_ref()),
@@ -499,7 +516,7 @@ fn empty_smart_playlist_shows_no_badge() {
 
     // No tracks seeded: every default smart list resolves to zero and must
     // therefore render no badge at all (nonzero-only policy).
-    let smart_id = {
+    let _smart_id = {
         let conn = shared.conn.borrow();
         conn.query_row(
             "SELECT id FROM smart_playlists WHERE name = 'Recently added'",
@@ -511,7 +528,7 @@ fn empty_smart_playlist_shows_no_badge() {
 
     rebuild(&shared, None, "test build");
 
-    let row = find_row(&shared, &ViewSource::Smart(smart_id))
+    let row = find_row(&shared, &ViewSource::RecentlyAdded)
         .expect("the 'Recently added' smart list must have a sidebar row");
     assert_eq!(
         numeric_badge_text(row.upcast_ref()),

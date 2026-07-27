@@ -464,8 +464,12 @@ fn add_podcast(
     let mut episodes_affected = 0;
     if params.import_existing {
         for episode in &feed.episodes {
-            podcasts::store::upsert_episode(conn, id, episode, now).map_err(DataError::Db)?;
-            episodes_affected += 1;
+            if podcasts::store::upsert_episode(conn, id, episode, now)
+                .map_err(DataError::Db)?
+                .is_some()
+            {
+                episodes_affected += 1;
+            }
         }
     }
     podcasts::store::update_fetch_success(

@@ -15,7 +15,7 @@ WHERE selection_json = '"entire_library"';
 "#;
 
 const MIGRATE_DEVICE_FILES: &str = r#"
-CREATE TABLE device_files_v34 (
+CREATE TABLE device_files_v36 (
   device_serial       TEXT NOT NULL,
   track_id            INTEGER NOT NULL,
   source_path         TEXT NOT NULL,
@@ -28,7 +28,7 @@ CREATE TABLE device_files_v34 (
   PRIMARY KEY (device_serial, track_id)
 );
 
-INSERT INTO device_files_v34 (
+INSERT INTO device_files_v36 (
   device_serial,
   track_id,
   source_path,
@@ -53,7 +53,7 @@ FROM device_files AS files
 LEFT JOIN tracks ON tracks.id = files.track_id;
 
 DROP TABLE device_files;
-ALTER TABLE device_files_v34 RENAME TO device_files;
+ALTER TABLE device_files_v36 RENAME TO device_files;
 CREATE INDEX idx_device_files_serial ON device_files(device_serial);
 "#;
 
@@ -70,9 +70,9 @@ CREATE TABLE IF NOT EXISTS device_playlists (
 CREATE INDEX IF NOT EXISTS idx_device_playlists_serial ON device_playlists(device_serial);
 "#;
 
-pub(crate) fn migrate_v34(conn: &Connection) -> Result<(), rusqlite::Error> {
+pub(crate) fn migrate_v36(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version >= 34 {
+    if version >= 36 {
         return Ok(());
     }
     let has_mp3_quality = has_column(conn, "device_settings", "mp3_quality")?;
@@ -86,7 +86,7 @@ pub(crate) fn migrate_v34(conn: &Connection) -> Result<(), rusqlite::Error> {
         transaction.execute_batch(MIGRATE_DEVICE_FILES)?;
     }
     transaction.execute_batch(CREATE_DEVICE_PLAYLISTS)?;
-    transaction.pragma_update(None, "user_version", 34)?;
+    transaction.pragma_update(None, "user_version", 36)?;
     transaction.commit()
 }
 

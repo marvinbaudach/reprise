@@ -367,6 +367,11 @@ impl PodcastsView {
         );
         self.add_target_action(
             &group,
+            podcasts_context_menu::ACTION_REMOVE_EPISODE,
+            PodcastsView::remove_episode,
+        );
+        self.add_target_action(
+            &group,
             podcasts_context_menu::ACTION_UNSUBSCRIBE,
             PodcastsView::unsubscribe,
         );
@@ -566,6 +571,77 @@ impl PodcastsView {
             {
                 view.show_error(&error.to_string());
                 return;
+            }
+            view.schedule_download_toast();
+        });
+        overlay.add_toast(toast);
+    }
+
+    fn remove_episode(self: &Rc<Self>, episode_id: i64) {
+        let Ok(Some(episode)) = podcasts::store::episode(&self.conn.borrow(), episode_id) else {
+            return;
+        };
+        if let Err(error) = podcasts::store::tombstone_episode(
+            &self.conn.borrow(),
+            episode_id,
+            chrono::Utc::now().timestamp(),
+        ) {
+            self.show_error(&error.to_string());
+            return;
+        }
+        self.refresh();
+        (self.callbacks.on_sidebar_refresh)();
+
+        let Some(overlay) = self.toast_overlay.upgrade() else {
+            match podcasts::store::commit_remove_episode(&self.conn.borrow(), episode_id) {
+                Ok(Some(path)) => self
+                    .kept_downloads
+                    .borrow_mut()
+                    .add(episode.subscription_id, vec![path]),
+                Ok(None) => {}
+                Err(error) => self.show_error(&error.to_string()),
+            }
+            self.schedule_download_toast();
+            return;
+        };
+
+        let toast = adw::Toast::new(&strings::podcast_removed_episode(&episode.title));
+        toast.set_button_label(Some(&strings::text(strings::PODCAST_UNDO)));
+        toast.set_timeout(10);
+        toast.set_priority(adw::ToastPriority::High);
+        let undone = Rc::new(Cell::new(false));
+        let weak = Rc::downgrade(self);
+        let undo_flag = undone.clone();
+        toast.connect_button_clicked(move |_| {
+            undo_flag.set(true);
+            if let Some(view) = weak.upgrade() {
+                if let Err(error) =
+                    podcasts::store::undo_remove_episode(&view.conn.borrow(), episode_id)
+                {
+                    view.show_error(&error.to_string());
+                }
+                view.refresh();
+                (view.callbacks.on_sidebar_refresh)();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        toast.connect_dismissed(move |_| {
+            if undone.get() {
+                return;
+            }
+            let Some(view) = weak.upgrade() else {
+                return;
+            };
+            match podcasts::store::commit_remove_episode(&view.conn.borrow(), episode_id) {
+                Ok(Some(path)) => view
+                    .kept_downloads
+                    .borrow_mut()
+                    .add(episode.subscription_id, vec![path]),
+                Ok(None) => {}
+                Err(error) => {
+                    view.show_error(&error.to_string());
+                    return;
+                }
             }
             view.schedule_download_toast();
         });

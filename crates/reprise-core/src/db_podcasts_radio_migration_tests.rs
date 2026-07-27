@@ -21,7 +21,8 @@ fn object_schema(conn: &Connection, table: &str) -> Vec<(String, String)> {
 
 fn reset_to_v31(conn: &Connection) {
     conn.execute_batch(
-        "DROP TABLE podcast_subscription_baselines;
+        "DROP TABLE podcast_episode_dismissals;
+         DROP TABLE podcast_subscription_baselines;
          DROP TABLE podcast_episodes;
          DROP TABLE podcast_subscriptions;
          DROP TABLE radio_stations;
@@ -43,6 +44,7 @@ fn fresh_and_v31_upgrade_have_identical_source_schema() {
     for table in [
         "podcast_subscriptions",
         "podcast_subscription_baselines",
+        "podcast_episode_dismissals",
         "podcast_episodes",
         "radio_stations",
     ] {
@@ -92,6 +94,44 @@ fn v33_adds_future_only_guid_baselines_with_subscription_cascade() {
 }
 
 #[test]
+fn v34_adds_episode_tombstones_and_dismissals_with_subscription_cascade() {
+    let conn = db::open(None).unwrap();
+    db::migrate(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO podcast_subscriptions
+         (id, kind, feed_url, title, added_at)
+         VALUES (1, 'youtube', 'https://example.test/channel', 'Channel', 1)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO podcast_episodes
+         (subscription_id, guid, title, audio_url, first_seen_at, removed_at)
+         VALUES (1, 'video-guid', 'Video', 'https://example.test/video', 1, 2)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO podcast_episode_dismissals (subscription_id, guid, removed_at)
+         VALUES (1, 'video-guid', 2)",
+        [],
+    )
+    .unwrap();
+
+    conn.execute("DELETE FROM podcast_subscriptions WHERE id = 1", [])
+        .unwrap();
+
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM podcast_episode_dismissals",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
+#[test]
 fn migration_is_idempotent() {
     let conn = db::open(None).unwrap();
     db::migrate(&conn).unwrap();
@@ -99,8 +139,51 @@ fn migration_is_idempotent() {
 
     migrate_v32(&conn).unwrap();
     migrate_v33(&conn).unwrap();
+    migrate_v34(&conn).unwrap();
 
     assert_eq!(object_schema(&conn, "podcast_episodes"), before);
+}
+
+#[test]
+fn migration_repairs_the_parallel_v34_device_sync_schema() {
+    let conn = db::open(None).unwrap();
+    db::migrate(&conn).unwrap();
+    conn.execute_batch(
+        "DROP TABLE podcast_episode_dismissals;
+         DROP INDEX idx_podcast_episodes_unplayed;
+         CREATE INDEX idx_podcast_episodes_unplayed
+           ON podcast_episodes(played_at) WHERE played_at IS NULL;
+         PRAGMA user_version = 34;",
+    )
+    .unwrap();
+
+    db::migrate(&conn).unwrap();
+
+    let dismissal_table_exists: bool = conn
+        .query_row(
+            "SELECT EXISTS(
+               SELECT 1 FROM sqlite_schema
+               WHERE type = 'table' AND name = 'podcast_episode_dismissals'
+             )",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(dismissal_table_exists);
+    let unplayed_index: String = conn
+        .query_row(
+            "SELECT sql FROM sqlite_schema
+             WHERE type = 'index' AND name = 'idx_podcast_episodes_unplayed'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(unplayed_index.contains("removed_at IS NULL"));
+    assert_eq!(
+        conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+            .unwrap(),
+        SUPPORTED_SCHEMA_VERSION
+    );
 }
 
 #[test]

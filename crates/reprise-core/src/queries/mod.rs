@@ -34,14 +34,12 @@
 //!   remove_selected_from_playlist`.
 //! - **Smart(id)**: loads the `SmartPlaylist` row, ANDs `library::playlists::
 //!   smart_rules_to_sql`'s WHERE fragment with `clauses::PRESENT` and the live
-//!   search filter, and orders/limits by the smart playlist's *own*
-//!   `sort_field`/`sort_dir`/`limit_count` — not whatever `track_list.rs`'s
-//!   current column sort happens to be (a smart playlist's sort is part of
-//!   its definition, not the view's). `sort_field`/`sort_dir` still run
-//!   through the shared `order_expr_and_dir`, so a hand-edited (DB-tampered)
-//!   `smart_playlists.sort_field` silently falls back to title order, same
-//!   as every other source (see `smart_playlist_window_falls_back_to_title_
-//!   on_tampered_sort_field` below).
+//!   search filter. Its own `sort_field`/`sort_dir`/`limit_count` choose the
+//!   member set first (a "Top 50" definition must keep meaning Top 50), then
+//!   the track list's current column sort orders those members for display.
+//!   Both sort pairs run through the shared `order_expr_and_dir`, so a
+//!   hand-edited (DB-tampered) sort field silently falls back to title order,
+//!   same as every other source.
 //!
 //!   ### Smart playlist window math
 //!
@@ -54,9 +52,9 @@
 //!   this right with a nested subquery rather than Rust-side arithmetic:
 //!   the *inner* query applies the rules/filter/order and the smart
 //!   playlist's own `LIMIT` first, producing exactly its member set in
-//!   order; the *outer* query re-applies the same `ORDER BY` (a subquery's
-//!   row order is not guaranteed to survive) and slices out the caller's
-//!   window via its own `LIMIT`/`OFFSET`. `query_track_count`'s smart arm
+//!   order; the *outer* query applies the user's current column sort and
+//!   slices out the caller's window via its own `LIMIT`/`OFFSET`.
+//!   `query_track_count`'s smart arm
 //!   mirrors this with plain arithmetic (`raw_count.min(limit_count)`)
 //!   since a count has no rows to slice.
 //! - **Queue**: ids are supplied by the caller (`queue_ids: &[i64]`, sourced
@@ -287,15 +285,27 @@ pub fn query_track_window_browsed_ai(
         ViewSource::Library => library::query_track_window_library(
             conn, sort_field, sort_dir, filter, offset, limit, browse, exclude_ai, project_ai,
         ),
+        ViewSource::RecentlyAdded => {
+            let browse = recently_added_browse(browse);
+            library::query_track_window_library(
+                conn, sort_field, sort_dir, filter, offset, limit, &browse, exclude_ai, project_ai,
+            )
+        }
         ViewSource::Missing => library::query_track_window_missing(
             conn, sort_field, sort_dir, filter, offset, limit, project_ai,
         ),
         ViewSource::Playlist(id) => playlist::query_track_window_playlist(
             conn, *id, sort_field, sort_dir, filter, offset, limit, project_ai,
         ),
-        ViewSource::Smart(id) => {
-            smart::query_track_window_smart(conn, *id, filter, offset, limit, project_ai)
-        }
+        ViewSource::Smart(id) => smart::query_track_window_smart(
+            conn,
+            *id,
+            (sort_field, sort_dir),
+            filter,
+            offset,
+            limit,
+            project_ai,
+        ),
         ViewSource::Queue => {
             queue::query_track_window_queue(conn, queue_ids, offset, limit, project_ai)
         }
@@ -355,6 +365,9 @@ pub fn query_track_count_browsed(
 ) -> Result<i64, rusqlite::Error> {
     match source {
         ViewSource::Library => library::query_track_count_library(conn, filter, browse),
+        ViewSource::RecentlyAdded => {
+            library::query_track_count_library(conn, filter, &recently_added_browse(browse))
+        }
         ViewSource::Missing => library::query_track_count_missing(conn, filter),
         ViewSource::Playlist(id) => playlist::query_track_count_playlist(conn, *id, filter),
         ViewSource::Smart(id) => smart::query_track_count_smart(conn, *id, filter),
@@ -429,6 +442,12 @@ pub fn query_track_count_browsed_ai(
             conn,
             filter,
             &genre_browse(genre, browse),
+            exclude_ai,
+        ),
+        ViewSource::RecentlyAdded => library::query_track_count_library_ai(
+            conn,
+            filter,
+            &recently_added_browse(browse),
             exclude_ai,
         ),
         _ => query_track_count_browsed(conn, source, filter, browse, queue_ids),
@@ -508,6 +527,9 @@ pub fn query_track_ids_browsed_ai(
             let rows = stmt.query_map(rusqlite::params_from_iter(params), row_to_id)?;
             rows.collect()
         }
+        ViewSource::RecentlyAdded => {
+            query_track_ids_recently_added(conn, sort_field, sort_dir, filter, browse, exclude_ai)
+        }
         ViewSource::Missing => {
             let has_filter = !filter.trim().is_empty();
             let sql = build_track_ids_query_base(1, sort_field, sort_dir, has_filter);
@@ -521,7 +543,9 @@ pub fn query_track_ids_browsed_ai(
             rows.collect()
         }
         ViewSource::Playlist(id) => playlist::query_playable_track_ids_playlist(conn, *id, filter),
-        ViewSource::Smart(id) => smart::query_track_ids_smart(conn, *id, filter),
+        ViewSource::Smart(id) => {
+            smart::query_track_ids_smart(conn, *id, sort_field, sort_dir, filter)
+        }
         ViewSource::Queue => Ok(queue_ids.to_vec()),
         ViewSource::Album {
             album,
@@ -569,6 +593,39 @@ fn genre_browse(genre: &str, browse: &BrowseFilter) -> BrowseFilter {
     let mut scoped = browse.clone();
     scoped.genre = Some(genre.trim().to_owned());
     scoped
+}
+
+fn recently_added_browse(browse: &BrowseFilter) -> BrowseFilter {
+    const SEVEN_DAYS_SECONDS: i64 = 7 * 24 * 60 * 60;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_secs() as i64);
+    BrowseFilter {
+        added_since: Some(now.saturating_sub(SEVEN_DAYS_SECONDS).to_string()),
+        ..browse.clone()
+    }
+}
+
+fn query_track_ids_recently_added(
+    conn: &Connection,
+    sort_field: &str,
+    sort_dir: &str,
+    filter: &str,
+    browse: &BrowseFilter,
+    exclude_ai: bool,
+) -> Result<Vec<i64>, rusqlite::Error> {
+    let browse = recently_added_browse(browse);
+    let has_filter = !filter.trim().is_empty();
+    let sql = build_track_ids_query_browsed(sort_field, sort_dir, has_filter, &browse, exclude_ai);
+    let mut stmt = conn.prepare(&sql)?;
+    let mut params = Vec::new();
+    if has_filter {
+        params.push(Value::Text(like_pattern(filter.trim())));
+    }
+    let (_, browse_values) = browse::browse_clause(&browse, params.len() + 1);
+    params.extend(browse_values.into_iter().map(Value::Text));
+    let rows = stmt.query_map(rusqlite::params_from_iter(params), row_to_id)?;
+    rows.collect()
 }
 
 /// Returns the ids represented by the current visible view. This differs
