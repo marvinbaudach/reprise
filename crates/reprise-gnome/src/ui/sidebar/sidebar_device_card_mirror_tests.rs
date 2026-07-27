@@ -1,5 +1,6 @@
 use super::tests::view;
 use super::*;
+use reprise_core::device_sync::DeviceStorageAccess;
 
 fn select_playlist(device: &mut DeviceView) {
     device.page.blockers.clear();
@@ -95,6 +96,28 @@ fn warnings_keep_an_idle_card_out_of_the_synced_state() {
     assert_eq!(
         card_subtitle(&device),
         "Needs attention · Available space unknown"
+    );
+}
+
+#[test]
+fn mtp_11_idle_device_card_shows_storage_information_instead_of_a_playlist_prompt() {
+    let mut device = view(PlannedSyncPhase::Idle);
+    device.storage.access = DeviceStorageAccess::Writable;
+    device.storage.free_bytes = Some(2 * 1_024 * 1_024);
+    device
+        .page
+        .blockers
+        .push(reprise_core::device_sync::MirrorBlocker::NoPlaylistsSelected);
+
+    assert_eq!(card_subtitle(&device), "Writable · 2.0 MiB free");
+
+    device.storage.access = DeviceStorageAccess::ReadOnly;
+    assert_eq!(card_subtitle(&device), "Read-only · 2.0 MiB free");
+
+    device.storage.access = DeviceStorageAccess::Unknown;
+    assert_eq!(
+        card_subtitle(&device),
+        "Write access unknown · 2.0 MiB free"
     );
 }
 
