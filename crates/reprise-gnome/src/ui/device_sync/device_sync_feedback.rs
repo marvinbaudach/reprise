@@ -189,8 +189,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn finishing_is_reported_as_complete_progress() {
+    fn mtp_6_finishing_is_reported_as_complete_progress() {
         assert_eq!(phase_percent(&PlannedSyncPhase::Finishing), 100);
+        assert!(include_str!("device_sync_feedback.rs").contains("Sync complete"));
+        assert!(
+            include_str!("../sidebar/sidebar_device_card.rs").contains("Synced ✓"),
+            "the sidebar must project the completed idle state"
+        );
     }
 
     #[test]

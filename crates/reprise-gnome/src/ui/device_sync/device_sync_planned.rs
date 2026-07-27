@@ -1,10 +1,13 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 
-use reprise_core::device_sync::m3u::{render_named_playlist, DevicePlaylistEntry};
 use reprise_core::device_sync::settings::{
-    delete_device_file, upsert_device_file, DeviceFileRecord,
+    delete_device_file, delete_device_playlist, upsert_device_file, upsert_device_playlist,
+    DeviceFileRecord, DevicePlaylistRecord,
 };
+use reprise_core::device_sync::{DesiredManagedFile, ManagedRemoval, MirrorPlan, TransferAction};
 
 use super::*;
 
@@ -25,7 +28,7 @@ impl fmt::Display for SyncStartError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnknownDevice => formatter.write_str("device is not connected"),
-            Self::Busy => formatter.write_str("another device synchronization is active"),
+            Self::Busy => formatter.write_str("device synchronization is already active"),
             Self::InsufficientSpace {
                 required_bytes,
                 available_bytes,
@@ -46,34 +49,128 @@ struct PlannedWork {
     device_id: String,
     generation: u64,
     root_uri: String,
-    settings: DeviceSettings,
-    delta: SyncDelta,
-    transfers: Vec<TransferPlanEntry>,
+    plan: MirrorPlan,
     cancelled: Arc<AtomicBool>,
     cancellable: gio::Cancellable,
 }
 
+#[derive(Clone)]
+struct TransferOperation {
+    desired: DesiredManagedFile,
+    previous: Option<DeviceFileRecord>,
+}
+
+fn transfer_operations(plan: &MirrorPlan) -> Vec<TransferOperation> {
+    let mut operations = plan
+        .copy
+        .iter()
+        .cloned()
+        .map(|desired| TransferOperation {
+            desired,
+            previous: None,
+        })
+        .chain(
+            plan.replace
+                .iter()
+                .cloned()
+                .map(|replacement| TransferOperation {
+                    desired: replacement.desired,
+                    previous: Some(replacement.existing),
+                }),
+        )
+        .collect::<Vec<_>>();
+    operations.sort_by_key(|operation| operation.desired.track.id);
+    operations
+}
+
+fn transcode_profile(action: TransferAction) -> Option<TranscodeProfile> {
+    match action {
+        TransferAction::CopyOriginal => None,
+        TransferAction::TranscodeOpus160 => Some(TranscodeProfile::Opus160),
+        TransferAction::TranscodeMp3(quality) => Some(TranscodeProfile::Mp3(quality)),
+    }
+}
+
+fn blocker_message(plan: &MirrorPlan) -> String {
+    format!("playlist mirror is blocked: {:?}", plan.blockers)
+}
+
+fn playlist_stem(device_path: &str, fallback: &str) -> String {
+    Path::new(device_path)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or(fallback)
+        .to_string()
+}
+
 impl DeviceSyncRuntime {
     pub fn sync_now(self: &Rc<Self>, device_id: &str) -> Result<(), SyncStartError> {
-        if self.active_device.borrow().is_some() {
-            return Err(SyncStartError::Busy);
+        {
+            let devices = self.device_states.borrow();
+            let device = devices
+                .iter()
+                .find(|device| device.descriptor.id == device_id && device.connected)
+                .ok_or(SyncStartError::UnknownDevice)?;
+            if device.is_busy() {
+                return Err(SyncStartError::Busy);
+            }
+            if device.scanning {
+                return Err(SyncStartError::Planning(
+                    "device storage inspection is still running".into(),
+                ));
+            }
+            if device.scan_error.is_some() {
+                return Err(SyncStartError::Planning(
+                    "device storage inspection is unavailable".into(),
+                ));
+            }
+            if device.storage.access == reprise_core::device_sync::DeviceStorageAccess::ReadOnly {
+                return Err(SyncStartError::Planning(
+                    "device storage is read-only".into(),
+                ));
+            }
         }
         self.recompute_delta(device_id)
             .map_err(SyncStartError::Planning)?;
+        let required_transcode_profiles = {
+            let devices = self.device_states.borrow();
+            let device = devices
+                .iter()
+                .find(|device| device.descriptor.id == device_id && device.connected)
+                .ok_or(SyncStartError::UnknownDevice)?;
+            if !device.mirror_plan.blockers.is_empty() {
+                return Err(SyncStartError::Planning(blocker_message(
+                    &device.mirror_plan,
+                )));
+            }
+            transfer_operations(&device.mirror_plan)
+                .iter()
+                .filter_map(|operation| transcode_profile(operation.desired.action))
+                .collect::<HashSet<_>>()
+        };
+        for profile in required_transcode_profiles {
+            self.backend
+                .probe_transcode(profile)
+                .map_err(SyncStartError::Planning)?;
+        }
         let work = {
             let mut devices = self.device_states.borrow_mut();
             let device = devices
                 .iter_mut()
                 .find(|device| device.descriptor.id == device_id && device.connected)
                 .ok_or(SyncStartError::UnknownDevice)?;
-            let delta = device
-                .delta
-                .clone()
-                .ok_or_else(|| SyncStartError::Planning("delta is unavailable".into()))?;
-            if let Some(available_bytes) = device.available_bytes {
-                if delta.bytes > available_bytes {
+            if device.is_busy() {
+                return Err(SyncStartError::Busy);
+            }
+            if !device.mirror_plan.blockers.is_empty() {
+                return Err(SyncStartError::Planning(blocker_message(
+                    &device.mirror_plan,
+                )));
+            }
+            if let Some(available_bytes) = device.storage.free_bytes {
+                if device.mirror_plan.transfer_bytes > available_bytes {
                     let error = SyncStartError::InsufficientSpace {
-                        required_bytes: delta.bytes,
+                        required_bytes: device.mirror_plan.transfer_bytes,
                         available_bytes,
                     };
                     device.sync_error = Some(SyncFailure {
@@ -91,28 +188,24 @@ impl DeviceSyncRuntime {
             device.planned_cancel = Some(cancelled.clone());
             device.cancellable = Some(cancellable.clone());
             device.sync_error = None;
-            device.transfer_started_at = None;
-            device.bytes_per_second = 0;
+            device.mtp_rate.reset();
             device.sync_phase = syncing_phase(
                 SyncStep::Removing,
                 0,
-                delta.to_remove.len(),
+                device.mirror_plan.remove.len(),
                 String::new(),
                 0,
-                delta.bytes,
+                device.mirror_plan.transfer_bytes,
             );
             PlannedWork {
                 device_id: device_id.to_string(),
                 generation: device.generation,
                 root_uri: device.descriptor.root_uri.clone(),
-                settings: device.settings.clone(),
-                delta,
-                transfers: device.transfer_plan.clone(),
+                plan: device.mirror_plan.clone(),
                 cancelled,
                 cancellable,
             }
         };
-        self.active_device.replace(Some(device_id.to_string()));
         self.notify();
         let weak = Rc::downgrade(self);
         gtk4::glib::MainContext::ref_thread_default().spawn_local(async move {
@@ -144,18 +237,22 @@ async fn run_planned_sync(weak: Weak<DeviceSyncRuntime>, work: PlannedWork) {
     {
         tracing::warn!(device_id = work.device_id, %error, "could not clean partial sync files");
     }
-    let files = load_device_files(&runtime.conn.borrow(), &work.device_id).unwrap_or_default();
-    let files_by_id = files
-        .iter()
-        .map(|file| (file.track_id, file.clone()))
-        .collect::<HashMap<_, _>>();
-
-    run_removals(&runtime, &work, &files_by_id, &mut failures).await;
-    if !work.cancelled.load(Ordering::SeqCst) {
-        run_transfers(&runtime, &work, &files_by_id, &mut failures).await;
-    }
-    if !work.cancelled.load(Ordering::SeqCst) {
+    let deferred_replacement_removals = if work.cancelled.load(Ordering::SeqCst) {
+        Vec::new()
+    } else {
+        run_transfers(&runtime, &work, &mut failures).await
+    };
+    if !work.cancelled.load(Ordering::SeqCst) && failures.is_empty() {
         run_playlists(&runtime, &work, &mut failures).await;
+    }
+    if !work.cancelled.load(Ordering::SeqCst) && failures.is_empty() {
+        run_removals(
+            &runtime,
+            &work,
+            &deferred_replacement_removals,
+            &mut failures,
+        )
+        .await;
     }
     finish_sync(&runtime, &work, failures);
 }
@@ -163,15 +260,16 @@ async fn run_planned_sync(weak: Weak<DeviceSyncRuntime>, work: PlannedWork) {
 async fn run_removals(
     runtime: &Rc<DeviceSyncRuntime>,
     work: &PlannedWork,
-    files: &HashMap<i64, DeviceFileRecord>,
+    deferred_replacements: &[(String, i64)],
     failures: &mut Vec<i64>,
 ) {
-    for (index, track_id) in work.delta.to_remove.iter().copied().enumerate() {
+    for (index, removal) in work.plan.remove.iter().enumerate() {
         if work.cancelled.load(Ordering::SeqCst) {
             break;
         }
-        let Some(file) = files.get(&track_id) else {
-            continue;
+        let (path, track_id) = match removal {
+            ManagedRemoval::Inventory(file) => (file.device_path.clone(), Some(file.track_id)),
+            ManagedRemoval::Orphan(file) => (file.relative_path.clone(), None),
         };
         set_phase(
             runtime,
@@ -180,28 +278,46 @@ async fn run_removals(
             syncing_phase(
                 SyncStep::Removing,
                 index,
-                work.delta.to_remove.len(),
-                file.device_path.clone(),
+                work.plan.remove.len(),
+                path.clone(),
                 0,
-                work.delta.bytes,
+                work.plan.transfer_bytes,
             ),
         );
         match runtime
             .backend
-            .delete_track(work.root_uri.clone(), file.device_path.clone())
+            .delete_track(work.root_uri.clone(), path)
             .await
         {
             Ok(_) => {
-                if let Err(error) =
-                    delete_device_file(&runtime.conn.borrow(), &work.device_id, track_id)
-                {
-                    tracing::warn!(track_id, %error, "could not remove device inventory row");
-                    failures.push(track_id);
+                if let Some(track_id) = track_id {
+                    if let Err(error) =
+                        delete_device_file(&runtime.conn.borrow(), &work.device_id, track_id)
+                    {
+                        tracing::warn!(track_id, %error, "could not remove device inventory row");
+                        failures.push(track_id);
+                    }
                 }
             }
             Err(error) => {
-                tracing::warn!(track_id, %error, "could not remove device track");
-                failures.push(track_id);
+                tracing::warn!(%error, "could not remove managed device item");
+                failures.push(track_id.unwrap_or(-1));
+            }
+        }
+    }
+    for (path, track_id) in deferred_replacements {
+        if work.cancelled.load(Ordering::SeqCst) {
+            break;
+        }
+        match runtime
+            .backend
+            .delete_track(work.root_uri.clone(), path.clone())
+            .await
+        {
+            Ok(_) => {}
+            Err(error) => {
+                tracing::warn!(%error, "could not remove replaced device track");
+                failures.push(*track_id);
             }
         }
     }
@@ -210,61 +326,22 @@ async fn run_removals(
 async fn run_transfers(
     runtime: &Rc<DeviceSyncRuntime>,
     work: &PlannedWork,
-    existing: &HashMap<i64, DeviceFileRecord>,
     failures: &mut Vec<i64>,
-) {
-    let copy_ids = work.delta.to_copy.iter().copied().collect::<HashSet<_>>();
-    let transfers = work
-        .transfers
-        .iter()
-        .filter(|entry| copy_ids.contains(&entry.track.id))
-        .cloned()
-        .collect::<Vec<_>>();
-    let encode_requests = transfers
-        .iter()
-        .enumerate()
-        .filter_map(|(token, entry)| match entry.mode {
-            TransferMode::Copy => None,
-            TransferMode::TranscodeOpus { bitrate } => Some(EncodeRequest {
-                token,
-                source: entry.track.source_path.clone(),
-                output: temporary_opus_path(&work.device_id, entry.track.id),
-                bitrate_kbps: bitrate,
-            }),
-        })
-        .collect::<Vec<_>>();
-    let receiver = if encode_requests.is_empty() {
-        None
-    } else {
-        match runtime
-            .backend
-            .start_transcodes(encode_requests, work.cancelled.clone())
-        {
-            Ok(receiver) => Some(receiver),
-            Err(error) => {
-                tracing::warn!(%error, "could not start device encoders");
-                failures.extend(
-                    transfers
-                        .iter()
-                        .filter(|entry| matches!(entry.mode, TransferMode::TranscodeOpus { .. }))
-                        .map(|entry| entry.track.id),
-                );
-                None
-            }
-        }
-    };
-    let mut ready = HashMap::new();
+) -> Vec<(String, i64)> {
+    let transfers = transfer_operations(&work.plan);
     let mut completed_bytes = 0_u64;
-    for (token, entry) in transfers.iter().enumerate() {
+    let mut deferred_replacement_removals = Vec::new();
+    for (token, operation) in transfers.iter().enumerate() {
         if work.cancelled.load(Ordering::SeqCst) {
             break;
         }
+        let entry = &operation.desired;
         let current_track = track_activity(&entry.track.title, &entry.track.artist);
-        let prepared = match entry.mode {
-            TransferMode::Copy => {
-                Some((entry.track.source_path.clone(), entry.expected_bytes, false))
+        let prepared = match entry.action {
+            TransferAction::CopyOriginal => {
+                Some((entry.track.source_path.clone(), entry.target_bytes, false))
             }
-            TransferMode::TranscodeOpus { .. } => {
+            action @ (TransferAction::TranscodeOpus160 | TransferAction::TranscodeMp3(_)) => {
                 set_phase(
                     runtime,
                     &work.device_id,
@@ -275,10 +352,34 @@ async fn run_transfers(
                         transfers.len(),
                         current_track.clone(),
                         completed_bytes,
-                        work.delta.bytes,
+                        work.plan.transfer_bytes,
                     ),
                 );
-                receive_ready(receiver.as_ref(), token, &mut ready).await
+                let profile =
+                    transcode_profile(action).expect("transcode action must provide a profile");
+                let extension = match profile {
+                    TranscodeProfile::Opus160 => "opus",
+                    TranscodeProfile::Mp3(_) => "mp3",
+                };
+                let request = TranscodeRequest {
+                    source: entry.track.source_path.clone(),
+                    output: temporary_transcode_path(&work.device_id, entry.track.id, extension),
+                    profile,
+                    metadata: reprise_platform_linux::device_transfer::AudioMetadata::for_track(
+                        &entry.track,
+                    ),
+                };
+                match runtime
+                    .backend
+                    .transcode_track(request, work.cancelled.clone())
+                    .await
+                {
+                    Ok(file) => Some((file.path, file.size_bytes, true)),
+                    Err(error) => {
+                        tracing::warn!(track_id = entry.track.id, %error, "device audio transcode failed");
+                        None
+                    }
+                }
             }
         };
         let Some((source, actual_size, temporary)) = prepared else {
@@ -295,15 +396,15 @@ async fn run_transfers(
                 transfers.len(),
                 current_track,
                 completed_bytes,
-                work.delta.bytes,
+                work.plan.transfer_bytes,
             ),
         );
         let progress_runtime = Rc::downgrade(runtime);
         let progress_id = work.device_id.clone();
         let progress_generation = work.generation;
         let base = completed_bytes;
-        let estimated = entry.expected_bytes;
-        let bytes_total = work.delta.bytes;
+        let estimated = entry.target_bytes;
+        let bytes_total = work.plan.transfer_bytes;
         let progress: Rc<dyn Fn(u64, u64)> = Rc::new(move |copied, _| {
             if let Some(runtime) = progress_runtime.upgrade() {
                 update_copy_bytes(
@@ -312,6 +413,7 @@ async fn run_transfers(
                     progress_generation,
                     base.saturating_add(copied.min(estimated)),
                     bytes_total,
+                    copied,
                 );
             }
         });
@@ -332,25 +434,34 @@ async fn run_transfers(
         }
         match result {
             Ok(_) => {
-                if let Some(old) = existing.get(&entry.track.id) {
-                    if old.device_path != entry.device_path {
-                        let _ = runtime
-                            .backend
-                            .delete_track(work.root_uri.clone(), old.device_path.clone())
-                            .await;
-                    }
-                }
                 let record = DeviceFileRecord {
                     device_serial: work.device_id.clone(),
                     track_id: entry.track.id,
+                    source_path: entry.track.source_path.to_string_lossy().into_owned(),
+                    source_size: entry.track.size_bytes,
+                    source_mtime: entry.track.source_mtime,
                     device_path: entry.device_path.clone(),
-                    size: entry.expected_bytes,
-                    mtime: entry.track.source_mtime,
+                    device_size: actual_size,
+                    profile_fingerprint: entry.profile_fingerprint.clone(),
                     pinned: false,
                 };
-                if let Err(error) = upsert_device_file(&runtime.conn.borrow(), &record) {
-                    tracing::warn!(track_id = entry.track.id, %error, "could not update device inventory");
-                    failures.push(entry.track.id);
+                let inventory_result = {
+                    let conn = runtime.conn.borrow();
+                    upsert_device_file(&conn, &record)
+                };
+                match inventory_result {
+                    Ok(()) => {
+                        if let Some(old) = &operation.previous {
+                            if old.device_path != entry.device_path {
+                                deferred_replacement_removals
+                                    .push((old.device_path.clone(), entry.track.id));
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        tracing::warn!(track_id = entry.track.id, %error, "could not update device inventory");
+                        failures.push(entry.track.id);
+                    }
                 }
             }
             Err(error) => {
@@ -360,37 +471,9 @@ async fn run_transfers(
                 }
             }
         }
-        completed_bytes = completed_bytes.saturating_add(entry.expected_bytes);
+        completed_bytes = completed_bytes.saturating_add(entry.target_bytes);
     }
-}
-
-async fn receive_ready(
-    receiver: Option<&async_channel::Receiver<EncodeOutcome>>,
-    token: usize,
-    pending: &mut HashMap<usize, Result<ReadyFile, String>>,
-) -> Option<(PathBuf, u64, bool)> {
-    if let Some(result) = pending.remove(&token) {
-        return result.ok().map(|file| (file.path, file.size, true));
-    }
-    let receiver = receiver?;
-    while let Ok(outcome) = receiver.recv().await {
-        let result = outcome.result.map_err(|error| error.to_string());
-        if outcome.token == token {
-            match result {
-                Ok(file) => return Some((file.path, file.size, true)),
-                Err(error) => {
-                    tracing::warn!(%error, "device transcode failed");
-                    return None;
-                }
-            }
-        } else {
-            if let Err(error) = &result {
-                tracing::warn!(%error, "device transcode failed");
-            }
-            pending.insert(outcome.token, result);
-        }
-    }
-    None
+    deferred_replacement_removals
 }
 
 async fn run_playlists(
@@ -398,16 +481,17 @@ async fn run_playlists(
     work: &PlannedWork,
     failures: &mut Vec<i64>,
 ) {
-    let playlists =
-        match playlist_snapshots(&runtime.conn.borrow(), &work.settings, &work.transfers) {
-            Ok(playlists) => playlists,
-            Err(error) => {
-                tracing::warn!(%error, "could not build device playlists");
-                failures.push(-1);
-                return;
-            }
-        };
-    for (index, (name, contents)) in playlists.iter().enumerate() {
+    let mut successful_sources = HashSet::new();
+    let planned_sources = work
+        .plan
+        .playlist_writes
+        .iter()
+        .map(|write| write.source.clone())
+        .collect::<HashSet<_>>();
+    for (index, playlist) in work.plan.playlist_writes.iter().enumerate() {
+        if work.cancelled.load(Ordering::SeqCst) {
+            break;
+        }
         set_phase(
             runtime,
             &work.device_id,
@@ -415,81 +499,81 @@ async fn run_playlists(
             syncing_phase(
                 SyncStep::WritingPlaylists,
                 index,
-                playlists.len(),
-                name.clone(),
-                work.delta.bytes,
-                work.delta.bytes,
+                work.plan.playlist_writes.len(),
+                playlist.source_name.clone(),
+                work.plan.transfer_bytes,
+                work.plan.transfer_bytes,
             ),
         );
-        if let Err(error) = runtime
+        let name = playlist_stem(&playlist.device_path, &playlist.source_name);
+        let write_result = runtime
             .backend
             .replace_playlist(
                 work.device_id.clone(),
                 work.root_uri.clone(),
                 name.clone(),
-                contents.clone(),
+                playlist.contents.as_bytes().to_vec(),
             )
-            .await
-        {
-            tracing::warn!(playlist = name, %error, "could not write device playlist");
-            failures.push(-1);
+            .await;
+        match write_result {
+            Ok(()) => {
+                let record = DevicePlaylistRecord {
+                    device_serial: work.device_id.clone(),
+                    source: playlist.source.clone(),
+                    source_name: playlist.source_name.clone(),
+                    device_path: playlist.device_path.clone(),
+                    last_synced_at: None,
+                };
+                match upsert_device_playlist(&runtime.conn.borrow(), &record) {
+                    Ok(()) => {
+                        successful_sources.insert(playlist.source.clone());
+                    }
+                    Err(error) => {
+                        tracing::warn!(playlist = name, %error, "could not update playlist inventory");
+                        failures.push(-1);
+                    }
+                }
+            }
+            Err(error) => {
+                tracing::warn!(playlist = name, %error, "could not write device playlist");
+                failures.push(-1);
+            }
         }
     }
-}
-
-fn playlist_snapshots(
-    conn: &Connection,
-    settings: &DeviceSettings,
-    transfers: &[TransferPlanEntry],
-) -> Result<Vec<(String, Vec<u8>)>, rusqlite::Error> {
-    let DeviceSelection::Sources(sources) = &settings.selection else {
-        return Ok(Vec::new());
-    };
-    let paths = transfers
-        .iter()
-        .map(|entry| (entry.track.id, entry))
-        .collect::<HashMap<_, _>>();
-    let manual_names = reprise_core::library::playlists::list(conn)?
-        .into_iter()
-        .map(|playlist| (playlist.id, playlist.name))
-        .collect::<HashMap<_, _>>();
-    let smart_names = reprise_core::library::playlists::list_smart(conn)?
-        .into_iter()
-        .map(|playlist| (playlist.id, playlist.name))
-        .collect::<HashMap<_, _>>();
-    let mut snapshots = Vec::new();
-    for source in sources {
-        let (view_source, name) = match source {
-            reprise_core::device_sync::SelectionSource::Playlist(id) => (
-                reprise_core::view_source::ViewSource::Playlist(*id),
-                manual_names.get(id),
-            ),
-            reprise_core::device_sync::SelectionSource::Smart(id) => (
-                reprise_core::view_source::ViewSource::Smart(*id),
-                smart_names.get(id),
-            ),
-        };
-        let Some(name) = name else {
-            continue;
-        };
-        let ids =
-            reprise_core::queries::query_track_ids(conn, &view_source, "title", "asc", "", &[])?;
-        let entries = ids
-            .into_iter()
-            .filter_map(|id| paths.get(&id))
-            .map(|entry| DevicePlaylistEntry {
-                relative_path: entry.device_path.clone(),
-                duration_secs: entry.track.duration_ms.max(0) / 1_000,
-                display: if entry.track.artist.trim().is_empty() {
-                    entry.track.title.clone()
-                } else {
-                    format!("{} - {}", entry.track.artist, entry.track.title)
-                },
-            })
-            .collect::<Vec<_>>();
-        snapshots.push((name.clone(), render_named_playlist(&entries).into_bytes()));
+    if work.cancelled.load(Ordering::SeqCst) || !failures.is_empty() {
+        return;
     }
-    Ok(snapshots)
+    for playlist in &work.plan.playlist_removals {
+        if work.cancelled.load(Ordering::SeqCst) {
+            break;
+        }
+        if planned_sources.contains(&playlist.source)
+            && !successful_sources.contains(&playlist.source)
+        {
+            continue;
+        }
+        match runtime
+            .backend
+            .delete_track(work.root_uri.clone(), playlist.device_path.clone())
+            .await
+        {
+            Ok(_) if !planned_sources.contains(&playlist.source) => {
+                if let Err(error) = delete_device_playlist(
+                    &runtime.conn.borrow(),
+                    &work.device_id,
+                    &playlist.source,
+                ) {
+                    tracing::warn!(%error, "could not remove playlist inventory");
+                    failures.push(-1);
+                }
+            }
+            Ok(_) => {}
+            Err(error) => {
+                tracing::warn!(%error, "could not remove managed device playlist");
+                failures.push(-1);
+            }
+        }
+    }
 }
 
 fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, mut failures: Vec<i64>) {
@@ -501,10 +585,8 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, mut failures
         work.generation,
         PlannedSyncPhase::Finishing,
     );
-    if runtime.active_device.borrow().as_deref() == Some(&work.device_id) {
-        runtime.active_device.replace(None);
-    }
-    let resume = {
+    let successful = failures.is_empty() && !work.cancelled.load(Ordering::SeqCst);
+    {
         let mut devices = runtime.device_states.borrow_mut();
         if let Some(device) = devices
             .iter_mut()
@@ -512,20 +594,25 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, mut failures
         {
             device.cancellable = None;
             device.planned_cancel = None;
-            if failures.is_empty() && !work.cancelled.load(Ordering::SeqCst) {
-                device.last_sync = Some(chrono::Utc::now());
+            if successful {
                 device.resume_planned = false;
+                device.sync_error = None;
             }
-            let resume = device.resume_planned && device.connected;
-            if resume {
-                device.resume_planned = false;
-            }
-            resume
-        } else {
-            false
         }
-    };
-    let planning_error = runtime.recompute_delta(&work.device_id).err();
+    }
+    if successful {
+        runtime.notify();
+        runtime.refresh_contents_after_sync(
+            &work.device_id,
+            work.plan
+                .playlist_writes
+                .iter()
+                .map(|playlist| playlist.source.clone())
+                .collect(),
+        );
+        return;
+    }
+    let planning_error = runtime.recompute_delta_silent(&work.device_id).err();
     if let Some(device) = runtime
         .device_states
         .borrow_mut()
@@ -544,13 +631,7 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, mut failures
             });
     }
     runtime.notify();
-    runtime.refresh_contents_after_sync(&work.device_id);
-    runtime.release_and_start_next(&work.device_id);
-    if resume && runtime.active_device.borrow().is_none() {
-        if let Err(error) = runtime.sync_now(&work.device_id) {
-            tracing::warn!(device_id = work.device_id, %error, "could not resume synchronization");
-        }
-    }
+    runtime.refresh_contents(&work.device_id);
 }
 
 fn syncing_phase(
@@ -598,10 +679,8 @@ fn set_phase(
                 step: SyncStep::Copying,
                 ..
             }
-        ) && device.transfer_started_at.is_none()
-        {
-            device.transfer_started_at = Some(Instant::now());
-            device.bytes_per_second = 0;
+        ) {
+            device.mtp_rate.begin_copy(Instant::now());
         }
         device.sync_phase = phase;
     }
@@ -614,6 +693,7 @@ fn update_copy_bytes(
     generation: u64,
     done: u64,
     total: u64,
+    copied: u64,
 ) {
     if let Some(device) = runtime
         .device_states
@@ -629,19 +709,17 @@ fn update_copy_bytes(
         {
             *bytes_done = (*bytes_done).max(done.min(total));
             *bytes_total = total;
-            if let Some(started_at) = device.transfer_started_at {
-                device.bytes_per_second = transfer_rate(*bytes_done, started_at.elapsed());
-            }
+            device.mtp_rate.observe(copied, Instant::now());
         }
     }
     runtime.notify();
 }
 
-fn temporary_opus_path(device_id: &str, track_id: i64) -> PathBuf {
+fn temporary_transcode_path(device_id: &str, track_id: i64, extension: &str) -> PathBuf {
     let sequence = TEMP_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     let safe_device = reprise_core::device_sync::safe_component(device_id, "device");
     std::env::temp_dir().join(format!(
-        "reprise-sync-{safe_device}-{}-{track_id}-{sequence}.opus",
-        std::process::id()
+        "reprise-sync-{safe_device}-{}-{track_id}-{sequence}.{extension}",
+        std::process::id(),
     ))
 }

@@ -118,7 +118,7 @@ fn waveform_peaks_crud_round_trips() {
 }
 
 #[test]
-fn migrate_v8_to_v9_creates_device_sync_tables_and_cascades_tracks() {
+fn migrate_v8_to_current_creates_device_sync_tables_and_preserves_managed_files() {
     let conn = open(None).unwrap();
     migrate(&conn).unwrap();
     let version: i64 = conn
@@ -137,8 +137,13 @@ fn migrate_v8_to_v9_creates_device_sync_tables_and_cascades_tracks() {
     )
     .unwrap();
     conn.execute(
-        "INSERT INTO device_files (device_serial, track_id, device_path, size, mtime, pinned) \
-         VALUES ('serial-1', 1, 'Music/Reprise/A/T.opus', 42, 7, 1)",
+        "INSERT INTO device_files (
+           device_serial, track_id, source_path, source_size, source_mtime,
+           device_path, device_size, profile_fingerprint, pinned
+         ) VALUES (
+           'serial-1', 1, '/t.flac', 84, 7,
+           'Music/Reprise/A/T.opus', 42, 'legacy-opus-v1', 1
+         )",
         [],
     )
     .unwrap();
@@ -146,7 +151,7 @@ fn migrate_v8_to_v9_creates_device_sync_tables_and_cascades_tracks() {
     let remaining: i64 = conn
         .query_row("SELECT COUNT(*) FROM device_files", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(remaining, 0);
+    assert_eq!(remaining, 1);
 
     migrate(&conn).unwrap();
     let settings: (String, i64, i64, i64) = conn

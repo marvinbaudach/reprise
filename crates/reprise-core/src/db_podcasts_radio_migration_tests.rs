@@ -146,6 +146,49 @@ fn migration_is_idempotent() {
 }
 
 #[test]
+fn migration_repairs_the_parallel_v34_device_sync_schema() {
+    let conn = db::open(None).unwrap();
+    db::migrate(&conn).unwrap();
+    conn.execute_batch(
+        "DROP TABLE podcast_episode_dismissals;
+         DROP INDEX idx_podcast_episodes_unplayed;
+         CREATE INDEX idx_podcast_episodes_unplayed
+           ON podcast_episodes(played_at) WHERE played_at IS NULL;
+         ALTER TABLE new_releases DROP COLUMN track_count;
+         PRAGMA user_version = 34;",
+    )
+    .unwrap();
+
+    db::migrate(&conn).unwrap();
+
+    let dismissal_table_exists: bool = conn
+        .query_row(
+            "SELECT EXISTS(
+               SELECT 1 FROM sqlite_schema
+               WHERE type = 'table' AND name = 'podcast_episode_dismissals'
+             )",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(dismissal_table_exists);
+    let unplayed_index: String = conn
+        .query_row(
+            "SELECT sql FROM sqlite_schema
+             WHERE type = 'index' AND name = 'idx_podcast_episodes_unplayed'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(unplayed_index.contains("removed_at IS NULL"));
+    assert_eq!(
+        conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+            .unwrap(),
+        SUPPORTED_SCHEMA_VERSION
+    );
+}
+
+#[test]
 fn podcast_episode_delete_cascades_from_subscription() {
     let conn = db::open(None).unwrap();
     db::migrate(&conn).unwrap();

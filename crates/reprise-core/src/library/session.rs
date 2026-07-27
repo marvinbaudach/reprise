@@ -470,30 +470,35 @@ mod tests {
         // still-live enum before it was removed). A session saved before
         // `BrowserPlace::NewReleases` was removed therefore looks exactly
         // like this on disk.
-        let mut value = serde_json::to_value(&state).unwrap();
-        value["browser_place"] = serde_json::json!("NewReleases");
-        value["library_root"] = serde_json::json!("NewReleases");
-        value["play_origin_place"] = serde_json::json!("NewReleases");
-        crate::library::settings::set_setting(&conn, SESSION_KEY, &value.to_string()).unwrap();
+        for removed_place in [
+            serde_json::json!("NewReleases"),
+            serde_json::json!({"Device": {"serial": "pixel-8"}}),
+        ] {
+            let mut value = serde_json::to_value(&state).unwrap();
+            value["browser_place"] = removed_place.clone();
+            value["library_root"] = removed_place.clone();
+            value["play_origin_place"] = removed_place;
+            crate::library::settings::set_setting(&conn, SESSION_KEY, &value.to_string()).unwrap();
 
-        let restored = load(&conn);
+            let restored = load(&conn);
 
-        // The unknown variant must degrade to `None` per field instead of
-        // failing the whole `SessionState` deserialization — otherwise the
-        // entire session (geometry, queue) is discarded, not just the place.
-        assert_eq!(
-            restored.browser_place,
-            Some(BrowserPlace::from(ViewSource::Library))
-        );
-        assert!(restored
-            .library_root
-            .as_ref()
-            .is_some_and(BrowserPlace::is_library_root));
-        assert_eq!(restored.play_origin_place, None);
-        assert_eq!(restored.window_width, state.window_width);
-        assert_eq!(restored.window_height, state.window_height);
-        assert_eq!(restored.maximized, state.maximized);
-        assert_eq!(restored.queue, state.queue);
+            // The unknown variant must degrade to `None` per field instead of
+            // failing the whole `SessionState` deserialization — otherwise the
+            // entire session (geometry, queue) is discarded, not just the place.
+            assert_eq!(
+                restored.browser_place,
+                Some(BrowserPlace::from(ViewSource::Library))
+            );
+            assert!(restored
+                .library_root
+                .as_ref()
+                .is_some_and(BrowserPlace::is_library_root));
+            assert_eq!(restored.play_origin_place, None);
+            assert_eq!(restored.window_width, state.window_width);
+            assert_eq!(restored.window_height, state.window_height);
+            assert_eq!(restored.maximized, state.maximized);
+            assert_eq!(restored.queue, state.queue);
+        }
     }
 
     #[test]

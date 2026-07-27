@@ -178,7 +178,6 @@ pub enum BrowserPlace {
     Podcasts,
     Radio,
     Conversions,
-    Device { serial: String },
 }
 
 impl BrowserPlace {
@@ -205,8 +204,7 @@ impl BrowserPlace {
             | Self::Concerts
             | Self::Podcasts
             | Self::Radio
-            | Self::Conversions
-            | Self::Device { .. } => None,
+            | Self::Conversions => None,
         }
     }
 
@@ -225,8 +223,7 @@ impl BrowserPlace {
             | Self::Concerts
             | Self::Podcasts
             | Self::Radio
-            | Self::Conversions
-            | Self::Device { .. } => None,
+            | Self::Conversions => None,
         }
     }
 
@@ -240,8 +237,7 @@ impl BrowserPlace {
             | Self::Concerts
             | Self::Podcasts
             | Self::Radio
-            | Self::Conversions
-            | Self::Device { .. } => None,
+            | Self::Conversions => None,
         }
     }
 
@@ -273,9 +269,6 @@ impl BrowserPlace {
             Self::Podcasts => ViewSource::Podcasts,
             Self::Radio => ViewSource::Radio,
             Self::Conversions => ViewSource::Conversions,
-            Self::Device { serial } => ViewSource::Device {
-                serial: serial.clone(),
-            },
         }
     }
 }
@@ -306,7 +299,6 @@ impl From<ViewSource> for BrowserPlace {
             ViewSource::Podcasts => return Self::Podcasts,
             ViewSource::Radio => return Self::Radio,
             ViewSource::Conversions => return Self::Conversions,
-            ViewSource::Device { serial } => return Self::Device { serial },
         };
         Self::tracks(collection, TrackViewState::default())
     }
@@ -384,9 +376,6 @@ mod tests {
             ViewSource::MyStats,
             ViewSource::Podcasts,
             ViewSource::Radio,
-            ViewSource::Device {
-                serial: "pixel-8".into(),
-            },
         ];
 
         for source in sources {
