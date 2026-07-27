@@ -188,6 +188,35 @@ fn an_empty_selection_blocks_without_planning_any_destructive_work() {
 }
 
 #[test]
+fn untracked_physical_files_are_warned_and_never_deleted() {
+    let source = SelectionSource::Playlist(10);
+    let wanted = track(1, "/music/one.flac", None, 10_000, 1_000_000);
+    let mut mirror_input = input(
+        vec![source.clone()],
+        vec![playlist(
+            source,
+            "Safe mirror",
+            vec![MirrorTrack::Available(wanted)],
+        )],
+    );
+    mirror_input.managed_files.push(ManagedDeviceFile {
+        relative_path: "Existing Artist/Existing Album/Existing Song.flac".into(),
+        size_bytes: 1_000_000,
+    });
+
+    let plan = plan_mirror(mirror_input);
+
+    assert_eq!(plan.copy.len(), 1);
+    assert!(plan.remove.is_empty());
+    assert_eq!(
+        plan.warnings,
+        vec![MirrorWarning::UnsafeManagedPath {
+            path: "Existing Artist/Existing Album/Existing Song.flac".into(),
+        }]
+    );
+}
+
+#[test]
 fn a_deleted_selected_playlist_blocks_instead_of_becoming_an_empty_source() {
     let present = SelectionSource::Playlist(10);
     let deleted = SelectionSource::Playlist(11);
@@ -212,7 +241,7 @@ fn a_deleted_selected_playlist_blocks_instead_of_becoming_an_empty_source() {
 }
 
 #[test]
-fn removed_library_rows_pins_and_orphans_mirror_only_inside_the_managed_scope() {
+fn removed_inventory_rows_and_untracked_files_stay_inside_the_safe_scope() {
     let source = SelectionSource::Playlist(10);
     let wanted = track(1, "/music/one.mp3", Some(192), 10_000, 240_000);
     let deleted = track(2, "/music/two.mp3", Some(192), 10_000, 240_000);
@@ -257,15 +286,14 @@ fn removed_library_rows_pins_and_orphans_mirror_only_inside_the_managed_scope() 
 
     assert!(plan.copy.is_empty());
     assert!(plan.replace.is_empty());
-    assert_eq!(plan.remove.len(), 2);
+    assert_eq!(plan.remove.len(), 1);
     assert!(plan.remove.iter().any(|removal| matches!(
         removal,
         ManagedRemoval::Inventory(file) if file.track_id == 2
     )));
-    assert!(plan.remove.iter().any(|removal| matches!(
-        removal,
-        ManagedRemoval::Orphan(file) if file.relative_path == "Unknown/Orphan.mp3"
-    )));
+    assert!(plan.warnings.contains(&MirrorWarning::UnsafeManagedPath {
+        path: "Unknown/Orphan.mp3".into(),
+    }));
     assert!(plan.warnings.contains(&MirrorWarning::UnsafeManagedPath {
         path: "../outside.mp3".into(),
     }));
