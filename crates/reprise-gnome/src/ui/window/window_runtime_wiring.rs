@@ -161,6 +161,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         conn,
         Rc::new(move || compact_preferences.present()),
     );
+    super::compact_mode_suggestion::install(window, toast_overlay, minimal_view, player.is_some());
 
     let rescan_conn = conn.clone();
     let rescan_scan_controls = scan_controls.clone();

@@ -110,6 +110,8 @@ pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX: &str = N_!("Import from Rhythmbox");
 pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX_DESCRIPTION: &str =
     N_!("Rhythmbox was found. Choose what Reprise should import.");
 pub const COLUMN_LAYOUT: &str = N_!("Column layout");
+pub const COLUMNS_FOLDED: &str = N_!("Some columns were folded to fit the window");
+pub const SHOW_COLUMNS: &str = N_!("Show columns");
 
 #[path = "strings_rhythmbox.rs"]
 mod rhythmbox;
@@ -119,6 +121,8 @@ pub const ONBOARDING_SKIP: &str = N_!("Skip for Now");
 pub const ONBOARDING_SET_UP: &str = N_!("Set Up Library");
 pub const MAIN_MENU: &str = N_!("Main menu");
 pub const COMPACT_MODE: &str = N_!("Compact Mode");
+pub const COMPACT_MODE_SUGGESTION: &str = N_!("This window may be easier to use in Compact Mode");
+pub const USE_COMPACT_MODE: &str = N_!("Use Compact Mode");
 // Compact Mode opens through the menu action; the Library header has no duplicate control.
 pub const RESTORE_FULL_WINDOW: &str = N_!("Restore Full Window");
 #[allow(dead_code)]

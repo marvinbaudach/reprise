@@ -314,6 +314,7 @@ pub struct TrackList {
     pub(in crate::ui) shared: Rc<Shared>,
     pub(in crate::ui) root: gtk4::Box,
     pub(in crate::ui) column_registry: ColumnRegistry,
+    pub(super) responsive_columns: Rc<super::responsive_columns::ResponsiveColumns>,
 }
 
 impl TrackList {
@@ -444,6 +445,14 @@ impl TrackList {
         // right point in construction.
         self.shared.import_errors_view.set_toast_overlay(overlay);
         self.shared.missing_files_view.set_toast_overlay(overlay);
+    }
+
+    pub(in crate::ui) fn install_responsive_column_notice(
+        self: &Rc<Self>,
+        window: &adw::ApplicationWindow,
+        overlay: &adw::ToastOverlay,
+    ) {
+        self.responsive_columns.install_notice(window, overlay);
     }
 
     /// Injects the main window, once it exists — see the `Shared::window`
