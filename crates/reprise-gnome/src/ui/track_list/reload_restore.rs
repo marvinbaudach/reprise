@@ -85,6 +85,20 @@ pub(in crate::ui) fn positions_for_ids(ids: &[i64], current: &[i64]) -> Vec<u32>
         .collect()
 }
 
+/// Resolves the stable scroll anchor to its new row before GTK paints the
+/// rebuilt model. The widget layer uses this for `ColumnView::scroll_to`
+/// immediately after the query swap, preventing the full-range
+/// `items_changed` signal from exposing its transient position-zero state.
+/// The later pixel calculation still restores the precise within-row offset.
+pub(in crate::ui) fn prepaint_position(
+    anchor: Option<(i64, f64)>,
+    current_ids: &[i64],
+) -> Option<u32> {
+    let (anchor_id, _) = anchor?;
+    let position = current_ids.iter().position(|&id| id == anchor_id)?;
+    u32::try_from(position).ok()
+}
+
 /// Computes the scroll offset that keeps the anchor row at the same
 /// distance from the viewport top it had when captured, resolved against the
 /// anchor track's *new* position in `current_ids`. Returns `None` when there
@@ -137,6 +151,16 @@ mod tests {
         let anchor = Some((100_i64, 5.0));
         let current_ids = vec![10, 20, 30, 40, 50, 60, 70, 100, 80, 90];
         assert_eq!(scroll_target(anchor, &current_ids, 20.0, 50.0), Some(145.0));
+    }
+
+    #[test]
+    fn tag_1_prepaint_target_resolves_the_stable_anchor_before_offset_restore() {
+        let anchor = Some((100_i64, 5.0));
+        let current_ids = vec![10, 20, 30, 40, 50, 60, 70, 100, 80, 90];
+
+        assert_eq!(prepaint_position(anchor, &current_ids), Some(7));
+        assert_eq!(prepaint_position(Some((999, 0.0)), &current_ids), None);
+        assert_eq!(prepaint_position(None, &current_ids), None);
     }
 
     #[test]
