@@ -3,7 +3,7 @@
 use reprise_core::queries::BrowseFilter;
 
 use super::surface::TrackList;
-use super::track_list_reload::set_filter_and_reload;
+use super::track_list_reload::reload_centering_playing_track;
 
 impl TrackList {
     /// FIL-1a/FIL-6: one action resets search and browse facets in a single
@@ -15,7 +15,8 @@ impl TrackList {
         self.shared.browse_bar.restore_filter(&empty);
         // FIL-7: Clear all also drops the AI-exclude filter (one reload below).
         self.shared.browse_bar.clear_exclude_ai();
-        set_filter_and_reload(&self.shared, "");
+        *self.shared.filter.borrow_mut() = String::new();
+        reload_centering_playing_track(&self.shared);
     }
 
     pub fn set_on_search_cleared(&self, callback: impl Fn() + 'static) {

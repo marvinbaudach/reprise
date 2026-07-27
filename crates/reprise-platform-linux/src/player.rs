@@ -1,42 +1,22 @@
 use gstreamer as gst;
 use gstreamer::prelude::*;
+use gstreamer_app as gst_app;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use reprise_core::library::settings::{TrackTransition, CROSSFADE_SECONDS_DEFAULT};
 use reprise_core::playback::{
-    AudioEffects, PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent, SpectrumAnalyzer,
-    SPECTRUM_ANALYSIS_BAND_COUNT,
+    AudioEffects, CavaBarProcessor, CavaConfig, PlaybackBackend, PlaybackError, PlaybackState,
+    PlayerEvent, SpectrumFrame, SPECTRUM_BAND_COUNT,
 };
 
 use crate::crossfade::{CrossfadeEngine, IncomingSlot, Transition};
 use crate::gapless::{connect_about_to_finish, note_stream_start, HandoffFlag, NextUri};
 use crate::player_effects::{
     apply_audio_filter, replace_audio_filter, set_playbin_spectrum_messages,
-    update_existing_audio_filter,
+    update_existing_audio_filter, CAVA_SAMPLE_RATE_HZ, CAVA_SINK_NAME,
 };
-
-/// Extracts the raw per-band decibel magnitudes from a GStreamer `spectrum`
-/// element message. The values are handed to a [`SpectrumAnalyzer`] (which owns
-/// the cross-frame state) rather than turned into a frame here, so onset and
-/// dynamics derivation stays in `reprise-core`.
-pub(super) fn spectrum_decibels_from_structure(
-    structure: &gst::StructureRef,
-) -> Option<[f32; SPECTRUM_ANALYSIS_BAND_COUNT]> {
-    if structure.name() != "spectrum" {
-        return None;
-    }
-    let magnitudes = structure.get::<gst::List>("magnitude").ok()?;
-    if magnitudes.len() != SPECTRUM_ANALYSIS_BAND_COUNT {
-        return None;
-    }
-    let mut decibels = [0.0_f32; SPECTRUM_ANALYSIS_BAND_COUNT];
-    for (slot, magnitude) in decibels.iter_mut().zip(magnitudes.iter()) {
-        *slot = magnitude.get::<f32>().ok()?;
-    }
-    Some(decibels)
-}
 
 /// Default playback volume before the user ever moves the slider — full scale,
 /// matching `playbin3`'s own `volume` property default. Also the value the
@@ -129,6 +109,9 @@ pub struct Player {
     /// silence it immediately. See `crossfade.rs`.
     incoming: IncomingSlot,
     spectrum_enabled: Arc<AtomicBool>,
+    /// Incremented for every GStreamer stream start so a gapless handoff
+    /// cannot inherit the previous track's FFT, gravity, or sensitivity state.
+    cava_stream_generation: Arc<AtomicU64>,
 }
 
 /// Builds a fresh `playbin3` element with the `REPRISE_AUDIO_SINK` override
@@ -185,6 +168,64 @@ pub(crate) fn build_playbin(
     Ok(playbin)
 }
 
+fn attach_cava_sink(
+    playbin: &gst::Element,
+    on_event: Arc<dyn Fn(PlayerEvent) + Send + Sync>,
+    enabled: Arc<AtomicBool>,
+    stream_generation: Arc<AtomicU64>,
+) -> Result<(), PlaybackError> {
+    let filter = playbin
+        .property::<Option<gst::Element>>("audio-filter")
+        .ok_or_else(|| PlaybackError::Backend("GStreamer: playbin has no audio filter".into()))?;
+    let bin = filter
+        .downcast::<gst::Bin>()
+        .map_err(|_| PlaybackError::Backend("GStreamer: audio filter is not a bin".into()))?;
+    let sink = bin
+        .by_name(CAVA_SINK_NAME)
+        .ok_or_else(|| PlaybackError::Backend("GStreamer: filter has no CAVA PCM sink".into()))?
+        .downcast::<gst_app::AppSink>()
+        .map_err(|_| PlaybackError::Backend("GStreamer: CAVA sink is not an AppSink".into()))?;
+    let config = CavaConfig::new(CAVA_SAMPLE_RATE_HZ as u32, SPECTRUM_BAND_COUNT);
+    let mut processor = CavaBarProcessor::new(config)
+        .map_err(|error| PlaybackError::Backend(format!("CAVA: {error}")))?;
+    let mut was_enabled = false;
+    let mut seen_stream_generation = stream_generation.load(Ordering::Acquire);
+    sink.set_callbacks(
+        gst_app::AppSinkCallbacks::builder()
+            .new_sample(move |sink| {
+                let sample = sink.pull_sample().map_err(|_| gst::FlowError::Eos)?;
+                if !enabled.load(Ordering::Relaxed) {
+                    was_enabled = false;
+                    return Ok(gst::FlowSuccess::Ok);
+                }
+                let current_stream_generation = stream_generation.load(Ordering::Acquire);
+                if !was_enabled || current_stream_generation != seen_stream_generation {
+                    processor.reset();
+                    was_enabled = true;
+                    seen_stream_generation = current_stream_generation;
+                }
+                let buffer = sample.buffer().ok_or(gst::FlowError::Error)?;
+                if buffer.flags().contains(gst::BufferFlags::DISCONT) {
+                    processor.reset();
+                }
+                let map = buffer.map_readable().map_err(|_| gst::FlowError::Error)?;
+                let pcm = map
+                    .as_slice()
+                    .chunks_exact(size_of::<f32>())
+                    .map(|bytes| f32::from_le_bytes(bytes.try_into().expect("four-byte PCM chunk")))
+                    .collect::<Vec<_>>();
+                let bands: [f32; SPECTRUM_BAND_COUNT] = processor
+                    .process(&pcm)
+                    .try_into()
+                    .expect("the CAVA processor returns its configured bar count");
+                (*on_event)(PlayerEvent::Spectrum(SpectrumFrame::from_cava_bars(bands)));
+                Ok(gst::FlowSuccess::Ok)
+            })
+            .build(),
+    );
+    Ok(())
+}
+
 /// Attaches a bus watch to `playbin` that reports EOS/error messages via
 /// `on_event`. Extracted out of `Player::new` so `Player::rebuild_playbin` and
 /// the crossfade promotion (see `crossfade.rs`) can attach an identically-
@@ -203,14 +244,18 @@ pub(crate) fn attach_bus_watch(
     on_event: Arc<dyn Fn(PlayerEvent) + Send + Sync>,
     handoff_pending: HandoffFlag,
     crossfading: Arc<AtomicBool>,
+    spectrum_enabled: Arc<AtomicBool>,
+    cava_stream_generation: Arc<AtomicU64>,
 ) -> Result<gst::bus::BusWatchGuard, PlaybackError> {
+    attach_cava_sink(
+        playbin,
+        on_event.clone(),
+        spectrum_enabled,
+        cava_stream_generation.clone(),
+    )?;
     let bus = playbin
         .bus()
         .ok_or_else(|| PlaybackError::Backend("GStreamer: no bus".into()))?;
-    // Owns the cross-frame reactivity state for this pipeline's watch. Reset on
-    // each stream start so one track's dynamics baseline never bleeds into the
-    // next.
-    let mut spectrum_analyzer = SpectrumAnalyzer::new();
     let mut stream_tags = (None::<String>, None::<String>);
     bus.add_watch(move |_, msg| {
         use gst::MessageView;
@@ -227,9 +272,9 @@ pub(crate) fn attach_bus_watch(
                 }
             }
             MessageView::StreamStart(_) => {
+                cava_stream_generation.fetch_add(1, Ordering::AcqRel);
                 // Fires on every stream start; only a gapless handoff (flagged
                 // by the `about-to-finish` handler) turns into `AdvancedToNext`.
-                spectrum_analyzer = SpectrumAnalyzer::new();
                 stream_tags = (None, None);
                 note_stream_start(&handoff_pending, on_event.as_ref());
             }
@@ -247,13 +292,6 @@ pub(crate) fn attach_bus_watch(
                         title: next.0,
                         organization: next.1,
                     });
-                }
-            }
-            MessageView::Element(element) => {
-                if let Some(structure) = element.structure() {
-                    if let Some(decibels) = spectrum_decibels_from_structure(structure) {
-                        (*on_event)(PlayerEvent::Spectrum(spectrum_analyzer.ingest(decibels)));
-                    }
                 }
             }
             MessageView::Error(e) => {
@@ -294,6 +332,7 @@ impl Player {
         let fade_generation = Arc::new(AtomicU64::new(0));
         let incoming: IncomingSlot = Arc::new(Mutex::new(None));
         let spectrum_enabled = Arc::new(AtomicBool::new(false));
+        let cava_stream_generation = Arc::new(AtomicU64::new(0));
 
         let playbin = build_playbin(
             &effects.lock().unwrap_or_else(PoisonError::into_inner),
@@ -306,6 +345,8 @@ impl Player {
             on_event.clone(),
             handoff_pending.clone(),
             crossfading.clone(),
+            spectrum_enabled.clone(),
+            cava_stream_generation.clone(),
         )?;
         let playbin = Arc::new(Mutex::new(playbin));
         let bus_watch = Arc::new(Mutex::new(bus_watch));
@@ -323,6 +364,7 @@ impl Player {
             generation: fade_generation.clone(),
             incoming: incoming.clone(),
             spectrum_enabled: spectrum_enabled.clone(),
+            cava_stream_generation: cava_stream_generation.clone(),
         };
 
         // Position ticker: report position + duration every 500 ms while
@@ -370,6 +412,7 @@ impl Player {
             fade_generation,
             incoming,
             spectrum_enabled,
+            cava_stream_generation,
         })
     }
 
@@ -487,6 +530,8 @@ impl Player {
             self.on_event.clone(),
             self.handoff_pending.clone(),
             self.crossfading.clone(),
+            self.spectrum_enabled.clone(),
+            self.cava_stream_generation.clone(),
         )?;
 
         let mut playbin = self.playbin.lock().unwrap_or_else(PoisonError::into_inner);
@@ -614,6 +659,12 @@ impl PlaybackBackend for Player {
             return Ok(());
         }
         replace_audio_filter(&playbin, &effects, apply_audio_filter)?;
+        attach_cava_sink(
+            &playbin,
+            self.on_event.clone(),
+            self.spectrum_enabled.clone(),
+            self.cava_stream_generation.clone(),
+        )?;
         set_playbin_spectrum_messages(&playbin, self.spectrum_enabled.load(Ordering::SeqCst))?;
         *current_effects = effects;
         Ok(())

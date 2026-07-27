@@ -51,27 +51,28 @@ pub fn read_cover_tag(track_path: &Path) -> CoverTag {
     }
 }
 
-/// Resolves the best available cover source for a track: embedded picture,
-/// sidecar image in the track folder, then the offline downloaded-cover cache.
+/// Resolves the best available cover source for a track: an album-wide
+/// downloaded cover first, then the existing local embedded-picture and
+/// sidecar fallbacks. A shared downloaded source takes precedence so a
+/// detected album mismatch can converge without modifying any audio file.
 /// Pure read — it never writes to either the library or cache.
 pub fn resolve_source(track_path: &Path) -> Option<CoverSource> {
     let tag = read_cover_tag(track_path);
-    if let Some(bytes) = tag.picture {
-        return Some(CoverSource::Embedded(bytes));
-    }
-    if let Some(dir) = track_path.parent() {
-        if let Some(path) = folder_image(dir) {
-            return Some(CoverSource::FolderImage(path));
-        }
-    }
-    // Stage 3 (offline): a previously downloaded cover for this album.
+    // Stage 1 (offline): a previously downloaded canonical cover for this
+    // album takes precedence over track-local embedded artwork.
     if let (Some(album_artist), Some(album)) = (tag.album_artist.as_deref(), tag.album.as_deref()) {
         let key = crate::cover_download::album_key(album_artist, album);
         if let Some(path) = crate::cover_download::downloaded_cover_path(&key) {
             return Some(CoverSource::FolderImage(path));
         }
     }
-    None
+    if let Some(bytes) = tag.picture {
+        return Some(CoverSource::Embedded(bytes));
+    }
+    track_path
+        .parent()
+        .and_then(folder_image)
+        .map(CoverSource::FolderImage)
 }
 
 /// Finds a sidecar cover image in `dir` by canonical stem + known extension,
@@ -295,6 +296,40 @@ mod tests {
         p
     }
 
+    fn tagged_track_with_cover(
+        dir: &std::path::Path,
+        name: &str,
+        album: &str,
+        cover: Vec<u8>,
+    ) -> std::path::PathBuf {
+        use lofty::picture::{MimeType, Picture, PictureType};
+        use lofty::prelude::*;
+
+        let source =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
+        let track = dir.join(name);
+        std::fs::copy(source, &track).unwrap();
+        let mut tagged = lofty::read_from_path(&track).unwrap();
+        let tag = tagged.primary_tag_mut().unwrap();
+        tag.set_album(album.to_string());
+        tag.insert_text(
+            lofty::tag::ItemKey::AlbumArtist,
+            "Consistency Artist".to_string(),
+        );
+        tag.push_picture(
+            Picture::unchecked(cover)
+                .pic_type(PictureType::CoverFront)
+                .mime_type(MimeType::Png)
+                .build(),
+        );
+        tagged
+            .primary_tag()
+            .unwrap()
+            .save_to_path(&track, lofty::config::WriteOptions::default())
+            .unwrap();
+        track
+    }
+
     #[test]
     fn returns_none_when_no_embedded_and_no_folder_image() {
         let dir = tempfile::tempdir().unwrap();
@@ -349,6 +384,33 @@ mod tests {
     }
 
     #[test]
+    fn browse_10_tracks_from_one_album_prefer_the_shared_cached_cover() {
+        let dir = tempfile::tempdir().unwrap();
+        let album = format!("Consistency Album {}", fastrand::u64(..));
+        let first =
+            tagged_track_with_cover(dir.path(), "first.flac", &album, solid_png([255, 0, 0]));
+        let second =
+            tagged_track_with_cover(dir.path(), "second.flac", &album, solid_png([0, 0, 255]));
+        let key = crate::cover_download::album_key("Consistency Artist", &album);
+        std::fs::create_dir_all(crate::cover_download::downloaded_dir()).unwrap();
+        let shared = crate::cover_download::downloaded_dir().join(format!("{key}.png"));
+        std::fs::write(&shared, solid_png([0, 255, 0])).unwrap();
+
+        let first_thumbnail =
+            thumbnail(&resolve_source(&first).unwrap(), ThumbnailSize::List).unwrap();
+        let second_thumbnail =
+            thumbnail(&resolve_source(&second).unwrap(), ThumbnailSize::List).unwrap();
+
+        assert_eq!(
+            first_thumbnail, second_thumbnail,
+            "one album identity must resolve to one canonical cached cover"
+        );
+        std::fs::remove_file(shared).ok();
+        std::fs::remove_file(first_thumbnail).ok();
+        std::fs::remove_file(second_thumbnail).ok();
+    }
+
+    #[test]
     fn read_cover_tag_degrades_to_empty_fields_for_an_unreadable_tag() {
         let dir = tempfile::tempdir().unwrap();
         let track = write(dir.path(), "not-a-track.flac", b"not audio");
@@ -370,7 +432,15 @@ mod tests {
 
     // A solid-color square red PNG of the given side length.
     fn red_png(side: u32) -> Vec<u8> {
-        let img = image::RgbImage::from_pixel(side, side, image::Rgb([255, 0, 0]));
+        solid_png_with_side([255, 0, 0], side)
+    }
+
+    fn solid_png(color: [u8; 3]) -> Vec<u8> {
+        solid_png_with_side(color, 32)
+    }
+
+    fn solid_png_with_side(color: [u8; 3], side: u32) -> Vec<u8> {
+        let img = image::RgbImage::from_pixel(side, side, image::Rgb(color));
         let mut buf = std::io::Cursor::new(Vec::new());
         image::DynamicImage::ImageRgb8(img)
             .write_to(&mut buf, image::ImageFormat::Png)

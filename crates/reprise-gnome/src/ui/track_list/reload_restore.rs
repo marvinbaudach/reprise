@@ -120,6 +120,28 @@ pub(in crate::ui) fn scroll_target(
     Some(target.clamp(0.0, upper_bound))
 }
 
+/// Computes the scroll offset that vertically centers `track_id` after a
+/// filter change. Returns `None` when no playing track exists, the track is
+/// outside the new view, or the whole list fits in the viewport.
+pub(in crate::ui) fn centered_track_scroll_target(
+    track_id: Option<i64>,
+    current_ids: &[i64],
+    row_height: f64,
+    viewport_height: f64,
+) -> Option<f64> {
+    let track_id = track_id?;
+    let position = current_ids.iter().position(|&id| id == track_id)?;
+    let position = u32::try_from(position).ok()?;
+    let n_rows = u32::try_from(current_ids.len()).ok()?;
+    let content_height = current_ids.len() as f64 * row_height;
+    crate::ui::scroll_center::centered_scroll_value(
+        position,
+        n_rows,
+        content_height,
+        viewport_height,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,6 +173,16 @@ mod tests {
         let anchor = Some((100_i64, 5.0));
         let current_ids = vec![10, 20, 30, 40, 50, 60, 70, 100, 80, 90];
         assert_eq!(scroll_target(anchor, &current_ids, 20.0, 50.0), Some(145.0));
+    }
+
+    #[test]
+    fn fil_9_filter_change_centers_playing_track_in_new_results() {
+        let current_ids = (1..=100).collect::<Vec<_>>();
+
+        assert_eq!(
+            centered_track_scroll_target(Some(51), &current_ids, 20.0, 200.0),
+            Some(910.0)
+        );
     }
 
     #[test]
