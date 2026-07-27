@@ -138,20 +138,24 @@ fn handle_queue_drop_is_a_noop_without_ids_or_callback() {
 }
 
 #[test]
-fn issues_collection_is_the_sidebar_bottom_slot() {
+fn fb_2a_progress_follows_the_issues_heading_before_issue_sources() {
     assert_eq!(
         sidebar_root_order(),
+        [SidebarRootChild::Navigation, SidebarRootChild::Issues]
+    );
+    assert_eq!(
+        issues_section_order(),
         [
-            SidebarRootChild::Navigation,
-            SidebarRootChild::Activity,
-            SidebarRootChild::Issues,
+            IssuesSectionChild::Heading,
+            IssuesSectionChild::Activity,
+            IssuesSectionChild::Sources,
         ]
     );
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn fb_2a_issues_stay_pinned_below_progress_activity() {
+fn fb_2a_progress_sits_inside_issues_before_sources() {
     gtk4::init().unwrap();
     let scrolled = gtk4::ScrolledWindow::builder().vexpand(true).build();
     let activity = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
@@ -168,25 +172,37 @@ fn fb_2a_issues_stay_pinned_below_progress_activity() {
     window.present();
     while gtk4::glib::MainContext::default().iteration(false) {}
 
-    // FB-2a: activity and Issues share the bottom region, with Issues fixed
-    // last so progress grows upward without lifting the persistent problem
-    // entry away from the bottom edge.
+    // FB-2a: the bottom region reads as one Issues section:
+    // heading -> progress activity -> persistent problem sources.
+    let issues_section = root
+        .last_child()
+        .and_then(|widget| widget.downcast::<gtk4::Box>().ok())
+        .expect("the sidebar must end in an Issues section");
+    let heading = issues_section
+        .first_child()
+        .expect("the Issues section must start with its heading");
+    let heading_bounds = heading.compute_bounds(&root).unwrap();
     let activity_bounds = activity.compute_bounds(&root).unwrap();
     let issues_bounds = issues.compute_bounds(&root).unwrap();
     assert_eq!(root.first_child().as_ref(), Some(scrolled.upcast_ref()));
+    assert_eq!(heading.next_sibling().as_ref(), Some(activity.upcast_ref()));
+    assert_eq!(activity.next_sibling().as_ref(), Some(issues.upcast_ref()));
     assert_eq!(
-        scrolled.next_sibling().as_ref(),
-        Some(activity.upcast_ref())
+        issues_section.last_child().as_ref(),
+        Some(issues.upcast_ref())
     );
-    assert_eq!(root.last_child().as_ref(), Some(issues.upcast_ref()));
     assert!(
         (issues_bounds.y() + issues_bounds.height() - root.height() as f32).abs() < 0.5,
         "Issues must touch the sidebar bottom edge: issues={issues_bounds:?}, root_height={}",
         root.height()
     );
     assert!(
+        (heading_bounds.y() + heading_bounds.height() - activity_bounds.y()).abs() < 0.5,
+        "progress activity must follow the Issues heading: heading={heading_bounds:?}, activity={activity_bounds:?}"
+    );
+    assert!(
         (activity_bounds.y() + activity_bounds.height() - issues_bounds.y()).abs() < 0.5,
-        "progress activity must sit directly above Issues: activity={activity_bounds:?}, issues={issues_bounds:?}"
+        "progress activity must sit directly above issue sources: activity={activity_bounds:?}, issues={issues_bounds:?}"
     );
     window.close();
 }
@@ -299,7 +315,6 @@ fn acc_3_bottom_pinned_issues_collection_is_a_tab_stop() {
     gtk4::init().unwrap();
     let issues = gtk4::ListBox::new();
     configure_issues_listbox(&issues);
-    crate::ui::sidebar_presentation::append_problem_header(&issues);
     let row = crate::ui::sidebar_presentation::build_issue_nav_row(
         "Missing files",
         crate::ui::sidebar_presentation::issue_row_presentation(
