@@ -1,8 +1,15 @@
 //! Live, path-free bridge between the GTK-owned sync runtime and local agents.
 
 use reprise_core::agent_device_sync::{
-    AgentDeviceSyncCommand, AgentDeviceSyncDevice, AgentDeviceSyncPhase, AgentDeviceSyncRequest,
-    AgentDeviceSyncState, SharedAgentDeviceSyncState,
+    AgentDeviceSyncBlocker, AgentDeviceSyncChanges, AgentDeviceSyncCommand,
+    AgentDeviceSyncControls, AgentDeviceSyncDevice, AgentDeviceSyncPhase, AgentDeviceSyncPlaylist,
+    AgentDeviceSyncRequest, AgentDeviceSyncState, AgentDeviceSyncStorage,
+    AgentDeviceSyncStorageComposition, AgentDeviceSyncStorageKnowledge,
+    AgentDeviceSyncStorageState, AgentDeviceSyncWarning, SharedAgentDeviceSyncState,
+};
+use reprise_core::device_sync::{
+    MirrorBlocker, Mp3Quality, SelectionSource, StorageComposition, StorageKnowledge,
+    StorageProjectionState, SyncPageWarning, TransferProfile,
 };
 
 use super::*;
@@ -35,11 +42,10 @@ impl DeviceSyncRuntime {
 
     fn apply_agent_command(self: &Rc<Self>, command: AgentDeviceSyncCommand) -> Result<(), String> {
         match command {
-            AgentDeviceSyncCommand::ConfigurePlaylist {
+            AgentDeviceSyncCommand::Configure {
                 device_name,
-                playlist_name,
-                remove_unselected,
-                bitrate_kbps,
+                sources,
+                quality_kbps,
             } => {
                 let mut settings = self
                     .unique_connected_device(&device_name)
@@ -50,18 +56,29 @@ impl DeviceSyncRuntime {
                 let options = self
                     .selection_options()
                     .map_err(|error| format!("could not resolve sync playlist: {error}"))?;
-                let mut matches = options
-                    .into_iter()
-                    .filter(|option| option.name == playlist_name);
-                let option = matches
-                    .next()
-                    .ok_or_else(|| format!("playlist '{playlist_name}' does not exist"))?;
-                if matches.next().is_some() {
-                    return Err(format!("playlist name '{playlist_name}' is ambiguous"));
+                let unique = sources
+                    .iter()
+                    .cloned()
+                    .collect::<std::collections::HashSet<_>>();
+                if unique.len() != sources.len() {
+                    return Err("playlist sources must not contain duplicates".into());
                 }
-                settings.selection = DeviceSelection::Sources(vec![option.source]);
-                settings.remove_deleted = remove_unselected;
-                settings.opus_bitrate = bitrate_kbps;
+                let available = options
+                    .into_iter()
+                    .map(|option| option.source)
+                    .collect::<std::collections::HashSet<_>>();
+                if let Some(source) = sources.iter().find(|source| !available.contains(*source)) {
+                    return Err(format!(
+                        "playlist source '{}' does not exist",
+                        source_name(source)
+                    ));
+                }
+                let quality =
+                    Mp3Quality::try_from(quality_kbps).map_err(|error| error.to_string())?;
+                settings.selection = DeviceSelection::Sources(sources);
+                settings.remove_deleted = true;
+                settings.profile = TransferProfile::Mp3(quality);
+                settings.opus_bitrate = 0;
                 self.update_settings(settings)
             }
             AgentDeviceSyncCommand::Start { device_name } => {
@@ -96,6 +113,13 @@ impl DeviceSyncRuntime {
     }
 }
 
+fn source_name(source: &SelectionSource) -> String {
+    match source {
+        SelectionSource::Playlist(id) => format!("playlist:{id}"),
+        SelectionSource::Smart(id) => format!("smart:{id}"),
+    }
+}
+
 fn agent_state(state: DeviceSyncState) -> AgentDeviceSyncState {
     AgentDeviceSyncState {
         devices: state.devices.into_iter().map(agent_device).collect(),
@@ -104,21 +128,103 @@ fn agent_state(state: DeviceSyncState) -> AgentDeviceSyncState {
 
 fn agent_device(device: DeviceView) -> AgentDeviceSyncDevice {
     let (phase, bytes_done, bytes_total, current_track) = agent_phase(device.sync_phase);
+    let TransferProfile::Mp3(quality) = device.settings.profile;
+    let page = device.page;
     AgentDeviceSyncDevice {
         name: device.name,
         connected: device.connected,
-        available_bytes: device.storage.free_bytes,
-        total_bytes: device.storage.total_bytes,
         managed_tracks: device.managed_track_count,
-        selected_tracks: device.page.unique_track_count,
-        tracks_to_copy: device.page.changes.additions + device.page.changes.replacements,
-        tracks_to_remove: device.page.changes.removals,
-        bytes_to_copy: device.page.changes.transfer_bytes,
+        quality_kbps: quality.kbps(),
+        playlists: page
+            .playlists
+            .into_iter()
+            .map(|playlist| AgentDeviceSyncPlaylist {
+                source: playlist.source,
+                name: playlist.name,
+                selected: playlist.selected,
+                available: playlist.available,
+                entry_count: playlist.entry_count,
+                unique_track_count: playlist.unique_track_count,
+                unavailable_count: playlist.unavailable_count,
+                target_bytes: playlist.target_bytes,
+            })
+            .collect(),
+        unique_track_count: page.unique_track_count,
+        target_bytes: page.target_bytes,
+        changes: AgentDeviceSyncChanges {
+            additions: page.changes.additions,
+            replacements: page.changes.replacements,
+            removals: page.changes.removals,
+            retained_unavailable: page.changes.retained_unavailable,
+            playlist_writes: page.changes.playlist_writes,
+            playlist_removals: page.changes.playlist_removals,
+            transfer_bytes: page.changes.transfer_bytes,
+        },
+        storage: AgentDeviceSyncStorage {
+            target_name: page.storage.target_name,
+            state: storage_state(page.storage.state),
+            transfer_bytes: page.storage.transfer_bytes,
+            current: storage_composition(&page.storage.current),
+            after_sync: page.storage.after_sync.as_ref().map(storage_composition),
+        },
+        blockers: page.blockers.into_iter().map(agent_blocker).collect(),
+        warnings: page.warnings.into_iter().map(agent_warning).collect(),
+        controls: AgentDeviceSyncControls {
+            editable: page.controls.editable,
+            can_start: page.controls.can_start,
+            can_cancel: page.controls.can_cancel,
+        },
         phase,
         bytes_done,
         bytes_total,
         bytes_per_second: device.bytes_per_second,
         current_track,
+    }
+}
+
+fn storage_state(state: StorageProjectionState) -> AgentDeviceSyncStorageState {
+    match state {
+        StorageProjectionState::Fits => AgentDeviceSyncStorageState::Fits,
+        StorageProjectionState::Insufficient { shortfall_bytes } => {
+            AgentDeviceSyncStorageState::Insufficient { shortfall_bytes }
+        }
+        StorageProjectionState::CapacityUnknown => AgentDeviceSyncStorageState::CapacityUnknown,
+        StorageProjectionState::Inconsistent => AgentDeviceSyncStorageState::Inconsistent,
+        StorageProjectionState::Blocked => AgentDeviceSyncStorageState::Blocked,
+    }
+}
+
+fn storage_composition(composition: &StorageComposition) -> AgentDeviceSyncStorageComposition {
+    AgentDeviceSyncStorageComposition {
+        total_bytes: composition.total_bytes,
+        reprise_music_bytes: composition.reprise_music_bytes,
+        other_music_bytes: composition.other_music_bytes,
+        other_used_bytes: composition.other_used_bytes,
+        free_bytes: composition.free_bytes,
+        knowledge: match composition.knowledge {
+            StorageKnowledge::Complete => AgentDeviceSyncStorageKnowledge::Complete,
+            StorageKnowledge::CapacityUnknown => AgentDeviceSyncStorageKnowledge::CapacityUnknown,
+            StorageKnowledge::Inconsistent => AgentDeviceSyncStorageKnowledge::Inconsistent,
+        },
+    }
+}
+
+fn agent_blocker(blocker: MirrorBlocker) -> AgentDeviceSyncBlocker {
+    match blocker {
+        MirrorBlocker::NoPlaylistsSelected => AgentDeviceSyncBlocker::NoPlaylistsSelected,
+        MirrorBlocker::MissingPlaylist(source) => AgentDeviceSyncBlocker::MissingPlaylist(source),
+        MirrorBlocker::DuplicatePlaylist(source) => {
+            AgentDeviceSyncBlocker::DuplicatePlaylist(source)
+        }
+    }
+}
+
+fn agent_warning(warning: SyncPageWarning) -> AgentDeviceSyncWarning {
+    match warning {
+        SyncPageWarning::UnavailableNotOnDevice { .. } => {
+            AgentDeviceSyncWarning::UnavailableNotOnDevice
+        }
+        SyncPageWarning::UnsafeManagedItem => AgentDeviceSyncWarning::UnsafeManagedItem,
     }
 }
 

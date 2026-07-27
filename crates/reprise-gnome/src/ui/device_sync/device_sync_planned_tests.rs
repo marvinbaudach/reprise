@@ -397,7 +397,7 @@ fn missing_mp3_capability_blocks_before_any_managed_deletion_or_copy() {
 }
 
 #[test]
-fn agent_bridge_reports_capacity_delta_and_applies_playlist_configuration() {
+fn agent_bridge_reports_the_compact_mirror_page_and_applies_multi_source_configuration() {
     run(async {
         let (_temp, conn) = fixture();
         select_road_playlist(&conn, &[1, 2]);
@@ -411,22 +411,67 @@ fn agent_bridge_reports_capacity_delta_and_applies_playlist_configuration() {
 
         let snapshot = read_agent_device_sync_state(&state);
         assert_eq!(snapshot.devices[0].name, "Phone a");
-        assert_eq!(snapshot.devices[0].available_bytes, Some(1_000_000));
-        assert_eq!(snapshot.devices[0].selected_tracks, 2);
-        assert_eq!(snapshot.devices[0].tracks_to_copy, 2);
+        assert_eq!(snapshot.devices[0].quality_kbps, 256);
+        assert_eq!(snapshot.devices[0].unique_track_count, 2);
+        assert_eq!(snapshot.devices[0].changes.additions, 2);
+        assert_eq!(
+            snapshot.devices[0].storage.current.free_bytes,
+            Some(1_000_000)
+        );
+        assert!(snapshot.devices[0].controls.can_start);
+        assert!(snapshot.devices[0]
+            .playlists
+            .iter()
+            .any(|playlist| playlist.source == SelectionSource::Playlist(10)
+                && playlist.selected
+                && playlist.entry_count == 2));
+        assert!(snapshot.devices[0]
+            .playlists
+            .iter()
+            .any(|playlist| playlist.source == SelectionSource::Smart(3) && !playlist.selected));
 
-        let (request, reply) =
-            agent_device_sync_request(AgentDeviceSyncCommand::ConfigurePlaylist {
-                device_name: "Phone a".into(),
-                playlist_name: "Road".into(),
-                remove_unselected: true,
-                bitrate_kbps: 256,
-            });
+        let (request, reply) = agent_device_sync_request(AgentDeviceSyncCommand::Configure {
+            device_name: "Phone a".into(),
+            sources: vec![SelectionSource::Playlist(10), SelectionSource::Smart(3)],
+            quality_kbps: 320,
+        });
         sender.send(request).await.unwrap();
         gtk4::glib::timeout_future(Duration::from_millis(2)).await;
         assert_eq!(reply.try_recv(), Ok(Ok(())));
         assert!(runtime.devices()[0].settings.remove_deleted);
-        assert_eq!(runtime.devices()[0].settings.opus_bitrate, 256);
+        assert_eq!(
+            runtime.devices()[0].settings.profile,
+            reprise_core::device_sync::TransferProfile::Mp3(
+                reprise_core::device_sync::Mp3Quality::Kbps320
+            )
+        );
+        assert_eq!(runtime.devices()[0].settings.opus_bitrate, 0);
+        assert_eq!(
+            runtime.devices()[0].settings.selection,
+            DeviceSelection::Sources(vec![
+                SelectionSource::Playlist(10),
+                SelectionSource::Smart(3),
+            ])
+        );
+
+        let (request, reply) = agent_device_sync_request(AgentDeviceSyncCommand::Configure {
+            device_name: "Phone a".into(),
+            sources: vec![SelectionSource::Playlist(10), SelectionSource::Playlist(10)],
+            quality_kbps: 128,
+        });
+        sender.send(request).await.unwrap();
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+        assert!(reply
+            .try_recv()
+            .unwrap()
+            .unwrap_err()
+            .contains("duplicates"));
+        assert_eq!(
+            runtime.devices()[0].settings.profile,
+            reprise_core::device_sync::TransferProfile::Mp3(
+                reprise_core::device_sync::Mp3Quality::Kbps320
+            )
+        );
 
         let (request, reply) = agent_device_sync_request(AgentDeviceSyncCommand::Start {
             device_name: "Missing phone".into(),
