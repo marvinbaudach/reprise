@@ -392,10 +392,11 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **FB-2a** [aktiv] [gtk] — Der Relink-Suchlauf läuft off-thread in der
   bestehenden, mit Scan/Sync stapelbaren Fortschrittskarte **innerhalb** des
   unten fixierten Issues-Bereichs. Seine Reihenfolge ist: Überschrift
-  „ISSUES“ → laufende Karten → Import errors / Missing files. Karte: Spinner
-  + Titel + % rechts (tabular) + 3-px-Balken + ellipsierte Detailzeile. Klick
-  auf die Karte → Missing files; der sichtbare Cancel-Button prüft den
-  Abbruch vor jeder Audiodatei.
+  „ISSUES“ → laufende Karten → Import errors / Missing files; laufende Karten
+  und Issue-Zeilen bilden dabei ohne flexiblen Zwischenraum einen gemeinsamen
+  Block am unteren Rand. Karte: Spinner + Titel + % rechts (tabular) +
+  3-px-Balken + ellipsierte Detailzeile. Klick auf die Karte → Missing files;
+  der sichtbare Cancel-Button prüft den Abbruch vor jeder Audiodatei.
 - **FB-2b** [geplant] [gtk] — Scan, Sync und Playlist-Import verwenden für
   jeden Lauf > ~1 s denselben vollständigen Kartenvertrag aus FB-2a,
   einschließlich sichtbarem Cancel und Navigation zur zugehörigen Ansicht.
@@ -604,8 +605,10 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Tracks nicht. Mechanik an der Wurzel: der Reload sichert Selektion über
   Track-IDs und Scroll über einen Anker (Track-ID + Offset, nie Pixel) und
   stellt beide wieder her — für alle Auslöser (Save, Watcher-Reconcile,
-  Sortierung, Rating). Gelöschte IDs fallen still heraus; ein gewollter Reset
-  ist explizit, nie Nebeneffekt.
+  Sortierung, Rating). Beim asynchronen Tag-Editor-Save wird der Scrollanker
+  vor dem Öffnen des Dialogs erfasst und nach dessen Worker-Abschluss
+  wiederverwendet. Gelöschte IDs fallen still heraus; ein gewollter Reset ist
+  explizit, nie Nebeneffekt.
 - **TAG-2** [aktiv] [gtk] — Multi-Semantik: Felder mit identischem Wert
   zeigen ihn normal; abweichende zeigen einen Mixed-Platzhalter (kursiv,
   gestrichelte Border) — bei ≤ 2 verschiedenen Werten die Werte selbst
@@ -857,7 +860,7 @@ Ort und Stelle (MOT-2, die Motion-Lesart von P-4).
   (`adw::OverlaySplitView`, Position Start — Auslöser dieser Sektion); der
   StatusPage⇄Liste-Stacks crossfaden mit dem Standard-Token wie der äußere
   Library/Stats/Device-Stack.
-- **MOT-4** [aktiv] [manuell] — Listen bewegen sich nicht: kein
+- **MOT-4** [ersetzt durch MOT-8] — Listen bewegen sich nicht: kein
   Stagger/Fade-in pro Row (windowed Model, 200er-Fenster, Bibliotheken
   jenseits 1 600 Rows). Erlaubt: ein Crossfade der gesamten Fläche beim
   View-Wechsel, solange nicht zwei dichte Quellen gleichzeitig lesbar
@@ -886,6 +889,14 @@ Ort und Stelle (MOT-2, die Motion-Lesart von P-4).
   für eigene Tick-Callbacks (Waveform-Positions-Glättung: Position hart
   setzen; Progress-Interpolation) und Pulse-Timer. `gtk::Spinner` und
   GTK-interne CSS-Mechanik sind Systemverhalten und werden nicht gegated.
+- **MOT-8** [aktiv] [gtk] — Listen bewegen sich nicht: kein Stagger/Fade-in
+  pro Row (windowed Model, 200er-Fenster, Bibliotheken jenseits 1 600 Rows).
+  View-Wechsel behalten das Standard-Token. Zwischen zwei dichten Quellen
+  (Podcasts⇄Music) wird die ausgehende Fläche vor dem Stack-Wechsel
+  vollständig ausgeblendet und nur die eingehende Fläche über die
+  Standarddauer eingeblendet: sichtbare Bewegung ohne harten Schnitt und
+  ohne zwei gleichzeitig lesbare Tabellen. Die Queue-Ausnahme aus MOT-4
+  bleibt erlaubend; `gtk-enable-animations=false` schaltet nach MOT-7 hart.
 
 ## P. Now-Playing-Panel
 

@@ -1,5 +1,7 @@
 //! Main-content stack sizing and source-transition policy.
 
+use gtk4::prelude::*;
+
 pub(super) fn build() -> gtk4::Stack {
     let stack = gtk4::Stack::new();
     super::library_player_bar::configure_content_stack(&stack);
@@ -8,23 +10,44 @@ pub(super) fn build() -> gtk4::Stack {
     stack
 }
 
-fn transition_for_switch(from: Option<&str>, to: &str) -> gtk4::StackTransitionType {
-    // MOT-4: dense source tables must never remain simultaneously readable.
-    // Keep the outer shell's Standard crossfade for other page switches, but
-    // make the Music/Podcasts boundary atomic in both directions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PageTransition {
+    Crossfade,
+    FadeThrough,
+}
+
+fn transition_for_switch(from: Option<&str>, to: &str) -> PageTransition {
     if matches!(
         (from, to),
         (Some("podcasts"), "library") | (Some("library"), "podcasts")
     ) {
-        gtk4::StackTransitionType::None
+        PageTransition::FadeThrough
     } else {
-        gtk4::StackTransitionType::Crossfade
+        PageTransition::Crossfade
     }
 }
 
-pub(super) fn show_page(stack: &gtk4::Stack, name: &str) {
+pub(in crate::ui) fn show_page(stack: &gtk4::Stack, name: &str) {
     let from = stack.visible_child_name();
-    stack.set_visible_child_full(name, transition_for_switch(from.as_deref(), name));
+    let transition = transition_for_switch(from.as_deref(), name);
+    let Some(incoming) = stack.child_by_name(name) else {
+        tracing::warn!(page = name, "content stack target is not installed");
+        return;
+    };
+    // A dense source left transparent by an earlier fade-through becomes
+    // fully visible before it is used as an incoming page again.
+    incoming.set_opacity(1.0);
+    if transition == PageTransition::FadeThrough {
+        // MOT-8: retain the same Standard-duration surface transition as
+        // other location switches without crossfading two readable tables.
+        // Hiding only the outgoing child turns GtkStack's normal crossfade
+        // into a single-surface fade-through; the incoming page still fades
+        // in and the surrounding shell never hard-cuts.
+        if let Some(outgoing) = from.as_deref().and_then(|name| stack.child_by_name(name)) {
+            outgoing.set_opacity(0.0);
+        }
+    }
+    stack.set_visible_child_full(name, gtk4::StackTransitionType::Crossfade);
 }
 
 #[cfg(test)]
@@ -32,18 +55,18 @@ mod tests {
     use gtk4::prelude::*;
 
     #[test]
-    fn mot_4_dense_source_switch_uses_no_overlap_transition() {
+    fn mot_8_dense_source_switch_retains_standard_motion() {
         assert_eq!(
             super::transition_for_switch(Some("podcasts"), "library"),
-            gtk4::StackTransitionType::None
+            super::PageTransition::FadeThrough
         );
         assert_eq!(
             super::transition_for_switch(Some("library"), "podcasts"),
-            gtk4::StackTransitionType::None
+            super::PageTransition::FadeThrough
         );
         assert_eq!(
             super::transition_for_switch(Some("library"), "stats"),
-            gtk4::StackTransitionType::Crossfade
+            super::PageTransition::Crossfade
         );
     }
 
@@ -62,7 +85,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn mot_4_dense_source_switch_never_overlaps_readable_tables() {
+    fn mot_8_dense_source_switch_animates_without_overlapping_readable_tables() {
         gtk4::init().unwrap();
         let stack = super::build();
         let library = gtk4::Label::new(Some("Music table"));
@@ -84,12 +107,12 @@ mod tests {
             "Music must be visible after the switch"
         );
         assert!(
-            !podcasts.is_mapped(),
-            "the outgoing Podcast table must not remain readable over Music"
+            podcasts.opacity() == 0.0,
+            "the outgoing Podcast table must become visually unreadable before Music fades in"
         );
         assert!(
-            !stack.is_transition_running(),
-            "dense source surfaces must switch without an overlapping crossfade"
+            stack.is_transition_running(),
+            "dense source surfaces must retain the normal location-switch motion"
         );
         window.close();
     }
