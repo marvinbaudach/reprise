@@ -4,6 +4,8 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
+use libadwaita as adw;
+use libadwaita::prelude::*;
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
 use rusqlite::Connection;
@@ -75,9 +77,12 @@ pub(in crate::ui) fn build(
     stack.set_visible_child_name(STACK_PAGE_EMPTY);
 
     let browse_bar = BrowseBar::new(conn.clone());
+    let responsive_columns_host = adw::BreakpointBin::new();
+    responsive_columns_host.set_size_request(1, 1);
+    responsive_columns_host.set_child(Some(&stack));
     let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     root.append(browse_bar.widget());
-    root.append(&stack);
+    root.append(&responsive_columns_host);
 
     let cover_loader = CoverLoader::new(cover_download);
     let shared = Rc::new(Shared {
@@ -246,6 +251,11 @@ pub(in crate::ui) fn build(
     let title_column = built_columns.title;
     let artist_column = built_columns.artist;
     let column_registry = built_columns.registry;
+    let responsive_columns = super::responsive_columns::ResponsiveColumns::new(
+        &responsive_columns_host,
+        &column_registry,
+        &column_layout::load_layout(&shared.conn.borrow()),
+    );
     super::end_of_results::install(&shared, &list_overlay, &scrolled);
     let initial_sort_column = if column_registry.is_visible(ColumnId::Artist) {
         artist_column.clone()
@@ -281,5 +291,6 @@ pub(in crate::ui) fn build(
         shared,
         root,
         column_registry,
+        responsive_columns,
     }
 }

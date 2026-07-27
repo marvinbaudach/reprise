@@ -101,8 +101,8 @@ pub(crate) use browse::browse_bar;
 use browse::{browse_filter_count, browse_filter_strings};
 #[allow(unused_imports)]
 use compact::{
-    compact_mode_controls, compact_player, compact_player_layouts, compact_player_menu,
-    compact_player_scroll, minimal_view,
+    compact_mode_controls, compact_mode_suggestion, compact_player, compact_player_layouts,
+    compact_player_menu, compact_player_scroll, minimal_view,
 };
 #[allow(unused_imports)]
 use cover::{cover_download_batch, main_cover_download_progress};
