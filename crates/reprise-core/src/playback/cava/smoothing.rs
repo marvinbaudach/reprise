@@ -5,6 +5,7 @@ const MAX_SENSITIVITY: f32 = 1_000_000.0;
 const MIN_SENSITIVITY: f32 = 1.0e-6;
 const MAX_INTERNAL_BAR_VALUE: f32 = 64.0;
 const MAX_INTEGRAL_FEEDBACK: f32 = 0.98;
+const INITIAL_SENSITIVITY_HEADROOM: f32 = 0.85;
 
 pub(super) struct Smoother {
     noise_reduction: f32,
@@ -12,6 +13,7 @@ pub(super) struct Smoother {
     autosensitivity: u32,
     sensitivity: f32,
     sensitivity_initializing: bool,
+    sensitivity_settling: bool,
     framerate: f32,
     frame_skip: u32,
     previous: Vec<f32>,
@@ -33,6 +35,7 @@ impl Smoother {
             autosensitivity,
             sensitivity: 1.0,
             sensitivity_initializing: true,
+            sensitivity_settling: false,
             framerate: INITIAL_FRAMERATE,
             frame_skip: 1,
             previous: vec![0.0; bar_count],
@@ -55,8 +58,14 @@ impl Smoother {
         let integral_feedback = (self.noise_reduction / integral_mod).min(MAX_INTEGRAL_FEEDBACK);
         let gravity_mod = (self.noise_reduction > 0.1)
             .then(|| framerate_mod.powf(2.5) * 2.0 / self.noise_reduction);
+        // Preserve CAVA's gain search exactly, but do not expose its clipped
+        // calibration frames. A cold analyzer can otherwise draw every band
+        // at 1.0 while autosensitivity backs down from its first overshoot.
+        let protect_initial_output = self.autosensitivity > 0
+            && (self.sensitivity_initializing || self.sensitivity_settling);
 
         let mut overshoot = false;
+        let mut max_internal = 0.0_f32;
         for (bar, (((previous, peak), fall), memory)) in bars.iter_mut().zip(
             self.previous
                 .iter_mut()
@@ -93,7 +102,7 @@ impl Smoother {
             } else {
                 *memory = bar.clamp(0.0, MAX_INTERNAL_BAR_VALUE);
                 overshoot |= *bar > 1.0;
-                *bar = bar.clamp(0.0, 1.0);
+                max_internal = max_internal.max(*bar);
             }
         }
 
@@ -102,13 +111,27 @@ impl Smoother {
                 let reduction = (1.0 - 0.02 * framerate_mod).max(0.01);
                 self.sensitivity *= reduction;
                 self.sensitivity_initializing = false;
+                self.sensitivity_settling = true;
             } else if signal_present {
+                self.sensitivity_settling = false;
                 self.sensitivity *= 1.0 + 0.001 * framerate_mod * self.autosensitivity as f32;
                 if self.sensitivity_initializing {
                     self.sensitivity *= 1.0 + 0.1 * framerate_mod;
                 }
             }
             self.sensitivity = self.sensitivity.clamp(MIN_SENSITIVITY, MAX_SENSITIVITY);
+        }
+
+        let output_scale = if self.autosensitivity > 0
+            && (protect_initial_output || overshoot)
+            && max_internal > INITIAL_SENSITIVITY_HEADROOM
+        {
+            INITIAL_SENSITIVITY_HEADROOM / max_internal
+        } else {
+            1.0
+        };
+        for bar in bars {
+            *bar = (*bar * output_scale).clamp(0.0, 1.0);
         }
     }
 
@@ -117,6 +140,7 @@ impl Smoother {
         self.frame_skip = 1;
         self.sensitivity = 1.0;
         self.sensitivity_initializing = true;
+        self.sensitivity_settling = false;
         self.previous.fill(0.0);
         self.peaks.fill(0.0);
         self.fall.fill(0.0);
@@ -132,5 +156,42 @@ impl Smoother {
         self.framerate +=
             sample_rate_hz as f32 * self.frame_skip as f32 / new_samples as f32 / 64.0;
         self.frame_skip = 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cold_rising_signal_does_not_expose_autosensitivity_clipping() {
+        let mut smoother = Smoother::new(64, 0.77, 0.04, 1);
+        let mut max_mean = 0.0_f32;
+        let mut max_near_full = 0;
+
+        for raw_level in [
+            0.01, 0.02, 0.04, 0.08, 0.12, 0.16, 0.18, 0.18, 0.18, 0.18, 0.18, 0.18,
+        ] {
+            let mut bars = [raw_level; 64];
+            smoother.apply(&mut bars, 4_096, 44_100, true);
+            max_mean = max_mean.max(bars.iter().sum::<f32>() / bars.len() as f32);
+            max_near_full = max_near_full.max(bars.iter().filter(|bar| **bar >= 0.95).count());
+        }
+
+        assert!(
+            max_mean <= INITIAL_SENSITIVITY_HEADROOM && max_near_full == 0,
+            "cold rising signal saturated: max_mean={max_mean:.3}, \
+             max_near_full={max_near_full}"
+        );
+    }
+
+    #[test]
+    fn disabled_autosensitivity_does_not_apply_initial_headroom() {
+        let mut smoother = Smoother::new(1, 0.0, 0.0, 0);
+        let mut bars = [1.2];
+
+        smoother.apply(&mut bars, 735, 44_100, true);
+
+        assert_eq!(bars, [1.0]);
     }
 }
