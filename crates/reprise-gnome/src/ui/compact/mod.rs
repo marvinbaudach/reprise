@@ -1,4 +1,5 @@
 pub(in crate::ui) mod compact_mode_controls;
+pub(in crate::ui) mod compact_mode_suggestion;
 pub(in crate::ui) mod compact_player;
 pub(in crate::ui) mod compact_player_layouts;
 pub(in crate::ui) mod compact_player_menu;

@@ -1,6 +1,8 @@
 //! Widget construction for the full-width Library player bar.
 
 use gtk4::{pango, prelude::*};
+use libadwaita as adw;
+use libadwaita::prelude::*;
 
 use super::cover_loader::CoverLoader;
 use super::strings;
@@ -15,11 +17,20 @@ const VOLUME_DEFAULT: f64 = 1.0;
 
 const COVER_PIXEL_SIZE: i32 = 56;
 const BAR_HEIGHT: i32 = 86;
-const START_ZONE_WIDTH: i32 = 300;
+// The info zone also owns a 12 px leading margin. Keep its requested content
+// width below 300 so the complete 1,170 px three-zone layout fits inside a
+// 1,200 px decorated window without a transient two-pixel overflow.
+const START_ZONE_WIDTH: i32 = 288;
 const END_ZONE_WIDTH: i32 = 250;
 const CENTER_ZONE_MAX_WIDTH: i32 = 620;
+const NARROW_BREAKPOINT_WIDTH: i32 = 900;
+const NARROW_START_ZONE_WIDTH: i32 = 160;
+const NARROW_END_ZONE_WIDTH: i32 = 172;
+const TRACK_INFO_MAX_WIDTH: i32 = 220;
+const NARROW_TRACK_INFO_MAX_WIDTH: i32 = 84;
 const VOLUME_SLIDER_WIDTH: i32 = 80;
 const PLAY_BUTTON_SIZE: i32 = 44;
+const TRACK_LABEL_MAX_CHARS: i32 = 22;
 
 const ZERO_TIME_LABEL: &str = "0:00";
 const ZONE_SPACING: i32 = 8;
@@ -112,12 +123,19 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     track_box.append(&title_button);
     track_box.append(&artist_button);
     track_box.set_valign(gtk4::Align::Center);
+    let track_info_clamp = adw::Clamp::builder()
+        .orientation(gtk4::Orientation::Horizontal)
+        .maximum_size(TRACK_INFO_MAX_WIDTH)
+        .tightening_threshold(TRACK_INFO_MAX_WIDTH)
+        .child(&track_box)
+        .build();
+    track_info_clamp.set_hexpand(true);
 
     // — Start zone (cover + track info) —
     let info_box = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
     info_box.set_margin_start(12);
     info_box.append(&cover_button);
-    info_box.append(&track_box);
+    info_box.append(&track_info_clamp);
     info_box.set_valign(gtk4::Align::Center);
     info_box.set_width_request(START_ZONE_WIDTH);
 
@@ -248,10 +266,45 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     center_box.set_end_widget(Some(&end_zone));
     center_box.set_hexpand(true);
 
+    // Preserve the spacious three-zone proportions at normal widths while
+    // letting every zone surrender its decorative width reservation before it
+    // can force the containing window wider.
+    let responsive = adw::BreakpointBin::new();
+    responsive.set_size_request(1, BAR_HEIGHT);
+    responsive.set_child(Some(&center_box));
+    let narrow = adw::BreakpointCondition::new_length(
+        adw::BreakpointConditionLengthType::MaxWidth,
+        f64::from(NARROW_BREAKPOINT_WIDTH),
+        adw::LengthUnit::Px,
+    );
+    let breakpoint = adw::Breakpoint::new(narrow);
+    breakpoint.add_setter(
+        &info_box,
+        "width-request",
+        Some(&NARROW_START_ZONE_WIDTH.to_value()),
+    );
+    breakpoint.add_setter(
+        &track_info_clamp,
+        "maximum-size",
+        Some(&NARROW_TRACK_INFO_MAX_WIDTH.to_value()),
+    );
+    breakpoint.add_setter(
+        &track_info_clamp,
+        "tightening-threshold",
+        Some(&NARROW_TRACK_INFO_MAX_WIDTH.to_value()),
+    );
+    breakpoint.add_setter(&center_zone, "width-request", Some(&(-1_i32).to_value()));
+    breakpoint.add_setter(
+        &end_zone,
+        "width-request",
+        Some(&NARROW_END_ZONE_WIDTH.to_value()),
+    );
+    responsive.add_breakpoint(breakpoint);
+
     // — Root wrapper gives us height-request without fighting CenterBox —
     let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     root.add_css_class(SURFACE_CSS_CLASS);
-    root.append(&center_box);
+    root.append(&responsive);
     root.set_height_request(BAR_HEIGHT);
     root.set_sensitive(false);
 
@@ -375,6 +428,10 @@ fn build_track_label() -> gtk4::Label {
     let label = gtk4::Label::new(None);
     label.set_halign(gtk4::Align::Start);
     label.set_ellipsize(pango::EllipsizeMode::End);
+    // `ellipsize` lowers the minimum but does not cap the natural width.
+    // CenterBox considers natural widths when balancing its side zones, so a
+    // very long title could otherwise pull the transport controls off-center.
+    label.set_max_width_chars(TRACK_LABEL_MAX_CHARS);
     label.set_xalign(0.0);
     label
 }
@@ -464,6 +521,113 @@ mod tests {
         // End zone has volume controls.
         assert!(layout.volume_scale.is_ancestor(&layout.root));
         assert!(layout.volume_icon.is_ancestor(&layout.root));
+        window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn style_5_player_bar_fits_a_narrow_short_window_without_clipping() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let layout = build();
+        let content = gtk4::ScrolledWindow::builder()
+            .child(&gtk4::Label::new(Some("Scrollable library content")))
+            .vexpand(true)
+            .build();
+        let shell = crate::ui::library_player_bar::LibraryPlayerBarShell::new(
+            &content,
+            Some(layout.root.upcast_ref()),
+            reprise_core::library::settings::PlayerBarPosition::Bottom,
+        );
+        let window = gtk4::Window::builder()
+            .default_width(720)
+            .default_height(420)
+            .child(shell.widget())
+            .build();
+
+        window.present();
+        wait_for_layout();
+
+        assert!(
+            window.width() <= 720,
+            "the full player forced a half-screen window wider: {}",
+            window.width()
+        );
+        assert_eq!(layout.root.width(), shell.widget().width());
+        assert!(
+            layout.root.height() >= super::BAR_HEIGHT,
+            "the player bar lost its full structural height"
+        );
+        for (name, widget) in [
+            ("cover", layout.cover_button.upcast_ref::<gtk4::Widget>()),
+            (
+                "play/pause",
+                layout.play_pause_button.upcast_ref::<gtk4::Widget>(),
+            ),
+            (
+                "waveform",
+                layout.waveform.widget().upcast_ref::<gtk4::Widget>(),
+            ),
+            (
+                "position",
+                layout.position_label.upcast_ref::<gtk4::Widget>(),
+            ),
+            (
+                "duration",
+                layout.duration_label.upcast_ref::<gtk4::Widget>(),
+            ),
+            ("volume", layout.volume_scale.upcast_ref::<gtk4::Widget>()),
+        ] {
+            let bounds = widget
+                .compute_bounds(&layout.root)
+                .unwrap_or_else(|| panic!("{name} has no player-bar bounds"));
+            assert!(
+                bounds.x() >= 0.0
+                    && bounds.y() >= 0.0
+                    && bounds.x() + bounds.width() <= layout.root.width() as f32
+                    && bounds.y() + bounds.height() <= layout.root.height() as f32,
+                "{name} is clipped outside the player bar: {bounds:?}, bar={}x{}",
+                layout.root.width(),
+                layout.root.height()
+            );
+        }
+
+        window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn style_5_long_title_keeps_transport_controls_centered() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let layout = build();
+        layout.title_label.set_text(
+            "Siren's Lament — Dark Melodic Metalcore Instrumental Mix | \
+             Cinematic Heavy Atmospheric Metal With An Extremely Long Name",
+        );
+        layout
+            .artist_label
+            .set_text("Hollow Fallen — Videos With Another Long Channel Name");
+        let window = gtk4::Window::builder()
+            .default_width(1_200)
+            .default_height(180)
+            .child(&layout.root)
+            .build();
+
+        window.present();
+        wait_for_layout();
+
+        let play_bounds = layout
+            .play_pause_button
+            .compute_bounds(&layout.root)
+            .expect("play button has player-bar bounds");
+        let play_center = play_bounds.x() + play_bounds.width() / 2.0;
+        let bar_center = layout.root.width() as f32 / 2.0;
+        assert!(
+            (play_center - bar_center).abs() <= 1.0,
+            "long metadata shifted transport controls: play={play_center}, bar={bar_center}"
+        );
+
         window.close();
     }
 

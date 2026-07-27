@@ -1372,6 +1372,31 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Backdrop-Blur über einem neutralen Tint-Floor von mindestens 80 %;
   Cairo, unbekannte Renderer, High Contrast und deaktivierte Animationen
   degradieren fail-closed zu einem neutralen, mindestens 94 % opaken Tint.
+- **STYLE-5** [aktiv] [gtk] — **Verkleinern schneidet keine wesentliche
+  Bedienung ab.** Bei horizontaler, vertikaler oder kombinierter
+  Fensterverkleinerung bleiben die primären Controls und Statusinformationen
+  innerhalb der Fensterfläche erreichbar. Insbesondere behält die strukturelle
+  Playerleiste (PLAY-7b) ihre vollständige Höhe; Cover, Play/Pause,
+  Positionszeit, Waveform, Dauer und Lautstärke liegen vollständig innerhalb
+  ihrer Allokation. Lange Titel und Interpreten ellipsieren innerhalb der
+  linken Metadatenzone und verschieben weder Transport noch Waveform aus der
+  Fenstermitte. Scrollbarer Content gibt den Platz ab, nicht die Playerleiste.
+- **STYLE-6** [aktiv] [gtk] — Bei starker horizontaler Verkleinerung klappt
+  die Tracktabelle sekundäre sichtbare Spalten vorübergehend ein; Cover,
+  Titel und Interpret bleiben sichtbar. Dieses Einklappen verändert weder
+  gespeicherte Sichtbarkeit, Reihenfolge oder Breiten noch die Sortierung.
+  „Show columns" stellt die Nutzerkonfiguration im schmalen Fenster wieder
+  her; zusätzliche Breite wird dann ausschließlich innerhalb der Tabelle
+  horizontal gescrollt.
+- **STYLE-7** [aktiv] [gtk] — Wird das Library-Fenster auf eine Breite
+  verkleinert oder gesnappt, bei der beide Flanken den Hauptinhalt sichtbar
+  verdrängen, schließen linke Library-Sidebar und rechtes Now-Playing-Panel
+  gemeinsam in derselben responsiven Transition. Ein 10-s-Undo-Toast stellt
+  exakt den Zustand beider Flanken vor dem Verkleinern wieder her; auch das
+  spätere Verbreitern restauriert diesen Zustand, sofern der User die Flanken
+  im schmalen Fenster nicht selbst geändert hat. Responsive Änderungen
+  überschreiben keine gespeicherte Sidebar- oder Panel-Präferenz, und beide
+  Header-Toggles bleiben zum manuellen Wiederöffnen erreichbar.
 - **CONTRAST-1** [aktiv] [gtk] — Es gibt drei zentrale Textstufen: Primär
   ungefähr 0,95 für Titel und Werte, Sekundär ungefähr 0,7 für Artist,
   Status, Metadaten und Spaltenköpfe, Hint ungefähr 0,5 für Platzhalter,
@@ -2385,6 +2410,12 @@ Dateien.
   (Capture-Phase, damit die Pfeil-Seek der Waveform die modifizierten Pfeile
   nicht schluckt) und decken sich mit den im Kontextmenü gezeigten
   Acceleratoren.
+- **MINI-5** [aktiv] [gtk] — Wird das Bibliotheksfenster so klein, dass die
+  Vollansicht unbequem wird, bietet Reprise höchstens einmal pro Sitzung
+  nichtblockierend „Use Compact Mode" an. Nur die ausdrückliche Aktivierung
+  dieses Angebots wechselt über denselben Pfad wie Ctrl+M in die
+  Kompaktansicht; Reprise schaltet nie allein um. Ist kein Player verfügbar
+  oder die Kompaktansicht bereits aktiv, erscheint das Angebot nicht.
 
 ## AE. Concerts
 
