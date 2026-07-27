@@ -63,8 +63,7 @@ use super::sidebar_activity_slot::SidebarActivitySlot;
 use super::sidebar_issues_section::build_issues_section;
 #[cfg(test)]
 use super::sidebar_issues_section::{
-    bottom_region_placement, issues_surface_for_progress, progress_page_order, IssuesSurface,
-    ProgressPageChild,
+    bottom_region_placement, issues_surface_for_progress, IssuesSurface,
 };
 use super::sidebar_navigation_scroller::build_navigation_scroller;
 use reprise_core::view_source::ViewSource;
@@ -509,6 +508,7 @@ fn build_root(
     issues_listbox: &gtk4::ListBox,
 ) -> gtk4::Box {
     let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    root.set_vexpand(true);
     let issues_section = build_issues_section(activity_slot, issues_listbox);
     for child in sidebar_root_order() {
         match child {
@@ -593,3 +593,7 @@ pub(in crate::ui) fn find_row(
 #[cfg(test)]
 #[path = "sidebar_tests.rs"]
 mod resolve_select_source_tests;
+
+#[cfg(test)]
+#[path = "sidebar_layout_tests.rs"]
+mod sidebar_layout_tests;

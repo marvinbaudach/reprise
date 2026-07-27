@@ -442,12 +442,13 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   fixierten Bereichs. Solange mindestens eine Fortschrittskarte sichtbar ist,
   **ersetzt** der Kartenblock den vollständigen Issues-Block; Überschrift
   „ISSUES“ und Import errors / Missing files sind weder sichtbar noch belegen
-  sie zusätzlichen Platz. Der Kartenblock selbst expandiert nicht vertikal,
-  sondern liegt wie der ersetzte Issues-Block direkt über der Playerleiste;
-  innerhalb einer größer zugeteilten Ersatzfläche liegt sämtlicher freier
-  Platz **oberhalb** des Kartenblocks. Nach dem vollständigen Ausblenden der
-  letzten Karte kehrt der Issues-Block zurück. Persistenter Device-Status
-  bleibt davon unabhängig sichtbar.
+  sie zusätzlichen Platz. Vollständig inaktive Fortschrittskarten belegen
+  ebenfalls keinen Platz; nur aktive oder noch ausblendende Karten nehmen am
+  Layout teil. Die Unterkante des sichtbaren Kartenblocks liegt direkt über
+  der Playerleiste, während sämtliche freie Sidebar-Höhe oberhalb des Blocks
+  bleibt. Nach dem vollständigen Ausblenden der letzten Karte kehrt der
+  Issues-Block zurück. Persistenter Device-Status bleibt davon unabhängig
+  sichtbar.
   Karte: Spinner + Titel + % rechts (tabular) + 3-px-Balken + ellipsierte
   Detailzeile. Klick auf die Karte → Missing files; der sichtbare
   Cancel-Button prüft den Abbruch vor jeder Audiodatei.
