@@ -167,7 +167,10 @@ pub fn build(
     let podcasts_runtime = crate::ui::podcasts::PodcastsRuntime::setup(&conn.borrow());
     let artist_portrait =
         super::artist_portrait_worker::ArtistPortraitRuntime::setup(&conn.borrow());
-    let media = reprise_platform_linux::mpris::start(crate::APP_ID);
+    let media = std::env::var(crate::SMOKE_MPRIS_BUS_ENV_VAR).map_or_else(
+        |_| reprise_platform_linux::mpris::start(crate::APP_ID),
+        |bus_name| reprise_platform_linux::mpris::start_with_bus_name(crate::APP_ID, bus_name),
+    );
     let device_sync = super::device_sync_smoke::runtime_from_env(conn).unwrap_or_else(|| {
         super::device_sync_runtime::DeviceSyncRuntime::new(
             conn,

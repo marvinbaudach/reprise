@@ -268,6 +268,22 @@ scripts/check-device-sync-gstreamer.sh
 Die Core-Purity-Ausgabe muss leer sein. Alle wesentlich geänderten Code-Dateien
 bleiben unter 800 Zeilen.
 
+## Automatisierte MTP-E2E-Simulation
+
+Stabile E2E-Tests benötigen kein angeschlossenes Telefon. Der
+`SimulatedMtpDeviceBackend` ersetzt das reale MTP/GIO-Backend an dessen
+Anwendungsgrenze durch ein verbundenes Telefon mit einem ausschließlich
+temporären Speicher-Root. Die Tests durchlaufen weiterhin die echten
+Transcoder, Mirror-Planung, GIO-Dateioperationen, Inventartransaktionen,
+Playlist-Veröffentlichung, Fortschritts- und Cancel-Zustände sowie den
+abschließenden Geräte-Readback.
+
+Die Simulation prüft Opus 160, MP3 256 und bytegenaues Original-Passthrough,
+unabhängige parallele Geräte sowie fremde, nicht inventarisierte Dateien. Sie
+emuliert absichtlich weder USB noch `libmtp` oder die GVfs-Geräteerkennung:
+Diese Schichten hängen von Host und Hardware ab und bleiben zusätzliche
+manuelle Akzeptanzchecks, nicht Voraussetzungen der reproduzierbaren Suite.
+
 ## Manuelle Stage-Review-Checks
 
 Diese Checks benötigen ausdrückliche Freigabe und ein Testgerät; sie sind nicht
