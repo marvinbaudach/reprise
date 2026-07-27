@@ -182,20 +182,39 @@ fn schedule_centered_scroll_restore(
     let scroll = gtk4::ScrollInfo::new();
     scroll.set_enable_vertical(true);
     column_view.scroll_to(position, None, gtk4::ListScrollFlags::NONE, Some(scroll));
+    schedule_centered_scroll_refinement(column_view, track_id, current_ids, attempts);
+}
+
+fn schedule_centered_scroll_refinement(
+    column_view: gtk4::ColumnView,
+    track_id: Option<i64>,
+    current_ids: Vec<i64>,
+    attempts: u8,
+) {
     gtk4::glib::idle_add_local_once(move || {
-        let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&column_view) else {
-            return;
-        };
-        let (upper, page) = (adjustment.upper(), adjustment.page_size());
-        if upper > page {
-            let height = upper / current_ids.len() as f64;
-            if let Some(value) =
-                reload_restore::centered_track_scroll_target(track_id, &current_ids, height, page)
-            {
-                adjustment.set_value(value);
+        if let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&column_view) {
+            let (upper, page) = (adjustment.upper(), adjustment.page_size());
+            if upper > page {
+                let height = upper / current_ids.len() as f64;
+                if let Some(value) = reload_restore::centered_track_scroll_target(
+                    track_id,
+                    &current_ids,
+                    height,
+                    page,
+                ) {
+                    adjustment.set_value(value);
+                }
             }
-        } else if attempts > 0 {
-            schedule_centered_scroll_restore(column_view, track_id, current_ids, attempts - 1);
+        }
+        if attempts > 0 {
+            gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(16), move || {
+                schedule_centered_scroll_refinement(
+                    column_view,
+                    track_id,
+                    current_ids,
+                    attempts - 1,
+                );
+            });
         }
     });
 }
@@ -300,8 +319,7 @@ pub(in crate::ui) fn reload(shared: &Rc<Shared>) {
 
 fn reload_with_viewport(shared: &Rc<Shared>, viewport: ReloadViewport) {
     let captured = capture_reload_anchor(shared);
-    run_query(shared);
-    restore_reload_anchor(shared, &captured, viewport);
+    reload_with_anchor_and_viewport(shared, &captured, viewport);
 }
 
 /// Re-runs the current query while restoring a snapshot captured before an
@@ -309,8 +327,16 @@ fn reload_with_viewport(shared: &Rc<Shared>, viewport: ReloadViewport) {
 /// capturing only when its worker finishes is too late: the closing dialog
 /// and focus restoration may already have disturbed GTK's live adjustment.
 pub(in crate::ui) fn reload_with_anchor(shared: &Rc<Shared>, captured: &ReloadAnchor) {
+    reload_with_anchor_and_viewport(shared, captured, ReloadViewport::PreserveAnchor);
+}
+
+fn reload_with_anchor_and_viewport(
+    shared: &Rc<Shared>,
+    captured: &ReloadAnchor,
+    viewport: ReloadViewport,
+) {
     run_query(shared);
-    restore_reload_anchor(shared, captured, ReloadViewport::PreserveAnchor);
+    restore_reload_anchor(shared, captured, viewport);
 }
 
 /// The bare query/model-swap/empty-state work, with no selection/scroll
