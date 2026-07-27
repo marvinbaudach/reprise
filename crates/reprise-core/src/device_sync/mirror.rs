@@ -342,16 +342,12 @@ fn plan_file_changes(
         {
             continue;
         }
-        if safe_managed_path(&file.relative_path) {
-            plan.remove.push(ManagedRemoval::Orphan(file.clone()));
-        } else {
-            push_warning(
-                &mut plan.warnings,
-                MirrorWarning::UnsafeManagedPath {
-                    path: file.relative_path.clone(),
-                },
-            );
-        }
+        push_warning(
+            &mut plan.warnings,
+            MirrorWarning::UnsafeManagedPath {
+                path: file.relative_path.clone(),
+            },
+        );
     }
 
     plan.transfer_bytes = plan
