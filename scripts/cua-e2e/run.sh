@@ -322,6 +322,7 @@ run_android_sync_page_scenario() {
     -c:a flac "$fixture_dir/simulated_sync.flac"
   REPRISE_SMOKE_DEVICE_ROOT="$device_root" \
   REPRISE_SMOKE_DEVICE_PLAYLIST="Recently added" \
+  REPRISE_SMOKE_DEVICE_UI_ONLY=1 \
     start_scenario_app \
       android-sync-page "$fixture_dir" "" 25
 
@@ -340,16 +341,25 @@ run_android_sync_page_scenario() {
   for label in \
     "Playlists" \
     "Recently added" \
+    "Sync overview" \
     "Next synchronization" \
-    "Last synchronization"; do
+    "Never synchronized"; do
     assert_snapshot_contains "$page_path" "$label"
   done
   assert_snapshot_absent "$page_path" "Device files"
   assert_snapshot_absent "$page_path" "Entire library"
+  cua_click_label \
+    "$APP_PID" "$WINDOW_ID" "Recently added" android-sync-select-playlist
+  wait_for_label \
+    "$APP_PID" "$WINDOW_ID" "1 unique track · 2.4 MiB on device" \
+    android-sync-playlist-selected \
+    >/dev/null
+  cua_click_label \
+    "$APP_PID" "$WINDOW_ID" "Sync now" android-sync-start
 
   finish_scenario android-sync-page \
     "dev scan complete" \
-    "device sync smoke started"
+    "device sync started from page"
   if ! find "$device_root/Music/Reprise" -type f -name '*.opus' -print -quit \
     | rg --quiet .; then
     echo "android-sync-page did not publish the simulated Opus track" >&2

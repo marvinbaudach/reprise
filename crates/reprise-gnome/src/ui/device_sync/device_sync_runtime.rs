@@ -413,7 +413,7 @@ impl DeviceSyncRuntime {
                     state.descriptor = descriptor;
                     state.connected = true;
                     if !was_connected {
-                        refresh.push(id.clone());
+                        refresh.push((id.clone(), false));
                     }
                 } else {
                     let settings = load_or_create_settings(
@@ -434,12 +434,29 @@ impl DeviceSyncRuntime {
                         }
                     });
                     states.push(DeviceState::new(descriptor, settings));
-                    refresh.push(id);
+                    refresh.push((id, true));
                 }
             }
         }
         self.notify();
-        for id in refresh {
+        for (id, is_new) in refresh {
+            if is_new {
+                if let Err(error) = self.recompute_delta_silent(&id) {
+                    tracing::warn!(
+                        device_id = id,
+                        %error,
+                        "could not prepare Android sync playlists before device inspection"
+                    );
+                }
+                if let Some(device) = self
+                    .device_states
+                    .borrow_mut()
+                    .iter_mut()
+                    .find(|device| device.descriptor.id == id)
+                {
+                    device.sync_phase = PlannedSyncPhase::ComputingDelta;
+                }
+            }
             self.refresh_contents(&id);
         }
     }

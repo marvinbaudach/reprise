@@ -26,6 +26,7 @@ use super::device_sync_runtime::{BackendFuture, DeviceBackend, DeviceSyncRuntime
 
 pub(in crate::ui) const ROOT_ENV: &str = "REPRISE_SMOKE_DEVICE_ROOT";
 const PLAYLIST_ENV: &str = "REPRISE_SMOKE_DEVICE_PLAYLIST";
+const UI_ONLY_ENV: &str = "REPRISE_SMOKE_DEVICE_UI_ONLY";
 pub(in crate::ui) const DEVICE_ID: &str = "reprise-smoke-device";
 pub(in crate::ui) const DEVICE_NAME: &str = "Simulated MTP Phone";
 
@@ -223,6 +224,10 @@ pub(in crate::ui) fn arm(runtime: &Rc<DeviceSyncRuntime>) {
         }
     }));
     retain_until_terminal(runtime, log_subscription, &started);
+    if std::env::var_os(UI_ONLY_ENV).is_some() {
+        tracing::info!("device sync smoke is waiting for UI actions");
+        return;
+    }
 
     let runtime = runtime.clone();
     let started_for_sync = started.clone();

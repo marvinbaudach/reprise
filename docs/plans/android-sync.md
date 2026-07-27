@@ -28,6 +28,13 @@ verbundene Android-MTP-Geräte. Die Bedienung bleibt absichtlich klein:
 - Jede Playlist zeigt ihren Namen, ihren letzten verifizierten Sync und ihre
   für das aktive Transferprofil projizierte Zielgröße. Ein laufender Sync zeigt
   Fortschritt und geglättete MTP-Transferrate.
+- Die Vollseite folgt einer Geräte-Dashboard-Hierarchie: Identität, Aktionen
+  und Speicher stehen vor dem Playlist-Arbeitsbereich; Transferprofil und
+  Sync-Zusammenfassung bleiben eine kompakte Nebenübersicht statt einer
+  Preferences-Seite.
+- Lokale Playlist-Optionen werden vor der asynchronen MTP-Speicherprüfung
+  projiziert und bleiben während „Checking device“ auswählbar. Erst der
+  tatsächliche Sync-Start wartet auf ein belastbares Prüfergebnis.
 - Änderungen werden sofort gerätebezogen persistiert; es gibt keinen Apply-
   Schritt und keine zweite Sync-Oberfläche.
 
@@ -207,7 +214,8 @@ Weitere Invarianten:
 
 Die Geräte-Seite zeigt:
 
-- Gerätename und MTP-Verbindung;
+- einen einfachen Hero-Kopf aus Gerätename, MTP-Verbindung, letztem
+  Geräte-Sync, Speicherleiste und Aktionen;
 - Transferprofil Opus 160 kbit/s, MP3 256 kbit/s oder Original;
 - die sichtbare Garantie, dass verlustbehaftete und unbekannte Quellen nie in
   ein anderes verlustbehaftetes Format transkodiert werden;
@@ -290,8 +298,9 @@ Die Simulation prüft Opus 160, MP3 256 und bytegenaues Original-Passthrough,
 unabhängige parallele Geräte sowie fremde, nicht inventarisierte Dateien. Sie
 besitzt außerdem den isolierten Hintergrund-CUA-Lauf `android-sync-page`: Er
 öffnet die Gerätekarte des simulierten Telefons, verifiziert die nicht-modale
-Vollseite mit Transferprofil, Playlist-Auswahl, letztem Sync, Delta und
-Speicher und weist anschließend eine tatsächlich veröffentlichte Opus-Datei
+Vollseite mit Hero-Kopf, Transferprofil, Playlist-Auswahl, profilabhängiger
+Größe, letztem Sync, Delta und Speicher, wählt eine Playlist über die echte
+GUI-Aktion und weist anschließend eine tatsächlich veröffentlichte Opus-Datei
 im temporären Geräte-Root nach. Markup-Parserfehler in dynamischen Namen
 machen diesen Lauf rot.
 
