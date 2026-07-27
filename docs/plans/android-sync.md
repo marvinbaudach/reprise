@@ -3,7 +3,7 @@
 Status: **Stage implementiert; manuelle Geräteprüfung offen**
 Branch: `feature/simplified-android-sync`
 Feature-Basis: `ea1b3dc7c1`
-Integriertes `dev`: `9f9fbd809b`
+Integriertes `dev`: `066d2abcb6`
 Stand: 2026-07-27
 
 Dieser Plan ersetzt den früheren Entwurf für Device-View, Preferences-Sync-Tab,
