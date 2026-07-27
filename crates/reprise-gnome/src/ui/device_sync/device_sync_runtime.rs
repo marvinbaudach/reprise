@@ -235,7 +235,13 @@ impl DeviceSyncRuntime {
             let verified_track_count = result
                 .as_ref()
                 .ok()
-                .map(|inspection| inspection.managed_files.len());
+                .map(|inspection| {
+                    inspection
+                        .managed_files
+                        .iter()
+                        .filter(|file| !file.relative_path.to_ascii_lowercase().ends_with(".m3u8"))
+                        .count()
+                });
             let inspection_error = result.as_ref().err().cloned();
             {
                 let mut devices = runtime.device_states.borrow_mut();

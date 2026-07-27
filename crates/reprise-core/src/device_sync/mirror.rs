@@ -247,7 +247,6 @@ fn build_plan(
         &inventory,
         &inventory_by_id,
         &unavailable,
-        &managed_files,
         &mut plan,
     );
     plan_playlists(
@@ -257,6 +256,26 @@ fn build_plan(
         &playlist_inventory,
         &mut plan,
     );
+    let known_paths = inventory
+        .iter()
+        .map(|file| file.device_path.clone())
+        .chain(
+            playlist_inventory
+                .iter()
+                .map(|playlist| playlist.device_path.clone()),
+        )
+        .chain(
+            plan.desired_files
+                .iter()
+                .map(|file| file.device_path.clone()),
+        )
+        .chain(
+            plan.playlist_writes
+                .iter()
+                .map(|playlist| playlist.device_path.clone()),
+        )
+        .collect::<HashSet<_>>();
+    plan_orphan_removals(&known_paths, &managed_files, &mut plan);
     plan
 }
 
@@ -265,7 +284,6 @@ fn plan_file_changes(
     inventory: &[DeviceFileRecord],
     inventory_by_id: &HashMap<i64, DeviceFileRecord>,
     unavailable: &HashMap<i64, UnavailableTrack>,
-    managed_files: &[ManagedDeviceFile],
     plan: &mut MirrorPlan,
 ) {
     let mut desired_ids = desired.keys().copied().collect::<Vec<_>>();
@@ -330,26 +348,6 @@ fn plan_file_changes(
         }
     }
 
-    let known_paths = inventory
-        .iter()
-        .map(|file| file.device_path.as_str())
-        .chain(desired.values().map(|file| file.device_path.as_str()))
-        .collect::<HashSet<_>>();
-    let mut seen_physical = HashSet::new();
-    for file in managed_files {
-        if !seen_physical.insert(file.relative_path.as_str())
-            || known_paths.contains(file.relative_path.as_str())
-        {
-            continue;
-        }
-        push_warning(
-            &mut plan.warnings,
-            MirrorWarning::UnsafeManagedPath {
-                path: file.relative_path.clone(),
-            },
-        );
-    }
-
     plan.transfer_bytes = plan
         .copy
         .iter()
@@ -360,6 +358,31 @@ fn plan_file_changes(
                 .map(|replacement| replacement.desired.target_bytes),
         )
         .fold(0_u64, u64::saturating_add);
+}
+
+fn plan_orphan_removals(
+    known_paths: &HashSet<String>,
+    managed_files: &[ManagedDeviceFile],
+    plan: &mut MirrorPlan,
+) {
+    let mut seen_physical = HashSet::new();
+    for file in managed_files {
+        if !seen_physical.insert(file.relative_path.as_str())
+            || known_paths.contains(&file.relative_path)
+        {
+            continue;
+        }
+        if safe_managed_path(&file.relative_path) {
+            plan.remove.push(ManagedRemoval::Orphan(file.clone()));
+        } else {
+            push_warning(
+                &mut plan.warnings,
+                MirrorWarning::UnsafeManagedPath {
+                    path: file.relative_path.clone(),
+                },
+            );
+        }
+    }
 }
 
 fn plan_playlists(

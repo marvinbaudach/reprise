@@ -233,6 +233,36 @@ fn profile_and_playlist_changes_persist_and_recompute_the_page_immediately() {
 }
 
 #[test]
+fn mtp_16_transfer_profile_survives_runtime_recreation_for_the_same_device() {
+    run(async {
+        let temp = tempfile::tempdir().unwrap();
+        let database = temp.path().join("reprise.db");
+        {
+            let conn = Rc::new(RefCell::new(Connection::open(&database).unwrap()));
+            reprise_core::db::migrate(&conn.borrow()).unwrap();
+            let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+            let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+            gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+
+            runtime
+                .set_transfer_profile("a", TransferProfile::Original)
+                .unwrap();
+            assert_eq!(runtime.devices()[0].page.profile, TransferProfile::Original);
+        }
+
+        let conn = Rc::new(RefCell::new(Connection::open(&database).unwrap()));
+        reprise_core::db::migrate(&conn.borrow()).unwrap();
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+
+        let restored = runtime.devices().remove(0);
+        assert_eq!(restored.settings.profile, TransferProfile::Original);
+        assert_eq!(restored.page.profile, TransferProfile::Original);
+    });
+}
+
+#[test]
 fn missing_or_empty_selected_playlists_block_start_without_planning_deletions() {
     run(async {
         let (_temp, conn) = fixture();

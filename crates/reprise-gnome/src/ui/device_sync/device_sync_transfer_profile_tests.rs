@@ -286,7 +286,7 @@ fn simulated_mtp_phones_sync_independently_in_parallel() {
 }
 
 #[test]
-fn simulated_mtp_phone_preserves_untracked_files_in_managed_storage() {
+fn mtp_17_simulated_mtp_phone_removes_every_untracked_file_from_managed_storage() {
     run(async {
         let (_sources, conn) = fixture();
         conn.borrow()
@@ -297,12 +297,14 @@ fn simulated_mtp_phone_preserves_untracked_files_in_managed_storage() {
             .unwrap();
         save_smoke_profile(&conn, 24, TransferProfile::Original);
         let device_root = tempfile::tempdir().unwrap();
-        let foreign = device_root
-            .path()
-            .join("Music/Reprise/Foreign/Existing.aiff");
-        std::fs::create_dir_all(foreign.parent().unwrap()).unwrap();
-        let expected_foreign = b"untracked device audio";
-        std::fs::write(&foreign, expected_foreign).unwrap();
+        let managed_root = device_root.path().join("Music/Reprise");
+        let foreign_audio = managed_root.join("Foreign/Existing.aiff");
+        let foreign_playlist = managed_root.join("Old playlist.m3u8");
+        let foreign_note = managed_root.join("notes.txt");
+        std::fs::create_dir_all(foreign_audio.parent().unwrap()).unwrap();
+        std::fs::write(&foreign_audio, b"untracked device audio").unwrap();
+        std::fs::write(&foreign_playlist, b"#EXTM3U\nForeign/Existing.aiff\n").unwrap();
+        std::fs::write(&foreign_note, b"not part of the mirror").unwrap();
         let backend = Rc::new(
             crate::ui::device_sync_smoke::SimulatedMtpDeviceBackend::for_root(device_root.path())
                 .unwrap(),
@@ -312,14 +314,16 @@ fn simulated_mtp_phone_preserves_untracked_files_in_managed_storage() {
 
         let device = run_to_completion(&runtime).await;
 
-        assert_eq!(std::fs::read(foreign).unwrap(), expected_foreign);
-        assert!(
-            device
-                .page
-                .warnings
-                .contains(&SyncPageWarning::UnsafeManagedItem),
-            "the preserved untracked item must remain visible as a path-free warning"
-        );
-        assert_eq!(device.verified_managed_track_count, Some(2));
+        assert!(!foreign_audio.exists());
+        assert!(!foreign_playlist.exists());
+        assert!(!foreign_note.exists());
+        assert!(managed_root.join("Preserve.m3u8").exists());
+        assert_eq!(device.page.changes.removals, 0);
+        assert_eq!(device.page.changes.playlist_removals, 0);
+        assert!(!device
+            .page
+            .warnings
+            .contains(&SyncPageWarning::UnsafeManagedItem));
+        assert_eq!(device.verified_managed_track_count, Some(1));
     });
 }
