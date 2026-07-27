@@ -43,10 +43,9 @@
 //! boolean-in shape, `escape_action_for`) are pure functions,
 //! unit-tested with no display. The action *callbacks* that wrap them are
 //! exercised by calling them directly in tests too (see this module's
-//! `#[cfg(test)]`). Real key events (does pressing the physical Space bar
-//! actually toggle playback; does a focused search entry actually keep
-//! typing a space) are pointer/keyboard-driven and are **not** headlessly
-//! drivable — manual check required (see the Task 9 report).
+//! `#[cfg(test)]`). The isolated CUA suite additionally delivers real key
+//! events to passive views, direct controls, text entry, and the selected
+//! Now Playing view tab.
 
 use gtk4::gio;
 use gtk4::gio::prelude::*;
@@ -60,6 +59,7 @@ use super::player_controller::PlayerController;
 /// internal identifiers, not user-facing text.
 const ACTION_TOGGLE_PLAY_PAUSE: &str = "toggle-play-pause";
 const ACTION_FOCUS_SEARCH: &str = "focus-search";
+pub(in crate::ui) const SIDEBAR_TOGGLE_CSS_CLASS: &str = "reprise-sidebar-toggle";
 
 /// Pure decision for the Space key: should it toggle playback, or be left
 /// alone so a focused text entry can type an actual space character? See
@@ -76,23 +76,34 @@ pub(in crate::ui) fn next_search_mode(current: bool) -> bool {
     !current
 }
 
-/// Whether `focus` (the window's currently focused widget, if any)
-/// implements `gtk::Editable` — the interface every text-entry-shaped widget
-/// in this app (`gtk::SearchEntry`, and any plain `gtk::Text`/`gtk::Entry`)
-/// implements. `None` (nothing focused) is not a text entry.
+/// Whether `focus` (the window's currently focused widget, if any) owns an
+/// unmodified Space press. Text entry and direct controls keep their native
+/// activation semantics. Passive collection views deliberately do not: ACC-4
+/// reserves Space there for global play/pause.
+fn local_control_owns_space(
+    is_selected_view_tab: bool,
+    is_sidebar_toggle: bool,
+    is_local_control: bool,
+) -> bool {
+    !is_selected_view_tab && !is_sidebar_toggle && is_local_control
+}
+
 fn focused_widget_owns_space(focus: Option<&gtk4::Widget>) -> bool {
     focus.is_some_and(|widget| {
-        widget.is::<gtk4::Editable>()
+        let is_selected_view_tab = widget
+            .downcast_ref::<gtk4::ToggleButton>()
+            .is_some_and(gtk4::ToggleButton::is_active)
+            && widget
+                .ancestor(adw::InlineViewSwitcher::static_type())
+                .is_some();
+        let is_sidebar_toggle = widget.has_css_class(SIDEBAR_TOGGLE_CSS_CLASS);
+        let is_local_control = widget.is::<gtk4::Editable>()
             || widget.is::<gtk4::Button>()
             || widget.is::<gtk4::CheckButton>()
             || widget.is::<gtk4::Switch>()
             || widget.is::<gtk4::Range>()
-            || widget.is::<gtk4::DropDown>()
-            || widget.is::<gtk4::ListBox>()
-            || widget.is::<gtk4::FlowBox>()
-            || widget.is::<gtk4::ListView>()
-            || widget.is::<gtk4::GridView>()
-            || widget.is::<gtk4::ColumnView>()
+            || widget.is::<gtk4::DropDown>();
+        local_control_owns_space(is_selected_view_tab, is_sidebar_toggle, is_local_control)
     })
 }
 
@@ -173,7 +184,8 @@ fn wire_toggle_play_pause(
             return gtk4::glib::Propagation::Proceed;
         };
         let focus = gtk4::prelude::GtkWindowExt::focus(&window);
-        if !space_should_toggle(focused_widget_owns_space(focus.as_ref())) {
+        let focus_owns_space = focused_widget_owns_space(focus.as_ref());
+        if !space_should_toggle(focus_owns_space) {
             return gtk4::glib::Propagation::Proceed;
         }
         if let Err(error) = gtk4::prelude::WidgetExt::activate_action(
@@ -480,6 +492,39 @@ mod tests {
     }
 
     #[test]
+    fn acc_4a_sidebar_toggle_never_owns_space_decision() {
+        for _ in 0..6 {
+            assert!(
+                !local_control_owns_space(false, true, true),
+                "Space must remain global play/pause while the sidebar toggle has focus"
+            );
+        }
+        assert!(
+            local_control_owns_space(false, false, true),
+            "other focused buttons keep their native Space action"
+        );
+        assert!(
+            !local_control_owns_space(true, false, true),
+            "an already selected passive view tab leaves Space global"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn acc_4a_sidebar_toggle_never_owns_space() {
+        gtk4::init().unwrap();
+        let sidebar_toggle = gtk4::ToggleButton::new();
+        sidebar_toggle.add_css_class(SIDEBAR_TOGGLE_CSS_CLASS);
+
+        for _ in 0..6 {
+            assert!(
+                !focused_widget_owns_space(Some(sidebar_toggle.upcast_ref())),
+                "Space must remain global play/pause while the sidebar toggle has focus"
+            );
+        }
+    }
+
+    #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn local_controls_keep_space_instead_of_toggling_playback() {
         gtk4::init().unwrap();
@@ -489,10 +534,6 @@ mod tests {
             gtk4::CheckButton::new().upcast(),
             gtk4::Switch::new().upcast(),
             gtk4::Scale::with_range(gtk4::Orientation::Horizontal, 0.0, 1.0, 0.1).upcast(),
-            gtk4::ListBox::new().upcast(),
-            gtk4::GridView::new(None::<gtk4::SelectionModel>, None::<gtk4::ListItemFactory>)
-                .upcast(),
-            gtk4::ColumnView::new(None::<gtk4::SelectionModel>).upcast(),
         ];
         for control in local_controls {
             assert!(
@@ -507,7 +548,75 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn acc_4_space_uses_capture_controller_so_local_controls_keep_the_key() {
+    fn selected_view_tab_leaves_space_to_global_playback() {
+        fn collect_toggles(root: &gtk4::Widget, toggles: &mut Vec<gtk4::ToggleButton>) {
+            let mut child = root.first_child();
+            while let Some(widget) = child {
+                if let Some(toggle) = widget.downcast_ref::<gtk4::ToggleButton>() {
+                    toggles.push(toggle.clone());
+                }
+                collect_toggles(&widget, toggles);
+                child = widget.next_sibling();
+            }
+        }
+
+        gtk4::init().unwrap();
+        let switcher = adw::InlineViewSwitcher::new();
+        let stack = adw::ViewStack::new();
+        stack.add_titled(&gtk4::Box::default(), Some("queue"), "Queue");
+        stack.add_titled(&gtk4::Box::default(), Some("visual"), "Visual");
+        switcher.set_stack(Some(&stack));
+        let window = gtk4::Window::new();
+        window.set_child(Some(&switcher));
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        let mut tabs = Vec::new();
+        collect_toggles(switcher.upcast_ref(), &mut tabs);
+        let selected = tabs
+            .iter()
+            .find(|tab| tab.is_active())
+            .expect("view switcher has one selected tab");
+        let inactive = tabs
+            .iter()
+            .find(|tab| !tab.is_active())
+            .expect("view switcher has one inactive tab");
+
+        assert!(
+            !focused_widget_owns_space(Some(selected.upcast_ref())),
+            "an already selected view tab has no useful local Space action"
+        );
+        assert!(
+            focused_widget_owns_space(Some(inactive.upcast_ref())),
+            "an inactive view tab keeps Space so it can activate locally"
+        );
+        window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn space_remains_global_from_passive_collection_views() {
+        gtk4::init().unwrap();
+        let collection_views: Vec<gtk4::Widget> = vec![
+            gtk4::ListBox::new().upcast(),
+            gtk4::ListView::new(None::<gtk4::SelectionModel>, None::<gtk4::ListItemFactory>)
+                .upcast(),
+            gtk4::GridView::new(None::<gtk4::SelectionModel>, None::<gtk4::ListItemFactory>)
+                .upcast(),
+            gtk4::ColumnView::new(None::<gtk4::SelectionModel>).upcast(),
+        ];
+
+        for view in collection_views {
+            assert!(
+                !focused_widget_owns_space(Some(&view)),
+                "{} must leave Space to global play/pause",
+                view.type_().name()
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn acc_4a_space_uses_capture_controller_so_local_controls_keep_the_key() {
         gtk4::init().unwrap();
         let app = adw::Application::builder()
             .application_id("org.reprise.Reprise.ShortcutTest")

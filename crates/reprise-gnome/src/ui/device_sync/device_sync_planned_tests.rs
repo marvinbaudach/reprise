@@ -1,4 +1,9 @@
 use super::*;
+use reprise_core::agent_device_sync::{
+    agent_device_sync_request, read_agent_device_sync_state, AgentDeviceSyncCommand,
+    AgentDeviceSyncState,
+};
+use std::sync::{Arc, Mutex};
 
 #[test]
 fn device_view_projects_descriptor_scan_and_idle_state() {
@@ -120,6 +125,57 @@ fn sync_now_copies_the_selection_and_commits_the_device_inventory() {
         assert_eq!(device.sync_phase, PlannedSyncPhase::Idle);
         assert!(device.last_sync.is_some());
     });
+}
+
+#[test]
+fn agent_bridge_reports_capacity_delta_and_applies_playlist_configuration() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1, 2]);
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 20));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+
+        let state = Arc::new(Mutex::new(AgentDeviceSyncState::default()));
+        let (sender, receiver) = async_channel::unbounded();
+        runtime.bind_agent_device_sync(&state, receiver);
+
+        let snapshot = read_agent_device_sync_state(&state);
+        assert_eq!(snapshot.devices[0].name, "Phone a");
+        assert_eq!(snapshot.devices[0].available_bytes, Some(1_000_000));
+        assert_eq!(snapshot.devices[0].selected_tracks, 2);
+        assert_eq!(snapshot.devices[0].tracks_to_copy, 2);
+
+        let (request, reply) =
+            agent_device_sync_request(AgentDeviceSyncCommand::ConfigurePlaylist {
+                device_name: "Phone a".into(),
+                playlist_name: "Road".into(),
+                remove_unselected: true,
+                bitrate_kbps: 256,
+            });
+        sender.send(request).await.unwrap();
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+        assert_eq!(reply.try_recv(), Ok(Ok(())));
+        assert!(runtime.devices()[0].settings.remove_deleted);
+        assert_eq!(runtime.devices()[0].settings.opus_bitrate, 256);
+
+        let (request, reply) = agent_device_sync_request(AgentDeviceSyncCommand::Start {
+            device_name: "Missing phone".into(),
+        });
+        sender.send(request).await.unwrap();
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+        assert!(reply
+            .try_recv()
+            .unwrap()
+            .unwrap_err()
+            .contains("absent, disconnected, or ambiguous"));
+    });
+}
+
+#[test]
+fn transfer_rate_uses_fractional_seconds_without_dividing_by_zero() {
+    assert_eq!(transfer_rate(1_024, Duration::from_millis(500)), 2_048);
+    assert_eq!(transfer_rate(1_024, Duration::ZERO), 0);
 }
 
 #[test]

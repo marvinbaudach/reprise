@@ -11,6 +11,7 @@ gnome = import('gnome')
 prefix = get_option('prefix')
 localedir = prefix / get_option('localedir')
 cargo_build = find_program('build-aux/meson-cargo-build.sh')
+worker_path = prefix / get_option('libexecdir') / 'reprise-worker'
 
 custom_target(
   'reprise',
@@ -22,12 +23,33 @@ custom_target(
     '@OUTPUT@',
     localedir,
     get_option('stem_backend').to_string(),
+    prefix,
+    worker_path,
   ],
   env: {'MESON_BUILD_PROFILE': get_option('profile')},
   build_by_default: true,
   install: true,
   install_dir: get_option('bindir'),
 )
+
+if get_option('stem_backend')
+  cargo_worker_build = find_program('build-aux/meson-cargo-worker-build.sh')
+  custom_target(
+    'reprise-worker',
+    output: 'reprise-worker',
+    command: [
+      cargo_worker_build,
+      meson.project_source_root(),
+      meson.project_build_root(),
+      '@OUTPUT@',
+      prefix,
+    ],
+    env: {'MESON_BUILD_PROFILE': get_option('profile')},
+    build_by_default: true,
+    install: true,
+    install_dir: get_option('libexecdir'),
+  )
+endif
 
 subdir('data')
 subdir('po')
