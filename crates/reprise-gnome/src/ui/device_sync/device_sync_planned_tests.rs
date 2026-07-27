@@ -420,13 +420,19 @@ fn agent_bridge_reports_capacity_delta_and_applies_playlist_configuration() {
                 device_name: "Phone a".into(),
                 playlist_name: "Road".into(),
                 remove_unselected: true,
-                bitrate_kbps: 256,
+                bitrate_kbps: 320,
             });
         sender.send(request).await.unwrap();
         gtk4::glib::timeout_future(Duration::from_millis(2)).await;
         assert_eq!(reply.try_recv(), Ok(Ok(())));
         assert!(runtime.devices()[0].settings.remove_deleted);
-        assert_eq!(runtime.devices()[0].settings.opus_bitrate, 256);
+        assert_eq!(
+            runtime.devices()[0].settings.profile,
+            reprise_core::device_sync::TransferProfile::Mp3(
+                reprise_core::device_sync::Mp3Quality::Kbps320
+            )
+        );
+        assert_eq!(runtime.devices()[0].settings.opus_bitrate, 0);
 
         let (request, reply) = agent_device_sync_request(AgentDeviceSyncCommand::Start {
             device_name: "Missing phone".into(),
