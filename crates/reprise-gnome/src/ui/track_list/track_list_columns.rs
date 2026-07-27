@@ -15,6 +15,7 @@ use gtk4::glib;
 use gtk4::prelude::*;
 
 use super::now_playing_marker;
+use super::rating_cell_refresh;
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::list_density;
 use crate::ui::playing_marker;
@@ -618,6 +619,10 @@ pub(in crate::ui) fn append_rating_column(
             // recurse into `on_rating_changed` below (see the module doc
             // comment on `ui::rating`).
             rating_widget.set_rating(track.rating);
+            rating_cell_refresh::register_cell(&shared, item, track.id, {
+                let rating_widget = rating_widget.clone();
+                move |rating| rating_widget.set_rating(rating)
+            });
             apply_now_playing(&rating_widget, track.id, &shared, false);
             now_playing_marker::register_cell(&shared, item, {
                 let rating_widget = rating_widget.clone();
@@ -653,6 +658,7 @@ pub(in crate::ui) fn append_rating_column(
             return;
         };
         now_playing_marker::unregister_cell(&shared_for_unbind_rating, item);
+        rating_cell_refresh::unregister_cell(&shared_for_unbind_rating, item);
         let Some(rating_widget) = item.child().and_then(|w| w.downcast::<RatingWidget>().ok())
         else {
             return;

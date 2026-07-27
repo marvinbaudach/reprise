@@ -8,5 +8,6 @@ pub(in crate::ui) mod tag_editor_save;
 pub(in crate::ui) mod tag_editor_state;
 pub(in crate::ui) mod tag_editor_style;
 pub(in crate::ui) mod tag_editor_widgets;
+mod tag_save_refresh;
 #[allow(unused_imports)]
 use super::*;

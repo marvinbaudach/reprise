@@ -3,11 +3,10 @@
 //! Queue — both with a track-count label), PLAYLISTS (`library::playlists::
 //! list`, each with its track count, plus grouped create/import actions), and
 //! SMART (`library::playlists::list_smart`, no counts — the mockup doesn't
-//! show any), then a bottom-pinned Issues section: its heading, a shared
-//! activity slot for connected-device sync and library scans, and finally the
-//! "problem sources" — Import errors / Missing files, each shown only while
-//! its count is non-zero. Active progress therefore sits inside Issues,
-//! directly above those sources (FB-2a).
+//! show any), persistent connected-device state, then one bottom-pinned region
+//! that shows either active progress cards or the complete Issues surface
+//! (heading plus Import errors / Missing files). Progress temporarily replaces
+//! that surface instead of pushing it upward (FB-8).
 //!
 //! ## Row identity: a plain `Vec`, not GObject data
 //!
@@ -61,10 +60,12 @@ use libadwaita as adw;
 use rusqlite::Connection;
 
 use super::sidebar_activity_slot::SidebarActivitySlot;
+use super::sidebar_boundary_navigation::wire_collection_boundary_navigation;
 use super::sidebar_issues_section::build_issues_section;
 #[cfg(test)]
-use super::sidebar_issues_section::{issues_section_order, IssuesSectionChild};
-use super::sidebar_boundary_navigation::wire_collection_boundary_navigation;
+use super::sidebar_issues_section::{
+    bottom_region_placement, issues_surface_for_progress, IssuesSurface,
+};
 use super::sidebar_navigation_scroller::build_navigation_scroller;
 use reprise_core::view_source::ViewSource;
 
@@ -195,7 +196,7 @@ pub(in crate::ui) struct Shared {
 }
 
 /// Handle to the built sidebar widget: scrolling navigation, then the
-/// bottom-pinned Issues section (heading, activity, issue sources).
+/// bottom-pinned region (either Issues or active scan progress).
 pub struct Sidebar {
     pub(in crate::ui) shared: Rc<Shared>,
     root: gtk4::Box,
@@ -226,7 +227,7 @@ impl Sidebar {
         let scrolled = build_navigation_scroller(&listbox);
 
         let activity_slot = SidebarActivitySlot::new();
-        let root = build_root(&scrolled, activity_slot.widget(), &issues_listbox);
+        let root = build_root(&scrolled, &activity_slot, &issues_listbox);
 
         let shared = Rc::new(Shared {
             conn,
@@ -417,28 +418,34 @@ pub(in crate::ui) fn remember_issue_focus_entry(listbox: &gtk4::ListBox, row: &g
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SidebarRootChild {
     Navigation,
+    Activity,
     Issues,
 }
 
-fn sidebar_root_order() -> [SidebarRootChild; 2] {
-    [SidebarRootChild::Navigation, SidebarRootChild::Issues]
+fn sidebar_root_order() -> [SidebarRootChild; 3] {
+    [
+        SidebarRootChild::Navigation,
+        SidebarRootChild::Activity,
+        SidebarRootChild::Issues,
+    ]
 }
 
 /// Assembles the sidebar's vertical root. The scrolling navigation list
-/// expands to fill the top. The Issues section is appended last so its sources
-/// stay flush with the bottom edge; within it, the shared activity slot
-/// (device sync / scan / relink cards) sits after the heading and before the
-/// Import errors / Missing files rows (FB-2a).
+/// expands to fill the top. The bottom region shows persistent Issues while
+/// idle; active scanner progress replaces its heading and source rows until
+/// the scanner's own revealer has fully hidden (FB-8).
 fn build_root(
     scrolled: &gtk4::ScrolledWindow,
-    activity_slot: &gtk4::Box,
+    activity_slot: &SidebarActivitySlot,
     issues_listbox: &gtk4::ListBox,
 ) -> gtk4::Box {
     let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    root.set_vexpand(true);
     let issues_section = build_issues_section(activity_slot, issues_listbox);
     for child in sidebar_root_order() {
         match child {
             SidebarRootChild::Navigation => root.append(scrolled),
+            SidebarRootChild::Activity => root.append(activity_slot.widget()),
             SidebarRootChild::Issues => root.append(&issues_section),
         }
     }
@@ -518,3 +525,7 @@ pub(in crate::ui) fn find_row(
 #[cfg(test)]
 #[path = "sidebar_tests.rs"]
 mod resolve_select_source_tests;
+
+#[cfg(test)]
+#[path = "sidebar_layout_tests.rs"]
+mod sidebar_layout_tests;
