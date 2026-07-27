@@ -155,12 +155,17 @@ fn fb_8_bottom_region_replaces_issues_instead_of_stacking_progress() {
     let placement = bottom_region_placement();
     assert!(
         !placement.vexpand,
-        "the replacement region must leave flexible height to navigation"
+        "the replacement region must not request additional vertical space"
     );
     assert_eq!(
         placement.valign,
         gtk4::Align::End,
-        "the replacement region must stay pinned directly above the player"
+        "the replacement region must prefer the bottom of any parent allocation"
+    );
+    assert_eq!(
+        progress_page_order(),
+        &[ProgressPageChild::FlexibleSpace, ProgressPageChild::Cards],
+        "extra page allocation must stay above the progress cards"
     );
 }
 
@@ -205,6 +210,18 @@ fn fb_8_scanner_visibility_switches_the_whole_bottom_region() {
         region.visible_child_name().as_deref(),
         Some("activity"),
         "scanner progress must replace the heading and issue rows"
+    );
+    let activity_page = region
+        .visible_child()
+        .and_then(|widget| widget.downcast::<gtk4::Box>().ok())
+        .expect("the activity surface must be a vertical page");
+    let spacer = activity_page
+        .first_child()
+        .expect("the activity page must reserve flexible space above its cards");
+    assert!(spacer.vexpands());
+    assert_eq!(
+        activity_page.last_child().as_ref(),
+        Some(activity.progress_widget().upcast_ref())
     );
     scanner.set_reveal_child(false);
     scanner.set_visible(false);

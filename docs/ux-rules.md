@@ -444,8 +444,9 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   „ISSUES“ und Import errors / Missing files sind weder sichtbar noch belegen
   sie zusätzlichen Platz. Der Kartenblock selbst expandiert nicht vertikal,
   sondern liegt wie der ersetzte Issues-Block direkt über der Playerleiste;
-  freier Platz bleibt beim Navigationsteil. Nach dem vollständigen Ausblenden
-  der letzten Karte kehrt der Issues-Block zurück. Persistenter Device-Status
+  innerhalb einer größer zugeteilten Ersatzfläche liegt sämtlicher freier
+  Platz **oberhalb** des Kartenblocks. Nach dem vollständigen Ausblenden der
+  letzten Karte kehrt der Issues-Block zurück. Persistenter Device-Status
   bleibt davon unabhängig sichtbar.
   Karte: Spinner + Titel + % rechts (tabular) + 3-px-Balken + ellipsierte
   Detailzeile. Klick auf die Karte → Missing files; der sichtbare
