@@ -73,7 +73,7 @@ fn no_loaded_track_uses_the_idle_presentation() {
 }
 
 #[test]
-fn ac_20_visual_is_the_third_panel_tab() {
+fn ac_22_visual_is_the_third_panel_tab() {
     assert_eq!(PanelTab::Visual.page_name(), VISUAL_PAGE);
     assert_eq!(
         PANEL_TABS,
@@ -330,7 +330,7 @@ fn head_and_pill_match_the_21a_structure() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_20_icons_only_switcher_keeps_three_labeled_keyboard_targets() {
+fn ac_22_icons_only_switcher_keeps_three_labeled_keyboard_targets() {
     gtk4::init().unwrap();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let widgets = test_widgets(&content, true);
@@ -351,7 +351,7 @@ fn ac_20_icons_only_switcher_keeps_three_labeled_keyboard_targets() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_20_visual_page_shrinks_instead_of_overlapping_the_tab_switcher() {
+fn ac_22_visual_page_shrinks_instead_of_overlapping_the_tab_switcher() {
     gtk4::init().unwrap();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let widgets = test_widgets(&content, true);
