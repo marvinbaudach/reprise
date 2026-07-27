@@ -138,7 +138,7 @@ fn handle_queue_drop_is_a_noop_without_ids_or_callback() {
 }
 
 #[test]
-fn issues_collection_is_the_sidebar_bottom_slot() {
+fn fb_8_bottom_region_replaces_issues_instead_of_stacking_progress() {
     assert_eq!(
         sidebar_root_order(),
         [
@@ -147,15 +147,39 @@ fn issues_collection_is_the_sidebar_bottom_slot() {
             SidebarRootChild::Issues,
         ]
     );
+    assert_eq!(issues_surface_for_progress(false), IssuesSurface::Issues);
+    assert_eq!(
+        issues_surface_for_progress(true),
+        IssuesSurface::Activity,
+        "a visible scanner must hide both the Issues heading and its source rows"
+    );
+    let placement = bottom_region_placement();
+    assert!(
+        !placement.vexpand,
+        "the replacement region must not request additional vertical space"
+    );
+    assert_eq!(
+        placement.valign,
+        gtk4::Align::End,
+        "the replacement region must prefer the bottom of any parent allocation"
+    );
+    assert!(
+        !placement.vhomogeneous,
+        "the replacement region must measure only its visible surface"
+    );
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn fb_2a_issues_stay_pinned_below_progress_activity() {
+fn fb_8_scanner_visibility_switches_the_whole_bottom_region() {
     gtk4::init().unwrap();
     let scrolled = gtk4::ScrolledWindow::builder().vexpand(true).build();
-    let activity = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    activity.append(&gtk4::Label::new(Some("Cover check complete")));
+    let activity = SidebarActivitySlot::new();
+    let scanner = gtk4::Revealer::builder()
+        .child(&gtk4::Label::new(Some("Checking library")))
+        .build();
+    scanner.set_visible(false);
+    activity.set_scan_card(&scanner);
     let issues = gtk4::ListBox::new();
     issues.append(&gtk4::Label::new(Some("Missing files")));
     let root = build_root(&scrolled, &activity, &issues);
@@ -168,25 +192,45 @@ fn fb_2a_issues_stay_pinned_below_progress_activity() {
     window.present();
     while gtk4::glib::MainContext::default().iteration(false) {}
 
-    // FB-2a: activity and Issues share the bottom region, with Issues fixed
-    // last so progress grows upward without lifting the persistent problem
-    // entry away from the bottom edge.
-    let activity_bounds = activity.compute_bounds(&root).unwrap();
-    let issues_bounds = issues.compute_bounds(&root).unwrap();
+    assert!(root.vexpands());
+    assert!(root.is_vexpand_set());
+    let region = root
+        .last_child()
+        .and_then(|widget| widget.downcast::<gtk4::Stack>().ok())
+        .expect("the sidebar must end in one replacement region");
     assert_eq!(root.first_child().as_ref(), Some(scrolled.upcast_ref()));
     assert_eq!(
-        scrolled.next_sibling().as_ref(),
-        Some(activity.upcast_ref())
+        region.visible_child_name().as_deref(),
+        Some("issues"),
+        "the persistent Issues surface is the idle state"
     );
-    assert_eq!(root.last_child().as_ref(), Some(issues.upcast_ref()));
-    assert!(
-        (issues_bounds.y() + issues_bounds.height() - root.height() as f32).abs() < 0.5,
-        "Issues must touch the sidebar bottom edge: issues={issues_bounds:?}, root_height={}",
-        root.height()
+    assert!(!region.vexpands());
+    assert_eq!(region.valign(), gtk4::Align::End);
+    scanner.set_visible(true);
+    scanner.set_reveal_child(true);
+    assert_eq!(
+        region.visible_child_name().as_deref(),
+        Some("activity"),
+        "scanner progress must replace the heading and issue rows"
     );
-    assert!(
-        (activity_bounds.y() + activity_bounds.height() - issues_bounds.y()).abs() < 0.5,
-        "progress activity must sit directly above Issues: activity={activity_bounds:?}, issues={issues_bounds:?}"
+    let progress_root = region
+        .visible_child()
+        .and_then(|widget| widget.downcast::<gtk4::Box>().ok())
+        .expect("the activity surface must be the shared progress root");
+    let spacer = progress_root
+        .first_child()
+        .expect("the progress root must reserve flexible space above its cards");
+    assert!(spacer.vexpands());
+    assert_eq!(
+        progress_root.last_child().as_ref(),
+        Some(scanner.upcast_ref())
+    );
+    scanner.set_reveal_child(false);
+    scanner.set_visible(false);
+    assert_eq!(
+        region.visible_child_name().as_deref(),
+        Some("issues"),
+        "Issues must return when the scanner has fully hidden"
     );
     window.close();
 }
@@ -209,7 +253,7 @@ fn acc_3_sidebar_uses_the_available_page_height_before_scrolling() {
         list.append(&gtk4::Label::new(Some(label)));
     }
     let scrolled = build_navigation_scroller(&list);
-    let activity = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let activity = SidebarActivitySlot::new();
     let issues = gtk4::ListBox::new();
     issues.set_visible(false);
     let root = build_root(&scrolled, &activity, &issues);
@@ -259,7 +303,7 @@ fn acc_3_short_sidebar_keeps_navigation_rows_scrollable() {
         list.append(&gtk4::Label::new(Some(&format!("Playlist {index}"))));
     }
     let scrolled = build_navigation_scroller(&list);
-    let activity = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let activity = SidebarActivitySlot::new();
     let issues = gtk4::ListBox::new();
     issues.set_visible(false);
     let root = build_root(&scrolled, &activity, &issues);
@@ -299,7 +343,6 @@ fn acc_3_bottom_pinned_issues_collection_is_a_tab_stop() {
     gtk4::init().unwrap();
     let issues = gtk4::ListBox::new();
     configure_issues_listbox(&issues);
-    crate::ui::sidebar_presentation::append_problem_header(&issues);
     let row = crate::ui::sidebar_presentation::build_issue_nav_row(
         "Missing files",
         crate::ui::sidebar_presentation::issue_row_presentation(

@@ -19,7 +19,7 @@ use super::track_list_context_menu;
 use super::track_list_dnd_smoke;
 use super::track_list_empty_state::build_status_page;
 use super::track_list_model::TrackListModel;
-use super::track_list_reload::reload;
+use super::track_list_reload::{reload, reload_centering_playing_track};
 use super::track_list_smoke::{
     arm_smoke_activate, arm_smoke_filter, arm_smoke_sort_column, arm_smoke_source,
 };
@@ -86,6 +86,7 @@ pub(in crate::ui) fn build(
         column_view: column_view.clone(),
         playing_track_id: Cell::new(None),
         now_playing_markers: RefCell::new(Vec::new()),
+        rating_cells: RefCell::new(Vec::new()),
         last_scroll_activity: Cell::new(None),
         active_reorder_drag_from: Cell::new(None),
         conn,
@@ -192,7 +193,7 @@ pub(in crate::ui) fn build(
                 return;
             };
             *shared.browse_filter.borrow_mut() = filter;
-            reload(&shared);
+            reload_centering_playing_track(&shared);
         });
     }
     {
