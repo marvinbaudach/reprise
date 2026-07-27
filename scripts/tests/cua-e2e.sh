@@ -10,6 +10,7 @@ if [[ ! -x "$runner" ]]; then
 fi
 sort_scenario="$repo_root/scripts/cua-e2e/track_sort.sh"
 tag_autocomplete_scenario="$repo_root/scripts/cua-e2e/tag_autocomplete.sh"
+responsive_window_scenario="$repo_root/scripts/cua-e2e/responsive_window.sh"
 helper_library="$repo_root/scripts/cua-e2e/lib.sh"
 if [[ ! -f "$sort_scenario" ]]; then
   echo "$sort_scenario must exist" >&2
@@ -24,6 +25,30 @@ for pattern in \
 do
   if ! rg --quiet --fixed-strings "$pattern" "$sort_scenario"; then
     echo "$sort_scenario must contain sort-regression contract: $pattern" >&2
+    exit 1
+  fi
+done
+if [[ ! -f "$responsive_window_scenario" ]]; then
+  echo "$responsive_window_scenario must exist" >&2
+  exit 1
+fi
+for pattern in \
+  'run_responsive_window_scenario' \
+  '720 760 responsive-narrow' \
+  '1600 420 responsive-short' \
+  '720 420 responsive-combined' \
+  'assert_full_player_controls_are_reachable' \
+  'assert_only_track_table_overflows' \
+  'responsive-play-long-title' \
+  'Side panels were closed to fit the window' \
+  'responsive-undo-side-panels' \
+  'Show columns' \
+  'Use Compact Mode' \
+  'responsive-short-panel' \
+  'responsive-restore-library ctrl m'
+do
+  if ! rg --quiet --fixed-strings "$pattern" "$responsive_window_scenario"; then
+    echo "$responsive_window_scenario must contain responsive geometry contract: $pattern" >&2
     exit 1
   fi
 done
@@ -103,6 +128,7 @@ for pattern in \
   'run_library_doctor_scenario' \
   'run_song_visuals_scenario' \
   'run_scrobbling_scenario' \
+  'run_responsive_window_scenario' \
   'Audio-reactive song visual' \
   'song-visuals-visual-focus' \
   '"Play \(Space\)"' \
