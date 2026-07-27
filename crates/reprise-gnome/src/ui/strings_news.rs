@@ -63,7 +63,6 @@ pub const UPDATES_CONCERTS_HEADER: &str = N_!("CONCERTS");
 pub const UPDATES_NEW_NEAR_YOU: &str = N_!("new near you");
 pub const UPDATES_NEWLY_ANNOUNCED: &str = N_!("newly announced");
 pub const UPDATES_CONCERTS_FETCH_FAILED: &str = N_!("Concerts fetch failed");
-pub const UPDATES_CONCERTS_NEEDS_KEY: &str = N_!("Add a concert provider API key in Preferences.");
 pub const NEW_RELEASES_CHECKING: &str = N_!("Checking for new releases…");
 pub const NEW_RELEASES_NONE: &str = N_!("No upcoming releases from your artists");
 pub const UPDATED_JUST_NOW: &str = N_!("Updated just now");

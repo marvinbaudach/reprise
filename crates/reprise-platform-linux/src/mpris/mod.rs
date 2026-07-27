@@ -93,9 +93,11 @@
 //! exist.
 
 mod control;
+mod device_sync_control;
 mod state;
 
 use control::RepriseControl;
+use device_sync_control::DeviceSyncControl;
 use state::{
     build_metadata, loop_status_to_repeat, next_command, previous_command, repeat_to_loop_status,
     seek_command, set_position_command,
@@ -113,6 +115,9 @@ use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{ObjectPath, OwnedValue, Value};
 use zbus::{fdo, interface};
 
+use reprise_core::agent_device_sync::{
+    AgentDeviceSyncRequest, AgentDeviceSyncState, SharedAgentDeviceSyncState,
+};
 use reprise_core::media_integration::{
     can_go_next, can_go_previous, can_pause, can_play, can_seek, metadata_differs, ms_to_micros,
     read_state, AgentQueueState, MediaIntegrationHandles, MprisCommand, MprisState,
@@ -162,15 +167,21 @@ pub fn start(desktop_entry: &'static str) -> MediaIntegrationHandles {
     let queue_state: SharedAgentQueueState = Arc::new(Mutex::new(AgentQueueState::default()));
     let (sender, receiver) = async_channel::unbounded::<MprisCommand>();
     let (seek_sender, seek_receiver) = async_channel::unbounded::<i64>();
+    let device_sync_state = Arc::new(Mutex::new(AgentDeviceSyncState::default()));
+    let (device_sync_sender, device_sync_receiver) =
+        async_channel::unbounded::<AgentDeviceSyncRequest>();
 
     let thread_state = state.clone();
     let thread_queue_state = queue_state.clone();
+    let thread_device_sync_state = device_sync_state.clone();
     std::thread::spawn(move || {
         run(
             &thread_state,
             thread_queue_state,
             sender,
             seek_receiver,
+            thread_device_sync_state,
+            device_sync_sender,
             desktop_entry,
         );
     });
@@ -180,6 +191,8 @@ pub fn start(desktop_entry: &'static str) -> MediaIntegrationHandles {
         queue_state,
         commands: receiver,
         seek_notify: seek_sender,
+        device_sync_state,
+        device_sync_commands: device_sync_receiver,
     }
 }
 
@@ -195,6 +208,8 @@ fn run(
     queue_state: SharedAgentQueueState,
     commands: async_channel::Sender<MprisCommand>,
     seek_receiver: async_channel::Receiver<i64>,
+    device_sync_state: SharedAgentDeviceSyncState,
+    device_sync_commands: async_channel::Sender<AgentDeviceSyncRequest>,
     desktop_entry: &'static str,
 ) {
     let player_iface = MprisPlayer {
@@ -202,12 +217,14 @@ fn run(
         commands: commands.clone(),
     };
     let reprise_control = RepriseControl::new(commands, queue_state);
+    let device_sync_control = DeviceSyncControl::new(device_sync_commands, device_sync_state);
 
     let connection = connection::Builder::session()
         .and_then(|builder| builder.name(BUS_NAME))
         .and_then(|builder| builder.serve_at(OBJECT_PATH, MprisRoot { desktop_entry }))
         .and_then(|builder| builder.serve_at(OBJECT_PATH, player_iface))
         .and_then(|builder| builder.serve_at(OBJECT_PATH, reprise_control))
+        .and_then(|builder| builder.serve_at(OBJECT_PATH, device_sync_control))
         .and_then(connection::Builder::build);
     let connection = match connection {
         Ok(connection) => connection,

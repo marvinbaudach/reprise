@@ -79,6 +79,8 @@ pub const MODEL_DOWNLOAD_BUTTON: &str = N_!("Download");
 /// honest placeholder, never a functionless enabled button.
 pub const MODEL_UNAVAILABLE_SUBTITLE: &str =
     N_!("This build has no stem-separation backend, so the model can't be downloaded here.");
+pub const MODEL_RUNTIME_UNAVAILABLE_SUBTITLE: &str =
+    N_!("The packaged ONNX Runtime is unavailable or failed verification. Reinstall this build.");
 /// INST-12: the model is present and verified; instrumental rendering works.
 pub const MODEL_READY_SUBTITLE: &str = N_!("Model ready — instrumental rendering is available.");
 /// INST-12: the render is being verified/published after the bytes arrive. Only

@@ -1,3 +1,4 @@
+mod content_stack;
 pub(in crate::ui) mod focus_evidence;
 pub(in crate::ui) mod library_chrome;
 pub(in crate::ui) mod library_shell;

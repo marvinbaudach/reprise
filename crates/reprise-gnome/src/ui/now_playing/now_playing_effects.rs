@@ -1,4 +1,4 @@
-//! Track-content rendering and the crossfade animation for `NowPlayingPanel`,
+//! Track-content rendering and the cover transition for `NowPlayingPanel`,
 //! split out of `now_playing.rs` to keep that file under the 800-line cap. These
 //! stay `NowPlayingPanel` methods — a child-module `impl super::NowPlayingPanel`
 //! block reaches the panel's (and `PanelWidgets`') private fields as a
@@ -17,6 +17,13 @@ use crate::ui::now_playing::panel_state::*;
 
 impl super::NowPlayingPanel {
     pub(super) fn render_track(&self) {
+        self.render_track_with_cover_resolution(|_| {});
+    }
+
+    fn render_track_with_cover_resolution(
+        &self,
+        on_cover_resolved: impl Fn(Option<std::path::PathBuf>) + 'static,
+    ) {
         let track = self.loaded_track.borrow().clone();
         let presentation = panel_presentation(track.as_ref(), self.playback_state.get());
         self.widgets.title.set_label(&presentation.title);
@@ -45,7 +52,7 @@ impl super::NowPlayingPanel {
         if let Some(track) = track {
             let visualizer = self.widgets.visualizer.clone();
             let cover_widget = self.widgets.cover.clone();
-            self.cover_loader.load_into_with_path(
+            self.cover_loader.load_into_with_resolution(
                 &self.widgets.cover,
                 &track.path,
                 ThumbnailSize::Full,
@@ -58,80 +65,97 @@ impl super::NowPlayingPanel {
                     // full-resolution file a second time. Only fall back to a
                     // fresh decode if the paintable isn't a texture for some
                     // reason (e.g. still showing the placeholder icon).
-                    let texture = cover_widget
-                        .paintable()
-                        .and_downcast::<gtk4::gdk::Texture>()
-                        .or_else(|| gtk4::gdk::Texture::from_filename(&resolved_path).ok());
-                    visualizer.set_cover(texture.as_ref());
+                    if let Some(resolved_path) = resolved_path.as_ref() {
+                        let texture = cover_widget
+                            .paintable()
+                            .and_downcast::<gtk4::gdk::Texture>()
+                            .or_else(|| gtk4::gdk::Texture::from_filename(resolved_path).ok());
+                        visualizer.set_cover(texture.as_ref());
+                    }
+                    on_cover_resolved(resolved_path);
                 },
             );
+        } else {
+            on_cover_resolved(None);
         }
     }
 
-    pub(super) fn animate_track_change(self: &Rc<Self>) {
-        self.cancel_track_animation();
-        let generation = self.track_animation_generation.get().wrapping_add(1);
-        self.track_animation_generation.set(generation);
-        let target = adw::CallbackAnimationTarget::new({
-            let content = self.widgets.track_content.clone();
-            move |value| content.set_opacity(value)
+    pub(super) fn animate_cover_change(self: &Rc<Self>) {
+        let visible_cover = if self.cover_transition_active.get() {
+            &self.widgets.outgoing_cover
+        } else {
+            &self.widgets.cover
+        };
+        let outgoing_paintable = visible_cover.paintable();
+        let outgoing_icon = visible_cover.icon_name();
+        self.cancel_cover_animation();
+        let generation = self.cover_animation_generation.get().wrapping_add(1);
+        self.cover_animation_generation.set(generation);
+        self.cover_transition_active.set(true);
+        if let Some(paintable) = outgoing_paintable {
+            self.widgets.outgoing_cover.set_paintable(Some(&paintable));
+        } else {
+            self.widgets
+                .outgoing_cover
+                .set_icon_name(outgoing_icon.as_deref());
+        }
+        self.widgets.outgoing_cover.set_visible(true);
+        self.widgets.outgoing_cover.set_opacity(1.0);
+
+        let panel = Rc::downgrade(self);
+        self.render_track_with_cover_resolution(move |_| {
+            let Some(panel) = panel.upgrade() else {
+                return;
+            };
+            if panel.cover_animation_generation.get() == generation {
+                panel.start_cover_fade(generation);
+            }
         });
-        let fade_out = crate::ui::motion::timed(
-            &self.widgets.track_content,
-            self.widgets.track_content.opacity(),
+    }
+
+    fn start_cover_fade(self: &Rc<Self>, generation: u64) {
+        let target = adw::CallbackAnimationTarget::new({
+            let cover = self.widgets.outgoing_cover.clone();
+            move |value| cover.set_opacity(value)
+        });
+        let transition = crate::ui::motion::timed(
+            &self.widgets.outgoing_cover,
+            1.0,
             0.0,
             crate::ui::motion::STANDARD,
             target,
         );
-        fade_out.set_duration(crate::ui::motion::half(crate::ui::motion::STANDARD));
         let panel = Rc::downgrade(self);
-        fade_out.connect_done(move |_| {
+        transition.connect_done(move |_| {
             let Some(panel) = panel.upgrade() else {
                 return;
             };
-            if panel.track_animation_generation.get() != generation {
+            if panel.cover_animation_generation.get() != generation {
                 return;
             }
-            panel.render_track();
-            let target = adw::CallbackAnimationTarget::new({
-                let content = panel.widgets.track_content.clone();
-                move |value| content.set_opacity(value)
-            });
-            let fade_in = crate::ui::motion::timed(
-                &panel.widgets.track_content,
-                0.0,
-                1.0,
-                crate::ui::motion::STANDARD,
-                target,
-            );
-            fade_in.set_duration(crate::ui::motion::half(crate::ui::motion::STANDARD));
-            let panel_for_done = Rc::downgrade(&panel);
-            fade_in.connect_done(move |_| {
-                let Some(panel) = panel_for_done.upgrade() else {
-                    return;
-                };
-                if panel.track_animation_generation.get() == generation {
-                    panel.track_animation.borrow_mut().take();
-                    panel.widgets.track_content.set_opacity(1.0);
-                }
-            });
-            *panel.track_animation.borrow_mut() = Some(fade_in.clone());
-            fade_in.play();
+            panel.cover_animation.borrow_mut().take();
+            panel.cover_transition_active.set(false);
+            panel.widgets.outgoing_cover.set_opacity(0.0);
+            panel.widgets.outgoing_cover.set_visible(false);
         });
-        *self.track_animation.borrow_mut() = Some(fade_out.clone());
-        fade_out.play();
+        *self.cover_animation.borrow_mut() = Some(transition.clone());
+        transition.play();
     }
 
-    pub(super) fn cancel_track_animation(&self) {
-        self.track_animation_generation
-            .set(self.track_animation_generation.get().wrapping_add(1));
-        if let Some(animation) = self.track_animation.borrow_mut().take() {
-            animation.pause();
+    pub(super) fn cancel_cover_animation(&self) {
+        self.cover_animation_generation
+            .set(self.cover_animation_generation.get().wrapping_add(1));
+        let previous = self.cover_animation.borrow_mut().take();
+        if let Some(animation) = previous {
+            animation.skip();
         }
+        self.cover_transition_active.set(false);
+        self.widgets.outgoing_cover.set_opacity(0.0);
+        self.widgets.outgoing_cover.set_visible(false);
     }
 
     #[cfg(test)]
-    pub(super) fn has_track_animation(&self) -> bool {
-        self.track_animation.borrow().is_some()
+    pub(super) fn has_cover_transition(&self) -> bool {
+        self.cover_transition_active.get()
     }
 }

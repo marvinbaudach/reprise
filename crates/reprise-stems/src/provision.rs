@@ -6,8 +6,9 @@
 //! 1. **Weights** ([`ensure_weights`]): download-on-first-use with SHA-256
 //!    verification and a licence notice written beside the file (plan 2.4.9).
 //!    The network fetch is injected, so tests drive it from local bytes; the
-//!    real `ureq` fetcher (`http_fetcher`) is compiled only with the `ort`
-//!    feature. A tampered download is rejected and never written.
+//!    real `ureq` fetcher (`http_fetcher`) is compiled only with the
+//!    `provision-http` feature. A tampered download is rejected and never
+//!    written.
 //! 2. **onnxruntime library** ([`resolve_library`]): the default build loads
 //!    onnxruntime dynamically (`load-dynamic`), so at runtime a
 //!    `libonnxruntime.so` must be located from an explicit, optionally
@@ -17,11 +18,12 @@
 //!
 //! `load-dynamic` `dlopen`s native code into the process, so a swapped or
 //! planted `libonnxruntime.so` executes with full process privileges.
-//! **Production packaging MUST set [`ORT_DYLIB_SHA256_ENV`]
-//! (`REPRISE_ORT_DYLIB_SHA256`)** to the pinned SHA-256 of the library it ships,
-//! so [`resolve_library`] refuses anything else. When it is unset the library
-//! loads unverified and the backend logs a loud warning to stderr. The model
-//! directory is also never resolved to a CWD-relative path (see
+//! **Production packaging MUST provide a pinned SHA-256 of the library it
+//! ships**, either at build time (`REPRISE_BUNDLED_ORT_DYLIB_SHA256`) or through
+//! [`ORT_DYLIB_SHA256_ENV`] (`REPRISE_ORT_DYLIB_SHA256`), so
+//! [`resolve_library`] refuses anything else. When neither is present the
+//! library loads unverified and the backend logs a loud warning to stderr. The
+//! model directory is also never resolved to a CWD-relative path (see
 //! [`default_model_dir`]), so a relative candidate can't be planted either.
 
 use std::fmt::Write as _;
@@ -32,6 +34,10 @@ use sha2::{Digest, Sha256};
 
 use crate::model::{WeightsSpec, HTDEMUCS_LICENSE_NOTICE};
 
+mod runtime_location;
+
+use runtime_location::configured_library_location;
+
 /// Environment variable ort itself reads for the dynamic library path; we honor
 /// it first so a host/Flatpak can point at its bundled, checksummed library.
 pub const ORT_DYLIB_ENV: &str = "ORT_DYLIB_PATH";
@@ -39,6 +45,9 @@ pub const ORT_DYLIB_ENV: &str = "ORT_DYLIB_PATH";
 /// Optional expected SHA-256 (lower hex) for the onnxruntime library, so a
 /// Flatpak/host can pin the exact library it shipped.
 pub const ORT_DYLIB_SHA256_ENV: &str = "REPRISE_ORT_DYLIB_SHA256";
+
+const BUNDLED_ORT_DYLIB: Option<&str> = option_env!("REPRISE_BUNDLED_ORT_DYLIB");
+const BUNDLED_ORT_DYLIB_SHA256: Option<&str> = option_env!("REPRISE_BUNDLED_ORT_DYLIB_SHA256");
 
 /// Something went wrong provisioning the model or locating onnxruntime.
 #[derive(Debug, thiserror::Error)]
@@ -156,6 +165,110 @@ pub struct LibraryLocation {
     pub expected_sha256: Option<String>,
 }
 
+/// The asset that prevents the production stem runtime from being ready.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeComponent {
+    /// The pinned htdemucs weights.
+    Model,
+    /// The native ONNX Runtime library loaded into the worker process.
+    NativeRuntime,
+}
+
+/// Verified paths needed to construct the production backend.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeAssets {
+    pub model_path: PathBuf,
+    pub model_id: String,
+    pub library_path: PathBuf,
+}
+
+/// One authoritative readiness result shared by hosts and UI.
+///
+/// `Ready` means both files exist and match their pinned SHA-256 values.
+/// `ModelRequired` is the only recoverable first-use state; the application can
+/// offer the checksummed weights download. Every native-runtime problem is a
+/// packaging/configuration failure and must remain non-actionable in the UI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RuntimeReadiness {
+    Ready(RuntimeAssets),
+    ModelRequired {
+        path: PathBuf,
+    },
+    Unavailable {
+        component: RuntimeComponent,
+        detail: String,
+    },
+}
+
+/// Checks the production runtime using the platform model directory and the
+/// configured native-library candidates.
+pub fn runtime_readiness() -> RuntimeReadiness {
+    let model_dir = match default_model_dir() {
+        Ok(path) => path,
+        Err(error) => {
+            return RuntimeReadiness::Unavailable {
+                component: RuntimeComponent::Model,
+                detail: error.to_string(),
+            };
+        }
+    };
+    runtime_readiness_in(
+        &model_dir,
+        &crate::model::HTDEMUCS_FP32,
+        &onnxruntime_location(),
+    )
+}
+
+/// Purely path-injected readiness check used by tests and packaging probes.
+pub fn runtime_readiness_in(
+    model_dir: &Path,
+    spec: &WeightsSpec,
+    library_location: &LibraryLocation,
+) -> RuntimeReadiness {
+    let library_path = match resolve_library(library_location) {
+        Ok(path) => path,
+        Err(error) => {
+            return RuntimeReadiness::Unavailable {
+                component: RuntimeComponent::NativeRuntime,
+                detail: error.to_string(),
+            };
+        }
+    };
+    if library_location.expected_sha256.is_none() {
+        return RuntimeReadiness::Unavailable {
+            component: RuntimeComponent::NativeRuntime,
+            detail: format!(
+                "onnxruntime library {} has no pinned SHA-256; set {}",
+                library_path.display(),
+                ORT_DYLIB_SHA256_ENV
+            ),
+        };
+    }
+
+    let model_path = weights_path(model_dir, spec);
+    if !model_path.is_file() {
+        return RuntimeReadiness::ModelRequired { path: model_path };
+    }
+    match file_sha256(&model_path) {
+        Ok(actual) if actual == spec.sha256 => RuntimeReadiness::Ready(RuntimeAssets {
+            model_path,
+            model_id: spec.model_id.to_string(),
+            library_path,
+        }),
+        Ok(actual) => RuntimeReadiness::Unavailable {
+            component: RuntimeComponent::Model,
+            detail: format!(
+                "model checksum mismatch: expected {}, got {actual}",
+                spec.sha256
+            ),
+        },
+        Err(error) => RuntimeReadiness::Unavailable {
+            component: RuntimeComponent::Model,
+            detail: error.to_string(),
+        },
+    }
+}
+
 /// Resolves the first existing candidate onnxruntime library, verifying its
 /// SHA-256 when one is pinned. Returns [`ProvisionError::LibraryNotFound`]
 /// listing every path tried when none exists — the "clear error when absent"
@@ -193,37 +306,31 @@ pub fn resolve_library(location: &LibraryLocation) -> Result<PathBuf, ProvisionE
 }
 
 /// Assembles the production candidate list for onnxruntime from the environment
-/// (`ORT_DYLIB_PATH` first, then a Reprise-bundled library beside the model
-/// directory) plus an optional pinned checksum from [`ORT_DYLIB_SHA256_ENV`].
+/// (`ORT_DYLIB_PATH` first), a checksum-pinned library embedded by the package
+/// build, then a Reprise-bundled library beside the model directory.
 ///
 /// Reads the environment (a side effect), so the pure resolution logic lives in
 /// [`resolve_library`], which this feeds.
 pub fn onnxruntime_location() -> LibraryLocation {
-    let mut candidates = Vec::new();
-    if let Some(explicit) = std::env::var_os(ORT_DYLIB_ENV) {
-        candidates.push(PathBuf::from(explicit));
-    }
-    // A library the host bundled next to the models (e.g. a Flatpak extension).
-    // Skipped when there is no data dir — never a CWD-relative candidate.
-    if let Ok(model_dir) = default_model_dir() {
-        candidates.push(model_dir.join("libonnxruntime.so"));
-    }
-    LibraryLocation {
-        candidates,
-        expected_sha256: std::env::var(ORT_DYLIB_SHA256_ENV).ok(),
-    }
+    configured_library_location(
+        std::env::var_os(ORT_DYLIB_ENV).map(PathBuf::from),
+        std::env::var(ORT_DYLIB_SHA256_ENV).ok(),
+        BUNDLED_ORT_DYLIB,
+        BUNDLED_ORT_DYLIB_SHA256,
+        default_model_dir().ok(),
+    )
 }
 
 /// The memory cap for a model download — generous so a mispointed URL cannot
-/// exhaust RAM (htdemucs fp32 is ~316 MB). Only the real fetcher (`ort`) uses it.
-#[cfg(feature = "ort")]
+/// exhaust RAM (htdemucs fp32 is ~316 MB). Only the real fetcher uses it.
+#[cfg(feature = "provision-http")]
 const MAX_DOWNLOAD_BYTES: u64 = 512 * 1024 * 1024;
 
 /// Reads `reader` to its end in 64 KiB chunks, reporting cumulative bytes read
 /// (and the server-declared total, when known) after each chunk and enforcing
 /// `max_bytes`. Pure over any [`Read`], so the progress accounting is unit-tested
-/// without touching the network. Part of the `ort` download machinery.
-#[cfg(feature = "ort")]
+/// without touching the network. Part of the model-provisioning machinery.
+#[cfg(feature = "provision-http")]
 fn read_reporting(
     mut reader: impl Read,
     content_length: Option<u64>,
@@ -249,11 +356,11 @@ fn read_reporting(
     Ok(bytes)
 }
 
-/// The real network fetcher (blocking `ureq`), compiled only with the `ort`
-/// feature, reporting progress through `on_progress` (cumulative bytes,
+/// The real network fetcher (blocking `ureq`), compiled only with the
+/// `provision-http` feature, reporting progress through `on_progress` (cumulative bytes,
 /// optional server total) after every chunk. Enforces [`MAX_DOWNLOAD_BYTES`].
 /// Tests never use this — they inject a local-bytes fetcher.
-#[cfg(feature = "ort")]
+#[cfg(feature = "provision-http")]
 pub fn http_fetcher_with_progress(
     url: &str,
     on_progress: &mut dyn FnMut(u64, Option<u64>),
@@ -276,7 +383,7 @@ pub fn http_fetcher_with_progress(
 
 /// The real network fetcher without progress — [`http_fetcher_with_progress`]
 /// with a no-op sink. Kept so existing callers stay unchanged.
-#[cfg(feature = "ort")]
+#[cfg(feature = "provision-http")]
 pub fn http_fetcher(url: &str) -> Result<Vec<u8>, String> {
     http_fetcher_with_progress(url, &mut |_, _| {})
 }
@@ -491,6 +598,91 @@ mod tests {
     }
 
     #[test]
+    fn runtime_readiness_requires_verified_model_and_native_runtime() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = fake_spec();
+        let model = weights_path(dir.path(), &spec);
+        let library = dir.path().join("libonnxruntime.so");
+        std::fs::write(&library, b"runtime bytes").unwrap();
+        let location = LibraryLocation {
+            candidates: vec![library.clone()],
+            expected_sha256: Some(sha256_hex(b"runtime bytes")),
+        };
+
+        assert_eq!(
+            runtime_readiness_in(dir.path(), &spec, &location),
+            RuntimeReadiness::ModelRequired {
+                path: model.clone()
+            },
+            "a verified runtime alone is not render-ready"
+        );
+
+        std::fs::write(&model, b"corrupt model").unwrap();
+        assert!(matches!(
+            runtime_readiness_in(dir.path(), &spec, &location),
+            RuntimeReadiness::Unavailable {
+                component: RuntimeComponent::Model,
+                ..
+            }
+        ));
+
+        std::fs::write(&model, PAYLOAD).unwrap();
+        assert_eq!(
+            runtime_readiness_in(dir.path(), &spec, &location),
+            RuntimeReadiness::Ready(RuntimeAssets {
+                model_path: model,
+                model_id: spec.model_id.to_string(),
+                library_path: library,
+            })
+        );
+    }
+
+    #[test]
+    fn runtime_readiness_rejects_missing_unpinned_or_tampered_native_code() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = fake_spec();
+        std::fs::write(weights_path(dir.path(), &spec), PAYLOAD).unwrap();
+        let library = dir.path().join("libonnxruntime.so");
+
+        let missing = LibraryLocation {
+            candidates: vec![library.clone()],
+            expected_sha256: Some(sha256_hex(b"runtime bytes")),
+        };
+        assert!(matches!(
+            runtime_readiness_in(dir.path(), &spec, &missing),
+            RuntimeReadiness::Unavailable {
+                component: RuntimeComponent::NativeRuntime,
+                ..
+            }
+        ));
+
+        std::fs::write(&library, b"runtime bytes").unwrap();
+        let unpinned = LibraryLocation {
+            candidates: vec![library.clone()],
+            expected_sha256: None,
+        };
+        assert!(matches!(
+            runtime_readiness_in(dir.path(), &spec, &unpinned),
+            RuntimeReadiness::Unavailable {
+                component: RuntimeComponent::NativeRuntime,
+                ..
+            }
+        ));
+
+        let tampered = LibraryLocation {
+            candidates: vec![library],
+            expected_sha256: Some(sha256_hex(b"different runtime")),
+        };
+        assert!(matches!(
+            runtime_readiness_in(dir.path(), &spec, &tampered),
+            RuntimeReadiness::Unavailable {
+                component: RuntimeComponent::NativeRuntime,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn default_model_dir_lives_under_reprise() {
         assert!(default_model_dir().unwrap().ends_with("reprise/models"));
     }
@@ -530,7 +722,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "ort")]
+    #[cfg(feature = "provision-http")]
     #[test]
     fn read_reporting_streams_all_bytes_and_reports_cumulative_progress() {
         let data = vec![7u8; 200_000];
@@ -560,7 +752,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "ort")]
+    #[cfg(feature = "provision-http")]
     #[test]
     fn read_reporting_enforces_the_size_cap() {
         let data = vec![0u8; 10_000];

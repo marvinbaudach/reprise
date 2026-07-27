@@ -1,8 +1,8 @@
 //! Short full-canvas flash for exceptional dynamics changes.
 //!
-//! Beat motion belongs entirely to the radial membrane. This overlay therefore
-//! tracks only a detected drop/slam and cannot keep the Grid tick loop alive
-//! with invisible secondary animation state.
+//! Bars beat motion belongs to the column envelope. This overlay tracks only a
+//! detected drop/slam and cannot keep the tick loop alive with invisible
+//! secondary animation state.
 
 /// Per-frame decay of the dynamics flash.
 const FLASH_DECAY: f32 = 0.90;

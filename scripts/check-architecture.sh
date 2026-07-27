@@ -51,9 +51,9 @@ echo "== Multi-frontend core boundaries =="
 #     `worker` (reprise-stems) exceptions are feature-gated, so the default
 #     tree must stay core-only — exactly what the plan pins as the enforced
 #     probe;
-#   * reprise-stems depends only on reprise-core, and only binary hosts (the
-#     GTK app; the CLI behind `worker`) may depend on it — the MCP server and
-#     the engine never may, so the feature stays removable;
+#   * reprise-stems depends only on reprise-core. GTK may enable its
+#     provisioning-only slice, while only the CLI worker enables native
+#     inference; the MCP server and engine never depend on the crate;
 #   * no GTK/libadwaita/GLib/GStreamer/zbus family crate links into the default
 #     dependency tree of any of the three.
 #
@@ -137,18 +137,19 @@ if [[ -n "$stray_stems_edge" ]]; then
   exit 1
 fi
 
-# The GTK app-hosted instrumental worker consumes the core `stem_separation`
-# trait, never reprise-stems directly. The DEFAULT build must therefore not link
-# reprise-stems. P3b wired the real backend behind the gnome `stem-backend` cargo
-# feature (mirroring the CLI's `worker` feature): the GTK app is a sanctioned
-# binary host for reprise-stems (see the §"binary hosts" note above), but the
-# edge is feature-gated so this default-build probe stays green — a feature-gated
-# edge does not appear in the default `-e normal` tree. Build with
-# `--features stem-backend` for the real render.
+# The default GTK build remains core-only. The stem-backend feature may link
+# reprise-stems' provisioning slice, but never the `ort` inference runtime:
+# rendering belongs exclusively in the separately packaged worker process.
 gnome_tree=$(run_dependency_probe "reprise-gnome default build" \
   -p reprise-gnome -e normal --prefix none --target all) || exit 1
 if printf '%s\n' "$gnome_tree" | rg --quiet '^reprise-stems '; then
-  echo "reprise-gnome default build must not depend on reprise-stems (the worker consumes the core stem_separation trait)" >&2
+  echo "reprise-gnome default build must not depend on reprise-stems" >&2
+  exit 1
+fi
+gnome_feature_tree=$(run_dependency_probe "reprise-gnome all features" \
+  -p reprise-gnome --all-features -e normal --prefix none --target all) || exit 1
+if printf '%s\n' "$gnome_feature_tree" | rg --quiet '^ort '; then
+  echo "reprise-gnome must not depend on ort (rendering belongs in reprise-worker)" >&2
   exit 1
 fi
 

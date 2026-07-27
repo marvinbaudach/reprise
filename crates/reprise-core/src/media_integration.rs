@@ -12,6 +12,9 @@
 
 use std::sync::{Arc, Mutex};
 
+use crate::agent_device_sync::{
+    AgentDeviceSyncRequest, AgentDeviceSyncState, SharedAgentDeviceSyncState,
+};
 use crate::queue::Repeat;
 
 /// `MprisState::volume`'s initial value until the bar or an MPRIS `Volume`
@@ -292,6 +295,8 @@ pub struct MediaIntegrationHandles {
     pub queue_state: SharedAgentQueueState,
     pub commands: async_channel::Receiver<MprisCommand>,
     pub seek_notify: async_channel::Sender<i64>,
+    pub device_sync_state: SharedAgentDeviceSyncState,
+    pub device_sync_commands: async_channel::Receiver<AgentDeviceSyncRequest>,
 }
 
 impl MediaIntegrationHandles {
@@ -316,12 +321,17 @@ impl MediaIntegrationHandles {
         let queue_state: SharedAgentQueueState = Arc::new(Mutex::new(AgentQueueState::default()));
         let (_commands_sender, commands) = async_channel::unbounded::<MprisCommand>();
         let (seek_notify, _seek_receiver) = async_channel::unbounded::<i64>();
+        let device_sync_state = Arc::new(Mutex::new(AgentDeviceSyncState::default()));
+        let (_device_sync_sender, device_sync_commands) =
+            async_channel::unbounded::<AgentDeviceSyncRequest>();
 
         Self {
             shared_state,
             queue_state,
             commands,
             seek_notify,
+            device_sync_state,
+            device_sync_commands,
         }
     }
 }
@@ -329,6 +339,17 @@ impl MediaIntegrationHandles {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inert_media_handles_include_dormant_device_sync_channels() {
+        let handles = MediaIntegrationHandles::inert();
+        assert!(
+            crate::agent_device_sync::read_agent_device_sync_state(&handles.device_sync_state)
+                .devices
+                .is_empty()
+        );
+        assert!(handles.device_sync_commands.is_closed());
+    }
 
     fn playing_state() -> MprisState {
         MprisState {

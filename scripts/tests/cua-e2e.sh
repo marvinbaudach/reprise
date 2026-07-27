@@ -9,6 +9,7 @@ if [[ ! -x "$runner" ]]; then
   exit 1
 fi
 sort_scenario="$repo_root/scripts/cua-e2e/track_sort.sh"
+tag_autocomplete_scenario="$repo_root/scripts/cua-e2e/tag_autocomplete.sh"
 helper_library="$repo_root/scripts/cua-e2e/lib.sh"
 if [[ ! -f "$sort_scenario" ]]; then
   echo "$sort_scenario must exist" >&2
@@ -23,6 +24,26 @@ for pattern in \
 do
   if ! rg --quiet --fixed-strings "$pattern" "$sort_scenario"; then
     echo "$sort_scenario must contain sort-regression contract: $pattern" >&2
+    exit 1
+  fi
+done
+if [[ ! -f "$tag_autocomplete_scenario" ]]; then
+  echo "$tag_autocomplete_scenario must exist" >&2
+  exit 1
+fi
+for pattern in \
+  'run_tag_autocomplete_surface_scenario' \
+  'Cogitations' \
+  'Cognitive Dissonance' \
+  'Radio Cognac' \
+  'cua_hotkey_focused' \
+  'backspace tag-autocomplete-clear' \
+  'cua_type_text_window' \
+  'tag-autocomplete-open-display.png' \
+  'import -window root'
+do
+  if ! rg --quiet --fixed-strings "$pattern" "$tag_autocomplete_scenario"; then
+    echo "$tag_autocomplete_scenario must contain autocomplete rendering contract: $pattern" >&2
     exit 1
   fi
 done
@@ -60,7 +81,7 @@ for pattern in \
   'run_private_scenario_group' \
   'CUA_E2E_PRIVATE_GROUP=' \
   'for scenario_group in' \
-  'dbus-run-session ffmpeg gdbus gnome-keyring-daemon jq python3 rg timeout wmctrl' \
+  'dbus-run-session ffmpeg gdbus gnome-keyring-daemon import jq python3 rg timeout wmctrl' \
   'CUA_DRIVER_SOCKET=' \
   'CUA_DRIVER_RS_UPDATE_CHECK=0' \
   'CUA_E2E_DRIVER_TIMEOUT_SECS=' \
@@ -78,14 +99,14 @@ for pattern in \
   'CUA_E2E_APP_PID=""' \
   'run_tag_1_no_jump_after_save_scenario' \
   'run_tag_3_multi_dialog_structure_scenario' \
+  'run_tag_autocomplete_surface_scenario' \
   'run_library_doctor_scenario' \
   'run_song_visuals_scenario' \
   'run_scrobbling_scenario' \
   'Audio-reactive song visual' \
-  '"Grid"' \
-  '"Bars"' \
-  '"Flow"' \
-  '"Pulse"' \
+  'song-visuals-visual-focus' \
+  '"Play \(Space\)"' \
+  'song-visuals-space-paused' \
   'cua_activate_main_menu_item' \
   'Enable Library Doctor' \
   'safe_change_count' \
@@ -95,6 +116,12 @@ for pattern in \
 do
   if ! rg --quiet -- "$pattern" "$runner"; then
     echo "$runner must contain isolation/coverage pattern: $pattern" >&2
+    exit 1
+  fi
+done
+for obsolete_visual_mode in '"Grid"' '"Bars"' '"Flow"' '"Pulse"'; do
+  if rg --quiet --fixed-strings "$obsolete_visual_mode" "$runner"; then
+    echo "$runner must not require the removed visual mode selector: $obsolete_visual_mode" >&2
     exit 1
   fi
 done
@@ -276,7 +303,7 @@ fi
 for pattern in \
   'acc-1-keyboard-only-surface-sweep' \
   'acc-3-tab-order-and-roving-collections' \
-  'acc-4-standard-keys-respect-local-controls' \
+  'acc-4a-space-routes-global-and-local-controls' \
   'acc-5-transients-and-navigation-restore-focus' \
   'acc-8-direct-manipulation-has-keyboard-equivalence' \
   'cua_hotkey' \
@@ -305,8 +332,10 @@ if rg --quiet 'focus_active_library_tab|keyboard_(albums|artists)' "$keyboard_ru
   exit 1
 fi
 for pattern in \
-  '"$pid" "$window_id" "Pause (Space)" acc-player-focus' \
-  '"$pid" "$window_id" "Play (Space)" acc-player-paused' \
+  'SPACE_TOGGLE_REGRESSION_COUNT=6' \
+  '"$pid" "$window_id" "Toggle sidebar" acc-player-sidebar-toggle-focus' \
+  'assert_focus_evidence_label "$state_path" "Toggle sidebar"' \
+  'assert_snapshot_contains "$state_path" "Music"' \
   '"$pid" "$window_id" "Music" acc-issues-main-collection' \
   '"$pid" "$window_id" "Missing files" down acc-issues-focus' \
   '"$pid" "$window_id" "Music" acc-stats-main-collection' \

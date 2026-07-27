@@ -19,10 +19,33 @@ const SEGMENT_GAP: f32 = 2.5;
 const PEAK_CAP_HEIGHT: f32 = 2.5;
 const PEAK_MIN: f32 = 0.04;
 const REFLECTION_SEGMENTS: usize = 6;
-const BEAT_LIFT_LOW: f32 = 0.24;
-const BEAT_LIFT_HIGH: f32 = 0.11;
+/// The spectrum alone uses the lower two thirds. Exceptional beat or sustained
+/// bass energy owns the remaining headroom, so compressed music cannot look
+/// permanently maxed out.
+const SPECTRUM_HEADROOM: f32 = 0.66;
+const BREAKDOWN_LIFT_LOW: f32 = 0.98;
+const BREAKDOWN_LIFT_HIGH: f32 = 0.82;
+/// Hits below this captured absolute-energy strength remain frequency-shaped
+/// detail instead of lifting the entire analyzer.
+const BREAKDOWN_STRENGTH_FLOOR: f32 = 0.25;
+/// At this strength a hit receives the full whole-analyzer lift. The value is
+/// anchored to the strongest captured bass impact in The Browning's "Wake Up".
+const BREAKDOWN_STRENGTH_FULL: f32 = 0.85;
+/// Sustained breakdown pressure needs all three gates: real bass presence,
+/// enough whole-mix energy, and bass that clearly dominates that mix.
+const BASS_PRESENCE_FLOOR: f32 = 0.68;
+const BASS_PRESENCE_FULL: f32 = 0.735;
+const LEVEL_PRESENCE_FLOOR: f32 = 0.44;
+const LEVEL_PRESENCE_FULL: f32 = 0.52;
+const BASS_DOMINANCE_FLOOR: f32 = 0.12;
+const BASS_DOMINANCE_FULL: f32 = 0.21;
 const HUE_START: f32 = 188.0;
 const HUE_END: f32 = 315.0;
+const ENVELOPE_EASING: f32 = 0.65;
+const MAX_RISE_PER_TICK: f32 = 3.0 / SEGMENT_COUNT as f32;
+const MAX_FALL_PER_TICK: f32 = 1.0 / SEGMENT_COUNT as f32;
+const ENVELOPE_SETTLE_EPSILON: f32 = 0.002;
+const PRESSURE_HOLD_TICKS: u8 = 3;
 
 fn group_value(values: &[f32; SPECTRUM_BAND_COUNT], bar: usize) -> f32 {
     let start = bar * SPECTRUM_BAND_COUNT / BAR_COUNT;
@@ -33,10 +56,112 @@ fn group_value(values: &[f32; SPECTRUM_BAND_COUNT], bar: usize) -> f32 {
     peak * 0.62 + mean * 0.38
 }
 
-fn bar_value(ctx: &ModeCtx, bar: usize) -> f32 {
+fn normalize_between(value: f32, floor: f32, full: f32) -> f32 {
+    ((value - floor) / (full - floor)).clamp(0.0, 1.0)
+}
+
+fn beat_pressure(beat: f32) -> f32 {
+    smoothstep(normalize_between(
+        beat,
+        BREAKDOWN_STRENGTH_FLOOR,
+        BREAKDOWN_STRENGTH_FULL,
+    ))
+}
+
+fn bass_pressure(bass: f32, level: f32) -> f32 {
+    let presence = normalize_between(bass, BASS_PRESENCE_FLOOR, BASS_PRESENCE_FULL);
+    let mix_energy = normalize_between(level, LEVEL_PRESENCE_FLOOR, LEVEL_PRESENCE_FULL);
+    let dominance = normalize_between(bass - level, BASS_DOMINANCE_FLOOR, BASS_DOMINANCE_FULL);
+    presence * (mix_energy * dominance).sqrt()
+}
+
+fn instant_pressure(beat: f32, bass: f32, level: f32) -> f32 {
+    beat_pressure(beat).max(bass_pressure(bass, level))
+}
+
+fn target_value(bands: &[f32; SPECTRUM_BAND_COUNT], pressure: f32, bar: usize) -> f32 {
     let across = bar as f32 / (BAR_COUNT - 1) as f32;
-    let beat_lift = BEAT_LIFT_LOW + (BEAT_LIFT_HIGH - BEAT_LIFT_LOW) * across;
-    (group_value(ctx.bands, bar) + ctx.beat * beat_lift).clamp(0.0, 1.0)
+    let lift = BREAKDOWN_LIFT_LOW + (BREAKDOWN_LIFT_HIGH - BREAKDOWN_LIFT_LOW) * across;
+    let spectrum = group_value(bands, bar).sqrt() * SPECTRUM_HEADROOM;
+    // Exceptional energy lifts the remaining headroom instead of adding a
+    // fixed amount. The spectrum silhouette survives while a breakdown can
+    // approach full height between individual onset edges.
+    spectrum + (1.0 - spectrum) * pressure * lift
+}
+
+pub(crate) struct BarsEnvelope {
+    values: [f32; BAR_COUNT],
+    pressure: f32,
+    pressure_hold_ticks: u8,
+}
+
+impl BarsEnvelope {
+    pub(crate) fn new() -> Self {
+        Self {
+            values: [0.0; BAR_COUNT],
+            pressure: 0.0,
+            pressure_hold_ticks: 0,
+        }
+    }
+
+    pub(crate) fn values(&self) -> &[f32; BAR_COUNT] {
+        &self.values
+    }
+
+    pub(crate) fn advance(
+        &mut self,
+        bands: &[f32; SPECTRUM_BAND_COUNT],
+        beat: f32,
+        bass: f32,
+        level: f32,
+    ) -> bool {
+        let pressure = instant_pressure(beat, bass, level);
+        if pressure > self.pressure + ENVELOPE_SETTLE_EPSILON {
+            self.pressure = pressure;
+            self.pressure_hold_ticks = PRESSURE_HOLD_TICKS;
+        } else if self.pressure_hold_ticks > 0 {
+            self.pressure_hold_ticks -= 1;
+        } else {
+            self.pressure = pressure;
+        }
+        let mut settled = self.pressure_hold_ticks == 0
+            && (self.pressure - pressure).abs() < ENVELOPE_SETTLE_EPSILON;
+        for (bar, current) in self.values.iter_mut().enumerate() {
+            let target = target_value(bands, self.pressure, bar);
+            let delta = target - *current;
+            let step = (delta * ENVELOPE_EASING).clamp(-MAX_FALL_PER_TICK, MAX_RISE_PER_TICK);
+            *current = (*current + step).clamp(0.0, 1.0);
+            settled &= delta.abs() < ENVELOPE_SETTLE_EPSILON;
+        }
+        settled
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.values = [0.0; BAR_COUNT];
+        self.pressure = 0.0;
+        self.pressure_hold_ticks = 0;
+    }
+
+    pub(crate) fn snap(
+        &mut self,
+        bands: &[f32; SPECTRUM_BAND_COUNT],
+        beat: f32,
+        bass: f32,
+        level: f32,
+    ) {
+        self.pressure = instant_pressure(beat, bass, level);
+        self.pressure_hold_ticks = 0;
+        self.values = std::array::from_fn(|bar| target_value(bands, self.pressure, bar));
+    }
+}
+
+fn bar_value(ctx: &ModeCtx, bar: usize) -> f32 {
+    ctx.bars[bar]
+}
+
+fn smoothstep(value: f32) -> f32 {
+    let value = value.clamp(0.0, 1.0);
+    value * value * (3.0 - 2.0 * value)
 }
 
 fn neon(bar: usize, alpha: f32) -> Fill {
@@ -99,6 +224,7 @@ pub(crate) fn scene(ctx: &ModeCtx) -> Vec<Shape> {
 
         for segment in 0..active.min(SEGMENT_COUNT) {
             let partial = (fraction - segment as f32).clamp(0.0, 1.0);
+            let transition = smoothstep(partial);
             let y = baseline - (segment + 1) as f32 * (segment_height + SEGMENT_GAP);
             shapes.push(Shape {
                 geom: Geom::Rect {
@@ -107,7 +233,7 @@ pub(crate) fn scene(ctx: &ModeCtx) -> Vec<Shape> {
                     w: bar_width,
                     h: segment_height,
                 },
-                fill: neon(bar, 0.34 + 0.62 * partial),
+                fill: neon(bar, 0.96 * transition),
                 width: 0.0,
                 glow: 0.0,
                 dash: None,
@@ -122,7 +248,7 @@ pub(crate) fn scene(ctx: &ModeCtx) -> Vec<Shape> {
                         w: bar_width,
                         h: reflection_height,
                     },
-                    fill: neon(bar, (0.13 - segment as f32 * 0.02) * partial),
+                    fill: neon(bar, (0.13 - segment as f32 * 0.02) * transition),
                     width: 0.0,
                     glow: 0.0,
                     dash: None,
@@ -247,9 +373,203 @@ mod tests {
         assert_eq!(caps, BAR_COUNT);
     }
 
+    #[test]
+    fn ac_20_breakdown_pressure_outranks_a_compressed_metal_bed() {
+        fn settled_average(bass: f32, level: f32) -> f32 {
+            let bands = [0.4; SPECTRUM_BAND_COUNT];
+            let mut envelope = BarsEnvelope::new();
+            for _ in 0..60 {
+                envelope.advance(&bands, 0.0, bass, level);
+            }
+            envelope.values().iter().sum::<f32>() / BAR_COUNT as f32
+        }
+
+        let metal_bed = settled_average(0.674, 0.444);
+        let breakdown = settled_average(0.732, 0.520);
+
+        assert!(
+            metal_bed < 0.55,
+            "ordinary compressed metal must retain visual headroom, got {metal_bed}"
+        );
+        assert!(
+            breakdown > 0.80,
+            "captured Wake Up breakdown energy must approach full height, got {breakdown}"
+        );
+        assert!(
+            breakdown >= metal_bed + 0.30,
+            "breakdown energy must visibly outrank the metal bed: bed={metal_bed}, breakdown={breakdown}"
+        );
+    }
+
+    #[test]
+    fn ac_20_short_breakdown_pressure_survives_the_fluid_attack() {
+        let bands = [0.4; SPECTRUM_BAND_COUNT];
+        let mut envelope = BarsEnvelope::new();
+        for _ in 0..60 {
+            envelope.advance(&bands, 0.0, 0.674, 0.444);
+        }
+
+        envelope.advance(&bands, 0.0, 0.732, 0.520);
+        let mut peak = envelope.values().iter().sum::<f32>() / BAR_COUNT as f32;
+        for _ in 0..3 {
+            envelope.advance(&bands, 0.0, 0.674, 0.444);
+            peak = peak.max(envelope.values().iter().sum::<f32>() / BAR_COUNT as f32);
+        }
+
+        assert!(
+            peak > 0.80,
+            "a captured one-frame breakdown must remain long enough for the fluid attack, got {peak}"
+        );
+    }
+
+    #[test]
+    fn ac_20_entering_segment_fades_in_from_nearly_transparent() {
+        let fraction = 1.01_f32;
+        let mut bars = [0.0_f32; BAR_COUNT];
+        bars[0] = fraction / SEGMENT_COUNT as f32;
+        let peaks = [0.0_f32; SPECTRUM_BAND_COUNT];
+        let ctx = ModeCtx {
+            peaks: &peaks,
+            bars: &bars,
+            beat: 0.0,
+            accent: (0.2, 0.7, 0.7),
+            accent2: (0.7, 0.2, 0.7),
+            width: WIDTH,
+            height: HEIGHT,
+        };
+        let shapes = scene(&ctx);
+        let first_x = WIDTH * HORIZONTAL_MARGIN;
+        let mut first_bar: Vec<_> = main_segments(&shapes)
+            .into_iter()
+            .filter(|shape| (rect_x(shape) - first_x).abs() < 0.01)
+            .collect();
+        first_bar.sort_by(|left, right| rect_y(left).total_cmp(&rect_y(right)));
+        let Fill::Solid(top) = first_bar[0].fill;
+
+        assert!(
+            top.a < 0.03,
+            "a newly entering segment must fade in instead of appearing at visible opacity, alpha={}",
+            top.a
+        );
+    }
+
+    #[test]
+    fn ac_20_large_kick_lifts_the_whole_analyzer_decisively() {
+        use crate::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
+        use crate::visuals::VisualEngine;
+
+        fn active_segments(engine: &VisualEngine) -> usize {
+            let shapes = scene(&test_ctx(engine, WIDTH, HEIGHT));
+            main_segments(&shapes).len()
+        }
+
+        let wall = [-40.0; SPECTRUM_ANALYSIS_BAND_COUNT];
+        let mut analyzer = SpectrumAnalyzer::new();
+        let mut engine = VisualEngine::new();
+        engine.set_playing(true);
+        for _ in 0..120 {
+            engine.ingest(&analyzer.ingest(wall));
+            engine.tick();
+        }
+        let before = active_segments(&engine);
+        let before_values: [f32; BAR_COUNT] = {
+            let ctx = test_ctx(&engine, WIDTH, HEIGHT);
+            std::array::from_fn(|bar| bar_value(&ctx, bar))
+        };
+
+        let mut kick = wall;
+        kick[..8].fill(-2.0);
+        let hit = analyzer.ingest(kick);
+        assert!(hit.beat().fired);
+        engine.ingest(&hit);
+        engine.tick();
+        let after = active_segments(&engine);
+        let ctx = test_ctx(&engine, WIDTH, HEIGHT);
+        let after_values: [f32; BAR_COUNT] = std::array::from_fn(|bar| bar_value(&ctx, bar));
+        let max_value = after_values.iter().copied().max_by(f32::total_cmp).unwrap();
+        let max_rise = before_values
+            .iter()
+            .zip(after_values)
+            .map(|(before, after)| after - before)
+            .fold(0.0_f32, f32::max);
+
+        assert!(
+            after >= before + BAR_COUNT * 2,
+            "a large kick must add at least two visible segments per column immediately: before={before}, after={after}"
+        );
+        assert!(
+            max_rise * SEGMENT_COUNT as f32 <= 3.0 + f32::EPSILON * 8.0,
+            "the first kick frame must not teleport a column by more than three segments, added={}",
+            max_rise * SEGMENT_COUNT as f32
+        );
+        assert!(
+            max_value < 0.98,
+            "the first kick frame must start a fast rise instead of saturating a column instantly, max={max_value}"
+        );
+
+        engine.tick();
+        engine.tick();
+        let fast_rise = active_segments(&engine);
+        assert!(
+            fast_rise >= before + BAR_COUNT * 4,
+            "a large kick must reach at least four additional segments per column within three frames: before={before}, after={fast_rise}"
+        );
+    }
+
+    #[test]
+    fn ac_20_bars_release_without_dropping_multiple_full_segments_per_frame() {
+        use crate::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
+        use crate::visuals::VisualEngine;
+
+        fn values(engine: &VisualEngine) -> [f32; BAR_COUNT] {
+            let ctx = test_ctx(engine, WIDTH, HEIGHT);
+            std::array::from_fn(|bar| bar_value(&ctx, bar))
+        }
+
+        let wall = [-40.0; SPECTRUM_ANALYSIS_BAND_COUNT];
+        let mut analyzer = SpectrumAnalyzer::new();
+        let mut engine = VisualEngine::new();
+        engine.set_playing(true);
+        for _ in 0..120 {
+            engine.ingest(&analyzer.ingest(wall));
+            engine.tick();
+        }
+
+        let mut kick = wall;
+        kick[..8].fill(-2.0);
+        engine.ingest(&analyzer.ingest(kick));
+        engine.tick();
+        let mut previous = values(&engine);
+        let max_drop = (0..8).fold(0.0_f32, |largest, _| {
+            engine.ingest(&analyzer.ingest(wall));
+            engine.tick();
+            let current = values(&engine);
+            let frame_drop = previous
+                .iter()
+                .zip(current)
+                .map(|(before, after)| before - after)
+                .fold(0.0_f32, f32::max);
+            previous = current;
+            largest.max(frame_drop)
+        });
+
+        assert!(
+            max_drop * SEGMENT_COUNT as f32 <= 1.0,
+            "a release frame must not remove more than one full segment, removed={}",
+            max_drop * SEGMENT_COUNT as f32
+        );
+    }
+
     fn rect_x(shape: &Shape) -> f32 {
         match shape.geom {
             Geom::Rect { x, .. } => x,
+            _ => f32::NAN,
+        }
+    }
+
+    fn rect_y(shape: &Shape) -> f32 {
+        match shape.geom {
+            Geom::Rect { y, .. } => y,
             _ => f32::NAN,
         }
     }

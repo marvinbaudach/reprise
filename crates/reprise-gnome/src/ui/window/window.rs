@@ -43,6 +43,7 @@ const MIN_HEIGHT: i32 = 400;
 
 fn build_player_backends(
     waveform: Arc<dyn WaveformBackend>,
+    media: reprise_core::media_integration::MediaIntegrationHandles,
 ) -> Result<PlayerControllerBackends, PlaybackError> {
     let (sender, playback_events) = async_channel::unbounded::<PlayerEvent>();
     let player = Player::new(Box::new(move |event| {
@@ -54,7 +55,7 @@ fn build_player_backends(
     Ok(PlayerControllerBackends {
         playback: Box::new(player),
         playback_events,
-        media: reprise_platform_linux::mpris::start(crate::APP_ID),
+        media,
         waveform,
     })
 }
@@ -166,16 +167,19 @@ pub fn build(
     let podcasts_runtime = crate::ui::podcasts::PodcastsRuntime::setup(&conn.borrow());
     let artist_portrait =
         super::artist_portrait_worker::ArtistPortraitRuntime::setup(&conn.borrow());
+    let media = reprise_platform_linux::mpris::start(crate::APP_ID);
     let device_sync = super::device_sync_smoke::runtime_from_env(conn).unwrap_or_else(|| {
         super::device_sync_runtime::DeviceSyncRuntime::new(
             conn,
             reprise_platform_linux::device_sync::DeviceMonitor::new(),
         )
     });
+    device_sync
+        .bind_agent_device_sync(&media.device_sync_state, media.device_sync_commands.clone());
     super::device_sync_actions::install(app, &device_sync);
     super::device_sync_smoke::arm(&device_sync);
 
-    let player = match build_player_backends(waveform_backend.clone()) {
+    let player = match build_player_backends(waveform_backend.clone(), media) {
         Ok(backends) => Some(PlayerController::new(
             conn.clone(),
             cover_download.clone(),
@@ -327,14 +331,10 @@ pub fn build(
     let stats_view = super::stats_view::StatsView::new(track_list.shared_cover_loader());
     stats_view.wire_year_selector(conn);
     let device_view = super::device_view::DeviceViewPage::new(&device_sync);
-    let content_stack = gtk4::Stack::new();
-    // Size to the visible page (see the library stack's `set_hhomogeneous`):
-    // Stats/Device pages must not inherit the library's minimum width, nor vice
-    // versa, and hidden source pages must not push the structural player bar
-    // below the window edge.
-    super::library_player_bar::configure_content_stack(&content_stack);
-    content_stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
-    content_stack.set_transition_duration(crate::ui::motion::STANDARD_MS);
+    let content_stack = super::content_stack::build();
+    // Size to the visible page in both axes: Stats/Device pages must not
+    // inherit the library's minimum size, nor vice versa, or a hidden tall
+    // device list can push the sidebar activity below the window edge.
     content_stack.add_named(&track_content, Some("library"));
     content_stack.add_named(stats_view.widget(), Some("stats"));
     content_stack.add_named(device_view.widget(), Some("device"));
@@ -529,14 +529,6 @@ pub fn build(
         &decorations,
         &device_sync,
     );
-    {
-        let preferences = Rc::downgrade(&preferences);
-        concerts_view.set_on_open_preferences(move || {
-            if let Some(preferences) = preferences.upgrade() {
-                preferences.present_plugins(&["concerts"]);
-            }
-        });
-    }
     {
         let preferences = preferences.clone();
         device_view.set_on_settings(move || preferences.present_page("synchronization"));

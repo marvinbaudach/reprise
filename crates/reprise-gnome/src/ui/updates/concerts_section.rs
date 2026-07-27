@@ -28,6 +28,10 @@ pub(super) fn concerts_section_subtitle(radius_active: bool) -> String {
     })
 }
 
+pub(super) fn concerts_section_visible(enabled: bool, has_credentials: bool) -> bool {
+    enabled && has_credentials
+}
+
 pub(super) fn delta_presentations(
     rows: &[ConcertRow],
     today: NaiveDate,
@@ -83,7 +87,6 @@ pub(super) struct ConcertsSection {
     root: gtk4::Box,
     list: gtk4::Box,
     subtitle: gtk4::Label,
-    credentials_hint: gtk4::Label,
     on_open_url: RefCell<OnOpenUrl>,
 }
 
@@ -100,21 +103,14 @@ impl ConcertsSection {
         header.append(&title);
         header.append(&subtitle);
 
-        let credentials_hint =
-            gtk4::Label::new(Some(&strings::text(strings::UPDATES_CONCERTS_NEEDS_KEY)));
-        credentials_hint.set_wrap(true);
-        credentials_hint.set_xalign(0.0);
-        credentials_hint.add_css_class("dim-label");
         let list = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
         root.append(&header);
-        root.append(&credentials_hint);
         root.append(&list);
         Self {
             root,
             list,
             subtitle,
-            credentials_hint,
             on_open_url: RefCell::new(Rc::new(|_| {})),
         }
     }
@@ -135,14 +131,13 @@ impl ConcertsSection {
         rows: &[ConcertRow],
         today: NaiveDate,
     ) {
-        self.root.set_visible(enabled);
-        if !enabled {
+        let visible = concerts_section_visible(enabled, has_credentials);
+        self.root.set_visible(visible);
+        if !visible {
             return;
         }
         self.subtitle
             .set_label(&concerts_section_subtitle(radius_active));
-        self.credentials_hint.set_visible(!has_credentials);
-        self.list.set_visible(has_credentials);
         while let Some(child) = self.list.first_child() {
             self.list.remove(&child);
         }
@@ -223,6 +218,13 @@ mod tests {
             concerts_section_subtitle(false),
             strings::text(strings::UPDATES_NEWLY_ANNOUNCED)
         );
+    }
+
+    #[test]
+    fn conc_9_section_is_absent_without_provider_credentials() {
+        assert!(concerts_section_visible(true, true));
+        assert!(!concerts_section_visible(true, false));
+        assert!(!concerts_section_visible(false, true));
     }
 
     #[test]
