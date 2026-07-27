@@ -14,6 +14,7 @@ use reprise_core::device_sync::{
 use super::device_sync_runtime::{
     DeviceSyncRuntime, DeviceSyncState, DeviceView, PlannedSyncPhase, SyncStep,
 };
+use super::device_sync_storage_bar::StorageBar;
 use super::device_sync_strings;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -98,15 +99,24 @@ fn storage_summary(storage: &DeviceStorageProjection) -> String {
             device_sync_strings::file_size(shortfall_bytes)
         ),
         StorageProjectionState::CapacityUnknown => {
-            let reprise = storage
-                .after_sync
-                .as_ref()
-                .map_or(storage.current.reprise_music_bytes, |after| {
-                    after.reprise_music_bytes
-                });
+            let Some(after) = &storage.after_sync else {
+                return "Storage capacity and after-sync composition are unknown.".into();
+            };
             format!(
-                "After sync: {} Reprise · available space unknown",
-                device_sync_strings::file_size(reprise)
+                "Music {} · after sync {} · Other unknown · Free {}",
+                device_sync_strings::file_size(
+                    storage
+                        .current
+                        .reprise_music_bytes
+                        .saturating_add(storage.current.other_music_bytes)
+                ),
+                storage_delta(
+                    storage.current.reprise_music_bytes,
+                    after.reprise_music_bytes
+                ),
+                after
+                    .free_bytes
+                    .map_or_else(|| "unknown".into(), device_sync_strings::file_size)
             )
         }
         StorageProjectionState::Fits => {
@@ -117,11 +127,36 @@ fn storage_summary(storage: &DeviceStorageProjection) -> String {
                 .free_bytes
                 .map_or_else(|| "unknown".into(), device_sync_strings::file_size);
             format!(
-                "After sync: {} Reprise · {} other music · {free} free",
-                device_sync_strings::file_size(after.reprise_music_bytes),
-                device_sync_strings::file_size(after.other_music_bytes),
+                "Music {} · after sync {} · Other {} · Free {free}",
+                device_sync_strings::file_size(
+                    storage
+                        .current
+                        .reprise_music_bytes
+                        .saturating_add(storage.current.other_music_bytes)
+                ),
+                storage_delta(
+                    storage.current.reprise_music_bytes,
+                    after.reprise_music_bytes
+                ),
+                after
+                    .other_used_bytes
+                    .map_or_else(|| "unknown".into(), device_sync_strings::file_size),
             )
         }
+    }
+}
+
+fn storage_delta(current_reprise: u64, after_reprise: u64) -> String {
+    match after_reprise.cmp(&current_reprise) {
+        std::cmp::Ordering::Greater => format!(
+            "+{}",
+            device_sync_strings::file_size(after_reprise - current_reprise)
+        ),
+        std::cmp::Ordering::Less => format!(
+            "−{}",
+            device_sync_strings::file_size(current_reprise - after_reprise)
+        ),
+        std::cmp::Ordering::Equal => "no change".into(),
     }
 }
 
@@ -279,7 +314,7 @@ struct SyncDialogSurface {
     playlist_rows: RefCell<Vec<(reprise_core::device_sync::SelectionSource, adw::SwitchRow)>>,
     changes: adw::ActionRow,
     storage: adw::ActionRow,
-    storage_bar: gtk4::ProgressBar,
+    storage_bar: StorageBar,
     notice: adw::ActionRow,
     progress: adw::ActionRow,
     progress_bar: gtk4::ProgressBar,
@@ -327,12 +362,8 @@ impl SyncDialogSurface {
         summary_group.add(&changes);
         let storage = adw::ActionRow::builder().title("Storage").build();
         summary_group.add(&storage);
-        let storage_bar = gtk4::ProgressBar::new();
-        storage_bar.set_show_text(false);
-        storage_bar.update_property(&[gtk4::accessible::Property::Label(
-            "Projected Reprise storage use",
-        )]);
-        summary_group.add(&storage_bar);
+        let storage_bar = StorageBar::new();
+        summary_group.add(storage_bar.widget());
         page.add(&summary_group);
 
         let status_group = adw::PreferencesGroup::builder().title("Status").build();
@@ -466,15 +497,7 @@ impl SyncDialogSurface {
         );
         self.storage
             .set_subtitle(&storage_summary(&device.page.storage));
-        let storage_fraction = device.page.storage.after_sync.as_ref().and_then(|after| {
-            after
-                .total_bytes
-                .filter(|total| *total > 0)
-                .map(|total| after.reprise_music_bytes as f64 / total as f64)
-        });
-        self.storage_bar.set_visible(storage_fraction.is_some());
-        self.storage_bar
-            .set_fraction(storage_fraction.unwrap_or(0.0).clamp(0.0, 1.0));
+        self.storage_bar.update(&device.page.storage);
         self.update_notice(device);
         self.update_progress(&device.sync_phase);
         self.update_actions(device);
