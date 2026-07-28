@@ -158,12 +158,7 @@ fn first_surface(widget: &gtk4::Widget) -> Option<gtk4::Widget> {
 /// settled before a display test measures them.
 #[cfg(test)]
 pub(in crate::ui) fn settle_layout() {
-    let main_loop = gtk4::glib::MainLoop::new(None, false);
-    let quit = main_loop.clone();
-    gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(200), move || {
-        quit.quit();
-    });
-    main_loop.run();
+    crate::ui::test_settle::settle_for(std::time::Duration::from_millis(200));
 }
 
 #[cfg(test)]

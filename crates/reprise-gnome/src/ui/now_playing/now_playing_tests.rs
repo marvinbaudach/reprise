@@ -4,12 +4,7 @@ use libadwaita::prelude::AdwApplicationWindowExt;
 use std::time::Duration;
 
 fn wait_for_layout(milliseconds: u64) {
-    let main_loop = gtk4::glib::MainLoop::new(None, false);
-    let quit = main_loop.clone();
-    gtk4::glib::timeout_add_local_once(Duration::from_millis(milliseconds), move || {
-        quit.quit();
-    });
-    main_loop.run();
+    crate::ui::test_settle::settle_for(Duration::from_millis(milliseconds));
 }
 
 fn loaded_track() -> NowPlaying {
