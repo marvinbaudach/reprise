@@ -31,7 +31,9 @@ pub use types::*;
 struct DeviceState {
     descriptor: DeviceDescriptor,
     connected: bool,
-    generation: u64,
+    /// The run that currently owns this device, if any. Identity of this
+    /// handle is what tells a superseded run to stop writing here.
+    machine: Option<Rc<RefCell<reprise_core::device_sync::DeviceSyncMachine>>>,
     cancellable: Option<gio::Cancellable>,
     storage: DeviceStorageSnapshot,
     managed_files: Vec<ManagedDeviceFile>,
@@ -56,7 +58,7 @@ impl DeviceState {
         Self {
             descriptor,
             connected: true,
-            generation: 0,
+            machine: None,
             cancellable: None,
             storage: DeviceStorageSnapshot::default(),
             managed_files: Vec::new(),
@@ -108,7 +110,7 @@ impl DeviceState {
     }
 
     fn is_active(&self) -> bool {
-        self.planned_cancel.is_some()
+        self.machine.is_some()
     }
 
     fn is_busy(&self) -> bool {
@@ -176,12 +178,7 @@ impl DeviceSyncRuntime {
             .iter_mut()
             .find(|device| device.descriptor.id == device_id)
         {
-            if let Some(cancelled) = &device.planned_cancel {
-                cancelled.store(true, std::sync::atomic::Ordering::SeqCst);
-            }
-            if let Some(cancellable) = &device.cancellable {
-                cancellable.cancel();
-            }
+            cancel_device_run(device);
         }
         self.notify();
     }
@@ -400,17 +397,14 @@ impl DeviceSyncRuntime {
                 state.connected = false;
                 state.scanning = false;
                 state.scan_generation = state.scan_generation.saturating_add(1);
-                if let Some(cancelled) = &state.planned_cancel {
-                    cancelled.store(true, std::sync::atomic::Ordering::SeqCst);
+                if state.machine.is_some() {
                     state.resume_planned = state.descriptor.reconnectable;
-                    if let Some(cancellable) = &state.cancellable {
-                        cancellable.cancel();
-                    }
+                    cancel_device_run(state);
                 }
             }
             states.retain(|state| {
                 incoming.contains_key(&state.descriptor.id)
-                    || state.planned_cancel.is_some()
+                    || state.machine.is_some()
                     || state.resume_planned
             });
             for (id, descriptor) in incoming {
@@ -480,6 +474,22 @@ impl DeviceSyncRuntime {
         for callback in callbacks {
             callback(state.clone());
         }
+    }
+}
+
+/// Stops a device's run in all three places it can be interrupted: the
+/// reducer, the GIO copy in flight, and the transcoder thread.
+fn cancel_device_run(device: &mut DeviceState) {
+    if let Some(machine) = &device.machine {
+        machine
+            .borrow_mut()
+            .dispatch(reprise_core::device_sync::Event::Cancel);
+    }
+    if let Some(cancelled) = &device.planned_cancel {
+        cancelled.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+    if let Some(cancellable) = &device.cancellable {
+        cancellable.cancel();
     }
 }
 
