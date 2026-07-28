@@ -297,15 +297,7 @@ mod tests {
     /// Iterates the default main context until `ms` wall-clock milliseconds
     /// have passed, so frame-clock driven CSS animation can progress.
     fn pump_ms(ms: u64) {
-        let done = std::rc::Rc::new(std::cell::Cell::new(false));
-        let done_setter = done.clone();
-        gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(ms), move || {
-            done_setter.set(true);
-        });
-        let context = gtk4::glib::MainContext::default();
-        while !done.get() {
-            context.iteration(true);
-        }
+        crate::ui::test_settle::settle_for(std::time::Duration::from_millis(ms));
     }
 
     /// CSS T-V probe (motion plan, task T2): establishes whether GTK's CSS
