@@ -21,10 +21,16 @@ mod tests {
         let table = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         let scroller = build_episode_scroller(table.upcast_ref());
 
-        assert_eq!(
-            scroller.child(),
-            Some(table.clone().upcast::<gtk4::Widget>())
-        );
+        // GtkScrolledWindow wraps a non-scrollable child in a GtkViewport of
+        // its own, so the table is the viewport's child rather than the
+        // scroller's. Assert what PLAY-7b actually promises — that the table is
+        // what scrolls — instead of comparing against the wrapper.
+        let hosted = scroller
+            .child()
+            .and_downcast::<gtk4::Viewport>()
+            .expect("a non-scrollable child is hosted in a viewport")
+            .child();
+        assert_eq!(hosted, Some(table.clone().upcast::<gtk4::Widget>()));
         assert!(scroller.vexpands());
         assert!(!scroller.propagates_natural_height());
     }
