@@ -38,6 +38,12 @@ const RELEASE_PER_WINDOW: f32 = 0.06;
 const AURA_ONSET: f32 = 0.55;
 /// Reported level of digital silence.
 const SILENCE_DBFS: f32 = -140.0;
+/// Below this the filter state is snapped to zero. Left alone it decays
+/// asymptotically into subnormal floats, where arithmetic costs an order of
+/// magnitude more — on the audio thread, during every fade-out and every gap
+/// between tracks. The threshold sits far above the subnormal range and about
+/// 600 dB below anything audible, so nothing real is truncated.
+const DENORMAL_FLOOR: f64 = 1.0e-30;
 
 /// One reading of how hard the bass is currently pushing.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -272,9 +278,12 @@ impl Biquad {
     }
 
     fn process(&mut self, x: f64) -> f64 {
-        let y = self.b0 * x + self.b1 * self.x1 + self.b2 * self.x2
+        let mut y = self.b0 * x + self.b1 * self.x1 + self.b2 * self.x2
             - self.a1 * self.y1
             - self.a2 * self.y2;
+        if y.abs() < DENORMAL_FLOOR {
+            y = 0.0;
+        }
         self.x2 = self.x1;
         self.x1 = x;
         self.y2 = self.y1;
@@ -287,5 +296,26 @@ impl Biquad {
         self.x2 = 0.0;
         self.y1 = 0.0;
         self.y2 = 0.0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_settling_filter_snaps_to_zero_instead_of_drifting_into_denormals() {
+        let mut biquad = Biquad::low_pass(44_100.0, LOW_PASS_HZ);
+        for _ in 0..1_000 {
+            biquad.process(1.0);
+        }
+
+        // One second of digital silence — a track gap or the end of a fade.
+        for _ in 0..44_100 {
+            biquad.process(0.0);
+        }
+
+        assert_eq!(biquad.y1, 0.0);
+        assert_eq!(biquad.y2, 0.0);
     }
 }
