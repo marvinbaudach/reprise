@@ -296,6 +296,75 @@ fn playlist_replace_and_read_round_trip() {
     );
 }
 
+/// The MTP backend can answer a rename with success without performing it,
+/// which is why publishing is proven rather than believed. A local fixture
+/// cannot fake that answer, so the proof itself is exercised directly.
+#[test]
+fn mtp_21_a_published_file_is_proven_by_its_expected_byte_count() {
+    let (temp, _storage) = fixture();
+    let path = temp.path().join("published.opus");
+    fs::write(&path, b"abcdef").unwrap();
+    let published = gio::File::for_path(&path);
+
+    assert!(run(verify_published(&published, 6)).is_ok());
+    assert!(matches!(
+        run(verify_published(&published, 9)),
+        Err(DeviceIoError::SizeMismatch {
+            expected: 9,
+            actual: 6,
+        })
+    ));
+}
+
+#[test]
+fn mtp_21_a_rename_that_left_nothing_behind_is_reported_not_believed() {
+    let (temp, _storage) = fixture();
+    let missing = gio::File::for_path(temp.path().join("never-arrived.opus"));
+
+    assert!(matches!(
+        run(verify_published(&missing, 6)),
+        Err(DeviceIoError::PublishNotApplied { .. })
+    ));
+}
+
+#[test]
+fn mtp_21_replacing_an_existing_track_publishes_it_without_leaving_a_partial() {
+    let (temp, storage) = fixture();
+    fs::create_dir_all(temp.path().join("Music/Reprise/Road")).unwrap();
+    fs::write(temp.path().join("source.flac"), b"new!").unwrap();
+    let final_path = temp.path().join("Music/Reprise/Road/7-source.flac");
+    fs::write(&final_path, b"old!").unwrap();
+
+    run(storage.replace_track(
+        &gio::File::for_path(temp.path().join("source.flac")),
+        "Road/7-source.flac",
+        4,
+        &gio::Cancellable::new(),
+        |_copied, _total| {},
+    ))
+    .unwrap();
+
+    assert_eq!(fs::read(&final_path).unwrap(), b"new!");
+    assert!(!temp
+        .path()
+        .join("Music/Reprise/Road/7-source.flac.part")
+        .exists());
+}
+
+#[test]
+fn mtp_21_rewriting_a_playlist_replaces_it_without_leaving_a_partial() {
+    let (temp, storage) = fixture();
+    run(storage.replace_playlist("Road", b"#EXTM3U\nRoad/1-old.flac\n".to_vec())).unwrap();
+
+    run(storage.replace_playlist("Road", b"#EXTM3U\nRoad/2-new.flac\n".to_vec())).unwrap();
+
+    assert_eq!(
+        fs::read(temp.path().join("Music/Reprise/Road.m3u8")).unwrap(),
+        b"#EXTM3U\nRoad/2-new.flac\n"
+    );
+    assert!(!temp.path().join("Music/Reprise/Road.m3u8.part").exists());
+}
+
 #[test]
 fn pre_cancelled_copy_leaves_no_partial_file() {
     let (temp, storage) = fixture();
