@@ -22,6 +22,7 @@ pub(in crate::ui) fn build_track_content_stack() -> gtk4::Stack {
     gtk4::Stack::builder()
         .vexpand(true)
         .hhomogeneous(false)
+        .vhomogeneous(false)
         .transition_type(gtk4::StackTransitionType::Crossfade)
         .transition_duration(crate::ui::motion::STANDARD_MS)
         .build()
@@ -109,6 +110,50 @@ mod tests {
 
         assert!(stack.vexpands());
         assert!(stack.height() > 300, "stack height was {}", stack.height());
+        window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn style_5_hidden_tall_track_page_cannot_push_the_player_out_of_view() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        if gtk4::init().is_err() {
+            return;
+        }
+        let stack = super::build_track_content_stack();
+        let visible_page = gtk4::Label::new(Some("visible tracks"));
+        let hidden_page = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        hidden_page.set_height_request(1_200);
+        stack.add_named(&visible_page, Some("list"));
+        stack.add_named(&hidden_page, Some("hidden"));
+        stack.set_visible_child_name("list");
+
+        let player = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        player.set_height_request(86);
+        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        root.append(&stack);
+        root.append(&player);
+        let window = gtk4::Window::builder()
+            .default_width(1_200)
+            .default_height(420)
+            .child(&root)
+            .build();
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        assert!(
+            !stack.is_vhomogeneous(),
+            "hidden track pages must not define the visible page height"
+        );
+        let player_bounds = player
+            .compute_bounds(&window)
+            .expect("player must share the window coordinate space");
+        assert!(
+            player_bounds.y() + player_bounds.height() <= window.height() as f32,
+            "player ended at {} outside the {} px window",
+            player_bounds.y() + player_bounds.height(),
+            window.height()
+        );
         window.close();
     }
 }

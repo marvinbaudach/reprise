@@ -3,11 +3,10 @@
 //! Queue — both with a track-count label), PLAYLISTS (`library::playlists::
 //! list`, each with its track count, plus grouped create/import actions), and
 //! SMART (`library::playlists::list_smart`, no counts — the mockup doesn't
-//! show any), then a shared activity slot for connected-device sync and
-//! library scans, and finally the "problem sources" — Import errors / Missing
-//! files, each shown only while its count is non-zero. Problem sources are
-//! pinned last so they stay flush with the sidebar's bottom edge; active
-//! progress stacks directly above them (FB-2a).
+//! show any), persistent connected-device state, then one bottom-pinned region
+//! that shows either active progress cards or the complete Issues surface
+//! (heading plus Import errors / Missing files). Progress temporarily replaces
+//! that surface instead of pushing it upward (FB-8).
 //!
 //! ## Row identity: a plain `Vec`, not GObject data
 //!
@@ -61,7 +60,15 @@ use libadwaita as adw;
 use rusqlite::Connection;
 
 use super::sidebar_activity_slot::SidebarActivitySlot;
+use super::sidebar_boundary_navigation::wire_collection_boundary_navigation;
+#[cfg(test)]
+use super::sidebar_issues_section::{
+    bottom_region_placement, issues_surface_for_progress, IssuesSurface,
+};
 use super::sidebar_navigation_scroller::build_navigation_scroller;
+use super::sidebar_root::build_root;
+#[cfg(test)]
+use super::sidebar_root::{sidebar_root_order, SidebarRootChild};
 use reprise_core::view_source::ViewSource;
 
 /// One row's identity: the built widget, the `ViewSource` selecting it
@@ -84,12 +91,13 @@ use super::sidebar_row_wiring::{wire_focus_leave_resync, wire_row_activated, wir
 pub(in crate::ui) struct Shared {
     pub(in crate::ui) conn: Rc<RefCell<Connection>>,
     pub(in crate::ui) listbox: gtk4::ListBox,
-    /// The non-scrolling "Issues" list (Import errors / Missing files),
-    /// pinned at the very bottom below the shared activity slot (design
-    /// mockup 14a; QA #6). A single `ListBox` can't bottom-pin a subset of
-    /// its rows, so this is its own list, with selection mirrored against `listbox`
-    /// (`wire_row_selected` clears the sibling on select). Hidden entirely
-    /// when there are no issues.
+    /// The non-scrolling issue-source list (Import errors / Missing files),
+    /// pinned at the very bottom of the Issues section below its shared
+    /// activity slot (design mockup 14a; QA #6). A single `ListBox` can't
+    /// bottom-pin a subset of the main navigation rows, so this is its own
+    /// list, with selection mirrored against `listbox` (`wire_row_selected`
+    /// clears the sibling on select). Hidden entirely when there are no issue
+    /// sources; the separate Issues heading mirrors that visibility.
     pub(in crate::ui) issues_listbox: gtk4::ListBox,
     /// Supplies the current queue's length for the "Queue" row's counter.
     /// Wired once at construction (mirrors `TrackList`'s `queue_ids_
@@ -189,8 +197,8 @@ pub(in crate::ui) struct Shared {
     pub(in crate::ui) refresh_count: Cell<u64>,
 }
 
-/// Handle to the built sidebar widget: scrolling navigation, the shared
-/// activity slot, then the bottom-pinned non-scrolling issues list.
+/// Handle to the built sidebar widget: scrolling navigation, then the
+/// bottom-pinned region (either Issues or active scan progress).
 pub struct Sidebar {
     pub(in crate::ui) shared: Rc<Shared>,
     root: gtk4::Box,
@@ -221,7 +229,7 @@ impl Sidebar {
         let scrolled = build_navigation_scroller(&listbox);
 
         let activity_slot = SidebarActivitySlot::new();
-        let root = build_root(&scrolled, activity_slot.widget(), &issues_listbox);
+        let root = build_root(&scrolled, &activity_slot, &issues_listbox);
 
         let shared = Rc::new(Shared {
             conn,
@@ -374,20 +382,9 @@ impl Sidebar {
     pub fn bind_device_sync(
         &self,
         runtime: &Rc<crate::ui::device_sync_runtime::DeviceSyncRuntime>,
+        on_open: Rc<dyn Fn(String, String)>,
     ) {
-        let shared = Rc::downgrade(&self.shared);
-        let section = super::sidebar_device_card::bind(
-            runtime,
-            Rc::new(move |serial, name| {
-                let Some(shared) = shared.upgrade() else {
-                    return;
-                };
-                let callback = shared.on_select.borrow().clone();
-                if let Some(callback) = callback {
-                    callback(ViewSource::Device { serial }, name);
-                }
-            }),
-        );
+        let section = super::sidebar_device_card::bind(runtime, on_open);
         self.activity_slot.set_device_section(&section);
     }
 }
@@ -407,112 +404,6 @@ pub(in crate::ui) fn remember_issue_focus_entry(listbox: &gtk4::ListBox, row: &g
     if listbox.focus_child().is_none() {
         listbox.set_focus_child(Some(row));
     }
-}
-
-fn first_issue_row(shared: &Shared) -> Option<gtk4::ListBoxRow> {
-    shared
-        .rows
-        .borrow()
-        .iter()
-        .find(|(row, _, _)| row.parent().as_ref() == Some(shared.issues_listbox.upcast_ref()))
-        .map(|(row, _, _)| row.clone())
-}
-
-fn last_main_row(shared: &Shared) -> Option<gtk4::ListBoxRow> {
-    shared
-        .rows
-        .borrow()
-        .iter()
-        .rev()
-        .find(|(row, _, _)| row.parent().as_ref() == Some(shared.listbox.upcast_ref()))
-        .map(|(row, _, _)| row.clone())
-}
-
-fn wire_collection_boundary_navigation(shared: &Rc<Shared>) {
-    let down = gtk4::EventControllerKey::new();
-    down.set_propagation_phase(gtk4::PropagationPhase::Capture);
-    let shared_down = shared.clone();
-    down.connect_key_pressed(move |_, key, _, modifiers| {
-        if key != gtk4::gdk::Key::Down || !modifiers.is_empty() {
-            return gtk4::glib::Propagation::Proceed;
-        }
-        let Some(current) = last_main_row(&shared_down) else {
-            return gtk4::glib::Propagation::Proceed;
-        };
-        if !current.has_focus() {
-            return gtk4::glib::Propagation::Proceed;
-        }
-        let Some(target) = first_issue_row(&shared_down) else {
-            return gtk4::glib::Propagation::Proceed;
-        };
-        if target.grab_focus() {
-            gtk4::glib::Propagation::Stop
-        } else {
-            gtk4::glib::Propagation::Proceed
-        }
-    });
-    shared.listbox.add_controller(down);
-
-    let up = gtk4::EventControllerKey::new();
-    up.set_propagation_phase(gtk4::PropagationPhase::Capture);
-    let shared_up = shared.clone();
-    up.connect_key_pressed(move |_, key, _, modifiers| {
-        if key != gtk4::gdk::Key::Up || !modifiers.is_empty() {
-            return gtk4::glib::Propagation::Proceed;
-        }
-        let Some(current) = first_issue_row(&shared_up) else {
-            return gtk4::glib::Propagation::Proceed;
-        };
-        if !current.has_focus() {
-            return gtk4::glib::Propagation::Proceed;
-        }
-        let Some(target) = last_main_row(&shared_up) else {
-            return gtk4::glib::Propagation::Proceed;
-        };
-        if target.grab_focus() {
-            gtk4::glib::Propagation::Stop
-        } else {
-            gtk4::glib::Propagation::Proceed
-        }
-    });
-    shared.issues_listbox.add_controller(up);
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum SidebarRootChild {
-    Navigation,
-    Activity,
-    Issues,
-}
-
-fn sidebar_root_order() -> [SidebarRootChild; 3] {
-    [
-        SidebarRootChild::Navigation,
-        SidebarRootChild::Activity,
-        SidebarRootChild::Issues,
-    ]
-}
-
-/// Assembles the sidebar's vertical root. The scrolling navigation list
-/// expands to fill the top; the shared activity slot (device sync / scan /
-/// relink cards) claims height only while something is active; and the issues
-/// list (Import errors / Missing files) is appended last so it stays flush
-/// with the sidebar's bottom edge. Active progress therefore grows upward
-/// without moving Issues away from the bottom (FB-2a).
-fn build_root(
-    scrolled: &gtk4::ScrolledWindow,
-    activity_slot: &gtk4::Box,
-    issues_listbox: &gtk4::ListBox,
-) -> gtk4::Box {
-    let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    for child in sidebar_root_order() {
-        match child {
-            SidebarRootChild::Navigation => root.append(scrolled),
-            SidebarRootChild::Activity => root.append(activity_slot),
-            SidebarRootChild::Issues => root.append(issues_listbox),
-        }
-    }
-    root
 }
 
 /// Re-runs the count/list queries and rebuilds every row. `force_select`
@@ -588,3 +479,7 @@ pub(in crate::ui) fn find_row(
 #[cfg(test)]
 #[path = "sidebar_tests.rs"]
 mod resolve_select_source_tests;
+
+#[cfg(test)]
+#[path = "sidebar_layout_tests.rs"]
+mod sidebar_layout_tests;

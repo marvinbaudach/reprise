@@ -14,6 +14,8 @@ fn release(id: &str) -> reprise_core::artist_news::StoredRelease {
         fallback_accent: "#123456".into(),
         presence: reprise_core::artist_news::LibraryPresence::Absent,
         announce_url: None,
+        track_count: None,
+        local_track_count: 0,
     }
 }
 

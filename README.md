@@ -78,7 +78,10 @@ it is a better music player, with evidence that each change is correct.
 ## Build and run
 
 Requirements: Rust 1.92+, Meson 1.3+, Ninja, GTK 4.22+, libadwaita 1.9+,
-SQLite, gettext, GStreamer 1.x, and GVfs with its MTP volume monitor.
+SQLite, gettext, GStreamer 1.x with the Good Plug-ins, and GVfs with its MTP
+volume monitor. Android synchronization specifically requires `lamemp3enc`
+and `id3v2mux`; `scripts/check-device-sync-gstreamer.sh` verifies the complete
+runtime factory set.
 
 Install the GStreamer codec plugins needed by the files you want to play.
 

@@ -19,6 +19,7 @@ gstreamer-app = "0.25"
 # enables (a dedicated OS thread using zbus::blocking, no integration with
 # glib's MainContext needed for MPRIS itself).
 zbus = "5"
+reprise-runtime-protocol = { path = "../reprise-runtime-protocol" }
 async-channel = "2.5.0"
 tracing = "0.1"
 gio = { version = "0.22", features = ["v2_74"] }
@@ -28,6 +29,7 @@ trash = "5"
 
 [dev-dependencies]
 tempfile = "3"
+lofty = "0.24"
 
 [lints]
 workspace = true

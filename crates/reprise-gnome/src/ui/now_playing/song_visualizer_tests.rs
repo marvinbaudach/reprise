@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn ac_20_visual_chrome_is_a_bars_only_canvas() {
+fn ac_23_visual_chrome_is_a_bars_only_canvas() {
     let css = css();
     assert!(css.contains("color: @reprise_player_accent"));
     assert!(css.contains(".reprise-song-visual-canvas"));
@@ -10,11 +10,12 @@ fn ac_20_visual_chrome_is_a_bars_only_canvas() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_20_visual_widget_exposes_only_a_labeled_bars_canvas() {
+fn ac_23_visual_widget_exposes_only_a_labeled_bars_canvas() {
     gtk4::init().unwrap();
     let visualizer = SongVisualizer::new();
 
-    assert_eq!(visualizer.root.observe_children().n_items(), 1);
+    // The canvas, and under it the analysis readout — nothing else.
+    assert_eq!(visualizer.root.observe_children().n_items(), 2);
     assert_eq!(visualizer.area.accessible_role(), gtk4::AccessibleRole::Img);
     assert!(gtk4::test_accessible_has_property(
         &visualizer.area,
@@ -22,48 +23,263 @@ fn ac_20_visual_widget_exposes_only_a_labeled_bars_canvas() {
     ));
 }
 
-/// Builds an engine that has just been hammered by a beat-then-sustain:
-/// playing, accented, 20 silent frames (settles the envelopes at rest), one
-/// full-spectrum impact frame (fires the beat/kick off the silence-to-loud
-/// flux jump — a real kick is broadband for an instant), then 9 frames of a
-/// realistic bass-heavy, treble-light sustain.
-///
-/// With the honest-loudness spectrum mapping (`SpectrumAnalyzer::ingest`,
-/// `playback.rs`), each band's height reflects its actual level, so the
-/// bass-heavy sustain reads back as a genuine spectrum silhouette (loud bass
-/// tapering to quiet treble) rather than a flat maxed-out wall. Mirrors
-/// `reprise_core::visuals::engine::lively_engine`, which is test-only and not
-/// exported across the crate boundary.
+#[test]
+fn ac_23_the_analysis_readout_reports_the_values_the_glow_uses() {
+    let values = analysis_values(BassPressure {
+        level_dbfs: -14.2,
+        baseline_dbfs: -20.0,
+        impact: 0.42,
+        aura: 0.0,
+    });
+
+    // Whole decibels: a tenth of a dB is neither readable at this refresh rate
+    // nor affordable in a 300 px panel, where it truncated "Baseline".
+    assert_eq!(values.len(), 4);
+    assert_eq!(values[0], "-14 dBFS");
+    assert_eq!(values[1], "-20 dBFS");
+    assert_eq!(values[2], "0.42");
+    assert_eq!(values[3], "0.00");
+}
+
+#[test]
+fn ac_23_a_silent_analysis_reads_as_a_dash_instead_of_a_bottomed_out_level() {
+    let values = analysis_values(BassPressure {
+        level_dbfs: -140.0,
+        baseline_dbfs: -140.0,
+        impact: 0.0,
+        aura: 0.0,
+    });
+
+    assert_eq!(values[0], "—");
+    assert_eq!(values[1], "—");
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn ac_23_the_readout_fits_in_the_strip_left_under_the_canvas() {
+    // The panel is a fixed 300 px wide and the canvas takes everything above,
+    // leaving roughly one strip. A readout taller than that is silently
+    // clipped — the live session showed Impact and Breakdown cut off.
+    const PANEL_WIDTH: i32 = 300;
+    const STRIP_HEIGHT: i32 = 52;
+
+    gtk4::init().unwrap();
+    let readout = AnalysisReadout::new();
+
+    let (_, natural, _, _) = readout
+        .root
+        .measure(gtk4::Orientation::Vertical, PANEL_WIDTH);
+
+    assert!(
+        natural <= STRIP_HEIGHT,
+        "the readout needs {natural} px but only ~{STRIP_HEIGHT} px are free under the canvas"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn ac_23_the_readout_names_stay_readable_at_the_panel_width() {
+    // Caption and value share one line, so the captions are the first thing
+    // to be ellipsized when they don't fit — the live session showed "BA…"
+    // and "BASELI…". What counts is not the 300 px panel but what is left
+    // inside `.reprise-song-visuals` and its 18 px side margins, minus some
+    // slack: at the bare 264 the live panel still truncated "Baseline".
+    // Measured with the real stylesheet, not the default font.
+    const PANEL_WIDTH: i32 = 300 - 2 * 18 - 16;
+
+    gtk4::init().unwrap();
+    crate::ui::style::install_css_string_for_test(&css());
+
+    let readout = AnalysisReadout::new();
+    readout.set(BassPressure {
+        level_dbfs: -41.7,
+        baseline_dbfs: -41.1,
+        impact: 0.35,
+        aura: 0.95,
+    });
+
+    let (_, natural, _, _) = readout.root.measure(gtk4::Orientation::Horizontal, -1);
+
+    assert!(
+        natural <= PANEL_WIDTH,
+        "the readout wants {natural} px, so its captions get truncated in the {PANEL_WIDTH} px panel"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn ac_23_the_readout_follows_the_measurement_the_player_delivers() {
+    use reprise_core::playback::{SpectrumFrame, SPECTRUM_BAND_COUNT};
+
+    gtk4::init().unwrap();
+    let visualizer = SongVisualizer::new();
+    visualizer.set_playback_state(PlaybackState::Playing);
+
+    visualizer.set_spectrum(
+        SpectrumFrame::from_cava_bars([0.5; SPECTRUM_BAND_COUNT]).with_bass_pressure(
+            BassPressure {
+                level_dbfs: -11.4,
+                baseline_dbfs: -19.0,
+                impact: 0.87,
+                aura: 0.31,
+            },
+        ),
+    );
+
+    let shown = visualizer.readout.shown_values();
+    assert_eq!(shown[0], "-11 dBFS");
+    assert_eq!(shown[2], "0.87");
+    assert_eq!(shown[3], "0.31");
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn ac_11_loading_a_track_reaches_the_engine_and_rests_the_canvas_alive() {
+    gtk4::init().unwrap();
+    let visualizer = SongVisualizer::new();
+    let bar_shapes = |visualizer: &SongVisualizer| {
+        visualizer
+            .engine
+            .borrow()
+            .scene(548.0, 300.0)
+            .shapes
+            .into_iter()
+            .filter(|shape| matches!(shape.geom, reprise_core::visuals::Geom::Rect { .. }))
+            .count()
+    };
+
+    visualizer.set_playback_state(PlaybackState::Stopped);
+    visualizer.set_has_track(false);
+    for _ in 0..120 {
+        visualizer.engine.borrow_mut().tick();
+    }
+    assert_eq!(bar_shapes(&visualizer), 0, "an empty player draws nothing");
+
+    visualizer.set_has_track(true);
+    for _ in 0..120 {
+        visualizer.engine.borrow_mut().tick();
+    }
+    assert!(
+        bar_shapes(&visualizer) > 0,
+        "a loaded but resting track keeps a low wave on the canvas"
+    );
+}
+
+/// Builds a representative already-smoothed CAVA silhouette.
 fn lively_engine() -> VisualEngine {
-    use reprise_core::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
+    use reprise_core::playback::{SpectrumFrame, SPECTRUM_BAND_COUNT};
 
     let mut engine = VisualEngine::new();
     engine.set_playing(true);
-    engine.set_accent((0.22, 0.78, 0.74)); // app teal
-    let mut analyzer = SpectrumAnalyzer::new();
-    for _ in 0..20 {
-        engine.ingest(&analyzer.ingest([-80.0; SPECTRUM_ANALYSIS_BAND_COUNT]));
-        engine.tick();
-    }
-    // One full-scale impact frame: fires the beat and seeds every band's
-    // auto-gain ceiling near its max.
-    engine.ingest(&analyzer.ingest([0.0; SPECTRUM_ANALYSIS_BAND_COUNT]));
-    engine.tick();
-    // Bass-heavy descending sustain with a couple of ripples, not a flat
-    // 0 dB slam: db(i) = -6 - 55*(i/255)^0.6 + 8*sin(i*0.20), clamped. Held
-    // well above the auto-gain floor throughout, so it reads as a smooth
-    // taper rather than a hard on/off cutoff.
-    let mut shaped = [0.0_f32; SPECTRUM_ANALYSIS_BAND_COUNT];
-    for (i, bin) in shaped.iter_mut().enumerate() {
-        let x = i as f32 / (SPECTRUM_ANALYSIS_BAND_COUNT - 1) as f32;
-        let db = -6.0 - 55.0 * x.powf(0.6) + 8.0 * (i as f32 * 0.20).sin();
-        *bin = db.clamp(-80.0, 0.0);
-    }
-    for _ in 0..9 {
-        engine.ingest(&analyzer.ingest(shaped));
+    engine.set_accent((0.22, 0.78, 0.74));
+    let shaped = std::array::from_fn(|index| {
+        let x = index as f32 / (SPECTRUM_BAND_COUNT - 1) as f32;
+        (0.9 - 0.55 * x.powf(0.6) + 0.08 * (index as f32 * 0.45).sin()).clamp(0.0, 1.0)
+    });
+    engine.ingest(&SpectrumFrame::from_cava_bars(shaped));
+    engine
+}
+
+/// Engine at rest: a loaded track, no playback, idle wave settled in.
+fn resting_engine(ticks: usize) -> VisualEngine {
+    let mut engine = VisualEngine::new();
+    engine.set_accent((0.22, 0.78, 0.74));
+    engine.set_has_track(true);
+    for _ in 0..ticks {
         engine.tick();
     }
     engine
+}
+
+/// Replays a real decoded track through the full chain — CAVA bars plus the
+/// bass-pressure detector — and writes the scene at named moments, to confirm
+/// on screen what the calibration says in numbers.
+#[test]
+#[ignore = "visual verification: needs REPRISE_VIS_PCM (raw mono f32 44.1 kHz)"]
+fn render_bass_pressure_moments_ppm() {
+    use reprise_core::playback::{
+        BassPressureDetector, CavaBarProcessor, CavaConfig, SpectrumFrame, SPECTRUM_BAND_COUNT,
+    };
+
+    const RATE: u32 = 44_100;
+    const CHUNK: usize = 1_024;
+    let (w, h) = (548.0_f32, 300.0_f32);
+
+    let Ok(pcm_path) = std::env::var("REPRISE_VIS_PCM") else {
+        println!("set REPRISE_VIS_PCM to a raw mono f32 44.1 kHz file");
+        return;
+    };
+    let out = std::env::var("REPRISE_VIS_OUT").unwrap_or_else(|_| "/tmp".to_owned());
+    let moments: Vec<(String, f32)> = std::env::var("REPRISE_VIS_MOMENTS")
+        .unwrap_or_else(|_| "intro:8.0,rhythmic:42.5,drop:16.5".to_owned())
+        .split(',')
+        .filter_map(|entry| {
+            let (name, seconds) = entry.split_once(':')?;
+            Some((name.to_owned(), seconds.parse().ok()?))
+        })
+        .collect();
+
+    let bytes = std::fs::read(&pcm_path).expect("readable raw PCM");
+    let samples: Vec<f32> = bytes
+        .chunks_exact(size_of::<f32>())
+        .map(|bytes| f32::from_le_bytes(bytes.try_into().expect("four-byte PCM chunk")))
+        .collect();
+
+    let mut cava =
+        CavaBarProcessor::new(CavaConfig::new(RATE, SPECTRUM_BAND_COUNT)).expect("CAVA processor");
+    let mut detector = BassPressureDetector::new(RATE);
+    let mut engine = VisualEngine::new();
+    engine.set_playing(true);
+    engine.set_accent((0.22, 0.78, 0.74));
+
+    for (index, chunk) in samples.chunks(CHUNK).enumerate() {
+        let bands: [f32; SPECTRUM_BAND_COUNT] = cava
+            .process(chunk)
+            .try_into()
+            .expect("the configured bar count");
+        let pressure = detector.observe(chunk);
+        engine.ingest(&SpectrumFrame::from_cava_bars(bands).with_bass_pressure(pressure));
+        engine.tick();
+
+        let seconds = (index * CHUNK) as f32 / RATE as f32;
+        let Some((name, _)) = moments
+            .iter()
+            .find(|(_, at)| (seconds - at).abs() < CHUNK as f32 / RATE as f32 / 2.0)
+        else {
+            continue;
+        };
+
+        let scene = engine.scene(w, h);
+        let mut surface =
+            gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, w as i32, h as i32)
+                .unwrap();
+        {
+            let cr = gtk4::cairo::Context::new(&surface).unwrap();
+            cr.set_source_rgb(0.078, 0.094, 0.102);
+            let _ = cr.paint();
+            render::draw_scene(&cr, &scene);
+        }
+        let path = format!("{out}/pressure-{name}.ppm");
+        write_ppm(&mut surface, w as usize, h as usize, &path);
+        println!(
+            "{path}: t={seconds:.1}s bass={:.1} dBFS baseline={:.1} dBFS impact={:.2} aura={:.2}",
+            pressure.level_dbfs, pressure.baseline_dbfs, pressure.impact, pressure.aura
+        );
+    }
+}
+
+fn write_ppm(surface: &mut gtk4::cairo::ImageSurface, width: usize, height: usize, path: &str) {
+    let stride = surface.stride() as usize;
+    let data = surface.data().unwrap();
+    let mut ppm = format!("P6\n{width} {height}\n255\n").into_bytes();
+    for y in 0..height {
+        for x in 0..width {
+            let offset = y * stride + x * 4;
+            ppm.extend_from_slice(&[data[offset + 2], data[offset + 1], data[offset]]);
+        }
+    }
+    drop(data);
+    std::fs::write(path, ppm).unwrap();
 }
 
 #[test]
@@ -72,37 +288,30 @@ fn render_bars_gallery_ppm() {
     let out = std::env::var("REPRISE_VIS_OUT").unwrap_or_else(|_| "/tmp".to_owned());
     let (w, h) = (548.0_f32, 300.0_f32);
 
-    let engine = lively_engine();
-    let scene = engine.scene(w, h);
-
-    let mut surface =
-        gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, w as i32, h as i32).unwrap();
-    {
-        let cr = gtk4::cairo::Context::new(&surface).unwrap();
-        cr.set_source_rgb(0.078, 0.094, 0.102);
-        let _ = cr.paint();
-        render::draw_scene(&cr, &scene);
-    }
-    let (iw, ih) = (w as usize, h as usize);
-    let stride = surface.stride() as usize;
-    let data = surface.data().unwrap();
-    let mut ppm = format!("P6\n{iw} {ih}\n255\n").into_bytes();
-    for y in 0..ih {
-        for x in 0..iw {
-            let o = y * stride + x * 4;
-            ppm.extend_from_slice(&[data[o + 2], data[o + 1], data[o]]);
+    for (name, scene) in [
+        ("visualizer-idle", resting_engine(120).scene(w, h)),
+        ("visualizer-idle-late", resting_engine(300).scene(w, h)),
+        ("visualizer-bars", lively_engine().scene(w, h)),
+    ] {
+        let mut surface =
+            gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, w as i32, h as i32)
+                .unwrap();
+        {
+            let cr = gtk4::cairo::Context::new(&surface).unwrap();
+            cr.set_source_rgb(0.078, 0.094, 0.102);
+            let _ = cr.paint();
+            render::draw_scene(&cr, &scene);
         }
+        let path = format!("{out}/{name}.ppm");
+        write_ppm(&mut surface, w as usize, h as usize, &path);
+        println!("wrote {path}");
     }
-    drop(data);
-    let path = format!("{out}/visualizer-bars.ppm");
-    std::fs::write(&path, ppm).unwrap();
-    println!("wrote {path}");
 }
 
 #[test]
 #[ignore = "diagnostic: measures the complete scene-build and Cairo-render frame budget"]
 fn bars_fullscreen_render_budget_diagnostic() {
-    use reprise_core::playback::{SpectrumAnalyzer, SPECTRUM_ANALYSIS_BAND_COUNT};
+    use reprise_core::playback::{SpectrumFrame, SPECTRUM_BAND_COUNT};
     use std::time::Instant;
 
     const FRAMES: usize = 240;
@@ -110,7 +319,6 @@ fn bars_fullscreen_render_budget_diagnostic() {
 
     let mut over_budget = Vec::new();
     for (width, height) in [(548, 300), (960, 540), (1920, 1080)] {
-        let mut analyzer = SpectrumAnalyzer::new();
         let mut engine = VisualEngine::new();
         engine.set_playing(true);
         let surface =
@@ -119,12 +327,12 @@ fn bars_fullscreen_render_budget_diagnostic() {
         let mut timings = Vec::with_capacity(FRAMES);
 
         for frame in 0..FRAMES {
-            let mut input = [-42.0_f32; SPECTRUM_ANALYSIS_BAND_COUNT];
+            let mut input = [0.45_f32; SPECTRUM_BAND_COUNT];
             if frame % 10 == 0 {
-                input[..96].fill(-2.0);
-                input[96..].fill(-12.0);
+                input[..24].fill(0.98);
+                input[24..].fill(0.78);
             }
-            engine.ingest(&analyzer.ingest(input));
+            engine.ingest(&SpectrumFrame::from_cava_bars(input));
 
             let started = Instant::now();
             engine.tick();

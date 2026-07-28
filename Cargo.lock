@@ -2637,6 +2637,7 @@ dependencies = [
  "md-5 0.11.0",
  "notify",
  "quick-xml",
+ "realfft",
  "rusqlite",
  "serde",
  "serde_json",
@@ -2679,6 +2680,7 @@ version = "0.1.1"
 dependencies = [
  "chrono",
  "reprise-core",
+ "reprise-runtime-protocol",
  "rmcp",
  "rusqlite",
  "serde",
@@ -2699,11 +2701,22 @@ dependencies = [
  "gio",
  "gstreamer",
  "gstreamer-app",
+ "lofty",
  "reprise-core",
+ "reprise-runtime-protocol",
  "tempfile",
  "tracing",
  "trash",
  "zbus",
+]
+
+[[package]]
+name = "reprise-runtime-protocol"
+version = "0.1.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "zvariant",
 ]
 
 [[package]]

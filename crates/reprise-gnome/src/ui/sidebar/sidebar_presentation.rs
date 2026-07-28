@@ -154,31 +154,7 @@ pub(in crate::ui) fn build_issue_nav_row(
     navigation_row(&hbox, title)
 }
 
-/// Builds a navigation row with a trailing badge label instead of a count
-/// (e.g. "NEW"). The badge uses the accent color via `.stats-badge`.
-#[allow(dead_code)]
-pub(in crate::ui) fn build_nav_row_with_badge(
-    title: &str,
-    badge_text: &str,
-    icon: NavIcon,
-) -> gtk4::ListBoxRow {
-    let hbox = row_box();
-    hbox.append(&nav_icon(icon));
-
-    let title_label = gtk4::Label::new(Some(title));
-    title_label.set_xalign(0.0);
-    title_label.set_hexpand(true);
-    title_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-    hbox.append(&title_label);
-
-    let badge = gtk4::Label::new(Some(badge_text));
-    badge.add_css_class("stats-badge");
-    hbox.append(&badge);
-
-    navigation_row(&hbox, title)
-}
-
-pub(in crate::ui) fn append_header(listbox: &gtk4::ListBox, text: &str) -> gtk4::ListBoxRow {
+fn header_label(text: &str) -> gtk4::Label {
     let label = gtk4::Label::new(Some(text));
     label.set_xalign(0.0);
     label.add_css_class("caption-heading");
@@ -188,7 +164,11 @@ pub(in crate::ui) fn append_header(listbox: &gtk4::ListBox, text: &str) -> gtk4:
     label.set_margin_end(ROW_HORIZONTAL_MARGIN);
     label.set_margin_top(14);
     label.set_margin_bottom(4);
+    label
+}
 
+pub(in crate::ui) fn append_header(listbox: &gtk4::ListBox, text: &str) -> gtk4::ListBoxRow {
+    let label = header_label(text);
     let row = gtk4::ListBoxRow::builder()
         .child(&label)
         .selectable(false)
@@ -242,8 +222,8 @@ fn append_playlist_action_row(
     row
 }
 
-pub(in crate::ui) fn append_problem_header(listbox: &gtk4::ListBox) -> gtk4::ListBoxRow {
-    append_header(listbox, &strings::text(strings::SIDEBAR_SECTION_ISSUES))
+pub(in crate::ui) fn problem_header() -> gtk4::Label {
+    header_label(&strings::text(strings::SIDEBAR_SECTION_ISSUES))
 }
 
 /// Pins the navigation sidebar at [`SIDEBAR_MIN_WIDTH`] real pixels (NPP-1).
@@ -412,16 +392,12 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn problem_sources_use_a_labeled_section_header() {
         gtk4::init().unwrap();
-        let listbox = gtk4::ListBox::new();
-        let row = append_problem_header(&listbox);
+        let label = problem_header();
 
-        assert!(!row.is_selectable());
-        assert!(!row.is_activatable());
-        assert!(!row.is_focusable());
-        let label = row.child().unwrap().downcast::<gtk4::Label>().unwrap();
         assert_eq!(label.text(), "ISSUES");
         assert!(label.has_css_class("caption-heading"));
         assert!(label.has_css_class("reprise-text-secondary"));
+        assert_eq!(label.accessible_role(), gtk4::AccessibleRole::Heading);
     }
 
     #[test]

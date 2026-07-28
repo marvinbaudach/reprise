@@ -6,8 +6,9 @@
 use chrono::NaiveDate;
 
 use crate::artist_news::{
-    artist_search_url, parse_artist_mbid, parse_release_groups, release_groups_url, ArtistMatch,
-    NewsKind,
+    artist_search_url, parse_artist_mbid, parse_release_group_page, parse_release_groups,
+    parse_release_track_count, release_group_detail_url, release_groups_page_url,
+    release_groups_url, ArtistMatch, NewsKind,
 };
 
 const ARTIST_ID: &str = "83d91898-7763-47d7-b03b-b92132375c47";
@@ -32,6 +33,60 @@ fn urls_encode_artist_and_bound_release_group_browse() {
     assert_eq!(
         release_groups_url(ARTIST_ID),
         format!("https://musicbrainz.org/ws/2/release-group?artist={ARTIST_ID}&type=album%7Cep%7Csingle&release-group-status=website-default&limit=100&inc=url-rels&fmt=json")
+    );
+}
+
+#[test]
+fn dg_3_release_group_pages_report_the_next_musicbrainz_offset() {
+    assert_eq!(
+        release_groups_page_url(ARTIST_ID, 0),
+        release_groups_url(ARTIST_ID)
+    );
+    assert_eq!(
+        release_groups_page_url(ARTIST_ID, 100),
+        format!(
+            "https://musicbrainz.org/ws/2/release-group?artist={ARTIST_ID}&type=album%7Cep%7Csingle&release-group-status=website-default&limit=100&inc=url-rels&fmt=json&offset=100"
+        )
+    );
+
+    let page = parse_release_group_page(
+        r#"{
+          "release-group-count": 102,
+          "release-group-offset": 100,
+          "release-groups": [
+            {"id":"last-1","title":"Older Album","first-release-date":"2020-03-01","primary-type":"Album"},
+            {"id":"last-2","title":"Older EP","first-release-date":"2019-02-01","primary-type":"EP"}
+          ]
+        }"#,
+        date(),
+        false,
+    )
+    .unwrap();
+
+    assert_eq!(page.items.len(), 2);
+    assert_eq!(page.next_offset, None);
+}
+
+#[test]
+fn dg_3_track_count_uses_the_smallest_complete_official_edition() {
+    assert_eq!(
+        release_group_detail_url("release/group"),
+        "https://musicbrainz.org/ws/2/release-group/release%2Fgroup?inc=releases%2Bmedia&fmt=json"
+    );
+    let body = r#"{"releases":[
+      {"status":"Official","media":[{"track-count":7},{"track-count":3}]},
+      {"status":"Official","media":[{"track-count":6}]},
+      {"status":"Promotion","media":[{"track-count":1}]},
+      {"status":"Bootleg","media":[{"track-count":4}]}
+    ]}"#;
+
+    assert_eq!(parse_release_track_count(body), Some(6));
+    assert_eq!(
+        parse_release_track_count(
+            r#"{"releases":[{"status":"Official","media":[{"track-count":1}]}]}"#
+        ),
+        None,
+        "single-sized editions cannot prove Album or EP ownership"
     );
 }
 
@@ -94,7 +149,7 @@ fn release_parser_excludes_secondary_and_non_album_types() {
 }
 
 #[test]
-fn date_filter_keeps_current_albums_and_ignores_missing_dates() {
+fn date_filter_keeps_current_albums_and_catalogues_missing_dates() {
     let json = r#"{"release-groups":[
       {"id":"today","title":"Today","first-release-date":"2026-07-13","primary-type":"Album"},
       {"id":"future","title":"Future Edge","first-release-date":"2027-07-13","primary-type":"Album"},
@@ -103,12 +158,40 @@ fn date_filter_keeps_current_albums_and_ignores_missing_dates() {
       {"id":"unknown","title":"Unknown","primary-type":"Album"}
     ]}"#;
     let items = parse_release_groups(json, date(), false);
-    assert_eq!(items.len(), 3);
+    assert_eq!(items.len(), 5);
     assert!(items
         .iter()
         .any(|item| item.title == "Today" && item.kind == NewsKind::Upcoming));
     assert!(items.iter().any(|item| item.title == "Future Edge"));
     assert!(items.iter().any(|item| item.title == "Recent"));
+    assert!(items
+        .iter()
+        .any(|item| item.title == "Too Old" && item.kind == NewsKind::Catalog));
+    assert!(items
+        .iter()
+        .any(|item| item.title == "Unknown" && item.kind == NewsKind::Catalog));
+}
+
+#[test]
+fn dg_3_undated_albums_and_eps_remain_catalog_but_singles_stay_out() {
+    let json = r#"{"release-groups":[
+      {"id":"album","title":"Undated Album","primary-type":"Album"},
+      {"id":"ep","title":"Undated EP","first-release-date":"unknown","primary-type":"EP"},
+      {"id":"single","title":"Undated Single","primary-type":"Single"}
+    ]}"#;
+
+    let items = parse_release_groups(json, date(), true);
+
+    assert_eq!(
+        items
+            .iter()
+            .map(|item| (item.title.as_str(), item.kind))
+            .collect::<Vec<_>>(),
+        [
+            ("Undated Album", NewsKind::Catalog),
+            ("Undated EP", NewsKind::Catalog),
+        ]
+    );
 }
 
 #[test]
@@ -120,12 +203,39 @@ fn nr_1a_album_and_ep_window_starts_ninety_days_ago() {
       {"id":"future","title":"Distant Future","first-release-date":"2028-01-01","primary-type":"Album"}
     ]}"#;
 
-    let titles = parse_release_groups(json, date(), false)
-        .into_iter()
-        .map(|item| item.title)
+    let items = parse_release_groups(json, date(), false);
+    let titles = items
+        .iter()
+        .filter(|item| item.kind != NewsKind::Catalog)
+        .map(|item| item.title.as_str())
         .collect::<Vec<_>>();
 
     assert_eq!(titles, ["Distant Future", "Album Edge", "EP Edge"]);
+    assert!(items
+        .into_iter()
+        .any(|item| item.title == "Too Old" && item.kind == NewsKind::Catalog));
+}
+
+#[test]
+fn nr_16_catalog_keeps_historical_albums_and_eps_without_old_singles() {
+    let json = r#"{"release-groups":[
+      {"id":"album","title":"Older Album","first-release-date":"2020-03-01","primary-type":"Album"},
+      {"id":"ep","title":"Older EP","first-release-date":"2024-10-18","primary-type":"EP"},
+      {"id":"single","title":"Older Single","first-release-date":"2024-09-01","primary-type":"Single"}
+    ]}"#;
+
+    let items = parse_release_groups(json, date(), true);
+
+    assert_eq!(
+        items
+            .iter()
+            .map(|item| (item.title.as_str(), item.kind))
+            .collect::<Vec<_>>(),
+        [
+            ("Older EP", NewsKind::Catalog),
+            ("Older Album", NewsKind::Catalog),
+        ]
+    );
 }
 
 #[test]
@@ -165,7 +275,7 @@ fn nr_1a_singles_window_starts_ninety_days_ago() {
 }
 
 #[test]
-fn nr_1a_secondary_types_are_excluded_before_the_twenty_item_cap() {
+fn nr_1a_secondary_types_are_excluded_before_query_time_news_cap() {
     let mut groups = vec![
         r#"{"id":"live","title":"Live","first-release-date":"2026-08-01","primary-type":"Album","secondary-types":["Live"]}"#
             .to_string(),
@@ -181,10 +291,10 @@ fn nr_1a_secondary_types_are_excluded_before_the_twenty_item_cap() {
 
     let items = parse_release_groups(&json, date(), false);
 
-    assert_eq!(items.len(), 20);
+    assert_eq!(items.len(), 21);
     assert!(items.iter().all(|item| item.title != "Live"));
-    assert!(items.iter().all(|item| item.title != "Item 20"));
     assert!(items.iter().any(|item| item.title == "Item 00"));
+    assert!(items.iter().any(|item| item.title == "Item 20"));
     assert!(items.iter().any(|item| item.title == "Item 19"));
 }
 
@@ -202,11 +312,16 @@ fn releases_sort_upcoming_ascending_then_new_descending() {
         .into_iter()
         .map(|item| item.title)
         .collect::<Vec<_>>();
-    // "New 3" (2026-04-01) falls outside the 90-day news window measured
-    // from `date()` (2026-07-13), not because of the item cap.
     assert_eq!(
         titles,
-        ["Upcoming 1", "Upcoming 2", "Upcoming 3", "New 1", "New 2"]
+        [
+            "Upcoming 1",
+            "Upcoming 2",
+            "Upcoming 3",
+            "New 1",
+            "New 2",
+            "New 3",
+        ]
     );
 }
 

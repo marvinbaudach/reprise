@@ -19,7 +19,7 @@ pub enum FetchScope {
 }
 
 pub fn configured_fetch_scope(conn: &Connection) -> Result<FetchScope, rusqlite::Error> {
-    if crate::library::settings::get_bool(conn, FETCH_ALL_ARTISTS_KEY, false)? {
+    if crate::library::settings::get_bool(conn, FETCH_ALL_ARTISTS_KEY, true)? {
         Ok(FetchScope::AllArtists)
     } else {
         Ok(FetchScope::TopArtists)

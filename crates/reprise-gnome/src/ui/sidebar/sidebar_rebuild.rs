@@ -317,7 +317,6 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
     let has_issues = has_import_errors || missing_count > 0;
     shared.issues_listbox.set_visible(has_issues);
     if has_issues {
-        sidebar_presentation::append_problem_header(&shared.issues_listbox);
         if has_import_errors {
             add_issue_row(
                 shared,
@@ -414,22 +413,6 @@ fn add_issue_row(
     sidebar_issue_cleanup::wire_issue_context_menu(shared, &row, source.clone());
     shared.issues_listbox.append(&row);
     remember_issue_focus_entry(&shared.issues_listbox, &row);
-    shared
-        .rows
-        .borrow_mut()
-        .push((row, source, title.to_string()));
-}
-
-#[allow(dead_code)]
-fn add_row_with_badge(
-    shared: &Rc<Shared>,
-    source: ViewSource,
-    title: &str,
-    badge_text: &str,
-    icon: NavIcon,
-) {
-    let row = sidebar_presentation::build_nav_row_with_badge(title, badge_text, icon);
-    shared.listbox.append(&row);
     shared
         .rows
         .borrow_mut()

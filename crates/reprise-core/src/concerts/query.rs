@@ -245,3 +245,32 @@ fn horizon_end(today: NaiveDate, horizon: DateHorizon) -> Option<String> {
     }?;
     Some(date.format("%Y-%m-%d").to_string())
 }
+
+/// Whether the cache holds any event that came from a similar artist.
+///
+/// The filter bar offers the "include similar" switch only when there is
+/// something for it to reveal; without this the switch appears and does
+/// nothing.
+pub fn has_similar_events(conn: &Connection) -> rusqlite::Result<bool> {
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM concert_events WHERE is_similar = 1)",
+        [],
+        |row| row.get::<_, bool>(0),
+    )
+}
+
+/// The distinct countries the cached events name, ordered for display.
+///
+/// Blank and whitespace-only values are dropped rather than offered as an
+/// unnamed choice.
+pub fn known_countries(conn: &Connection) -> rusqlite::Result<Vec<String>> {
+    let mut statement = conn.prepare(
+        "SELECT DISTINCT trim(country) FROM concert_events
+         WHERE country IS NOT NULL AND trim(country) <> ''
+         ORDER BY lower(trim(country))",
+    )?;
+    let rows = statement.query_map([], |row| row.get(0))?;
+    // A row that will not convert costs the list that one entry, not all of
+    // them: an unusable value in one cached event must not empty the filter.
+    Ok(rows.filter_map(Result::ok).collect())
+}

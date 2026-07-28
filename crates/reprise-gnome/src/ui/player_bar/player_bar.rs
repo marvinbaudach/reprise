@@ -117,12 +117,6 @@ pub struct PlayerBar {
     /// Same guard shape as `updating_shuffle`, for `set_volume_indicator`/
     /// `connect_volume_changed`.
     updating_volume: Rc<Cell<bool>>,
-    /// Whether the volume is currently muted (volume_scale at 0 via the icon).
-    #[allow(dead_code)]
-    muted: Cell<bool>,
-    /// Volume level before muting, so unmuting restores it.
-    #[allow(dead_code)]
-    pre_mute_volume: Cell<f64>,
     /// Callback fired when the user activates the title button — wired to
     /// reveal the loaded album in the Library grid (GRID-5).
     on_title_click: crate::ui::link_activation::ActivationSlot,
@@ -257,8 +251,6 @@ impl PlayerBar {
             library_has_tracks: Cell::new(false),
             updating_shuffle: Rc::new(Cell::new(false)),
             updating_volume: Rc::new(Cell::new(false)),
-            muted: Cell::new(false),
-            pre_mute_volume: Cell::new(1.0),
             on_title_click,
             on_cover_click,
             on_artist_click,

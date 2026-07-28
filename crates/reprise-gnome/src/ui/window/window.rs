@@ -167,7 +167,10 @@ pub fn build(
     let podcasts_runtime = crate::ui::podcasts::PodcastsRuntime::setup(&conn.borrow());
     let artist_portrait =
         super::artist_portrait_worker::ArtistPortraitRuntime::setup(&conn.borrow());
-    let media = reprise_platform_linux::mpris::start(crate::APP_ID);
+    let media = std::env::var(crate::SMOKE_MPRIS_BUS_ENV_VAR).map_or_else(
+        |_| reprise_platform_linux::mpris::start(crate::APP_ID),
+        |bus_name| reprise_platform_linux::mpris::start_with_bus_name(crate::APP_ID, bus_name),
+    );
     let device_sync = super::device_sync_smoke::runtime_from_env(conn).unwrap_or_else(|| {
         super::device_sync_runtime::DeviceSyncRuntime::new(
             conn,
@@ -176,7 +179,6 @@ pub fn build(
     });
     device_sync
         .bind_agent_device_sync(&media.device_sync_state, media.device_sync_commands.clone());
-    super::device_sync_actions::install(app, &device_sync);
     super::device_sync_smoke::arm(&device_sync);
 
     let player = match build_player_backends(waveform_backend.clone(), media) {
@@ -216,7 +218,6 @@ pub fn build(
         let queue_model = queue_model.clone();
         move || queue_model.borrow().sidebar_count()
     }));
-    sidebar.bind_device_sync(&device_sync);
 
     // Stage 3 Task 8: at most one folder watcher runs at a time. `None`
     // until either the startup check below finds a persisted `library_root`
@@ -330,14 +331,11 @@ pub fn build(
     super::current_track_selection::wire(player.as_ref(), &track_list);
     let stats_view = super::stats_view::StatsView::new(track_list.shared_cover_loader());
     stats_view.wire_year_selector(conn);
-    let device_view = super::device_view::DeviceViewPage::new(&device_sync);
     let content_stack = super::content_stack::build();
-    // Size to the visible page in both axes: Stats/Device pages must not
-    // inherit the library's minimum size, nor vice versa, or a hidden tall
-    // device list can push the sidebar activity below the window edge.
+    // Size to the visible page in both axes: dedicated content pages must not
+    // inherit the library's minimum size, nor vice versa.
     content_stack.add_named(&track_content, Some("library"));
     content_stack.add_named(stats_view.widget(), Some("stats"));
-    content_stack.add_named(device_view.widget(), Some("device"));
     content_stack.set_visible_child_name("library");
     toolbar_view.set_content(Some(&content_stack));
 
@@ -379,7 +377,6 @@ pub fn build(
     let releases_view = Rc::new(crate::ui::releases::install(
         conn.clone(),
         db_path.to_path_buf(),
-        on_show_album.clone(),
     ));
     content_stack.add_named(concerts_view.root(), Some("concerts"));
     content_stack.add_named(releases_view.root(), Some("releases"));
@@ -446,6 +443,22 @@ pub fn build(
     let split_view = library_shell.split_view;
     let content_nav = library_shell.content_nav;
     let info_panel = library_shell.info_panel;
+    let open_device: super::device_sync_launcher::OpenDevice = Rc::new({
+        let content_stack = content_stack.clone();
+        let window_title = window_title.clone();
+        let runtime = device_sync.clone();
+        let split_view = split_view.clone();
+        move |device_id, _| {
+            if !super::device_sync_page::open(&content_stack, &window_title, &device_id, &runtime) {
+                tracing::warn!(device_id, "could not open Android sync page");
+                return;
+            }
+            if split_view.is_collapsed() {
+                split_view.set_show_sidebar(false);
+            }
+        }
+    });
+    sidebar.bind_device_sync(&device_sync, open_device.clone());
     super::device_sync_feedback::install(&header, &split_view, &toast_overlay, &device_sync);
     info_panel.retain_for_window(&window);
     if let Some(player) = &player {
@@ -527,12 +540,7 @@ pub fn build(
         &cover_download,
         &artist_portrait,
         &decorations,
-        &device_sync,
     );
-    {
-        let preferences = preferences.clone();
-        device_view.set_on_settings(move || preferences.present_page("synchronization"));
-    }
     {
         let preferences = Rc::downgrade(&preferences);
         info_panel.lyrics_view().set_on_settings(move || {
@@ -562,7 +570,8 @@ pub fn build(
         radio_view: &radio_view,
         podcasts_runtime: &podcasts_runtime,
         content_stack: &content_stack,
-        device_view: &device_view,
+        device_sync: &device_sync,
+        open_device: &open_device,
         window_title: &window_title,
         scan_controls: &scan_controls,
         toast_overlay: &toast_overlay,
@@ -581,6 +590,7 @@ pub fn build(
         active_content_focus: &active_content_focus,
         metadata_navigator: &metadata_navigator,
     });
+    super::responsive_side_panels::install(&window, &toast_overlay, &split_view, &info_panel, conn);
 
     tracing::info!("main window built");
     window.present();

@@ -29,6 +29,7 @@ fn reset_to_v28(conn: &Connection) {
         "DROP TABLE ai_jobs;
          DROP TABLE track_provenance;
          ALTER TABLE playlists DROP COLUMN role;
+         ALTER TABLE new_releases DROP COLUMN track_count;
          PRAGMA user_version = 28;",
     )
     .unwrap();

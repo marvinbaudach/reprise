@@ -4,6 +4,8 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
+use libadwaita as adw;
+use libadwaita::prelude::*;
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
 use rusqlite::Connection;
@@ -19,7 +21,7 @@ use super::track_list_context_menu;
 use super::track_list_dnd_smoke;
 use super::track_list_empty_state::build_status_page;
 use super::track_list_model::TrackListModel;
-use super::track_list_reload::reload;
+use super::track_list_reload::{reload, reload_centering_playing_track};
 use super::track_list_smoke::{
     arm_smoke_activate, arm_smoke_filter, arm_smoke_sort_column, arm_smoke_source,
 };
@@ -75,9 +77,12 @@ pub(in crate::ui) fn build(
     stack.set_visible_child_name(STACK_PAGE_EMPTY);
 
     let browse_bar = BrowseBar::new(conn.clone());
+    let responsive_columns_host = adw::BreakpointBin::new();
+    responsive_columns_host.set_size_request(1, 1);
+    responsive_columns_host.set_child(Some(&stack));
     let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     root.append(browse_bar.widget());
-    root.append(&stack);
+    root.append(&responsive_columns_host);
 
     let cover_loader = CoverLoader::new(cover_download);
     let shared = Rc::new(Shared {
@@ -86,6 +91,7 @@ pub(in crate::ui) fn build(
         column_view: column_view.clone(),
         playing_track_id: Cell::new(None),
         now_playing_markers: RefCell::new(Vec::new()),
+        rating_cells: RefCell::new(Vec::new()),
         last_scroll_activity: Cell::new(None),
         active_reorder_drag_from: Cell::new(None),
         conn,
@@ -192,7 +198,7 @@ pub(in crate::ui) fn build(
                 return;
             };
             *shared.browse_filter.borrow_mut() = filter;
-            reload(&shared);
+            reload_centering_playing_track(&shared);
         });
     }
     {
@@ -245,6 +251,11 @@ pub(in crate::ui) fn build(
     let title_column = built_columns.title;
     let artist_column = built_columns.artist;
     let column_registry = built_columns.registry;
+    let responsive_columns = super::responsive_columns::ResponsiveColumns::new(
+        &responsive_columns_host,
+        &column_registry,
+        &column_layout::load_layout(&shared.conn.borrow()),
+    );
     super::end_of_results::install(&shared, &list_overlay, &scrolled);
     let initial_sort_column = if column_registry.is_visible(ColumnId::Artist) {
         artist_column.clone()
@@ -280,5 +291,6 @@ pub(in crate::ui) fn build(
         shared,
         root,
         column_registry,
+        responsive_columns,
     }
 }

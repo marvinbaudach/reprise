@@ -11,8 +11,6 @@
 
 use gtk4::gdk;
 
-use crate::ui::strings;
-
 // ── Pure-logic helpers (unchanged from v1, exercised by the tests below) ─────
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -20,17 +18,6 @@ use crate::ui::strings;
 pub struct ParseFieldError;
 
 pub(in crate::ui) const RATING_MAX: i32 = 5;
-
-// F0 note (not this package's ownership, touched only to keep the build
-// green): orphaned by the `Cell<bool>` dirty-array's removal — every text
-// field now lives in `TagEditSession` and is read via `set_pending`/
-// `write_batch`, never patched from a raw `(dirty, text)` pair. Left in
-// place rather than deleted for Package E's Wave-4 call on whether its
-// TAG-8 keyboard work still wants it.
-#[allow(dead_code)]
-pub(crate) fn string_patch(dirty: bool, text: &str) -> Option<String> {
-    dirty.then(|| text.to_string())
-}
 
 pub(crate) fn number_patch(
     dirty: bool,
@@ -60,16 +47,7 @@ pub enum NavigateDirection {
 
 // ── Field identity for dirty tracking ────────────────────────────────────────
 
-/// Indices into the old `dirty` flags vector (F0 removed it in favor of
-/// `TagEditSession` + `TagField`). E1 answers Package F's "still wants
-/// index-based field identity?" call for seven of these: they're now the
-/// identity space `ENTER_CHAIN_ORDER`/`next_enter_target` reason over below,
-/// so those seven lose their `#[allow(dead_code)]` — this file's own
-/// non-test code uses them, not just `tag_editor_tests.rs` (Package G's
-/// test module for `tag_editor.rs`, which still exercises `field_name`/
-/// `FIELD_COUNT`/`string_patch` and therefore keeps those three alive; this
-/// package does not own that test file and cannot delete what it depends
-/// on).
+/// Field identities used by `ENTER_CHAIN_ORDER`/`next_enter_target`.
 pub(in crate::ui) const FIELD_TITLE: usize = 0;
 pub(in crate::ui) const FIELD_ARTIST: usize = 1;
 pub(in crate::ui) const FIELD_ALBUM: usize = 2;
@@ -77,28 +55,6 @@ pub(in crate::ui) const FIELD_ALBUM_ARTIST: usize = 3;
 pub(in crate::ui) const FIELD_YEAR: usize = 4;
 pub(in crate::ui) const FIELD_TRACK_NO: usize = 5;
 pub(in crate::ui) const FIELD_GENRE: usize = 6;
-#[allow(dead_code)]
-pub(in crate::ui) const FIELD_RATING: usize = 7;
-#[allow(dead_code)]
-pub(in crate::ui) const FIELD_COUNT: usize = 8;
-
-/// Human-readable names for the old pending-change bar, indexed by
-/// `FIELD_*` — orphaned by the same F0 removal as the constants above.
-#[allow(dead_code)]
-pub(in crate::ui) fn field_name(index: usize) -> String {
-    use strings::*;
-    match index {
-        FIELD_TITLE => text(TAG_TITLE),
-        FIELD_ARTIST => text(TAG_ARTIST),
-        FIELD_ALBUM => text(TAG_ALBUM),
-        FIELD_ALBUM_ARTIST => text(TAG_ALBUM_ARTIST),
-        FIELD_YEAR => text(TAG_YEAR),
-        FIELD_TRACK_NO => text(TAG_TRACK_NUMBER),
-        FIELD_GENRE => text(TAG_GENRE),
-        FIELD_RATING => text(RATING),
-        _ => String::new(),
-    }
-}
 
 // ── TAG-8: Enter-chain ───────────────────────────────────────────────────────
 

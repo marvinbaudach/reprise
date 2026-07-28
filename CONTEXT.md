@@ -90,6 +90,21 @@ Wiedergabe-Snapshot gestartet wurde. Er dient dem spaeteren Aufdecken, besitzt
 aber nicht die Wiedergabe selbst.
 _Vermeiden_: aktuelle Ansicht, Queue
 
+## Veröffentlichungsabgleich
+
+**Veröffentlichungsbesitz**:
+Eine konkrete Album- oder EP-Veröffentlichung gilt nur dann als vorhanden,
+wenn die Bibliothek sie als diese Veröffentlichung vollständig enthält.
+Einzelne Aufnahmen, die separat oder zuvor als Singles erschienen sind,
+begründen keinen Besitz des späteren Albums oder der EP.
+_Vermeiden_: vorhandene Songs, Track-Überschneidung
+
+**Diskografielücke**:
+Ein reguläres Album oder eine EP eines Bibliotheksinterpreten, für das kein
+Veröffentlichungsbesitz besteht. Einzelne vorhandene Aufnahmen oder Singles
+schließen die Lücke nicht.
+_Vermeiden_: fehlender Song, neue Veröffentlichung
+
 ## KI-Fassungen und Provenienz
 
 **Instrumental-Fassung**:

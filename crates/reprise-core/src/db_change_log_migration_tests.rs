@@ -35,6 +35,7 @@ fn schema_v28_fresh_and_v26_upgrade_have_the_same_change_log_shape() {
              DROP TABLE ai_jobs;
              DROP TABLE track_provenance;
              ALTER TABLE playlists DROP COLUMN role;
+             ALTER TABLE new_releases DROP COLUMN track_count;
              PRAGMA user_version = 26;",
         )
         .unwrap();

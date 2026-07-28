@@ -9,9 +9,12 @@ const ESTIMATED_USB_BYTES_PER_SECOND: u64 = 5 * 1024 * 1024;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SyncCandidate {
     pub track_id: i64,
-    pub device_path: String,
-    pub transfer_bytes: u64,
+    pub source_path: String,
+    pub source_size: u64,
     pub source_mtime: i64,
+    pub device_path: String,
+    pub profile_fingerprint: String,
+    pub transfer_bytes: u64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -40,9 +43,11 @@ pub fn compute_delta(
         }
         let current = existing.get(&candidate.track_id);
         let unchanged = current.is_some_and(|file| {
-            file.device_path == candidate.device_path
-                && file.mtime == candidate.source_mtime
-                && file.size == candidate.transfer_bytes
+            file.source_path == candidate.source_path
+                && file.source_size == candidate.source_size
+                && file.source_mtime == candidate.source_mtime
+                && file.device_path == candidate.device_path
+                && file.profile_fingerprint == candidate.profile_fingerprint
         });
         if !unchanged {
             to_copy.push(candidate.track_id);

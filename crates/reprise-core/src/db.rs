@@ -12,7 +12,7 @@ pub enum DbError {
     SchemaTooNew { found: i64, supported: i64 },
 }
 
-pub const SUPPORTED_SCHEMA_VERSION: i64 = 35;
+pub const SUPPORTED_SCHEMA_VERSION: i64 = 39;
 
 /// Default SQLite `busy_timeout` (milliseconds) every [`open`] connection is
 /// configured with: wait up to this long for a write lock instead of failing
@@ -74,6 +74,26 @@ pub fn default_path() -> std::path::PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("reprise/reprise.db")
+}
+
+/// The file this connection is attached to, if it has one.
+///
+/// Background work opens its own connection rather than sharing the
+/// frontend's, so it needs the path — and asking the connection is more
+/// honest than assuming [`default_path`], which is wrong under a test
+/// fixture or an explicitly chosen library. An in-memory database has no
+/// file and yields `None`.
+pub fn main_path(conn: &Connection) -> Option<std::path::PathBuf> {
+    let mut statement = conn.prepare("PRAGMA database_list").ok()?;
+    let mut rows = statement.query([]).ok()?;
+    while let Some(row) = rows.next().ok()? {
+        let name = row.get::<_, String>(1).ok()?;
+        let path = row.get::<_, String>(2).ok()?;
+        if name == "main" && !path.is_empty() {
+            return Some(std::path::PathBuf::from(path));
+        }
+    }
+    None
 }
 
 const SCHEMA_V1: &str = r#"
@@ -680,6 +700,10 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
     crate::db_podcasts_radio::migrate_v33(conn)?;
     crate::db_podcasts_radio::migrate_v34(conn)?;
     crate::db_recently_added::migrate_v35(conn)?;
+    crate::db_device_sync::migrate_v36(conn)?;
+    crate::db_device_sync::migrate_v37(conn)?;
+    crate::db_device_sync::migrate_v38(conn)?;
+    crate::db_release_discography::migrate_v39(conn)?;
     Ok(())
 }
 

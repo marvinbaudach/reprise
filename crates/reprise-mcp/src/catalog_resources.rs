@@ -172,6 +172,8 @@ struct CompleteRelease {
     first_seen: Option<i64>,
     hidden_at: Option<i64>,
     announce_url: Option<String>,
+    track_count: Option<i64>,
+    local_track_count: i64,
     library_presence: &'static str,
     history_status: &'static str,
 }
@@ -193,6 +195,8 @@ impl From<ReleaseHistoryRecord> for CompleteRelease {
             first_seen: release.first_seen,
             hidden_at: release.hidden_at,
             announce_url: release.announce_url,
+            track_count: release.track_count,
+            local_track_count: release.local_track_count,
             library_presence: library_presence_name(release.presence),
             history_status,
         }
