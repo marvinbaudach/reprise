@@ -45,6 +45,7 @@
 //! diagnostic kind. `tests/schema.rs` enforces that against fully populated
 //! fixtures rather than trusting review.
 
+pub mod device_run;
 pub mod device_sync;
 pub mod jobs;
 pub mod playback;
@@ -89,8 +90,10 @@ impl std::fmt::Display for ProtocolVersion {
 }
 
 /// The version this build speaks. Version 1 is the first named contract; it
-/// replaces the unversioned positional tuples that preceded it.
-pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1, minor: 0 };
+/// replaces the unversioned positional tuples that preceded it. Minor 1 adds
+/// [`device_run::DeviceRunSnapshot`], the delta the runtime publishes while a
+/// device run is going — an addition, so a 1.0 client stays served.
+pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1, minor: 1 };
 
 #[cfg(test)]
 mod tests {
@@ -124,6 +127,6 @@ mod tests {
     #[test]
     fn the_shipped_version_is_compatible_with_itself() {
         assert!(PROTOCOL_VERSION.is_compatible_with(PROTOCOL_VERSION));
-        assert_eq!(PROTOCOL_VERSION.to_string(), "1.0");
+        assert_eq!(PROTOCOL_VERSION.to_string(), "1.1");
     }
 }

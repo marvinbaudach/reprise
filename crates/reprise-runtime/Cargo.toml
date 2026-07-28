@@ -1,0 +1,31 @@
+[package]
+name = "reprise-runtime"
+description = "Single-owner application runtime: owns playback, the queue, background jobs, device runs and the database writer"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+default = []
+# The fake ports, published so downstream crates can drive a real runtime in
+# their own tests without audio, a display or media files (Task 3.4 runs the
+# MCP server against one). They are always compiled for this crate's own
+# tests; the feature only decides whether *other* crates may see them.
+fakes = []
+
+[dependencies]
+reprise-core = { path = "../reprise-core" }
+reprise-runtime-protocol = { path = "../reprise-runtime-protocol" }
+# The runtime owns the database writer (plan §9.1), so it holds a Connection
+# directly. It assembles no SQL of its own: every statement goes through a
+# named `reprise-core` facade.
+rusqlite = { version = "0.40", features = ["bundled"] }
+tracing = "0.1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true
