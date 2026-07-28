@@ -1165,6 +1165,9 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   Refresh-Icon durch einen Spinner und zeigt sonst das Alter der letzten
   Aktualisierung. Offline oder Fehler zeigen weiter den letzten Cache samt
   Alter und nur einen dezenten Inline-Hinweis im Fuß — nie ein Fehlerbanner.
+  Das zugrundeliegende Prinzip ist seit `NET-3` app-weit benannt (`cached`/
+  `interrupted`); diese Regel bleibt die maßgebliche Fassung für New
+  Releases' eigene Spinner-Mechanik und wird dadurch nicht ersetzt.
 - **NR-7** [aktiv] [gtk] — New Releases ist ein Plugin auf der Plugins-Seite,
   standardmäßig aus und mit Privacy-Untertitel „contacts MusicBrainz" sowie
   Auswahl „Top artists only / all artists". Bei ausgeschaltetem Modul gibt es
@@ -1186,6 +1189,11 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   einen Start-Abruf gibt es nicht. NR-8 schließt diese Schleife, ohne NR-5 zu
   kippen. Datenschutzlich unverändert: Netzverkehr entsteht ausschließlich nach
   ausdrücklicher Aktivierung, nur sofort statt nie.
+  Die Offline-Kante der zweiten Kante (fehlgeschlagener Erst-Abruf hält ✦
+  sichtbar mit Retry) folgt demselben „Cache/Erstlauf ist nie ein
+  Fehler"-Prinzip, das `NET-3` app-weit benennt; der Opt-in-Trigger und die
+  Badge-Punkt-Regel selbst sind Zustimmungs-Semantik und liegen außerhalb
+  von `NET-3`. Diese Regel bleibt deshalb unverändert `[aktiv]`.
 - **NR-9** [ersetzt durch NR-9a] [gtk] — setzt auf NR-3 auf: Der Badge
   aus NR-3 zeigt die **Anzahl** der Einträge mit `seen_at IS NULL`, ab 10 als
   „9+", verschwindet mit dem Öffnen (alle gelisteten Einträge werden
@@ -1414,6 +1422,83 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   aktives `artist_news` wird als aktives New-Releases-Modul übernommen.
   Negative Cache-Marker gelten nicht als Nutzung; frische Installationen
   starten mit allen vier Netz-Modulen aus.
+- **NET-3** [geplant] — Offline ist ein Zustand, kein Fehler: kein
+  netzgestützter Ort der App darf einen fehlenden Netzzugang wie eine
+  Fehlermeldung behandeln. Der Vertrag deckt sieben Zustände ab, die jede
+  netzgestützte Ansicht (Feed, Suche, Refresh) kennen muss: **cached** (der
+  letzte erfolgreiche Stand bleibt sichtbar samt Alter, nie durch einen
+  Fehler ersetzt), **empty** (noch nie erfolgreich abgerufen — ein
+  Lade-/Erstlauf-Zustand statt stiller Leere), **queued** (eine
+  Online-Aktion wurde angenommen und wartet auf Netz), **interrupted** (ein
+  laufender Abruf bricht ab — der Cache bleibt stehen, nur ein dezenter
+  Inline-Hinweis, nie ein Banner), **authentication** (401 bzw. fehlendes
+  Credential — neutral, ohne Zugangsdaten-Aufforderung im Fluss selbst),
+  **rate limit** (429 — wie „interrupted" behandelt, kein Sonderfehlerbild)
+  und **provider failure** (5xx/Sonstiges — ebenso). Für die drei
+  Online-Quellen (Podcasts, YouTube, Radio) und den Telefon-Sync gelten
+  zusätzlich sechs konkrete Verhaltensweisen aus Turn 6 (6e, Issue #107):
+  1. Heruntergeladene Episoden/Tracks bleiben uneingeschränkt abspielbar,
+     seek- und resume-fähig — lokale Wiedergabe fasst das Netz nie an.
+  2. Nicht heruntergeladene Einträge bleiben aus dem Cache gelistet, lesen
+     aber „Needs network"; die Zeile wird gedimmt, nie versteckt.
+  3. Download- und Sync-Aktionen werden angenommen und als „Queued offline"
+     geführt statt ausgegraut zu werden; sie laufen automatisch der Reihe
+     nach, sobald die Verbindung zurückkehrt.
+  4. Add-Dialoge deaktivieren ihr Suchfeld mit einer einzeiligen
+     Begründung; das Einfügen einer URL funktioniert weiter, das Abo
+     entsteht beim nächsten Abruf.
+  5. Radio ist die eine Ausnahme: ein Live-Stream lässt sich nicht
+     vormerken. Sender bleiben gelistet, „Play" meldet „No connection ·
+     Retry" statt zu queuen.
+  6. Telefon-Sync: MTP ist lokal — der Sync bereits heruntergeladener
+     Dateien läuft auch offline; nur Einträge ohne lokale Datei warten.
+
+  Kritische Abgrenzung zu `NET-1a`: „ausgeschaltet" (der globale Riegel
+  `online-sources-enabled` oder ein Modul-Schalter aus) und „offline"
+  (dieser Vertrag) sind **verschiedene Zustände** und dürfen nicht
+  zusammenfallen. Ausgeschaltet ist ein Datenschutzversprechen — es
+  verweigert Suche **und** URL-Pfad gleichermaßen, ohne Ausnahme; der
+  einzige Prüfpunkt dafür bleibt `online_sources::network_allowed` und
+  seine Aufrufer (`podcasts::add_dialog_input::submit_refusal`,
+  `radio::add_dialog::submit`). Offline verweigert nichts — es merkt vor
+  oder bietet Retry an. Dieser Vertrag prüft nie einen Modul-Schalter, nur
+  die Konnektivität.
+
+  Diese Regel ist die Vertrags-Prosa und wechselt selbst erst auf `[aktiv]`,
+  wenn ihre Buchstaben-Teilregeln es alle sind. Sie konsolidiert das
+  gemeinsame „Cache ist nie ein Fehler"-Prinzip, das `NR-6`, `NR-8`,
+  `CONC-4b` und `INST-12` je in eigenen Worten für ihre Fläche schon
+  festhalten — diese vier Regeln bleiben unverändert `[aktiv]` und
+  verweisen ab jetzt hierher, statt das Prinzip zu duplizieren; keine von
+  ihnen ändert Verhalten oder Test. `LYR-3` gehört **nicht** hierher: sie
+  regelt den abgeschalteten Zustand des Lyrics-Moduls (`NET-1a`-Familie),
+  nicht Offline — siehe die Anmerkung dort.
+- **NET-3a** [aktiv] [core] — Die reine, darstellungsfreie Projektion
+  `reprise_core::connectivity`: `row_presentation(Connectivity,
+  LocalAvailability)` liefert `Playable`, sobald eine Datei lokal vorliegt
+  (online wie offline gleich), sonst `NeedsNetwork` nur während `Offline`.
+  `deferrable_action_outcome` liefert `RunsNow` online oder wenn die Datei
+  bereits lokal vorliegt (Telefon-Sync einer bereits geladenen Datei — MTP
+  ist lokal), sonst `QueuedOffline`. `podcasts::download_state::
+  DownloadState::local_availability` ist die Brücke von Podcasts'/YouTubes
+  reichhaltigerem Download-Zustand in dieses einfache Lokal-Signal.
+  `Connectivity` ist ein explizit gesetzter Zustand, kein Rückschluss aus
+  einer fehlgeschlagenen Anfrage — was er nicht kennt: die Erreichbarkeit
+  eines einzelnen Anbieters, Authentifizierung oder Rate-Limits, das sind
+  Anfrage-Ergebnisse, kein Konnektivitäts-Zustand. Diese Projektion ist
+  Verdrahtungsgrundlage, keine fertige Anzeige: das automatische Ausführen
+  vorgemerkter Aktionen bei Netzwiederkehr sowie die Anzeige in den
+  Podcast-/YouTube-Zeilen folgen in einem späteren Commit (`NET-3c`, F2).
+- **NET-3b** [aktiv] [gtk] — Radio-Ausnahme: Sender bleiben immer gelistet.
+  Das Kontextmenü zeigt „Play" (`radio_context_menu::play_menu_label`), wenn
+  `Connectivity::Online` gilt oder der Sender bereits läuft; bei `Offline`
+  lautet der Eintrag „No connection · Retry", und ein frischer Play-Versuch
+  (`radio_view::try_play_station`) öffnet keine Verbindung, solange die
+  Konnektivität offline bleibt — kein Vormerken, kein automatischer Lauf,
+  weil ein Live-Stream sich nicht aufschieben lässt. Die Konnektivität ist
+  ein injizierbarer Zustand (`RadioView::set_connectivity`), standardmäßig
+  `Online` und in dieser Regel noch an kein echtes Betriebssystem-Signal
+  angeschlossen.
 - **LYR-1** [geplant] [core] — Lokale eingebettete Songtexte und `.lrc`-
   Sidecars werden unabhängig vom Online-Lyrics-Modul angezeigt. Reprise liest
   diese lokalen Formate heute noch nicht; die Regel bleibt bis zu dieser
@@ -1429,6 +1514,11 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   hervorgehobenen Plugins-Zeile. Solange LYR-1 geplant ist, verspricht dieser
   Zustand keine lokalen eingebetteten Songtexte. Ein eingeschaltetes Modul
   ohne Treffer zeigt stattdessen „No lyrics found".
+  Abgrenzung zu `NET-3`: diese Regel behandelt das **abgeschaltete** Modul
+  (`NET-1a`-Familie — bewusste Nutzer-Entscheidung, keine Konnektivität) und
+  bleibt dafür unverändert `[aktiv]`. Der Fall „Modul an, aber offline" ist
+  für Lyrics heute nicht spezifiziert; träfe er ein, gälte dafür `NET-3`,
+  nicht diese Regel — die beiden Zustände dürfen nicht verwechselt werden.
 - **DISCOVER-1** [ersetzt durch BROWSE-1] — Netz-Features ohne dauerhaft sichtbare
   eigene Fläche erhalten genau einen dezenten, schließbaren Inline-Hinweis am
   Ort der sichtbaren Lücke: Cover ab drei gleichzeitig sichtbaren Fallback-
@@ -2449,6 +2539,10 @@ Dateien.
   Default-Build/Flatpak gebündelt. In einem Build **ohne** das
   `stem-backend`-Feature zeigt die Ansicht einen ehrlichen, deaktivierten
   Platzhalter mit Hinweis statt eines funktionslosen Buttons. (Beschluss 11)
+  Der Offline-Fehlerpfad folgt demselben Prinzip, das `NET-3` seither
+  app-weit benennt; diese Regel bleibt die maßgebliche Fassung für den
+  Erstlauf-Download der Modell-Gewichte (SHA-256, Lizenznotiz) und wird
+  dadurch nicht ersetzt.
 - **INST-13** [aktiv] [gtk] — Erreichbarkeit: Die Konvertierungs-/Staging-Ansicht
   ist über einen eigenen **Sidebar-Eintrag** (`ViewSource::Conversions`, Titel
   „Instrumental conversions") erreichbar. Der Eintrag erscheint **nur, solange
@@ -2552,7 +2646,9 @@ Dateien.
   Sidebar-Zahl und das Updates-Popover sofort neu. Nie gefetcht bietet genau
   „Fetch now"; null Treffer mit Filtern genau „Show all". Offline oder Fehler
   lassen Cache und „Updated X ago" sichtbar und melden den Fehler
-  ausschließlich inline im Footer.
+  ausschließlich inline im Footer — dieselbe `cached`/`interrupted`-Fassung,
+  die `NET-3` seither app-weit benennt; Credential- und Filter-Verhalten
+  bleiben Concerts-eigen und unverändert `[aktiv]`.
 - **CONC-5** [ersetzt durch CONC-5a] — Ursprünglicher Worker-Vertrag mit
   View-Open-Staleness, Due-Check und „Fetch now" als einzigen Netz-Triggern.
 - **CONC-5a** [aktiv] [core] — Netz läuft ausschließlich im Worker oder

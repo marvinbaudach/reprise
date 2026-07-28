@@ -4,6 +4,7 @@ use std::rc::Rc;
 use gtk4::gio;
 use gtk4::prelude::*;
 use libadwaita as adw;
+use reprise_core::connectivity::{self, Connectivity};
 use reprise_core::radio::{self, StationRow};
 use rusqlite::Connection;
 
@@ -37,6 +38,11 @@ struct Shared {
     filter_bar: Rc<RadioFilterBar>,
     rows: RefCell<Vec<StationRow>>,
     live: Rc<RefCell<RadioLiveState>>,
+    /// `NET-3b`: explicit, injectable connectivity seam (see
+    /// `reprise_core::connectivity`) — defaults to `Online` and is not
+    /// wired to any real OS signal yet; only [`RadioView::set_connectivity`]
+    /// (and tests) change it.
+    connectivity: Rc<Cell<Connectivity>>,
     stack: gtk4::Stack,
     status: adw::StatusPage,
     status_button: gtk4::Button,
@@ -67,6 +73,11 @@ impl RadioView {
             let live = live.clone();
             Rc::new(move || live.borrow().clone()) as LiveState
         };
+        let connectivity = Rc::new(Cell::new(Connectivity::default()));
+        let connectivity_source = {
+            let connectivity = connectivity.clone();
+            Rc::new(move || connectivity.get()) as radio_columns::ConnectivitySource
+        };
 
         let column_view = gtk4::ColumnView::builder()
             .model(model.selection())
@@ -86,12 +97,16 @@ impl RadioView {
                 remove_station(&shared, id);
             }
         });
-        radio_columns::append_columns(&column_view, &on_remove, &live_source);
+        radio_columns::append_columns(&column_view, &on_remove, &live_source, &connectivity_source);
         {
             let live = live_source.clone();
-            radio_context_menu::wire_keyboard(&column_view, model.selection(), move |id| {
-                super::radio_presentation::row_is_accented(id, &live())
-            });
+            let connectivity = connectivity_source.clone();
+            radio_context_menu::wire_keyboard(
+                &column_view,
+                model.selection(),
+                move |id| super::radio_presentation::row_is_accented(id, &live()),
+                move || connectivity(),
+            );
         }
         let action_group = gio::SimpleActionGroup::new();
         column_view.insert_action_group("radio", Some(&action_group));
@@ -125,6 +140,7 @@ impl RadioView {
             filter_bar: filter_bar.clone(),
             rows: RefCell::new(Vec::new()),
             live,
+            connectivity,
             stack,
             status,
             status_button: status_button.clone(),
@@ -234,6 +250,14 @@ impl RadioView {
         self.shared.toast_overlay.set(Some(overlay));
     }
 
+    /// `NET-3b`: sets the connectivity seam this view's Play affordance
+    /// consults. Not wired to any real OS signal yet — see
+    /// `reprise_core::connectivity` for what such a signal could and could
+    /// not know; this is the injection point a future binding would call.
+    pub(in crate::ui) fn set_connectivity(&self, value: Connectivity) {
+        self.shared.connectivity.set(value);
+    }
+
     pub(in crate::ui) fn set_on_mutated(&self, callback: impl Fn() + 'static) {
         *self.shared.on_mutated.borrow_mut() = Some(Rc::new(callback));
     }
@@ -324,16 +348,37 @@ fn activate_station(shared: &Rc<Shared>, station: &StationRow) {
             }
         } else if let Some(controller) = shared.controller.upgrade() {
             if !controller.toggle_external_pause() {
-                play_station(&controller, station);
+                try_play_station(shared, &controller, station);
             }
         }
     } else if let Some(controller) = shared.controller.upgrade() {
-        play_station(&controller, station);
+        try_play_station(shared, &controller, station);
     } else {
         tracing::warn!("radio playback is unavailable without a playback backend");
     }
     if let Some(callback) = shared.on_activated.borrow().clone() {
         callback(station.id);
+    }
+}
+
+/// `NET-3b`: a live stream cannot be deferred, so — unlike a download or a
+/// device sync — offline never queues a fresh play attempt. Instead of
+/// opening a connection that is known to fail, this simply does not start
+/// one; the context menu's "No connection · Retry" label (`play_menu_label`)
+/// is the only feedback, and clicking it again after connectivity returns
+/// is the retry.
+fn try_play_station(shared: &Shared, controller: &Rc<PlayerController>, station: &StationRow) {
+    match connectivity::live_stream_action_outcome(shared.connectivity.get()) {
+        connectivity::ActionOutcome::RunsNow => play_station(controller, station),
+        connectivity::ActionOutcome::NoConnectionRetry => {
+            tracing::debug!(
+                station_id = station.id,
+                "radio play skipped: no connection, showing retry instead of connecting"
+            );
+        }
+        connectivity::ActionOutcome::QueuedOffline => unreachable!(
+            "live_stream_action_outcome never returns QueuedOffline — a live stream cannot be deferred"
+        ),
     }
 }
 

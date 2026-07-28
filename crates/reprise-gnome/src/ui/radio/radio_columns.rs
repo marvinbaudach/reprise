@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
 use gtk4::prelude::*;
+use reprise_core::connectivity::Connectivity;
 use reprise_core::radio::StationRow;
 
 use super::radio_context_menu;
@@ -12,6 +13,9 @@ use crate::ui::strings;
 
 pub(super) type OnRemove = Rc<dyn Fn(i64)>;
 pub(super) type LiveState = Rc<dyn Fn() -> RadioLiveState>;
+/// `NET-3b`: read at right-click/context-menu-key time so the Play entry's
+/// label always reflects current connectivity, never a stale snapshot.
+pub(super) type ConnectivitySource = Rc<dyn Fn() -> Connectivity>;
 
 fn apply_playing_style(widget: &gtk4::Widget, playing: bool) {
     if playing {
@@ -27,9 +31,11 @@ fn text_column(
     expand: bool,
     render: impl Fn(&StationRow, &RadioLiveState) -> String + 'static,
     live_state: &LiveState,
+    connectivity: &ConnectivitySource,
 ) {
     let factory = gtk4::SignalListItemFactory::new();
     let live_for_gesture = live_state.clone();
+    let connectivity_for_gesture = connectivity.clone();
     factory.connect_setup(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -40,7 +46,13 @@ fn text_column(
             .ellipsize(gtk4::pango::EllipsizeMode::End)
             .build();
         let live = live_for_gesture.clone();
-        radio_context_menu::wire_gesture(&label, item, move |id| row_is_accented(id, &live()));
+        let connectivity = connectivity_for_gesture.clone();
+        radio_context_menu::wire_gesture(
+            &label,
+            item,
+            move |id| row_is_accented(id, &live()),
+            move || connectivity(),
+        );
         item.set_child(Some(&label));
     });
     let live_state = live_state.clone();
@@ -78,10 +90,16 @@ fn text_column(
     view.append_column(&column);
 }
 
-fn state_column(view: &gtk4::ColumnView, on_remove: &OnRemove, live_state: &LiveState) {
+fn state_column(
+    view: &gtk4::ColumnView,
+    on_remove: &OnRemove,
+    live_state: &LiveState,
+    connectivity: &ConnectivitySource,
+) {
     let factory = gtk4::SignalListItemFactory::new();
     let callback = on_remove.clone();
     let live_for_gesture = live_state.clone();
+    let connectivity_for_gesture = connectivity.clone();
     factory.connect_setup(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -122,7 +140,13 @@ fn state_column(view: &gtk4::ColumnView, on_remove: &OnRemove, live_state: &Live
         cell.append(&icon);
         cell.append(&star);
         let live = live_for_gesture.clone();
-        radio_context_menu::wire_gesture(&cell, item, move |id| row_is_accented(id, &live()));
+        let connectivity = connectivity_for_gesture.clone();
+        radio_context_menu::wire_gesture(
+            &cell,
+            item,
+            move |id| row_is_accented(id, &live()),
+            move || connectivity(),
+        );
         item.set_child(Some(&cell));
     });
     let live_state = live_state.clone();
@@ -173,14 +197,16 @@ pub(super) fn append_columns(
     view: &gtk4::ColumnView,
     on_remove: &OnRemove,
     live_state: &LiveState,
+    connectivity: &ConnectivitySource,
 ) {
-    state_column(view, on_remove, live_state);
+    state_column(view, on_remove, live_state, connectivity);
     text_column(
         view,
         &strings::text(strings::RADIO_STATION),
         true,
         |row, _| row.name.clone(),
         live_state,
+        connectivity,
     );
     text_column(
         view,
@@ -188,6 +214,7 @@ pub(super) fn append_columns(
         false,
         |row, _| format_genre(row.genre.as_deref()),
         live_state,
+        connectivity,
     );
     text_column(
         view,
@@ -195,6 +222,7 @@ pub(super) fn append_columns(
         false,
         |row, _| format_bitrate(row.bitrate_kbps),
         live_state,
+        connectivity,
     );
     text_column(
         view,
@@ -202,6 +230,7 @@ pub(super) fn append_columns(
         false,
         |row, _| format_country(row.country_code.as_deref()),
         live_state,
+        connectivity,
     );
     text_column(
         view,
@@ -209,5 +238,6 @@ pub(super) fn append_columns(
         true,
         |row, live| now_playing(row.id, live),
         live_state,
+        connectivity,
     );
 }

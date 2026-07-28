@@ -47,6 +47,9 @@ pub const RADIO_ADD_FAILED: &str = N_!("Could not add this station");
 pub const RADIO_ALREADY_FAVORITE: &str = N_!("This station is already in Radio");
 pub const RADIO_PLAY: &str = N_!("Play");
 pub const RADIO_STOP: &str = N_!("Stop");
+/// `NET-3b`: Radio's offline exception — a live stream cannot be queued, so
+/// the Play entry itself becomes the retry affordance while offline.
+pub const RADIO_NO_CONNECTION_RETRY: &str = N_!("No connection · Retry");
 pub const RADIO_COPY_URL: &str = N_!("Copy stream URL");
 pub const RADIO_EDIT: &str = N_!("Edit station…");
 pub const RADIO_REMOVE_FAVORITE: &str = N_!("Remove favorite");

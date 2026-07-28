@@ -30,6 +30,7 @@ mod artist_news_view;
 pub mod artist_portrait;
 pub mod browser;
 pub mod concerts;
+pub mod connectivity;
 pub mod cover;
 pub mod cover_download;
 pub mod db;

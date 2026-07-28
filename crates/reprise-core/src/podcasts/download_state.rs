@@ -1,5 +1,7 @@
 //! Pure presentation state for episode downloads.
 
+use crate::connectivity::LocalAvailability;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DownloadProgress {
     pub received_bytes: u64,
@@ -57,6 +59,26 @@ pub fn from_persisted(
     }
 }
 
+impl DownloadState {
+    /// `NET-3a`'s bridge from this module's richer download lifecycle into
+    /// the offline projection's simpler local-availability signal. Only a
+    /// file that is actually present locally lets a row or an action skip
+    /// the network entirely — every other state (not downloaded, queued,
+    /// downloading, a path recorded but the file gone, or a failed
+    /// attempt) still needs the network to become playable/transferable.
+    #[must_use]
+    pub const fn local_availability(&self) -> LocalAvailability {
+        match self {
+            DownloadState::Downloaded { .. } => LocalAvailability::Available,
+            DownloadState::NotDownloaded
+            | DownloadState::Queued
+            | DownloadState::Downloading { .. }
+            | DownloadState::Missing
+            | DownloadState::Failed { .. } => LocalAvailability::Missing,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,5 +128,31 @@ mod tests {
             from_persisted(Some("/podcasts/show/episode.mp3"), Some(42), false),
             DownloadState::Missing
         );
+    }
+
+    #[test]
+    fn net_3a_local_availability_is_available_only_for_a_downloaded_file() {
+        assert_eq!(
+            DownloadState::Downloaded { bytes: 42 }.local_availability(),
+            LocalAvailability::Available
+        );
+        for missing in [
+            DownloadState::NotDownloaded,
+            DownloadState::Queued,
+            DownloadState::Downloading {
+                received_bytes: 10,
+                total_bytes: None,
+            },
+            DownloadState::Missing,
+            DownloadState::Failed {
+                message: "offline".into(),
+            },
+        ] {
+            assert_eq!(
+                missing.local_availability(),
+                LocalAvailability::Missing,
+                "{missing:?} still needs the network"
+            );
+        }
     }
 }
