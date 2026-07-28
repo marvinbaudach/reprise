@@ -521,6 +521,34 @@ Aktionen ohne Beruhigungs-Assertion zwischen `responsive_window.sh:189-190` —
 nicht auf einen Produktfehler. Das sollte vor dem ersten neuen CUA-Szenario
 repariert sein, sonst erbt jedes neue Szenario dasselbe Muster.
 
+## 7b. Was nur ein Mensch abnehmen kann
+
+Die automatischen Gatter beweisen Projektionen, Widget-Aufbau und
+Zustandsübergänge. Sie beweisen **nicht**, wie etwas aussieht, sich anfühlt oder
+sich an echter Fremdhardware verhält. `AGENTS.md` reserviert diese Kategorie
+ausdrücklich für Rendering, Zeigergesten, Medientasten, Wayland-Verhalten und
+den Sperrbildschirm. Was aus dieser Arbeit dazugehört:
+
+- **Add-Dialoge (Block A).** Wirkt der kompakte `+ Add` als Zeilenaktion
+  richtig gewichtet neben der Fußleiste? Ist das quittierte „Added" erkennbar
+  erledigt, ohne wie ein Fehler auszusehen? Liest sich der einzeilige Hinweis
+  bei quellfremder URL als Erklärung statt als Zurückweisung?
+- **Leerzustände (B1).** Sehen die drei Flächen „ungenutzt" aus statt „kaputt"
+  — das ist die eigentliche Zusage von 6f und kein Test kann sie prüfen.
+- **Kanal-Detail (D1).** Sind Download-Spalte und Kopfsumme bei langen
+  Titeln und schmalem Fenster noch lesbar?
+- **Online sources (G1).** Der wichtigste Punkt: Schalter aus, dann durch
+  Podcasts, YouTube, Radio, Cover, Porträts und Lyrics gehen — passiert
+  wirklich nichts im Netz? Die Zusage lautet „no requests, no downloads,
+  nothing hidden".
+- **MTP-Sync (Block E).** Ein echter Gerätelauf mit angestecktem Telefon. Das
+  Testdoppel beweist die Reihenfolge und die Buchführung, aber weder
+  Handle-Auflösung nach Reconnect noch das Verhalten des Android-Media-Scanners
+  mit den drei Zielordnern.
+- **Offline (Block F).** Netz trennen und prüfen, ob heruntergeladene Episoden
+  unverändert spielen, nicht heruntergeladene gedimmt „Needs network" lesen und
+  Radio „No connection · Retry" statt einer Warteschlange anbietet.
+
 ## 8a. Entschieden
 
 Vom Eigentümer am 2026-07-28 entschieden; diese Punkte sind keine offenen
