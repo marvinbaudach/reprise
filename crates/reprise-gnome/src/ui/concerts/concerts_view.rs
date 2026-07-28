@@ -269,11 +269,7 @@ fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
     let location = concerts::config::location(&conn)?;
     let credentials = concerts::config::credentials(&conn)?;
     let similar_enabled = concerts::config::similar_config(&conn)?.enabled;
-    let has_similar_rows = conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM concert_events WHERE is_similar = 1)",
-        [],
-        |row| row.get::<_, bool>(0),
-    )?;
+    let has_similar_rows = concerts::has_similar_events(&conn)?;
     let rows = concerts::query_events(&conn, &filter, location.as_ref(), today)?;
     let total = if filter == ConcertFilter::default() {
         rows.len()

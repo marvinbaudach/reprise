@@ -270,21 +270,10 @@ impl ConcertsRuntime {
     }
 }
 
-pub(super) fn request_allowed(enabled: bool, fetching: bool, due: bool) -> bool {
-    enabled && !fetching && due
-}
+pub(super) use reprise_core::updates::fetch_allowed as request_allowed;
 
 fn database_path(conn: &rusqlite::Connection) -> Option<PathBuf> {
-    let mut statement = conn.prepare("PRAGMA database_list").ok()?;
-    let mut rows = statement.query([]).ok()?;
-    while let Some(row) = rows.next().ok()? {
-        let name = row.get::<_, String>(1).ok()?;
-        let path = row.get::<_, String>(2).ok()?;
-        if name == "main" && !path.is_empty() {
-            return Some(PathBuf::from(path));
-        }
-    }
-    None
+    reprise_core::db::main_path(conn)
 }
 
 fn spawn(database_path: Option<PathBuf>) -> async_channel::Sender<WorkerRequest> {
