@@ -1,13 +1,9 @@
-//! Characterization tests for [`DeviceSyncMachine`].
+//! Tests for [`DeviceSyncMachine`].
 //!
-//! These pin the orchestration that `reprise-gnome` performed before the
-//! extraction, including two inherited oddities that are deliberately
-//! preserved here and corrected in a separate commit:
-//!
-//! * `MTP-O1` — the run opens on [`SyncStep::Removing`] although removals run
-//!   last.
-//! * `MTP-O2` — a single failed track suppresses every playlist write and
-//!   every removal.
+//! Most of these are characterization tests: they pin the orchestration that
+//! `reprise-gnome` performed before the extraction. Two behaviours are
+//! deliberately *not* the old ones — the opening step label and the reach of a
+//! failed transfer — and their tests say so.
 
 use std::path::PathBuf;
 
@@ -16,6 +12,7 @@ use super::{
     DesiredManagedFile, DeviceFileRecord, DevicePlaylistRecord, ManagedDeviceFile, ManagedRemoval,
     MirrorPlan, MirrorReplacement, PlaylistWrite, SelectionSource, SyncTrack, TransferAction,
 };
+use crate::device_sync::m3u::DevicePlaylistEntry;
 use crate::device_sync::PlannedSyncPhase;
 use crate::device_sync::SyncStep;
 
@@ -63,11 +60,23 @@ fn existing(id: i64, device_path: &str) -> DeviceFileRecord {
 }
 
 fn playlist_write(id: i64) -> PlaylistWrite {
+    playlist_write_covering(id, &[])
+}
+
+/// A playlist write whose entries point at the given tracks' device paths.
+fn playlist_write_covering(id: i64, track_ids: &[i64]) -> PlaylistWrite {
     PlaylistWrite {
         source: SelectionSource::Playlist(id),
         source_name: format!("Playlist {id}"),
         device_path: format!("Reprise/Playlist {id}.m3u8"),
-        entries: Vec::new(),
+        entries: track_ids
+            .iter()
+            .map(|track_id| DevicePlaylistEntry {
+                relative_path: format!("Reprise/{track_id}.opus"),
+                duration_secs: 180,
+                display: format!("Track {track_id}"),
+            })
+            .collect(),
         contents: "#EXTM3U\n".into(),
     }
 }
@@ -108,7 +117,7 @@ fn start(plan: MirrorPlan) -> (DeviceSyncMachine, Vec<Effect>) {
 }
 
 #[test]
-fn mtp_o1_a_run_opens_on_the_removing_step_although_removals_run_last() {
+fn mtp_18_a_run_opens_on_the_step_that_actually_runs_first() {
     let mut plan = empty_plan();
     plan.copy
         .push(desired(1, TransferAction::CopyOriginal, 100));
@@ -122,14 +131,53 @@ fn mtp_o1_a_run_opens_on_the_removing_step_although_removals_run_last() {
     assert_eq!(
         machine.phase(),
         &PlannedSyncPhase::Syncing {
-            step: SyncStep::Removing,
+            step: SyncStep::Copying,
             done: 0,
             total: 1,
-            current_track: String::new(),
+            current_track: "Track 1 — Artist".into(),
             bytes_done: 0,
             bytes_total: 100,
         },
-        "preserved oddity: the opening label names the step that runs last"
+        "the run opens on its first transfer, not on the removals that run last"
+    );
+}
+
+#[test]
+fn mtp_18_a_run_without_transfers_opens_on_its_playlists() {
+    let mut plan = empty_plan();
+    plan.playlist_writes.push(playlist_write(7));
+    plan.remove
+        .push(ManagedRemoval::Inventory(existing(9, "Reprise/9.opus")));
+
+    let (machine, _) = start(plan);
+
+    assert!(matches!(
+        machine.phase(),
+        PlannedSyncPhase::Syncing {
+            step: SyncStep::WritingPlaylists,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn mtp_18_a_run_with_nothing_but_removals_opens_on_them() {
+    let mut plan = empty_plan();
+    plan.remove
+        .push(ManagedRemoval::Inventory(existing(9, "Reprise/9.opus")));
+
+    let (machine, _) = start(plan);
+
+    assert_eq!(
+        machine.phase(),
+        &PlannedSyncPhase::Syncing {
+            step: SyncStep::Removing,
+            done: 0,
+            total: 1,
+            current_track: "Reprise/9.opus".into(),
+            bytes_done: 0,
+            bytes_total: 0,
+        }
     );
 }
 
@@ -188,12 +236,29 @@ fn a_clean_run_copies_then_writes_playlists_then_removes_then_verifies() {
 }
 
 #[test]
-fn mtp_o2_one_failed_track_suppresses_every_playlist_and_every_removal() {
+fn mtp_19_a_failed_track_suppresses_only_the_playlists_that_reference_it() {
     let mut plan = empty_plan();
     plan.copy
         .push(desired(1, TransferAction::CopyOriginal, 100));
-    plan.playlist_writes.push(playlist_write(7));
-    plan.playlist_removals.push(playlist_record(8));
+    plan.playlist_writes.push(playlist_write_covering(7, &[1]));
+    plan.playlist_writes.push(playlist_write_covering(8, &[2]));
+    plan.transfer_bytes = 100;
+
+    let (mut machine, _) = start(plan);
+    machine.dispatch(Event::PartialsCleaned(Ok(())));
+
+    assert_eq!(
+        machine.dispatch(Event::TrackCopied(Err("device is full".into()))),
+        vec![Effect::WritePlaylist { index: 1 }],
+        "playlist 7 would point at the track that never arrived; playlist 8 would not"
+    );
+}
+
+#[test]
+fn mtp_19_a_failed_track_alone_does_not_block_the_removals() {
+    let mut plan = empty_plan();
+    plan.copy
+        .push(desired(1, TransferAction::CopyOriginal, 100));
     plan.remove
         .push(ManagedRemoval::Inventory(existing(9, "Reprise/9.opus")));
     plan.transfer_bytes = 100;
@@ -201,17 +266,33 @@ fn mtp_o2_one_failed_track_suppresses_every_playlist_and_every_removal() {
     let (mut machine, _) = start(plan);
     machine.dispatch(Event::PartialsCleaned(Ok(())));
 
-    let after_failure = machine.dispatch(Event::TrackCopied(Err("device is full".into())));
+    assert_eq!(
+        machine.dispatch(Event::TrackCopied(Err("device is full".into()))),
+        vec![Effect::RemoveTrack { index: 0 }],
+        "an obsolete file is obsolete whatever an unrelated transfer did"
+    );
+}
+
+#[test]
+fn mtp_19_a_playlist_held_back_by_a_failed_track_keeps_its_previous_file() {
+    let mut plan = empty_plan();
+    plan.copy
+        .push(desired(1, TransferAction::CopyOriginal, 100));
+    plan.playlist_writes.push(playlist_write_covering(7, &[1]));
+    plan.playlist_removals.push(playlist_record(7));
+    plan.transfer_bytes = 100;
+
+    let (mut machine, _) = start(plan);
+    machine.dispatch(Event::PartialsCleaned(Ok(())));
 
     assert_eq!(
-        after_failure,
+        machine.dispatch(Event::TrackCopied(Err("device is full".into()))),
         vec![Effect::Finished(SyncOutcome::Failed {
             terminal_error: None,
             failed_tracks: vec![1],
         })],
-        "preserved oddity: playlists and removals are skipped wholesale"
+        "the playlist was never rewritten, so its old file must survive"
     );
-    assert_eq!(machine.phase(), &PlannedSyncPhase::Idle);
 }
 
 #[test]
@@ -611,5 +692,67 @@ fn a_failed_removal_still_lets_a_superseded_path_be_cleaned_up() {
             device_path: "Reprise/old.mp3".into(),
         }],
         "the superseded copy is still deleted after a failed removal"
+    );
+}
+
+#[test]
+fn mtp_19_a_playlist_that_could_not_be_rewritten_holds_every_removal_back() {
+    let mut plan = empty_plan();
+    plan.playlist_writes.push(playlist_write(7));
+    plan.remove
+        .push(ManagedRemoval::Inventory(existing(9, "Reprise/9.opus")));
+
+    let (mut machine, _) = start(plan);
+    machine.dispatch(Event::PartialsCleaned(Ok(())));
+
+    assert_eq!(
+        machine.dispatch(Event::PlaylistWritten(Err("read-only".into()))),
+        vec![Effect::Finished(SyncOutcome::Failed {
+            terminal_error: None,
+            failed_tracks: vec![-1],
+        })],
+        "the device still holds the old playlist, which may reference the file"
+    );
+}
+
+#[test]
+fn mtp_19_a_failed_transfer_that_holds_back_no_playlist_leaves_the_removals_alone() {
+    let mut plan = empty_plan();
+    plan.copy
+        .push(desired(1, TransferAction::CopyOriginal, 100));
+    plan.playlist_writes.push(playlist_write_covering(7, &[2]));
+    plan.remove
+        .push(ManagedRemoval::Inventory(existing(9, "Reprise/9.opus")));
+    plan.transfer_bytes = 100;
+
+    let (mut machine, _) = start(plan);
+    machine.dispatch(Event::PartialsCleaned(Ok(())));
+    machine.dispatch(Event::TrackCopied(Err("device is full".into())));
+    machine.dispatch(Event::PlaylistWritten(Ok(())));
+
+    assert_eq!(
+        machine.dispatch(Event::PlaylistRecorded(Ok(()))),
+        vec![Effect::RemoveTrack { index: 0 }],
+        "every playlist was republished, so nothing stale can reference the file"
+    );
+}
+
+#[test]
+fn mtp_19_a_playlist_that_could_not_be_deleted_holds_every_removal_back() {
+    let mut plan = empty_plan();
+    plan.playlist_removals.push(playlist_record(8));
+    plan.remove
+        .push(ManagedRemoval::Inventory(existing(9, "Reprise/9.opus")));
+
+    let (mut machine, _) = start(plan);
+    machine.dispatch(Event::PartialsCleaned(Ok(())));
+
+    assert_eq!(
+        machine.dispatch(Event::PlaylistRemoved(Err("device is busy".into()))),
+        vec![Effect::Finished(SyncOutcome::Failed {
+            terminal_error: None,
+            failed_tracks: vec![-1],
+        })],
+        "the obsolete playlist is still on the device and may name the file"
     );
 }
