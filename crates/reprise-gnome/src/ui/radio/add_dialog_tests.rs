@@ -179,3 +179,24 @@ fn src_8_radio_results_scroll_inside_a_bounded_viewport() {
         "station rows need the same overlay-scrollbar clearance as the other dialogs"
     );
 }
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn net_1a_radio_search_never_reaches_the_directory_while_the_switch_is_off() {
+    gtk4::init().unwrap();
+    let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
+    reprise_core::online_sources::set_enabled(&conn.borrow(), false).unwrap();
+    let dialog = RadioAddDialog::new(conn, || {});
+
+    dialog.submit("metalcore");
+
+    assert_eq!(
+        dialog.widgets.status.text().as_str(),
+        strings::text(strings::ONLINE_SOURCES_TURNED_OFF),
+        "the refusal must be stated, not silent"
+    );
+    assert!(
+        matches!(dialog.state.borrow().phase, AddDialogPhase::Idle),
+        "no search may be dispatched, so the dialog stays idle"
+    );
+}

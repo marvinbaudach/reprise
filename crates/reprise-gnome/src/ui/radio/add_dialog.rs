@@ -350,6 +350,19 @@ impl RadioAddDialog {
             self.render(AddDialogState::default());
             return;
         }
+        // NET-1a: radio-browser search and the ICY probe are both network
+        // paths, so the switch is honoured before either is dispatched.
+        let allowed = reprise_core::online_sources::network_allowed(
+            &self.conn.borrow(),
+            &reprise_core::modules::RADIO_MODULE,
+        )
+        .unwrap_or(false);
+        if !allowed {
+            self.widgets
+                .status
+                .set_text(&strings::text(strings::ONLINE_SOURCES_TURNED_OFF));
+            return;
+        }
         let (state, generation) = self.state.borrow().clone().begin(&input);
         self.render(state);
         let result = match input {

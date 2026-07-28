@@ -20,3 +20,9 @@ pub const ONLINE_SOURCES_RADIO_SUBTITLE: &str = N_!("Directory: radio-browser.in
 pub const ONLINE_SOURCES_USE_YOUTUBE: &str = N_!("Use YouTube");
 pub const ONLINE_SOURCES_USE_PODCASTS: &str = N_!("Use Podcasts");
 pub const ONLINE_SOURCES_USE_RADIO: &str = N_!("Use Radio");
+
+/// `NET-1a`: shown wherever a surface refuses to reach the network because the
+/// global switch — or the source's own switch — is off. The page promises "no
+/// requests, no downloads, nothing hidden", so the refusal has to be visible.
+pub const ONLINE_SOURCES_TURNED_OFF: &str =
+    N_!("Online sources are turned off — enable them in Preferences");

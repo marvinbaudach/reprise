@@ -6,6 +6,7 @@
 //! [`PodcastKind`], so they live here rather than in the widget code.
 
 use reprise_core::podcasts::{self, PodcastKind};
+use rusqlite::Connection;
 
 use crate::ui::strings;
 
@@ -73,9 +74,111 @@ pub(super) fn primary_action(input: &str, kind: PodcastKind) -> (&'static str, b
     (label, sensitive)
 }
 
+/// Everything that can stop a submit before any provider work starts, in one
+/// place: `SRC-6` refuses a source-foreign URL, and `NET-1a` refuses any network
+/// path while the global switch or this source's own switch is off.
+///
+/// Returns the message to show, or `None` when the submit may proceed.
+pub(super) fn submit_refusal(
+    conn: &Connection,
+    kind: PodcastKind,
+    input: &AddInput,
+) -> Option<&'static str> {
+    if !input_matches_dialog(input, kind) {
+        return Some(foreign_url_reason(kind));
+    }
+    if matches!(input, AddInput::Empty) {
+        return None;
+    }
+    // A failed lookup is treated as "not allowed": refusing a request we are
+    // unsure about is the safe direction for a privacy promise.
+    if podcasts::config::source_network_allowed(conn, kind).unwrap_or(false) {
+        None
+    } else {
+        Some(strings::ONLINE_SOURCES_TURNED_OFF)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn conn_with(youtube: bool, podcasts: bool, global: bool) -> Connection {
+        let conn = reprise_core::db::open_migrated(None).unwrap();
+        reprise_core::modules::set_enabled(&conn, &reprise_core::modules::YOUTUBE_MODULE, youtube)
+            .unwrap();
+        reprise_core::modules::set_enabled(
+            &conn,
+            &reprise_core::modules::PODCASTS_MODULE,
+            podcasts,
+        )
+        .unwrap();
+        reprise_core::online_sources::set_enabled(&conn, global).unwrap();
+        conn
+    }
+
+    #[test]
+    fn net_1a_a_disabled_source_refuses_every_network_path_of_its_dialog() {
+        let off = conn_with(false, false, true);
+
+        for input in [
+            classify_input("metal interviews"),
+            classify_input("https://feeds.test/show.xml"),
+        ] {
+            assert_eq!(
+                submit_refusal(&off, PodcastKind::Rss, &input),
+                Some(strings::ONLINE_SOURCES_TURNED_OFF),
+                "search and URL preview must both be refused"
+            );
+        }
+        assert_eq!(
+            submit_refusal(
+                &off,
+                PodcastKind::Youtube,
+                &classify_input("https://www.youtube.com/@example")
+            ),
+            Some(strings::ONLINE_SOURCES_TURNED_OFF)
+        );
+    }
+
+    #[test]
+    fn net_1a_the_global_switch_overrides_an_enabled_source() {
+        let global_off = conn_with(true, true, false);
+        let terms = classify_input("metal interviews");
+
+        assert_eq!(
+            submit_refusal(&global_off, PodcastKind::Rss, &terms),
+            Some(strings::ONLINE_SOURCES_TURNED_OFF),
+            "the global switch must win over an enabled source"
+        );
+        assert_eq!(
+            submit_refusal(&global_off, PodcastKind::Youtube, &terms),
+            Some(strings::ONLINE_SOURCES_TURNED_OFF)
+        );
+    }
+
+    #[test]
+    fn net_1a_an_enabled_source_proceeds_and_an_empty_field_never_reaches_the_network() {
+        let on = conn_with(true, true, true);
+
+        assert_eq!(
+            submit_refusal(&on, PodcastKind::Rss, &classify_input("metal interviews")),
+            None
+        );
+        assert_eq!(
+            submit_refusal(&on, PodcastKind::Rss, &AddInput::Empty),
+            None
+        );
+        // SRC-6 still outranks the gate: a foreign URL is named as foreign.
+        assert_eq!(
+            submit_refusal(
+                &on,
+                PodcastKind::Rss,
+                &classify_input("https://www.youtube.com/@example")
+            ),
+            Some(strings::PODCAST_URL_IS_YOUTUBE)
+        );
+    }
 
     #[test]
     fn src_3a_add_dialog_submits_search_or_url_through_one_field() {

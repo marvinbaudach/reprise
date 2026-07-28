@@ -18,7 +18,7 @@ use crate::ui::strings;
 
 use super::add_dialog_input::{
     classify_input, dialog_hint, dialog_title, foreign_url_reason, input_matches_dialog,
-    primary_action, AddInput,
+    primary_action, submit_refusal, AddInput,
 };
 use super::add_dialog_results::{clear, result_section, rss_candidate, youtube_candidate};
 
@@ -177,10 +177,10 @@ pub(super) fn present(
             let next = generation.get().wrapping_add(1);
             generation.set(next);
             let parsed = classify_input(&input);
-            // SRC-6: a source-foreign URL is refused here, so no provider work
-            // is started and nothing is handed to the other dialog.
-            if !input_matches_dialog(&parsed, preferred_kind) {
-                status.set_text(&strings::text(foreign_url_reason(preferred_kind)));
+            // SRC-6 and NET-1a decided in one place, before any provider work.
+            let refusal = submit_refusal(&conn.borrow(), preferred_kind, &parsed);
+            if let Some(reason) = refusal {
+                status.set_text(&strings::text(reason));
                 return;
             }
             match parsed {
