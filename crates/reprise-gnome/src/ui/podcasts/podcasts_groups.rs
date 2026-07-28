@@ -338,7 +338,7 @@ fn download_status(state: &DownloadState) -> gtk4::Widget {
             label.set_text(&format!(
                 "{} · {}",
                 strings::text(strings::PODCAST_DOWNLOADING),
-                file_size(Some((*received_bytes).try_into().unwrap_or(i64::MAX)))
+                strings::compact_file_size(*received_bytes)
             ));
             match total_bytes {
                 Some(total) if *total > 0 => {
@@ -355,7 +355,8 @@ fn download_status(state: &DownloadState) -> gtk4::Widget {
             }
         }
         DownloadState::Downloaded { bytes } => {
-            label.set_text(&file_size(Some((*bytes).try_into().unwrap_or(i64::MAX))));
+            // POD-11: the file exists, so its compact, truthful size is shown.
+            label.set_text(&strings::compact_file_size(*bytes));
         }
         DownloadState::Missing => {
             label.set_text(&strings::text(strings::PODCAST_DOWNLOAD_MISSING));

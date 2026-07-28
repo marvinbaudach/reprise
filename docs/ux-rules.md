@@ -2703,6 +2703,16 @@ Hörstatistik.
   „Load more" erweitert denselben Kanal einmalig über die yt-dlp-Providergrenze
   bis Eintrag 40. Auswahl und Mehrfach-Download beziehungsweise -Entfernen
   bleiben kanalgebunden; jede Zeile zeigt den Downloadzustand aus POD-7.
+- **POD-11** [aktiv] [gtk] — Auf der YouTube-Kanalseite trägt jede Zeile
+  eine eigene Download-Spalte mit dem Zustand aus POD-7 und, sobald eine
+  Datei tatsächlich existiert, ihrer kompakt formatierten Größe (z. B.
+  „148 MB", „1.2 GB"); für nicht heruntergeladene Episoden wird nie eine
+  Größe erfunden. Eine Kopfzeile fasst den aktuell geladenen Kanal
+  zusammen — Fenstergröße der gelisteten Menge, Anzahl heruntergeladener
+  Episoden und deren Gesamtgröße auf der Platte (z. B. „10 of 487 ·
+  3 downloaded · 1.2 GB") — und bleibt nach „Load more", beim Ein-/
+  Ausblenden von Shorts sowie nach Abschluss oder Löschung eines Downloads
+  korrekt.
 - **RAD-1** [aktiv] [gtk] — Nur die aktuell verbundene Station ist in der
   Tabelle akzentuiert; ihr Zustandsicon, Name, Now-playing und Zeilentint
   wechseln gemeinsam. Alle anderen sowie eine präsentierte, aber getrennte

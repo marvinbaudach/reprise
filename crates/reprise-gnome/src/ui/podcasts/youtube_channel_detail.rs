@@ -11,6 +11,7 @@ use gtk4::prelude::*;
 use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::EpisodeRow;
 
+use super::podcasts_download_presentation;
 use super::podcasts_groups::{self, DownloadRowWidgets};
 use super::podcasts_presentation::{duration, relative_date, status_pill, RenderedSourceGroup};
 use crate::ui::strings;
@@ -308,7 +309,22 @@ impl YoutubeChannelDetail {
             let state = self.state.borrow();
             state.available_count(subscription_id, &rendered.group.episodes)
         };
-        let window = gtk4::Label::new(Some(&strings::youtube_channel_window(shown, available)));
+        // POD-11: downloaded count/bytes cover the whole channel, not just
+        // the visible window or the Shorts-filtered set, so the total reads
+        // as real disk usage.
+        let download_states = self.download_states.borrow().clone();
+        let summary = podcasts_download_presentation::channel_download_summary(
+            shown,
+            available,
+            &rendered.group.episodes,
+            &download_states,
+        );
+        let window = gtk4::Label::new(Some(&strings::youtube_channel_summary(
+            summary.shown,
+            summary.available,
+            summary.downloaded_count,
+            summary.downloaded_bytes,
+        )));
         window.set_hexpand(true);
         window.set_xalign(0.0);
         controls.append(&window);
@@ -595,5 +611,80 @@ mod tests {
         assert_eq!(state.active_channel(), Some(7));
         state.close_channel();
         assert_eq!(state.active_channel(), None);
+    }
+
+    #[test]
+    fn pod_11_channel_header_summary_reflects_window_shorts_and_downloads_together() {
+        // 11 long-form videos plus one Short (id 11, 60s).
+        let episodes = (1..=12)
+            .rev()
+            .map(|id| episode(id, Some(if id == 11 { 60 } else { 600 })))
+            .collect::<Vec<_>>();
+        let mut state = YoutubeChannelState::default();
+        let mut download_states = BTreeMap::new();
+        download_states.insert(12, DownloadState::Downloaded { bytes: 1_000 });
+        download_states.insert(2, DownloadState::Downloaded { bytes: 2_000 });
+
+        // Initial 10-of-11 window (Shorts hidden), two episodes downloaded.
+        let shown = state.visible_episodes(7, &episodes).len();
+        let available = state.available_count(7, &episodes);
+        let summary = podcasts_download_presentation::channel_download_summary(
+            shown,
+            available,
+            &episodes,
+            &download_states,
+        );
+        assert_eq!((summary.shown, summary.available), (10, 11));
+        assert_eq!(summary.downloaded_count, 2);
+        assert_eq!(summary.downloaded_bytes, 3_000);
+
+        // "Load more" changes the window, not the download totals.
+        state.set_loaded_limit(7, 40);
+        let shown = state.visible_episodes(7, &episodes).len();
+        let available = state.available_count(7, &episodes);
+        let summary = podcasts_download_presentation::channel_download_summary(
+            shown,
+            available,
+            &episodes,
+            &download_states,
+        );
+        assert_eq!((summary.shown, summary.available), (11, 11));
+        assert_eq!(summary.downloaded_count, 2);
+        assert_eq!(summary.downloaded_bytes, 3_000);
+
+        // Revealing Shorts changes the window again; downloads stay correct.
+        state.set_hide_shorts(7, false);
+        let shown = state.visible_episodes(7, &episodes).len();
+        let available = state.available_count(7, &episodes);
+        let summary = podcasts_download_presentation::channel_download_summary(
+            shown,
+            available,
+            &episodes,
+            &download_states,
+        );
+        assert_eq!((summary.shown, summary.available), (12, 12));
+        assert_eq!(summary.downloaded_count, 2);
+
+        // A newly finished download changes the totals without touching the window.
+        download_states.insert(11, DownloadState::Downloaded { bytes: 500 });
+        let summary = podcasts_download_presentation::channel_download_summary(
+            shown,
+            available,
+            &episodes,
+            &download_states,
+        );
+        assert_eq!(summary.downloaded_count, 3);
+        assert_eq!(summary.downloaded_bytes, 3_500);
+
+        // Deleting a download drops it from both the count and the total.
+        download_states.remove(&12);
+        let summary = podcasts_download_presentation::channel_download_summary(
+            shown,
+            available,
+            &episodes,
+            &download_states,
+        );
+        assert_eq!(summary.downloaded_count, 2);
+        assert_eq!(summary.downloaded_bytes, 2_500);
     }
 }
