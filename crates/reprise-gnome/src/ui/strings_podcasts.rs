@@ -190,12 +190,23 @@ pub fn podcast_sync_device(device: &str) -> String {
     )
 }
 
-pub fn youtube_channel_window(shown: usize, available: usize) -> String {
+/// `POD-11`: the YouTube channel detail's header summary — the currently
+/// listed window's size, how many of the channel's episodes are downloaded,
+/// and their combined size on disk (e.g. "10 of 487 · 3 downloaded ·
+/// 1.2 GB").
+pub fn youtube_channel_summary(
+    shown: usize,
+    available: usize,
+    downloaded_count: usize,
+    downloaded_bytes: u64,
+) -> String {
     formatted(
-        N_!("Latest {shown} of {available} videos"),
+        N_!("{shown} of {available} · {downloaded} downloaded · {size}"),
         &[
             ("shown", &shown.to_string()),
             ("available", &available.to_string()),
+            ("downloaded", &downloaded_count.to_string()),
+            ("size", &compact_file_size(downloaded_bytes)),
         ],
     )
 }
@@ -288,6 +299,34 @@ fn compact_unit(value: u64, unit: u64, suffix: &str) -> String {
     }
 }
 
+/// `POD-11`: compact, truthful byte-size formatting for the YouTube channel
+/// detail's per-episode download column and header summary — e.g.
+/// "148 MB", "1.2 GB". Below one binary-tier unit the exact byte count is
+/// shown; at or above it, one decimal place is used until the scaled value
+/// reaches double digits, at which point the decimal is dropped so large
+/// sizes stay compact.
+pub fn compact_file_size(bytes: u64) -> String {
+    const KIB: f64 = 1_024.0;
+    const MIB: f64 = KIB * 1_024.0;
+    const GIB: f64 = MIB * 1_024.0;
+    let value = bytes as f64;
+    if value < KIB {
+        return format!("{bytes} B");
+    }
+    let (scaled, unit) = if value < MIB {
+        (value / KIB, "KB")
+    } else if value < GIB {
+        (value / MIB, "MB")
+    } else {
+        (value / GIB, "GB")
+    };
+    if scaled < 10.0 {
+        format!("{scaled:.1} {unit}")
+    } else {
+        format!("{:.0} {unit}", scaled.round())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -309,6 +348,41 @@ mod tests {
         assert_eq!(
             podcast_youtube_channel_matches(2),
             "2 matching videos · audio only"
+        );
+    }
+
+    #[test]
+    fn compact_file_size_shows_exact_bytes_below_one_kilobyte() {
+        assert_eq!(compact_file_size(0), "0 B");
+        assert_eq!(compact_file_size(512), "512 B");
+        assert_eq!(compact_file_size(1_023), "1023 B");
+    }
+
+    #[test]
+    fn compact_file_size_switches_tier_at_each_1024_boundary() {
+        assert_eq!(compact_file_size(1_024), "1.0 KB");
+        assert_eq!(compact_file_size(1_048_575), "1024 KB");
+        assert_eq!(compact_file_size(1_048_576), "1.0 MB");
+        assert_eq!(compact_file_size(1_073_741_824), "1.0 GB");
+    }
+
+    #[test]
+    fn compact_file_size_drops_the_decimal_at_ten_and_above() {
+        assert_eq!(compact_file_size(9 * 1_048_576), "9.0 MB");
+        assert_eq!(compact_file_size(10 * 1_048_576), "10 MB");
+    }
+
+    #[test]
+    fn compact_file_size_matches_the_owners_design_examples() {
+        assert_eq!(compact_file_size(148 * 1_048_576), "148 MB");
+        assert_eq!(compact_file_size(1_288_490_189), "1.2 GB");
+    }
+
+    #[test]
+    fn pod_11_channel_summary_line_matches_the_owners_design_example() {
+        assert_eq!(
+            youtube_channel_summary(10, 487, 3, 1_288_490_189),
+            "10 of 487 · 3 downloaded · 1.2 GB"
         );
     }
 }
