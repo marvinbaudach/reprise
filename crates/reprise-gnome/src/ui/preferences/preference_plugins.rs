@@ -31,13 +31,17 @@ fn creates_scrobbling_entry(descriptor: &ModuleDescriptor) -> bool {
     descriptor.id == "listenbrainz"
 }
 
-pub(in crate::ui) fn network_descriptors() -> [&'static ModuleDescriptor; 8] {
+/// YouTube, Podcasts and Radio have moved to the dedicated Online sources
+/// page (`SET-8`) — their master switches and rows no longer render here.
+fn moved_to_online_sources_page(descriptor: &ModuleDescriptor) -> bool {
+    matches!(descriptor.id, "podcasts" | "youtube" | "radio")
+}
+
+pub(in crate::ui) fn network_descriptors() -> [&'static ModuleDescriptor; 6] {
     [
         &reprise_core::modules::LIBRARY_DOCTOR_MODULE,
         &reprise_core::modules::NEW_RELEASES_MODULE,
         &reprise_core::modules::CONCERTS_MODULE,
-        &reprise_core::modules::PODCASTS_MODULE,
-        &reprise_core::modules::RADIO_MODULE,
         &reprise_core::modules::COVER_DOWNLOAD_MODULE,
         &reprise_core::modules::ARTIST_PORTRAITS_MODULE,
         &reprise_core::modules::ONLINE_LYRICS_MODULE,
@@ -117,6 +121,9 @@ impl PreferencesContext {
             .title(strings::text(strings::CONNECTED_SERVICES))
             .build();
         for descriptor in reprise_core::modules::ALL_MODULES {
+            if moved_to_online_sources_page(descriptor) {
+                continue;
+            }
             // Scrobbling has one entry; provider controls live on its detail page.
             if plugin_group(descriptor) == PluginGroup::Connected {
                 if creates_scrobbling_entry(descriptor) {
@@ -160,16 +167,10 @@ impl PreferencesContext {
                 row_ref.set(Some(row.upcast_ref::<gtk4::Widget>()));
                 self.plugin_rows.borrow_mut().insert(descriptor.id, row_ref);
             }
-            let podcast_rows = (descriptor.id == "podcasts")
-                .then(|| super::preference_podcasts::build(&self.conn, active));
-            let radio_rows = (descriptor.id == "radio")
-                .then(|| super::preference_radio::build(&self.conn, active));
             let syncing = Rc::new(Cell::new(false));
             let weak = Rc::downgrade(self);
             let descriptor = *descriptor;
             let syncing_notify = syncing.clone();
-            let podcasts_notify = podcast_rows.clone();
-            let radio_notify = radio_rows.clone();
             row.connect_active_notify(move |row| {
                 let Some(context) = weak.upgrade() else {
                     return;
@@ -183,7 +184,6 @@ impl PreferencesContext {
                         .artist_news
                         .set_enabled(&context.conn.borrow(), active),
                     "concerts" => context.concerts.set_enabled(&context.conn.borrow(), active),
-                    "podcasts" => context.podcasts.set_enabled(&context.conn.borrow(), active),
                     "cover_download" => context
                         .cover_download
                         .set_enabled(&context.conn.borrow(), active),
@@ -238,13 +238,7 @@ impl PreferencesContext {
                     syncing_notify.set(false);
                     return;
                 }
-                if let Some(rows) = &podcasts_notify {
-                    rows.set_sensitive(active);
-                }
-                if let Some(rows) = &radio_notify {
-                    rows.set_sensitive(active);
-                }
-                if matches!(descriptor.id, "concerts" | "podcasts" | "radio") {
+                if descriptor.id == "concerts" {
                     context.sidebar.refresh("source module toggled");
                 }
             });
@@ -278,29 +272,7 @@ impl PreferencesContext {
                     },
                 );
             }
-            if descriptor.id == "podcasts" {
-                let alive = glib::WeakRef::new();
-                alive.set(Some(&row));
-                let target = alive.clone();
-                let rows = podcast_rows.clone();
-                let syncing = syncing.clone();
-                self.podcasts.subscribe_enabled(move |enabled| {
-                    let Some(row) = target.upgrade() else { return };
-                    syncing.set(true);
-                    row.set_active(enabled);
-                    syncing.set(false);
-                    if let Some(rows) = &rows {
-                        rows.set_sensitive(enabled);
-                    }
-                });
-            }
             group.add(&row);
-            if let Some(rows) = podcast_rows {
-                rows.add_to(group);
-            }
-            if let Some(rows) = radio_rows {
-                rows.add_to(group);
-            }
         }
         page.add(&local_group);
         page.add(&online_group);
@@ -377,6 +349,22 @@ mod tests {
         }
     }
 
+    /// `SET-8`: the three online-sources modules render on their own page,
+    /// not on Plugins — no duplicated master switches.
+    #[test]
+    fn set_8_podcasts_youtube_and_radio_moved_off_the_plugins_page() {
+        for descriptor in [
+            &reprise_core::modules::PODCASTS_MODULE,
+            &reprise_core::modules::YOUTUBE_MODULE,
+            &reprise_core::modules::RADIO_MODULE,
+        ] {
+            assert!(moved_to_online_sources_page(descriptor));
+        }
+        assert!(!moved_to_online_sources_page(
+            &reprise_core::modules::CONCERTS_MODULE
+        ));
+    }
+
     #[test]
     fn network_plugin_deep_link_highlight_is_transient() {
         assert_eq!(
@@ -395,7 +383,7 @@ mod tests {
     #[test]
     fn all_network_plugin_rows_expose_privacy_copy() {
         let descriptors = network_descriptors();
-        assert_eq!(descriptors.len(), 8);
+        assert_eq!(descriptors.len(), 6);
         for descriptor in descriptors {
             assert!(plugin_applies_live(descriptor));
             assert!(plugin_description(descriptor)

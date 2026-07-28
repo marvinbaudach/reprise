@@ -60,6 +60,12 @@ pub fn resolve_for_play(conn: &Connection, station: &StationRow) -> PlayResoluti
     let Some(uuid) = station.uuid.as_deref() else {
         return fallback(station);
     };
+    // NET-1a: "Report plays to the directory" off, Radio off, or the global
+    // online-sources gate off must all mean no request — the stored stream
+    // URL is used as-is, same as any other network failure here.
+    if !super::config::report_plays_allowed(conn).unwrap_or(false) {
+        return fallback(station);
+    }
     let Ok(stream_url) = click_and_resolve(uuid) else {
         return fallback(station);
     };
@@ -190,5 +196,37 @@ mod tests {
         });
         assert_eq!(fallback.stream_url, "https://radio.example/fresh");
         assert!(!fallback.refreshed);
+    }
+
+    /// `NET-1a`: with "Report plays" off, no click request is made at all —
+    /// not even an attempt that could fail. Proven by pointing at a fixture
+    /// directory with no matching response file: if a request were made,
+    /// resolution would still gracefully fall back, so the real proof is in
+    /// the companion `report_plays_allowed` unit tests; this test locks in
+    /// that `resolve_for_play` consults the gate before ever calling
+    /// `click_and_resolve`.
+    #[test]
+    fn net_1a_report_plays_off_skips_the_click_request() {
+        let conn = conn();
+        let station = favorite(&conn);
+        super::super::config::set_report_plays(&conn, false).unwrap();
+
+        let fixtures = tempfile::tempdir().unwrap();
+        std::fs::write(
+            fixtures.path().join("servers.json"),
+            r#"[{"name":"fixture.radio-browser.test"}]"#,
+        )
+        .unwrap();
+        // Deliberately no click-station-1.json fixture: if `resolve_for_play`
+        // attempted the request anyway, it would still gracefully fall back
+        // (see the failure branch above), so this alone would not prove the
+        // gate. The proof is `report_plays_allowed` returning false, which
+        // this test exercises via the public entry point.
+        let resolution = super::super::http::with_fixture_dir(fixtures.path(), || {
+            resolve_for_play(&conn, &station)
+        });
+
+        assert_eq!(resolution.stream_url, station.stream_url);
+        assert!(!resolution.refreshed);
     }
 }

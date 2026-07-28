@@ -173,7 +173,8 @@ fn new_subscription_uses_the_configured_auto_download_default() {
         import_count: 25,
         auto_download_default: true,
         cleanup_policy: podcasts::config::CleanupPolicy::KeepAll,
-        youtube_enabled: true,
+        youtube_import_count: 10,
+        youtube_hide_shorts_default: true,
         ytdlp_path: None,
         refresh_hours: 6,
     };

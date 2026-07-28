@@ -31,9 +31,7 @@ impl RadioPreferenceRows {
 }
 
 pub(in crate::ui) fn build(conn: &Rc<RefCell<Connection>>, enabled: bool) -> RadioPreferenceRows {
-    let selected = reprise_core::radio::config::load(&conn.borrow())
-        .map(|config| order_index(config.search_order))
-        .unwrap_or_default();
+    let config = reprise_core::radio::config::load(&conn.borrow()).unwrap_or_default();
     let model = gtk4::StringList::new(&[
         &strings::text(strings::RADIO_ORDER_VOTES),
         &strings::text(strings::RADIO_ORDER_NAME),
@@ -42,7 +40,7 @@ pub(in crate::ui) fn build(conn: &Rc<RefCell<Connection>>, enabled: bool) -> Rad
     let order = adw::ComboRow::builder()
         .title(strings::text(strings::RADIO_SEARCH_ORDER))
         .model(&model)
-        .selected(selected)
+        .selected(order_index(config.search_order))
         .build();
     {
         let conn = conn.clone();
@@ -52,8 +50,22 @@ pub(in crate::ui) fn build(conn: &Rc<RefCell<Connection>>, enabled: bool) -> Rad
             }
         });
     }
+
+    let report_plays = adw::SwitchRow::builder()
+        .title(strings::text(strings::RADIO_REPORT_PLAYS))
+        .active(config.report_plays)
+        .build();
+    {
+        let conn = conn.clone();
+        report_plays.connect_active_notify(move |row| {
+            if let Err(error) = save_report_plays(&conn.borrow(), row.is_active()) {
+                tracing::warn!(%error, "could not save radio preference");
+            }
+        });
+    }
+
     let rows = RadioPreferenceRows {
-        rows: Rc::new(vec![order.upcast()]),
+        rows: Rc::new(vec![order.upcast(), report_plays.upcast()]),
     };
     rows.set_sensitive(enabled);
     rows
@@ -79,6 +91,10 @@ fn save_search_order(conn: &Connection, value: SearchOrder) -> Result<(), rusqli
     reprise_core::radio::config::set_search_order(conn, value)
 }
 
+fn save_report_plays(conn: &Connection, value: bool) -> Result<(), rusqlite::Error> {
+    reprise_core::radio::config::set_report_plays(conn, value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -96,11 +112,22 @@ mod tests {
     }
 
     #[test]
+    fn report_plays_preference_round_trips() {
+        let conn = reprise_core::db::open_migrated(None).unwrap();
+        save_report_plays(&conn, false).unwrap();
+        assert!(
+            !reprise_core::radio::config::load(&conn)
+                .unwrap()
+                .report_plays
+        );
+    }
+
+    #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn radio_preference_rows_build_with_search_order() {
+    fn radio_preference_rows_build_with_search_order_and_report_plays() {
         gtk4::init().unwrap();
         let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
         let rows = build(&conn, true);
-        assert_eq!(rows.rows.len(), 1);
+        assert_eq!(rows.rows.len(), 2);
     }
 }

@@ -15,6 +15,8 @@ fn src_1_podcast_and_radio_rows_are_gated_ordered_and_live_counted() {
         let conn = shared.conn.borrow();
         reprise_core::modules::set_enabled(&conn, &reprise_core::modules::PODCASTS_MODULE, true)
             .unwrap();
+        reprise_core::modules::set_enabled(&conn, &reprise_core::modules::YOUTUBE_MODULE, true)
+            .unwrap();
         conn.execute(
             "INSERT INTO podcast_subscriptions
                (kind, feed_url, title, auto_download, added_at)
@@ -80,4 +82,53 @@ fn src_1_podcast_and_radio_rows_are_gated_ordered_and_live_counted() {
         numeric_badge_text(rows[radio].0.upcast_ref()),
         Some("1".to_string())
     );
+}
+
+/// Issue #96: Podcasts off + YouTube on must be a valid, independently
+/// visible state — YouTube is a peer source, not a Podcasts sub-setting.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn issue_96_podcasts_off_youtube_on_shows_only_the_youtube_row() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let shared = test_shared();
+    {
+        let conn = shared.conn.borrow();
+        reprise_core::modules::set_enabled(&conn, &reprise_core::modules::YOUTUBE_MODULE, true)
+            .unwrap();
+        assert!(
+            !reprise_core::modules::is_enabled(&conn, &reprise_core::modules::PODCASTS_MODULE)
+                .unwrap()
+        );
+    }
+
+    rebuild(&shared, None, "youtube only");
+
+    assert!(find_row(&shared, &ViewSource::Podcasts).is_none());
+    assert!(find_row(&shared, &ViewSource::Youtube).is_some());
+}
+
+/// `NET-1a`: the global online-sources gate hides all three source rows,
+/// even when their own modules are individually on — "off really means
+/// off" for the sidebar, not only for the network calls behind it.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn net_1a_global_gate_off_hides_podcasts_youtube_and_radio_rows() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let shared = test_shared();
+    {
+        let conn = shared.conn.borrow();
+        reprise_core::modules::set_enabled(&conn, &reprise_core::modules::PODCASTS_MODULE, true)
+            .unwrap();
+        reprise_core::modules::set_enabled(&conn, &reprise_core::modules::YOUTUBE_MODULE, true)
+            .unwrap();
+        reprise_core::online_sources::set_enabled(&conn, false).unwrap();
+    }
+
+    rebuild(&shared, None, "global gate off");
+
+    assert!(find_row(&shared, &ViewSource::Podcasts).is_none());
+    assert!(find_row(&shared, &ViewSource::Youtube).is_none());
+    assert!(find_row(&shared, &ViewSource::Radio).is_none());
 }

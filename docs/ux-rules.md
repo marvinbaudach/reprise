@@ -446,6 +446,22 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Features behält die Plugins-Seite nur die Aktivierungsschalter; Scope-,
   Provider-, Location- und Similar-Optionen stehen ausschließlich auf den
   jeweiligen Hauptseiten und sind bei deaktiviertem Modul nicht bedienbar.
+- **SET-8** [aktiv] [gtk] — Eine eigene Preferences-Hauptseite „Online
+  sources" (Turn 7b) bündelt die drei Netz-Quellen: ganz oben ein globaler
+  Riegel „Use online sources" mit Untertitel „Off makes this a local player
+  only: no requests, no downloads, nothing hidden — the three entries
+  disappear from the sidebar."; darunter drei gleichrangige Blöcke YouTube,
+  Podcasts, Radio, je mit eigenem Master-Schalter und den in
+  `docs/plans/podcasts-youtube-radio-turn6.md` Abschnitt 3b festgelegten
+  Zeilen. YouTube ist dabei ein zu Podcasts und Radio gleichrangiges Modul,
+  keine Unteroption von Podcasts (Issue #96). Ein ausgeschalteter Block
+  versteckt seinen eigenen Sidebar-Eintrag und stoppt seine Requests, löscht
+  aber weder Abos noch Favoriten — dieselbe Zusicherung trägt die
+  Fußzeile: „Each block is self-contained: turning one off hides its
+  sidebar entry and stops its requests; subscriptions and favorites are
+  kept, not deleted." Der vierte Block „Phone sync" aus 7b ist absichtlich
+  nicht Teil davon, solange sein Sync-Unterbau (Block E) nicht existiert —
+  seine Regeln folgen mit diesem Block.
 
 ## G. Feedback-Vokabular
 
@@ -1372,11 +1388,26 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
 
 ## T. Netz-Features opt-in
 
-- **NET-1** [aktiv] [gtk] — Automatische und massenhafte Netzabrufe sind
-  opt-in. Cover-Downloads, Artist-Portraits und New Releases starten nur bei
-  eingeschaltetem Modul; Online-Lyrics haben ebenfalls einen Schalter, damit
-  vollständig netzfreie Nutzung möglich bleibt. Ein Ausschalten wirkt sofort
-  und versteckt bereits lokal gecachte Bilder nicht.
+- **NET-1** [ersetzt durch NET-1a] — Automatische und massenhafte
+  Netzabrufe sind opt-in. Cover-Downloads, Artist-Portraits und New
+  Releases starten nur bei eingeschaltetem Modul; Online-Lyrics haben
+  ebenfalls einen Schalter, damit vollständig netzfreie Nutzung möglich
+  bleibt. Ein Ausschalten wirkt sofort und versteckt bereits lokal
+  gecachte Bilder nicht.
+- **NET-1a** [aktiv] [core] [gtk] — Erweitert `NET-1` um einen globalen
+  Riegel `online-sources-enabled` (Preferences-Seite „Online sources",
+  `SET-8`): eine UND-Bedingung vor **jedem** Netzabruf der App, oben auf
+  dem jeweiligen Modul- bzw. Quellen-Schalter — Cover-Downloads,
+  Artist-Portraits, New Releases, Online-Lyrics **und** die drei Online-
+  Quellen YouTube, Podcasts, Radio. Die eine Autorität dafür ist
+  `reprise_core::online_sources::network_allowed` in core, direkt neben
+  der Modul-Registry; jeder Netz-Einstiegspunkt hängt sich daran, statt nur
+  sein eigenes Modul zu prüfen. Aus heißt: keine Requests, keine Downloads,
+  nichts versteckt außer den drei Sidebar-Einträgen — Abos, Favoriten und
+  bereits lokal gecachte Bilder bleiben unangetastet. Je Quelle bzw. Modul
+  besitzt YouTube außerdem ein eigenes, von Podcasts unabhängiges
+  Modul-Flag (Issue #96): „Podcasts aus + YouTube an" ist ein gültiger
+  Zustand.
 - **NET-2** [aktiv] [core] — Updates schützen nachweisbare bisherige Nutzung:
   vorhandene heruntergeladene Cover bzw. Portraits aktivieren ihr Modul,
   bestehende Bibliotheksdatenbanken behalten Online-Lyrics, und ein zuvor

@@ -91,36 +91,76 @@ pub(in crate::ui) enum PodcastsWorkerResult {
 
 type OnEnabled = Rc<dyn Fn(bool)>;
 
+/// Issue #96 / `NET-1a`: `enabled` is true when *either* Podcasts (RSS) or
+/// YouTube is network-allowed (its own module AND the global online-sources
+/// gate) — "Podcasts off + YouTube on" must still dispatch work. Which
+/// subscriptions actually get fetched is then decided per-kind, deeper in
+/// `podcasts::pipeline`, which is the one authority for that gate.
 pub(in crate::ui) struct PodcastsRuntime {
     pub enabled: Rc<Cell<bool>>,
     worker: async_channel::Sender<PodcastsRequest>,
     subscribers: RefCell<Vec<OnEnabled>>,
 }
 
+fn any_source_dispatchable(conn: &rusqlite::Connection) -> bool {
+    reprise_core::podcasts::config::source_network_allowed(
+        conn,
+        reprise_core::podcasts::PodcastKind::Rss,
+    )
+    .unwrap_or(false)
+        || reprise_core::podcasts::config::source_network_allowed(
+            conn,
+            reprise_core::podcasts::PodcastKind::Youtube,
+        )
+        .unwrap_or(false)
+}
+
 impl PodcastsRuntime {
     pub(in crate::ui) fn setup(conn: &rusqlite::Connection) -> Rc<Self> {
-        let enabled =
-            reprise_core::modules::is_enabled(conn, &reprise_core::modules::PODCASTS_MODULE)
-                .unwrap_or(false);
         Rc::new(Self {
-            enabled: Rc::new(Cell::new(enabled)),
+            enabled: Rc::new(Cell::new(any_source_dispatchable(conn))),
             worker: spawn(database_path(conn)),
             subscribers: RefCell::new(Vec::new()),
         })
     }
 
-    pub(in crate::ui) fn set_enabled(
+    fn set_module_enabled(
+        &self,
+        conn: &rusqlite::Connection,
+        module: &'static reprise_core::modules::ModuleDescriptor,
+        enabled: bool,
+    ) -> Result<(), rusqlite::Error> {
+        reprise_core::modules::set_enabled(conn, module, enabled)?;
+        self.recompute_enabled(conn);
+        Ok(())
+    }
+
+    pub(in crate::ui) fn set_podcasts_enabled(
         &self,
         conn: &rusqlite::Connection,
         enabled: bool,
     ) -> Result<(), rusqlite::Error> {
-        reprise_core::modules::set_enabled(conn, &reprise_core::modules::PODCASTS_MODULE, enabled)?;
+        self.set_module_enabled(conn, &reprise_core::modules::PODCASTS_MODULE, enabled)
+    }
+
+    pub(in crate::ui) fn set_youtube_enabled(
+        &self,
+        conn: &rusqlite::Connection,
+        enabled: bool,
+    ) -> Result<(), rusqlite::Error> {
+        self.set_module_enabled(conn, &reprise_core::modules::YOUTUBE_MODULE, enabled)
+    }
+
+    /// Re-derives `enabled` from persisted state and notifies subscribers on
+    /// change. Called after either source module toggles, and after the
+    /// global online-sources gate toggles (from the Online sources page).
+    pub(in crate::ui) fn recompute_enabled(&self, conn: &rusqlite::Connection) {
+        let enabled = any_source_dispatchable(conn);
         if self.enabled.replace(enabled) != enabled {
             for callback in self.subscribers.borrow().iter() {
                 callback(enabled);
             }
         }
-        Ok(())
     }
 
     pub(in crate::ui) fn subscribe_enabled(&self, callback: impl Fn(bool) + 'static) {
@@ -354,6 +394,13 @@ fn try_download_episode_to_root(
     let episode = podcasts::store::episode(conn, episode_id)
         .map_err(|error| error.to_string())?
         .ok_or_else(|| "podcast episode no longer exists".to_owned())?;
+    // NET-1a: a download is a network entry point too — gate it per the
+    // episode's own source kind, not the blanket dispatch check above.
+    if !podcasts::config::source_network_allowed(conn, episode.kind)
+        .map_err(|error| error.to_string())?
+    {
+        return Err("this source is disabled".to_owned());
+    }
     let subscription = podcasts::store::subscription(conn, episode.subscription_id)
         .map_err(|error| error.to_string())?
         .filter(|subscription| subscription.removed_at.is_none())
@@ -413,336 +460,5 @@ fn download_extension(kind: podcasts::PodcastKind, audio_url: &str) -> &'static 
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use reprise_core::podcasts::download_state::{DownloadProgress, DownloadState};
-    use reprise_core::podcasts::feed::ParsedEpisode;
-    use reprise_core::podcasts::pipeline::FeedFetcher;
-    use reprise_core::podcasts::store::{self, NewSubscription};
-
-    struct ProgressFeed {
-        fail: bool,
-    }
-
-    impl FeedFetcher for ProgressFeed {
-        fn fetch(
-            &self,
-            _: &podcasts::SubscriptionRow,
-        ) -> Result<podcasts::http::Response, podcasts::PodcastError> {
-            unreachable!()
-        }
-
-        fn download(&self, _: &str, _: &std::path::Path) -> Result<(), podcasts::PodcastError> {
-            unreachable!()
-        }
-
-        fn download_with_progress(
-            &self,
-            _: &str,
-            destination: &std::path::Path,
-            on_progress: &mut dyn FnMut(DownloadProgress),
-        ) -> Result<(), podcasts::PodcastError> {
-            std::fs::write(destination, b"0123456789").unwrap();
-            on_progress(DownloadProgress {
-                received_bytes: 8,
-                total_bytes: None,
-            });
-            on_progress(DownloadProgress {
-                received_bytes: 4,
-                total_bytes: Some(10),
-            });
-            on_progress(DownloadProgress {
-                received_bytes: 10,
-                total_bytes: None,
-            });
-            if self.fail {
-                Err(podcasts::PodcastError::Transport("offline".to_owned()))
-            } else {
-                Ok(())
-            }
-        }
-    }
-
-    fn episode(conn: &rusqlite::Connection) -> i64 {
-        let subscription_id = store::add_or_restore(
-            conn,
-            &NewSubscription {
-                kind: podcasts::PodcastKind::Rss,
-                feed_url: "https://example.test/feed".to_owned(),
-                title: "Show".to_owned(),
-                author: None,
-                image_url: None,
-                auto_download: false,
-            },
-            1,
-        )
-        .unwrap();
-        store::upsert_episode(
-            conn,
-            subscription_id,
-            &ParsedEpisode {
-                guid: "episode".to_owned(),
-                title: "Episode".to_owned(),
-                audio_url: "https://example.test/episode.mp3".to_owned(),
-                page_url: None,
-                published_at: None,
-                duration_secs: None,
-            },
-            1,
-        )
-        .unwrap()
-        .unwrap()
-        .episode_id
-    }
-
-    #[test]
-    fn automatic_refresh_requires_every_gate() {
-        assert!(automatic_refresh_allowed(true, 1, false, true));
-        assert!(!automatic_refresh_allowed(false, 1, false, true));
-        assert!(!automatic_refresh_allowed(true, 0, false, true));
-        assert!(!automatic_refresh_allowed(true, 1, true, true));
-        assert!(!automatic_refresh_allowed(true, 1, false, false));
-    }
-
-    #[test]
-    fn plane_6b_youtube_downloads_use_the_opus_extension() {
-        assert_eq!(
-            download_extension(podcasts::PodcastKind::Youtube, "ignored"),
-            "opus"
-        );
-        assert_eq!(
-            download_extension(
-                podcasts::PodcastKind::Rss,
-                "https://example.test/episode.mp3"
-            ),
-            "mp3"
-        );
-    }
-
-    #[test]
-    fn pod_7_download_request_does_not_invalidate_an_in_flight_refresh() {
-        assert_eq!(
-            request_generation(9, PodcastsOperation::Download { episode_id: 4 }),
-            9
-        );
-        assert_eq!(
-            request_generation(9, PodcastsOperation::Refresh { force: true }),
-            10
-        );
-        assert_eq!(
-            request_generation(
-                9,
-                PodcastsOperation::LoadMore {
-                    subscription_id: 7,
-                    end: 40,
-                },
-            ),
-            10
-        );
-    }
-
-    #[test]
-    fn pod_7_download_worker_emits_ordered_monotone_states_and_persists_after_publish() {
-        let conn = reprise_core::db::open_migrated(None).unwrap();
-        let episode_id = episode(&conn);
-        let directory = tempfile::tempdir().unwrap();
-        let mut states = Vec::new();
-
-        download_episode_to_root(
-            &conn,
-            episode_id,
-            directory.path(),
-            &ProgressFeed { fail: false },
-            &NeverYoutube,
-            &mut |state| states.push(state),
-        );
-
-        assert_eq!(
-            states,
-            [
-                DownloadState::Queued,
-                DownloadState::Downloading {
-                    received_bytes: 0,
-                    total_bytes: None,
-                },
-                DownloadState::Downloading {
-                    received_bytes: 8,
-                    total_bytes: None,
-                },
-                DownloadState::Downloading {
-                    received_bytes: 8,
-                    total_bytes: Some(10),
-                },
-                DownloadState::Downloading {
-                    received_bytes: 10,
-                    total_bytes: Some(10),
-                },
-                DownloadState::Downloaded { bytes: 10 },
-            ]
-        );
-        let row = store::episode(&conn, episode_id).unwrap().unwrap();
-        assert_eq!(row.downloaded_bytes, Some(10));
-        assert!(row
-            .downloaded_path
-            .is_some_and(|path| !path.ends_with(".part")));
-    }
-
-    #[test]
-    fn pod_7_failed_worker_download_emits_failed_and_removes_partial() {
-        let conn = reprise_core::db::open_migrated(None).unwrap();
-        let episode_id = episode(&conn);
-        let directory = tempfile::tempdir().unwrap();
-        let mut states = Vec::new();
-
-        download_episode_to_root(
-            &conn,
-            episode_id,
-            directory.path(),
-            &ProgressFeed { fail: true },
-            &NeverYoutube,
-            &mut |state| states.push(state),
-        );
-
-        assert!(matches!(
-            states.last(),
-            Some(DownloadState::Failed { message }) if message == "network request failed: offline"
-        ));
-        assert!(store::episode(&conn, episode_id)
-            .unwrap()
-            .unwrap()
-            .downloaded_path
-            .is_none());
-        assert!(walk_files(directory.path()).is_empty());
-    }
-
-    #[test]
-    fn pod_7_response_channel_coalesces_progress_but_never_drops_terminal_state() {
-        let (response, receiver) = podcasts_response_channel();
-        let progress = |received_bytes| PodcastsResponse {
-            generation: 7,
-            result: Ok(PodcastsWorkerResult::DownloadState {
-                episode_id: 4,
-                state: DownloadState::Downloading {
-                    received_bytes,
-                    total_bytes: Some(30),
-                },
-            }),
-        };
-        response.publish_latest(progress(10));
-        response.publish_latest(progress(20));
-        let latest = receiver.try_recv().unwrap();
-        assert!(matches!(
-            latest.result,
-            Ok(PodcastsWorkerResult::DownloadState {
-                state: DownloadState::Downloading {
-                    received_bytes: 20,
-                    ..
-                },
-                ..
-            })
-        ));
-
-        response.publish_terminal(PodcastsResponse {
-            generation: 7,
-            result: Ok(PodcastsWorkerResult::DownloadState {
-                episode_id: 4,
-                state: DownloadState::Failed {
-                    message: "offline".into(),
-                },
-            }),
-        });
-        assert!(matches!(
-            receiver.try_recv().unwrap().result.unwrap(),
-            PodcastsWorkerResult::DownloadState {
-                episode_id: 4,
-                state: DownloadState::Failed { ref message },
-            } if message == "offline"
-        ));
-    }
-
-    #[test]
-    fn pod_7_episode_removed_during_download_leaves_no_persisted_or_orphaned_file() {
-        let conn = reprise_core::db::open_migrated(None).unwrap();
-        let episode_id = episode(&conn);
-        let directory = tempfile::tempdir().unwrap();
-        let feed = RemovingFeed {
-            conn: &conn,
-            episode_id,
-        };
-        let mut states = Vec::new();
-
-        download_episode_to_root(
-            &conn,
-            episode_id,
-            directory.path(),
-            &feed,
-            &NeverYoutube,
-            &mut |state| states.push(state),
-        );
-
-        assert!(matches!(
-            states.last(),
-            Some(DownloadState::Failed { message })
-                if message == "podcast episode no longer exists"
-        ));
-        assert!(store::episode(&conn, episode_id).unwrap().is_none());
-        assert!(walk_files(directory.path()).is_empty());
-    }
-
-    struct RemovingFeed<'a> {
-        conn: &'a rusqlite::Connection,
-        episode_id: i64,
-    }
-
-    impl FeedFetcher for RemovingFeed<'_> {
-        fn fetch(
-            &self,
-            _: &podcasts::SubscriptionRow,
-        ) -> Result<podcasts::http::Response, podcasts::PodcastError> {
-            unreachable!()
-        }
-
-        fn download(
-            &self,
-            _: &str,
-            destination: &std::path::Path,
-        ) -> Result<(), podcasts::PodcastError> {
-            std::fs::write(destination, b"complete").unwrap();
-            store::tombstone_episode(self.conn, self.episode_id, 2).unwrap();
-            Ok(())
-        }
-    }
-
-    #[derive(Default)]
-    struct NeverYoutube;
-
-    impl podcasts::pipeline::YoutubeFetcher for NeverYoutube {
-        fn list(
-            &self,
-            _: &str,
-            _: usize,
-        ) -> Result<podcasts::feed::ParsedFeed, podcasts::PodcastError> {
-            unreachable!()
-        }
-
-        fn download(&self, _: &str, _: &std::path::Path) -> Result<(), podcasts::PodcastError> {
-            unreachable!()
-        }
-    }
-
-    fn walk_files(root: &std::path::Path) -> Vec<std::path::PathBuf> {
-        let Ok(entries) = std::fs::read_dir(root) else {
-            return Vec::new();
-        };
-        entries
-            .flatten()
-            .flat_map(|entry| {
-                if entry.path().is_dir() {
-                    walk_files(&entry.path())
-                } else {
-                    vec![entry.path()]
-                }
-            })
-            .collect()
-    }
-}
+#[path = "podcasts_worker_tests.rs"]
+mod tests;

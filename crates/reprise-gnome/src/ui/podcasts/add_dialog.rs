@@ -278,7 +278,12 @@ fn search(request_generation: u64, terms: String, context: &SearchContext<'_>) {
             );
         }
         PodcastKind::Youtube => {
-            if !config.as_ref().is_some_and(|value| value.youtube_enabled) {
+            let youtube_allowed = reprise_core::online_sources::network_allowed(
+                &context.conn.borrow(),
+                &reprise_core::modules::YOUTUBE_MODULE,
+            )
+            .unwrap_or(false);
+            if !youtube_allowed {
                 return;
             }
             let ytdlp_path = config.and_then(|value| value.ytdlp_path);

@@ -9,17 +9,19 @@ pub(in crate::ui) enum PageId {
     Appearance,
     Layout,
     Library,
+    OnlineSources,
     NewReleases,
     Concerts,
     Plugins,
     Experimental,
 }
 
-pub(in crate::ui) const PAGE_ORDER: [PageId; 8] = [
+pub(in crate::ui) const PAGE_ORDER: [PageId; 9] = [
     PageId::Playback,
     PageId::Appearance,
     PageId::Layout,
     PageId::Library,
+    PageId::OnlineSources,
     PageId::NewReleases,
     PageId::Concerts,
     PageId::Plugins,
@@ -33,6 +35,7 @@ impl PageId {
             Self::Appearance => "appearance",
             Self::Layout => "layout",
             Self::Library => "library",
+            Self::OnlineSources => "online_sources",
             Self::NewReleases => "new_releases",
             Self::Concerts => "concerts",
             Self::Plugins => "plugins",
@@ -46,6 +49,7 @@ impl PageId {
             Self::Appearance => strings::PREFERENCES_APPEARANCE,
             Self::Layout => strings::PREFERENCES_LAYOUT,
             Self::Library => strings::PREFERENCES_LIBRARY,
+            Self::OnlineSources => strings::PREFERENCES_ONLINE_SOURCES,
             Self::NewReleases => strings::NEW_RELEASES,
             Self::Concerts => strings::CONCERTS,
             Self::Plugins => strings::PREFERENCES_PLUGINS,
@@ -60,6 +64,7 @@ impl PageId {
             Self::Appearance => "applications-graphics-symbolic",
             Self::Layout => "view-grid-symbolic",
             Self::Library => "folder-music-symbolic",
+            Self::OnlineSources => "network-server-symbolic",
             Self::NewReleases => "starred-symbolic",
             Self::Concerts => "x-office-calendar-symbolic",
             Self::Plugins => "application-x-addon-symbolic",
@@ -119,7 +124,7 @@ pub(in crate::ui) fn selected_sidebar_focus_target(sidebar: &gtk4::ListBox) -> g
 }
 
 pub(in crate::ui) fn build(
-    pages: [(PageId, adw::PreferencesPage); 8],
+    pages: [(PageId, adw::PreferencesPage); 9],
     foreground_top_bar: Option<&gtk4::Widget>,
 ) -> PreferencesShell {
     let stack = adw::ViewStack::new();
@@ -264,14 +269,20 @@ mod tests {
                 PageId::Appearance,
                 PageId::Layout,
                 PageId::Library,
+                PageId::OnlineSources,
                 PageId::NewReleases,
                 PageId::Concerts,
                 PageId::Plugins,
                 PageId::Experimental,
             ]
         );
-        assert_eq!(page_index_by_name("new_releases"), Some(4));
-        assert_eq!(page_index_by_name("concerts"), Some(5));
+        assert_eq!(page_index_by_name("new_releases"), Some(5));
+        assert_eq!(page_index_by_name("concerts"), Some(6));
+    }
+
+    #[test]
+    fn set_8_online_sources_is_a_peer_page_right_before_new_releases() {
+        assert_eq!(page_index_by_name("online_sources"), Some(4));
     }
 
     #[test]

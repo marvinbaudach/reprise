@@ -5,7 +5,12 @@ use super::*;
 use crate::podcasts::store::{self, NewSubscription};
 
 fn conn() -> Connection {
-    crate::db::open_migrated(None).unwrap()
+    let conn = crate::db::open_migrated(None).unwrap();
+    // These tests exercise fetch/parse/store logic, not the NET-1a gate
+    // itself (see the dedicated `net_1a_*` tests below), so YouTube starts
+    // enabled here.
+    crate::modules::set_enabled(&conn, &crate::modules::YOUTUBE_MODULE, true).unwrap();
+    conn
 }
 
 #[derive(Default)]
@@ -173,4 +178,88 @@ fn pod_10_load_more_fetches_and_persists_the_first_forty_items() {
             .len(),
         40
     );
+}
+
+/// `NET-1a`: a YouTube subscription is skipped, not fetched, when the
+/// YouTube module is off — this is issue #96's other half: Podcasts on
+/// must not implicitly allow YouTube (see the RSS half in
+/// `pipeline_refresh_tests.rs`).
+#[test]
+fn net_1a_disabled_youtube_module_skips_refresh_without_fetching() {
+    let conn = conn();
+    crate::modules::set_enabled(&conn, &crate::modules::YOUTUBE_MODULE, false).unwrap();
+    let id = store::add_or_restore(
+        &conn,
+        &NewSubscription {
+            kind: PodcastKind::Youtube,
+            feed_url: "https://www.youtube.com/channel/UCabc123".to_owned(),
+            title: "Channel".to_owned(),
+            author: None,
+            image_url: None,
+            auto_download: false,
+        },
+        1,
+    )
+    .unwrap();
+    let directory = tempfile::tempdir().unwrap();
+
+    let summary = refresh_to_root(
+        &conn,
+        &FakeFeedNeverCalled,
+        &NeverYoutube,
+        10,
+        true,
+        directory.path(),
+    )
+    .unwrap();
+
+    assert_eq!(summary.failed, 1);
+    assert_eq!(
+        store::subscription(&conn, id)
+            .unwrap()
+            .unwrap()
+            .last_outcome
+            .as_deref(),
+        Some("failed")
+    );
+}
+
+/// `NET-1a`: the explicit "Load more" action also respects the gate —
+/// every YouTube network entry point, not just the periodic refresh.
+#[test]
+fn net_1a_load_more_is_blocked_when_youtube_module_is_off() {
+    let conn = conn();
+    let subscription_id = store::add_or_restore(
+        &conn,
+        &NewSubscription {
+            kind: PodcastKind::Youtube,
+            feed_url: "https://www.youtube.com/channel/UCmore".to_owned(),
+            title: "Channel".to_owned(),
+            author: None,
+            image_url: None,
+            auto_download: false,
+        },
+        1,
+    )
+    .unwrap();
+    crate::modules::set_enabled(&conn, &crate::modules::YOUTUBE_MODULE, false).unwrap();
+
+    let result = load_more_youtube(&conn, &NeverYoutube, subscription_id, 40, 20);
+
+    assert!(matches!(
+        result,
+        Err(PipelineError::YoutubeSourceUnavailable)
+    ));
+}
+
+struct FakeFeedNeverCalled;
+
+impl FeedFetcher for FakeFeedNeverCalled {
+    fn fetch(&self, _: &SubscriptionRow) -> Result<Response, PodcastError> {
+        panic!("a disabled subscription must not be fetched")
+    }
+
+    fn download(&self, _: &str, _: &Path) -> Result<(), PodcastError> {
+        panic!("a disabled subscription must not be downloaded")
+    }
 }

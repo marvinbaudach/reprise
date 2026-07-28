@@ -137,7 +137,9 @@ impl PodcastsView {
         stack.add_named(&list_box, Some("list"));
         stack.add_named(&status, Some("status"));
         stack.add_named(empty_state.widget(), Some(EMPTY_PAGE));
-        let youtube_detail = YoutubeChannelDetail::new(&stack);
+        let default_hide_shorts = podcasts::config::load(&conn.borrow())
+            .map_or(true, |config| config.youtube_hide_shorts_default);
+        let youtube_detail = YoutubeChannelDetail::new(&stack, default_hide_shorts);
         stack.add_named(youtube_detail.widget(), Some("youtube-channel"));
         stack.set_vexpand(true);
 

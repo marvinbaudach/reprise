@@ -111,6 +111,11 @@ mod sources;
 #[allow(unused_imports)]
 pub use sources::*;
 
+#[path = "strings_online_sources.rs"]
+mod online_sources;
+#[allow(unused_imports)]
+pub use online_sources::*;
+
 pub const ONBOARDING_WELCOME: &str = N_!("Welcome to Reprise");
 pub const ONBOARDING_PRIVACY: &str = N_!("Reprise keeps your library local. Missing album covers are retrieved automatically from MusicBrainz and Cover Art Archive. Music files are changed only when you explicitly edit tags or move tracks to Trash.");
 pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX: &str = N_!("Import from Rhythmbox");

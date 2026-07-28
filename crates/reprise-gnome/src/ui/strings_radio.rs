@@ -59,6 +59,7 @@ pub const RADIO_ORDER_VOTES: &str = N_!("Votes");
 pub const RADIO_ORDER_NAME: &str = N_!("Name");
 pub const RADIO_ORDER_CLICKS: &str = N_!("Clicks");
 pub const RADIO_UNKNOWN_NOW_PLAYING: &str = N_!("—");
+pub const RADIO_REPORT_PLAYS: &str = N_!("Report plays to the directory");
 
 pub fn radio_station_count(count: usize) -> String {
     let count_text = count.to_string();

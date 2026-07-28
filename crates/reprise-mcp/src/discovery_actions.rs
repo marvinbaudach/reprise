@@ -144,7 +144,10 @@ fn search_youtube(conn: &Connection, query: &str) -> Result<Vec<DiscoveryCandida
     use reprise_core::podcasts::{self, discovery, PodcastKind};
 
     let config = podcasts::config::load(conn).map_err(DataError::Db)?;
-    if !config.youtube_enabled {
+    let youtube_allowed =
+        reprise_core::online_sources::network_allowed(conn, &reprise_core::modules::YOUTUBE_MODULE)
+            .map_err(DataError::Db)?;
+    if !youtube_allowed {
         return Err(DataError::InvalidInput(
             "YouTube sources are disabled in Reprise preferences".to_owned(),
         ));

@@ -119,18 +119,16 @@ pub const YOUTUBE_REMOVE_SELECTED: &str = N_!("Remove selected");
 pub const PODCAST_UNDO: &str = N_!("Undo");
 pub const PODCAST_DELETE_FILES: &str = N_!("Delete files");
 pub const PODCAST_PLAY_NEXT_EPISODE: &str = N_!("Play next episode");
-pub const PODCAST_PREFERENCES_IMPORT_COUNT: &str = N_!("Import latest N episodes");
-pub const PODCAST_PREFERENCES_AUTO_DOWNLOAD: &str =
-    N_!("Download new episodes automatically (default for new subscriptions)");
-pub const PODCAST_PREFERENCES_CLEANUP: &str = N_!("Downloads cleanup");
+pub const PODCAST_EPISODES_PER_SHOW: &str = N_!("Episodes per show");
+pub const PODCAST_PREFERENCES_AUTO_DOWNLOAD: &str = N_!("Download new episodes");
+pub const PODCAST_PREFERENCES_CLEANUP: &str = N_!("Delete played episodes");
 pub const PODCAST_CLEANUP_KEEP_ALL: &str = N_!("Keep all");
-pub const PODCAST_CLEANUP_DELETE_PLAYED: &str = N_!("Delete played after 7 days");
+pub const PODCAST_CLEANUP_DELETE_PLAYED: &str = N_!("After 7 days");
 pub const PODCAST_CLEANUP_KEEP_LAST: &str = N_!("Keep last 5 per show");
-pub const PODCAST_YOUTUBE_SOURCES: &str = N_!("YouTube sources");
+pub const YOUTUBE_EPISODES_PER_CHANNEL: &str = N_!("Episodes per channel");
 pub const PODCAST_YTDLP: &str = N_!("yt-dlp");
 pub const PODCAST_YTDLP_UPDATE: &str = N_!("Update");
 pub const PODCAST_YTDLP_CHECKING: &str = N_!("Checking installed version…");
-pub const PODCAST_REFRESH_INTERVAL: &str = N_!("Refresh every N hours");
 pub const PODCAST_UPDATED_JUST_NOW: &str = N_!("Updated just now");
 pub const PODCAST_SUBSCRIBERS: &str = N_!("{count} subscribers");
 

@@ -423,7 +423,13 @@ fn add_podcast(
                 .map_err(|error| podcast_source_error(&error))?;
             (feed, Some(response))
         }
-        podcasts::PodcastKind::Youtube if config.youtube_enabled => {
+        podcasts::PodcastKind::Youtube
+            if reprise_core::online_sources::network_allowed(
+                conn,
+                &reprise_core::modules::YOUTUBE_MODULE,
+            )
+            .unwrap_or(false) =>
+        {
             let listing = podcasts::ytdlp::YtDlp::discover(config.ytdlp_path.as_deref())
                 .list(url)
                 .map(podcasts::youtube::project_playlist)
@@ -622,6 +628,7 @@ pub(crate) fn podcast_source_error(error: &reprise_core::podcasts::PodcastError)
         PodcastError::Body(_) | PodcastError::Parse(_) => "podcast source returned invalid data",
         PodcastError::NotModified => "podcast source was not modified",
         PodcastError::YtDlp(_) => "YouTube source could not be read with yt-dlp",
+        PodcastError::Disabled(_) => "this source is disabled in Reprise preferences",
     };
     DataError::InvalidInput(message.to_owned())
 }

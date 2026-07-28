@@ -25,7 +25,14 @@ pub(super) struct YoutubeChannelState {
     active_channel: Option<i64>,
     visible_limits: BTreeMap<i64, usize>,
     extended_channels: BTreeSet<i64>,
-    show_shorts: BTreeSet<i64>,
+    /// Channels whose Shorts visibility has been explicitly toggled away
+    /// from `default_shows_shorts` — the effective per-channel value is
+    /// `default_shows_shorts XOR shorts_overridden.contains(id)`.
+    shorts_overridden: BTreeSet<i64>,
+    /// Seeded from the "Hide Shorts" preference on the Online sources page
+    /// (`SET-8`) when the detail surface is built. Defaults to `false`
+    /// (Shorts hidden), matching Reprise's historical hardcoded behavior.
+    default_shows_shorts: bool,
     selected: BTreeMap<i64, BTreeSet<i64>>,
 }
 
@@ -42,12 +49,20 @@ impl YoutubeChannelState {
         self.active_channel
     }
 
+    pub(super) fn set_default_shows_shorts(&mut self, show: bool) {
+        self.default_shows_shorts = show;
+    }
+
+    fn effective_shows_shorts(&self, subscription_id: i64) -> bool {
+        self.default_shows_shorts ^ self.shorts_overridden.contains(&subscription_id)
+    }
+
     pub(super) fn visible_episodes<'a>(
         &self,
         subscription_id: i64,
         episodes: &'a [EpisodeRow],
     ) -> Vec<&'a EpisodeRow> {
-        let show_shorts = self.show_shorts.contains(&subscription_id);
+        let show_shorts = self.effective_shows_shorts(subscription_id);
         let limit = self
             .visible_limits
             .get(&subscription_id)
@@ -71,10 +86,11 @@ impl YoutubeChannelState {
     }
 
     pub(super) fn set_hide_shorts(&mut self, subscription_id: i64, hide: bool) {
-        if hide {
-            self.show_shorts.remove(&subscription_id);
+        let desired_show = !hide;
+        if desired_show == self.default_shows_shorts {
+            self.shorts_overridden.remove(&subscription_id);
         } else {
-            self.show_shorts.insert(subscription_id);
+            self.shorts_overridden.insert(subscription_id);
         }
     }
 
@@ -97,11 +113,11 @@ impl YoutubeChannelState {
     }
 
     fn hide_shorts(&self, subscription_id: i64) -> bool {
-        !self.show_shorts.contains(&subscription_id)
+        !self.effective_shows_shorts(subscription_id)
     }
 
     fn available_count(&self, subscription_id: i64, episodes: &[EpisodeRow]) -> usize {
-        let show_shorts = self.show_shorts.contains(&subscription_id);
+        let show_shorts = self.effective_shows_shorts(subscription_id);
         episodes
             .iter()
             .filter(|episode| show_shorts || !is_short(episode))
@@ -153,7 +169,10 @@ pub(super) struct YoutubeChannelDetail {
 }
 
 impl YoutubeChannelDetail {
-    pub(super) fn new(host: &gtk4::Stack) -> Rc<Self> {
+    /// `default_hide_shorts` seeds every channel's initial Shorts
+    /// visibility from the "Hide Shorts" row on the Online sources page
+    /// (`SET-8`); a channel's own explicit toggle always overrides it.
+    pub(super) fn new(host: &gtk4::Stack, default_hide_shorts: bool) -> Rc<Self> {
         let content = gtk4::Box::new(gtk4::Orientation::Vertical, 10);
         content.set_margin_top(12);
         content.set_margin_bottom(12);
@@ -163,11 +182,13 @@ impl YoutubeChannelDetail {
             .hscrollbar_policy(gtk4::PolicyType::Never)
             .child(&content)
             .build();
+        let mut state = YoutubeChannelState::default();
+        state.set_default_shows_shorts(!default_hide_shorts);
         Rc::new(Self {
             root,
             content,
             host: host.clone(),
-            state: RefCell::new(YoutubeChannelState::default()),
+            state: RefCell::new(state),
             groups: RefCell::new(Vec::new()),
             download_states: RefCell::new(BTreeMap::new()),
             download_widgets: RefCell::new(BTreeMap::new()),
@@ -562,6 +583,27 @@ mod tests {
         assert_eq!(state.visible_episodes(7, &episodes).len(), 1);
         state.set_hide_shorts(7, false);
         assert_eq!(state.visible_episodes(7, &episodes).len(), 2);
+    }
+
+    /// `SET-8`: the Online sources page's "Hide Shorts" default seeds new
+    /// channels' Shorts visibility, but a channel's own explicit toggle
+    /// still overrides it — turning the global default off must not
+    /// silently flip a channel someone already set the other way.
+    #[test]
+    fn set_8_hide_shorts_default_seeds_new_channels_but_per_channel_override_wins() {
+        let episodes = vec![episode(2, Some(600)), episode(1, Some(60))];
+        let mut state = YoutubeChannelState::default();
+        state.set_default_shows_shorts(true); // "Hide Shorts" preference is off
+
+        // Untouched channel follows the default: Shorts are shown.
+        assert_eq!(state.visible_episodes(7, &episodes).len(), 2);
+
+        // This channel explicitly hides Shorts, overriding the default.
+        state.set_hide_shorts(7, true);
+        assert_eq!(state.visible_episodes(7, &episodes).len(), 1);
+
+        // A different, untouched channel still follows the default.
+        assert_eq!(state.visible_episodes(8, &episodes).len(), 2);
     }
 
     #[test]

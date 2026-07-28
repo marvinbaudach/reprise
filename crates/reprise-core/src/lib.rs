@@ -63,6 +63,7 @@ pub mod media_integration;
 pub mod models;
 pub mod modules;
 pub mod musicbrainz;
+pub mod online_sources;
 pub mod playback;
 pub mod podcasts;
 pub mod provenance;

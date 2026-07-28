@@ -98,4 +98,8 @@ pub enum PodcastError {
     NotModified,
     #[error("{0}")]
     YtDlp(String),
+    /// The subscription's kind (RSS or YouTube) is disabled, either at its
+    /// own module or the global online-sources gate (`NET-1a`).
+    #[error("{0}")]
+    Disabled(String),
 }

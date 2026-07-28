@@ -144,6 +144,9 @@ printf '%s\n' '{"entries":[
     .unwrap();
     std::fs::set_permissions(&fake_ytdlp, std::fs::Permissions::from_mode(0o755)).unwrap();
     set_bool_setting(&path, CAP_SOURCES_MANAGE, true);
+    // YouTube is a peer module, independent of Podcasts (issue #96) — it
+    // must be explicitly enabled, same as any other network module.
+    set_bool_setting(&path, "module.youtube.enabled", true);
     let mut client =
         McpClient::start_with_env(&path, &[("REPRISE_YTDLP_BIN", fake_ytdlp.as_path())]);
 
