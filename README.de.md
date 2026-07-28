@@ -76,7 +76,8 @@ Playlist-Logik in `reprise-core`; native Interaktion und Accessibility in
 
 Starte mit [AGENTS.md](AGENTS.md) und dem [UX-Regelwerk](docs/ux-rules.md).
 Jede Änderung beginnt mit einem fehlschlagenden Test, respektiert die
-Core-Grenze und landet per Pull Request über `feature → dev → main`. Das Ziel
+Core-Grenze und landet per gesquashtem Pull Request in `dev`, von wo `main`
+per Fast-Forward nachgezogen wird. Das Ziel
 ist nicht mehr Code, sondern ein besserer Musikplayer — mit Belegen, dass jede
 Änderung korrekt ist.
 
@@ -140,7 +141,7 @@ oder dein Benutzerprofil zurück.
 | [AGENTS.md](AGENTS.md) | Repository-Workflow, Sicherheitsgrenzen und Pflicht-Gates |
 | [TESTING.md](TESTING.md) | Testebenen, Benchmarkmethode und Evidenzgrenzen |
 | [docs/ux-rules.md](docs/ux-rules.md) | Verbindliche Interaktions- und Accessibility-Verträge |
-| [docs/agents/branching.md](docs/agents/branching.md) | Pull-Request-Flow `feature → dev → main` |
+| [docs/agents/branching.md](docs/agents/branching.md) | Gesquashte Pull Requests nach `dev`, Fast-Forward-Promotion nach `main` |
 | [docs/showcase.md](docs/showcase.md) | Portfolio-Positionierung und vertiefende Engineering-Evidenz |
 | [RELEASING.md](RELEASING.md) | Packaging- und Release-Checkliste |
 

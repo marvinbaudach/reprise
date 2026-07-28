@@ -72,7 +72,8 @@ audio, desktop, and device adapters in `reprise-platform-linux`.
 
 Start with [AGENTS.md](AGENTS.md) and the [UX rulebook](docs/ux-rules.md).
 Every change starts with a failing test, respects the core boundary, and lands
-via pull request through `feature → dev → main`. The goal is not more code —
+through a squashed pull request into `dev`, from where `main` is
+fast-forwarded. The goal is not more code —
 it is a better music player, with evidence that each change is correct.
 
 ## Build and run
@@ -152,7 +153,7 @@ missing — they never fall back to the live desktop or your user profile.
 | [AGENTS.md](AGENTS.md) | Repository workflow, safety boundaries, and required gates |
 | [TESTING.md](TESTING.md) | Test layers, benchmark method, and evidence limits |
 | [docs/ux-rules.md](docs/ux-rules.md) | Binding interaction and accessibility contracts |
-| [docs/agents/branching.md](docs/agents/branching.md) | `feature → dev → main` pull-request flow |
+| [docs/agents/branching.md](docs/agents/branching.md) | Squashed pull requests into `dev`, fast-forward promotion to `main` |
 | [docs/showcase.md](docs/showcase.md) | Portfolio positioning and deeper engineering evidence |
 | [RELEASING.md](RELEASING.md) | Packaging and release checklist |
 

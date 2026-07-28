@@ -1,10 +1,13 @@
 name: Delete merged branch
 
-# Repo-wide "Automatically delete head branches" is intentionally OFF so that
-# dev survives every dev→main promotion (the promotion PR's head is always dev,
-# and GitHub's built-in auto-delete cannot be scoped per branch on a private
-# free-tier repo — branch protection and rulesets both require GitHub Pro).
-# This workflow reproduces auto-delete for every OTHER merged branch instead.
+# Repo-wide "Automatically delete head branches" was switched OFF so that dev
+# would survive the dev→main promotion, whose pull request had dev as its head.
+# Since 2026-07-28 the repository allows squash merging only, and the promotion
+# is a fast-forward push instead of a pull request (see docs/agents/branching.md),
+# so no long-lived branch is ever a pull-request head. The setting is therefore
+# safe to enable, which would make this workflow redundant; it is kept for now
+# because Actions do not currently run for this account and the guard below
+# costs nothing.
 
 on:
   pull_request:
