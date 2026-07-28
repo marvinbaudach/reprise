@@ -45,13 +45,8 @@ use reprise_core::library::playlist_membership;
 /// `Shared::on_queue_drop`'s doc comment. Lives beside its drop handler
 /// (relocated from `sidebar.rs`, orchestrator size rule).
 pub(in crate::ui) type OnQueueDrop = std::rc::Rc<dyn Fn(&[i64]) -> bool>;
-pub(in crate::ui) type OnConversionDrop = std::rc::Rc<dyn Fn(&[i64]) -> bool>;
 
 impl Sidebar {
-    pub fn set_on_conversion_drop(&self, callback: impl Fn(&[i64]) -> bool + 'static) {
-        *self.shared.on_conversion_drop.borrow_mut() = Some(Rc::new(callback));
-    }
-
     /// Drives the same drop-handling sequence as the real playlist-row drop
     /// target for callers that cannot synthesize a pointer drag.
     pub fn handle_playlist_drop(&self, playlist_id: i64, playlist_name: &str, ids: &[i64]) -> bool {
@@ -183,40 +178,6 @@ pub(in crate::ui) fn wire_queue_drop_target(shared: &Rc<Shared>, row: &gtk4::Lis
     row.add_controller(drop_target);
 }
 
-/// Makes the experimental Conversions row the second enqueue path specified by
-/// the feature design: a multi-track drag becomes one instrumental batch.
-pub(in crate::ui) fn wire_conversion_drop_target(shared: &Rc<Shared>, row: &gtk4::ListBoxRow) {
-    // input-parity: ACC-8 keyboard=context-menu-create-instrumental
-    let drop_target = gtk4::DropTarget::new(glib::Type::STRING, gtk4::gdk::DragAction::COPY);
-    let shared = shared.clone();
-    drop_target.connect_drop(move |_target, value, _x, _y| {
-        let Ok(payload_str) = value.get::<String>() else {
-            return false;
-        };
-        let Some(payload) = track_list_dnd::parse_drag_payload(&payload_str) else {
-            return false;
-        };
-        handle_conversion_drop(&shared, &payload.ids)
-    });
-    row.add_controller(drop_target);
-}
-
-pub(in crate::ui) fn handle_conversion_drop(shared: &Rc<Shared>, ids: &[i64]) -> bool {
-    let callback = shared.on_conversion_drop.borrow().clone();
-    dispatch_conversion_drop(callback, ids)
-}
-
-fn dispatch_conversion_drop(callback: Option<OnConversionDrop>, ids: &[i64]) -> bool {
-    if ids.is_empty() {
-        return false;
-    }
-    let Some(callback) = callback else {
-        tracing::warn!("conversion drop fired without a window callback");
-        return false;
-    };
-    callback(ids)
-}
-
 /// The actual "append dropped tracks to the queue" logic — standalone for
 /// the same two-entry-points reason as [`handle_playlist_drop`] (real drop
 /// target here, `Sidebar::handle_queue_drop` for the `REPRISE_SMOKE_DND=
@@ -251,34 +212,11 @@ pub(in crate::ui) fn handle_queue_drop(shared: &Rc<Shared>, ids: &[i64]) -> bool
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
-    use std::rc::Rc;
-
-    use super::{dispatch_conversion_drop, drop_added_rows};
+    use super::drop_added_rows;
 
     #[test]
     fn duplicate_only_drop_reports_no_change() {
         assert!(!drop_added_rows(0));
         assert!(drop_added_rows(1));
-    }
-
-    #[test]
-    fn conversion_drop_dispatches_the_complete_drag_selection() {
-        let observed = Rc::new(RefCell::new(Vec::new()));
-        let callback = {
-            let observed = observed.clone();
-            Rc::new(move |ids: &[i64]| {
-                *observed.borrow_mut() = ids.to_vec();
-                true
-            })
-        };
-
-        assert!(dispatch_conversion_drop(Some(callback), &[4, 2, 7]));
-        assert_eq!(*observed.borrow(), vec![4, 2, 7]);
-        assert!(!dispatch_conversion_drop(None, &[4]));
-        assert!(!dispatch_conversion_drop(
-            Some(Rc::new(|_: &[i64]| true)),
-            &[]
-        ));
     }
 }
