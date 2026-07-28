@@ -84,10 +84,12 @@ The project is built **plan-by-plan, task-by-task, test-first**. To continue:
 
 - Never commit or push directly to `dev` or `main`. Create a dedicated branch for every
   change and open a pull request whose base branch is `dev`.
-- Agents may prepare, update, verify, and merge pull requests into `dev` after all required
-  checks are green, but must not merge `dev` into `main` or approve a production release.
+- Agents may prepare, update, verify, and merge pull requests into `dev` after the gate is
+  green, but must not merge `dev` into `main` or approve a production release. Which gate
+  that is depends on the repository's plan — see `docs/agents/branching.md`; today it is a
+  local `scripts/check-merge-readiness.sh` run, because GitHub enforces nothing here.
 - Only the repository owner promotes `dev` to `main`, after reviewing the accumulated
-  changes and confirming that all required checks are green.
+  changes and confirming the same gate is green.
 - Emergency production fixes still start on a `hotfix/*` branch and require an explicit
   pull request and owner approval before reaching `main`.
 
