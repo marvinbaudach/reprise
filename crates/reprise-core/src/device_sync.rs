@@ -11,6 +11,7 @@ use crate::library::m3u::{M3uEntry, M3uExportEntry};
 
 pub mod delta;
 pub mod m3u;
+pub mod machine;
 pub mod mirror;
 pub mod page;
 pub mod profile;
@@ -21,6 +22,10 @@ pub mod storage;
 pub mod transfer;
 
 pub use delta::{compute_delta, SyncCandidate, SyncDelta};
+pub use machine::{
+    DeviceSyncMachine, Effect, Event, PlannedSyncPhase, SyncOutcome, SyncStep, TransferOperation,
+    TransferSource,
+};
 pub use mirror::{
     plan_mirror, DesiredManagedFile, ManagedDeviceFile, ManagedRemoval, MirrorBlocker, MirrorInput,
     MirrorPlan, MirrorPlaylistProjection, MirrorPlaylistSnapshot, MirrorReplacement, MirrorTrack,
@@ -366,6 +371,10 @@ mod inventory_tests;
 #[cfg(test)]
 #[path = "device_sync/mirror_tests.rs"]
 mod mirror_tests;
+
+#[cfg(test)]
+#[path = "device_sync/machine_tests.rs"]
+mod machine_tests;
 
 #[cfg(test)]
 mod tests {

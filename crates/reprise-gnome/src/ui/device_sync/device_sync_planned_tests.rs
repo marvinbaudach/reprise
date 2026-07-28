@@ -755,3 +755,35 @@ fn mtp_5_reconnect_resumes_planned_sync_from_the_remaining_delta() {
         assert_eq!(backend.state.copy_order.borrow().len(), 1);
     });
 }
+
+#[test]
+fn mtp_15_every_copy_restarts_the_transfer_rate_baseline() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1, 2]);
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 0));
+        let (started, releases) = backend.gate_copies(&["a"]);
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+
+        runtime.sync_now("a").unwrap();
+
+        started.recv().await.unwrap();
+        let after_first = runtime.devices()[0].bytes_per_second;
+        releases["a"].send(()).await.unwrap();
+
+        started.recv().await.unwrap();
+        let after_second = runtime.devices()[0].bytes_per_second;
+        releases["a"].send(()).await.unwrap();
+
+        assert!(after_first > 0, "the first copy must produce a rate");
+        // Progress counts from zero for every track. A baseline left over from
+        // the previous track silently discards every smaller sample, and the
+        // displayed rate then freezes for the rest of the run.
+        assert_ne!(
+            after_first, after_second,
+            "the second copy must be measured against its own baseline"
+        );
+        settle().await;
+    });
+}
