@@ -88,6 +88,12 @@ The project is built **plan-by-plan, task-by-task, test-first**. To continue:
   green, but must not merge `dev` into `main` or approve a production release. Which gate
   that is depends on the repository's plan — see `docs/agents/branching.md`; today it is a
   local `scripts/check-merge-readiness.sh` run, because GitHub enforces nothing here.
+- **Squash every topic-branch pull request into `dev`** — one commit per pull request, titled
+  as a conventional commit. The `dev` → `main` promotion and the post-hotfix `main` → `dev`
+  sync are the only merge commits; squashing those would permanently diverge the two
+  long-lived branches. See `docs/agents/branching.md`, "Merge method". A squashed branch is
+  never reported as merged by `git branch -d`, so delete it with `-D`, and never stack a topic
+  branch on another topic branch.
 - Only the repository owner promotes `dev` to `main`, after reviewing the accumulated
   changes and confirming the same gate is green.
 - Emergency production fixes still start on a `hotfix/*` branch and require an explicit
