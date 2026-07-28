@@ -58,7 +58,8 @@ impl PodcastsRuntime {
     ) -> Result<(), rusqlite::Error> {
         reprise_core::modules::set_enabled(conn, &reprise_core::modules::PODCASTS_MODULE, enabled)?;
         if self.enabled.replace(enabled) != enabled {
-            for callback in self.subscribers.borrow().iter() {
+            let subscribers = self.subscribers.borrow().clone();
+            for callback in subscribers {
                 callback(enabled);
             }
         }
@@ -214,5 +215,30 @@ mod tests {
         assert!(!automatic_refresh_allowed(true, 0, false, true));
         assert!(!automatic_refresh_allowed(true, 1, true, true));
         assert!(!automatic_refresh_allowed(true, 1, false, false));
+    }
+
+    #[test]
+    fn enabled_subscriber_can_register_another_subscriber_during_notification() {
+        let conn = reprise_core::db::open_migrated(None).unwrap();
+        let runtime = PodcastsRuntime::setup(&conn);
+        let primary_calls = Rc::new(RefCell::new(Vec::new()));
+        let secondary_calls = Rc::new(RefCell::new(Vec::new()));
+        let runtime_for_callback = runtime.clone();
+        let primary_calls_for_callback = primary_calls.clone();
+        let secondary_calls_for_callback = secondary_calls.clone();
+        runtime.subscribe_enabled(move |enabled| {
+            primary_calls_for_callback.borrow_mut().push(enabled);
+            if enabled {
+                let calls = secondary_calls_for_callback.clone();
+                runtime_for_callback.subscribe_enabled(move |enabled| {
+                    calls.borrow_mut().push(enabled);
+                });
+            }
+        });
+
+        runtime.set_enabled(&conn, true).unwrap();
+
+        assert_eq!(primary_calls.borrow().as_slice(), [false, true]);
+        assert_eq!(secondary_calls.borrow().as_slice(), [true]);
     }
 }
