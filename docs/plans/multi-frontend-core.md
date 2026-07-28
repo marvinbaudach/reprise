@@ -222,6 +222,15 @@ Fehler); kein externer Zugriff auf In-Memory-Queue/Position außer MPRIS
 (akzeptiert; MCP exponiert ohnehin keine Transport-Tools); Schema-Guard
 ist Pflicht (2.3, P0).
 
+> **Nachtrag 2026-07-28 — die zweite dieser Konsequenzen ist inzwischen
+> aufgehoben.** Beschluss 1 gilt unverändert für *Daten*: kein Daemon, kein
+> IPC auf dem Query-Pfad. Für Zustand, der nie in der Datenbank steht —
+> Player-Pipeline, In-Memory-Queue, laufende Geräteläufe und Jobs — gibt es
+> ab Stufe 1 des Thin-Core-Plans einen Laufzeitdienst mit einem einzigen
+> Besitzer. Sektion 9 ist dafür die verbindliche Naht; sie zieht den in
+> Sektion 8 geparkten `org.reprise.Reprise1` vom Parkplatz und begrenzt ihn
+> ausdrücklich auf diesen Ausschnitt.
+
 ### 2.2 Änderungspropagation — Mechanismus, Ordnung, Races
 
 **Beschluss 5: Transaktionale Outbox (`change_log`) als Wahrheit über das
@@ -1035,3 +1044,194 @@ den Fließtext eingearbeitet — diese Liste ist die kompakte Referenz.
   allenfalls später).
 - **Langform-Ausschlussregel** für Shuffle/Auto-Queue, falls generierte
   Langform-Titel real werden (Beschluss 17; dann als `[geplant]`-Regel).
+
+## 9. Laufzeitdienst — verbindliches Design
+
+Nachtrag vom 2026-07-28, Ausführungsdokument
+`docs/plans/thin-core-headless-mcp.md`, Stufe 1 Task 1.1. Diese Sektion ist
+ab hier die Wahrheit über Besitz von Laufzeitzustand; sie ergänzt Beschluss 1
+(2.1) und ersetzt ihn nicht.
+
+### 9.1 Verhältnis zu Beschluss 1 — was bleibt, was dazukommt
+
+Beschluss 1 hat einen Daemon **für Daten** verworfen, und das bleibt richtig:
+Bibliothek, Playlists, Einstellungen, Module, Podcast-/Radio-Abos, Concerts
+und Releases liegen in SQLite, jede Oberfläche linkt `reprise-core` direkt,
+WAL trägt n Leser plus einen Schreiber, und `change_log` + Notifier (2.2)
+machen Fremd-Writes live sichtbar. Nichts davon bekommt IPC. Der heiße
+Fenster-Query-Pfad bleibt ein Funktionsaufruf.
+
+Was Beschluss 1 nicht abdeckt, ist der Zustand, der **gar nicht in der
+Datenbank steht**: die GStreamer-Pipeline, die In-Memory-Queue, laufende
+Geräteläufe, laufende Jobs. Beschluss 1 nennt das offen als Konsequenz
+(„kein externer Zugriff auf In-Memory-Queue/Position außer MPRIS“) und
+Sektion 8 parkt `org.reprise.Reprise1` als Erweiterungspunkt. Die
+Forcing-Function des Thin-Core-Plans — MCP muss Playback, Queue,
+Hintergrundaufgaben und Geräte-Sync **ohne laufendes GTK-Fenster** steuern —
+holt genau diesen Punkt vom Parkplatz.
+
+Die Grenze ist damit scharf und in beide Richtungen prüfbar:
+
+| Zustand | Besitzer | Zugriff der Oberflächen |
+| --- | --- | --- |
+| Bibliothek, Playlists, Settings, Module, Abos, Concerts/Releases | SQLite | direkt eingebettet über `reprise-core` |
+| Player-Pipeline, Position, Lautstärke | Laufzeit | Command + Snapshot über den Runtime-Client |
+| Queue (Reihenfolge, aktueller Index, Refill) | Laufzeit | Command + Snapshot |
+| Geräteläufe (Inspect → … → Verify, Generationen, Cancel) | Laufzeit | Command + Snapshot |
+| Hintergrundjobs (Scan, Downloads, Instrumental) | Laufzeit | Command + Snapshot |
+| Schreibzugriff auf die DB während eines Laufzeit-Effekts | Laufzeit (serialisiert) | Effekte schreiben nur über die Laufzeit |
+
+Ein Frontend darf pure Queries und Präsentationswerte weiterhin direkt
+linken. Laufzeitgebundene Effekte gehen ausnahmslos über den Client. Diese
+Zweiteilung ist keine Übergangslösung, sondern das Zielbild: sie hält den
+Lesepfad schnell und portabel und gibt den Effekten einen einzigen Besitzer.
+
+### 9.2 Lebenszyklus
+
+Die Laufzeit hat vier Zustände. Übergänge sind vollständig; es gibt keinen
+impliziten fünften.
+
+```text
+        activate()                 handshake ok
+Absent ------------> Starting ---------------------> Serving
+   ^                    |                              |
+   |                    | Lease belegt / Version fremd  | letzter Client weg
+   |                    v                              | UND nichts aktiv
+   +---------------- Refused <---------------------+   v
+   |                                                Draining
+   +-------------------------------------------------- +
+                       Idle-Frist abgelaufen
+```
+
+- **Absent** — kein Prozess. Jeder Command eines Clients löst Aktivierung aus.
+- **Starting** — Prozess läuft, Lease wird beansprucht, Handshake noch offen.
+  Clients warten mit Timeout, sie pollen nicht.
+- **Serving** — Lease gehalten, Commands werden angenommen, Snapshots
+  publiziert.
+- **Draining** — kein Client mehr verbunden und keine Arbeit aktiv; die
+  Idle-Frist läuft. Ein neuer Client oder ein neuer Effekt bricht Draining
+  sofort ab und führt zurück nach Serving.
+- **Refused** — Start abgebrochen, weil die Lease bereits gehalten wird oder
+  die Protokoll-Hauptversion nicht passt. Der Prozess beendet sich mit einer
+  strukturierten Ursache; er wartet nicht und startet nichts neu.
+
+### 9.3 Single-Owner-Lease
+
+Genau ein Prozess besitzt die Laufzeit. Die Lease ist eine exklusive
+Betriebssystem-Sperre auf einer Datei unter `XDG_RUNTIME_DIR`, kein
+Datenbankfeld und kein Namensdienst-Detail:
+
+- Die Sperre wird **vor** dem Öffnen von GStreamer, Geräten und dem
+  Schreib-Pool beansprucht. Wer sie nicht bekommt, hat nie einen Effekt
+  angefasst.
+- Der Kernel gibt sie beim Prozessende frei, auch bei `SIGKILL`. Damit gibt
+  es keine verwaiste Sperre und keinen Reaper.
+- Die Datei trägt PID und Protokollversion als Inhalt, ausschließlich zu
+  Diagnosezwecken. Autorität ist die Sperre, nie der Inhalt.
+- Ein zweiter Laufzeitprozess ist ein Bug, kein Sonderfall: `Refused` ist der
+  einzige zulässige Ausgang.
+
+### 9.4 Auto-Aktivierung
+
+Unter Linux ist die Laufzeit ein D-Bus-aktivierbarer User-Dienst
+(`org.reprise.Reprise1`) mit systemd-User-Unit. Ein Client sendet seinen
+ersten Command und der Bus startet den Dienst. Daraus folgen drei Regeln:
+
+1. Kein Client startet den Dienst selbst per `spawn`. Es gibt genau einen
+   Startpfad, sonst ist die Lease-Argumentation wertlos.
+2. Binärdatei, `.service`-Datei und Unit werden **gemeinsam** ausgeliefert;
+   ein Installations-/Release-Test beweist das, sonst ist die Aktivierung auf
+   dem Entwicklungsrechner grün und beim Nutzer tot.
+3. Aktivierung ist plattformspezifisch und lebt in
+   `reprise-platform-linux`. Der Client kennt nur „verbinden“ und „Fehler“,
+   nie systemd.
+
+### 9.5 Client-Wiederverbindung
+
+Clients sind zustandslos gegenüber der Laufzeit; die Laufzeit ist die
+Wahrheit. Beim Verbinden gilt derselbe Ablauf wie beim ersten Start:
+Handshake mit Protokollversion, dann **ein vollständiger Snapshot**, danach
+Deltas. Es gibt kein Nachspielen verpasster Events — dieselbe Begründung wie
+bei `change_log` (2.2): Konsumenten refreshen Zustand, sie replayen keine
+Operationen.
+
+- Eine gerissene Verbindung ist erwartetes Verhalten, kein Fehlerfall: der
+  Client verbindet mit begrenztem Backoff neu und ersetzt beim Snapshot
+  seinen gesamten laufzeitgebundenen Zustand.
+- Solange keine Verbindung besteht, zeigt eine Oberfläche keinen geratenen
+  Zustand. Transport und Geräteaktionen sind sichtbar nicht verfügbar
+  (RUN-2), keine Attrappe.
+- Ein Command, der während einer Trennung abgeschickt wurde, wird **nicht**
+  gepuffert und später ausgeführt. Er scheitert strukturiert; die Oberfläche
+  entscheidet, ob sie ihn nach dem Snapshot erneut anbietet. Verzögertes
+  Ausführen alter Absichten ist die gefährlichere Variante.
+
+### 9.6 Idle-Shutdown
+
+Die Laufzeit beendet sich nur, wenn **alle** vier Bedingungen gelten: kein
+Client verbunden, keine Wiedergabe (auch nicht pausiert mit geladenem
+Track), kein Gerätelauf, kein Job. Trifft eine davon nicht zu, wird die
+Idle-Frist gar nicht erst gestartet.
+
+Das ist bewusst konservativ: ein Dienst, der Arbeit abbricht, um Speicher zu
+sparen, ist ein Datenverlust-Feature. Die Frist ist eine benannte Konstante,
+keine Streuzahl, und der Übergang nach `Draining` ist abbrechbar (9.2).
+
+### 9.7 Fehlersemantik
+
+Jede Client-Interaktion endet in genau einer von vier Kategorien. Sie sind
+für Oberflächen **und** für Agenten dieselben:
+
+| Kategorie | Bedeutung | Was der Client tut |
+| --- | --- | --- |
+| `Unavailable` | Laufzeit nicht erreichbar oder nicht gestartet | Backoff, neu verbinden, Aktion sichtbar deaktivieren |
+| `Refused` | Lease belegt oder Protokoll-Hauptversion fremd | nicht wiederholen; Ursache benennen |
+| `Rejected` | Command formal gültig, fachlich unzulässig (fehlende Capability, unbekannte Entität, verbotener Übergang) | nicht wiederholen; Grund anzeigen |
+| `Failed` | Effekt ist gelaufen und gescheitert (Gerät weg, Datei nicht lesbar, Codec fehlt) | Ergebnis anzeigen, Wiederholung ist eine Nutzerentscheidung |
+
+Verbindliche Eigenschaften für alle vier:
+
+- Sie sind **strukturiert**, nie freier Text. MCP liefert immer eine
+  Tool-Antwort, niemals einen Transportabbruch; `stdout` bleibt reines MCP.
+- Sie sind **pfadfrei**: kein lokaler Dateipfad verlässt die Laufzeit
+  Richtung Agent. Entitäten werden über IDs benannt.
+- Sie tragen den Writer-Token-Gedanken aus 2.2 weiter: jede Mutation ist im
+  Event-Log ihrem Auslöser zugeordnet.
+
+### 9.8 Capability-Matrix
+
+Jede Ressource wird gelesen oder mutiert; jede Mutation hängt an genau einer
+Capability. Die Spalte „heute“ hält den Stand fest, damit Stufe 3.5 messbar
+schließt statt gefühlt.
+
+| Ressource | Lesen | Mutation | Capability | heute |
+| --- | --- | --- | --- | --- |
+| Bibliothek (Tracks, Artists, Albums) | ja | — | `library:read` | vorhanden |
+| Playlists | ja | anlegen | `playlist:create` | vorhanden |
+| Playlists | ja | umbenennen, löschen, Inhalt ändern | `playlist:manage` | vorhanden |
+| Instrumental-Jobs | ja | anlegen | `ai:create` | vorhanden |
+| Instrumental-Jobs | ja | speichern, verwerfen, abbrechen | `ai:create` | offen (3.5) |
+| Podcasts, Radio | ja | abonnieren, entfernen, herunterladen | `sources:manage` | vorhanden |
+| Concerts, Releases | ja | refreshen, filtern, ausblenden | `sources:manage` | offen (3.5) |
+| Geräte-Sync | ja | konfigurieren, starten, abbrechen | `device:sync` | vorhanden |
+| Playback | ja | play, pause, seek, Lautstärke | `playback:control` | vorhanden |
+| Queue | ja | einreihen, umsortieren, leeren | `playback:control` | teilweise |
+| Settings, Module | offen (3.5) | setzen | `settings:manage` | offen (3.5) |
+| Scan, Wartung | offen (3.5) | starten | `library:maintain` | offen (3.5) |
+
+Zwei Regeln über der Tabelle, beide bindend:
+
+1. **Kein Feature-Schalter darf ein zentrales Tool verschwinden lassen.**
+   Playback- und Geräte-Tools sind im Default-Build. Ein Agent, der ein Tool
+   nicht sieht, kann nicht wissen, dass es existiert.
+2. **Dateisystemverändernde Mutationen sind standardmäßig aus**, brauchen
+   eine eigene persistierte Capability und geben niemals lokale Pfade zurück.
+
+### 9.9 Sichtbares Verhalten
+
+Alles, was ein Nutzer an diesem Design bemerken kann, steht als
+`[geplant]`-Regel in Sektion AG des UX-Regelwerks (RUN-1 bis RUN-5) und
+wechselt dort einzeln auf `[aktiv]`, sobald die jeweilige Scheibe
+implementiert ist. Die Frage, ob das Schließen des Fensters die Wiedergabe
+beendet, ist dort als Regelvorschlag markiert und bewusst noch nicht
+entschieden — sie ist eine Produktentscheidung, keine Architekturfolge.
