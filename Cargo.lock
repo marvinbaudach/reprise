@@ -2703,11 +2703,17 @@ dependencies = [
  "gstreamer-app",
  "lofty",
  "reprise-core",
+ "reprise-runtime",
  "reprise-runtime-protocol",
+ "rusqlite",
+ "rustix",
+ "serde",
  "tempfile",
  "tracing",
+ "tracing-subscriber",
  "trash",
  "zbus",
+ "zvariant",
 ]
 
 [[package]]

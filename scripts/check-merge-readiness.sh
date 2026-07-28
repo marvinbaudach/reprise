@@ -49,6 +49,8 @@ echo "== Accessibility semantics and input parity =="
 scripts/check-accessibility-semantics.sh
 scripts/check-input-parity.sh
 
+scripts/check-runtime-service-install.sh
+
 echo "== Frontend thinness =="
 scripts/check-frontend-thinness.sh
 
@@ -86,6 +88,12 @@ scripts/check-display-tests.sh --motion
 
 echo "== CSS parse display tests =="
 scripts/check-display-tests.sh --css
+
+# The runtime service's own tests need a session bus. A private one, so they
+# never touch the developer's running Reprise.
+echo "== Runtime service bus tests =="
+dbus-run-session -- cargo test --locked -p reprise-platform-linux \
+  --test runtime_service -- --ignored --test-threads=1
 
 echo "== Dependency audit =="
 cargo audit

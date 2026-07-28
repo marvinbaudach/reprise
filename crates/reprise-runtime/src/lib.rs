@@ -48,6 +48,7 @@ pub mod error;
 pub mod event;
 #[cfg(any(test, feature = "fakes"))]
 pub mod fakes;
+pub mod lifecycle;
 pub mod ports;
 
 mod devices;
@@ -58,6 +59,7 @@ mod transport;
 pub use client::{ClientHandshake, ClientId};
 pub use error::{Capability, Failed, Refused, Rejected, RuntimeError, Unavailable};
 pub use event::{Delivery, RuntimeEvent, RuntimeSnapshot, SequencedEvent};
+pub use lifecycle::{Lifecycle, LifecycleChange, LifecycleMachine, RefusalCause, IDLE_GRACE};
 pub use ports::{Clock, DeviceEffects, LibraryPort, PlayableTrack, Ports, TrackLocation};
 pub use runtime::{Command, Connected, DeviceCommand, Runtime};
 
