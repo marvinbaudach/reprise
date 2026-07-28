@@ -20,7 +20,6 @@ const HUE_START: f32 = 188.0;
 const HUE_END: f32 = 315.0;
 const BASS_GLOW_ALPHA: f32 = 0.35;
 const BASS_GLOW_RADIUS: f32 = 0.44;
-const BREAKDOWN_GLOW_THRESHOLD: f32 = 0.50;
 const BREAKDOWN_GLOW_ALPHA: f32 = 0.55;
 const BREAKDOWN_GLOW_RADIUS: f32 = 0.32;
 
@@ -46,7 +45,9 @@ pub(crate) fn scene(ctx: &ModeCtx) -> Vec<Shape> {
         (max_height - SEGMENT_GAP * (SEGMENT_COUNT - 1) as f32) / SEGMENT_COUNT as f32;
     let mut shapes = Vec::with_capacity(BAR_COUNT * (SEGMENT_COUNT + REFLECTION_SEGMENTS + 2) + 4);
 
-    if ctx.bass_glow > 0.0 {
+    // Both layers scale straight off the measured pressure, so a rhythmic kick
+    // is a soft lift and only a sustained breakdown reaches the inner auras.
+    if ctx.bass_impact > 0.0 {
         let radius = ctx.width.max(ctx.height) * BASS_GLOW_RADIUS;
         for (bar, cx) in [(0, ctx.width * 0.28), (BAR_COUNT - 1, ctx.width * 0.72)] {
             shapes.push(Shape {
@@ -55,34 +56,31 @@ pub(crate) fn scene(ctx: &ModeCtx) -> Vec<Shape> {
                     cy: ctx.height * 0.68,
                     r: radius,
                 },
-                fill: neon(bar, BASS_GLOW_ALPHA * ctx.bass_glow),
+                fill: neon(bar, BASS_GLOW_ALPHA * ctx.bass_impact),
                 width: 0.0,
                 glow: 0.0,
                 dash: None,
             });
         }
+    }
 
-        let breakdown = smoothstep(
-            (ctx.bass_glow - BREAKDOWN_GLOW_THRESHOLD) / (1.0 - BREAKDOWN_GLOW_THRESHOLD),
-        );
-        if breakdown > 0.0 {
-            let radius = ctx.width.max(ctx.height) * BREAKDOWN_GLOW_RADIUS;
-            for (bar, cx) in [
-                (BAR_COUNT / 10, ctx.width * 0.32),
-                (BAR_COUNT - 1 - BAR_COUNT / 10, ctx.width * 0.68),
-            ] {
-                shapes.push(Shape {
-                    geom: Geom::RadialGlow {
-                        cx,
-                        cy: ctx.height * 0.66,
-                        r: radius,
-                    },
-                    fill: neon(bar, BREAKDOWN_GLOW_ALPHA * breakdown),
-                    width: 0.0,
-                    glow: 0.0,
-                    dash: None,
-                });
-            }
+    if ctx.bass_aura > 0.0 {
+        let radius = ctx.width.max(ctx.height) * BREAKDOWN_GLOW_RADIUS;
+        for (bar, cx) in [
+            (BAR_COUNT / 10, ctx.width * 0.32),
+            (BAR_COUNT - 1 - BAR_COUNT / 10, ctx.width * 0.68),
+        ] {
+            shapes.push(Shape {
+                geom: Geom::RadialGlow {
+                    cx,
+                    cy: ctx.height * 0.66,
+                    r: radius,
+                },
+                fill: neon(bar, BREAKDOWN_GLOW_ALPHA * ctx.bass_aura),
+                width: 0.0,
+                glow: 0.0,
+                dash: None,
+            });
         }
     }
 
@@ -198,7 +196,7 @@ mod tests {
     }
 
     #[test]
-    fn ac_22_draws_sixty_four_one_to_one_cava_columns() {
+    fn ac_23_draws_sixty_four_one_to_one_cava_columns() {
         let engine = lively_engine();
         let shapes = scene(&test_ctx(&engine, WIDTH, HEIGHT));
         let mut x_positions: Vec<f32> = main_segments(&shapes)
@@ -255,7 +253,8 @@ mod tests {
         let ctx = ModeCtx {
             peaks: &peaks,
             bars: &bars,
-            bass_glow: 0.0,
+            bass_impact: 0.0,
+            bass_aura: 0.0,
             accent: (0.2, 0.7, 0.7),
             accent2: (0.7, 0.2, 0.7),
             width: WIDTH,
