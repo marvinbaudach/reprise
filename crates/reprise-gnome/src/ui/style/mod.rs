@@ -49,6 +49,7 @@ fn app_css() -> String {
         super::eq_bars::css(),
         super::playing_marker::css(),
         super::sidebar_device_card::css(),
+        super::source_context_surface::css(),
         super::list_density::css(),
         super::library_chrome::css(),
         super::now_playing::css(),
