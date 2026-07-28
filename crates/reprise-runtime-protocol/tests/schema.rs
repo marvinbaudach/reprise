@@ -17,6 +17,7 @@ use reprise_runtime_protocol::device_sync::{
 use reprise_runtime_protocol::jobs::{BatchProgress, JobSnapshot};
 use reprise_runtime_protocol::playback::PlaybackSnapshot;
 use reprise_runtime_protocol::queue::QueueSnapshot;
+use reprise_runtime_protocol::runtime::RuntimeSnapshot;
 use reprise_runtime_protocol::PROTOCOL_VERSION;
 
 fn dbus_context() -> zvariant::serialized::Context {
@@ -359,8 +360,59 @@ fn no_snapshot_carries_a_local_filesystem_path() {
     }
 }
 
+/// The handshake payload nests every other snapshot, so its round trip is
+/// the one that proves the whole tree survives together rather than only
+/// piece by piece.
+#[test]
+fn the_whole_runtime_snapshot_survives_a_dbus_round_trip() {
+    let snapshot = RuntimeSnapshot {
+        protocol_major: PROTOCOL_VERSION.major,
+        protocol_minor: PROTOCOL_VERSION.minor,
+        sequence: 41,
+        playback: PlaybackSnapshot {
+            status: "paused".into(),
+            track_id: Some(42),
+            title: "Ghosts".into(),
+            artist: "Nine Inch Nails".into(),
+            album: "Ghosts I-IV".into(),
+            duration_ms: 214_000,
+            position_ms: 61_000,
+            volume: 0.75,
+            shuffle: false,
+            repeat: "off".into(),
+        },
+        queue: QueueSnapshot {
+            current_track_id: Some(42),
+            play_next_track_ids: vec![43],
+            context_track_ids: vec![44, 45],
+            play_next_total: 1,
+            context_total: 2,
+        },
+        device_runs: vec![populated_device_run()],
+        jobs: vec![JobSnapshot {
+            job_id: 9,
+            kind: "instrumental".into(),
+            state: "staged".into(),
+            progress_permille: 1_000,
+            batch_id: None,
+            source_track_id: Some(42),
+            result_track_id: None,
+            cancel_requested: false,
+            error_kind: None,
+        }],
+    };
+
+    assert_eq!(round_trip(&snapshot), snapshot);
+
+    // The empty runtime is the state every fresh process starts in, and an
+    // empty `Vec` inside a dictionary is exactly where an encoder is most
+    // likely to disagree with its decoder about the signature.
+    let empty = RuntimeSnapshot::default();
+    assert_eq!(round_trip(&empty), empty);
+}
+
 #[test]
 fn the_protocol_version_is_pinned() {
     assert_eq!(PROTOCOL_VERSION.major, 1);
-    assert_eq!(PROTOCOL_VERSION.minor, 1);
+    assert_eq!(PROTOCOL_VERSION.minor, 2);
 }
