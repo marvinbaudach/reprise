@@ -2636,6 +2636,19 @@ Hörstatistik.
   oder fehlerhafte Werte werden **weggelassen** — nie als Null und nie als
   „unknown" dargestellt. Die Zahl stammt aus dem bereits laufenden
   Such-Subprozess; es gibt keine zusätzliche Abfrage pro Kanal.
+- **SRC-10** [aktiv] [gtk] — Der echte Leerzustand „noch nichts
+  hinzugefügt" trägt für Podcasts, YouTube und Radio dieselbe Geometrie: die
+  Glyphe des eigenen Sidebar-Eintrags in einer gedämpften abgerundeten
+  Kachel, ein Titel, ein Absatz mit je einem Satz *was* hier landet und
+  *woher* es kommt, genau ein Primär-Button mit Plus-Icon und darunter als
+  ruhige Zweitzeile der URL-Weg — sofern die Quelle einen eigenen hat; Radio
+  hat keinen, weil der Absatz die Stream-URL bereits nennt. Weder Toolbar
+  noch Filterzeile noch Zähler erscheinen in diesem Zustand, nie „0 of 0":
+  die Fläche sieht ungenutzt aus, nicht kaputt. Nie eine generische
+  Platzhaltergrafik, nie ein Spinner ohne Auftrag. Sobald das erste Abo
+  landet, verschwindet dieser Zustand vollständig; „Nothing matches these
+  filters" und die übrigen Leerzustands-Klassifikationen
+  (`NoEpisodes`/`NoResults`) behalten ihre eigene, unveränderte Fläche.
 - **POD-1** [aktiv] [core] — Episodenstatus ist pure Ableitung: Played
   genau bei gesetztem `played_at`, sonst Resume bei `position_ms > 0`, sonst
   New. Ein Episodenende setzt Played und löscht die Position.

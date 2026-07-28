@@ -73,6 +73,7 @@ pub mod shortcuts;
 pub(in crate::ui) mod show_in_files;
 pub(crate) mod sidebar;
 mod source_add_action;
+mod source_empty_state;
 mod stats;
 pub mod status_bar;
 pub mod strings;

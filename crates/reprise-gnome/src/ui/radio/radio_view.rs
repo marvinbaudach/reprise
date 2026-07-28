@@ -16,10 +16,16 @@ use super::radio_model::{RadioModel, RadioObject};
 use super::radio_presentation::{sort_rows, RadioLiveState};
 use crate::ui::playback::external_media::{ExternalMedia, RadioPhase};
 use crate::ui::playback::player_controller::PlayerController;
+use crate::ui::sidebar::sidebar_presentation::NavIcon;
+use crate::ui::source_empty_state::{SourceEmptyState, SourceEmptyStateCopy};
 use crate::ui::strings;
 
 const LIST_PAGE: &str = "list";
 const STATUS_PAGE: &str = "status";
+/// `SRC-10`: the stack page holding the shared "nothing added yet" empty
+/// state — distinct from `STATUS_PAGE`, which still carries `NoResults`
+/// (Block B2, unchanged).
+const EMPTY_PAGE: &str = "empty";
 
 type IdCallback = Rc<dyn Fn(i64)>;
 type Callback = Rc<dyn Fn()>;
@@ -35,6 +41,7 @@ struct Shared {
     status: adw::StatusPage,
     status_button: gtk4::Button,
     empty_state: Cell<RadioEmptyState>,
+    empty_page: SourceEmptyState,
     root: gtk4::Widget,
     add_dialog: RefCell<Option<Rc<RadioAddDialog>>>,
     toast_overlay: gtk4::glib::WeakRef<adw::ToastOverlay>,
@@ -98,12 +105,14 @@ impl RadioView {
         let status_button = gtk4::Button::new();
         status_button.set_halign(gtk4::Align::Center);
         status.set_child(Some(&status_button));
+        let empty_page = SourceEmptyState::new(&radio_empty_state_copy());
         let stack = gtk4::Stack::builder()
             .transition_type(gtk4::StackTransitionType::Crossfade)
             .vexpand(true)
             .build();
         stack.add_named(&scrolled, Some(LIST_PAGE));
         stack.add_named(&status, Some(STATUS_PAGE));
+        stack.add_named(empty_page.widget(), Some(EMPTY_PAGE));
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         root.add_css_class("reprise-radio-view");
         root.append(filter_bar.widget());
@@ -120,6 +129,7 @@ impl RadioView {
             status,
             status_button: status_button.clone(),
             empty_state: Cell::new(RadioEmptyState::Empty),
+            empty_page,
             root: root.upcast(),
             add_dialog: RefCell::new(None),
             toast_overlay: gtk4::glib::WeakRef::new(),
@@ -177,14 +187,24 @@ impl RadioView {
         }
         {
             let weak = Rc::downgrade(&shared);
+            shared.empty_page.connect_add(move || {
+                if let Some(shared) = weak.upgrade() {
+                    present_add_dialog(&shared);
+                }
+            });
+        }
+        {
+            let weak = Rc::downgrade(&shared);
             status_button.connect_clicked(move |_| {
                 let Some(shared) = weak.upgrade() else {
                     return;
                 };
-                match shared.empty_state.get() {
-                    RadioEmptyState::Empty => present_add_dialog(&shared),
-                    RadioEmptyState::NoResults => shared.filter_bar.clear_all(),
-                    RadioEmptyState::List => {}
+                // `SRC-10` moved the "nothing added yet" empty state onto
+                // its own page with its own button (wired above via
+                // `empty_page.connect_add`); this button is reachable only
+                // for `NoResults` now.
+                if shared.empty_state.get() == RadioEmptyState::NoResults {
+                    shared.filter_bar.clear_all();
                 }
             });
         }
@@ -253,30 +273,41 @@ fn render_rows(shared: &Rc<Shared>) {
 
 fn apply_empty_state(shared: &Shared, state: RadioEmptyState, total: usize) {
     shared.empty_state.set(state);
-    if state == RadioEmptyState::List {
-        shared.stack.set_visible_child_name(LIST_PAGE);
-        return;
+    // `SRC-10`: the true "nothing added yet" empty state hides the toolbar
+    // too — Add button, filter chips, and count all disappear, so the view
+    // reads as unused rather than broken. `NoResults` keeps the toolbar,
+    // since clearing filters is the way out of that state.
+    shared
+        .filter_bar
+        .widget()
+        .set_visible(state != RadioEmptyState::Empty);
+    match state {
+        RadioEmptyState::List => shared.stack.set_visible_child_name(LIST_PAGE),
+        RadioEmptyState::Empty => shared.stack.set_visible_child_name(EMPTY_PAGE),
+        RadioEmptyState::NoResults => {
+            shared.status.set_icon_name(Some("system-search-symbolic"));
+            shared
+                .status
+                .set_title(&strings::text(strings::NO_RESULTS_TITLE));
+            shared.status.set_description(Some(""));
+            shared
+                .status_button
+                .set_label(&strings::radio_show_all_count(total));
+            shared.stack.set_visible_child_name(STATUS_PAGE);
+        }
     }
-    let (icon, title, description, action) = match state {
-        RadioEmptyState::Empty => (
-            "network-wireless-symbolic",
-            strings::text(strings::RADIO_NO_STATIONS),
-            strings::text(strings::RADIO_NO_STATIONS_DESCRIPTION),
-            strings::text(strings::RADIO_ADD),
-        ),
-        RadioEmptyState::NoResults => (
-            "system-search-symbolic",
-            strings::text(strings::NO_RESULTS_TITLE),
-            String::new(),
-            strings::radio_show_all_count(total),
-        ),
-        RadioEmptyState::List => unreachable!("list state returns before status mutation"),
-    };
-    shared.status.set_icon_name(Some(icon));
-    shared.status.set_title(&title);
-    shared.status.set_description(Some(&description));
-    shared.status_button.set_label(&action);
-    shared.stack.set_visible_child_name(STATUS_PAGE);
+}
+
+fn radio_empty_state_copy() -> SourceEmptyStateCopy {
+    SourceEmptyStateCopy {
+        icon_name: NavIcon::Radio.icon_name(),
+        title: strings::text(strings::RADIO_NO_STATIONS),
+        body: strings::text(strings::RADIO_NO_STATIONS_DESCRIPTION),
+        button_label: strings::text(strings::RADIO_ADD),
+        // Radio has no secondary line — the body already names the URL
+        // path (a stream URL), so a second line would repeat it.
+        secondary_line: None,
+    }
 }
 
 fn present_add_dialog(shared: &Shared) {
@@ -534,10 +565,53 @@ mod tests {
         let conn = Rc::new(RefCell::new(Connection::open_in_memory().unwrap()));
         reprise_core::db::migrate(&conn.borrow()).unwrap();
         let view = RadioView::new(conn, None);
+        // `SRC-10` moved this action onto the shared empty-state page's own
+        // button (`empty_page`) rather than the still-existing
+        // `status_button`, which now serves only `NoResults`.
         assert_eq!(
-            view.shared.status_button.label().as_deref(),
+            view.shared.empty_page.button_label_text().as_deref(),
             Some("Add station")
         );
         assert_eq!(view.shared.empty_state.get(), RadioEmptyState::Empty);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn src_10_radio_empty_state_hides_the_toolbar_and_the_first_station_restores_it() {
+        gtk4::init().unwrap();
+        let conn = Rc::new(RefCell::new(Connection::open_in_memory().unwrap()));
+        reprise_core::db::migrate(&conn.borrow()).unwrap();
+        let view = RadioView::new(conn.clone(), None);
+
+        assert!(!view.shared.filter_bar.widget().is_visible());
+        assert_eq!(
+            view.shared.stack.visible_child_name().as_deref(),
+            Some(EMPTY_PAGE)
+        );
+
+        radio::station::add_or_restore(
+            &conn.borrow(),
+            &radio::station::NewStation {
+                uuid: None,
+                name: "Test Station".into(),
+                stream_url: "https://example.invalid/stream".into(),
+                homepage: None,
+                favicon_url: None,
+                genre: None,
+                codec: None,
+                bitrate_kbps: None,
+                country_code: None,
+                votes: None,
+            },
+            0,
+        )
+        .unwrap();
+        view.refresh();
+
+        assert!(view.shared.filter_bar.widget().is_visible());
+        assert_eq!(
+            view.shared.stack.visible_child_name().as_deref(),
+            Some(LIST_PAGE)
+        );
     }
 }

@@ -34,11 +34,26 @@ pub const PODCAST_FILTER_SOURCE: &str = N_!("Source");
 pub const PODCAST_CLEAR_ALL: &str = N_!("Clear all");
 pub const PODCAST_GROUP_FACTS: &str =
     N_!("{episodes} · {unplayed} new · latest {latest} · {downloaded}");
+/// `SRC-10`: the shared empty-state grammar's copy for Podcasts — title, one
+/// paragraph of what lands here and where it comes from, the primary
+/// button, and a quiet secondary line. The design's approved secondary text
+/// mentions OPML import ("or import an OPML file"); no OPML import path
+/// exists in this codebase (see `docs/plans/podcasts-youtube-radio-turn6.md`
+/// O-7), so this uses the URL path wording instead, matching YouTube's.
 pub const PODCAST_NO_PODCASTS: &str = N_!("No podcasts yet");
-pub const PODCAST_NO_PODCASTS_DESCRIPTION: &str = N_!("Add a show to receive its latest episodes.");
-pub const YOUTUBE_NO_CHANNELS: &str = N_!("No YouTube channels yet");
-pub const YOUTUBE_NO_CHANNELS_DESCRIPTION: &str =
-    N_!("Subscribe to a channel to receive its latest videos.");
+pub const PODCAST_NO_PODCASTS_DESCRIPTION: &str = N_!(
+    "Search by name or paste a feed URL. New episodes arrive on their own and remember where you stopped listening."
+);
+pub const PODCAST_NO_PODCASTS_SECONDARY: &str = N_!("or paste a feed URL in the dialog");
+pub const YOUTUBE_NO_CHANNELS: &str = N_!("No channels yet");
+pub const YOUTUBE_NO_CHANNELS_DESCRIPTION: &str = N_!(
+    "Subscribe to a channel and its uploads appear here as audio-only episodes — long mixes, sets, instrumentals. Shorts stay hidden."
+);
+/// The empty state's primary button — deliberately shorter than the
+/// toolbar's `YOUTUBE_ADD` ("Add YouTube channel"): the page's own glyph and
+/// title already say YouTube, so the button need not repeat it.
+pub const YOUTUBE_NO_CHANNELS_ADD: &str = N_!("Add channel");
+pub const YOUTUBE_NO_CHANNELS_SECONDARY: &str = N_!("or paste a channel URL in the dialog");
 pub const PODCAST_NO_EPISODES: &str = N_!("No episodes yet");
 pub const PODCAST_NO_EPISODES_DESCRIPTION: &str =
     N_!("Refresh subscriptions to check for new episodes.");

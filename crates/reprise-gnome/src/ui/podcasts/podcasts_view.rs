@@ -33,10 +33,17 @@ use super::podcasts_worker::{
     PodcastsRuntime, PodcastsWorkerResult,
 };
 use super::youtube_channel_detail::YoutubeChannelDetail;
+use crate::ui::sidebar::sidebar_presentation::NavIcon;
+use crate::ui::source_empty_state::{SourceEmptyState, SourceEmptyStateCopy};
 use crate::ui::strings;
 
 #[path = "podcasts_view_requests.rs"]
 mod requests;
+
+/// `SRC-10`: the stack page holding the shared empty-state geometry, used
+/// only for "nothing subscribed yet" — distinct from the existing `"status"`
+/// page, which still carries `NoEpisodes`/`NoResults` (Block B2, unchanged).
+const EMPTY_PAGE: &str = "empty";
 
 type OnEpisodeActivated = Rc<dyn Fn(EpisodeRow)>;
 type OnSubscriptionRemoved = Rc<dyn Fn(i64)>;
@@ -85,6 +92,8 @@ pub(in crate::ui) struct PodcastsView {
     youtube_detail: Rc<YoutubeChannelDetail>,
     status: adw::StatusPage,
     status_button: gtk4::Button,
+    empty_state: SourceEmptyState,
+    footer: gtk4::Box,
     footer_status: gtk4::Label,
     footer_spinner: gtk4::Spinner,
     groups: RefCell<Vec<SourceGroup>>,
@@ -123,9 +132,11 @@ impl PodcastsView {
         let status_button = gtk4::Button::new();
         status_button.add_css_class("suggested-action");
         status.set_child(Some(&status_button));
+        let empty_state = SourceEmptyState::new(&empty_state_copy(kind));
         let stack = gtk4::Stack::new();
         stack.add_named(&list_box, Some("list"));
         stack.add_named(&status, Some("status"));
+        stack.add_named(empty_state.widget(), Some(EMPTY_PAGE));
         let youtube_detail = YoutubeChannelDetail::new(&stack);
         stack.add_named(youtube_detail.widget(), Some("youtube-channel"));
         stack.set_vexpand(true);
@@ -164,6 +175,8 @@ impl PodcastsView {
             youtube_detail,
             status,
             status_button,
+            empty_state,
+            footer,
             footer_status,
             footer_spinner,
             groups: RefCell::new(Vec::new()),
@@ -179,6 +192,12 @@ impl PodcastsView {
         });
         view.install_actions();
         view.wire_controls(&refresh);
+        let weak = Rc::downgrade(&view);
+        view.empty_state.connect_add(move || {
+            if let Some(view) = weak.upgrade() {
+                view.open_add_dialog();
+            }
+        });
         view.refresh();
         view
     }
@@ -253,10 +272,11 @@ impl PodcastsView {
             let Some(view) = weak.upgrade() else {
                 return;
             };
-            let subscriptions = view.groups.borrow().len();
-            if subscriptions == 0 {
-                view.open_add_dialog();
-            } else if filter_active(&view.filter_bar.filter()) {
+            // `SRC-10` moved the "nothing subscribed yet" empty state onto
+            // its own page with its own button (see `open_add_dialog` wiring
+            // in `install`); this button is now reachable only for
+            // `NoEpisodes`/`NoResults`, both subscribed states.
+            if filter_active(&view.filter_bar.filter()) {
                 view.filter_bar.clear_all();
             } else {
                 view.request_refresh(true);
@@ -405,25 +425,19 @@ impl PodcastsView {
         self.filter_bar
             .set_context(unique(shows), filtered.len(), total);
         let subscriptions = groups.len();
-        match podcasts_empty_state_for(subscriptions, total, filtered.len(), filter_active(&filter))
-        {
+        let classification =
+            podcasts_empty_state_for(subscriptions, total, filtered.len(), filter_active(&filter));
+        // `SRC-10`: the true "nothing subscribed yet" empty state hides the
+        // footer's refresh row too — refreshing zero subscriptions has
+        // nothing to do, and a live "Refresh now" control would make an
+        // intentionally unused view look broken instead.
+        self.footer
+            .set_visible(classification != PodcastsEmptyState::Empty);
+        match classification {
             PodcastsEmptyState::List => self.stack.set_visible_child_name("list"),
+            PodcastsEmptyState::Empty => self.stack.set_visible_child_name(EMPTY_PAGE),
             state => {
                 let (title, description, button) = match state {
-                    PodcastsEmptyState::Empty => (
-                        match self.kind {
-                            PodcastKind::Rss => strings::PODCAST_NO_PODCASTS,
-                            PodcastKind::Youtube => strings::YOUTUBE_NO_CHANNELS,
-                        },
-                        match self.kind {
-                            PodcastKind::Rss => strings::PODCAST_NO_PODCASTS_DESCRIPTION,
-                            PodcastKind::Youtube => strings::YOUTUBE_NO_CHANNELS_DESCRIPTION,
-                        },
-                        strings::text(match self.kind {
-                            PodcastKind::Rss => strings::PODCAST_ADD,
-                            PodcastKind::Youtube => strings::YOUTUBE_ADD,
-                        }),
-                    ),
                     PodcastsEmptyState::NoEpisodes => (
                         strings::PODCAST_NO_EPISODES,
                         strings::PODCAST_NO_EPISODES_DESCRIPTION,
@@ -434,7 +448,7 @@ impl PodcastsView {
                         strings::PODCAST_NO_EPISODES_DESCRIPTION,
                         strings::podcast_show_all_count(total),
                     ),
-                    PodcastsEmptyState::List => unreachable!(),
+                    PodcastsEmptyState::List | PodcastsEmptyState::Empty => unreachable!(),
                 };
                 self.status.set_title(&strings::text(title));
                 self.status
@@ -728,5 +742,35 @@ impl PodcastsView {
         } else {
             tracing::warn!(%message, "podcast action failed");
         }
+    }
+}
+
+/// `SRC-10`: the shared empty-state geometry's copy for this source's kind —
+/// Podcasts (RSS) or YouTube. The glyph matches the source's own sidebar
+/// entry (`NavIcon`), so the page visually continues from where the user
+/// navigated.
+fn empty_state_copy(kind: PodcastKind) -> SourceEmptyStateCopy {
+    let (icon, title, body, button, secondary) = match kind {
+        PodcastKind::Rss => (
+            NavIcon::Podcasts.icon_name(),
+            strings::PODCAST_NO_PODCASTS,
+            strings::PODCAST_NO_PODCASTS_DESCRIPTION,
+            strings::PODCAST_ADD,
+            strings::PODCAST_NO_PODCASTS_SECONDARY,
+        ),
+        PodcastKind::Youtube => (
+            NavIcon::Youtube.icon_name(),
+            strings::YOUTUBE_NO_CHANNELS,
+            strings::YOUTUBE_NO_CHANNELS_DESCRIPTION,
+            strings::YOUTUBE_NO_CHANNELS_ADD,
+            strings::YOUTUBE_NO_CHANNELS_SECONDARY,
+        ),
+    };
+    SourceEmptyStateCopy {
+        icon_name: icon,
+        title: strings::text(title),
+        body: strings::text(body),
+        button_label: strings::text(button),
+        secondary_line: Some(strings::text(secondary)),
     }
 }

@@ -21,9 +21,14 @@ pub const RADIO_ADD_FILTER: &str = N_!("Add filter");
 pub const RADIO_FILTER_GENRE: &str = N_!("Genre");
 pub const RADIO_FILTER_COUNTRY: &str = N_!("Country");
 pub const RADIO_CLEAR_ALL: &str = N_!("Clear all");
+/// `SRC-10`: the shared empty-state grammar's copy for Radio — title, one
+/// paragraph of what lands here and where it comes from, the primary
+/// button. Radio has no secondary line: the body already names the URL
+/// path (a stream URL), so a second line repeating it would be redundant.
 pub const RADIO_NO_STATIONS: &str = N_!("No stations yet");
-pub const RADIO_NO_STATIONS_DESCRIPTION: &str =
-    N_!("Add an internet radio station to start listening.");
+pub const RADIO_NO_STATIONS_DESCRIPTION: &str = N_!(
+    "Find stations in the open radio-browser directory, or paste a stream URL. Nothing is fetched until you search."
+);
 pub const RADIO_DIALOG_TITLE: &str = N_!("Add Station");
 pub const RADIO_DIALOG_HINT: &str = N_!("Search or paste a stream / M3U / PLS URL");
 pub const RADIO_SEARCHING: &str = N_!("Searching…");
