@@ -418,19 +418,3 @@ fn add_issue_row(
         .borrow_mut()
         .push((row, source, title.to_string()));
 }
-
-#[allow(dead_code)]
-fn add_row_with_badge(
-    shared: &Rc<Shared>,
-    source: ViewSource,
-    title: &str,
-    badge_text: &str,
-    icon: NavIcon,
-) {
-    let row = sidebar_presentation::build_nav_row_with_badge(title, badge_text, icon);
-    shared.listbox.append(&row);
-    shared
-        .rows
-        .borrow_mut()
-        .push((row, source, title.to_string()));
-}
