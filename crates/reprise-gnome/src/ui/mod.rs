@@ -81,6 +81,8 @@ mod tag_edit;
 mod tag_write_gate;
 #[cfg(test)]
 pub(crate) mod test_main_context;
+#[cfg(test)]
+pub(crate) mod test_settle;
 pub mod toasts;
 #[cfg(test)]
 pub(crate) mod tooltip_discipline;
