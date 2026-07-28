@@ -181,11 +181,20 @@ Riegel „Use online sources"; aus heißt lokaler Player, keine Requests, keine
 Downloads, und die drei Sidebar-Einträge verschwinden. Abos und Favoriten
 bleiben erhalten, sie werden nie gelöscht.
 
+Stand nach der Design-Aktualisierung vom 2026-07-28 — **vier** Blöcke in dieser
+Reihenfolge. Beachte: „Phone sync" trägt **fünf** Zeilen und bricht damit die
+frühere „höchstens drei Zeilen"-Beschreibung; maßgeblich ist diese Tabelle.
+
 | Block | Untertitel | Zeilen |
 | --- | --- | --- |
+| **Phone sync** | Same rules for every device — folders stay per device | Sync playlists `Selected playlists` · Sync YouTube audio `Marked channels · cap 8 GiB` · Sync podcast episodes `Off` · Music transfer profile `Opus 160 kbit/s` · Target folders `Per device →` |
 | YouTube | Channel feeds, audio via yt-dlp | Episodes per channel `Latest 10` · Hide Shorts `On` · `yt-dlp 2026.07.04` mit `Update` |
 | Podcasts | RSS feeds, search via Apple Podcasts | Episodes per show `Latest 25` · Download new episodes `Off` · Delete played episodes `After 7 days` |
 | Radio | Directory: radio-browser.info | Search order `Most voted` · Report plays to the directory `On` |
+
+Der Untertitel des Phone-sync-Blocks ist der ganze Vertrag in einem Satz: die
+**Regeln** gelten für jedes Gerät, die **Ordner** bleiben pro Gerät. Die letzte
+Zeile „Target folders · Per device →" ist der Absprung in die Geräteansicht.
 
 Technisch: drei Booleans plus ein globales `online-sources-enabled` als
 **UND-Bedingung vor jedem Request** — ausdrücklich auch für Cover, Portraits
