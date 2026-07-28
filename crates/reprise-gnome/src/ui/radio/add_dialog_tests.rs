@@ -58,7 +58,7 @@ fn src_5_radio_search_hides_existing_favorites() {
         },
     ];
 
-    let visible = filter_new_stations(
+    let visible = radio::search::filter_new_stations(
         candidates,
         &[("existing".into(), "https://radio.test/existing".into())],
     );
@@ -106,8 +106,9 @@ fn src_5_successful_radio_add_removes_the_result_row() {
 #[test]
 fn src_5_radio_url_preview_hides_an_existing_favorite() {
     let preview = StationPreview::manual("Existing", "https://radio.test/live/");
-    assert!(preview_is_favorite(
-        &preview,
+    assert!(radio::search::station_is_known(
+        preview.uuid.as_deref(),
+        &preview.stream_url,
         &[("".into(), "https://radio.test/live".into())]
     ));
 }

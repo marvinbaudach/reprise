@@ -500,7 +500,10 @@ fn add_podcast(
     })
 }
 
-fn required_nonempty<'a>(value: Option<&'a str>, message: &str) -> Result<&'a str, DataError> {
+pub(crate) fn required_nonempty<'a>(
+    value: Option<&'a str>,
+    message: &str,
+) -> Result<&'a str, DataError> {
     value
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -610,7 +613,7 @@ fn require_manage(conn: &rusqlite::Connection, granted_at_startup: bool) -> Resu
     }
 }
 
-fn podcast_source_error(error: &reprise_core::podcasts::PodcastError) -> DataError {
+pub(crate) fn podcast_source_error(error: &reprise_core::podcasts::PodcastError) -> DataError {
     use reprise_core::podcasts::PodcastError;
     let message = match error {
         PodcastError::Timeout => "podcast source timed out",
@@ -623,7 +626,7 @@ fn podcast_source_error(error: &reprise_core::podcasts::PodcastError) -> DataErr
     DataError::InvalidInput(message.to_owned())
 }
 
-fn radio_source_error(error: &reprise_core::radio::RadioError) -> DataError {
+pub(crate) fn radio_source_error(error: &reprise_core::radio::RadioError) -> DataError {
     use reprise_core::radio::RadioError;
     let message = match error {
         RadioError::Timeout => "radio stream timed out",

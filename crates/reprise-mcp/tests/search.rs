@@ -64,6 +64,7 @@ fn tool_discovery_lists_the_expected_tools() {
         "music_manage_radio",
         "music_search_albums",
         "music_search_artists",
+        "music_search_sources",
         "music_search_tracks",
         "music_update_playlist",
     ];

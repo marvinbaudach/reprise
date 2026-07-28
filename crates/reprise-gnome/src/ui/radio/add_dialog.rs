@@ -454,7 +454,7 @@ impl RadioAddDialog {
                     .collect()
             },
         );
-        let rows = filter_new_stations(rows, &favorites);
+        let rows = radio::search::filter_new_stations(rows, &favorites);
         self.widgets.status.remove_css_class("error");
         self.widgets.status.set_text(&format!(
             "{} · {}",
@@ -533,7 +533,8 @@ impl RadioAddDialog {
                     .collect()
             },
         );
-        if preview_is_favorite(preview, &favorites) {
+        if radio::search::station_is_known(preview.uuid.as_deref(), &preview.stream_url, &favorites)
+        {
             self.widgets
                 .status
                 .set_text(&strings::text(strings::RADIO_ALREADY_FAVORITE));
@@ -586,37 +587,6 @@ impl RadioAddDialog {
             }
         }
     }
-}
-
-fn filter_new_stations(
-    candidates: Vec<StationCandidate>,
-    favorites: &[(String, String)],
-) -> Vec<StationCandidate> {
-    candidates
-        .into_iter()
-        .filter(|candidate| {
-            let stream_url = normalized_stream_url(&candidate.url_resolved);
-            !favorites.iter().any(|(uuid, url)| {
-                (!uuid.is_empty() && uuid == &candidate.uuid)
-                    || normalized_stream_url(url) == stream_url
-            })
-        })
-        .collect()
-}
-
-fn preview_is_favorite(preview: &StationPreview, favorites: &[(String, String)]) -> bool {
-    let stream_url = normalized_stream_url(&preview.stream_url);
-    favorites.iter().any(|(uuid, url)| {
-        preview
-            .uuid
-            .as_deref()
-            .is_some_and(|candidate| !uuid.is_empty() && uuid == candidate)
-            || normalized_stream_url(url) == stream_url
-    })
-}
-
-fn normalized_stream_url(value: &str) -> String {
-    value.trim().trim_end_matches('/').to_owned()
 }
 
 fn station_from_candidate(candidate: StationCandidate) -> radio::station::NewStation {

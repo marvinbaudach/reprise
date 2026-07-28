@@ -6,6 +6,9 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use reprise_core::podcasts::discovery::{
+    active_source_keys, dialog_provider, filter_unsubscribed, source_is_subscribed, Candidate,
+};
 use reprise_core::podcasts::{self, PodcastKind};
 use rusqlite::Connection;
 
@@ -18,9 +21,6 @@ use super::add_dialog_input::{
     primary_action, AddInput,
 };
 use super::add_dialog_results::{clear, result_section, rss_candidate, youtube_candidate};
-use super::search_results::{
-    active_source_keys, dialog_provider, filter_unsubscribed, source_is_subscribed, Candidate,
-};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum AddDialogPhase {

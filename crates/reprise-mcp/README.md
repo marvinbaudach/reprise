@@ -111,6 +111,7 @@ client that launches it must run on the **same machine** as Reprise.
 | `music_update_playlist` | `action` = `rename`\|`add_tracks`, plus playlist/name/track ids | Safely rename a playlist or append tracks | `playlist:manage` |
 | `music_create_instrumental` | `track_ids` | Queue vocal-removal (htdemucs) render jobs | `ai:create` |
 | `music_get_job_status` | job/batch id | Progress of a render job | `library:read` |
+| `music_search_sources` | `provider` = `rss`\|`youtube`\|`radio`, `query` | Search Apple Podcasts, yt-dlp, or radio-browser for a new source to subscribe to | `sources:manage` |
 | `music_manage_podcasts` | `action` = `add`\|`edit`\|`remove`\|`refresh`, plus action fields | Read RSS/YouTube with yt-dlp and manage cached subscriptions | `sources:manage` |
 | `music_manage_radio` | `action` = `add`\|`edit`\|`remove`, plus action fields | Manage radio favorites; URL-only add reads ICY metadata | `sources:manage` |
 | `music_playback_control` | `action` = `play`\|`pause`\|`stop`\|`next`\|`previous` | Transport-control the running app | `playback:control` |
@@ -139,6 +140,18 @@ unchanged, while lossless inputs use the selected transfer profile. Removal is
 limited to Reprise's managed inventory under `Music/Reprise`; music outside
 that root is never a deletion target. `cancel` stops an active transfer and
 `eject` safely disconnects an idle device.
+
+`music_search_sources` mirrors the GNOME add dialogs: `provider` pins a call
+to exactly one provider (`rss` = Apple Podcasts search, `youtube` = yt-dlp
+channel search, `radio` = radio-browser) — there is never a mixed result
+list. Already-subscribed sources are filtered out by the same stable-identity
+rules the GNOME dialogs use. A YouTube candidate's `subscriber_count` is
+present only when the channel publishes one — absent, `null`, and malformed
+counts are all omitted, never shown as zero. Each candidate's `url` is the
+identifier to pass to `music_manage_podcasts`/`music_manage_radio` `add`; it
+is stripped of any embedded credential and fragment first, but (unlike the
+resources below) its query string is kept, because for an RSS feed in
+particular the query string can be part of the feed's actual identity.
 
 `music_manage_podcasts` accepts an RSS feed URL or a YouTube channel/playlist
 URL for `add`. RSS is parsed directly; YouTube is listed through the configured

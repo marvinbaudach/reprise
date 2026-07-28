@@ -19,7 +19,6 @@ mod podcasts_scroller;
 mod podcasts_view;
 mod podcasts_view_data;
 mod podcasts_worker;
-mod search_results;
 pub(crate) mod source_image;
 mod youtube_channel_detail;
 

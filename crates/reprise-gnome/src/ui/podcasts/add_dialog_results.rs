@@ -5,11 +5,10 @@
 //! file-size gate.
 
 use gtk4::prelude::*;
+use reprise_core::podcasts::discovery::Candidate;
 use reprise_core::podcasts::{self, PodcastKind};
 
 use crate::ui::strings;
-
-use super::search_results::Candidate;
 
 /// `SRC-9`: the subscriber count is optional context, so it is appended only
 /// when the channel actually publishes one.

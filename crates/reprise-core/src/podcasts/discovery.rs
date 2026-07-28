@@ -1,10 +1,15 @@
-//! Pure search-result projection shared by the add-dialog surface.
+//! Pure search-result projection shared by every surface that lets a user
+//! discover a new podcast or YouTube channel — the GNOME add dialog and the
+//! MCP discovery tool alike. Keeping this in `reprise-core` means both
+//! surfaces filter "already subscribed" results by the exact same identity
+//! rules; a copy in only one crate would let the two silently drift apart.
 
-use reprise_core::podcasts::{self, PodcastKind};
 use rusqlite::Connection;
 
+use super::{query, store, PodcastKind};
+
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct Candidate {
+pub struct Candidate {
     pub kind: PodcastKind,
     pub title: String,
     pub subtitle: String,
@@ -15,14 +20,18 @@ pub(super) struct Candidate {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct ActiveSourceKey {
+pub struct ActiveSourceKey {
     kind: PodcastKind,
     url: String,
     identity_guids: Vec<String>,
 }
 
-pub(super) fn active_source_keys(conn: &Connection) -> Vec<ActiveSourceKey> {
-    podcasts::store::active_subscriptions(conn).map_or_else(
+/// Loads the identity of every currently-subscribed podcast/YouTube source,
+/// for filtering fresh search results. Never fails outright — a lookup error
+/// is logged and treated as "nothing subscribed yet" so a transient DB issue
+/// degrades to showing everything rather than hiding search results.
+pub fn active_source_keys(conn: &Connection) -> Vec<ActiveSourceKey> {
+    store::active_subscriptions(conn).map_or_else(
         |error| {
             tracing::warn!(%error, "could not load subscribed sources for search filtering");
             Vec::new()
@@ -30,7 +39,7 @@ pub(super) fn active_source_keys(conn: &Connection) -> Vec<ActiveSourceKey> {
         |rows| {
             rows.into_iter()
                 .map(|row| {
-                    let identity_guids = podcasts::query::episodes_for_subscription(conn, row.id)
+                    let identity_guids = query::episodes_for_subscription(conn, row.id)
                         .map_or_else(
                             |error| {
                                 tracing::warn!(
@@ -53,7 +62,9 @@ pub(super) fn active_source_keys(conn: &Connection) -> Vec<ActiveSourceKey> {
     )
 }
 
-pub(super) fn filter_unsubscribed(
+/// `SRC-5`: drop any search candidate that already matches a subscribed
+/// source by stable identity.
+pub fn filter_unsubscribed(
     candidates: Vec<Candidate>,
     subscribed: &[ActiveSourceKey],
 ) -> Vec<Candidate> {
@@ -70,7 +81,7 @@ pub(super) fn filter_unsubscribed(
         .collect()
 }
 
-pub(super) fn source_is_subscribed(
+pub fn source_is_subscribed(
     kind: PodcastKind,
     url: &str,
     identity_guids: &[String],
@@ -96,9 +107,9 @@ fn youtube_handle_channel_pair(left: &str, right: &str) -> bool {
         || (left.starts_with("youtube:channel:") && right.starts_with("youtube:handle:"))
 }
 
-/// `SRC-6`: an add dialog only ever queries the provider of the library place
-/// it was opened from. There is no mixed result list and no shared search.
-pub(super) const fn dialog_provider(opened_from: PodcastKind) -> PodcastKind {
+/// `SRC-6`: a search is bound to exactly one provider — the one the caller
+/// asked for. There is no mixed result list and no shared search.
+pub const fn dialog_provider(opened_from: PodcastKind) -> PodcastKind {
     opened_from
 }
 
