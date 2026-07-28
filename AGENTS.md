@@ -51,15 +51,15 @@ plans — they live at `docs/` top level and outrank the code.
 `docs/ux-rules.md` is the single UX source of truth (German). Before touching
 any user-facing behavior, read the sections you work in. The contract:
 
-- `[aktiv]` rules are enforceable: deviation is a bug; every `[aktiv]` rule
+- `[active]` rules are enforceable: deviation is a bug; every `[active]` rule
   has a rule-named test (`fn play_1a_…` / cua-e2e `play-1a-…`) that gates
   merges via `scripts/check-ux-traceability.sh`.
-- A rule flips `[geplant]` → `[aktiv]` in the same commit that implements
+- A rule flips `[planned]` → `[active]` in the same commit that implements
   the behavior and adds its test — never retroactively.
-- Rule IDs are append-only; replaced rules stay as `[ersetzt durch <ID>]`
+- Rule IDs are append-only; replaced rules stay as `[replaced durch <ID>]`
   and their tests are re-pointed in the same commit.
 - If you hit a case no rule covers: do NOT decide locally. Add a
-  `[geplant]` draft with the next free ID in the affected section, marked
+  `[planned]` draft with the next free ID in the affected section, marked
   `<!-- REVIEW: Regelvorschlag -->`, and surface it for human review.
 
 ## How to resume (the method — no special tooling required)
@@ -122,7 +122,7 @@ Markdown is exempt: docs are split by subject, never by line count.
   translations come later via gettext; German first.) Internal design docs/specs are in German
   — deliberately, it is the project's working language. Tests and shell scripts are code, so
   they stay English even when they enforce a German doc; rule IDs and status tokens
-  (`[aktiv]`, `[geplant]`) are quoted verbatim and stay German.
+  (`[active]`, `[planned]`) are quoted verbatim and stay German.
 - **Never touch the user's music files or real database unasked.** Reprise only ever *reads*
   the user's audio files; deletes are DB-only or trash-with-confirmation, never silent file ops.
   The real DB is `~/.local/share/reprise/reprise.db` (1686 real tracks; library root
