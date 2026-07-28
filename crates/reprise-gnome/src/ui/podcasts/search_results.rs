@@ -96,11 +96,10 @@ fn youtube_handle_channel_pair(left: &str, right: &str) -> bool {
         || (left.starts_with("youtube:channel:") && right.starts_with("youtube:handle:"))
 }
 
-pub(super) const fn preferred_provider_order(preferred: PodcastKind) -> [PodcastKind; 2] {
-    match preferred {
-        PodcastKind::Rss => [PodcastKind::Rss, PodcastKind::Youtube],
-        PodcastKind::Youtube => [PodcastKind::Youtube, PodcastKind::Rss],
-    }
+/// `SRC-6`: an add dialog only ever queries the provider of the library place
+/// it was opened from. There is no mixed result list and no shared search.
+pub(super) const fn dialog_provider(opened_from: PodcastKind) -> PodcastKind {
+    opened_from
 }
 
 fn normalized_source_url(kind: PodcastKind, value: &str) -> String {
@@ -175,15 +174,9 @@ mod tests {
     }
 
     #[test]
-    fn src_5_search_orders_the_calling_library_source_first() {
-        assert_eq!(
-            preferred_provider_order(PodcastKind::Rss),
-            [PodcastKind::Rss, PodcastKind::Youtube]
-        );
-        assert_eq!(
-            preferred_provider_order(PodcastKind::Youtube),
-            [PodcastKind::Youtube, PodcastKind::Rss]
-        );
+    fn src_6_each_dialog_searches_only_its_own_provider() {
+        assert_eq!(dialog_provider(PodcastKind::Rss), PodcastKind::Rss);
+        assert_eq!(dialog_provider(PodcastKind::Youtube), PodcastKind::Youtube);
     }
 
     #[test]

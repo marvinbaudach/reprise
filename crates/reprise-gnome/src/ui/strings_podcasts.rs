@@ -46,7 +46,12 @@ pub const PODCAST_REFRESH_NOW: &str = N_!("Refresh now");
 pub const PODCAST_REFRESHING: &str = N_!("Refreshing podcasts…");
 pub const PODCAST_REFRESH_FAILED: &str = N_!("Refresh failed · showing saved episodes");
 pub const PODCAST_DIALOG_TITLE: &str = N_!("Add Podcast");
-pub const PODCAST_DIALOG_HINT: &str = N_!("Search or paste an RSS / YouTube URL");
+pub const PODCAST_DIALOG_HINT: &str = N_!("Search by name or paste a feed URL");
+pub const YOUTUBE_DIALOG_TITLE: &str = N_!("Add Channel");
+pub const YOUTUBE_DIALOG_HINT: &str = N_!("Search or paste a channel URL");
+/// `SRC-6`: a source-foreign URL is refused, never silently handed over.
+pub const PODCAST_URL_IS_YOUTUBE: &str = N_!("That is a YouTube channel — add it under YouTube");
+pub const YOUTUBE_URL_IS_FEED: &str = N_!("That is an RSS feed — add it under Podcasts");
 pub const PODCAST_SEARCH: &str = N_!("Search");
 pub const PODCAST_PREVIEW: &str = N_!("Preview");
 pub const PODCAST_SEARCHING: &str = N_!("Searching…");

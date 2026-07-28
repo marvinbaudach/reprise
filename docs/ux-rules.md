@@ -2579,7 +2579,7 @@ Hörstatistik.
   die Chip-Form. Die gemeinsame Toolbar-Grammatik lautet Add-Button ·
   „Add filter" · aktive löschbare Filter-Pills · Zählung rechts; Filterzeilen
   behalten bei Zustandswechseln ihre Höhe.
-- **SRC-3** [aktiv] [gtk] — Jede Quelle besitzt genau einen Add-Dialog mit
+- **SRC-3** [ersetzt durch SRC-3a] [gtk] — Jede Quelle besitzt genau einen Add-Dialog mit
   genau einem Eingabefeld für Suchbegriffe oder URL. Suche liefert gruppierte
   Ergebnisse mit Zeilenaktionen; eine erkannte URL führt über Preview und
   Optionen zu einer Bestätigung. Netz- und Subprozessarbeit startet nur auf
@@ -2596,6 +2596,19 @@ Hörstatistik.
   die ihre Episoden aufklappen; Radio bleibt eine Senderliste. Die
   Hinzufügen-Dialoge zeigen echte Quellbilder, gruppieren YouTube-Treffer
   kanalweise und blenden bereits abonnierte Podcasts, Kanäle und Sender aus.
+- **SRC-3a** [aktiv] [gtk] — Jede Quelle besitzt genau einen Add-Dialog mit
+  genau einem Eingabefeld für Suchbegriffe oder URL. Suche liefert Ergebnisse
+  mit Zeilenaktionen; eine erkannte URL **der eigenen Quelle** führt über
+  Preview und Optionen zu einer Bestätigung. Netz- und Subprozessarbeit startet
+  nur auf Submit und läuft nie auf dem GTK-Main-Loop. Gegenüber SRC-3 neu: der
+  URL-Weg ist an die Quelle des Dialogs gebunden (siehe SRC-6).
+- **SRC-6** [aktiv] [gtk] — Podcasts, YouTube und Radio haben je einen
+  eigenen Add-Dialog mit eigener Identität (Titel und Platzhalter). Ein Dialog
+  befragt **ausschließlich** den Provider seines Library-Ortes; es gibt weder
+  ein gemischtes Ergebnis noch eine geteilte Suche. Eine quellfremde URL wird
+  abgelehnt und einzeilig begründet — sie wird weder ausgewertet noch still an
+  einen anderen Dialog übergeben, und der Primär-Button bleibt dabei inaktiv.
+  Der Hinweis erscheint bereits beim Tippen, nicht erst beim Absenden.
 - **POD-1** [aktiv] [core] — Episodenstatus ist pure Ableitung: Played
   genau bei gesetztem `played_at`, sonst Resume bei `position_ms > 0`, sonst
   New. Ein Episodenende setzt Played und löscht die Position.

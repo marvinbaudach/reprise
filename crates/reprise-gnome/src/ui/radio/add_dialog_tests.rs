@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn src_3_radio_add_dialog_submits_search_or_url_through_one_field() {
+fn src_3a_radio_add_dialog_submits_search_or_url_through_one_field() {
     assert_eq!(
         classify_input("ambient radio"),
         AddInput::Search("ambient radio".into())

@@ -2,6 +2,7 @@
 #![allow(dead_code)]
 
 mod add_dialog;
+mod add_dialog_input;
 mod css;
 mod podcasts_columns;
 mod podcasts_context_menu;

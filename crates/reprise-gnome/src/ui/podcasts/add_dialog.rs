@@ -12,18 +12,13 @@ use rusqlite::Connection;
 use crate::ui::one_shot_task;
 use crate::ui::strings;
 
-use super::search_results::{
-    active_source_keys, filter_unsubscribed, preferred_provider_order, source_is_subscribed,
-    Candidate,
+use super::add_dialog_input::{
+    classify_input, dialog_hint, dialog_title, foreign_url_reason, input_matches_dialog,
+    primary_action, AddInput,
 };
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) enum AddInput {
-    Empty,
-    Search(String),
-    YoutubeUrl(String),
-    FeedUrl(String),
-}
+use super::search_results::{
+    active_source_keys, dialog_provider, filter_unsubscribed, source_is_subscribed, Candidate,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum AddDialogPhase {
@@ -33,18 +28,6 @@ pub(super) enum AddDialogPhase {
     Results,
     Preview,
     Error,
-}
-
-pub(super) fn classify_input(input: &str) -> AddInput {
-    let input = input.trim();
-    if input.is_empty() {
-        return AddInput::Empty;
-    }
-    match podcasts::url_detect::detect(input) {
-        podcasts::url_detect::InputKind::Search => AddInput::Search(input.to_owned()),
-        podcasts::url_detect::InputKind::YoutubeUrl => AddInput::YoutubeUrl(input.to_owned()),
-        podcasts::url_detect::InputKind::ProbableFeedUrl => AddInput::FeedUrl(input.to_owned()),
-    }
 }
 
 #[derive(Clone)]
@@ -78,15 +61,7 @@ struct AddDialogSurface {
     primary: gtk4::Button,
 }
 
-fn primary_action(input: &str) -> (&'static str, bool) {
-    match classify_input(input) {
-        AddInput::Empty => (strings::PODCAST_SEARCH, false),
-        AddInput::Search(_) => (strings::PODCAST_SEARCH, true),
-        AddInput::YoutubeUrl(_) | AddInput::FeedUrl(_) => (strings::PODCAST_PREVIEW, true),
-    }
-}
-
-fn build_surface() -> AddDialogSurface {
+fn build_surface(kind: PodcastKind) -> AddDialogSurface {
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
     content.set_margin_top(18);
     content.set_margin_bottom(18);
@@ -94,7 +69,7 @@ fn build_surface() -> AddDialogSurface {
     content.set_margin_end(18);
 
     let entry = gtk4::SearchEntry::builder()
-        .placeholder_text(strings::text(strings::PODCAST_DIALOG_HINT))
+        .placeholder_text(strings::text(dialog_hint(kind)))
         .build();
     content.append(&entry);
     let status = gtk4::Label::new(None);
@@ -119,22 +94,30 @@ fn build_surface() -> AddDialogSurface {
     content.append(&footer);
 
     let primary_for_entry = primary.clone();
+    let status_for_entry = status.clone();
     entry.connect_changed(move |entry| {
-        let (label, sensitive) = primary_action(&entry.text());
+        let text = entry.text();
+        let (label, sensitive) = primary_action(&text, kind);
         primary_for_entry.set_label(&strings::text(label));
         primary_for_entry.set_sensitive(sensitive);
+        // SRC-6: name the mismatch while typing, not only on submit.
+        if input_matches_dialog(&classify_input(&text), kind) {
+            status_for_entry.set_text("");
+        } else {
+            status_for_entry.set_text(&strings::text(foreign_url_reason(kind)));
+        }
     });
 
     let header = adw::HeaderBar::new();
     header.set_title_widget(Some(&adw::WindowTitle::new(
-        &strings::text(strings::PODCAST_DIALOG_TITLE),
+        &strings::text(dialog_title(kind)),
         "",
     )));
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
     toolbar.set_content(Some(&content));
     let dialog = adw::Dialog::builder()
-        .title(strings::text(strings::PODCAST_DIALOG_TITLE))
+        .title(strings::text(dialog_title(kind)))
         .content_width(620)
         .content_height(560)
         .child(&toolbar)
@@ -158,7 +141,7 @@ pub(super) fn present(
 ) {
     let conn = conn.clone();
     let on_added: OnAdded = Rc::new(on_added);
-    let surface = build_surface();
+    let surface = build_surface(preferred_kind);
     let dialog = surface.dialog;
     let entry = surface.entry;
     let status = surface.status;
@@ -176,7 +159,14 @@ pub(super) fn present(
             clear(&results);
             let next = generation.get().wrapping_add(1);
             generation.set(next);
-            match classify_input(&input) {
+            let parsed = classify_input(&input);
+            // SRC-6: a source-foreign URL is refused here, so no provider work
+            // is started and nothing is handed to the other dialog.
+            if !input_matches_dialog(&parsed, preferred_kind) {
+                status.set_text(&strings::text(foreign_url_reason(preferred_kind)));
+                return;
+            }
+            match parsed {
                 AddInput::Empty => status.set_text(""),
                 AddInput::Search(terms) => {
                     status.set_text(&strings::text(strings::PODCAST_SEARCHING));
@@ -247,77 +237,76 @@ fn search(request_generation: u64, terms: String, context: &SearchContext<'_>) {
     let locale = std::env::var("LC_ALL")
         .or_else(|_| std::env::var("LANG"))
         .unwrap_or_else(|_| "C".into());
-    let apple_terms = terms.clone();
-    let apple_results = result_section();
-    let youtube_results = result_section();
-    for kind in preferred_provider_order(context.preferred_kind) {
-        context.results.append(match kind {
-            PodcastKind::Rss => &apple_results,
-            PodcastKind::Youtube => &youtube_results,
-        });
-    }
-    let apple = one_shot_task::spawn("reprise-podcast-search", move || {
-        podcasts::itunes::search(&apple_terms, &locale)
-            .map(|rows| {
-                rows.into_iter()
-                    .map(|row| Candidate {
-                        kind: PodcastKind::Rss,
-                        title: row.title,
-                        subtitle: row.author.clone().unwrap_or_default(),
-                        author: row.author,
-                        image_url: row.image_url,
-                        url: row.feed_url,
-                        identity_guids: Vec::new(),
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .map_err(|error| error.to_string())
-    });
-    attach_candidates(
-        apple,
-        request_generation,
-        context.generation,
-        context.status,
-        &apple_results,
-        context.conn,
-        context.on_added,
-        strings::PODCAST_APPLE_RESULTS,
-        auto_download_default,
-    );
+    // SRC-6: exactly one provider is queried — the one this dialog belongs to.
+    let section = result_section();
+    context.results.append(&section);
 
-    if config.as_ref().is_some_and(|value| value.youtube_enabled) {
-        let ytdlp_path = config.and_then(|value| value.ytdlp_path);
-        let youtube = one_shot_task::spawn("reprise-youtube-search", move || {
-            podcasts::ytdlp::YtDlp::discover(ytdlp_path.as_deref())
-                .search_channels(&terms)
-                .map(|rows| {
-                    rows.into_iter()
-                        .map(|row| Candidate {
-                            kind: PodcastKind::Youtube,
-                            title: row.title,
-                            subtitle: strings::podcast_youtube_channel_matches(
-                                row.matching_video_count,
-                            ),
-                            author: None,
-                            image_url: row.image_url,
-                            url: row.url,
-                            identity_guids: row.matching_video_ids,
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .map_err(|error| error.to_string())
-        });
-        attach_candidates(
-            youtube,
-            request_generation,
-            context.generation,
-            context.status,
-            &youtube_results,
-            context.conn,
-            context.on_added,
-            strings::PODCAST_YOUTUBE_RESULTS,
-            auto_download_default,
-        );
+    match dialog_provider(context.preferred_kind) {
+        PodcastKind::Rss => {
+            let task = one_shot_task::spawn("reprise-podcast-search", move || {
+                podcasts::itunes::search(&terms, &locale)
+                    .map(|rows| rows.into_iter().map(rss_candidate).collect::<Vec<_>>())
+                    .map_err(|error| error.to_string())
+            });
+            attach_candidates(
+                task,
+                request_generation,
+                context.generation,
+                context.status,
+                &section,
+                context.conn,
+                context.on_added,
+                strings::PODCAST_APPLE_RESULTS,
+                auto_download_default,
+            );
+        }
+        PodcastKind::Youtube => {
+            if !config.as_ref().is_some_and(|value| value.youtube_enabled) {
+                return;
+            }
+            let ytdlp_path = config.and_then(|value| value.ytdlp_path);
+            let task = one_shot_task::spawn("reprise-youtube-search", move || {
+                podcasts::ytdlp::YtDlp::discover(ytdlp_path.as_deref())
+                    .search_channels(&terms)
+                    .map(|rows| rows.into_iter().map(youtube_candidate).collect::<Vec<_>>())
+                    .map_err(|error| error.to_string())
+            });
+            attach_candidates(
+                task,
+                request_generation,
+                context.generation,
+                context.status,
+                &section,
+                context.conn,
+                context.on_added,
+                strings::PODCAST_YOUTUBE_RESULTS,
+                auto_download_default,
+            );
+        }
+    }
+}
+
+fn rss_candidate(row: podcasts::itunes::SearchResult) -> Candidate {
+    Candidate {
+        kind: PodcastKind::Rss,
+        title: row.title,
+        subtitle: row.author.clone().unwrap_or_default(),
+        author: row.author,
+        image_url: row.image_url,
+        url: row.feed_url,
+        identity_guids: Vec::new(),
+    }
+}
+
+fn youtube_candidate(row: podcasts::ytdlp::YtDlpChannel) -> Candidate {
+    Candidate {
+        kind: PodcastKind::Youtube,
+        title: row.title,
+        subtitle: strings::podcast_youtube_channel_matches(row.matching_video_count),
+        author: None,
+        image_url: row.image_url,
+        url: row.url,
+        identity_guids: row.matching_video_ids,
     }
 }
 
@@ -664,26 +653,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn src_3_add_dialog_submits_search_or_url_through_one_field() {
-        assert_eq!(
-            classify_input("systems"),
-            AddInput::Search("systems".into())
-        );
-        assert!(matches!(
-            classify_input("https://example.test/feed.xml"),
-            AddInput::FeedUrl(_)
-        ));
-        assert!(matches!(
-            classify_input("https://youtube.com/@show"),
-            AddInput::YoutubeUrl(_)
-        ));
-    }
-
-    #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn src_3_add_dialog_has_fixed_cancel_and_primary_actions() {
+    fn src_3a_add_dialog_has_fixed_cancel_and_primary_actions() {
         gtk4::init().unwrap();
-        let surface = build_surface();
+        let surface = build_surface(PodcastKind::Rss);
         let cancel = strings::text(strings::PODCAST_CANCEL);
         let search = strings::text(strings::PODCAST_SEARCH);
         let preview = strings::text(strings::PODCAST_PREVIEW);
