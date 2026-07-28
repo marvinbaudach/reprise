@@ -17,10 +17,12 @@ pull request back to `dev`.
 2. Create a focused `feature/*`, `fix/*`, or `chore/*` branch from `dev`.
 3. Open a pull request to `dev`.
 4. Merge only after the gate is green — see "What actually enforces this"
-   below for which gate that is today.
+   below for which gate that is today — and squash the pull request; see
+   "Merge method".
 5. Promote a tested development snapshot with a pull request from `dev` to
-   `main`. Any other head branch targeting `main` is wrong unless it uses the
-   emergency `hotfix/*` path below.
+   `main`. That one is a merge commit, not a squash. Any other head branch
+   targeting `main` is wrong unless it uses the emergency `hotfix/*` path
+   below.
 
 Direct pushes to `main` and `dev`, force pushes, and deleting either branch
 are all forbidden. Read that as a rule this project holds itself to, not as
@@ -32,6 +34,60 @@ never bypasses the gate or the pull-request boundary. After the hotfix
 merges, immediately synchronize `main` back into `dev` through a pull request
 so the integration branch cannot lose the repair. Routine fixes still use the
 normal feature-to-`dev` promotion path.
+
+## Merge method
+
+The method depends on what the head branch is, and there are exactly two
+cases:
+
+| Pull request | Method | Result on the base branch |
+| --- | --- | --- |
+| `feature/*`, `fix/*`, `chore/*` → `dev` | **Squash and merge** | one commit per pull request |
+| `hotfix/*` → `main` | **Squash and merge** | one commit per hotfix |
+| `dev` → `main` (promotion) | **Merge commit** | the snapshot, with its per-pull-request commits |
+| `main` → `dev` (post-hotfix sync) | **Merge commit** | the repair, without duplicating it |
+
+Rebase merging is not used at all.
+
+Topic branches squash because their internal history is working history: the
+test-first loop from `AGENTS.md` produces a commit per task plus follow-up
+fix commits, and none of that is worth carrying on `dev` forever. What is
+worth carrying is one reviewed, gate-passed change per pull request.
+
+The two integration pull requests must **not** squash, for a reason that is
+structural rather than aesthetic: their head branches are long-lived. Squashing
+`dev` into `main` would write a commit that no longer contains `dev` in its
+ancestry, so every later promotion would replay the whole difference again and
+`dev` would diverge from `main` permanently. The same applies to syncing a
+hotfix back from `main`. A merge commit keeps both branches on one ancestry —
+which is also what makes `git merge-base --is-ancestor` in
+`scripts/check-merge-readiness.sh` a meaningful staleness check.
+
+The squash commit message is the pull request title in the project's
+conventional-commit form (`fix(sync): name the running step`); GitHub appends
+the `(#N)` reference. Trim the auto-collected list of branch commits out of the
+body and leave the explanation instead. No attribution footer, as everywhere
+else in this repository.
+
+Two consequences of squashing, both of which bite silently:
+
+- **`git branch -d` refuses to delete a squashed branch.** Git sees no merge,
+  because there is none — the branch content arrived as a new commit. Use
+  `git branch -D <branch>` locally after confirming the squash commit is on
+  `dev`, and delete the remote branch as described below.
+- **Do not stack a topic branch on another topic branch.** Once the parent is
+  squashed into `dev`, the child still carries the parent's original commits,
+  and merging `dev` back in conflicts against content that is textually
+  identical but has no shared ancestry. Branch from `dev`, or rebase the child
+  onto `dev` after the parent lands.
+
+Nothing enforces the choice. Both methods stay enabled under
+*Settings → General → Pull requests* precisely because the promotion needs the
+merge commit, so GitHub offers the maintainer both buttons on every pull
+request and the correct one is the one the table above names. Turning off
+"Allow merge commits" would break the promotion; turning off "Allow squash
+merging" would break everything else. Enable "Default to pull request title
+for squash merge commits" so the common case needs no editing.
 
 ## What actually enforces this
 
@@ -73,8 +129,8 @@ matter how green the last local `cargo test` looked.
 Two consequences worth stating plainly:
 
 - **Branch cleanup is manual.** `.github/workflows/delete-merged-branch.yml`
-  only runs if Actions run. Delete the branch locally and on the remote after
-  merging.
+  only runs if Actions run. Delete the branch locally (`git branch -D`, see
+  "Merge method") and on the remote after merging.
 - **Turning the plan on changes this file, not the workflow.** If the
   repository ever moves to a plan with rulesets, configure the branches to
   require `CI / Quality gate` and replace this section with what is then
