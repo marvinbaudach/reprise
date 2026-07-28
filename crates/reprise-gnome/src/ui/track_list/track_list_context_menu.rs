@@ -216,7 +216,6 @@ pub(in crate::ui) fn build_context_menu_model(shared: &Rc<Shared>) -> gio::Menu 
         }
         menu.append_section(None, &reorder);
     }
-    super::track_menu_instrumental::append_section(&menu, shared, &summary);
     menu
 }
 
@@ -313,8 +312,6 @@ pub(in crate::ui) fn wire_context_menu_actions(
         });
     }
     action_group.add_action(&queue_action);
-
-    super::track_menu_instrumental::wire_action(&action_group, shared);
 
     for (name, direction) in [
         (
