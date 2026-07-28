@@ -77,8 +77,7 @@ fn resolve_label(conn: &Connection, source: &ViewSource) -> String {
         | ViewSource::Podcasts
         | ViewSource::Youtube
         | ViewSource::Radio
-        | ViewSource::Conversions
-        | ViewSource::Device { .. } => strings::text(strings::SIDEBAR_MUSIC),
+        | ViewSource::Conversions => strings::text(strings::SIDEBAR_MUSIC),
     }
 }
 

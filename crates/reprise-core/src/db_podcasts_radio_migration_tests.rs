@@ -26,6 +26,7 @@ fn reset_to_v31(conn: &Connection) {
          DROP TABLE podcast_episodes;
          DROP TABLE podcast_subscriptions;
          DROP TABLE radio_stations;
+         ALTER TABLE new_releases DROP COLUMN track_count;
          PRAGMA user_version = 31;",
     )
     .unwrap();
@@ -132,7 +133,7 @@ fn v34_adds_episode_tombstones_and_dismissals_with_subscription_cascade() {
 }
 
 #[test]
-fn v36_adds_download_sizes_and_rss_phone_sync_defaults() {
+fn v40_adds_download_sizes_and_rss_phone_sync_defaults() {
     let conn = db::open(None).unwrap();
     db::migrate(&conn).unwrap();
     conn.execute(
@@ -170,7 +171,7 @@ fn v36_adds_download_sizes_and_rss_phone_sync_defaults() {
 }
 
 #[test]
-fn v37_adds_stable_per_device_podcast_selections() {
+fn v41_adds_stable_per_device_podcast_selections() {
     let conn = db::open(None).unwrap();
     db::migrate(&conn).unwrap();
     conn.execute(
@@ -215,10 +216,99 @@ fn migration_is_idempotent() {
     migrate_v32(&conn).unwrap();
     migrate_v33(&conn).unwrap();
     migrate_v34(&conn).unwrap();
-    migrate_v36(&conn).unwrap();
-    migrate_v37(&conn).unwrap();
+    migrate_v40(&conn).unwrap();
+    migrate_v41(&conn).unwrap();
 
     assert_eq!(object_schema(&conn, "podcast_episodes"), before);
+}
+
+#[test]
+fn v39_upgrade_preserves_device_sync_and_discography_before_adding_podcast_sync() {
+    let conn = db::open(None).unwrap();
+    db::migrate(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO device_settings
+         (device_serial, device_name, selection_json, transfer_profile,
+          ratings_back, remove_deleted)
+         VALUES ('phone', 'Phone', '[]', 'original', 0, 1)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO podcast_subscriptions
+         (id, kind, feed_url, title, added_at)
+         VALUES (1, 'rss', 'https://example.test/feed', 'Show', 1)",
+        [],
+    )
+    .unwrap();
+    conn.pragma_update(None, "user_version", 39).unwrap();
+
+    db::migrate(&conn).unwrap();
+
+    let device_name: String = conn
+        .query_row(
+            "SELECT device_name FROM device_settings WHERE device_serial = 'phone'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(device_name, "Phone");
+    let sync_to_phone: bool = conn
+        .query_row(
+            "SELECT sync_to_phone FROM podcast_subscriptions WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(!sync_to_phone);
+    assert_eq!(
+        conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+            .unwrap(),
+        SUPPORTED_SCHEMA_VERSION
+    );
+}
+
+#[test]
+fn migration_repairs_the_parallel_v34_device_sync_schema() {
+    let conn = db::open(None).unwrap();
+    db::migrate(&conn).unwrap();
+    conn.execute_batch(
+        "DROP TABLE podcast_episode_dismissals;
+         DROP INDEX idx_podcast_episodes_unplayed;
+         CREATE INDEX idx_podcast_episodes_unplayed
+           ON podcast_episodes(played_at) WHERE played_at IS NULL;
+         ALTER TABLE new_releases DROP COLUMN track_count;
+         PRAGMA user_version = 34;",
+    )
+    .unwrap();
+
+    db::migrate(&conn).unwrap();
+
+    let dismissal_table_exists: bool = conn
+        .query_row(
+            "SELECT EXISTS(
+               SELECT 1 FROM sqlite_schema
+               WHERE type = 'table' AND name = 'podcast_episode_dismissals'
+             )",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(dismissal_table_exists);
+    let unplayed_index: String = conn
+        .query_row(
+            "SELECT sql FROM sqlite_schema
+             WHERE type = 'index' AND name = 'idx_podcast_episodes_unplayed'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(unplayed_index.contains("removed_at IS NULL"));
+    assert_eq!(
+        conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+            .unwrap(),
+        SUPPORTED_SCHEMA_VERSION
+    );
 }
 
 #[test]

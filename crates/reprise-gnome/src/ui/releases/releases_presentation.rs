@@ -9,7 +9,6 @@ use crate::ui::strings;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum ReleasesRowAction {
     Restore,
-    ShowInLibrary,
     OpenAnnouncement(String),
 }
 
@@ -38,36 +37,29 @@ pub(super) fn release_type_label(raw: &str) -> String {
 }
 
 pub(super) fn release_status_label(entry: &HistoryEntry, today: NaiveDate) -> String {
-    let message = match release_status(entry, today) {
-        ReleaseStatus::InLibrary => strings::RELEASES_IN_LIBRARY,
-        ReleaseStatus::Upcoming => strings::RELEASES_UPCOMING,
-        ReleaseStatus::Released => strings::RELEASES_RELEASED,
-    };
-    strings::text(message)
+    match release_status(entry, today) {
+        ReleaseStatus::InLibrary => strings::text(strings::RELEASES_IN_LIBRARY),
+        ReleaseStatus::Upcoming => strings::text(strings::RELEASES_UPCOMING),
+        ReleaseStatus::Incomplete => entry.track_count.map_or_else(
+            || strings::text(strings::RELEASES_INCOMPLETE),
+            |track_count| strings::release_track_count_line(entry.local_track_count, track_count),
+        ),
+        ReleaseStatus::Missing => strings::text(strings::RELEASES_MISSING),
+    }
 }
 
-pub(super) fn releases_row_action(entry: &HistoryEntry, today: NaiveDate) -> ReleasesRowAction {
+pub(super) fn bandcamp_purchase_target(entry: &HistoryEntry) -> Option<&str> {
+    reprise_core::artist_news_links::bandcamp_purchase_url(entry.announce_url.as_deref())
+}
+
+pub(super) fn releases_row_action(entry: &HistoryEntry, _today: NaiveDate) -> ReleasesRowAction {
     if entry.hidden {
         return ReleasesRowAction::Restore;
-    }
-    if release_status(entry, today) == ReleaseStatus::InLibrary
-        && parse_release_date(&entry.first_release_date).is_none_or(|date| date <= today)
-    {
-        return ReleasesRowAction::ShowInLibrary;
     }
     ReleasesRowAction::OpenAnnouncement(reprise_core::artist_news_links::announce_url_or_fallback(
         entry.announce_url.as_deref(),
         &entry.release_group_mbid,
     ))
-}
-
-fn parse_release_date(raw: &str) -> Option<NaiveDate> {
-    match raw.len() {
-        10 => NaiveDate::parse_from_str(raw, "%Y-%m-%d").ok(),
-        7 => NaiveDate::parse_from_str(&format!("{raw}-01"), "%Y-%m-%d").ok(),
-        4 => NaiveDate::parse_from_str(&format!("{raw}-01-01"), "%Y-%m-%d").ok(),
-        _ => None,
-    }
 }
 
 #[cfg(test)]
@@ -92,6 +84,8 @@ mod tests {
             hidden_at: hidden.then_some(2),
             presence,
             announce_url: None,
+            track_count: None,
+            local_track_count: 0,
         }
     }
 
@@ -104,7 +98,7 @@ mod tests {
     }
 
     #[test]
-    fn status_pills_follow_query_time_presence_then_date() {
+    fn nr_17_status_pills_describe_discography_gaps() {
         assert_eq!(
             release_status_label(&entry("2027", LibraryPresence::Complete, false), today()),
             "In library"
@@ -115,28 +109,33 @@ mod tests {
         );
         assert_eq!(
             release_status_label(&entry("unknown", LibraryPresence::Partial, false), today()),
-            "released"
+            "Incomplete"
+        );
+        let mut partial = entry("2026-01-01", LibraryPresence::Partial, false);
+        partial.local_track_count = 1;
+        partial.track_count = Some(5);
+        assert_eq!(release_status_label(&partial, today()), "1 of 5 tracks");
+        assert_eq!(
+            release_status_label(
+                &entry("2026-01-01", LibraryPresence::Absent, false),
+                today()
+            ),
+            "Missing"
         );
         assert_eq!(release_type_label("ep"), "EP");
     }
 
     #[test]
-    fn nr_14_activation_uses_restore_library_or_announcement() {
+    fn nr_17_activation_uses_restore_or_external_release_link() {
         let hidden = entry("2026-01-01", LibraryPresence::Complete, true);
         assert_eq!(
             releases_row_action(&hidden, today()),
             ReleasesRowAction::Restore
         );
 
-        let owned = entry("2026-01-01", LibraryPresence::Complete, false);
+        let upcoming = entry("2026-08-01", LibraryPresence::Absent, false);
         assert_eq!(
-            releases_row_action(&owned, today()),
-            ReleasesRowAction::ShowInLibrary
-        );
-
-        let upcoming_owned = entry("2026-08-01", LibraryPresence::Complete, false);
-        assert_eq!(
-            releases_row_action(&upcoming_owned, today()),
+            releases_row_action(&upcoming, today()),
             ReleasesRowAction::OpenAnnouncement(
                 "https://musicbrainz.org/release-group/release-id".to_string()
             )
@@ -148,5 +147,22 @@ mod tests {
             releases_row_action(&absent, today()),
             ReleasesRowAction::OpenAnnouncement("https://artist.example/release".to_string())
         );
+    }
+
+    #[test]
+    fn nr_20_bandcamp_purchase_target_requires_a_real_bandcamp_relation() {
+        let mut release = entry("2026", LibraryPresence::Absent, false);
+        release.announce_url =
+            Some("https://oceansleeper.bandcamp.com/album/maybe-death-is-all-i-need".into());
+        assert_eq!(
+            bandcamp_purchase_target(&release),
+            Some("https://oceansleeper.bandcamp.com/album/maybe-death-is-all-i-need")
+        );
+
+        release.announce_url = Some("https://musicbrainz.org/release-group/release-id".into());
+        assert_eq!(bandcamp_purchase_target(&release), None);
+
+        release.announce_url = Some("https://bandcamp.com.evil.example/album/fake".into());
+        assert_eq!(bandcamp_purchase_target(&release), None);
     }
 }

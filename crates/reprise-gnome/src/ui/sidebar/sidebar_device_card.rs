@@ -266,11 +266,7 @@ impl DeviceCard {
         self.indicator
             .set_visible_child_name(if syncing { "syncing" } else { "device" });
 
-        match detail_mode(
-            &device.sync_phase,
-            device.has_pending_sync(),
-            device.has_sync_selection(),
-        ) {
+        match detail_mode(device) {
             DetailMode::Delta => {
                 self.delta_detail.set_text(&card_subtitle(device));
                 self.detail_stack.set_visible_child_name("delta");
@@ -282,7 +278,7 @@ impl DeviceCard {
             DetailMode::Synced => {
                 self.synced_detail.set_text(&format!(
                     "Synced ✓ · {}",
-                    device_sync_strings::free_space(device.available_bytes)
+                    device_sync_strings::free_space(device.storage.free_bytes)
                 ));
                 self.detail_stack.set_visible_child_name("synced");
             }
@@ -313,6 +309,15 @@ impl DeviceCard {
                         *bytes_total,
                         current_track,
                     )));
+            }
+            PlannedSyncPhase::Finishing => {
+                self.suffix_stack.set_visible_child_name("progress");
+                self.percent.set_text("100 %");
+                self.progress_revealer.set_visible(true);
+                self.progress_revealer.set_reveal_child(true);
+                self.animate_progress(1.0);
+                self.root
+                    .set_tooltip_text(Some("Finishing synchronization"));
             }
             _ => {
                 self.progress_generation
@@ -380,12 +385,55 @@ enum DetailMode {
     Synced,
 }
 
-fn detail_mode(phase: &PlannedSyncPhase, has_delta: bool, has_selection: bool) -> DetailMode {
-    match phase {
+fn detail_mode(device: &DeviceView) -> DetailMode {
+    match &device.sync_phase {
         PlannedSyncPhase::Syncing { .. } | PlannedSyncPhase::Finishing => DetailMode::Progress,
-        PlannedSyncPhase::Idle if has_selection && !has_delta => DetailMode::Synced,
+        PlannedSyncPhase::Idle
+            if has_mirror_selection(device)
+                && mirror_change_count(device) == 0
+                && !mirror_needs_attention(device) =>
+        {
+            DetailMode::Synced
+        }
         PlannedSyncPhase::Idle | PlannedSyncPhase::ComputingDelta => DetailMode::Delta,
     }
+}
+
+fn has_mirror_selection(device: &DeviceView) -> bool {
+    device.page.blockers.is_empty()
+        && device
+            .page
+            .playlists
+            .iter()
+            .any(|playlist| playlist.selected)
+}
+
+fn mirror_change_count(device: &DeviceView) -> usize {
+    device
+        .page
+        .changes
+        .additions
+        .saturating_add(device.page.changes.replacements)
+        .saturating_add(device.page.changes.removals)
+        .saturating_add(device.page.changes.playlist_removals)
+}
+
+fn mirror_needs_attention(device: &DeviceView) -> bool {
+    !device.page.blockers.is_empty()
+        || !device.page.warnings.is_empty()
+        || device.scan_error.is_some()
+        || device.sync_error.is_some()
+}
+
+fn mirror_needs_attention_beyond_selection(device: &DeviceView) -> bool {
+    device
+        .page
+        .blockers
+        .iter()
+        .any(|blocker| blocker != &reprise_core::device_sync::MirrorBlocker::NoPlaylistsSelected)
+        || !device.page.warnings.is_empty()
+        || device.scan_error.is_some()
+        || device.sync_error.is_some()
 }
 
 fn sync_fraction(bytes_done: u64, bytes_total: u64) -> f64 {
@@ -434,21 +482,62 @@ fn card_title(device: &DeviceView) -> String {
 
 fn card_subtitle(device: &DeviceView) -> String {
     match &device.sync_phase {
-        PlannedSyncPhase::ComputingDelta => "Checking…".into(),
+        PlannedSyncPhase::ComputingDelta => format!(
+            "{} · Checking…",
+            device_sync_strings::free_space(device.storage.free_bytes)
+        ),
         // The percentage lives in its own fixed-width label; keeping it out of
         // here stops the track name from shifting the number around.
         PlannedSyncPhase::Syncing {
             step,
             current_track,
             ..
-        } => device_sync_strings::sync_activity(step_glyph(step), current_track),
-        PlannedSyncPhase::Finishing => "Finishing…".into(),
+        } => {
+            let activity = device_sync_strings::sync_activity(step_glyph(step), current_track);
+            if matches!(step, SyncStep::Copying) && device.bytes_per_second > 0 {
+                format!(
+                    "{} · {activity} · {}/s",
+                    device_sync_strings::free_space(device.storage.free_bytes),
+                    device_sync_strings::file_size(device.bytes_per_second)
+                )
+            } else {
+                format!(
+                    "{} · {activity}",
+                    device_sync_strings::free_space(device.storage.free_bytes)
+                )
+            }
+        }
+        PlannedSyncPhase::Finishing => format!(
+            "{} · Finishing…",
+            device_sync_strings::free_space(device.storage.free_bytes)
+        ),
         PlannedSyncPhase::Idle => {
-            let music = device.delta.as_ref().map_or(0, |delta| delta.to_copy.len());
+            if !has_mirror_selection(device) {
+                let space = device_sync_strings::available_space(device.storage.free_bytes);
+                if mirror_needs_attention_beyond_selection(device) {
+                    return format!("Needs attention · {space}");
+                }
+                return format!(
+                    "{} · {}",
+                    crate::ui::device_sync::device_sync_storage_copy::storage_access_label(
+                        device.storage.access,
+                    ),
+                    device_sync_strings::free_space(device.storage.free_bytes)
+                );
+            }
+            let space = device_sync_strings::available_space(device.storage.free_bytes);
+            if mirror_needs_attention(device) {
+                return format!("Needs attention · {space}");
+            }
+            let changes = mirror_change_count(device);
             format!(
-                "Music {music} · Podcasts {} · {}",
-                device.podcast_sync.to_copy,
-                device_sync_strings::available_space(device.available_bytes)
+                "{} · {} to transfer · {space}",
+                if changes == 1 {
+                    "1 change".into()
+                } else {
+                    format!("{changes} changes")
+                },
+                device_sync_strings::file_size(device.page.changes.transfer_bytes)
             )
         }
     }
@@ -468,68 +557,31 @@ fn step_glyph(step: &SyncStep) -> &'static str {
 mod tests {
     use super::*;
 
-    fn view(phase: PlannedSyncPhase) -> DeviceView {
+    pub(super) fn view(phase: PlannedSyncPhase) -> DeviceView {
         DeviceView {
             id: "pixel".into(),
             name: "Pixel 8".into(),
             icon: gtk4::gio::ThemedIcon::new("phone-symbolic").upcast(),
             connected: true,
-            available_bytes: None,
-            total_bytes: None,
-            contents: Default::default(),
-            scanning: false,
+            storage: Default::default(),
             scan_error: None,
-            draft_playlists: Vec::new(),
-            last_enqueue: None,
-            snapshot: reprise_core::device_sync::DeviceQueue::new().snapshot(),
             settings: reprise_core::device_sync::DeviceSettings {
                 device_serial: "pixel".into(),
                 device_name: "Pixel 8".into(),
                 selection: reprise_core::device_sync::DeviceSelection::EntireLibrary,
+                profile: reprise_core::device_sync::TransferProfile::default(),
                 opus_bitrate: 0,
                 ratings_back: false,
                 remove_deleted: true,
             },
-            delta: Some(reprise_core::device_sync::SyncDelta::default()),
             sync_phase: phase,
             sync_error: None,
             last_sync: None,
-            tracks: Vec::new(),
-            selected_track_count: 0,
-            podcast_sync: crate::ui::device_sync_runtime::PodcastSyncSummary::default(),
+            verified_managed_track_count: None,
+            managed_track_count: 0,
             bytes_per_second: 0,
+            page: Default::default(),
         }
-    }
-
-    #[test]
-    fn card_detail_mode_distinguishes_delta_progress_and_synced_states() {
-        assert_eq!(
-            detail_mode(&PlannedSyncPhase::Idle, true, true),
-            DetailMode::Delta
-        );
-        assert_eq!(
-            detail_mode(
-                &PlannedSyncPhase::Syncing {
-                    step: SyncStep::Copying,
-                    done: 0,
-                    total: 1,
-                    current_track: "Track".into(),
-                    bytes_done: 0,
-                    bytes_total: 1,
-                },
-                true,
-                true,
-            ),
-            DetailMode::Progress
-        );
-        assert_eq!(
-            detail_mode(&PlannedSyncPhase::Idle, false, true),
-            DetailMode::Synced
-        );
-        assert_eq!(
-            detail_mode(&PlannedSyncPhase::Idle, false, false),
-            DetailMode::Delta
-        );
     }
 
     #[test]
@@ -537,26 +589,6 @@ mod tests {
         assert_eq!(sync_fraction(50, 100), 0.5);
         assert_eq!(sync_fraction(150, 100), 1.0);
         assert_eq!(sync_fraction(50, 0), 0.0);
-    }
-
-    #[test]
-    fn pod_8_podcast_only_delta_is_selected_pending_and_named_separately() {
-        let mut device = view(PlannedSyncPhase::Idle);
-        device.settings.selection = reprise_core::device_sync::DeviceSelection::Sources(Vec::new());
-        device.podcast_sync = crate::ui::device_sync_runtime::PodcastSyncSummary {
-            selected: 3,
-            to_copy: 2,
-            to_remove: 1,
-            bytes: 42,
-        };
-
-        assert!(device.has_sync_selection());
-        assert!(device.has_pending_sync());
-        assert_eq!(
-            detail_mode(&device.sync_phase, device.has_pending_sync(), true),
-            DetailMode::Delta
-        );
-        assert!(card_subtitle(&device).starts_with("Music 0 · Podcasts 2"));
     }
 
     #[test]
@@ -582,7 +614,7 @@ mod tests {
     }
 
     #[test]
-    fn sidebar_device_card_has_no_direct_sync_action() {
+    fn mtp_13_sidebar_device_card_has_no_direct_sync_action() {
         let direct_sync_action = ["app", "sync-device"].join(".");
 
         assert!(!include_str!("sidebar_device_card.rs").contains(&direct_sync_action));
@@ -716,6 +748,10 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "sidebar_device_card_mirror_tests.rs"]
+mod mirror_tests;
 
 #[cfg(test)]
 mod css_tests {

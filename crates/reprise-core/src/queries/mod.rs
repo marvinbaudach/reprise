@@ -340,8 +340,7 @@ pub fn query_track_window_browsed_ai(
         | ViewSource::Podcasts
         | ViewSource::Youtube
         | ViewSource::Radio
-        | ViewSource::Conversions
-        | ViewSource::Device { .. } => Ok(Vec::new()),
+        | ViewSource::Conversions => Ok(Vec::new()),
     }
 }
 
@@ -401,8 +400,7 @@ pub fn query_track_count_browsed(
         | ViewSource::Podcasts
         | ViewSource::Youtube
         | ViewSource::Radio
-        | ViewSource::Conversions
-        | ViewSource::Device { .. } => Ok(0),
+        | ViewSource::Conversions => Ok(0),
     }
 }
 
@@ -587,8 +585,7 @@ pub fn query_track_ids_browsed_ai(
         | ViewSource::Podcasts
         | ViewSource::Youtube
         | ViewSource::Radio
-        | ViewSource::Conversions
-        | ViewSource::Device { .. } => Ok(Vec::new()),
+        | ViewSource::Conversions => Ok(Vec::new()),
     }
 }
 

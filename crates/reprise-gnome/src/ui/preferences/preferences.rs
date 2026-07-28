@@ -14,7 +14,6 @@ use crate::ui::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
 use crate::ui::concerts::ConcertsRuntime;
 use crate::ui::cover_download_worker::CoverDownloadRuntime;
-use crate::ui::device_sync_runtime::DeviceSyncRuntime;
 use crate::ui::library_player_bar::LibraryPlayerBarShell;
 use crate::ui::now_playing::NowPlayingPanel;
 use crate::ui::player_controller::PlayerController;
@@ -122,7 +121,6 @@ pub(in crate::ui) struct PreferencesContext {
     pub(in crate::ui) cover_download: CoverDownloadRuntime,
     pub(in crate::ui) artist_portrait: Rc<ArtistPortraitRuntime>,
     pub(in crate::ui) decorations: Rc<WindowDecorations>,
-    pub(in crate::ui) device_sync: Rc<DeviceSyncRuntime>,
     preferences_dialog: RefCell<glib::WeakRef<adw::Dialog>>,
     preferences_navigation: RefCell<glib::WeakRef<adw::NavigationView>>,
     preferences_stack: RefCell<glib::WeakRef<adw::ViewStack>>,
@@ -155,7 +153,6 @@ impl PreferencesContext {
         cover_download: &CoverDownloadRuntime,
         artist_portrait: &Rc<ArtistPortraitRuntime>,
         decorations: &Rc<WindowDecorations>,
-        device_sync: &Rc<DeviceSyncRuntime>,
     ) -> Rc<Self> {
         let context = Rc::new(Self {
             window: window.clone(),
@@ -187,7 +184,6 @@ impl PreferencesContext {
             cover_download: cover_download.clone(),
             artist_portrait: artist_portrait.clone(),
             decorations: decorations.clone(),
-            device_sync: device_sync.clone(),
             preferences_dialog: RefCell::new(glib::WeakRef::new()),
             preferences_navigation: RefCell::new(glib::WeakRef::new()),
             preferences_stack: RefCell::new(glib::WeakRef::new()),
@@ -243,6 +239,11 @@ impl PreferencesContext {
         self.open(None);
     }
 
+    /// Opens (or raises) Preferences on a named live page.
+    pub(in crate::ui) fn present_page(self: &Rc<Self>, page_name: &str) {
+        self.open(Some(page_name));
+    }
+
     fn open(self: &Rc<Self>, initial_page: Option<&str>) {
         if self.preferences_dialog.borrow().upgrade().is_some() {
             return; // dialog is already open (modal, always on top)
@@ -259,9 +260,6 @@ impl PreferencesContext {
                 PageId::Appearance => self.appearance_page(),
                 PageId::Layout => self.layout_page(),
                 PageId::Library => self.library_page(),
-                PageId::Synchronization => {
-                    super::preference_sync::build_page(&self.device_sync, &self.track_list)
-                }
                 PageId::NewReleases => {
                     super::preference_new_releases::build_page(&self.conn, &self.artist_news)
                 }
@@ -385,11 +383,6 @@ impl PreferencesContext {
         self.set_equalizer_enabled(true);
         self.set_replay_gain_mode(ReplayGainMode::Track);
         tracing::info!("preferences smoke applied layout and audio settings");
-    }
-
-    /// Opens (or raises) the preferences window and navigates to `page_name`.
-    pub(in crate::ui) fn present_page(self: &Rc<Self>, page_name: &str) {
-        self.open(Some(page_name));
     }
 
     pub(in crate::ui) fn present_plugins(self: &Rc<Self>, targets: &'static [&'static str]) {

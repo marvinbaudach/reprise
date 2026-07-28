@@ -187,9 +187,6 @@ fn intent_for(place: &BrowserPlace) -> NavigationIntent {
         BrowserPlace::Youtube => NavigationIntent::Sidebar(SidebarTarget::Youtube),
         BrowserPlace::Radio => NavigationIntent::Sidebar(SidebarTarget::Radio),
         BrowserPlace::Conversions => NavigationIntent::Sidebar(SidebarTarget::Conversions),
-        BrowserPlace::Device { serial } => {
-            NavigationIntent::Sidebar(SidebarTarget::Device(serial.clone()))
-        }
     }
 }
 

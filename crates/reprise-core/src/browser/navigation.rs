@@ -11,7 +11,7 @@ use super::{
 
 pub const MAX_HISTORY: usize = 50;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SidebarTarget {
     Music,
     RecentlyAdded,
@@ -27,7 +27,6 @@ pub enum SidebarTarget {
     Youtube,
     Radio,
     Conversions,
-    Device(String),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -215,12 +214,7 @@ impl BrowserNavigation {
             SidebarTarget::Youtube => BrowserPlace::Youtube,
             SidebarTarget::Radio => BrowserPlace::Radio,
             SidebarTarget::Conversions => BrowserPlace::Conversions,
-            SidebarTarget::Device(serial) if !serial.trim().is_empty() => BrowserPlace::Device {
-                serial: serial.trim().to_owned(),
-            },
-            SidebarTarget::Playlist(_) | SidebarTarget::Smart(_) | SidebarTarget::Device(_) => {
-                self.library_root.clone()
-            }
+            SidebarTarget::Playlist(_) | SidebarTarget::Smart(_) => self.library_root.clone(),
         }
     }
 
@@ -332,9 +326,6 @@ fn same_destination(left: &BrowserPlace, right: &BrowserPlace) -> bool {
         | (BrowserPlace::Podcasts, BrowserPlace::Podcasts)
         | (BrowserPlace::Radio, BrowserPlace::Radio)
         | (BrowserPlace::Conversions, BrowserPlace::Conversions) => true,
-        (BrowserPlace::Device { serial: left }, BrowserPlace::Device { serial: right }) => {
-            left == right
-        }
         _ => false,
     }
 }
@@ -550,16 +541,6 @@ mod tests {
             .navigate(NavigationIntent::Sidebar(SidebarTarget::Playlist(0)))
             .unwrap();
         assert_eq!(invalid_playlist.to, library());
-
-        navigation
-            .navigate(NavigationIntent::Sidebar(SidebarTarget::Queue))
-            .unwrap();
-        let invalid_device = navigation
-            .navigate(NavigationIntent::Sidebar(SidebarTarget::Device(
-                "  ".into(),
-            )))
-            .unwrap();
-        assert_eq!(invalid_device.to, library());
     }
 
     #[test]

@@ -14,6 +14,24 @@ pub(in crate::ui) struct SourceViews {
     pub(in crate::ui) radio: Rc<crate::ui::radio::RadioView>,
 }
 
+impl SourceViews {
+    pub(in crate::ui) fn set_toast_overlay(&self, overlay: &libadwaita::ToastOverlay) {
+        self.podcasts.set_toast_overlay(overlay);
+        self.youtube.set_toast_overlay(overlay);
+        self.radio.set_toast_overlay(overlay);
+    }
+
+    pub(in crate::ui) fn into_parts(
+        self,
+    ) -> (
+        Rc<crate::ui::podcasts::PodcastsView>,
+        Rc<crate::ui::podcasts::PodcastsView>,
+        Rc<crate::ui::radio::RadioView>,
+    ) {
+        (self.podcasts, self.youtube, self.radio)
+    }
+}
+
 pub(in crate::ui) fn install(
     conn: &Rc<RefCell<Connection>>,
     podcasts_runtime: &Rc<crate::ui::podcasts::PodcastsRuntime>,

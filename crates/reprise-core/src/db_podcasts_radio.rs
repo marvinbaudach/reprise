@@ -77,13 +77,13 @@ CREATE TABLE IF NOT EXISTS podcast_episode_dismissals (
   PRIMARY KEY(subscription_id, guid)
 );
 
-DROP INDEX idx_podcast_episodes_unplayed;
+DROP INDEX IF EXISTS idx_podcast_episodes_unplayed;
 CREATE INDEX idx_podcast_episodes_unplayed
   ON podcast_episodes(played_at)
   WHERE played_at IS NULL AND removed_at IS NULL;
 "#;
 
-const SCHEMA_V37: &str = r#"
+const SCHEMA_V41: &str = r#"
 CREATE TABLE IF NOT EXISTS podcast_subscription_devices (
   subscription_id INTEGER NOT NULL
                   REFERENCES podcast_subscriptions(id) ON DELETE CASCADE,
@@ -118,17 +118,25 @@ pub(crate) fn migrate_v33(conn: &Connection) -> Result<(), rusqlite::Error> {
 
 pub(crate) fn migrate_v34(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version >= 34 {
-        return Ok(());
-    }
-    let transaction = conn.unchecked_transaction()?;
     let has_removed_at = {
-        let mut statement = transaction.prepare("PRAGMA table_info(podcast_episodes)")?;
+        let mut statement = conn.prepare("PRAGMA table_info(podcast_episodes)")?;
         let columns = statement
             .query_map([], |row| row.get::<_, String>(1))?
             .collect::<Result<Vec<_>, _>>()?;
         columns.into_iter().any(|column| column == "removed_at")
     };
+    let has_dismissals: bool = conn.query_row(
+        "SELECT EXISTS(
+           SELECT 1 FROM sqlite_schema
+           WHERE type = 'table' AND name = 'podcast_episode_dismissals'
+         )",
+        [],
+        |row| row.get(0),
+    )?;
+    if version >= 34 && has_removed_at && has_dismissals {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
     if !has_removed_at {
         transaction.execute(
             "ALTER TABLE podcast_episodes ADD COLUMN removed_at INTEGER",
@@ -136,13 +144,13 @@ pub(crate) fn migrate_v34(conn: &Connection) -> Result<(), rusqlite::Error> {
         )?;
     }
     transaction.execute_batch(SCHEMA_V34)?;
-    transaction.pragma_update(None, "user_version", 34)?;
+    transaction.pragma_update(None, "user_version", version.max(34))?;
     transaction.commit()
 }
 
-pub(crate) fn migrate_v36(conn: &Connection) -> Result<(), rusqlite::Error> {
+pub(crate) fn migrate_v40(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version >= 36 {
+    if version >= 40 {
         return Ok(());
     }
     let transaction = conn.unchecked_transaction()?;
@@ -159,18 +167,18 @@ pub(crate) fn migrate_v36(conn: &Connection) -> Result<(), rusqlite::Error> {
             [],
         )?;
     }
-    transaction.pragma_update(None, "user_version", 36)?;
+    transaction.pragma_update(None, "user_version", 40)?;
     transaction.commit()
 }
 
-pub(crate) fn migrate_v37(conn: &Connection) -> Result<(), rusqlite::Error> {
+pub(crate) fn migrate_v41(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version >= 37 {
+    if version >= 41 {
         return Ok(());
     }
     let transaction = conn.unchecked_transaction()?;
-    transaction.execute_batch(SCHEMA_V37)?;
-    transaction.pragma_update(None, "user_version", 37)?;
+    transaction.execute_batch(SCHEMA_V41)?;
+    transaction.pragma_update(None, "user_version", 41)?;
     transaction.commit()
 }
 

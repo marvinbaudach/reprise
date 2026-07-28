@@ -80,9 +80,6 @@ pub enum ViewSource {
     /// track list. The sidebar routes to it only while the experimental switch
     /// is on (INST-11/INST-13); the content area shows the conversion widget.
     Conversions,
-    /// A connected MTP device. The device serial is the durable identity
-    /// used by synchronization settings and managed-file inventory.
-    Device { serial: String },
 }
 
 impl ViewSource {
@@ -112,7 +109,6 @@ impl ViewSource {
             Self::Youtube => "youtube".to_string(),
             Self::Radio => "radio".to_string(),
             Self::Conversions => "conversions".to_string(),
-            Self::Device { serial } => format!("device:{serial}"),
         }
     }
 }
@@ -142,13 +138,6 @@ mod tests {
         assert_eq!(ViewSource::Podcasts.label(), "podcasts");
         assert_eq!(ViewSource::Youtube.label(), "youtube");
         assert_eq!(ViewSource::Radio.label(), "radio");
-        assert_eq!(
-            ViewSource::Device {
-                serial: "pixel-8".into(),
-            }
-            .label(),
-            "device:pixel-8"
-        );
         assert_eq!(
             ViewSource::Album {
                 album: "Blue".into(),

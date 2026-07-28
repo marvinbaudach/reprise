@@ -1,15 +1,24 @@
 //! Transfer decisions and device destinations independent of platform I/O.
 
-use std::collections::{HashMap, HashSet};
-use std::path::Path;
-
 use super::sanitize::{device_track_path, sanitize_component, DevicePathMetadata};
-use super::SyncTrack;
+use super::{Mp3Quality, SyncTrack, TransferAction, TransferProfile};
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TransferMode {
     Copy,
-    TranscodeOpus { bitrate: u32 },
+    TranscodeOpus160,
+    TranscodeMp3 { quality: Mp3Quality },
+}
+
+impl TransferMode {
+    pub fn fingerprint(self) -> String {
+        match self {
+            Self::Copy => "copy-original-v1".into(),
+            Self::TranscodeOpus160 => TransferProfile::Opus160.fingerprint().into(),
+            Self::TranscodeMp3 { quality } => TransferProfile::Mp3(quality).fingerprint().into(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -20,13 +29,16 @@ pub struct TransferPlanEntry {
     pub mode: TransferMode,
 }
 
-pub fn build_transfer_plan(tracks: Vec<SyncTrack>, opus_bitrate: u32) -> Vec<TransferPlanEntry> {
-    build_transfer_plan_with_inventory(tracks, opus_bitrate, &[])
+pub fn build_transfer_plan(
+    tracks: Vec<SyncTrack>,
+    profile: TransferProfile,
+) -> Vec<TransferPlanEntry> {
+    build_transfer_plan_with_inventory(tracks, profile, &[])
 }
 
 pub fn build_transfer_plan_with_inventory(
     tracks: Vec<SyncTrack>,
-    opus_bitrate: u32,
+    profile: TransferProfile,
     inventory: &[super::settings::DeviceFileRecord],
 ) -> Vec<TransferPlanEntry> {
     let mut collisions = HashMap::<String, CollisionSlots>::new();
@@ -35,9 +47,11 @@ pub fn build_transfer_plan_with_inventory(
     let mut plan = indexed
         .into_iter()
         .map(|(index, track)| {
-            let mode = transfer_mode(&track.source_path, opus_bitrate);
-            let forced_extension =
-                matches!(mode, TransferMode::TranscodeOpus { .. }).then_some("opus");
+            let mode = match profile.action_for(&track) {
+                TransferAction::CopyOriginal => TransferMode::Copy,
+                TransferAction::TranscodeOpus160 => TransferMode::TranscodeOpus160,
+                TransferAction::TranscodeMp3(quality) => TransferMode::TranscodeMp3 { quality },
+            };
             let metadata = DevicePathMetadata {
                 album_artist: track.album_artist.clone(),
                 artist: track.artist.clone(),
@@ -51,11 +65,13 @@ pub fn build_transfer_plan_with_inventory(
                 .entry(collision_key)
                 .or_insert_with_key(|key| CollisionSlots::from_inventory(key, inventory))
                 .assign(track.id);
-            let device_path = device_track_path(&metadata, forced_extension, collision_index);
-            let expected_bytes = match mode {
-                TransferMode::Copy => track.size_bytes,
-                TransferMode::TranscodeOpus { bitrate } => transcode_size(&track, bitrate),
+            let forced_extension = match mode {
+                TransferMode::Copy => None,
+                TransferMode::TranscodeOpus160 => Some("opus"),
+                TransferMode::TranscodeMp3 { .. } => Some("mp3"),
             };
+            let device_path = device_track_path(&metadata, forced_extension, collision_index);
+            let expected_bytes = profile.estimated_target_bytes(&track);
             (
                 index,
                 TransferPlanEntry {
@@ -124,34 +140,6 @@ fn inventory_collision_index(device_path: &str, collision_key: &str) -> Option<u
     let suffix = inventory_key.strip_prefix(collision_key)?;
     let index = suffix.strip_prefix(" (")?.strip_suffix(')')?.parse().ok()?;
     (index >= 2).then_some(index)
-}
-
-pub fn transfer_mode(path: &Path, opus_bitrate: u32) -> TransferMode {
-    if opus_bitrate == 0 || !is_lossless(path) {
-        TransferMode::Copy
-    } else {
-        TransferMode::TranscodeOpus {
-            bitrate: opus_bitrate,
-        }
-    }
-}
-
-fn is_lossless(path: &Path) -> bool {
-    path.extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| {
-            matches!(
-                extension.to_ascii_lowercase().as_str(),
-                "flac" | "wav" | "wave" | "aiff" | "aif" | "alac" | "wv"
-            )
-        })
-}
-
-fn transcode_size(track: &SyncTrack, bitrate: u32) -> u64 {
-    u64::try_from(track.duration_ms.max(1))
-        .unwrap_or(0)
-        .saturating_mul(u64::from(bitrate))
-        .div_ceil(8)
 }
 
 fn path_stem_key(metadata: &DevicePathMetadata) -> String {

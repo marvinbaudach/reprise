@@ -10,7 +10,6 @@ use libadwaita::prelude::*;
 use rusqlite::Connection;
 
 use super::artist_news_worker::ArtistNewsRuntime;
-use super::device_view::DeviceViewPage;
 use super::info_panel::InfoPanel;
 use super::now_playing_wiring;
 use super::player_controller::PlayerController;
@@ -34,7 +33,6 @@ pub(in crate::ui) struct LibraryShell {
 pub(in crate::ui) enum ActiveContentTarget {
     Tracks,
     Stats,
-    Device,
     Concerts,
     Releases,
     Podcasts,
@@ -45,7 +43,6 @@ pub(in crate::ui) enum ActiveContentTarget {
 fn active_content_target(content_name: Option<&str>) -> Option<ActiveContentTarget> {
     match content_name {
         Some("stats") => Some(ActiveContentTarget::Stats),
-        Some("device") => Some(ActiveContentTarget::Device),
         Some("concerts") => Some(ActiveContentTarget::Concerts),
         Some("releases") => Some(ActiveContentTarget::Releases),
         Some("podcasts") => Some(ActiveContentTarget::Podcasts),
@@ -89,7 +86,6 @@ impl ActiveContentFocus {
             Some(ActiveContentTarget::Tracks) => (self.focus_tracks)(),
             Some(
                 ActiveContentTarget::Stats
-                | ActiveContentTarget::Device
                 | ActiveContentTarget::Concerts
                 | ActiveContentTarget::Releases
                 | ActiveContentTarget::Podcasts
@@ -169,7 +165,6 @@ pub(in crate::ui) fn wire_source_routing(
     radio_view: &Rc<crate::ui::radio::RadioView>,
     conn: &Rc<RefCell<Connection>>,
     content_stack: &gtk4::Stack,
-    device_view: &Rc<DeviceViewPage>,
     source_title: &adw::WindowTitle,
     show_content: Rc<dyn Fn()>,
     active_content_focus: &ActiveContentFocus,
@@ -183,7 +178,6 @@ pub(in crate::ui) fn wire_source_routing(
     let podcasts_view = podcasts_view.clone();
     let youtube_view = youtube_view.clone();
     let radio_view = radio_view.clone();
-    let device_view = device_view.clone();
     let conn = conn.clone();
     let sidebar_for_select = sidebar.clone();
     let show_content_on_select = show_content.clone();
@@ -212,10 +206,7 @@ pub(in crate::ui) fn wire_source_routing(
             Ok(false) => {}
             Err(error) => tracing::error!(%error, "failed to record issue view as viewed"),
         }
-        if let ViewSource::Device { serial } = &source {
-            device_view.show_device(serial);
-            super::content_stack::show_page(&content_stack, "device");
-        } else if matches!(source, ViewSource::MyStats) {
+        if matches!(source, ViewSource::MyStats) {
             super::content_stack::show_page(&content_stack, "stats");
             stats_view.prepare_entrance();
             stats_view.refresh(&conn);
@@ -404,10 +395,7 @@ mod tests {
             active_content_target(Some("stats")),
             Some(ActiveContentTarget::Stats)
         );
-        assert_eq!(
-            active_content_target(Some("device")),
-            Some(ActiveContentTarget::Device)
-        );
+        assert_eq!(active_content_target(Some("device")), None);
         assert_eq!(
             active_content_target(Some("concerts")),
             Some(ActiveContentTarget::Concerts)
@@ -433,11 +421,9 @@ mod tests {
         gtk4::init().unwrap();
         let tracks = gtk4::Button::with_label("Tracks focus");
         let stats = gtk4::Button::with_label("Stats focus");
-        let device = gtk4::Button::with_label("Device focus");
         let content = gtk4::Stack::new();
         content.add_named(&tracks, Some("library"));
         content.add_named(&stats, Some("stats"));
-        content.add_named(&device, Some("device"));
         content.set_visible_child_name("library");
         let window = gtk4::Window::builder().child(&content).build();
         window.present();
@@ -452,7 +438,6 @@ mod tests {
         for (content_name, expected) in [
             ("library", tracks.upcast_ref::<gtk4::Widget>()),
             ("stats", stats.upcast_ref()),
-            ("device", device.upcast_ref()),
         ] {
             content.set_visible_child_name(content_name);
             assert!(focus.focus());

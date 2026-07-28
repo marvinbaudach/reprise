@@ -42,6 +42,9 @@ git diff --check "$base_ref"...HEAD
 
 scripts/check-architecture.sh
 
+echo "== Android Opus/MP3 sync runtime =="
+scripts/check-device-sync-gstreamer.sh
+
 echo "== Accessibility semantics and input parity =="
 scripts/check-accessibility-semantics.sh
 scripts/check-input-parity.sh

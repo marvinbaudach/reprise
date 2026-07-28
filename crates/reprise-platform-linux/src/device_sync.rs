@@ -8,6 +8,8 @@ use gio::prelude::*;
 use reprise_core::device_sync::{safe_component, ManagedRoot};
 use reprise_core::library::m3u::{parse_m3u, M3uEntry};
 
+pub use reprise_core::device_sync::{DeviceStorageInspection, DeviceStorageSnapshot};
+
 const ENUMERATE_ATTRIBUTES: &str = "standard::name,standard::type,standard::size";
 const ENUMERATE_BATCH_SIZE: i32 = 64;
 const PARTIAL_SUFFIX: &str = ".part";
@@ -213,35 +215,18 @@ fn notify_subscribers(
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DeviceFile {
-    pub relative_path: String,
-    pub name: String,
-    pub size_bytes: u64,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DevicePlaylist {
-    pub name: String,
-    pub entries: Vec<M3uEntry>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct DeviceContents {
-    pub files: Vec<DeviceFile>,
-    pub podcast_files: Vec<DeviceFile>,
-    pub playlists: Vec<DevicePlaylist>,
-}
+#[path = "device_sync_inspection.rs"]
+mod inspection;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CopyOutcome {
     Copied,
-    Skipped,
 }
 
 #[derive(Debug)]
 pub enum DeviceIoError {
     InvalidRelativePath,
+    SizeMismatch { expected: u64, actual: u64 },
     Io(gio::glib::Error),
 }
 
@@ -249,6 +234,10 @@ impl fmt::Display for DeviceIoError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidRelativePath => formatter.write_str("invalid managed device path"),
+            Self::SizeMismatch { expected, actual } => write!(
+                formatter,
+                "partial device file has {actual} bytes, expected {expected}"
+            ),
             Self::Io(error) => write!(formatter, "device I/O failed: {error}"),
         }
     }
@@ -268,13 +257,6 @@ pub struct DeviceStorage {
     /// Cached result of [`Self::storage_root`] — resolving it enumerates the
     /// device root, which is a round-trip worth doing once per instance.
     storage: RefCell<Option<gio::File>>,
-}
-
-#[derive(Clone, Copy)]
-struct TransferOptions {
-    root: ManagedRoot,
-    expected_size: u64,
-    skip_matching_size: bool,
 }
 
 impl DeviceStorage {
@@ -334,11 +316,7 @@ impl DeviceStorage {
         // Prefer the internal storage when a card is also present; otherwise
         // take the only volume. A root without volumes is left as-is so the
         // caller still gets a sensible (if failing) error from the operation.
-        let chosen = volumes
-            .iter()
-            .find(|name| name.to_lowercase().contains("internal"))
-            .or_else(|| volumes.first())
-            .cloned();
+        let chosen = choose_storage_volume(&volumes);
         let resolved = match chosen {
             Some(name) => {
                 tracing::debug!(volume = %name, "device sync: resolved MTP storage volume");
@@ -351,39 +329,6 @@ impl DeviceStorage {
         };
         *self.storage.borrow_mut() = Some(resolved.clone());
         Ok(resolved)
-    }
-
-    pub async fn available_bytes(&self) -> Result<Option<u64>, DeviceIoError> {
-        self.filesystem_bytes(gio::FILE_ATTRIBUTE_FILESYSTEM_FREE)
-            .await
-    }
-
-    /// Returns the capacity attributes that GVfs exposes for this storage.
-    /// MTP reliably provides free space on supported phones, while total size
-    /// is backend-dependent and must remain optional for UI fallbacks.
-    pub async fn capacity_bytes(&self) -> Result<(Option<u64>, Option<u64>), DeviceIoError> {
-        let available = self.available_bytes().await?;
-        let total = match self
-            .filesystem_bytes(gio::FILE_ATTRIBUTE_FILESYSTEM_SIZE)
-            .await
-        {
-            Ok(total) => total,
-            Err(error) => {
-                tracing::debug!(%error, "device sync: total capacity is unavailable");
-                None
-            }
-        };
-        Ok((available, total))
-    }
-
-    async fn filesystem_bytes(&self, attribute: &str) -> Result<Option<u64>, DeviceIoError> {
-        let info = self
-            .root
-            .query_filesystem_info_future(attribute, gio::glib::Priority::DEFAULT)
-            .await?;
-        Ok(info
-            .has_attribute(attribute)
-            .then(|| info.attribute_uint64(attribute)))
     }
 
     /// Removes transfer remnants left by a disconnect or process exit. Only
@@ -465,15 +410,12 @@ impl DeviceStorage {
         P: FnMut(u64, u64) + 'static,
     {
         self.transfer_track(
+            ManagedRoot::Music,
             source,
             relative_path,
+            expected_size,
             cancellable,
             progress,
-            TransferOptions {
-                root: ManagedRoot::Music,
-                expected_size,
-                skip_matching_size: true,
-            },
         )
         .await
     }
@@ -492,15 +434,12 @@ impl DeviceStorage {
         P: FnMut(u64, u64) + 'static,
     {
         self.transfer_track(
+            ManagedRoot::Music,
             source,
             relative_path,
+            expected_size,
             cancellable,
             progress,
-            TransferOptions {
-                root: ManagedRoot::Music,
-                expected_size,
-                skip_matching_size: false,
-            },
         )
         .await
     }
@@ -518,50 +457,40 @@ impl DeviceStorage {
         P: FnMut(u64, u64) + 'static,
     {
         self.transfer_track(
+            root,
             source,
             relative_path,
+            expected_size,
             cancellable,
             progress,
-            TransferOptions {
-                root,
-                expected_size,
-                skip_matching_size: false,
-            },
         )
         .await
     }
 
     async fn transfer_track<P>(
         &self,
+        root: ManagedRoot,
         source: &gio::File,
         relative_path: &str,
+        expected_size: u64,
         cancellable: &gio::Cancellable,
         progress: P,
-        options: TransferOptions,
     ) -> Result<CopyOutcome, DeviceIoError>
     where
         P: FnMut(u64, u64) + 'static,
     {
         let components = safe_relative_components(relative_path)?;
         let storage = self.storage_root().await?;
-        self.ensure_managed_directories(
-            &storage,
-            options.root,
-            &components[..components.len() - 1],
-        )
-        .await?;
-        let target = Self::managed_child(&storage, options.root, &components);
-        if options.skip_matching_size && target_size(&target).await? == Some(options.expected_size)
-        {
-            return Ok(CopyOutcome::Skipped);
-        }
+        self.ensure_managed_directories(&storage, root, &components[..components.len() - 1])
+            .await?;
+        let target = Self::managed_child(&storage, root, &components);
         let target_name = components.last().expect("validated nonempty path");
         let partial_components = components[..components.len() - 1]
             .iter()
             .cloned()
             .chain([format!("{target_name}{PARTIAL_SUFFIX}")])
             .collect::<Vec<_>>();
-        let partial = Self::managed_child(&storage, options.root, &partial_components);
+        let partial = Self::managed_child(&storage, root, &partial_components);
         let progress = Rc::new(RefCell::new(progress));
         let callback_progress = progress.clone();
         let (sender, receiver) = async_channel::bounded(1);
@@ -585,6 +514,14 @@ impl DeviceStorage {
             delete_if_present(&partial).await;
             return Err(error.into());
         }
+        let actual_size = target_size(&partial).await?.unwrap_or(0);
+        if actual_size != expected_size {
+            delete_if_present(&partial).await;
+            return Err(DeviceIoError::SizeMismatch {
+                expected: expected_size,
+                actual: actual_size,
+            });
+        }
         if let Err(error) = partial
             .move_future(
                 &target,
@@ -597,7 +534,7 @@ impl DeviceStorage {
             delete_if_present(&partial).await;
             return Err(error.into());
         }
-        (progress.borrow_mut())(options.expected_size, options.expected_size);
+        (progress.borrow_mut())(expected_size, expected_size);
         Ok(CopyOutcome::Copied)
     }
 
@@ -694,6 +631,20 @@ impl DeviceStorage {
     }
 }
 
+fn choose_storage_volume(volumes: &[String]) -> Option<String> {
+    volumes
+        .iter()
+        .find(|name| name.to_lowercase().contains("internal"))
+        .or_else(|| {
+            volumes.iter().find(|name| {
+                let name = name.to_lowercase();
+                !name.contains("sd") && !name.contains("card")
+            })
+        })
+        .or_else(|| volumes.first())
+        .cloned()
+}
+
 fn safe_relative_components(path: &str) -> Result<Vec<String>, DeviceIoError> {
     if path.is_empty() || path.chars().any(char::is_control) {
         return Err(DeviceIoError::InvalidRelativePath);
@@ -758,16 +709,6 @@ fn is_audio_file(name: &str) -> bool {
             )
         })
 }
-
-fn is_playlist_file(name: &str) -> bool {
-    Path::new(name)
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("m3u8"))
-}
-
-#[path = "device_sync_inspect.rs"]
-mod inspect;
 
 #[cfg(test)]
 #[path = "device_sync_tests.rs"]

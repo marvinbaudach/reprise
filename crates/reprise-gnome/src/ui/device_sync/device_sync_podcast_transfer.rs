@@ -7,7 +7,7 @@ pub(super) async fn run_podcast_removals(
     work: &PlannedWork,
     failures: &mut Vec<i64>,
 ) {
-    let music_count = work.delta.to_remove.len();
+    let music_count = work.plan.remove.len();
     let total = music_count.saturating_add(work.podcasts.to_remove.len());
     for (index, path) in work.podcasts.to_remove.iter().enumerate() {
         if work.cancelled.load(Ordering::SeqCst) {
@@ -23,7 +23,7 @@ pub(super) async fn run_podcast_removals(
                 total,
                 path.clone(),
                 0,
-                work.delta.bytes,
+                work.plan.transfer_bytes,
             ),
         );
         if let Err(error) = runtime
@@ -59,7 +59,7 @@ pub(super) async fn run_podcast_transfers(
                 work.podcasts.to_copy.len(),
                 current,
                 completed_bytes,
-                work.delta.bytes,
+                work.plan.transfer_bytes,
             ),
         );
         let progress_runtime = Rc::downgrade(runtime);
@@ -67,7 +67,7 @@ pub(super) async fn run_podcast_transfers(
         let progress_generation = work.generation;
         let base = completed_bytes;
         let expected = episode.size_bytes;
-        let bytes_total = work.delta.bytes;
+        let bytes_total = work.plan.transfer_bytes;
         let progress: Rc<dyn Fn(u64, u64)> = Rc::new(move |copied, _| {
             if let Some(runtime) = progress_runtime.upgrade() {
                 update_copy_bytes(
@@ -76,6 +76,7 @@ pub(super) async fn run_podcast_transfers(
                     progress_generation,
                     base.saturating_add(copied.min(expected)),
                     bytes_total,
+                    copied,
                 );
             }
         });

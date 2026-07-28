@@ -307,29 +307,99 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 
 ## E. MTP / Sync
 
-- **MTP-1** [geplant] [gtk] — Einstecken: Toast „Pixel 8 connected",
-  Gerätekarte faded in die Sidebar. Keine Auto-Navigation — der User wird nie
-  aus seiner Ansicht gerissen.
-- **MTP-2** [geplant] [gtk] — Karte: Klick auf Karte → Device-View (push).
-  Klick auf „Sync"-Pill → startet Sync sofort, ohne Navigation
-  (stopPropagation). Hover-Tooltip zeigt Details.
-- **MTP-3** [geplant] [core] — Sync läuft: Karte und (falls offen)
-  Device-View zeigen denselben Fortschritt (ein State). Cancel überall =
-  gleiche Aktion: aktuelle Datei sauber beenden, Toast „Sync cancelled · 28
-  copied".
-- **MTP-4** [geplant] [gtk] — Unmount/Eject in der Device-View: Eject-Klick →
-  Button wird Spinner → unmount → Toast „Pixel 8 can be unplugged" → View
-  poppt selbst zur vorherigen Ansicht (150 ms Crossfade), Karte verschwindet.
-  Eject während Sync: disabled + Tooltip „Sync in progress".
-- **MTP-5** [geplant] [gtk] — Kabel gezogen (ohne Eject): Toast „Pixel 8
-  disconnected" (+ „— sync incomplete (54 of 82)" falls mitten im Sync). Ist
-  die Device-View offen, wechselt sie auf eine StatusPage „Device
-  disconnected" mit Button „Back to Library" — sie schließt sich nicht selbst
-  (der User soll lesen können, was passiert ist). Karte verschwindet.
-  Nächster Sync resumt via .part-Regel.
-- **MTP-6** [geplant] [gtk] — Sync-Ende: Toast „Sync complete · 82 copied, 14
-  removed" (+ „· 3 failed" mit „Details"). Karte morpht zu Idle („synced ✓"),
-  Delta-Karte zeigt „Everything in sync ✓". Kein 100 %-Haltezustand.
+- **MTP-1** [aktiv] [gtk] — Ein neues verbundenes Android-MTP-Gerät erzeugt
+  einen gerätenamenspezifischen Connected-Toast und eine Gerätekarte in der
+  Sidebar. Es navigiert nie automatisch aus der aktuellen Ansicht.
+- **MTP-2** [ersetzt durch MTP-13]
+- **MTP-3** [aktiv] [gtk] — Gerätekarte und offene Geräte-Seite projizieren
+  denselben gerätebezogenen Runtime-State. Syncs verschiedener Geräte dürfen
+  parallel laufen; Start und Cancel wirken ausschließlich auf das benannte
+  Gerät, und ein spätes Progress-Event eines abgebrochenen Laufs wird durch
+  dessen Generation verworfen.
+- **MTP-4** [aktiv] [gtk] — Eject lebt ausschließlich auf der
+  Geräte-Seite. Es ist nur bei einem verbundenen, nicht synchronisierenden
+  Gerät aktiv; während Sync und Finishing ist es deaktiviert und erklärt den
+  Grund im Tooltip.
+- **MTP-5** [aktiv] [gtk] — Beim Abziehen verschwindet die Gerätekarte, der
+  offene Geräte-Seite bleibt als „Device disconnected"-Status lesbar, und ein
+  laufender gerätebezogener Sync wird abgebrochen. Ein reconnect-fähiges Gerät
+  setzt beim Wiederverbinden den verbleibenden sicheren Mirror-Plan fort;
+  unvollständige `.part`-Dateien werden vor der nächsten Veröffentlichung
+  bereinigt.
+- **MTP-6** [aktiv] [gtk] — Finishing wird als vollständiger Fortschritt
+  projiziert. Danach zeigt der Lifecycle-Toast den Abschluss oder Fehlerstatus,
+  und die Gerätekarte wechselt ohne separaten 100-%-Haltezustand zurück in den
+  aktuellen Idle-/Synced-Zustand.
+- **MTP-7** [aktiv] [gtk] — Die Geräte-Seite stellt vollständig
+  bekannten Speicher als themenfarbene Segmentleiste aus Music, geplantem
+  After-sync-Zuwachs, Other und Free dar; dieselben Werte bleiben textuell
+  verfügbar. Bei unvollständiger oder inkonsistenter Kapazität verschwindet
+  die Leiste, und der Text benennt „unknown“, statt Anteile zu erfinden.
+- **MTP-8** [aktiv] [gtk] — Die Geräte-Seite bietet genau drei
+  Transferprofile: Opus mit 160 kbit/s als Empfehlung und Standard, MP3 mit
+  256 kbit/s als Kompatibilitäts-Fallback sowie unveränderte Originaldateien.
+  Ein verlustbehaftetes oder nicht eindeutig als verlustfrei erkanntes
+  Quellformat wird unter jedem Profil unverändert kopiert und nie in ein
+  anderes verlustbehaftetes Format transkodiert.
+- **MTP-9** [aktiv] [gtk] — Die Geräte-Seite benennt den von GIO
+  gemeldeten Schreibzugriff des gewählten Zielspeichers als „Writable“,
+  „Read-only“ oder „Write access unknown“. Ein sicher schreibgeschütztes Ziel
+  sperrt den Sync-Start und erklärt den Grund; unbekannte Angaben werden nicht
+  als Schreibfähigkeit ausgegeben und blockieren nicht vorsorglich.
+- **MTP-10** [aktiv] [gtk] — Ein fehlerfreier Transfer bleibt „Finishing“,
+  bis Reprise den verwalteten Geräteordner erneut gelesen hat. Erst dieses
+  erfolgreiche Rücklesen erzeugt den Abschluss-Toast und eine als „Verified“
+  bezeichnete Seiten-Zusammenfassung mit der tatsächlich gefundenen Anzahl
+  verwalteter Tracks; ein fehlgeschlagenes Rücklesen behauptet keinen Erfolg.
+- **MTP-11** [aktiv] [gtk] — Eine untätige Gerätekarte ohne gültige
+  Playlist-Auswahl zeigt keine Handlungsaufforderung. Ihre Detailzeile beginnt
+  mit dem bekannten Schreibstatus („Writable“, „Read-only“ oder „Write access
+  unknown“) und nennt den freien Speicher; echte Scan-, Sync-, Warn- oder
+  Auswahlfehler behalten stattdessen „Needs attention“.
+- **MTP-12** [aktiv] [gtk] — Jede verfügbare Playlist-Zeile auf der
+  Geräte-Seite nennt ihren letzten auf diesem Gerät verifizierten
+  Sync-Zeitpunkt in lokaler Zeit. Ohne belastbaren Zeitpunkt steht dort
+  ausdrücklich „No verified sync time“. Ein Zeitpunkt wird erst nach
+  erfolgreichem Geräte-Readback gespeichert; fehlgeschlagene oder nur
+  teilweise veröffentlichte Läufe überschreiben ihn nicht.
+- **MTP-13** [aktiv] [gtk] — Die gesamte Gerätekarte ist genau ein nativer
+  Tastatur- und Pointer-Einstieg in eine nicht-modale Geräte-Vollseite im
+  Hauptfenster und startet keinen Sync direkt. Der primäre Menüeintrag öffnet
+  bei einem Gerät dieselbe Seite und bei mehreren Geräten zuerst eine kompakte
+  Auswahl. Die Seite enthält keine Song- oder Geräte-Dateiliste und als einzige
+  Einstellung das Transferprofil; sie zeigt jede Playlist mit sichtbarem,
+  markup-sicherem Namen, Auswahl, letztem verifiziertem Sync und der für das
+  aktive Profil projizierten Zielgröße sowie bei einem laufenden Sync
+  Fortschrittsbalken und aktuelle geglättete MTP-Transferrate.
+- **MTP-14** [aktiv] [gtk] — Die Geräte-Vollseite besitzt die
+  Informationshierarchie eines Geräte-Dashboards und nicht die einer
+  Preferences-Seite: Geräteidentität, MTP-Status, letzter Geräte-Sync,
+  Gerätespeicher und Aktionen bilden einen gemeinsamen, einfachen Hero-Kopf.
+  Playlists mit profilabhängiger Zielgröße und letztem Playlist-Sync bilden
+  den Hauptinhalt; Transferprofil, Delta und laufender Fortschritt bleiben
+  eine kompakte Nebenübersicht. Lokal bekannte Playlists erscheinen und bleiben
+  auswählbar, während Reprise den MTP-Speicher noch prüft; nur der
+  Sync-Start wartet auf diese Prüfung.
+- **MTP-15** [aktiv] [gtk] — Playlist-Arbeitsbereich und Sync-Übersicht
+  besitzen unabhängig von Delta-, Track- und Geschwindigkeitstext dieselben
+  stabilen oberen und unteren Kartenkanten; wechselnder Statustext wird
+  innerhalb einer begrenzten Overview-Breite umgebrochen und verschiebt keine
+  Spalte. Die aktuelle MTP-Transfergeschwindigkeit steht während Copy als
+  eigene beschriftete Zeile neben dem Tracktext. Die Sidebar-Gerätekarte nennt
+  den freien Gerätespeicher auch während Checking, Sync und Finishing so früh,
+  dass Ellipsize ihn nicht verdeckt.
+- **MTP-16** [aktiv] [gtk] — Eine Änderung des Transferprofils wird sofort
+  gerätebezogen gespeichert und für dasselbe Gerät sowohl nach einem Reconnect
+  als auch nach einem App-Neustart wiederhergestellt. Ein neues Gerät beginnt
+  weiterhin mit Opus 160 kbit/s.
+- **MTP-17** [aktiv] [core] — `Music/Reprise` ist der einzige und vollständig
+  autoritative Gerätebereich von Reprise. Nach erfolgreicher Veröffentlichung
+  aller gewünschten Tracks und Playlists werden dort sämtliche übrigen
+  sicheren Dateien entfernt, auch wenn sie nicht im Reprise-Inventar stehen;
+  gewünschte Track- und Playlist-Pfade bleiben erhalten. Außerhalb dieses
+  Unterordners wird nichts geschrieben, verschoben oder gelöscht, und ein
+  fehlender oder ungültiger Playlist-Sollzustand plant keine destruktive
+  Arbeit.
 
 ## F. Einstellungen & Modale
 
@@ -1136,12 +1206,12 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   gesamte Delta-Menge beider Sektionen im aktuellen Scope. Vollständig in der
   Bibliothek vorhandene Releases werden gelistet und gestempelt, zählen aber
   nie in den Unseen-Badge.
-- **NR-12a** [aktiv] [gtk] — Die persistente Historie aller je gezeigten
+- **NR-12a** [ersetzt durch NR-16] [gtk] — Die persistente Historie aller je gezeigten
   Meldungen lebt in der Releases-Vollansicht als eigenem Sidebar-Ort.
   Ausgeblendete Einträge sind dort über den Hidden-Filter einzeln mit „Show
   again" rückholbar. Retention bleibt: sechs Monate UND höchstens 200
   Einträge, hartes Löschen, nie innerhalb des 90-Tage-Fetch-Fensters.
-- **NR-14** [aktiv] [gtk] — Die Releases-Vollansicht ist eine Tabelle
+- **NR-14** [ersetzt durch NR-17] [gtk] — Die Releases-Vollansicht ist eine Tabelle
   `Date · Title · Artist · Type · Status`, standardmäßig nach Datum
   absteigend. Status ist `In library`, sonst `upcoming` oder `released`.
   Aktivierung führt immer die Dreiweg-Primäraktion aus: Hidden → Show again;
@@ -1149,10 +1219,48 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   announcement. Die permanente Filterzeile bietet sticky Chips für Not in
   library, Type und Hidden samt „X of Y releases", „Clear all" und genau
   einem „Show all"-Schritt bei null Treffern.
-- **NR-15** [aktiv] [gtk] — „Releases" ist ein Sidebar-Ort in SMART, vor
+- **NR-15** [ersetzt durch NR-18] [gtk] — „Releases" ist ein Sidebar-Ort in SMART, vor
   Concerts und nur bei aktivem `new_releases`-Modul. Sein Badge entspricht
   exakt der Anzahl der nach persistenten Filtern beim Öffnen sichtbaren
   Zeilen; 0 rendert keinen Badge.
+- **NR-16** [aktiv] [core] [gtk] — Die Releases-Vollansicht ist ein
+  Discography-Gap-Katalog für aktuell in der Bibliothek vertretene Artists.
+  Sie enthält reguläre Alben und EPs unabhängig vom Alter, aber niemals
+  Singles oder vollständig vorhandene Releases. Einzelne Vorab-Singles oder
+  unvollständige Albumtitel zählen nicht als Besitz; vollständig ist ein
+  erschienenes Release erst, wenn seine distinct lokalen Track-Identitäten
+  mindestens die kleinste offizielle MusicBrainz-Edition abdecken.
+  Ausgeblendete Lücken bleiben über den Hidden-Filter rückholbar; Album- und
+  EP-Katalogzeilen unterliegen keiner zeitlichen Retention.
+- **NR-17** [aktiv] [gtk] — Die Gap-Ansicht bleibt die Tabelle
+  `Date · Title · Artist · Type · Status`, standardmäßig nach Datum
+  absteigend. Status ist `upcoming`, `Missing`, `Incomplete` oder — bei
+  bekannter Länge — `X of Y tracks`. Die permanente Filterzeile bietet nur
+  noch sticky Type- und Hidden-Chips; Aktivierung öffnet die externe
+  Release-URL, Hidden aktiviert `Show again`. Ein leerer Standardfilter
+  bestätigt „No missing albums or EPs"; die Fußzeile enthält keine
+  Sechs-Monats-Retention.
+- **NR-18** [aktiv] [core] [gtk] — „Releases" bleibt ein nur bei aktivem
+  `new_releases`-Modul sichtbarer Sidebar-Ort in SMART vor Concerts. Sein
+  Badge entspricht exakt der Anzahl der mit den persistenten Type-/Hidden-
+  Filtern sichtbaren Discography-Lücken; 0 rendert keinen Badge.
+- **NR-19** [geplant] [gtk] — Eine Releases-Lücke darf zusätzlich einen
+  klar als Affiliate-Link gekennzeichneten Kaufpfad anbieten, aber nur für
+  einen vertraglich für installierbare Linux-Desktop-Apps freigegebenen
+  Partner. Die Offenlegung steht direkt am Kauflink; ohne Freigabe oder
+  echte Kaufrelation bleibt die unveränderte externe MusicBrainz-Relation
+  provisionsfrei. Bibliotheksdaten und geheime Schlüssel gelangen nie in
+  die URL. <!-- REVIEW: Regelvorschlag -->
+- **NR-20** [aktiv] [core] [gtk] — Die Releases-Tabelle erweitert NR-17 um
+  die Spalte `Buy`. Nur wenn MusicBrainz für die Release-Group eine echte
+  HTTP(S)-Relation auf eine `/album/…`-Seite bei `bandcamp.com` oder einer
+  Subdomain liefert, zeigt die Zeile dort `Bandcamp` und öffnet exakt diese
+  URL im Standardbrowser. Lookalike-Domains, Artist-Homepages, geratene
+  Such-URLs und alle anderen Ziele erzeugen keinen Kaufknopf. Der Direktlink
+  ist provisionsfrei, enthält keine
+  Trackingparameter und wird nicht als Affiliate-Link bezeichnet; NR-19
+  bleibt einer späteren vertraglich freigegebenen Monetarisierung
+  vorbehalten.
 
 ## S. Flächen & Geometrie
 
@@ -1337,6 +1445,31 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Backdrop-Blur über einem neutralen Tint-Floor von mindestens 80 %;
   Cairo, unbekannte Renderer, High Contrast und deaktivierte Animationen
   degradieren fail-closed zu einem neutralen, mindestens 94 % opaken Tint.
+- **STYLE-5** [aktiv] [gtk] — **Verkleinern schneidet keine wesentliche
+  Bedienung ab.** Bei horizontaler, vertikaler oder kombinierter
+  Fensterverkleinerung bleiben die primären Controls und Statusinformationen
+  innerhalb der Fensterfläche erreichbar. Insbesondere behält die strukturelle
+  Playerleiste (PLAY-7b) ihre vollständige Höhe; Cover, Play/Pause,
+  Positionszeit, Waveform, Dauer und Lautstärke liegen vollständig innerhalb
+  ihrer Allokation. Lange Titel und Interpreten ellipsieren innerhalb der
+  linken Metadatenzone und verschieben weder Transport noch Waveform aus der
+  Fenstermitte. Scrollbarer Content gibt den Platz ab, nicht die Playerleiste.
+- **STYLE-6** [aktiv] [gtk] — Bei starker horizontaler Verkleinerung klappt
+  die Tracktabelle sekundäre sichtbare Spalten vorübergehend ein; Cover,
+  Titel und Interpret bleiben sichtbar. Dieses Einklappen verändert weder
+  gespeicherte Sichtbarkeit, Reihenfolge oder Breiten noch die Sortierung.
+  „Show columns" stellt die Nutzerkonfiguration im schmalen Fenster wieder
+  her; zusätzliche Breite wird dann ausschließlich innerhalb der Tabelle
+  horizontal gescrollt.
+- **STYLE-7** [aktiv] [gtk] — Wird das Library-Fenster auf eine Breite
+  verkleinert oder gesnappt, bei der beide Flanken den Hauptinhalt sichtbar
+  verdrängen, schließen linke Library-Sidebar und rechtes Now-Playing-Panel
+  gemeinsam in derselben responsiven Transition. Ein 10-s-Undo-Toast stellt
+  exakt den Zustand beider Flanken vor dem Verkleinern wieder her; auch das
+  spätere Verbreitern restauriert diesen Zustand, sofern der User die Flanken
+  im schmalen Fenster nicht selbst geändert hat. Responsive Änderungen
+  überschreiben keine gespeicherte Sidebar- oder Panel-Präferenz, und beide
+  Header-Toggles bleiben zum manuellen Wiederöffnen erreichbar.
 - **CONTRAST-1** [aktiv] [gtk] — Es gibt drei zentrale Textstufen: Primär
   ungefähr 0,95 für Titel und Werte, Sekundär ungefähr 0,7 für Artist,
   Status, Metadaten und Spaltenköpfe, Hint ungefähr 0,5 für Platzhalter,
@@ -2350,6 +2483,12 @@ Dateien.
   (Capture-Phase, damit die Pfeil-Seek der Waveform die modifizierten Pfeile
   nicht schluckt) und decken sich mit den im Kontextmenü gezeigten
   Acceleratoren.
+- **MINI-5** [aktiv] [gtk] — Wird das Bibliotheksfenster so klein, dass die
+  Vollansicht unbequem wird, bietet Reprise höchstens einmal pro Sitzung
+  nichtblockierend „Use Compact Mode" an. Nur die ausdrückliche Aktivierung
+  dieses Angebots wechselt über denselben Pfad wie Ctrl+M in die
+  Kompaktansicht; Reprise schaltet nie allein um. Ist kein Player verfügbar
+  oder die Kompaktansicht bereits aktiv, erscheint das Angebot nicht.
 
 ## AE. Concerts
 

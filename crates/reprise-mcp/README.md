@@ -118,8 +118,8 @@ client that launches it must run on the **same machine** as Reprise.
 | `music_set_playback` | `action` plus `volume`, `offset_seconds`, `enabled`, or `repeat` | Set volume, seek, shuffle, or repeat | `playback:control` |
 | `music_play` | exactly one of `track_ids` or `playlist_id` | Play a track list or a whole playlist | `playback:control` |
 | `music_queue` | `action` = `status`\|`add_next`\|`add_last`\|`clear` | Read or safely change the manual Play Next queue | `playback:control` |
-| `music_get_device_sync_state` | none | Read device capacity, managed/selected counts, delta, progress, current title, and bytes/second | read-only |
-| `music_device_sync` | `action` = `configure_playlist`\|`start`\|`cancel`, exact `device_name`, and configuration fields including `bitrate_kbps` | Configure and control synchronization of Reprise-managed files | `device:sync` |
+| `music_get_device_sync_state` | none | Read playlists and verified sync times, transfer profile, deduplicated totals, device capacity/access, delta, progress, current title, bytes/second, and available controls | read-only |
+| `music_device_sync` | `action` = `configure`\|`start`\|`cancel`\|`eject`, exact `device_name`; `configure` also takes `sources` and optional `profile` = `opus_160`\|`mp3_256`\|`original` | Configure and control playlist mirroring of Reprise-managed files | `device:sync` |
 
 `music_play` resolves a `playlist_id` to its ordered tracks itself, then tells
 the app to play them. Only **present** (non-missing) tracks are playable.
@@ -128,11 +128,17 @@ the app to play them. Only **present** (non-missing) tracks are playable.
 removes only manually queued Play Next entries. Queue status returns at most
 200 ids from each section, together with the complete section totals.
 
-`music_device_sync` deliberately separates `configure_playlist` from `start`.
-After configuration, inspect `tracks_to_copy`, `tracks_to_remove`, and
-`bytes_to_copy` with `music_get_device_sync_state` before starting. Removal is
+`music_device_sync` deliberately separates `configure` from `start`. After
+configuration, inspect the deduplicated `unique_track_count`, `changes`,
+`last_synced_at`, playlist timestamps, `storage` including its write `access`,
+`blockers`, `warnings`, and `controls` with
+`music_get_device_sync_state` before starting. Tracks shared by several
+selected playlists are transferred only once; each written playlist still
+keeps its own order and repeated entries. Lossy and unknown inputs stay
+unchanged, while lossless inputs use the selected transfer profile. Removal is
 limited to Reprise's managed inventory under `Music/Reprise`; music outside
-that root is never a deletion target.
+that root is never a deletion target. `cancel` stops an active transfer and
+`eject` safely disconnects an idle device.
 
 `music_manage_podcasts` accepts an RSS feed URL or a YouTube channel/playlist
 URL for `add`. RSS is parsed directly; YouTube is listed through the configured

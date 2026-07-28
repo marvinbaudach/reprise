@@ -179,7 +179,6 @@ pub enum BrowserPlace {
     Youtube,
     Radio,
     Conversions,
-    Device { serial: String },
 }
 
 impl BrowserPlace {
@@ -207,8 +206,7 @@ impl BrowserPlace {
             | Self::Podcasts
             | Self::Youtube
             | Self::Radio
-            | Self::Conversions
-            | Self::Device { .. } => None,
+            | Self::Conversions => None,
         }
     }
 
@@ -228,8 +226,7 @@ impl BrowserPlace {
             | Self::Podcasts
             | Self::Youtube
             | Self::Radio
-            | Self::Conversions
-            | Self::Device { .. } => None,
+            | Self::Conversions => None,
         }
     }
 
@@ -244,8 +241,7 @@ impl BrowserPlace {
             | Self::Podcasts
             | Self::Youtube
             | Self::Radio
-            | Self::Conversions
-            | Self::Device { .. } => None,
+            | Self::Conversions => None,
         }
     }
 
@@ -278,9 +274,6 @@ impl BrowserPlace {
             Self::Youtube => ViewSource::Youtube,
             Self::Radio => ViewSource::Radio,
             Self::Conversions => ViewSource::Conversions,
-            Self::Device { serial } => ViewSource::Device {
-                serial: serial.clone(),
-            },
         }
     }
 }
@@ -312,7 +305,6 @@ impl From<ViewSource> for BrowserPlace {
             ViewSource::Youtube => return Self::Youtube,
             ViewSource::Radio => return Self::Radio,
             ViewSource::Conversions => return Self::Conversions,
-            ViewSource::Device { serial } => return Self::Device { serial },
         };
         Self::tracks(collection, TrackViewState::default())
     }
@@ -391,9 +383,6 @@ mod tests {
             ViewSource::Podcasts,
             ViewSource::Youtube,
             ViewSource::Radio,
-            ViewSource::Device {
-                serial: "pixel-8".into(),
-            },
         ];
 
         for source in sources {

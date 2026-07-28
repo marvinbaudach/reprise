@@ -33,6 +33,12 @@ the desktop FileChooser/Documents portals; moving files to Trash uses the Trash
 portal inside Flatpak. There is no broad home-directory, direct-USB,
 session-bus, or system-bus access.
 
+The runtime must provide the GStreamer Good Plug-ins used by Android MP3
+synchronization, in particular `lamemp3enc` and `id3v2mux`. Run
+`scripts/check-device-sync-gstreamer.sh` in the built runtime as part of every
+packaging verification; synchronization blocks before any managed deletion if
+the fixed MP3/ID3 pipeline is unavailable.
+
 ## Public-source handoff
 
 The repository currently has no public remote or immutable release artifact,

@@ -292,7 +292,7 @@ impl NewReleasesPopover {
         button.connect_clicked(move |_| {
             if let Some(state) = weak.upgrade() {
                 state.popover.popdown();
-                (state.on_open_view)(target.clone());
+                (state.on_open_view)(target);
             }
         });
     }
@@ -424,8 +424,9 @@ impl NewReleasesPopover {
                 }
             }
         }
-        let unseen_releases = reprise_core::artist_news::unseen_release_count(&self.conn.borrow())
-            .unwrap_or_default();
+        let unseen_releases =
+            reprise_core::artist_news::unseen_release_count(&self.conn.borrow(), today)
+                .unwrap_or_default();
         let (_, concerts_ready, unseen_concerts, latest_concerts) =
             self.concerts_badge_state(today);
         match badge::updates_badge(

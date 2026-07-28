@@ -45,8 +45,7 @@ impl MenuContext {
             | ViewSource::Youtube
             | ViewSource::Radio
             | ViewSource::Conversions
-            | ViewSource::Genre(_)
-            | ViewSource::Device { .. } => Self::LibraryTracks,
+            | ViewSource::Genre(_) => Self::LibraryTracks,
         }
     }
 }
@@ -433,12 +432,6 @@ mod tests {
             (ViewSource::Missing, MenuContext::LibraryTracks),
             (ViewSource::ImportErrors, MenuContext::LibraryTracks),
             (ViewSource::MyStats, MenuContext::LibraryTracks),
-            (
-                ViewSource::Device {
-                    serial: "pixel-8".into(),
-                },
-                MenuContext::LibraryTracks,
-            ),
         ];
         for (source, expected) in cases {
             assert_eq!(MenuContext::from_source(&source), expected, "{source:?}");
