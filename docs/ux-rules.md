@@ -431,6 +431,34 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Episode braucht keinen Download-Schritt. Der Downloader, der den
   vorgemerkten Zustand tatsächlich abarbeitet, ist nicht Teil dieser Regel
   (E2/E4).
+- **MTP-21** [aktiv] [core] — Die Sollmenge je Sync-Kategorie ist eine reine
+  Projektion aus Auswahlregel und Bibliothekszustand (E2). Playlists liefern
+  „N of M selected · K tracks"; YouTube-Tonspuren begrenzen jeden aktivierten
+  Kanal (Kanal-Toggle aus 6b) auf seine neuesten N Episoden unabhängig vom
+  Downloadzustand („N of M channels · latest K each"); Podcast-Episoden
+  wollen jede ungespielte, bereits heruntergeladene Episode aktivierter Shows
+  ohne Obergrenze („Unplayed downloads only"). Eine gewollte Episode ohne
+  lokale Datei (`wanted_on_device`, `MTP-20`) zählt als wartend, nie als
+  kopierbereit — die Sollmenge trennt beides sichtbar, statt eine wartende
+  Episode stillschweigend aus dem Ergebnis zu filtern.
+- **MTP-22** [aktiv] [core] — Der Sync-Plan wird pro Kategorie gelesen (E3):
+  entweder eine bezifferte Bilanz „N new · M removed", oder einer von zwei
+  eigenständigen Zuständen — „source off" (globale Regel oder Geräteziel
+  deaktiviert; nichts wurde geprüft, das ist etwas anderes als „geprüft und
+  keine Änderung") und „Unavailable, kept on phone" (nichts Lokales zum
+  Vergleichen vorhanden; vorhandene Gerätedateien bleiben unangetastet statt
+  geraten zu werden — hergeleitet aus `Connectivity`, `NET-3a`, ohne einen
+  zweiten Offline-Begriff zu erfinden). Kopieren und Entfernen behalten je
+  eine eigene Datei- und Byte-Zahl, in Zeile und Gesamtbilanz gleichermaßen
+  („To copy 14 files · 2.6 GiB", „To remove 3 files · 148 MiB", „Playlists
+  rewritten 2"); ob eine Kategorie etwas zu tun hat, entscheidet die
+  Dateizahl, nie der Byte-Wert. Eine reine Entfernung mit 0 B insgesamt
+  bewegter Größe bleibt dadurch als „3 to remove · frees 0 B" von „nichts zu
+  tun" unterscheidbar — die frühere Sidebar-Karte, die „N changes" und einen
+  einzelnen, nur kopierte Bytes zählenden Betrag kombinierte und dadurch
+  „3 changes · 0 B" zeigte, ist diese Lücke. Ein Größen-Cap (`MTP-19`) wirkt
+  als zusätzliches Entfernen oberhalb der Auswahl-Bilanz und verändert nie
+  die Kopier-Zahl.
 
 ## F. Einstellungen & Modale
 

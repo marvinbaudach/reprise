@@ -10,6 +10,7 @@ use std::path::{Component, Path, PathBuf};
 use crate::library::m3u::{M3uEntry, M3uExportEntry};
 
 pub mod cap;
+pub mod category_diff;
 pub mod delta;
 pub mod m3u;
 pub mod mirror;
@@ -17,6 +18,7 @@ pub mod page;
 pub mod podcasts;
 pub mod profile;
 pub mod sanitize;
+pub mod selection;
 pub mod settings;
 pub mod snapshot;
 pub mod storage;
@@ -24,6 +26,10 @@ pub mod targets;
 pub mod transfer;
 
 pub use cap::{items_to_evict, CapItem};
+pub use category_diff::{
+    aggregate_balance, apply_cap, candidate_source, project_category_reading, CandidateSource,
+    CategoryDiff, CategoryReading, SyncBalance,
+};
 pub use delta::{compute_delta, SyncCandidate, SyncDelta};
 pub use mirror::{
     plan_mirror, DesiredManagedFile, ManagedDeviceFile, ManagedRemoval, MirrorBlocker, MirrorInput,
@@ -37,6 +43,11 @@ pub use page::{
 pub use profile::{
     project_playlist_sizes, Mp3Quality, PlaylistSizeProjection, PlaylistTargetSize, PlaylistTracks,
     TransferAction, TransferProfile, UnsupportedMp3Quality,
+};
+pub use selection::{
+    select_episodes, summarize_playlist_selection, summarize_youtube_selection,
+    EpisodeSelectionCandidate, EpisodeSelectionResult, EpisodeSelectionRule,
+    PlaylistSelectionSummary, YoutubeChannelToggle, YoutubeSelectionSummary,
 };
 pub use settings::{
     DeviceFileRecord, DevicePlaylistRecord, DeviceSelection, DeviceSettings, SelectionSource,

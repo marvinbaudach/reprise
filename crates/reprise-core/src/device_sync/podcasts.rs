@@ -37,6 +37,12 @@ pub struct PodcastSyncPlan {
     pub to_copy: Vec<PodcastSyncCandidate>,
     pub to_remove: Vec<String>,
     pub bytes: u64,
+    /// Total size freed by everything in [`Self::to_remove`], kept
+    /// separate from [`Self::bytes`] (which only ever counts bytes moving
+    /// onto the device) so a deletions-only plan can report a truthful
+    /// "0 B to copy · frees N MiB" instead of one blended figure — see
+    /// `device_sync::category_diff` (`MTP-22`).
+    pub bytes_freed: u64,
 }
 
 pub fn query_candidates_for_device(
@@ -115,15 +121,22 @@ pub fn query_candidates_for_device(
     Ok(candidates)
 }
 
+/// Builds a plan for one [`PodcastSyncSource`] at a time. Only the `Rss`
+/// call site is wired into a real transfer today (`POD-8`); `Youtube` is
+/// modelled and tested here but nothing in the running app calls this with
+/// `Youtube` yet — see `device_sync::category_diff` (`MTP-22`), which
+/// exercises both branches as a pure projection without touching the real
+/// per-device candidate query.
 pub fn build_plan(
     candidates: Vec<PodcastSyncCandidate>,
     inventory: &[PodcastDeviceFile],
     remove_deleted: bool,
+    source: PodcastSyncSource,
 ) -> PodcastSyncPlan {
     let candidates = candidates
         .into_iter()
         .filter(|candidate| {
-            candidate.source == PodcastSyncSource::Rss && safe_relative_path(&candidate.device_path)
+            candidate.source == source && safe_relative_path(&candidate.device_path)
         })
         .collect::<Vec<_>>();
     let desired = candidates
@@ -142,23 +155,26 @@ pub fn build_plan(
         })
         .collect::<Vec<_>>();
     let bytes = to_copy.iter().map(|candidate| candidate.size_bytes).sum();
-    let to_remove = if remove_deleted {
+    let (to_remove, bytes_freed) = if remove_deleted {
         inventory
             .iter()
             .filter(|file| {
                 safe_relative_path(&file.device_path)
                     && !desired.contains(file.device_path.as_str())
             })
-            .map(|file| file.device_path.clone())
-            .collect()
+            .fold((Vec::new(), 0_u64), |(mut paths, freed), file| {
+                paths.push(file.device_path.clone());
+                (paths, freed.saturating_add(file.size_bytes))
+            })
     } else {
-        Vec::new()
+        (Vec::new(), 0)
     };
     PodcastSyncPlan {
         selected: desired.len(),
         to_copy,
         to_remove,
         bytes,
+        bytes_freed,
     }
 }
 
@@ -350,11 +366,50 @@ mod tests {
             },
         ];
 
-        let plan = build_plan(vec![source.clone(), youtube], &inventory, true);
+        let plan = build_plan(
+            vec![source.clone(), youtube],
+            &inventory,
+            true,
+            PodcastSyncSource::Rss,
+        );
 
         assert_eq!(plan.to_copy, [source]);
         assert_eq!(plan.to_remove, ["Old/9-Old.mp3".to_string()]);
         assert_eq!(plan.bytes, 100);
+        assert_eq!(
+            plan.bytes_freed, 20,
+            "bytes_freed sums the removed inventory files, not the whole inventory"
+        );
+    }
+
+    #[test]
+    fn mtp_21_youtube_source_selects_youtube_candidates_the_same_way_rss_does() {
+        let rss = PodcastSyncCandidate {
+            episode_id: 1,
+            source: PodcastSyncSource::Rss,
+            source_path: "/downloads/one.mp3".into(),
+            device_path: "Show/1-One.mp3".into(),
+            title: "One".into(),
+            show: "Show".into(),
+            size_bytes: 100,
+            source_mtime: 1,
+        };
+        let youtube = PodcastSyncCandidate {
+            source: PodcastSyncSource::Youtube,
+            device_path: "Channel/2-Video.webm".into(),
+            size_bytes: 200,
+            ..rss.clone()
+        };
+
+        let plan = build_plan(
+            vec![rss, youtube.clone()],
+            &[],
+            true,
+            PodcastSyncSource::Youtube,
+        );
+
+        assert_eq!(plan.to_copy, [youtube]);
+        assert_eq!(plan.bytes, 200);
     }
 
     #[test]

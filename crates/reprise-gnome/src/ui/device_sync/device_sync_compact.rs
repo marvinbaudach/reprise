@@ -1,5 +1,6 @@
 use reprise_core::device_sync::podcasts::{
     build_plan as build_podcast_plan, query_candidates_for_device, PodcastDeviceFile,
+    PodcastSyncSource,
 };
 use reprise_core::device_sync::settings::{
     load_device_files, load_device_playlists, resolve_selection_track_ids, save_settings,
@@ -154,7 +155,12 @@ impl DeviceSyncRuntime {
                 .collect::<Vec<_>>();
             let podcast_candidates =
                 query_candidates_for_device(&conn, device_id).map_err(|error| error.to_string())?;
-            let podcast_plan = build_podcast_plan(podcast_candidates, &podcast_inventory, true);
+            let podcast_plan = build_podcast_plan(
+                podcast_candidates,
+                &podcast_inventory,
+                true,
+                PodcastSyncSource::Rss,
+            );
             (projection, podcast_plan, managed_track_count)
         };
         projection.plan.transfer_bytes = projection
