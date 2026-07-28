@@ -16,7 +16,8 @@ use reprise_core::device_sync::device_view::{
 };
 use reprise_core::device_sync::settings::{load_or_create_settings, mark_device_playlists_synced};
 use reprise_core::device_sync::{
-    CategoryDiff, DeviceSelection, DeviceSettings, DeviceStorageInspection, DeviceStorageSnapshot,
+    aggregate_balance, should_auto_start, AutoStartFacts, CategoryDiff, CategoryReading,
+    DeviceSelection, DeviceSettings, DeviceStorageInspection, DeviceStorageSnapshot,
     ManagedDeviceFile, MirrorPlan, SelectionSource, SyncPageState, SyncTarget, SyncTargetKind,
 };
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor, DeviceMonitor};
@@ -122,14 +123,7 @@ impl DeviceState {
         // query pipeline yet (`podcasts::query_candidates_for_device` only
         // ever returns already-downloaded episodes) — future UI work, not
         // this one.
-        let category_diffs = [
-            CategoryDiff::from_mirror_plan(&self.mirror_plan),
-            CategoryDiff::from_podcast_plan(&self.youtube_plan, 0),
-            CategoryDiff::from_podcast_plan(&self.podcast_plan, 0),
-        ];
-        let category_readings = std::array::from_fn(|i| {
-            project_device_category_reading(&self.targets[i], category_diffs[i])
-        });
+        let category_readings = self.category_readings();
         let device_bytes = [
             category_bytes(&self.managed_files),
             category_bytes(&self.youtube_files),
@@ -171,6 +165,21 @@ impl DeviceState {
 
     fn is_busy(&self) -> bool {
         self.is_active() || self.sync_phase == PlannedSyncPhase::Finishing
+    }
+
+    /// `MTP-22`/`MTP-28`: one category diff per named target, in
+    /// `SyncTargetKind::ALL` order — shared by [`Self::view`] and `MTP-30`'s
+    /// auto-start decision so both read the exact same projection instead
+    /// of two slightly different ones.
+    fn category_readings(&self) -> [CategoryReading; 3] {
+        let category_diffs = [
+            CategoryDiff::from_mirror_plan(&self.mirror_plan),
+            CategoryDiff::from_podcast_plan(&self.youtube_plan, 0),
+            CategoryDiff::from_podcast_plan(&self.podcast_plan, 0),
+        ];
+        std::array::from_fn(|i| {
+            project_device_category_reading(&self.targets[i], category_diffs[i])
+        })
     }
 }
 
@@ -245,7 +254,16 @@ impl DeviceSyncRuntime {
     }
 
     pub fn refresh_contents(self: &Rc<Self>, device_id: &str) {
-        self.refresh_contents_with_delta(device_id, true, RefreshPurpose::Normal);
+        self.refresh_contents_with_delta(device_id, true, RefreshPurpose::Normal, false);
+    }
+
+    /// Same as [`Self::refresh_contents`], except this refresh is the first
+    /// one after the device connected (`apply_devices`, both a brand-new
+    /// device and a reconnect) — the only refresh `MTP-30`'s auto-start
+    /// decision is allowed to fire from. A manual "Refresh" click or the
+    /// post-sync verify refresh must never re-trigger it.
+    fn refresh_contents_on_connect(self: &Rc<Self>, device_id: &str) {
+        self.refresh_contents_with_delta(device_id, true, RefreshPurpose::Normal, true);
     }
 
     fn refresh_contents_after_sync(
@@ -253,7 +271,12 @@ impl DeviceSyncRuntime {
         device_id: &str,
         sources: Vec<SelectionSource>,
     ) {
-        self.refresh_contents_with_delta(device_id, true, RefreshPurpose::VerifySync(sources));
+        self.refresh_contents_with_delta(
+            device_id,
+            true,
+            RefreshPurpose::VerifySync(sources),
+            false,
+        );
     }
 
     fn refresh_contents_with_delta(
@@ -261,6 +284,7 @@ impl DeviceSyncRuntime {
         device_id: &str,
         recompute_delta: bool,
         purpose: RefreshPurpose,
+        just_connected: bool,
     ) {
         let request = {
             let mut devices = self.device_states.borrow_mut();
@@ -426,6 +450,33 @@ impl DeviceSyncRuntime {
                     if let Err(error) = runtime.sync_now(&id) {
                         tracing::warn!(device_id = id, %error, "could not resume device synchronization");
                     }
+                } else if just_connected {
+                    // `MTP-30`: gather every fact from one short borrow, drop
+                    // it, and only then decide — same discipline as
+                    // `should_resume` above. A refused or failed automatic
+                    // start is silent apart from this log: the user did not
+                    // press anything, so it must never raise a modal or an
+                    // error banner.
+                    let facts = {
+                        let devices = runtime.device_states.borrow();
+                        devices
+                            .iter()
+                            .find(|device| device.descriptor.id == id)
+                            .map(|device| AutoStartFacts {
+                                just_connected,
+                                sync_automatically: device.settings.sync_automatically,
+                                scan_ok: device.scan_error.is_none(),
+                                planning_ok: planning_error.is_none(),
+                                device_connected: device.connected,
+                                device_busy: device.is_busy(),
+                                balance: aggregate_balance(&device.category_readings()),
+                            })
+                    };
+                    if facts.is_some_and(should_auto_start) {
+                        if let Err(error) = runtime.sync_now(&id) {
+                            tracing::warn!(device_id = id, %error, "could not start automatic device synchronization");
+                        }
+                    }
                 }
             }
         });
@@ -527,7 +578,7 @@ impl DeviceSyncRuntime {
                     device.sync_phase = PlannedSyncPhase::ComputingDelta;
                 }
             }
-            self.refresh_contents(&id);
+            self.refresh_contents_on_connect(&id);
         }
     }
 

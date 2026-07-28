@@ -538,6 +538,25 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Bilanz aus `MTP-22` steht im Tooltip. Während Sync/Finishing bleibt die
   dünne Fortschrittslinie am Kartenboden (`MTP-6`, unverändert) die einzige
   Statusanzeige.
+- **MTP-30** [aktiv] [core] [gtk] — Der Schalter „Sync automatically when
+  this phone connects" (7a, `DeviceSettings::sync_automatically`, Standard
+  **an**) bedeutet: sobald der Sync-Plan nach dem Verbinden feststeht, startet
+  der Sync von selbst, ohne Knopfdruck. Das gilt ausschließlich für das erste
+  Refresh nach dem Verbinden (Neuanschluss oder Reconnect) — ein manuelles
+  „Refresh" oder das Verifizierungs-Refresh nach einem Sync lösen ihn nie aus.
+  Ein automatischer Start setzt einen verifizierten Scan **und** einen
+  fehlerfrei geplanten Sync voraus (kein `scan_error`, kein Planungsfehler);
+  ein noch nicht geprüftes Gerät (`MTP-26`) startet nie automatisch. Er
+  entfällt außerdem, wenn das Gerät bereits beschäftigt ist oder es laut der
+  bestehenden Bilanz (`MTP-22`, `SyncBalance::has_work`) schlicht nichts zu
+  tun gibt — letzteres wird wiederverwendet, nie neu hergeleitet. Ein
+  verweigerter oder fehlgeschlagener automatischer Start bleibt bis auf ein
+  `tracing::warn!`-Log vollständig still — kein Modal, kein Fehlerbanner,
+  denn niemand hat etwas angeklickt; der manuelle Sync-Button behält seine
+  bestehende Fehleranzeige unverändert. Die Entscheidung selbst ist eine
+  reine Funktion über die gesammelten Fakten (`reprise_core::device_sync::
+  auto_start::should_auto_start`); die GTK-Laufzeit sammelt diese Fakten nur
+  und gehorcht.
 
 ## F. Einstellungen & Modale
 

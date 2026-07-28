@@ -467,6 +467,7 @@ fn mtp_24_podcast_and_youtube_audio_are_always_copied_1_to_1_never_transcoded() 
                 [episode_path.to_string_lossy().as_ref()],
             )
             .unwrap();
+        disable_auto_start(&conn, "a");
 
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
@@ -533,6 +534,7 @@ fn pod_12_planned_sync_copies_selected_rss_and_youtube_each_to_its_own_target() 
                 [youtube_path.to_string_lossy().as_ref()],
             )
             .unwrap();
+        disable_auto_start(&conn, "a");
 
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
         backend.state.podcast_files.replace(vec![ManagedDeviceFile {
@@ -608,6 +610,28 @@ fn select_road_playlist(conn: &Rc<RefCell<Connection>>, ids: &[i64]) {
     save_road_settings(conn, "a");
 }
 
+/// `MTP-30`: seeds a device-settings row with the switch off and no
+/// playlist selection, for tests that set up their own podcast/YouTube work
+/// directly via SQL and then drive `sync_now` manually — without this, the
+/// default-on switch (`DEFAULT 1`, schema v44) would start a sync on
+/// connect before the test's own `sync_now` call runs, doubling every copy.
+fn disable_auto_start(conn: &Rc<RefCell<Connection>>, device_id: &str) {
+    save_settings(
+        &conn.borrow(),
+        &DeviceSettings {
+            device_serial: device_id.into(),
+            device_name: format!("Phone {device_id}"),
+            selection: DeviceSelection::Sources(Vec::new()),
+            profile: reprise_core::device_sync::TransferProfile::default(),
+            opus_bitrate: 0,
+            ratings_back: false,
+            remove_deleted: true,
+            sync_automatically: false,
+        },
+    )
+    .unwrap();
+}
+
 fn save_road_settings(conn: &Rc<RefCell<Connection>>, device_id: &str) {
     save_settings(
         &conn.borrow(),
@@ -619,12 +643,19 @@ fn save_road_settings(conn: &Rc<RefCell<Connection>>, device_id: &str) {
             opus_bitrate: 0,
             ratings_back: false,
             remove_deleted: true,
-            sync_automatically: true,
+            // `MTP-30`: most tests using this fixture orchestrate `sync_now`
+            // manually (gates, cancellation races, progress observation) and
+            // must not race an automatic start on connect. `MTP-30`'s own
+            // tests (`device_sync_auto_start_tests.rs`) set this explicitly
+            // instead of relying on this shared fixture.
+            sync_automatically: false,
         },
     )
     .unwrap();
 }
 
+#[path = "device_sync_auto_start_tests.rs"]
+mod auto_start_tests;
 #[path = "device_sync_compact_tests.rs"]
 mod compact_tests;
 #[path = "device_sync_planned_tests.rs"]

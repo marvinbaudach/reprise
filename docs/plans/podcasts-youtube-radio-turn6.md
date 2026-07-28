@@ -389,7 +389,10 @@ kommen zwei Inhaltsarten und eine neue Geräteansicht dazu.
   mit „Scan device", Sektion „Content" mit Zielordner, Auswahl und Cap je
   Quelle, „Next synchronization" mit Diff und Bilanz, „Remove from phone when
   deleted or unsubscribed here", „Sync automatically when this phone connects",
-  „Eject".
+  „Eject". **Nachtrag:** der Schalter wurde hier zunächst nur spezifiziert und
+  gerendert, aber von keinem Code gelesen — ein toter Schalter. Sein Verhalten
+  (automatischer Sync-Start nach verifiziertem Scan und geplanter Arbeit,
+  still bei Ablehnung/Fehler) ist jetzt implementiert (`MTP-30`).
 - **E6 · Zielordner-Browser (7d).** Speicherauswahl intern/SD, Baum aus
   `GetObjectPropList`, „New folder" via `SendObjectInfo`, Zielvorschau, Warnung
   bei einem Ordner innerhalb des Playlist-Ziels, „Reset to default". Bereits
