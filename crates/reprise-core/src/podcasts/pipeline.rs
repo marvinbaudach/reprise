@@ -254,7 +254,7 @@ pub fn refresh_to_root(
             }
         }
     }
-    super::downloads::enforce_cleanup(conn, config.cleanup_policy, now)?;
+    super::downloads::enforce_cleanup(conn, download_root, config.cleanup_policy, now)?;
     Ok(summary)
 }
 
