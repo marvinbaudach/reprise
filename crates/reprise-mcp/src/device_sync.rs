@@ -10,62 +10,18 @@ use crate::playback::PlaybackError;
 const BUS_NAME: &str = "org.mpris.MediaPlayer2.reprise";
 const OBJECT_PATH: &str = "/org/mpris/MediaPlayer2";
 const DEVICE_SYNC_INTERFACE: &str = "org.reprise.DeviceSync1";
-type DeviceSyncSourceSelection = (String, i64);
-type DeviceSyncSourceRow = (
-    String,
-    i64,
-    bool,
-    String,
-    bool,
-    bool,
-    u64,
-    u64,
-    u64,
-    u64,
-    bool,
-    i64,
-);
-type DeviceSyncChangesRow = (u64, u64, u64, u64, u64, u64, u64);
-type DeviceSyncStorageCompositionRow = (bool, u64, u64, u64, bool, u64, bool, u64, String);
-type DeviceSyncStorageRow = (
-    bool,
-    String,
-    String,
-    bool,
-    u64,
-    u64,
-    DeviceSyncStorageCompositionRow,
-    bool,
-    DeviceSyncStorageCompositionRow,
-    String,
-);
-type DeviceSyncControlsRow = (bool, bool, bool, bool);
-type DeviceSyncProgressRow = (u64, u64, u64);
-type DeviceSyncTimestampRow = (bool, i64);
-type DeviceSyncRow = (
-    String,
-    bool,
-    String,
-    u64,
-    u64,
-    u64,
-    Vec<DeviceSyncSourceRow>,
-    DeviceSyncChangesRow,
-    DeviceSyncStorageRow,
-    Vec<String>,
-    Vec<String>,
-    DeviceSyncControlsRow,
-    String,
-    DeviceSyncProgressRow,
-    String,
-    DeviceSyncTimestampRow,
-);
+
+use reprise_runtime_protocol::device_sync::{
+    DeviceChangeCounts, DeviceSnapshot, DeviceSourceSelection, DeviceSourceSnapshot,
+    DeviceStorageComposition, DeviceStorageSnapshot,
+};
+use reprise_runtime_protocol::{ProtocolVersion, PROTOCOL_VERSION};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeviceSyncAction {
     Configure {
         device_name: String,
-        sources: Vec<DeviceSyncSourceSelection>,
+        sources: Vec<DeviceSourceSelection>,
         profile: String,
     },
     Start {
@@ -139,12 +95,15 @@ fn reject_configuration_fields(params: &DeviceSyncParams) -> Result<(), String> 
     }
 }
 
-fn source_selection(source: &DeviceSyncSourceParam) -> Result<DeviceSyncSourceSelection, String> {
+fn source_selection(source: &DeviceSyncSourceParam) -> Result<DeviceSourceSelection, String> {
     if source.id <= 0 {
         return Err("source id must be positive".into());
     }
     match source.kind.as_str() {
-        "playlist" | "smart" => Ok((source.kind.clone(), source.id)),
+        "playlist" | "smart" => Ok(DeviceSourceSelection {
+            kind: source.kind.clone(),
+            id: source.id,
+        }),
         other => Err(format!(
             "source kind must be 'playlist' or 'smart'; got '{other}'"
         )),
@@ -182,111 +141,118 @@ fn map_zbus_error(error: &zbus::Error) -> PlaybackError {
 
 pub fn state() -> Result<DeviceSyncStateDto, PlaybackError> {
     let proxy = connect()?;
-    let rows: Vec<DeviceSyncRow> = proxy
+    check_protocol_version(&proxy)?;
+    let devices: Vec<DeviceSnapshot> = proxy
         .call("Snapshot", &())
         .map_err(|error| map_zbus_error(&error))?;
     Ok(DeviceSyncStateDto {
-        devices: rows.into_iter().map(map_row).collect(),
+        devices: devices.into_iter().map(map_device).collect(),
     })
 }
 
-fn map_row(row: DeviceSyncRow) -> DeviceSyncDeviceDto {
-    let (
-        name,
-        connected,
-        profile,
-        managed_tracks,
-        unique_track_count,
-        target_bytes,
-        playlists,
-        changes,
-        storage,
-        blockers,
-        warnings,
-        controls,
-        phase,
-        progress,
-        current_track,
-        last_synced_at,
-    ) = row;
+/// Refuses a service whose contract this build cannot read, instead of
+/// decoding a payload it does not understand. Section 9.7 of
+/// `docs/plans/multi-frontend-core.md` calls this the `Refused` category; it
+/// borrows `PlaybackError::Bus` until Stage 3 gives the runtime client its
+/// own error type.
+fn check_protocol_version(proxy: &zbus::blocking::Proxy<'static>) -> Result<(), PlaybackError> {
+    let (major, minor): (u32, u32) = proxy
+        .get_property("ProtocolVersion")
+        .map_err(|error| map_zbus_error(&error))?;
+    let served = ProtocolVersion { major, minor };
+    if served.is_compatible_with(PROTOCOL_VERSION) {
+        return Ok(());
+    }
+    Err(version_mismatch(served))
+}
+
+fn version_mismatch(served: ProtocolVersion) -> PlaybackError {
+    PlaybackError::Bus(format!(
+        "the running Reprise speaks device-sync protocol {served}, this build needs \
+         major version {}; restart the app so both sides match",
+        PROTOCOL_VERSION.major
+    ))
+}
+
+fn map_device(device: DeviceSnapshot) -> DeviceSyncDeviceDto {
     DeviceSyncDeviceDto {
-        name,
-        connected,
-        last_synced_at: last_synced_at.0.then_some(last_synced_at.1),
-        profile,
-        managed_tracks,
-        unique_track_count,
-        target_bytes,
-        playlists: playlists.into_iter().map(map_source_row).collect(),
-        changes: map_changes_row(changes),
-        storage: map_storage_row(storage),
-        blockers,
-        warnings,
+        name: device.name,
+        connected: device.connected,
+        last_synced_at: device.last_synced_at,
+        profile: device.profile,
+        managed_tracks: device.managed_tracks,
+        unique_track_count: device.unique_track_count,
+        target_bytes: device.target_bytes,
+        playlists: device.sources.into_iter().map(map_source).collect(),
+        changes: map_changes(&device.changes),
+        storage: map_storage(device.storage),
+        blockers: device.blockers,
+        warnings: device.warnings,
         controls: DeviceSyncControlsDto {
-            editable: controls.0,
-            can_start: controls.1,
-            can_cancel: controls.2,
-            can_eject: controls.3,
+            editable: device.controls.editable,
+            can_start: device.controls.can_start,
+            can_cancel: device.controls.can_cancel,
+            can_eject: device.controls.can_eject,
         },
-        phase,
+        phase: device.phase,
         progress: DeviceSyncProgressDto {
-            bytes_done: progress.0,
-            bytes_total: progress.1,
-            bytes_per_second: progress.2,
+            bytes_done: device.progress.bytes_done,
+            bytes_total: device.progress.bytes_total,
+            bytes_per_second: device.progress.bytes_per_second,
         },
-        current_track,
+        current_track: device.current_track,
     }
 }
 
-fn map_source_row(row: DeviceSyncSourceRow) -> DeviceSyncPlaylistDto {
+fn map_source(source: DeviceSourceSnapshot) -> DeviceSyncPlaylistDto {
     DeviceSyncPlaylistDto {
-        kind: row.0,
-        id: row.1,
-        name: row.2.then_some(row.3),
-        selected: row.4,
-        available: row.5,
-        entry_count: row.6,
-        unique_track_count: row.7,
-        unavailable_count: row.8,
-        target_bytes: row.9,
-        last_synced_at: row.10.then_some(row.11),
+        kind: source.kind,
+        id: source.id,
+        name: source.name,
+        selected: source.selected,
+        available: source.available,
+        entry_count: source.entry_count,
+        unique_track_count: source.unique_track_count,
+        unavailable_count: source.unavailable_count,
+        target_bytes: source.target_bytes,
+        last_synced_at: source.last_synced_at,
     }
 }
 
-fn map_changes_row(row: DeviceSyncChangesRow) -> DeviceSyncChangesDto {
+fn map_changes(changes: &DeviceChangeCounts) -> DeviceSyncChangesDto {
     DeviceSyncChangesDto {
-        additions: row.0,
-        replacements: row.1,
-        removals: row.2,
-        retained_unavailable: row.3,
-        playlist_writes: row.4,
-        playlist_removals: row.5,
-        transfer_bytes: row.6,
+        additions: changes.additions,
+        replacements: changes.replacements,
+        removals: changes.removals,
+        retained_unavailable: changes.retained_unavailable,
+        playlist_writes: changes.playlist_writes,
+        playlist_removals: changes.playlist_removals,
+        transfer_bytes: changes.transfer_bytes,
     }
 }
 
-fn map_storage_row(row: DeviceSyncStorageRow) -> DeviceSyncStorageDto {
+fn map_storage(storage: DeviceStorageSnapshot) -> DeviceSyncStorageDto {
     DeviceSyncStorageDto {
-        target_name: row.0.then_some(row.1),
-        access: row.9,
-        state: row.2,
-        shortfall_bytes: row.3.then_some(row.4),
-        transfer_bytes: row.5,
-        current: map_storage_composition_row(row.6),
-        after_sync: row.7.then(|| map_storage_composition_row(row.8)),
+        target_name: storage.target_name,
+        access: storage.access,
+        state: storage.state,
+        shortfall_bytes: storage.shortfall_bytes,
+        transfer_bytes: storage.transfer_bytes,
+        current: map_storage_composition(storage.current),
+        after_sync: storage.after_sync.map(map_storage_composition),
     }
 }
 
-fn map_storage_composition_row(
-    row: DeviceSyncStorageCompositionRow,
+fn map_storage_composition(
+    composition: DeviceStorageComposition,
 ) -> DeviceSyncStorageCompositionDto {
     DeviceSyncStorageCompositionDto {
-        total_bytes: row.0.then_some(row.1),
-        reprise_music_bytes: row.2,
-        other_music_bytes: row.3,
-        other_used_bytes: row.4.then_some(row.5),
-        free_bytes: row.6.then_some(row.7),
-        knowledge: row.8,
+        total_bytes: composition.total_bytes,
+        reprise_music_bytes: composition.reprise_music_bytes,
+        other_music_bytes: composition.other_music_bytes,
+        other_used_bytes: composition.other_used_bytes,
+        free_bytes: composition.free_bytes,
+        knowledge: composition.knowledge,
     }
 }
 
@@ -333,49 +299,75 @@ mod tests {
     use super::*;
 
     #[test]
-    fn row_mapping_preserves_the_compact_mirror_page_without_paths_or_serials() {
-        let dto = map_row((
-            "Pixel".into(),
-            true,
-            "original".into(),
-            75,
-            200,
-            80,
-            vec![(
-                "smart".into(),
-                7,
-                true,
-                "Heavy rotation".into(),
-                true,
-                true,
-                220,
-                200,
-                2,
-                80,
-                true,
-                1_721_234_567,
-            )],
-            (125, 5, 0, 2, 1, 0, 60),
-            (
-                true,
-                "Internal storage".into(),
-                "fits".into(),
-                false,
-                0,
-                60,
-                (true, 100, 20, 10, true, 30, true, 40, "complete".into()),
-                true,
-                (true, 100, 80, 10, true, 10, true, 0, "complete".into()),
-                "writable".into(),
-            ),
-            Vec::new(),
-            vec!["unavailable_not_on_device".into()],
-            (false, false, true, false),
-            "copying".into(),
-            (20, 60, 10),
-            "Sun//Eater — Lorna Shore".into(),
-            (true, 1_721_234_890),
-        ));
+    fn snapshot_mapping_preserves_the_compact_mirror_page_without_paths_or_serials() {
+        let dto = map_device(DeviceSnapshot {
+            name: "Pixel".into(),
+            connected: true,
+            profile: "original".into(),
+            managed_tracks: 75,
+            unique_track_count: 200,
+            target_bytes: 80,
+            sources: vec![DeviceSourceSnapshot {
+                kind: "smart".into(),
+                id: 7,
+                name: Some("Heavy rotation".into()),
+                selected: true,
+                available: true,
+                entry_count: 220,
+                unique_track_count: 200,
+                unavailable_count: 2,
+                target_bytes: 80,
+                last_synced_at: Some(1_721_234_567),
+            }],
+            changes: DeviceChangeCounts {
+                additions: 125,
+                replacements: 5,
+                removals: 0,
+                retained_unavailable: 2,
+                playlist_writes: 1,
+                playlist_removals: 0,
+                transfer_bytes: 60,
+            },
+            storage: DeviceStorageSnapshot {
+                target_name: Some("Internal storage".into()),
+                state: "fits".into(),
+                shortfall_bytes: None,
+                transfer_bytes: 60,
+                current: DeviceStorageComposition {
+                    total_bytes: Some(100),
+                    reprise_music_bytes: 20,
+                    other_music_bytes: 10,
+                    other_used_bytes: Some(30),
+                    free_bytes: Some(40),
+                    knowledge: "complete".into(),
+                },
+                after_sync: Some(DeviceStorageComposition {
+                    total_bytes: Some(100),
+                    reprise_music_bytes: 80,
+                    other_music_bytes: 10,
+                    other_used_bytes: Some(10),
+                    free_bytes: Some(0),
+                    knowledge: "complete".into(),
+                }),
+                access: "writable".into(),
+            },
+            blockers: Vec::new(),
+            warnings: vec!["unavailable_not_on_device".into()],
+            controls: reprise_runtime_protocol::device_sync::DeviceControls {
+                editable: false,
+                can_start: false,
+                can_cancel: true,
+                can_eject: false,
+            },
+            phase: "copying".into(),
+            progress: reprise_runtime_protocol::device_sync::DeviceProgress {
+                bytes_done: 20,
+                bytes_total: 60,
+                bytes_per_second: 10,
+            },
+            current_track: "Sun//Eater — Lorna Shore".into(),
+            last_synced_at: Some(1_721_234_890),
+        });
 
         assert_eq!(dto.profile, "original");
         assert_eq!(dto.last_synced_at, Some(1_721_234_890));
@@ -392,6 +384,19 @@ mod tests {
         let json = serde_json::to_value(dto).unwrap();
         assert!(json.get("serial").is_none());
         assert!(!json.to_string().contains("path"));
+    }
+
+    /// The point of the handshake is a message a person can act on, instead
+    /// of a decode failure deep inside zvariant.
+    #[test]
+    fn a_foreign_protocol_version_is_refused_with_an_actionable_message() {
+        let PlaybackError::Bus(message) = version_mismatch(ProtocolVersion { major: 2, minor: 0 })
+        else {
+            panic!("a version mismatch is a bus-level refusal");
+        };
+        assert!(message.contains("speaks device-sync protocol 2.0"));
+        assert!(message.contains(&format!("major version {}", PROTOCOL_VERSION.major)));
+        assert!(message.contains("restart the app"));
     }
 
     #[test]
@@ -416,7 +421,16 @@ mod tests {
             action,
             DeviceSyncAction::Configure {
                 device_name: "Pixel".into(),
-                sources: vec![("playlist".into(), 3), ("smart".into(), 7)],
+                sources: vec![
+                    DeviceSourceSelection {
+                        kind: "playlist".into(),
+                        id: 3,
+                    },
+                    DeviceSourceSelection {
+                        kind: "smart".into(),
+                        id: 7,
+                    },
+                ],
                 profile: "opus_160".into(),
             }
         );

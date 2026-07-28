@@ -2654,6 +2654,54 @@ Hörstatistik.
   selbst die Stream-URL. Die Preview liest Name, Bitrate, Genre und
   Content-Type ausschließlich aus ICY-/HTTP-Headern und streamt keinen Body.
 
+## AG. Laufzeitdienst (headless Steuerung)
+
+<!-- Sektionsbuchstabe: AF war die letzte vergebene Marke, AG ist die nächste
+     freie. Diese Sektion verankert das Laufzeit-Design aus Sektion 9 des
+     multi-frontend-core-Plans (Thin-Core-Plan, Stufe 1 Task 1.1). Alle Regeln
+     starten [geplant] und wechseln einzeln auf [aktiv], sobald die jeweilige
+     Scheibe aus Stufe 3 implementiert ist. -->
+
+Wiedergabe, Queue, Hintergrundjobs und Geräteläufe gehören künftig einer
+Laufzeit, nicht dem GTK-Prozess. Oberflächen und Agenten sind Clients
+desselben Zustands. Diese Sektion regelt ausschließlich, was ein Nutzer davon
+sieht; Besitz, Lease und Fehlerkategorien stehen im Architekturplan.
+
+- **RUN-1** [geplant] [core] — Ein einziger Besitzer: Wiedergabe, Queue,
+  Jobs und Geräteläufe gehören zu jedem Zeitpunkt genau einer Laufzeit. Eine
+  zweite Oberfläche startet nie eine konkurrierende Laufzeit; sie verbindet
+  sich oder scheitert benannt. Zwei gleichzeitig sichtbare, voneinander
+  abweichende Wiedergabezustände sind ein Bug, kein Anzeigeproblem.
+- **RUN-2** [geplant] [gtk] — Kein geratener Zustand: solange keine
+  Verbindung zur Laufzeit besteht, zeigt die Oberfläche Transport,
+  Queue-Aktionen und Geräteaktionen sichtbar nicht verfügbar statt einer
+  Attrappe aus dem letzten bekannten Stand. Ein Control, das nichts auslösen
+  kann, sieht auch nicht so aus, als könnte es das (FB-Vokabular, G).
+- **RUN-3** [geplant] [gtk] — Wiederverbindung ist ein Hintergrundereignis:
+  eine kurze Trennung erzeugt keinen Toast pro Versuch, keinen Dialog und
+  keine Fokus-Wanderung. Erst ein dauerhaft erfolgloser Zustand wird einmal
+  benannt, an Ort und Stelle. Nach dem Wiederverbinden ersetzt ein
+  vollständiger Snapshot den laufzeitgebundenen Zustand, ohne Selektion und
+  Scrollposition zu opfern (wie EXT-2).
+- **RUN-4** [geplant] [core] — Leerlauf-Abschaltung unterbricht nie Arbeit:
+  die Laufzeit beendet sich nur, wenn kein Client verbunden ist, nichts
+  spielt oder pausiert geladen ist, kein Gerätelauf und kein Job aktiv ist.
+  Ein Dienst, der laufende Arbeit für Ressourcen abbricht, ist ein
+  Datenverlust-Feature.
+- **RUN-5** [geplant] [gtk] — Fremde Steuerung ist geräuschlos, aber
+  ehrlich: ändert ein Agent oder eine zweite Oberfläche Wiedergabe oder
+  Queue, folgt die sichtbare Oberfläche sofort und still — kein Toast, kein
+  Fokus-Diebstahl, keine Ansicht wird in den Vordergrund gezogen (P-1/P-4 in
+  der Live-Refresh-Lesart, wie EXT-5). Der Nutzer bemerkt es am geänderten
+  Zustand, nie an einer Ankündigung.
+  <!-- REVIEW: Regelvorschlag — offen und bewusst nicht mitentschieden ist,
+       ob das Schließen des Fensters die Wiedergabe beendet. Der
+       Laufzeit-Lebenszyklus erlaubt beides: Idle-Shutdown (RUN-4) hält den
+       Dienst am Leben, solange etwas spielt, also würde Musik nach dem
+       Schließen weiterlaufen, bis sie endet. Das ist eine
+       Produktentscheidung, keine Architekturfolge, und braucht eine eigene
+       Regel, bevor Stufe 3.3 die Scheibe „Playback/Queue“ migriert. -->
+
 ---
 
 Wenn beim Testen ein Fall auftaucht, den keine Regel deckt: Regel ergänzen
