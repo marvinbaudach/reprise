@@ -70,7 +70,9 @@ struct PlannedWork {
     cancelled: Arc<AtomicBool>,
     /// Interrupts GIO copies.
     cancellable: gio::Cancellable,
-    /// The file the last transcode produced, awaiting its copy.
+    /// The file the last transcode produced, awaiting its copy. The machine
+    /// always follows a successful transcode with its copy, and that copy
+    /// deletes the file whether it succeeded or not, so no other path has to.
     transcoded: Option<PathBuf>,
     /// The effects `Event::Start` unlocked, awaiting the first main-loop turn.
     pending: Vec<Effect>,
@@ -522,20 +524,33 @@ fn is_current_run(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork) -> bool {
 
 fn publish_phase(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork) {
     let phase = work.machine.borrow().phase().clone();
-    if let Some(device) = runtime
-        .device_states
-        .borrow_mut()
-        .iter_mut()
-        .find(|device| device.descriptor.id == work.device_id)
     {
-        let is_current = device
-            .machine
-            .as_ref()
-            .is_some_and(|current| Rc::ptr_eq(current, &work.machine));
-        if !is_current {
-            return;
+        let mut devices = runtime.device_states.borrow_mut();
+        if let Some(device) = devices
+            .iter_mut()
+            .find(|device| device.descriptor.id == work.device_id)
+        {
+            let is_current = device
+                .machine
+                .as_ref()
+                .is_some_and(|current| Rc::ptr_eq(current, &work.machine));
+            if is_current {
+                // Progress arrives per track, counting from zero each time, so
+                // the rate meter needs a fresh baseline whenever a new copy
+                // starts. Without it every sample below the previous track's
+                // final byte count is discarded and the displayed rate freezes.
+                if matches!(
+                    phase,
+                    PlannedSyncPhase::Syncing {
+                        step: SyncStep::Copying,
+                        ..
+                    }
+                ) {
+                    device.mtp_rate.begin_copy(Instant::now());
+                }
+                device.sync_phase = phase;
+            }
         }
-        device.sync_phase = phase;
     }
     runtime.notify();
 }
@@ -567,16 +582,22 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, outcome: Syn
         return;
     }
 
-    let (message, failed_tracks) = match outcome {
+    let (terminal_error, failed_tracks) = match outcome {
         SyncOutcome::Failed {
-            message,
+            terminal_error,
             failed_tracks,
-        } => (Some(message), failed_tracks),
+        } => (terminal_error, failed_tracks),
         _ => (None, Vec::new()),
     };
-    // A run can end on a device whose plan no longer describes reality, so the
-    // fresh planning error is the more useful message when there is one.
-    let planning_error = runtime.recompute_delta_silent(&work.device_id).err();
+    // A stage that failed outright already explains the run, so its message
+    // wins and the delta is not recomputed. Otherwise a fresh planning error
+    // describes the device better than a count of lost tracks does.
+    let message = terminal_error
+        .or_else(|| runtime.recompute_delta_silent(&work.device_id).err())
+        .or_else(|| {
+            (!failed_tracks.is_empty())
+                .then(|| format!("{} synchronization items failed", failed_tracks.len()))
+        });
     if let Some(device) = runtime
         .device_states
         .borrow_mut()
@@ -584,7 +605,7 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, outcome: Syn
         .find(|device| device.descriptor.id == work.device_id)
     {
         device.sync_phase = PlannedSyncPhase::Idle;
-        device.sync_error = planning_error.or(message).map(|message| SyncFailure {
+        device.sync_error = message.map(|message| SyncFailure {
             message,
             failed_tracks,
         });
