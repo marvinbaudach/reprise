@@ -34,8 +34,8 @@ pub use provider::{
     ArtistRef, EventProvider, ProviderError, ProviderEvent, ProviderKind, Resolution,
 };
 pub use query::{
-    count_unseen, count_upcoming, latest_fetch_at, mark_scope_seen, query_cached_events,
-    query_events, query_unseen, CachedConcertEvent,
+    count_unseen, count_upcoming, has_similar_events, known_countries, latest_fetch_at,
+    mark_scope_seen, query_cached_events, query_events, query_unseen, CachedConcertEvent,
 };
 pub use refresh::{artist_due, jitter_seconds, refresh_due};
 pub use similar::{

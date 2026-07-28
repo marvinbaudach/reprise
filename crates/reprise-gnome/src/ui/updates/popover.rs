@@ -127,15 +127,9 @@ fn module_effect(
 /// shared by the popover's open path (`trigger_staleness_refresh`) and the
 /// hourly timer (`maybe_background_refresh`), so the two never drift apart
 /// with their own copy of the same condition.
-fn periodic_fetch_due(enabled: bool, fetching: bool, refresh_due: bool) -> bool {
-    enabled && !fetching && refresh_due
-}
+use reprise_core::updates::fetch_allowed as periodic_fetch_due;
 
-#[derive(Clone, Copy)]
-enum FeedKind {
-    News,
-    Concerts,
-}
+use reprise_core::updates::{Feed, FeedRefresh};
 
 pub(in crate::ui) type OnOpenView = Rc<dyn Fn(reprise_core::browser::navigation::SidebarTarget)>;
 
@@ -166,9 +160,9 @@ struct NewReleasesPopover {
     updated: gtk4::Label,
     failure: gtk4::Label,
     fetching: Cell<bool>,
-    pending_fetches: Cell<u8>,
-    news_failed: Cell<bool>,
-    concerts_failed: Cell<bool>,
+    /// The fetch currently in flight across both feeds, or the finished one
+    /// whose outcome the footer is still showing.
+    run: RefCell<FeedRefresh>,
     generation: Cell<u64>,
     /// The hourly background staleness timer (Beschluss 8), running only
     /// while the module is enabled. `SourceId` is move-only, so `Cell::take`
@@ -228,9 +222,7 @@ impl NewReleasesPopover {
             updated,
             failure,
             fetching: Cell::new(false),
-            pending_fetches: Cell::new(0),
-            news_failed: Cell::new(false),
-            concerts_failed: Cell::new(false),
+            run: RefCell::new(FeedRefresh::start(&[])),
             generation: Cell::new(0),
             refresh_timer: Cell::new(None),
             on_show_album,
@@ -466,10 +458,11 @@ impl NewReleasesPopover {
         let footer = footer_presentation(latest, chrono::Utc::now().timestamp(), failed);
         self.updated.set_label(&footer.updated);
         self.updated.set_visible(latest.is_some());
-        let failure_text = fetch_failure_text(failed, self.concerts_failed.get());
+        let failure_text = fetch_failure_text(failed, self.run.borrow().has_failed(Feed::Concerts));
         self.failure.set_label(&failure_text);
-        self.failure
-            .set_visible(footer.show_cached_failure || self.concerts_failed.get());
+        self.failure.set_visible(
+            footer.show_cached_failure || self.run.borrow().has_failed(Feed::Concerts),
+        );
     }
 
     fn concerts_badge_state(&self, today: chrono::NaiveDate) -> (bool, bool, i64, Option<i64>) {
@@ -599,15 +592,21 @@ impl NewReleasesPopover {
             .unwrap_or(false)
             && reprise_core::concerts::config::credentials(&self.conn.borrow())
                 .is_ok_and(|credentials| !credentials.is_empty());
-        let pending = u8::from(news_enabled) + u8::from(concerts_enabled);
-        if pending == 0 {
+        let mut feeds = Vec::new();
+        if news_enabled {
+            feeds.push(Feed::NewReleases);
+        }
+        if concerts_enabled {
+            feeds.push(Feed::Concerts);
+        }
+        let run = FeedRefresh::start(&feeds);
+        if run.is_complete() {
+            self.run.replace(run);
             self.render(false, false);
             return;
         }
         self.fetching.set(true);
-        self.pending_fetches.set(pending);
-        self.news_failed.set(false);
-        self.concerts_failed.set(false);
+        self.run.replace(run);
         self.fetch_stack.set_visible_child_name("spinner");
         self.spinner.start();
         self.fetch_button.set_sensitive(false);
@@ -628,7 +627,7 @@ impl NewReleasesPopover {
             fetch_from_database(&database_path)
         });
         let Ok(receiver) = result else {
-            self.finish_feed(FeedKind::News, true);
+            self.finish_feed(Feed::NewReleases, true);
             return;
         };
         let weak = Rc::downgrade(self);
@@ -645,7 +644,7 @@ impl NewReleasesPopover {
                 }
             };
             if let Some(state) = weak.upgrade() {
-                state.finish_feed(FeedKind::News, failed);
+                state.finish_feed(Feed::NewReleases, failed);
             }
         });
     }
@@ -659,7 +658,7 @@ impl NewReleasesPopover {
             force: true,
             response: sender,
         }) {
-            self.finish_feed(FeedKind::Concerts, true);
+            self.finish_feed(Feed::Concerts, true);
             return;
         }
         let weak = Rc::downgrade(self);
@@ -679,13 +678,13 @@ impl NewReleasesPopover {
                 }
             };
             if let Some(state) = weak.upgrade() {
-                state.finish_feed(FeedKind::Concerts, failed);
+                state.finish_feed(Feed::Concerts, failed);
             }
         });
     }
 
-    fn finish_feed(self: &Rc<Self>, feed: FeedKind, failed: bool) {
-        if matches!(feed, FeedKind::News) && !failed {
+    fn finish_feed(self: &Rc<Self>, feed: Feed, failed: bool) {
+        if matches!(feed, Feed::NewReleases) && !failed {
             let result = {
                 let conn = self.conn.borrow();
                 reprise_core::library::settings::set_new_releases_fetch_completed(&conn, true)
@@ -694,20 +693,19 @@ impl NewReleasesPopover {
                 tracing::warn!(%error, "could not save New Releases fetch state");
             }
         }
-        match feed {
-            FeedKind::News => self.news_failed.set(failed),
-            FeedKind::Concerts => self.concerts_failed.set(failed),
-        }
-        let remaining = self.pending_fetches.get().saturating_sub(1);
-        self.pending_fetches.set(remaining);
-        if remaining > 0 {
+        let (complete, news_failed) = {
+            let mut run = self.run.borrow_mut();
+            run.finish(feed, failed);
+            (run.is_complete(), run.has_failed(Feed::NewReleases))
+        };
+        if !complete {
             return;
         }
         self.fetching.set(false);
         self.spinner.stop();
         self.fetch_stack.set_visible_child_name("icon");
         self.fetch_button.set_sensitive(true);
-        self.render(false, self.news_failed.get());
+        self.render(false, news_failed);
     }
 }
 

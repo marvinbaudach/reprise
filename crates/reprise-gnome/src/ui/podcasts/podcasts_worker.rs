@@ -105,15 +105,7 @@ pub(in crate::ui) fn automatic_refresh_allowed(
 }
 
 fn database_path(conn: &rusqlite::Connection) -> Option<PathBuf> {
-    let mut statement = conn.prepare("PRAGMA database_list").ok()?;
-    let mut rows = statement.query([]).ok()?;
-    while let Some(row) = rows.next().ok()? {
-        if row.get::<_, String>(1).ok()?.as_str() == "main" {
-            let path = row.get::<_, String>(2).ok()?;
-            return (!path.is_empty()).then(|| PathBuf::from(path));
-        }
-    }
-    None
+    reprise_core::db::main_path(conn)
 }
 
 fn spawn(database_path: Option<PathBuf>) -> async_channel::Sender<PodcastsRequest> {
