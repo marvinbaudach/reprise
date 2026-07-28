@@ -84,6 +84,8 @@ pub struct DeviceView {
     pub managed_track_count: usize,
     pub bytes_per_second: u64,
     pub page: SyncPageState,
+    /// The recorded runs shown under "Recent transfers" (MTP-20).
+    pub history: Vec<crate::ui::device_sync::device_sync_history::RunWithDeviations>,
 }
 
 // The run's phase is produced by the core state machine, not by this

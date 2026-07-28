@@ -42,6 +42,8 @@ struct DeviceState {
     scan_generation: u64,
     scan_error: Option<String>,
     settings: DeviceSettings,
+    /// Recorded sync runs for this device, refreshed when one ends.
+    history: Vec<crate::ui::device_sync::device_sync_history::RunWithDeviations>,
     sync_phase: PlannedSyncPhase,
     sync_error: Option<SyncFailure>,
     planned_cancel: Option<Arc<AtomicBool>>,
@@ -56,6 +58,7 @@ struct DeviceState {
 impl DeviceState {
     fn new(descriptor: DeviceDescriptor, settings: DeviceSettings) -> Self {
         Self {
+            history: Vec::new(),
             descriptor,
             connected: true,
             machine: None,
@@ -92,6 +95,7 @@ impl DeviceState {
             page.controls = reprise_core::device_sync::SyncPageControls::default();
         }
         DeviceView {
+            history: self.history.clone(),
             id: self.descriptor.id.clone(),
             name: self.descriptor.name.clone(),
             icon: self.descriptor.icon.clone(),
@@ -440,6 +444,7 @@ impl DeviceSyncRuntime {
         }
         self.notify();
         for (id, is_new) in refresh {
+            self.reload_sync_history(&id);
             if is_new {
                 if let Err(error) = self.recompute_delta_silent(&id) {
                     tracing::warn!(

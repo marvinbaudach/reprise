@@ -295,6 +295,8 @@ struct PlaylistRowWidgets {
 
 struct DeviceSyncPage {
     root: gtk4::glib::WeakRef<gtk4::Stack>,
+    /// Container for the "Recent transfers" card (MTP-20).
+    history: gtk4::Box,
     device_name: gtk4::Label,
     connection: gtk4::Label,
     device_last_sync: gtk4::Label,
@@ -376,6 +378,7 @@ impl DeviceSyncPage {
 
         let surface = Rc::new(Self {
             root: root_ref,
+            history: dashboard.history,
             device_name: dashboard.device_name,
             connection: dashboard.connection,
             device_last_sync: dashboard.device_last_sync,
@@ -413,6 +416,7 @@ impl DeviceSyncPage {
     }
 
     fn update(&self, device: &DeviceView) {
+        super::device_sync_history::fill(&self.history, &device.history);
         self.updating.set(true);
         self.device_name.set_label(&device.name);
         self.connection.set_label("MTP connected");
