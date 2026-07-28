@@ -9,12 +9,15 @@ use reprise_core::podcasts;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::ui) enum PodcastsOperation {
     Refresh { force: bool },
+    LoadMore { subscription_id: i64, end: usize },
     Download { episode_id: i64 },
 }
 
 pub(in crate::ui) const fn request_generation(current: u64, operation: PodcastsOperation) -> u64 {
     match operation {
-        PodcastsOperation::Refresh { .. } => current.wrapping_add(1),
+        PodcastsOperation::Refresh { .. } | PodcastsOperation::LoadMore { .. } => {
+            current.wrapping_add(1)
+        }
         PodcastsOperation::Download { .. } => current,
     }
 }
@@ -76,6 +79,10 @@ impl PodcastsResponseChannel {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::ui) enum PodcastsWorkerResult {
     Refreshed(podcasts::pipeline::RefreshSummary),
+    LoadedMore {
+        subscription_id: i64,
+        end: usize,
+    },
     DownloadState {
         episode_id: i64,
         state: podcasts::download_state::DownloadState,
@@ -222,6 +229,29 @@ fn process_request(
                 });
             send_response(request, result);
         }
+        PodcastsOperation::LoadMore {
+            subscription_id,
+            end,
+        } => {
+            let result = podcasts::config::load(conn)
+                .map_err(|error| error.to_string())
+                .and_then(|config| {
+                    let ytdlp = podcasts::ytdlp::YtDlp::discover(config.ytdlp_path.as_deref());
+                    podcasts::pipeline::load_more_youtube(
+                        conn,
+                        &ytdlp,
+                        subscription_id,
+                        end,
+                        chrono::Utc::now().timestamp(),
+                    )
+                    .map(|_| PodcastsWorkerResult::LoadedMore {
+                        subscription_id,
+                        end,
+                    })
+                    .map_err(|error| error.to_string())
+                });
+            send_response(request, result);
+        }
         PodcastsOperation::Download { episode_id } => {
             download_episode(conn, episode_id, &mut |state| {
                 send_response(
@@ -235,7 +265,8 @@ fn process_request(
 
 fn send_response(request: &PodcastsRequest, result: Result<PodcastsWorkerResult, String>) {
     let terminal = match &result {
-        Err(_) | Ok(PodcastsWorkerResult::Refreshed(_)) => true,
+        Err(_)
+        | Ok(PodcastsWorkerResult::Refreshed(_) | PodcastsWorkerResult::LoadedMore { .. }) => true,
         Ok(PodcastsWorkerResult::DownloadState { state, .. }) => matches!(
             state,
             podcasts::download_state::DownloadState::Downloaded { .. }
@@ -327,10 +358,7 @@ fn try_download_episode_to_root(
         .map_err(|error| error.to_string())?
         .filter(|subscription| subscription.removed_at.is_none())
         .ok_or_else(|| "podcast subscription no longer exists".to_owned())?;
-    let extension = match episode.kind {
-        podcasts::PodcastKind::Rss => podcasts::downloads::extension_from_url(&episode.audio_url),
-        podcasts::PodcastKind::Youtube => "audio",
-    };
+    let extension = download_extension(episode.kind, &episode.audio_url);
     let destination = podcasts::downloads::download_path(
         download_root,
         &subscription.feed_url,
@@ -378,6 +406,10 @@ fn try_download_episode_to_root(
         return Err("podcast episode no longer exists".to_owned());
     }
     Ok(bytes)
+}
+
+fn download_extension(kind: podcasts::PodcastKind, audio_url: &str) -> &'static str {
+    podcasts::downloads::extension_for(kind, audio_url)
 }
 
 #[cfg(test)]
@@ -473,6 +505,21 @@ mod tests {
     }
 
     #[test]
+    fn plane_6b_youtube_downloads_use_the_opus_extension() {
+        assert_eq!(
+            download_extension(podcasts::PodcastKind::Youtube, "ignored"),
+            "opus"
+        );
+        assert_eq!(
+            download_extension(
+                podcasts::PodcastKind::Rss,
+                "https://example.test/episode.mp3"
+            ),
+            "mp3"
+        );
+    }
+
+    #[test]
     fn pod_7_download_request_does_not_invalidate_an_in_flight_refresh() {
         assert_eq!(
             request_generation(9, PodcastsOperation::Download { episode_id: 4 }),
@@ -480,6 +527,16 @@ mod tests {
         );
         assert_eq!(
             request_generation(9, PodcastsOperation::Refresh { force: true }),
+            10
+        );
+        assert_eq!(
+            request_generation(
+                9,
+                PodcastsOperation::LoadMore {
+                    subscription_id: 7,
+                    end: 40,
+                },
+            ),
             10
         );
     }

@@ -5,6 +5,7 @@ mod add_dialog;
 mod css;
 mod podcasts_columns;
 mod podcasts_context_menu;
+mod podcasts_device_sync;
 mod podcasts_download_presentation;
 mod podcasts_empty_state;
 mod podcasts_filter_bar;
@@ -18,6 +19,7 @@ mod podcasts_view_data;
 mod podcasts_worker;
 mod search_results;
 pub(crate) mod source_image;
+mod youtube_channel_detail;
 
 pub(in crate::ui) use podcasts_view::{PodcastsCallbacks, PodcastsView};
 pub(in crate::ui) use podcasts_worker::PodcastsRuntime;

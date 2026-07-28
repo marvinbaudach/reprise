@@ -35,6 +35,8 @@ pub(super) fn download(
             OsString::from("-f"),
             OsString::from("bestaudio"),
             OsString::from("-x"),
+            OsString::from("--audio-format"),
+            OsString::from("opus"),
             OsString::from("--no-part"),
             OsString::from("--print"),
             OsString::from("after_move:filepath"),

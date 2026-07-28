@@ -31,6 +31,12 @@ pub(super) struct SourceSummary {
     pub latest_published_at: Option<i64>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct RenderedSourceGroup {
+    pub group: SourceGroup,
+    pub summary: SourceSummary,
+}
+
 pub(super) fn source_summary(
     group: &SourceGroup,
     download_states: &BTreeMap<i64, DownloadState>,
@@ -58,6 +64,29 @@ pub(super) fn source_summary(
             .filter_map(|episode| episode.published_at)
             .max(),
     }
+}
+
+pub(super) fn rendered_source_groups(
+    groups: &[SourceGroup],
+    filter: &PodcastFilter,
+    download_states: &BTreeMap<i64, DownloadState>,
+) -> Vec<RenderedSourceGroup> {
+    groups
+        .iter()
+        .filter_map(|group| {
+            let episodes = apply_filter(&group.episodes, filter);
+            if episodes.is_empty() && active(filter) {
+                return None;
+            }
+            let summary = source_summary(group, download_states);
+            let mut rendered = group.clone();
+            rendered.episodes = episodes;
+            Some(RenderedSourceGroup {
+                group: rendered,
+                summary,
+            })
+        })
+        .collect()
 }
 
 pub(super) fn relative_date(timestamp: Option<i64>, today: NaiveDate) -> String {
@@ -284,5 +313,35 @@ mod tests {
                 latest_published_at: Some(20),
             }
         );
+    }
+
+    #[test]
+    fn pod_9_filtered_children_keep_the_full_source_summary() {
+        let mut played = row(1, Some(10), PodcastKind::Rss);
+        played.played_at = Some(30);
+        let unplayed = row(2, Some(20), PodcastKind::Rss);
+        let group = SourceGroup {
+            subscription_id: 7,
+            title: "Show".into(),
+            author: None,
+            image_url: None,
+            kind: PodcastKind::Rss,
+            sync_to_phone: false,
+            episodes: vec![played, unplayed],
+        };
+
+        let rendered = rendered_source_groups(
+            &[group],
+            &PodcastFilter {
+                unplayed_only: true,
+                ..PodcastFilter::default()
+            },
+            &BTreeMap::new(),
+        );
+
+        assert_eq!(rendered[0].group.episodes.len(), 1);
+        assert_eq!(rendered[0].summary.episode_count, 2);
+        assert_eq!(rendered[0].summary.unplayed_count, 1);
+        assert_eq!(rendered[0].summary.latest_published_at, Some(20));
     }
 }

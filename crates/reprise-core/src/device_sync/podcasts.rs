@@ -39,19 +39,23 @@ pub struct PodcastSyncPlan {
     pub bytes: u64,
 }
 
-pub fn query_candidates(conn: &Connection) -> Result<Vec<PodcastSyncCandidate>, rusqlite::Error> {
+pub fn query_candidates_for_device(
+    conn: &Connection,
+    device_id: &str,
+) -> Result<Vec<PodcastSyncCandidate>, rusqlite::Error> {
     let mut statement = conn.prepare(
         "SELECT e.id, e.title, s.title, e.downloaded_path, e.downloaded_bytes
          FROM podcast_episodes e
          JOIN podcast_subscriptions s ON s.id = e.subscription_id
+         JOIN podcast_subscription_devices d
+           ON d.subscription_id = s.id AND d.device_id = ?1
          WHERE s.removed_at IS NULL
            AND s.kind = 'rss'
-           AND s.sync_to_phone = 1
            AND e.removed_at IS NULL
            AND e.downloaded_path IS NOT NULL
          ORDER BY s.title COLLATE NOCASE, e.published_at DESC, e.id DESC",
     )?;
-    let rows = statement.query_map([], |row| {
+    let rows = statement.query_map([device_id], |row| {
         Ok((
             row.get::<_, i64>(0)?,
             row.get::<_, String>(1)?,
@@ -257,6 +261,8 @@ mod tests {
         insert_subscription(&conn, 1, "rss", true, "Show: One / Daily");
         insert_subscription(&conn, 2, "youtube", true, "Video Channel");
         insert_subscription(&conn, 3, "rss", false, "Other Show");
+        crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:pixel", true).unwrap();
+        crate::podcasts::phone_sync::set_device_enabled(&conn, 3, "mtp:tablet", true).unwrap();
         insert_episode(&conn, 11, 1, &eligible, 8);
         insert_episode(&conn, 12, 2, &youtube, 7);
         insert_episode(&conn, 13, 3, &unselected, 10);
@@ -268,7 +274,7 @@ mod tests {
         )
         .unwrap();
 
-        let candidates = super::query_candidates(&conn).unwrap();
+        let candidates = super::query_candidates_for_device(&conn, "mtp:pixel").unwrap();
 
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].episode_id, 11);
@@ -287,6 +293,7 @@ mod tests {
         let legacy = downloads.path().join("legacy.mp3");
         std::fs::write(&legacy, b"legacy").unwrap();
         insert_subscription(&conn, 1, "rss", true, "Legacy Show");
+        crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:pixel", true).unwrap();
         insert_episode(&conn, 11, 1, &legacy, 6);
         conn.execute(
             "UPDATE podcast_episodes SET downloaded_bytes = NULL WHERE id = 11",
@@ -294,7 +301,7 @@ mod tests {
         )
         .unwrap();
 
-        let candidates = query_candidates(&conn).unwrap();
+        let candidates = query_candidates_for_device(&conn, "mtp:pixel").unwrap();
 
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].size_bytes, 6);
@@ -348,6 +355,42 @@ mod tests {
         assert_eq!(plan.to_copy, [source]);
         assert_eq!(plan.to_remove, ["Old/9-Old.mp3".to_string()]);
         assert_eq!(plan.bytes, 100);
+    }
+
+    #[test]
+    fn pod_8_each_device_receives_only_its_selected_rss_subscriptions() {
+        let conn = migrated();
+        let downloads = tempfile::tempdir().unwrap();
+        let phone_episode = downloads.path().join("phone.mp3");
+        let tablet_episode = downloads.path().join("tablet.mp3");
+        std::fs::write(&phone_episode, b"phone").unwrap();
+        std::fs::write(&tablet_episode, b"tablet").unwrap();
+        insert_subscription(&conn, 1, "rss", false, "Phone Show");
+        insert_subscription(&conn, 2, "rss", false, "Tablet Show");
+        insert_episode(&conn, 11, 1, &phone_episode, 5);
+        insert_episode(&conn, 12, 2, &tablet_episode, 6);
+        crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:phone", true).unwrap();
+        crate::podcasts::phone_sync::set_device_enabled(&conn, 2, "mtp:tablet", true).unwrap();
+
+        let phone = query_candidates_for_device(&conn, "mtp:phone").unwrap();
+        let tablet = query_candidates_for_device(&conn, "mtp:tablet").unwrap();
+        let unselected = query_candidates_for_device(&conn, "mtp:other").unwrap();
+
+        assert_eq!(
+            phone
+                .iter()
+                .map(|episode| episode.episode_id)
+                .collect::<Vec<_>>(),
+            [11]
+        );
+        assert_eq!(
+            tablet
+                .iter()
+                .map(|episode| episode.episode_id)
+                .collect::<Vec<_>>(),
+            [12]
+        );
+        assert!(unselected.is_empty());
     }
 
     #[test]

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use rusqlite::{params, Connection};
 
 use super::config::CleanupPolicy;
-use super::PodcastError;
+use super::{PodcastError, PodcastKind};
 
 const PLAYED_RETENTION_SECONDS: i64 = 7 * 24 * 60 * 60;
 const KEEP_EPISODES_PER_SHOW: usize = 5;
@@ -115,6 +115,14 @@ pub fn extension_from_url(value: &str) -> &'static str {
         Some("flac") => "flac",
         Some("wav") => "wav",
         _ => "audio",
+    }
+}
+
+#[must_use]
+pub fn extension_for(kind: PodcastKind, audio_url: &str) -> &'static str {
+    match kind {
+        PodcastKind::Rss => extension_from_url(audio_url),
+        PodcastKind::Youtube => "opus",
     }
 }
 
@@ -412,6 +420,24 @@ mod tests {
         assert!(matches!(result, Err(PodcastError::Transport(_))));
         assert!(!destination.exists());
         assert!(!part.exists());
+    }
+
+    #[test]
+    fn pod_10_youtube_downloads_have_one_shared_opus_extension_policy() {
+        assert_eq!(
+            super::extension_for(
+                super::super::PodcastKind::Youtube,
+                "https://www.youtube.com/watch?v=video"
+            ),
+            "opus"
+        );
+        assert_eq!(
+            super::extension_for(
+                super::super::PodcastKind::Rss,
+                "https://example.test/episode.mp3"
+            ),
+            "mp3"
+        );
     }
 
     #[test]

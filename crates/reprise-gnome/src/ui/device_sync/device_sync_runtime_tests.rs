@@ -700,7 +700,9 @@ fn pod_8_planned_sync_copies_selected_rss_and_removes_only_podcast_inventory() {
                  (id, kind, feed_url, title, auto_download, sync_to_phone, added_at)
                  VALUES
                  (10, 'rss', 'https://example.test/rss', 'RSS Show', 0, 1, 1),
-                 (11, 'youtube', 'https://example.test/youtube', 'Video', 0, 1, 1);",
+                 (11, 'youtube', 'https://example.test/youtube', 'Video', 0, 1, 1);
+                 INSERT INTO podcast_subscription_devices (subscription_id, device_id)
+                 VALUES (10, 'a'), (11, 'a');",
             )
             .unwrap();
         conn.borrow()

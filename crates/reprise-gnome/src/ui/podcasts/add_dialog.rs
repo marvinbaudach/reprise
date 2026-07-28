@@ -498,12 +498,19 @@ fn append_candidate(
     button.add_css_class("suggested-action");
     let conn = conn.clone();
     let on_added = on_added.clone();
+    let row_weak = row.downgrade();
+    let parent_weak = parent.downgrade();
     button.connect_clicked(move |button| {
-        match subscribe(&conn.borrow(), &candidate, auto_download_default, None) {
+        let result = {
+            let conn = conn.borrow();
+            subscribe(&conn, &candidate, auto_download_default, None)
+        };
+        match result {
             Ok(_) => {
-                button.set_label("✓");
-                button.set_sensitive(false);
                 on_added(true);
+                if let (Some(parent), Some(row)) = (parent_weak.upgrade(), row_weak.upgrade()) {
+                    remove_candidate_result(&parent, &row);
+                }
             }
             Err(error) => button.set_tooltip_text(Some(&error.to_string())),
         }
@@ -550,18 +557,24 @@ fn append_preview(
     let conn = conn.clone();
     let on_added = on_added.clone();
     let preview_guids = preview.guids;
+    let parent_weak = parent.downgrade();
     subscribe_button.connect_clicked(move |button| {
         let baseline = baseline_for_import_choice(import.is_active(), &preview_guids);
-        match subscribe(
-            &conn.borrow(),
-            &candidate,
-            auto_download.is_active(),
-            baseline.as_deref(),
-        ) {
+        let result = {
+            let conn = conn.borrow();
+            subscribe(
+                &conn,
+                &candidate,
+                auto_download.is_active(),
+                baseline.as_deref(),
+            )
+        };
+        match result {
             Ok(_) => {
-                button.set_label("✓");
-                button.set_sensitive(false);
                 on_added(import.is_active());
+                if let Some(parent) = parent_weak.upgrade() {
+                    clear(&parent);
+                }
             }
             Err(error) => button.set_tooltip_text(Some(&error.to_string())),
         }
@@ -636,6 +649,16 @@ fn clear(parent: &gtk4::Box) {
     }
 }
 
+fn remove_candidate_result(parent: &gtk4::Box, row: &gtk4::Box) {
+    parent.remove(row);
+    if parent
+        .first_child()
+        .is_some_and(|child| child.next_sibling().is_none())
+    {
+        clear(parent);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -688,6 +711,43 @@ mod tests {
         assert!(image.has_css_class("reprise-source-image"));
         assert_eq!(image.width_request(), 40);
         assert_eq!(image.height_request(), 40);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn src_5_successful_subscribe_removes_the_result_row() {
+        gtk4::init().unwrap();
+        let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
+        let parent = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        let on_added: OnAdded = Rc::new(|_| {});
+        append_heading(&parent, strings::PODCAST_APPLE_RESULTS);
+        append_candidate(
+            &parent,
+            Candidate {
+                kind: PodcastKind::Rss,
+                title: "New show".into(),
+                subtitle: "Publisher".into(),
+                author: Some("Publisher".into()),
+                image_url: None,
+                url: "https://example.test/new-feed".into(),
+                identity_guids: Vec::new(),
+            },
+            &conn,
+            &on_added,
+            false,
+        );
+
+        let row = parent
+            .first_child()
+            .and_downcast::<gtk4::Box>()
+            .expect("candidate row");
+        let button = row
+            .last_child()
+            .and_downcast::<gtk4::Button>()
+            .expect("subscribe button");
+        button.emit_clicked();
+
+        assert!(parent.first_child().is_none());
     }
 
     #[test]

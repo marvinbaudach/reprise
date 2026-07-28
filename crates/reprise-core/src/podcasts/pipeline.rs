@@ -10,10 +10,23 @@ use super::http::Response;
 use super::store::FetchSuccess;
 use super::{PodcastError, PodcastKind, SubscriptionRow};
 
+#[path = "pipeline_load_more.rs"]
+mod load_more;
+pub use load_more::load_more_youtube;
+
 const MAX_AUTO_DOWNLOADS_PER_SUBSCRIPTION: usize = 3;
+const OFFICIAL_YOUTUBE_LIMIT: usize = 15;
 
 pub trait FeedFetcher {
     fn fetch(&self, subscription: &SubscriptionRow) -> Result<Response, PodcastError>;
+    fn fetch_url(
+        &self,
+        url: &str,
+        etag: Option<&str>,
+        last_modified: Option<&str>,
+    ) -> Result<Response, PodcastError> {
+        super::http::get_conditional(url, etag, last_modified)
+    }
     fn download(&self, url: &str, destination: &Path) -> Result<(), PodcastError>;
 
     fn download_with_progress(
@@ -28,6 +41,9 @@ pub trait FeedFetcher {
 
 pub trait YoutubeFetcher {
     fn list(&self, url: &str, limit: usize) -> Result<ParsedFeed, PodcastError>;
+    fn list_range(&self, url: &str, end: usize) -> Result<ParsedFeed, PodcastError> {
+        self.list(url, end)
+    }
     fn download(&self, url: &str, destination: &Path) -> Result<(), PodcastError>;
 
     fn download_with_progress(
@@ -74,6 +90,12 @@ impl YoutubeFetcher for super::ytdlp::YtDlp {
 
     fn download(&self, url: &str, destination: &Path) -> Result<(), PodcastError> {
         super::ytdlp::YtDlp::download(self, url, destination)
+    }
+
+    fn list_range(&self, url: &str, end: usize) -> Result<ParsedFeed, PodcastError> {
+        let listing =
+            super::youtube::project_playlist(super::ytdlp::YtDlp::list_range(self, url, end)?);
+        Ok(project_youtube_feed(listing, end))
     }
 
     fn download_with_progress(
@@ -123,6 +145,10 @@ pub struct RefreshSummary {
 pub enum PipelineError {
     #[error("database error: {0}")]
     Database(#[from] rusqlite::Error),
+    #[error(transparent)]
+    Provider(#[from] PodcastError),
+    #[error("YouTube channel is no longer available")]
+    YoutubeSourceUnavailable,
     #[error(transparent)]
     Cleanup(#[from] super::downloads::CleanupError),
 }
@@ -212,9 +238,25 @@ fn refresh_to_root_with_download_progress(
                 let feed = super::feed::parse_feed(&response.body, config.import_count)?;
                 Ok((feed, Some(response)))
             }),
-            PodcastKind::Youtube if config.youtube_enabled => youtube_fetcher
-                .list(&subscription.feed_url, config.import_count)
-                .map(|feed| (feed, None)),
+            PodcastKind::Youtube if config.youtube_enabled => {
+                if let Some(feed_url) = super::youtube::long_form_feed_url(&subscription.feed_url) {
+                    feed_fetcher
+                        .fetch_url(
+                            &feed_url,
+                            subscription.etag.as_deref(),
+                            subscription.last_modified.as_deref(),
+                        )
+                        .and_then(|response| {
+                            let feed =
+                                super::feed::parse_feed(&response.body, OFFICIAL_YOUTUBE_LIMIT)?;
+                            Ok((feed, Some(response)))
+                        })
+                } else {
+                    youtube_fetcher
+                        .list(&subscription.feed_url, config.import_count)
+                        .map(|feed| (feed, None))
+                }
+            }
             PodcastKind::Youtube => Err(PodcastError::YtDlp(
                 "YouTube sources are disabled".to_owned(),
             )),
@@ -290,10 +332,8 @@ fn refresh_to_root_with_download_progress(
                 if episode.downloaded_path.is_some() {
                     continue;
                 }
-                let extension = match subscription.kind {
-                    PodcastKind::Rss => super::downloads::extension_from_url(&episode.audio_url),
-                    PodcastKind::Youtube => "audio",
-                };
+                let extension =
+                    super::downloads::extension_for(subscription.kind, &episode.audio_url);
                 let destination = super::downloads::download_path(
                     download_root,
                     &subscription.feed_url,
@@ -450,6 +490,10 @@ fn database_seed(conn: &Connection) -> Result<String, rusqlite::Error> {
 }
 
 #[cfg(test)]
+#[path = "pipeline_youtube_tests.rs"]
+mod youtube_tests;
+
+#[cfg(test)]
 mod tests {
     use std::cell::RefCell;
 
@@ -485,18 +529,6 @@ mod tests {
         fn download(&self, _: &str, _: &Path) -> Result<(), PodcastError> {
             Err(PodcastError::YtDlp("unexpected YouTube call".to_owned()))
         }
-    }
-
-    #[test]
-    fn untitled_youtube_listing_uses_a_non_url_fallback_title() {
-        let feed = project_youtube_feed(
-            super::super::youtube::YoutubeListing {
-                title: None,
-                episodes: Vec::new(),
-            },
-            25,
-        );
-        assert_eq!(feed.title, "YouTube source");
     }
 
     struct PartialFailureFeed {

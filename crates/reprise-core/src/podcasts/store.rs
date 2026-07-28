@@ -65,7 +65,7 @@ fn add_or_restore_in(
     subscription: &NewSubscription,
     now: i64,
 ) -> Result<i64, rusqlite::Error> {
-    conn.query_row(
+    let subscription_id = conn.query_row(
         "INSERT INTO podcast_subscriptions
          (kind, feed_url, title, author, image_url, auto_download, added_at, removed_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL)
@@ -91,7 +91,14 @@ fn add_or_restore_in(
             now
         ],
         |row| row.get(0),
-    )
+    )?;
+    if subscription.kind == PodcastKind::Youtube {
+        conn.execute(
+            "DELETE FROM podcast_subscription_devices WHERE subscription_id = ?1",
+            [subscription_id],
+        )?;
+    }
+    Ok(subscription_id)
 }
 
 pub fn active_subscriptions(conn: &Connection) -> Result<Vec<SubscriptionRow>, rusqlite::Error> {
@@ -238,7 +245,7 @@ pub fn upsert_episode(
            title = excluded.title,
            audio_url = excluded.audio_url,
            page_url = excluded.page_url,
-           published_at = excluded.published_at,
+           published_at = COALESCE(excluded.published_at, podcast_episodes.published_at),
            duration_secs = COALESCE(excluded.duration_secs, podcast_episodes.duration_secs)
          RETURNING id",
         params![

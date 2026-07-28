@@ -2460,7 +2460,6 @@ Hörstatistik.
 - **POD-1** [aktiv] [core] — Episodenstatus ist pure Ableitung: Played
   genau bei gesetztem `played_at`, sonst Resume bei `position_ms > 0`, sonst
   New. Ein Episodenende setzt Played und löscht die Position.
-  standardmäßig nach Datum absteigend.
 - **POD-2** [aktiv] [core] — RSS ist die Daten-API:
   enclosure/guid/pubDate/itunes:duration; GUID, ersatzweise Enclosure-URL und
   bei YouTube die Video-ID, ist die einzige Episodenidentität für Dedupe,
@@ -2494,16 +2493,24 @@ Hörstatistik.
   verschwunden. Fortschritt bleibt transient; abgeschlossene Pfade und
   Größen werden gemeinsam persistiert und gemeinsam gelöscht.
 - **POD-8** [aktiv] [core] [gtk] — Nur heruntergeladene Episoden aus
-  explizit ausgewählten RSS-Abos sind für Android-Sync geeignet. Sie landen
+  explizit pro stabiler Geräteidentität ausgewählten RSS-Abos sind für
+  Android-Sync geeignet. Die Auswahlsteuerung erscheint nur bei mindestens
+  einem aktuell verbundenen MTP-Gerät: ein Gerät wird direkt adressiert, bei
+  mehreren Geräten lassen sich die Ziele unabhängig wählen. Episoden landen
   unter `Podcasts/Reprise/<Show>/`; YouTube-Quellen werden unabhängig von
   ihrem Downloadzustand nie auf ein Gerät synchronisiert. Musik-Playlisten
   bleiben unverändert unter `Music/Reprise`.
-- **POD-9** [aktiv] [core] [gtk] — Episodenstatus ist pure Ableitung:
-  Played genau bei gesetztem `played_at`, sonst Resume bei `position_ms > 0`,
-  sonst New. Ein Episodenende setzt Played und löscht die Position. Innerhalb
-  jeder nach stabiler Subscription-ID gruppierten Show beziehungsweise jedes
-  Kanals stehen Episoden nach Datum absteigend; die Gruppenzeile zeigt
+- **POD-9** [aktiv] [core] [gtk] — Innerhalb jeder nach stabiler
+  Subscription-ID gruppierten Show beziehungsweise jedes Kanals stehen
+  Episoden mit den Statussemantiken aus POD-1 nach Datum absteigend; die
+  Gruppenzeile zeigt
   Gesamt-/Ungespielt-Zahl, neueste Episode und lokale Datenmenge.
+- **POD-10** [aktiv] [core] [gtk] — Die YouTube-Kanalseite beginnt mit
+  höchstens den zehn neuesten Long-Form-Einträgen aus dem offiziellen
+  schlüssellosen UULF-Feed und hält Shorts standardmäßig verborgen.
+  „Load more" erweitert denselben Kanal einmalig über die yt-dlp-Providergrenze
+  bis Eintrag 40. Auswahl und Mehrfach-Download beziehungsweise -Entfernen
+  bleiben kanalgebunden; jede Zeile zeigt den Downloadzustand aus POD-7.
 - **RAD-1** [aktiv] [gtk] — Nur die aktuell verbundene Station ist in der
   Tabelle akzentuiert; ihr Zustandsicon, Name, Now-playing und Zeilentint
   wechseln gemeinsam. Alle anderen sowie eine präsentierte, aber getrennte

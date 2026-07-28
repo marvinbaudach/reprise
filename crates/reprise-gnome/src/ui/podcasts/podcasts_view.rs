@@ -14,11 +14,14 @@ use rusqlite::Connection;
 
 use super::add_dialog;
 use super::podcasts_context_menu;
+use super::podcasts_device_sync::PodcastDeviceSyncState;
 use super::podcasts_download_presentation::refreshed_download_states;
 use super::podcasts_empty_state::{podcasts_empty_state_for, PodcastsEmptyState};
 use super::podcasts_filter_bar::PodcastsFilterBar;
 use super::podcasts_groups;
-use super::podcasts_presentation::{active as filter_active, apply_filter, sort_newest_first};
+use super::podcasts_presentation::{
+    active as filter_active, apply_filter, rendered_source_groups, sort_newest_first,
+};
 use super::podcasts_removal::{
     download_commit_action, download_request_allowed, download_toggle_action, DownloadCommitAction,
     DownloadToggleAction, KeptDownloads,
@@ -29,7 +32,11 @@ use super::podcasts_worker::{
     podcasts_response_channel, request_generation, PodcastsOperation, PodcastsRequest,
     PodcastsRuntime, PodcastsWorkerResult,
 };
+use super::youtube_channel_detail::YoutubeChannelDetail;
 use crate::ui::strings;
+
+#[path = "podcasts_view_requests.rs"]
+mod requests;
 
 type OnEpisodeActivated = Rc<dyn Fn(EpisodeRow)>;
 type OnSubscriptionRemoved = Rc<dyn Fn(i64)>;
@@ -68,19 +75,21 @@ impl PodcastsCallbacks {
 
 pub(in crate::ui) struct PodcastsView {
     root: gtk4::Box,
-    conn: Rc<RefCell<Connection>>,
+    pub(super) conn: Rc<RefCell<Connection>>,
     runtime: Rc<PodcastsRuntime>,
     callbacks: PodcastsCallbacks,
     kind: PodcastKind,
     filter_bar: Rc<PodcastsFilterBar>,
     group_container: gtk4::Box,
     stack: gtk4::Stack,
+    youtube_detail: Rc<YoutubeChannelDetail>,
     status: adw::StatusPage,
     status_button: gtk4::Button,
     footer_status: gtk4::Label,
     footer_spinner: gtk4::Spinner,
     groups: RefCell<Vec<SourceGroup>>,
     rows: RefCell<Vec<EpisodeRow>>,
+    pub(super) device_sync: PodcastDeviceSyncState,
     expanded_sources: Rc<RefCell<BTreeSet<i64>>>,
     download_states: Rc<RefCell<BTreeMap<i64, DownloadState>>>,
     download_widgets: RefCell<BTreeMap<i64, podcasts_groups::DownloadRowWidgets>>,
@@ -117,6 +126,8 @@ impl PodcastsView {
         let stack = gtk4::Stack::new();
         stack.add_named(&list_box, Some("list"));
         stack.add_named(&status, Some("status"));
+        let youtube_detail = YoutubeChannelDetail::new(&stack);
+        stack.add_named(youtube_detail.widget(), Some("youtube-channel"));
         stack.set_vexpand(true);
 
         let footer = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
@@ -150,12 +161,14 @@ impl PodcastsView {
             filter_bar,
             group_container,
             stack,
+            youtube_detail,
             status,
             status_button,
             footer_status,
             footer_spinner,
             groups: RefCell::new(Vec::new()),
             rows: RefCell::new(Vec::new()),
+            device_sync: PodcastDeviceSyncState::default(),
             expanded_sources: Rc::new(RefCell::new(BTreeSet::new())),
             download_states: Rc::new(RefCell::new(BTreeMap::new())),
             download_widgets: RefCell::new(BTreeMap::new()),
@@ -183,13 +196,23 @@ impl PodcastsView {
         self.render();
     }
 
+    pub(in crate::ui) fn bind_device_sync(
+        self: &Rc<Self>,
+        runtime: &Rc<crate::ui::device_sync_runtime::DeviceSyncRuntime>,
+    ) {
+        super::podcasts_device_sync::bind(self, runtime);
+    }
+
     pub(in crate::ui) fn refresh(&self) {
         let result = {
             let conn = self.conn.borrow();
-            podcasts::query::list_source_groups(&conn, self.kind)
+            podcasts::query::list_source_groups(&conn, self.kind).and_then(|groups| {
+                let selected = PodcastDeviceSyncState::selected_for_groups(&conn, &groups)?;
+                Ok((groups, selected))
+            })
         };
         match result {
-            Ok(groups) => {
+            Ok((groups, selected_devices)) => {
                 let mut rows = groups
                     .iter()
                     .flat_map(|group| group.episodes.iter().cloned())
@@ -200,6 +223,7 @@ impl PodcastsView {
                     .replace(refreshed_download_states(&rows, &previous));
                 self.groups.replace(groups);
                 self.rows.replace(rows);
+                self.device_sync.replace_selected(selected_devices);
                 let last_updated = {
                     let conn = self.conn.borrow();
                     last_updated_text(&conn)
@@ -209,65 +233,6 @@ impl PodcastsView {
             }
             Err(error) => self.footer_status.set_text(&error.to_string()),
         }
-    }
-
-    pub(in crate::ui) fn request_refresh(self: &Rc<Self>, force: bool) -> bool {
-        let operation = PodcastsOperation::Refresh { force };
-        let generation = request_generation(self.generation.get(), operation);
-        self.generation.set(generation);
-        let (response, receiver) = podcasts_response_channel();
-        let queued = self.runtime.request(PodcastsRequest {
-            generation,
-            operation,
-            response,
-        });
-        if !queued {
-            return false;
-        }
-        self.footer_spinner.start();
-        self.footer_status
-            .set_text(&strings::text(strings::PODCAST_REFRESHING));
-        let weak = Rc::downgrade(self);
-        glib::spawn_future_local(async move {
-            while let Ok(response) = receiver.recv().await {
-                let Some(view) = weak.upgrade() else {
-                    return;
-                };
-                if view.generation.get() != response.generation {
-                    return;
-                }
-                match response.result {
-                    Ok(PodcastsWorkerResult::DownloadState { episode_id, state }) => {
-                        let known = {
-                            let rows = view.rows.borrow();
-                            rows.iter().any(|row| row.id == episode_id)
-                        };
-                        if !known {
-                            view.refresh();
-                            view.footer_status
-                                .set_text(&strings::text(strings::PODCAST_REFRESHING));
-                        }
-                        view.set_download_state(episode_id, &state);
-                    }
-                    Ok(PodcastsWorkerResult::Refreshed(_)) => {
-                        view.footer_spinner.stop();
-                        view.refresh();
-                        (view.callbacks.on_sidebar_refresh)();
-                        break;
-                    }
-                    Err(error) => {
-                        view.footer_spinner.stop();
-                        view.refresh();
-                        view.footer_status.set_text(&format!(
-                            "{} · {error}",
-                            strings::text(strings::PODCAST_REFRESH_FAILED)
-                        ));
-                        break;
-                    }
-                }
-            }
-        });
-        true
     }
 
     fn wire_controls(self: &Rc<Self>, refresh_button: &gtk4::Button) {
@@ -352,25 +317,21 @@ impl PodcastsView {
             podcasts_context_menu::ACTION_UNSUBSCRIBE,
             PodcastsView::unsubscribe,
         );
-        self.add_target_action(
-            &group,
-            podcasts_context_menu::ACTION_TOGGLE_PHONE_SYNC,
-            |view, subscription_id| {
-                let Ok(Some(subscription)) =
-                    podcasts::store::subscription(&view.conn.borrow(), subscription_id)
-                else {
-                    return;
-                };
-                if let Err(error) = podcasts::store::set_sync_to_phone(
-                    &view.conn.borrow(),
-                    subscription_id,
-                    !subscription.sync_to_phone,
-                ) {
-                    view.show_error(&error.to_string());
-                }
-                view.refresh();
-            },
-        );
+        super::podcasts_device_sync::install_action(self, &group);
+        let load_more =
+            gio::SimpleAction::new("load-more", Some(&<(i64, u32)>::static_variant_type()));
+        let weak = Rc::downgrade(self);
+        load_more.connect_activate(move |_, target| {
+            let Some(view) = weak.upgrade() else { return };
+            let Some((subscription_id, end)) =
+                target.and_then(gtk4::glib::Variant::get::<(i64, u32)>)
+            else {
+                return;
+            };
+            view.request_load_more(subscription_id, end as usize);
+        });
+        group.add_action(&load_more);
+        self.youtube_detail.install_actions(&group);
         let add = gio::SimpleAction::new("open-add", None);
         let weak = Rc::downgrade(self);
         add.connect_activate(move |_, _| {
@@ -415,10 +376,12 @@ impl PodcastsView {
         });
     }
 
-    fn render(&self) {
+    pub(super) fn render(&self) {
         let rows = self.rows.borrow().clone();
         let groups = self.groups.borrow().clone();
         let download_states = self.download_states.borrow().clone();
+        let connected_devices = self.device_sync.connected();
+        let selected_devices = self.device_sync.selected();
         let filter = self.filter_bar.filter();
         let filtered = apply_filter(&rows, &filter);
         let total = rows.len();
@@ -426,25 +389,17 @@ impl PodcastsView {
             .iter()
             .map(|group| group.title.clone())
             .collect::<Vec<_>>();
-        let rendered_groups = groups
-            .iter()
-            .filter_map(|group| {
-                let episodes = apply_filter(&group.episodes, &filter);
-                if episodes.is_empty() && filter_active(&filter) {
-                    None
-                } else {
-                    let mut rendered = group.clone();
-                    rendered.episodes = episodes;
-                    Some(rendered)
-                }
-            })
-            .collect::<Vec<_>>();
+        let rendered_groups = rendered_source_groups(&groups, &filter, &download_states);
+        self.youtube_detail
+            .update(&rendered_groups, &download_states);
         let download_widgets = podcasts_groups::replace(
             &self.group_container,
             &rendered_groups,
             self.playing_episode.get(),
             &self.expanded_sources,
             &download_states,
+            &connected_devices,
+            &selected_devices,
         );
         self.download_widgets.replace(download_widgets);
         self.filter_bar
@@ -487,6 +442,9 @@ impl PodcastsView {
                 self.status_button.set_label(&button);
                 self.stack.set_visible_child_name("status");
             }
+        }
+        if self.youtube_detail.is_active() {
+            self.stack.set_visible_child_name("youtube-channel");
         }
     }
 
@@ -556,6 +514,7 @@ impl PodcastsView {
                         }
                     }
                     Ok(PodcastsWorkerResult::Refreshed(_)) => {}
+                    Ok(PodcastsWorkerResult::LoadedMore { .. }) => {}
                     Err(error) => {
                         view.set_download_state(
                             episode_id,
@@ -579,6 +538,7 @@ impl PodcastsView {
         if let Some(widgets) = widgets {
             podcasts_groups::update_download_state(&widgets, state);
         }
+        self.youtube_detail.update_download_state(episode_id, state);
     }
 
     fn unsubscribe(self: &Rc<Self>, subscription_id: i64) {
@@ -760,7 +720,7 @@ impl PodcastsView {
         overlay.add_toast(toast);
     }
 
-    fn show_error(&self, message: &str) {
+    pub(super) fn show_error(&self, message: &str) {
         if let Some(overlay) = self.toast_overlay.upgrade() {
             let toast = adw::Toast::new(message);
             toast.set_priority(adw::ToastPriority::High);

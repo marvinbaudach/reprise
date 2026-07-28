@@ -305,10 +305,13 @@ mod tests {
         assert!(available.update_sensitive);
         assert!(available.subtitle.contains("2026.07.26"));
 
-        let missing = ytdlp_display_state(true, Err("yt-dlp is not installed".to_owned()));
+        let missing = ytdlp_display_state(
+            true,
+            Err("YouTube component is unavailable — reinstall or repair Reprise".to_owned()),
+        );
         assert!(missing.youtube_enabled);
         assert!(!missing.update_sensitive);
-        assert!(missing.subtitle.contains("not installed"));
+        assert!(missing.subtitle.contains("repair Reprise"));
 
         let disabled = ytdlp_display_state(false, Err("missing".to_owned()));
         assert!(!disabled.youtube_enabled);

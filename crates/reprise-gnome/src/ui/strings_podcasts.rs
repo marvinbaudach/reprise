@@ -66,7 +66,7 @@ pub const PODCAST_SEARCH_FAILED: &str = N_!("Could not search for podcasts");
 pub const PODCAST_SUBSCRIBE_FAILED: &str = N_!("Could not subscribe to this podcast");
 pub const PODCAST_ALREADY_SUBSCRIBED: &str = N_!("This source is already subscribed");
 pub const PODCAST_YTDLP_MISSING: &str =
-    N_!("yt-dlp is not installed — YouTube sources are disabled");
+    N_!("YouTube component is unavailable — reinstall or repair Reprise");
 pub const PODCAST_YTDLP_BLOCKED: &str =
     N_!("YouTube blocked the request — update yt-dlp (Preferences)");
 pub const PODCAST_RESOLVING_AUDIO: &str = N_!("Resolving audio…");
@@ -87,6 +87,15 @@ pub const PODCAST_MORE_SOURCE_OPTIONS: &str = N_!("More source options");
 pub const PODCAST_UNSUBSCRIBE: &str = N_!("Unsubscribe");
 pub const PODCAST_SYNC_PHONE: &str = N_!("Sync downloaded episodes to phone");
 pub const PODCAST_STOP_SYNC_PHONE: &str = N_!("Stop syncing episodes to phone");
+pub const PODCAST_SYNC_DEVICES: &str = N_!("Sync downloaded episodes to devices");
+pub const YOUTUBE_LOAD_MORE: &str = N_!("Load more");
+pub const YOUTUBE_LOADING_MORE: &str = N_!("Loading more videos…");
+pub const YOUTUBE_BACK_TO_CHANNELS: &str = N_!("Back to YouTube channels");
+pub const YOUTUBE_HIDE_SHORTS: &str = N_!("Hide Shorts");
+pub const YOUTUBE_OPEN_CHANNEL: &str = N_!("Open channel");
+pub const YOUTUBE_SELECT_EPISODES: &str = N_!("Select episodes");
+pub const YOUTUBE_DOWNLOAD_SELECTED: &str = N_!("Download selected");
+pub const YOUTUBE_REMOVE_SELECTED: &str = N_!("Remove selected");
 pub const PODCAST_UNDO: &str = N_!("Undo");
 pub const PODCAST_DELETE_FILES: &str = N_!("Delete files");
 pub const PODCAST_PLAY_NEXT_EPISODE: &str = N_!("Play next episode");
@@ -151,6 +160,34 @@ pub fn podcast_show_all_count(count: usize) -> String {
 
 pub fn podcast_unsubscribe_from(show: &str) -> String {
     formatted(N_!("Unsubscribe from “{show}”"), &[("show", show)])
+}
+
+pub fn podcast_sync_device(device: &str) -> String {
+    formatted(
+        N_!("Sync downloaded episodes to “{device}”"),
+        &[("device", device)],
+    )
+}
+
+pub fn youtube_channel_window(shown: usize, available: usize) -> String {
+    formatted(
+        N_!("Latest {shown} of {available} videos"),
+        &[
+            ("shown", &shown.to_string()),
+            ("available", &available.to_string()),
+        ],
+    )
+}
+
+pub fn youtube_selected_count(count: usize) -> String {
+    formatted(N_!("{count} selected"), &[("count", &count.to_string())])
+}
+
+pub fn podcast_stop_sync_device(device: &str) -> String {
+    formatted(
+        N_!("Stop syncing episodes to “{device}”"),
+        &[("device", device)],
+    )
 }
 
 pub fn podcast_removed_episode(title: &str) -> String {

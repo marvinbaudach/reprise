@@ -1,0 +1,126 @@
+use super::*;
+
+#[test]
+fn src_3_radio_add_dialog_submits_search_or_url_through_one_field() {
+    assert_eq!(
+        classify_input("ambient radio"),
+        AddInput::Search("ambient radio".into())
+    );
+    assert_eq!(
+        classify_input("https://radio.example/listen.pls"),
+        AddInput::Url("https://radio.example/listen.pls".into())
+    );
+    assert_eq!(classify_input("   "), AddInput::Empty);
+}
+
+#[test]
+fn dialog_state_ignores_stale_results_and_requires_a_valid_preview() {
+    let state = AddDialogState::default();
+    let (state, first) = state.begin(&AddInput::Search("metal".into()));
+    let (state, second) = state.begin(&AddInput::Url("https://radio.example/live".into()));
+    assert!(matches!(state.phase, AddDialogPhase::Previewing));
+    assert_eq!(
+        state.clone().accept(first, AddResult::Search(Vec::new())),
+        state
+    );
+    let preview = StationPreview::manual("Example", "https://radio.example/live");
+    let accepted = state.accept(second, AddResult::Preview(preview));
+    assert!(matches!(accepted.phase, AddDialogPhase::Preview(_)));
+    assert!(accepted.can_confirm());
+}
+
+#[test]
+fn src_5_radio_search_hides_existing_favorites() {
+    let candidates = vec![
+        StationCandidate {
+            uuid: "existing".into(),
+            name: "Existing".into(),
+            url_resolved: "https://radio.test/existing/".into(),
+            codec: None,
+            bitrate_kbps: None,
+            country_code: None,
+            genre: None,
+            tags: Vec::new(),
+            votes: 1,
+            favicon_url: Some("https://radio.test/existing.png".into()),
+        },
+        StationCandidate {
+            uuid: "new".into(),
+            name: "New".into(),
+            url_resolved: "https://radio.test/new".into(),
+            codec: None,
+            bitrate_kbps: None,
+            country_code: None,
+            genre: None,
+            tags: Vec::new(),
+            votes: 2,
+            favicon_url: Some("https://radio.test/new.png".into()),
+        },
+    ];
+
+    let visible = filter_new_stations(
+        candidates,
+        &[("existing".into(), "https://radio.test/existing".into())],
+    );
+
+    assert_eq!(visible.len(), 1);
+    assert_eq!(visible[0].uuid, "new");
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_5_successful_radio_add_removes_the_result_row() {
+    gtk4::init().unwrap();
+    let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
+    let dialog = RadioAddDialog::new(conn, || {});
+    dialog.render_results(vec![StationCandidate {
+        uuid: "new".into(),
+        name: "New".into(),
+        url_resolved: "https://radio.test/new".into(),
+        codec: None,
+        bitrate_kbps: None,
+        country_code: None,
+        genre: None,
+        tags: Vec::new(),
+        votes: 2,
+        favicon_url: None,
+    }]);
+
+    let row = dialog
+        .widgets
+        .results
+        .first_child()
+        .and_downcast::<gtk4::ListBoxRow>()
+        .expect("search result row");
+    let button = row
+        .child()
+        .and_downcast::<gtk4::Box>()
+        .and_then(|content| content.last_child())
+        .and_downcast::<gtk4::Button>()
+        .expect("add button");
+    button.emit_clicked();
+
+    assert!(dialog.widgets.results.first_child().is_none());
+}
+
+#[test]
+fn src_5_radio_url_preview_hides_an_existing_favorite() {
+    let preview = StationPreview::manual("Existing", "https://radio.test/live/");
+    assert!(preview_is_favorite(
+        &preview,
+        &[("".into(), "https://radio.test/live".into())]
+    ));
+}
+
+#[test]
+fn rad_4_playlist_type_is_detected_without_consuming_a_live_stream() {
+    assert_eq!(
+        playlist_kind("https://radio.example/listen.PLS?token=1"),
+        Some(reprise_core::radio::playlist::PlaylistKind::Pls)
+    );
+    assert_eq!(
+        playlist_kind("https://radio.example/listen.m3u8"),
+        Some(reprise_core::radio::playlist::PlaylistKind::M3u)
+    );
+    assert_eq!(playlist_kind("https://radio.example/live"), None);
+}

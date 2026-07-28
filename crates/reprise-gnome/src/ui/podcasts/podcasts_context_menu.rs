@@ -24,6 +24,50 @@ const ACTIONS: &[&str] = &[
     ACTION_TOGGLE_PHONE_SYNC,
 ];
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct PodcastSyncDevice {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct DeviceSyncChoice {
+    pub device: PodcastSyncDevice,
+    pub selected: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum SyncControl {
+    Hidden,
+    Direct {
+        device: PodcastSyncDevice,
+        selected: bool,
+    },
+    Chooser(Vec<DeviceSyncChoice>),
+}
+
+pub(super) fn sync_control(
+    devices: &[PodcastSyncDevice],
+    selected_device_ids: &[String],
+) -> SyncControl {
+    let choices = devices
+        .iter()
+        .cloned()
+        .map(|device| {
+            let selected = selected_device_ids.contains(&device.id);
+            DeviceSyncChoice { device, selected }
+        })
+        .collect::<Vec<_>>();
+    match choices.as_slice() {
+        [] => SyncControl::Hidden,
+        [choice] => SyncControl::Direct {
+            device: choice.device.clone(),
+            selected: choice.selected,
+        },
+        _ => SyncControl::Chooser(choices),
+    }
+}
+
 pub(super) fn build(row: &EpisodeRow) -> gio::Menu {
     let menu = gio::Menu::new();
     let primary = gio::Menu::new();
@@ -77,19 +121,31 @@ pub(super) fn build(row: &EpisodeRow) -> gio::Menu {
     menu
 }
 
-pub(super) fn build_source(group: &SourceGroup) -> gio::Menu {
+pub(super) fn build_source(
+    group: &SourceGroup,
+    devices: &[PodcastSyncDevice],
+    selected_device_ids: &[String],
+) -> gio::Menu {
     let menu = gio::Menu::new();
     if group.kind == PodcastKind::Rss {
-        append_targeted(
-            &menu,
-            if group.sync_to_phone {
-                strings::PODCAST_STOP_SYNC_PHONE
-            } else {
-                strings::PODCAST_SYNC_PHONE
-            },
-            ACTION_TOGGLE_PHONE_SYNC,
-            group.subscription_id,
-        );
+        match sync_control(devices, selected_device_ids) {
+            SyncControl::Hidden => {}
+            SyncControl::Direct { device, selected } => append_device_targeted(
+                &menu,
+                group.subscription_id,
+                &DeviceSyncChoice { device, selected },
+            ),
+            SyncControl::Chooser(choices) => {
+                let choices_menu = gio::Menu::new();
+                for choice in choices {
+                    append_device_targeted(&choices_menu, group.subscription_id, &choice);
+                }
+                menu.append_submenu(
+                    Some(&strings::text(strings::PODCAST_SYNC_DEVICES)),
+                    &choices_menu,
+                );
+            }
+        }
     }
     append_targeted(
         &menu,
@@ -98,6 +154,20 @@ pub(super) fn build_source(group: &SourceGroup) -> gio::Menu {
         group.subscription_id,
     );
     menu
+}
+
+fn append_device_targeted(menu: &gio::Menu, subscription_id: i64, choice: &DeviceSyncChoice) {
+    let label = if choice.selected {
+        strings::podcast_stop_sync_device(&choice.device.name)
+    } else {
+        strings::podcast_sync_device(&choice.device.name)
+    };
+    let item = gio::MenuItem::new(Some(&label), None);
+    item.set_action_and_target_value(
+        Some(&format!("podcasts.{ACTION_TOGGLE_PHONE_SYNC}")),
+        Some(&(subscription_id, choice.device.id.clone()).to_variant()),
+    );
+    menu.append_item(&item);
 }
 
 fn append_targeted(menu: &gio::Menu, label: &str, action: &str, id: i64) {
@@ -185,7 +255,63 @@ mod tests {
             sync_to_phone: false,
             episodes: Vec::new(),
         };
-        let menu = build_source(&group);
+        let menu = build_source(
+            &group,
+            &[PodcastSyncDevice {
+                id: "mtp:pixel".into(),
+                name: "Pixel".into(),
+            }],
+            &[],
+        );
         assert_eq!(menu.n_items(), 1);
+    }
+
+    #[test]
+    fn pod_8_sync_control_is_hidden_without_a_connected_device() {
+        assert_eq!(sync_control(&[], &[]), SyncControl::Hidden);
+    }
+
+    #[test]
+    fn pod_8_one_connected_device_is_targeted_directly() {
+        let devices = [PodcastSyncDevice {
+            id: "mtp:pixel".into(),
+            name: "Pixel".into(),
+        }];
+
+        assert_eq!(
+            sync_control(&devices, &["mtp:pixel".into()]),
+            SyncControl::Direct {
+                device: devices[0].clone(),
+                selected: true,
+            }
+        );
+    }
+
+    #[test]
+    fn pod_8_multiple_connected_devices_offer_independent_choices() {
+        let devices = [
+            PodcastSyncDevice {
+                id: "mtp:phone".into(),
+                name: "Phone".into(),
+            },
+            PodcastSyncDevice {
+                id: "mtp:tablet".into(),
+                name: "Tablet".into(),
+            },
+        ];
+
+        assert_eq!(
+            sync_control(&devices, &["mtp:tablet".into()]),
+            SyncControl::Chooser(vec![
+                DeviceSyncChoice {
+                    device: devices[0].clone(),
+                    selected: false,
+                },
+                DeviceSyncChoice {
+                    device: devices[1].clone(),
+                    selected: true,
+                },
+            ])
+        );
     }
 }

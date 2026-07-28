@@ -83,6 +83,17 @@ CREATE INDEX idx_podcast_episodes_unplayed
   WHERE played_at IS NULL AND removed_at IS NULL;
 "#;
 
+const SCHEMA_V37: &str = r#"
+CREATE TABLE IF NOT EXISTS podcast_subscription_devices (
+  subscription_id INTEGER NOT NULL
+                  REFERENCES podcast_subscriptions(id) ON DELETE CASCADE,
+  device_id       TEXT NOT NULL CHECK(length(trim(device_id)) > 0),
+  PRIMARY KEY(subscription_id, device_id)
+);
+CREATE INDEX IF NOT EXISTS idx_podcast_subscription_devices_device
+  ON podcast_subscription_devices(device_id);
+"#;
+
 pub(crate) fn migrate_v32(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version >= 32 {
@@ -149,6 +160,17 @@ pub(crate) fn migrate_v36(conn: &Connection) -> Result<(), rusqlite::Error> {
         )?;
     }
     transaction.pragma_update(None, "user_version", 36)?;
+    transaction.commit()
+}
+
+pub(crate) fn migrate_v37(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= 37 {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    transaction.execute_batch(SCHEMA_V37)?;
+    transaction.pragma_update(None, "user_version", 37)?;
     transaction.commit()
 }
 

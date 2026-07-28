@@ -465,13 +465,30 @@ impl RadioAddDialog {
             let add = gtk4::Button::with_label(&strings::text(strings::RADIO_ADD_RESULT));
             let conn = self.conn.clone();
             let on_added = self.on_added.clone();
+            let row_weak = row.downgrade();
+            let results_weak = self.widgets.results.downgrade();
+            let status_weak = self.widgets.status.downgrade();
             add.connect_clicked(move |button| {
                 let station = station_from_candidate(candidate.clone());
-                match radio::station::add_or_restore(&conn.borrow(), &station, now_unix()) {
+                let result = {
+                    let conn = conn.borrow();
+                    radio::station::add_or_restore(&conn, &station, now_unix())
+                };
+                match result {
                     Ok(_) => {
-                        button.set_icon_name("object-select-symbolic");
-                        button.set_sensitive(false);
                         on_added();
+                        if let (Some(results), Some(row)) =
+                            (results_weak.upgrade(), row_weak.upgrade())
+                        {
+                            results.remove(&row);
+                            if let Some(status) = status_weak.upgrade() {
+                                status.set_text(&format!(
+                                    "{} · {}",
+                                    strings::text(strings::RADIO_RESULTS_HEADER),
+                                    strings::radio_results_count(child_count(&results))
+                                ));
+                            }
+                        }
                     }
                     Err(error) => {
                         tracing::warn!(%error, "could not add radio search result");
@@ -536,11 +553,11 @@ impl RadioAddDialog {
             AddDialogPhase::Preview(preview) => preview.clone(),
             _ => return,
         };
-        match radio::station::add_or_restore(
-            &self.conn.borrow(),
-            &preview.into_new_station(),
-            now_unix(),
-        ) {
+        let result = {
+            let conn = self.conn.borrow();
+            radio::station::add_or_restore(&conn, &preview.into_new_station(), now_unix())
+        };
+        match result {
             Ok(_) => {
                 (self.on_added)();
                 self.widgets.dialog.close();
@@ -586,6 +603,16 @@ fn preview_is_favorite(preview: &StationPreview, favorites: &[(String, String)])
 
 fn normalized_stream_url(value: &str) -> String {
     value.trim().trim_end_matches('/').to_owned()
+}
+
+fn child_count(widget: &impl IsA<gtk4::Widget>) -> usize {
+    let mut count = 0;
+    let mut child = widget.as_ref().first_child();
+    while let Some(current) = child {
+        count += 1;
+        child = current.next_sibling();
+    }
+    count
 }
 
 fn station_from_candidate(candidate: StationCandidate) -> radio::station::NewStation {
@@ -643,95 +670,5 @@ fn now_unix() -> i64 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn src_3_radio_add_dialog_submits_search_or_url_through_one_field() {
-        assert_eq!(
-            classify_input("ambient radio"),
-            AddInput::Search("ambient radio".into())
-        );
-        assert_eq!(
-            classify_input("https://radio.example/listen.pls"),
-            AddInput::Url("https://radio.example/listen.pls".into())
-        );
-        assert_eq!(classify_input("   "), AddInput::Empty);
-    }
-
-    #[test]
-    fn dialog_state_ignores_stale_results_and_requires_a_valid_preview() {
-        let state = AddDialogState::default();
-        let (state, first) = state.begin(&AddInput::Search("metal".into()));
-        let (state, second) = state.begin(&AddInput::Url("https://radio.example/live".into()));
-        assert!(matches!(state.phase, AddDialogPhase::Previewing));
-        assert_eq!(
-            state.clone().accept(first, AddResult::Search(Vec::new())),
-            state
-        );
-        let preview = StationPreview::manual("Example", "https://radio.example/live");
-        let accepted = state.accept(second, AddResult::Preview(preview));
-        assert!(matches!(accepted.phase, AddDialogPhase::Preview(_)));
-        assert!(accepted.can_confirm());
-    }
-
-    #[test]
-    fn src_5_radio_search_hides_existing_favorites() {
-        let candidates = vec![
-            StationCandidate {
-                uuid: "existing".into(),
-                name: "Existing".into(),
-                url_resolved: "https://radio.test/existing/".into(),
-                codec: None,
-                bitrate_kbps: None,
-                country_code: None,
-                genre: None,
-                tags: Vec::new(),
-                votes: 1,
-                favicon_url: Some("https://radio.test/existing.png".into()),
-            },
-            StationCandidate {
-                uuid: "new".into(),
-                name: "New".into(),
-                url_resolved: "https://radio.test/new".into(),
-                codec: None,
-                bitrate_kbps: None,
-                country_code: None,
-                genre: None,
-                tags: Vec::new(),
-                votes: 2,
-                favicon_url: Some("https://radio.test/new.png".into()),
-            },
-        ];
-
-        let visible = filter_new_stations(
-            candidates,
-            &[("existing".into(), "https://radio.test/existing".into())],
-        );
-
-        assert_eq!(visible.len(), 1);
-        assert_eq!(visible[0].uuid, "new");
-    }
-
-    #[test]
-    fn src_5_radio_url_preview_hides_an_existing_favorite() {
-        let preview = StationPreview::manual("Existing", "https://radio.test/live/");
-        assert!(preview_is_favorite(
-            &preview,
-            &[("".into(), "https://radio.test/live".into())]
-        ));
-    }
-
-    #[test]
-    fn rad_4_playlist_type_is_detected_without_consuming_a_live_stream() {
-        assert_eq!(
-            playlist_kind("https://radio.example/listen.PLS?token=1"),
-            Some(reprise_core::radio::playlist::PlaylistKind::Pls)
-        );
-        assert_eq!(
-            playlist_kind("https://radio.example/listen.m3u8"),
-            Some(reprise_core::radio::playlist::PlaylistKind::M3u)
-        );
-        assert_eq!(playlist_kind("https://radio.example/live"), None);
-    }
-}
+#[path = "add_dialog_tests.rs"]
+mod tests;

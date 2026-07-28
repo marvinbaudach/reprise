@@ -12,11 +12,14 @@ use std::{
 
 use serde_json::Value;
 
+#[path = "ytdlp_range.rs"]
+mod range;
+
 pub use super::ytdlp_search::YtDlpChannel;
 use super::PodcastError;
 
 const BLOCKED_MESSAGE: &str = "YouTube blocked the request — update yt-dlp (Preferences)";
-const MISSING_MESSAGE: &str = "yt-dlp is not installed — YouTube sources are disabled";
+const MISSING_MESSAGE: &str = "YouTube component is unavailable — reinstall or repair Reprise";
 const GENERIC_FAILURE: &str = "yt-dlp failed";
 const MAX_ERROR_CHARS: usize = 180;
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
@@ -456,6 +459,10 @@ fn duration_secs(value: Option<&Value>) -> Option<i64> {
 }
 
 #[cfg(all(test, unix))]
+#[path = "ytdlp_range_tests.rs"]
+mod range_tests;
+
+#[cfg(all(test, unix))]
 mod tests {
     use std::{
         ffi::OsStr,
@@ -636,6 +643,8 @@ printf '%s\n' '{"url":"https://googlevideo.test/ephemeral","duration":93.4}'
                 "-f",
                 "bestaudio",
                 "-x",
+                "--audio-format",
+                "opus",
                 "--no-part",
                 "--print",
                 "after_move:filepath",
@@ -695,7 +704,7 @@ printf '%s\n' '{"url":"https://googlevideo.test/ephemeral","duration":93.4}'
             YtDlp::with_binary_and_timeouts("/definitely/missing/reprise-yt-dlp", short_timeouts());
         assert_eq!(
             missing.probe_version().unwrap_err().to_string(),
-            "yt-dlp is not installed — YouTube sources are disabled"
+            "YouTube component is unavailable — reinstall or repair Reprise"
         );
 
         let directory = tempfile::tempdir().unwrap();

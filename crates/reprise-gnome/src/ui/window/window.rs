@@ -389,6 +389,7 @@ pub fn build(
         player.as_ref(),
         &sidebar,
         &content_stack,
+        &device_sync,
     );
     let podcasts_view = source_views.podcasts;
     let youtube_view = source_views.youtube;

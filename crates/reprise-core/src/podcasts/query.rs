@@ -16,7 +16,7 @@ pub fn list_episodes(conn: &Connection) -> Result<Vec<EpisodeRow>, rusqlite::Err
          FROM podcast_episodes e
          JOIN podcast_subscriptions s ON s.id = e.subscription_id
          WHERE s.removed_at IS NULL AND e.removed_at IS NULL
-         ORDER BY e.published_at IS NULL, e.published_at DESC, e.first_seen_at DESC, e.id DESC"
+         ORDER BY e.published_at IS NULL, e.published_at DESC, e.first_seen_at DESC, e.id ASC"
     );
     let mut statement = conn.prepare(&sql)?;
     let rows = statement.query_map([], super::store::episode_from_row)?;
@@ -34,7 +34,7 @@ pub fn episodes_for_subscription(
          WHERE s.removed_at IS NULL
            AND e.removed_at IS NULL
            AND e.subscription_id = ?1
-         ORDER BY e.published_at IS NULL, e.published_at DESC, e.first_seen_at DESC, e.id DESC"
+         ORDER BY e.published_at IS NULL, e.published_at DESC, e.first_seen_at DESC, e.id ASC"
     );
     let mut statement = conn.prepare(&sql)?;
     let rows = statement.query_map([subscription_id], super::store::episode_from_row)?;
@@ -229,6 +229,34 @@ mod tests {
             .map(|episode| episode.title)
             .collect::<Vec<_>>();
         assert_eq!(titles, ["newer", "older", "undated"]);
+    }
+
+    #[test]
+    fn pod_10_undated_youtube_batch_keeps_provider_source_order() {
+        let conn = conn();
+        let show = store::add_or_restore(
+            &conn,
+            &NewSubscription {
+                kind: PodcastKind::Youtube,
+                feed_url: "https://www.youtube.com/channel/UCorder".into(),
+                title: "Channel".into(),
+                author: None,
+                image_url: None,
+                auto_download: false,
+            },
+            1,
+        )
+        .unwrap();
+        add_episode(&conn, show, "newest", None);
+        add_episode(&conn, show, "older", None);
+
+        let titles = episodes_for_subscription(&conn, show)
+            .unwrap()
+            .into_iter()
+            .map(|episode| episode.title)
+            .collect::<Vec<_>>();
+
+        assert_eq!(titles, ["newest", "older"]);
     }
 
     #[test]

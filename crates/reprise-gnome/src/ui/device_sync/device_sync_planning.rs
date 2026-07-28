@@ -2,7 +2,9 @@
 
 use std::rc::Rc;
 
-use reprise_core::device_sync::podcasts::{build_plan, query_candidates, PodcastDeviceFile};
+use reprise_core::device_sync::podcasts::{
+    build_plan, query_candidates_for_device, PodcastDeviceFile,
+};
 use reprise_core::device_sync::settings::{load_device_files, resolve_selection_track_ids};
 use reprise_core::device_sync::transfer::build_transfer_plan_with_inventory;
 use reprise_core::device_sync::{compute_delta, SyncCandidate};
@@ -50,7 +52,8 @@ impl DeviceSyncRuntime {
                 })
                 .collect::<Vec<_>>();
             let delta = compute_delta(&candidates, &files, settings.remove_deleted);
-            let podcast_candidates = query_candidates(&conn).map_err(|error| error.to_string())?;
+            let podcast_candidates =
+                query_candidates_for_device(&conn, device_id).map_err(|error| error.to_string())?;
             let podcast_plan = build_plan(
                 podcast_candidates,
                 &podcast_inventory,
