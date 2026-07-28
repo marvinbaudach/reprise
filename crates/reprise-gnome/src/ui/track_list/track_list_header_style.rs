@@ -219,14 +219,7 @@ mod tests {
         }
 
         fn settle_transitions() {
-            let done = std::rc::Rc::new(std::cell::Cell::new(false));
-            let done_setter = done.clone();
-            gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
-                done_setter.set(true);
-            });
-            while !done.get() {
-                gtk4::glib::MainContext::default().iteration(true);
-            }
+            crate::ui::test_settle::settle_for(std::time::Duration::from_millis(300));
         }
 
         gtk4::init().unwrap();
