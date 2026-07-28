@@ -86,28 +86,9 @@ pub struct DeviceView {
     pub page: SyncPageState,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SyncStep {
-    Removing,
-    Transcoding,
-    Copying,
-    WritingPlaylists,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PlannedSyncPhase {
-    Idle,
-    ComputingDelta,
-    Syncing {
-        step: SyncStep,
-        done: u32,
-        total: u32,
-        current_track: String,
-        bytes_done: u64,
-        bytes_total: u64,
-    },
-    Finishing,
-}
+// The run's phase is produced by the core state machine, not by this
+// frontend. Re-exported here so the widgets keep their existing import path.
+pub use reprise_core::device_sync::{PlannedSyncPhase, SyncStep};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SyncFailure {
