@@ -104,7 +104,24 @@ for surface in reprise-cli reprise-mcp; do
   fi
 done
 
-for surface in reprise-cli reprise-mcp reprise-stems; do
+# The runtime is the toolkit-neutral owner of playback, queue, device runs and
+# jobs (plan §9.1). Its whole reason to exist is that a second frontend — or no
+# frontend at all — can drive the application, so a GTK/GLib/GStreamer/zbus edge
+# here would silently re-couple it to the GNOME process. It may depend on the
+# engine and the protocol contract, and on nothing else in the workspace.
+runtime_tree=$(run_dependency_probe "reprise-runtime all features" \
+  -p reprise-runtime --all-features -e normal --prefix none --target all) || exit 1
+stray_runtime_edge=$(printf '%s\n' "$runtime_tree" \
+  | rg '^reprise-[a-z-]+ ' \
+  | rg -v '^(reprise-core|reprise-runtime|reprise-runtime-protocol) ' \
+  | sort -u || true)
+if [[ -n "$stray_runtime_edge" ]]; then
+  echo "reprise-runtime may depend on reprise-core and reprise-runtime-protocol only; found:" >&2
+  echo "$stray_runtime_edge" >&2
+  exit 1
+fi
+
+for surface in reprise-cli reprise-mcp reprise-stems reprise-runtime; do
   surface_tree=$(run_dependency_probe "$surface default build" \
     -p "$surface" -e normal --target all) || exit 1
   if printf '%s\n' "$surface_tree" | rg --quiet "$banned_dependency_families"; then

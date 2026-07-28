@@ -2711,6 +2711,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "reprise-runtime"
+version = "0.1.1"
+dependencies = [
+ "reprise-core",
+ "reprise-runtime-protocol",
+ "rusqlite",
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
 name = "reprise-runtime-protocol"
 version = "0.1.1"
 dependencies = [
