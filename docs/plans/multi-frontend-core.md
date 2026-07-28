@@ -1222,8 +1222,12 @@ schließt statt gefühlt.
 Zwei Regeln über der Tabelle, beide bindend:
 
 1. **Kein Feature-Schalter darf ein zentrales Tool verschwinden lassen.**
-   Playback- und Geräte-Tools sind im Default-Build. Ein Agent, der ein Tool
-   nicht sieht, kann nicht wissen, dass es existiert.
+   Ein Agent, der ein Tool nicht sieht, kann nicht wissen, dass es existiert.
+   Heute ist das noch verletzt: Playback- und Geräte-Tools hängen am
+   `mpris`-Feature von `reprise-mcp`, das nicht im Default-Build steckt —
+   `scripts/check-architecture.sh` verlangt derzeit sogar, dass der
+   Default-Build allein von `reprise-core` abhängt. Task 3.4 löst beides
+   gemeinsam auf; bis dahin ist diese Regel ein Ziel, kein Ist-Zustand.
 2. **Dateisystemverändernde Mutationen sind standardmäßig aus**, brauchen
    eine eigene persistierte Capability und geben niemals lokale Pfade zurück.
 
