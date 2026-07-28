@@ -491,10 +491,9 @@ mod display_tests {
             .column_view
             .scroll_to(position, None, gtk4::ListScrollFlags::FOCUS, None);
         let adjustment = track_list.shared.column_view.vadjustment().unwrap();
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
-        while adjustment.value() <= 0.0 && std::time::Instant::now() < deadline {
-            gtk4::glib::MainContext::default().iteration(false);
-        }
+        crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
+            adjustment.value() > 0.0
+        });
         let before = adjustment.value();
         assert!(
             before > 0.0,
@@ -512,10 +511,9 @@ mod display_tests {
         let mut save_anchor = opened_anchor;
         save_anchor.selected_ids = vec![written_id];
         reload_with_anchor(&track_list.shared, &save_anchor);
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
-        while (adjustment.value() - before).abs() >= 1.0 && std::time::Instant::now() < deadline {
-            gtk4::glib::MainContext::default().iteration(false);
-        }
+        crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
+            (adjustment.value() - before).abs() < 1.0
+        });
 
         assert!(
             adjustment.value() > 0.0,

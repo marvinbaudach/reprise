@@ -141,7 +141,7 @@ mod tests {
         // result without requiring a second reload.
         status.refresh(&conn);
         status.set_enabled(true);
-        while gtk4::glib::MainContext::default().iteration(false) {}
+        crate::ui::test_settle::settle_until_mapped(status.widget());
 
         assert!(status.widget().is_mapped(), "status surface is mapped");
         assert!(status.widget().height() > 0, "status surface is allocated");
