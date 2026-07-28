@@ -12,6 +12,7 @@ use crate::library::m3u::{M3uEntry, M3uExportEntry};
 pub mod cap;
 pub mod category_diff;
 pub mod delta;
+pub mod device_view;
 pub mod m3u;
 pub mod mirror;
 pub mod page;
@@ -31,6 +32,11 @@ pub use category_diff::{
     CategoryDiff, CategoryReading, SyncBalance,
 };
 pub use delta::{compute_delta, SyncCandidate, SyncDelta};
+pub use device_view::{
+    category_bytes, project_category_content_row, project_category_segments,
+    project_contents_state, project_device_category_reading, CategoryContentRow, CategorySegments,
+    DeviceContentsState,
+};
 pub use mirror::{
     plan_mirror, DesiredManagedFile, ManagedDeviceFile, ManagedRemoval, MirrorBlocker, MirrorInput,
     MirrorPlan, MirrorPlaylistProjection, MirrorPlaylistSnapshot, MirrorReplacement, MirrorTrack,

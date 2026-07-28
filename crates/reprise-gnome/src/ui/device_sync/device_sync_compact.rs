@@ -5,9 +5,10 @@ use reprise_core::device_sync::podcasts::{
 use reprise_core::device_sync::settings::{
     load_device_files, load_device_playlists, resolve_selection_track_ids, save_settings,
 };
+use reprise_core::device_sync::targets::{load_target, save_target};
 use reprise_core::device_sync::{
     load_mirror_playlist_snapshots, load_or_create_targets, project_storage, project_sync_page,
-    DeviceSelection, SelectionSource, SyncPageInput, SyncTargetKind, TransferProfile,
+    DeviceSelection, SelectionSource, SyncPageInput, SyncTarget, SyncTargetKind, TransferProfile,
 };
 
 use super::*;
@@ -72,6 +73,65 @@ impl DeviceSyncRuntime {
         self.update_settings(settings)
     }
 
+    /// "Remove from phone when deleted or unsubscribed here" (design 7a).
+    /// Genuinely per-device, unlike the sync rules 7b's Preferences block
+    /// owns — see `db_device_sync::migrate_v44`'s doc comment.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn set_remove_deleted(
+        self: &Rc<Self>,
+        device_id: &str,
+        remove_deleted: bool,
+    ) -> Result<(), String> {
+        let mut settings = self.settings_for_update(device_id)?;
+        settings.remove_deleted = remove_deleted;
+        self.update_settings(settings)
+    }
+
+    /// "Sync automatically when this phone connects" (design 7a) — likewise
+    /// per-device.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn set_sync_automatically(
+        self: &Rc<Self>,
+        device_id: &str,
+        sync_automatically: bool,
+    ) -> Result<(), String> {
+        let mut settings = self.settings_for_update(device_id)?;
+        settings.sync_automatically = sync_automatically;
+        self.update_settings(settings)
+    }
+
+    /// `MTP-18`'s one per-device toggle exposed by the Content section
+    /// (`MTP-28`): whether this device's slot for `kind` is active at all.
+    /// Independent of the global "sync this content type" rule (7b), which
+    /// is not built yet — see `device_view::project_device_category_reading`.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn set_target_enabled(
+        self: &Rc<Self>,
+        device_id: &str,
+        kind: SyncTargetKind,
+        enabled: bool,
+    ) -> Result<(), String> {
+        {
+            let devices = self.device_states.borrow();
+            let device = devices
+                .iter()
+                .find(|device| device.descriptor.id == device_id)
+                .ok_or_else(|| "device is not connected".to_string())?;
+            if device.is_busy() {
+                return Err("device synchronization is active".into());
+            }
+        }
+        let mut target = {
+            let conn = self.conn.borrow();
+            load_target(&conn, device_id, kind)
+                .map_err(|error| error.to_string())?
+                .unwrap_or_else(|| SyncTarget::default_for(kind))
+        };
+        target.enabled = enabled;
+        save_target(&self.conn.borrow(), device_id, &target).map_err(|error| error.to_string())?;
+        self.recompute_delta(device_id)
+    }
+
     pub fn selection_options(&self) -> Result<Vec<DeviceSelectionOption>, String> {
         let conn = self.conn.borrow();
         let mut options = reprise_core::library::playlists::list(&conn)
@@ -130,7 +190,7 @@ impl DeviceSyncRuntime {
             DeviceSelection::Sources(sources) => sources.clone(),
             DeviceSelection::EntireLibrary => Vec::new(),
         };
-        let (mut projection, podcast_plan, youtube_plan, managed_track_count) = {
+        let (mut projection, podcast_plan, youtube_plan, managed_track_count, targets) = {
             let conn = self.conn.borrow();
             let files = load_device_files(&conn, device_id).map_err(|error| error.to_string())?;
             let managed_track_count = files.len();
@@ -171,7 +231,13 @@ impl DeviceSyncRuntime {
                 &youtube_inventory,
                 PodcastSyncSource::Youtube,
             );
-            (projection, podcast_plan, youtube_plan, managed_track_count)
+            (
+                projection,
+                podcast_plan,
+                youtube_plan,
+                managed_track_count,
+                targets,
+            )
         };
         projection.plan.transfer_bytes = projection
             .plan
@@ -196,6 +262,7 @@ impl DeviceSyncRuntime {
             device.mirror_plan = projection.plan;
             device.podcast_plan = podcast_plan;
             device.youtube_plan = youtube_plan;
+            device.targets = targets;
             device.page = projection.page;
             device.sync_phase = PlannedSyncPhase::Idle;
         }

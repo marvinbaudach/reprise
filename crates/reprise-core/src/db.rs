@@ -12,7 +12,7 @@ pub enum DbError {
     SchemaTooNew { found: i64, supported: i64 },
 }
 
-pub const SUPPORTED_SCHEMA_VERSION: i64 = 43;
+pub const SUPPORTED_SCHEMA_VERSION: i64 = 44;
 
 /// Default SQLite `busy_timeout` (milliseconds) every [`open`] connection is
 /// configured with: wait up to this long for a write lock instead of failing
@@ -688,6 +688,7 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
     crate::db_podcasts_radio::migrate_v41(conn)?;
     crate::db_device_sync::migrate_v42(conn)?;
     crate::db_podcasts_radio::migrate_v43(conn)?;
+    crate::db_device_sync::migrate_v44(conn)?;
     Ok(())
 }
 

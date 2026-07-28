@@ -147,6 +147,128 @@ pub fn file_size(bytes: u64) -> String {
     format_bytes(bytes)
 }
 
+/// Design 7a: "Playlists" / "YouTube audio" / "Podcast episodes" — the
+/// Content section and Next synchronization panel's category labels.
+pub fn category_name(kind: reprise_core::device_sync::SyncTargetKind) -> &'static str {
+    use reprise_core::device_sync::SyncTargetKind;
+    match kind {
+        SyncTargetKind::Playlists => "Playlists",
+        SyncTargetKind::YoutubeAudio => "YouTube audio",
+        SyncTargetKind::PodcastEpisodes => "Podcast episodes",
+    }
+}
+
+/// Design 7a's cap column: "Cap 8.0 GiB" or "No cap".
+pub fn cap_text(cap_bytes: Option<u64>) -> String {
+    cap_bytes.map_or_else(
+        || "No cap".to_string(),
+        |bytes| format!("Cap {}", file_size(bytes)),
+    )
+}
+
+/// `MTP-22`'s exact vocabulary for one category's `CategoryReading` — used
+/// both by the Next synchronization panel's per-category row and (via
+/// [`balance_text`]) by the sidebar card's full-balance tooltip, so the two
+/// surfaces never drift into different wording for the same numbers.
+pub fn category_reading_text(reading: &reprise_core::device_sync::CategoryReading) -> String {
+    use reprise_core::device_sync::CategoryReading;
+    match reading {
+        CategoryReading::SourceOff => "Source off".to_string(),
+        CategoryReading::UnavailableKeptOnPhone => "Unavailable, kept on phone".to_string(),
+        CategoryReading::Diff(diff) => balance_parts(
+            diff.files_to_copy,
+            diff.bytes_to_copy,
+            diff.files_to_remove,
+            diff.bytes_freed,
+            diff.playlists_rewritten,
+        ),
+    }
+}
+
+/// `MTP-22`'s aggregate balance line — "To copy 14 files · 2.6 GiB", "To
+/// remove 3 files · 148 MiB", "Playlists rewritten 2".
+pub fn balance_text(balance: &reprise_core::device_sync::SyncBalance) -> String {
+    balance_parts(
+        balance.files_to_copy,
+        balance.bytes_to_copy,
+        balance.files_to_remove,
+        balance.bytes_freed,
+        balance.playlists_rewritten,
+    )
+}
+
+fn balance_parts(
+    files_to_copy: usize,
+    bytes_to_copy: u64,
+    files_to_remove: usize,
+    bytes_freed: u64,
+    playlists_rewritten: usize,
+) -> String {
+    let mut parts = Vec::new();
+    if files_to_copy > 0 {
+        parts.push(format!(
+            "To copy {} · {}",
+            counted_files(files_to_copy),
+            file_size(bytes_to_copy)
+        ));
+    }
+    if files_to_remove > 0 {
+        parts.push(format!(
+            "To remove {} · {}",
+            counted_files(files_to_remove),
+            file_size(bytes_freed)
+        ));
+    }
+    if playlists_rewritten > 0 {
+        parts.push(format!("Playlists rewritten {playlists_rewritten}"));
+    }
+    if parts.is_empty() {
+        return "Nothing pending".to_string();
+    }
+    parts.join(" · ")
+}
+
+fn counted_files(count: usize) -> String {
+    if count == 1 {
+        "1 file".to_string()
+    } else {
+        format!("{count} files")
+    }
+}
+
+/// Design 7a: "175.0 GiB free → 172.4 GiB after this sync". Collapses to a
+/// single figure when this sync would not move the free-space needle at
+/// all, so a device with nothing pending never shows a pointless arrow to
+/// the same number.
+pub fn free_space_line(free_before_bytes: u64, free_after_bytes: u64) -> String {
+    if free_before_bytes == free_after_bytes {
+        return format!("{} free", file_size(free_before_bytes));
+    }
+    format!(
+        "{} free \u{2192} {} after this sync",
+        file_size(free_before_bytes),
+        file_size(free_after_bytes)
+    )
+}
+
+/// Design 7c: "synced 12 min ago". Coarse buckets are deliberate — the
+/// sidebar card is a glance surface, not a log.
+pub fn relative_time(
+    now: chrono::DateTime<chrono::Utc>,
+    then: chrono::DateTime<chrono::Utc>,
+) -> String {
+    let minutes = now.signed_duration_since(then).num_minutes().max(0);
+    if minutes < 1 {
+        "just now".to_string()
+    } else if minutes < 60 {
+        format!("{minutes} min ago")
+    } else if minutes < 24 * 60 {
+        format!("{} h ago", minutes / 60)
+    } else {
+        format!("{} d ago", minutes / (24 * 60))
+    }
+}
+
 fn format_bytes(bytes: u64) -> String {
     const KIB: f64 = 1_024.0;
     const MIB: f64 = KIB * 1_024.0;
@@ -166,6 +288,7 @@ fn format_bytes(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
 
     #[test]
     fn byte_formatting_uses_compact_binary_units() {
@@ -189,5 +312,77 @@ mod tests {
     #[test]
     fn track_progress_keeps_both_counts_visible() {
         assert_eq!(track_progress(2, 5), "2 of 5 tracks");
+    }
+
+    #[test]
+    fn mtp_22_balance_text_matches_the_designs_exact_vocabulary() {
+        use reprise_core::device_sync::SyncBalance;
+
+        let balance = SyncBalance {
+            files_to_copy: 14,
+            bytes_to_copy: (2.6 * 1024.0 * 1024.0 * 1024.0) as u64,
+            files_to_remove: 3,
+            bytes_freed: 148 * 1024 * 1024,
+            files_waiting_for_download: 0,
+            playlists_rewritten: 2,
+        };
+
+        assert_eq!(
+            balance_text(&balance),
+            "To copy 14 files · 2.6 GiB · To remove 3 files · 148.0 MiB · Playlists rewritten 2"
+        );
+    }
+
+    #[test]
+    fn mtp_22_deletions_only_balance_reads_frees_not_zero_bytes_to_copy() {
+        use reprise_core::device_sync::SyncBalance;
+
+        let balance = SyncBalance {
+            files_to_copy: 0,
+            bytes_to_copy: 0,
+            files_to_remove: 3,
+            bytes_freed: 148 * 1024 * 1024,
+            files_waiting_for_download: 0,
+            playlists_rewritten: 0,
+        };
+
+        assert_eq!(balance_text(&balance), "To remove 3 files · 148.0 MiB");
+    }
+
+    #[test]
+    fn cap_text_names_the_cap_or_says_there_is_none() {
+        assert_eq!(cap_text(Some(8 * 1024 * 1024 * 1024)), "Cap 8.0 GiB");
+        assert_eq!(cap_text(None), "No cap");
+    }
+
+    #[test]
+    fn free_space_line_shows_the_arrow_only_when_this_sync_moves_the_needle() {
+        const GIB: u64 = 1024 * 1024 * 1024;
+        assert_eq!(
+            free_space_line(175 * GIB, (172.4 * GIB as f64) as u64),
+            "175.0 GiB free \u{2192} 172.4 GiB after this sync"
+        );
+        assert_eq!(free_space_line(64 * GIB, 64 * GIB), "64.0 GiB free");
+    }
+
+    #[test]
+    fn relative_time_buckets_minutes_hours_and_days() {
+        let now = chrono::Utc.with_ymd_and_hms(2026, 7, 28, 12, 0, 0).unwrap();
+        assert_eq!(
+            relative_time(now, now - chrono::Duration::seconds(10)),
+            "just now"
+        );
+        assert_eq!(
+            relative_time(now, now - chrono::Duration::minutes(12)),
+            "12 min ago"
+        );
+        assert_eq!(
+            relative_time(now, now - chrono::Duration::hours(3)),
+            "3 h ago"
+        );
+        assert_eq!(
+            relative_time(now, now - chrono::Duration::days(2)),
+            "2 d ago"
+        );
     }
 }

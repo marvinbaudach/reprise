@@ -84,6 +84,46 @@ pub struct DeviceView {
     pub managed_track_count: usize,
     pub bytes_per_second: u64,
     pub page: SyncPageState,
+    /// `MTP-26` (design 7a): whether this device's on-device contents have
+    /// ever been successfully inspected this session.
+    pub contents_state: reprise_core::device_sync::device_view::DeviceContentsState,
+    /// `MTP-28` (design 7a): the Content section's three rows, in
+    /// `SyncTargetKind::ALL` order — target folder, per-device activation,
+    /// size on device, cap. Content is per-device only; the rules that
+    /// decide what is selected stay in Preferences (7b/7e).
+    pub content_rows: [reprise_core::device_sync::device_view::CategoryContentRow; 3],
+    /// `MTP-22`/`MTP-28`: each category's diff reading, same order as
+    /// [`Self::content_rows`] — the Next synchronization panel's rows and
+    /// the sidebar card's aggregate balance are both projected from this.
+    pub category_readings: [reprise_core::device_sync::CategoryReading; 3],
+    /// Bytes on this session's YouTube-audio and podcast-episode target
+    /// folders, summed once here so the storage bar (`MTP-27`) does not
+    /// re-walk the raw inventory lists.
+    pub youtube_bytes: u64,
+    pub podcast_bytes: u64,
+}
+
+/// Test-only "nothing known yet" baseline for the three category fields —
+/// shared so `DeviceView` test fixtures across the page, sidebar card and
+/// runtime tests do not each hand-roll the same `SyncTargetKind::ALL.map`.
+#[cfg(test)]
+pub(in crate::ui) fn empty_category_readings() -> [reprise_core::device_sync::CategoryReading; 3] {
+    reprise_core::device_sync::SyncTargetKind::ALL.map(|kind| {
+        let target = reprise_core::device_sync::SyncTarget::default_for(kind);
+        reprise_core::device_sync::device_view::project_device_category_reading(
+            &target,
+            reprise_core::device_sync::CategoryDiff::default(),
+        )
+    })
+}
+
+#[cfg(test)]
+pub(in crate::ui) fn empty_content_rows(
+) -> [reprise_core::device_sync::device_view::CategoryContentRow; 3] {
+    reprise_core::device_sync::SyncTargetKind::ALL.map(|kind| {
+        let target = reprise_core::device_sync::SyncTarget::default_for(kind);
+        reprise_core::device_sync::device_view::project_category_content_row(&target, 0)
+    })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

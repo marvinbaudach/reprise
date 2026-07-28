@@ -13,6 +13,15 @@ use reprise_core::device_sync::{
 use super::*;
 use crate::ui::device_sync_runtime::{DeviceView, PlannedSyncPhase, SyncFailure};
 
+fn no_op_content_actions() -> ContentPanelActions {
+    ContentPanelActions {
+        set_target_enabled: Rc::new(|_, _| {}),
+        set_remove_deleted: Rc::new(|_| {}),
+        set_sync_automatically: Rc::new(|_| {}),
+        scan_device: Rc::new(|| {}),
+    }
+}
+
 fn row() -> SyncPlaylistRow {
     SyncPlaylistRow {
         source: SelectionSource::Smart(7),
@@ -63,6 +72,7 @@ fn device() -> DeviceView {
             opus_bitrate: 0,
             ratings_back: false,
             remove_deleted: false,
+            sync_automatically: true,
         },
         sync_phase: PlannedSyncPhase::Idle,
         sync_error: None::<SyncFailure>,
@@ -70,6 +80,11 @@ fn device() -> DeviceView {
         verified_managed_track_count: None,
         managed_track_count: 0,
         bytes_per_second: 0,
+        contents_state: reprise_core::device_sync::device_view::DeviceContentsState::Verified,
+        content_rows: crate::ui::device_sync_runtime::empty_content_rows(),
+        category_readings: crate::ui::device_sync_runtime::empty_category_readings(),
+        youtube_bytes: 0,
+        podcast_bytes: 0,
         page: SyncPageState {
             profile_options: TransferProfile::ALL.to_vec(),
             profile: TransferProfile::Mp3(Mp3Quality::Kbps256),
@@ -409,6 +424,7 @@ fn mtp_14_full_page_uses_a_device_dashboard_instead_of_preferences_chrome() {
             cancel: Rc::new(|| {}),
             eject: Rc::new(|| {}),
         },
+        &no_op_content_actions(),
     );
 
     fn count_descendants<T: IsA<gtk4::Widget> + StaticType>(widget: &gtk4::Widget) -> usize {
@@ -473,6 +489,7 @@ fn mtp_15_sync_status_text_does_not_resize_the_playlist_workspace() {
             cancel: Rc::new(|| {}),
             eject: Rc::new(|| {}),
         },
+        &no_op_content_actions(),
     );
     let window = gtk4::Window::new();
     window.set_default_size(968, 800);
@@ -531,6 +548,7 @@ fn mtp_15_playlist_and_sync_overview_cards_share_the_same_edges() {
             cancel: Rc::new(|| {}),
             eject: Rc::new(|| {}),
         },
+        &no_op_content_actions(),
     );
     let window = gtk4::Window::new();
     window.set_default_size(968, 800);
@@ -555,8 +573,8 @@ fn mtp_15_playlist_and_sync_overview_cards_share_the_same_edges() {
     collect_cards(root.upcast_ref(), &mut cards);
     assert_eq!(
         cards.len(),
-        3,
-        "hero, playlist workspace and sync overview must be cards"
+        4,
+        "hero, playlist workspace, sync overview and the content panel must be cards"
     );
     let body = cards[1].parent().expect("shared dashboard body");
     assert_eq!(cards[2].parent().as_ref(), Some(&body));
@@ -600,7 +618,7 @@ fn mtp_13_full_page_renders_and_wires_only_the_playlist_mirroring_controls() {
     };
     let mut device = device();
     device.page.playlists[0].name = Some("Lorna Shore & Similar".into());
-    let (surface, root) = DeviceSyncPage::new(&device, actions);
+    let (surface, root) = DeviceSyncPage::new(&device, actions, &no_op_content_actions());
 
     assert_eq!(root.visible_child_name().as_deref(), Some("connected"));
     assert_eq!(

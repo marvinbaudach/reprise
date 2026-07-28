@@ -91,6 +91,7 @@ fn save_sources(conn: &Rc<RefCell<Connection>>, device_id: &str, sources: Vec<Se
             opus_bitrate: 0,
             ratings_back: false,
             remove_deleted: true,
+            sync_automatically: true,
         },
     )
     .unwrap();

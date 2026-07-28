@@ -1,6 +1,7 @@
 mod sidebar_activity_slot;
 mod sidebar_boundary_navigation;
 pub(in crate::ui) mod sidebar_device_card;
+mod sidebar_device_card_text;
 pub(crate) mod sidebar_dnd;
 pub(crate) mod sidebar_export;
 pub(in crate::ui) mod sidebar_issue_cleanup;

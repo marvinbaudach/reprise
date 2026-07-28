@@ -71,6 +71,7 @@ fn v36_migration_preserves_managed_files_without_the_track_cascade() {
         .unwrap();
     assert_eq!(version, 36);
     crate::db_device_sync::migrate_v37(&conn).unwrap();
+    crate::db_device_sync::migrate_v44(&conn).unwrap();
     let settings = load_or_create_settings(&conn, "phone", "ignored").unwrap();
     assert_eq!(settings.selection, DeviceSelection::Sources(Vec::new()));
     assert_eq!(settings.profile, TransferProfile::Mp3(Mp3Quality::Kbps256));
@@ -143,6 +144,7 @@ fn v36_migration_keeps_valid_playlist_selection_and_marks_it_unconfigured_only_w
 
     crate::db_device_sync::migrate_v36(&conn).unwrap();
     crate::db_device_sync::migrate_v37(&conn).unwrap();
+    crate::db_device_sync::migrate_v44(&conn).unwrap();
 
     assert_eq!(
         load_or_create_settings(&conn, "configured", "ignored")
@@ -178,6 +180,7 @@ fn v37_migration_preserves_existing_mp3_behavior_while_fresh_devices_default_to_
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
     assert_eq!(version, 37);
+    crate::db_device_sync::migrate_v44(&conn).unwrap();
     assert_eq!(
         load_or_create_settings(&conn, "existing", "ignored")
             .unwrap()

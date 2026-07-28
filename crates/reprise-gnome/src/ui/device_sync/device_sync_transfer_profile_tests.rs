@@ -18,6 +18,7 @@ fn save_profile(
             opus_bitrate: 0,
             ratings_back: false,
             remove_deleted: true,
+            sync_automatically: true,
         },
     )
     .unwrap();

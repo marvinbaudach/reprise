@@ -351,11 +351,12 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   erfolgreiche Rücklesen erzeugt den Abschluss-Toast und eine als „Verified“
   bezeichnete Seiten-Zusammenfassung mit der tatsächlich gefundenen Anzahl
   verwalteter Tracks; ein fehlgeschlagenes Rücklesen behauptet keinen Erfolg.
-- **MTP-11** [aktiv] [gtk] — Eine untätige Gerätekarte ohne gültige
-  Playlist-Auswahl zeigt keine Handlungsaufforderung. Ihre Detailzeile beginnt
-  mit dem bekannten Schreibstatus („Writable“, „Read-only“ oder „Write access
-  unknown“) und nennt den freien Speicher; echte Scan-, Sync-, Warn- oder
-  Auswahlfehler behalten stattdessen „Needs attention“.
+- **MTP-11** [ersetzt durch MTP-29] — beschrieb eine untätige Gerätekarte
+  ohne Playlist-Auswahl, die den Schreibstatus statt einer Handlungsaufforderung
+  zeigt. Turn 7c ersetzt diese eine Formulierung durch vier benannte Zustände
+  (`MTP-29`), von denen „Tap to scan device contents" die frühere
+  Schreibstatus-Zeile ablöst; echte Scan-, Sync-, Warn- oder Auswahlfehler
+  behalten weiterhin „Needs attention" (jetzt Teil von `MTP-29`).
 - **MTP-12** [aktiv] [gtk] — Jede verfügbare Playlist-Zeile auf der
   Geräte-Seite nennt ihren letzten auf diesem Gerät verifizierten
   Sync-Zeitpunkt in lokaler Zeit. Ohne belastbaren Zeitpunkt steht dort
@@ -489,6 +490,54 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   ausgeschlossener Kandidat wird dadurch automatisch zur gewöhnlichen
   Entfernung — kein separater Aufräumschritt nötig. Das Playlists-Ziel hat
   keinen Cap (`MTP-18`) und ist von dieser Regel nicht betroffen.
+- **MTP-26** [aktiv] [core] [gtk] — „Device contents never verified" ist ein
+  echter, prüfbarer Zustand (7a) statt einer stillen Tatsache in der
+  Scan-Buchführung: `NeverVerified`, `Verifying`, `Verified` und
+  `Failed(Grund)` sind vier eigenständige Werte, keine Varianten eines
+  Bool. Die Geräteansicht zeigt den Zustand mit einer Aktion „Scan device";
+  diese ist deaktiviert, solange bereits gescannt wird, bleibt aber nach
+  einem fehlgeschlagenen Scan aktiv, damit ein erneuter Versuch möglich ist.
+  Kein neuer Scan-Mechanismus: derselbe Inspect-Aufruf, der heute automatisch
+  vor jedem Sync läuft, wird hier nur sichtbar gemacht.
+- **MTP-27** [aktiv] [core] [gtk] — Der Speicherbalken der Geräteansicht ist
+  nach Kategorie segmentiert — Music, YouTube audio, Podcasts, Other — statt
+  nur Music/After-sync/Other/Free wie der bestehende Balken im kompakten
+  Sync-Dialog (`MTP-7`, unverändert). Die Bytes, die dieser Sync schreiben
+  wird, tragen ein eigenes, deutlich **schraffiertes** „Incoming this sync"-
+  Segment statt nur eines anderen Alpha-Werts. Eine Freispeicher-Zeile liest
+  „175.0 GiB free → 172.4 GiB after this sync"; bewegt der anstehende Sync
+  den Freispeicher nicht, entfällt der Pfeil und es steht nur „X free" da.
+  Bei unvollständiger oder inkonsistenter Kapazität verschwindet der Balken
+  komplett, statt einen Anteil zu erfinden — dieselbe Regel wie in `MTP-7`.
+- **MTP-28** [aktiv] [core] [gtk] — Die Geräteansicht bekommt eine
+  „Content"-Sektion mit einer Zeile je der drei benannten Ziele (`MTP-18`):
+  Zielordnerpfad, Auswahl-Zusammenfassung, Größe auf dem Gerät, Cap und ein
+  Schalter. **Nachtrag vom 2026-07-28 bindend:** die Auswahl-Zusammenfassung
+  und der Cap sind reine Anzeige der globalen Regeln aus Preferences (7b/7e)
+  — beschriftet „rules from Preferences" / „Same on all devices" — und hier
+  nicht editierbar; dafür gibt es keine zweite Bedienstelle. Der einzige
+  Schalter dieser Sektion ist `SyncTarget::enabled` (`MTP-18`) — ob dieses
+  Gerät für die Kategorie überhaupt einen aktiven Platz hat —, ausdrücklich
+  unterschieden von einer globalen „Sync diese Inhaltsart"-Regel, die noch
+  nicht existiert (7b-„Phone sync"-Block, siehe `T6-G1`). Ein „Next
+  synchronization"-Panel darunter liest pro Kategorie `MTP-22`s Zeile („To
+  copy 14 files · 2.6 GiB", „To remove 3 files · 148 MiB", „Source off",
+  „Unavailable, kept on phone") und trägt darunter dieselbe Bilanz aggregiert.
+  Der Zielordner selbst ist in dieser Aufgabe nur Text — der Browser zum
+  Ändern ist `MTP-18`s bereits notierte Zukunftsarbeit (7d, E6, nicht Teil
+  dieser Aufgabe).
+- **MTP-29** [aktiv] [gtk] — Die Sidebar-Gerätekarte nennt im Leerlauf eine
+  von genau vier Richtungssätzen statt einer einzelnen blockierenden Zahl:
+  „14 to copy · 2.6 GiB · 3 to remove", „3 to remove · frees 148 MiB" (0 B
+  bewegt ist hier korrekt und darf nicht nach „nichts zu tun" aussehen —
+  löst `MTP-11`s frühere Schreibstatus-Zeile mit ab), „Up to date · synced
+  12 min ago" und „Tap to scan device contents" bei `MTP-26`s
+  `NeverVerified`/`Failed`. Ein echtes Problem (Blocker außer
+  „nichts ausgewählt", Warnung, Scan- oder Sync-Fehler) geht davor und zeigt
+  weiterhin „Needs attention". Die Karte trägt nur den Leitsatz; die volle
+  Bilanz aus `MTP-22` steht im Tooltip. Während Sync/Finishing bleibt die
+  dünne Fortschrittslinie am Kartenboden (`MTP-6`, unverändert) die einzige
+  Statusanzeige.
 
 ## F. Einstellungen & Modale
 

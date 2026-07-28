@@ -10,10 +10,14 @@ use std::sync::Arc;
 
 use gtk4::gio;
 use gtk4::gio::prelude::*;
+use reprise_core::device_sync::device_view::{
+    category_bytes, project_category_content_row, project_contents_state,
+    project_device_category_reading,
+};
 use reprise_core::device_sync::settings::{load_or_create_settings, mark_device_playlists_synced};
 use reprise_core::device_sync::{
-    DeviceSelection, DeviceSettings, DeviceStorageInspection, DeviceStorageSnapshot,
-    ManagedDeviceFile, MirrorPlan, SelectionSource, SyncPageState,
+    CategoryDiff, DeviceSelection, DeviceSettings, DeviceStorageInspection, DeviceStorageSnapshot,
+    ManagedDeviceFile, MirrorPlan, SelectionSource, SyncPageState, SyncTarget, SyncTargetKind,
 };
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor, DeviceMonitor};
 use reprise_platform_linux::device_transfer::{TranscodeProfile, TranscodeRequest, TranscodedFile};
@@ -41,6 +45,15 @@ struct DeviceState {
     scanning: bool,
     scan_generation: u64,
     scan_error: Option<String>,
+    /// `MTP-26`: whether `backend.inspect` has ever completed successfully
+    /// for this device this session. Session-only by design — the
+    /// inventory itself is rebuilt live from MTP on every connect, so
+    /// "verified" cannot outlive the connection it was verified on.
+    ever_inspected: bool,
+    /// `MTP-18`: this device's three named sync targets, refreshed on every
+    /// `recompute_delta_silent`. Read-only from the sidebar/device view's
+    /// perspective outside of the folder picker (E6, not built here).
+    targets: [SyncTarget; 3],
     settings: DeviceSettings,
     sync_phase: PlannedSyncPhase,
     sync_error: Option<SyncFailure>,
@@ -70,6 +83,8 @@ impl DeviceState {
             scanning: false,
             scan_generation: 0,
             scan_error: None,
+            ever_inspected: false,
+            targets: SyncTargetKind::ALL.map(SyncTarget::default_for),
             settings,
             sync_phase: PlannedSyncPhase::ComputingDelta,
             sync_error: None,
@@ -97,6 +112,32 @@ impl DeviceState {
         if self.sync_phase == PlannedSyncPhase::Finishing {
             page.controls = reprise_core::device_sync::SyncPageControls::default();
         }
+        // `MTP-27`/`MTP-28`: one category diff per named target
+        // (`SyncTargetKind::ALL` order: Playlists, YoutubeAudio,
+        // PodcastEpisodes), each already computed by
+        // `recompute_delta_silent` — reused here, not recomputed.
+        // `files_waiting_for_download` stays 0: the selection engine that
+        // would populate it (`selection::select_episodes`, `MTP-20`/
+        // `MTP-21`) is not wired into the live per-device podcast/YouTube
+        // query pipeline yet (`podcasts::query_candidates_for_device` only
+        // ever returns already-downloaded episodes) — future UI work, not
+        // this one.
+        let category_diffs = [
+            CategoryDiff::from_mirror_plan(&self.mirror_plan),
+            CategoryDiff::from_podcast_plan(&self.youtube_plan, 0),
+            CategoryDiff::from_podcast_plan(&self.podcast_plan, 0),
+        ];
+        let category_readings = std::array::from_fn(|i| {
+            project_device_category_reading(&self.targets[i], category_diffs[i])
+        });
+        let device_bytes = [
+            category_bytes(&self.managed_files),
+            category_bytes(&self.youtube_files),
+            category_bytes(&self.podcast_files),
+        ];
+        let content_rows = std::array::from_fn(|i| {
+            project_category_content_row(&self.targets[i], device_bytes[i])
+        });
         DeviceView {
             id: self.descriptor.id.clone(),
             name: self.descriptor.name.clone(),
@@ -112,6 +153,15 @@ impl DeviceState {
             managed_track_count: self.managed_track_count,
             bytes_per_second: self.mtp_rate.bytes_per_second(),
             page,
+            contents_state: project_contents_state(
+                self.scanning,
+                self.scan_error.as_deref(),
+                self.ever_inspected,
+            ),
+            content_rows,
+            category_readings,
+            youtube_bytes: device_bytes[1],
+            podcast_bytes: device_bytes[2],
         }
     }
 
@@ -270,6 +320,7 @@ impl DeviceSyncRuntime {
                             device.podcast_files = podcast_files;
                             device.youtube_files = youtube_files;
                             device.scan_error = None;
+                            device.ever_inspected = true;
                         }
                         Err(error) => device.scan_error = Some(error),
                     }
@@ -449,6 +500,7 @@ impl DeviceSyncRuntime {
                             opus_bitrate: 0,
                             ratings_back: false,
                             remove_deleted: true,
+                            sync_automatically: true,
                         }
                     });
                     states.push(DeviceState::new(descriptor, settings));

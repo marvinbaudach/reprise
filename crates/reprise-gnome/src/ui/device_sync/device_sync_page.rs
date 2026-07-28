@@ -11,6 +11,8 @@ use reprise_core::device_sync::{
     SyncPageWarning, SyncPlaylistRow, TransferProfile,
 };
 
+use super::device_sync_content_panel::{ContentPanel, ContentPanelActions};
+use super::device_sync_page_actions::PageActions;
 use super::device_sync_page_layout;
 use super::device_sync_runtime::{
     DeviceSyncRuntime, DeviceSyncState, DeviceView, PlannedSyncPhase, SyncStep,
@@ -226,65 +228,6 @@ fn counted(count: usize, singular: &str, plural: &str) -> String {
 }
 
 #[derive(Clone)]
-struct PageActions {
-    set_profile: Rc<dyn Fn(TransferProfile)>,
-    set_playlist: Rc<dyn Fn(reprise_core::device_sync::SelectionSource, bool)>,
-    start: Rc<dyn Fn()>,
-    cancel: Rc<dyn Fn()>,
-    eject: Rc<dyn Fn()>,
-}
-
-impl PageActions {
-    fn for_runtime(runtime: &Rc<DeviceSyncRuntime>, device_id: &str) -> Self {
-        let set_profile = {
-            let runtime = runtime.clone();
-            let device_id = device_id.to_string();
-            Rc::new(move |profile| {
-                if let Err(error) = runtime.set_transfer_profile(&device_id, profile) {
-                    tracing::warn!(%error, "could not update Android sync transfer profile");
-                }
-            }) as Rc<dyn Fn(TransferProfile)>
-        };
-        let set_playlist = {
-            let runtime = runtime.clone();
-            let device_id = device_id.to_string();
-            Rc::new(move |source, selected| {
-                if let Err(error) = runtime.set_playlist_selected(&device_id, source, selected) {
-                    tracing::warn!(%error, "could not update Android sync playlist");
-                }
-            }) as Rc<dyn Fn(reprise_core::device_sync::SelectionSource, bool)>
-        };
-        let start = {
-            let runtime = runtime.clone();
-            let device_id = device_id.to_string();
-            Rc::new(move || match runtime.sync_now(&device_id) {
-                Ok(()) => tracing::info!(device_id, "device sync started from page"),
-                Err(error) => {
-                    tracing::warn!(%error, "could not start Android synchronization");
-                }
-            }) as Rc<dyn Fn()>
-        };
-        let cancel = {
-            let runtime = runtime.clone();
-            let device_id = device_id.to_string();
-            Rc::new(move || runtime.cancel_current(&device_id)) as Rc<dyn Fn()>
-        };
-        let eject = {
-            let runtime = runtime.clone();
-            let device_id = device_id.to_string();
-            Rc::new(move || runtime.eject(&device_id)) as Rc<dyn Fn()>
-        };
-        Self {
-            set_profile,
-            set_playlist,
-            start,
-            cancel,
-            eject,
-        }
-    }
-}
-
-#[derive(Clone)]
 struct PlaylistRowWidgets {
     source: reprise_core::device_sync::SelectionSource,
     button: gtk4::ToggleButton,
@@ -316,18 +259,25 @@ struct DeviceSyncPage {
     progress_bar: gtk4::ProgressBar,
     primary: gtk4::Button,
     eject: gtk4::Button,
+    content_panel: ContentPanel,
     updating: Rc<Cell<bool>>,
     cancelling: Rc<Cell<bool>>,
     actions: PageActions,
 }
 
 impl DeviceSyncPage {
-    fn new(device: &DeviceView, actions: PageActions) -> (Rc<Self>, gtk4::Stack) {
+    fn new(
+        device: &DeviceView,
+        actions: PageActions,
+        content_actions: &ContentPanelActions,
+    ) -> (Rc<Self>, gtk4::Stack) {
         let labels = device_sync_page_layout::profile_labels(profile_label);
         let dashboard = device_sync_page_layout::build(device, &labels);
         dashboard
             .eject
             .set_tooltip_text(Some(&device_sync_strings::eject_tooltip(false)));
+        let content_panel = ContentPanel::new(content_actions);
+        dashboard.content.append(content_panel.root());
 
         let disconnected = adw::StatusPage::builder()
             .icon_name("phone-symbolic")
@@ -397,6 +347,7 @@ impl DeviceSyncPage {
             progress_bar: dashboard.progress_bar,
             primary: dashboard.primary,
             eject: dashboard.eject,
+            content_panel,
             updating,
             cancelling,
             actions,
@@ -457,6 +408,7 @@ impl DeviceSyncPage {
         self.update_notice(device);
         self.update_progress(&device.sync_phase, device.bytes_per_second);
         self.update_actions(device);
+        self.content_panel.update(device);
         self.updating.set(false);
     }
 
@@ -754,8 +706,11 @@ pub(in crate::ui) fn open(
     let Some(device) = device else {
         return false;
     };
-    let (surface, root) =
-        DeviceSyncPage::new(&device, PageActions::for_runtime(runtime, device_id));
+    let (surface, root) = DeviceSyncPage::new(
+        &device,
+        PageActions::for_runtime(runtime, device_id),
+        &ContentPanelActions::for_runtime(runtime, device_id),
+    );
     if let Some(previous) = content_stack.child_by_name("device-sync") {
         content_stack.remove(&previous);
     }

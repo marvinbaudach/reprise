@@ -165,6 +165,30 @@ pub(crate) fn migrate_v42(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.commit()
 }
 
+// Design 7a/7e (`docs/plans/podcasts-youtube-radio-turn6.md` §3b): the
+// device view's "Sync automatically when this phone connects" switch. Like
+// `remove_deleted`, this is a genuinely per-device choice (not one of the
+// global sync rules 7b's Preferences block owns), so it lives beside it on
+// `device_settings` rather than on `device_sync_targets`.
+const ADD_SYNC_AUTOMATICALLY: &str = r#"
+ALTER TABLE device_settings
+  ADD COLUMN sync_automatically INTEGER NOT NULL DEFAULT 1;
+"#;
+
+pub(crate) fn migrate_v44(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    let has_sync_automatically = has_column(conn, "device_settings", "sync_automatically")?;
+    if version >= 44 && has_sync_automatically {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    if !has_sync_automatically {
+        transaction.execute_batch(ADD_SYNC_AUTOMATICALLY)?;
+    }
+    transaction.pragma_update(None, "user_version", version.max(44))?;
+    transaction.commit()
+}
+
 fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, rusqlite::Error> {
     conn.query_row(
         "SELECT EXISTS(

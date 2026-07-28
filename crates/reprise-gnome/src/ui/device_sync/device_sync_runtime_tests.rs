@@ -619,6 +619,7 @@ fn save_road_settings(conn: &Rc<RefCell<Connection>>, device_id: &str) {
             opus_bitrate: 0,
             ratings_back: false,
             remove_deleted: true,
+            sync_automatically: true,
         },
     )
     .unwrap();

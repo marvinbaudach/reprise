@@ -33,6 +33,7 @@ fn settings_default_then_round_trip_selection_and_supported_bitrate() {
             opus_bitrate: 0,
             ratings_back: false,
             remove_deleted: true,
+            sync_automatically: true,
         }
     );
 

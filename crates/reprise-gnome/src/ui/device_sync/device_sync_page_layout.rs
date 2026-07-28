@@ -11,6 +11,11 @@ const OVERVIEW_WIDTH_CHARS: i32 = 42;
 
 pub(super) struct DeviceDashboard {
     pub(super) root: gtk4::ScrolledWindow,
+    /// The vertical content column, exposed so the caller can append
+    /// further cards (the Content/Next-synchronization panel, design 7a)
+    /// below the hero and playlist body without this module needing to
+    /// know about that panel's type.
+    pub(super) content: gtk4::Box,
     pub(super) device_name: gtk4::Label,
     pub(super) connection: gtk4::Label,
     pub(super) device_last_sync: gtk4::Label,
@@ -113,7 +118,12 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
     policy.set_wrap(true);
     constrain_overview_width(&policy);
 
-    let changes_heading = label("Next synchronization", "heading");
+    // Deliberately not "Next synchronization" — that title now belongs to
+    // the Content panel's cross-category diff (`MTP-22`/`MTP-28`) appended
+    // below this card. `changes` here is playlist-scoped only
+    // (`page.changes`), so it gets its own, narrower heading rather than
+    // implying it is the complete picture.
+    let changes_heading = label("Playlist changes", "heading");
     let changes = detail_label();
     constrain_overview_width(&changes);
 
@@ -188,6 +198,7 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
 
     DeviceDashboard {
         root,
+        content,
         device_name,
         connection,
         device_last_sync,
