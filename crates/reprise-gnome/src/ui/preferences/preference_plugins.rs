@@ -241,6 +241,13 @@ impl PreferencesContext {
                 if descriptor.id == "concerts" {
                     context.sidebar.refresh("source module toggled");
                 }
+                // `SRC-11` / `NET-1a`: the source-artwork gate is the AND of
+                // the global master and this module, so republish it after any
+                // successful module change. Recomputing unconditionally costs
+                // one settings read per toggle and cannot be forgotten the way
+                // a per-module arm can — the same omission already let a stale
+                // open gate survive a switch-off once.
+                crate::ui::podcasts::source_image::recompute_gate(&context.conn.borrow());
             });
             if descriptor.id == "new_releases" {
                 let alive = glib::WeakRef::new();

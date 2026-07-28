@@ -62,6 +62,27 @@ thread_local! {
 /// value yet) counts as not-allowed, per `NET-1a`.
 static GATE_OPEN: AtomicBool = AtomicBool::new(false);
 
+/// `NET-1a` / `SET-4`: re-publishes the gate from settings when the setting
+/// itself changes, rather than waiting for the next queued image.
+///
+/// Publishing only from `queue_artwork` is not enough on its own: it makes the
+/// flag depend on somebody rendering another uncached image. Switch the gate
+/// off from Preferences — a page that shows no source artwork at all — while a
+/// full queue is still draining, and nothing would call `queue_artwork`, so the
+/// stale `true` would survive and the queued tasks would keep fetching. That is
+/// exactly the leak the atomic exists to close, one step removed.
+///
+/// A failed lookup counts as not allowed: refusing when unsure is the safe
+/// direction for a privacy promise (`SRC-11`).
+pub(in crate::ui) fn recompute_gate(conn: &rusqlite::Connection) {
+    let allowed = reprise_core::online_sources::network_allowed(
+        conn,
+        &reprise_core::modules::SOURCE_IMAGES_MODULE,
+    )
+    .unwrap_or(false);
+    GATE_OPEN.store(allowed, Ordering::Relaxed);
+}
+
 #[derive(Clone)]
 pub(crate) struct SourceImage {
     root: gtk4::Stack,
@@ -176,7 +197,7 @@ struct ArtworkTask {
 /// have captured earlier — and against the on-disk cache, which is always
 /// consulted regardless of the gate (`SRC-11`). `fetch` is injected so tests
 /// can exercise this without ever making a real network request.
-fn process_task(task: ArtworkTask, fetch: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>) {
+fn process_task(task: &ArtworkTask, fetch: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>) {
     let allowed = GATE_OPEN.load(Ordering::Relaxed);
     let outcome = reprise_core::remote_image::resolve(Some(&task.url), allowed, fetch);
     let path = match outcome {
@@ -201,7 +222,7 @@ fn queue_artwork(url: String, allowed: bool) -> Option<async_channel::Receiver<O
                 .name(format!("reprise-source-artwork-{index}"))
                 .spawn(move || {
                     while let Ok(task) = receiver.recv_blocking() {
-                        process_task(task, &mut |url| {
+                        process_task(&task, &mut |url| {
                             reprise_core::podcasts::source_artwork::fetch(url)
                                 .map_err(|error| error.to_string())
                         });
@@ -297,7 +318,7 @@ mod tests {
         super::GATE_OPEN.store(false, Ordering::SeqCst);
 
         let mut fetch_called = false;
-        super::process_task(task, &mut |_| {
+        super::process_task(&task, &mut |_| {
             fetch_called = true;
             Err("must not be called".into())
         });
@@ -332,6 +353,50 @@ mod tests {
     /// consults the cache would satisfy every other `src_11_*` test here —
     /// with an empty cache the fallback looks identical either way — and
     /// still break the promise on the next restart.
+    /// `NET-1a` / `SRC-11`: switching the gate off must take effect for tasks
+    /// that are ALREADY queued, even when nothing enqueues another image
+    /// afterwards. Preferences shows no source artwork, so turning the switch
+    /// off there is exactly the case where no further `queue_artwork` call
+    /// happens — publishing the gate only from that function left a stale
+    /// `true` alive and the draining queue kept fetching.
+    #[test]
+    fn src_11_turning_the_setting_off_closes_the_gate_without_a_further_enqueue() {
+        use std::sync::atomic::Ordering;
+
+        let conn = reprise_core::db::open_migrated(None).unwrap();
+        reprise_core::modules::set_enabled(
+            &conn,
+            &reprise_core::modules::SOURCE_IMAGES_MODULE,
+            true,
+        )
+        .unwrap();
+        super::recompute_gate(&conn);
+        assert!(
+            super::GATE_OPEN.load(Ordering::SeqCst),
+            "precondition: module on and global on means the gate is open"
+        );
+
+        // The user switches the global master off from Preferences. No image
+        // is rendered there, so nothing calls `queue_artwork`.
+        reprise_core::online_sources::set_enabled(&conn, false).unwrap();
+        super::recompute_gate(&conn);
+
+        let (response, _receiver) = async_channel::bounded(1);
+        let task = super::ArtworkTask {
+            url: "https://images.test/src-11-gate-closed-from-preferences.png".into(),
+            response,
+        };
+        let mut fetch_called = false;
+        super::process_task(&task, &mut |_| {
+            fetch_called = true;
+            Err("must not be called".into())
+        });
+        assert!(
+            !fetch_called,
+            "a queued task must not fetch after the setting was switched off"
+        );
+    }
+
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn src_11_a_cached_image_is_shown_even_with_the_gate_closed() {

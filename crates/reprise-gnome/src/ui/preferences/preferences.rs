@@ -420,6 +420,10 @@ impl PreferencesContext {
         self.artist_news.recompute_enabled(&conn);
         self.concerts.recompute_enabled(&conn);
         self.podcasts.recompute_enabled(&conn);
+        // `SRC-11`: source artwork keeps its gate in a process-wide atomic the
+        // artwork workers read, so it has to be republished here too — a queue
+        // that is still draining has no other reason to notice the change.
+        crate::ui::podcasts::source_image::recompute_gate(&conn);
         drop(conn);
         if let Some(player) = &self.player {
             player.recompute_lyrics_enabled();
