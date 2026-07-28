@@ -1390,7 +1390,10 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
 - **LYR-2** [aktiv] [gtk] — LRCLIB wird ausschließlich bei offenem Lyrics-
   Tab, fehlendem lokalen Text und eingeschaltetem Online-Lyrics-Modul
   kontaktiert. Es gibt weder Prefetch noch Batch-Abruf für kommende Queue-
-  Einträge.
+  Einträge. Maßgeblich ist der geladene Track, nicht der Abspielzustand: ein
+  aus der Sitzung wiederhergestellter Track, der in der Playerleiste steht,
+  zeigt seine Lyrics ohne vorherigen Start. Der Leerzustand „Play a track to
+  see its lyrics" gilt nur, solange gar kein Track geladen ist.
 - **LYR-3** [aktiv] [gtk] — Bei offenem Lyrics-Tab, fehlendem Text und
   ausgeschaltetem Modul zeigt eine zentrierte StatusPage Icon, Titel
   „Online lyrics are disabled", Untertitel „Enable them to load missing
@@ -1879,11 +1882,16 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
 - **AC-7** [ersetzt durch AC-10]
 - **AC-8** [ersetzt durch AC-11]
 - **AC-10** [ersetzt durch AC-19]
-- **AC-11** [aktiv] [gtk] — Dauerbewegung existiert ausschließlich während
-  laufender Wiedergabe und nur bei sichtbarem Visual-Tab. Pause und Stop klingen
-  auf das statische Bild aus; `gtk-enable-animations=false` zeigt dieses ohne
-  Tick-Callback. Das ist die in MOT-2 erlaubte, audiofunktionale Ausnahme für
-  Dauerbewegung.
+- **AC-11** [aktiv] [gtk] — Dauerbewegung existiert nur bei sichtbarem
+  Visual-Tab und nur, solange der Player überhaupt einen Track hält. Laufende
+  Wiedergabe zeigt die audioreaktiven Säulen. Pause und Stop lassen die
+  Live-Balken ausklingen und übergeben an eine ruhende Atembewegung: eine
+  flache, zu beiden Rändern auslaufende Welle von höchstens 10 % Balkenhöhe,
+  die in sechs Sekunden einmal über die Breite wandert und im Ruhezustand mit
+  rund 30 Hz statt der vollen Renderrate neu gezeichnet wird. Ohne geladenen
+  Track bleibt die Fläche leer und ohne Tick-Callback;
+  `gtk-enable-animations=false` zeigt die Ruhewelle als stehendes Bild. Das ist
+  die in MOT-2 erlaubte, audiofunktionale Ausnahme für Dauerbewegung.
 - **AC-19** [ersetzt durch AC-20]
 - **AC-20** [ersetzt durch AC-21]
 - **AC-21** [ersetzt durch AC-22]
@@ -1902,8 +1910,9 @@ zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
   bestehenden Cyan-zu-Magenta-Verlauf, Reflexionen, Glühen und langsam
   sinkenden Peak-Kappen. Unter Renderlast gilt strikt „latest wins"; alte
   Impulse werden nicht in neuere CAVA-Frames übertragen. Pause und Stop dürfen
-  ausschließlich für das nach AC-11 geforderte statische Ausklingen eine
-  visuelle Absenkung anwenden.
+  ausschließlich für das nach AC-11 geforderte Ausklingen eine visuelle
+  Absenkung anwenden; die dort definierte Ruhewelle hebt danach nur an, was die
+  Live-Balken frei lassen, und verändert weder CAVA-Werte noch Peak-Kappen.
   Unabhängig von den Balkenhöhen steuert die quadratische Energie der zwölf
   tiefsten CAVA-Bänder eine reine Darstellungsschicht: kräftiger Bass zündet
   sofort zwei breite Neon-Glows hinter den Säulen, die nach dem Impuls weich
