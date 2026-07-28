@@ -230,22 +230,25 @@ async fn run_planned_sync(weak: Weak<DeviceSyncRuntime>, work: PlannedWork) {
         return;
     };
     let mut failures = Vec::new();
-    if let Err(error) = runtime
+    let cleanup_error = runtime
         .backend
         .cleanup_partials(work.root_uri.clone())
         .await
-    {
-        tracing::warn!(device_id = work.device_id, %error, "could not clean partial sync files");
-    }
-    let deferred_replacement_removals = if work.cancelled.load(Ordering::SeqCst) {
-        Vec::new()
-    } else {
-        run_transfers(&runtime, &work, &mut failures).await
-    };
-    if !work.cancelled.load(Ordering::SeqCst) && failures.is_empty() {
+        .err()
+        .map(|error| {
+            tracing::warn!(device_id = work.device_id, %error, "could not clean partial sync files");
+            format!("could not clean partial sync files: {error}")
+        });
+    let deferred_replacement_removals =
+        if work.cancelled.load(Ordering::SeqCst) || cleanup_error.is_some() {
+            Vec::new()
+        } else {
+            run_transfers(&runtime, &work, &mut failures).await
+        };
+    if cleanup_error.is_none() && !work.cancelled.load(Ordering::SeqCst) && failures.is_empty() {
         run_playlists(&runtime, &work, &mut failures).await;
     }
-    if !work.cancelled.load(Ordering::SeqCst) && failures.is_empty() {
+    if cleanup_error.is_none() && !work.cancelled.load(Ordering::SeqCst) && failures.is_empty() {
         run_removals(
             &runtime,
             &work,
@@ -254,7 +257,7 @@ async fn run_planned_sync(weak: Weak<DeviceSyncRuntime>, work: PlannedWork) {
         )
         .await;
     }
-    finish_sync(&runtime, &work, failures);
+    finish_sync(&runtime, &work, failures, cleanup_error);
 }
 
 async fn run_removals(
@@ -576,7 +579,12 @@ async fn run_playlists(
     }
 }
 
-fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, mut failures: Vec<i64>) {
+fn finish_sync(
+    runtime: &Rc<DeviceSyncRuntime>,
+    work: &PlannedWork,
+    mut failures: Vec<i64>,
+    terminal_error: Option<String>,
+) {
     failures.sort_unstable();
     failures.dedup();
     set_phase(
@@ -585,7 +593,8 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, mut failures
         work.generation,
         PlannedSyncPhase::Finishing,
     );
-    let successful = failures.is_empty() && !work.cancelled.load(Ordering::SeqCst);
+    let successful =
+        terminal_error.is_none() && failures.is_empty() && !work.cancelled.load(Ordering::SeqCst);
     {
         let mut devices = runtime.device_states.borrow_mut();
         if let Some(device) = devices
@@ -612,7 +621,8 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, mut failures
         );
         return;
     }
-    let planning_error = runtime.recompute_delta_silent(&work.device_id).err();
+    let planning_error =
+        terminal_error.or_else(|| runtime.recompute_delta_silent(&work.device_id).err());
     if let Some(device) = runtime
         .device_states
         .borrow_mut()

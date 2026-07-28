@@ -72,6 +72,7 @@ pub mod session_restore;
 pub mod shortcuts;
 pub(in crate::ui) mod show_in_files;
 pub(crate) mod sidebar;
+mod source_context_surface;
 mod stats;
 pub mod status_bar;
 pub mod strings;

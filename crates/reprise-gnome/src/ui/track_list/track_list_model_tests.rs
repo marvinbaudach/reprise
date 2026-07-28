@@ -231,36 +231,6 @@ fn track_at_spans_multiple_windows_in_sorted_order() {
 }
 
 #[test]
-fn invalidate_window_at_forces_a_fresh_read_of_that_row() {
-    let model = seeded_model(&[("Zulu", "AAA"), ("Alpha", "BBB")]);
-    model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
-    assert_eq!(model.track_at(0).unwrap().rating, 0);
-
-    // Mutate the underlying row directly (simulating a rating write
-    // elsewhere), bypassing the model entirely.
-    {
-        let conn = model.imp().conn.borrow().clone().unwrap();
-        conn.borrow()
-            .execute("UPDATE tracks SET rating = 4 WHERE title = 'Alpha'", [])
-            .unwrap();
-    }
-
-    // Without invalidation the cached clone is still stale.
-    assert_eq!(model.track_at(0).unwrap().rating, 0);
-
-    model.invalidate_window_at(0);
-    assert_eq!(model.track_at(0).unwrap().rating, 4);
-}
-
-#[test]
-fn invalidate_window_at_out_of_range_is_a_no_op() {
-    let model = seeded_model(&[("Alpha", "BBB")]);
-    model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
-    // Must not panic.
-    model.invalidate_window_at(5);
-}
-
-#[test]
 fn set_cached_rating_patches_the_cache_without_a_model_signal() {
     let model = seeded_model(&[("Zulu", "AAA"), ("Alpha", "BBB")]);
     model.set_query(&ViewSource::Library, "title", "asc", "", &[]);

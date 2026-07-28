@@ -499,55 +499,14 @@ impl TrackListModel {
         track
     }
 
-    /// Invalidates the cached window covering `position` and fires
-    /// `items_changed(position, 1, 1)` so anything bound to the model
-    /// (`GtkColumnView`/`NoSelection`) re-pulls that exact row via `item()`.
-    /// Out-of-range positions are logged and ignored rather than panicking,
-    /// matching every other fallible path on this type.
-    ///
-    /// CAUTION: that one-row `items_changed` is a *fake* remove+insert, which
-    /// makes GtkColumnView replace the row widget under the pointer/focus and
-    /// snap the viewport to the TOP — the "double-click / rating jumps to the
-    /// top" bug. Do NOT use this to reflect a change on a row the user just
-    /// interacted with. For a rating write use [`Self::set_cached_rating`] (the
-    /// star widget already shows the value; only the cache needs patching), and
-    /// for the now-playing marker use `now_playing_marker`'s in-place
-    /// re-appliers — both update visible cells with no signal and no jump. This
-    /// remains only for a genuine row-content change that is NOT under the
-    /// pointer (currently none in the UI, hence `pub(in crate::ui)`).
-    // Deliberately retained but currently UI-unused: the scroll-jump fix
-    // (now-playing marker via `now_playing_marker`, rating via
-    // `set_cached_rating`) removed its last caller, but it stays as the tested,
-    // documented escape hatch for a future non-pointer row-content change.
-    #[allow(dead_code)]
-    pub(in crate::ui) fn invalidate_window_at(&self, position: u32) {
-        let total = self.imp().state.borrow().total;
-        if position >= total {
-            tracing::warn!(
-                position,
-                total,
-                "invalidate_window_at: position out of range"
-            );
-            return;
-        }
-
-        let window_start = (position / WINDOW_SIZE) * WINDOW_SIZE;
-        self.imp().state.borrow_mut().cache.remove(&window_start);
-
-        self.items_changed(position, 1, 1);
-    }
-
     /// Patches the cached `Track`'s rating at `position` IN PLACE, emitting no
-    /// model signal. Counterpart to [`Self::invalidate_window_at`] for the one
-    /// case where the visible cell is already correct: a star-rating click runs
-    /// `RatingWidget::set_rating` before this, so only the model's cached clone
-    /// is stale. `invalidate_window_at`'s `items_changed(pos, 1, 1)` would fix
-    /// that clone too, but its fake remove+insert makes GtkColumnView replace
-    /// the row widget under the pointer and snap the viewport back to the top —
-    /// the long-standing "rating click jumps to the top" bug. Patching the
-    /// cached value directly keeps a later scroll-away/back correct WITHOUT any
-    /// signal. If the covering window is not cached there is nothing to patch:
-    /// the next `track_at` re-reads the (already-updated) row from SQL.
+    /// model signal. A star-rating click updates the visible widget first, so
+    /// only the model's cached clone is stale. Emitting a fake one-row
+    /// remove+insert would make GtkColumnView replace the row widget under the
+    /// pointer and snap the viewport back to the top. Patching the cached value
+    /// directly keeps a later scroll-away/back correct without any signal. If
+    /// the covering window is not cached there is nothing to patch: the next
+    /// `track_at` re-reads the already-updated row from SQL.
     pub fn set_cached_rating(&self, position: u32, rating: i32) {
         let window_start = (position / WINDOW_SIZE) * WINDOW_SIZE;
         let offset_in_window = (position - window_start) as usize;
