@@ -231,7 +231,10 @@ fn analysis_values(pressure: BassPressure) -> [String; 4] {
         if value <= READOUT_SILENCE_DBFS {
             "—".to_owned()
         } else {
-            format!("{value:.1} dBFS")
+            // Whole decibels only: at ten refreshes a second a tenth of a dB
+            // is noise to the eye, and the extra glyphs cost width the 300 px
+            // panel does not have.
+            format!("{value:.0} dBFS")
         }
     };
     [
@@ -256,11 +259,14 @@ impl AnalysisReadout {
     fn new() -> Self {
         // Two by two, not one row of four: the panel is a fixed 300 px wide
         // (NPP-1), where four columns leave ~70 px each and truncate every
-        // caption. Every label ellipsizes so enlarged text shortens the words
-        // instead of widening the panel.
+        // caption. Caption and value sit side by side rather than stacked,
+        // because the strip the canvas leaves free is only about one line
+        // tall — stacked, the second row was silently clipped. Every label
+        // ellipsizes so enlarged text shortens the words instead of widening
+        // the panel.
         let root = gtk4::Grid::builder()
             .column_homogeneous(true)
-            .row_spacing(6)
+            .row_spacing(2)
             .column_spacing(14)
             .accessible_role(gtk4::AccessibleRole::Group)
             .build();
@@ -278,7 +284,7 @@ impl AnalysisReadout {
         .into_iter()
         .enumerate()
         .map(|(index, name)| {
-            let cell = gtk4::Box::new(gtk4::Orientation::Vertical, 1);
+            let cell = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
             let caption = gtk4::Label::builder()
                 .label(strings::text(name))
                 .xalign(0.0)
@@ -287,7 +293,8 @@ impl AnalysisReadout {
             caption.add_css_class("reprise-song-visual-analysis-name");
             let value = gtk4::Label::builder()
                 .label("—")
-                .xalign(0.0)
+                .xalign(1.0)
+                .hexpand(true)
                 .ellipsize(gtk4::pango::EllipsizeMode::End)
                 .build();
             value.add_css_class("reprise-song-visual-analysis-value");
@@ -400,11 +407,9 @@ pub(in crate::ui) fn css() -> String {
        border: 1px solid alpha(@reprise_player_accent, 0.14);\
        border-radius: 24px;\
      }\n\
-     .reprise-song-visual-analysis { padding: 0 10px; }\n\
+     .reprise-song-visual-analysis { padding: 0 2px; }\n\
      .reprise-song-visual-analysis-name {\
-       font-size: 0.72rem;\
-       letter-spacing: 0.06em;\
-       text-transform: uppercase;\
+       font-size: 0.78rem;\
        opacity: 0.5;\
      }\n\
      .reprise-song-visual-analysis-value {\
