@@ -19,6 +19,7 @@ pub mod sanitize;
 pub mod settings;
 pub mod snapshot;
 pub mod storage;
+pub mod sync_log;
 pub mod transfer;
 
 pub use delta::{compute_delta, SyncCandidate, SyncDelta};
@@ -622,3 +623,7 @@ mod tests {
         assert_eq!(resumed.current_bytes, 25);
     }
 }
+
+#[cfg(test)]
+#[path = "device_sync/sync_log_tests.rs"]
+mod sync_log_tests;

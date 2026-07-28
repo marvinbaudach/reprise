@@ -580,6 +580,7 @@ mod tests {
             verified_managed_track_count: None,
             managed_track_count: 0,
             bytes_per_second: 0,
+            history: Vec::new(),
             page: Default::default(),
         }
     }

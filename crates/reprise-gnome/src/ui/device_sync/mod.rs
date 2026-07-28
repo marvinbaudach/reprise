@@ -1,5 +1,6 @@
 pub(in crate::ui) mod device_sync_backend;
 pub(in crate::ui) mod device_sync_feedback;
+mod device_sync_history;
 pub(in crate::ui) mod device_sync_launcher;
 pub(in crate::ui) mod device_sync_page;
 mod device_sync_page_layout;
