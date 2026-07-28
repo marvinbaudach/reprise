@@ -136,6 +136,7 @@ impl PodcastsView {
         let model = PodcastsModel::new();
         let column_view = gtk4::ColumnView::new(Some(model.selection().clone()));
         column_view.add_css_class("reprise-podcasts-table");
+        column_view.add_css_class(crate::ui::source_context_surface::TABLE_CSS_CLASS);
         column_view.set_hexpand(true);
         column_view.set_vexpand(true);
 
@@ -280,6 +281,7 @@ impl PodcastsView {
                 .is_some_and(|view| view.playing_episode.get() == Some(episode_id))
         });
         let columns = podcasts_columns::append_columns(column_view, &unsubscribe, &playing);
+        podcasts_context_menu::wire_keyboard(column_view, self.model.selection());
         columns.date.set_resizable(false);
         self.model.enable_sorting(column_view.sorter());
     }

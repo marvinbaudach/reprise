@@ -683,9 +683,8 @@ pub(in crate::ui) fn append_rating_column(
     column
 }
 
-/// Persists a rating change via `library::stats::set_rating` and, on
-/// success, invalidates the model's cached copy of the affected row (see
-/// `TrackListModel::invalidate_window_at`). A write failure is logged and,
+/// Persists a rating change via `library::stats::set_rating` and patches the
+/// model's cached copy of the affected row on success. A write failure is logged and,
 /// since Stage 3 Task 1 (backlog item a), also surfaced as a toast: the
 /// displayed rating already reflects the click (`RatingWidget::set_rating`
 /// ran first), so without a toast the user couldn't tell the write didn't
@@ -709,9 +708,8 @@ fn on_rating_changed(
             match refresh {
                 // The star widget already shows the new rating (set on click,
                 // above); only the model's cached clone is stale. Patch it in
-                // place — NOT via `invalidate_window_at`, whose one-row
-                // `items_changed` replaces the row widget under the pointer and
-                // snaps the viewport to the top. See `set_cached_rating`.
+                // place: a one-row `items_changed` would replace the row widget
+                // under the pointer and snap the viewport to the top.
                 RatingRefresh::Row => shared.model.set_cached_rating(position, new_rating),
                 RatingRefresh::Query => reload(shared),
             }
