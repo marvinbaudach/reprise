@@ -163,4 +163,8 @@ fn src_8_radio_results_scroll_inside_a_bounded_viewport() {
         scroller.vexpands(),
         "fifty results must not push the footer past the window edge"
     );
+    assert!(
+        dialog.widgets.results.margin_end() > 0,
+        "station rows need the same overlay-scrollbar clearance as the other dialogs"
+    );
 }

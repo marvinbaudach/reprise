@@ -271,6 +271,9 @@ impl RadioAddDialog {
             .vexpand(true)
             .child(&results)
             .build();
+        // SRC-8: same clearance from the overlay scrollbar as the podcast and
+        // channel dialogs, so no row action sits underneath it.
+        results.set_margin_end(6);
         content.append(&results_scroller);
         content.append(&preview);
         content.append(&fetch_row);
@@ -614,16 +617,6 @@ fn preview_is_favorite(preview: &StationPreview, favorites: &[(String, String)])
 
 fn normalized_stream_url(value: &str) -> String {
     value.trim().trim_end_matches('/').to_owned()
-}
-
-fn child_count(widget: &impl IsA<gtk4::Widget>) -> usize {
-    let mut count = 0;
-    let mut child = widget.as_ref().first_child();
-    while let Some(current) = child {
-        count += 1;
-        child = current.next_sibling();
-    }
-    count
 }
 
 fn station_from_candidate(candidate: StationCandidate) -> radio::station::NewStation {
