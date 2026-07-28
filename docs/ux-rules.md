@@ -440,6 +440,16 @@ human. Rationale for changes lives in the git history.
   expandable row each with its deviations inside. Recording never blocks a
   sync: a log write that fails is dropped, not propagated. Only the most
   recent thirty runs are kept.
+- **MTP-21** [active] [core] — A file counts as transferred only once it is
+  proven to be on the device under its final name. Transfers publish through
+  a `.part` file and rename it at the end; that rename is confirmed
+  afterwards — the target must be there with the bytes that were sent —
+  because a device can acknowledge a rename it never performed, which strands
+  the audio under a name no media scanner reads while the inventory claims it
+  arrived. An existing target is removed before the rename instead of being
+  overwritten by it, since overwriting is what the device mishandles. A
+  transfer that cannot be proven fails the file honestly and leaves no partial
+  behind, so the next run copies it again.
 
 ## F. Settings & modals
 
