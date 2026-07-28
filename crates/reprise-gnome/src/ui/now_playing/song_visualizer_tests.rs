@@ -22,6 +22,39 @@ fn ac_22_visual_widget_exposes_only_a_labeled_bars_canvas() {
     ));
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn ac_11_loading_a_track_reaches_the_engine_and_rests_the_canvas_alive() {
+    gtk4::init().unwrap();
+    let visualizer = SongVisualizer::new();
+    let bar_shapes = |visualizer: &SongVisualizer| {
+        visualizer
+            .engine
+            .borrow()
+            .scene(548.0, 300.0)
+            .shapes
+            .into_iter()
+            .filter(|shape| matches!(shape.geom, reprise_core::visuals::Geom::Rect { .. }))
+            .count()
+    };
+
+    visualizer.set_playback_state(PlaybackState::Stopped);
+    visualizer.set_has_track(false);
+    for _ in 0..120 {
+        visualizer.engine.borrow_mut().tick();
+    }
+    assert_eq!(bar_shapes(&visualizer), 0, "an empty player draws nothing");
+
+    visualizer.set_has_track(true);
+    for _ in 0..120 {
+        visualizer.engine.borrow_mut().tick();
+    }
+    assert!(
+        bar_shapes(&visualizer) > 0,
+        "a loaded but resting track keeps a low wave on the canvas"
+    );
+}
+
 /// Builds a representative already-smoothed CAVA silhouette.
 fn lively_engine() -> VisualEngine {
     use reprise_core::playback::{SpectrumFrame, SPECTRUM_BAND_COUNT};
@@ -37,11 +70,51 @@ fn lively_engine() -> VisualEngine {
     engine
 }
 
+/// Engine at rest: a loaded track, no playback, idle wave settled in.
+fn resting_engine(ticks: usize) -> VisualEngine {
+    let mut engine = VisualEngine::new();
+    engine.set_accent((0.22, 0.78, 0.74));
+    engine.set_has_track(true);
+    for _ in 0..ticks {
+        engine.tick();
+    }
+    engine
+}
+
 #[test]
 #[ignore = "visual gallery: renders the Bars scene to REPRISE_VIS_OUT for eyeballing"]
 fn render_bars_gallery_ppm() {
     let out = std::env::var("REPRISE_VIS_OUT").unwrap_or_else(|_| "/tmp".to_owned());
     let (w, h) = (548.0_f32, 300.0_f32);
+
+    for (name, scene) in [
+        ("visualizer-idle", resting_engine(120).scene(w, h)),
+        ("visualizer-idle-late", resting_engine(300).scene(w, h)),
+    ] {
+        let mut surface =
+            gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, w as i32, h as i32)
+                .unwrap();
+        {
+            let cr = gtk4::cairo::Context::new(&surface).unwrap();
+            cr.set_source_rgb(0.078, 0.094, 0.102);
+            let _ = cr.paint();
+            render::draw_scene(&cr, &scene);
+        }
+        let (iw, ih) = (w as usize, h as usize);
+        let stride = surface.stride() as usize;
+        let data = surface.data().unwrap();
+        let mut ppm = format!("P6\n{iw} {ih}\n255\n").into_bytes();
+        for y in 0..ih {
+            for x in 0..iw {
+                let o = y * stride + x * 4;
+                ppm.extend_from_slice(&[data[o + 2], data[o + 1], data[o]]);
+            }
+        }
+        drop(data);
+        let path = format!("{out}/{name}.ppm");
+        std::fs::write(&path, ppm).unwrap();
+        println!("wrote {path}");
+    }
 
     let engine = lively_engine();
     let scene = engine.scene(w, h);
