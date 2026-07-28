@@ -134,6 +134,34 @@ fn lyr_2_fetch_only_when_enabled() {
     assert_eq!(calls.load(Ordering::SeqCst), 2);
 }
 
+/// A restored session shows title and artist in the bar without playing
+/// anything — the Lyrics tab keys off exactly that metadata, so it must not
+/// wait for playback (the tab still gates the fetch, per LYR-2).
+#[test]
+fn a_loaded_track_fetches_lyrics_before_playback_starts() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let runtime = LyricsRuntime::setup_with_lookup(Arc::new({
+        let calls = calls.clone();
+        move |_| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Ok(LyricsBody::Plain("synthetic lyrics".into()))
+        }
+    }));
+    let lyrics = PlayerLyrics::setup_with_runtime(runtime, true);
+    lyrics.set_tab_open(true);
+    lyrics.set_playback_state(PlaybackState::Stopped);
+
+    lyrics.set_track(Some(lyrics_query("Restored")));
+
+    for _ in 0..20 {
+        if calls.load(Ordering::SeqCst) == 1 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
 #[test]
 fn successful_backend_start_builds_one_exact_lyrics_query() {
     let backend = FakePlayback::succeeding();
