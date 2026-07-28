@@ -1,15 +1,15 @@
 //! The device view's Content and Next synchronization sections (design 7a),
 //! plus the "Device contents never verified" banner and the two per-device
-//! switches. E6 (the target-folder browser) is not built here — the
-//! Content section's target path is read-only text; repointing a folder
-//! stays a future task.
+//! switches. The Content section's target-folder path opens the E6 folder
+//! browser (`device_sync_target_browser`, `MTP-31`) via "Change folder…";
+//! it is otherwise read-only text.
 //!
 //! Per the 2026-07-28 design addendum, sync *rules* are global and live in
 //! Preferences (7b/7e); this panel shows them read-only, labelled "rules
-//! from Preferences". The only editable things here are per-device: each
-//! category's target-folder activation (`SyncTarget::enabled`, `MTP-18`),
-//! "Remove from phone when deleted or unsubscribed here", and "Sync
-//! automatically when this phone connects".
+//! from Preferences". The editable things here are per-device: each
+//! category's target folder (via the browser) and its activation
+//! (`SyncTarget::enabled`, `MTP-18`), "Remove from phone when deleted or
+//! unsubscribed here", and "Sync automatically when this phone connects".
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -29,6 +29,9 @@ pub(super) struct ContentPanelActions {
     pub(super) set_remove_deleted: Rc<dyn Fn(bool)>,
     pub(super) set_sync_automatically: Rc<dyn Fn(bool)>,
     pub(super) scan_device: Rc<dyn Fn()>,
+    /// `MTP-31` (design 7d): opens the target-folder browser for one
+    /// category, relative to the widget that triggered it.
+    pub(super) open_folder_browser: Rc<dyn Fn(SyncTargetKind, gtk4::Widget)>,
 }
 
 impl ContentPanelActions {
@@ -65,11 +68,19 @@ impl ContentPanelActions {
             let device_id = device_id.to_string();
             Rc::new(move || runtime.refresh_contents(&device_id)) as Rc<dyn Fn()>
         };
+        let open_folder_browser = {
+            let runtime = runtime.clone();
+            let device_id = device_id.to_string();
+            Rc::new(move |kind, parent: gtk4::Widget| {
+                super::device_sync_target_browser::present(&parent, &runtime, &device_id, kind);
+            }) as Rc<dyn Fn(SyncTargetKind, gtk4::Widget)>
+        };
         Self {
             set_target_enabled,
             set_remove_deleted,
             set_sync_automatically,
             scan_device,
+            open_folder_browser,
         }
     }
 }
@@ -290,12 +301,24 @@ fn build_category_row(
     title.add_css_class("heading");
     title.set_xalign(0.0);
     let path = detail("");
+    let browse_button = gtk4::Button::with_label("Change folder…");
+    browse_button.add_css_class("flat");
+    browse_button.set_halign(gtk4::Align::Start);
+    {
+        let open_folder_browser = actions.open_folder_browser.clone();
+        browse_button.connect_clicked(move |button| {
+            open_folder_browser(kind, button.clone().upcast());
+        });
+    }
+    let path_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    path_row.append(&path);
+    path_row.append(&browse_button);
     let selection = detail("");
     let size_cap = detail("");
     let labels = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
     labels.set_hexpand(true);
     labels.append(&title);
-    labels.append(&path);
+    labels.append(&path_row);
     labels.append(&selection);
     labels.append(&size_cap);
 

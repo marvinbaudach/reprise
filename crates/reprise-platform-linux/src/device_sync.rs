@@ -217,6 +217,8 @@ fn notify_subscribers(
 
 #[path = "device_sync_inspection.rs"]
 mod inspection;
+#[path = "device_sync_browser.rs"]
+mod target_browser;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CopyOutcome {
@@ -226,8 +228,21 @@ pub enum CopyOutcome {
 #[derive(Debug)]
 pub enum DeviceIoError {
     InvalidRelativePath,
-    SizeMismatch { expected: u64, actual: u64 },
+    SizeMismatch {
+        expected: u64,
+        actual: u64,
+    },
     Io(gio::glib::Error),
+    /// Design 7d: the chosen `StorageId` no longer matches any storage
+    /// volume at the device root — e.g. an SD card was removed since the
+    /// browser last listed storages.
+    StorageNotFound,
+    /// Design 7d's "New folder": a folder with that name already exists at
+    /// the chosen location.
+    FolderAlreadyExists,
+    /// Design 7d's root-creation error path: the device refused to create
+    /// a folder directly at a storage volume's own top level.
+    CannotCreateAtStorageRoot(gio::glib::Error),
 }
 
 impl fmt::Display for DeviceIoError {
@@ -239,6 +254,16 @@ impl fmt::Display for DeviceIoError {
                 "partial device file has {actual} bytes, expected {expected}"
             ),
             Self::Io(error) => write!(formatter, "device I/O failed: {error}"),
+            Self::StorageNotFound => {
+                formatter.write_str("the selected storage is no longer available on this device")
+            }
+            Self::FolderAlreadyExists => {
+                formatter.write_str("a folder with that name already exists here")
+            }
+            Self::CannotCreateAtStorageRoot(error) => write!(
+                formatter,
+                "this device does not allow creating folders directly in the storage root: {error}"
+            ),
         }
     }
 }

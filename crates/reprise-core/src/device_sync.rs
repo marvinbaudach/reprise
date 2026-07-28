@@ -10,6 +10,7 @@ use std::path::{Component, Path, PathBuf};
 use crate::library::m3u::{M3uEntry, M3uExportEntry};
 
 pub mod auto_start;
+pub mod browser;
 pub mod cap;
 pub mod category_diff;
 pub mod delta;
@@ -28,6 +29,11 @@ pub mod targets;
 pub mod transfer;
 
 pub use auto_start::{should_auto_start, AutoStartFacts};
+pub use browser::{
+    classify_storage_kind, folder_conflicts_with_playlist_target, preview_target_folder,
+    reset_target_folder, target_relocation_action, StorageKind, StorageOption, TargetPreview,
+    TargetRelocation,
+};
 pub use cap::{items_to_evict, CapItem};
 pub use category_diff::{
     aggregate_balance, apply_cap, candidate_source, project_category_reading, CandidateSource,

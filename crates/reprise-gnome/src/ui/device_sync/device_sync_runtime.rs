@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use gtk4::gio;
 use gtk4::gio::prelude::*;
+use reprise_core::device_sync::browser::StorageOption;
 use reprise_core::device_sync::device_view::{
     category_bytes, project_category_content_row, project_contents_state,
     project_device_category_reading,
@@ -18,7 +19,8 @@ use reprise_core::device_sync::settings::{load_or_create_settings, mark_device_p
 use reprise_core::device_sync::{
     aggregate_balance, should_auto_start, AutoStartFacts, CategoryDiff, CategoryReading,
     DeviceSelection, DeviceSettings, DeviceStorageInspection, DeviceStorageSnapshot,
-    ManagedDeviceFile, MirrorPlan, SelectionSource, SyncPageState, SyncTarget, SyncTargetKind,
+    ManagedDeviceFile, MirrorPlan, SelectionSource, StorageId, SyncPageState, SyncTarget,
+    SyncTargetKind,
 };
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor, DeviceMonitor};
 use reprise_platform_linux::device_transfer::{TranscodeProfile, TranscodeRequest, TranscodedFile};
@@ -610,6 +612,8 @@ mod agent;
 mod compact;
 #[path = "device_sync_planned.rs"]
 mod planned;
+#[path = "device_sync_target_actions.rs"]
+mod target_actions;
 
 #[cfg(test)]
 pub(super) use planned::SyncStartError;

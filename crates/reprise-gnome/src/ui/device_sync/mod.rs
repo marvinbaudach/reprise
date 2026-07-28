@@ -11,6 +11,7 @@ pub(in crate::ui) mod device_sync_smoke;
 pub(in crate::ui) mod device_sync_storage_bar;
 pub(in crate::ui) mod device_sync_storage_copy;
 pub(in crate::ui) mod device_sync_strings;
+mod device_sync_target_browser;
 
 #[cfg(test)]
 mod device_sync_rate_tests;

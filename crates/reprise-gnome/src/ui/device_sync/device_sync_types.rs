@@ -66,6 +66,46 @@ pub trait DeviceBackend {
     fn eject(&self, _device_id: String) -> BackendFuture<bool> {
         Box::pin(async { Ok(false) })
     }
+    /// `MTP-31` (design 7d): every browsable storage volume at the device
+    /// root ("Internal shared storage", "SD card"). Re-listed fresh on
+    /// every browser open — see `reprise_core::device_sync::browser`'s
+    /// module docs on why nothing MTP-derived is cached across calls.
+    fn list_storages(&self, _root_uri: String) -> BackendFuture<Vec<StorageOption>> {
+        Box::pin(async { Err("storage browsing is unavailable".into()) })
+    }
+    /// `MTP-31`: the immediate child folders of `path` on `storage`.
+    fn list_folders(
+        &self,
+        _root_uri: String,
+        _storage: StorageId,
+        _path: String,
+    ) -> BackendFuture<Vec<String>> {
+        Box::pin(async { Err("folder browsing is unavailable".into()) })
+    }
+    /// `MTP-31`'s "New folder". Devices that refuse creation directly at a
+    /// storage's own top level surface a distinct error the dialog can
+    /// explain rather than a generic failure.
+    fn create_folder(
+        &self,
+        _root_uri: String,
+        _storage: StorageId,
+        _path: String,
+        _name: String,
+    ) -> BackendFuture<()> {
+        Box::pin(async { Err("folder creation is unavailable".into()) })
+    }
+    /// `MTP-32`: relocates an already-synced target folder in one MTP move
+    /// instead of the sync layer re-copying every file under it. Only
+    /// called when `target_relocation_action` resolves to `MoveFolder`.
+    fn move_folder(
+        &self,
+        _root_uri: String,
+        _storage: StorageId,
+        _from_path: String,
+        _to_path: String,
+    ) -> BackendFuture<()> {
+        Box::pin(async { Err("folder relocation is unavailable".into()) })
+    }
 }
 
 #[derive(Clone, Debug)]

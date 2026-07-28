@@ -6,7 +6,8 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use gtk4::gio;
-use reprise_core::device_sync::DeviceStorageInspection;
+use reprise_core::device_sync::browser::StorageOption;
+use reprise_core::device_sync::{DeviceStorageInspection, StorageId};
 use reprise_platform_linux::device_sync::{
     CopyOutcome, DeviceDescriptor, DeviceMonitor, DeviceStorage,
 };
@@ -141,6 +142,59 @@ impl DeviceBackend for GioDeviceBackend {
         Box::pin(async move {
             monitor
                 .eject(&device_id)
+                .await
+                .map_err(|error| error.to_string())
+        })
+    }
+
+    fn list_storages(&self, root_uri: String) -> BackendFuture<Vec<StorageOption>> {
+        Box::pin(async move {
+            DeviceStorage::from_uri(&root_uri)
+                .list_storage_volumes()
+                .await
+                .map_err(|error| error.to_string())
+        })
+    }
+
+    fn list_folders(
+        &self,
+        root_uri: String,
+        storage: StorageId,
+        path: String,
+    ) -> BackendFuture<Vec<String>> {
+        Box::pin(async move {
+            DeviceStorage::from_uri(&root_uri)
+                .list_child_folders(storage, &path)
+                .await
+                .map_err(|error| error.to_string())
+        })
+    }
+
+    fn create_folder(
+        &self,
+        root_uri: String,
+        storage: StorageId,
+        path: String,
+        name: String,
+    ) -> BackendFuture<()> {
+        Box::pin(async move {
+            DeviceStorage::from_uri(&root_uri)
+                .create_child_folder(storage, &path, &name)
+                .await
+                .map_err(|error| error.to_string())
+        })
+    }
+
+    fn move_folder(
+        &self,
+        root_uri: String,
+        storage: StorageId,
+        from_path: String,
+        to_path: String,
+    ) -> BackendFuture<()> {
+        Box::pin(async move {
+            DeviceStorage::from_uri(&root_uri)
+                .move_child_folder(storage, &from_path, &to_path)
                 .await
                 .map_err(|error| error.to_string())
         })

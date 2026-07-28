@@ -523,9 +523,10 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   synchronization"-Panel darunter liest pro Kategorie `MTP-22`s Zeile („To
   copy 14 files · 2.6 GiB", „To remove 3 files · 148 MiB", „Source off",
   „Unavailable, kept on phone") und trägt darunter dieselbe Bilanz aggregiert.
-  Der Zielordner selbst ist in dieser Aufgabe nur Text — der Browser zum
-  Ändern ist `MTP-18`s bereits notierte Zukunftsarbeit (7d, E6, nicht Teil
-  dieser Aufgabe).
+  **Nachtrag vom 2026-07-28 (E6) bindend:** der Zielordnerpfad ist nicht mehr
+  reiner Text — „Change folder…" neben dem Pfad öffnet den
+  Geräte-Ordner-Browser (`MTP-31`); die frühere Formulierung, dieser Browser
+  sei noch nicht gebaut, ist damit erledigt.
 - **MTP-29** [aktiv] [gtk] — Die Sidebar-Gerätekarte nennt im Leerlauf eine
   von genau vier Richtungssätzen statt einer einzelnen blockierenden Zahl:
   „14 to copy · 2.6 GiB · 3 to remove", „3 to remove · frees 148 MiB" (0 B
@@ -557,6 +558,43 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   reine Funktion über die gesammelten Fakten (`reprise_core::device_sync::
   auto_start::should_auto_start`); die GTK-Laufzeit sammelt diese Fakten nur
   und gehorcht.
+- **MTP-31** [aktiv] [core] [gtk] — Design 7d, E6: „Change folder…" neben
+  jedem Zielordnerpfad der Content-Sektion (`MTP-28`) öffnet den
+  Geräte-Ordner-Browser. Der Browser bietet Speicherauswahl (intern/SD-Karte,
+  aus den am Gerät gefundenen Speichern), einen Ordnerbaum mit Navigation
+  hinein und eine Ordnerebene zurück, „New folder" sowie eine Zielvorschau
+  („Files will be stored at ⟨Storage⟩ → ⟨Pfad⟩"), die erst nach gewählter
+  Speicherquelle auflöst und sonst „once a storage is chosen" bzw. bei einem
+  verschwundenen Speicher „no longer available" ausweist. Liegt der gewählte
+  Ordner auf demselben Speicher innerhalb des Playlists-Ziels (`MTP-17`s
+  autoritativer Baum), erscheint eine Warnung — Nesting würde die dortigen
+  Dateien der Playlists-Aufräumung aussetzen. „Reset to default" setzt Pfad
+  und Speicher auf `SyncTargetKind::default_path` zurück, ohne `enabled` oder
+  `cap_bytes` anzufassen (`MTP-28`s Nachtrag hält beide für nicht editierbar).
+  Verweigert ein Gerät das Anlegen eines Ordners direkt im Wurzelverzeichnis
+  eines Speichers, zeigt der Browser diesen Fehler inline statt ihn
+  stillschweigend zu verschlucken oder Erfolg zu behaupten. MTP kennt keine
+  Pfade (`MTP-18`): jeder Browser-Aufruf löst Speicher und Ordnerinhalt frisch
+  über den `DeviceBackend` auf, nie über einen gespeicherten Object-Handle.
+  Jede Entscheidung — Zielvorschau, Konflikt-Warnung, Reset-Ergebnis — ist
+  eine reine, GTK-freie Funktion in `reprise_core::device_sync::browser`; die
+  GTK-Seite sammelt nur Fakten (Speicherliste, Ordnerinhalt) und stellt sie
+  dar. Die reale GVfs/MTP-Anbindung und ein aufzeichnender Test-Stellvertreter
+  teilen sich denselben `DeviceBackend`-Vertrag (`MTP-23`), sodass kein Test
+  ein angeschlossenes Telefon braucht.
+- **MTP-32** [aktiv] [core] [gtk] — Ändert der Browser (`MTP-31`) den
+  Zielordner eines bereits auf einen Speicher aufgelösten Ziels auf
+  demselben Speicher, werden dort bereits synchronisierte Dateien beim
+  nächsten Schritt per MTP-Verschieben an den neuen Ort umgezogen, statt sie
+  ein zweites Mal zu kopieren. Ein Speicherwechsel läuft weiterhin über
+  `MTP-18`s bestehenden Kopieren-und-verwaisen-Pfad, weil ein Ordner MTP-
+  Speichergrenzen nicht per Verschieben überqueren kann. Die Entscheidung
+  (Unchanged / MoveFolder / CopyAndOrphanPrevious) ist die reine Funktion
+  `reprise_core::device_sync::browser::target_relocation_action`, die
+  `MTP-18`s `target_storage_transition` wiederverwendet statt sie zu
+  duplizieren; ein Verschieben, das am Gerät fehlschlägt, blockiert das
+  Speichern des neuen Ordners nicht — der nächste Sync kopiert dann schlicht
+  frisch, protokolliert aber eine Warnung.
 
 ## F. Einstellungen & Modale
 

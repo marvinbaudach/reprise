@@ -19,6 +19,7 @@ fn no_op_content_actions() -> ContentPanelActions {
         set_remove_deleted: Rc::new(|_| {}),
         set_sync_automatically: Rc::new(|_| {}),
         scan_device: Rc::new(|| {}),
+        open_folder_browser: Rc::new(|_, _| {}),
     }
 }
 
