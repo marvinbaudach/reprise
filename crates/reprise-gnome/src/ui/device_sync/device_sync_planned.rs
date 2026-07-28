@@ -9,7 +9,8 @@ use reprise_core::device_sync::settings::{
     DeviceFileRecord, DevicePlaylistRecord,
 };
 use reprise_core::device_sync::{
-    DesiredManagedFile, ManagedRemoval, ManagedRoot, MirrorPlan, TransferAction,
+    load_or_create_targets, DesiredManagedFile, ManagedRemoval, MirrorPlan, SyncTargetKind,
+    TransferAction,
 };
 
 use super::*;
@@ -54,6 +55,14 @@ struct PlannedWork {
     root_uri: String,
     plan: MirrorPlan,
     podcasts: PodcastSyncPlan,
+    youtube: PodcastSyncPlan,
+    /// Resolved device paths for the three named sync targets (`MTP-18`,
+    /// `MTP-23`) — loaded once per sync so every transfer/removal/cleanup
+    /// step below routes through the right folder instead of a hard-coded
+    /// single managed root.
+    playlists_path: String,
+    podcasts_path: String,
+    youtube_path: String,
     cancelled: Arc<AtomicBool>,
     cancellable: gio::Cancellable,
 }
@@ -97,6 +106,23 @@ fn transcode_profile(action: TransferAction) -> Option<TranscodeProfile> {
 
 fn blocker_message(plan: &MirrorPlan) -> String {
     format!("playlist mirror is blocked: {:?}", plan.blockers)
+}
+
+/// The resolved device path for one named sync target (`MTP-18`). Falls
+/// back to the kind's design default if somehow absent from the freshly
+/// loaded three — `load_or_create_targets` always returns all three, so
+/// this is just defense in depth, never the normal path.
+fn target_path(
+    targets: &[reprise_core::device_sync::SyncTarget; 3],
+    kind: SyncTargetKind,
+) -> String {
+    targets
+        .iter()
+        .find(|target| target.kind == kind)
+        .map_or_else(
+            || kind.default_path().to_string(),
+            |target| target.path.clone(),
+        )
 }
 
 fn playlist_stem(device_path: &str, fallback: &str) -> String {
@@ -201,12 +227,18 @@ impl DeviceSyncRuntime {
                 0,
                 device.mirror_plan.transfer_bytes,
             );
+            let targets = load_or_create_targets(&self.conn.borrow(), device_id)
+                .map_err(|error| SyncStartError::Planning(error.to_string()))?;
             PlannedWork {
                 device_id: device_id.to_string(),
                 generation: device.generation,
                 root_uri: device.descriptor.root_uri.clone(),
                 plan: device.mirror_plan.clone(),
                 podcasts: device.podcast_plan.clone(),
+                youtube: device.youtube_plan.clone(),
+                playlists_path: target_path(&targets, SyncTargetKind::Playlists),
+                podcasts_path: target_path(&targets, SyncTargetKind::PodcastEpisodes),
+                youtube_path: target_path(&targets, SyncTargetKind::YoutubeAudio),
                 cancelled,
                 cancellable,
             }
@@ -235,29 +267,61 @@ async fn run_planned_sync(weak: Weak<DeviceSyncRuntime>, work: PlannedWork) {
         return;
     };
     let mut failures = Vec::new();
-    for root in [ManagedRoot::Music, ManagedRoot::Podcasts] {
+    for target_path in [
+        &work.playlists_path,
+        &work.podcasts_path,
+        &work.youtube_path,
+    ] {
         if let Err(error) = runtime
             .backend
-            .cleanup_managed_partials(work.root_uri.clone(), root)
+            .cleanup_partials(work.root_uri.clone(), target_path.clone())
             .await
         {
-            tracing::warn!(device_id = work.device_id, ?root, %error, "could not clean partial sync files");
+            tracing::warn!(device_id = work.device_id, target_path, %error, "could not clean partial sync files");
         }
     }
     let (deferred_replacement_removals, completed_bytes) = if work.cancelled.load(Ordering::SeqCst)
     {
         (Vec::new(), 0)
     } else {
-        run_transfers(&runtime, &work, &mut failures).await
+        music_transfer::run_transfers(&runtime, &work, &mut failures).await
     };
+    let mut completed_bytes = completed_bytes;
     if !work.cancelled.load(Ordering::SeqCst) && failures.is_empty() {
-        run_podcast_transfers(&runtime, &work, completed_bytes, &mut failures).await;
+        let podcast_offset = 0;
+        let content_total = work.podcasts.to_copy.len() + work.youtube.to_copy.len();
+        completed_bytes = content_transfer::run_content_transfers(
+            &runtime,
+            &work,
+            &work.podcasts_path,
+            &work.podcasts.to_copy,
+            podcast_offset,
+            content_total,
+            completed_bytes,
+            &mut failures,
+        )
+        .await;
+    }
+    if !work.cancelled.load(Ordering::SeqCst) && failures.is_empty() {
+        let youtube_offset = work.podcasts.to_copy.len();
+        let content_total = work.podcasts.to_copy.len() + work.youtube.to_copy.len();
+        content_transfer::run_content_transfers(
+            &runtime,
+            &work,
+            &work.youtube_path,
+            &work.youtube.to_copy,
+            youtube_offset,
+            content_total,
+            completed_bytes,
+            &mut failures,
+        )
+        .await;
     }
     if !work.cancelled.load(Ordering::SeqCst) && failures.is_empty() {
         run_playlists(&runtime, &work, &mut failures).await;
     }
     if !work.cancelled.load(Ordering::SeqCst) && failures.is_empty() {
-        run_removals(
+        music_transfer::run_removals(
             &runtime,
             &work,
             &deferred_replacement_removals,
@@ -266,228 +330,29 @@ async fn run_planned_sync(weak: Weak<DeviceSyncRuntime>, work: PlannedWork) {
         .await;
     }
     if !work.cancelled.load(Ordering::SeqCst) && failures.is_empty() {
-        run_podcast_removals(&runtime, &work, &mut failures).await;
+        let remove_total = work.podcasts.to_remove.len() + work.youtube.to_remove.len();
+        content_transfer::run_content_removals(
+            &runtime,
+            &work,
+            &work.podcasts_path,
+            &work.podcasts.to_remove,
+            0,
+            remove_total,
+            &mut failures,
+        )
+        .await;
+        content_transfer::run_content_removals(
+            &runtime,
+            &work,
+            &work.youtube_path,
+            &work.youtube.to_remove,
+            work.podcasts.to_remove.len(),
+            remove_total,
+            &mut failures,
+        )
+        .await;
     }
     finish_sync(&runtime, &work, failures);
-}
-
-async fn run_removals(
-    runtime: &Rc<DeviceSyncRuntime>,
-    work: &PlannedWork,
-    deferred_replacements: &[(String, i64)],
-    failures: &mut Vec<i64>,
-) {
-    for (index, removal) in work.plan.remove.iter().enumerate() {
-        if work.cancelled.load(Ordering::SeqCst) {
-            break;
-        }
-        let (path, track_id) = match removal {
-            ManagedRemoval::Inventory(file) => (file.device_path.clone(), Some(file.track_id)),
-            ManagedRemoval::Orphan(file) => (file.relative_path.clone(), None),
-        };
-        set_phase(
-            runtime,
-            &work.device_id,
-            work.generation,
-            syncing_phase(
-                SyncStep::Removing,
-                index,
-                work.plan.remove.len(),
-                path.clone(),
-                0,
-                work.plan.transfer_bytes,
-            ),
-        );
-        match runtime
-            .backend
-            .delete_track(work.root_uri.clone(), path)
-            .await
-        {
-            Ok(_) => {
-                if let Some(track_id) = track_id {
-                    if let Err(error) =
-                        delete_device_file(&runtime.conn.borrow(), &work.device_id, track_id)
-                    {
-                        tracing::warn!(track_id, %error, "could not remove device inventory row");
-                        failures.push(track_id);
-                    }
-                }
-            }
-            Err(error) => {
-                tracing::warn!(%error, "could not remove managed device item");
-                failures.push(track_id.unwrap_or(-1));
-            }
-        }
-    }
-    for (path, track_id) in deferred_replacements {
-        if work.cancelled.load(Ordering::SeqCst) {
-            break;
-        }
-        match runtime
-            .backend
-            .delete_track(work.root_uri.clone(), path.clone())
-            .await
-        {
-            Ok(_) => {}
-            Err(error) => {
-                tracing::warn!(%error, "could not remove replaced device track");
-                failures.push(*track_id);
-            }
-        }
-    }
-}
-
-async fn run_transfers(
-    runtime: &Rc<DeviceSyncRuntime>,
-    work: &PlannedWork,
-    failures: &mut Vec<i64>,
-) -> (Vec<(String, i64)>, u64) {
-    let transfers = transfer_operations(&work.plan);
-    let mut completed_bytes = 0_u64;
-    let mut deferred_replacement_removals = Vec::new();
-    for (token, operation) in transfers.iter().enumerate() {
-        if work.cancelled.load(Ordering::SeqCst) {
-            break;
-        }
-        let entry = &operation.desired;
-        let current_track = track_activity(&entry.track.title, &entry.track.artist);
-        let prepared = match entry.action {
-            TransferAction::CopyOriginal => {
-                Some((entry.track.source_path.clone(), entry.target_bytes, false))
-            }
-            action @ (TransferAction::TranscodeOpus160 | TransferAction::TranscodeMp3(_)) => {
-                set_phase(
-                    runtime,
-                    &work.device_id,
-                    work.generation,
-                    syncing_phase(
-                        SyncStep::Transcoding,
-                        token,
-                        transfers.len(),
-                        current_track.clone(),
-                        completed_bytes,
-                        work.plan.transfer_bytes,
-                    ),
-                );
-                let profile =
-                    transcode_profile(action).expect("transcode action must provide a profile");
-                let extension = match profile {
-                    TranscodeProfile::Opus160 => "opus",
-                    TranscodeProfile::Mp3(_) => "mp3",
-                };
-                let request = TranscodeRequest {
-                    source: entry.track.source_path.clone(),
-                    output: temporary_transcode_path(&work.device_id, entry.track.id, extension),
-                    profile,
-                    metadata: reprise_platform_linux::device_transfer::AudioMetadata::for_track(
-                        &entry.track,
-                    ),
-                };
-                match runtime
-                    .backend
-                    .transcode_track(request, work.cancelled.clone())
-                    .await
-                {
-                    Ok(file) => Some((file.path, file.size_bytes, true)),
-                    Err(error) => {
-                        tracing::warn!(track_id = entry.track.id, %error, "device audio transcode failed");
-                        None
-                    }
-                }
-            }
-        };
-        let Some((source, actual_size, temporary)) = prepared else {
-            failures.push(entry.track.id);
-            continue;
-        };
-        set_phase(
-            runtime,
-            &work.device_id,
-            work.generation,
-            syncing_phase(
-                SyncStep::Copying,
-                token,
-                transfers.len(),
-                current_track,
-                completed_bytes,
-                work.plan.transfer_bytes,
-            ),
-        );
-        let progress_runtime = Rc::downgrade(runtime);
-        let progress_id = work.device_id.clone();
-        let progress_generation = work.generation;
-        let base = completed_bytes;
-        let estimated = entry.target_bytes;
-        let bytes_total = work.plan.transfer_bytes;
-        let progress: Rc<dyn Fn(u64, u64)> = Rc::new(move |copied, _| {
-            if let Some(runtime) = progress_runtime.upgrade() {
-                update_copy_bytes(
-                    &runtime,
-                    &progress_id,
-                    progress_generation,
-                    base.saturating_add(copied.min(estimated)),
-                    bytes_total,
-                    copied,
-                );
-            }
-        });
-        let result = runtime
-            .backend
-            .replace_track(
-                work.device_id.clone(),
-                work.root_uri.clone(),
-                source.clone(),
-                entry.device_path.clone(),
-                actual_size,
-                work.cancellable.clone(),
-                progress,
-            )
-            .await;
-        if temporary {
-            let _ = std::fs::remove_file(&source);
-        }
-        match result {
-            Ok(_) => {
-                let record = DeviceFileRecord {
-                    device_serial: work.device_id.clone(),
-                    track_id: entry.track.id,
-                    source_path: entry.track.source_path.to_string_lossy().into_owned(),
-                    source_size: entry.track.size_bytes,
-                    source_mtime: entry.track.source_mtime,
-                    device_path: entry.device_path.clone(),
-                    device_size: actual_size,
-                    profile_fingerprint: entry.profile_fingerprint.clone(),
-                    pinned: false,
-                };
-                let inventory_result = {
-                    let conn = runtime.conn.borrow();
-                    upsert_device_file(&conn, &record)
-                };
-                match inventory_result {
-                    Ok(()) => {
-                        if let Some(old) = &operation.previous {
-                            if old.device_path != entry.device_path {
-                                deferred_replacement_removals
-                                    .push((old.device_path.clone(), entry.track.id));
-                            }
-                        }
-                    }
-                    Err(error) => {
-                        tracing::warn!(track_id = entry.track.id, %error, "could not update device inventory");
-                        failures.push(entry.track.id);
-                    }
-                }
-            }
-            Err(error) => {
-                tracing::warn!(track_id = entry.track.id, %error, "device transfer failed");
-                if !work.cancelled.load(Ordering::SeqCst) {
-                    failures.push(entry.track.id);
-                }
-            }
-        }
-        completed_bytes = completed_bytes.saturating_add(entry.target_bytes);
-    }
-    (deferred_replacement_removals, completed_bytes)
 }
 
 async fn run_playlists(
@@ -525,6 +390,7 @@ async fn run_playlists(
             .replace_playlist(
                 work.device_id.clone(),
                 work.root_uri.clone(),
+                work.playlists_path.clone(),
                 name.clone(),
                 playlist.contents.as_bytes().to_vec(),
             )
@@ -568,7 +434,11 @@ async fn run_playlists(
         }
         match runtime
             .backend
-            .delete_track(work.root_uri.clone(), playlist.device_path.clone())
+            .delete_track(
+                work.root_uri.clone(),
+                work.playlists_path.clone(),
+                playlist.device_path.clone(),
+            )
             .await
         {
             Ok(_) if !planned_sources.contains(&playlist.source) => {
@@ -729,9 +599,10 @@ fn update_copy_bytes(
     runtime.notify();
 }
 
-#[path = "device_sync_podcast_transfer.rs"]
-mod podcast_transfer;
-use podcast_transfer::{run_podcast_removals, run_podcast_transfers};
+#[path = "device_sync_content_transfer.rs"]
+mod content_transfer;
+#[path = "device_sync_music_transfer.rs"]
+mod music_transfer;
 
 fn temporary_transcode_path(device_id: &str, track_id: i64, extension: &str) -> PathBuf {
     let sequence = TEMP_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);

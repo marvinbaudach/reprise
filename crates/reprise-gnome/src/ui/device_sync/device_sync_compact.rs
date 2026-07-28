@@ -6,8 +6,8 @@ use reprise_core::device_sync::settings::{
     load_device_files, load_device_playlists, resolve_selection_track_ids, save_settings,
 };
 use reprise_core::device_sync::{
-    load_mirror_playlist_snapshots, project_storage, project_sync_page, DeviceSelection,
-    SelectionSource, SyncPageInput, TransferProfile,
+    load_mirror_playlist_snapshots, load_or_create_targets, project_storage, project_sync_page,
+    DeviceSelection, SelectionSource, SyncPageInput, SyncTargetKind, TransferProfile,
 };
 
 use super::*;
@@ -111,7 +111,7 @@ impl DeviceSyncRuntime {
     }
 
     pub(super) fn recompute_delta_silent(self: &Rc<Self>, device_id: &str) -> Result<(), String> {
-        let (settings, storage, managed_files, podcast_files) = self
+        let (settings, storage, managed_files, podcast_files, youtube_files) = self
             .device_states
             .borrow()
             .iter()
@@ -122,6 +122,7 @@ impl DeviceSyncRuntime {
                     device.storage.clone(),
                     device.managed_files.clone(),
                     device.podcast_files.clone(),
+                    device.youtube_files.clone(),
                 )
             })
             .ok_or_else(|| "device is not connected".to_string())?;
@@ -129,7 +130,7 @@ impl DeviceSyncRuntime {
             DeviceSelection::Sources(sources) => sources.clone(),
             DeviceSelection::EntireLibrary => Vec::new(),
         };
-        let (mut projection, podcast_plan, managed_track_count) = {
+        let (mut projection, podcast_plan, youtube_plan, managed_track_count) = {
             let conn = self.conn.borrow();
             let files = load_device_files(&conn, device_id).map_err(|error| error.to_string())?;
             let managed_track_count = files.len();
@@ -146,28 +147,38 @@ impl DeviceSyncRuntime {
                 managed_files,
                 storage: storage.clone(),
             });
-            let podcast_inventory = podcast_files
-                .iter()
-                .map(|file| PodcastDeviceFile {
-                    device_path: file.relative_path.clone(),
-                    size_bytes: file.size_bytes,
-                })
-                .collect::<Vec<_>>();
-            let podcast_candidates =
+            let targets =
+                load_or_create_targets(&conn, device_id).map_err(|error| error.to_string())?;
+            let podcast_inventory = as_podcast_device_files(&podcast_files);
+            let youtube_inventory = as_podcast_device_files(&youtube_files);
+            // Both kinds are queried once and each `build_plan` call filters
+            // by its own `PodcastSyncSource` — the same candidate set feeds
+            // both target plans, mirroring how RSS and YouTube are equally
+            // eligible for phone sync (`POD-12`).
+            let candidates =
                 query_candidates_for_device(&conn, device_id).map_err(|error| error.to_string())?;
-            let podcast_plan = build_podcast_plan(
-                podcast_candidates,
+            let podcast_plan = target_podcast_plan(
+                &targets,
+                SyncTargetKind::PodcastEpisodes,
+                candidates.clone(),
                 &podcast_inventory,
-                true,
                 PodcastSyncSource::Rss,
             );
-            (projection, podcast_plan, managed_track_count)
+            let youtube_plan = target_podcast_plan(
+                &targets,
+                SyncTargetKind::YoutubeAudio,
+                candidates,
+                &youtube_inventory,
+                PodcastSyncSource::Youtube,
+            );
+            (projection, podcast_plan, youtube_plan, managed_track_count)
         };
         projection.plan.transfer_bytes = projection
             .plan
             .transfer_bytes
-            .saturating_add(podcast_plan.bytes);
-        if podcast_plan.selected > 0 {
+            .saturating_add(podcast_plan.bytes)
+            .saturating_add(youtube_plan.bytes);
+        if podcast_plan.selected > 0 || youtube_plan.selected > 0 {
             projection.plan.blockers.retain(|blocker| {
                 blocker != &reprise_core::device_sync::MirrorBlocker::NoPlaylistsSelected
             });
@@ -184,6 +195,7 @@ impl DeviceSyncRuntime {
             device.managed_track_count = managed_track_count;
             device.mirror_plan = projection.plan;
             device.podcast_plan = podcast_plan;
+            device.youtube_plan = youtube_plan;
             device.page = projection.page;
             device.sync_phase = PlannedSyncPhase::Idle;
         }
@@ -199,4 +211,34 @@ impl DeviceSyncRuntime {
             .map(|device| device.settings.clone())
             .ok_or_else(|| "device is not connected".to_string())
     }
+}
+
+/// Builds one target's podcast/YouTube plan, or an empty one when that
+/// target is switched off for this device (`SyncTarget::enabled`) — a
+/// disabled target has no active slot for its category regardless of what
+/// candidates or inventory exist.
+fn target_podcast_plan(
+    targets: &[reprise_core::device_sync::SyncTarget; 3],
+    kind: SyncTargetKind,
+    candidates: Vec<reprise_core::device_sync::podcasts::PodcastSyncCandidate>,
+    inventory: &[PodcastDeviceFile],
+    source: PodcastSyncSource,
+) -> reprise_core::device_sync::podcasts::PodcastSyncPlan {
+    let Some(target) = targets.iter().find(|target| target.kind == kind) else {
+        return reprise_core::device_sync::podcasts::PodcastSyncPlan::default();
+    };
+    if !target.enabled {
+        return reprise_core::device_sync::podcasts::PodcastSyncPlan::default();
+    }
+    build_podcast_plan(candidates, inventory, true, source, target.cap_bytes)
+}
+
+fn as_podcast_device_files(files: &[ManagedDeviceFile]) -> Vec<PodcastDeviceFile> {
+    files
+        .iter()
+        .map(|file| PodcastDeviceFile {
+            device_path: file.relative_path.clone(),
+            size_bytes: file.size_bytes,
+        })
+        .collect()
 }

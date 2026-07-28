@@ -138,7 +138,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pod_8_connected_device_choices_replace_stale_disconnected_devices() {
+    fn pod_12_connected_device_choices_replace_stale_disconnected_devices() {
         let state = PodcastDeviceSyncState::default();
         let phone = PodcastSyncDevice {
             id: "mtp:phone".into(),

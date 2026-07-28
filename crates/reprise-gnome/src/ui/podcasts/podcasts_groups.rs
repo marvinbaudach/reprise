@@ -164,10 +164,11 @@ fn group_header(
     facts.add_css_class("caption");
     facts.add_css_class("dim-label");
     header.append(&facts);
-    if group.kind == PodcastKind::Rss
-        && connected_devices
-            .iter()
-            .any(|device| selected_device_ids.contains(&device.id))
+    // RSS and YouTube sources sync to their own device target folder alike
+    // (`POD-12`), so the phone-sync indicator is not kind-restricted.
+    if connected_devices
+        .iter()
+        .any(|device| selected_device_ids.contains(&device.id))
     {
         let sync = gtk4::Image::from_icon_name("phone-symbolic");
         sync.set_tooltip_text(Some(&strings::text(strings::PODCAST_SYNC_PHONE)));

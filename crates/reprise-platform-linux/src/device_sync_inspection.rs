@@ -34,9 +34,11 @@ impl DeviceStorage {
             },
             managed_files: Vec::new(),
             podcast_files: Vec::new(),
+            youtube_files: Vec::new(),
         };
         let music = storage.child("Music");
         let mut pending = VecDeque::from([(music, String::new())]);
+        let mut youtube_files = Vec::new();
         while let Some((directory, prefix)) = pending.pop_front() {
             let enumerator = match directory
                 .enumerate_children_future(
@@ -82,6 +84,21 @@ impl DeviceStorage {
                             relative_path: managed_path.to_string(),
                             size_bytes,
                         });
+                    } else if let Some(youtube_path) =
+                        relative_path.strip_prefix("Reprise-YouTube/")
+                    {
+                        // Its own target folder (`MTP-18`), not the
+                        // Playlists tree: excluded from both
+                        // `reprise_music_bytes` and `other_music_bytes` so
+                        // it is neither counted as a Reprise playlist track
+                        // nor as a foreign file.
+                        if !is_managed_item_file(&name) {
+                            continue;
+                        }
+                        youtube_files.push(ManagedDeviceFile {
+                            relative_path: youtube_path.to_string(),
+                            size_bytes,
+                        });
                     } else if is_audio_file(&name) {
                         inspection.snapshot.other_music_bytes = inspection
                             .snapshot
@@ -94,7 +111,9 @@ impl DeviceStorage {
         inspection
             .managed_files
             .sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
-        inspection.podcast_files = inspect_podcasts(&storage).await?;
+        youtube_files.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+        inspection.youtube_files = youtube_files;
+        inspection.podcast_files = inspect_folder(&storage, &["Podcasts", "Reprise"]).await?;
         Ok(inspection)
     }
 
@@ -119,8 +138,19 @@ impl DeviceStorage {
     }
 }
 
-async fn inspect_podcasts(storage: &gio::File) -> Result<Vec<ManagedDeviceFile>, DeviceIoError> {
-    let root = storage.child("Podcasts").child("Reprise");
+/// Walks one target folder identified by its literal path components
+/// (`components`, e.g. `["Podcasts", "Reprise"]`) and returns every audio
+/// file found under it, keyed by its path relative to that folder. Used for
+/// targets whose whole tree is Reprise-owned (unlike the Playlists target,
+/// which shares `Music/` with foreign files and is walked separately in
+/// [`DeviceStorage::inspect`]).
+async fn inspect_folder(
+    storage: &gio::File,
+    components: &[&str],
+) -> Result<Vec<ManagedDeviceFile>, DeviceIoError> {
+    let root = components
+        .iter()
+        .fold(storage.clone(), |parent, component| parent.child(component));
     let mut pending = VecDeque::from([(root, String::new())]);
     let mut files = Vec::new();
     while let Some((directory, prefix)) = pending.pop_front() {

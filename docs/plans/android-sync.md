@@ -6,6 +6,26 @@ Feature-Basis: `ea1b3dc7c1`
 Integriertes `dev`: `6cdb1af33e`
 Stand: 2026-07-27
 
+## Nachtrag vom 2026-07-28 — drei benannte Sync-Ziele lösen den einzigen
+## verwalteten Ordner ab
+
+Turn 7 des Design-Dokuments (`docs/plans/podcasts-youtube-radio-turn6.md`,
+Block E) ersetzt den unten beschriebenen einzigen verwalteten
+`Music/Reprise`-Bereich durch **drei benannte, per-Gerät konfigurierbare
+Sync-Ziele** — Playlists, YouTube-Tonspuren, Podcast-Episoden
+(`device_sync/targets.rs`, Regel `MTP-18`) — und verdrahtet den tatsächlichen
+Transfer entsprechend (`MTP-23`). Wo dieser Plan unten von „dem
+verwalteten Ordner" oder „außerhalb `Music/Reprise`" als der einzigen
+Grenze spricht, gilt das nur noch für das **Playlists-Ziel**; die anderen
+beiden Ziele (Standard `/Music/Reprise-YouTube`, `/Podcasts/Reprise`)
+schreiben, löschen und bereinigen genauso, nur additiv statt vollständig
+autoritativ (`MTP-17`). Musik folgt weiterhin dem Transferprofil; Podcast-
+und YouTube-Audio wird immer 1:1 kopiert, nie umkodiert (`MTP-24`). Beide
+neuen Ziele tragen einen Größen-Cap mit „ältestes zuerst"-Räumung
+(`MTP-19`/`MTP-25`), das Playlists-Ziel bleibt ungedeckelt. Kein Geräte-
+Browser für frei wählbare Zielordner existiert noch (7d/E6) — die drei
+Ziele starten mit ihren Vorschlagspfaden und `enabled = true`.
+
 Dieser Plan ersetzt den früheren Entwurf für einen Geräte-Dateibrowser,
 Preferences-Sync-Tab, „Entire Library“, Pins, Ratings-Back, frei
 konfigurierbare Encoder und einen globalen Sync. Der
@@ -43,10 +63,13 @@ verbundene Android-MTP-Geräte. Die Bedienung bleibt absichtlich klein:
   Transferprofil wird nach Reconnect und App-Neustart für dasselbe Gerät
   wiederhergestellt. Es gibt keinen Apply-Schritt und keine zweite
   Sync-Oberfläche.
-- `Music/Reprise` ist ein vollständig von Reprise verwalteter Mirror-Root.
-  Nach vollständiger Veröffentlichung des neuen Sollzustands werden dort alle
-  nicht mehr benötigten Dateien entfernt. Außerhalb dieses Unterordners wird
-  nichts geschrieben, verschoben oder gelöscht.
+- `Music/Reprise` — das Playlists-Sync-Ziel (`MTP-18`) — ist ein vollständig
+  von Reprise verwalteter Mirror-Root. Nach vollständiger Veröffentlichung
+  des neuen Sollzustands werden dort alle nicht mehr benötigten Dateien
+  entfernt. Außerhalb dieses Unterordners schreibt, verschiebt und löscht
+  Reprise nur noch innerhalb der beiden anderen benannten Ziele
+  (`/Music/Reprise-YouTube`, `/Podcasts/Reprise`, siehe Nachtrag oben) —
+  nirgendwo sonst auf dem Gerät.
 
 Nicht Teil dieser Stage sind:
 
@@ -85,14 +108,28 @@ Die pure Core-Schicht besitzt die plattformneutralen Verträge:
   Sidebar.
 - `device_sync/settings.rs`: gerätebezogene Auswahl sowie Track- und
   Playlist-Inventare.
+- `device_sync/targets.rs`: die drei benannten Sync-Ziele (`MTP-18`) —
+  `StorageID`, Pfad-String, Aktivierung, optionaler Cap — als reine
+  Datenschicht, siehe Nachtrag oben.
+- `device_sync/cap.rs`: reine „ältestes zuerst"-Cap-Räumung (`MTP-19`),
+  transport- und zielartunabhängig.
+- `device_sync/podcasts.rs`: Sync-Plan für Podcast-Episoden und
+  YouTube-Tonspuren — beide über denselben `build_plan`, unterschieden nur
+  durch `PodcastSyncSource` und Ziel-Cap.
+- `device_sync/category_diff.rs`: die pro-Kategorie lesbare Diff-Projektion
+  fürs Geräte-Dashboard (`MTP-21`/`MTP-22`), reine Anzeige-Übersetzung ohne
+  eigene Transferlogik.
 
 `reprise-core` bleibt frei von GTK, libadwaita, GStreamer und zbus.
 
 ### `reprise-platform-linux`
 
-- `device_sync.rs` erkennt ausschließlich MTP-Ziele, löst den verwalteten
-  `Music/Reprise`-Bereich auf, inspiziert nur diesen Bereich und liefert andere
-  Musik ausschließlich aggregiert.
+- `device_sync.rs` erkennt ausschließlich MTP-Ziele und löst pro Aufruf den
+  Pfad eines der drei benannten Sync-Ziele auf (`target_path: &str`, siehe
+  Nachtrag oben) statt eines fest verdrahteten Bereichs; die Playlists-
+  Inspektion aggregiert fremde Musik weiterhin nur als Summe, die beiden
+  anderen Ziele werden separat als eigene Datei-Inventare geliefert
+  (`device_sync_inspection.rs`).
 - `device_transfer.rs` transkodiert genau eine eindeutig verlustfreie Datei
   zur Zeit entweder über `opusenc → oggmux` mit 160 kbit/s VBR oder über
   `lamemp3enc → id3v2mux` mit 256 kbit/s CBR. Tags und eingebettete Cover
@@ -103,7 +140,8 @@ Die pure Core-Schicht besitzt die plattformneutralen Verträge:
   Schritt blockiert.
 - Der MTP-Transfer schreibt zuerst `<Ziel>.part`, prüft die erwartete Größe und
   veröffentlicht erst danach atomar auf den finalen verwalteten Pfad.
-- Partials werden ausschließlich unter `Music/Reprise` bereinigt.
+- Partials werden unter jedem der drei benannten Ziele unabhängig bereinigt
+  (`cleanup_partials_in(target_path)`), nicht mehr nur unter `Music/Reprise`.
 
 ### `reprise-gnome`
 

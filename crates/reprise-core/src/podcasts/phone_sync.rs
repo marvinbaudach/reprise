@@ -1,4 +1,9 @@
-//! Podcast source eligibility for Android synchronization.
+//! Podcast source eligibility for Android synchronization (`POD-12`).
+//!
+//! RSS and YouTube subscriptions are equally eligible: eligibility is about
+//! the subscription being active, not about its kind. Each kind lands on
+//! its own device target folder (`MTP-18`) — that routing decision lives in
+//! `device_sync::podcasts`, not here.
 
 use rusqlite::{params, Connection};
 
@@ -16,7 +21,7 @@ pub fn set_device_enabled(
     let eligible = transaction.query_row(
         "SELECT EXISTS(
            SELECT 1 FROM podcast_subscriptions
-           WHERE id = ?1 AND removed_at IS NULL AND kind = 'rss'
+           WHERE id = ?1 AND removed_at IS NULL
          )",
         [subscription_id],
         |row| row.get::<_, bool>(0),
@@ -60,7 +65,6 @@ pub fn selected_device_ids(
          JOIN podcast_subscriptions s ON s.id = d.subscription_id
          WHERE d.subscription_id = ?1
            AND s.removed_at IS NULL
-           AND s.kind = 'rss'
          ORDER BY d.device_id",
     )?;
     let rows = statement.query_map([subscription_id], |row| row.get(0))?;
@@ -75,7 +79,7 @@ pub fn set_enabled(
     Ok(conn.execute(
         "UPDATE podcast_subscriptions
          SET sync_to_phone = ?2
-         WHERE id = ?1 AND removed_at IS NULL AND kind = 'rss'",
+         WHERE id = ?1 AND removed_at IS NULL",
         params![subscription_id, enabled],
     )? != 0)
 }
@@ -98,7 +102,7 @@ mod tests {
     }
 
     #[test]
-    fn pod_8_only_rss_subscriptions_can_sync_to_phone() {
+    fn pod_12_rss_and_youtube_subscriptions_can_equally_sync_to_phone() {
         let conn = crate::db::open_migrated(None).unwrap();
         let rss = store::add_or_restore(
             &conn,
@@ -114,7 +118,7 @@ mod tests {
         .unwrap();
 
         assert!(set_enabled(&conn, rss, true).unwrap());
-        assert!(!set_enabled(&conn, youtube, true).unwrap());
+        assert!(set_enabled(&conn, youtube, true).unwrap());
         assert!(
             store::subscription(&conn, rss)
                 .unwrap()
@@ -122,7 +126,7 @@ mod tests {
                 .sync_to_phone
         );
         assert!(
-            !store::subscription(&conn, youtube)
+            store::subscription(&conn, youtube)
                 .unwrap()
                 .unwrap()
                 .sync_to_phone
@@ -130,7 +134,7 @@ mod tests {
     }
 
     #[test]
-    fn pod_8_restoring_a_source_as_youtube_clears_phone_sync() {
+    fn pod_12_restoring_a_source_under_a_different_kind_clears_phone_sync() {
         let conn = crate::db::open_migrated(None).unwrap();
         let source = store::add_or_restore(
             &conn,
@@ -170,7 +174,7 @@ mod tests {
     }
 
     #[test]
-    fn pod_8_rss_phone_sync_selection_is_persisted_per_stable_device() {
+    fn pod_12_rss_phone_sync_selection_is_persisted_per_stable_device() {
         let conn = crate::db::open_migrated(None).unwrap();
         let rss = store::add_or_restore(
             &conn,
@@ -194,7 +198,7 @@ mod tests {
     }
 
     #[test]
-    fn pod_8_youtube_cannot_persist_any_device_selection() {
+    fn pod_12_youtube_persists_device_selection_just_like_rss() {
         let conn = crate::db::open_migrated(None).unwrap();
         let youtube = store::add_or_restore(
             &conn,
@@ -203,7 +207,13 @@ mod tests {
         )
         .unwrap();
 
-        assert!(!set_device_enabled(&conn, youtube, "mtp:pixel", true).unwrap());
+        assert!(set_device_enabled(&conn, youtube, "mtp:pixel", true).unwrap());
+        assert_eq!(
+            selected_device_ids(&conn, youtube).unwrap(),
+            ["mtp:pixel".to_owned()]
+        );
+
+        assert!(set_device_enabled(&conn, youtube, "mtp:pixel", false).unwrap());
         assert!(selected_device_ids(&conn, youtube).unwrap().is_empty());
     }
 }

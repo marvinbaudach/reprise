@@ -36,6 +36,7 @@ struct DeviceState {
     storage: DeviceStorageSnapshot,
     managed_files: Vec<ManagedDeviceFile>,
     podcast_files: Vec<ManagedDeviceFile>,
+    youtube_files: Vec<ManagedDeviceFile>,
     managed_track_count: usize,
     scanning: bool,
     scan_generation: u64,
@@ -50,6 +51,7 @@ struct DeviceState {
     mtp_rate: MtpRateMeter,
     mirror_plan: MirrorPlan,
     podcast_plan: reprise_core::device_sync::podcasts::PodcastSyncPlan,
+    youtube_plan: reprise_core::device_sync::podcasts::PodcastSyncPlan,
     page: SyncPageState,
 }
 
@@ -63,6 +65,7 @@ impl DeviceState {
             storage: DeviceStorageSnapshot::default(),
             managed_files: Vec::new(),
             podcast_files: Vec::new(),
+            youtube_files: Vec::new(),
             managed_track_count: 0,
             scanning: false,
             scan_generation: 0,
@@ -77,6 +80,7 @@ impl DeviceState {
             mtp_rate: MtpRateMeter::default(),
             mirror_plan: MirrorPlan::default(),
             podcast_plan: reprise_core::device_sync::podcasts::PodcastSyncPlan::default(),
+            youtube_plan: reprise_core::device_sync::podcasts::PodcastSyncPlan::default(),
             page: SyncPageState::default(),
         }
     }
@@ -259,10 +263,12 @@ impl DeviceSyncRuntime {
                             snapshot,
                             managed_files,
                             podcast_files,
+                            youtube_files,
                         }) => {
                             device.storage = snapshot;
                             device.managed_files = managed_files;
                             device.podcast_files = podcast_files;
+                            device.youtube_files = youtube_files;
                             device.scan_error = None;
                         }
                         Err(error) => device.scan_error = Some(error),

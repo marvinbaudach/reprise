@@ -11,7 +11,7 @@ use gtk4::gio::prelude::*;
 use reprise_core::device_sync::settings::save_settings;
 use reprise_core::device_sync::{
     DeviceSelection, DeviceSettings, DeviceStorageAccess, DeviceStorageInspection,
-    DeviceStorageSnapshot, ManagedDeviceFile, ManagedRoot, SelectionSource,
+    DeviceStorageSnapshot, ManagedDeviceFile, SelectionSource,
 };
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor};
 use reprise_platform_linux::device_transfer::{TranscodeProfile, TranscodeRequest, TranscodedFile};
@@ -53,9 +53,14 @@ struct FakeState {
     max_total: Cell<usize>,
     playlists: RefCell<Vec<(String, String, Vec<u8>)>>,
     deleted: RefCell<Vec<String>>,
-    managed_copies: RefCell<Vec<(ManagedRoot, String)>>,
-    managed_deleted: RefCell<Vec<(ManagedRoot, String)>>,
+    /// Every `replace_track`/`delete_track` call that reached this double,
+    /// recorded as `(target_path, relative_path)` — the seam's proof that
+    /// the right named target (`MTP-18`) was used, without touching a real
+    /// or simulated filesystem.
+    managed_copies: RefCell<Vec<(String, String)>>,
+    managed_deleted: RefCell<Vec<(String, String)>>,
     podcast_files: RefCell<Vec<ManagedDeviceFile>>,
+    youtube_files: RefCell<Vec<ManagedDeviceFile>>,
     ejected: RefCell<Vec<String>>,
     planned_operations: RefCell<Vec<(String, &'static str)>>,
     available_bytes: Cell<Option<u64>>,
@@ -183,6 +188,7 @@ impl DeviceBackend for FakeBackend {
         let gate = self.state.inspection_gate.borrow_mut().take();
         let inspection_error = self.state.inspection_error.borrow_mut().take();
         let podcast_files = self.state.podcast_files.borrow().clone();
+        let youtube_files = self.state.youtube_files.borrow().clone();
         Box::pin(async move {
             if let Some(gate) = gate {
                 gate.started
@@ -207,14 +213,16 @@ impl DeviceBackend for FakeBackend {
                 },
                 managed_files: Vec::new(),
                 podcast_files,
+                youtube_files,
             })
         })
     }
 
-    fn copy_track(
+    fn replace_track(
         &self,
         device_id: String,
         _root_uri: String,
+        target_path: String,
         _source_path: PathBuf,
         relative_target: String,
         expected_size: u64,
@@ -273,7 +281,11 @@ impl DeviceBackend for FakeBackend {
             state
                 .copy_order
                 .borrow_mut()
-                .push((device_id, relative_target));
+                .push((device_id, relative_target.clone()));
+            state
+                .managed_copies
+                .borrow_mut()
+                .push((target_path, relative_target));
             Ok(CopyOutcome::Copied)
         })
     }
@@ -304,53 +316,24 @@ impl DeviceBackend for FakeBackend {
         })
     }
 
-    fn delete_track(&self, _root_uri: String, relative_target: String) -> TestFuture<bool> {
+    fn delete_track(
+        &self,
+        _root_uri: String,
+        target_path: String,
+        relative_target: String,
+    ) -> TestFuture<bool> {
         let state = self.state.clone();
         Box::pin(async move {
             let observer = state.delete_observer.borrow().clone();
             if let Some(observer) = observer {
                 observer(&relative_target);
             }
-            state.deleted.borrow_mut().push(relative_target);
-            Ok(true)
-        })
-    }
-
-    fn delete_managed(
-        &self,
-        _root_uri: String,
-        root: ManagedRoot,
-        relative_target: String,
-    ) -> TestFuture<bool> {
-        let state = self.state.clone();
-        Box::pin(async move {
+            state.deleted.borrow_mut().push(relative_target.clone());
             state
                 .managed_deleted
                 .borrow_mut()
-                .push((root, relative_target));
+                .push((target_path, relative_target));
             Ok(true)
-        })
-    }
-
-    fn replace_managed(
-        &self,
-        _device_id: String,
-        _root_uri: String,
-        root: ManagedRoot,
-        _source_path: PathBuf,
-        relative_target: String,
-        expected_size: u64,
-        _cancellable: gio::Cancellable,
-        progress: Rc<dyn Fn(u64, u64)>,
-    ) -> TestFuture<CopyOutcome> {
-        let state = self.state.clone();
-        Box::pin(async move {
-            progress(expected_size, expected_size);
-            state
-                .managed_copies
-                .borrow_mut()
-                .push((root, relative_target));
-            Ok(CopyOutcome::Copied)
         })
     }
 
@@ -358,6 +341,7 @@ impl DeviceBackend for FakeBackend {
         &self,
         device_id: String,
         _root_uri: String,
+        _target_path: String,
         name: String,
         contents: Vec<u8>,
     ) -> TestFuture<()> {
@@ -455,7 +439,63 @@ async fn settle() {
 }
 
 #[test]
-fn pod_8_planned_sync_copies_selected_rss_and_removes_only_podcast_inventory() {
+fn mtp_24_podcast_and_youtube_audio_are_always_copied_1_to_1_never_transcoded() {
+    run(async {
+        let (downloads, conn) = fixture();
+        // Named with a `.flac` extension on purpose: if this ever went
+        // through the music transfer-profile branch it would be flagged
+        // as lossless and transcoded. Podcast/YouTube audio must never
+        // take that branch (`MTP-24`) — it copies whatever bytes exist.
+        let episode_path = downloads.path().join("episode.flac");
+        std::fs::write(&episode_path, b"already-opus-bytes").unwrap();
+        conn.borrow()
+            .execute_batch(
+                "INSERT INTO podcast_subscriptions
+                 (id, kind, feed_url, title, auto_download, sync_to_phone, added_at)
+                 VALUES (10, 'youtube', 'https://example.test/channel', 'Channel', 0, 1, 1);
+                 INSERT INTO podcast_subscription_devices (subscription_id, device_id)
+                 VALUES (10, 'a');",
+            )
+            .unwrap();
+        conn.borrow()
+            .execute(
+                "INSERT INTO podcast_episodes
+                 (id, subscription_id, guid, title, audio_url, downloaded_path,
+                  downloaded_bytes, first_seen_at)
+                 VALUES (100, 10, 'yt-100', 'Video', 'https://example.test/video.webm',
+                         ?1, 18, 1)",
+                [episode_path.to_string_lossy().as_ref()],
+            )
+            .unwrap();
+
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        settle().await;
+
+        runtime.sync_now("a").unwrap();
+        settle().await;
+
+        assert_eq!(
+            backend.state.managed_copies.borrow().as_slice(),
+            [(
+                "/Music/Reprise-YouTube".to_string(),
+                "Channel/100-Video.flac".to_string()
+            )]
+        );
+        assert!(
+            backend
+                .state
+                .planned_operations
+                .borrow()
+                .iter()
+                .all(|(_, kind)| *kind != "transcode"),
+            "podcast/YouTube audio must never be transcoded"
+        );
+    });
+}
+
+#[test]
+fn pod_12_planned_sync_copies_selected_rss_and_youtube_each_to_its_own_target() {
     run(async {
         let (downloads, conn) = fixture();
         let rss_path = downloads.path().join("rss.mp3");
@@ -504,26 +544,36 @@ fn pod_8_planned_sync_copies_selected_rss_and_removes_only_podcast_inventory() {
 
         let page = runtime.devices().remove(0).page;
         assert!(page.blockers.is_empty());
-        assert_eq!(page.changes.transfer_bytes, 9);
+        // Both the RSS episode (9 bytes) and the YouTube episode (7 bytes)
+        // are wanted — YouTube is no longer defensively cleared (POD-12).
+        assert_eq!(page.changes.transfer_bytes, 16);
         assert!(page.controls.can_start);
 
         runtime.sync_now("a").unwrap();
         settle().await;
 
+        let mut copies = backend.state.managed_copies.borrow().clone();
+        copies.sort();
         assert_eq!(
-            backend.state.managed_copies.borrow().as_slice(),
-            [(ManagedRoot::Podcasts, "RSS Show/100-Episode.mp3".into())]
+            copies,
+            [
+                (
+                    "/Music/Reprise-YouTube".to_string(),
+                    "Video/101-Video.mp3".to_string()
+                ),
+                (
+                    "/Podcasts/Reprise".to_string(),
+                    "RSS Show/100-Episode.mp3".to_string()
+                ),
+            ]
         );
         assert_eq!(
             backend.state.managed_deleted.borrow().as_slice(),
-            [(ManagedRoot::Podcasts, "Old Show/99-Old.mp3".into())]
+            [(
+                "/Podcasts/Reprise".to_string(),
+                "Old Show/99-Old.mp3".to_string()
+            )]
         );
-        assert!(backend
-            .state
-            .copy_order
-            .borrow()
-            .iter()
-            .all(|(_, path)| !path.contains("Episode") && !path.contains("Video")));
     });
 }
 

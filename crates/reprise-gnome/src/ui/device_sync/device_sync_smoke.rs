@@ -86,34 +86,11 @@ impl DeviceBackend for SimulatedMtpDeviceBackend {
         })
     }
 
-    fn copy_track(
-        &self,
-        _device_id: String,
-        root_uri: String,
-        source_path: PathBuf,
-        relative_target: String,
-        expected_size: u64,
-        cancellable: gio::Cancellable,
-        progress: Rc<dyn Fn(u64, u64)>,
-    ) -> BackendFuture<CopyOutcome> {
-        Box::pin(async move {
-            Self::storage(&root_uri)
-                .copy_track(
-                    &gio::File::for_path(source_path),
-                    &relative_target,
-                    expected_size,
-                    &cancellable,
-                    move |copied, total| progress(copied, total),
-                )
-                .await
-                .map_err(|error| error.to_string())
-        })
-    }
-
     fn replace_track(
         &self,
         _device_id: String,
         root_uri: String,
+        target_path: String,
         source_path: PathBuf,
         relative_target: String,
         expected_size: u64,
@@ -122,7 +99,8 @@ impl DeviceBackend for SimulatedMtpDeviceBackend {
     ) -> BackendFuture<CopyOutcome> {
         Box::pin(async move {
             Self::storage(&root_uri)
-                .replace_track(
+                .replace_managed(
+                    &target_path,
                     &gio::File::for_path(source_path),
                     &relative_target,
                     expected_size,
@@ -134,19 +112,24 @@ impl DeviceBackend for SimulatedMtpDeviceBackend {
         })
     }
 
-    fn cleanup_partials(&self, root_uri: String) -> BackendFuture<u32> {
+    fn cleanup_partials(&self, root_uri: String, target_path: String) -> BackendFuture<u32> {
         Box::pin(async move {
             Self::storage(&root_uri)
-                .cleanup_partials()
+                .cleanup_partials_in(&target_path)
                 .await
                 .map_err(|error| error.to_string())
         })
     }
 
-    fn delete_track(&self, root_uri: String, relative_target: String) -> BackendFuture<bool> {
+    fn delete_track(
+        &self,
+        root_uri: String,
+        target_path: String,
+        relative_target: String,
+    ) -> BackendFuture<bool> {
         Box::pin(async move {
             Self::storage(&root_uri)
-                .delete_track(&relative_target)
+                .delete_managed(&target_path, &relative_target)
                 .await
                 .map_err(|error| error.to_string())
         })
@@ -185,12 +168,13 @@ impl DeviceBackend for SimulatedMtpDeviceBackend {
         &self,
         _device_id: String,
         root_uri: String,
+        target_path: String,
         name: String,
         contents: Vec<u8>,
     ) -> BackendFuture<()> {
         Box::pin(async move {
             Self::storage(&root_uri)
-                .replace_playlist(&name, contents)
+                .replace_playlist(&target_path, &name, contents)
                 .await
                 .map_err(|error| error.to_string())
         })

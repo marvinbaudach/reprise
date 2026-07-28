@@ -3,7 +3,7 @@
 use gtk4::gio;
 use gtk4::glib::variant::ToVariant;
 use gtk4::prelude::*;
-use reprise_core::podcasts::{EpisodeRow, PodcastKind, SourceGroup};
+use reprise_core::podcasts::{EpisodeRow, SourceGroup};
 
 use crate::ui::strings;
 
@@ -121,30 +121,32 @@ pub(super) fn build(row: &EpisodeRow) -> gio::Menu {
     menu
 }
 
+/// Builds the source-level context menu, including the phone-sync section.
+/// RSS and YouTube sources get the same sync section (`POD-12`) — each
+/// lands on its own device target folder (`MTP-18`), a routing decision
+/// made downstream in `device_sync::podcasts`, not here.
 pub(super) fn build_source(
     group: &SourceGroup,
     devices: &[PodcastSyncDevice],
     selected_device_ids: &[String],
 ) -> gio::Menu {
     let menu = gio::Menu::new();
-    if group.kind == PodcastKind::Rss {
-        match sync_control(devices, selected_device_ids) {
-            SyncControl::Hidden => {}
-            SyncControl::Direct { device, selected } => append_device_targeted(
-                &menu,
-                group.subscription_id,
-                &DeviceSyncChoice { device, selected },
-            ),
-            SyncControl::Chooser(choices) => {
-                let choices_menu = gio::Menu::new();
-                for choice in choices {
-                    append_device_targeted(&choices_menu, group.subscription_id, &choice);
-                }
-                menu.append_submenu(
-                    Some(&strings::text(strings::PODCAST_SYNC_DEVICES)),
-                    &choices_menu,
-                );
+    match sync_control(devices, selected_device_ids) {
+        SyncControl::Hidden => {}
+        SyncControl::Direct { device, selected } => append_device_targeted(
+            &menu,
+            group.subscription_id,
+            &DeviceSyncChoice { device, selected },
+        ),
+        SyncControl::Chooser(choices) => {
+            let choices_menu = gio::Menu::new();
+            for choice in choices {
+                append_device_targeted(&choices_menu, group.subscription_id, &choice);
             }
+            menu.append_submenu(
+                Some(&strings::text(strings::PODCAST_SYNC_DEVICES)),
+                &choices_menu,
+            );
         }
     }
     append_targeted(
@@ -228,6 +230,8 @@ fn popup(item: &gtk4::ListItem, parent: &gtk4::Widget, x: i32, y: i32) {
 
 #[cfg(test)]
 mod tests {
+    use reprise_core::podcasts::PodcastKind;
+
     use super::*;
 
     #[test]
@@ -245,7 +249,7 @@ mod tests {
     }
 
     #[test]
-    fn pod_8_youtube_never_exposes_phone_sync_action() {
+    fn pod_12_youtube_exposes_phone_sync_action_just_like_rss() {
         let group = SourceGroup {
             subscription_id: 1,
             title: "Channel".into(),
@@ -263,16 +267,17 @@ mod tests {
             }],
             &[],
         );
-        assert_eq!(menu.n_items(), 1);
+        // 1 section for "Sync to <device>" plus 1 for "Unsubscribe".
+        assert_eq!(menu.n_items(), 2);
     }
 
     #[test]
-    fn pod_8_sync_control_is_hidden_without_a_connected_device() {
+    fn pod_12_sync_control_is_hidden_without_a_connected_device() {
         assert_eq!(sync_control(&[], &[]), SyncControl::Hidden);
     }
 
     #[test]
-    fn pod_8_one_connected_device_is_targeted_directly() {
+    fn pod_12_one_connected_device_is_targeted_directly() {
         let devices = [PodcastSyncDevice {
             id: "mtp:pixel".into(),
             name: "Pixel".into(),
@@ -288,7 +293,7 @@ mod tests {
     }
 
     #[test]
-    fn pod_8_multiple_connected_devices_offer_independent_choices() {
+    fn pod_12_multiple_connected_devices_offer_independent_choices() {
         let devices = [
             PodcastSyncDevice {
                 id: "mtp:phone".into(),

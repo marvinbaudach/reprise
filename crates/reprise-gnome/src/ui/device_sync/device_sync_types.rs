@@ -3,101 +3,46 @@ use super::*;
 pub type BackendFuture<T> = Pin<Box<dyn Future<Output = Result<T, String>>>>;
 pub(super) type StateCallback = Rc<dyn Fn(DeviceSyncState)>;
 
+/// The injectable MTP transport seam (`MTP-23`). Every method takes the
+/// resolved absolute `target_path` of one of the three named sync targets
+/// (`MTP-18`, e.g. `/Music/Reprise-YouTube`) explicitly, rather than
+/// picking a hard-coded root — that is what makes routing "the actual
+/// transfer through three named targets" a caller-side decision instead of
+/// something this trait has to special-case per content kind.
+///
+/// [`GioDeviceBackend`](super::device_sync_backend::GioDeviceBackend) is the
+/// real GVfs/MTP implementation; tests drive a recording double instead
+/// (see `FakeBackend` in `device_sync_runtime_tests.rs`), so no test in this
+/// module needs a real or simulated phone.
 pub trait DeviceBackend {
     fn devices(&self) -> Vec<DeviceDescriptor>;
     fn subscribe_devices(&self, callback: Rc<dyn Fn(Vec<DeviceDescriptor>)>);
     fn inspect(&self, root_uri: String) -> BackendFuture<DeviceStorageInspection>;
+    /// Copies (or overwrites) `source_path` to `relative_target` under
+    /// `target_path`, always replacing any existing file even when its
+    /// byte count happens to be unchanged.
     #[allow(clippy::too_many_arguments)]
-    fn copy_track(
+    fn replace_track(
         &self,
         device_id: String,
         root_uri: String,
+        target_path: String,
         source_path: PathBuf,
         relative_target: String,
         expected_size: u64,
         cancellable: gio::Cancellable,
         progress: Rc<dyn Fn(u64, u64)>,
     ) -> BackendFuture<CopyOutcome>;
-    #[allow(clippy::too_many_arguments)]
-    fn replace_track(
-        &self,
-        device_id: String,
-        root_uri: String,
-        source_path: PathBuf,
-        relative_target: String,
-        expected_size: u64,
-        cancellable: gio::Cancellable,
-        progress: Rc<dyn Fn(u64, u64)>,
-    ) -> BackendFuture<CopyOutcome> {
-        self.copy_track(
-            device_id,
-            root_uri,
-            source_path,
-            relative_target,
-            expected_size,
-            cancellable,
-            progress,
-        )
-    }
-    fn cleanup_partials(&self, _root_uri: String) -> BackendFuture<u32> {
+    fn cleanup_partials(&self, _root_uri: String, _target_path: String) -> BackendFuture<u32> {
         Box::pin(async { Ok(0) })
     }
-    fn cleanup_managed_partials(
+    fn delete_track(
         &self,
-        root_uri: String,
-        root: reprise_core::device_sync::ManagedRoot,
-    ) -> BackendFuture<u32> {
-        match root {
-            reprise_core::device_sync::ManagedRoot::Music => self.cleanup_partials(root_uri),
-            reprise_core::device_sync::ManagedRoot::Podcasts => {
-                Box::pin(async { Err("podcast cleanup is unavailable".into()) })
-            }
-        }
-    }
-    fn delete_track(&self, _root_uri: String, _relative_target: String) -> BackendFuture<bool> {
-        Box::pin(async { Err("device deletion is unavailable".into()) })
-    }
-    fn delete_managed(
-        &self,
-        root_uri: String,
-        root: reprise_core::device_sync::ManagedRoot,
-        relative_target: String,
+        _root_uri: String,
+        _target_path: String,
+        _relative_target: String,
     ) -> BackendFuture<bool> {
-        match root {
-            reprise_core::device_sync::ManagedRoot::Music => {
-                self.delete_track(root_uri, relative_target)
-            }
-            reprise_core::device_sync::ManagedRoot::Podcasts => {
-                Box::pin(async { Err("podcast deletion is unavailable".into()) })
-            }
-        }
-    }
-    #[allow(clippy::too_many_arguments)]
-    fn replace_managed(
-        &self,
-        device_id: String,
-        root_uri: String,
-        root: reprise_core::device_sync::ManagedRoot,
-        source_path: PathBuf,
-        relative_target: String,
-        expected_size: u64,
-        cancellable: gio::Cancellable,
-        progress: Rc<dyn Fn(u64, u64)>,
-    ) -> BackendFuture<CopyOutcome> {
-        match root {
-            reprise_core::device_sync::ManagedRoot::Music => self.replace_track(
-                device_id,
-                root_uri,
-                source_path,
-                relative_target,
-                expected_size,
-                cancellable,
-                progress,
-            ),
-            reprise_core::device_sync::ManagedRoot::Podcasts => {
-                Box::pin(async { Err("podcast transfer is unavailable".into()) })
-            }
-        }
+        Box::pin(async { Err("device deletion is unavailable".into()) })
     }
     fn probe_transcode(&self, _profile: TranscodeProfile) -> Result<(), String> {
         Err("audio transcoding is unavailable".into())
@@ -114,6 +59,7 @@ pub trait DeviceBackend {
         &self,
         device_id: String,
         root_uri: String,
+        target_path: String,
         name: String,
         contents: Vec<u8>,
     ) -> BackendFuture<()>;

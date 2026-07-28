@@ -392,14 +392,17 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   gerätebezogen gespeichert und für dasselbe Gerät sowohl nach einem Reconnect
   als auch nach einem App-Neustart wiederhergestellt. Ein neues Gerät beginnt
   weiterhin mit Opus 160 kbit/s.
-- **MTP-17** [aktiv] [core] — `Music/Reprise` ist der einzige und vollständig
-  autoritative Gerätebereich von Reprise. Nach erfolgreicher Veröffentlichung
-  aller gewünschten Tracks und Playlists werden dort sämtliche übrigen
-  sicheren Dateien entfernt, auch wenn sie nicht im Reprise-Inventar stehen;
-  gewünschte Track- und Playlist-Pfade bleiben erhalten. Außerhalb dieses
-  Unterordners wird nichts geschrieben, verschoben oder gelöscht, und ein
-  fehlender oder ungültiger Playlist-Sollzustand plant keine destruktive
-  Arbeit.
+- **MTP-17** [aktiv] [core] — `Music/Reprise` — das Playlists-Ziel aus
+  `MTP-18` — ist vollständig autoritativ für Musik und Playlisten. Nach
+  erfolgreicher Veröffentlichung aller gewünschten Tracks und Playlists
+  werden dort sämtliche übrigen sicheren Dateien entfernt, auch wenn sie
+  nicht im Reprise-Inventar stehen; gewünschte Track- und Playlist-Pfade
+  bleiben erhalten. Außerhalb dieses Unterordners wird nichts geschrieben,
+  verschoben oder gelöscht, und ein fehlender oder ungültiger
+  Playlist-Sollzustand plant keine destruktive Arbeit. Die beiden anderen
+  Ziele (YouTube-Tonspuren, Podcast-Episoden) sind **nicht** auf dieselbe
+  Weise autoritativ — sie diffen additiv gegen ihre eigene Kandidatenliste
+  statt jede unbekannte Datei zu entfernen (`MTP-23`).
 - **MTP-18** [aktiv] [core] — Reprise kennt pro Gerät drei benannte
   Sync-Ziele — Playlists, YouTube-Tonspuren, Podcast-Episoden — statt eines
   einzigen verwalteten Ordners (löst `78e379fd` ab, keine Migration: siehe
@@ -414,8 +417,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   StorageID plus Pfad persistiert, nie ein Handle. Wechselt die StorageID
   eines Ziels, kann der Ordner nicht mitwandern; die vorherige
   Speicherkopie gilt als verwaist und wird aufgeräumt, sobald neu kopiert
-  ist. Reine Datenschicht: die Verdrahtung in den tatsächlichen
-  MTP-Transfer folgt in E2/E4.
+  ist. Die Verdrahtung in den tatsächlichen MTP-Transfer ist `MTP-23`.
 - **MTP-19** [aktiv] [core] — Überschreitet ein Sync-Ziel mit Größen-Cap
   seine Grenze, verlassen die ältesten Dateien zuerst das Gerät, bis die
   Summe wieder höchstens dem Cap entspricht; das Entfernen stoppt, sobald
@@ -459,6 +461,34 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   „3 changes · 0 B" zeigte, ist diese Lücke. Ein Größen-Cap (`MTP-19`) wirkt
   als zusätzliches Entfernen oberhalb der Auswahl-Bilanz und verändert nie
   die Kopier-Zahl.
+- **MTP-23** [aktiv] [core] [gtk] — Der tatsächliche Transfer schreibt und
+  löscht durch die drei benannten Ziele aus `MTP-18`, nicht mehr durch einen
+  einzigen verwalteten Ordner (löst die `78e379fd`-Auflösung endgültig ab):
+  Playlisten weiterhin unter dem Playlists-Ziel (Standard `/Music/Reprise`,
+  `MTP-17`), YouTube-Tonspuren unter dem YoutubeAudio-Ziel (Standard
+  `/Music/Reprise-YouTube`), Podcast-Episoden unter dem PodcastEpisodes-Ziel
+  (Standard `/Podcasts/Reprise`). Ein deaktiviertes Ziel (`SyncTarget::enabled`)
+  liefert eine leere Sollmenge für seine Kategorie, statt etwas an den
+  falschen Ort zu schreiben. Löschen und Kopieren laufen seriell, ein
+  Transfer gleichzeitig; Fortschritt kommt aus dem Send-Callback des
+  Transports. Die MTP-Transportschicht ist eine injizierbare Abstraktion
+  (`DeviceBackend`); die reale GVfs/MTP-Anbindung und ein aufzeichnender
+  Test-Stellvertreter teilen sich denselben Vertrag, sodass die Regressions-
+  Gate ohne angeschlossenes Telefon läuft.
+- **MTP-24** [aktiv] [core] — Musik folgt weiterhin dem Transferprofil
+  (`profile.rs`): verlustfreies Quellmaterial wird nach Opus 160 kbit/s oder
+  MP3 256 kbit/s umkodiert, verlustbehaftetes bleibt unangetastet. Podcast-
+  und YouTube-Audio wird **immer** 1:1 kopiert, nie umkodiert — es liegt
+  bereits als Opus oder AAC vor, und ein zweiter Kodierschritt wäre reiner
+  Qualitätsverlust ohne Nutzen.
+- **MTP-25** [aktiv] [core] — Der Größen-Cap aus `MTP-19` wirkt real: bevor
+  ein YouTube-Tonspuren- oder Podcast-Episoden-Ziel mit Cap seine Sollmenge
+  aus Kandidaten bildet, verlässt die älteste Teilmenge (nach Alter der
+  Quelldatei) die Sollmenge, bis die Summe wieder höchstens dem Cap
+  entspricht. Ein bereits auf dem Gerät vorhandener, aber jetzt
+  ausgeschlossener Kandidat wird dadurch automatisch zur gewöhnlichen
+  Entfernung — kein separater Aufräumschritt nötig. Das Playlists-Ziel hat
+  keinen Cap (`MTP-18`) und ist von dieser Regel nicht betroffen.
 
 ## F. Einstellungen & Modale
 
@@ -2870,14 +2900,13 @@ Hörstatistik.
   Fortschrittsbalken, lokal mit Dateigröße, fehlgeschlagen oder lokal
   verschwunden. Fortschritt bleibt transient; abgeschlossene Pfade und
   Größen werden gemeinsam persistiert und gemeinsam gelöscht.
-- **POD-8** [aktiv] [core] [gtk] — Nur heruntergeladene Episoden aus
-  explizit pro stabiler Geräteidentität ausgewählten RSS-Abos sind für
-  Android-Sync geeignet. Die Auswahlsteuerung erscheint nur bei mindestens
-  einem aktuell verbundenen MTP-Gerät: ein Gerät wird direkt adressiert, bei
-  mehreren Geräten lassen sich die Ziele unabhängig wählen. Episoden landen
-  unter `Podcasts/Reprise/<Show>/`; YouTube-Quellen werden unabhängig von
-  ihrem Downloadzustand nie auf ein Gerät synchronisiert. Musik-Playlisten
-  bleiben unverändert unter `Music/Reprise`.
+- **POD-8** [ersetzt durch POD-12] — Frühere Regel: nur heruntergeladene
+  Episoden aus explizit pro stabiler Geräteidentität ausgewählten RSS-Abos
+  sind für Android-Sync geeignet; YouTube-Quellen werden unabhängig von
+  ihrem Downloadzustand nie auf ein Gerät synchronisiert. Beide Hälften
+  sind mit den drei benannten Sync-Zielen (`MTP-18`, `MTP-23`) falsch
+  geworden — YouTube-Audio bekommt sein eigenes Ziel und synchronisiert
+  jetzt gleichberechtigt.
 - **POD-9** [aktiv] [core] [gtk] — Innerhalb jeder nach stabiler
   Subscription-ID gruppierten Show beziehungsweise jedes Kanals stehen
   Episoden mit den Statussemantiken aus POD-1 nach Datum absteigend; die
@@ -2899,6 +2928,21 @@ Hörstatistik.
   3 downloaded · 1.2 GB") — und bleibt nach „Load more", beim Ein-/
   Ausblenden von Shorts sowie nach Abschluss oder Löschung eines Downloads
   korrekt.
+- **POD-12** [aktiv] [core] [gtk] — Heruntergeladene Episoden aus explizit
+  pro stabiler Geräteidentität ausgewählten RSS- **und** YouTube-Abos sind
+  gleichberechtigt für Android-Sync geeignet — die Auswahl ist pro
+  Subscription und Gerät, nicht nach Quellart entschieden. Die
+  Auswahlsteuerung erscheint nur bei mindestens einem aktuell verbundenen
+  MTP-Gerät: ein Gerät wird direkt adressiert, bei mehreren Geräten lassen
+  sich die Ziele unabhängig wählen. RSS-Episoden landen unter ihrem
+  PodcastEpisodes-Ziel (Standard `Podcasts/Reprise/<Show>/`),
+  YouTube-Tonspuren unter ihrem eigenen YoutubeAudio-Ziel (Standard
+  `Music/Reprise-YouTube/<Kanal>/`, `MTP-18`); beide werden 1:1 kopiert,
+  nie umkodiert (`MTP-24`). Musik-Playlisten bleiben unverändert unter
+  ihrem Playlists-Ziel (Standard `Music/Reprise`). Ein Wechsel der Abo-Art
+  an derselben Feed-URL (z. B. ein erneuter Import als anderer Kanaltyp)
+  löscht die vorherige Geräteauswahl — das ist keine Quellart-Sonderregel,
+  sondern gilt symmetrisch für jeden Artwechsel.
 - **RAD-1** [aktiv] [gtk] — Nur die aktuell verbundene Station ist in der
   Tabelle akzentuiert; ihr Zustandsicon, Name, Now-playing und Zeilentint
   wechseln gemeinsam. Alle anderen sowie eine präsentierte, aber getrennte

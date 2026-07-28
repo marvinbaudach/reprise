@@ -28,14 +28,16 @@ impl DeviceBackend for FailingCopyBackend {
                 },
                 managed_files: Vec::new(),
                 podcast_files: Vec::new(),
+                youtube_files: Vec::new(),
             })
         })
     }
 
-    fn copy_track(
+    fn replace_track(
         &self,
         _device_id: String,
         _root_uri: String,
+        _target_path: String,
         _source_path: PathBuf,
         _relative_target: String,
         _expected_size: u64,
@@ -49,6 +51,7 @@ impl DeviceBackend for FailingCopyBackend {
         &self,
         _device_id: String,
         _root_uri: String,
+        _target_path: String,
         _name: String,
         _contents: Vec<u8>,
     ) -> TestFuture<()> {

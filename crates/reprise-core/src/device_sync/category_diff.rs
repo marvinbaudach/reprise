@@ -477,6 +477,7 @@ mod tests {
             &Vec::<PodcastDeviceFile>::new(),
             true,
             PodcastSyncSource::Rss,
+            None,
         );
 
         let podcast_category = CategoryDiff::from_podcast_plan(&podcast_plan, 2);

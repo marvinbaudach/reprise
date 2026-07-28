@@ -1,10 +1,13 @@
-//! Pure Android planning for explicitly selected RSS podcast downloads.
+//! Pure Android planning for explicitly selected podcast and YouTube
+//! downloads (`POD-12`).
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use rusqlite::Connection;
 
+use super::cap::{items_to_evict, CapItem};
 use super::safe_component;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -45,18 +48,22 @@ pub struct PodcastSyncPlan {
     pub bytes_freed: u64,
 }
 
+/// Queries every downloaded, selected episode for `device_id` across both
+/// [`PodcastSyncSource`] kinds. `build_plan` (called once per source) does
+/// the per-kind filtering, so this deliberately does not restrict `s.kind`
+/// — RSS and YouTube subscriptions are equally eligible once selected for a
+/// device (`POD-12`).
 pub fn query_candidates_for_device(
     conn: &Connection,
     device_id: &str,
 ) -> Result<Vec<PodcastSyncCandidate>, rusqlite::Error> {
     let mut statement = conn.prepare(
-        "SELECT e.id, e.title, s.title, e.downloaded_path, e.downloaded_bytes
+        "SELECT e.id, e.title, s.title, e.downloaded_path, e.downloaded_bytes, s.kind
          FROM podcast_episodes e
          JOIN podcast_subscriptions s ON s.id = e.subscription_id
          JOIN podcast_subscription_devices d
            ON d.subscription_id = s.id AND d.device_id = ?1
          WHERE s.removed_at IS NULL
-           AND s.kind = 'rss'
            AND e.removed_at IS NULL
            AND e.downloaded_path IS NOT NULL
          ORDER BY s.title COLLATE NOCASE, e.published_at DESC, e.id DESC",
@@ -68,13 +75,17 @@ pub fn query_candidates_for_device(
             row.get::<_, String>(2)?,
             PathBuf::from(row.get::<_, String>(3)?),
             row.get::<_, Option<i64>>(4)?,
+            row.get::<_, String>(5)?,
         ))
     })?;
     let rows = rows.collect::<Result<Vec<_>, _>>()?;
     drop(statement);
     let mut candidates = Vec::new();
     for row in rows {
-        let (episode_id, title, show, source_path, recorded_bytes) = row;
+        let (episode_id, title, show, source_path, recorded_bytes, kind) = row;
+        let Some(source) = source_from_kind(&kind) else {
+            continue;
+        };
         let Ok(metadata) = std::fs::metadata(&source_path) else {
             continue;
         };
@@ -104,7 +115,7 @@ pub fn query_candidates_for_device(
         };
         candidates.push(PodcastSyncCandidate {
             episode_id,
-            source: PodcastSyncSource::Rss,
+            source,
             device_path: device_path(episode_id, &show, &title, &source_path),
             title,
             show,
@@ -121,23 +132,41 @@ pub fn query_candidates_for_device(
     Ok(candidates)
 }
 
-/// Builds a plan for one [`PodcastSyncSource`] at a time. Only the `Rss`
-/// call site is wired into a real transfer today (`POD-8`); `Youtube` is
-/// modelled and tested here but nothing in the running app calls this with
-/// `Youtube` yet — see `device_sync::category_diff` (`MTP-22`), which
-/// exercises both branches as a pure projection without touching the real
-/// per-device candidate query.
+fn source_from_kind(kind: &str) -> Option<PodcastSyncSource> {
+    match kind {
+        "rss" => Some(PodcastSyncSource::Rss),
+        "youtube" => Some(PodcastSyncSource::Youtube),
+        _ => None,
+    }
+}
+
+/// Builds a plan for one [`PodcastSyncSource`] at a time — RSS episodes and
+/// YouTube audio are planned identically, each against its own target
+/// folder (`MTP-18`). `cap_bytes` is the target's optional size cap
+/// (`MTP-19`/`MTP-25`): when the full desired set would exceed it, the
+/// oldest candidates (by [`PodcastSyncCandidate::source_mtime`]) are
+/// dropped from the desired set entirely before the copy/remove diff runs,
+/// so an evicted-but-already-resident file is picked up by the ordinary
+/// "not in desired" removal below rather than needing a second pass.
 pub fn build_plan(
     candidates: Vec<PodcastSyncCandidate>,
     inventory: &[PodcastDeviceFile],
     remove_deleted: bool,
     source: PodcastSyncSource,
+    cap_bytes: Option<u64>,
 ) -> PodcastSyncPlan {
     let candidates = candidates
         .into_iter()
         .filter(|candidate| {
             candidate.source == source && safe_relative_path(&candidate.device_path)
         })
+        .collect::<Vec<_>>();
+    let evicted = cap_bytes
+        .map(|cap| evicted_paths(&candidates, cap))
+        .unwrap_or_default();
+    let candidates = candidates
+        .into_iter()
+        .filter(|candidate| !evicted.contains(&candidate.device_path))
         .collect::<Vec<_>>();
     let desired = candidates
         .iter()
@@ -176,6 +205,29 @@ pub fn build_plan(
         bytes,
         bytes_freed,
     }
+}
+
+/// `MTP-19`/`MTP-25`: which desired device paths must leave to bring the
+/// full candidate set back under `cap_bytes`, oldest (`source_mtime`)
+/// first. Reuses [`items_to_evict`] rather than re-deriving the eviction
+/// order — this is only the adapter from `PodcastSyncCandidate` to
+/// `CapItem`.
+fn evicted_paths(candidates: &[PodcastSyncCandidate], cap_bytes: u64) -> HashSet<String> {
+    // `CapItem::Id` must be `Copy`, so candidates are identified by index
+    // rather than by their (non-`Copy`) `device_path` String.
+    let items = candidates
+        .iter()
+        .enumerate()
+        .map(|(index, candidate)| CapItem {
+            id: index,
+            size_bytes: candidate.size_bytes,
+            age: candidate.source_mtime,
+        })
+        .collect::<Vec<_>>();
+    items_to_evict(&items, cap_bytes)
+        .into_iter()
+        .map(|index| candidates[index].device_path.clone())
+        .collect()
 }
 
 pub fn safe_relative_path(path: &str) -> bool {
@@ -262,7 +314,7 @@ mod tests {
     }
 
     #[test]
-    fn pod_8_candidates_are_complete_selected_rss_downloads_only() {
+    fn pod_12_candidates_are_complete_and_explicitly_selected_for_the_device() {
         let conn = migrated();
         let downloads = tempfile::tempdir().unwrap();
         let eligible = downloads.path().join("eligible.mp3");
@@ -292,8 +344,13 @@ mod tests {
 
         let candidates = super::query_candidates_for_device(&conn, "mtp:pixel").unwrap();
 
+        // Episode 12 belongs to a YouTube subscription that was never
+        // explicitly selected for "mtp:pixel" (only subscription 1 was), so
+        // it stays out — not because of its kind, but because selection is
+        // per subscription and per device (POD-12), same as RSS.
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].episode_id, 11);
+        assert_eq!(candidates[0].source, PodcastSyncSource::Rss);
         assert_eq!(candidates[0].source_path, eligible);
         assert_eq!(candidates[0].size_bytes, 8);
         assert_eq!(
@@ -303,7 +360,25 @@ mod tests {
     }
 
     #[test]
-    fn pod_8_legacy_downloads_backfill_size_before_phone_sync() {
+    fn pod_12_a_selected_youtube_subscription_is_queried_just_like_rss() {
+        let conn = migrated();
+        let downloads = tempfile::tempdir().unwrap();
+        let video = downloads.path().join("video.webm");
+        std::fs::write(&video, b"video-bytes").unwrap();
+
+        insert_subscription(&conn, 1, "youtube", false, "Channel");
+        crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:pixel", true).unwrap();
+        insert_episode(&conn, 11, 1, &video, 11);
+
+        let candidates = query_candidates_for_device(&conn, "mtp:pixel").unwrap();
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].source, PodcastSyncSource::Youtube);
+        assert_eq!(candidates[0].episode_id, 11);
+    }
+
+    #[test]
+    fn pod_12_legacy_downloads_backfill_size_before_phone_sync() {
         let conn = migrated();
         let downloads = tempfile::tempdir().unwrap();
         let legacy = downloads.path().join("legacy.mp3");
@@ -331,7 +406,7 @@ mod tests {
     }
 
     #[test]
-    fn pod_8_plan_copies_and_removes_only_inside_the_rss_podcast_tree() {
+    fn pod_12_plan_copies_and_removes_only_inside_the_rss_podcast_tree() {
         let source = PodcastSyncCandidate {
             episode_id: 1,
             source: PodcastSyncSource::Rss,
@@ -371,6 +446,7 @@ mod tests {
             &inventory,
             true,
             PodcastSyncSource::Rss,
+            None,
         );
 
         assert_eq!(plan.to_copy, [source]);
@@ -406,6 +482,7 @@ mod tests {
             &[],
             true,
             PodcastSyncSource::Youtube,
+            None,
         );
 
         assert_eq!(plan.to_copy, [youtube]);
@@ -413,7 +490,75 @@ mod tests {
     }
 
     #[test]
-    fn pod_8_each_device_receives_only_its_selected_rss_subscriptions() {
+    fn mtp_25_a_cap_evicts_the_oldest_candidates_before_copying_or_removing() {
+        let old = PodcastSyncCandidate {
+            episode_id: 1,
+            source: PodcastSyncSource::Youtube,
+            source_path: "/downloads/old.webm".into(),
+            device_path: "Channel/1-Old.webm".into(),
+            title: "Old".into(),
+            show: "Channel".into(),
+            size_bytes: 60,
+            source_mtime: 1,
+        };
+        let newer = PodcastSyncCandidate {
+            episode_id: 2,
+            device_path: "Channel/2-Newer.webm".into(),
+            title: "Newer".into(),
+            size_bytes: 60,
+            source_mtime: 2,
+            ..old.clone()
+        };
+        // `old` is already resident on the device; `newer` is not yet
+        // copied. A 60-byte cap only has room for one of them, so `old`
+        // (the smaller age) must leave — evicted before copying, not
+        // copied then immediately evicted.
+        let inventory = vec![PodcastDeviceFile {
+            device_path: old.device_path.clone(),
+            size_bytes: 60,
+        }];
+
+        let plan = build_plan(
+            vec![old.clone(), newer.clone()],
+            &inventory,
+            true,
+            PodcastSyncSource::Youtube,
+            Some(60),
+        );
+
+        assert_eq!(plan.to_copy, [newer]);
+        assert_eq!(plan.to_remove, [old.device_path]);
+        assert_eq!(plan.bytes, 60);
+        assert_eq!(plan.bytes_freed, 60);
+    }
+
+    #[test]
+    fn mtp_25_a_cap_that_already_fits_evicts_nothing() {
+        let candidate = PodcastSyncCandidate {
+            episode_id: 1,
+            source: PodcastSyncSource::Rss,
+            source_path: "/downloads/one.mp3".into(),
+            device_path: "Show/1-One.mp3".into(),
+            title: "One".into(),
+            show: "Show".into(),
+            size_bytes: 10,
+            source_mtime: 1,
+        };
+
+        let plan = build_plan(
+            vec![candidate.clone()],
+            &[],
+            true,
+            PodcastSyncSource::Rss,
+            Some(100),
+        );
+
+        assert_eq!(plan.to_copy, [candidate]);
+        assert!(plan.to_remove.is_empty());
+    }
+
+    #[test]
+    fn pod_12_each_device_receives_only_its_selected_subscriptions() {
         let conn = migrated();
         let downloads = tempfile::tempdir().unwrap();
         let phone_episode = downloads.path().join("phone.mp3");
@@ -449,7 +594,7 @@ mod tests {
     }
 
     #[test]
-    fn pod_8_managed_paths_reject_absolute_parent_and_control_components() {
+    fn pod_12_managed_paths_reject_absolute_parent_and_control_components() {
         assert!(safe_relative_path("Show/1-Episode.mp3"));
         assert!(!safe_relative_path("../Music/Reprise/track.mp3"));
         assert!(!safe_relative_path("Show/../../track.mp3"));

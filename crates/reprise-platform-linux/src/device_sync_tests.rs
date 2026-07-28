@@ -163,7 +163,8 @@ fn copy_creates_managed_directories_and_reports_progress() {
     fs::write(&source_path, vec![7_u8; 32 * 1024]).unwrap();
     let progress = Rc::new(RefCell::new(Vec::new()));
     let observed = progress.clone();
-    let outcome = run(storage.copy_track(
+    let outcome = run(storage.replace_managed(
+        "/Music/Reprise",
         &gio::File::for_path(&source_path),
         "Road/7-source.flac",
         32 * 1024,
@@ -197,7 +198,8 @@ fn mtp_17_same_size_untracked_destination_is_overwritten() {
         b"old!",
     )
     .unwrap();
-    let outcome = run(storage.copy_track(
+    let outcome = run(storage.replace_managed(
+        "/Music/Reprise",
         &gio::File::for_path(temp.path().join("source.flac")),
         "Road/7-source.flac",
         4,
@@ -223,7 +225,8 @@ fn replace_track_overwrites_a_changed_file_even_when_its_size_is_unchanged() {
     )
     .unwrap();
 
-    let outcome = run(storage.replace_track(
+    let outcome = run(storage.replace_managed(
+        "/Music/Reprise",
         &gio::File::for_path(temp.path().join("source.flac")),
         "Road/7-source.flac",
         4,
@@ -247,7 +250,8 @@ fn replacement_verifies_the_partial_size_before_overwriting_the_final_file() {
     let final_path = temp.path().join("Music/Reprise/Road/7-source.flac");
     fs::write(&final_path, b"known-good").unwrap();
 
-    let result = run(storage.replace_track(
+    let result = run(storage.replace_managed(
+        "/Music/Reprise",
         &gio::File::for_path(temp.path().join("source.flac")),
         "Road/7-source.flac",
         6,
@@ -273,7 +277,8 @@ fn replacement_verifies_the_partial_size_before_overwriting_the_final_file() {
 fn copy_rejects_paths_outside_the_managed_root() {
     let (temp, storage) = fixture();
     fs::write(temp.path().join("source.flac"), b"x").unwrap();
-    let result = run(storage.copy_track(
+    let result = run(storage.replace_managed(
+        "/Music/Reprise",
         &gio::File::for_path(temp.path().join("source.flac")),
         "../outside.flac",
         1,
@@ -287,9 +292,14 @@ fn copy_rejects_paths_outside_the_managed_root() {
 #[test]
 fn playlist_replace_and_read_round_trip() {
     let (_temp, storage) = fixture();
-    run(storage.replace_playlist("Road", b"#EXTM3U\nRoad/7-song.flac\n".to_vec())).unwrap();
+    run(storage.replace_playlist(
+        "/Music/Reprise",
+        "Road",
+        b"#EXTM3U\nRoad/7-song.flac\n".to_vec(),
+    ))
+    .unwrap();
     assert_eq!(
-        run(storage.read_playlist("Road")).unwrap(),
+        run(storage.read_playlist("/Music/Reprise", "Road")).unwrap(),
         vec![M3uEntry {
             path: "Road/7-song.flac".into()
         }]
@@ -302,7 +312,8 @@ fn pre_cancelled_copy_leaves_no_partial_file() {
     fs::write(temp.path().join("source.flac"), vec![1_u8; 1024]).unwrap();
     let cancellable = gio::Cancellable::new();
     cancellable.cancel();
-    let result = run(storage.copy_track(
+    let result = run(storage.replace_managed(
+        "/Music/Reprise",
         &gio::File::for_path(temp.path().join("source.flac")),
         "Road/1-source.flac",
         1024,
@@ -332,7 +343,10 @@ fn cleanup_partials_removes_only_orphaned_part_files_under_the_managed_root() {
     .unwrap();
     fs::write(temp.path().join("Music/outside.part"), b"outside").unwrap();
 
-    assert_eq!(run(storage.cleanup_partials()).unwrap(), 1);
+    assert_eq!(
+        run(storage.cleanup_partials_in("/Music/Reprise")).unwrap(),
+        1
+    );
     assert!(!temp
         .path()
         .join("Music/Reprise/Road/unfinished.opus.part")
@@ -354,10 +368,10 @@ fn delete_track_is_scoped_to_the_managed_root_and_reports_absence() {
     )
     .unwrap();
 
-    assert!(run(storage.delete_track("Road/finished.opus")).unwrap());
-    assert!(!run(storage.delete_track("Road/finished.opus")).unwrap());
+    assert!(run(storage.delete_managed("/Music/Reprise", "Road/finished.opus")).unwrap());
+    assert!(!run(storage.delete_managed("/Music/Reprise", "Road/finished.opus")).unwrap());
     assert!(matches!(
-        run(storage.delete_track("../outside.opus")),
+        run(storage.delete_managed("/Music/Reprise", "../outside.opus")),
         Err(DeviceIoError::InvalidRelativePath)
     ));
 }
@@ -389,7 +403,8 @@ fn non_mtp_root_is_used_verbatim_without_storage_resolution() {
     let source_path = temp.path().join("source.flac");
     fs::write(&source_path, b"audio").unwrap();
 
-    run(storage.copy_track(
+    run(storage.replace_managed(
+        "/Music/Reprise",
         &gio::File::for_path(&source_path),
         "Road/song.flac",
         5,
@@ -405,7 +420,7 @@ fn non_mtp_root_is_used_verbatim_without_storage_resolution() {
 }
 
 #[test]
-fn pod_8_podcast_io_is_scoped_to_podcasts_reprise_and_inspected_separately() {
+fn mtp_23_podcast_io_is_scoped_to_its_own_target_and_inspected_separately() {
     let (temp, storage) = fixture();
     let source_path = temp.path().join("episode.mp3");
     fs::write(&source_path, b"podcast").unwrap();
@@ -413,7 +428,7 @@ fn pod_8_podcast_io_is_scoped_to_podcasts_reprise_and_inspected_separately() {
     fs::write(temp.path().join("Music/Reprise/Album/track.mp3"), b"music").unwrap();
 
     run(storage.replace_managed(
-        reprise_core::device_sync::ManagedRoot::Podcasts,
+        "/Podcasts/Reprise",
         &gio::File::for_path(&source_path),
         "Show/1-Episode.mp3",
         7,
@@ -426,10 +441,7 @@ fn pod_8_podcast_io_is_scoped_to_podcasts_reprise_and_inspected_separately() {
         b"podcast"
     );
     assert!(matches!(
-        run(storage.delete_managed(
-            reprise_core::device_sync::ManagedRoot::Podcasts,
-            "Music/Reprise/Album/track.mp3"
-        )),
+        run(storage.delete_managed("/Podcasts/Reprise", "Music/Reprise/Album/track.mp3")),
         Ok(false)
     ));
     assert!(temp.path().join("Music/Reprise/Album/track.mp3").is_file());
@@ -443,15 +455,56 @@ fn pod_8_podcast_io_is_scoped_to_podcasts_reprise_and_inspected_separately() {
             .collect::<Vec<_>>(),
         ["Show/1-Episode.mp3"]
     );
-    assert!(run(storage.delete_managed(
-        reprise_core::device_sync::ManagedRoot::Podcasts,
-        "Show/1-Episode.mp3"
-    ))
-    .unwrap());
+    assert!(run(storage.delete_managed("/Podcasts/Reprise", "Show/1-Episode.mp3")).unwrap());
 }
 
 #[test]
-fn pod_8_podcast_partial_cleanup_cannot_touch_music_or_other_podcast_apps() {
+fn mtp_23_youtube_audio_io_is_scoped_to_its_own_target_and_inspected_separately() {
+    let (temp, storage) = fixture();
+    let source_path = temp.path().join("video.opus");
+    fs::write(&source_path, b"video-audio").unwrap();
+    fs::create_dir_all(temp.path().join("Music/Reprise/Album")).unwrap();
+    fs::write(temp.path().join("Music/Reprise/Album/track.mp3"), b"music").unwrap();
+    fs::write(temp.path().join("Music/loose.mp3"), b"foreign").unwrap();
+
+    run(storage.replace_managed(
+        "/Music/Reprise-YouTube",
+        &gio::File::for_path(&source_path),
+        "Channel/1-Video.opus",
+        11,
+        &gio::Cancellable::new(),
+        |_, _| {},
+    ))
+    .unwrap();
+    assert_eq!(
+        fs::read(
+            temp.path()
+                .join("Music/Reprise-YouTube/Channel/1-Video.opus")
+        )
+        .unwrap(),
+        b"video-audio"
+    );
+
+    let contents = run(storage.inspect()).unwrap();
+    assert_eq!(
+        contents
+            .youtube_files
+            .iter()
+            .map(|file| file.relative_path.as_str())
+            .collect::<Vec<_>>(),
+        ["Channel/1-Video.opus"]
+    );
+    // The YouTube-audio target sits inside `Music/`, alongside the
+    // Playlists target and truly foreign files — it must count toward
+    // neither `reprise_music_bytes` nor `other_music_bytes`.
+    assert_eq!(contents.snapshot.reprise_music_bytes, 5);
+    assert_eq!(contents.snapshot.other_music_bytes, 7);
+
+    assert!(run(storage.delete_managed("/Music/Reprise-YouTube", "Channel/1-Video.opus")).unwrap());
+}
+
+#[test]
+fn mtp_23_podcast_partial_cleanup_cannot_touch_music_or_other_podcast_apps() {
     let (temp, storage) = fixture();
     for path in [
         "Podcasts/Reprise/Show/episode.mp3.part",
@@ -464,7 +517,7 @@ fn pod_8_podcast_partial_cleanup_cannot_touch_music_or_other_podcast_apps() {
     }
 
     assert_eq!(
-        run(storage.cleanup_partials_in(reprise_core::device_sync::ManagedRoot::Podcasts)).unwrap(),
+        run(storage.cleanup_partials_in("/Podcasts/Reprise")).unwrap(),
         1
     );
     assert!(!temp

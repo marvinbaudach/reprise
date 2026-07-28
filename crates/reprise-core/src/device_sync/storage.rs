@@ -25,6 +25,11 @@ pub struct DeviceStorageInspection {
     pub snapshot: DeviceStorageSnapshot,
     pub managed_files: Vec<ManagedDeviceFile>,
     pub podcast_files: Vec<ManagedDeviceFile>,
+    /// Files found under the YouTube-audio target folder (`MTP-18`,
+    /// default `/Music/Reprise-YouTube`). Kept apart from `managed_files`
+    /// (the Playlists target) the same way `podcast_files` already is —
+    /// each named target gets its own inventory list.
+    pub youtube_files: Vec<ManagedDeviceFile>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

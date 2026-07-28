@@ -66,21 +66,6 @@ pub use targets::{
 
 pub const REPRISE_DEVICE_DIR: &str = "Reprise";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ManagedRoot {
-    Music,
-    Podcasts,
-}
-
-impl ManagedRoot {
-    pub const fn components(self) -> [&'static str; 2] {
-        match self {
-            Self::Music => ["Music", REPRISE_DEVICE_DIR],
-            Self::Podcasts => ["Podcasts", REPRISE_DEVICE_DIR],
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SyncTrack {
     pub id: i64,
