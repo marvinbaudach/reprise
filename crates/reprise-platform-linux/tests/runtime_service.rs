@@ -338,3 +338,207 @@ fn the_protocol_version_is_readable_without_connecting() {
     assert_eq!(major, reprise_runtime_protocol::PROTOCOL_VERSION.major);
     assert_eq!(minor, reprise_runtime_protocol::PROTOCOL_VERSION.minor);
 }
+
+// --- The client half ---------------------------------------------------
+//
+// Below this line the tests drive the same service through
+// `runtime_client` instead of a hand-written proxy. That is the pairing
+// that matters: a client and a service that agree in a test but not in the
+// application would each look correct on their own.
+
+use reprise_platform_linux::runtime_client::{
+    start_with_bus_name, ClientError, ClientEvent, RuntimeCommand, RuntimeEvents,
+};
+use reprise_runtime_protocol::playback::PlaybackCommand;
+
+/// Waits for the first event matching `wanted`, ignoring the rest.
+///
+/// Ignoring rather than asserting on position: the runtime publishes every
+/// facet that changed, and a test that pinned the exact sequence would break
+/// whenever an unrelated facet started changing too.
+fn await_event(
+    events: &RuntimeEvents,
+    wanted: impl Fn(&ClientEvent) -> bool,
+    what: &str,
+) -> ClientEvent {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        let Some(event) = events.recv_blocking() else {
+            break;
+        };
+        if wanted(&event) {
+            return event;
+        }
+    }
+    panic!("no {what} arrived");
+}
+
+#[test]
+#[ignore = "requires a session bus; run via dbus-run-session"]
+fn a_client_connects_and_is_handed_the_whole_state() {
+    let served = Served::start("clientconnect", Duration::from_secs(60));
+    let (client, events) =
+        start_with_bus_name(vec!["playback:control".to_owned()], served.bus_name.clone());
+
+    let event = await_event(
+        &events,
+        |event| matches!(event, ClientEvent::Connected(_)),
+        "connection",
+    );
+
+    let ClientEvent::Connected(snapshot) = event else {
+        unreachable!("the matcher only accepts Connected")
+    };
+    assert_eq!(snapshot.playback.status, "stopped");
+    assert_eq!(
+        snapshot.protocol_major,
+        reprise_runtime_protocol::PROTOCOL_VERSION.major
+    );
+    client.shutdown();
+}
+
+#[test]
+#[ignore = "requires a session bus; run via dbus-run-session"]
+fn a_sent_command_takes_effect_and_its_delta_comes_back() {
+    let served = Served::start("clientsend", Duration::from_secs(60));
+    let (client, events) =
+        start_with_bus_name(vec!["playback:control".to_owned()], served.bus_name.clone());
+    await_event(
+        &events,
+        |event| matches!(event, ClientEvent::Connected(_)),
+        "connection",
+    );
+
+    client.send(RuntimeCommand::PlayTracks {
+        track_ids: vec![1, 2, 3],
+        start_index: 0,
+    });
+
+    let event = await_event(
+        &events,
+        |event| matches!(event, ClientEvent::PlaybackChanged { .. }),
+        "playback delta",
+    );
+    let ClientEvent::PlaybackChanged { sequence, snapshot } = event else {
+        unreachable!("the matcher only accepts PlaybackChanged")
+    };
+    assert!(sequence > 0);
+    assert_eq!(snapshot.status, "playing");
+    assert_eq!(snapshot.track_id, Some(1));
+    client.shutdown();
+}
+
+#[test]
+#[ignore = "requires a session bus; run via dbus-run-session"]
+fn a_rejected_send_reports_an_event_instead_of_stalling_the_caller() {
+    let served = Served::start("clientreject", Duration::from_secs(60));
+    let (client, events) =
+        start_with_bus_name(vec!["playback:control".to_owned()], served.bus_name.clone());
+    await_event(
+        &events,
+        |event| matches!(event, ClientEvent::Connected(_)),
+        "connection",
+    );
+
+    client.send(RuntimeCommand::Playback(PlaybackCommand::SetRepeat(
+        "sometimes".into(),
+    )));
+
+    let event = await_event(
+        &events,
+        |event| matches!(event, ClientEvent::CommandFailed { .. }),
+        "failure",
+    );
+    let ClientEvent::CommandFailed { error, .. } = event else {
+        unreachable!("the matcher only accepts CommandFailed")
+    };
+    assert!(
+        matches!(error, ClientError::Rejected(_)),
+        "the category survives both hops: {error:?}"
+    );
+    assert_eq!(error.kind(), "rejected:unknown_repeat_mode");
+    assert!(!error.is_retryable());
+    client.shutdown();
+}
+
+#[test]
+#[ignore = "requires a session bus; run via dbus-run-session"]
+fn a_call_answers_the_caller_directly() {
+    let served = Served::start("clientcall", Duration::from_secs(60));
+    let (client, events) =
+        start_with_bus_name(vec!["playback:control".to_owned()], served.bus_name.clone());
+    await_event(
+        &events,
+        |event| matches!(event, ClientEvent::Connected(_)),
+        "connection",
+    );
+
+    let error = client
+        .call(RuntimeCommand::Playback(PlaybackCommand::Play))
+        .expect_err("nothing is loaded and nothing is queued");
+
+    assert!(
+        matches!(error, ClientError::Rejected(_)),
+        "a tool call gets its answer as a return value, not as an event: \
+         {error:?}"
+    );
+    assert_eq!(error.kind(), "rejected:nothing_to_play");
+    client.shutdown();
+}
+
+#[test]
+#[ignore = "requires a session bus; run via dbus-run-session"]
+fn a_command_without_the_capability_is_rejected_over_the_wire_too() {
+    let served = Served::start("clientcap", Duration::from_secs(60));
+    // A read-only surface: connected, holding no mutation capability.
+    let (client, events) = start_with_bus_name(Vec::new(), served.bus_name.clone());
+    await_event(
+        &events,
+        |event| matches!(event, ClientEvent::Connected(_)),
+        "connection",
+    );
+
+    let error = client
+        .call(RuntimeCommand::Playback(PlaybackCommand::Play))
+        .expect_err("without playback:control the command is not admissible");
+
+    assert_eq!(error.kind(), "rejected:missing_capability:playback:control");
+    client.shutdown();
+}
+
+#[test]
+#[ignore = "requires a session bus; run via dbus-run-session"]
+fn a_runtime_that_goes_away_is_reported_rather_than_guessed_at() {
+    let mut served = Served::start("clientgone", Duration::ZERO);
+    let (client, events) =
+        start_with_bus_name(vec!["playback:control".to_owned()], served.bus_name.clone());
+    await_event(
+        &events,
+        |event| matches!(event, ClientEvent::Connected(_)),
+        "connection",
+    );
+
+    // The client says goodbye, which leaves the zero-grace runtime with
+    // nothing to do; it exits and the bus name loses its owner.
+    client.shutdown();
+    served.wait_for_shutdown();
+
+    let (next, events) =
+        start_with_bus_name(vec!["playback:control".to_owned()], served.bus_name.clone());
+    let event = await_event(
+        &events,
+        |event| matches!(event, ClientEvent::Disconnected),
+        "disconnection",
+    );
+
+    assert_eq!(event, ClientEvent::Disconnected);
+    let error = next
+        .call(RuntimeCommand::Playback(PlaybackCommand::Play))
+        .expect_err("there is nothing to command");
+    assert!(
+        error.is_retryable(),
+        "an absent runtime is a state to reconnect from, not a failure to \
+         report to the user: {error:?}"
+    );
+    next.shutdown();
+}
