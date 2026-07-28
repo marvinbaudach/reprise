@@ -88,13 +88,7 @@ fn ac_23_the_readout_names_stay_readable_at_the_panel_width() {
     const PANEL_WIDTH: i32 = 300 - 2 * 18 - 16;
 
     gtk4::init().unwrap();
-    let provider = gtk4::CssProvider::new();
-    provider.load_from_string(&css());
-    gtk4::style_context_add_provider_for_display(
-        &gtk4::gdk::Display::default().unwrap(),
-        &provider,
-        gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
-    );
+    crate::ui::style::install_css_string_for_test(&css());
 
     let readout = AnalysisReadout::new();
     readout.set(BassPressure {
