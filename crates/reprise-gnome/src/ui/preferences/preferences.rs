@@ -239,11 +239,6 @@ impl PreferencesContext {
         self.open(None);
     }
 
-    /// Opens (or raises) Preferences on a named live page.
-    pub(in crate::ui) fn present_page(self: &Rc<Self>, page_name: &str) {
-        self.open(Some(page_name));
-    }
-
     fn open(self: &Rc<Self>, initial_page: Option<&str>) {
         if self.preferences_dialog.borrow().upgrade().is_some() {
             return; // dialog is already open (modal, always on top)
