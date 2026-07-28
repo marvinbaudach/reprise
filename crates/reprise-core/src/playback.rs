@@ -4,9 +4,11 @@
 //! frontend drives playback through. The concrete implementations live in the
 //! per-OS platform crates (Linux: GStreamer `playbin3` in `player.rs`).
 
+mod bass_pressure;
 mod cava;
 mod fault_policy;
 
+pub use bass_pressure::{BassPressure, BassPressureDetector, STEADY_GLOW};
 pub use cava::{CavaBarProcessor, CavaConfig, CavaError};
 pub use fault_policy::{playback_fault_policy, PlaybackFaultNotice, PlaybackFaultPolicy};
 
@@ -42,6 +44,7 @@ pub const SPECTRUM_BAND_COUNT: usize = 64;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SpectrumFrame {
     bands: [f32; SPECTRUM_BAND_COUNT],
+    pressure: BassPressure,
 }
 
 impl SpectrumFrame {
@@ -56,12 +59,28 @@ impl SpectrumFrame {
                     0.0
                 }
             }),
+            pressure: BassPressure::silent(),
+        }
+    }
+
+    /// Attaches the absolute bass measurement taken from the same PCM. Kept
+    /// separate from the bars because CAVA's auto-sensitivity makes those
+    /// relative, and the glow layer needs an honest level (AC-23).
+    pub fn with_bass_pressure(self, pressure: BassPressure) -> Self {
+        Self {
+            pressure: pressure.sanitized(),
+            ..self
         }
     }
 
     /// Per-band normalized magnitudes (`0..=1`).
     pub fn bands(&self) -> &[f32; SPECTRUM_BAND_COUNT] {
         &self.bands
+    }
+
+    /// How hard the bass is pushing, measured without CAVA's gain in the path.
+    pub fn bass_pressure(&self) -> BassPressure {
+        self.pressure
     }
 
     /// Under render load CAVA frames are strictly latest-wins.
@@ -110,6 +129,10 @@ mod song_visual_tests;
 #[cfg(test)]
 #[path = "playback/cava_tests.rs"]
 mod cava_tests;
+
+#[cfg(test)]
+#[path = "playback/bass_pressure_tests.rs"]
+mod bass_pressure_tests;
 
 /// The audio-playback contract every platform implements (Linux: GStreamer
 /// playbin3 in `player.rs`; future macOS/Windows: AVFoundation / WASAPI —

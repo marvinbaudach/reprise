@@ -13,7 +13,7 @@ pub use scene::{Fill, Geom, Rgba, Scene, Shape};
 #[cfg(test)]
 mod bars_source_tests {
     #[test]
-    fn ac_22_builds_bars_without_visual_mode_state() {
+    fn ac_23_builds_bars_without_visual_mode_state() {
         let engine = include_str!("visuals/engine.rs");
         for removed in ["pub enum VisualMode", "set_mode(", "fn mode("] {
             assert!(

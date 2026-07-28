@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use reprise_core::library::settings::{TrackTransition, CROSSFADE_SECONDS_DEFAULT};
 use reprise_core::playback::{
-    AudioEffects, CavaBarProcessor, CavaConfig, PlaybackBackend, PlaybackError, PlaybackState,
-    PlayerEvent, SpectrumFrame, SPECTRUM_BAND_COUNT,
+    AudioEffects, BassPressureDetector, CavaBarProcessor, CavaConfig, PlaybackBackend,
+    PlaybackError, PlaybackState, PlayerEvent, SpectrumFrame, SPECTRUM_BAND_COUNT,
 };
 
 use crate::crossfade::{CrossfadeEngine, IncomingSlot, Transition};
@@ -188,6 +188,9 @@ fn attach_cava_sink(
     let config = CavaConfig::new(CAVA_SAMPLE_RATE_HZ as u32, SPECTRUM_BAND_COUNT);
     let mut processor = CavaBarProcessor::new(config)
         .map_err(|error| PlaybackError::Backend(format!("CAVA: {error}")))?;
+    // Measured from the same PCM, but deliberately outside CAVA: the bars are
+    // auto-sensitivity-normalized and cannot say how loud the bass really is.
+    let mut pressure_detector = BassPressureDetector::new(CAVA_SAMPLE_RATE_HZ as u32);
     let mut was_enabled = false;
     let mut seen_stream_generation = stream_generation.load(Ordering::Acquire);
     sink.set_callbacks(
@@ -201,12 +204,14 @@ fn attach_cava_sink(
                 let current_stream_generation = stream_generation.load(Ordering::Acquire);
                 if !was_enabled || current_stream_generation != seen_stream_generation {
                     processor.reset();
+                    pressure_detector.reset();
                     was_enabled = true;
                     seen_stream_generation = current_stream_generation;
                 }
                 let buffer = sample.buffer().ok_or(gst::FlowError::Error)?;
                 if buffer.flags().contains(gst::BufferFlags::DISCONT) {
                     processor.reset();
+                    pressure_detector.reset();
                 }
                 let map = buffer.map_readable().map_err(|_| gst::FlowError::Error)?;
                 let pcm = map
@@ -218,7 +223,10 @@ fn attach_cava_sink(
                     .process(&pcm)
                     .try_into()
                     .expect("the CAVA processor returns its configured bar count");
-                (*on_event)(PlayerEvent::Spectrum(SpectrumFrame::from_cava_bars(bands)));
+                let pressure = pressure_detector.observe(&pcm);
+                (*on_event)(PlayerEvent::Spectrum(
+                    SpectrumFrame::from_cava_bars(bands).with_bass_pressure(pressure),
+                ));
                 Ok(gst::FlowSuccess::Ok)
             })
             .build(),

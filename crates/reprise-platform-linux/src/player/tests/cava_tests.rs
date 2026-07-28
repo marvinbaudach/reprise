@@ -3,7 +3,7 @@ use crate::player_effects::{build_audio_filter, set_spectrum_messages};
 use gstreamer_app as gst_app;
 
 #[test]
-fn ac_22_audio_filter_exposes_normalized_mono_pcm_to_cava() {
+fn ac_23_audio_filter_exposes_normalized_mono_pcm_to_cava() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -32,7 +32,7 @@ fn ac_22_audio_filter_exposes_normalized_mono_pcm_to_cava() {
 }
 
 #[test]
-fn ac_22_cava_pcm_branch_splits_before_replay_gain_normalization() {
+fn ac_23_cava_pcm_branch_splits_before_replay_gain_normalization() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -77,7 +77,7 @@ fn ac_22_cava_pcm_branch_splits_before_replay_gain_normalization() {
 }
 
 #[test]
-fn ac_22_enabled_player_emits_live_cava_frames() {
+fn ac_23_enabled_player_emits_live_cava_frames() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -119,7 +119,53 @@ fn ac_22_enabled_player_emits_live_cava_frames() {
 }
 
 #[test]
-fn ac_22_filter_replacement_reattaches_the_cava_processor() {
+fn ac_23_enabled_player_measures_absolute_bass_pressure() {
+    let _guard = AUDIO_SINK_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
+
+    let (tx, rx) = std::sync::mpsc::channel::<PlayerEvent>();
+    let player = Player::new(Box::new(move |event| {
+        let _ = tx.send(event);
+    }))
+    .unwrap();
+    player.set_spectrum_enabled(true).unwrap();
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
+    player.play(path).unwrap();
+
+    // The first frames may arrive before a full analysis window has closed, so
+    // wait for one that carries a real measurement rather than silence.
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let pressure = 'wait: loop {
+        while gst::glib::MainContext::default().pending() {
+            gst::glib::MainContext::default().iteration(false);
+        }
+        while let Ok(event) = rx.try_recv() {
+            if let PlayerEvent::Spectrum(frame) = event {
+                let pressure = frame.bass_pressure();
+                if pressure.level_dbfs > -140.0 {
+                    break 'wait pressure;
+                }
+            }
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "expected a measured bass pressure within timeout"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    };
+
+    assert!(pressure.level_dbfs.is_finite());
+    assert!(pressure.baseline_dbfs.is_finite());
+    assert!((0.0..=1.0).contains(&pressure.impact));
+    assert!((0.0..=1.0).contains(&pressure.aura));
+    player.stop().unwrap();
+    std::env::remove_var(AUDIO_SINK_ENV_VAR);
+}
+
+#[test]
+fn ac_23_filter_replacement_reattaches_the_cava_processor() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -157,7 +203,7 @@ fn ac_22_filter_replacement_reattaches_the_cava_processor() {
 }
 
 #[test]
-fn ac_22_stream_start_invalidates_the_previous_cava_history() {
+fn ac_23_stream_start_invalidates_the_previous_cava_history() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
