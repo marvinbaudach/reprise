@@ -5,6 +5,7 @@
 //! cache is capped at [`MAX_CACHE_ENTRIES`] files: once a new write would
 //! exceed the cap, the least-recently-modified files are evicted first.
 
+use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -26,12 +27,33 @@ pub(crate) fn key_for(url: &str) -> String {
     crate::cover::hash_hex(url.trim().as_bytes())
 }
 
+/// Looks up the cached file for `url`, if any. `SRC-11` defines eviction as
+/// "least recently *touched* first", so a hit here has to count as a touch —
+/// otherwise a file viewed daily is exactly as eviction-eligible as one never
+/// looked at again since the day it was downloaded, both ordered purely by
+/// write time. See [`touch`].
 pub(crate) fn cached_path_in(dir: &Path, url: &str) -> Option<PathBuf> {
     let key = key_for(url);
-    IMAGE_EXTS
+    let path = IMAGE_EXTS
         .iter()
         .map(|ext| dir.join(format!("{key}.{ext}")))
-        .find(|path| path.exists())
+        .find(|path| path.exists())?;
+    touch(&path);
+    Some(path)
+}
+
+/// Bumps `path`'s modification time to now, so it is treated as freshly used
+/// for the next eviction pass. Best-effort and silent on failure (read-only
+/// filesystem, permissions, a concurrent unlink, ...): a cache hit must still
+/// be returned to the caller either way — `SRC-11`'s "a cache hit is always
+/// shown" promise does not depend on the touch succeeding, only eviction
+/// priority does, and a slightly-too-eager eviction is a far smaller defect
+/// than hiding an image that is sitting right there on disk.
+fn touch(path: &Path) {
+    let Ok(file) = File::open(path) else {
+        return;
+    };
+    let _ = file.set_modified(SystemTime::now());
 }
 
 /// Writes `bytes` atomically (temp file + rename), replaces any stale
@@ -61,6 +83,14 @@ pub(crate) fn store_image(dir: &Path, url: &str, bytes: &[u8], ext: &str) -> Opt
 /// Pure: given each cached file's identity and last-modified time, returns
 /// which ids to evict — oldest-modified first — to bring the count down to
 /// `limit`. A no-op (empty result) when already at or under the limit.
+///
+/// Sorted by `(modified, id)`: the id is a pure tie-break, never a ranking
+/// criterion on its own, but it makes the order fully deterministic when two
+/// entries share a modification time (coarse filesystem timestamp
+/// resolution, or two files touched within the same tick) — without it, ties
+/// silently fell back to whatever order `read_dir` happened to yield, which
+/// is not guaranteed stable and made the claimed "deterministic" eviction
+/// false in exactly the case it matters (a real collision).
 pub(crate) fn entries_to_evict(
     mut entries: Vec<(String, SystemTime)>,
     limit: usize,
@@ -68,7 +98,9 @@ pub(crate) fn entries_to_evict(
     if entries.len() <= limit {
         return Vec::new();
     }
-    entries.sort_by_key(|(_, modified)| *modified);
+    entries.sort_by(|(id_a, modified_a), (id_b, modified_b)| {
+        modified_a.cmp(modified_b).then_with(|| id_a.cmp(id_b))
+    });
     let overflow = entries.len() - limit;
     entries
         .into_iter()
@@ -184,5 +216,70 @@ mod tests {
         assert!(cached_path_in(&dir, "https://x.test/2.jpg").is_some());
         assert!(cached_path_in(&dir, "https://x.test/3.jpg").is_some());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// `SRC-11`: "die am längsten unangetasteten Dateien zuerst" — least
+    /// recently *touched*, not least recently *written*. A cache hit on the
+    /// oldest-written file must count as touching it, so it survives the
+    /// next eviction in place of whichever entry is now the actual
+    /// least-recently-used one.
+    #[test]
+    fn src_11_a_cache_hit_counts_as_touching_the_entry() {
+        let dir = tmp();
+        std::fs::create_dir_all(&dir).unwrap();
+        let oldest = store_image(&dir, "https://x.test/1.jpg", b"1", "jpg").unwrap();
+        std::thread::sleep(Duration::from_millis(10));
+        let middle = store_image(&dir, "https://x.test/2.jpg", b"2", "jpg").unwrap();
+        std::thread::sleep(Duration::from_millis(10));
+        let _newest = store_image(&dir, "https://x.test/3.jpg", b"3", "jpg").unwrap();
+        std::thread::sleep(Duration::from_millis(10));
+
+        // "View" the oldest-written entry through the same lookup `resolve`
+        // uses on every cache hit.
+        assert_eq!(
+            cached_path_in(&dir, "https://x.test/1.jpg"),
+            Some(oldest.clone())
+        );
+
+        enforce_bound(&dir, 2);
+
+        assert!(
+            oldest.exists(),
+            "a just-touched entry must not be evicted even though it was written first"
+        );
+        assert!(
+            !middle.exists(),
+            "the now-least-recently-touched entry must be evicted instead"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// `SRC-11` promises *deterministic* eviction. Sorting purely by
+    /// modification time is not deterministic when two entries share a
+    /// timestamp (coarse filesystem clocks, or two touches in the same
+    /// tick): the outcome would then depend on whatever order `read_dir`
+    /// happens to hand entries in, which is explicitly unspecified. This
+    /// asserts the same tied set evicts identically no matter what order it
+    /// is discovered in — `read_dir` order is stood in for by the input
+    /// `Vec` order, which is exactly what varies between real filesystem
+    /// listings.
+    #[test]
+    fn src_11_entries_to_evict_ties_are_deterministic_regardless_of_discovery_order() {
+        let same = SystemTime::now();
+        let forward = vec![
+            ("a.jpg".to_string(), same),
+            ("b.jpg".to_string(), same),
+            ("c.jpg".to_string(), same),
+        ];
+        let reversed = vec![
+            ("c.jpg".to_string(), same),
+            ("b.jpg".to_string(), same),
+            ("a.jpg".to_string(), same),
+        ];
+        assert_eq!(
+            entries_to_evict(forward, 1),
+            entries_to_evict(reversed, 1),
+            "eviction of tied-timestamp entries must not depend on discovery order"
+        );
     }
 }

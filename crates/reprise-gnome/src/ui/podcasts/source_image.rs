@@ -11,11 +11,21 @@
 //! which is the sole place bytes are ever requested. The bounded on-disk
 //! cache and the gate check both live in that pure core module; this file
 //! only decodes the resulting path into a GTK texture.
+//!
+//! The background artwork workers do not simply reuse the `images_allowed`
+//! value a caller passed when a task was queued: that value can go stale if
+//! the gate is switched off while the task is still sitting in the queue
+//! (queue depth up to [`ARTWORK_QUEUE_LIMIT`], drained by only
+//! [`ARTWORK_WORKERS`] threads). Instead every fresh value is published to
+//! [`GATE_OPEN`], and the worker re-reads it immediately before calling
+//! `resolve` — see that constant's doc comment for why this shape was chosen
+//! over a per-task snapshot or a DB read from the worker thread.
 
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 use gtk4::prelude::*;
@@ -29,6 +39,28 @@ thread_local! {
     static TEXTURE_CACHE: RefCell<VecDeque<(String, gtk4::gdk::Texture)>> =
         const { RefCell::new(VecDeque::new()) };
 }
+
+/// The most recently observed `images_allowed` gate state, shared across the
+/// worker threads below.
+///
+/// `NET-1a` requires that switching the gate off takes effect immediately —
+/// including for artwork tasks that were already queued while it was on. The
+/// worker threads have no `rusqlite::Connection` and must not open one per
+/// task (that would mean a DB hit on every dequeue, on a thread with no
+/// natural connection lifetime); polling settings from a background thread is
+/// the wrong shape here. Instead, every caller of `SourceImage::new`/
+/// `set_url` already recomputes `images_allowed` fresh from its own live
+/// connection on every render pass (`SRC-11`: "Jeder Aufrufer berechnet den
+/// Riegel selbst an seiner eigenen Verbindung") — that is already the
+/// freshest signal the app has. `queue_artwork` publishes each such value
+/// into this atomic, and the worker reads it again immediately before
+/// calling `remote_image::resolve`, instead of trusting whatever value a
+/// task happened to capture when it was built. A task queued while the gate
+/// was open therefore still gets refused if the gate has since closed.
+///
+/// Starts `false` so a failed/unknown gate state (nothing has published a
+/// value yet) counts as not-allowed, per `NET-1a`.
+static GATE_OPEN: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone)]
 pub(crate) struct SourceImage {
@@ -136,16 +168,30 @@ impl SourceImage {
 
 struct ArtworkTask {
     url: String,
-    /// `NET-1a` / `SRC-11`: threaded through to `remote_image::resolve`,
-    /// which is where the gate is actually enforced. A task is enqueued even
-    /// when this is false, because the on-disk cache must still be consulted
-    /// — `resolve` reads it before it looks at this flag, so a closed gate
-    /// costs a disk lookup and never a request.
-    allowed: bool,
     response: async_channel::Sender<Option<PathBuf>>,
 }
 
+/// Runs one queued task against the CURRENT gate state — read via
+/// [`GATE_OPEN`] at the moment of the call, not any value the caller might
+/// have captured earlier — and against the on-disk cache, which is always
+/// consulted regardless of the gate (`SRC-11`). `fetch` is injected so tests
+/// can exercise this without ever making a real network request.
+fn process_task(task: ArtworkTask, fetch: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>) {
+    let allowed = GATE_OPEN.load(Ordering::Relaxed);
+    let outcome = reprise_core::remote_image::resolve(Some(&task.url), allowed, fetch);
+    let path = match outcome {
+        ImageOutcome::Cached(path) | ImageOutcome::Fetched(path) => Some(path),
+        ImageOutcome::NotAllowed | ImageOutcome::NoUrl | ImageOutcome::FetchFailed => None,
+    };
+    let _ = task.response.send_blocking(path);
+}
+
 fn queue_artwork(url: String, allowed: bool) -> Option<async_channel::Receiver<Option<PathBuf>>> {
+    // Publish the freshest known gate state before anything else: this is
+    // what lets an already-queued task see a later flip to `false`. See
+    // `GATE_OPEN`'s doc comment for why this is updated here rather than
+    // read by the worker from settings directly.
+    GATE_OPEN.store(allowed, Ordering::Relaxed);
     static QUEUE: OnceLock<async_channel::Sender<ArtworkTask>> = OnceLock::new();
     let queue = QUEUE.get_or_init(|| {
         let (sender, receiver) = async_channel::bounded::<ArtworkTask>(ARTWORK_QUEUE_LIMIT);
@@ -155,21 +201,10 @@ fn queue_artwork(url: String, allowed: bool) -> Option<async_channel::Receiver<O
                 .name(format!("reprise-source-artwork-{index}"))
                 .spawn(move || {
                     while let Ok(task) = receiver.recv_blocking() {
-                        let outcome = reprise_core::remote_image::resolve(
-                            Some(&task.url),
-                            task.allowed,
-                            &mut |url| {
-                                reprise_core::podcasts::source_artwork::fetch(url)
-                                    .map_err(|error| error.to_string())
-                            },
-                        );
-                        let path = match outcome {
-                            ImageOutcome::Cached(path) | ImageOutcome::Fetched(path) => Some(path),
-                            ImageOutcome::NotAllowed
-                            | ImageOutcome::NoUrl
-                            | ImageOutcome::FetchFailed => None,
-                        };
-                        let _ = task.response.send_blocking(path);
+                        process_task(task, &mut |url| {
+                            reprise_core::podcasts::source_artwork::fetch(url)
+                                .map_err(|error| error.to_string())
+                        });
                     }
                 })
             {
@@ -179,13 +214,7 @@ fn queue_artwork(url: String, allowed: bool) -> Option<async_channel::Receiver<O
         sender
     });
     let (response, receiver) = async_channel::bounded(1);
-    queue
-        .try_send(ArtworkTask {
-            url,
-            allowed,
-            response,
-        })
-        .ok()?;
+    queue.try_send(ArtworkTask { url, response }).ok()?;
     Some(receiver)
 }
 
@@ -233,6 +262,56 @@ mod tests {
         assert_eq!(super::validated_url("file:///home/user/secret"), None);
         assert_eq!(super::validated_url("data:image/png;base64,AAAA"), None);
         assert_eq!(super::validated_url("not a URL"), None);
+    }
+
+    /// `NET-1a` / `SRC-11`: a task queued while the gate was open must still
+    /// be refused if the gate has closed by the time a worker actually picks
+    /// it up — the decision has to use the CURRENT gate state, not one
+    /// captured when the row was built. No display, no thread pool, and no
+    /// real network call needed: `process_task` is the exact code the worker
+    /// threads run, called here directly with an injected `fetch` so a stale
+    /// decision would show up as a real (test-failing) call rather than
+    /// requiring a live socket. `fetch` returns `Err` rather than image
+    /// bytes so a stale-gate failure never writes into the shared on-disk
+    /// cache — this test only asserts whether `fetch` was invoked at all.
+    #[test]
+    fn src_11_worker_uses_the_gate_state_current_at_fetch_time_not_the_one_queued_with() {
+        use std::sync::atomic::Ordering;
+
+        // A URL this test owns, guaranteed not to be cached from any other
+        // test/run: the on-disk cache is real and shared (see other
+        // `src_11_*` tests in `remote_image`), so reusing a URL used
+        // elsewhere could make this test observe a stale cache hit instead
+        // of exercising the gate decision it targets.
+        let url = "https://images.test/src-11-net-1a-stale-gate-unique-marker.png";
+
+        // The row was built while "Use online sources" was on...
+        super::GATE_OPEN.store(true, Ordering::SeqCst);
+        let (response, receiver) = async_channel::bounded(1);
+        let task = super::ArtworkTask {
+            url: url.into(),
+            response,
+        };
+        // ...but the user switches it off again before this task, still
+        // sitting in the queue, is actually dequeued and processed.
+        super::GATE_OPEN.store(false, Ordering::SeqCst);
+
+        let mut fetch_called = false;
+        super::process_task(task, &mut |_| {
+            fetch_called = true;
+            Err("must not be called".into())
+        });
+
+        assert!(
+            !fetch_called,
+            "the worker must not fetch once the gate has closed, even though \
+             it was open when the task was queued"
+        );
+        assert_eq!(
+            receiver.try_recv(),
+            Ok(None),
+            "a refused, uncached task resolves to no image, never an error image"
+        );
     }
 
     /// A real 1x1 truecolor PNG, small enough to inline and valid enough for
