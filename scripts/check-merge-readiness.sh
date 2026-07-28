@@ -49,6 +49,9 @@ echo "== Accessibility semantics and input parity =="
 scripts/check-accessibility-semantics.sh
 scripts/check-input-parity.sh
 
+echo "== Frontend thinness =="
+scripts/check-frontend-thinness.sh
+
 echo "== UX traceability =="
 scripts/check-ux-traceability.sh
 
