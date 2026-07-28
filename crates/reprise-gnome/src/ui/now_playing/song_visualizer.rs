@@ -17,7 +17,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use reprise_core::playback::{PlaybackState, SpectrumFrame};
+use reprise_core::playback::{BassPressure, PlaybackState, SpectrumFrame};
 use reprise_core::visuals::VisualEngine;
 
 use crate::ui::{motion, strings};
@@ -31,6 +31,12 @@ const COVER_PALETTE_PIXELS: usize = (COVER_PALETTE_EDGE * COVER_PALETTE_EDGE) as
 /// Redraw interval (µs) while no audio is playing — the resting breath runs at
 /// ~30 Hz instead of the full render rate.
 const IDLE_FRAME_INTERVAL_US: i64 = 33_000;
+/// Refresh interval (µs) of the analysis readout. The measurement updates at
+/// the frame rate, but numbers changing 60×/s are unreadable — and re-laying
+/// out four labels that often is pure waste.
+const READOUT_INTERVAL_US: i64 = 100_000;
+/// Below this the bass band carries nothing worth printing as a number.
+const READOUT_SILENCE_DBFS: f32 = -90.0;
 
 #[derive(Clone)]
 pub(in crate::ui) struct SongVisualizer {
@@ -41,6 +47,8 @@ pub(in crate::ui) struct SongVisualizer {
     area: gtk4::Widget,
     areas: Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::Widget>>>>,
     engine: Rc<RefCell<VisualEngine>>,
+    /// Shows what the glow layer is currently reacting to (AC-23).
+    readout: AnalysisReadout,
     /// Mirrored outside the engine (which has no getter) so `set_spectrum`
     /// can gate on "are we actually playing" without borrowing it.
     playback: Rc<Cell<PlaybackState>>,
@@ -55,14 +63,17 @@ impl SongVisualizer {
         let area = build_canvas(&engine);
         register_area(&areas, &area);
 
+        let readout = AnalysisReadout::new();
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 10);
         root.add_css_class("reprise-song-visuals");
         root.append(&area);
+        root.append(&readout.root);
         Self {
             root,
             area,
             areas,
             engine,
+            readout,
             playback: Rc::new(Cell::new(PlaybackState::Stopped)),
             panel_active: Rc::new(Cell::new(false)),
             tick_id: Rc::new(RefCell::new(None)),
@@ -94,6 +105,7 @@ impl SongVisualizer {
     /// motion from the previous track does not bleed into the new one.
     pub(in crate::ui) fn note_track_changed(&self) {
         self.engine.borrow_mut().note_track_changed();
+        self.readout.set(self.engine.borrow().bass_pressure());
         queue_registered_areas(&self.areas);
     }
 
@@ -113,6 +125,7 @@ impl SongVisualizer {
             return;
         }
         self.engine.borrow_mut().ingest(&frame);
+        self.readout.update(frame.bass_pressure());
         self.ensure_tick();
     }
 
@@ -130,6 +143,7 @@ impl SongVisualizer {
             self.ensure_tick();
         } else {
             self.stop_tick();
+            self.readout.set(self.engine.borrow().bass_pressure());
             queue_registered_areas(&self.areas);
         }
     }
@@ -155,6 +169,7 @@ impl SongVisualizer {
         let areas = self.areas.clone();
         let panel_active = self.panel_active.clone();
         let playback = self.playback.clone();
+        let readout = self.readout.clone();
         let slot = self.tick_id.clone();
         // Decouple the sim's advance from the render frame rate: each engine
         // tick is a fixed 1/60 s step, but the frame clock slows to the render
@@ -189,6 +204,9 @@ impl SongVisualizer {
             for _ in 0..steps {
                 settled = engine.borrow_mut().tick();
             }
+            // Also refreshed here, so the readout follows the release once
+            // playback stops and no further frames arrive.
+            readout.update(engine.borrow().bass_pressure());
             queue_registered_areas(&areas);
             if settled {
                 *slot.borrow_mut() = None;
@@ -204,6 +222,115 @@ impl SongVisualizer {
         if let Some(id) = self.tick_id.borrow_mut().take() {
             id.remove();
         }
+    }
+}
+
+/// The four analysis numbers, in the order the readout shows them.
+fn analysis_values(pressure: BassPressure) -> [String; 4] {
+    let decibels = |value: f32| {
+        if value <= READOUT_SILENCE_DBFS {
+            "—".to_owned()
+        } else {
+            format!("{value:.1} dBFS")
+        }
+    };
+    [
+        decibels(pressure.level_dbfs),
+        decibels(pressure.baseline_dbfs),
+        format!("{:.2}", pressure.impact),
+        format!("{:.2}", pressure.aura),
+    ]
+}
+
+/// The live analysis under the canvas: the absolute bass level, the running
+/// baseline it is measured against, and the two glow values derived from them.
+/// Showing them keeps the visual's behavior traceable instead of magic.
+#[derive(Clone)]
+struct AnalysisReadout {
+    root: gtk4::Grid,
+    values: Vec<gtk4::Label>,
+    last_update_us: Rc<Cell<i64>>,
+}
+
+impl AnalysisReadout {
+    fn new() -> Self {
+        // Two by two, not one row of four: the panel is a fixed 300 px wide
+        // (NPP-1), where four columns leave ~70 px each and truncate every
+        // caption. Every label ellipsizes so enlarged text shortens the words
+        // instead of widening the panel.
+        let root = gtk4::Grid::builder()
+            .column_homogeneous(true)
+            .row_spacing(6)
+            .column_spacing(14)
+            .accessible_role(gtk4::AccessibleRole::Group)
+            .build();
+        root.add_css_class("reprise-song-visual-analysis");
+        root.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+            strings::SONG_VISUALS_ANALYSIS_ACCESSIBLE,
+        ))]);
+
+        let values = [
+            strings::SONG_VISUALS_BASS,
+            strings::SONG_VISUALS_BASELINE,
+            strings::SONG_VISUALS_IMPACT,
+            strings::SONG_VISUALS_BREAKDOWN,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, name)| {
+            let cell = gtk4::Box::new(gtk4::Orientation::Vertical, 1);
+            let caption = gtk4::Label::builder()
+                .label(strings::text(name))
+                .xalign(0.0)
+                .ellipsize(gtk4::pango::EllipsizeMode::End)
+                .build();
+            caption.add_css_class("reprise-song-visual-analysis-name");
+            let value = gtk4::Label::builder()
+                .label("—")
+                .xalign(0.0)
+                .ellipsize(gtk4::pango::EllipsizeMode::End)
+                .build();
+            value.add_css_class("reprise-song-visual-analysis-value");
+            cell.append(&caption);
+            cell.append(&value);
+            root.attach(&cell, (index % 2) as i32, (index / 2) as i32, 1, 1);
+            value
+        })
+        .collect();
+
+        Self {
+            root,
+            values,
+            last_update_us: Rc::new(Cell::new(0)),
+        }
+    }
+
+    /// Writes the numbers immediately — for state changes, where the readout
+    /// must not lag behind a stop or a track switch.
+    fn set(&self, pressure: BassPressure) {
+        self.last_update_us.set(gtk4::glib::monotonic_time());
+        for (label, value) in self.values.iter().zip(analysis_values(pressure)) {
+            label.set_text(&value);
+        }
+    }
+
+    /// Writes the numbers at most every [`READOUT_INTERVAL_US`] — for the live
+    /// path, which fires at the frame rate.
+    fn update(&self, pressure: BassPressure) {
+        let now = gtk4::glib::monotonic_time();
+        let last = self.last_update_us.get();
+        if last != 0 && now.saturating_sub(last) < READOUT_INTERVAL_US {
+            return;
+        }
+        self.set(pressure);
+    }
+
+    #[cfg(test)]
+    fn shown_values(&self) -> Vec<String> {
+        self.values
+            .iter()
+            .map(|label| label.text().to_string())
+            .collect()
     }
 }
 
@@ -272,6 +399,18 @@ pub(in crate::ui) fn css() -> String {
        background-color: alpha(#ffffff, 0.025);\
        border: 1px solid alpha(@reprise_player_accent, 0.14);\
        border-radius: 24px;\
+     }\n\
+     .reprise-song-visual-analysis { padding: 0 10px; }\n\
+     .reprise-song-visual-analysis-name {\
+       font-size: 0.72rem;\
+       letter-spacing: 0.06em;\
+       text-transform: uppercase;\
+       opacity: 0.5;\
+     }\n\
+     .reprise-song-visual-analysis-value {\
+       font-size: 0.86rem;\
+       font-feature-settings: \"tnum\" 1;\
+       color: @reprise_player_accent;\
      }"
     .to_owned()
 }

@@ -1949,7 +1949,8 @@ STYLE-1).
 - **AC-19** [replaced by AC-20]
 - **AC-20** [replaced by AC-21]
 - **AC-21** [replaced by AC-22]
-- **AC-22** [active] [core] [gtk] — „Song Visuals" is a plugin, switched
+- **AC-22** [replaced by AC-23]
+- **AC-23** [active] [core] [gtk] — „Song Visuals" is a plugin, switched
   off by default and applicable live. When switched on, the Linux
   pipeline branches off locally normalized mono PCM before ReplayGain;
   CAVA math generates 64 logarithmic display bands from it, clamped to
@@ -1967,15 +1968,26 @@ STYLE-1).
   Stop may only apply a visual dampening for the decay required by
   AC-11; the resting wave defined there then only fills in what the live
   bars leave free, and changes neither CAVA values nor peak caps.
-  Independent of the bar heights, the squared energy of the twelve
-  lowest CAVA bands drives a pure display layer: powerful bass instantly
-  ignites two broad neon glows behind the columns, which decay softly
-  after the impulse. An extreme, broadly sustained breakdown bass
-  non-linearly adds two brighter inner auras; high-frequency energy
-  alone does not trigger the effect. This bass aura changes neither
-  CAVA values nor peak caps nor bar heights. With animations switched
-  off, it jumps to the static value of the current frame without any
-  decay.
+  The glow layer behind the columns is never derived from the CAVA
+  bands. Auto-sensitivity keeps re-normalizing those, so a quiet sung
+  passage climbs to the same band values as a drop and the glow would
+  fire on both. Instead a second path measures the same PCM without any
+  gain of its own: a 30–150 Hz band, its RMS in true dBFS, and a slow
+  baseline of the track's own recent bass. Absolute level and the swell
+  above that baseline together produce two presentation-only values. A
+  rhythmic kick lifts two broad neon glows softly and in proportion to
+  the measured pressure; only pressure sustained across a breakdown adds
+  the two brighter inner auras. A bass band that stays quiet in absolute
+  terms never glows, however tall the bars grow, and high-frequency
+  energy alone never triggers either layer. Both release after the
+  impulse instead of flickering, and neither changes CAVA values, peak
+  caps, nor bar heights. With animations switched off, the layer holds
+  the current frame's value without decay.
+  Below the canvas the visual names the analysis it reacts to —
+  absolute bass level, baseline, kick glow, and breakdown aura. The
+  numbers refresh at most ten times per second so they stay readable,
+  and a band without measurable signal reads as a dash instead of a
+  bottomed-out level.
   Track and album ReplayGain normalize the audible output only after the
   PCM branch-off; the same input waveform therefore produces the same
   visual deflection regardless of the stored gain value. A mode

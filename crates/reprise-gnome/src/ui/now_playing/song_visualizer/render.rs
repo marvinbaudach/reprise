@@ -207,7 +207,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ac_22_fullscreen_render_size_is_capped_without_upscaling_inline_canvases() {
+    fn ac_23_fullscreen_render_size_is_capped_without_upscaling_inline_canvases() {
         assert_eq!(capped_scene_size(548, 300), (548, 300));
         assert_eq!(capped_scene_size(640, 360), (640, 360));
         assert_eq!(capped_scene_size(1920, 1080), (512, 288));
