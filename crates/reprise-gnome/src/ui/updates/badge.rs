@@ -4,37 +4,10 @@ use gtk4::prelude::*;
 
 use crate::ui::strings;
 
-/// Text for the counter badge, or `None` when nothing should be shown.
-/// `0` (or negative) → `None` (no empty element); `1..=9` → `"n"`;
-/// `>= 10` → `"9+"`.
-pub(in crate::ui) fn badge_presentation(unseen: i64) -> Option<String> {
-    match unseen {
-        n if n <= 0 => None,
-        1..=9 => Some(unseen.to_string()),
-        _ => Some("9+".to_string()),
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in crate::ui) struct FeedBadgeInput {
-    pub enabled: bool,
-    pub ready: bool,
-    pub unseen: i64,
-}
-
-pub(in crate::ui) fn updates_badge(
-    news: FeedBadgeInput,
-    concerts: FeedBadgeInput,
-) -> Option<String> {
-    let contribution = |feed: FeedBadgeInput| {
-        if feed.enabled && feed.ready {
-            feed.unseen.max(0)
-        } else {
-            0
-        }
-    };
-    badge_presentation(contribution(news).saturating_add(contribution(concerts)))
-}
+// The badge's arithmetic is shared application logic, not presentation: a
+// headless surface reports the same counts. It lives in `reprise_core::updates`
+// and is re-exported here so the widgets keep one import path.
+pub(in crate::ui) use reprise_core::updates::{updates_badge, FeedBadge as FeedBadgeInput};
 
 pub(in crate::ui) fn build_button() -> (gtk4::MenuButton, gtk4::Label) {
     let glyph = gtk4::Label::new(Some("✦"));
@@ -67,6 +40,7 @@ pub(in crate::ui) fn build_button() -> (gtk4::MenuButton, gtk4::Label) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reprise_core::updates::badge_text as badge_presentation;
 
     #[test]
     fn nr_9a_updates_badge_sums_only_enabled_ready_feeds_and_caps_at_nine_plus() {

@@ -454,17 +454,7 @@ fn chooser_row(label: &str) -> gtk4::ListBoxRow {
 }
 
 fn countries(conn: &Connection) -> Vec<String> {
-    let Ok(mut statement) = conn.prepare(
-        "SELECT DISTINCT trim(country) FROM concert_events
-         WHERE country IS NOT NULL AND trim(country) <> ''
-         ORDER BY lower(trim(country))",
-    ) else {
-        return Vec::new();
-    };
-    statement
-        .query_map([], |row| row.get(0))
-        .map(|rows| rows.filter_map(Result::ok).collect())
-        .unwrap_or_default()
+    reprise_core::concerts::known_countries(conn).unwrap_or_default()
 }
 
 fn wire(bar: &Rc<ConcertsFilterBar>) {
