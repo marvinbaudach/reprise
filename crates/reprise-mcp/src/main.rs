@@ -18,6 +18,7 @@ mod device_dto;
 mod device_sync;
 #[cfg(feature = "mpris")]
 mod device_tools;
+mod discovery_actions;
 mod dto;
 mod error;
 #[cfg(feature = "mpris")]

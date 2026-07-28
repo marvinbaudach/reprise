@@ -1,6 +1,7 @@
 //! Podcast subscriptions, episodes, refresh, and provider boundaries.
 
 pub mod config;
+pub mod discovery;
 pub mod download_state;
 pub mod downloads;
 pub mod feed;
