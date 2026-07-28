@@ -359,7 +359,7 @@ impl TrackListModel {
         // INST-10 / FIX-4: the AI badge (and so the `is_ai` column) is needed
         // only while the experimental switch is on. Cache that here so the hot
         // windowed query pays the correlated provenance subquery only then.
-        let project_ai = crate::ui::instrumental::experimental_enabled(&conn.borrow());
+        let project_ai = crate::ui::experimental::experimental_enabled(&conn.borrow());
 
         {
             let mut state = self.imp().state.borrow_mut();
