@@ -415,6 +415,16 @@ human. Rationale for changes lives in the git history.
   and playlist paths are preserved. Nothing is written, moved, or
   deleted outside this subfolder, and a missing or invalid playlist
   target state schedules no destructive work.
+- **MTP-18** [active] [core] — A running sync always names the step it is
+  actually performing. The run opens on the step that will do the first
+  visible work — its first transfer, or its playlists, or its removals —
+  never on a step scheduled for later.
+- **MTP-19** [active] [core] — A failed track holds back only what depends
+  on it. A playlist is left unwritten exactly when it would point at a track
+  that never arrived; every other playlist is published. Removals wait until
+  every planned playlist has been rewritten, because an older playlist left
+  on the device may still reference a file that is about to be deleted.
+
 ## F. Settings & modals
 
 - **SET-1** [planned] [gtk] — Preferences = one window with vertical

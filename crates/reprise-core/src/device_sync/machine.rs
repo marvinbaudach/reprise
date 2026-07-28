@@ -185,11 +185,17 @@ pub struct DeviceSyncMachine {
     cancelled: bool,
     terminal_error: Option<String>,
     failures: Vec<i64>,
+    /// Device paths whose transfer failed. A playlist that would point at one
+    /// of them must not be published.
+    failed_device_paths: HashSet<String>,
     completed_bytes: u64,
     transcoded_bytes: Option<u64>,
     deferred_replacements: Vec<(String, i64)>,
     planned_playlist_sources: HashSet<SelectionSource>,
     successful_playlist_sources: HashSet<SelectionSource>,
+    /// Set when a playlist file the device should no longer hold is still
+    /// there because its deletion failed.
+    stale_playlist_on_device: bool,
 }
 
 impl DeviceSyncMachine {
@@ -209,11 +215,13 @@ impl DeviceSyncMachine {
             cancelled: false,
             terminal_error: None,
             failures: Vec::new(),
+            failed_device_paths: HashSet::new(),
             completed_bytes: 0,
             transcoded_bytes: None,
             deferred_replacements: Vec::new(),
             planned_playlist_sources,
             successful_playlist_sources: HashSet::new(),
+            stale_playlist_on_device: false,
         }
     }
 
@@ -256,15 +264,7 @@ impl DeviceSyncMachine {
                 Vec::new()
             }
             (Awaiting::Start, Event::Start) => {
-                // Preserved oddity: the opening label names the removal step
-                // although removals run last. See `machine_tests.rs`.
-                self.phase = self.syncing_phase(
-                    SyncStep::Removing,
-                    0,
-                    self.plan.remove.len(),
-                    String::new(),
-                    0,
-                );
+                self.phase = self.opening_phase();
                 self.awaiting = Awaiting::Partials;
                 vec![Effect::CleanPartials]
             }
@@ -282,7 +282,7 @@ impl DeviceSyncMachine {
                     self.start_copy(index)
                 }
                 Err(_) => {
-                    self.fail_track(self.transfers[index].desired.track.id);
+                    self.fail_transfer(index);
                     self.advance_past_transfer(index)
                 }
             },
@@ -295,7 +295,7 @@ impl DeviceSyncMachine {
                     // A copy that fails because the run was cancelled is not a
                     // failure of the track.
                     if !self.cancelled {
-                        self.fail_track(self.transfers[index].desired.track.id);
+                        self.fail_transfer(index);
                     }
                     self.advance_past_transfer(index)
                 }
@@ -313,7 +313,7 @@ impl DeviceSyncMachine {
                             }
                         }
                     }
-                    Err(_) => self.fail_track(self.transfers[index].desired.track.id),
+                    Err(_) => self.fail_transfer(index),
                 }
                 self.advance_past_transfer(index)
             }
@@ -348,6 +348,9 @@ impl DeviceSyncMachine {
                     }
                 }
                 Err(_) => {
+                    // The obsolete playlist is still on the device, and its
+                    // entries may name files the removal stage would delete.
+                    self.stale_playlist_on_device = true;
                     self.fail_playlist();
                     self.enter_playlist_removals(index + 1)
                 }
@@ -469,12 +472,25 @@ impl DeviceSyncMachine {
     }
 
     fn enter_playlists(&mut self) -> Vec<Effect> {
-        // Preserved oddity: one failed track suppresses every playlist write
-        // and, further down, every removal. See `machine_tests.rs`.
-        if self.cancelled || !self.failures.is_empty() {
+        if self.cancelled {
             return self.finish();
         }
         self.enter_playlist_writes(0)
+    }
+
+    /// Whether a planned playlist would point at a track that never arrived.
+    ///
+    /// This is the whole reason a failed transfer touches playlists at all: a
+    /// published playlist must not reference a file that is not on the device.
+    /// Playlists that reference nothing lost are unaffected.
+    fn playlist_references_a_failed_transfer(&self, index: usize) -> bool {
+        if self.failed_device_paths.is_empty() {
+            return false;
+        }
+        self.plan.playlist_writes[index]
+            .entries
+            .iter()
+            .any(|entry| self.failed_device_paths.contains(&entry.relative_path))
     }
 
     fn enter_playlist_writes(&mut self, from: usize) -> Vec<Effect> {
@@ -482,11 +498,11 @@ impl DeviceSyncMachine {
             return self.finish();
         }
         let Some(write) = self.plan.playlist_writes.get(from) else {
-            if !self.failures.is_empty() {
-                return self.finish();
-            }
             return self.enter_playlist_removals(0);
         };
+        if self.playlist_references_a_failed_transfer(from) {
+            return self.enter_playlist_writes(from + 1);
+        }
         self.phase = self.syncing_phase(
             SyncStep::WritingPlaylists,
             from,
@@ -519,12 +535,26 @@ impl DeviceSyncMachine {
 
     /// The gate in front of the removal stage.
     ///
-    /// This is the second half of the preserved MTP-O2 oddity: a failure
-    /// anywhere before the removals suppresses all of them. It belongs here,
-    /// at the stage boundary, and not inside the loop — a removal that fails
-    /// must not stop the removals after it.
+    /// A removal is safe only once no playlist that could name the file is
+    /// still on the device in an outdated form. That covers two cases: a
+    /// planned playlist that was not rewritten — because its write failed, or
+    /// because it was held back for pointing at a track that never arrived —
+    /// and an obsolete playlist whose deletion failed. The machine does not
+    /// know any of their contents, so it holds every removal back rather than
+    /// guess.
+    ///
+    /// A failed transfer that holds back no playlist therefore does not block
+    /// the removals, which is where this differs from the blanket
+    /// "any failure stops everything" rule it replaces.
     fn begin_removals(&mut self) -> Vec<Effect> {
-        if self.cancelled || !self.failures.is_empty() {
+        if self.cancelled {
+            return self.finish();
+        }
+        let every_playlist_republished = self
+            .planned_playlist_sources
+            .iter()
+            .all(|source| self.successful_playlist_sources.contains(source));
+        if !every_playlist_republished || self.stale_playlist_on_device {
             return self.finish();
         }
         self.enter_removals(0)
@@ -588,8 +618,54 @@ impl DeviceSyncMachine {
         })]
     }
 
+    /// The phase a run shows before its first step reports anything.
+    ///
+    /// Partial cleanup runs first but has no step of its own, so the run opens
+    /// on whichever step will actually do the first visible work. Naming a
+    /// step that runs later — as this did with `Removing` — tells the user the
+    /// run is doing something it has not started.
+    fn opening_phase(&self) -> PlannedSyncPhase {
+        if !self.transfers.is_empty() {
+            let step = match self.transfers[0].desired.action {
+                TransferAction::CopyOriginal => SyncStep::Copying,
+                TransferAction::TranscodeOpus160 | TransferAction::TranscodeMp3(_) => {
+                    SyncStep::Transcoding
+                }
+            };
+            return self.syncing_phase(step, 0, self.transfers.len(), self.transfer_activity(0), 0);
+        }
+        if let Some(write) = self.plan.playlist_writes.first() {
+            return self.syncing_phase(
+                SyncStep::WritingPlaylists,
+                0,
+                self.plan.playlist_writes.len(),
+                write.source_name.clone(),
+                0,
+            );
+        }
+        self.syncing_phase(
+            SyncStep::Removing,
+            0,
+            self.plan.remove.len(),
+            self.plan
+                .remove
+                .first()
+                .map(removal_path)
+                .unwrap_or_default(),
+            0,
+        )
+    }
+
     fn fail_track(&mut self, track_id: i64) {
         self.failures.push(track_id);
+    }
+
+    /// Records a failed transfer under both the track that was lost and the
+    /// device path that will therefore not exist.
+    fn fail_transfer(&mut self, index: usize) {
+        let desired = &self.transfers[index].desired;
+        self.failures.push(desired.track.id);
+        self.failed_device_paths.insert(desired.device_path.clone());
     }
 
     /// A playlist failure has no track to blame, so it is recorded under the
