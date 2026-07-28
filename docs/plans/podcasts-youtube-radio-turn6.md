@@ -191,6 +191,54 @@ Technisch: drei Booleans plus ein globales `online-sources-enabled` als
 **UND-Bedingung vor jedem Request** — ausdrücklich auch für Cover, Portraits
 und Lyrics, damit „aus" wirklich aus heißt.
 
+**Nachtrag vom 2026-07-28 — Sync-Regeln sind global.** Diese Änderung kam nach
+der ersten Fassung von 7a/7b und hat Vorrang vor den Absätzen darüber:
+
+- 7b bekommt einen eigenen Block **„Phone sync"**: Playlisten,
+  YouTube-Tonspuren und Podcast-Episoden synchronisieren, Caps und das
+  Musik-Transfer-Profil. Diese Regeln gelten **für alle Geräte**; in den
+  Settings gibt es **keine** Geräteauswahl. Letzte Zeile des Blocks:
+  „Target folders · Per device →".
+- 7a zeigt dieselben Werte nur noch **lesend** („rules from Preferences",
+  „Same on all devices"). Pro Gerät bleibt allein der Zielordner-Picker.
+- **7e** hält das fest: global sind die Regeln, pro Gerät nur Zielordner und
+  Sync-Stand — Ordnerstrukturen unterscheiden sich zwischen Handy und DAP.
+  Defaults werden automatisch gesetzt, damit der Picker meist unangetastet
+  bleibt.
+
+Folge für den Aufgabenschnitt: **E1 wird kleiner** (die Ziele tragen nur noch
+Ordner und Sync-Stand pro Gerät, die Regeln liegen global), **G1 wird größer**
+(der „Phone sync"-Block gehört in die Settings-Seite). 7b und 7e sind vor
+Beginn von Block E vollständig zu lesen; die Absätze oben beschreiben den
+überholten geräte-lokalen Entwurf.
+
+**7f — Sync in zwei sichtbaren Phasen.** Löst das Problem, dass ein Sync
+Dateien braucht, die noch nicht heruntergeladen sind:
+
+1. **Preparation** — der Sync-Überblick listet „2 files to download · 312 MiB"
+   mit Titeln und trägt einen Schalter „Download missing files before syncing"
+   (online standardmäßig an). Der Primär-Button heißt dann **Download & sync**,
+   sonst **Sync now**.
+2. **Transfer** — „Step 1 of 2 · Downloading 1 of 2 · 62%" mit Balken, danach
+   die eigentliche Übertragung. Abbrechen behält fertige Downloads.
+
+Der entscheidende Kniff gegen Denkarbeit: „Sync to phone" auf einer Episode
+**ohne** Datei setzt `wanted_on_device`, und der Download folgt automatisch.
+Niemand muss „erst laden, dann auswählen" durchdenken. Preparation benutzt
+denselben Download-Manager mit Vorrang, keinen zweiten Pfad.
+
+Randfälle, die den Vertrag tragen:
+
+- **Offline** läuft der Sync trotzdem: vorhandene Dateien gehen rüber, fehlende
+  werden mit Notiz übersprungen („2 episodes skipped · not downloaded") und
+  bleiben vorgemerkt. Das ist die Sync-Ausprägung von `NET-3` (Block F).
+- Bei **getakteter Verbindung** wird Preparation angeboten, nicht gestartet.
+- Mit **abgeschalteten Online-Quellen** (`online-sources-enabled` aus, G1b)
+  gibt es die Phase gar nicht.
+
+`wanted_on_device` ist neuer persistenter Zustand und gehört damit in E1, nicht
+in die Darstellung.
+
 **7c — Geräte-Karte:** nennt die Richtung statt einer nichtssagenden Bilanz.
 Vier Zustände: „14 to copy · 2.6 GiB · 3 to remove", „3 to remove · frees
 148 MiB" (hier ist 0 B korrekt und darf nicht nach „nichts zu tun" aussehen),
@@ -356,6 +404,38 @@ kommen zwei Inhaltsarten und eine neue Geräteansicht dazu.
 - **G2 · Restabgleich 6a.** Spaltensatz `Show · Latest · Episodes`, „Show all N
   episodes", Kopfzeile „4 shows · 41 episodes · 7 new" gegen den bestehenden
   Gruppen-Renderer prüfen und nur die Lücke schließen.
+
+### Block H — MCP-Parität (Querschnitt)
+
+Anforderung des Eigentümers: **alles, was die GUI kann, muss auch über MCP
+verfügbar sein.** Der heutige Stand deckt das nicht ab — `source_tools.rs`
+kennt nur `music_manage_podcasts` und `music_manage_radio` (add/edit/remove/
+refresh) plus die gecachten Resources `reprise://podcasts` und
+`reprise://radio`. Es gibt **keine** Discovery-, Download-, Sync- oder
+Settings-Oberfläche.
+
+Jeder Block bekommt deshalb seine MCP-Aufgabe; sie folgt der jeweiligen
+GUI-Aufgabe, damit beide dieselbe Kernfunktion benutzen statt zwei Pfade zu
+bauen:
+
+- **H-A** · Discovery: ein quellgetrenntes Such-Tool (`SRC-6`) mit den
+  Kandidatenfeldern inklusive optionaler Abonnentenzahl (`SRC-9`). Netz- und
+  Subprozessarbeit ist capability-gated wie die Mutationen; „bereits abonniert"
+  wird genauso gefiltert wie in der GUI.
+- **H-B** · Leerzustände sind reine Darstellung und brauchen kein Tool; der
+  Zustand ist aus den vorhandenen Resources ableitbar.
+- **H-D** · Kanal-Detail: Fenster, Shorts-Filter, Download-Zustände mit
+  Größen und die Batch-Aktionen.
+- **H-E** · Sync: Zielordner, Caps, Diff nach Kategorie, `wanted_on_device`
+  und das Auslösen eines Syncs.
+- **H-F** · Offline: der Zustand aus `NET-3` muss über MCP ablesbar sein,
+  damit ein Agent nicht blind in eine vorgemerkte Aktion läuft.
+- **H-G** · Settings: die drei Master-Schalter, der globale Riegel und der
+  „Phone sync"-Block.
+
+Grundregeln für alle: keine signierten URLs, Query-Strings, Zugangsdaten oder
+lokalen Pfade in Antworten; Mutationen und Netzzugriff hinter Capabilities;
+dieselbe Kernfassade wie die GUI, damit Verhalten nicht auseinanderläuft.
 
 ## 6. Reihenfolge
 

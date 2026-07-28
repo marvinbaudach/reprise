@@ -17,6 +17,7 @@ use super::add_dialog_input::{
     classify_input, dialog_hint, dialog_title, foreign_url_reason, input_matches_dialog,
     primary_action, AddInput,
 };
+use super::add_dialog_results::{clear, result_section, rss_candidate, youtube_candidate};
 use super::search_results::{
     active_source_keys, dialog_provider, filter_unsubscribed, source_is_subscribed, Candidate,
 };
@@ -78,10 +79,16 @@ fn build_surface(kind: PodcastKind) -> AddDialogSurface {
     status.set_xalign(0.0);
     content.append(&status);
     let results = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
+    // SRC-8: vertical scrolling only. Without this the widest result row adds a
+    // horizontal scrollbar and pushes the row actions past the viewport edge.
     let scroller = gtk4::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk4::PolicyType::Never)
+        .vscrollbar_policy(gtk4::PolicyType::Automatic)
         .vexpand(true)
         .child(&results)
         .build();
+    // Keep the rows clear of the overlay scrollbar so no action sits under it.
+    results.set_margin_end(6);
     content.append(&scroller);
 
     // SRC-7: say once why an added source stops appearing, instead of letting
@@ -294,36 +301,6 @@ fn search(request_generation: u64, terms: String, context: &SearchContext<'_>) {
             );
         }
     }
-}
-
-fn rss_candidate(row: podcasts::itunes::SearchResult) -> Candidate {
-    Candidate {
-        kind: PodcastKind::Rss,
-        title: row.title,
-        subtitle: row.author.clone().unwrap_or_default(),
-        author: row.author,
-        image_url: row.image_url,
-        url: row.feed_url,
-        identity_guids: Vec::new(),
-    }
-}
-
-fn youtube_candidate(row: podcasts::ytdlp::YtDlpChannel) -> Candidate {
-    Candidate {
-        kind: PodcastKind::Youtube,
-        title: row.title,
-        subtitle: strings::podcast_youtube_channel_matches(row.matching_video_count),
-        author: None,
-        image_url: row.image_url,
-        url: row.url,
-        identity_guids: row.matching_video_ids,
-    }
-}
-
-fn result_section() -> gtk4::Box {
-    let section = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
-    section.add_css_class("reprise-podcast-result-section");
-    section
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -645,15 +622,51 @@ fn configured_auto_download_default(config: Option<&podcasts::config::PodcastCon
     config.is_some_and(|value| value.auto_download_default)
 }
 
-fn clear(parent: &gtk4::Box) {
-    while let Some(child) = parent.first_child() {
-        parent.remove(&child);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Walk a widget's descendants and return the first `ScrolledWindow`.
+    fn find_scroller(widget: &gtk4::Widget) -> Option<gtk4::ScrolledWindow> {
+        if let Ok(scroller) = widget.clone().downcast::<gtk4::ScrolledWindow>() {
+            return Some(scroller);
+        }
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            if let Some(found) = find_scroller(&current) {
+                return Some(found);
+            }
+            child = current.next_sibling();
+        }
+        None
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn src_8_add_dialog_results_scroll_vertically_only() {
+        gtk4::init().unwrap();
+        let surface = build_surface(PodcastKind::Rss);
+        let scroller = surface
+            .dialog
+            .child()
+            .and_then(|child| find_scroller(&child))
+            .expect("the result list must live in a scroller");
+
+        assert_eq!(
+            scroller.hscrollbar_policy(),
+            gtk4::PolicyType::Never,
+            "a horizontal scrollbar would push the row actions out of view"
+        );
+        assert_eq!(scroller.vscrollbar_policy(), gtk4::PolicyType::Automatic);
+        assert!(
+            scroller.vexpands(),
+            "only the result list may absorb the leftover height"
+        );
+        assert!(
+            surface.results.margin_end() > 0,
+            "rows need clearance from the overlay scrollbar"
+        );
+    }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
@@ -713,8 +726,9 @@ mod tests {
             false,
         );
 
+        // The heading is appended first, so the candidate row is the last child.
         let row = parent
-            .first_child()
+            .last_child()
             .and_downcast::<gtk4::Box>()
             .expect("candidate row");
         let button = row
@@ -725,8 +739,9 @@ mod tests {
 
         // SRC-7: the row stays so the add is visibly acknowledged; only the
         // next submitted search drops it (SRC-5).
-        assert!(
-            parent.first_child().is_some(),
+        assert_eq!(
+            parent.last_child().and_downcast::<gtk4::Box>().as_ref(),
+            Some(&row),
             "the result row must survive a successful add"
         );
         assert!(

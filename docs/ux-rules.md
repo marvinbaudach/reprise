@@ -2620,6 +2620,22 @@ Hörstatistik.
   library"). Angeboten und hinzugefügt unterscheiden sich nie allein durch
   Farbe oder zwei fast gleich aussehende Theme-Glyphen. Jeder Dialog erklärt
   einmal im Fuß, dass abonnierte Quellen aus späteren Suchen herausfallen.
+- **SRC-8** [aktiv] [gtk] — In allen drei Add-Dialogen wächst ausschließlich
+  die Ergebnisliste. Sie liegt in einem eigenen Scroller, der **nur vertikal**
+  scrollt; eine horizontale Scrollleiste gibt es nie, statt dessen ellipsieren
+  Titel und Untertitel. Eingabefeld, Statuszeile, Fußnote und die feste
+  Fußleiste mit Cancel und Primäraktion bleiben unabhängig von der Trefferzahl
+  sichtbar und erreichbar. Zeilen halten Abstand zur Overlay-Scrollleiste,
+  damit keine Zeilenaktion darunter liegt, und die letzte Zeile scrollt
+  vollständig über die Fußleiste. Artwork und Zeilenaktion behalten dabei ihre
+  Größe.
+- **SRC-9** [aktiv] [core] [gtk] — Kanal-Suchergebnisse zeigen die
+  Abonnentenzahl als kompakte Zusatzangabe („62.4k subscribers",
+  „1.2M subscribers"), sobald der Kanal sie veröffentlicht. Sie ist optionaler
+  Zusatz und ersetzt nie die bestehende Trefferangabe. Fehlende, verborgene
+  oder fehlerhafte Werte werden **weggelassen** — nie als Null und nie als
+  „unknown" dargestellt. Die Zahl stammt aus dem bereits laufenden
+  Such-Subprozess; es gibt keine zusätzliche Abfrage pro Kanal.
 - **POD-1** [aktiv] [core] — Episodenstatus ist pure Ableitung: Played
   genau bei gesetztem `played_at`, sonst Resume bei `position_ms > 0`, sonst
   New. Ein Episodenende setzt Played und löscht die Position.

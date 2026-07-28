@@ -124,3 +124,43 @@ fn rad_4_playlist_type_is_detected_without_consuming_a_live_stream() {
     );
     assert_eq!(playlist_kind("https://radio.example/live"), None);
 }
+
+/// Walk a widget's descendants and return the first `ScrolledWindow`.
+fn find_scroller(widget: &gtk4::Widget) -> Option<gtk4::ScrolledWindow> {
+    if let Ok(scroller) = widget.clone().downcast::<gtk4::ScrolledWindow>() {
+        return Some(scroller);
+    }
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        if let Some(found) = find_scroller(&current) {
+            return Some(found);
+        }
+        child = current.next_sibling();
+    }
+    None
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_8_radio_results_scroll_inside_a_bounded_viewport() {
+    gtk4::init().unwrap();
+    let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
+    let dialog = RadioAddDialog::new(conn, || {});
+    let scroller = dialog
+        .widgets
+        .dialog
+        .child()
+        .and_then(|child| find_scroller(&child))
+        .expect("the station list must live in a scroller");
+
+    assert_eq!(
+        scroller.hscrollbar_policy(),
+        gtk4::PolicyType::Never,
+        "station rows ellipsize instead of scrolling sideways"
+    );
+    assert_eq!(scroller.vscrollbar_policy(), gtk4::PolicyType::Automatic);
+    assert!(
+        scroller.vexpands(),
+        "fifty results must not push the footer past the window edge"
+    );
+}

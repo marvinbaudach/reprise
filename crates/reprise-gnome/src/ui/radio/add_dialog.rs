@@ -261,7 +261,17 @@ impl RadioAddDialog {
         content.append(&entry);
         content.append(&spinner);
         content.append(&status);
-        content.append(&results);
+        // SRC-8: the result list is the only part that may grow. A bare
+        // GtkListBox contributes every row's natural height, so fifty hits push
+        // the footer — and every Add action with it — past the window edge.
+        let results_scroller = gtk4::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk4::PolicyType::Never)
+            .vscrollbar_policy(gtk4::PolicyType::Automatic)
+            .propagate_natural_height(true)
+            .vexpand(true)
+            .child(&results)
+            .build();
+        content.append(&results_scroller);
         content.append(&preview);
         content.append(&fetch_row);
         content.append(&footnote);

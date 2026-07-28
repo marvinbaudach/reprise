@@ -117,6 +117,7 @@ pub const PODCAST_YTDLP_UPDATE: &str = N_!("Update");
 pub const PODCAST_YTDLP_CHECKING: &str = N_!("Checking installed version…");
 pub const PODCAST_REFRESH_INTERVAL: &str = N_!("Refresh every N hours");
 pub const PODCAST_UPDATED_JUST_NOW: &str = N_!("Updated just now");
+pub const PODCAST_SUBSCRIBERS: &str = N_!("{count} subscribers");
 
 pub fn podcast_episode_count(count: usize) -> String {
     let count_text = count.to_string();
@@ -242,6 +243,34 @@ pub fn podcast_updated_minutes_ago(minutes: i64) -> String {
         N_!("Updated {minutes} min ago"),
         &[("minutes", &minutes.to_string())],
     )
+}
+
+/// `SRC-9`: a compact, optional subscriber count for channel discovery rows.
+/// Absent counts are omitted entirely — never rendered as zero or "unknown".
+pub fn podcast_subscriber_count(followers: u64) -> String {
+    let count = compact_count(followers);
+    formatted(PODCAST_SUBSCRIBERS, &[("count", &count)])
+}
+
+fn compact_count(value: u64) -> String {
+    const THOUSAND: u64 = 1_000;
+    const MILLION: u64 = 1_000_000;
+    match value {
+        value if value < THOUSAND => value.to_string(),
+        value if value < MILLION => compact_unit(value, THOUSAND, "k"),
+        value => compact_unit(value, MILLION, "M"),
+    }
+}
+
+/// One decimal place, with a trailing `.0` dropped so 62 000 reads `62k`.
+fn compact_unit(value: u64, unit: u64, suffix: &str) -> String {
+    let whole = value / unit;
+    let tenths = (value % unit) * 10 / unit;
+    if tenths == 0 {
+        format!("{whole}{suffix}")
+    } else {
+        format!("{whole}.{tenths}{suffix}")
+    }
 }
 
 #[cfg(test)]

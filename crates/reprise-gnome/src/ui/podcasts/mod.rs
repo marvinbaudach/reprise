@@ -3,6 +3,7 @@
 
 mod add_dialog;
 mod add_dialog_input;
+mod add_dialog_results;
 mod css;
 mod podcasts_columns;
 mod podcasts_context_menu;

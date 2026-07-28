@@ -12,6 +12,9 @@ pub struct YtDlpChannel {
     pub image_url: Option<String>,
     pub matching_video_count: usize,
     pub matching_video_ids: Vec<String>,
+    /// yt-dlp's optional `channel_follower_count`. `None` whenever the channel
+    /// hides it or the provider omits it — never a substituted zero.
+    pub follower_count: Option<u64>,
 }
 
 pub(super) fn parse_search_channels(body: &str) -> Result<Vec<YtDlpChannel>, PodcastError> {
@@ -36,6 +39,9 @@ pub(super) fn parse_search_channels(body: &str) -> Result<Vec<YtDlpChannel>, Pod
             if channel.image_url.is_none() {
                 channel.image_url = entry_image_url(entry);
             }
+            if channel.follower_count.is_none() {
+                channel.follower_count = entry_follower_count(entry);
+            }
             continue;
         }
         let Some(title) = non_empty_json_string(entry, "channel")
@@ -55,6 +61,7 @@ pub(super) fn parse_search_channels(body: &str) -> Result<Vec<YtDlpChannel>, Pod
             image_url: entry_image_url(entry),
             matching_video_count: 1,
             matching_video_ids: non_empty_json_string(entry, "id").into_iter().collect(),
+            follower_count: entry_follower_count(entry),
         });
     }
     Ok(channels)
@@ -80,6 +87,24 @@ pub(super) fn stable_source_url(value: &Value) -> Option<String> {
         })
 }
 
+/// yt-dlp reports `channel_follower_count` on video entries, but only when the
+/// channel publishes it. A hidden count is absent or null, and some responses
+/// carry a float — none of those may become a visible zero.
+fn entry_follower_count(entry: &Value) -> Option<u64> {
+    let value = entry.get("channel_follower_count")?;
+    if let Some(count) = value.as_u64() {
+        return Some(count);
+    }
+    let count = value.as_f64()?;
+    if count.is_finite() && count >= 0.0 {
+        // `as` saturates at the integer bounds for finite floats.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        Some(count as u64)
+    } else {
+        None
+    }
+}
+
 pub(super) fn entry_image_url(entry: &Value) -> Option<String> {
     non_empty_json_string(entry, "thumbnail").or_else(|| {
         entry
@@ -93,6 +118,34 @@ pub(super) fn entry_image_url(entry: &Value) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn src_9_hidden_or_malformed_follower_counts_never_become_zero() {
+        let channels = parse_search_channels(
+            r#"{"entries":[
+              {"id":"v1","title":"A","channel_id":"UC-a","channel":"Visible","channel_follower_count":62400},
+              {"id":"v2","title":"B","channel_id":"UC-b","channel":"Hidden"},
+              {"id":"v3","title":"C","channel_id":"UC-c","channel":"Null","channel_follower_count":null},
+              {"id":"v4","title":"D","channel_id":"UC-d","channel":"Float","channel_follower_count":1200000.0},
+              {"id":"v5","title":"E","channel_id":"UC-e","channel":"Bogus","channel_follower_count":"many"}
+            ]}"#,
+        )
+        .unwrap();
+
+        let by_title = |title: &str| {
+            channels
+                .iter()
+                .find(|channel| channel.title == title)
+                .unwrap()
+                .follower_count
+        };
+
+        assert_eq!(by_title("Visible"), Some(62_400));
+        assert_eq!(by_title("Float"), Some(1_200_000));
+        assert_eq!(by_title("Hidden"), None, "an absent count stays absent");
+        assert_eq!(by_title("Null"), None, "a null count stays absent");
+        assert_eq!(by_title("Bogus"), None, "a malformed count stays absent");
+    }
 
     #[test]
     fn search_channels_groups_video_matches_by_canonical_channel() {
