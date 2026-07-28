@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=org.reprise.Reprise1
+Exec=@bindir@/reprise-runtime
+SystemdService=reprise-runtime.service

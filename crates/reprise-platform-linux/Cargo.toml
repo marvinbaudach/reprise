@@ -26,9 +26,39 @@ gio = { version = "0.22", features = ["v2_74"] }
 # Host trash implementation used outside Flatpak. Sandboxed deletion is
 # routed through the XDG Trash portal in `src/trash.rs` instead.
 trash = "5"
+# The single-owner lease (plan §9.3) is an advisory file lock. rustix is a
+# pure-Rust, direct-syscall wrapper — no libc build step and no second C
+# dependency for one `flock` call.
+rustix = { version = "1", features = ["fs"] }
+# The signal bodies the runtime service emits are the protocol's own dict
+# types, so it needs zvariant's `DynamicType` bound and serde's `Serialize`
+# to hand them to zbus. Both are already in the tree via zbus/zvariant.
+# The runtime service holds the database writer, so it needs a Connection to
+# hand to `Runtime::new`. It assembles no SQL: every statement goes through a
+# named `reprise-core` facade.
+rusqlite = { version = "0.40", features = ["bundled"] }
+zvariant = "5"
+serde = { version = "1", features = ["derive"] }
+reprise-runtime = { path = "../reprise-runtime" }
+
+# The activatable runtime binary logs to the journal through stderr.
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[[bin]]
+name = "reprise-runtime"
+path = "src/bin/reprise-runtime.rs"
+# The binary shares its name with the `reprise-runtime` library crate, which
+# is deliberate — that is what the bus activates and what a user sees in
+# `systemctl --user`. Rustdoc normalizes both to the same output directory,
+# so the binary opts out: its documentation is its source, and the library's
+# rendered docs are the ones anyone would look for.
+doc = false
 
 [dev-dependencies]
 tempfile = "3"
+# The bus-level tests serve a runtime made of fakes, so the same serving loop
+# runs without audio, a display or media files.
+reprise-runtime = { path = "../reprise-runtime", features = ["fakes"] }
 lofty = "0.24"
 
 [lints]
