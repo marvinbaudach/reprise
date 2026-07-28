@@ -15,6 +15,7 @@ use reprise_core::device_sync::settings::{
     delete_device_file, delete_device_playlist, upsert_device_file, upsert_device_playlist,
     DeviceFileRecord, DevicePlaylistRecord,
 };
+use reprise_core::device_sync::sync_log::{self, Deviation, DeviationKind, RunCounters, RunStart};
 use reprise_core::device_sync::{
     DeviceSyncMachine, Effect, Event, ManagedRemoval, MirrorPlan, SyncOutcome, TransferAction,
     TransferOperation, TransferSource,
@@ -23,6 +24,84 @@ use reprise_core::device_sync::{
 use super::*;
 
 static TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+
+/// Wall-clock seconds, for log entries a person reads later.
+fn now_seconds() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs() as i64)
+        .unwrap_or_default()
+}
+
+/// Records what a run did while it does it (MTP-20).
+///
+/// The log must never be able to break a sync, so every write is best-effort:
+/// a failure is logged and dropped rather than propagated. A run whose opening
+/// entry could not be written simply carries no id and records nothing.
+struct RunLog {
+    run: Option<i64>,
+    counters: RunCounters,
+}
+
+impl RunLog {
+    fn open(runtime: &DeviceSyncRuntime, start: &RunStart) -> Self {
+        let run = match sync_log::start_run(&runtime.conn.borrow(), start) {
+            Ok(run) => Some(run),
+            Err(error) => {
+                tracing::warn!(%error, "could not open the device sync log entry");
+                None
+            }
+        };
+        Self {
+            run,
+            counters: RunCounters::default(),
+        }
+    }
+
+    fn copied(&mut self, bytes: u64) {
+        self.counters.copied = self.counters.copied.saturating_add(1);
+        self.counters.bytes_copied = self.counters.bytes_copied.saturating_add(bytes);
+    }
+
+    fn deleted(&mut self) {
+        self.counters.deleted = self.counters.deleted.saturating_add(1);
+    }
+
+    fn note(
+        &mut self,
+        runtime: &DeviceSyncRuntime,
+        kind: DeviationKind,
+        track_id: Option<i64>,
+        device_path: &str,
+        detail: String,
+    ) {
+        if matches!(kind, DeviationKind::Failed) {
+            self.counters.failed = self.counters.failed.saturating_add(1);
+        }
+        let Some(run) = self.run else {
+            return;
+        };
+        let deviation = Deviation {
+            kind,
+            track_id,
+            device_path: device_path.to_owned(),
+            detail,
+        };
+        if let Err(error) = sync_log::note_deviation(&runtime.conn.borrow(), run, &deviation) {
+            tracing::warn!(%error, "could not record a device sync deviation");
+        }
+    }
+
+    fn close(&self, runtime: &DeviceSyncRuntime, outcome: &SyncOutcome, finished_at: i64) {
+        let Some(run) = self.run else {
+            return;
+        };
+        let summary = sync_log::summarize(outcome, self.counters, finished_at);
+        if let Err(error) = sync_log::finish_run(&runtime.conn.borrow(), run, &summary) {
+            tracing::warn!(%error, "could not close the device sync log entry");
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SyncStartError {
@@ -76,6 +155,8 @@ struct PlannedWork {
     transcoded: Option<PathBuf>,
     /// The effects `Event::Start` unlocked, awaiting the first main-loop turn.
     pending: Vec<Effect>,
+    /// What this run did, recorded as it happens (MTP-20).
+    log: RunLog,
 }
 
 fn transcode_profile(action: TransferAction) -> Option<TranscodeProfile> {
@@ -113,6 +194,36 @@ fn removal_track_id(removal: &ManagedRemoval) -> Option<i64> {
 }
 
 impl DeviceSyncRuntime {
+    /// Reloads this device's recorded runs so the page can show them (MTP-20).
+    /// Best-effort: a log that cannot be read leaves the section empty rather
+    /// than breaking the page.
+    pub(super) fn reload_sync_history(&self, device_id: &str) {
+        let loaded = {
+            let conn = self.conn.borrow();
+            match sync_log::recent_runs(&conn, sync_log::RETAINED_RUNS) {
+                Ok(runs) => runs
+                    .into_iter()
+                    .filter(|run| run.device_serial == device_id)
+                    .map(|run| {
+                        let found = sync_log::deviations(&conn, run.id).unwrap_or_default();
+                        (run, found)
+                    })
+                    .collect(),
+                Err(error) => {
+                    tracing::warn!(%error, "could not read the device sync log");
+                    Vec::new()
+                }
+            }
+        };
+        let mut devices = self.device_states.borrow_mut();
+        if let Some(device) = devices
+            .iter_mut()
+            .find(|device| device.descriptor.id == device_id)
+        {
+            device.history = loaded;
+        }
+    }
+
     pub fn sync_now(self: &Rc<Self>, device_id: &str) -> Result<(), SyncStartError> {
         {
             let devices = self.device_states.borrow();
@@ -208,6 +319,19 @@ impl DeviceSyncRuntime {
             device.cancellable = Some(cancellable.clone());
             device.sync_error = None;
             device.mtp_rate.reset();
+            let log = RunLog::open(
+                self,
+                &RunStart {
+                    device_serial: device_id.to_string(),
+                    device_name: device.descriptor.name.clone(),
+                    transfer_profile: device.settings.profile.storage_value().to_owned(),
+                    started_at: now_seconds(),
+                    planned: u32::try_from(
+                        device.mirror_plan.copy.len() + device.mirror_plan.replace.len(),
+                    )
+                    .unwrap_or(u32::MAX),
+                },
+            );
             PlannedWork {
                 device_id: device_id.to_string(),
                 root_uri: device.descriptor.root_uri.clone(),
@@ -216,6 +340,7 @@ impl DeviceSyncRuntime {
                 cancellable,
                 transcoded: None,
                 pending,
+                log,
             }
         };
         self.notify();
@@ -307,6 +432,13 @@ async fn perform(runtime: &Rc<DeviceSyncRuntime>, work: &mut PlannedWork, effect
                 }
                 Err(error) => {
                     tracing::warn!(track_id = entry.track.id, %error, "device audio transcode failed");
+                    work.log.note(
+                        runtime,
+                        DeviationKind::Failed,
+                        Some(entry.track.id),
+                        &entry.device_path,
+                        format!("transcode failed: {error}"),
+                    );
                     Event::Transcoded(Err(error))
                 }
             }
@@ -344,9 +476,19 @@ async fn perform(runtime: &Rc<DeviceSyncRuntime>, work: &mut PlannedWork, effect
                 let _ = std::fs::remove_file(&path);
             }
             match result {
-                Ok(_) => Event::TrackCopied(Ok(bytes)),
+                Ok(_) => {
+                    work.log.copied(bytes);
+                    Event::TrackCopied(Ok(bytes))
+                }
                 Err(error) => {
                     tracing::warn!(track_id = entry.track.id, %error, "device transfer failed");
+                    work.log.note(
+                        runtime,
+                        DeviationKind::Failed,
+                        Some(entry.track.id),
+                        &entry.device_path,
+                        format!("copy failed: {error}"),
+                    );
                     Event::TrackCopied(Err(error))
                 }
             }
@@ -376,6 +518,7 @@ async fn perform(runtime: &Rc<DeviceSyncRuntime>, work: &mut PlannedWork, effect
         Effect::WritePlaylist { index } => {
             let playlist = playlist_write(work, index);
             let name = playlist_stem(&playlist.device_path, &playlist.source_name);
+            let playlist_device_path = playlist.device_path.clone();
             let result = runtime
                 .backend
                 .replace_playlist(
@@ -387,6 +530,13 @@ async fn perform(runtime: &Rc<DeviceSyncRuntime>, work: &mut PlannedWork, effect
                 .await;
             Event::PlaylistWritten(result.map_err(|error| {
                 tracing::warn!(playlist = name, %error, "could not write device playlist");
+                work.log.note(
+                    runtime,
+                    DeviationKind::PlaylistWriteFailed,
+                    None,
+                    &playlist_device_path,
+                    format!("playlist write failed: {error}"),
+                );
                 error
             }))
         }
@@ -411,6 +561,9 @@ async fn perform(runtime: &Rc<DeviceSyncRuntime>, work: &mut PlannedWork, effect
                 .backend
                 .delete_track(work.root_uri.clone(), device_path)
                 .await;
+            if result.is_ok() {
+                work.log.deleted();
+            }
             Event::PlaylistRemoved(result.map(|_| ()).map_err(|error| {
                 tracing::warn!(%error, "could not remove managed device playlist");
                 error
@@ -425,11 +578,26 @@ async fn perform(runtime: &Rc<DeviceSyncRuntime>, work: &mut PlannedWork, effect
             }))
         }
         Effect::RemoveTrack { index } => {
-            let path = removal_path(&removal(work, index));
+            let managed = removal(work, index);
+            let path = removal_path(&managed);
+            let track_id = removal_track_id(&managed);
             let result = runtime
                 .backend
-                .delete_track(work.root_uri.clone(), path)
+                .delete_track(work.root_uri.clone(), path.clone())
                 .await;
+            if result.is_ok() {
+                work.log.deleted();
+                // Deletions are recorded individually: the mirror owns
+                // Music/Reprise, so "what did it remove" is exactly the
+                // question someone asks afterwards.
+                work.log.note(
+                    runtime,
+                    DeviationKind::Deleted,
+                    track_id,
+                    &path,
+                    "no longer covered by the selection".to_owned(),
+                );
+            }
             Event::TrackRemoved(result.map(|_| ()).map_err(|error| {
                 tracing::warn!(%error, "could not remove managed device item");
                 error
@@ -560,6 +728,8 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, outcome: Syn
         return;
     }
     publish_phase(runtime, work);
+    work.log.close(runtime, &outcome, now_seconds());
+    runtime.reload_sync_history(&work.device_id);
     let successful = matches!(outcome, SyncOutcome::Completed { .. });
     {
         let mut devices = runtime.device_states.borrow_mut();

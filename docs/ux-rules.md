@@ -424,6 +424,22 @@ human. Rationale for changes lives in the git history.
   that never arrived; every other playlist is published. Removals wait until
   every planned playlist has been rewritten, because an older playlist left
   on the device may still reference a file that is about to be deleted.
+- **MTP-20** [active] [core] [gtk] — Every synchronization run is recorded,
+  so what a past run did can be answered afterwards instead of guessed. The
+  entry opens when the run starts and names the device, the transfer profile
+  and how many files were planned; it closes with the balance of what was
+  copied, skipped, removed and failed, and with the reason when the run did
+  not complete. A run whose session ends without closing it — the app died,
+  the cable was pulled — is marked interrupted by the next run rather than
+  left open or dropped, because "it never finished" is itself the answer.
+  Successful copies are counted, not listed; every file that deviated —
+  skipped, failed, removed, or kept in its original format — is recorded
+  individually with its device path and reason, removals included, since the
+  mirror owns `Music/Reprise` and what it deleted is the question that gets
+  asked. The device page shows the recorded runs newest first, one
+  expandable row each with its deviations inside. Recording never blocks a
+  sync: a log write that fails is dropped, not propagated. Only the most
+  recent thirty runs are kept.
 
 ## F. Settings & modals
 
