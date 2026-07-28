@@ -48,6 +48,20 @@ impl RuntimeCommand {
             Self::Queue(QueueCommand::AddNext(ids)) => ("QueueAddNext", Body::Ids(ids.clone())),
             Self::Queue(QueueCommand::AddLast(ids)) => ("QueueAddLast", Body::Ids(ids.clone())),
             Self::Queue(QueueCommand::Clear) => ("QueueClear", Body::None),
+            Self::Queue(QueueCommand::Move { from, to }) => ("QueueMove", Body::Move(*from, *to)),
+            Self::Queue(QueueCommand::RemoveAt(positions)) => {
+                ("QueueRemoveAt", Body::Positions(positions.clone()))
+            }
+            Self::Queue(QueueCommand::RemoveContextAt(positions)) => {
+                ("QueueRemoveContextAt", Body::Positions(positions.clone()))
+            }
+            Self::Queue(QueueCommand::PlayNextAt(position)) => {
+                ("QueuePlayNextAt", Body::Position(*position))
+            }
+            Self::Queue(QueueCommand::PlayContextAt(position)) => {
+                ("QueuePlayContextAt", Body::Position(*position))
+            }
+            Self::Queue(QueueCommand::Purge(ids)) => ("QueuePurge", Body::Ids(ids.clone())),
             Self::PlayTracks {
                 track_ids,
                 start_index,
@@ -78,6 +92,9 @@ pub(super) enum Body {
     Text(String),
     Ids(Vec<i64>),
     Tracks(Vec<i64>, u64),
+    Position(u64),
+    Positions(Vec<u64>),
+    Move(u64, u64),
 }
 
 /// What a surface hears from the runtime.

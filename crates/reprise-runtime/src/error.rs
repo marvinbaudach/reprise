@@ -81,6 +81,10 @@ pub enum Rejected {
     NothingToPlay,
     /// A repeat mode outside `off`, `all`, `one`.
     UnknownRepeatMode,
+    /// A queue position that is not there. Positions come from a snapshot
+    /// the client already holds, so this means the snapshot moved under it —
+    /// the client refreshes rather than guessing which row was meant.
+    NoSuchQueueEntry,
     /// The job id does not exist, or is already terminal.
     UnknownJob,
     /// The command is part of the protocol but not yet served here. Saving
@@ -139,6 +143,7 @@ impl RuntimeError {
             Self::Rejected(Rejected::NoRunToCancel) => "no_run_to_cancel",
             Self::Rejected(Rejected::NothingToPlay) => "nothing_to_play",
             Self::Rejected(Rejected::UnknownRepeatMode) => "unknown_repeat_mode",
+            Self::Rejected(Rejected::NoSuchQueueEntry) => "no_such_queue_entry",
             Self::Rejected(Rejected::UnknownJob) => "unknown_job",
             Self::Rejected(Rejected::UnsupportedCommand) => "unsupported_command",
             Self::Failed(Failed::PlaybackBackend) => "playback_backend",

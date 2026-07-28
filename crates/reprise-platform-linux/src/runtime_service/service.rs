@@ -34,13 +34,7 @@ use reprise_runtime_protocol::ProtocolVersion;
 
 use super::lease::{LeaseError, RuntimeLease};
 
-/// The well-known name the runtime owns and the bus activates.
-pub const BUS_NAME: &str = "org.reprise.Reprise1";
-/// The object the interface lives at.
-pub const OBJECT_PATH: &str = "/org/reprise/Reprise1";
-/// The interface name, repeated here because the `#[interface]` attribute
-/// needs a literal and the packaging files need the same string.
-pub const INTERFACE_NAME: &str = "org.reprise.Reprise1";
+pub use reprise_runtime_protocol::{BUS_NAME, INTERFACE_NAME, OBJECT_PATH};
 
 /// How often the loop reconsiders the idle grace. Coarse on purpose: this
 /// wakes an otherwise-sleeping process, and the grace it serves is measured
@@ -228,12 +222,23 @@ fn spawn_ticker(sender: async_channel::Sender<Request>, tick: Duration) {
     });
 }
 
+/// Forwards what the audio backend reports — except the spectrum.
+///
+/// A spectrum frame arrives ~60x/s and the runtime discards it: it is a
+/// rendering concern of whichever surface draws a visualizer, not runtime
+/// state. Relaying it anyway would put sixty messages a second into an
+/// unbounded inbox for nobody, and would be the first thing to pile up if
+/// the serving loop ever stalled on a slow write. When a visualizer does
+/// need frames, it will ask for them and they will travel their own way.
 fn spawn_player_relay(
     sender: async_channel::Sender<Request>,
     events: async_channel::Receiver<reprise_core::playback::PlayerEvent>,
 ) {
     std::thread::spawn(move || {
         while let Ok(event) = events.recv_blocking() {
+            if matches!(event, reprise_core::playback::PlayerEvent::Spectrum(_)) {
+                continue;
+            }
             if sender.send_blocking(Request::Player(event)).is_err() {
                 return;
             }

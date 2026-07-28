@@ -47,10 +47,13 @@
 
 pub mod device_run;
 pub mod device_sync;
+pub mod endpoint;
 pub mod jobs;
 pub mod playback;
 pub mod queue;
 pub mod runtime;
+
+pub use endpoint::{BUS_NAME, INTERFACE_NAME, OBJECT_PATH};
 
 /// The protocol contract's version.
 ///
@@ -95,8 +98,10 @@ impl std::fmt::Display for ProtocolVersion {
 /// [`device_run::DeviceRunSnapshot`], the delta the runtime publishes while a
 /// device run is going — an addition, so a 1.0 client stays served. Minor 2
 /// adds [`runtime::RuntimeSnapshot`], the whole-state payload the handshake
-/// returns; also additive.
-pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1, minor: 2 };
+/// returns; also additive. Minor 3 adds the queue commands a full queue view
+/// needs — move, remove, jump, purge — again additive: an older runtime
+/// simply has no method for them.
+pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1, minor: 3 };
 
 #[cfg(test)]
 mod tests {
@@ -130,6 +135,6 @@ mod tests {
     #[test]
     fn the_shipped_version_is_compatible_with_itself() {
         assert!(PROTOCOL_VERSION.is_compatible_with(PROTOCOL_VERSION));
-        assert_eq!(PROTOCOL_VERSION.to_string(), "1.2");
+        assert_eq!(PROTOCOL_VERSION.to_string(), "1.3");
     }
 }

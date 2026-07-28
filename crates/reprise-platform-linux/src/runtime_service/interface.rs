@@ -250,6 +250,72 @@ impl Reprise1 {
             .await
     }
 
+    /// Moves one explicit-queue entry. Positions come from the caller's
+    /// last queue snapshot; a stale one is rejected rather than applied to
+    /// whichever row happens to be there now.
+    async fn queue_move(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        from: u64,
+        to: u64,
+    ) -> Result<(), Error> {
+        self.command(&header, Command::Queue(QueueCommand::Move { from, to }))
+            .await
+    }
+
+    async fn queue_remove_at(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        positions: Vec<u64>,
+    ) -> Result<(), Error> {
+        self.command(&header, Command::Queue(QueueCommand::RemoveAt(positions)))
+            .await
+    }
+
+    async fn queue_remove_context_at(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        positions: Vec<u64>,
+    ) -> Result<(), Error> {
+        self.command(
+            &header,
+            Command::Queue(QueueCommand::RemoveContextAt(positions)),
+        )
+        .await
+    }
+
+    async fn queue_play_next_at(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        position: u64,
+    ) -> Result<(), Error> {
+        self.command(&header, Command::Queue(QueueCommand::PlayNextAt(position)))
+            .await
+    }
+
+    async fn queue_play_context_at(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        position: u64,
+    ) -> Result<(), Error> {
+        self.command(
+            &header,
+            Command::Queue(QueueCommand::PlayContextAt(position)),
+        )
+        .await
+    }
+
+    /// Forgets these track ids wherever they are queued — a library deletion
+    /// reaching the queue, not a user editing it.
+    async fn queue_purge(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        track_ids: Vec<i64>,
+    ) -> Result<(), Error> {
+        self.command(&header, Command::Queue(QueueCommand::Purge(track_ids)))
+            .await
+    }
+
     async fn device_start(
         &self,
         #[zbus(header)] header: Header<'_>,

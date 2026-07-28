@@ -184,9 +184,13 @@ impl Runtime {
             }
             Command::Queue(queue) => {
                 let before = self.transport_facets();
-                self.transport.queue_command(queue);
+                let result = self.transport.queue_command(
+                    &*self.ports.playback,
+                    &*self.ports.library,
+                    queue,
+                );
                 self.publish_transport_changes(before);
-                Ok(())
+                result
             }
             Command::PlayTracks {
                 track_ids,

@@ -152,14 +152,63 @@ impl Transport {
         }
     }
 
-    pub(crate) fn queue_command(&mut self, command: &QueueCommand) {
+    pub(crate) fn queue_command(
+        &mut self,
+        backend: &dyn PlaybackBackend,
+        library: &dyn LibraryPort,
+        command: &QueueCommand,
+    ) -> Result<(), RuntimeError> {
         match command {
-            QueueCommand::AddNext(ids) => self.up_next.append(ids),
-            QueueCommand::AddLast(ids) => self.queue.append_tracks(ids),
+            // Both ends of the *explicit* queue, not one of each: "play
+            // next" jumps the manual line and "add to queue" joins its back.
+            // Neither touches the surrounding context, which is what makes
+            // them undoable by clearing the queue.
+            QueueCommand::AddNext(ids) => self.up_next.prepend(ids),
+            QueueCommand::AddLast(ids) => self.up_next.append(ids),
             // "Clearing a queue is not a stop command" (protocol): only the
             // explicit queue goes; the current track keeps playing.
             QueueCommand::Clear => self.up_next = UpNextQueue::default(),
+            QueueCommand::Move { from, to } => {
+                let (from, to) = (as_index(*from), as_index(*to));
+                if !self.up_next.move_item(from, to) {
+                    return Err(RuntimeError::Rejected(Rejected::NoSuchQueueEntry));
+                }
+            }
+            QueueCommand::RemoveAt(positions) => {
+                let positions: Vec<usize> = positions.iter().map(|at| as_index(*at)).collect();
+                if self.up_next.remove_positions(&positions) == 0 {
+                    return Err(RuntimeError::Rejected(Rejected::NoSuchQueueEntry));
+                }
+            }
+            QueueCommand::RemoveContextAt(positions) => {
+                let positions: Vec<usize> = positions.iter().map(|at| as_index(*at)).collect();
+                if !self.queue.remove_order_positions(&positions) {
+                    return Err(RuntimeError::Rejected(Rejected::NoSuchQueueEntry));
+                }
+            }
+            QueueCommand::PlayNextAt(position) => {
+                let track_id = self
+                    .up_next
+                    .take_at(as_index(*position))
+                    .ok_or(RuntimeError::Rejected(Rejected::NoSuchQueueEntry))?;
+                return self.start(backend, library, track_id);
+            }
+            QueueCommand::PlayContextAt(position) => {
+                let track_id = self
+                    .queue
+                    .play_order_position_now(as_index(*position))
+                    .ok_or(RuntimeError::Rejected(Rejected::NoSuchQueueEntry))?;
+                return self.start(backend, library, track_id);
+            }
+            QueueCommand::Purge(ids) => {
+                self.up_next.remove_ids(ids);
+                // `_except_current` deliberately: a track that is playing
+                // when its file is deleted finishes, because stopping the
+                // music is not what deleting a file asked for.
+                self.queue.remove_ids_except_current(ids);
+            }
         }
+        Ok(())
     }
 
     /// Applies an asynchronous report from the audio backend.
@@ -201,7 +250,7 @@ impl Transport {
                 // arrives with the gapless setting in Task 3.3), which is
                 // exactly why this branch stays defensive rather than absent.
                 if let Some(next) = self.take_next_auto() {
-                    self.load(library, next);
+                    self.load(backend, library, next);
                 }
             }
             PlayerEvent::StreamTags { title, .. } => {
@@ -318,32 +367,87 @@ impl Transport {
     }
 
     /// Resolves, hands the location to the backend, and adopts it as current.
+    ///
+    /// **A failure leaves nothing loaded and nothing playing**, which is the
+    /// whole point of routing every start through here. The tempting version
+    /// returns early and leaves the previous track in `current`: harmless
+    /// when a *user* pressed play and gets an error back, and silently wrong
+    /// when the caller was the end of the previous track. There the runtime
+    /// would keep reporting a track that already finished, at a frozen
+    /// position, forever — and because only *changed* facets are published,
+    /// no client would ever be told.
     fn start(
         &mut self,
         backend: &dyn PlaybackBackend,
         library: &dyn LibraryPort,
         track_id: i64,
     ) -> Result<(), RuntimeError> {
-        let track = library
-            .resolve(track_id)
-            .ok_or(RuntimeError::Failed(Failed::TrackNotPlayable))?;
+        let Some(track) = library.resolve(track_id) else {
+            // Logged here rather than left to the caller: this is the one
+            // failure that carries no backend message, so without a line
+            // here a vanished file produces no trace at all.
+            tracing::warn!(track_id, "track cannot be resolved to anything playable");
+            self.abandon(backend);
+            return Err(RuntimeError::Failed(Failed::TrackNotPlayable));
+        };
         let started = match &track.location {
             TrackLocation::Path(path) => backend.play(path),
             TrackLocation::Uri(uri) => backend.play_uri(uri),
         };
-        started.map_err(|error| backend_failed(&error))?;
+        if let Err(error) = started {
+            self.abandon(backend);
+            return Err(backend_failed(&error));
+        }
         self.current = Some(track);
         self.position_ms = 0;
         self.status = PlaybackState::Playing;
         Ok(())
     }
 
+    /// Puts the model back into the state a failed start actually leaves the
+    /// world in: nothing loaded, nothing playing.
+    ///
+    /// The backend is stopped too, but only when something was actually
+    /// loaded. Skipping that would leave the *previous* track still coming
+    /// out of the speakers while the runtime reports nothing playing — the
+    /// same divergence in the other direction. Stopping a backend that was
+    /// already idle, on the other hand, is a call with nothing to say.
+    fn abandon(&mut self, backend: &dyn PlaybackBackend) {
+        if self.current.is_some() {
+            if let Err(error) = backend.stop() {
+                tracing::warn!(%error, "backend refused to stop after a failed start");
+            }
+        }
+        self.current = None;
+        self.position_ms = 0;
+        self.status = PlaybackState::Stopped;
+    }
+
     /// Adopts a track as current *without* telling the backend to play it —
     /// for the gapless handoff, where the audio is already running.
-    fn load(&mut self, library: &dyn LibraryPort, track_id: i64) {
-        self.current = library.resolve(track_id);
-        self.position_ms = 0;
+    fn load(&mut self, backend: &dyn PlaybackBackend, library: &dyn LibraryPort, track_id: i64) {
+        match library.resolve(track_id) {
+            Some(track) => {
+                self.current = Some(track);
+                self.position_ms = 0;
+            }
+            // The backend already handed off to a track this side cannot
+            // describe. Reporting nothing loaded while `status` stays
+            // `Playing` would make `is_active` lie to the idle rule, so the
+            // handoff is undone rather than half-adopted.
+            None => {
+                tracing::warn!(track_id, "gapless handoff to an unresolvable track");
+                self.abandon(backend);
+            }
+        }
     }
+}
+
+/// A wire position as an index. Saturating rather than wrapping: an
+/// absurd position becomes an out-of-range one, which every queue operation
+/// already rejects cleanly.
+fn as_index(position: u64) -> usize {
+    usize::try_from(position).unwrap_or(usize::MAX)
 }
 
 /// Keeps the backend's message in the log, where a path is allowed, and
