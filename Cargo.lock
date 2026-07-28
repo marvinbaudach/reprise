@@ -2663,7 +2663,6 @@ dependencies = [
  "oo7",
  "reprise-core",
  "reprise-platform-linux",
- "reprise-stems",
  "rusqlite",
  "serde",
  "serde_json",

@@ -163,7 +163,7 @@ mod tests {
             .unwrap();
         }
         // The AI-exclude filter only applies when the experimental switch is on.
-        crate::ui::instrumental::set_experimental_enabled(&conn, true).unwrap();
+        crate::ui::experimental::set_experimental_enabled(&conn, true).unwrap();
 
         let track_list = TrackList::new(
             Rc::new(RefCell::new(conn)),

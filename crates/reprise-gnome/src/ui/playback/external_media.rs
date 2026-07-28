@@ -456,12 +456,6 @@ impl PlayerController {
         self.notify_external_changed();
     }
 
-    pub(in crate::ui) fn begin_external_preview(&self, path: String) {
-        self.persist_external_position();
-        self.external.borrow_mut().begin_preview(path);
-        self.notify_external_changed();
-    }
-
     pub(in crate::ui) fn persist_external_on_quit(&self) {
         self.persist_external_position();
     }

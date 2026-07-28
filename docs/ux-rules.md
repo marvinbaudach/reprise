@@ -2454,20 +2454,20 @@ playback effect. The feature is **experimental** (decision 11): its
 entire UI appears only behind the "Experimental features" toggle; rough
 edges are deliberately accepted. The player plays only finished files.
 
-- **INST-1** [active] [gtk] — Triggered via track context menu: with
+- **INST-1** [replaced by nothing — the instrumental surface was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — Triggered via track context menu: with
   the Experimental toggle active, the track context menu carries the
   entry "Create instrumental"; it acts on the **entire selection**
   (multi-selection → one batch with a shared `batch_id` for aggregate
   progress) and is inactive for a selection consisting purely of
   missing items (a missing file cannot be separated). Without the
   toggle, the entry does not appear (INST-11). (Plan 2.4/1)
-- **INST-2** [active] [gtk] — Conversion playlist = staging area with
+- **INST-2** [replaced by nothing — the instrumental surface was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — Conversion playlist = staging area with
   **exactly one aggregate progress bar** (done/total + percent, fed from
   the job rows/events, not from backend-internal numbers). **There is
   no further progress UI**: no sidebar/status-bar slot (the
   android-sync-V2 bottom slot is not touched), **no toast**.
   (Decision 18)
-- **INST-3** [active] [gtk] — One visible state per row: queued /
+- **INST-3** [replaced by nothing — the instrumental surface was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — One visible state per row: queued /
   processing (with row progress) / done — unsaved / saved / failed. The
   view is technically a special view over `ai_jobs` + staging store
   (playback via file path), not a playlist row source — even though it
@@ -2476,12 +2476,12 @@ edges are deliberately accepted. The player plays only finished files.
   bundled the view-side marking and the actual playback; it is split
   into the view-side marking (INST-4a) and the real staging playback
   (INST-4b, P3b).
-- **INST-4a** [active] [gtk] — In the conversion view, a finished
+- **INST-4a** [replaced by nothing — the instrumental surface was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — In the conversion view, a finished
   render present in staging is marked as **playable** (Play active),
   while a still-processing entry is not (it shows progress). The
   staging render is a real file prior to any save decision. (Decision
   15, plan 2.4/7)
-- **INST-4b** [active] [gtk] — Activating a playable entry **actually
+- **INST-4b** [replaced by nothing — the instrumental surface was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — Activating a playable entry **actually
   plays** the staging render (or the promoted title) — playback via
   file path. Until the player can do this, the action is a marked
   placeholder (P3b).
@@ -2489,29 +2489,29 @@ edges are deliberately accepted. The player plays only finished files.
   bundled the click decision and the ongoing wait interaction; it is
   split into the view-model decision (INST-5a) and the app interaction
   (INST-5b, P3b).
-- **INST-5a** [active] [gtk] — Wait rule (decision): a click on a
+- **INST-5a** [replaced by nothing — the instrumental surface was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — Wait rule (decision): a click on a
   **still-processing** entry triggers "wait with progress" — **never
   Play** (no original fallback), **never auto-skip**. The pure
   view-model decision is thereby enforceable, independent of playback.
-- **INST-5b** [active] [gtk] — In the running app, clicking a
+- **INST-5b** [replaced by nothing — the instrumental surface was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — In the running app, clicking a
   processing entry blocks the start with visible render progress and
   begins after completion (no fallback/skip). Progressive early start
   is a later optimization, not v1 (P3b).
-- **INST-6** [active] [gtk] — Save decision per row (Save / Discard)
+- **INST-6** [replaced by nothing — the instrumental surface was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — Save decision per row (Save / Discard)
   plus "Save all" in the header row. Saving **promotes** via the core
   facade (move into the dedicated folder, final tags incl. AI
   provenance, registration — atomic, no re-render); afterward **the row
   switches to the promoted library title and stays** there until the
   user cleans up. Discarding deletes the staging render; undecided items
   never appear in the library. (Decision 15/16)
-- **INST-7** [active] [gtk] — "Clear playlist" **warns** when undecided
+- **INST-7** [replaced by nothing — the instrumental surface was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — "Clear playlist" **warns** when undecided
   (done-unsaved) entries exist — hours of compute time do not evaporate
   unconfirmed. (Decision 15)
-- **INST-8** [active] [gtk] — Undecided renders **persist across
+- **INST-8** [replaced by nothing — the instrumental surface was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — Undecided renders **persist across
   restarts**; their **disk cost is visible in the view** (size per row /
   total). There is **no silent reaper** — only the explicit discard
   action (or saving) removes a render. (Decision 15)
-- **INST-9** [active] [gtk] — Dragging an **already converted** track
+- **INST-9** [replaced by nothing — the instrumental surface was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — Dragging an **already converted** track
   into the conversion playlist produces a **notice referencing the
   existing one**, not a duplicate job (dedup skip in the core facade).
   (Decision 16)
@@ -2525,7 +2525,7 @@ edges are deliberately accepted. The player plays only finished files.
   filter (FIL-7) — is **hidden as long as the "Experimental features"
   toggle is off**. The toggle is a persisted setting; its state alone
   decides visibility. (Decision 11)
-- **INST-12** [active] [gtk] — Model provisioning: behind the toggle
+- **INST-12** [replaced by nothing — the instrumental surface was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — Model provisioning: behind the toggle
   lies the first-use download flow for the ML runtime weights via the
   core facade `ensure_weights` (background thread with progress,
   SHA-256 checksum, license note next to the file, clear error paths
@@ -2534,13 +2534,13 @@ edges are deliberately accepted. The player plays only finished files.
   the `stem-backend` feature, the view shows an honest, disabled
   placeholder with a hint instead of a non-functional button.
   (Decision 11)
-- **INST-13** [active] [gtk] — Reachability: the conversion/staging
+- **INST-13** [replaced by nothing — the instrumental surface was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — Reachability: the conversion/staging
   view is reachable via its own **sidebar entry**
   (`ViewSource::Conversions`, title "Instrumental conversions"). The
   entry appears **only as long as the "Experimental features" toggle is
   on** (INST-11) — the same gating that also creates the content page,
   so the entry never selects a missing page. (Plan 2.4/7, package F)
-- **INST-14** [planned] [gtk] — The sidebar entry "Instrumental
+- **INST-14** [replaced by nothing — the instrumental surface was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — The sidebar entry "Instrumental
   conversions" is a drop target for tracks from the library. A
   multi-selection is queued as one batch; missing or removed tracks are
   skipped, existing work is referenced per INST-9 instead of duplicated.

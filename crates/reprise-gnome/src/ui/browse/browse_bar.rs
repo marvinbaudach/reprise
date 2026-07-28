@@ -361,7 +361,7 @@ impl BrowseBar {
     /// Whether the "Hide AI music" filter is offered here: Library-only and
     /// gated on the experimental switch (INST-11).
     fn ai_filter_available(&self) -> bool {
-        self.is_library.get() && crate::ui::instrumental::experimental_enabled(&self.conn.borrow())
+        self.is_library.get() && crate::ui::experimental::experimental_enabled(&self.conn.borrow())
     }
 
     /// Toggles the sticky AI-exclude filter and reloads (via the browse-changed

@@ -570,12 +570,11 @@ impl PlayerController {
     }
 
     /// Resolves `id` via `queries::query_track_summary` and starts its
-    /// playback — the one place that starts a QUEUE track through `Player::
-    /// play` (the only other `Player::play` caller is `preview::play_preview`,
-    /// a one-off instrumental preview, INST-4b), shared by `play_from_view` and
-    /// every queue-stepping call site so the "resolve, evaluate prior play
-    /// tracking, start playback, handle failure" sequence exists exactly once
-    /// (DRY). Ends the previous track's listening session first
+    /// playback — the one place that starts a QUEUE track through
+    /// `Player::play`, shared by `play_from_view` and every queue-stepping call
+    /// site so the "resolve, evaluate prior play tracking, start playback,
+    /// handle failure" sequence exists exactly once (DRY). Ends the previous
+    /// track's listening session first
     /// (`evaluate_play_tracking`) — a queue step is still a track switch. On
     /// success, resets `consecutive_skips` to 0 (a good track breaks any skip
     /// chain). On a `Player::play` failure, hands off to `playback_faults.rs`'s
