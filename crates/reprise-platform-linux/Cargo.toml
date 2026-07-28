@@ -59,6 +59,10 @@ tempfile = "3"
 # The bus-level tests serve a runtime made of fakes, so the same serving loop
 # runs without audio, a display or media files.
 reprise-runtime = { path = "../reprise-runtime", features = ["fakes"] }
+# The bus tests drive the service through the real client, so the two halves
+# are proved to agree rather than each looking correct alone. A dev-only edge:
+# the service does not depend on the client in a shipped build.
+reprise-runtime-client = { path = "../reprise-runtime-client" }
 lofty = "0.24"
 
 [lints]

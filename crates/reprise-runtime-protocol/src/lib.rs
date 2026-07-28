@@ -47,10 +47,13 @@
 
 pub mod device_run;
 pub mod device_sync;
+pub mod endpoint;
 pub mod jobs;
 pub mod playback;
 pub mod queue;
 pub mod runtime;
+
+pub use endpoint::{BUS_NAME, INTERFACE_NAME, OBJECT_PATH};
 
 /// The protocol contract's version.
 ///

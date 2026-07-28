@@ -2703,6 +2703,7 @@ dependencies = [
  "lofty",
  "reprise-core",
  "reprise-runtime",
+ "reprise-runtime-client",
  "reprise-runtime-protocol",
  "rusqlite",
  "rustix",
@@ -2724,6 +2725,18 @@ dependencies = [
  "rusqlite",
  "tempfile",
  "tracing",
+]
+
+[[package]]
+name = "reprise-runtime-client"
+version = "0.1.1"
+dependencies = [
+ "async-channel",
+ "reprise-runtime-protocol",
+ "serde",
+ "tracing",
+ "zbus",
+ "zvariant",
 ]
 
 [[package]]

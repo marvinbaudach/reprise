@@ -346,7 +346,7 @@ fn the_protocol_version_is_readable_without_connecting() {
 // that matters: a client and a service that agree in a test but not in the
 // application would each look correct on their own.
 
-use reprise_platform_linux::runtime_client::{
+use reprise_runtime_client::{
     start_with_bus_name, ClientError, ClientEvent, RuntimeCommand, RuntimeEvents,
 };
 use reprise_runtime_protocol::playback::PlaybackCommand;

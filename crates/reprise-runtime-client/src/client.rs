@@ -5,10 +5,9 @@ use std::time::Duration;
 use reprise_runtime_protocol::runtime::RuntimeSnapshot;
 use reprise_runtime_protocol::PROTOCOL_VERSION;
 
-use super::events::{Body, ClientError, ClientEvent, RuntimeCommand};
-use crate::runtime_service::{BUS_NAME, OBJECT_PATH};
+use reprise_runtime_protocol::{BUS_NAME, INTERFACE_NAME as INTERFACE, OBJECT_PATH};
 
-const INTERFACE: &str = "org.reprise.Reprise1";
+use crate::events::{Body, ClientError, ClientEvent, RuntimeCommand};
 
 /// The first retry delay, doubled until [`MAX_BACKOFF`].
 const MIN_BACKOFF: Duration = Duration::from_millis(200);

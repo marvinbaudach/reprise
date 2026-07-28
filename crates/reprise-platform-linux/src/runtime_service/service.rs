@@ -34,13 +34,7 @@ use reprise_runtime_protocol::ProtocolVersion;
 
 use super::lease::{LeaseError, RuntimeLease};
 
-/// The well-known name the runtime owns and the bus activates.
-pub const BUS_NAME: &str = "org.reprise.Reprise1";
-/// The object the interface lives at.
-pub const OBJECT_PATH: &str = "/org/reprise/Reprise1";
-/// The interface name, repeated here because the `#[interface]` attribute
-/// needs a literal and the packaging files need the same string.
-pub const INTERFACE_NAME: &str = "org.reprise.Reprise1";
+pub use reprise_runtime_protocol::{BUS_NAME, INTERFACE_NAME, OBJECT_PATH};
 
 /// How often the loop reconsiders the idle grace. Coarse on purpose: this
 /// wakes an otherwise-sleeping process, and the grace it serves is measured

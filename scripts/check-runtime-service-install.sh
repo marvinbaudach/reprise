@@ -64,10 +64,12 @@ expect() {
 
 # The bus name the code claims, read from the source of truth rather than
 # repeated here — if the constant changes, this check follows it and the
-# metadata has to follow too.
+# metadata has to follow too. That source is the *protocol* crate: the
+# address is part of the contract, and a client must be able to learn it
+# without depending on the service.
 bus_name=$(rg --no-line-number --replace '$1' \
   '^pub const BUS_NAME: &str = "(.*)";$' \
-  crates/reprise-platform-linux/src/runtime_service/service.rs | head -1)
+  crates/reprise-runtime-protocol/src/endpoint.rs | head -1)
 if [[ -z "$bus_name" ]]; then
   echo "cannot read BUS_NAME from the runtime service source" >&2
   exit 1
