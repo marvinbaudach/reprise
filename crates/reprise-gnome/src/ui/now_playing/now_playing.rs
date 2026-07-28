@@ -404,7 +404,9 @@ impl NowPlayingPanel {
                 _ => (true, true),
             }
         };
+        let has_track = track.is_some();
         *self.loaded_track.borrow_mut() = track;
+        self.widgets.visualizer.set_has_track(has_track);
         if id_changed {
             // A new track started: reset the visual engine's clock, water
             // surface, and impact overlay so ripples/sparks from the
