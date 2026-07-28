@@ -69,7 +69,7 @@ fn src_5_radio_search_hides_existing_favorites() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn src_5_successful_radio_add_removes_the_result_row() {
+fn src_7_a_successful_radio_add_acknowledges_the_row_in_place() {
     gtk4::init().unwrap();
     let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
     let dialog = RadioAddDialog::new(conn, || {});
@@ -100,7 +100,17 @@ fn src_5_successful_radio_add_removes_the_result_row() {
         .expect("add button");
     button.emit_clicked();
 
-    assert!(dialog.widgets.results.first_child().is_none());
+    // SRC-7: the row stays and its action becomes an inactive acknowledgement,
+    // so the add is visible; only the next submitted search drops it (SRC-5).
+    assert!(
+        dialog.widgets.results.first_child().is_some(),
+        "the result row must survive a successful add"
+    );
+    assert!(
+        !button.is_sensitive(),
+        "the acknowledged action must not be pressable again"
+    );
+    assert!(button.has_css_class("reprise-source-added"));
 }
 
 #[test]
