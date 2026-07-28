@@ -182,6 +182,27 @@ pub(crate) fn migrate_v41(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.commit()
 }
 
+// `MTP-20`: persistent "sync to phone" intent for a single episode,
+// independent of whether it has been downloaded yet (design 7f). See
+// `podcasts::wanted_on_device` for the pure transition this column backs.
+pub(crate) fn migrate_v43(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    let has_wanted = has_column(conn, "podcast_episodes", "wanted_on_device")?;
+    if version >= 43 && has_wanted {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    if !has_wanted {
+        transaction.execute(
+            "ALTER TABLE podcast_episodes
+             ADD COLUMN wanted_on_device INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+    transaction.pragma_update(None, "user_version", version.max(43))?;
+    transaction.commit()
+}
+
 fn has_column(conn: &Connection, table: &str, expected: &str) -> Result<bool, rusqlite::Error> {
     let mut statement = conn.prepare(&format!("PRAGMA table_info({table})"))?;
     let columns = statement

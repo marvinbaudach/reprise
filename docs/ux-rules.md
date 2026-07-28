@@ -400,6 +400,37 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Unterordners wird nichts geschrieben, verschoben oder gelöscht, und ein
   fehlender oder ungültiger Playlist-Sollzustand plant keine destruktive
   Arbeit.
+- **MTP-18** [aktiv] [core] — Reprise kennt pro Gerät drei benannte
+  Sync-Ziele — Playlists, YouTube-Tonspuren, Podcast-Episoden — statt eines
+  einzigen verwalteten Ordners (löst `78e379fd` ab, keine Migration: siehe
+  Turn-6/7-Plan §1b). Jedes Ziel trägt eine optionale `StorageID`, einen
+  Pfad-String, eine Aktivierung und einen optionalen Größen-Cap; die
+  Vorschlagswerte sind `/Music/Reprise` (kein Cap), `/Music/Reprise-YouTube`
+  (8 GiB) und `/Podcasts/Reprise` (4 GiB) — änderbar per Geräte-Browser (7d,
+  noch nicht gebaut). Die Regeln, *was* auf ein Ziel synchronisiert wird,
+  bleiben global (Preferences) und sind ausdrücklich **nicht** Teil dieses
+  Typs. MTP kennt keine Pfade: Ordner sind Object-Handles unter einer
+  StorageID, die über Reconnects nicht stabil sind — deshalb wird nur
+  StorageID plus Pfad persistiert, nie ein Handle. Wechselt die StorageID
+  eines Ziels, kann der Ordner nicht mitwandern; die vorherige
+  Speicherkopie gilt als verwaist und wird aufgeräumt, sobald neu kopiert
+  ist. Reine Datenschicht: die Verdrahtung in den tatsächlichen
+  MTP-Transfer folgt in E2/E4.
+- **MTP-19** [aktiv] [core] — Überschreitet ein Sync-Ziel mit Größen-Cap
+  seine Grenze, verlassen die ältesten Dateien zuerst das Gerät, bis die
+  Summe wieder höchstens dem Cap entspricht; das Entfernen stoppt, sobald
+  das erreicht ist, und nimmt nie mehr als nötig. Die Auswahl ist eine
+  reine Funktion über Größe und Alter je Eintrag, unabhängig von Ziel-Art
+  oder Transport.
+- **MTP-20** [aktiv] [core] — Jede Episode trägt einen persistenten
+  Zustand `wanted_on_device` (7f). „Sync to phone" auf einer Episode ohne
+  lokale Datei setzt diesen Zustand, statt die Aktion abzulehnen; der
+  Download folgt automatisch — online sofort, offline vorgemerkt über den
+  bestehenden `NET-3a`-Vertrag (`deferrable_action_outcome`), ohne dessen
+  Online/Offline-Entscheidung zu duplizieren. Eine bereits heruntergeladene
+  Episode braucht keinen Download-Schritt. Der Downloader, der den
+  vorgemerkten Zustand tatsächlich abarbeitet, ist nicht Teil dieser Regel
+  (E2/E4).
 
 ## F. Einstellungen & Modale
 

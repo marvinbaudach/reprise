@@ -9,6 +9,7 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::library::m3u::{M3uEntry, M3uExportEntry};
 
+pub mod cap;
 pub mod delta;
 pub mod m3u;
 pub mod mirror;
@@ -19,8 +20,10 @@ pub mod sanitize;
 pub mod settings;
 pub mod snapshot;
 pub mod storage;
+pub mod targets;
 pub mod transfer;
 
+pub use cap::{items_to_evict, CapItem};
 pub use delta::{compute_delta, SyncCandidate, SyncDelta};
 pub use mirror::{
     plan_mirror, DesiredManagedFile, ManagedDeviceFile, ManagedRemoval, MirrorBlocker, MirrorInput,
@@ -43,6 +46,11 @@ pub use storage::{
     project_storage, storage_composition, DeviceStorageAccess, DeviceStorageInspection,
     DeviceStorageProjection, DeviceStorageSnapshot, StorageComposition, StorageKnowledge,
     StorageProjectionState,
+};
+pub use targets::{
+    load_or_create_targets, load_target, save_target, target_storage_transition, StorageId,
+    StorageTransition, SyncTarget, SyncTargetError, SyncTargetKind,
+    PODCAST_EPISODES_DEFAULT_CAP_BYTES, YOUTUBE_AUDIO_DEFAULT_CAP_BYTES,
 };
 
 pub const REPRISE_DEVICE_DIR: &str = "Reprise";

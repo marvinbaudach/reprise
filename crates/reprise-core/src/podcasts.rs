@@ -15,6 +15,7 @@ pub mod source_artwork;
 pub mod status;
 pub mod store;
 pub mod url_detect;
+pub mod wanted_on_device;
 pub mod youtube;
 pub mod ytdlp;
 mod ytdlp_download;

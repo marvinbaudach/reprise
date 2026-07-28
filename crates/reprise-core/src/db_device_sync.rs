@@ -85,6 +85,26 @@ ALTER TABLE device_playlists
   CHECK (last_synced_at IS NULL OR last_synced_at >= 0);
 "#;
 
+// `MTP-18`: three named, per-device sync targets replacing the single
+// implicit managed folder from `78e379fd`. See
+// `device_sync::targets` for the pure model this table backs — `kind` is
+// one of `SyncTargetKind::storage_value()`, `storage_id` is an MTP
+// `StorageID` (not a path component, and never a persisted object handle —
+// handles are not stable across reconnects), `path` is the device-relative
+// target folder, and `cap_bytes` is an optional per-target size cap.
+const CREATE_DEVICE_SYNC_TARGETS: &str = r#"
+CREATE TABLE IF NOT EXISTS device_sync_targets (
+  device_serial TEXT NOT NULL,
+  kind          TEXT NOT NULL
+                  CHECK (kind IN ('playlists', 'youtube_audio', 'podcast_episodes')),
+  storage_id    INTEGER,
+  path          TEXT NOT NULL CHECK (length(trim(path)) > 0),
+  enabled       INTEGER NOT NULL DEFAULT 1,
+  cap_bytes     INTEGER CHECK (cap_bytes IS NULL OR cap_bytes >= 0),
+  PRIMARY KEY (device_serial, kind)
+);
+"#;
+
 pub(crate) fn migrate_v36(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version >= 36 {
@@ -131,6 +151,17 @@ pub(crate) fn migrate_v38(conn: &Connection) -> Result<(), rusqlite::Error> {
         transaction.execute_batch(ADD_PLAYLIST_LAST_SYNC)?;
     }
     transaction.pragma_update(None, "user_version", version.max(38))?;
+    transaction.commit()
+}
+
+pub(crate) fn migrate_v42(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= 42 {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    transaction.execute_batch(CREATE_DEVICE_SYNC_TARGETS)?;
+    transaction.pragma_update(None, "user_version", 42)?;
     transaction.commit()
 }
 
