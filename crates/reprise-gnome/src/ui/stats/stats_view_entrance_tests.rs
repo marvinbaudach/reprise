@@ -67,13 +67,16 @@ fn seed_previous_year_track(conn: &Connection, count: i64) {
 }
 
 fn wait_for(milliseconds: u64) {
-    let main_loop = gtk4::glib::MainLoop::new(None, false);
-    let quit = main_loop.clone();
-    gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(milliseconds), move || {
-        quit.quit();
-    });
-    main_loop.run();
+    crate::ui::test_settle::settle_for(std::time::Duration::from_millis(milliseconds));
 }
+
+/// Wall-clock budget for a frame-driven animation to reach a state.
+///
+/// Both polls below exit the moment their condition holds, so a generous
+/// budget costs a healthy run nothing — while a tight one fails a correct
+/// animation whenever frames arrive more slowly, which is what parallel
+/// display-test workers cause.
+const ANIMATION_BUDGET_MS: u64 = 5_000;
 
 fn wait_until(milliseconds: u64, condition: impl Fn() -> bool + 'static) -> bool {
     let main_loop = gtk4::glib::MainLoop::new(None, false);
@@ -183,7 +186,7 @@ fn stats_17_entrance_keeps_copy_static_while_sparse_week_bars_grow() {
         "the mapped hero copy must be final from its first presented frame"
     );
     assert!(view.render.ribbon.is_sparse());
-    let order = observe_best_week_order(view.render.ribbon.clone(), 1_000);
+    let order = observe_best_week_order(view.render.ribbon.clone(), ANIMATION_BUDGET_MS);
     assert!(
         order.saw_reset.get(),
         "the best-week bar must start from the baseline"
@@ -203,7 +206,7 @@ fn stats_17_entrance_keeps_copy_static_while_sparse_week_bars_grow() {
 
     let ribbon = view.render.ribbon.clone();
     assert!(
-        wait_until(300, move || (0.0..1.0)
+        wait_until(ANIMATION_BUDGET_MS, move || (0.0..1.0)
             .contains(&ribbon.best_week_label_opacity())),
         "the best-week label must fade only after its own bar reaches full height"
     );
@@ -279,7 +282,20 @@ fn stats_17_period_switch_tweens_bars_without_restarting_static_content() {
         .position(|period| *period == StatsPeriod::AllTime)
         .unwrap() as u32;
     view.period_dropdown.set_selected(all_time);
-    wait_for(40);
+    // The tween starts on the first frame after the period switch, and a fixed
+    // wait budgets wall-clock time for that frame rather than waiting for it.
+    // Under parallel display-test workers forty milliseconds can pass without
+    // one, and the sample below was then still zero.
+    assert!(
+        crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
+            view.render
+                .songs_card
+                .summary_bars()
+                .get(1)
+                .is_some_and(|bar| bar.value() > 0.0)
+        }),
+        "the newly visible song bar must start its period tween"
+    );
 
     let bars = view.render.songs_card.summary_bars();
     let growing_value = bars
