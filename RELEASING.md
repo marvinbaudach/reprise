@@ -188,7 +188,7 @@ Do not point development hooks at the maintainer's real library.
   selection, and now-playing state. Verify names, roles, states, values, and
   actions with Orca and a switched-off monitor; cover the on-screen keyboard,
   real GNOME/Wayland dialogs and portals, and reduced animation. Record the
-  result before changing ACC-7 from `[geplant]` to `[aktiv]`.
+  result before changing ACC-7 from `[planned]` to `[active]`.
 
 - Confirm first-run copy/layout, Skip, Set Up Library, and the portal folder
   chooser. The copy must disclose automatic cover lookup without showing a
