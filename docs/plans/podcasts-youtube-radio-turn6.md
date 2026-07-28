@@ -37,6 +37,20 @@ diesem Plan. Wo Turn 6 von einer `[aktiv]`-Regel abweicht, ändert sich die Rege
 in demselben Commit, der das Verhalten umsetzt und seinen regelbenannten Test
 mitbringt.
 
+## 1b. Rahmenbedingung: keine Rückwärtskompatibilität
+
+Vom Eigentümer am 2026-07-28 bestätigt: Reprise ist **nicht veröffentlicht**,
+es gibt **keine bestehenden Installationen**. Migrationen, Kompatibilitäts-
+Fallbacks und doppelte Schreibpfade sind damit in dieser gesamten Arbeit kein
+Kriterium.
+
+Praktische Folge: wo ein sauberes Datenmodell und ein rückwärtskompatibles
+kollidieren, gewinnt das saubere. Ein zurückgelassener zweiter Ort der Wahrheit
+ist schlimmer als jede der beiden Varianten für sich. Betrifft unmittelbar G1
+(YouTube bekommt einen eigenen `ModuleDescriptor` statt eines verschachtelten
+`podcasts.youtube_enabled`) und E1 (benannte Sync-Ziele statt einer Migration
+des einzelnen verwalteten Geräteordners).
+
 ## 2. Ist-Stand — verifiziert, nicht angenommen
 
 Vor jeder Aufwandsschätzung: ein erheblicher Teil von Turn 6 steht bereits. Die
@@ -356,9 +370,9 @@ kommen zwei Inhaltsarten und eine neue Geräteansicht dazu.
 
 - **E1 · Sync-Ziel-Modell im Core.** Aus einem einzigen verwalteten Geräteordner
   werden drei benannte Ziele mit je `StorageID`, Pfad-String, Aktivierung und
-  optionalem Größen-Cap. Reine Datenschicht plus Migration des bestehenden
-  Ziels auf „Playlists". Einheitentests für Auflösung, Migration und
-  Cap-Berechnung; kein UI.
+  optionalem Größen-Cap. Reine Datenschicht. **Keine Migration** — siehe
+  Abschnitt 1b; das alte Einzelziel wird ersetzt, nicht überführt.
+  Einheitentests für Auflösung und Cap-Berechnung; kein UI.
 - **E2 · Inhaltsauswahl je Quelle.** Playlists („2 of 4 selected"), YouTube
   („2 of 6 channels · latest 5 each") und Podcasts („Unplayed downloads only")
   liefern jeweils die Sollmenge an Dateien. Der Kanal-Toggle aus 6b und die
