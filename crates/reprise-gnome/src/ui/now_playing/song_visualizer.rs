@@ -28,6 +28,9 @@ const DRAW_HEIGHT: i32 = 220;
 /// hue/saturation sample.
 const COVER_PALETTE_EDGE: i32 = 32;
 const COVER_PALETTE_PIXELS: usize = (COVER_PALETTE_EDGE * COVER_PALETTE_EDGE) as usize;
+/// Redraw interval (µs) while no audio is playing — the resting breath runs at
+/// ~30 Hz instead of the full render rate.
+const IDLE_FRAME_INTERVAL_US: i64 = 33_000;
 
 #[derive(Clone)]
 pub(in crate::ui) struct SongVisualizer {
@@ -94,6 +97,17 @@ impl SongVisualizer {
         queue_registered_areas(&self.areas);
     }
 
+    /// Whether the player holds a track at all. A loaded but resting track
+    /// breathes (AC-11); an empty player keeps the canvas empty.
+    pub(in crate::ui) fn set_has_track(&self, has_track: bool) {
+        self.engine.borrow_mut().set_has_track(has_track);
+        if !motion::animations_enabled() {
+            self.engine.borrow_mut().snap_to_static();
+        }
+        self.ensure_tick();
+        queue_registered_areas(&self.areas);
+    }
+
     pub(in crate::ui) fn set_spectrum(&self, frame: SpectrumFrame) {
         if !motion::animations_enabled() || self.playback.get() != PlaybackState::Playing {
             return;
@@ -140,6 +154,7 @@ impl SongVisualizer {
         let engine = self.engine.clone();
         let areas = self.areas.clone();
         let panel_active = self.panel_active.clone();
+        let playback = self.playback.clone();
         let slot = self.tick_id.clone();
         // Decouple the sim's advance from the render frame rate: each engine
         // tick is a fixed 1/60 s step, but the frame clock slows to the render
@@ -154,7 +169,17 @@ impl SongVisualizer {
                 return gtk4::glib::ControlFlow::Break;
             }
             let now = frame_clock.frame_time();
-            let previous = last_frame_us.replace(now);
+            let previous = last_frame_us.get();
+            // The idle breath is slow by design — redrawing it at the full
+            // render rate would burn frames for motion nobody can see. The
+            // fixed engine step below keeps it real-time regardless.
+            if playback.get() != PlaybackState::Playing
+                && previous != 0
+                && now - previous < IDLE_FRAME_INTERVAL_US
+            {
+                return gtk4::glib::ControlFlow::Continue;
+            }
+            last_frame_us.set(now);
             let steps = if previous == 0 {
                 1
             } else {
