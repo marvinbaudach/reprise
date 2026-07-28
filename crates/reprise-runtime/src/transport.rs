@@ -152,14 +152,63 @@ impl Transport {
         }
     }
 
-    pub(crate) fn queue_command(&mut self, command: &QueueCommand) {
+    pub(crate) fn queue_command(
+        &mut self,
+        backend: &dyn PlaybackBackend,
+        library: &dyn LibraryPort,
+        command: &QueueCommand,
+    ) -> Result<(), RuntimeError> {
         match command {
-            QueueCommand::AddNext(ids) => self.up_next.append(ids),
-            QueueCommand::AddLast(ids) => self.queue.append_tracks(ids),
+            // Both ends of the *explicit* queue, not one of each: "play
+            // next" jumps the manual line and "add to queue" joins its back.
+            // Neither touches the surrounding context, which is what makes
+            // them undoable by clearing the queue.
+            QueueCommand::AddNext(ids) => self.up_next.prepend(ids),
+            QueueCommand::AddLast(ids) => self.up_next.append(ids),
             // "Clearing a queue is not a stop command" (protocol): only the
             // explicit queue goes; the current track keeps playing.
             QueueCommand::Clear => self.up_next = UpNextQueue::default(),
+            QueueCommand::Move { from, to } => {
+                let (from, to) = (as_index(*from), as_index(*to));
+                if !self.up_next.move_item(from, to) {
+                    return Err(RuntimeError::Rejected(Rejected::NoSuchQueueEntry));
+                }
+            }
+            QueueCommand::RemoveAt(positions) => {
+                let positions: Vec<usize> = positions.iter().map(|at| as_index(*at)).collect();
+                if self.up_next.remove_positions(&positions) == 0 {
+                    return Err(RuntimeError::Rejected(Rejected::NoSuchQueueEntry));
+                }
+            }
+            QueueCommand::RemoveContextAt(positions) => {
+                let positions: Vec<usize> = positions.iter().map(|at| as_index(*at)).collect();
+                if !self.queue.remove_order_positions(&positions) {
+                    return Err(RuntimeError::Rejected(Rejected::NoSuchQueueEntry));
+                }
+            }
+            QueueCommand::PlayNextAt(position) => {
+                let track_id = self
+                    .up_next
+                    .take_at(as_index(*position))
+                    .ok_or(RuntimeError::Rejected(Rejected::NoSuchQueueEntry))?;
+                return self.start(backend, library, track_id);
+            }
+            QueueCommand::PlayContextAt(position) => {
+                let track_id = self
+                    .queue
+                    .play_order_position_now(as_index(*position))
+                    .ok_or(RuntimeError::Rejected(Rejected::NoSuchQueueEntry))?;
+                return self.start(backend, library, track_id);
+            }
+            QueueCommand::Purge(ids) => {
+                self.up_next.remove_ids(ids);
+                // `_except_current` deliberately: a track that is playing
+                // when its file is deleted finishes, because stopping the
+                // music is not what deleting a file asked for.
+                self.queue.remove_ids_except_current(ids);
+            }
         }
+        Ok(())
     }
 
     /// Applies an asynchronous report from the audio backend.
@@ -344,6 +393,13 @@ impl Transport {
         self.current = library.resolve(track_id);
         self.position_ms = 0;
     }
+}
+
+/// A wire position as an index. Saturating rather than wrapping: an
+/// absurd position becomes an out-of-range one, which every queue operation
+/// already rejects cleanly.
+fn as_index(position: u64) -> usize {
+    usize::try_from(position).unwrap_or(usize::MAX)
 }
 
 /// Keeps the backend's message in the log, where a path is allowed, and

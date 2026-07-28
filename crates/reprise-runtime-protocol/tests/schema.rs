@@ -414,5 +414,5 @@ fn the_whole_runtime_snapshot_survives_a_dbus_round_trip() {
 #[test]
 fn the_protocol_version_is_pinned() {
     assert_eq!(PROTOCOL_VERSION.major, 1);
-    assert_eq!(PROTOCOL_VERSION.minor, 2);
+    assert_eq!(PROTOCOL_VERSION.minor, 3);
 }

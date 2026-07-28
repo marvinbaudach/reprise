@@ -303,6 +303,9 @@ impl Worker {
             Body::Text(value) => proxy.call::<_, _, ()>(method, &(value,)),
             Body::Ids(values) => proxy.call::<_, _, ()>(method, &(values,)),
             Body::Tracks(ids, start) => proxy.call::<_, _, ()>(method, &(ids, start)),
+            Body::Position(position) => proxy.call::<_, _, ()>(method, &(position,)),
+            Body::Positions(positions) => proxy.call::<_, _, ()>(method, &(positions,)),
+            Body::Move(from, to) => proxy.call::<_, _, ()>(method, &(from, to)),
         };
         outcome.map_err(|error| ClientError::from_bus(&error))
     }
