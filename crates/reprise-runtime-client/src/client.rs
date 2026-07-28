@@ -5,10 +5,9 @@ use std::time::Duration;
 use reprise_runtime_protocol::runtime::RuntimeSnapshot;
 use reprise_runtime_protocol::PROTOCOL_VERSION;
 
-use super::events::{Body, ClientError, ClientEvent, RuntimeCommand};
-use crate::runtime_service::{BUS_NAME, OBJECT_PATH};
+use reprise_runtime_protocol::{BUS_NAME, INTERFACE_NAME as INTERFACE, OBJECT_PATH};
 
-const INTERFACE: &str = "org.reprise.Reprise1";
+use crate::events::{Body, ClientError, ClientEvent, RuntimeCommand};
 
 /// The first retry delay, doubled until [`MAX_BACKOFF`].
 const MIN_BACKOFF: Duration = Duration::from_millis(200);
@@ -16,6 +15,17 @@ const MIN_BACKOFF: Duration = Duration::from_millis(200);
 /// exponential: a surface that reconnects a minute after the runtime came
 /// back is indistinguishable from a broken one.
 const MAX_BACKOFF: Duration = Duration::from_secs(5);
+
+/// How long a single method call may take before the client gives up on it.
+///
+/// zbus defaults to *no* timeout, and the worker issues its calls inline on
+/// the one thread that processes jobs. A runtime that accepted the message
+/// and then wedged — blocked on a slow write, stopped, gone to swap — would
+/// therefore park that thread forever, and with it every later job including
+/// the shutdown. A bounded wait turns that into an ordinary `Unavailable`
+/// that reconnects. Generous rather than snappy: a real command answering
+/// slowly must not be mistaken for a dead runtime.
+const METHOD_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// A handle for sending commands. Cheap to clone; every clone talks to the
 /// same connection.
@@ -190,7 +200,10 @@ impl Worker {
     /// change of *name ownership*, which the bus reports. That is what makes
     /// reconnection a handshake rather than a rebuilt transport.
     fn open_bus(&mut self, watcher: &async_channel::Sender<Job>) {
-        match zbus::blocking::Connection::session() {
+        let opened = zbus::blocking::connection::Builder::session()
+            .map(|builder| builder.method_timeout(METHOD_TIMEOUT))
+            .and_then(zbus::blocking::connection::Builder::build);
+        match opened {
             Ok(connection) => {
                 spawn_owner_watch(&connection, self.bus_name.clone(), watcher.clone());
                 spawn_signal_relay(&connection, self.events.clone(), watcher.clone());
@@ -303,6 +316,9 @@ impl Worker {
             Body::Text(value) => proxy.call::<_, _, ()>(method, &(value,)),
             Body::Ids(values) => proxy.call::<_, _, ()>(method, &(values,)),
             Body::Tracks(ids, start) => proxy.call::<_, _, ()>(method, &(ids, start)),
+            Body::Position(position) => proxy.call::<_, _, ()>(method, &(position,)),
+            Body::Positions(positions) => proxy.call::<_, _, ()>(method, &(positions,)),
+            Body::Move(from, to) => proxy.call::<_, _, ()>(method, &(from, to)),
         };
         outcome.map_err(|error| ClientError::from_bus(&error))
     }
