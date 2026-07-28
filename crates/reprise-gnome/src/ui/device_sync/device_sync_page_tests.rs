@@ -70,6 +70,7 @@ fn device() -> DeviceView {
         verified_managed_track_count: None,
         managed_track_count: 0,
         bytes_per_second: 0,
+        history: Vec::new(),
         page: SyncPageState {
             profile_options: TransferProfile::ALL.to_vec(),
             profile: TransferProfile::Mp3(Mp3Quality::Kbps256),
@@ -675,4 +676,78 @@ fn mtp_13_full_page_renders_and_wires_only_the_playlist_mirroring_controls() {
         "the runtime callback must not retain a removed device page"
     );
     callback(DeviceSyncState::default());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn mtp_20_the_page_shows_the_recorded_runs_with_their_deviations() {
+    use reprise_core::device_sync::sync_log::{Deviation, DeviationKind, RunOutcome, RunRecord};
+
+    gtk4::init().expect("GTK test display");
+    let mut view = device();
+    view.history = vec![(
+        RunRecord {
+            id: 1,
+            device_serial: "phone".into(),
+            device_name: "Pixel 8".into(),
+            transfer_profile: "opus_160".into(),
+            started_at: 1_785_183_239,
+            finished_at: None,
+            outcome: RunOutcome::Interrupted,
+            planned: 200,
+            copied: 104,
+            skipped: 0,
+            deleted: 0,
+            failed: 1,
+            bytes_copied: 1_024,
+            detail: None,
+        },
+        vec![Deviation {
+            kind: DeviationKind::Failed,
+            track_id: Some(7),
+            device_path: "Music/Reprise/Artist/Track.opus".into(),
+            detail: "copy failed: device is full".into(),
+        }],
+    )];
+
+    let (_page, root) = DeviceSyncPage::new(
+        &view,
+        PageActions {
+            set_profile: Rc::new(|_| {}),
+            set_playlist: Rc::new(|_, _| {}),
+            start: Rc::new(|| {}),
+            cancel: Rc::new(|| {}),
+            eject: Rc::new(|| {}),
+        },
+    );
+
+    fn collect_labels(widget: &gtk4::Widget, into: &mut Vec<String>) {
+        if let Some(label) = widget.downcast_ref::<gtk4::Label>() {
+            into.push(label.label().to_string());
+        }
+        if let Some(row) = widget.downcast_ref::<libadwaita::ExpanderRow>() {
+            use libadwaita::prelude::PreferencesRowExt;
+            into.push(row.title().to_string());
+        }
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            collect_labels(&current, into);
+            child = current.next_sibling();
+        }
+    }
+
+    let mut labels = Vec::new();
+    collect_labels(root.upcast_ref::<gtk4::Widget>(), &mut labels);
+    assert!(
+        labels.iter().any(|text| text.contains("Recent transfers")),
+        "the device page must name its transfer history: {labels:?}"
+    );
+    assert!(
+        labels.iter().any(|text| text.contains("104 of 200 copied")),
+        "the balance of a run must be readable: {labels:?}"
+    );
+    assert!(
+        labels.iter().any(|text| text.contains("Interrupted")),
+        "a run that never finished must say so: {labels:?}"
+    );
 }
