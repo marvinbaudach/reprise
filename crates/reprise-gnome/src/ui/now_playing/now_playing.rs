@@ -22,6 +22,7 @@ use crate::ui::player_controller::NowPlaying;
 use crate::ui::style::tokens;
 
 type OnVoid = Rc<dyn Fn()>;
+const TAB_SWITCHER_MIN_HEIGHT: i32 = 50;
 
 #[path = "now_playing_effects.rs"]
 mod now_playing_effects;
@@ -155,7 +156,11 @@ fn build_widgets_for_session(
         &visual_viewport,
         Some(VISUAL_PAGE),
         &strings::text(strings::VISUAL),
-        "audio-speakers-symbolic",
+        // Rising bars rather than a speaker: the tab shows what the audio
+        // looks like, not where it comes out. Adwaita has no equalizer or
+        // spectrum glyph, so the signal-strength bars stand in — the shape is
+        // exactly the visual's, only the icon name is borrowed.
+        "network-cellular-signal-excellent-symbolic",
     );
     tab_stack.set_visible_child_name(session.selected.get().page_name());
     lyrics.set_tab_open(session.selected.get() == PanelTab::Lyrics);
@@ -167,6 +172,7 @@ fn build_widgets_for_session(
         .build();
     tab_switcher.add_css_class("reprise-now-playing-tabs");
     let tabs = adw::BreakpointBin::new();
+    tabs.set_size_request(1, TAB_SWITCHER_MIN_HEIGHT);
     tabs.set_child(Some(&tab_switcher));
     let narrow = adw::BreakpointCondition::new_length(
         adw::BreakpointConditionLengthType::MaxWidth,
@@ -374,6 +380,14 @@ impl NowPlayingPanel {
     }
 
     pub(in crate::ui) fn apply_persisted_visibility(&self, visible: bool) {
+        self.set_transient_visibility(visible);
+    }
+
+    pub(in crate::ui) fn is_panel_visible(&self) -> bool {
+        self.widgets.column.is_visible()
+    }
+
+    pub(in crate::ui) fn set_transient_visibility(&self, visible: bool) {
         self.syncing_visibility.set(true);
         self.widgets.column.set_visible(visible);
         self.toggle.set_active(visible);
@@ -394,7 +408,9 @@ impl NowPlayingPanel {
                 _ => (true, true),
             }
         };
+        let has_track = track.is_some();
         *self.loaded_track.borrow_mut() = track;
+        self.widgets.visualizer.set_has_track(has_track);
         if id_changed {
             // A new track started: reset the visual engine's clock, water
             // surface, and impact overlay so ripples/sparks from the

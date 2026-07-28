@@ -28,6 +28,10 @@ const REFRESH_TIMER_SECONDS: u32 = 60 * 60;
 
 type Callback = Rc<dyn Fn()>;
 
+fn notify_filter_changed(runtime: &ConcertsRuntime) {
+    runtime.notify_settings_changed();
+}
+
 struct Shared {
     conn: Rc<RefCell<Connection>>,
     runtime: Rc<ConcertsRuntime>,
@@ -126,9 +130,7 @@ impl ConcertsView {
             let shared = Rc::downgrade(&shared);
             filter_bar.set_on_changed(move |_| {
                 if let Some(shared) = shared.upgrade() {
-                    if let Err(error) = render_cache(&shared) {
-                        tracing::warn!(%error, "could not apply concerts filter");
-                    }
+                    notify_filter_changed(&shared.runtime);
                 }
             });
         }
@@ -267,11 +269,7 @@ fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
     let location = concerts::config::location(&conn)?;
     let credentials = concerts::config::credentials(&conn)?;
     let similar_enabled = concerts::config::similar_config(&conn)?.enabled;
-    let has_similar_rows = conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM concert_events WHERE is_similar = 1)",
-        [],
-        |row| row.get::<_, bool>(0),
-    )?;
+    let has_similar_rows = concerts::has_similar_events(&conn)?;
     let rows = concerts::query_events(&conn, &filter, location.as_ref(), today)?;
     let total = if filter == ConcertFilter::default() {
         rows.len()
@@ -607,5 +605,21 @@ mod tests {
         );
         assert!(!view.shared.fetch_stack.is_visible());
         assert_eq!(refreshes.get(), 2);
+    }
+
+    #[test]
+    fn conc_7_filter_changes_refresh_badge_dependents() {
+        let conn = Connection::open_in_memory().unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        let runtime = ConcertsRuntime::setup(&conn);
+        let refreshes = Rc::new(Cell::new(0));
+        runtime.subscribe_settings(|| true, {
+            let refreshes = refreshes.clone();
+            move || refreshes.set(refreshes.get() + 1)
+        });
+
+        notify_filter_changed(&runtime);
+
+        assert_eq!(refreshes.get(), 1);
     }
 }

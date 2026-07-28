@@ -6,11 +6,13 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use gtk4::gio;
-use reprise_core::library::m3u::M3uEntry;
+use reprise_core::device_sync::DeviceStorageInspection;
 use reprise_platform_linux::device_sync::{
-    CopyOutcome, DeviceContents, DeviceDescriptor, DeviceMonitor, DeviceStorage,
+    CopyOutcome, DeviceDescriptor, DeviceMonitor, DeviceStorage,
 };
-use reprise_platform_linux::device_transfer::{EncodeOutcome, EncodeRequest, EncoderPipeline};
+use reprise_platform_linux::device_transfer::{
+    probe_transcode_capability, transcode_audio, TranscodeProfile, TranscodeRequest, TranscodedFile,
+};
 
 use super::device_sync_runtime::{BackendFuture, DeviceBackend};
 
@@ -33,18 +35,10 @@ impl DeviceBackend for GioDeviceBackend {
         self.monitor.subscribe(callback);
     }
 
-    fn inspect(
-        &self,
-        root_uri: String,
-    ) -> BackendFuture<(DeviceContents, Option<u64>, Option<u64>)> {
+    fn inspect(&self, root_uri: String) -> BackendFuture<DeviceStorageInspection> {
         Box::pin(async move {
             let storage = DeviceStorage::from_uri(&root_uri);
-            let contents = storage.inspect().await.map_err(|error| error.to_string())?;
-            let (available, total) = storage
-                .capacity_bytes()
-                .await
-                .map_err(|error| error.to_string())?;
-            Ok((contents, available, total))
+            storage.inspect().await.map_err(|error| error.to_string())
         })
     }
 
@@ -67,15 +61,6 @@ impl DeviceBackend for GioDeviceBackend {
                     &cancellable,
                     move |copied, total| progress(copied, total),
                 )
-                .await
-                .map_err(|error| error.to_string())
-        })
-    }
-
-    fn read_playlist(&self, root_uri: String, name: String) -> BackendFuture<Vec<M3uEntry>> {
-        Box::pin(async move {
-            DeviceStorage::from_uri(&root_uri)
-                .read_playlist(&name)
                 .await
                 .map_err(|error| error.to_string())
         })
@@ -123,28 +108,33 @@ impl DeviceBackend for GioDeviceBackend {
         })
     }
 
-    fn start_transcodes(
+    fn probe_transcode(&self, profile: TranscodeProfile) -> Result<(), String> {
+        probe_transcode_capability(profile).map_err(|error| error.to_string())
+    }
+
+    fn transcode_track(
         &self,
-        requests: Vec<EncodeRequest>,
+        request: TranscodeRequest,
         cancelled: Arc<AtomicBool>,
-    ) -> Result<async_channel::Receiver<EncodeOutcome>, String> {
-        let (sender, receiver) = async_channel::bounded(1);
-        std::thread::Builder::new()
-            .name("reprise-device-encoders".into())
-            .spawn(move || match EncoderPipeline::start(requests, cancelled) {
-                Ok(pipeline) => {
-                    while let Some(result) = pipeline.next() {
-                        if sender.send_blocking(result).is_err() {
-                            break;
-                        }
+    ) -> BackendFuture<TranscodedFile> {
+        Box::pin(async move {
+            let (sender, receiver) = async_channel::bounded(1);
+            std::thread::Builder::new()
+                .name("reprise-device-audio-encoder".into())
+                .spawn(move || {
+                    let output = request.output.clone();
+                    let result =
+                        transcode_audio(&request, &cancelled).map_err(|error| error.to_string());
+                    if sender.send_blocking(result).is_err() {
+                        let _ = std::fs::remove_file(output);
                     }
-                }
-                Err(error) => {
-                    tracing::warn!(%error, "could not create device encoder pipeline");
-                }
-            })
-            .map_err(|error| error.to_string())?;
-        Ok(receiver)
+                })
+                .map_err(|error| error.to_string())?;
+            receiver
+                .recv()
+                .await
+                .map_err(|_| "audio encoder stopped without a result".to_string())?
+        })
     }
 
     fn replace_playlist(

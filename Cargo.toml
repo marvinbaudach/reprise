@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/reprise-core",
+    "crates/reprise-runtime-protocol",
     "crates/reprise-platform-linux",
     "crates/reprise-gnome",
     "crates/reprise-cli",

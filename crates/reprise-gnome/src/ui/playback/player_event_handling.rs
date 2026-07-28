@@ -266,32 +266,31 @@ mod spectrum_coalescing_tests {
     use super::*;
     use reprise_core::playback::{SpectrumFrame, SPECTRUM_BAND_COUNT};
 
-    fn spectrum(db: f32) -> PlayerEvent {
-        PlayerEvent::Spectrum(SpectrumFrame::from_decibels([db; SPECTRUM_BAND_COUNT]))
+    fn spectrum(value: f32) -> PlayerEvent {
+        PlayerEvent::Spectrum(SpectrumFrame::from_cava_bars([value; SPECTRUM_BAND_COUNT]))
     }
 
     #[test]
-    fn ac_20_spectrum_burst_keeps_only_the_freshest_frame() {
-        let events =
-            coalesce_player_event_burst([spectrum(-60.0), spectrum(-40.0), spectrum(-20.0)]);
+    fn ac_23_spectrum_burst_keeps_only_the_freshest_cava_frame() {
+        let events = coalesce_player_event_burst([spectrum(0.25), spectrum(0.5), spectrum(0.75)]);
         assert_eq!(events.len(), 1);
         let PlayerEvent::Spectrum(frame) = &events[0] else {
             panic!("expected the coalesced spectrum");
         };
         assert_eq!(
             frame.bands(),
-            SpectrumFrame::from_decibels([-20.0; SPECTRUM_BAND_COUNT]).bands()
+            SpectrumFrame::from_cava_bars([0.75; SPECTRUM_BAND_COUNT]).bands()
         );
     }
 
     #[test]
     fn non_spectrum_events_keep_order_and_bound_coalescing_windows() {
         let events = coalesce_player_event_burst([
-            spectrum(-60.0),
-            spectrum(-40.0),
+            spectrum(0.25),
+            spectrum(0.5),
             PlayerEvent::StateChanged(PlaybackState::Paused),
-            spectrum(-20.0),
-            spectrum(0.0),
+            spectrum(0.75),
+            spectrum(1.0),
             PlayerEvent::TrackFinished,
         ]);
         assert_eq!(events.len(), 4);

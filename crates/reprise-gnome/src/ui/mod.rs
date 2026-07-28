@@ -30,7 +30,6 @@ mod concerts;
 mod cover;
 pub mod delete_tracks;
 mod device_sync;
-mod device_view;
 pub mod dialogs;
 pub(crate) mod ellipsis_tooltip;
 pub(crate) mod eq_bars;
@@ -73,6 +72,7 @@ pub mod session_restore;
 pub mod shortcuts;
 pub(in crate::ui) mod show_in_files;
 pub(crate) mod sidebar;
+mod source_context_surface;
 mod stats;
 pub mod status_bar;
 pub mod strings;
@@ -102,8 +102,8 @@ pub(crate) use browse::browse_bar;
 use browse::{browse_filter_count, browse_filter_strings};
 #[allow(unused_imports)]
 use compact::{
-    compact_mode_controls, compact_player, compact_player_layouts, compact_player_menu,
-    compact_player_scroll, minimal_view,
+    compact_mode_controls, compact_mode_suggestion, compact_player, compact_player_layouts,
+    compact_player_menu, compact_player_scroll, minimal_view,
 };
 #[allow(unused_imports)]
 use cover::{cover_download_batch, main_cover_download_progress};
@@ -111,8 +111,8 @@ use cover::{cover_download_batch, main_cover_download_progress};
 pub(crate) use cover::{cover_download_worker, cover_loader};
 #[allow(unused_imports)]
 use device_sync::{
-    device_sync_actions, device_sync_backend, device_sync_feedback, device_sync_runtime,
-    device_sync_smoke, device_sync_strings,
+    device_sync_backend, device_sync_feedback, device_sync_launcher, device_sync_page,
+    device_sync_runtime, device_sync_smoke, device_sync_strings,
 };
 #[allow(unused_imports)]
 use library_views::artist_avatar;
@@ -141,8 +141,8 @@ use playlists::{playlist_import_navigation, playlist_io_names};
 use preferences::{
     preference_appearance, preference_choice_cards, preference_dependencies, preference_effects,
     preference_lastfm, preference_layout, preference_library, preference_listenbrainz,
-    preference_playback, preference_plugins, preference_rhythmbox, preference_sync,
-    preference_visual_strings, preference_window_decorations, preferences_window,
+    preference_playback, preference_plugins, preference_rhythmbox, preference_visual_strings,
+    preference_window_decorations, preferences_window,
 };
 #[allow(unused_imports)]
 pub(crate) use scan::{scan_card_css, scan_flow};

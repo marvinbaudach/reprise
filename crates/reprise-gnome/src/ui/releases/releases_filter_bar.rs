@@ -6,7 +6,7 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use reprise_core::artist_news::{
     persisted_releases_filter, ReleaseTypeFilter, ReleasesFilter, RELEASES_FILTER_HIDDEN_KEY,
-    RELEASES_FILTER_NOT_IN_LIBRARY_KEY, RELEASES_FILTER_TYPE_KEY,
+    RELEASES_FILTER_TYPE_KEY,
 };
 use rusqlite::Connection;
 
@@ -21,17 +21,12 @@ type OnChanged = Rc<dyn Fn(ReleasesFilter)>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum FilterFacet {
-    NotInLibrary,
     Type,
     Hidden,
 }
 
 pub(super) fn remove_filter(filter: &ReleasesFilter, facet: FilterFacet) -> ReleasesFilter {
     match facet {
-        FilterFacet::NotInLibrary => ReleasesFilter {
-            not_in_library: false,
-            ..filter.clone()
-        },
         FilterFacet::Type => ReleasesFilter {
             release_type: None,
             ..filter.clone()
@@ -45,9 +40,6 @@ pub(super) fn remove_filter(filter: &ReleasesFilter, facet: FilterFacet) -> Rele
 
 fn active_facets(filter: &ReleasesFilter) -> Vec<FilterFacet> {
     let mut facets = Vec::new();
-    if filter.not_in_library {
-        facets.push(FilterFacet::NotInLibrary);
-    }
     if filter.release_type.is_some() {
         facets.push(FilterFacet::Type);
     }
@@ -59,7 +51,6 @@ fn active_facets(filter: &ReleasesFilter) -> Vec<FilterFacet> {
 
 fn facet_label(facet: FilterFacet) -> String {
     strings::text(match facet {
-        FilterFacet::NotInLibrary => strings::RELEASES_NOT_IN_LIBRARY,
         FilterFacet::Type => strings::RELEASES_TYPE,
         FilterFacet::Hidden => strings::RELEASES_HIDDEN,
     })
@@ -70,7 +61,6 @@ fn chip_label(filter: &ReleasesFilter, facet: FilterFacet) -> String {
         FilterFacet::Type => strings::text(match filter.release_type {
             Some(ReleaseTypeFilter::Album) => strings::RELEASES_ALBUM,
             Some(ReleaseTypeFilter::Ep) => strings::RELEASES_EP,
-            Some(ReleaseTypeFilter::Single) => strings::RELEASES_SINGLE,
             None => strings::RELEASES_TYPE,
         }),
         _ => facet_label(facet),
@@ -78,11 +68,6 @@ fn chip_label(filter: &ReleasesFilter, facet: FilterFacet) -> String {
 }
 
 fn persist_filter(conn: &Connection, filter: &ReleasesFilter) -> Result<(), rusqlite::Error> {
-    reprise_core::library::settings::set_bool(
-        conn,
-        RELEASES_FILTER_NOT_IN_LIBRARY_KEY,
-        filter.not_in_library,
-    )?;
     reprise_core::library::settings::set_setting(
         conn,
         RELEASES_FILTER_TYPE_KEY,
@@ -267,14 +252,10 @@ impl ReleasesFilterBar {
     fn rebuild_facets(&self) {
         self.facet_list.remove_all();
         let active = active_facets(&self.filter());
-        let facets = [
-            FilterFacet::NotInLibrary,
-            FilterFacet::Type,
-            FilterFacet::Hidden,
-        ]
-        .into_iter()
-        .filter(|facet| !active.contains(facet))
-        .collect::<Vec<_>>();
+        let facets = [FilterFacet::Type, FilterFacet::Hidden]
+            .into_iter()
+            .filter(|facet| !active.contains(facet))
+            .collect::<Vec<_>>();
         for facet in &facets {
             self.facet_list.append(&chooser_row(&facet_label(*facet)));
         }
@@ -286,13 +267,6 @@ impl ReleasesFilterBar {
         self.value_list.remove_all();
         let current = self.filter();
         let values = match facet {
-            FilterFacet::NotInLibrary => vec![(
-                strings::text(strings::RELEASES_NOT_IN_LIBRARY),
-                ReleasesFilter {
-                    not_in_library: true,
-                    ..current
-                },
-            )],
             FilterFacet::Hidden => vec![(
                 strings::text(strings::RELEASES_HIDDEN),
                 ReleasesFilter {
@@ -300,20 +274,16 @@ impl ReleasesFilterBar {
                     ..current
                 },
             )],
-            FilterFacet::Type => [
-                ReleaseTypeFilter::Album,
-                ReleaseTypeFilter::Ep,
-                ReleaseTypeFilter::Single,
-            ]
-            .into_iter()
-            .map(|release_type| {
-                let filter = ReleasesFilter {
-                    release_type: Some(release_type),
-                    ..current.clone()
-                };
-                (chip_label(&filter, FilterFacet::Type), filter)
-            })
-            .collect(),
+            FilterFacet::Type => [ReleaseTypeFilter::Album, ReleaseTypeFilter::Ep]
+                .into_iter()
+                .map(|release_type| {
+                    let filter = ReleasesFilter {
+                        release_type: Some(release_type),
+                        ..current.clone()
+                    };
+                    (chip_label(&filter, FilterFacet::Type), filter)
+                })
+                .collect(),
         };
         for (label, _) in &values {
             self.value_list.append(&chooser_row(label));
@@ -411,19 +381,11 @@ mod tests {
     use reprise_core::artist_news::ReleaseTypeFilter;
 
     #[test]
-    fn nr_14_each_release_chip_removes_only_its_own_constraint() {
+    fn nr_17_each_release_chip_removes_only_its_own_constraint() {
         let filter = ReleasesFilter {
-            not_in_library: true,
             release_type: Some(ReleaseTypeFilter::Ep),
             hidden: true,
         };
-        assert_eq!(
-            remove_filter(&filter, FilterFacet::NotInLibrary),
-            ReleasesFilter {
-                not_in_library: false,
-                ..filter.clone()
-            }
-        );
         assert_eq!(
             remove_filter(&filter, FilterFacet::Type),
             ReleasesFilter {
@@ -445,8 +407,7 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         reprise_core::db::migrate(&conn).unwrap();
         let filter = ReleasesFilter {
-            not_in_library: true,
-            release_type: Some(ReleaseTypeFilter::Single),
+            release_type: Some(ReleaseTypeFilter::Album),
             hidden: true,
         };
         persist_filter(&conn, &filter).unwrap();
@@ -455,7 +416,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn nr_14_filter_header_is_permanent_and_reserves_its_height() {
+    fn nr_17_filter_header_is_permanent_and_reserves_its_height() {
         gtk4::init().unwrap();
         let conn = Rc::new(RefCell::new(Connection::open_in_memory().unwrap()));
         reprise_core::db::migrate(&conn.borrow()).unwrap();

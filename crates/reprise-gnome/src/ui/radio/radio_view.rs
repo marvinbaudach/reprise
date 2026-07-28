@@ -67,6 +67,7 @@ impl RadioView {
             .show_column_separators(false)
             .build();
         column_view.add_css_class("reprise-radio-table");
+        column_view.add_css_class(crate::ui::source_context_surface::TABLE_CSS_CLASS);
 
         let remove_target = Rc::new(RefCell::new(None::<std::rc::Weak<Shared>>));
         let remove_shared = remove_target.clone();

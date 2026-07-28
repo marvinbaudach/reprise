@@ -10,6 +10,7 @@ if [[ ! -x "$runner" ]]; then
 fi
 sort_scenario="$repo_root/scripts/cua-e2e/track_sort.sh"
 tag_autocomplete_scenario="$repo_root/scripts/cua-e2e/tag_autocomplete.sh"
+responsive_window_scenario="$repo_root/scripts/cua-e2e/responsive_window.sh"
 helper_library="$repo_root/scripts/cua-e2e/lib.sh"
 if [[ ! -f "$sort_scenario" ]]; then
   echo "$sort_scenario must exist" >&2
@@ -24,6 +25,30 @@ for pattern in \
 do
   if ! rg --quiet --fixed-strings "$pattern" "$sort_scenario"; then
     echo "$sort_scenario must contain sort-regression contract: $pattern" >&2
+    exit 1
+  fi
+done
+if [[ ! -f "$responsive_window_scenario" ]]; then
+  echo "$responsive_window_scenario must exist" >&2
+  exit 1
+fi
+for pattern in \
+  'run_responsive_window_scenario' \
+  '720 760 responsive-narrow' \
+  '1600 420 responsive-short' \
+  '720 420 responsive-combined' \
+  'assert_full_player_controls_are_reachable' \
+  'assert_only_track_table_overflows' \
+  'responsive-play-long-title' \
+  'Side panels were closed to fit the window' \
+  'responsive-undo-side-panels' \
+  'Show columns' \
+  'Use Compact Mode' \
+  'responsive-short-panel' \
+  'responsive-restore-library ctrl m'
+do
+  if ! rg --quiet --fixed-strings "$pattern" "$responsive_window_scenario"; then
+    echo "$responsive_window_scenario must contain responsive geometry contract: $pattern" >&2
     exit 1
   fi
 done
@@ -78,6 +103,7 @@ for pattern in \
   'run-manifest.txt' \
   'run_fresh_install_scenario' \
   'run_populated_library_scenario' \
+  'run_android_sync_page_scenario' \
   'run_private_scenario_group' \
   'CUA_E2E_PRIVATE_GROUP=' \
   'for scenario_group in' \
@@ -95,14 +121,18 @@ for pattern in \
   'restart_private_cua_daemon' \
   'wmctrl' \
   'REPRISE_SMOKE_TAG_EDIT=' \
+  'REPRISE_SMOKE_DEVICE_ROOT=' \
+  'REPRISE_SMOKE_DEVICE_PLAYLIST=' \
   'REPRISE_SMOKE_FOCUS_STATE=' \
   'CUA_E2E_APP_PID=""' \
   'run_tag_1_no_jump_after_save_scenario' \
   'run_tag_3_multi_dialog_structure_scenario' \
   'run_tag_autocomplete_surface_scenario' \
   'run_library_doctor_scenario' \
+  'run_android_sync_page_scenario' \
   'run_song_visuals_scenario' \
   'run_scrobbling_scenario' \
+  'run_responsive_window_scenario' \
   'Audio-reactive song visual' \
   'song-visuals-visual-focus' \
   '"Play \(Space\)"' \
@@ -116,6 +146,22 @@ for pattern in \
 do
   if ! rg --quiet -- "$pattern" "$runner"; then
     echo "$runner must contain isolation/coverage pattern: $pattern" >&2
+    exit 1
+  fi
+done
+for android_sync_contract in \
+  '"Simulated MTP Phone"' \
+  '"Transfer profile"' \
+  '"Recently added"' \
+  '"Sync overview"' \
+  '"Next synchronization"' \
+  '"Never synchronized"' \
+  '"1 unique track · 2.4 MiB on device"' \
+  '"Sync now"' \
+  '"Device files"' \
+  '"Entire library"'; do
+  if ! rg --quiet --fixed-strings "$android_sync_contract" "$runner"; then
+    echo "$runner must cover the Android sync full-page contract: $android_sync_contract" >&2
     exit 1
   fi
 done

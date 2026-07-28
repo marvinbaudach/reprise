@@ -16,8 +16,6 @@ pub(in crate::ui) mod preference_podcasts;
 pub(in crate::ui) mod preference_radio;
 pub(in crate::ui) mod preference_rhythmbox;
 pub(in crate::ui) mod preference_scrobbling;
-pub(in crate::ui) mod preference_sync;
-mod preference_sync_navigation;
 pub(in crate::ui) mod preference_visual_strings;
 pub(in crate::ui) mod preference_window_decorations;
 pub(in crate::ui) mod preferences_window;

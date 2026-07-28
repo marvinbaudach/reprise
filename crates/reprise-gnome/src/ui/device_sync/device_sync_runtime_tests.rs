@@ -10,15 +10,36 @@ use gtk4::gio;
 use gtk4::gio::prelude::*;
 use reprise_core::device_sync::settings::save_settings;
 use reprise_core::device_sync::{
-    DeviceSelection, DeviceSettings, SelectionSource, SyncPhase, SyncSnapshot,
+    DeviceSelection, DeviceSettings, DeviceStorageAccess, DeviceStorageInspection,
+    DeviceStorageSnapshot, SelectionSource,
 };
-use reprise_platform_linux::device_sync::{CopyOutcome, DeviceContents, DeviceDescriptor};
+use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor};
+use reprise_platform_linux::device_transfer::{TranscodeProfile, TranscodeRequest, TranscodedFile};
 use rusqlite::Connection;
 
 use super::device_sync_runtime::*;
 
 type TestFuture<T> = Pin<Box<dyn Future<Output = Result<T, String>>>>;
 type DeviceSubscriber = Rc<dyn Fn(Vec<DeviceDescriptor>)>;
+type DeleteObserver = Rc<dyn Fn(&str)>;
+
+#[derive(Clone)]
+struct CopyGate {
+    started: async_channel::Sender<String>,
+    releases: HashMap<String, async_channel::Receiver<()>>,
+}
+
+#[derive(Clone)]
+struct PlaylistGate {
+    started: async_channel::Sender<()>,
+    release: async_channel::Receiver<()>,
+}
+
+#[derive(Clone)]
+struct InspectionGate {
+    started: async_channel::Sender<()>,
+    release: async_channel::Receiver<()>,
+}
 
 #[derive(Default)]
 struct FakeState {
@@ -32,8 +53,19 @@ struct FakeState {
     max_total: Cell<usize>,
     playlists: RefCell<Vec<(String, String, Vec<u8>)>>,
     deleted: RefCell<Vec<String>>,
+    ejected: RefCell<Vec<String>>,
+    planned_operations: RefCell<Vec<(String, &'static str)>>,
     available_bytes: Cell<Option<u64>>,
     total_bytes: Cell<Option<u64>>,
+    storage_access: Cell<DeviceStorageAccess>,
+    transcode_probe_error: RefCell<Option<String>>,
+    cleanup_error: RefCell<Option<String>>,
+    copy_gate: RefCell<Option<CopyGate>>,
+    playlist_error: RefCell<Option<String>>,
+    playlist_gate: RefCell<Option<PlaylistGate>>,
+    inspection_gate: RefCell<Option<InspectionGate>>,
+    inspection_error: RefCell<Option<String>>,
+    delete_observer: RefCell<Option<DeleteObserver>>,
 }
 
 #[derive(Clone)]
@@ -56,6 +88,26 @@ impl FakeBackend {
         self
     }
 
+    fn with_storage_access(self, access: DeviceStorageAccess) -> Self {
+        self.state.storage_access.set(access);
+        self
+    }
+
+    fn with_transcode_probe_error(self, error: &str) -> Self {
+        self.state.transcode_probe_error.replace(Some(error.into()));
+        self
+    }
+
+    fn with_cleanup_error(self, error: &str) -> Self {
+        self.state.cleanup_error.replace(Some(error.into()));
+        self
+    }
+
+    fn with_playlist_error(self, error: &str) -> Self {
+        self.state.playlist_error.replace(Some(error.into()));
+        self
+    }
+
     fn set_available_bytes(&self, available_bytes: Option<u64>) {
         self.state.available_bytes.set(available_bytes);
     }
@@ -66,6 +118,55 @@ impl FakeBackend {
         for subscriber in subscribers {
             subscriber(devices.to_owned());
         }
+    }
+
+    fn gate_copies(
+        &self,
+        device_ids: &[&str],
+    ) -> (
+        async_channel::Receiver<String>,
+        HashMap<String, async_channel::Sender<()>>,
+    ) {
+        let (started, started_rx) = async_channel::unbounded();
+        let mut releases = HashMap::new();
+        let mut release_senders = HashMap::new();
+        for device_id in device_ids {
+            let (release, release_rx) = async_channel::unbounded();
+            releases.insert((*device_id).to_string(), release_rx);
+            release_senders.insert((*device_id).to_string(), release);
+        }
+        self.state
+            .copy_gate
+            .replace(Some(CopyGate { started, releases }));
+        (started_rx, release_senders)
+    }
+
+    fn gate_playlist(&self) -> (async_channel::Receiver<()>, async_channel::Sender<()>) {
+        let (started, started_rx) = async_channel::bounded(1);
+        let (release, release_rx) = async_channel::bounded(1);
+        self.state.playlist_gate.replace(Some(PlaylistGate {
+            started,
+            release: release_rx,
+        }));
+        (started_rx, release)
+    }
+
+    fn gate_next_inspection(&self) -> (async_channel::Receiver<()>, async_channel::Sender<()>) {
+        let (started, started_rx) = async_channel::bounded(1);
+        let (release, release_rx) = async_channel::bounded(1);
+        self.state.inspection_gate.replace(Some(InspectionGate {
+            started,
+            release: release_rx,
+        }));
+        (started_rx, release)
+    }
+
+    fn fail_next_inspection(&self, error: &str) {
+        self.state.inspection_error.replace(Some(error.into()));
+    }
+
+    fn observe_deletes(&self, observer: DeleteObserver) {
+        self.state.delete_observer.replace(Some(observer));
     }
 }
 
@@ -78,10 +179,37 @@ impl DeviceBackend for FakeBackend {
         self.state.subscribers.borrow_mut().push(callback);
     }
 
-    fn inspect(&self, _root_uri: String) -> TestFuture<(DeviceContents, Option<u64>, Option<u64>)> {
+    fn inspect(&self, _root_uri: String) -> TestFuture<DeviceStorageInspection> {
         let available_bytes = self.state.available_bytes.get();
         let total_bytes = self.state.total_bytes.get();
-        Box::pin(async move { Ok((DeviceContents::default(), available_bytes, total_bytes)) })
+        let storage_access = self.state.storage_access.get();
+        let gate = self.state.inspection_gate.borrow_mut().take();
+        let inspection_error = self.state.inspection_error.borrow_mut().take();
+        Box::pin(async move {
+            if let Some(gate) = gate {
+                gate.started
+                    .send(())
+                    .await
+                    .map_err(|_| "inspection-start observer was dropped".to_string())?;
+                gate.release
+                    .recv()
+                    .await
+                    .map_err(|_| "inspection gate was dropped".to_string())?;
+            }
+            if let Some(error) = inspection_error {
+                return Err(error);
+            }
+            Ok(DeviceStorageInspection {
+                snapshot: DeviceStorageSnapshot {
+                    target_name: Some("Internal shared storage".into()),
+                    access: storage_access,
+                    free_bytes: available_bytes,
+                    total_bytes,
+                    ..DeviceStorageSnapshot::default()
+                },
+                managed_files: Vec::new(),
+            })
+        })
     }
 
     fn copy_track(
@@ -97,6 +225,10 @@ impl DeviceBackend for FakeBackend {
         let state = self.state.clone();
         let delay_ms = self.delay_ms;
         Box::pin(async move {
+            state
+                .planned_operations
+                .borrow_mut()
+                .push((device_id.clone(), "copy"));
             state.copy_attempts.set(state.copy_attempts.get() + 1);
             {
                 let mut active = state.active_by_device.borrow_mut();
@@ -111,7 +243,21 @@ impl DeviceBackend for FakeBackend {
             state.active_total.set(active_total);
             state.max_total.set(state.max_total.get().max(active_total));
             progress(expected_size / 2, expected_size);
-            gtk4::glib::timeout_future(Duration::from_millis(delay_ms)).await;
+            let gate = state.copy_gate.borrow().clone();
+            if let Some(gate) = gate {
+                gate.started
+                    .send(device_id.clone())
+                    .await
+                    .map_err(|_| "copy-start observer was dropped".to_string())?;
+                gate.releases
+                    .get(&device_id)
+                    .ok_or_else(|| format!("missing copy gate for {device_id}"))?
+                    .recv()
+                    .await
+                    .map_err(|_| format!("copy gate for {device_id} was dropped"))?;
+            } else {
+                gtk4::glib::timeout_future(Duration::from_millis(delay_ms)).await;
+            }
             let current = state.active_total.get();
             state.active_total.set(current.saturating_sub(1));
             if let Some(active) = state.active_by_device.borrow_mut().get_mut(&device_id) {
@@ -133,17 +279,44 @@ impl DeviceBackend for FakeBackend {
         })
     }
 
-    fn read_playlist(
+    fn probe_transcode(&self, _profile: TranscodeProfile) -> Result<(), String> {
+        self.state
+            .transcode_probe_error
+            .borrow()
+            .clone()
+            .map_or(Ok(()), Err)
+    }
+
+    fn transcode_track(
         &self,
-        _root_uri: String,
-        _name: String,
-    ) -> TestFuture<Vec<reprise_core::library::m3u::M3uEntry>> {
-        Box::pin(async { Ok(Vec::new()) })
+        request: TranscodeRequest,
+        _cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) -> TestFuture<TranscodedFile> {
+        let state = self.state.clone();
+        Box::pin(async move {
+            state
+                .planned_operations
+                .borrow_mut()
+                .push(("fake".into(), "transcode"));
+            Ok(TranscodedFile {
+                path: request.output,
+                size_bytes: 100,
+            })
+        })
+    }
+
+    fn cleanup_partials(&self, _root_uri: String) -> TestFuture<u32> {
+        let error = self.state.cleanup_error.borrow().clone();
+        Box::pin(async move { error.map_or(Ok(0), Err) })
     }
 
     fn delete_track(&self, _root_uri: String, relative_target: String) -> TestFuture<bool> {
         let state = self.state.clone();
         Box::pin(async move {
+            let observer = state.delete_observer.borrow().clone();
+            if let Some(observer) = observer {
+                observer(&relative_target);
+            }
             state.deleted.borrow_mut().push(relative_target);
             Ok(true)
         })
@@ -158,11 +331,33 @@ impl DeviceBackend for FakeBackend {
     ) -> TestFuture<()> {
         let state = self.state.clone();
         Box::pin(async move {
+            if let Some(error) = state.playlist_error.borrow().clone() {
+                return Err(error);
+            }
+            let gate = state.playlist_gate.borrow().clone();
+            if let Some(gate) = gate {
+                gate.started
+                    .send(())
+                    .await
+                    .map_err(|_| "playlist-start observer was dropped".to_string())?;
+                gate.release
+                    .recv()
+                    .await
+                    .map_err(|_| "playlist gate was dropped".to_string())?;
+            }
             state
                 .playlists
                 .borrow_mut()
                 .push((device_id, name, contents));
             Ok(())
+        })
+    }
+
+    fn eject(&self, device_id: String) -> TestFuture<bool> {
+        let state = self.state.clone();
+        Box::pin(async move {
+            state.ejected.borrow_mut().push(device_id);
+            Ok(true)
         })
     }
 }
@@ -227,422 +422,60 @@ async fn settle() {
     }
 }
 
-async fn settle_until(runtime: &DeviceSyncRuntime, device_id: &str, phase: SyncPhase) {
-    for _ in 0..1_000 {
-        if snapshot(runtime, device_id).phase == phase {
-            return;
+fn signal_when(
+    runtime: &Rc<DeviceSyncRuntime>,
+    condition: impl Fn(&DeviceSyncState) -> bool + 'static,
+) -> (Subscription, async_channel::Receiver<()>) {
+    let (sender, receiver) = async_channel::bounded(1);
+    let subscription = runtime.subscribe(Rc::new(move |state| {
+        if condition(&state) {
+            let _ = sender.try_send(());
         }
-        gtk4::glib::timeout_future(Duration::from_millis(5)).await;
-    }
-    panic!("device sync did not reach {phase:?}");
+    }));
+    (subscription, receiver)
 }
 
-fn snapshot(runtime: &DeviceSyncRuntime, id: &str) -> SyncSnapshot {
-    runtime
-        .devices()
-        .into_iter()
-        .find(|device| device.id == id)
-        .unwrap()
-        .snapshot
-}
-
-#[test]
-fn rapid_jobs_for_one_device_copy_strictly_fifo_without_overlap() {
-    run(async {
-        let (_temp, conn) = fixture();
-        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 2));
-        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
-        runtime.enqueue("a", "First", &[1, 2]).unwrap();
-        runtime.enqueue("a", "Second", &[3]).unwrap();
-        settle().await;
-        assert_eq!(backend.state.max_by_device.borrow().get("a"), Some(&1));
-        let targets = backend
-            .state
-            .copy_order
-            .borrow()
-            .iter()
-            .map(|(_, target)| target.clone())
-            .collect::<Vec<_>>();
-        assert_eq!(
-            targets,
-            ["First/1-1.flac", "First/2-2.flac", "Second/3-3.flac"]
-        );
-    });
-}
-
-#[test]
-fn different_devices_share_one_global_copy_slot() {
-    run(async {
-        let (_temp, conn) = fixture();
-        let backend = Rc::new(FakeBackend::new(
-            vec![descriptor("a", true), descriptor("b", true)],
-            10,
-        ));
-        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
-        runtime.enqueue("a", "A", &[1]).unwrap();
-        runtime.enqueue("b", "B", &[2]).unwrap();
-        settle().await;
-        assert_eq!(backend.state.max_total.get(), 1);
-        assert_eq!(backend.state.copy_order.borrow().len(), 2);
-    });
-}
-
-#[test]
-fn subscriber_receives_initial_state_and_progress_updates() {
-    run(async {
-        let (_temp, conn) = fixture();
-        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 4));
-        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
-        let states = Rc::new(RefCell::new(Vec::new()));
-        let observed = states.clone();
-        let _subscription = runtime.subscribe(Rc::new(move |state| {
-            observed.borrow_mut().push(state);
-        }));
-        assert_eq!(states.borrow().len(), 1);
-        assert_eq!(states.borrow()[0].devices.len(), 1);
-        runtime.enqueue("a", "A", &[1]).unwrap();
-        settle().await;
-        assert!(states.borrow().len() >= 4);
-        assert_eq!(snapshot(&runtime, "a").phase, SyncPhase::Complete);
-    });
-}
-
-#[test]
-fn active_snapshot_reports_file_bytes_track_count_and_queued_job() {
-    run(async {
-        let (_temp, conn) = fixture();
-        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 20));
-        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
-        runtime.enqueue("a", "A", &[1, 2]).unwrap();
-        runtime.enqueue("a", "B", &[3]).unwrap();
-        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
-        let active = snapshot(&runtime, "a");
-        assert_eq!(active.phase, SyncPhase::Copying);
-        assert_eq!(active.current_bytes, 50);
-        assert_eq!(active.current_total, Some(100));
-        assert_eq!(active.total_tracks, 2);
-        assert_eq!(active.queued_jobs, 1);
-        settle().await;
-    });
-}
-
-#[test]
-fn cancelling_current_job_keeps_and_runs_the_waiting_job() {
-    run(async {
-        let (_temp, conn) = fixture();
-        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 20));
-        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
-        let observed = Rc::new(RefCell::new(Vec::new()));
-        let snapshots = observed.clone();
-        let _subscription = runtime.subscribe(Rc::new(move |state| {
-            if let Some(device) = state.devices.first() {
-                snapshots.borrow_mut().push(device.snapshot.clone());
-            }
-        }));
-        runtime.enqueue("a", "Cancel", &[1, 2]).unwrap();
-        runtime.enqueue("a", "Keep", &[3]).unwrap();
-        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
-        runtime.cancel_current("a");
-        settle().await;
-        assert!(backend
-            .state
-            .copy_order
-            .borrow()
-            .iter()
-            .any(|(_, target)| target == "Keep/3-3.flac"));
-        assert!(observed.borrow().iter().all(|snapshot| {
-            snapshot.current_name.as_deref() != Some("3.flac") || snapshot.current_bytes <= 50
-        }));
-    });
-}
-
-#[test]
-fn stable_device_disconnect_pauses_and_replug_resumes_current_track() {
-    run(async {
-        let (_temp, conn) = fixture();
-        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 15));
-        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
-        runtime.enqueue("a", "A", &[1]).unwrap();
-        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
-        backend.set_devices(&[]);
-        gtk4::glib::timeout_future(Duration::from_millis(20)).await;
-        assert_eq!(snapshot(&runtime, "a").phase, SyncPhase::PausedDisconnected);
-        backend.set_devices(&[descriptor("a", true)]);
-        settle().await;
-        assert_eq!(snapshot(&runtime, "a").phase, SyncPhase::Complete);
-    });
-}
-
-#[test]
-fn uri_only_device_does_not_claim_safe_resume_after_disconnect() {
-    run(async {
-        let (_temp, conn) = fixture();
-        let backend = Rc::new(FakeBackend::new(vec![descriptor("uri", false)], 15));
-        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
-        runtime.enqueue("uri", "A", &[1]).unwrap();
-        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
-        backend.set_devices(&[]);
-        gtk4::glib::timeout_future(Duration::from_millis(30)).await;
-        assert_eq!(snapshot(&runtime, "uri").phase, SyncPhase::Failed);
-        backend.set_devices(&[descriptor("uri", false)]);
-        settle().await;
-        assert!(backend.state.copy_order.borrow().is_empty());
-    });
-}
-
-#[test]
-fn invalid_device_or_empty_resolution_is_rejected_without_a_job() {
-    run(async {
-        let (temp, conn) = fixture();
-        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
-        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
-        assert!(matches!(
-            runtime.enqueue("missing", "A", &[1]),
-            Err(EnqueueError::UnknownDevice)
-        ));
-        std::fs::remove_file(temp.path().join("1.flac")).unwrap();
-        assert!(matches!(
-            runtime.enqueue("a", "A", &[1, 999]),
-            Err(EnqueueError::NoUsableTracks)
-        ));
-    });
-}
-
-#[test]
-fn known_insufficient_space_rejects_the_job_before_copying() {
-    run(async {
-        let (_temp, conn) = fixture();
-        let backend = Rc::new(
-            FakeBackend::new(vec![descriptor("a", true)], 1).with_available_bytes(Some(150)),
-        );
-        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
-        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
-
-        assert_eq!(
-            runtime.enqueue("a", "Too Large", &[1, 2]),
-            Err(EnqueueError::InsufficientSpace {
-                required_bytes: 200,
-                available_bytes: 150,
-            })
-        );
-        settle().await;
-        assert!(backend.state.copy_order.borrow().is_empty());
-        assert_eq!(snapshot(&runtime, "a").phase, SyncPhase::Idle);
-        assert_eq!(snapshot(&runtime, "a").queued_jobs, 0);
-    });
-}
-
-#[test]
-fn queued_jobs_reserve_space_for_later_actions_on_the_same_device() {
-    run(async {
-        let (_temp, conn) = fixture();
-        let backend = Rc::new(
-            FakeBackend::new(vec![descriptor("a", true)], 20).with_available_bytes(Some(150)),
-        );
-        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
-        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
-
-        runtime.enqueue("a", "First", &[1]).unwrap();
-        assert_eq!(
-            runtime.enqueue("a", "Second", &[2]),
-            Err(EnqueueError::InsufficientSpace {
-                required_bytes: 100,
-                available_bytes: 50,
-            })
-        );
-        settle().await;
-        assert_eq!(backend.state.copy_order.borrow().len(), 1);
-    });
-}
-
-#[test]
-fn cancelling_a_job_releases_its_reserved_space() {
-    run(async {
-        let (_temp, conn) = fixture();
-        let backend = Rc::new(
-            FakeBackend::new(vec![descriptor("a", true)], 20).with_available_bytes(Some(150)),
-        );
-        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
-        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
-
-        runtime.enqueue("a", "Cancel", &[1]).unwrap();
-        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
-        runtime.cancel_current("a");
-        settle().await;
-
-        assert_eq!(runtime.enqueue("a", "After Cancel", &[2]), Ok(1));
-        settle().await;
-        assert_eq!(snapshot(&runtime, "a").phase, SyncPhase::Complete);
-    });
-}
-
-#[test]
-fn playlist_drafts_are_sanitized_deduplicated_and_do_no_device_io() {
-    run(async {
-        let (_temp, conn) = fixture();
-        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
-        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
-        assert_eq!(
-            runtime.create_playlist_draft("a", "../ Road / Mix"),
-            Some("Road Mix".into())
-        );
-        assert_eq!(
-            runtime.create_playlist_draft("a", "Road Mix"),
-            Some("Road Mix".into())
-        );
-        assert_eq!(runtime.devices()[0].draft_playlists, ["Road Mix"]);
-        assert!(backend.state.copy_order.borrow().is_empty());
-        assert!(backend.state.playlists.borrow().is_empty());
-    });
-}
-
-#[test]
-fn unplugged_idle_device_leaves_the_detected_device_list() {
-    run(async {
-        let (_temp, conn) = fixture();
-        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
-        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
-        backend.set_devices(&[]);
-        assert!(runtime.devices().is_empty());
-    });
-}
-
-#[test]
-fn local_gio_backend_runs_two_jobs_in_order_with_monotone_progress_and_m3u8() {
-    run(async {
-        let (_sources, conn) = fixture();
-        let device_root = tempfile::tempdir().unwrap();
-        let backend = Rc::new(
-            super::device_sync_smoke::SmokeDeviceBackend::for_root(device_root.path()).unwrap(),
-        );
-        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
-        let snapshots = Rc::new(RefCell::new(Vec::new()));
-        let observed = snapshots.clone();
-        let _subscription = runtime.subscribe(Rc::new(move |state| {
-            if let Some(device) = state.devices.first() {
-                observed.borrow_mut().push(device.snapshot.clone());
-            }
-        }));
-        runtime
-            .enqueue(super::device_sync_smoke::DEVICE_ID, "Road", &[1, 2])
-            .unwrap();
-        runtime
-            .enqueue(super::device_sync_smoke::DEVICE_ID, "Road", &[3])
-            .unwrap();
-        // Wait for the runtime to actually finish both jobs (files copied,
-        // m3u8 written) rather than a fixed timeout — a plain `settle()` raced
-        // the real gio copies under CI load and left the last file unwritten
-        // when the assertions ran. Mirrors the sibling cancel test's wait.
-        settle_until(
-            &runtime,
-            super::device_sync_smoke::DEVICE_ID,
-            SyncPhase::Complete,
-        )
-        .await;
-
-        for id in 1..=3 {
-            assert!(device_root
-                .path()
-                .join(format!("Music/Reprise/Road/{id}-{id}.flac"))
-                .is_file());
-        }
-        let playlist =
-            std::fs::read_to_string(device_root.path().join("Music/Reprise/Road.m3u8")).unwrap();
-        let paths = reprise_core::library::m3u::parse_m3u(&playlist)
-            .into_iter()
-            .map(|entry| entry.path)
-            .collect::<Vec<_>>();
-        assert_eq!(paths, ["Road/1-1.flac", "Road/2-2.flac", "Road/3-3.flac"]);
-
-        for total_tracks in [2, 1] {
-            let progress = snapshots
-                .borrow()
-                .iter()
-                .filter(|snapshot| snapshot.total_tracks == total_tracks)
-                .map(|snapshot| snapshot.completed_bytes + snapshot.current_bytes)
-                .collect::<Vec<_>>();
-            assert!(progress.windows(2).all(|pair| pair[0] <= pair[1]));
-        }
-        assert_eq!(
-            snapshot(&runtime, super::device_sync_smoke::DEVICE_ID).phase,
-            SyncPhase::Complete
-        );
-    });
-}
-
-#[test]
-fn local_gio_cancel_removes_partial_and_runs_the_waiting_job() {
-    run(async {
-        let (sources, conn) = fixture();
-        std::fs::write(
-            sources.path().join("4.flac"),
-            vec![4_u8; 16 * 1_024 * 1_024],
+fn select_road_playlist(conn: &Rc<RefCell<Connection>>, ids: &[i64]) {
+    conn.borrow()
+        .execute(
+            "INSERT INTO playlists (id, name, position) VALUES (10, 'Road', 0)",
+            [],
         )
         .unwrap();
-        let device_root = tempfile::tempdir().unwrap();
-        let backend = Rc::new(
-            super::device_sync_smoke::SmokeDeviceBackend::for_root(device_root.path()).unwrap(),
-        );
-        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
-
-        runtime
-            .enqueue(super::device_sync_smoke::DEVICE_ID, "Done", &[1])
+    for (position, track_id) in ids.iter().enumerate() {
+        conn.borrow()
+            .execute(
+                "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (10, ?1, ?2)",
+                rusqlite::params![track_id, position as i64],
+            )
             .unwrap();
-        settle_until(
-            &runtime,
-            super::device_sync_smoke::DEVICE_ID,
-            SyncPhase::Complete,
-        )
-        .await;
-
-        let cancelled = Rc::new(Cell::new(false));
-        let cancelled_for_callback = cancelled.clone();
-        let runtime_for_callback = Rc::downgrade(&runtime);
-        let _subscription = runtime.subscribe(Rc::new(move |state| {
-            let Some(device) = state.devices.first() else {
-                return;
-            };
-            if device.snapshot.current_name.as_deref() == Some("4.flac")
-                && device.snapshot.current_bytes > 0
-                && !cancelled_for_callback.replace(true)
-            {
-                if let Some(runtime) = runtime_for_callback.upgrade() {
-                    runtime.cancel_current(super::device_sync_smoke::DEVICE_ID);
-                }
-            }
-        }));
-        runtime
-            .enqueue(super::device_sync_smoke::DEVICE_ID, "Cancel", &[4])
-            .unwrap();
-        runtime
-            .enqueue(super::device_sync_smoke::DEVICE_ID, "Keep", &[2])
-            .unwrap();
-        settle_until(
-            &runtime,
-            super::device_sync_smoke::DEVICE_ID,
-            SyncPhase::Complete,
-        )
-        .await;
-
-        assert!(cancelled.get());
-        assert!(device_root
-            .path()
-            .join("Music/Reprise/Done/1-1.flac")
-            .is_file());
-        assert!(device_root
-            .path()
-            .join("Music/Reprise/Keep/2-2.flac")
-            .is_file());
-        assert!(!device_root
-            .path()
-            .join("Music/Reprise/Cancel/4-4.flac")
-            .exists());
-        assert!(!device_root
-            .path()
-            .join("Music/Reprise/Cancel/4-4.flac.reprise-part")
-            .exists());
-    });
+    }
+    save_road_settings(conn, "a");
 }
 
+fn save_road_settings(conn: &Rc<RefCell<Connection>>, device_id: &str) {
+    save_settings(
+        &conn.borrow(),
+        &DeviceSettings {
+            device_serial: device_id.into(),
+            device_name: format!("Phone {device_id}"),
+            selection: DeviceSelection::Sources(vec![SelectionSource::Playlist(10)]),
+            profile: reprise_core::device_sync::TransferProfile::default(),
+            opus_bitrate: 0,
+            ratings_back: false,
+            remove_deleted: true,
+        },
+    )
+    .unwrap();
+}
+
+#[path = "device_sync_compact_tests.rs"]
+mod compact_tests;
 #[path = "device_sync_planned_tests.rs"]
 mod planned_tests;
+#[path = "device_sync_readback_tests.rs"]
+mod readback_tests;
+#[path = "device_sync_safety_tests.rs"]
+mod safety_tests;
+#[path = "device_sync_transfer_profile_tests.rs"]
+mod transfer_profile_tests;

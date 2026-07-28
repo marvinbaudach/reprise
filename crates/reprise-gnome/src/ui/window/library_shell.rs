@@ -10,7 +10,6 @@ use libadwaita::prelude::*;
 use rusqlite::Connection;
 
 use super::artist_news_worker::ArtistNewsRuntime;
-use super::device_view::DeviceViewPage;
 use super::info_panel::InfoPanel;
 use super::now_playing_wiring;
 use super::player_controller::PlayerController;
@@ -34,7 +33,6 @@ pub(in crate::ui) struct LibraryShell {
 pub(in crate::ui) enum ActiveContentTarget {
     Tracks,
     Stats,
-    Device,
     Concerts,
     Releases,
     Podcasts,
@@ -44,7 +42,6 @@ pub(in crate::ui) enum ActiveContentTarget {
 fn active_content_target(content_name: Option<&str>) -> Option<ActiveContentTarget> {
     match content_name {
         Some("stats") => Some(ActiveContentTarget::Stats),
-        Some("device") => Some(ActiveContentTarget::Device),
         Some("concerts") => Some(ActiveContentTarget::Concerts),
         Some("releases") => Some(ActiveContentTarget::Releases),
         Some("podcasts") => Some(ActiveContentTarget::Podcasts),
@@ -87,7 +84,6 @@ impl ActiveContentFocus {
             Some(ActiveContentTarget::Tracks) => (self.focus_tracks)(),
             Some(
                 ActiveContentTarget::Stats
-                | ActiveContentTarget::Device
                 | ActiveContentTarget::Concerts
                 | ActiveContentTarget::Releases
                 | ActiveContentTarget::Podcasts
@@ -164,7 +160,6 @@ pub(in crate::ui) fn wire_source_routing(
     radio_view: &Rc<crate::ui::radio::RadioView>,
     conn: &Rc<RefCell<Connection>>,
     content_stack: &gtk4::Stack,
-    device_view: &Rc<DeviceViewPage>,
     source_title: &adw::WindowTitle,
     show_content: Rc<dyn Fn()>,
     active_content_focus: &ActiveContentFocus,
@@ -177,7 +172,6 @@ pub(in crate::ui) fn wire_source_routing(
     let releases_view = releases_view.clone();
     let podcasts_view = podcasts_view.clone();
     let radio_view = radio_view.clone();
-    let device_view = device_view.clone();
     let conn = conn.clone();
     let sidebar_for_select = sidebar.clone();
     let show_content_on_select = show_content.clone();
@@ -206,25 +200,22 @@ pub(in crate::ui) fn wire_source_routing(
             Ok(false) => {}
             Err(error) => tracing::error!(%error, "failed to record issue view as viewed"),
         }
-        if let ViewSource::Device { serial } = &source {
-            device_view.show_device(serial);
-            content_stack.set_visible_child_name("device");
-        } else if matches!(source, ViewSource::MyStats) {
-            content_stack.set_visible_child_name("stats");
+        if matches!(source, ViewSource::MyStats) {
+            super::content_stack::show_page(&content_stack, "stats");
             stats_view.prepare_entrance();
             stats_view.refresh(&conn);
         } else if matches!(source, ViewSource::Concerts) {
             concerts_view.refresh();
-            content_stack.set_visible_child_name("concerts");
+            super::content_stack::show_page(&content_stack, "concerts");
         } else if matches!(source, ViewSource::Releases) {
             releases_view.refresh();
-            content_stack.set_visible_child_name("releases");
+            super::content_stack::show_page(&content_stack, "releases");
         } else if matches!(source, ViewSource::Podcasts) {
             podcasts_view.refresh();
-            content_stack.set_visible_child_name("podcasts");
+            super::content_stack::show_page(&content_stack, "podcasts");
         } else if matches!(source, ViewSource::Radio) {
             radio_view.refresh();
-            content_stack.set_visible_child_name("radio");
+            super::content_stack::show_page(&content_stack, "radio");
         } else if matches!(source, ViewSource::Conversions) {
             // INST-13: the conversion/staging view lives on its own page. Ensure
             // it is installed (under the same experimental gate as the sidebar
@@ -232,9 +223,9 @@ pub(in crate::ui) fn wire_source_routing(
             // toggle-on, so without this the selection would land on a missing
             // page and the content would silently stay put.
             crate::ui::instrumental::conversion_wiring::ensure_page_installed();
-            content_stack.set_visible_child_name("conversions");
+            super::content_stack::show_page(&content_stack, "conversions");
         } else {
-            content_stack.set_visible_child_name("library");
+            super::content_stack::show_page(&content_stack, "library");
             track_list.set_source(source);
         }
         source_title.set_title(&source_name);
@@ -288,7 +279,7 @@ pub(in crate::ui) fn route_to_place(
     let source = place.view_source();
     match &source {
         ViewSource::Album { .. } | ViewSource::Artist(_) | ViewSource::Genre(_) => {
-            content_stack.set_visible_child_name("library");
+            super::content_stack::show_page(content_stack, "library");
             let _ = track_list.restore_browser_place(place.browser_place());
             crate::ui::sidebar_session::sync_current_source(&sidebar.shared, &source);
             source_title.set_title(&scope_title(&source));
@@ -395,10 +386,7 @@ mod tests {
             active_content_target(Some("stats")),
             Some(ActiveContentTarget::Stats)
         );
-        assert_eq!(
-            active_content_target(Some("device")),
-            Some(ActiveContentTarget::Device)
-        );
+        assert_eq!(active_content_target(Some("device")), None);
         assert_eq!(
             active_content_target(Some("concerts")),
             Some(ActiveContentTarget::Concerts)
@@ -424,11 +412,9 @@ mod tests {
         gtk4::init().unwrap();
         let tracks = gtk4::Button::with_label("Tracks focus");
         let stats = gtk4::Button::with_label("Stats focus");
-        let device = gtk4::Button::with_label("Device focus");
         let content = gtk4::Stack::new();
         content.add_named(&tracks, Some("library"));
         content.add_named(&stats, Some("stats"));
-        content.add_named(&device, Some("device"));
         content.set_visible_child_name("library");
         let window = gtk4::Window::builder().child(&content).build();
         window.present();
@@ -443,7 +429,6 @@ mod tests {
         for (content_name, expected) in [
             ("library", tracks.upcast_ref::<gtk4::Widget>()),
             ("stats", stats.upcast_ref()),
-            ("device", device.upcast_ref()),
         ] {
             content.set_visible_child_name(content_name);
             assert!(focus.focus());

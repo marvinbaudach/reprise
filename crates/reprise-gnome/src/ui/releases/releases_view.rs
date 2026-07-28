@@ -18,7 +18,6 @@ use super::releases_empty_state::{releases_empty_state_for, ReleasesEmptyState};
 use super::releases_filter_bar::ReleasesFilterBar;
 use super::releases_model::{ReleaseObject, ReleasesModel};
 use super::releases_presentation::{releases_row_action, ReleasesRowAction};
-use super::OnShowAlbum;
 use crate::ui::external_link::{self, LaunchErrorSlot};
 use crate::ui::{one_shot_task, strings};
 
@@ -45,7 +44,6 @@ struct Shared {
     failure: gtk4::Label,
     fetching: Cell<bool>,
     empty_state: Cell<ReleasesEmptyState>,
-    on_show_album: OnShowAlbum,
     on_launch_error: LaunchErrorSlot,
     on_refreshed: RefCell<Option<Callback>>,
 }
@@ -56,11 +54,7 @@ pub(in crate::ui) struct ReleasesView {
 }
 
 impl ReleasesView {
-    pub(in crate::ui) fn new(
-        conn: Rc<RefCell<Connection>>,
-        database_path: PathBuf,
-        on_show_album: OnShowAlbum,
-    ) -> Self {
+    pub(in crate::ui) fn new(conn: Rc<RefCell<Connection>>, database_path: PathBuf) -> Self {
         let model = Rc::new(ReleasesModel::new());
         let filter_bar = ReleasesFilterBar::new(conn.clone());
         let column_view = gtk4::ColumnView::builder()
@@ -81,7 +75,17 @@ impl ReleasesView {
                 set_hidden(&shared, &mbid, hidden);
             }
         });
-        let date_column = releases_columns::append_columns(&column_view, &on_set_hidden);
+        let launch_target = shared_target.clone();
+        let on_open: releases_columns::OnOpenTarget = Rc::new(move |url| {
+            let shared = launch_target
+                .borrow()
+                .as_ref()
+                .and_then(std::rc::Weak::upgrade);
+            if let Some(shared) = shared {
+                external_link::launch(&url, "Bandcamp purchase", Some(&shared.on_launch_error));
+            }
+        });
+        let date_column = releases_columns::append_columns(&column_view, &on_set_hidden, &on_open);
         let scrolled = gtk4::ScrolledWindow::builder()
             .child(&column_view)
             .vexpand(true)
@@ -122,7 +126,6 @@ impl ReleasesView {
             failure,
             fetching: Cell::new(false),
             empty_state: Cell::new(ReleasesEmptyState::NeverFetched),
-            on_show_album,
             on_launch_error: Rc::new(RefCell::new(None)),
             on_refreshed: RefCell::new(None),
         });
@@ -269,9 +272,6 @@ fn activate_position(shared: &Rc<Shared>, position: u32) {
     let entry = object.entry();
     match releases_row_action(&entry, Local::now().date_naive()) {
         ReleasesRowAction::Restore => set_hidden(shared, &entry.release_group_mbid, false),
-        ReleasesRowAction::ShowInLibrary => {
-            (shared.on_show_album)(&entry.title, &entry.artist_name);
-        }
         ReleasesRowAction::OpenAnnouncement(url) => {
             external_link::launch(&url, "release announcement", Some(&shared.on_launch_error));
         }
@@ -306,10 +306,6 @@ fn build_footer() -> (
     updated.add_css_class("caption");
     updated.set_hexpand(true);
     footer.append(&updated);
-    let retention = gtk4::Label::new(Some(&strings::text(strings::RETENTION_SIX_MONTHS)));
-    retention.add_css_class("dim-label");
-    retention.add_css_class("caption");
-    footer.append(&retention);
     let failure = gtk4::Label::new(Some(&strings::text(strings::FETCH_FAILED_INLINE)));
     failure.add_css_class("error");
     failure.add_css_class("caption");
@@ -436,11 +432,11 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn nr_14_releases_view_exposes_filters_five_columns_and_footer() {
+    fn nr_20_releases_view_exposes_filters_six_columns_and_footer() {
         gtk4::init().unwrap();
         let conn = Rc::new(RefCell::new(Connection::open_in_memory().unwrap()));
         reprise_core::db::migrate(&conn.borrow()).unwrap();
-        let view = ReleasesView::new(conn, PathBuf::new(), Rc::new(|_, _| {}));
+        let view = ReleasesView::new(conn, PathBuf::new());
         let root = view.root().clone().downcast::<gtk4::Box>().unwrap();
         assert_eq!(root.observe_children().n_items(), 3);
         let stack = root
@@ -454,7 +450,7 @@ mod tests {
             .and_then(|scrolled| scrolled.child())
             .and_downcast::<gtk4::ColumnView>()
             .unwrap();
-        assert_eq!(table.columns().n_items(), 5);
+        assert_eq!(table.columns().n_items(), 6);
         assert_eq!(
             table
                 .columns()

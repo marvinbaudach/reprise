@@ -1,0 +1,23 @@
+[package]
+name = "reprise-runtime-protocol"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Versioned command and snapshot contract between the Reprise runtime and its clients"
+
+[lints]
+workspace = true
+
+[dependencies]
+# zvariant is the D-Bus *data format*, not the bus: no connection, no async
+# runtime, no service registration. Depending on it here lets one definition
+# serve both the service and its clients, which is the whole point of this
+# crate. `zbus` itself stays optional in the crates that actually talk to a
+# bus (see reprise-mcp's `mpris` feature).
+zvariant = "5"
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"

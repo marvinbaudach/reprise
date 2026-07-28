@@ -97,6 +97,7 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
     // reason as the player's toast overlay above — `track_list` is built
     // before `toast_overlay` exists.
     track_list.set_toast_overlay(toast_overlay);
+    track_list.install_responsive_column_notice(window, toast_overlay);
     // Embed a lightweight scan-progress indicator in the empty-library status
     // page so the user sees scanning feedback during a first scan (before any
     // tracks are in the list). Created here — after both `track_list` and

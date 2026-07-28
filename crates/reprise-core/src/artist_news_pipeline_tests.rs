@@ -90,8 +90,8 @@ fn nr_1a_tag_mbid_skips_search_and_persists_releases() {
         .unwrap();
     assert_eq!(
         future_album.presence,
-        crate::artist_news::LibraryPresence::Complete,
-        "the newly imported album (two local tracks) is marked fully owned"
+        crate::artist_news::LibraryPresence::Partial,
+        "an unreleased album cannot be hidden as fully owned"
     );
     let recent_ep = after_import
         .iter()
@@ -101,6 +101,80 @@ fn nr_1a_tag_mbid_skips_search_and_persists_releases() {
         recent_ep.presence,
         crate::artist_news::LibraryPresence::Absent,
         "an album with no local match stays absent"
+    );
+}
+
+#[test]
+fn dg_3_refresh_pages_the_discography_and_enriches_local_matches() {
+    let conn = migrated_conn();
+    conn.execute(
+        "INSERT INTO tracks (
+           path, title, artist, artist_mbid, album_artist, album, track_no,
+           play_count, added_at
+         ) VALUES (
+           '/music/advance.flac', 'Advance Single', 'Ocean Sleeper', ?1,
+           'Ocean Sleeper', 'Maybe Death Is All I Need', 1, 20, 0
+         )",
+        [ARTIST_ID],
+    )
+    .unwrap();
+    let first_page = r#"{
+      "release-group-count": 3,
+      "release-group-offset": 0,
+      "release-groups": [
+        {"id":"wanted","title":"Maybe Death Is All I Need","first-release-date":"2024-10-18","primary-type":"EP","secondary-types":[]}
+      ]
+    }"#;
+    let second_page = r#"{
+      "release-group-count": 3,
+      "release-group-offset": 1,
+      "release-groups": [
+        {"id":"wanted","title":"Maybe Death Is All I Need","first-release-date":"2024-10-18","primary-type":"EP","secondary-types":[]},
+        {"id":"older","title":"Old Album","first-release-date":"2018-01-01","primary-type":"Album","secondary-types":[]}
+      ]
+    }"#;
+    let details = r#"{"releases":[
+      {"status":"Official","media":[{"track-count":5}]}
+    ]}"#;
+    let mut urls = Vec::new();
+    let mut fetch = |url: &str| {
+        urls.push(url.to_string());
+        if url.contains("/release-group/wanted?") {
+            Ok(details.to_string())
+        } else if url.ends_with("&offset=1") {
+            Ok(second_page.to_string())
+        } else {
+            Ok(first_page.to_string())
+        }
+    };
+
+    let report = refresh_with(
+        &conn,
+        date(),
+        1_000_000,
+        FetchScope::TopArtists,
+        true,
+        &mut fetch,
+        &mut no_accent,
+    )
+    .unwrap();
+
+    assert_eq!(report.releases_upserted, 2);
+    assert_eq!(urls.len(), 3);
+    assert!(urls.iter().any(|url| url.ends_with("&offset=1")));
+    assert!(urls
+        .iter()
+        .any(|url| url.contains("/release-group/wanted?inc=releases%2Bmedia")));
+    let releases = crate::artist_news_history::query_complete_history(&conn, date()).unwrap();
+    let wanted = releases
+        .iter()
+        .find(|release| release.release_group_mbid == "wanted")
+        .unwrap();
+    assert_eq!(wanted.track_count, Some(5));
+    assert_eq!(wanted.local_track_count, 1);
+    assert_eq!(
+        wanted.presence,
+        crate::artist_news::LibraryPresence::Partial
     );
 }
 
@@ -259,7 +333,7 @@ fn nr_3a_seen_item_not_rebadged() {
     )
     .unwrap();
 
-    assert_eq!(unseen_release_count(&conn).unwrap(), 1);
+    assert_eq!(unseen_release_count(&conn, date()).unwrap(), 1);
     let known_seen: Option<i64> = conn
         .query_row(
             "SELECT seen_at FROM new_releases WHERE release_group_mbid = 'known'",

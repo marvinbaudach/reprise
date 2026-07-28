@@ -127,6 +127,10 @@ pub(in crate::ui) struct Shared {
     /// remove+insert snapped the viewport to the top on a double-click-to-play.
     pub(in crate::ui) now_playing_markers:
         RefCell<Vec<super::now_playing_marker::NowPlayingMarker>>,
+    /// Realised rating-cell re-appliers. Rating-only Tag Editor saves use
+    /// these to update stars without an `items_changed` row replacement,
+    /// which would re-anchor the viewport.
+    pub(in crate::ui) rating_cells: RefCell<Vec<super::rating_cell_refresh::RatingCellMarker>>,
     pub(in crate::ui) last_scroll_activity: Cell<Option<std::time::Instant>>,
     /// View position an in-app single-row reorder drag started from — set at
     /// drag-prepare, cleared on drag end/cancel. `None` while no reorder-
@@ -310,6 +314,7 @@ pub struct TrackList {
     pub(in crate::ui) shared: Rc<Shared>,
     pub(in crate::ui) root: gtk4::Box,
     pub(in crate::ui) column_registry: ColumnRegistry,
+    pub(super) responsive_columns: Rc<super::responsive_columns::ResponsiveColumns>,
 }
 
 impl TrackList {
@@ -440,6 +445,14 @@ impl TrackList {
         // right point in construction.
         self.shared.import_errors_view.set_toast_overlay(overlay);
         self.shared.missing_files_view.set_toast_overlay(overlay);
+    }
+
+    pub(in crate::ui) fn install_responsive_column_notice(
+        self: &Rc<Self>,
+        window: &adw::ApplicationWindow,
+        overlay: &adw::ToastOverlay,
+    ) {
+        self.responsive_columns.install_notice(window, overlay);
     }
 
     /// Injects the main window, once it exists — see the `Shared::window`

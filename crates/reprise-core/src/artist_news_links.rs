@@ -9,8 +9,9 @@
 //! pointing at the MusicBrainz release-group page instead.
 
 use serde_json::Value;
+use url::Url;
 
-const BANDCAMP_MARKER: &str = "bandcamp.com";
+const BANDCAMP_HOST: &str = "bandcamp.com";
 const PURCHASE_OR_STREAM_TYPES: &[&str] = &[
     "purchase for download",
     "free streaming",
@@ -50,7 +51,7 @@ fn find_link<'a>(
         if !wanted.contains(&kind) {
             continue;
         }
-        if prefer_bandcamp && url.contains(BANDCAMP_MARKER) {
+        if prefer_bandcamp && bandcamp_purchase_url(Some(url)).is_some() {
             return Some(url);
         }
         if first.is_none() {
@@ -58,6 +59,24 @@ fn find_link<'a>(
         }
     }
     first
+}
+
+/// Returns an unchanged tracking-free Bandcamp album URL, rejecting lookalike hosts.
+#[must_use]
+pub fn bandcamp_purchase_url(value: Option<&str>) -> Option<&str> {
+    let value = value?;
+    let parsed = Url::parse(value).ok()?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return None;
+    }
+    let host = parsed.host_str()?;
+    let mut segments = parsed.path_segments()?;
+    let is_album_page = segments.next() == Some("album")
+        && segments.next().is_some_and(|slug| !slug.trim().is_empty());
+    ((host == BANDCAMP_HOST || host.ends_with(".bandcamp.com"))
+        && is_album_page
+        && parsed.query().is_none())
+    .then_some(value)
 }
 
 /// Persistierte URL oder Fallback auf die MB-Release-Group-Seite.
@@ -146,5 +165,30 @@ mod tests {
                 "https://musicbrainz.org/release-group/abc"
             );
         }
+    }
+
+    #[test]
+    fn nr_20_bandcamp_purchase_url_accepts_only_real_bandcamp_hosts() {
+        for candidate in [
+            "https://oceansleeper.bandcamp.com/album/maybe-death-is-all-i-need",
+            "https://bandcamp.com/album/example",
+        ] {
+            assert_eq!(bandcamp_purchase_url(Some(candidate)), Some(candidate));
+        }
+
+        for candidate in [
+            "https://bandcamp.com.evil.example/album/fake",
+            "https://evilbandcamp.com/album/fake",
+            "https://oceansleeper.bandcamp.com/",
+            "https://bandcamp.com/search?q=Ocean%20Sleeper",
+            "https://oceansleeper.bandcamp.com/album/example?utm_source=reprise",
+            "https://bandcamp.com/album/example?from=discover-top",
+            "file://bandcamp.com/etc/passwd",
+            "javascript:bandcamp.com",
+            "",
+        ] {
+            assert_eq!(bandcamp_purchase_url(Some(candidate)), None);
+        }
+        assert_eq!(bandcamp_purchase_url(None), None);
     }
 }

@@ -4,9 +4,11 @@ use std::future::Future;
 use std::rc::Rc;
 
 use gio::prelude::*;
+use reprise_core::device_sync::DeviceStorageAccess;
 use reprise_core::library::m3u::M3uEntry;
 use tempfile::TempDir;
 
+use super::inspection::storage_access_from_attributes;
 use super::*;
 
 fn run<T>(future: impl Future<Output = T>) -> T {
@@ -46,13 +48,40 @@ fn descriptor_falls_back_to_uri_without_claiming_reconnect_support() {
 #[test]
 fn missing_music_directory_inspects_as_empty() {
     let (_temp, storage) = fixture();
-    let contents = run(storage.inspect()).unwrap();
-    assert!(contents.files.is_empty());
-    assert!(contents.playlists.is_empty());
+    let inspection = run(storage.inspect()).unwrap();
+    assert!(inspection.managed_files.is_empty());
+    assert_eq!(inspection.snapshot.reprise_music_bytes, 0);
+    assert_eq!(inspection.snapshot.other_music_bytes, 0);
+    assert!(inspection.snapshot.free_bytes.is_some());
+    assert!(inspection.snapshot.total_bytes.is_some());
 }
 
 #[test]
-fn inspection_finds_audio_and_reprise_playlists_but_not_other_files() {
+fn storage_access_prefers_read_only_evidence_and_preserves_unknowns() {
+    assert_eq!(
+        storage_access_from_attributes(Some(true), Some(true)),
+        DeviceStorageAccess::ReadOnly
+    );
+    assert_eq!(
+        storage_access_from_attributes(Some(false), Some(false)),
+        DeviceStorageAccess::ReadOnly
+    );
+    assert_eq!(
+        storage_access_from_attributes(None, Some(true)),
+        DeviceStorageAccess::Writable
+    );
+    assert_eq!(
+        storage_access_from_attributes(Some(false), None),
+        DeviceStorageAccess::Unknown
+    );
+    assert_eq!(
+        storage_access_from_attributes(None, None),
+        DeviceStorageAccess::Unknown
+    );
+}
+
+#[test]
+fn inspection_aggregates_music_and_returns_every_authoritative_reprise_file() {
     let (temp, storage) = fixture();
     fs::create_dir_all(temp.path().join("Music/Reprise/Road")).unwrap();
     fs::write(temp.path().join("Music/Reprise/Road/1-song.flac"), b"audio").unwrap();
@@ -64,21 +93,67 @@ fn inspection_finds_audio_and_reprise_playlists_but_not_other_files() {
     )
     .unwrap();
 
-    let contents = run(storage.inspect()).unwrap();
-    let paths = contents
-        .files
+    let inspection = run(storage.inspect()).unwrap();
+    let paths = inspection
+        .managed_files
         .iter()
         .map(|file| file.relative_path.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(paths, ["Reprise/Road/1-song.flac", "loose.mp3"]);
-    assert_eq!(contents.playlists.len(), 1);
-    assert_eq!(contents.playlists[0].name, "Road");
+    assert_eq!(paths, ["Road.m3u8", "Road/1-song.flac"]);
+    assert_eq!(inspection.snapshot.reprise_music_bytes, 30);
+    assert_eq!(inspection.snapshot.other_music_bytes, 6);
     assert_eq!(
-        contents.playlists[0].entries,
-        vec![M3uEntry {
-            path: "Road/1-song.flac".into()
-        }]
+        inspection.snapshot.target_name.as_deref(),
+        temp.path().file_name().and_then(|name| name.to_str())
     );
+}
+
+#[test]
+fn managed_readback_keeps_byte_preserved_originals_with_unlisted_extensions() {
+    let (temp, storage) = fixture();
+    fs::create_dir_all(temp.path().join("Music/Reprise/Artist/Album")).unwrap();
+    fs::write(
+        temp.path()
+            .join("Music/Reprise/Artist/Album/01 Original.aiff"),
+        b"original",
+    )
+    .unwrap();
+    fs::write(
+        temp.path().join("Music/Reprise/Originals.m3u8"),
+        b"#EXTM3U\nArtist/Album/01 Original.aiff\n",
+    )
+    .unwrap();
+    fs::write(
+        temp.path()
+            .join("Music/Reprise/Artist/Album/unfinished.aiff.part"),
+        b"partial",
+    )
+    .unwrap();
+
+    let inspection = run(storage.inspect()).unwrap();
+    assert_eq!(
+        inspection
+            .managed_files
+            .iter()
+            .map(|file| file.relative_path.as_str())
+            .collect::<Vec<_>>(),
+        ["Artist/Album/01 Original.aiff", "Originals.m3u8"]
+    );
+    assert_eq!(inspection.snapshot.reprise_music_bytes, 46);
+}
+
+#[test]
+fn storage_volume_choice_prefers_internal_storage_and_otherwise_stays_deterministic() {
+    let volumes = vec!["SD Card".to_string(), "Internal shared storage".to_string()];
+    assert_eq!(
+        choose_storage_volume(&volumes),
+        Some("Internal shared storage".into())
+    );
+    assert_eq!(
+        choose_storage_volume(&["SD Card".into(), "Phone storage".into()]),
+        Some("Phone storage".into())
+    );
+    assert_eq!(choose_storage_volume(&[]), None);
 }
 
 #[test]
@@ -113,7 +188,7 @@ fn copy_creates_managed_directories_and_reports_progress() {
 }
 
 #[test]
-fn same_size_destination_is_skipped_without_overwrite() {
+fn mtp_17_same_size_untracked_destination_is_overwritten() {
     let (temp, storage) = fixture();
     fs::create_dir_all(temp.path().join("Music/Reprise/Road")).unwrap();
     fs::write(temp.path().join("source.flac"), b"new!").unwrap();
@@ -130,10 +205,10 @@ fn same_size_destination_is_skipped_without_overwrite() {
         |_copied, _total| {},
     ))
     .unwrap();
-    assert_eq!(outcome, CopyOutcome::Skipped);
+    assert_eq!(outcome, CopyOutcome::Copied);
     assert_eq!(
         fs::read(temp.path().join("Music/Reprise/Road/7-source.flac")).unwrap(),
-        b"old!"
+        b"new!"
     );
 }
 
@@ -162,6 +237,36 @@ fn replace_track_overwrites_a_changed_file_even_when_its_size_is_unchanged() {
         fs::read(temp.path().join("Music/Reprise/Road/7-source.flac")).unwrap(),
         b"new!"
     );
+}
+
+#[test]
+fn replacement_verifies_the_partial_size_before_overwriting_the_final_file() {
+    let (temp, storage) = fixture();
+    fs::create_dir_all(temp.path().join("Music/Reprise/Road")).unwrap();
+    fs::write(temp.path().join("source.flac"), b"short").unwrap();
+    let final_path = temp.path().join("Music/Reprise/Road/7-source.flac");
+    fs::write(&final_path, b"known-good").unwrap();
+
+    let result = run(storage.replace_track(
+        &gio::File::for_path(temp.path().join("source.flac")),
+        "Road/7-source.flac",
+        6,
+        &gio::Cancellable::new(),
+        |_copied, _total| {},
+    ));
+
+    assert!(matches!(
+        result,
+        Err(DeviceIoError::SizeMismatch {
+            expected: 6,
+            actual: 5,
+        })
+    ));
+    assert_eq!(fs::read(final_path).unwrap(), b"known-good");
+    assert!(!temp
+        .path()
+        .join("Music/Reprise/Road/7-source.flac.part")
+        .exists());
 }
 
 #[test]

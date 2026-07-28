@@ -54,33 +54,20 @@ enum Recorded {
     QueueClear,
     ConfigureDevice {
         device_name: String,
-        playlist_name: String,
-        remove_unselected: bool,
-        bitrate_kbps: u32,
+        sources: Vec<DeviceSourceSelection>,
+        profile: String,
     },
     StartDevice(String),
     CancelDevice(String),
+    EjectDevice(String),
 }
 
 type Calls = Arc<Mutex<Vec<Recorded>>>;
-type DeviceSyncRow = (
-    String,
-    bool,
-    bool,
-    u64,
-    bool,
-    u64,
-    u64,
-    u64,
-    u64,
-    u64,
-    u64,
-    String,
-    u64,
-    u64,
-    u64,
-    String,
-);
+use reprise_runtime_protocol::device_sync::{
+    DeviceChangeCounts, DeviceControls, DeviceProgress, DeviceSnapshot, DeviceSourceSelection,
+    DeviceSourceSnapshot, DeviceStorageComposition, DeviceStorageSnapshot,
+};
+use reprise_runtime_protocol::PROTOCOL_VERSION;
 
 /// Stub for the standard MPRIS `Player` interface. Each Rust method maps to its
 /// PascalCase D-Bus name (`play` → `Play`), matching what
@@ -212,42 +199,107 @@ struct DeviceSyncStub {
 
 #[interface(name = "org.reprise.DeviceSync1")]
 impl DeviceSyncStub {
-    fn snapshot(&self) -> Vec<DeviceSyncRow> {
-        vec![(
-            "Pixel".into(),
-            true,
-            true,
-            80,
-            true,
-            100,
-            75,
-            200,
-            125,
-            75,
-            60,
-            "copying".into(),
-            20,
-            60,
-            10,
-            "Sun//Eater — Lorna Shore".into(),
-        )]
+    /// The stub speaks the version this build ships, so the client's
+    /// handshake passes and the test exercises decoding rather than the
+    /// refusal path.
+    #[zbus(property)]
+    fn protocol_version(&self) -> (u32, u32) {
+        (PROTOCOL_VERSION.major, PROTOCOL_VERSION.minor)
     }
 
-    fn configure_playlist(
-        &self,
-        device_name: &str,
-        playlist_name: &str,
-        remove_unselected: bool,
-        bitrate_kbps: u32,
-    ) {
+    fn snapshot(&self) -> Vec<DeviceSnapshot> {
+        vec![DeviceSnapshot {
+            name: "Pixel".into(),
+            connected: true,
+            profile: "original".into(),
+            managed_tracks: 75,
+            unique_track_count: 200,
+            target_bytes: 80,
+            sources: vec![
+                DeviceSourceSnapshot {
+                    kind: "playlist".into(),
+                    id: 3,
+                    name: Some("Lorna Shore & Similar".into()),
+                    selected: true,
+                    available: true,
+                    entry_count: 220,
+                    unique_track_count: 200,
+                    unavailable_count: 2,
+                    target_bytes: 80,
+                    last_synced_at: Some(1_721_234_567),
+                },
+                DeviceSourceSnapshot {
+                    kind: "smart".into(),
+                    id: 7,
+                    name: Some("Heavy rotation".into()),
+                    selected: true,
+                    available: true,
+                    entry_count: 50,
+                    unique_track_count: 50,
+                    unavailable_count: 0,
+                    target_bytes: 20,
+                    last_synced_at: None,
+                },
+            ],
+            changes: DeviceChangeCounts {
+                additions: 120,
+                replacements: 5,
+                removals: 75,
+                retained_unavailable: 2,
+                playlist_writes: 1,
+                playlist_removals: 0,
+                transfer_bytes: 60,
+            },
+            storage: DeviceStorageSnapshot {
+                target_name: Some("Internal storage".into()),
+                state: "fits".into(),
+                shortfall_bytes: None,
+                transfer_bytes: 60,
+                current: DeviceStorageComposition {
+                    total_bytes: Some(100),
+                    reprise_music_bytes: 20,
+                    other_music_bytes: 10,
+                    other_used_bytes: Some(30),
+                    free_bytes: Some(40),
+                    knowledge: "complete".into(),
+                },
+                after_sync: Some(DeviceStorageComposition {
+                    total_bytes: Some(100),
+                    reprise_music_bytes: 80,
+                    other_music_bytes: 10,
+                    other_used_bytes: Some(10),
+                    free_bytes: Some(0),
+                    knowledge: "complete".into(),
+                }),
+                access: "writable".into(),
+            },
+            blockers: Vec::new(),
+            warnings: vec!["unavailable_not_on_device".into()],
+            controls: DeviceControls {
+                editable: false,
+                can_start: false,
+                can_cancel: true,
+                can_eject: false,
+            },
+            phase: "copying".into(),
+            progress: DeviceProgress {
+                bytes_done: 20,
+                bytes_total: 60,
+                bytes_per_second: 10,
+            },
+            current_track: "Sun//Eater — Lorna Shore".into(),
+            last_synced_at: Some(1_721_234_890),
+        }]
+    }
+
+    fn configure(&self, device_name: &str, sources: Vec<DeviceSourceSelection>, profile: &str) {
         self.calls
             .lock()
             .expect("calls lock")
             .push(Recorded::ConfigureDevice {
                 device_name: device_name.to_owned(),
-                playlist_name: playlist_name.to_owned(),
-                remove_unselected,
-                bitrate_kbps,
+                sources,
+                profile: profile.to_owned(),
             });
     }
 
@@ -263,6 +315,13 @@ impl DeviceSyncStub {
             .lock()
             .expect("calls lock")
             .push(Recorded::CancelDevice(device_name.to_owned()));
+    }
+
+    fn eject(&self, device_name: &str) {
+        self.calls
+            .lock()
+            .expect("calls lock")
+            .push(Recorded::EjectDevice(device_name.to_owned()));
     }
 }
 
@@ -357,21 +416,55 @@ fn device_sync_state_and_commands_round_trip_without_internal_identity() {
     let state = client.call_tool("music_get_device_sync_state", json!({}));
     let body = structured_ok(&state);
     assert_eq!(body["devices"][0]["name"], "Pixel");
-    assert_eq!(body["devices"][0]["available_bytes"], 80);
-    assert_eq!(body["devices"][0]["bytes_per_second"], 10);
+    assert_eq!(body["devices"][0]["profile"], "original");
+    assert_eq!(body["devices"][0]["last_synced_at"], 1_721_234_890_i64);
+    assert_eq!(body["devices"][0]["unique_track_count"], 200);
+    assert_eq!(
+        body["devices"][0]["playlists"][0]["unique_track_count"],
+        200
+    );
+    assert_eq!(body["devices"][0]["playlists"][1]["unique_track_count"], 50);
+    assert_eq!(body["devices"][0]["playlists"][1]["selected"], true);
+    assert!(
+        body["devices"][0]["playlists"][0]["unique_track_count"]
+            .as_u64()
+            .unwrap()
+            + body["devices"][0]["playlists"][1]["unique_track_count"]
+                .as_u64()
+                .unwrap()
+            > body["devices"][0]["unique_track_count"].as_u64().unwrap(),
+        "overlapping selected playlists must expose a smaller deduplicated device total"
+    );
+    assert_eq!(
+        body["devices"][0]["playlists"][0]["last_synced_at"],
+        1_721_234_567_i64
+    );
+    assert!(body["devices"][0]["playlists"][1]["last_synced_at"].is_null());
+    assert_eq!(body["devices"][0]["playlists"][0]["kind"], "playlist");
+    assert_eq!(body["devices"][0]["playlists"][1]["kind"], "smart");
+    assert_eq!(body["devices"][0]["changes"]["replacements"], 5);
+    assert_eq!(body["devices"][0]["storage"]["current"]["free_bytes"], 40);
+    assert_eq!(body["devices"][0]["storage"]["after_sync"]["free_bytes"], 0);
+    assert_eq!(body["devices"][0]["storage"]["access"], "writable");
+    assert_eq!(body["devices"][0]["progress"]["bytes_per_second"], 10);
+    assert_eq!(body["devices"][0]["controls"]["can_cancel"], true);
+    assert_eq!(body["devices"][0]["controls"]["can_eject"], false);
     assert!(!state.to_string().contains("serial"));
     assert!(!state.to_string().contains("path"));
 
     for params in [
         json!({
-            "action": "configure_playlist",
+            "action": "configure",
             "device_name": "Pixel",
-            "playlist_name": "Lorna Shore & Similar · 200",
-            "remove_unselected": true,
-            "bitrate_kbps": 256
+            "sources": [
+                { "kind": "playlist", "id": 3 },
+                { "kind": "smart", "id": 7 }
+            ],
+            "profile": "mp3_256"
         }),
         json!({ "action": "start", "device_name": "Pixel" }),
         json!({ "action": "cancel", "device_name": "Pixel" }),
+        json!({ "action": "eject", "device_name": "Pixel" }),
     ] {
         let response = client.call_tool("music_device_sync", params);
         assert!(!tool_success_text(&response).is_empty());
@@ -382,12 +475,21 @@ fn device_sync_state_and_commands_round_trip_without_internal_identity() {
         vec![
             Recorded::ConfigureDevice {
                 device_name: "Pixel".into(),
-                playlist_name: "Lorna Shore & Similar · 200".into(),
-                remove_unselected: true,
-                bitrate_kbps: 256,
+                sources: vec![
+                    DeviceSourceSelection {
+                        kind: "playlist".into(),
+                        id: 3,
+                    },
+                    DeviceSourceSelection {
+                        kind: "smart".into(),
+                        id: 7,
+                    },
+                ],
+                profile: "mp3_256".into(),
             },
             Recorded::StartDevice("Pixel".into()),
             Recorded::CancelDevice("Pixel".into()),
+            Recorded::EjectDevice("Pixel".into()),
         ]
     );
 }
