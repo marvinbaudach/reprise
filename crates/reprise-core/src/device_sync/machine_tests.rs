@@ -206,7 +206,7 @@ fn mtp_o2_one_failed_track_suppresses_every_playlist_and_every_removal() {
     assert_eq!(
         after_failure,
         vec![Effect::Finished(SyncOutcome::Failed {
-            message: "1 synchronization items failed".into(),
+            terminal_error: None,
             failed_tracks: vec![1],
         })],
         "preserved oddity: playlists and removals are skipped wholesale"
@@ -225,7 +225,7 @@ fn a_failed_partial_cleanup_ends_the_run_before_any_transfer() {
     assert_eq!(
         machine.dispatch(Event::PartialsCleaned(Err("stale handle".into()))),
         vec![Effect::Finished(SyncOutcome::Failed {
-            message: "could not clean partial sync files: stale handle".into(),
+            terminal_error: Some("could not clean partial sync files: stale handle".into()),
             failed_tracks: Vec::new(),
         })]
     );
@@ -358,7 +358,7 @@ fn a_failed_inventory_row_fails_the_track_and_keeps_the_old_file() {
     assert_eq!(
         machine.dispatch(Event::FileRecorded(Err("database is locked".into()))),
         vec![Effect::Finished(SyncOutcome::Failed {
-            message: "1 synchronization items failed".into(),
+            terminal_error: None,
             failed_tracks: vec![1],
         })],
         "the replaced file stays until its inventory row exists"
@@ -527,7 +527,7 @@ fn a_still_mirrored_playlist_keeps_its_file_when_its_write_failed() {
     assert_eq!(
         after_failed_write,
         vec![Effect::Finished(SyncOutcome::Failed {
-            message: "1 synchronization items failed".into(),
+            terminal_error: None,
             failed_tracks: vec![-1],
         })],
         "the stale playlist file survives a failed rewrite"

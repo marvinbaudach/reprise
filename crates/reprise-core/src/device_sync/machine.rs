@@ -119,7 +119,10 @@ pub enum SyncOutcome {
     },
     Cancelled,
     Failed {
-        message: String,
+        /// Set when a whole stage failed rather than individual tracks. The
+        /// frontend composes the message it shows; wording is not the core's
+        /// business, so a run that merely lost tracks reports only their ids.
+        terminal_error: Option<String>,
         failed_tracks: Vec<i64>,
     },
 }
@@ -579,12 +582,8 @@ impl DeviceSyncMachine {
         if self.cancelled {
             return vec![Effect::Finished(SyncOutcome::Cancelled)];
         }
-        let message = self
-            .terminal_error
-            .clone()
-            .unwrap_or_else(|| format!("{} synchronization items failed", self.failures.len()));
         vec![Effect::Finished(SyncOutcome::Failed {
-            message,
+            terminal_error: self.terminal_error.clone(),
             failed_tracks: self.failures.clone(),
         })]
     }
