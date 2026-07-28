@@ -218,10 +218,10 @@ and Rustdoc with warnings denied, the isolated workspace tests, and
 `cargo audit` with no advisory beyond the explicitly accepted `paste`
 maintenance warning.
 
-Merge readiness also runs `scripts/check-ux-traceability.sh`: every `[aktiv]`
+Merge readiness also runs `scripts/check-ux-traceability.sh`: every `[active]`
 rule in `docs/ux-rules.md` needs a rule-named test, no test may reference an
-unknown or replaced rule ID, no `[aktiv]` rule test may be `#[ignore]`d, and
-every `#[ignore]` on a rule-named test must read `UX <ID> [geplant] — …`.
+unknown or replaced rule ID, no `[active]` rule test may be `#[ignore]`d, and
+every `#[ignore]` on a rule-named test must read `UX <ID> [planned] — …`.
 Only real `#[test]` fns and executed cua-e2e lines count as coverage — a
 same-named helper fn or a comment does not.
 

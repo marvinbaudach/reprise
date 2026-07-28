@@ -53,8 +53,8 @@ if [[ $mode == rule-named ]]; then
   declare -A status_of
   while read -r id st; do
     status_of[$id]=$st
-  done < <(grep -oE '^- \*\*[A-Z]+-[0-9]+[a-z]?\*\* \[(aktiv|geplant|ersetzt)' "$doc" \
-    | sed -E 's/^- \*\*([A-Z]+-[0-9]+[a-z]?)\*\* \[(aktiv|geplant|ersetzt)/\1 \2/')
+  done < <(grep -oE '^- \*\*[A-Z]+-[0-9]+[a-z]?\*\* \[(active|planned|replaced)' "$doc" \
+    | sed -E 's/^- \*\*([A-Z]+-[0-9]+[a-z]?)\*\* \[(active|planned|replaced)/\1 \2/')
   prefixes=$(printf '%s\n' "${!status_of[@]}" | sed -E 's/-.*$//' \
     | sort -u | tr '[:upper:]' '[:lower:]' | paste -sd'|')
   [[ -n $prefixes ]] || { echo "check-display-tests: no rules found in $doc" >&2; exit 1; }
