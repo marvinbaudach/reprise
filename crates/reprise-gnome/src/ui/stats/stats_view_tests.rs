@@ -206,12 +206,7 @@ fn wait_for_layout() {
 }
 
 fn wait_for(milliseconds: u64) {
-    let main_loop = gtk4::glib::MainLoop::new(None, false);
-    let quit = main_loop.clone();
-    gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(milliseconds), move || {
-        quit.quit();
-    });
-    main_loop.run();
+    crate::ui::test_settle::settle_for(std::time::Duration::from_millis(milliseconds));
 }
 
 /// One track with one play in the current period, so the page stack shows
