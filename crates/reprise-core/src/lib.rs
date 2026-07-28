@@ -72,6 +72,7 @@ pub mod radio;
 pub mod scrobbling;
 pub mod stem_separation;
 pub mod up_next;
+pub mod updates;
 pub mod view_source;
 pub mod visuals;
 pub mod waveform;

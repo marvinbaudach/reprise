@@ -76,6 +76,26 @@ pub fn default_path() -> std::path::PathBuf {
         .join("reprise/reprise.db")
 }
 
+/// The file this connection is attached to, if it has one.
+///
+/// Background work opens its own connection rather than sharing the
+/// frontend's, so it needs the path — and asking the connection is more
+/// honest than assuming [`default_path`], which is wrong under a test
+/// fixture or an explicitly chosen library. An in-memory database has no
+/// file and yields `None`.
+pub fn main_path(conn: &Connection) -> Option<std::path::PathBuf> {
+    let mut statement = conn.prepare("PRAGMA database_list").ok()?;
+    let mut rows = statement.query([]).ok()?;
+    while let Some(row) = rows.next().ok()? {
+        let name = row.get::<_, String>(1).ok()?;
+        let path = row.get::<_, String>(2).ok()?;
+        if name == "main" && !path.is_empty() {
+            return Some(std::path::PathBuf::from(path));
+        }
+    }
+    None
+}
+
 const SCHEMA_V1: &str = r#"
 CREATE TABLE tracks (
   id            INTEGER PRIMARY KEY,

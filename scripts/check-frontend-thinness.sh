@@ -30,7 +30,7 @@ echo "== Frontend thinness =="
 # count. Lower it in the same commit that removes a use. Never raise one
 # without a reason recorded in the commit message.
 declare -A budget=(
-  [rusqlite]=542
+  [rusqlite]=537
   [filesystem]=17
   [threads]=15
   [workers]=8
