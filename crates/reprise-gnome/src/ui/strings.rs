@@ -104,6 +104,13 @@ mod radio;
 #[allow(unused_imports)]
 pub use radio::*;
 
+// SRC-7: the row-level add action is shared by Podcasts, YouTube and Radio,
+// so its wording lives in one place instead of three.
+#[path = "strings_sources.rs"]
+mod sources;
+#[allow(unused_imports)]
+pub use sources::*;
+
 pub const ONBOARDING_WELCOME: &str = N_!("Welcome to Reprise");
 pub const ONBOARDING_PRIVACY: &str = N_!("Reprise keeps your library local. Missing album covers are retrieved automatically from MusicBrainz and Cover Art Archive. Music files are changed only when you explicitly edit tags or move tracks to Trash.");
 pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX: &str = N_!("Import from Rhythmbox");

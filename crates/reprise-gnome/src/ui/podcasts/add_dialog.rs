@@ -10,6 +10,7 @@ use reprise_core::podcasts::{self, PodcastKind};
 use rusqlite::Connection;
 
 use crate::ui::one_shot_task;
+use crate::ui::source_add_action;
 use crate::ui::strings;
 
 use super::add_dialog_input::{
@@ -82,6 +83,15 @@ fn build_surface(kind: PodcastKind) -> AddDialogSurface {
         .child(&results)
         .build();
     content.append(&scroller);
+
+    // SRC-7: say once why an added source stops appearing, instead of letting
+    // it vanish unexplained on the next search.
+    let footnote = gtk4::Label::new(Some(&strings::text(strings::SOURCE_SUBSCRIBED_DROP_OUT)));
+    footnote.add_css_class("caption");
+    footnote.add_css_class("dim-label");
+    footnote.set_xalign(0.0);
+    footnote.set_wrap(true);
+    content.append(&footnote);
 
     let cancel = gtk4::Button::with_label(&strings::text(strings::PODCAST_CANCEL));
     let primary = gtk4::Button::with_label(&strings::text(strings::PODCAST_SEARCH));
@@ -483,12 +493,11 @@ fn append_candidate(
         candidate.kind,
         candidate.image_url.as_deref(),
     );
-    let button = gtk4::Button::with_label(&strings::text(strings::PODCAST_SUBSCRIBE));
-    button.add_css_class("suggested-action");
+    // SRC-7: the same compact action every discovery row uses.
+    let title = candidate.title.clone();
+    let button = source_add_action::add_button(source_add_action::AddActionKind::Subscribe, &title);
     let conn = conn.clone();
     let on_added = on_added.clone();
-    let row_weak = row.downgrade();
-    let parent_weak = parent.downgrade();
     button.connect_clicked(move |button| {
         let result = {
             let conn = conn.borrow();
@@ -497,9 +506,13 @@ fn append_candidate(
         match result {
             Ok(_) => {
                 on_added(true);
-                if let (Some(parent), Some(row)) = (parent_weak.upgrade(), row_weak.upgrade()) {
-                    remove_candidate_result(&parent, &row);
-                }
+                // SRC-5/SRC-7: acknowledge in place; only the next submitted
+                // search drops the row.
+                source_add_action::mark_added(
+                    button,
+                    source_add_action::AddActionKind::Subscribe,
+                    &title,
+                );
             }
             Err(error) => button.set_tooltip_text(Some(&error.to_string())),
         }
@@ -638,16 +651,6 @@ fn clear(parent: &gtk4::Box) {
     }
 }
 
-fn remove_candidate_result(parent: &gtk4::Box, row: &gtk4::Box) {
-    parent.remove(row);
-    if parent
-        .first_child()
-        .is_some_and(|child| child.next_sibling().is_none())
-    {
-        clear(parent);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -688,7 +691,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn src_5_successful_subscribe_removes_the_result_row() {
+    fn src_7_a_successful_subscribe_acknowledges_the_row_in_place() {
         gtk4::init().unwrap();
         let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
         let parent = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
@@ -720,7 +723,17 @@ mod tests {
             .expect("subscribe button");
         button.emit_clicked();
 
-        assert!(parent.first_child().is_none());
+        // SRC-7: the row stays so the add is visibly acknowledged; only the
+        // next submitted search drops it (SRC-5).
+        assert!(
+            parent.first_child().is_some(),
+            "the result row must survive a successful add"
+        );
+        assert!(
+            !button.is_sensitive(),
+            "the acknowledged action must not be pressable again"
+        );
+        assert!(button.has_css_class("reprise-source-added"));
     }
 
     #[test]

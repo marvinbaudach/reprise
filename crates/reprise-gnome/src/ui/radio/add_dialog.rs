@@ -10,7 +10,7 @@ use reprise_core::radio::search::StationCandidate;
 use reprise_core::radio::{self, RadioError};
 use rusqlite::Connection;
 
-use crate::ui::{one_shot_task, strings};
+use crate::ui::{one_shot_task, source_add_action, strings};
 
 type AddedCallback = Rc<dyn Fn()>;
 
@@ -241,7 +241,13 @@ impl RadioAddDialog {
         buttons.append(&cancel);
         buttons.append(&confirm);
 
-        let footnote = gtk4::Label::new(Some(&strings::text(strings::RADIO_COMMUNITY_FOOTNOTE)));
+        // SRC-7: the same two-line footing as the podcast and channel dialogs —
+        // where the results come from, and why added ones stop appearing.
+        let footnote = gtk4::Label::new(Some(&format!(
+            "{}\n{}",
+            strings::text(strings::RADIO_COMMUNITY_FOOTNOTE),
+            strings::text(strings::SOURCE_SUBSCRIBED_DROP_OUT)
+        )));
         footnote.set_xalign(0.0);
         footnote.set_wrap(true);
         footnote.add_css_class("dim-label");
@@ -462,12 +468,12 @@ impl RadioAddDialog {
             details.add_css_class("caption");
             copy.append(&title);
             copy.append(&details);
-            let add = gtk4::Button::with_label(&strings::text(strings::RADIO_ADD_RESULT));
+            // SRC-7: the same compact action the podcast and channel dialogs use.
+            let station_name = candidate.name.clone();
+            let add =
+                source_add_action::add_button(source_add_action::AddActionKind::Add, &station_name);
             let conn = self.conn.clone();
             let on_added = self.on_added.clone();
-            let row_weak = row.downgrade();
-            let results_weak = self.widgets.results.downgrade();
-            let status_weak = self.widgets.status.downgrade();
             add.connect_clicked(move |button| {
                 let station = station_from_candidate(candidate.clone());
                 let result = {
@@ -477,22 +483,17 @@ impl RadioAddDialog {
                 match result {
                     Ok(_) => {
                         on_added();
-                        if let (Some(results), Some(row)) =
-                            (results_weak.upgrade(), row_weak.upgrade())
-                        {
-                            results.remove(&row);
-                            if let Some(status) = status_weak.upgrade() {
-                                status.set_text(&format!(
-                                    "{} · {}",
-                                    strings::text(strings::RADIO_RESULTS_HEADER),
-                                    strings::radio_results_count(child_count(&results))
-                                ));
-                            }
-                        }
+                        // SRC-7: acknowledge in place instead of removing the
+                        // row, so the add stays visible.
+                        source_add_action::mark_added(
+                            button,
+                            source_add_action::AddActionKind::Add,
+                            &station_name,
+                        );
                     }
                     Err(error) => {
                         tracing::warn!(%error, "could not add radio search result");
-                        button.set_label(&strings::text(strings::RADIO_ADD_FAILED));
+                        button.set_tooltip_text(Some(&strings::text(strings::RADIO_ADD_FAILED)));
                     }
                 }
             });

@@ -2609,6 +2609,17 @@ Hörstatistik.
   abgelehnt und einzeilig begründet — sie wird weder ausgewertet noch still an
   einen anderen Dialog übergeben, und der Primär-Button bleibt dabei inaktiv.
   Der Hinweis erscheint bereits beim Tippen, nicht erst beim Absenden.
+- **SRC-7** [aktiv] [gtk] — Alle Ergebniszeilen in allen drei Add-Dialogen
+  tragen dieselbe kompakte Aktion: Plus-Icon plus kurze Beschriftung „Add".
+  Nach dem Hinzufügen wird genau dieselbe Fläche zum inaktiven „Added" mit
+  Haken-Icon — die Zeile verschwindet **nicht** sofort, damit der Erfolg
+  sichtbar bleibt; erst die nächste abgeschickte Suche blendet die Quelle aus
+  (SRC-5). Weil die sichtbare Beschriftung die Quelle nicht benennen kann,
+  tragen barrierefreier Name und Tooltip immer den vollen Satz
+  („Subscribe to {source}", „Add {source}", „{source} is already in your
+  library"). Angeboten und hinzugefügt unterscheiden sich nie allein durch
+  Farbe oder zwei fast gleich aussehende Theme-Glyphen. Jeder Dialog erklärt
+  einmal im Fuß, dass abonnierte Quellen aus späteren Suchen herausfallen.
 - **POD-1** [aktiv] [core] — Episodenstatus ist pure Ableitung: Played
   genau bei gesetztem `played_at`, sonst Resume bei `position_ms > 0`, sonst
   New. Ein Episodenende setzt Played und löscht die Position.
