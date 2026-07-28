@@ -2,7 +2,7 @@
 
 use reprise_runtime_protocol::device_run::DeviceRunSnapshot;
 use reprise_runtime_protocol::jobs::{JobCommand, JobSnapshot};
-use reprise_runtime_protocol::playback::{PlaybackCommand, PlaybackSnapshot};
+use reprise_runtime_protocol::playback::{ExternalMedia, PlaybackCommand, PlaybackSnapshot};
 use reprise_runtime_protocol::queue::{QueueCommand, QueueSnapshot};
 use reprise_runtime_protocol::runtime::RuntimeSnapshot;
 
@@ -19,6 +19,8 @@ pub enum RuntimeCommand {
         track_ids: Vec<i64>,
         start_index: usize,
     },
+    /// Play a stream, a podcast episode or a preview render.
+    PlayExternal(ExternalMedia),
     Job(JobCommand),
     DeviceStart {
         device: String,
@@ -69,6 +71,7 @@ impl RuntimeCommand {
                 "PlayTracks",
                 Body::Tracks(track_ids.clone(), *start_index as u64),
             ),
+            Self::PlayExternal(media) => ("PlayExternal", Body::External(media.clone())),
             Self::Job(JobCommand::Cancel(job_id)) => ("JobCancel", Body::Id(*job_id)),
             Self::Job(JobCommand::Save(job_id)) => ("JobSave", Body::Id(*job_id)),
             Self::Job(JobCommand::Discard(job_id)) => ("JobDiscard", Body::Id(*job_id)),
@@ -95,6 +98,7 @@ pub(super) enum Body {
     Position(u64),
     Positions(Vec<u64>),
     Move(u64, u64),
+    External(ExternalMedia),
 }
 
 /// What a surface hears from the runtime.

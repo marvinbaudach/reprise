@@ -590,3 +590,66 @@ fn the_queue_commands_a_queue_view_needs_all_survive_the_wire() {
     assert_eq!(stale.kind(), "rejected:no_such_queue_entry");
     client.shutdown();
 }
+
+#[test]
+#[ignore = "requires a session bus; run via dbus-run-session"]
+fn a_stream_plays_beside_the_queue_and_does_not_hand_back_to_it() {
+    use reprise_runtime_protocol::playback::ExternalMedia;
+
+    let served = Served::start("external", Duration::from_secs(60));
+    let (client, events) =
+        start_with_bus_name(vec!["playback:control".to_owned()], served.bus_name.clone());
+    await_event(
+        &events,
+        |event| matches!(event, ClientEvent::Connected(_)),
+        "connection",
+    );
+    client
+        .call(RuntimeCommand::PlayTracks {
+            track_ids: vec![1, 2, 3],
+            start_index: 0,
+        })
+        .expect("playing the queue succeeds");
+
+    client
+        .call(RuntimeCommand::PlayExternal(ExternalMedia {
+            location: "https://stream.example/live".into(),
+            remote: true,
+            title: "Morning Show".into(),
+            artist: "Example FM".into(),
+            duration_ms: 0,
+        }))
+        .expect("playing a stream succeeds");
+
+    let event = await_event(
+        &events,
+        |event| match event {
+            ClientEvent::PlaybackChanged { snapshot, .. } => snapshot.title == "Morning Show",
+            _ => false,
+        },
+        "the stream's delta",
+    );
+    let ClientEvent::PlaybackChanged { snapshot, .. } = event else {
+        unreachable!("the matcher only accepts PlaybackChanged")
+    };
+    assert_eq!(
+        snapshot.track_id, None,
+        "a stream has no library id on the wire either"
+    );
+    assert_eq!(snapshot.artist, "Example FM");
+
+    // The queue is still there to go back to. Read through a second peer,
+    // because a snapshot is what any surface would take after a stream ends.
+    let observer = served.client();
+    let seen = observer.connect().expect("a second peer connects");
+    assert!(
+        !seen.queue.context_track_ids.is_empty(),
+        "the music the stream interrupted is still queued"
+    );
+    assert_eq!(
+        seen.playback.title, "Morning Show",
+        "and the stream is what is playing"
+    );
+
+    client.shutdown();
+}

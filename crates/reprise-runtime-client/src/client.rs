@@ -319,6 +319,16 @@ impl Worker {
             Body::Position(position) => proxy.call::<_, _, ()>(method, &(position,)),
             Body::Positions(positions) => proxy.call::<_, _, ()>(method, &(positions,)),
             Body::Move(from, to) => proxy.call::<_, _, ()>(method, &(from, to)),
+            Body::External(media) => proxy.call::<_, _, ()>(
+                method,
+                &(
+                    media.location,
+                    media.remote,
+                    media.title,
+                    media.artist,
+                    media.duration_ms,
+                ),
+            ),
         };
         outcome.map_err(|error| ClientError::from_bus(&error))
     }

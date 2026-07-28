@@ -14,7 +14,7 @@
 use reprise_runtime::{Command, DeviceCommand, RuntimeError};
 use reprise_runtime_protocol::device_run::DeviceRunSnapshot;
 use reprise_runtime_protocol::jobs::{JobCommand, JobSnapshot};
-use reprise_runtime_protocol::playback::{PlaybackCommand, PlaybackSnapshot};
+use reprise_runtime_protocol::playback::{ExternalMedia, PlaybackCommand, PlaybackSnapshot};
 use reprise_runtime_protocol::queue::{QueueCommand, QueueSnapshot};
 use reprise_runtime_protocol::runtime::RuntimeSnapshot;
 use reprise_runtime_protocol::ProtocolVersion;
@@ -221,6 +221,35 @@ impl Reprise1 {
                 track_ids,
                 start_index: usize::try_from(start_index).unwrap_or(usize::MAX),
             },
+        )
+        .await
+    }
+
+    /// Plays a stream, a podcast episode or a preview render — anything
+    /// without a library id. The queue is left where it is; going back to it
+    /// afterwards finds it untouched.
+    ///
+    /// The caller says whether `location` is remote rather than leaving the
+    /// runtime to sniff the string, so a local path containing `://` is not
+    /// opened as a URL.
+    async fn play_external(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        location: String,
+        remote: bool,
+        title: String,
+        artist: String,
+        duration_ms: i64,
+    ) -> Result<(), Error> {
+        self.command(
+            &header,
+            Command::PlayExternal(ExternalMedia {
+                location,
+                remote,
+                title,
+                artist,
+                duration_ms,
+            }),
         )
         .await
     }

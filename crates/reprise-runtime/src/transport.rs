@@ -13,6 +13,8 @@ use reprise_core::up_next::UpNextQueue;
 use reprise_runtime_protocol::playback::{PlaybackCommand, PlaybackSnapshot};
 use reprise_runtime_protocol::queue::{QueueCommand, QueueSnapshot};
 
+use reprise_runtime_protocol::playback::ExternalMedia;
+
 use crate::error::{Failed, Rejected, RuntimeError};
 use crate::ports::{LibraryPort, PlayableTrack, TrackLocation};
 
@@ -22,6 +24,39 @@ use crate::ports::{LibraryPort, PlayableTrack, TrackLocation};
 /// agents see no change in window size when Task 3.3 re-points them here.
 const QUEUE_WINDOW: usize = 200;
 
+/// What is loaded in the backend, however it got there.
+///
+/// A library track and a radio stream differ in exactly two ways that the
+/// rest of this module cares about, so those are the two extra fields: one
+/// has a library id and one does not, and one advances the queue when it
+/// ends while the other simply stops.
+struct Loaded {
+    /// Absent for anything without a library id — a stream, an episode, a
+    /// preview render. A client must never invent one.
+    track_id: Option<i64>,
+    title: String,
+    artist: String,
+    album: String,
+    duration_ms: i64,
+    /// Whether the end of this is the queue's cue to move on. False for
+    /// external media: finishing a podcast episode must not start the music
+    /// that happened to be queued behind it.
+    from_queue: bool,
+}
+
+impl From<PlayableTrack> for Loaded {
+    fn from(track: PlayableTrack) -> Self {
+        Self {
+            track_id: Some(track.track_id),
+            title: track.title,
+            artist: track.artist,
+            album: track.album,
+            duration_ms: track.duration_ms,
+            from_queue: true,
+        }
+    }
+}
+
 /// Player and queue state.
 pub(crate) struct Transport {
     queue: Queue,
@@ -30,7 +65,7 @@ pub(crate) struct Transport {
     /// What is loaded in the backend right now. `None` means nothing is —
     /// which is what makes `Stopped` distinguishable from `Paused` with a
     /// track still loaded, the distinction §9.6's idle rule hangs on.
-    current: Option<PlayableTrack>,
+    current: Option<Loaded>,
     position_ms: i64,
     volume: f64,
 }
@@ -61,7 +96,7 @@ impl Transport {
                 PlaybackState::Paused => "paused".into(),
                 PlaybackState::Stopped => "stopped".into(),
             },
-            track_id: track.map(|track| track.track_id),
+            track_id: track.and_then(|track| track.track_id),
             title: track.map(|track| track.title.clone()).unwrap_or_default(),
             artist: track.map(|track| track.artist.clone()).unwrap_or_default(),
             album: track.map(|track| track.album.clone()).unwrap_or_default(),
@@ -82,7 +117,7 @@ impl Transport {
             // What is *playing*, which is not always where the context
             // cursor stands: an explicitly queued track plays beside the
             // context without moving it.
-            current_track_id: self.current.as_ref().map(|track| track.track_id),
+            current_track_id: self.current.as_ref().and_then(|track| track.track_id),
             play_next_track_ids: self
                 .up_next
                 .ids()
@@ -112,6 +147,41 @@ impl Transport {
             return Err(RuntimeError::Rejected(Rejected::NothingToPlay));
         };
         self.start(backend, library, track_id)
+    }
+
+    /// Plays something that is not a library track.
+    ///
+    /// The queue is left exactly as it is — not cleared, not advanced. A
+    /// podcast episode plays *beside* the music, and going back to the queue
+    /// afterwards must find it where the user left it.
+    pub(crate) fn play_external(
+        &mut self,
+        backend: &dyn PlaybackBackend,
+        media: &ExternalMedia,
+    ) -> Result<(), RuntimeError> {
+        if media.location.trim().is_empty() {
+            return Err(RuntimeError::Rejected(Rejected::NothingToPlay));
+        }
+        let started = if media.remote {
+            backend.play_uri(&media.location)
+        } else {
+            backend.play(&media.location)
+        };
+        if let Err(error) = started {
+            self.abandon(backend);
+            return Err(backend_failed(&error));
+        }
+        self.current = Some(Loaded {
+            track_id: None,
+            title: media.title.clone(),
+            artist: media.artist.clone(),
+            album: String::new(),
+            duration_ms: media.duration_ms,
+            from_queue: false,
+        });
+        self.position_ms = 0;
+        self.status = PlaybackState::Playing;
+        Ok(())
     }
 
     pub(crate) fn playback_command(
@@ -237,10 +307,18 @@ impl Transport {
                 }
             }
             PlayerEvent::TrackFinished => {
-                if let Some(next) = self.take_next_auto() {
-                    let _ = self.start(backend, library, next);
-                } else {
-                    let _ = self.stop(backend);
+                // Only what the queue started hands back to the queue. A
+                // finished episode or a stream that dropped must not launch
+                // whatever music was waiting behind it — the user did not
+                // ask for that, and it is loud.
+                let advances = self.current.as_ref().is_none_or(|loaded| loaded.from_queue);
+                match advances.then(|| self.take_next_auto()).flatten() {
+                    Some(next) => {
+                        let _ = self.start(backend, library, next);
+                    }
+                    None => {
+                        let _ = self.stop(backend);
+                    }
                 }
             }
             PlayerEvent::AdvancedToNext => {
@@ -283,10 +361,14 @@ impl Transport {
                 Ok(())
             }
             PlaybackState::Stopped => {
+                // Only a library track can be restarted from here. External
+                // media has no id to resolve and, for a stream, no position
+                // to resume to — the surface that knows where it came from
+                // re-sends it, which is also how a radio station reconnects.
                 let track_id = self
                     .current
                     .as_ref()
-                    .map(|track| track.track_id)
+                    .and_then(|track| track.track_id)
                     .or_else(|| self.queue.current())
                     .ok_or(RuntimeError::Rejected(Rejected::NothingToPlay))?;
                 self.start(backend, library, track_id)
@@ -398,7 +480,7 @@ impl Transport {
             self.abandon(backend);
             return Err(backend_failed(&error));
         }
-        self.current = Some(track);
+        self.current = Some(track.into());
         self.position_ms = 0;
         self.status = PlaybackState::Playing;
         Ok(())
@@ -428,7 +510,7 @@ impl Transport {
     fn load(&mut self, backend: &dyn PlaybackBackend, library: &dyn LibraryPort, track_id: i64) {
         match library.resolve(track_id) {
             Some(track) => {
-                self.current = Some(track);
+                self.current = Some(track.into());
                 self.position_ms = 0;
             }
             // The backend already handed off to a track this side cannot

@@ -29,6 +29,36 @@ pub struct PlaybackSnapshot {
     pub repeat: String,
 }
 
+/// Something to play that is not a library track: a radio stream, a podcast
+/// episode, a preview render.
+///
+/// The runtime owns the pipeline, so it has to be told what to put in it —
+/// but it deliberately does not own *finding* it. Resolving a station's
+/// current stream URL, or a video's audio track, is network work with its
+/// own retries and its own failures; the surface that already does it keeps
+/// doing it and hands over the result. What crosses here is the smallest
+/// thing that cannot be anywhere else: a location and what to show.
+///
+/// `location` travels **inward only**. No snapshot carries it back, which is
+/// what keeps the path-free rule (§9.7) true even when the thing playing is
+/// a local file nobody has a library id for.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExternalMedia {
+    /// A local path, or a remote URI when `remote` is set.
+    pub location: String,
+    /// Whether `location` is a URI for the backend's remote entry point.
+    /// Explicit rather than sniffed from the string: a local path that
+    /// happens to contain `://` would otherwise be opened as a URL.
+    pub remote: bool,
+    pub title: String,
+    /// The show, the station, or empty. Whatever the surface would display
+    /// where an artist normally goes.
+    pub artist: String,
+    /// Zero when unknown — a live stream has no duration, and a podcast's is
+    /// sometimes only learned once it plays.
+    pub duration_ms: i64,
+}
+
 /// A playback command.
 ///
 /// Deliberately not a wire type: D-Bus has no sum type, so encoding this as
