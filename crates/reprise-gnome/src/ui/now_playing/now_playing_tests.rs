@@ -324,7 +324,14 @@ fn head_and_pill_match_the_21a_structure() {
     let visual = widgets.tab_stack.child_by_name(VISUAL_PAGE).unwrap();
     let page = widgets.tab_stack.page(&visual);
     assert_eq!(page.title().as_deref(), Some("Visual"));
-    assert_eq!(page.icon_name().as_deref(), Some("audio-speakers-symbolic"));
+    // Rising bars, not a speaker: the tab shows what the audio looks like,
+    // not where it comes out. Adwaita ships no equalizer or spectrum symbol,
+    // so the signal-strength bars stand in — the glyph matches the visual
+    // exactly, only its icon name is borrowed.
+    assert_eq!(
+        page.icon_name().as_deref(),
+        Some("network-cellular-signal-excellent-symbolic")
+    );
     assert!(widgets.footer.has_css_class("reprise-now-playing-footer"));
 }
 

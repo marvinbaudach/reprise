@@ -32,9 +32,11 @@ fn ac_23_the_analysis_readout_reports_the_values_the_glow_uses() {
         aura: 0.0,
     });
 
+    // Whole decibels: a tenth of a dB is neither readable at this refresh rate
+    // nor affordable in a 300 px panel, where it truncated "Baseline".
     assert_eq!(values.len(), 4);
-    assert!(values[0].contains("-14.2"), "bass level: {:?}", values[0]);
-    assert!(values[1].contains("-20.0"), "baseline: {:?}", values[1]);
+    assert_eq!(values[0], "-14 dBFS");
+    assert_eq!(values[1], "-20 dBFS");
     assert_eq!(values[2], "0.42");
     assert_eq!(values[3], "0.00");
 }
@@ -54,6 +56,64 @@ fn ac_23_a_silent_analysis_reads_as_a_dash_instead_of_a_bottomed_out_level() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn ac_23_the_readout_fits_in_the_strip_left_under_the_canvas() {
+    // The panel is a fixed 300 px wide and the canvas takes everything above,
+    // leaving roughly one strip. A readout taller than that is silently
+    // clipped — the live session showed Impact and Breakdown cut off.
+    const PANEL_WIDTH: i32 = 300;
+    const STRIP_HEIGHT: i32 = 52;
+
+    gtk4::init().unwrap();
+    let readout = AnalysisReadout::new();
+
+    let (_, natural, _, _) = readout
+        .root
+        .measure(gtk4::Orientation::Vertical, PANEL_WIDTH);
+
+    assert!(
+        natural <= STRIP_HEIGHT,
+        "the readout needs {natural} px but only ~{STRIP_HEIGHT} px are free under the canvas"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn ac_23_the_readout_names_stay_readable_at_the_panel_width() {
+    // Caption and value share one line, so the captions are the first thing
+    // to be ellipsized when they don't fit — the live session showed "BA…"
+    // and "BASELI…". What counts is not the 300 px panel but what is left
+    // inside `.reprise-song-visuals` and its 18 px side margins, minus some
+    // slack: at the bare 264 the live panel still truncated "Baseline".
+    // Measured with the real stylesheet, not the default font.
+    const PANEL_WIDTH: i32 = 300 - 2 * 18 - 16;
+
+    gtk4::init().unwrap();
+    let provider = gtk4::CssProvider::new();
+    provider.load_from_string(&css());
+    gtk4::style_context_add_provider_for_display(
+        &gtk4::gdk::Display::default().unwrap(),
+        &provider,
+        gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
+
+    let readout = AnalysisReadout::new();
+    readout.set(BassPressure {
+        level_dbfs: -41.7,
+        baseline_dbfs: -41.1,
+        impact: 0.35,
+        aura: 0.95,
+    });
+
+    let (_, natural, _, _) = readout.root.measure(gtk4::Orientation::Horizontal, -1);
+
+    assert!(
+        natural <= PANEL_WIDTH,
+        "the readout wants {natural} px, so its captions get truncated in the {PANEL_WIDTH} px panel"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn ac_23_the_readout_follows_the_measurement_the_player_delivers() {
     use reprise_core::playback::{SpectrumFrame, SPECTRUM_BAND_COUNT};
 
@@ -64,7 +124,7 @@ fn ac_23_the_readout_follows_the_measurement_the_player_delivers() {
     visualizer.set_spectrum(
         SpectrumFrame::from_cava_bars([0.5; SPECTRUM_BAND_COUNT]).with_bass_pressure(
             BassPressure {
-                level_dbfs: -11.5,
+                level_dbfs: -11.4,
                 baseline_dbfs: -19.0,
                 impact: 0.87,
                 aura: 0.31,
@@ -73,7 +133,7 @@ fn ac_23_the_readout_follows_the_measurement_the_player_delivers() {
     );
 
     let shown = visualizer.readout.shown_values();
-    assert!(shown[0].contains("-11.5"), "bass level: {:?}", shown[0]);
+    assert_eq!(shown[0], "-11 dBFS");
     assert_eq!(shown[2], "0.87");
     assert_eq!(shown[3], "0.31");
 }
