@@ -101,7 +101,7 @@ run_display_test() {
   local index=$1
   local test=$2
   local data_home cache_home config_home runtime_dir marker_dir
-  local display_test_passed server_num
+  local display_test_passed server_num attempt attempts
   # The parent owns the shared results directory. A background worker must
   # never inherit its EXIT cleanup and remove siblings' logs or statuses.
   trap - EXIT
@@ -115,6 +115,11 @@ run_display_test() {
   # xvfb-run -a can race while parallel workers probe the same free display.
   # Assign a stable, unique server number to every worker instead.
   server_num=$((99 + index))
+  # Under load Xvfb can still be coming up when the test connects, which
+  # surfaces as GTK's "Failed to initialize GTK" rather than as a test failure.
+  # That signature is an environment fault, never an assertion, so it earns one
+  # retry on a different server number. Any other failure is reported as-is.
+  attempts=2
   {
     echo "== display test: $test =="
     # Set XDG roots before dbus-run-session so D-Bus-activated Portal and
@@ -122,19 +127,32 @@ run_display_test() {
     # xvfb-run can return non-zero after the test process succeeded when its
     # cleanup races an already-exited Xvfb process. The marker is written only
     # after cargo reports success, so it remains the authoritative test result.
-    if env \
-      XDG_DATA_HOME="$data_home" XDG_CACHE_HOME="$cache_home" \
-      XDG_CONFIG_HOME="$config_home" XDG_RUNTIME_DIR="$runtime_dir" \
-      GIO_USE_VFS=local GTK_USE_PORTAL=0 \
-      GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink \
-      DISPLAY_TEST="$test" DISPLAY_TEST_PASSED="$display_test_passed" \
-      dbus-run-session -- xvfb-run --server-num="$server_num" \
-      bash -c '
-        cargo test -p reprise-gnome "$DISPLAY_TEST" -- --ignored --exact \
-          && : >"$DISPLAY_TEST_PASSED"
-      '; then
-      :
-    fi
+    for ((attempt = 1; attempt <= attempts; attempt++)); do
+      if env \
+        XDG_DATA_HOME="$data_home" XDG_CACHE_HOME="$cache_home" \
+        XDG_CONFIG_HOME="$config_home" XDG_RUNTIME_DIR="$runtime_dir" \
+        GIO_USE_VFS=local GTK_USE_PORTAL=0 \
+        GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink \
+        DISPLAY_TEST="$test" DISPLAY_TEST_PASSED="$display_test_passed" \
+        dbus-run-session -- xvfb-run --server-num="$server_num" \
+        bash -c '
+          cargo test -p reprise-gnome "$DISPLAY_TEST" -- --ignored --exact \
+            && : >"$DISPLAY_TEST_PASSED"
+        '; then
+        :
+      fi
+      # An explicit if: under `set -e` a bare `[[ ... ]] && break` would abort
+      # the worker on the common case, before the status is ever written.
+      if [[ -f $display_test_passed ]]; then
+        break
+      fi
+      (( attempt < attempts )) || break
+      # Only the display never coming up is retried; a real failure stands.
+      grep -q "Failed to initialize GTK" "$results_dir/$index.log" 2>/dev/null \
+        || break
+      server_num=$((server_num + 1000))
+      echo "== retrying $test on server :$server_num (display never came up) =="
+    done
     if [[ -f $display_test_passed ]]; then
       echo pass >"$results_dir/$index.status"
     else
