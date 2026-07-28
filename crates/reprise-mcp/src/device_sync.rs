@@ -169,7 +169,8 @@ fn check_protocol_version(proxy: &zbus::blocking::Proxy<'static>) -> Result<(), 
 fn version_mismatch(served: ProtocolVersion) -> PlaybackError {
     PlaybackError::Bus(format!(
         "the running Reprise speaks device-sync protocol {served}, this build needs \
-         {PROTOCOL_VERSION}; restart the app so both sides match"
+         major version {}; restart the app so both sides match",
+        PROTOCOL_VERSION.major
     ))
 }
 
@@ -394,7 +395,7 @@ mod tests {
             panic!("a version mismatch is a bus-level refusal");
         };
         assert!(message.contains("speaks device-sync protocol 2.0"));
-        assert!(message.contains(&format!("needs {PROTOCOL_VERSION}")));
+        assert!(message.contains(&format!("major version {}", PROTOCOL_VERSION.major)));
         assert!(message.contains("restart the app"));
     }
 

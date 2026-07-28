@@ -64,11 +64,21 @@ pub struct ProtocolVersion {
 
 impl ProtocolVersion {
     /// Whether a peer advertising `self` can serve a client built against
-    /// `expected`. Same major, and the peer is not older in minor — an older
-    /// service cannot deliver fields a newer client requires.
+    /// `expected`.
+    ///
+    /// Only the major version decides. A lower minor is explicitly fine: a
+    /// minor bump may only *add* optional fields and commands, so an older
+    /// peer simply omits a key the client then reads as `None`. Refusing a
+    /// lower minor would contradict that rule and would hard-fail the most
+    /// ordinary upgrade sequence there is — a client updated on disk while
+    /// the older runtime is still running.
+    ///
+    /// The minor number is still worth carrying: a client can read it to
+    /// know it is talking to an older peer and skip a feature knowingly
+    /// instead of discovering an absent field by accident.
     #[must_use]
     pub fn is_compatible_with(self, expected: Self) -> bool {
-        self.major == expected.major && self.minor >= expected.minor
+        self.major == expected.major
     }
 }
 
@@ -87,16 +97,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_matching_major_and_a_newer_minor_stay_compatible() {
+    fn any_minor_of_the_same_major_stays_compatible() {
         let client = ProtocolVersion { major: 1, minor: 2 };
         assert!(ProtocolVersion { major: 1, minor: 2 }.is_compatible_with(client));
         assert!(ProtocolVersion { major: 1, minor: 7 }.is_compatible_with(client));
     }
 
+    /// The case the strict form got wrong: a client updated on disk while the
+    /// older runtime is still running. A minor bump only adds optional
+    /// fields, so the older peer is perfectly usable and refusing it would
+    /// break an ordinary upgrade.
     #[test]
-    fn an_older_minor_or_a_foreign_major_is_refused() {
+    fn an_older_minor_is_served_rather_than_refused() {
         let client = ProtocolVersion { major: 1, minor: 2 };
-        assert!(!ProtocolVersion { major: 1, minor: 1 }.is_compatible_with(client));
+        assert!(ProtocolVersion { major: 1, minor: 1 }.is_compatible_with(client));
+        assert!(ProtocolVersion { major: 1, minor: 0 }.is_compatible_with(client));
+    }
+
+    #[test]
+    fn a_foreign_major_is_refused() {
+        let client = ProtocolVersion { major: 1, minor: 2 };
         assert!(!ProtocolVersion { major: 2, minor: 2 }.is_compatible_with(client));
         assert!(!ProtocolVersion { major: 0, minor: 9 }.is_compatible_with(client));
     }
