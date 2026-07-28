@@ -9,6 +9,7 @@
 //!    the wrong column.
 //! 3. No snapshot carries a local filesystem path.
 
+use reprise_runtime_protocol::device_run::DeviceRunSnapshot;
 use reprise_runtime_protocol::device_sync::{
     DeviceChangeCounts, DeviceControls, DeviceProgress, DeviceSnapshot, DeviceSourceSnapshot,
     DeviceStorageComposition, DeviceStorageSnapshot,
@@ -201,6 +202,39 @@ fn playback_queue_and_job_snapshots_survive_a_dbus_round_trip() {
     assert_eq!(round_trip(&batch), batch);
 }
 
+/// Every field set, every optional present — same convention as
+/// [`populated_device`], which is what makes it usable as the field-name
+/// fixture (an absent optional serializes to no key at all).
+fn populated_device_run() -> DeviceRunSnapshot {
+    DeviceRunSnapshot {
+        device: "Pixel 8".into(),
+        phase: "verifying".into(),
+        progress: DeviceProgress {
+            bytes_done: 104_857_600,
+            bytes_total: 3_221_225_472,
+            bytes_per_second: 8_388_608,
+        },
+        current_track: "Ghosts".into(),
+        failed_track_ids: vec![41, 42],
+        outcome: Some("completed".into()),
+    }
+}
+
+#[test]
+fn a_device_run_snapshot_survives_a_dbus_round_trip() {
+    let finished = populated_device_run();
+    assert_eq!(round_trip(&finished), finished);
+
+    // A run in flight is the case that leaves the optional unset, and an
+    // absent `outcome` is exactly what separates "still going" from "ended".
+    let running = DeviceRunSnapshot {
+        phase: "copying".into(),
+        outcome: None,
+        ..populated_device_run()
+    };
+    assert_eq!(round_trip(&running), running);
+}
+
 fn field_names(value: &impl serde::Serialize) -> Vec<String> {
     let json = serde_json::to_value(value).expect("snapshot serializes as a map");
     let mut names: Vec<String> = json
@@ -271,6 +305,17 @@ fn the_wire_field_names_are_the_checked_in_contract() {
             "total_bytes",
         ]
     );
+    assert_eq!(
+        field_names(&populated_device_run()),
+        [
+            "current_track",
+            "device",
+            "failed_track_ids",
+            "outcome",
+            "phase",
+            "progress",
+        ]
+    );
 }
 
 /// Walks every string in a serialized snapshot and rejects anything that
@@ -287,24 +332,35 @@ fn strings(value: &serde_json::Value, found: &mut Vec<String>) {
 
 #[test]
 fn no_snapshot_carries_a_local_filesystem_path() {
-    let device = serde_json::to_value(populated_device()).unwrap();
-    let mut values = Vec::new();
-    strings(&device, &mut values);
-    assert!(
-        !values.is_empty(),
-        "the fixture must actually carry strings"
-    );
+    let fixtures = [
+        ("device", serde_json::to_value(populated_device()).unwrap()),
+        (
+            "device run",
+            serde_json::to_value(populated_device_run()).unwrap(),
+        ),
+    ];
 
-    for value in values {
+    for (label, fixture) in fixtures {
+        let mut values = Vec::new();
+        strings(&fixture, &mut values);
         assert!(
-            !value.starts_with('/') && !value.starts_with("~/") && !value.starts_with("file://"),
-            "device snapshot leaked a path-like value: {value}"
+            !values.is_empty(),
+            "the {label} fixture must actually carry strings"
         );
+
+        for value in values {
+            assert!(
+                !value.starts_with('/')
+                    && !value.starts_with("~/")
+                    && !value.starts_with("file://"),
+                "{label} snapshot leaked a path-like value: {value}"
+            );
+        }
     }
 }
 
 #[test]
 fn the_protocol_version_is_pinned() {
     assert_eq!(PROTOCOL_VERSION.major, 1);
-    assert_eq!(PROTOCOL_VERSION.minor, 0);
+    assert_eq!(PROTOCOL_VERSION.minor, 1);
 }
