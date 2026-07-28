@@ -85,14 +85,16 @@ impl SourceImage {
             self.root.set_visible_child(&self.picture);
             return;
         }
-        // `NET-1a` / `C1`: a memory-cache miss does not by itself justify a
-        // network attempt. `queue_artwork` still checks the on-disk cache
-        // (which may hold a hit from an earlier session) before consulting
-        // this flag again in `remote_image::resolve`, so a closed gate never
-        // hides an already-downloaded image — it only refuses a fresh fetch.
-        if !images_allowed {
-            return;
-        }
+        // `NET-1a` / `SRC-11`: a memory-cache miss does not by itself justify a
+        // network attempt — but it does not justify hiding an image either.
+        // The gate is handed to `remote_image::resolve`, which reads the
+        // on-disk cache (possibly filled in an earlier session) BEFORE it
+        // consults the flag, so a closed gate refuses a fresh fetch without
+        // hiding an already-downloaded image. Returning here instead would be
+        // safe but would break `SRC-11`'s promise that a cache hit is always
+        // shown, and the cost would be invisible: a memory cache is empty at
+        // startup, so every restart with the gate closed would drop images
+        // that are sitting on disk and need no request at all.
         let Some(receiver) = queue_artwork(url.clone(), images_allowed) else {
             tracing::debug!(%url, "source artwork queue is full");
             return;
@@ -134,9 +136,11 @@ impl SourceImage {
 
 struct ArtworkTask {
     url: String,
-    /// `NET-1a`: threaded through to `remote_image::resolve` as a
-    /// defense-in-depth re-check — `set_url` already refuses to enqueue a
-    /// task when this is false, so this only matters if that ever changes.
+    /// `NET-1a` / `SRC-11`: threaded through to `remote_image::resolve`,
+    /// which is where the gate is actually enforced. A task is enqueued even
+    /// when this is false, because the on-disk cache must still be consulted
+    /// — `resolve` reads it before it looks at this flag, so a closed gate
+    /// costs a disk lookup and never a request.
     allowed: bool,
     response: async_channel::Sender<Option<PathBuf>>,
 }
@@ -231,9 +235,60 @@ mod tests {
         assert_eq!(super::validated_url("not a URL"), None);
     }
 
+    /// A real 1x1 truecolor PNG, small enough to inline and valid enough for
+    /// GDK to decode — the cache only ever holds bytes a decoder accepted.
+    const TINY_PNG: [u8; 69] = [
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90,
+        0x77, 0x53, 0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0xA8,
+        0xAF, 0xAF, 0x07, 0x00, 0x02, 0xFE, 0x01, 0x7E, 0xBA, 0x25, 0x70, 0x25, 0x00, 0x00, 0x00,
+        0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ];
+
+    /// `SRC-11`: "ein Cache-Treffer wird immer gezeigt, unabhängig vom Riegel".
+    /// The rule is binding, so this asserts the composed behaviour, not just
+    /// `remote_image::resolve` in isolation: an earlier session's download
+    /// must still appear with the gate closed, because showing a file that is
+    /// already on disk costs no request. A widget that returns before it ever
+    /// consults the cache would satisfy every other `src_11_*` test here —
+    /// with an empty cache the fallback looks identical either way — and
+    /// still break the promise on the next restart.
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn src_11_gate_closed_stays_on_the_fallback_and_never_queues_a_fetch() {
+    fn src_11_a_cached_image_is_shown_even_with_the_gate_closed() {
+        gtk4::init().unwrap();
+        let url = "https://images.test/src-11-cached.png";
+        // Populate the cache through the public core path, with the gate open.
+        let outcome =
+            reprise_core::remote_image::resolve(Some(url), true, &mut |_| Ok(TINY_PNG.to_vec()));
+        assert!(
+            matches!(
+                outcome,
+                reprise_core::remote_image::ImageOutcome::Fetched(_)
+                    | reprise_core::remote_image::ImageOutcome::Cached(_)
+            ),
+            "precondition: the image must be in the cache, got {outcome:?}"
+        );
+
+        // Now the gate is closed. No request may happen — and no image may be
+        // hidden either.
+        let image =
+            super::SourceImage::new(Some(url), "audio-input-microphone-symbolic", 40, false);
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while image.widget().visible_child_name().as_deref() != Some("artwork") {
+            while gtk4::glib::MainContext::default().iteration(false) {}
+            assert!(
+                std::time::Instant::now() < deadline,
+                "a cached image must be shown with the gate closed, but the widget stayed on the fallback"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn src_11_gate_closed_stays_on_the_fallback_and_never_fetches() {
         gtk4::init().unwrap();
         let image = super::SourceImage::new(
             Some("https://images.test/net-1a-widget-closed.jpg"),
