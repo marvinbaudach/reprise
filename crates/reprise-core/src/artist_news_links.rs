@@ -61,7 +61,7 @@ fn find_link<'a>(
     first
 }
 
-/// Returns an unchanged launchable Bandcamp URL, rejecting lookalike hosts.
+/// Returns an unchanged tracking-free Bandcamp album URL, rejecting lookalike hosts.
 #[must_use]
 pub fn bandcamp_purchase_url(value: Option<&str>) -> Option<&str> {
     let value = value?;
@@ -73,7 +73,10 @@ pub fn bandcamp_purchase_url(value: Option<&str>) -> Option<&str> {
     let mut segments = parsed.path_segments()?;
     let is_album_page = segments.next() == Some("album")
         && segments.next().is_some_and(|slug| !slug.trim().is_empty());
-    ((host == BANDCAMP_HOST || host.ends_with(".bandcamp.com")) && is_album_page).then_some(value)
+    ((host == BANDCAMP_HOST || host.ends_with(".bandcamp.com"))
+        && is_album_page
+        && parsed.query().is_none())
+    .then_some(value)
 }
 
 /// Persistierte URL oder Fallback auf die MB-Release-Group-Seite.
@@ -178,6 +181,8 @@ mod tests {
             "https://evilbandcamp.com/album/fake",
             "https://oceansleeper.bandcamp.com/",
             "https://bandcamp.com/search?q=Ocean%20Sleeper",
+            "https://oceansleeper.bandcamp.com/album/example?utm_source=reprise",
+            "https://bandcamp.com/album/example?from=discover-top",
             "file://bandcamp.com/etc/passwd",
             "javascript:bandcamp.com",
             "",
