@@ -59,6 +59,7 @@ struct FakeState {
     total_bytes: Cell<Option<u64>>,
     storage_access: Cell<DeviceStorageAccess>,
     transcode_probe_error: RefCell<Option<String>>,
+    cleanup_error: RefCell<Option<String>>,
     copy_gate: RefCell<Option<CopyGate>>,
     playlist_error: RefCell<Option<String>>,
     playlist_gate: RefCell<Option<PlaylistGate>>,
@@ -94,6 +95,11 @@ impl FakeBackend {
 
     fn with_transcode_probe_error(self, error: &str) -> Self {
         self.state.transcode_probe_error.replace(Some(error.into()));
+        self
+    }
+
+    fn with_cleanup_error(self, error: &str) -> Self {
+        self.state.cleanup_error.replace(Some(error.into()));
         self
     }
 
@@ -297,6 +303,11 @@ impl DeviceBackend for FakeBackend {
                 size_bytes: 100,
             })
         })
+    }
+
+    fn cleanup_partials(&self, _root_uri: String) -> TestFuture<u32> {
+        let error = self.state.cleanup_error.borrow().clone();
+        Box::pin(async move { error.map_or(Ok(0), Err) })
     }
 
     fn delete_track(&self, _root_uri: String, relative_target: String) -> TestFuture<bool> {

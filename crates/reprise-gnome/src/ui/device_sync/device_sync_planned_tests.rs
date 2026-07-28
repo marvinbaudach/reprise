@@ -140,6 +140,36 @@ fn sync_now_copies_the_selection_and_commits_the_device_inventory() {
 }
 
 #[test]
+fn mtp_5_partial_cleanup_failure_blocks_every_planned_write() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1, 2]);
+        let backend = Rc::new(
+            FakeBackend::new(vec![descriptor("a", true)], 1)
+                .with_cleanup_error("injected cleanup failure"),
+        );
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+        let (_subscription, completed) = signal_when(&runtime, |state| {
+            state.devices[0].sync_phase == PlannedSyncPhase::Idle
+                && (state.devices[0].sync_error.is_some() || state.devices[0].last_sync.is_some())
+        });
+
+        runtime.sync_now("a").unwrap();
+        completed.recv().await.unwrap();
+
+        assert!(backend.state.copy_order.borrow().is_empty());
+        assert!(backend.state.playlists.borrow().is_empty());
+        assert!(backend.state.deleted.borrow().is_empty());
+        let device = runtime.devices().remove(0);
+        assert!(device.last_sync.is_none());
+        let failure = device.sync_error.unwrap();
+        assert!(failure.message.contains("injected cleanup failure"));
+        assert!(failure.failed_tracks.is_empty());
+    });
+}
+
+#[test]
 fn known_read_only_target_is_rejected_at_the_runtime_boundary() {
     run(async {
         let (_temp, conn) = fixture();
