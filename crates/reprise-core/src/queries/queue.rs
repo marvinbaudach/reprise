@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use crate::models::Track;
 
-use super::clauses::{ai_projection, row_to_track};
+use super::clauses::row_to_track;
 use super::MAX_WINDOW_LIMIT;
 use rusqlite::Connection;
 
@@ -34,9 +34,8 @@ pub(super) fn query_track_window_queue(
     ids: &[i64],
     offset: i64,
     limit: i64,
-    project_ai: bool,
 ) -> Result<Vec<Track>, rusqlite::Error> {
-    query_track_window_queue_with_observer(conn, ids, offset, limit, project_ai, || {})
+    query_track_window_queue_with_observer(conn, ids, offset, limit, || {})
 }
 
 #[cfg(test)]
@@ -47,7 +46,7 @@ pub(super) fn query_track_window_queue_counted(
     limit: i64,
     on_query: impl FnOnce(),
 ) -> Result<Vec<Track>, rusqlite::Error> {
-    query_track_window_queue_with_observer(conn, ids, offset, limit, true, on_query)
+    query_track_window_queue_with_observer(conn, ids, offset, limit, on_query)
 }
 
 fn query_track_window_queue_with_observer(
@@ -55,7 +54,6 @@ fn query_track_window_queue_with_observer(
     ids: &[i64],
     offset: i64,
     limit: i64,
-    project_ai: bool,
     on_query: impl FnOnce(),
 ) -> Result<Vec<Track>, rusqlite::Error> {
     let limit = limit.clamp(0, MAX_WINDOW_LIMIT);
@@ -86,12 +84,10 @@ fn query_track_window_queue_with_observer(
         .map(|i| format!("?{i}"))
         .collect::<Vec<_>>()
         .join(",");
-    let is_ai = ai_projection(project_ai);
     let sql = format!(
         "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
          duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
-         file_mtime, missing_since, missing_reason, untagged, file_size, device, inode, \
-         {is_ai} AS is_ai \
+         file_mtime, missing_since, missing_reason, untagged, file_size, device, inode \
          FROM tracks WHERE id IN ({placeholders})"
     );
     on_query();

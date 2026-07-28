@@ -252,21 +252,14 @@ pub fn query_track_window_browsed(
     queue_ids: &[i64],
 ) -> Result<Vec<Track>, rusqlite::Error> {
     query_track_window_browsed_ai(
-        conn, source, sort_field, sort_dir, filter, browse, offset, limit, queue_ids, false, true,
+        conn, source, sort_field, sort_dir, filter, browse, offset, limit, queue_ids, false,
     )
 }
 
-/// Like [`query_track_window_browsed`] but honoring two AI concerns:
-///
-/// - `exclude_ai` (plan 2.4/8, Beschluss 17): when set, tracks flagged in
-///   `track_provenance` are hidden. Only `Library` honors it — that is where
-///   the browse filter row lives.
-/// - `project_ai` (INST-10 / FIX-4): whether to project the real `is_ai` column
-///   (the correlated provenance `EXISTS`) or a literal `0`. The AI badge only
-///   renders while the experimental switch is on, so the GTK layer passes
-///   `experimental_on` here; when off, every source's window carries no per-row
-///   provenance subquery. Honored by **all** sources (the badge can appear on
-///   any track row). The default entry points above pass `false`/`true`.
+/// Like [`query_track_window_browsed`] but honoring `exclude_ai` (plan 2.4/8,
+/// Beschluss 17): when set, tracks flagged in `track_provenance` are hidden.
+/// Only `Library` honors it — that is where the browse filter row lives. The
+/// default entry points above pass `false`.
 #[allow(clippy::too_many_arguments)]
 pub fn query_track_window_browsed_ai(
     conn: &mut Connection,
@@ -279,23 +272,22 @@ pub fn query_track_window_browsed_ai(
     limit: i64,
     queue_ids: &[i64],
     exclude_ai: bool,
-    project_ai: bool,
 ) -> Result<Vec<Track>, rusqlite::Error> {
     match source {
         ViewSource::Library => library::query_track_window_library(
-            conn, sort_field, sort_dir, filter, offset, limit, browse, exclude_ai, project_ai,
+            conn, sort_field, sort_dir, filter, offset, limit, browse, exclude_ai,
         ),
         ViewSource::RecentlyAdded => {
             let browse = recently_added_browse(browse);
             library::query_track_window_library(
-                conn, sort_field, sort_dir, filter, offset, limit, &browse, exclude_ai, project_ai,
+                conn, sort_field, sort_dir, filter, offset, limit, &browse, exclude_ai,
             )
         }
         ViewSource::Missing => library::query_track_window_missing(
-            conn, sort_field, sort_dir, filter, offset, limit, project_ai,
+            conn, sort_field, sort_dir, filter, offset, limit,
         ),
         ViewSource::Playlist(id) => playlist::query_track_window_playlist(
-            conn, *id, sort_field, sort_dir, filter, offset, limit, project_ai,
+            conn, *id, sort_field, sort_dir, filter, offset, limit,
         ),
         ViewSource::Smart(id) => smart::query_track_window_smart(
             conn,
@@ -304,10 +296,9 @@ pub fn query_track_window_browsed_ai(
             filter,
             offset,
             limit,
-            project_ai,
         ),
         ViewSource::Queue => {
-            queue::query_track_window_queue(conn, queue_ids, offset, limit, project_ai)
+            queue::query_track_window_queue(conn, queue_ids, offset, limit)
         }
         ViewSource::Album {
             album,
@@ -322,15 +313,14 @@ pub fn query_track_window_browsed_ai(
             browse,
             offset,
             limit,
-            project_ai,
         ),
         ViewSource::Artist(artist) => library_views::query_artist_track_window(
-            conn, artist, sort_field, sort_dir, filter, browse, offset, limit, project_ai,
+            conn, artist, sort_field, sort_dir, filter, browse, offset, limit,
         ),
         ViewSource::Genre(genre) => {
             let browse = genre_browse(genre, browse);
             library::query_track_window_library(
-                conn, sort_field, sort_dir, filter, offset, limit, &browse, exclude_ai, project_ai,
+                conn, sort_field, sort_dir, filter, offset, limit, &browse, exclude_ai,
             )
         }
         ViewSource::ImportErrors

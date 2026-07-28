@@ -47,11 +47,6 @@ pub fn conversion_disk_total(total: &str) -> String {
     format!("{total} kept on disk")
 }
 
-// AI badge on a promoted instrumental track row (INST-10). A compact "AI" pill
-// with the full provenance phrase as its tooltip.
-pub const AI_BADGE_LABEL: &str = N_!("AI");
-pub const AI_BADGE_TOOLTIP: &str = N_!("Instrumental · AI-manipulated");
-
 // "Hide AI music" library filter (FIL-7).
 pub const FILTER_HIDE_AI: &str = N_!("Hide AI music");
 

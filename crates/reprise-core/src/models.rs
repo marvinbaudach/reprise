@@ -109,12 +109,6 @@ pub struct Track {
     /// to its true `pt.position` via this field rather than assuming the two
     /// coincide — see that function's doc comment.
     pub playlist_position: Option<i64>,
-    /// Schema v27 (multi-frontend-core): whether this track is AI-manipulated —
-    /// an `EXISTS` against `track_provenance(ai = 1)` projected by the windowed
-    /// track queries (INST-10). `false` for a `Track` built outside those
-    /// queries (it is only consulted where the AI badge renders). The DB flag is
-    /// the truth, never the on-disk folder (Beschluss 13/17).
-    pub is_ai: bool,
 }
 
 impl Track {

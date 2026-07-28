@@ -24,13 +24,10 @@ pub(super) fn query_track_window_library(
     limit: i64,
     browse: &BrowseFilter,
     exclude_ai: bool,
-    project_ai: bool,
 ) -> Result<Vec<Track>, rusqlite::Error> {
     let limit = limit.clamp(0, MAX_WINDOW_LIMIT);
     let has_filter = !filter.trim().is_empty();
-    let sql = build_track_query_browsed(
-        sort_field, sort_dir, has_filter, browse, exclude_ai, project_ai,
-    );
+    let sql = build_track_query_browsed(sort_field, sort_dir, has_filter, browse, exclude_ai);
     let mut stmt = conn.prepare(&sql)?;
     let mut params = vec![Value::Integer(limit), Value::Integer(offset)];
     if has_filter {
@@ -49,11 +46,10 @@ pub(super) fn query_track_window_missing(
     filter: &str,
     offset: i64,
     limit: i64,
-    project_ai: bool,
 ) -> Result<Vec<Track>, rusqlite::Error> {
     let limit = limit.clamp(0, MAX_WINDOW_LIMIT);
     let has_filter = !filter.trim().is_empty();
-    let sql = build_track_query_base(1, sort_field, sort_dir, has_filter, project_ai);
+    let sql = build_track_query_base(1, sort_field, sort_dir, has_filter);
     let mut stmt = conn.prepare(&sql)?;
     let like = like_pattern(filter.trim());
     let rows = if has_filter {

@@ -8,7 +8,7 @@ use crate::library::playlists::{self, SmartPlaylist};
 use crate::models::Track;
 
 use super::clauses::{
-    ai_projection, filter_clause, like_pattern, order_clause, row_to_id, row_to_track, PRESENT,
+    filter_clause, like_pattern, order_clause, row_to_id, row_to_track, PRESENT,
 };
 use super::queue::QUEUE_LIMIT;
 use super::MAX_WINDOW_LIMIT;
@@ -42,7 +42,6 @@ fn build_smart_window_query(
     filter: &str,
     offset: i64,
     limit: i64,
-    project_ai: bool,
 ) -> Result<(String, Vec<rusqlite::types::Value>), playlists::SmartRulesError> {
     let has_filter = !filter.trim().is_empty();
     let member_order = order_clause(&smart.sort_field, &smart.sort_dir);
@@ -50,12 +49,10 @@ fn build_smart_window_query(
     let (rules_frag, mut params) = playlists::smart_rules_to_sql(&smart.rules_json)?;
 
     let mut next_idx = params.len() as u8 + 1;
-    let is_ai = ai_projection(project_ai);
     let mut inner_sql = format!(
         "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
          duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
-         file_mtime, missing_since, missing_reason, untagged, file_size, device, inode, \
-         {is_ai} AS is_ai \
+         file_mtime, missing_since, missing_reason, untagged, file_size, device, inode \
          FROM tracks WHERE {PRESENT} AND ({rules_frag})"
     );
     if has_filter {
@@ -89,7 +86,6 @@ pub(super) fn query_track_window_smart(
     filter: &str,
     offset: i64,
     limit: i64,
-    project_ai: bool,
 ) -> Result<Vec<Track>, rusqlite::Error> {
     let limit = limit.clamp(0, MAX_WINDOW_LIMIT);
     let Some(smart) = load_smart_playlist(conn, smart_id)? else {
@@ -110,7 +106,6 @@ pub(super) fn query_track_window_smart(
             limit,
             &browse,
             false,
-            project_ai,
         );
     }
 
@@ -121,7 +116,6 @@ pub(super) fn query_track_window_smart(
         filter,
         offset,
         limit,
-        project_ai,
     ) {
         Ok(v) => v,
         Err(error) => {

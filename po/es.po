@@ -3623,14 +3623,6 @@ msgstr "Listo — sin guardar"
 msgid "Saved to library"
 msgstr "Guardado en la biblioteca"
 
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:52
-msgid "AI"
-msgstr "IA"
-
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:53
-msgid "Instrumental · AI-manipulated"
-msgstr "Instrumental · modificado con IA"
-
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:56
 msgid "Hide AI music"
 msgstr "Ocultar música con IA"

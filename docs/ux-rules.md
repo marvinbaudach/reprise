@@ -2499,13 +2499,20 @@ edges are deliberately accepted. The player plays only finished files.
   into the conversion playlist produces a **notice referencing the
   existing one**, not a duplicate job (dedup skip in the core facade).
   (Decision 16)
-- **INST-10** [active] [gtk] — Promoted versions carry a visible **AI
-  badge** ("Instrumental · AI-manipulated") with a **source reference**,
-  where linked. Provenance is DB-primary (`track_provenance`), the tag
-  reference secondary; the badge keys off the DB flag, never off the
-  storage folder. (Decision 13/14)
+- **INST-10** [replaced by nothing — the AI badge was retired with the
+  `is_ai` column] — The rule required promoted versions to carry a visible
+  **AI badge** ("Instrumental · AI-manipulated") keyed off the DB-primary
+  `track_provenance` flag (Decision 13/14). The badge read `Track::is_ai`,
+  a correlated provenance `EXISTS` projected by every windowed track query;
+  removing that column removes the badge, so the rule has no behavior left
+  to bind. The ID stays as a signpost per the append-only contract. Nothing
+  supersedes it — the instrumental feature is being withdrawn, not
+  redesigned. <!-- REVIEW: an outright withdrawal has no precedent in this
+  catalogue; the maintainer should confirm this is how a retired rule reads. -->
+  Files promoted while the feature existed keep the `REPRISE_AI_MODEL` tag
+  written into them, so their on-disk provenance is unaffected.
 - **INST-11** [active] [gtk] — **Master gate:** the entire instrumental
-  UI — context menu entry, conversion view, AI badges, "Hide AI music"
+  UI — context menu entry, conversion view, "Hide AI music"
   filter (FIL-7) — is **hidden as long as the "Experimental features"
   toggle is off**. The toggle is a persisted setting; its state alone
   decides visibility. (Decision 11)

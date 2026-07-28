@@ -3621,14 +3621,6 @@ msgstr "Bereit — nicht gespeichert"
 msgid "Saved to library"
 msgstr "In der Musiksammlung gespeichert"
 
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:52
-msgid "AI"
-msgstr "KI"
-
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:53
-msgid "Instrumental · AI-manipulated"
-msgstr "Instrumental · KI-bearbeitet"
-
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:56
 msgid "Hide AI music"
 msgstr "KI-Musik ausblenden"

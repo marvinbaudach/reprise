@@ -3506,14 +3506,6 @@ msgstr ""
 msgid "Saved to library"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:52
-msgid "AI"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:53
-msgid "Instrumental · AI-manipulated"
-msgstr ""
-
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:56
 msgid "Hide AI music"
 msgstr ""
