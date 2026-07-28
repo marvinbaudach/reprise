@@ -34,7 +34,12 @@ pub(super) async fn run_removals(
         );
         match runtime
             .backend
-            .delete_track(work.root_uri.clone(), work.playlists_path.clone(), path)
+            .delete_track(
+                work.root_uri.clone(),
+                work.playlists_path.clone(),
+                work.playlists_storage,
+                path,
+            )
             .await
         {
             Ok(_) => {
@@ -62,6 +67,7 @@ pub(super) async fn run_removals(
             .delete_track(
                 work.root_uri.clone(),
                 work.playlists_path.clone(),
+                work.playlists_storage,
                 path.clone(),
             )
             .await
@@ -175,6 +181,7 @@ pub(super) async fn run_transfers(
                 work.device_id.clone(),
                 work.root_uri.clone(),
                 work.playlists_path.clone(),
+                work.playlists_storage,
                 source.clone(),
                 entry.device_path.clone(),
                 actual_size,

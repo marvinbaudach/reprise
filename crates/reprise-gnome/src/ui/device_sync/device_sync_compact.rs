@@ -223,6 +223,7 @@ impl DeviceSyncRuntime {
                 candidates.clone(),
                 &podcast_inventory,
                 PodcastSyncSource::Rss,
+                settings.remove_deleted,
             );
             let youtube_plan = target_podcast_plan(
                 &targets,
@@ -230,6 +231,7 @@ impl DeviceSyncRuntime {
                 candidates,
                 &youtube_inventory,
                 PodcastSyncSource::Youtube,
+                settings.remove_deleted,
             );
             (
                 projection,
@@ -284,12 +286,20 @@ impl DeviceSyncRuntime {
 /// target is switched off for this device (`SyncTarget::enabled`) — a
 /// disabled target has no active slot for its category regardless of what
 /// candidates or inventory exist.
+///
+/// `remove_deleted` is the per-device "Remove from phone when deleted or
+/// unsubscribed here" switch (`DeviceSettings::remove_deleted`, design 7a).
+/// Before this fix the switch was rendered and persisted but every planning
+/// call hard-coded `true`, so turning it off never actually kept an
+/// unsubscribed episode on the phone.
+#[allow(clippy::too_many_arguments)]
 fn target_podcast_plan(
     targets: &[reprise_core::device_sync::SyncTarget; 3],
     kind: SyncTargetKind,
     candidates: Vec<reprise_core::device_sync::podcasts::PodcastSyncCandidate>,
     inventory: &[PodcastDeviceFile],
     source: PodcastSyncSource,
+    remove_deleted: bool,
 ) -> reprise_core::device_sync::podcasts::PodcastSyncPlan {
     let Some(target) = targets.iter().find(|target| target.kind == kind) else {
         return reprise_core::device_sync::podcasts::PodcastSyncPlan::default();
@@ -297,7 +307,13 @@ fn target_podcast_plan(
     if !target.enabled {
         return reprise_core::device_sync::podcasts::PodcastSyncPlan::default();
     }
-    build_podcast_plan(candidates, inventory, true, source, target.cap_bytes)
+    build_podcast_plan(
+        candidates,
+        inventory,
+        remove_deleted,
+        source,
+        target.cap_bytes,
+    )
 }
 
 fn as_podcast_device_files(files: &[ManagedDeviceFile]) -> Vec<PodcastDeviceFile> {

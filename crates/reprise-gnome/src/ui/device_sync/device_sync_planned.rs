@@ -9,8 +9,8 @@ use reprise_core::device_sync::settings::{
     DeviceFileRecord, DevicePlaylistRecord,
 };
 use reprise_core::device_sync::{
-    load_or_create_targets, DesiredManagedFile, ManagedRemoval, MirrorPlan, SyncTargetKind,
-    TransferAction,
+    load_or_create_targets, DesiredManagedFile, ManagedRemoval, MirrorPlan, StorageId,
+    SyncTargetKind, TransferAction,
 };
 
 use super::*;
@@ -63,6 +63,14 @@ struct PlannedWork {
     playlists_path: String,
     podcasts_path: String,
     youtube_path: String,
+    /// The persisted `StorageId` each target was pointed at by the folder
+    /// browser (`MTP-31`/`MTP-32`), `None` until repointed. Carried
+    /// alongside the paths above so the transfer actually writes to the
+    /// storage the user chose instead of `DeviceStorage::storage_root`'s
+    /// "prefer internal" guess (finding 1).
+    playlists_storage: Option<StorageId>,
+    podcasts_storage: Option<StorageId>,
+    youtube_storage: Option<StorageId>,
     cancelled: Arc<AtomicBool>,
     cancellable: gio::Cancellable,
 }
@@ -123,6 +131,20 @@ fn target_path(
             || kind.default_path().to_string(),
             |target| target.path.clone(),
         )
+}
+
+/// The resolved `StorageId` for one named sync target (`MTP-18`), the
+/// `target_path` counterpart: `None` both when the target has never been
+/// repointed by the folder browser and, defensively, when it is somehow
+/// absent from the freshly loaded three.
+fn target_storage(
+    targets: &[reprise_core::device_sync::SyncTarget; 3],
+    kind: SyncTargetKind,
+) -> Option<StorageId> {
+    targets
+        .iter()
+        .find(|target| target.kind == kind)
+        .and_then(|target| target.storage_id)
 }
 
 fn playlist_stem(device_path: &str, fallback: &str) -> String {
@@ -239,6 +261,9 @@ impl DeviceSyncRuntime {
                 playlists_path: target_path(&targets, SyncTargetKind::Playlists),
                 podcasts_path: target_path(&targets, SyncTargetKind::PodcastEpisodes),
                 youtube_path: target_path(&targets, SyncTargetKind::YoutubeAudio),
+                playlists_storage: target_storage(&targets, SyncTargetKind::Playlists),
+                podcasts_storage: target_storage(&targets, SyncTargetKind::PodcastEpisodes),
+                youtube_storage: target_storage(&targets, SyncTargetKind::YoutubeAudio),
                 cancelled,
                 cancellable,
             }
@@ -267,14 +292,14 @@ async fn run_planned_sync(weak: Weak<DeviceSyncRuntime>, work: PlannedWork) {
         return;
     };
     let mut failures = Vec::new();
-    for target_path in [
-        &work.playlists_path,
-        &work.podcasts_path,
-        &work.youtube_path,
+    for (target_path, storage_id) in [
+        (&work.playlists_path, work.playlists_storage),
+        (&work.podcasts_path, work.podcasts_storage),
+        (&work.youtube_path, work.youtube_storage),
     ] {
         if let Err(error) = runtime
             .backend
-            .cleanup_partials(work.root_uri.clone(), target_path.clone())
+            .cleanup_partials(work.root_uri.clone(), target_path.clone(), storage_id)
             .await
         {
             tracing::warn!(device_id = work.device_id, target_path, %error, "could not clean partial sync files");
@@ -294,6 +319,7 @@ async fn run_planned_sync(weak: Weak<DeviceSyncRuntime>, work: PlannedWork) {
             &runtime,
             &work,
             &work.podcasts_path,
+            work.podcasts_storage,
             &work.podcasts.to_copy,
             podcast_offset,
             content_total,
@@ -309,6 +335,7 @@ async fn run_planned_sync(weak: Weak<DeviceSyncRuntime>, work: PlannedWork) {
             &runtime,
             &work,
             &work.youtube_path,
+            work.youtube_storage,
             &work.youtube.to_copy,
             youtube_offset,
             content_total,
@@ -335,6 +362,7 @@ async fn run_planned_sync(weak: Weak<DeviceSyncRuntime>, work: PlannedWork) {
             &runtime,
             &work,
             &work.podcasts_path,
+            work.podcasts_storage,
             &work.podcasts.to_remove,
             0,
             remove_total,
@@ -345,6 +373,7 @@ async fn run_planned_sync(weak: Weak<DeviceSyncRuntime>, work: PlannedWork) {
             &runtime,
             &work,
             &work.youtube_path,
+            work.youtube_storage,
             &work.youtube.to_remove,
             work.podcasts.to_remove.len(),
             remove_total,
@@ -391,6 +420,7 @@ async fn run_playlists(
                 work.device_id.clone(),
                 work.root_uri.clone(),
                 work.playlists_path.clone(),
+                work.playlists_storage,
                 name.clone(),
                 playlist.contents.as_bytes().to_vec(),
             )
@@ -437,6 +467,7 @@ async fn run_playlists(
             .delete_track(
                 work.root_uri.clone(),
                 work.playlists_path.clone(),
+                work.playlists_storage,
                 playlist.device_path.clone(),
             )
             .await

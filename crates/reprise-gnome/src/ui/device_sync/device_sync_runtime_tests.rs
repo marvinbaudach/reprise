@@ -471,6 +471,8 @@ mod auto_start_tests;
 mod compact_tests;
 #[path = "device_sync_planned_tests.rs"]
 mod planned_tests;
+#[path = "device_sync_podcast_removal_tests.rs"]
+mod podcast_removal_tests;
 #[path = "device_sync_readback_tests.rs"]
 mod readback_tests;
 #[path = "device_sync_safety_tests.rs"]

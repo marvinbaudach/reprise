@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use gtk4::gio;
 use reprise_core::device_sync::browser::StorageOption;
-use reprise_core::device_sync::{DeviceStorageInspection, StorageId};
+use reprise_core::device_sync::{DeviceStorageInspection, StorageId, SyncTarget};
 use reprise_platform_linux::device_sync::{
     CopyOutcome, DeviceDescriptor, DeviceMonitor, DeviceStorage,
 };
@@ -36,18 +36,27 @@ impl DeviceBackend for GioDeviceBackend {
         self.monitor.subscribe(callback);
     }
 
-    fn inspect(&self, root_uri: String) -> BackendFuture<DeviceStorageInspection> {
+    fn inspect(
+        &self,
+        root_uri: String,
+        targets: [SyncTarget; 3],
+    ) -> BackendFuture<DeviceStorageInspection> {
         Box::pin(async move {
             let storage = DeviceStorage::from_uri(&root_uri);
-            storage.inspect().await.map_err(|error| error.to_string())
+            storage
+                .inspect(&targets)
+                .await
+                .map_err(|error| error.to_string())
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn replace_track(
         &self,
         _device_id: String,
         root_uri: String,
         target_path: String,
+        storage_id: Option<StorageId>,
         source_path: PathBuf,
         relative_target: String,
         expected_size: u64,
@@ -57,6 +66,7 @@ impl DeviceBackend for GioDeviceBackend {
         Box::pin(async move {
             DeviceStorage::from_uri(&root_uri)
                 .replace_managed(
+                    storage_id,
                     &target_path,
                     &gio::File::for_path(source_path),
                     &relative_target,
@@ -69,10 +79,15 @@ impl DeviceBackend for GioDeviceBackend {
         })
     }
 
-    fn cleanup_partials(&self, root_uri: String, target_path: String) -> BackendFuture<u32> {
+    fn cleanup_partials(
+        &self,
+        root_uri: String,
+        target_path: String,
+        storage_id: Option<StorageId>,
+    ) -> BackendFuture<u32> {
         Box::pin(async move {
             DeviceStorage::from_uri(&root_uri)
-                .cleanup_partials_in(&target_path)
+                .cleanup_partials_in(storage_id, &target_path)
                 .await
                 .map_err(|error| error.to_string())
         })
@@ -82,11 +97,12 @@ impl DeviceBackend for GioDeviceBackend {
         &self,
         root_uri: String,
         target_path: String,
+        storage_id: Option<StorageId>,
         relative_target: String,
     ) -> BackendFuture<bool> {
         Box::pin(async move {
             DeviceStorage::from_uri(&root_uri)
-                .delete_managed(&target_path, &relative_target)
+                .delete_managed(storage_id, &target_path, &relative_target)
                 .await
                 .map_err(|error| error.to_string())
         })
@@ -126,12 +142,13 @@ impl DeviceBackend for GioDeviceBackend {
         _device_id: String,
         root_uri: String,
         target_path: String,
+        storage_id: Option<StorageId>,
         name: String,
         contents: Vec<u8>,
     ) -> BackendFuture<()> {
         Box::pin(async move {
             DeviceStorage::from_uri(&root_uri)
-                .replace_playlist(&target_path, &name, contents)
+                .replace_playlist(storage_id, &target_path, &name, contents)
                 .await
                 .map_err(|error| error.to_string())
         })

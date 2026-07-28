@@ -595,6 +595,34 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   duplizieren; ein Verschieben, das am Gerät fehlschlägt, blockiert das
   Speichern des neuen Ordners nicht — der nächste Sync kopiert dann schlicht
   frisch, protokolliert aber eine Warnung.
+- **MTP-33** [aktiv] [core] — Der Schalter „Remove from phone when deleted
+  or unsubscribed here" (design 7a, `DeviceSettings::remove_deleted`)
+  entscheidet real, ob eine nicht mehr gewollte Podcast-Episode oder
+  YouTube-Tonspur beim nächsten Sync-Plan das Gerät verlässt: ausgeschaltet
+  bleibt eine solche Datei liegen, `podcasts::build_plan`s `to_remove`
+  bleibt für die betroffene Kategorie leer. Beide additiven Ziele
+  (YouTube-Tonspuren, Podcast-Episoden, `MTP-18`) lesen dafür
+  `DeviceSettings::remove_deleted` desselben Geräts, nie einen
+  hartkodierten Wert. Das Playlists-Ziel ist von diesem Schalter
+  unberührt — dort bleibt `MTP-17`s vollständige Aufräumung unverändert
+  bestehen, unabhängig davon, wie dieser Schalter steht.
+- **MTP-34** [aktiv] [gtk] — Design 7d's Geräte-Ordner-Browser (`MTP-31`)
+  trägt für jede Navigation — Zeilen-Aktivierung, „Up", Speicherwechsel,
+  „Reset to default" — ein Generation-Token, exakt wie `cover_loader.rs`s
+  Schutz gegen wiederverwendete Zeilen. Eine spät eintreffende Ordnerliste
+  oder ein spät eintreffender Fehler einer bereits überholten Navigation
+  wird verworfen statt an die inzwischen aktuelle Ordneransicht angehängt
+  zu werden — sonst könnten Kind-Einträge eines langsam ladenden Ordners
+  unter einem inzwischen geöffneten, anderen Ordner erscheinen und bei
+  Auswahl einen falschen Pfad ergeben.
+- **MTP-35** [aktiv] [gtk] — Design 7d's „Save" zeigt eine verweigerte
+  Persistierung (`set_target_folder` schlägt fehl, z. B. laufender Sync
+  oder ein zwischenzeitlich abgezogenes Gerät) inline im selben
+  Fehlerbereich, den eine verweigerte Ordnererstellung schon nutzt
+  (`MTP-31`), und lässt den Dialog offen, statt ihn wie bei Erfolg zu
+  schließen. Ein verweigertes Speichern darf nie wie ein erfolgreiches
+  aussehen; die gewählte Auswahl bleibt sichtbar, damit nichts
+  stillschweigend verworfen wird.
 
 ## F. Einstellungen & Modale
 

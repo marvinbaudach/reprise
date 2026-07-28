@@ -17,10 +17,10 @@ use reprise_core::device_sync::device_view::{
 };
 use reprise_core::device_sync::settings::{load_or_create_settings, mark_device_playlists_synced};
 use reprise_core::device_sync::{
-    aggregate_balance, should_auto_start, AutoStartFacts, CategoryDiff, CategoryReading,
-    DeviceSelection, DeviceSettings, DeviceStorageInspection, DeviceStorageSnapshot,
-    ManagedDeviceFile, MirrorPlan, SelectionSource, StorageId, SyncPageState, SyncTarget,
-    SyncTargetKind,
+    aggregate_balance, load_or_create_targets, should_auto_start, AutoStartFacts, CategoryDiff,
+    CategoryReading, DeviceSelection, DeviceSettings, DeviceStorageInspection,
+    DeviceStorageSnapshot, ManagedDeviceFile, MirrorPlan, SelectionSource, StorageId,
+    SyncPageState, SyncTarget, SyncTargetKind,
 };
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor, DeviceMonitor};
 use reprise_platform_linux::device_transfer::{TranscodeProfile, TranscodeRequest, TranscodedFile};
@@ -288,6 +288,25 @@ impl DeviceSyncRuntime {
         purpose: RefreshPurpose,
         just_connected: bool,
     ) {
+        // Loaded synchronously, before the async inspect below, so it walks
+        // each of the three named targets (`MTP-18`) at the storage/path
+        // the folder browser (`MTP-31`) most recently persisted for it —
+        // never a stale or default guess (finding 1).
+        let targets = match load_or_create_targets(&self.conn.borrow(), device_id) {
+            Ok(targets) => targets,
+            Err(error) => {
+                let mut devices = self.device_states.borrow_mut();
+                if let Some(device) = devices
+                    .iter_mut()
+                    .find(|device| device.descriptor.id == device_id)
+                {
+                    device.scan_error = Some(error.to_string());
+                }
+                drop(devices);
+                self.notify();
+                return;
+            }
+        };
         let request = {
             let mut devices = self.device_states.borrow_mut();
             let Some(device) = devices
@@ -312,7 +331,7 @@ impl DeviceSyncRuntime {
         let weak = self.weak_self.borrow().clone();
         let id = device_id.to_string();
         gtk4::glib::MainContext::ref_thread_default().spawn_local(async move {
-            let result = backend.inspect(root_uri).await;
+            let result = backend.inspect(root_uri, targets).await;
             let Some(runtime) = weak.upgrade() else {
                 return;
             };

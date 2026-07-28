@@ -18,7 +18,11 @@ impl DeviceBackend for FailingCopyBackend {
 
     fn subscribe_devices(&self, _callback: Rc<dyn Fn(Vec<DeviceDescriptor>)>) {}
 
-    fn inspect(&self, _root_uri: String) -> TestFuture<DeviceStorageInspection> {
+    fn inspect(
+        &self,
+        _root_uri: String,
+        _targets: [reprise_core::device_sync::SyncTarget; 3],
+    ) -> TestFuture<DeviceStorageInspection> {
         Box::pin(async {
             Ok(DeviceStorageInspection {
                 snapshot: DeviceStorageSnapshot {
@@ -33,11 +37,13 @@ impl DeviceBackend for FailingCopyBackend {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn replace_track(
         &self,
         _device_id: String,
         _root_uri: String,
         _target_path: String,
+        _storage_id: Option<reprise_core::device_sync::StorageId>,
         _source_path: PathBuf,
         _relative_target: String,
         _expected_size: u64,
@@ -52,6 +58,7 @@ impl DeviceBackend for FailingCopyBackend {
         _device_id: String,
         _root_uri: String,
         _target_path: String,
+        _storage_id: Option<reprise_core::device_sync::StorageId>,
         _name: String,
         _contents: Vec<u8>,
     ) -> TestFuture<()> {

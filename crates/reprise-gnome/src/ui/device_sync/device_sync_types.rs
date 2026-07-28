@@ -17,29 +17,48 @@ pub(super) type StateCallback = Rc<dyn Fn(DeviceSyncState)>;
 pub trait DeviceBackend {
     fn devices(&self) -> Vec<DeviceDescriptor>;
     fn subscribe_devices(&self, callback: Rc<dyn Fn(Vec<DeviceDescriptor>)>);
-    fn inspect(&self, root_uri: String) -> BackendFuture<DeviceStorageInspection>;
+    /// `targets`: the device's three named sync targets (`MTP-18`), each
+    /// carrying the persisted `storage_id`/path the folder browser (`MTP-31`)
+    /// resolved for it — inspection walks exactly those, never a
+    /// hard-coded folder name, so a repointed target is recognized as its
+    /// own category's inventory (`MTP-1` finding: storage/folder honoured
+    /// end to end).
+    fn inspect(
+        &self,
+        root_uri: String,
+        targets: [SyncTarget; 3],
+    ) -> BackendFuture<DeviceStorageInspection>;
     /// Copies (or overwrites) `source_path` to `relative_target` under
-    /// `target_path`, always replacing any existing file even when its
-    /// byte count happens to be unchanged.
+    /// `target_path` on `storage_id` (`None` falls back to the same
+    /// "prefer internal" default used before a target was ever repointed),
+    /// always replacing any existing file even when its byte count happens
+    /// to be unchanged.
     #[allow(clippy::too_many_arguments)]
     fn replace_track(
         &self,
         device_id: String,
         root_uri: String,
         target_path: String,
+        storage_id: Option<StorageId>,
         source_path: PathBuf,
         relative_target: String,
         expected_size: u64,
         cancellable: gio::Cancellable,
         progress: Rc<dyn Fn(u64, u64)>,
     ) -> BackendFuture<CopyOutcome>;
-    fn cleanup_partials(&self, _root_uri: String, _target_path: String) -> BackendFuture<u32> {
+    fn cleanup_partials(
+        &self,
+        _root_uri: String,
+        _target_path: String,
+        _storage_id: Option<StorageId>,
+    ) -> BackendFuture<u32> {
         Box::pin(async { Ok(0) })
     }
     fn delete_track(
         &self,
         _root_uri: String,
         _target_path: String,
+        _storage_id: Option<StorageId>,
         _relative_target: String,
     ) -> BackendFuture<bool> {
         Box::pin(async { Err("device deletion is unavailable".into()) })
@@ -60,6 +79,7 @@ pub trait DeviceBackend {
         device_id: String,
         root_uri: String,
         target_path: String,
+        storage_id: Option<StorageId>,
         name: String,
         contents: Vec<u8>,
     ) -> BackendFuture<()>;

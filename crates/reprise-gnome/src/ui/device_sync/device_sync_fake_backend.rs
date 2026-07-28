@@ -18,7 +18,7 @@ use gtk4::gio::prelude::*;
 use reprise_core::device_sync::browser::StorageOption;
 use reprise_core::device_sync::{
     DeviceStorageAccess, DeviceStorageInspection, DeviceStorageSnapshot, ManagedDeviceFile,
-    StorageId,
+    StorageId, SyncTarget,
 };
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor};
 use reprise_platform_linux::device_transfer::{TranscodeProfile, TranscodeRequest, TranscodedFile};
@@ -65,6 +65,13 @@ pub(super) struct FakeState {
     /// or simulated filesystem.
     pub(super) managed_copies: RefCell<Vec<(String, String)>>,
     pub(super) managed_deleted: RefCell<Vec<(String, String)>>,
+    /// `MTP-18`/finding-1 proof: the `storage_id` each `replace_track`/
+    /// `delete_track`/`replace_playlist` call actually reached this double
+    /// with, keyed by `target_path` — the seam a test uses to prove a
+    /// device's persisted per-target storage choice is what the transfer
+    /// layer uses, not just what `device.targets` records in memory.
+    pub(super) transfer_storage_ids: RefCell<Vec<(String, Option<StorageId>)>>,
+    pub(super) last_inspected_targets: RefCell<Option<[SyncTarget; 3]>>,
     pub(super) podcast_files: RefCell<Vec<ManagedDeviceFile>>,
     pub(super) youtube_files: RefCell<Vec<ManagedDeviceFile>>,
     pub(super) ejected: RefCell<Vec<String>>,
@@ -222,7 +229,11 @@ impl DeviceBackend for FakeBackend {
         self.state.subscribers.borrow_mut().push(callback);
     }
 
-    fn inspect(&self, _root_uri: String) -> TestFuture<DeviceStorageInspection> {
+    fn inspect(
+        &self,
+        _root_uri: String,
+        targets: [SyncTarget; 3],
+    ) -> TestFuture<DeviceStorageInspection> {
         let available_bytes = self.state.available_bytes.get();
         let total_bytes = self.state.total_bytes.get();
         let storage_access = self.state.storage_access.get();
@@ -230,6 +241,7 @@ impl DeviceBackend for FakeBackend {
         let inspection_error = self.state.inspection_error.borrow_mut().take();
         let podcast_files = self.state.podcast_files.borrow().clone();
         let youtube_files = self.state.youtube_files.borrow().clone();
+        self.state.last_inspected_targets.replace(Some(targets));
         Box::pin(async move {
             if let Some(gate) = gate {
                 gate.started
@@ -259,11 +271,13 @@ impl DeviceBackend for FakeBackend {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn replace_track(
         &self,
         device_id: String,
         _root_uri: String,
         target_path: String,
+        storage_id: Option<StorageId>,
         _source_path: PathBuf,
         relative_target: String,
         expected_size: u64,
@@ -272,6 +286,10 @@ impl DeviceBackend for FakeBackend {
     ) -> TestFuture<CopyOutcome> {
         let state = self.state.clone();
         let delay_ms = self.delay_ms;
+        state
+            .transfer_storage_ids
+            .borrow_mut()
+            .push((target_path.clone(), storage_id));
         Box::pin(async move {
             state
                 .planned_operations
@@ -361,9 +379,14 @@ impl DeviceBackend for FakeBackend {
         &self,
         _root_uri: String,
         target_path: String,
+        storage_id: Option<StorageId>,
         relative_target: String,
     ) -> TestFuture<bool> {
         let state = self.state.clone();
+        state
+            .transfer_storage_ids
+            .borrow_mut()
+            .push((target_path.clone(), storage_id));
         Box::pin(async move {
             let observer = state.delete_observer.borrow().clone();
             if let Some(observer) = observer {
@@ -382,11 +405,16 @@ impl DeviceBackend for FakeBackend {
         &self,
         device_id: String,
         _root_uri: String,
-        _target_path: String,
+        target_path: String,
+        storage_id: Option<StorageId>,
         name: String,
         contents: Vec<u8>,
     ) -> TestFuture<()> {
         let state = self.state.clone();
+        state
+            .transfer_storage_ids
+            .borrow_mut()
+            .push((target_path, storage_id));
         Box::pin(async move {
             if let Some(error) = state.playlist_error.borrow().clone() {
                 return Err(error);

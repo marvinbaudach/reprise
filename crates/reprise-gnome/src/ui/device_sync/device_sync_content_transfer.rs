@@ -6,16 +6,19 @@
 //! path and which plan slice gets passed in.
 
 use reprise_core::device_sync::podcasts::PodcastSyncCandidate;
+use reprise_core::device_sync::StorageId;
 
 use super::*;
 
-/// Deletes every path in `to_remove` from `target_path`. `offset`/`total`
-/// let the caller report progress across both content targets as one
-/// combined "N of M" count rather than resetting per target.
+/// Deletes every path in `to_remove` from `target_path` on `storage_id`.
+/// `offset`/`total` let the caller report progress across both content
+/// targets as one combined "N of M" count rather than resetting per target.
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn run_content_removals(
     runtime: &Rc<DeviceSyncRuntime>,
     work: &PlannedWork,
     target_path: &str,
+    storage_id: Option<StorageId>,
     to_remove: &[String],
     offset: usize,
     total: usize,
@@ -40,7 +43,12 @@ pub(super) async fn run_content_removals(
         );
         if let Err(error) = runtime
             .backend
-            .delete_track(work.root_uri.clone(), target_path.to_string(), path.clone())
+            .delete_track(
+                work.root_uri.clone(),
+                target_path.to_string(),
+                storage_id,
+                path.clone(),
+            )
             .await
         {
             tracing::warn!(device_path = path, target_path, %error, "could not remove device content file");
@@ -59,6 +67,7 @@ pub(super) async fn run_content_transfers(
     runtime: &Rc<DeviceSyncRuntime>,
     work: &PlannedWork,
     target_path: &str,
+    storage_id: Option<StorageId>,
     to_copy: &[PodcastSyncCandidate],
     offset: usize,
     total: usize,
@@ -108,6 +117,7 @@ pub(super) async fn run_content_transfers(
                 work.device_id.clone(),
                 work.root_uri.clone(),
                 target_path.to_string(),
+                storage_id,
                 episode.source_path.clone(),
                 episode.device_path.clone(),
                 episode.size_bytes,

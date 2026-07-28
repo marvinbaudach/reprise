@@ -155,6 +155,12 @@ pub(in crate::ui) fn present(
     // async loader recursively.
     let navigate: NavigateFn = Rc::new(RefCell::new(None));
     let updating = Rc::new(Cell::new(false));
+    // `MTP-34`: bumped by every navigation (row activation, "Up", storage
+    // change, "Reset to default") — exactly `cover_loader.rs`'s guard
+    // against a recycled row. A folder listing or error that lands after a
+    // newer navigation has already started is stale and must be dropped,
+    // not appended under whatever folder is now showing.
+    let generation = Rc::new(Cell::new(0_u64));
 
     let navigate_impl: Rc<dyn Fn(String)> = {
         let state = state.clone();
@@ -170,6 +176,7 @@ pub(in crate::ui) fn present(
         let error_label = error_label.clone();
         let new_folder_entry = new_folder_entry.clone();
         let new_folder_button = new_folder_button.clone();
+        let generation = generation.clone();
         Rc::new(move |path: String| {
             let Some(storage) = state.borrow().storage else {
                 return;
@@ -189,25 +196,35 @@ pub(in crate::ui) fn present(
             while let Some(child) = folder_list.first_child() {
                 folder_list.remove(&child);
             }
+            // `MTP-34`: this navigation is now the current one — any result
+            // still in flight for an earlier path belongs to a view the
+            // user has already left.
+            let token = generation.get().wrapping_add(1);
+            generation.set(token);
 
             let runtime = runtime.clone();
             let device_id = device_id.clone();
             let folder_list = folder_list.clone();
             let error_box = error_box.clone();
             let error_label = error_label.clone();
-            gtk4::glib::MainContext::ref_thread_default().spawn_local(async move {
-                match runtime.browse_folders(&device_id, storage, path).await {
-                    Ok(folders) => {
-                        for name in folders {
-                            folder_list.append(&folder_row(&name));
-                        }
+            let generation = generation.clone();
+            gtk4::glib::MainContext::ref_thread_default().spawn_local(load_folders_if_current(
+                runtime,
+                device_id,
+                storage,
+                path,
+                generation,
+                token,
+                move |folders| {
+                    for name in folders {
+                        folder_list.append(&folder_row(&name));
                     }
-                    Err(error) => {
-                        error_label.set_label(&error);
-                        error_box.set_visible(true);
-                    }
-                }
-            });
+                },
+                move |error| {
+                    error_label.set_label(&error);
+                    error_box.set_visible(true);
+                },
+            ));
         })
     };
     *navigate.borrow_mut() = Some(navigate_impl);
@@ -329,7 +346,12 @@ pub(in crate::ui) fn present(
         let warning_label = warning_label.clone();
         let error_box = error_box.clone();
         let folder_list = folder_list.clone();
+        let generation = generation.clone();
         move |_| {
+            // `MTP-34`: resetting clears the folder list the same way a
+            // navigation does, so any still-in-flight listing for the
+            // folder the user just left must not land here either.
+            generation.set(generation.get().wrapping_add(1));
             let reset = reset_target_folder(&state.borrow().original);
             state.borrow_mut().storage = reset.storage_id;
             state.borrow_mut().path = reset.path.clone();
@@ -366,17 +388,29 @@ pub(in crate::ui) fn present(
         let device_id = device_id.to_string();
         let state = state.clone();
         let dialog = dialog.downgrade();
+        let error_box = error_box.clone();
+        let error_label = error_label.clone();
         move |_| {
             let (storage, path) = {
                 let state = state.borrow();
                 (state.storage, state.path.clone())
             };
-            if let Err(error) = runtime.set_target_folder(&device_id, kind, storage, path) {
-                tracing::warn!(%error, "could not save Android sync target folder");
-            }
-            if let Some(dialog) = dialog.upgrade() {
-                dialog.close();
-            }
+            let result = runtime.set_target_folder(&device_id, kind, storage, path);
+            let error_label = error_label.clone();
+            let error_box = error_box.clone();
+            let dialog = dialog.clone();
+            handle_save_result(
+                result,
+                move |message| {
+                    error_label.set_label(message);
+                    error_box.set_visible(true);
+                },
+                move || {
+                    if let Some(dialog) = dialog.upgrade() {
+                        dialog.close();
+                    }
+                },
+            );
         }
     });
 
@@ -434,6 +468,62 @@ pub(in crate::ui) fn present(
         }
     };
     gtk4::glib::MainContext::ref_thread_default().spawn_local(load_storages);
+}
+
+/// `MTP-34`'s staleness guard, pulled out of the row/"Up"/storage-dropdown
+/// navigation closure so the race itself — not just its GTK call sites —
+/// is unit-testable without a display: races `runtime.browse_folders` for
+/// one navigation against the shared `generation` counter, and only calls
+/// `on_folders`/`on_error` while `token` still matches the current
+/// generation. A result for a navigation the user has already left is
+/// dropped silently, exactly like a recycled list row's stale cover load
+/// (`cover_loader.rs`).
+#[allow(clippy::too_many_arguments)]
+async fn load_folders_if_current(
+    runtime: Rc<DeviceSyncRuntime>,
+    device_id: String,
+    storage: StorageId,
+    path: String,
+    generation: Rc<Cell<u64>>,
+    token: u64,
+    on_folders: impl FnOnce(Vec<String>),
+    on_error: impl FnOnce(String),
+) {
+    match runtime.browse_folders(&device_id, storage, path).await {
+        Ok(folders) => {
+            if generation.get() != token {
+                return;
+            }
+            on_folders(folders);
+        }
+        Err(error) => {
+            if generation.get() != token {
+                return;
+            }
+            on_error(error);
+        }
+    }
+}
+
+/// `MTP-35`: what the Save button does with a persistence result — pulled
+/// out of the widget wiring so the decision itself is testable without a
+/// display. Success closes the dialog, exactly as before; a refused save
+/// (busy device, disconnected device) must not look like a successful one,
+/// so it reports inline through the same error area a refused "New folder"
+/// already uses (`MTP-31`) and leaves the dialog open, so the choice is
+/// not silently lost.
+fn handle_save_result(
+    result: Result<(), String>,
+    show_error: impl FnOnce(&str),
+    close_dialog: impl FnOnce(),
+) {
+    match result {
+        Ok(()) => close_dialog(),
+        Err(error) => {
+            tracing::warn!(%error, "could not save Android sync target folder");
+            show_error(&format!("Could not save: {error}"));
+        }
+    }
 }
 
 fn detail_label(text: &str) -> gtk4::Label {
@@ -527,67 +617,5 @@ fn parent_path(path: &str) -> Option<String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use reprise_core::device_sync::browser::StorageKind;
-
-    #[test]
-    fn mtp_31_path_navigation_pushes_and_pops_components() {
-        assert_eq!(push_path("/", "Music"), "/Music");
-        assert_eq!(push_path("/Music", "Reprise"), "/Music/Reprise");
-        assert_eq!(parent_path("/Music/Reprise"), Some("/Music".to_string()));
-        assert_eq!(parent_path("/Music"), Some("/".to_string()));
-        assert_eq!(parent_path("/"), None);
-    }
-
-    #[test]
-    fn mtp_31_preview_text_names_the_resolved_storage_and_path() {
-        assert_eq!(
-            preview_text(&TargetPreview::Resolved {
-                storage_name: "Internal shared storage".to_string(),
-                path: "/Music/Reprise-YouTube".to_string(),
-            }),
-            "Files will be stored at Internal shared storage → /Music/Reprise-YouTube"
-        );
-        assert!(preview_text(&TargetPreview::Unresolved {
-            path: "/Music/Reprise-YouTube".to_string()
-        })
-        .contains("once a storage is chosen"));
-        assert!(preview_text(&TargetPreview::StorageMissing {
-            path: "/Music/Reprise-YouTube".to_string()
-        })
-        .contains("no longer available"));
-    }
-
-    #[test]
-    fn mtp_31_conflict_warning_only_fires_against_an_actual_playlist_target() {
-        let playlists = SyncTarget {
-            kind: SyncTargetKind::Playlists,
-            storage_id: Some(StorageId(1)),
-            path: "/Music/Reprise".to_string(),
-            enabled: true,
-            cap_bytes: None,
-        };
-        let state = BrowserState {
-            original: SyncTarget {
-                kind: SyncTargetKind::YoutubeAudio,
-                storage_id: Some(StorageId(1)),
-                path: "/Music/Reprise-YouTube".to_string(),
-                enabled: true,
-                cap_bytes: None,
-            },
-            playlist_target: Some(playlists.clone()),
-            storages: vec![StorageOption {
-                id: StorageId(1),
-                name: "Internal".to_string(),
-                kind: StorageKind::Internal,
-            }],
-            storage: Some(StorageId(1)),
-            path: "/Music/Reprise/Nested".to_string(),
-        };
-        let conflicts = state.playlist_target.as_ref().is_some_and(|playlist| {
-            folder_conflicts_with_playlist_target(state.storage, &state.path, playlist)
-        });
-        assert!(conflicts);
-    }
-}
+#[path = "device_sync_target_browser_tests.rs"]
+mod tests;

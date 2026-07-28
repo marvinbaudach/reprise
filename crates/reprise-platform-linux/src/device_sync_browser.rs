@@ -183,7 +183,13 @@ impl DeviceStorage {
     /// than cached — a storage can disappear (SD card removed) between
     /// browser sessions, and the module's core rule is that nothing
     /// MTP-derived is trusted to still be valid across a reconnect.
-    async fn resolve_storage_root(
+    ///
+    /// `pub(super)`: also the resolution primitive
+    /// [`DeviceStorage::resolve_target_storage`] (parent module) and
+    /// [`inspection`](super::inspection) build on, so a target's persisted
+    /// `StorageId` (`MTP-18`) is what transfers and inspection actually use,
+    /// not just what the folder browser previews (`MTP-31`).
+    pub(super) async fn resolve_storage_root(
         &self,
         storage_id: StorageId,
     ) -> Result<gio::File, DeviceIoError> {

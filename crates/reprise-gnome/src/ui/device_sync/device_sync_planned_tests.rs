@@ -139,6 +139,49 @@ fn sync_now_copies_the_selection_and_commits_the_device_inventory() {
     });
 }
 
+/// `MTP-18`, finding 1: once the folder browser (`MTP-31`) has persisted a
+/// storage for the Playlists target, `sync_now`'s actual transfer must
+/// carry that `storage_id` through to the backend — not silently
+/// reconstruct storage from the device root the way the pre-fix transfer
+/// layer did (which always guessed "prefer internal" regardless of what
+/// `set_target_folder` had just saved).
+#[test]
+fn mtp_18_sync_now_routes_the_playlists_transfer_through_its_persisted_storage() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1, 2]);
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+
+        runtime
+            .set_target_folder(
+                "a",
+                SyncTargetKind::Playlists,
+                Some(StorageId(7)),
+                "/Music/Reprise".to_string(),
+            )
+            .unwrap();
+        settle().await;
+
+        runtime.sync_now("a").unwrap();
+        settle().await;
+
+        let recorded = backend.state.transfer_storage_ids.borrow().clone();
+        assert!(
+            !recorded.is_empty(),
+            "the sync must have reached at least one transfer call"
+        );
+        assert!(
+            recorded
+                .iter()
+                .all(|(target_path, storage_id)| target_path != "/Music/Reprise"
+                    || *storage_id == Some(StorageId(7))),
+            "every Playlists-target transfer must carry the persisted storage_id, got {recorded:?}"
+        );
+    });
+}
+
 #[test]
 fn known_read_only_target_is_rejected_at_the_runtime_boundary() {
     run(async {
