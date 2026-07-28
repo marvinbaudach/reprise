@@ -30,10 +30,10 @@ echo "== Frontend thinness =="
 # count. Lower it in the same commit that removes a use. Never raise one
 # without a reason recorded in the commit message.
 declare -A budget=(
-  [rusqlite]=537
+  [rusqlite]=515
   [filesystem]=17
-  [threads]=15
-  [workers]=8
+  [threads]=13
+  [workers]=7
 )
 
 # Prints the frontend's *production* lines as `path:line:code`.
@@ -131,7 +131,6 @@ echo "== Dead-code allowlist =="
 allowlist=$(cat <<'ALLOWLIST'
 crates/reprise-core/src/library/playlists.rs:6
 crates/reprise-gnome/src/ui/concerts/mod.rs:1
-crates/reprise-gnome/src/ui/instrumental/conversion_view.rs:1
 crates/reprise-gnome/src/ui/issues/mod.rs:1
 crates/reprise-gnome/src/ui/lyrics/lyrics_view.rs:4
 crates/reprise-gnome/src/ui/motion.rs:2

@@ -119,10 +119,6 @@ impl ExternalPlaybackState {
         }
     }
 
-    pub(in crate::ui) fn preview_path(&self) -> Option<String> {
-        self.preview_path.clone()
-    }
-
     pub(in crate::ui) fn plays_podcast_subscription(&self, subscription_id: i64) -> bool {
         matches!(
             self.session.as_ref(),

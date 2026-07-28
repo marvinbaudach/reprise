@@ -361,7 +361,7 @@ fn run_query(shared: &Rc<Shared>) {
     // experimental switch (INST-11). Its sticky state lives in the browse bar.
     let exclude_ai = shared.browse_bar.exclude_ai()
         && matches!(source, ViewSource::Library)
-        && crate::ui::instrumental::experimental_enabled(&shared.conn.borrow());
+        && crate::ui::experimental::experimental_enabled(&shared.conn.borrow());
     let has_filter = !filter.trim().is_empty() || !browse.is_empty() || exclude_ai;
 
     let is_queue = matches!(source, ViewSource::Queue);

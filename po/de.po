@@ -1699,7 +1699,6 @@ msgid "Stale"
 msgstr "Veraltet"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:80
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:36
 msgid "Failed"
 msgstr "Fehlgeschlagen"
 
@@ -2647,7 +2646,6 @@ msgstr "Audio wird aufgelöst …"
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:65
 #: crates/reprise-gnome/src/ui/strings_radio.rs:42
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:14
 msgid "Play"
 msgstr "Wiedergabe"
 
@@ -3574,53 +3572,6 @@ msgstr ""
 msgid "Show all {total} tracks"
 msgstr "Alle {total} Titel anzeigen"
 
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:8
-msgid "Instrumental conversions"
-msgstr "Instrumental-Konvertierungen"
-
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:9
-msgid "No conversions yet"
-msgstr "Noch keine Konvertierungen"
-
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:10
-msgid "Save all"
-msgstr "Alle speichern"
-
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:11
-msgid "Clear playlist"
-msgstr "Wiedergabeliste leeren"
-
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:12
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:180
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:198
-msgid "Save"
-msgstr "Speichern"
-
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:13
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:199
-msgid "Discard"
-msgstr "Verwerfen"
-
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:17
-msgid "Instrumental preview"
-msgstr "Instrumentalvorschau"
-
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:32
-msgid "Queued"
-msgstr "Eingereiht"
-
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:33
-msgid "Processing…"
-msgstr "Wird verarbeitet…"
-
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:34
-msgid "Ready — not saved"
-msgstr "Bereit — nicht gespeichert"
-
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:35
-msgid "Saved to library"
-msgstr "In der Musiksammlung gespeichert"
-
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:52
 msgid "AI"
 msgstr "KI"
@@ -3658,14 +3609,6 @@ msgstr ""
 "Kontextmenü, die Konvertierungsansicht, Abzeichen und den Filter „KI-Musik "
 "ausblenden“."
 
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:71
-msgid "Instrumental model"
-msgstr "Instrumental-Modell"
-
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:72
-msgid "Vocal-removal model"
-msgstr "Modell zur Gesangsentfernung"
-
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:74
 msgid ""
 "Downloaded on first use (~316 MB), verified by checksum, with a licence note "
@@ -3673,10 +3616,6 @@ msgid ""
 msgstr ""
 "Wird bei der ersten Verwendung heruntergeladen (~316 MB), per Prüfsumme "
 "verifiziert, mit einem Lizenzhinweis daneben."
-
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:76
-msgid "Download"
-msgstr "Herunterladen"
 
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:81
 msgid ""
@@ -3693,14 +3632,6 @@ msgid ""
 msgstr ""
 "Die mitgelieferte ONNX Runtime ist nicht verfügbar oder konnte nicht "
 "verifiziert werden. Installiere diesen Build neu."
-
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:85
-msgid "Model ready — instrumental rendering is available."
-msgstr "Modell bereit — Instrumental-Rendering ist verfügbar."
-
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:89
-msgid "Verifying…"
-msgstr "Wird verifiziert…"
 
 #: crates/reprise-gnome/src/ui/strings_scan.rs:5
 msgid "Library folder unavailable"
@@ -3877,6 +3808,11 @@ msgstr "pro Titel"
 msgid "will be applied to all {count}"
 msgstr "wird auf alle {count} angewendet"
 
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:180
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:198
+msgid "Save"
+msgstr "Speichern"
+
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:181
 #, rust-format
 msgid "Save {count}"
@@ -3895,6 +3831,10 @@ msgstr "{count} ausstehende Änderungen"
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:196
 msgid "Save changes?"
 msgstr "Änderungen speichern?"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:199
+msgid "Discard"
+msgstr "Verwerfen"
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:201
 #, rust-format
@@ -3956,10 +3896,6 @@ msgstr "Zur Warteschlange hinzufügen"
 msgid "Add to playlist"
 msgstr "Zur Wiedergabeliste hinzufügen"
 
-#: crates/reprise-gnome/src/ui/strings_track_menu.rs:8
-msgid "Create instrumental"
-msgstr "Instrumentalversion erstellen"
-
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:9
 msgid "Move to top"
 msgstr "Nach oben verschieben"
@@ -4003,30 +3939,6 @@ msgstr "{count} aus der Musiksammlung entfernen…"
 #, rust-format
 msgid "Move {count} to Trash…"
 msgstr "{count} in den Papierkorb verschieben…"
-
-#: crates/reprise-gnome/src/ui/strings_track_menu.rs:65
-#, rust-format
-msgid "Queued {count} instrumental conversion"
-msgstr "{count} Instrumental-Konvertierung eingereiht"
-
-#: crates/reprise-gnome/src/ui/strings_track_menu.rs:66
-#, rust-format
-msgid "Queued {count} instrumental conversions"
-msgstr "{count} Instrumental-Konvertierungen eingereiht"
-
-#: crates/reprise-gnome/src/ui/strings_track_menu.rs:75
-#, rust-format
-msgid "{count} already exists"
-msgstr "{count} existiert bereits"
-
-#: crates/reprise-gnome/src/ui/strings_track_menu.rs:76
-#, rust-format
-msgid "{count} already exist"
-msgstr "{count} existieren bereits"
-
-#: crates/reprise-gnome/src/ui/strings_track_menu.rs:84
-msgid "Could not queue instrumental conversion"
-msgstr "Instrumental-Konvertierung konnte nicht eingereiht werden"
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:90
 #, rust-format
@@ -4483,6 +4395,80 @@ msgstr "Separate Titelleiste"
 
 #~ msgid "Bars"
 #~ msgstr "Bars"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:38
+msgid "Show upcoming releases and missing albums or EPs · contacts MusicBrainz"
+msgstr ""
+"Zeigt kommende Veröffentlichungen und fehlende Alben oder EPs · kontaktiert "
+"MusicBrainz"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:17
+msgid "Buy"
+msgstr "Kaufen"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:18
+msgid "Bandcamp"
+msgstr "Bandcamp"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:19
+msgid "Buy on Bandcamp"
+msgstr "Auf Bandcamp kaufen"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:29
+msgid "Incomplete"
+msgstr "Unvollständig"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:30
+msgid "Missing"
+msgstr "Fehlend"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:31
+msgid "No discography data yet"
+msgstr "Noch keine Diskografiedaten"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:32
+msgid "No missing albums or EPs"
+msgstr "Keine fehlenden Alben oder EPs"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:37
+#, rust-format
+msgid "{shown} of {total} gaps"
+msgstr "{shown} von {total} Lücken"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:43
+#, rust-format
+msgid "{total} gaps"
+msgstr "{total} Lücken"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:48
+#, rust-format
+msgid "Show all {total} gaps"
+msgstr "Alle {total} Lücken anzeigen"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:55
+#, rust-format
+msgid "{local} of {total} tracks"
+msgstr "{local} von {total} Titeln"
+
+#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:11
+msgid "Live song analysis driving the visual"
+msgstr "Live-Songanalyse steuert die Visualisierung"
+
+#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:12
+msgid "Bass"
+msgstr "Bass"
+
+#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:13
+msgid "Baseline"
+msgstr "Grundpegel"
+
+#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:14
+msgid "Impact"
+msgstr "Wirkung"
+
+#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:15
+msgid "Breakdown"
+msgstr "Breakdown"
 
 #~ msgid "Add a concert provider API key in Preferences."
 #~ msgstr ""

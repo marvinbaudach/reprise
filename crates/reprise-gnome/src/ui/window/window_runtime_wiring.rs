@@ -510,52 +510,6 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         Some(track_list) => track_list.reload(),
         None => tracing::warn!("track list reload skipped: track list is gone"),
     });
-    crate::ui::instrumental::set_settings_hook({
-        let preferences = Rc::downgrade(preferences);
-        Rc::new(move || {
-            if let Some(preferences) = preferences.upgrade() {
-                preferences.present_page("experimental");
-            }
-        })
-    });
-    {
-        let conn = conn.clone();
-        let overlay = toast_overlay.downgrade();
-        sidebar.set_on_conversion_drop(move |ids| {
-            let outcome = crate::ui::instrumental::enqueue_present_tracks(&conn.borrow(), ids);
-            match outcome {
-                Ok(summary) if summary.accepted() > 0 => {
-                    crate::ui::instrumental::wake_worker();
-                    if let Some(overlay) = overlay.upgrade() {
-                        overlay.add_toast(adw::Toast::new(
-                            &crate::ui::strings::create_instrumental_toast(
-                                summary.created,
-                                summary.deduplicated,
-                            ),
-                        ));
-                    }
-                    true
-                }
-                Ok(_) => false,
-                Err(
-                    crate::ui::instrumental::EnqueueError::ModelRequired
-                    | crate::ui::instrumental::EnqueueError::RuntimeUnavailable(_),
-                ) => {
-                    crate::ui::instrumental::open_settings();
-                    true
-                }
-                Err(error) => {
-                    tracing::error!(%error, "conversion drop could not queue instrumentals");
-                    if let Some(overlay) = overlay.upgrade() {
-                        overlay.add_toast(adw::Toast::new(
-                            &crate::ui::strings::create_instrumental_failed_toast(),
-                        ));
-                    }
-                    false
-                }
-            }
-        });
-    }
     let sidebar_weak = Rc::downgrade(sidebar);
     track_list.set_on_sidebar_playlist_drop(move |playlist_id, playlist_name, ids| {
         match sidebar_weak.upgrade() {
@@ -627,17 +581,6 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         watcher_state,
     );
     start_external_changes_refresh(db_path, track_list, sidebar);
-    crate::ui::instrumental::conversion_wiring::install(
-        &crate::ui::instrumental::conversion_wiring::ConversionWiring {
-            conn,
-            db_path,
-            window,
-            content_stack,
-            toast_overlay,
-            track_list,
-            player,
-        },
-    );
     super::mounts::install(&super::mounts::MountWiring {
         conn,
         db_path,
@@ -766,13 +709,6 @@ fn start_external_changes_refresh(
                         );
                     }
                 }
-            }
-            if plan.conversion {
-                // An MCP/CLI process enqueued an instrumental job. The packaged
-                // worker-process supervisor idles until woken, so nudge it to
-                // claim and render the new job. A no-op when the experimental
-                // feature is off (no supervisor, no wake hook).
-                crate::ui::instrumental::wake_worker();
             }
         }),
     );
