@@ -1,6 +1,6 @@
 //! YouTube channel windowing, Shorts visibility, and batch-selection surface.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
@@ -166,6 +166,10 @@ pub(super) struct YoutubeChannelDetail {
     groups: RefCell<Vec<RenderedSourceGroup>>,
     download_states: RefCell<BTreeMap<i64, DownloadState>>,
     download_widgets: RefCell<BTreeMap<i64, DownloadRowWidgets>>,
+    /// `NET-1a` / `C1`: `online_sources::network_allowed(conn,
+    /// &modules::SOURCE_IMAGES_MODULE)`, refreshed by [`Self::update`] on
+    /// every render pass — this view never reads settings itself.
+    images_allowed: Cell<bool>,
 }
 
 impl YoutubeChannelDetail {
@@ -192,6 +196,7 @@ impl YoutubeChannelDetail {
             groups: RefCell::new(Vec::new()),
             download_states: RefCell::new(BTreeMap::new()),
             download_widgets: RefCell::new(BTreeMap::new()),
+            images_allowed: Cell::new(false),
         })
     }
 
@@ -227,9 +232,11 @@ impl YoutubeChannelDetail {
         self: &Rc<Self>,
         groups: &[RenderedSourceGroup],
         download_states: &BTreeMap<i64, DownloadState>,
+        images_allowed: bool,
     ) {
         self.groups.replace(groups.to_vec());
         self.download_states.replace(download_states.clone());
+        self.images_allowed.set(images_allowed);
         let active = self.state.borrow().active_channel();
         if active.is_some_and(|id| !groups.iter().any(|group| group.group.subscription_id == id)) {
             self.state.borrow_mut().close_channel();
@@ -302,6 +309,7 @@ impl YoutubeChannelDetail {
             rendered.group.image_url.as_deref(),
             "video-x-generic-symbolic",
             48,
+            self.images_allowed.get(),
         );
         row.append(image.widget());
         let title = gtk4::Label::new(Some(&rendered.group.title));
@@ -728,5 +736,42 @@ mod tests {
         );
         assert_eq!(summary.downloaded_count, 2);
         assert_eq!(summary.downloaded_bytes, 2_500);
+    }
+
+    /// `SRC-11` / `NET-1a`: the channel-detail header is one of the source
+    /// image entry points — with `images_allowed: false` (set via
+    /// `update`) it must stay on the glyph fallback even though the group
+    /// carries a real `image_url`.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn src_11_channel_header_stays_on_the_fallback_when_images_are_not_allowed() {
+        gtk4::init().unwrap();
+        let stack = gtk4::Stack::new();
+        let detail = YoutubeChannelDetail::new(&stack, true);
+        let group = reprise_core::podcasts::SourceGroup {
+            subscription_id: 7,
+            title: "Channel".into(),
+            author: None,
+            image_url: Some("https://images.test/net-1a-channel-header.jpg".into()),
+            kind: PodcastKind::Youtube,
+            sync_to_phone: false,
+            episodes: Vec::new(),
+        };
+        let rendered = RenderedSourceGroup {
+            summary: source_summary(&group, &BTreeMap::<i64, DownloadState>::new()),
+            group,
+        };
+        detail.update(std::slice::from_ref(&rendered), &BTreeMap::new(), false);
+
+        let header = detail
+            .build_header(&rendered)
+            .downcast::<gtk4::Box>()
+            .unwrap();
+        let artwork = header
+            .first_child()
+            .and_then(|back| back.next_sibling())
+            .and_downcast::<gtk4::Stack>()
+            .expect("source image stack");
+        assert_eq!(artwork.visible_child_name().as_deref(), Some("fallback"));
     }
 }

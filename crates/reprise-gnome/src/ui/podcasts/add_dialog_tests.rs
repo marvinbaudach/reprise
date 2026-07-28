@@ -87,7 +87,7 @@ fn src_3a_add_dialog_has_fixed_cancel_and_primary_actions() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_5_result_rows_use_the_source_artwork_surface() {
     gtk4::init().unwrap();
-    let row = candidate_row("Show", "Publisher", PodcastKind::Rss, None);
+    let row = candidate_row("Show", "Publisher", PodcastKind::Rss, None, false);
     let image = row
         .first_child()
         .and_downcast::<gtk4::Stack>()
@@ -96,6 +96,47 @@ fn src_5_result_rows_use_the_source_artwork_surface() {
     assert!(image.has_css_class("reprise-source-image"));
     assert_eq!(image.width_request(), 40);
     assert_eq!(image.height_request(), 40);
+}
+
+/// `SRC-11` / `NET-1a`: the helper every result and preview row in this
+/// dialog uses to gate its source image must reflect both the global
+/// online-sources switch and the Source Images module — not just one of
+/// them.
+#[test]
+fn src_11_add_dialog_images_allowed_is_the_net_1a_and() {
+    let conn = reprise_core::db::open_migrated(None).unwrap();
+    // Neither the global gate nor the module is on by default.
+    assert!(!images_allowed(&conn));
+
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::SOURCE_IMAGES_MODULE, true)
+        .unwrap();
+    assert!(
+        images_allowed(&conn),
+        "module on, global on (default) => allowed"
+    );
+
+    reprise_core::online_sources::set_enabled(&conn, false).unwrap();
+    assert!(!images_allowed(&conn), "module on, global off => blocked");
+}
+
+/// `SRC-11` / `NET-1a`: with the gate closed, a result row carrying a real
+/// `image_url` must stay on the glyph fallback — nothing is requested.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_11_result_row_stays_on_the_fallback_when_images_are_not_allowed() {
+    gtk4::init().unwrap();
+    let row = candidate_row(
+        "Show",
+        "Publisher",
+        PodcastKind::Rss,
+        Some("https://images.test/net-1a-add-dialog.jpg"),
+        false,
+    );
+    let image = row
+        .first_child()
+        .and_downcast::<gtk4::Stack>()
+        .expect("source image stack");
+    assert_eq!(image.visible_child_name().as_deref(), Some("fallback"));
 }
 
 #[test]

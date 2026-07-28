@@ -21,6 +21,19 @@ pub(super) enum AddInput {
     Url(String),
 }
 
+/// `NET-1a` / `C1`: `online_sources::network_allowed(conn,
+/// &modules::SOURCE_IMAGES_MODULE)`, computed fresh at every call so each
+/// favicon tile reflects the current gate — this dialog never lets the
+/// widget read settings itself. A free function (rather than a method) so
+/// its wiring is testable without constructing the GTK dialog.
+pub(super) fn images_allowed(conn: &Connection) -> bool {
+    reprise_core::online_sources::network_allowed(
+        conn,
+        &reprise_core::modules::SOURCE_IMAGES_MODULE,
+    )
+    .unwrap_or(false)
+}
+
 pub(super) fn classify_input(input: &str) -> AddInput {
     let input = input.trim();
     if input.is_empty() {
@@ -482,6 +495,7 @@ impl RadioAddDialog {
                 candidate.favicon_url.as_deref(),
                 "network-wireless-symbolic",
                 40,
+                images_allowed(&self.conn.borrow()),
             );
             let copy = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
             copy.set_hexpand(true);
@@ -565,6 +579,7 @@ impl RadioAddDialog {
             preview.favicon_url.as_deref(),
             "network-wireless-symbolic",
             40,
+            images_allowed(&self.conn.borrow()),
         );
         let name = gtk4::Label::new(Some(&preview.name));
         name.set_xalign(0.0);

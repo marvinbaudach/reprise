@@ -1,11 +1,25 @@
-//! Remote source artwork used by subscription and search surfaces.
+//! Remote source artwork used by library rows and Add-dialog result/preview
+//! rows (channel/show thumbnails, iTunes `artworkUrl600`, radio-browser
+//! `favicon`).
+//!
+//! `NET-1a` / `C1`: every caller passes `images_allowed`, already computed as
+//! `online_sources::network_allowed(conn, &modules::SOURCE_IMAGES_MODULE)` at
+//! its own call site — this widget never reads settings itself. A memory- or
+//! disk-cache hit is always shown regardless of `images_allowed` (an
+//! already-cached image is never hidden); only the network fallback on a
+//! genuine cache miss is gated, via `reprise_core::remote_image::resolve`,
+//! which is the sole place bytes are ever requested. The bounded on-disk
+//! cache and the gate check both live in that pure core module; this file
+//! only decodes the resulting path into a GTK texture.
 
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::OnceLock;
 
 use gtk4::prelude::*;
+use reprise_core::remote_image::ImageOutcome;
 
 const CACHE_LIMIT: usize = 128;
 const ARTWORK_QUEUE_LIMIT: usize = 64;
@@ -25,7 +39,12 @@ pub(crate) struct SourceImage {
 }
 
 impl SourceImage {
-    pub(crate) fn new(image_url: Option<&str>, fallback_icon: &str, size: i32) -> SourceImage {
+    pub(crate) fn new(
+        image_url: Option<&str>,
+        fallback_icon: &str,
+        size: i32,
+        images_allowed: bool,
+    ) -> SourceImage {
         let fallback = gtk4::Image::from_icon_name(fallback_icon);
         fallback.set_pixel_size(size);
         let picture = gtk4::Picture::new();
@@ -45,7 +64,7 @@ impl SourceImage {
             picture,
             generation: Rc::new(Cell::new(0)),
         };
-        image.set_url(image_url);
+        image.set_url(image_url, images_allowed);
         image
     }
 
@@ -53,7 +72,7 @@ impl SourceImage {
         &self.root
     }
 
-    pub(crate) fn set_url(&self, image_url: Option<&str>) {
+    fn set_url(&self, image_url: Option<&str>, images_allowed: bool) {
         let generation = self.generation.get().wrapping_add(1);
         self.generation.set(generation);
         self.root.set_visible_child(&self.fallback);
@@ -66,7 +85,15 @@ impl SourceImage {
             self.root.set_visible_child(&self.picture);
             return;
         }
-        let Some(receiver) = queue_artwork(url.clone()) else {
+        // `NET-1a` / `C1`: a memory-cache miss does not by itself justify a
+        // network attempt. `queue_artwork` still checks the on-disk cache
+        // (which may hold a hit from an earlier session) before consulting
+        // this flag again in `remote_image::resolve`, so a closed gate never
+        // hides an already-downloaded image — it only refuses a fresh fetch.
+        if !images_allowed {
+            return;
+        }
+        let Some(receiver) = queue_artwork(url.clone(), images_allowed) else {
             tracing::debug!(%url, "source artwork queue is full");
             return;
         };
@@ -74,12 +101,9 @@ impl SourceImage {
         let weak_picture = self.picture.downgrade();
         let current = self.generation.clone();
         gtk4::glib::spawn_future_local(async move {
-            let bytes = match receiver.recv().await {
-                Ok(Ok(bytes)) => bytes,
-                Ok(Err(error)) => {
-                    tracing::debug!(%error, %url, "could not load source artwork");
-                    return;
-                }
+            let path = match receiver.recv().await {
+                Ok(Some(path)) => path,
+                Ok(None) => return,
                 Err(error) => {
                     tracing::debug!(%error, %url, "could not load source artwork");
                     return;
@@ -94,11 +118,10 @@ impl SourceImage {
             let Some(picture) = weak_picture.upgrade() else {
                 return;
             };
-            let bytes = gtk4::glib::Bytes::from_owned(bytes);
-            let texture = match gtk4::gdk::Texture::from_bytes(&bytes) {
+            let texture = match gtk4::gdk::Texture::from_filename(&path) {
                 Ok(texture) => texture,
                 Err(error) => {
-                    tracing::debug!(%error, %url, "source artwork could not be decoded");
+                    tracing::debug!(%error, %url, path = %path.display(), "source artwork could not be decoded");
                     return;
                 }
             };
@@ -111,12 +134,14 @@ impl SourceImage {
 
 struct ArtworkTask {
     url: String,
-    response: async_channel::Sender<Result<Vec<u8>, reprise_core::podcasts::PodcastError>>,
+    /// `NET-1a`: threaded through to `remote_image::resolve` as a
+    /// defense-in-depth re-check — `set_url` already refuses to enqueue a
+    /// task when this is false, so this only matters if that ever changes.
+    allowed: bool,
+    response: async_channel::Sender<Option<PathBuf>>,
 }
 
-fn queue_artwork(
-    url: String,
-) -> Option<async_channel::Receiver<Result<Vec<u8>, reprise_core::podcasts::PodcastError>>> {
+fn queue_artwork(url: String, allowed: bool) -> Option<async_channel::Receiver<Option<PathBuf>>> {
     static QUEUE: OnceLock<async_channel::Sender<ArtworkTask>> = OnceLock::new();
     let queue = QUEUE.get_or_init(|| {
         let (sender, receiver) = async_channel::bounded::<ArtworkTask>(ARTWORK_QUEUE_LIMIT);
@@ -126,8 +151,21 @@ fn queue_artwork(
                 .name(format!("reprise-source-artwork-{index}"))
                 .spawn(move || {
                     while let Ok(task) = receiver.recv_blocking() {
-                        let result = reprise_core::podcasts::source_artwork::fetch(&task.url);
-                        let _ = task.response.send_blocking(result);
+                        let outcome = reprise_core::remote_image::resolve(
+                            Some(&task.url),
+                            task.allowed,
+                            &mut |url| {
+                                reprise_core::podcasts::source_artwork::fetch(url)
+                                    .map_err(|error| error.to_string())
+                            },
+                        );
+                        let path = match outcome {
+                            ImageOutcome::Cached(path) | ImageOutcome::Fetched(path) => Some(path),
+                            ImageOutcome::NotAllowed
+                            | ImageOutcome::NoUrl
+                            | ImageOutcome::FetchFailed => None,
+                        };
+                        let _ = task.response.send_blocking(path);
                     }
                 })
             {
@@ -137,7 +175,13 @@ fn queue_artwork(
         sender
     });
     let (response, receiver) = async_channel::bounded(1);
-    queue.try_send(ArtworkTask { url, response }).ok()?;
+    queue
+        .try_send(ArtworkTask {
+            url,
+            allowed,
+            response,
+        })
+        .ok()?;
     Some(receiver)
 }
 
@@ -185,5 +229,32 @@ mod tests {
         assert_eq!(super::validated_url("file:///home/user/secret"), None);
         assert_eq!(super::validated_url("data:image/png;base64,AAAA"), None);
         assert_eq!(super::validated_url("not a URL"), None);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn src_11_gate_closed_stays_on_the_fallback_and_never_queues_a_fetch() {
+        gtk4::init().unwrap();
+        let image = super::SourceImage::new(
+            Some("https://images.test/net-1a-widget-closed.jpg"),
+            "audio-input-microphone-symbolic",
+            40,
+            false,
+        );
+        assert_eq!(
+            image.widget().visible_child_name().as_deref(),
+            Some("fallback")
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn src_11_no_url_stays_on_the_fallback_regardless_of_the_gate() {
+        gtk4::init().unwrap();
+        let image = super::SourceImage::new(None, "audio-input-microphone-symbolic", 40, true);
+        assert_eq!(
+            image.widget().visible_child_name().as_deref(),
+            Some("fallback")
+        );
     }
 }

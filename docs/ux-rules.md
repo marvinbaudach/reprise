@@ -2933,6 +2933,23 @@ Hörstatistik.
   landet, verschwindet dieser Zustand vollständig; „Nothing matches these
   filters" und die übrigen Leerzustands-Klassifikationen
   (`NoEpisodes`/`NoResults`) behalten ihre eigene, unveränderte Fläche.
+- **SRC-11** [aktiv] [core] [gtk] — Kanal-, Show- und Senderbilder
+  (YouTube-`thumbnails`, iTunes-`artworkUrl600`, radio-browser-`favicon` —
+  `C1`) laufen über ein eigenes Modul (`module.source_images.enabled`) und
+  unterliegen `NET-1a`: ein Cache-Treffer wird immer gezeigt, unabhängig vom
+  Riegel — ein Cache-Fehlschlag löst nur bei aktivem globalem Riegel **und**
+  aktivem Modul einen Abruf aus, sonst bleibt die Quellglyphe stehen, nie ein
+  Fehlerbild. Die reine Abruf-/Cache-Politik lebt gemeinfrei testbar in
+  `reprise_core::remote_image` (kein gtk4/libadwaita/gstreamer/zbus); Dekodierung
+  und Darstellung bleiben im GNOME-Crate. Der On-Disk-Cache ist auf
+  `MAX_CACHE_ENTRIES` (300) Einträge begrenzt und räumt beim Überschreiten
+  deterministisch die am längsten unangetasteten Dateien zuerst ab — anders
+  als der unbegrenzte, dauerhafte Cover-Art-Cache. Jeder Aufrufer (Podcast-
+  Bibliotheksansicht, YouTube-Kanaldetail, alle drei Add-Dialoge) berechnet
+  den Riegel selbst an seiner eigenen Verbindung, statt sich auf einen
+  vorgelagerten Prüfpunkt zu verlassen — Lehre aus `T6-G1-gap`: ein
+  Datenschutzversprechen in der UI-Copy braucht einen Test pro Aufrufpfad,
+  nicht pro Feature.
 - **POD-1** [aktiv] [core] — Episodenstatus ist pure Ableitung: Played
   genau bei gesetztem `played_at`, sonst Resume bei `position_ms > 0`, sonst
   New. Ein Episodenende setzt Played und löscht die Position.

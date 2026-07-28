@@ -71,6 +71,7 @@ pub mod provenance;
 pub mod queries;
 pub mod queue;
 pub mod radio;
+pub mod remote_image;
 pub mod scrobbling;
 pub mod stem_separation;
 pub mod up_next;

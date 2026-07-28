@@ -28,8 +28,13 @@ struct GroupRenderContext<'a> {
     download_states: &'a BTreeMap<i64, DownloadState>,
     connected_devices: &'a [podcasts_context_menu::PodcastSyncDevice],
     selected_devices: &'a BTreeMap<i64, Vec<String>>,
+    /// `NET-1a` / `C1`: `online_sources::network_allowed(conn,
+    /// &modules::SOURCE_IMAGES_MODULE)`, computed once per render pass by
+    /// the caller — this module never reads settings itself.
+    images_allowed: bool,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn replace(
     container: &gtk4::Box,
     groups: &[RenderedSourceGroup],
@@ -38,6 +43,7 @@ pub(super) fn replace(
     download_states: &BTreeMap<i64, DownloadState>,
     connected_devices: &[podcasts_context_menu::PodcastSyncDevice],
     selected_devices: &BTreeMap<i64, Vec<String>>,
+    images_allowed: bool,
 ) -> BTreeMap<i64, DownloadRowWidgets> {
     while let Some(child) = container.first_child() {
         container.remove(&child);
@@ -49,6 +55,7 @@ pub(super) fn replace(
         download_states,
         connected_devices,
         selected_devices,
+        images_allowed,
     };
     for rendered in groups {
         container.append(&build_group(rendered, &context, &mut download_widgets));
@@ -86,6 +93,7 @@ fn build_group(
             .selected_devices
             .get(&group.subscription_id)
             .map_or(&[], Vec::as_slice),
+        context.images_allowed,
     )));
 
     let episodes = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
@@ -112,6 +120,7 @@ fn group_header(
     summary: &SourceSummary,
     connected_devices: &[podcasts_context_menu::PodcastSyncDevice],
     selected_device_ids: &[String],
+    images_allowed: bool,
 ) -> gtk4::Widget {
     let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
     header.set_hexpand(true);
@@ -127,6 +136,7 @@ fn group_header(
             PodcastKind::Youtube => "video-x-generic-symbolic",
         },
         40,
+        images_allowed,
     );
     artwork
         .widget()
@@ -406,6 +416,7 @@ mod tests {
             &BTreeMap::new(),
             &[],
             &BTreeMap::new(),
+            false,
         );
         assert!(widgets.is_empty());
         assert!(container.first_child().is_some());
@@ -438,6 +449,7 @@ mod tests {
             },
             &[],
             &[],
+            false,
         )
         .downcast::<gtk4::Box>()
         .unwrap();
@@ -452,5 +464,42 @@ mod tests {
         assert_eq!(star.opacity(), 0.0);
         assert!(star.has_css_class("accent"));
         assert_eq!(star.action_name().as_deref(), Some("podcasts.unsubscribe"));
+    }
+
+    /// `SRC-11` / `NET-1a`: the library group header is one of the source
+    /// image entry points — with `images_allowed: false` it must stay on the
+    /// glyph fallback even though the group carries a real `image_url`.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn src_11_group_header_stays_on_the_fallback_when_images_are_not_allowed() {
+        gtk4::init().unwrap();
+        let group = SourceGroup {
+            subscription_id: 9,
+            title: "Show".into(),
+            author: None,
+            image_url: Some("https://images.test/net-1a-group-header.jpg".into()),
+            kind: PodcastKind::Rss,
+            sync_to_phone: false,
+            episodes: Vec::new(),
+        };
+        let header = group_header(
+            &group,
+            &SourceSummary {
+                episode_count: 0,
+                unplayed_count: 0,
+                downloaded_bytes: 0,
+                latest_published_at: None,
+            },
+            &[],
+            &[],
+            false,
+        )
+        .downcast::<gtk4::Box>()
+        .unwrap();
+        let artwork = header
+            .first_child()
+            .and_downcast::<gtk4::Stack>()
+            .expect("source image stack");
+        assert_eq!(artwork.visible_child_name().as_deref(), Some("fallback"));
     }
 }

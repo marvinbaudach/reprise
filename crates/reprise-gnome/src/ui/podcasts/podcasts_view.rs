@@ -412,8 +412,16 @@ impl PodcastsView {
             .map(|group| group.title.clone())
             .collect::<Vec<_>>();
         let rendered_groups = rendered_source_groups(&groups, &filter, &download_states);
+        // `NET-1a` / `C1`: computed once per render pass from the live
+        // module + global-gate state, then threaded down to every source
+        // image entry point in this view instead of each one re-deriving it.
+        let images_allowed = reprise_core::online_sources::network_allowed(
+            &self.conn.borrow(),
+            &reprise_core::modules::SOURCE_IMAGES_MODULE,
+        )
+        .unwrap_or(false);
         self.youtube_detail
-            .update(&rendered_groups, &download_states);
+            .update(&rendered_groups, &download_states, images_allowed);
         let download_widgets = podcasts_groups::replace(
             &self.group_container,
             &rendered_groups,
@@ -422,6 +430,7 @@ impl PodcastsView {
             &download_states,
             &connected_devices,
             &selected_devices,
+            images_allowed,
         );
         self.download_widgets.replace(download_widgets);
         self.filter_bar

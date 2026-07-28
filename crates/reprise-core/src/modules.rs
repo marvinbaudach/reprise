@@ -121,6 +121,17 @@ pub const ONLINE_LYRICS_MODULE: ModuleDescriptor = ModuleDescriptor {
     applies_live: true,
 };
 
+/// `C1`/`SRC-11`: channel, show and station artwork (YouTube thumbnails,
+/// iTunes `artworkUrl600`, radio-browser favicons) for the podcast, YouTube
+/// and radio library views and their Add dialogs.
+pub const SOURCE_IMAGES_MODULE: ModuleDescriptor = ModuleDescriptor {
+    id: "source_images",
+    name: "Source Images",
+    description: "Download channel, show, and station artwork for Podcasts, YouTube, and Radio",
+    default_enabled: false,
+    applies_live: true,
+};
+
 pub const SONG_VISUALS_MODULE: ModuleDescriptor = ModuleDescriptor {
     id: "song_visuals",
     name: "Song Visuals",
@@ -141,6 +152,7 @@ pub const ALL_MODULES: &[&ModuleDescriptor] = &[
     &COVER_DOWNLOAD_MODULE,
     &ARTIST_PORTRAITS_MODULE,
     &ONLINE_LYRICS_MODULE,
+    &SOURCE_IMAGES_MODULE,
     &LISTENBRAINZ_MODULE,
     &LASTFM_MODULE,
 ];
@@ -300,12 +312,26 @@ mod tests {
     }
 
     #[test]
+    fn src_11_all_modules_includes_opt_in_source_images() {
+        let conn = migrated_conn();
+        assert!(ALL_MODULES
+            .iter()
+            .any(|module| module.id == "source_images"));
+        assert_eq!(
+            enabled_key(&SOURCE_IMAGES_MODULE),
+            "module.source_images.enabled"
+        );
+        assert!(!is_enabled(&conn, &SOURCE_IMAGES_MODULE).unwrap());
+    }
+
+    #[test]
     fn network_modules_default_off_and_apply_live() {
         let conn = migrated_conn();
         for module in [
             &COVER_DOWNLOAD_MODULE,
             &ARTIST_PORTRAITS_MODULE,
             &ONLINE_LYRICS_MODULE,
+            &SOURCE_IMAGES_MODULE,
         ] {
             assert!(!module.default_enabled, "{} must be opt-in", module.id);
             assert!(module.applies_live, "{} must apply live", module.id);

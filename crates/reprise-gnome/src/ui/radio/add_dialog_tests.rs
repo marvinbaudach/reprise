@@ -113,6 +113,63 @@ fn src_7_a_successful_radio_add_acknowledges_the_row_in_place() {
     assert!(button.has_css_class("reprise-source-added"));
 }
 
+/// `SRC-11` / `NET-1a`: the method both radio favicon call sites
+/// (`render_results`, `render_preview`) use to gate their source image must
+/// reflect both the global online-sources switch and the Source Images
+/// module.
+#[test]
+fn src_11_radio_add_dialog_images_allowed_is_the_net_1a_and() {
+    let conn = reprise_core::db::open_migrated(None).unwrap();
+    // Neither the global gate nor the module is on by default.
+    assert!(!images_allowed(&conn));
+
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::SOURCE_IMAGES_MODULE, true)
+        .unwrap();
+    assert!(
+        images_allowed(&conn),
+        "module on, global on (default) => allowed"
+    );
+
+    reprise_core::online_sources::set_enabled(&conn, false).unwrap();
+    assert!(!images_allowed(&conn), "module on, global off => blocked");
+}
+
+/// `SRC-11` / `NET-1a`: with the gate closed, a search-result favicon must
+/// stay on the glyph fallback — nothing is requested.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_11_radio_search_result_stays_on_the_fallback_when_images_are_not_allowed() {
+    gtk4::init().unwrap();
+    let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
+    let dialog = RadioAddDialog::new(conn, || {});
+    dialog.render_results(vec![StationCandidate {
+        uuid: "new".into(),
+        name: "New".into(),
+        url_resolved: "https://radio.test/new".into(),
+        codec: None,
+        bitrate_kbps: None,
+        country_code: None,
+        genre: None,
+        tags: Vec::new(),
+        votes: 2,
+        favicon_url: Some("https://images.test/net-1a-radio.png".into()),
+    }]);
+
+    let row = dialog
+        .widgets
+        .results
+        .first_child()
+        .and_downcast::<gtk4::ListBoxRow>()
+        .expect("search result row");
+    let image = row
+        .child()
+        .and_downcast::<gtk4::Box>()
+        .and_then(|content| content.first_child())
+        .and_downcast::<gtk4::Stack>()
+        .expect("source image stack");
+    assert_eq!(image.visible_child_name().as_deref(), Some("fallback"));
+}
+
 #[test]
 fn src_5_radio_url_preview_hides_an_existing_favorite() {
     let preview = StationPreview::manual("Existing", "https://radio.test/live/");

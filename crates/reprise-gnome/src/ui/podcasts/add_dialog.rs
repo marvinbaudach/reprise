@@ -474,6 +474,7 @@ fn append_candidate(
         &candidate.subtitle,
         candidate.kind,
         candidate.image_url.as_deref(),
+        images_allowed(&conn.borrow()),
     );
     // SRC-7: the same compact action every discovery row uses.
     let title = candidate.title.clone();
@@ -518,6 +519,7 @@ fn append_preview(
         &subtitle,
         preview.kind,
         preview.image_url.as_deref(),
+        images_allowed(&conn.borrow()),
     );
     parent.append(&row);
     let import = gtk4::CheckButton::with_label(&strings::podcast_import_latest_count(import_count));
@@ -566,11 +568,24 @@ fn append_preview(
     parent.append(&subscribe_button);
 }
 
+/// `NET-1a` / `C1`: `online_sources::network_allowed(conn,
+/// &modules::SOURCE_IMAGES_MODULE)`, computed once by each caller of
+/// [`candidate_row`] — this dialog never lets the widget read settings
+/// itself.
+fn images_allowed(conn: &Connection) -> bool {
+    reprise_core::online_sources::network_allowed(
+        conn,
+        &reprise_core::modules::SOURCE_IMAGES_MODULE,
+    )
+    .unwrap_or(false)
+}
+
 fn candidate_row(
     title: &str,
     subtitle: &str,
     kind: PodcastKind,
     image_url: Option<&str>,
+    images_allowed: bool,
 ) -> gtk4::Box {
     let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
     row.add_css_class("reprise-podcast-result");
@@ -581,6 +596,7 @@ fn candidate_row(
             PodcastKind::Youtube => "video-x-generic-symbolic",
         },
         40,
+        images_allowed,
     );
     row.append(image.widget());
     let labels = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
