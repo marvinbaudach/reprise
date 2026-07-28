@@ -19,6 +19,21 @@ const BASS_GLOW_BAND_COUNT: usize = 12;
 const BASS_GLOW_THRESHOLD: f32 = 0.36;
 const BASS_GLOW_FULL_SCALE: f32 = 0.49;
 const BASS_GLOW_DECAY: f32 = 0.024;
+/// Ticks for one full travel of the idle wave (60 Hz → six seconds).
+const IDLE_PERIOD_TICKS: f32 = 360.0;
+/// Crests visible across the canvas width at any moment.
+const IDLE_WAVE_COUNT: f32 = 1.0;
+/// Ceiling of the resting wave, as a fraction of the bar height.
+const IDLE_PEAK: f32 = 0.17;
+/// Trough of the resting wave — the canvas is never fully empty.
+const IDLE_FLOOR: f32 = 0.012;
+/// Breaths per travel cycle: a second, slower swell over the whole wave so the
+/// canvas rises and falls instead of only sliding sideways.
+const IDLE_BREATH_RATIO: f32 = 1.5;
+/// How much of the wave the breath takes away at its lowest point.
+const IDLE_BREATH_DEPTH: f32 = 0.3;
+/// Fade-in per tick once playback stops (≈0.4 s to full amplitude).
+const IDLE_FADE_IN: f32 = 0.04;
 
 /// Borrowed render inputs for the Bars scene builder.
 pub struct ModeCtx<'a> {
@@ -43,8 +58,14 @@ impl ModeCtx<'_> {
 pub struct VisualEngine {
     bands_current: [f32; SPECTRUM_BAND_COUNT],
     bands_peaks: [f32; SPECTRUM_BAND_COUNT],
+    /// What the scene draws: the live bars, lifted by the idle wave whenever a
+    /// track is loaded but not playing (AC-11).
+    display_bands: [f32; SPECTRUM_BAND_COUNT],
     bass_glow: f32,
     playing: bool,
+    has_track: bool,
+    idle_phase: f32,
+    idle_amp: f32,
     accent: (f32, f32, f32),
     cover_accent2: Option<(f32, f32, f32)>,
 }
@@ -60,8 +81,12 @@ impl VisualEngine {
         Self {
             bands_current: [0.0; SPECTRUM_BAND_COUNT],
             bands_peaks: [0.0; SPECTRUM_BAND_COUNT],
+            display_bands: [0.0; SPECTRUM_BAND_COUNT],
             bass_glow: 0.0,
             playing: false,
+            has_track: false,
+            idle_phase: 0.0,
+            idle_amp: 0.0,
             accent: (0.5, 0.5, 0.5),
             cover_accent2: None,
         }
@@ -70,6 +95,48 @@ impl VisualEngine {
     /// Enables live frames or begins the visual-only stop fade.
     pub fn set_playing(&mut self, playing: bool) {
         self.playing = playing;
+        if playing {
+            self.idle_amp = 0.0;
+        }
+        self.refresh_display_bands();
+    }
+
+    /// Whether a track is loaded at all. Without one there is nothing to keep
+    /// alive, so the canvas rests fully empty (AC-11).
+    pub fn set_has_track(&mut self, has_track: bool) {
+        self.has_track = has_track;
+        if !has_track {
+            self.idle_amp = 0.0;
+            self.idle_phase = 0.0;
+        }
+        self.refresh_display_bands();
+    }
+
+    /// A loaded, non-playing track breathes instead of showing an empty box.
+    fn idle_active(&self) -> bool {
+        self.has_track && !self.playing
+    }
+
+    /// Resting wave for `band`: a slow travelling swell, tapered to nothing at
+    /// both edges so it reads as a breath rather than a signal.
+    fn idle_band(&self, band: usize) -> f32 {
+        if self.idle_amp <= 0.0 {
+            return 0.0;
+        }
+        let across = band as f32 / (SPECTRUM_BAND_COUNT - 1) as f32;
+        let envelope = (std::f32::consts::PI * across).sin();
+        let wave = 0.5
+            + 0.5 * (std::f32::consts::TAU * (across * IDLE_WAVE_COUNT - self.idle_phase)).sin();
+        let breath = 1.0
+            - IDLE_BREATH_DEPTH
+                * (0.5 - 0.5 * (std::f32::consts::TAU * self.idle_phase * IDLE_BREATH_RATIO).sin());
+        self.idle_amp * envelope * breath * (IDLE_FLOOR + (IDLE_PEAK - IDLE_FLOOR) * wave)
+    }
+
+    /// Live bars win; the idle wave only lifts whatever they leave empty.
+    fn refresh_display_bands(&mut self) {
+        let bands = std::array::from_fn(|band| self.bands_current[band].max(self.idle_band(band)));
+        self.display_bands = bands;
     }
 
     pub fn set_accent(&mut self, rgb: (f32, f32, f32)) {
@@ -89,6 +156,7 @@ impl VisualEngine {
         self.bands_current = [0.0; SPECTRUM_BAND_COUNT];
         self.bands_peaks = [0.0; SPECTRUM_BAND_COUNT];
         self.bass_glow = 0.0;
+        self.refresh_display_bands();
     }
 
     /// Installs the already-bounded CAVA values in the same frame.
@@ -98,11 +166,17 @@ impl VisualEngine {
         for (peak, current) in self.bands_peaks.iter_mut().zip(self.bands_current.iter()) {
             *peak = peak.max(*current);
         }
+        self.refresh_display_bands();
     }
 
-    /// Advances peak caps and, only while stopped, fades the static bars out.
+    /// Advances peak caps, fades the live bars out once playback stops, and
+    /// keeps the idle wave travelling while a loaded track rests (AC-11).
     pub fn tick(&mut self) -> bool {
         let mut settled = true;
+        if self.idle_active() {
+            self.idle_phase = (self.idle_phase + 1.0 / IDLE_PERIOD_TICKS).fract();
+            self.idle_amp = (self.idle_amp + IDLE_FADE_IN).min(1.0);
+        }
         if !self.playing {
             for bar in &mut self.bands_current {
                 *bar += (0.0 - *bar) * STOP_RELEASE;
@@ -125,13 +199,20 @@ impl VisualEngine {
             }
             settled &= (*peak - *current).abs() < SETTLE_EPSILON;
         }
-        settled && !self.playing
+        self.refresh_display_bands();
+        settled && !self.playing && !self.idle_active()
     }
 
     /// Removes visual-only motion without changing the current CAVA frame.
+    /// With animations off the idle wave still shows — as a still image at its
+    /// current phase, never as motion.
     pub fn snap_to_static(&mut self) {
         self.bands_peaks = self.bands_current;
         self.bass_glow = bass_glow_target(&self.bands_current);
+        if self.idle_active() {
+            self.idle_amp = 1.0;
+        }
+        self.refresh_display_bands();
     }
 
     pub fn accent2(&self) -> (f32, f32, f32) {
@@ -142,7 +223,7 @@ impl VisualEngine {
     fn make_ctx(&self, width: f32, height: f32) -> ModeCtx<'_> {
         ModeCtx {
             peaks: &self.bands_peaks,
-            bars: &self.bands_current,
+            bars: &self.display_bands,
             bass_glow: self.bass_glow,
             accent: self.accent,
             accent2: self.accent2(),
@@ -153,7 +234,7 @@ impl VisualEngine {
 
     pub fn scene(&self, width: f32, height: f32) -> Scene {
         let ctx = self.make_ctx(width, height);
-        let level = self.bands_current.iter().sum::<f32>() / SPECTRUM_BAND_COUNT as f32;
+        let level = self.display_bands.iter().sum::<f32>() / SPECTRUM_BAND_COUNT as f32;
         let mut shapes = vec![Shape {
             geom: Geom::RadialGlow {
                 cx: width / 2.0,
@@ -366,12 +447,71 @@ mod tests {
     }
 
     #[test]
-    fn ac_11_continuous_motion_ceases_when_playback_stops() {
+    fn ac_11_continuous_motion_ceases_without_a_loaded_track() {
         let mut engine = lively_engine();
         assert!(!engine.tick());
         engine.set_playing(false);
 
         assert!((0..500).any(|_| engine.tick()));
+    }
+
+    #[test]
+    fn ac_11_idle_breathing_keeps_a_loaded_track_alive_while_stopped() {
+        let mut engine = lively_engine();
+        engine.set_has_track(true);
+        engine.set_playing(false);
+
+        // The live bars release first; the idle wave takes over and never
+        // settles, so the tick loop keeps running.
+        for _ in 0..200 {
+            assert!(!engine.tick());
+        }
+        let first = engine.display_bands;
+        for _ in 0..30 {
+            engine.tick();
+        }
+
+        assert!(first.iter().any(|bar| *bar > 0.0));
+        assert_ne!(first, engine.display_bands);
+    }
+
+    #[test]
+    fn ac_11_idle_breathing_stays_a_low_resting_wave() {
+        let mut engine = VisualEngine::new();
+        engine.set_has_track(true);
+        for _ in 0..400 {
+            engine.tick();
+            assert!(
+                engine.display_bands.iter().all(|bar| *bar <= IDLE_PEAK),
+                "idle wave must stay below the resting ceiling"
+            );
+        }
+        assert!(engine.bands_peaks.iter().all(|peak| *peak == 0.0));
+    }
+
+    #[test]
+    fn ac_11_playback_takes_over_from_the_idle_wave_immediately() {
+        let mut engine = VisualEngine::new();
+        engine.set_has_track(true);
+        for _ in 0..200 {
+            engine.tick();
+        }
+        engine.set_playing(true);
+        let bars = std::array::from_fn(|index| index as f32 / SPECTRUM_BAND_COUNT as f32);
+        engine.ingest(&SpectrumFrame::from_cava_bars(bars));
+
+        assert_eq!(engine.display_bands, bars);
+    }
+
+    #[test]
+    fn ac_11_disabled_animations_show_the_resting_wave_without_motion() {
+        let mut engine = VisualEngine::new();
+        engine.set_has_track(true);
+        engine.snap_to_static();
+        let resting = engine.display_bands;
+
+        assert!(resting.iter().any(|bar| *bar > 0.0));
+        assert_eq!(resting, engine.display_bands);
     }
 
     #[test]
