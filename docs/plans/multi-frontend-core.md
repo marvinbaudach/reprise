@@ -490,6 +490,9 @@ Semantik (User-Beschluss): **explizit, dauerhaft, gekennzeichnet.**
 | `crates/reprise-cli` | `reprise-cli` | Headless-Oberfläche: Playlists (inkl. rename/delete), Suche, Summary, Scan, Instrumental-Jobs, Job-Status; Features: `mpris` (Linux-only, zbus direkt), `worker` (zieht `reprise-stems`) | `reprise-core`, `clap` v4 (derive), `serde_json`; hinter Features: `zbus`, `reprise-stems` | MIT |
 | `crates/reprise-mcp` | `reprise-mcp` | Lokaler MCP-Server, stdio | `reprise-core`, offizieller Rust-SDK (`rmcp`, gepinnt), `serde`/`serde_json`, `tokio` (nur hier, vom SDK erzwungen) | MIT |
 | `crates/reprise-stems` | — (lib) | `StemSeparationBackend`-Implementierung (ML-Inferenz; Runtime laut Spike: candle **oder** ort; libtorch und Python-Subprozess verworfen) | `reprise-core` + ML-Runtime | MIT (Runtime-/Modell-Lizenzen im Gate geprüft) |
+| `crates/reprise-runtime-protocol` | — (lib) | Der Vertrag zwischen Laufzeit und Clients: Snapshots, Kommandos, Busname/Objektpfad, Protokollversion (Sektion 9) | `zvariant`, `serde` | MIT |
+| `crates/reprise-runtime` | — (lib) | Die Laufzeit selbst: Player, Queue, Geräteläufe, Jobs, DB-Writer; toolkit-neutral, Plattformarbeit hinter Ports | `reprise-core`, `reprise-runtime-protocol`, `rusqlite` | MIT |
+| `crates/reprise-runtime-client` | — (lib) | Der Client, den **jede** Oberfläche benutzt: Handshake, Reconnect, Kommandos, Deltas | `reprise-runtime-protocol`, `zbus` | MIT |
 
 Regeln (in `scripts/check-architecture.sh` zu verankern, Paket I):
 
@@ -503,6 +506,17 @@ Regeln (in `scripts/check-architecture.sh` zu verankern, Paket I):
   Binary-Hosts (App; CLI nur hinter `worker`) referenziert
   `reprise-stems`. Das Feature bleibt dadurch entfernbar, ohne die
   Core-Naht anzufassen.
+- `reprise-runtime` referenziert aus dem Workspace nur `reprise-core` und
+  `reprise-runtime-protocol` und **keine** Toolkit-Familie (gtk4,
+  libadwaita, glib, gstreamer, zbus). Die Laufzeit ist der Grund, warum ein
+  zweites Frontend — oder gar keines — die Anwendung fahren kann; eine
+  Toolkit-Kante hier koppelt sie still zurück an den GNOME-Prozess.
+- `reprise-runtime-client` referenziert aus dem Workspace **nur**
+  `reprise-runtime-protocol`. Bewusst nicht `reprise-platform-linux`: der
+  MCP-Server ist ein Client und darf durch ihn nicht GStreamer in seinen
+  Abhängigkeitsbaum ziehen. Busname und Objektpfad liegen deshalb im
+  Protokoll, wo sie als Teil des Vertrags ohnehin hingehören, und nicht im
+  Dienst.
 - Kein SQL außerhalb von Core (bestehendes Gate ausgeweitet);
   MCP-Leak-Matrix aus Spec D19 gilt wörtlich (nie Pfade, XDG, Lyrics,
   Seriennummern, Credentials, rohe Hörereignisse).

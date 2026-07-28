@@ -497,3 +497,68 @@ fn a_context_row_can_be_removed_by_its_play_order_position() {
         vec![3]
     );
 }
+
+/// The review finding this file did not previously cover: a *fresh* failed
+/// start leaves `current` empty either way, so only an advance from a track
+/// that was already playing shows the divergence.
+#[test]
+fn a_track_that_vanished_before_its_turn_stops_playback_instead_of_freezing_it() {
+    let mut fixture = fixture();
+    // The queue's second entry is not in the library — the ordinary shape of
+    // a file deleted after the queue was built.
+    fixture.library = FakeLibrary::with_tracks([1]);
+    fixture.play_tracks(vec![1, 2], 0).unwrap();
+    fixture.player_event(&PlayerEvent::Position {
+        position_ms: 30_000,
+        duration_ms: 60_000,
+    });
+
+    fixture.player_event(&PlayerEvent::TrackFinished);
+
+    let snapshot = fixture.transport.playback_snapshot();
+    assert_eq!(
+        snapshot.status, "stopped",
+        "the runtime must not keep reporting a track that already finished; \
+         only changed facets are published, so a stale one is never corrected"
+    );
+    assert_eq!(snapshot.track_id, None);
+    assert_eq!(snapshot.position_ms, 0, "and not the frozen old position");
+    assert!(
+        !fixture.transport.is_active(),
+        "nothing is loaded, so the idle rule must be able to see that"
+    );
+}
+
+#[test]
+fn a_failed_skip_stops_the_previous_track_rather_than_leaving_it_audible() {
+    let mut fixture = fixture();
+    fixture.library = FakeLibrary::with_tracks([1]);
+    fixture.play_tracks(vec![1, 2], 0).unwrap();
+    fixture.calls.clear();
+
+    let error = fixture
+        .command(&PlaybackCommand::Next)
+        .expect_err("the next track is not playable");
+
+    assert_eq!(error.category(), "failed");
+    assert!(
+        fixture.calls.calls().contains(&BackendCall::Stop),
+        "the backend was still playing the previous track; reporting nothing \
+         loaded without stopping it is the same divergence in reverse"
+    );
+    assert_eq!(fixture.transport.playback_snapshot().track_id, None);
+}
+
+#[test]
+fn a_failed_start_from_a_stop_leaves_the_stopped_state_it_found() {
+    let mut fixture = fixture();
+    fixture.library = FakeLibrary::with_tracks([]);
+
+    let error = fixture
+        .play_tracks(vec![7], 0)
+        .expect_err("nothing resolves");
+
+    assert_eq!(error.category(), "failed");
+    assert_eq!(fixture.transport.playback_snapshot().status, "stopped");
+    assert!(!fixture.transport.is_active());
+}

@@ -250,7 +250,7 @@ impl Transport {
                 // arrives with the gapless setting in Task 3.3), which is
                 // exactly why this branch stays defensive rather than absent.
                 if let Some(next) = self.take_next_auto() {
-                    self.load(library, next);
+                    self.load(backend, library, next);
                 }
             }
             PlayerEvent::StreamTags { title, .. } => {
@@ -367,31 +367,79 @@ impl Transport {
     }
 
     /// Resolves, hands the location to the backend, and adopts it as current.
+    ///
+    /// **A failure leaves nothing loaded and nothing playing**, which is the
+    /// whole point of routing every start through here. The tempting version
+    /// returns early and leaves the previous track in `current`: harmless
+    /// when a *user* pressed play and gets an error back, and silently wrong
+    /// when the caller was the end of the previous track. There the runtime
+    /// would keep reporting a track that already finished, at a frozen
+    /// position, forever — and because only *changed* facets are published,
+    /// no client would ever be told.
     fn start(
         &mut self,
         backend: &dyn PlaybackBackend,
         library: &dyn LibraryPort,
         track_id: i64,
     ) -> Result<(), RuntimeError> {
-        let track = library
-            .resolve(track_id)
-            .ok_or(RuntimeError::Failed(Failed::TrackNotPlayable))?;
+        let Some(track) = library.resolve(track_id) else {
+            // Logged here rather than left to the caller: this is the one
+            // failure that carries no backend message, so without a line
+            // here a vanished file produces no trace at all.
+            tracing::warn!(track_id, "track cannot be resolved to anything playable");
+            self.abandon(backend);
+            return Err(RuntimeError::Failed(Failed::TrackNotPlayable));
+        };
         let started = match &track.location {
             TrackLocation::Path(path) => backend.play(path),
             TrackLocation::Uri(uri) => backend.play_uri(uri),
         };
-        started.map_err(|error| backend_failed(&error))?;
+        if let Err(error) = started {
+            self.abandon(backend);
+            return Err(backend_failed(&error));
+        }
         self.current = Some(track);
         self.position_ms = 0;
         self.status = PlaybackState::Playing;
         Ok(())
     }
 
+    /// Puts the model back into the state a failed start actually leaves the
+    /// world in: nothing loaded, nothing playing.
+    ///
+    /// The backend is stopped too, but only when something was actually
+    /// loaded. Skipping that would leave the *previous* track still coming
+    /// out of the speakers while the runtime reports nothing playing — the
+    /// same divergence in the other direction. Stopping a backend that was
+    /// already idle, on the other hand, is a call with nothing to say.
+    fn abandon(&mut self, backend: &dyn PlaybackBackend) {
+        if self.current.is_some() {
+            if let Err(error) = backend.stop() {
+                tracing::warn!(%error, "backend refused to stop after a failed start");
+            }
+        }
+        self.current = None;
+        self.position_ms = 0;
+        self.status = PlaybackState::Stopped;
+    }
+
     /// Adopts a track as current *without* telling the backend to play it —
     /// for the gapless handoff, where the audio is already running.
-    fn load(&mut self, library: &dyn LibraryPort, track_id: i64) {
-        self.current = library.resolve(track_id);
-        self.position_ms = 0;
+    fn load(&mut self, backend: &dyn PlaybackBackend, library: &dyn LibraryPort, track_id: i64) {
+        match library.resolve(track_id) {
+            Some(track) => {
+                self.current = Some(track);
+                self.position_ms = 0;
+            }
+            // The backend already handed off to a track this side cannot
+            // describe. Reporting nothing loaded while `status` stays
+            // `Playing` would make `is_active` lie to the idle rule, so the
+            // handoff is undone rather than half-adopted.
+            None => {
+                tracing::warn!(track_id, "gapless handoff to an unresolvable track");
+                self.abandon(backend);
+            }
+        }
     }
 }
 
