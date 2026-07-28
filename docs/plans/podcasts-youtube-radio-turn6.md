@@ -433,8 +433,13 @@ bauen:
 - **H-G** · Settings: die drei Master-Schalter, der globale Riegel und der
   „Phone sync"-Block.
 
-Grundregeln für alle: keine signierten URLs, Query-Strings, Zugangsdaten oder
-lokalen Pfade in Antworten; Mutationen und Netzzugriff hinter Capabilities;
+Grundregeln für alle: keine signierten URLs, Zugangsdaten oder lokalen Pfade
+in Antworten. **Query-Strings sind ausgenommen** (Eigentümer-Entscheidung vom
+2026-07-28): `SRC-5` beweist mit eigenem Test, dass der Query-String Teil der
+Identität eines Feeds sein kann — ihn pauschal zu strippen ließe ein
+nachfolgendes `add` auf den falschen Feed zeigen. Statt dessen werden Userinfo
+und Fragment entfernt, Nicht-HTTP(S)-Schemata abgelehnt und Artwork-URLs ganz
+weggelassen. Weiter gilt: Mutationen und Netzzugriff hinter Capabilities;
 dieselbe Kernfassade wie die GUI, damit Verhalten nicht auseinanderläuft.
 
 ## 6. Reihenfolge
