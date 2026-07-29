@@ -27,7 +27,7 @@ use reprise_core::library::settings::TrackTransition;
 use reprise_core::playback::{AudioEffects, PlayerEvent};
 
 use crate::gapless::{HandoffFlag, NextUri};
-use crate::player::{attach_bus_watch, build_playbin};
+use crate::player_pipeline::{attach_bus_watch, build_playbin};
 
 /// Geteilter (Modus, Sekunden)-Zustand. Der Ticker liest ihn zur Trigger-
 /// Entscheidung, `set_transition` schreibt ihn, und der `about-to-finish`-
@@ -100,6 +100,11 @@ pub(crate) struct CrossfadeEngine {
     pub(crate) incoming: IncomingSlot,
     pub(crate) spectrum_enabled: Arc<AtomicBool>,
     pub(crate) cava_stream_generation: Arc<AtomicU64>,
+    /// The `PlaybackBackend` "Stream generations" counter (see
+    /// `reprise_core::playback`), shared with `Player` and `gapless.rs`.
+    /// Bumped in `promote`, not when the secondary silently starts — see
+    /// that method's doc comment for why the timing matters.
+    pub(crate) stream_generation: Arc<AtomicU64>,
 }
 
 impl CrossfadeEngine {
@@ -159,6 +164,7 @@ impl CrossfadeEngine {
             self.next_uri.clone(),
             self.handoff_pending.clone(),
             self.transition.clone(),
+            self.stream_generation.clone(),
         ) {
             Ok(element) => element,
             Err(error) => {
@@ -259,6 +265,15 @@ impl CrossfadeEngine {
                 .unwrap_or_else(PoisonError::into_inner)
                 .take();
             let old = std::mem::replace(&mut *primary, secondary.clone());
+            // Bumped here, under the same `playbin` lock as the swap, not when
+            // the secondary silently started minutes/seconds earlier: until
+            // this instant `self.playbin` (and thus every `Position` tick the
+            // ticker reads through it) still describes the *outgoing* track,
+            // so bumping any earlier would mislabel those ticks as belonging
+            // to a stream that has not actually taken over yet. Taking the
+            // lock provides the happens-before edge that guarantees no ticker
+            // read after this point can observe the old generation.
+            self.stream_generation.fetch_add(1, Ordering::SeqCst);
             if let Err(error) = old.set_state(gst::State::Null) {
                 tracing::debug!(%error, "crossfade: outgoing pipeline refused Null (dropping anyway)");
             }

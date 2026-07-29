@@ -7,7 +7,7 @@
 //! track, when a finished track advances the cursor, what a snapshot of all
 //! that looks like. That binding is here now, with no toolkit in sight.
 
-use reprise_core::playback::{PlaybackBackend, PlaybackState, PlayerEvent};
+use reprise_core::playback::{PlaybackBackend, PlaybackState, PlayerEvent, StreamGeneration};
 use reprise_core::queue::{Queue, Repeat};
 use reprise_core::up_next::UpNextQueue;
 use reprise_runtime_protocol::playback::{PlaybackCommand, PlaybackSnapshot};
@@ -68,6 +68,15 @@ pub(crate) struct Transport {
     current: Option<Loaded>,
     position_ms: i64,
     volume: f64,
+    /// The stream whose reports this transport still believes.
+    ///
+    /// A backend event is delivered asynchronously, so one emitted for the
+    /// track that *just* ended can arrive after the next has already been
+    /// started. Applied blindly it advances the queue a second time — the
+    /// user presses Next once and two tracks go by — or overwrites the new
+    /// track's position with the old one's. The backend stamps every event
+    /// with the stream it came from; this is the stamp to compare against.
+    stream: StreamGeneration,
 }
 
 impl Transport {
@@ -79,6 +88,7 @@ impl Transport {
             current: None,
             position_ms: 0,
             volume: 1.0,
+            stream: StreamGeneration::INITIAL,
         }
     }
 
@@ -181,6 +191,7 @@ impl Transport {
         });
         self.position_ms = 0;
         self.status = PlaybackState::Playing;
+        self.stream = backend.current_generation();
         Ok(())
     }
 
@@ -285,6 +296,20 @@ impl Transport {
     ///
     /// These are not commands and cannot fail towards a client — there is
     /// nobody waiting on them. A backend error stops playback and is logged.
+    /// Whether a report stamped `stream` still describes what is loaded.
+    ///
+    /// A *newer* stamp is adopted rather than discarded: it can only mean
+    /// something started a stream this transport has not caught up with yet,
+    /// and refusing it would leave the runtime deaf to the very pipeline it
+    /// is supposed to be reporting on.
+    pub(crate) fn accepts_stream(&mut self, stream: StreamGeneration) -> bool {
+        if stream < self.stream {
+            return false;
+        }
+        self.stream = stream;
+        true
+    }
+
     pub(crate) fn player_event(
         &mut self,
         backend: &dyn PlaybackBackend,
@@ -497,6 +522,9 @@ impl Transport {
         self.current = Some(track.into());
         self.position_ms = 0;
         self.status = PlaybackState::Playing;
+        // Everything the previous stream still has in flight is stale from
+        // here on.
+        self.stream = backend.current_generation();
         Ok(())
     }
 

@@ -96,8 +96,9 @@ pub enum Request {
     },
     /// The bus reported that a peer's name has no owner any more.
     PeerVanished { peer: String },
-    /// An asynchronous report from the audio backend.
-    Player(reprise_core::playback::PlayerEvent),
+    /// An asynchronous report from the audio backend, stamped with the
+    /// stream it came from.
+    Player(reprise_core::playback::StreamEvent),
     /// A device port finished computing what a run would change. `None`
     /// means it could not.
     DevicePlan {
@@ -176,7 +177,7 @@ impl RuntimeService {
         lease: RuntimeLease,
         options: &ServeOptions,
         inbox: ServiceInbox,
-        player_events: Option<async_channel::Receiver<reprise_core::playback::PlayerEvent>>,
+        player_events: Option<async_channel::Receiver<reprise_core::playback::StreamEvent>>,
     ) -> Result<(), ServiceError> {
         let ServiceInbox {
             sender,
@@ -232,11 +233,14 @@ fn spawn_ticker(sender: async_channel::Sender<Request>, tick: Duration) {
 /// need frames, it will ask for them and they will travel their own way.
 fn spawn_player_relay(
     sender: async_channel::Sender<Request>,
-    events: async_channel::Receiver<reprise_core::playback::PlayerEvent>,
+    events: async_channel::Receiver<reprise_core::playback::StreamEvent>,
 ) {
     std::thread::spawn(move || {
         while let Ok(event) = events.recv_blocking() {
-            if matches!(event, reprise_core::playback::PlayerEvent::Spectrum(_)) {
+            if matches!(
+                event.event,
+                reprise_core::playback::PlayerEvent::Spectrum(_)
+            ) {
                 continue;
             }
             if sender.send_blocking(Request::Player(event)).is_err() {

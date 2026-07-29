@@ -617,3 +617,65 @@ fn a_failed_start_from_a_stop_leaves_the_stopped_state_it_found() {
 
 #[path = "transport_external_tests.rs"]
 mod external;
+
+#[test]
+fn a_report_from_the_track_that_was_just_replaced_is_ignored() {
+    use reprise_core::playback::StreamGeneration;
+
+    let mut fixture = fixture();
+    fixture.play_tracks(vec![1, 2, 3], 0).unwrap();
+    // The backend moved on: something started a newer stream, and the
+    // transport learned about it.
+    assert!(fixture.transport.accepts_stream(StreamGeneration::from(4)));
+
+    let stale = fixture.transport.accepts_stream(StreamGeneration::from(3));
+
+    assert!(
+        !stale,
+        "a report stamped with a stream that has already been replaced \
+         describes a track nobody is listening to; applying it would advance \
+         the queue past a track the user never skipped"
+    );
+}
+
+#[test]
+fn a_report_from_a_stream_the_transport_has_not_seen_yet_is_adopted() {
+    use reprise_core::playback::StreamGeneration;
+
+    let mut fixture = fixture();
+
+    let accepted = fixture.transport.accepts_stream(StreamGeneration::from(9));
+
+    assert!(
+        accepted,
+        "a newer stamp can only mean a stream started by something this \
+         transport has not caught up with; refusing it would leave the \
+         runtime deaf to the pipeline it is meant to report on"
+    );
+    assert!(
+        fixture.transport.accepts_stream(StreamGeneration::from(9)),
+        "and the same stream keeps being believed afterwards"
+    );
+}
+
+#[test]
+fn starting_a_track_makes_the_previous_streams_reports_stale() {
+    use reprise_core::playback::StreamGeneration;
+
+    let mut fixture = fixture();
+    // One start, so the backend is on its first stream and the transport
+    // adopted it.
+    fixture.play_tracks(vec![1], 0).unwrap();
+    let first = StreamGeneration::from(1);
+    assert!(fixture.transport.accepts_stream(first));
+
+    // A second start moves the backend on.
+    fixture.play_tracks(vec![2], 0).unwrap();
+
+    assert!(
+        !fixture.transport.accepts_stream(first),
+        "whatever the previous stream still has in flight is stale the \
+         moment a new one starts — this is the double-skip the guard exists \
+         to stop"
+    );
+}

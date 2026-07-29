@@ -7,7 +7,7 @@
 
 use std::path::Path;
 
-use reprise_core::playback::PlayerEvent;
+use reprise_core::playback::StreamEvent;
 use reprise_core::queries;
 use reprise_runtime::{
     Clock, DeviceEffects, LibraryPort, PlayableTrack, Ports, Runtime, TrackLocation,
@@ -99,7 +99,7 @@ impl DeviceEffects for UnmigratedDeviceEffects {
 /// reports on.
 pub struct Composition {
     pub runtime: Runtime,
-    pub player_events: async_channel::Receiver<PlayerEvent>,
+    pub player_events: async_channel::Receiver<StreamEvent>,
 }
 
 /// Builds the Linux runtime over an already-migrated database.
@@ -114,8 +114,11 @@ pub fn compose(
     let writer = reprise_core::db::open_migrated(Some(database)).map_err(ComposeError::Database)?;
     let reader = reprise_core::db::open_migrated(Some(database)).map_err(ComposeError::Database)?;
 
-    let (events, player_events) = async_channel::unbounded::<PlayerEvent>();
-    let player = crate::player::Player::new(Box::new(move |event| {
+    let (events, player_events) = async_channel::unbounded::<StreamEvent>();
+    // The generation-stamping constructor, not the plain one: the runtime
+    // has to be able to tell a report about the track it just replaced from
+    // one about the track it just started.
+    let player = crate::player::Player::new_with_generation(Box::new(move |event| {
         // The backend reports from GStreamer's own threads; the channel is
         // the only place those threads and the runtime thread meet.
         let _ = events.send_blocking(event);
