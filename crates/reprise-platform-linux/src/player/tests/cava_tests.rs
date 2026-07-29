@@ -1,5 +1,6 @@
 use super::*;
 use crate::player_effects::{build_audio_filter, set_spectrum_messages};
+use crate::player_pipeline::AUDIO_SINK_ENV_VAR;
 use gstreamer_app as gst_app;
 
 #[test]

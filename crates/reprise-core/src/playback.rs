@@ -123,6 +123,60 @@ pub enum PlayerEvent {
     Error(String),
 }
 
+/// Identifies which stream — i.e. which call to [`PlaybackBackend::play`] /
+/// [`PlaybackBackend::play_uri`], or which gapless/crossfade hand-off to a
+/// pre-fed track — produced a given [`PlayerEvent`]. See the "Stream
+/// generations" section of [`PlaybackBackend`]'s doc comment for the full
+/// contract; in short, a backend bumps this counter every time it starts
+/// something new, and a consumer that remembers the generation it itself
+/// last started can use it to tell a late-arriving event for an abandoned
+/// stream apart from one for the stream currently in play.
+///
+/// Ordering is the whole API surface on purpose: a consumer's discard rule is
+/// "strictly older than the highest generation I have seen so far ⇒ stale,
+/// discard". A generation the consumer has never seen that is *newer* than
+/// its own bookmark is never stale — it can only mean a stream already
+/// started by some means the consumer has not caught up with yet (its own
+/// `play()` call included, since the backend bumps before that call returns),
+/// so the right move is to adopt it and advance the bookmark, not discard it.
+/// Equivalently: compare with `<`, never `==`/`!=`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct StreamGeneration(u64);
+
+impl StreamGeneration {
+    /// The generation in effect before any stream has ever started. Also
+    /// what [`PlaybackBackend::current_generation`]'s default implementation
+    /// returns forever, for backends that do not override it — see that
+    /// method's doc comment for why that is a safe, honest default rather
+    /// than a lie.
+    pub const INITIAL: Self = Self(0);
+}
+
+impl From<u64> for StreamGeneration {
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
+}
+
+/// A [`PlayerEvent`] paired with the [`StreamGeneration`] that was current
+/// the instant the backend produced it.
+///
+/// Purely additive, opt-in delivery. A backend's plain event-delivery
+/// callback (`Box<dyn Fn(PlayerEvent) + Send + Sync>`, unchanged — see
+/// [`PlaybackBackend`]'s doc comment) keeps delivering bare `PlayerEvent`s
+/// exactly as it always has, so a consumer that does not care about stream
+/// generations is never forced to see this type, and existing consumers are
+/// unaffected byte-for-byte. A backend that also offers a *tagged*
+/// construction path (Linux: `Player::new_with_generation`) delivers this
+/// type instead, to consumers that need to discard stale async events
+/// crossing a stream boundary — see [`StreamGeneration`]'s doc comment for
+/// the discard rule.
+#[derive(Debug, Clone)]
+pub struct StreamEvent {
+    pub generation: StreamGeneration,
+    pub event: PlayerEvent,
+}
+
 #[cfg(test)]
 #[path = "playback/song_visual_tests.rs"]
 mod song_visual_tests;
@@ -142,6 +196,29 @@ mod bass_pressure_tests;
 /// construction-time concern, not a trait method: each concrete backend
 /// takes a `Box<dyn Fn(PlayerEvent) + Send + Sync>` callback in its own
 /// constructor and may invoke it from any thread; frontends marshal.
+///
+/// ## Stream generations
+///
+/// Event delivery is asynchronous relative to the calls that start playback:
+/// a `TrackFinished`/`Error`/`Position` for a track the caller has already
+/// abandoned (the user pressed Next) can still be in flight when the next
+/// track starts, and arrive after it — applied naively, that re-advances a
+/// queue that already advanced, or overwrites the new track's position with
+/// the old one's. A backend implementing this trait MUST maintain a
+/// [`StreamGeneration`] counter and bump it every time it starts something
+/// new: `play`, `play_uri`, and a gapless/crossfade hand-off to a pre-fed
+/// track all count as "new" — the hand-off hands the listener a genuinely
+/// different stream even though no `play`/`play_uri` call drove it.
+/// [`current_generation`](Self::current_generation) exposes the live value
+/// for any consumer to read. A backend that also offers a *tagged*
+/// construction path (Linux: `Player::new_with_generation`) stamps every
+/// emitted event, at the instant it is produced, with whatever generation
+/// was current then (see [`StreamEvent`]) — that production-time stamp, not
+/// a value the consumer reads later on delivery, is what makes discarding a
+/// stale event safe under the race above; delivery order and read timing are
+/// not trustworthy substitutes for it. This is purely additive: the plain
+/// `Fn(PlayerEvent)` construction path is unaffected, and a consumer that
+/// never asks for tagging never observes either new type.
 pub trait PlaybackBackend {
     fn play(&self, path: &str) -> Result<(), PlaybackError>;
     /// Starts a non-local media URI. Implementations must accept `http`,
@@ -182,6 +259,16 @@ pub trait PlaybackBackend {
         mode: crate::library::settings::TrackTransition,
         crossfade_seconds: u8,
     );
+
+    /// The generation of whichever stream this backend most recently started
+    /// (see the "Stream generations" section above). Backends that do not
+    /// track streams individually may keep this default, which never
+    /// changes: every event then compares as "not older", so staleness
+    /// detection is simply unavailable for that backend rather than
+    /// incorrect — a safe, honest default for mocks/fixtures, never a lie.
+    fn current_generation(&self) -> StreamGeneration {
+        StreamGeneration::INITIAL
+    }
 }
 
 /// Platform-neutral playback error. `Backend`'s message is produced by the
