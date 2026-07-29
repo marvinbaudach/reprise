@@ -402,6 +402,51 @@ kommen zwei Inhaltsarten und eine neue Geräteansicht dazu.
 - **E7 · Sidebar-Geräte-Karte (7c).** Vier Zustände mit Richtungsangabe, volle
   Bilanz nur im Tooltip, Fortschrittslinie während des Syncs.
 
+- **E8 · Sync-Regeln auf die Geräteseite (Folge aus `E-6`).** Auswahl je Quelle,
+  Caps und Transfer-Profil werden dort bedienbar, wo sie heute nur als Anzeige
+  stehen; der Querverweis „rules from Preferences" / „Same on all devices"
+  verschwindet, der geplante „Phone sync"-Block in 7b entfällt ersatzlos, und
+  die Einstellungen behalten allein den Riegel „Online sources". Das Datenmodell
+  bleibt unverändert — verlagert wird die Bedienfläche, nicht der Speicher.
+  `MTP-28` hält die aufgehobene Trennung als `[aktiv]` fest und wird über
+  `[ersetzt durch …]` abgelöst, `SET-8`s Forderung nach dem Phone-sync-Block
+  ebenso. **Gefährlichste Stelle der Aufgabe:** aus Anzeige wird Bedienung, und
+  genau dabei sind auf diesem Branch schon drei Schalter entstanden, die
+  rendern und speichern, aber nie gelesen werden. Jede verlagerte Einstellung
+  braucht einen Test, der beweist, dass sich das *Verhalten* zwischen ihren
+  beiden Stellungen unterscheidet.
+
+- **E9 · Sichtbarer Zwei-Phasen-Sync (7f).** Bisher ist nur `wanted_on_device`
+  modelliert (E1); die beiden Phasen aus Abschnitt 3 fehlen ganz.
+  *Preparation*: der Überblick listet „2 files to download · 312 MiB" mit
+  Titeln, trägt den Schalter „Download missing files before syncing" (online
+  standardmäßig an) und benennt den Primärbutton danach **Download & sync**
+  statt **Sync now**. *Transfer*: „Step 1 of 2 · Downloading 1 of 2 · 62%" mit
+  Balken, danach die Übertragung; Abbrechen behält fertige Downloads.
+  Preparation benutzt den bestehenden Download-Manager mit Vorrang — **kein
+  zweiter Pfad**. Die drei Randfälle tragen den Vertrag und sind der
+  eigentliche Inhalt: offline läuft der Sync trotzdem und überspringt fehlende
+  Dateien mit Notiz („2 episodes skipped · not downloaded"), sie bleiben
+  vorgemerkt (`NET-3`); bei getakteter Verbindung wird Preparation *angeboten*,
+  nicht gestartet; mit abgeschalteten Online-Quellen gibt es die Phase gar
+  nicht. Hängt an R1, weil die Warteliste erst dann echte Zahlen hat.
+
+- **R1 · `MTP-21` live verdrahten** (Befund des externen Reviews). Die reine
+  Projektion `selection::select_episodes` erfüllt die Regel und ist getestet,
+  die Live-Pipeline ruft sie nie auf: `query_candidates_for_device` filtert
+  nicht nach gespielt, und `files_waiting_for_download` ist hart 0. Folge:
+  gespielte Episoden wandern trotzdem aufs Gerät, obwohl die Geräteseite
+  „Unplayed downloads only" behauptet, und eine vorgemerkte Episode ohne Datei
+  verschwindet aus der Bilanz — seit `MTP-30` heißt das, dass ein Gerät
+  „Up to date" meldet und seinen automatischen Sync überspringt, während
+  Arbeit ansteht. Der regelbenannte Test prüft nur das Label und bliebe grün,
+  wenn man das Auswahlverhalten löschte.
+
+- **R2 · MCP-Parität für Block D/E/F/G** (Befund des externen Reviews) —
+  identisch mit H-D bis H-G unten, hier nur als offener Posten vermerkt:
+  `device_dto` kennt weiterhin nur die alte Aggregatsicht, ein Agent kann also
+  einen Sync auslösen, aber nicht sehen, was er täte.
+
 ### Block F — Offline (6e) · Issue #107
 
 - **F1 · Vertrag `NET-3`** für cached, empty, queued, interrupted,
@@ -481,6 +526,9 @@ F1 → F2 → F3 → F4             Offline-Vertrag, bevor D und E ihn erben
 D1 → D2 → D3 → D4             Kanal-Detail vervollständigen
 E1 → E2 → E3 → E4             MTP-Kern: Ziele, Auswahl, Diff, Transfer
         ↘ E5 → E6 → E7        Geräteansicht, Ordner-Browser, Sidebar-Karte
+R1 → E8 → E9                  Auswahl live, Regeln auf die Geräteseite,
+                              dann der sichtbare Zwei-Phasen-Sync
+R2 (= H-D…H-G)                MCP-Parität, unabhängig von den GUI-Blöcken
 G2                            Restabgleich 6a
 ```
 
