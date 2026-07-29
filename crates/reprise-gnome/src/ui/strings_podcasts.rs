@@ -185,6 +185,30 @@ pub fn podcast_group_facts(
     )
 }
 
+pub const PODCAST_LIBRARY_SUMMARY: &str = N_!("{shows} · {episodes} · {new} new");
+
+/// `G2` (design 6a): the page-level header line above the grouped list,
+/// e.g. "4 shows · 41 episodes · 7 new". `shows` and `episodes` each get
+/// their own singular/plural form; `new` is a bare count — the design has
+/// no distinct singular wording for it ("1 new", not "1 new one").
+pub fn podcast_library_summary(shows: usize, episodes: usize, new: usize) -> String {
+    let shows_text = shows.to_string();
+    let shows_text = plural(
+        "{shows} show",
+        "{shows} shows",
+        shows,
+        &[("shows", &shows_text)],
+    );
+    formatted(
+        PODCAST_LIBRARY_SUMMARY,
+        &[
+            ("shows", &shows_text),
+            ("episodes", &podcast_episode_count(episodes)),
+            ("new", &new.to_string()),
+        ],
+    )
+}
+
 pub fn podcast_filtered_count(visible: usize, total: usize) -> String {
     formatted(
         N_!("{visible} of {total} episodes"),
@@ -357,6 +381,24 @@ mod tests {
     fn episode_count_uses_singular_and_plural_copy() {
         assert_eq!(podcast_episode_count(1), "1 episode");
         assert_eq!(podcast_episode_count(23), "23 episodes");
+    }
+
+    /// `G2` (design 6a): matches the owner's design example verbatim.
+    #[test]
+    fn pod_9_library_summary_matches_the_owners_design_example() {
+        assert_eq!(
+            podcast_library_summary(4, 41, 7),
+            "4 shows · 41 episodes · 7 new"
+        );
+    }
+
+    /// `G2`: singular forms at exactly one, not just the plural path.
+    #[test]
+    fn pod_9_library_summary_uses_singular_forms_at_one() {
+        assert_eq!(
+            podcast_library_summary(1, 1, 0),
+            "1 show · 1 episode · 0 new"
+        );
     }
 
     #[test]

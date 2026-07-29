@@ -41,6 +41,40 @@ pub(super) struct RenderedSourceGroup {
     pub summary: SourceSummary,
 }
 
+/// `G2` (design 6a): the page-level header line above the grouped list
+/// ("4 shows · 41 episodes · 7 new").
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct LibrarySummary {
+    pub shows: usize,
+    pub episodes: usize,
+    pub new: usize,
+}
+
+/// `G2`: a pure projection over the **unfiltered** group set — always the
+/// whole library, independent of the active filter, so the header keeps
+/// reading as an overview rather than jittering with every filter chip.
+/// "new" uses the same definition as the per-group facts line
+/// (`SourceSummary::unplayed_count`, i.e. `played_at.is_none()`, which
+/// includes in-progress "Resume" episodes) so the aggregate and the
+/// per-group counts never disagree about what counts as new.
+pub(super) fn library_summary(groups: &[SourceGroup]) -> LibrarySummary {
+    let mut episodes = 0_usize;
+    let mut new = 0_usize;
+    for group in groups {
+        episodes += group.episodes.len();
+        new += group
+            .episodes
+            .iter()
+            .filter(|episode| episode.played_at.is_none())
+            .count();
+    }
+    LibrarySummary {
+        shows: groups.len(),
+        episodes,
+        new,
+    }
+}
+
 pub(super) fn source_summary(
     group: &SourceGroup,
     download_states: &BTreeMap<i64, DownloadState>,
@@ -365,6 +399,56 @@ mod tests {
                 latest_published_at: Some(20),
             }
         );
+    }
+
+    /// `G2` (design 6a): the header line's "new" figure must sum the same
+    /// unplayed definition as the per-group facts (`played_at.is_none()`,
+    /// so a "Resume" episode still counts as new) across every group, not
+    /// just the "New" status — this would go red if the count were narrowed
+    /// to `EpisodeStatus::New` only, or if it summed distinct show titles
+    /// instead of episodes.
+    #[test]
+    fn pod_9_library_summary_counts_shows_episodes_and_new_across_all_groups() {
+        let mut played = row(1, Some(10), PodcastKind::Rss);
+        played.played_at = Some(30);
+        let unplayed = row(2, Some(20), PodcastKind::Rss);
+        let mut resuming = row(3, Some(15), PodcastKind::Rss);
+        resuming.position_ms = 5_000;
+        let group_a = SourceGroup {
+            subscription_id: 1,
+            title: "Show A".into(),
+            author: None,
+            image_url: None,
+            kind: PodcastKind::Rss,
+            sync_to_phone: false,
+            episodes: vec![played, unplayed],
+        };
+        let group_b = SourceGroup {
+            subscription_id: 2,
+            title: "Show B".into(),
+            author: None,
+            image_url: None,
+            kind: PodcastKind::Rss,
+            sync_to_phone: false,
+            episodes: vec![resuming],
+        };
+
+        let summary = library_summary(&[group_a, group_b]);
+
+        assert_eq!(
+            summary,
+            LibrarySummary {
+                shows: 2,
+                episodes: 3,
+                new: 2,
+            }
+        );
+    }
+
+    /// `G2`: an empty library must not fabricate counts.
+    #[test]
+    fn pod_9_library_summary_is_zero_for_no_subscriptions() {
+        assert_eq!(library_summary(&[]), LibrarySummary::default());
     }
 
     #[test]
