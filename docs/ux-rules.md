@@ -616,9 +616,9 @@ human. Rationale for changes lives in the git history.
   uses (`MTP-31`), and leaves the dialog open instead of closing it as it does
   on success. A refused save must never look like a successful one; the chosen
   selection stays visible so that nothing is discarded silently.
-- **MTP-36** [active] [core] — `MTP-41`'s YouTube rule "the latest N episodes
-  per enabled channel, regardless of download state" names N; this is where
-  that value lives. **Decided 2026-07-29:** a global default (default **5**,
+- **MTP-36** [active] [core] — `MTP-45`'s YouTube rule "the latest N episodes
+  per enabled channel among those already downloaded or explicitly wanted"
+  names N; this is where that value lives. **Decided 2026-07-29:** a global default (default **5**,
   `podcasts::config::PodcastConfig::latest_per_channel_default`, key
   `podcasts.latest_per_channel_default`), overridable per channel
   (`podcast_subscriptions.latest_per_channel`, schema v47) — the same shape as
@@ -663,7 +663,7 @@ human. Rationale for changes lives in the git history.
      disabled rather than feigning an effect no eviction path delivers.
   2. **The selection summary becomes a real, honest live value** instead of a
      display of global rules or a static text. Playlists already read
-     `selection::summarize_playlist_selection` (`MTP-41`); YouTube and podcasts
+     `selection::summarize_playlist_selection` (`MTP-45`); YouTube and podcasts
      now likewise read "N of M channels selected" and "N of M shows selected ·
      unplayed downloads only" live from
      `podcasts::phone_sync::selection_summary` — the same selection that is
@@ -713,7 +713,7 @@ human. Rationale for changes lives in the git history.
   duplicating its online/offline decision. An already downloaded episode needs
   no download step. The downloader that actually works off the pending state is
   not part of this rule (E2/E4).
-- **MTP-41** [active] [core] — The intended set per sync category is a pure
+- **MTP-41** [replaced by MTP-45] — The intended set per sync category is a pure
   projection from the selection rule and the library state (E2). Playlists
   yield "N of M selected · K tracks"; YouTube audio limits each enabled channel
   (channel toggle from 6b) to its latest N episodes regardless of download
@@ -725,7 +725,7 @@ human. Rationale for changes lives in the git history.
   waiting episode out of the result.
 - **MTP-42** [active] [core] — Design 7f's preparation phase
   (`reprise_core::device_sync::preparation`) is a pure projection over
-  `MTP-41`'s waiting set, `NET-1a`'s global gate, `NET-3a`'s connectivity, and
+  `MTP-45`'s waiting set, `NET-1a`'s global gate, `NET-3a`'s connectivity, and
   the device's own "prepare before sync" switch. It resolves in this order:
   1. `online-sources-enabled` off (`NET-1a`) means the phase does not exist at
      all — not an empty phase, not a disabled switch, nothing shown.
@@ -777,6 +777,29 @@ human. Rationale for changes lives in the git history.
   refresh pipeline's auto-download branch and MCP's `music_manage_episodes`
   call, so the episode lookup, `NET-1a` gate, `.part` handling, and progress
   emission cannot drift between a manual click and a preparation download.
+- **MTP-45** [active] [core] — The intended set per sync category is a pure
+  projection from the selection rule and the library state (E2). Playlists
+  yield "N of M selected · K tracks"; YouTube audio limits each enabled
+  channel (channel toggle from 6b) to its latest N episodes among those
+  already downloaded or explicitly wanted (`wanted_on_device`, `MTP-40`) — an
+  episode that is neither is never a candidate at all, so N bounds only the
+  eligible set, never "every episode this channel has ever published"
+  ("N of M channels · latest K each"); podcast episodes want every unplayed,
+  already downloaded episode of enabled shows with no upper bound ("Unplayed
+  downloads only"). A wanted episode without a local file (`wanted_on_device`,
+  `MTP-40`) counts as waiting, never as ready to copy — the intended set keeps
+  the two visibly apart instead of silently filtering a waiting episode out of
+  the result.
+
+  **Replaces `MTP-41` (decided 2026-07-29).** `MTP-41`'s YouTube clause read
+  "latest N episodes … regardless of download state", which never matched
+  `query_selection_candidates_for_device`: the code has only ever admitted
+  already-downloaded or explicitly `wanted_on_device` episodes into the
+  candidate set. The owner decided the code is right and the rule text was
+  wrong — an unwanted, missing episode must not silently pull a download just
+  to fill an N-episode quota. Every other clause of `MTP-41` (playlists,
+  podcast episodes, the waiting-versus-ready distinction) is unchanged and
+  carries over verbatim.
 
 ## F. Settings & modals
 

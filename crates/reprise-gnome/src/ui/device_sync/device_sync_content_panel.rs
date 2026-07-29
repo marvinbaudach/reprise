@@ -535,7 +535,7 @@ fn verification_copy(state: &DeviceContentsState) -> (String, String, bool) {
 
 /// `MTP-37`: design 7a's per-category selection summary. Every branch is
 /// now a live read of real per-device selection state — Playlists via the
-/// existing engine (`selection::summarize_playlist_selection`, `MTP-41`),
+/// existing engine (`selection::summarize_playlist_selection`, `MTP-45`),
 /// YouTube and podcasts via `POD-12`'s per-device subscription selection
 /// (`podcasts::phone_sync::selection_summary`, gathered by the caller into
 /// `youtube_selection`/`podcast_selection`). None of these are edited in

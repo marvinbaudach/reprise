@@ -73,7 +73,7 @@ struct DeviceState {
     mirror_plan: MirrorPlan,
     podcast_plan: reprise_core::device_sync::podcasts::PodcastSyncPlan,
     youtube_plan: reprise_core::device_sync::podcasts::PodcastSyncPlan,
-    /// `MTP-41`/`MTP-40`: podcast/YouTube episodes wanted for this device
+    /// `MTP-45`/`MTP-40`: podcast/YouTube episodes wanted for this device
     /// but not yet downloaded, from the same `select_episodes` pass that
     /// produced `podcast_plan`/`youtube_plan` — fed into `CategoryDiff`'s
     /// `files_waiting_for_download` (`MTP-22`) instead of the previous
@@ -175,7 +175,7 @@ impl DeviceState {
         // `recompute_delta_silent` — reused here, not recomputed.
         // `files_waiting_for_download` reads `podcast_waiting`/
         // `youtube_waiting`, both populated by `selection::select_episodes`
-        // (`MTP-40`/`MTP-41`) in `recompute_delta_silent` from
+        // (`MTP-40`/`MTP-45`) in `recompute_delta_silent` from
         // `podcasts::query_selection_candidates_for_device`.
         let category_readings = self.category_readings();
         let device_bytes = [

@@ -107,7 +107,7 @@ fn mtp_30_stays_silent_when_the_connect_scan_fails() {
     });
 }
 
-/// `MTP-41`/`MTP-30`: before `MTP-41`'s live wiring fix,
+/// `MTP-45`/`MTP-30`: before `MTP-45`'s live wiring fix,
 /// `files_waiting_for_download` was hard-coded to `0`, so a device with
 /// only a wanted-but-missing podcast episode (`wanted_on_device`, `MTP-40`)
 /// pending — nothing to copy, nothing to remove — produced an all-zero
