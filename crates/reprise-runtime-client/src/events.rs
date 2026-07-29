@@ -55,7 +55,12 @@ impl RuntimeCommand {
             Self::Playback(PlaybackCommand::SetVolume(volume)) => {
                 ("SetVolume", Body::Volume(*volume))
             }
-            Self::Playback(PlaybackCommand::Seek(delta_ms)) => ("Seek", Body::Delta(*delta_ms)),
+            Self::Playback(PlaybackCommand::Seek(delta_ms)) => {
+                ("Seek", Body::Milliseconds(*delta_ms))
+            }
+            Self::Playback(PlaybackCommand::SeekTo(position_ms)) => {
+                ("SeekTo", Body::Milliseconds(*position_ms))
+            }
             Self::Playback(PlaybackCommand::SetShuffle(on)) => ("SetShuffle", Body::Flag(*on)),
             Self::Playback(PlaybackCommand::SetRepeat(mode)) => {
                 ("SetRepeat", Body::Text(mode.clone()))
@@ -128,7 +133,7 @@ pub(super) enum Body {
     None,
     Flag(bool),
     Volume(f64),
-    Delta(i64),
+    Milliseconds(i64),
     Id(i64),
     Text(String),
     Ids(Vec<i64>),
@@ -307,3 +312,23 @@ impl std::fmt::Display for ClientError {
 }
 
 impl std::error::Error for ClientError {}
+
+#[cfg(test)]
+mod tests {
+    use super::{Body, RuntimeCommand};
+    use reprise_runtime_protocol::playback::PlaybackCommand;
+
+    /// The wire has two seek methods because the intentions are different.
+    /// Pin both the member name and the absolute value: using `Seek` here
+    /// would turn a 60-second scrubber target into a 60-second delta.
+    #[test]
+    fn an_absolute_seek_keeps_its_method_and_target_on_the_wire() {
+        let (method, body) = RuntimeCommand::Playback(PlaybackCommand::SeekTo(60_000)).wire();
+
+        assert_eq!(method, "SeekTo");
+        let Body::Milliseconds(target) = body else {
+            panic!("an absolute seek must carry one signed millisecond value")
+        };
+        assert_eq!(target, 60_000);
+    }
+}

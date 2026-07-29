@@ -598,7 +598,7 @@ fn the_whole_runtime_snapshot_survives_a_dbus_round_trip() {
 #[test]
 fn the_protocol_version_is_pinned() {
     assert_eq!(PROTOCOL_VERSION.major, 4);
-    assert_eq!(PROTOCOL_VERSION.minor, 1);
+    assert_eq!(PROTOCOL_VERSION.minor, 2);
 }
 
 /// The effects facet, pinned like the others: a client decodes by name, so a
@@ -620,5 +620,24 @@ fn the_effects_wire_field_names_are_the_checked_in_contract() {
             "equalizer_enabled",
             "replay_gain",
         ]
+    );
+}
+
+/// The page's wire field names, pinned like every other snapshot's.
+#[test]
+fn the_queue_page_wire_field_names_are_the_checked_in_contract() {
+    use reprise_runtime_protocol::queue::QueuePage;
+
+    let page = QueuePage {
+        revision: 9,
+        section: "context".into(),
+        offset: 400,
+        track_ids: vec![41, 42, 43],
+        total: 4_000,
+    };
+    assert_eq!(round_trip(&page), page);
+    assert_eq!(
+        field_names(&page),
+        ["offset", "revision", "section", "total", "track_ids"]
     );
 }

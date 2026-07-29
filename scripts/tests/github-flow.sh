@@ -61,7 +61,7 @@ require_pattern 'check-merge-readiness.sh --no-fetch' scripts/ci-quality.sh
 require_pattern '^main <- dev <- feature/' "$guide"
 require_pattern 'CI / Quality gate' "$guide"
 require_pattern 'Every pull request runs' "$guide"
-require_pattern 'Direct pushes to `main`' "$guide"
+require_pattern 'sanctioned direct push to `main`' "$guide"
 require_pattern 'hotfix/\\*' "$guide"
 require_pattern 'hotfix/' AGENTS.md
 require_pattern 'package-ecosystem: github-actions' .github/dependabot.yml

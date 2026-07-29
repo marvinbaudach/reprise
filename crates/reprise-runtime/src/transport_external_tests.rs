@@ -556,3 +556,148 @@ fn a_handoff_after_a_finish_does_not_leave_the_finish_standing() {
          act on an ending that has been overtaken"
     );
 }
+
+#[test]
+fn an_absolute_seek_lands_where_it_was_aimed() {
+    let mut fixture = fixture();
+    fixture.play_tracks(vec![1], 0).unwrap();
+    fixture.player_event(&PlayerEvent::Position {
+        position_ms: 5_000,
+        duration_ms: 240_000,
+    });
+
+    fixture
+        .command(&PlaybackCommand::SeekTo(90_000))
+        .expect("the track is 240s long");
+
+    assert_eq!(
+        fixture.transport.playback_snapshot().position_ms,
+        90_000,
+        "a scrubber knows where the user let go; expressing that as a delta \
+         makes it depend on how far the playhead had run by the time the \
+         message arrived, so the same drag lands elsewhere under load"
+    );
+}
+
+#[test]
+fn an_absolute_seek_past_the_end_stops_at_the_end() {
+    let mut fixture = fixture();
+    fixture.play_tracks(vec![1], 0).unwrap();
+    fixture.player_event(&PlayerEvent::Position {
+        position_ms: 0,
+        duration_ms: 240_000,
+    });
+
+    fixture.command(&PlaybackCommand::SeekTo(999_000)).unwrap();
+
+    assert_eq!(fixture.transport.playback_snapshot().position_ms, 240_000);
+}
+
+#[test]
+fn a_live_stream_refuses_to_be_seeked_rather_than_jumping_to_its_start() {
+    let mut fixture = fixture();
+    fixture
+        .transport
+        .play_external(&fixture.backend, &a_stream(), None)
+        .unwrap();
+
+    let error = fixture
+        .command(&PlaybackCommand::SeekTo(30_000))
+        .expect_err("a stream has no length to seek within");
+
+    assert_eq!(error.kind(), "rejected:not_seekable");
+    assert_eq!(
+        fixture.transport.playback_snapshot().position_ms,
+        0,
+        "clamping against a duration of zero would silently turn every seek \
+         into a jump to the start, which is the worst possible answer to \
+         someone trying to skip ahead"
+    );
+}
+
+#[test]
+fn an_episode_seeks_once_its_duration_is_known() {
+    let mut fixture = fixture();
+    fixture
+        .transport
+        .play_external(&fixture.backend, &an_episode(), None)
+        .unwrap();
+    fixture.player_event(&PlayerEvent::Position {
+        position_ms: 0,
+        duration_ms: 3_600_000,
+    });
+
+    fixture
+        .command(&PlaybackCommand::SeekTo(60_000))
+        .expect("an episode is seekable");
+
+    assert_eq!(fixture.transport.playback_snapshot().position_ms, 60_000);
+}
+
+/// The window between starting an episode and the first position report,
+/// where this side does not yet know how long it is.
+///
+/// The test above does *not* cover this: it delivers a duration first, so it
+/// only proves seeking works once the length is known. This is the case that
+/// actually needed a guard.
+#[test]
+fn seeking_before_the_first_duration_report_does_not_collapse_to_the_start() {
+    let mut fixture = fixture();
+    // `an_episode` carries `duration_ms: 0` — unknown, not empty.
+    fixture
+        .transport
+        .play_external(&fixture.backend, &an_episode(), None)
+        .unwrap();
+
+    fixture
+        .command(&PlaybackCommand::SeekTo(60_000))
+        .expect("an episode is seekable whether or not its length is known yet");
+
+    assert_eq!(
+        fixture.transport.playback_snapshot().position_ms,
+        60_000,
+        "clamping against a duration of zero turns every target into the \
+         start — the same silent jump the live refusal exists to prevent, in \
+         the one case that refusal deliberately lets through"
+    );
+    assert!(
+        fixture.calls.calls().contains(&BackendCall::SeekTo(60_000)),
+        "and the backend, which knows the real length even while this side \
+         does not, is the one asked to judge it"
+    );
+}
+
+#[test]
+fn a_relative_seek_before_the_first_duration_report_moves_too() {
+    let mut fixture = fixture();
+    fixture
+        .transport
+        .play_external(&fixture.backend, &an_episode(), None)
+        .unwrap();
+
+    fixture.command(&PlaybackCommand::Seek(30_000)).unwrap();
+
+    assert_eq!(
+        fixture.transport.playback_snapshot().position_ms,
+        30_000,
+        "the pre-existing relative form had the same collapse"
+    );
+}
+
+#[test]
+fn seeking_before_the_start_still_stops_at_the_start() {
+    let mut fixture = fixture();
+    fixture
+        .transport
+        .play_external(&fixture.backend, &an_episode(), None)
+        .unwrap();
+
+    fixture.command(&PlaybackCommand::Seek(-30_000)).unwrap();
+
+    assert_eq!(
+        fixture.transport.playback_snapshot().position_ms,
+        0,
+        "the lower bound holds whether or not the length is known: there is \
+         nothing before the start of anything"
+    );
+}

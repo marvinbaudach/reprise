@@ -119,6 +119,72 @@ fn playback_events(events: &[crate::event::SequencedEvent]) -> Vec<&RuntimeEvent
 }
 
 #[test]
+fn frequent_player_reports_do_not_require_a_whole_queue_comparison() {
+    use reprise_core::playback::{PlaybackState, PlayerEvent};
+
+    for event in [
+        PlayerEvent::StateChanged(PlaybackState::Playing),
+        PlayerEvent::Position {
+            position_ms: 30_000,
+            duration_ms: 180_000,
+        },
+        PlayerEvent::StreamTags {
+            title: Some("News".into()),
+            organization: Some("Example FM".into()),
+        },
+    ] {
+        assert!(
+            !crate::runtime::player_event_can_change_queue(&event),
+            "{event:?} changes playback metadata, not queue order; a 100,000-row \
+             queue must not be cloned twice for a report emitted every 500 ms"
+        );
+    }
+
+    for event in [
+        PlayerEvent::TrackFinished,
+        PlayerEvent::AdvancedToNext,
+        PlayerEvent::Error("decoder stopped".into()),
+    ] {
+        assert!(
+            crate::runtime::player_event_can_change_queue(&event),
+            "{event:?} may move or unload the current queue entry"
+        );
+    }
+}
+
+#[test]
+fn frequent_playback_commands_do_not_require_a_whole_queue_comparison() {
+    use reprise_runtime_protocol::playback::PlaybackCommand;
+
+    for command in [
+        PlaybackCommand::Pause,
+        PlaybackCommand::SetVolume(0.5),
+        PlaybackCommand::Seek(5_000),
+        PlaybackCommand::SeekTo(30_000),
+        PlaybackCommand::SetRepeat("all".into()),
+    ] {
+        assert!(
+            !crate::runtime::playback_command_can_change_queue(&command),
+            "{command:?} changes playback state, not queue order; a scrubber \
+             must not clone a 100,000-row queue for every target it sends"
+        );
+    }
+
+    for command in [
+        PlaybackCommand::Play,
+        PlaybackCommand::Stop,
+        PlaybackCommand::Next,
+        PlaybackCommand::Previous,
+        PlaybackCommand::SetShuffle(true),
+    ] {
+        assert!(
+            crate::runtime::playback_command_can_change_queue(&command),
+            "{command:?} can load, unload, move, or reorder the queue"
+        );
+    }
+}
+
+#[test]
 fn two_clients_receive_the_same_events_under_the_same_sequence() {
     let mut harness = harness();
     let watcher = full_client(&mut harness.runtime);
@@ -720,6 +786,9 @@ mod effects;
 
 #[path = "runtime_spectrum_tests.rs"]
 mod spectrum;
+
+#[path = "runtime_paging_tests.rs"]
+mod paging;
 
 #[path = "runtime_restore_tests.rs"]
 mod restore;

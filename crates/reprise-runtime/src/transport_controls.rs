@@ -10,7 +10,7 @@
 use reprise_core::playback::{PlaybackBackend, PlaybackState};
 use reprise_core::queue::Queue;
 
-use super::{backend_failed, Source, Transport};
+use super::{backend_failed, Seek, Source, Transport};
 use crate::error::{Rejected, RuntimeError};
 use crate::ports::LibraryPort;
 
@@ -197,18 +197,51 @@ impl Transport {
         }
     }
 
+    /// Seeks, either by an offset from where the playhead is or to an
+    /// absolute point.
+    ///
+    /// Both, because they are different intentions and one cannot stand in
+    /// for the other. A relative seek is "thirty seconds back" and has to be
+    /// resolved against the position at the moment it is applied. Turning a
+    /// scrubber drag into a relative seek makes it depend on how long the
+    /// message took to arrive: the same drag lands somewhere else under load,
+    /// and repeated drags drift.
+    ///
+    /// A live stream refuses both. It has no length to seek within, and
+    /// clamping to a duration of zero would silently turn every seek into a
+    /// jump to the start — the worst possible answer to "let me skip the ad".
+    ///
+    /// The upper clamp applies only when the length is actually known.
+    /// `duration_ms == 0` means *unknown*, not *empty*: a downloaded episode
+    /// reports zero until the first position report arrives, and clamping a
+    /// seek against it collapses every target to the start — the same silent
+    /// jump the live refusal exists to prevent, in the one case the refusal
+    /// deliberately lets through. The backend knows the real length even
+    /// while this side does not, so an unclamped target is answered by the
+    /// only party that can answer it.
     pub(super) fn seek(
         &mut self,
         backend: &dyn PlaybackBackend,
-        delta_ms: i64,
+        seek: Seek,
     ) -> Result<(), RuntimeError> {
-        let Some(duration_ms) = self.current.as_ref().map(|track| track.duration_ms) else {
+        let Some(loaded) = self.current.as_ref() else {
             return Err(RuntimeError::Rejected(Rejected::NothingToPlay));
         };
-        let target = self
-            .position_ms
-            .saturating_add(delta_ms)
-            .clamp(0, duration_ms.max(0));
+        if loaded.live {
+            return Err(RuntimeError::Rejected(Rejected::NotSeekable));
+        }
+        let duration_ms = loaded.duration_ms;
+        let aimed = match seek {
+            Seek::By(delta_ms) => self.position_ms.saturating_add(delta_ms),
+            Seek::To(position_ms) => position_ms,
+        };
+        let target = if duration_ms > 0 {
+            aimed.clamp(0, duration_ms)
+        } else {
+            // No upper bound to clamp against. The lower one always holds:
+            // there is nothing before the start of anything.
+            aimed.max(0)
+        };
         backend
             .seek_to(target)
             .map_err(|error| backend_failed(&error))?;

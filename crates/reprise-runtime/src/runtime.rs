@@ -11,6 +11,7 @@ use reprise_runtime_protocol::effects::EffectsRequest;
 use reprise_runtime_protocol::jobs::JobCommand;
 use reprise_runtime_protocol::playback::{ExternalMedia, PlaybackCommand, PlaybackSnapshot};
 use reprise_runtime_protocol::queue::{QueueCommand, QueueSnapshot};
+use reprise_runtime_protocol::queue::{QueuePage, QueueSection};
 use reprise_runtime_protocol::session::RestoredQueue;
 use reprise_runtime_protocol::PROTOCOL_VERSION;
 use rusqlite::Connection;
@@ -22,7 +23,7 @@ use crate::error::{Capability, Refused, RuntimeError, Unavailable};
 use crate::event::{Delivery, RuntimeEvent, RuntimeSnapshot};
 use crate::jobs;
 use crate::ports::Ports;
-use crate::transport::Transport;
+use crate::transport::{QueueIdentity, Transport, QUEUE_WINDOW};
 
 /// What a client asks the runtime to do.
 ///
@@ -94,6 +95,45 @@ impl Command {
             Self::Job(_) => Capability::AiCreate,
             Self::Device(_) => Capability::DeviceSync,
         }
+    }
+}
+
+/// Whether a backend report can change the queue identity.
+///
+/// Kept exhaustive on purpose: a new event kind must decide whether the
+/// runtime needs the whole-queue before-image. Position reports arrive every
+/// 500 ms on Linux, so treating every report as queue-changing would clone a
+/// virtual queue twice per tick even though its order stayed still.
+pub(crate) fn player_event_can_change_queue(event: &reprise_core::playback::PlayerEvent) -> bool {
+    match event {
+        reprise_core::playback::PlayerEvent::TrackFinished
+        | reprise_core::playback::PlayerEvent::AdvancedToNext
+        | reprise_core::playback::PlayerEvent::Error(_) => true,
+        reprise_core::playback::PlayerEvent::StateChanged(_)
+        | reprise_core::playback::PlayerEvent::Position { .. }
+        | reprise_core::playback::PlayerEvent::StreamTags { .. }
+        | reprise_core::playback::PlayerEvent::Spectrum(_) => false,
+    }
+}
+
+/// Whether a playback command can change the queue identity.
+///
+/// Like the backend-event classification above, this is exhaustive so a new
+/// command must decide whether it needs the whole-queue before-image.
+/// Scrubber and volume commands can arrive frequently and must stay O(1)
+/// with respect to queue length.
+pub(crate) fn playback_command_can_change_queue(command: &PlaybackCommand) -> bool {
+    match command {
+        PlaybackCommand::Play
+        | PlaybackCommand::Stop
+        | PlaybackCommand::Next
+        | PlaybackCommand::Previous
+        | PlaybackCommand::SetShuffle(_) => true,
+        PlaybackCommand::Pause
+        | PlaybackCommand::SetVolume(_)
+        | PlaybackCommand::Seek(_)
+        | PlaybackCommand::SeekTo(_)
+        | PlaybackCommand::SetRepeat(_) => false,
     }
 }
 
@@ -270,6 +310,37 @@ impl Runtime {
         })
     }
 
+    /// One window of a queue section, for a view scrolled past the 200 rows
+    /// the snapshot carries.
+    ///
+    /// `limit` is capped at the snapshot's own window size. An unbounded read
+    /// would let one client ask for a hundred thousand ids in a single reply
+    /// and stall the runtime for every other client while it is built —
+    /// §9.1's single-threaded ownership is what makes that everyone's
+    /// problem rather than only the caller's.
+    pub fn queue_page(
+        &self,
+        section: &str,
+        offset: u64,
+        limit: u64,
+    ) -> Result<QueuePage, RuntimeError> {
+        let section = QueueSection::from_wire(section).ok_or(RuntimeError::Rejected(
+            crate::error::Rejected::NoSuchQueueSection,
+        ))?;
+        let limit = usize::try_from(limit)
+            .unwrap_or(usize::MAX)
+            .min(QUEUE_WINDOW);
+        let offset_index = usize::try_from(offset).unwrap_or(usize::MAX);
+        let (track_ids, total) = self.transport.queue_page(section, offset_index, limit);
+        Ok(QueuePage {
+            revision: self.queue_revision,
+            section: section.as_wire().to_owned(),
+            offset,
+            track_ids,
+            total: total as u64,
+        })
+    }
+
     /// Takes the newest spectrum frame this client has not seen.
     ///
     /// Separate from [`Self::drain`] on purpose. Frames carry no sequence and
@@ -308,7 +379,11 @@ impl Runtime {
         }
         let outcome = match command {
             Command::Playback(playback) => {
-                let before = self.transport_facets();
+                let before = (
+                    self.transport.playback_snapshot(),
+                    playback_command_can_change_queue(playback)
+                        .then(|| self.transport.queue_identity()),
+                );
                 let result = self.transport.playback_command(
                     &*self.ports.playback,
                     &*self.ports.library,
@@ -445,7 +520,10 @@ impl Runtime {
             self.clients.offer_spectrum(frame);
             return;
         }
-        let before = self.transport_facets();
+        let before = (
+            self.transport.playback_snapshot(),
+            player_event_can_change_queue(&event.event).then(|| self.transport.queue_identity()),
+        );
         self.transport
             .player_event(&*self.ports.playback, &*self.ports.library, &event.event);
         self.publish_transport_changes(None, before);
@@ -513,10 +591,10 @@ impl Runtime {
         }
     }
 
-    fn transport_facets(&self) -> (PlaybackSnapshot, QueueSnapshot) {
+    fn transport_facets(&self) -> (PlaybackSnapshot, Option<QueueIdentity>) {
         (
             self.transport.playback_snapshot(),
-            self.transport.queue_snapshot(),
+            Some(self.transport.queue_identity()),
         )
     }
 
@@ -529,7 +607,7 @@ impl Runtime {
     fn publish_transport_changes(
         &mut self,
         initiator: Option<ClientId>,
-        before: (PlaybackSnapshot, QueueSnapshot),
+        before: (PlaybackSnapshot, Option<QueueIdentity>),
     ) {
         let (playback_before, queue_before) = before;
         let playback = self.transport.playback_snapshot();
@@ -537,13 +615,17 @@ impl Runtime {
             self.clients
                 .publish(initiator, RuntimeEvent::PlaybackChanged(playback));
         }
-        let queue = self.transport.queue_snapshot();
-        if queue != queue_before {
-            // The revision counts exactly this: a change worth telling a
-            // client about. Both sides of the comparison are unstamped, so
-            // the count itself cannot make the queue look changed.
+        // Compared on the whole queue rather than on the snapshot. The
+        // snapshot shows 200 rows per section, so comparing it cannot see a
+        // reorder past the two-hundredth — which was harmless only while
+        // nothing could name those positions. `QueuePage` names them.
+        //
+        // One comparison, not two: every field of the snapshot is derived
+        // from the identity, so the identity is strictly the stronger test.
+        // Keeping both would be two places deciding the same thing.
+        if queue_before.is_some_and(|before| self.transport.queue_identity() != before) {
             self.queue_revision += 1;
-            let queue = self.stamped_queue(queue);
+            let queue = self.stamped_queue(self.transport.queue_snapshot());
             self.clients
                 .publish(initiator, RuntimeEvent::QueueChanged(queue));
         }

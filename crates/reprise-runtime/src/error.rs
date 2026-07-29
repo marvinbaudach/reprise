@@ -79,6 +79,11 @@ pub enum Rejected {
     NoRunToCancel,
     /// Transport was asked to play with nothing loaded and nothing queued.
     NothingToPlay,
+    /// A seek in something with no length to seek within — a live stream.
+    NotSeekable,
+    /// A queue section this build does not know — not `play_next` or
+    /// `context`.
+    NoSuchQueueSection,
     /// An equalizer that is not exactly ten bands. Rejected rather than
     /// padded or truncated: the bands are fixed centre frequencies, so a
     /// list of a different length names frequencies nobody agreed on.
@@ -167,6 +172,8 @@ impl RuntimeError {
             Self::Rejected(Rejected::DeviceAlreadyRunning) => "device_already_running",
             Self::Rejected(Rejected::NoRunToCancel) => "no_run_to_cancel",
             Self::Rejected(Rejected::NothingToPlay) => "nothing_to_play",
+            Self::Rejected(Rejected::NotSeekable) => "not_seekable",
+            Self::Rejected(Rejected::NoSuchQueueSection) => "no_such_queue_section",
             Self::Rejected(Rejected::UnknownEqualizerShape) => "unknown_equalizer_shape",
             Self::Rejected(Rejected::UnknownReplayGainMode) => "unknown_replay_gain_mode",
             Self::Rejected(Rejected::UnknownRepeatMode) => "unknown_repeat_mode",
