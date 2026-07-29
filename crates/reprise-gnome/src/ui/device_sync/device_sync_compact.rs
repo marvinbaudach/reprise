@@ -78,8 +78,8 @@ impl DeviceSyncRuntime {
     }
 
     /// "Remove from phone when deleted or unsubscribed here" (design 7a).
-    /// Genuinely per-device, unlike the sync rules 7b's Preferences block
-    /// owns — see `db_device_sync::migrate_v44`'s doc comment.
+    /// Per-device, like every other sync rule since `E-6` moved them onto
+    /// the device page — see `db_device_sync::migrate_v44`'s doc comment.
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn set_remove_deleted(
         self: &Rc<Self>,
@@ -105,9 +105,11 @@ impl DeviceSyncRuntime {
     }
 
     /// `MTP-18`'s one per-device toggle exposed by the Content section
-    /// (`MTP-28`): whether this device's slot for `kind` is active at all.
-    /// Independent of the global "sync this content type" rule (7b), which
-    /// is not built yet — see `device_view::project_device_category_reading`.
+    /// (`MTP-37`): whether this device's slot for `kind` is active at all.
+    /// `E-6` withdrew the once-planned global "sync this content type" rule
+    /// outright, so this switch owns its section without a second,
+    /// higher-priority one anywhere — see
+    /// `device_view::project_device_category_reading`.
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn set_target_enabled(
         self: &Rc<Self>,
@@ -132,6 +134,45 @@ impl DeviceSyncRuntime {
                 .unwrap_or_else(|| SyncTarget::default_for(kind))
         };
         target.enabled = enabled;
+        save_target(&self.conn.borrow(), device_id, &target).map_err(|error| error.to_string())?;
+        self.recompute_delta(device_id)
+    }
+
+    /// `MTP-37` (`E-6`, `E-8`): the Content section's size-cap column
+    /// becomes a real per-device control here — before this, `cap_bytes`
+    /// was persisted (`MTP-18`) and enforced by `build_plan`'s eviction
+    /// pass (`MTP-19`/`MTP-25`) but had no editing surface anywhere, so a
+    /// user could never actually change it. `None` clears the cap
+    /// (unlimited); `Some` sets it in bytes. Playlists have no cap concept
+    /// (`MTP-18`'s `default_cap_bytes`) and no eviction path reads a
+    /// playlist cap, so the GTK side never offers this control for that
+    /// kind — this method does not special-case it either way, it simply
+    /// persists whatever is asked and lets the existing eviction pass
+    /// (which already ignores `None`) do the rest.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn set_target_cap(
+        self: &Rc<Self>,
+        device_id: &str,
+        kind: SyncTargetKind,
+        cap_bytes: Option<u64>,
+    ) -> Result<(), String> {
+        {
+            let devices = self.device_states.borrow();
+            let device = devices
+                .iter()
+                .find(|device| device.descriptor.id == device_id)
+                .ok_or_else(|| "device is not connected".to_string())?;
+            if device.is_busy() {
+                return Err("device synchronization is active".into());
+            }
+        }
+        let mut target = {
+            let conn = self.conn.borrow();
+            load_target(&conn, device_id, kind)
+                .map_err(|error| error.to_string())?
+                .unwrap_or_else(|| SyncTarget::default_for(kind))
+        };
+        target.cap_bytes = cap_bytes;
         save_target(&self.conn.borrow(), device_id, &target).map_err(|error| error.to_string())?;
         self.recompute_delta(device_id)
     }
@@ -202,6 +243,8 @@ impl DeviceSyncRuntime {
             youtube_waiting,
             managed_track_count,
             targets,
+            youtube_selection_summary,
+            podcast_selection_summary,
         ) = {
             let conn = self.conn.borrow();
             let files = load_device_files(&conn, device_id).map_err(|error| error.to_string())?;
@@ -263,6 +306,35 @@ impl DeviceSyncRuntime {
                 PodcastSyncSource::Youtube,
                 settings.remove_deleted,
             );
+            // `MTP-37`: the Content section's live "N of M ... selected"
+            // read, sourced straight from `POD-12`'s per-device selection —
+            // not a second selection surface, just an honest count of the
+            // one that already exists.
+            let (youtube_selected, youtube_total) =
+                reprise_core::podcasts::phone_sync::selection_summary(
+                    &conn,
+                    device_id,
+                    reprise_core::podcasts::PodcastKind::Youtube,
+                )
+                .map_err(|error| error.to_string())?;
+            let (podcast_selected, podcast_total) =
+                reprise_core::podcasts::phone_sync::selection_summary(
+                    &conn,
+                    device_id,
+                    reprise_core::podcasts::PodcastKind::Rss,
+                )
+                .map_err(|error| error.to_string())?;
+            let youtube_selection_summary = reprise_core::device_sync::YoutubeSelectionSummary {
+                channels_selected: youtube_selected,
+                channels_total: youtube_total,
+                // `MTP-36` (`[geplant]`): no persisted per-channel cap yet,
+                // same interim value `plan_episode_selection` already uses.
+                latest_per_channel: usize::MAX,
+            };
+            let podcast_selection_summary = reprise_core::device_sync::PodcastSelectionSummary {
+                shows_selected: podcast_selected,
+                shows_total: podcast_total,
+            };
             (
                 projection,
                 podcast_plan,
@@ -271,6 +343,8 @@ impl DeviceSyncRuntime {
                 youtube_selection.waiting.len(),
                 managed_track_count,
                 targets,
+                youtube_selection_summary,
+                podcast_selection_summary,
             )
         };
         projection.plan.transfer_bytes = projection
@@ -299,6 +373,8 @@ impl DeviceSyncRuntime {
             device.podcast_waiting = podcast_waiting;
             device.youtube_waiting = youtube_waiting;
             device.targets = targets;
+            device.youtube_selection = youtube_selection_summary;
+            device.podcast_selection = podcast_selection_summary;
             device.page = projection.page;
             device.sync_phase = PlannedSyncPhase::Idle;
         }

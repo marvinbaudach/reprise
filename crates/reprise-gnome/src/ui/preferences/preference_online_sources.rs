@@ -173,7 +173,7 @@ mod tests {
     }
 
     #[test]
-    fn set_8_footer_copy_matches_the_design() {
+    fn set_9_footer_copy_matches_the_design() {
         assert_eq!(
             strings::text(strings::ONLINE_SOURCES_FOOTER),
             "Each block is self-contained: turning one off hides its sidebar entry and stops its requests; subscriptions and favorites are kept, not deleted."
@@ -181,7 +181,7 @@ mod tests {
     }
 
     #[test]
-    fn set_8_block_subtitles_match_the_design() {
+    fn set_9_block_subtitles_match_the_design() {
         assert_eq!(
             strings::text(strings::ONLINE_SOURCES_YOUTUBE_SUBTITLE),
             "Channel feeds, audio via yt-dlp"

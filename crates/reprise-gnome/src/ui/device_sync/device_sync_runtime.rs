@@ -19,8 +19,8 @@ use reprise_core::device_sync::settings::{load_or_create_settings, mark_device_p
 use reprise_core::device_sync::{
     aggregate_balance, load_or_create_targets, should_auto_start, AutoStartFacts, CategoryDiff,
     CategoryReading, DeviceSelection, DeviceSettings, DeviceStorageInspection,
-    DeviceStorageSnapshot, ManagedDeviceFile, MirrorPlan, SelectionSource, StorageId,
-    SyncPageState, SyncTarget, SyncTargetKind,
+    DeviceStorageSnapshot, ManagedDeviceFile, MirrorPlan, PodcastSelectionSummary, SelectionSource,
+    StorageId, SyncPageState, SyncTarget, SyncTargetKind, YoutubeSelectionSummary,
 };
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor, DeviceMonitor};
 use reprise_platform_linux::device_transfer::{TranscodeProfile, TranscodeRequest, TranscodedFile};
@@ -75,6 +75,13 @@ struct DeviceState {
     /// hard-coded `0`.
     podcast_waiting: usize,
     youtube_waiting: usize,
+    /// `MTP-37`: the Content section's live "N of M ... selected" read for
+    /// each category, refreshed on every `recompute_delta_silent` from
+    /// `podcasts::phone_sync::selection_summary` — see `device_view`'s
+    /// module doc on why this stays a read of `POD-12`'s existing
+    /// selection state rather than a second one.
+    youtube_selection: YoutubeSelectionSummary,
+    podcast_selection: PodcastSelectionSummary,
     page: SyncPageState,
 }
 
@@ -108,6 +115,8 @@ impl DeviceState {
             youtube_plan: reprise_core::device_sync::podcasts::PodcastSyncPlan::default(),
             podcast_waiting: 0,
             youtube_waiting: 0,
+            youtube_selection: YoutubeSelectionSummary::default(),
+            podcast_selection: PodcastSelectionSummary::default(),
             page: SyncPageState::default(),
         }
     }
@@ -124,7 +133,7 @@ impl DeviceState {
         if self.sync_phase == PlannedSyncPhase::Finishing {
             page.controls = reprise_core::device_sync::SyncPageControls::default();
         }
-        // `MTP-27`/`MTP-28`: one category diff per named target
+        // `MTP-27`/`MTP-37`: one category diff per named target
         // (`SyncTargetKind::ALL` order: Playlists, YoutubeAudio,
         // PodcastEpisodes), each already computed by
         // `recompute_delta_silent` — reused here, not recomputed.
@@ -165,6 +174,8 @@ impl DeviceState {
             category_readings,
             youtube_bytes: device_bytes[1],
             podcast_bytes: device_bytes[2],
+            youtube_selection: self.youtube_selection,
+            podcast_selection: self.podcast_selection,
         }
     }
 
@@ -176,7 +187,7 @@ impl DeviceState {
         self.is_active() || self.sync_phase == PlannedSyncPhase::Finishing
     }
 
-    /// `MTP-22`/`MTP-28`: one category diff per named target, in
+    /// `MTP-22`/`MTP-37`: one category diff per named target, in
     /// `SyncTargetKind::ALL` order — shared by [`Self::view`] and `MTP-30`'s
     /// auto-start decision so both read the exact same projection instead
     /// of two slightly different ones.

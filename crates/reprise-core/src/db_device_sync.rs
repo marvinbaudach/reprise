@@ -165,11 +165,10 @@ pub(crate) fn migrate_v42(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.commit()
 }
 
-// Design 7a/7e (`docs/plans/podcasts-youtube-radio-turn6.md` §3b): the
-// device view's "Sync automatically when this phone connects" switch. Like
-// `remove_deleted`, this is a genuinely per-device choice (not one of the
-// global sync rules 7b's Preferences block owns), so it lives beside it on
-// `device_settings` rather than on `device_sync_targets`.
+// Design 7a/7e (`docs/plans/podcasts-youtube-radio-turn6.md` §3b, §8a
+// `E-6`): the device view's "Sync automatically when this phone connects"
+// switch. Like `remove_deleted`, this is a per-device choice, so it lives
+// beside it on `device_settings` rather than on `device_sync_targets`.
 const ADD_SYNC_AUTOMATICALLY: &str = r#"
 ALTER TABLE device_settings
   ADD COLUMN sync_automatically INTEGER NOT NULL DEFAULT 1;

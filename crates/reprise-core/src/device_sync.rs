@@ -61,7 +61,8 @@ pub use profile::{
 pub use selection::{
     select_episodes, summarize_playlist_selection, summarize_youtube_selection,
     EpisodeSelectionCandidate, EpisodeSelectionResult, EpisodeSelectionRule,
-    PlaylistSelectionSummary, YoutubeChannelToggle, YoutubeSelectionSummary,
+    PlaylistSelectionSummary, PodcastSelectionSummary, YoutubeChannelToggle,
+    YoutubeSelectionSummary,
 };
 pub use settings::{
     DeviceFileRecord, DevicePlaylistRecord, DeviceSelection, DeviceSettings, SelectionSource,

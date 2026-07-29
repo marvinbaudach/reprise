@@ -356,10 +356,10 @@ mod tests {
         }
     }
 
-    /// `SET-8`: the three online-sources modules render on their own page,
+    /// `SET-9`: the three online-sources modules render on their own page,
     /// not on Plugins — no duplicated master switches.
     #[test]
-    fn set_8_podcasts_youtube_and_radio_moved_off_the_plugins_page() {
+    fn set_9_podcasts_youtube_and_radio_moved_off_the_plugins_page() {
         for descriptor in [
             &reprise_core::modules::PODCASTS_MODULE,
             &reprise_core::modules::YOUTUBE_MODULE,

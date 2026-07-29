@@ -16,6 +16,7 @@ use crate::ui::device_sync_runtime::{DeviceView, PlannedSyncPhase, SyncFailure};
 fn no_op_content_actions() -> ContentPanelActions {
     ContentPanelActions {
         set_target_enabled: Rc::new(|_, _| {}),
+        set_target_cap: Rc::new(|_, _| {}),
         set_remove_deleted: Rc::new(|_| {}),
         set_sync_automatically: Rc::new(|_| {}),
         scan_device: Rc::new(|| {}),
@@ -86,6 +87,8 @@ fn device() -> DeviceView {
         category_readings: crate::ui::device_sync_runtime::empty_category_readings(),
         youtube_bytes: 0,
         podcast_bytes: 0,
+        youtube_selection: Default::default(),
+        podcast_selection: Default::default(),
         page: SyncPageState {
             profile_options: TransferProfile::ALL.to_vec(),
             profile: TransferProfile::Mp3(Mp3Quality::Kbps256),

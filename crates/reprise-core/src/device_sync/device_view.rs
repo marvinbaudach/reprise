@@ -1,19 +1,21 @@
 //! Pure projections for the device view (design 7a) and the sidebar device
 //! card (design 7c) — turn E5/E7. See
-//! `docs/plans/podcasts-youtube-radio-turn6.md` §3b, including the
-//! 2026-07-28 addendum, for the exact contract these projections implement.
+//! `docs/plans/podcasts-youtube-radio-turn6.md` §3b/§8a (`E-5`, `E-6`) for
+//! the exact contract these projections implement.
 //!
-//! ## Global rules stay global (the addendum's whole point)
+//! ## `E-5`/`E-6`: sync rules live on the device page, not in Preferences
 //!
-//! The addendum is explicit: sync *rules* — what syncs, caps, the transfer
-//! profile — are global and live in Preferences (7b), identical on every
-//! device. The device view shows them read-only. The only genuinely
-//! per-device things are the target folder (`SyncTarget::path`, `MTP-18`)
-//! and whether this device's slot for a category is active at all
-//! (`SyncTarget::enabled` — already modeled as per-device in `MTP-18`,
-//! independent of the global rule). Nothing in this module grows a
-//! content-selection or cap-editing surface; [`CategoryContentRow`] only
-//! ever *reads* [`super::targets::SyncTarget`], it never decides content.
+//! Reprise supports exactly one connected MTP device (`E-5`); the
+//! 2026-07-28 addendum's global-rules-in-Preferences split existed only to
+//! answer "which device do these rules apply to" once several devices were
+//! in play. With one device that question does not arise, so `E-6`
+//! withdrew the addendum: the cap and the transfer profile are editable
+//! per device (`MTP-37`), and the selection summary is a live, honest read
+//! of the same per-device selection state edited elsewhere (the podcast
+//! and channel pages, `POD-12`) — never a second selection surface layered
+//! on top of it. The target folder (`SyncTarget::path`) and whether this
+//! device's slot for a category is active at all (`SyncTarget::enabled`)
+//! remain per-device, as they always were (`MTP-18`).
 //!
 //! ## What is reused, not recomputed
 //!
@@ -163,13 +165,15 @@ pub fn project_category_segments(
     })
 }
 
-/// `MTP-28`: one category's row in the device view's "Content" section
+/// `MTP-37`: one category's row in the device view's "Content" section
 /// (design 7a) — target folder, per-device activation, size already on the
-/// device, and the cap. Deliberately excludes anything about *what*
-/// content is wanted: that summary is read from the existing selection
-/// projections (`selection::summarize_playlist_selection`,
-/// `selection::summarize_youtube_selection`) by the caller, labelled "rules
-/// from Preferences" — this type only ever carries the per-device half.
+/// device, and the cap (`E-6`: editable here, not a read-only mirror of a
+/// Preferences page that no longer exists). Deliberately excludes anything
+/// about *what* content is wanted: that summary is read from the existing
+/// selection projections (`selection::summarize_playlist_selection`,
+/// `selection::summarize_youtube_selection`,
+/// `podcasts::phone_sync::selection_summary`) by the caller — this type
+/// only ever carries the per-device half.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CategoryContentRow {
     pub kind: super::targets::SyncTargetKind,
@@ -182,7 +186,7 @@ pub struct CategoryContentRow {
     pub cap_bytes: Option<u64>,
 }
 
-/// `MTP-28`: thin, pure translation from a [`SyncTarget`] plus its already-
+/// `MTP-37`: thin, pure translation from a [`SyncTarget`] plus its already-
 /// summed on-device size into the row the Content section renders.
 #[must_use]
 pub fn project_category_content_row(
@@ -198,13 +202,11 @@ pub fn project_category_content_row(
     }
 }
 
-/// `MTP-28`: a category's `MTP-22` reading, gated by this device's target
-/// activation only. The global "sync this content type" rule (7b's Phone
-/// sync block) is not built yet — see
-/// `docs/plans/podcasts-youtube-radio-turn6.md`, task `T6-G1` — so every
-/// call site today passes the global rule as always-on; once 7b's block
-/// exists, its per-category switch becomes a second argument here instead
-/// of this function silently assuming "on". Connectivity does not gate this
+/// `MTP-37`: a category's `MTP-22` reading, gated by this device's target
+/// activation only. `E-6` withdrew the planned global "sync this content
+/// type" rule (7b's Phone sync block) outright — it will not be built — so
+/// `SyncTarget::enabled` is, and stays, the only switch this reading
+/// depends on. Connectivity does not gate this
 /// either: every category's candidates are read from the local database and
 /// MTP inventory, never from the network, so
 /// [`CategoryReading::UnavailableKeptOnPhone`] cannot occur through this
@@ -341,7 +343,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_28_content_row_reads_the_targets_per_device_folder_activation_and_cap() {
+    fn mtp_37_content_row_reads_the_targets_per_device_folder_activation_and_cap() {
         let target = SyncTarget {
             kind: SyncTargetKind::YoutubeAudio,
             storage_id: None,
@@ -360,7 +362,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_28_a_disabled_target_reads_source_off_even_with_a_nonzero_diff() {
+    fn mtp_37_a_disabled_target_reads_source_off_even_with_a_nonzero_diff() {
         let target = SyncTarget {
             kind: SyncTargetKind::PodcastEpisodes,
             storage_id: None,
@@ -384,7 +386,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_28_an_enabled_target_reads_its_computed_diff() {
+    fn mtp_37_an_enabled_target_reads_its_computed_diff() {
         let target = SyncTarget {
             kind: SyncTargetKind::Playlists,
             storage_id: None,

@@ -281,7 +281,7 @@ mod tests {
     }
 
     #[test]
-    fn set_8_online_sources_is_a_peer_page_right_before_new_releases() {
+    fn set_9_online_sources_is_a_peer_page_right_before_new_releases() {
         assert_eq!(page_index_by_name("online_sources"), Some(4));
     }
 

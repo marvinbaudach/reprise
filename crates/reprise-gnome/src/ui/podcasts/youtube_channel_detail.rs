@@ -579,12 +579,12 @@ mod tests {
         assert_eq!(state.visible_episodes(7, &episodes).len(), 2);
     }
 
-    /// `SET-8`: the Online sources page's "Hide Shorts" default seeds new
+    /// `SET-9`: the Online sources page's "Hide Shorts" default seeds new
     /// channels' Shorts visibility, but a channel's own explicit toggle
     /// still overrides it — turning the global default off must not
     /// silently flip a channel someone already set the other way.
     #[test]
-    fn set_8_hide_shorts_default_seeds_new_channels_but_per_channel_override_wins() {
+    fn set_9_hide_shorts_default_seeds_new_channels_but_per_channel_override_wins() {
         let episodes = vec![episode(2, Some(600)), episode(1, Some(60))];
         let mut state = YoutubeChannelState::default();
         state.set_default_shows_shorts(true); // "Hide Shorts" preference is off
