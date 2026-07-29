@@ -624,6 +624,8 @@ fn a_stream_plays_beside_the_queue_and_does_not_hand_back_to_it() {
             title: "Morning Show".into(),
             artist: "Example FM".into(),
             duration_ms: 0,
+            external_ref: "radio/7".into(),
+            live: true,
         }))
         .expect("playing a stream succeeds");
 
@@ -643,6 +645,17 @@ fn a_stream_plays_beside_the_queue_and_does_not_hand_back_to_it() {
         "a stream has no library id on the wire either"
     );
     assert_eq!(snapshot.artist, "Example FM");
+    assert_eq!(
+        snapshot.external_ref.as_deref(),
+        Some("radio/7"),
+        "the identity the surface gave this comes back across the bus: it is \
+         the only way to tell two items apart that both have no library id"
+    );
+    assert!(
+        snapshot.live,
+        "a stream cannot be seeked, and a client that has to infer that from \
+         duration_ms == 0 gets a podcast of unknown length wrong"
+    );
 
     // The queue is still there to go back to. Read through a second peer,
     // because a snapshot is what any surface would take after a stream ends.
