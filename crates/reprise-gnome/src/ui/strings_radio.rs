@@ -42,6 +42,11 @@ pub const RADIO_COMMUNITY_FOOTNOTE: &str =
 pub const RADIO_STREAM_DETECTED: &str = N_!("Radio stream detected");
 pub const RADIO_PLAYLIST_DETECTED: &str = N_!("Playlist file detected");
 pub const RADIO_PREVIEW_FAILED: &str = N_!("Could not preview this station");
+/// `NET-3` point 4: search needs the network, so it is refused offline with
+/// this one-line reason while the URL path — including a plain stream
+/// URL — stays open.
+pub const RADIO_SEARCH_NEEDS_NETWORK: &str =
+    N_!("Search needs a connection — paste a stream URL instead");
 pub const RADIO_SEARCH_FAILED: &str = N_!("Could not search for stations");
 pub const RADIO_ADD_FAILED: &str = N_!("Could not add this station");
 pub const RADIO_ALREADY_FAVORITE: &str = N_!("This station is already in Radio");

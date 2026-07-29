@@ -105,14 +105,20 @@ impl PodcastsView {
 
     pub(super) fn open_add_dialog(self: &Rc<Self>) {
         let weak = Rc::downgrade(self);
-        add_dialog::present(&self.root, &self.conn, self.kind, move |import_latest| {
-            if let Some(view) = weak.upgrade() {
-                view.refresh();
-                if import_latest {
-                    view.request_refresh(true);
+        add_dialog::present(
+            &self.root,
+            &self.conn,
+            self.kind,
+            self.connectivity(),
+            move |import_latest| {
+                if let Some(view) = weak.upgrade() {
+                    view.refresh();
+                    if import_latest {
+                        view.request_refresh(true);
+                    }
+                    (view.callbacks.on_sidebar_refresh)();
                 }
-                (view.callbacks.on_sidebar_refresh)();
-            }
-        });
+            },
+        );
     }
 }

@@ -8,9 +8,22 @@ use reprise_core::podcasts;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::ui) enum PodcastsOperation {
-    Refresh { force: bool },
-    LoadMore { subscription_id: i64, end: usize },
-    Download { episode_id: i64 },
+    Refresh {
+        force: bool,
+    },
+    LoadMore {
+        subscription_id: i64,
+        end: usize,
+    },
+    Download {
+        episode_id: i64,
+    },
+    /// `NET-3c`: replays whatever is `wanted_on_device` but still missing a
+    /// local file, in order — the caller only sends this once it already
+    /// believes connectivity just returned (see `PodcastsView::
+    /// set_connectivity`); this operation itself trusts that belief rather
+    /// than re-deriving it.
+    RunQueued,
 }
 
 pub(in crate::ui) const fn request_generation(current: u64, operation: PodcastsOperation) -> u64 {
@@ -18,7 +31,10 @@ pub(in crate::ui) const fn request_generation(current: u64, operation: PodcastsO
         PodcastsOperation::Refresh { .. } | PodcastsOperation::LoadMore { .. } => {
             current.wrapping_add(1)
         }
-        PodcastsOperation::Download { .. } => current,
+        // Neither is allowed to cancel a refresh/load-more already in
+        // flight, and both are themselves allowed to keep running alongside
+        // one — same non-cancelling treatment `Download` already has.
+        PodcastsOperation::Download { .. } | PodcastsOperation::RunQueued => current,
     }
 }
 
@@ -99,6 +115,13 @@ pub(in crate::ui) enum PodcastsWorkerResult {
     DownloadState {
         episode_id: i64,
         state: podcasts::download_state::DownloadState,
+    },
+    /// `NET-3c`: the whole queued-download run finished — `ran` is how many
+    /// pending episodes actually downloaded. Per-episode progress arrives
+    /// beforehand as ordinary `DownloadState` results on the same channel,
+    /// exactly like `Refresh`'s auto-download phase already does.
+    QueueRunComplete {
+        ran: usize,
     },
 }
 
@@ -357,13 +380,20 @@ fn process_request(
         PodcastsOperation::Download { episode_id } => {
             download_episode(conn, request, episode_id);
         }
+        PodcastsOperation::RunQueued => {
+            run_queued(conn, request);
+        }
     }
 }
 
 fn send_response(request: &PodcastsRequest, result: Result<PodcastsWorkerResult, String>) {
     let terminal = match &result {
         Err(_)
-        | Ok(PodcastsWorkerResult::Refreshed(_) | PodcastsWorkerResult::LoadedMore { .. }) => true,
+        | Ok(
+            PodcastsWorkerResult::Refreshed(_)
+            | PodcastsWorkerResult::LoadedMore { .. }
+            | PodcastsWorkerResult::QueueRunComplete { .. },
+        ) => true,
         Ok(PodcastsWorkerResult::DownloadState { state, .. }) => matches!(
             state,
             podcasts::download_state::DownloadState::Downloaded { .. }
@@ -420,6 +450,47 @@ fn download_episode(conn: &rusqlite::Connection, request: &PodcastsRequest, epis
     // response as terminal already.
     if let Err(error) = result {
         send_response(request, Err(error.to_string()));
+    }
+}
+
+/// `NET-3c`: the runner's GTK-side wiring. This request only ever reaches
+/// the worker once its caller already believes connectivity just returned
+/// (`PodcastsView::set_connectivity`) — the operation trusts that belief,
+/// the same way `deferrable_action_outcome`'s callers elsewhere in this
+/// codebase are trusted rather than re-checked here. All the actual
+/// selection and replay logic lives in
+/// `reprise_core::podcasts::queued_downloads::run_queued_downloads`; this
+/// only wires up the fetchers and forwards progress, exactly like
+/// `download_episode` above does for a single episode.
+fn run_queued(conn: &rusqlite::Connection, request: &PodcastsRequest) {
+    let config = match podcasts::config::load(conn) {
+        Ok(config) => config,
+        Err(error) => {
+            send_response(request, Err(error.to_string()));
+            return;
+        }
+    };
+    let ytdlp = podcasts::ytdlp::YtDlp::discover(config.ytdlp_path.as_deref());
+    let download_root = podcasts::downloads::default_download_root();
+    let result = podcasts::queued_downloads::run_queued_downloads(
+        conn,
+        &podcasts::pipeline::HttpFeedFetcher,
+        &ytdlp,
+        &download_root,
+        reprise_core::connectivity::Connectivity::Online,
+        |episode_id, state| {
+            send_response(
+                request,
+                Ok(PodcastsWorkerResult::DownloadState { episode_id, state }),
+            );
+        },
+    );
+    match result {
+        Ok(ran) => send_response(
+            request,
+            Ok(PodcastsWorkerResult::QueueRunComplete { ran: ran.len() }),
+        ),
+        Err(error) => send_response(request, Err(error.to_string())),
     }
 }
 
