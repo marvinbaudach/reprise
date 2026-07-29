@@ -29,8 +29,21 @@ echo "== Frontend thinness =="
 # Every budget below is a ceiling AND a floor: it must equal the measured
 # count. Lower it in the same commit that removes a use. Never raise one
 # without a reason recorded in the commit message.
+# NET-3c (podcast-channel-redesign, F2): +2 rusqlite, irreducible thin
+# wiring shaped exactly like an existing budgeted sibling. podcasts_worker.rs
+# gained `run_queued`'s `conn: &rusqlite::Connection` (+2 matches on the one
+# line, same as `download_episode` right above it already contributes) to
+# reach `reprise_core::podcasts::queued_downloads::run_queued_downloads` —
+# the selection/replay logic itself already lives in reprise-core; this is
+# only the connection handle the worker needs to call in.
+# NET-3 point 4 (podcast-channel-redesign, F4): +1 more rusqlite, same
+# shape again. add_dialog.rs's `subscribe_offline` gained a
+# `conn: &Rc<RefCell<Connection>>` (matching the existing `subscribe`
+# wrapper right below it) to reach
+# `reprise_core::podcasts::offline_add::offline_subscribe` — the
+# already-subscribed check and the one DB write both live in reprise-core.
 declare -A budget=(
-  [rusqlite]=535
+  [rusqlite]=538
   [filesystem]=17
   [threads]=14
   [workers]=7

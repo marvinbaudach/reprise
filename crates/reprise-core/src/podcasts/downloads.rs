@@ -306,6 +306,14 @@ fn cleanup_candidates(
         // SQLite window functions can't vary the rank cutoff per partition.
         // A resolved value of `0` means unlimited (`E-9`) and is excluded
         // from deletion entirely, never treated as "keep zero".
+        //
+        // The `downloaded_path IS NOT NULL` filter MUST live inside the
+        // windowed subquery's `WHERE`, before `ROW_NUMBER()` runs — review
+        // finding (P1): filtering it afterward let undownloaded episodes
+        // consume rank positions, so "keep last N downloaded" could rank a
+        // show's real downloads past N and delete every one of them even
+        // though far fewer than N were ever downloaded. Ranking must be
+        // computed over downloaded episodes only.
         CleanupPolicy::KeepLast5 => {
             let mut statement = conn.prepare(
                 "SELECT id, downloaded_path, keep_downloaded, episode_rank FROM (
@@ -318,8 +326,8 @@ fn cleanup_candidates(
                    FROM podcast_episodes e
                    JOIN podcast_subscriptions s ON s.id = e.subscription_id
                    WHERE s.removed_at IS NULL
+                     AND e.downloaded_path IS NOT NULL
                  )
-                 WHERE downloaded_path IS NOT NULL
                  ORDER BY id",
             )?;
             let rows = statement.query_map([], |row| {

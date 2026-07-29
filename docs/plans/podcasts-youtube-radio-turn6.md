@@ -435,7 +435,7 @@ kommen zwei Inhaltsarten und eine neue Geräteansicht dazu.
   nicht gestartet; mit abgeschalteten Online-Quellen gibt es die Phase gar
   nicht. Hängt an R1, weil die Warteliste erst dann echte Zahlen hat.
 
-- **R1 · `MTP-41` live verdrahten** (Befund des externen Reviews). Die reine
+- **R1 · `MTP-45` live verdrahten** (Befund des externen Reviews). Die reine
   Projektion `selection::select_episodes` erfüllt die Regel und ist getestet,
   die Live-Pipeline ruft sie nie auf: `query_candidates_for_device` filtert
   nicht nach gespielt, und `files_waiting_for_download` ist hart 0. Folge:
@@ -732,10 +732,25 @@ Fragen mehr und gehen so in die Regeln `SRC-6` und `SRC-7` ein.
   eines Umbaus. „Nichts von diesem Kanal" sagt weiterhin der Kanal-Schalter
   aus 6b — das ist keine Menge, also wird es auch nicht als Menge
   ausgedrückt. `MTP-36` trägt die Entscheidung im Regeltext.
+- **E-10 · entschieden am 2026-07-29 · `MTP-41`s YouTube-Klausel war falsch,
+  nicht der Code.** Ein externer Review markierte als P1, dass
+  `query_selection_candidates_for_device` nur bereits heruntergeladene oder
+  ausdrücklich `wanted_on_device`-Episoden als Kandidaten zulässt, während
+  `MTP-41`s Text „latest N episodes … regardless of download state"
+  versprach. Der Eigentümer hat entschieden: der Code ist richtig, der
+  Regeltext war falsch — eine ungewollte, fehlende Episode darf nie
+  stillschweigend einen Download auslösen, nur um ein N-Episoden-Kontingent
+  zu füllen. `MTP-41` wird gemäß dem Append-only-Vertrag `[replaced by
+  MTP-45]`; sein Text bleibt als Protokoll dessen stehen, was er einmal
+  sagte. `MTP-45` übernimmt Playlists, Podcast-Episoden und die
+  Warten-versus-bereit-Unterscheidung unverändert und korrigiert
+  ausschließlich die YouTube-Klausel auf das, was der Code seit je tut: N
+  begrenzt nur die Menge der bereits heruntergeladenen oder gewünschten
+  Episoden je Kanal, nicht "jede je veröffentlichte Episode".
 
 ## 8. Offene Fragen — nicht lokal entscheiden
 
-**Derzeit keine.** O-1 bis O-7 sowie E-9 sind entschieden und stehen mit Begründung in
+**Derzeit keine.** O-1 bis O-7 sowie E-9 und E-10 sind entschieden und stehen mit Begründung in
 Abschnitt 8a. Neue Fälle, die keine Regel abdeckt, kommen weiterhin hierher —
 als `[geplant]`-Entwurf mit `<!-- REVIEW: Regelvorschlag -->`, nicht im Code
 beantwortet (`AGENTS.md`).

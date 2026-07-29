@@ -6,6 +6,7 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use reprise_core::connectivity::Connectivity;
 use reprise_core::podcasts::discovery::{
     active_source_keys, dialog_provider, filter_unsubscribed, source_is_subscribed, Candidate,
 };
@@ -17,8 +18,8 @@ use crate::ui::source_add_action;
 use crate::ui::strings;
 
 use super::add_dialog_input::{
-    classify_input, dialog_hint, dialog_title, foreign_url_reason, input_matches_dialog,
-    primary_action, submit_refusal, AddInput,
+    classify_input, dialog_hint, dialog_status_hint, dialog_title, primary_action_for_connectivity,
+    submit_refusal, AddInput,
 };
 use super::add_dialog_results::{clear, result_section, rss_candidate, youtube_candidate};
 
@@ -63,7 +64,7 @@ struct AddDialogSurface {
     primary: gtk4::Button,
 }
 
-fn build_surface(kind: PodcastKind) -> AddDialogSurface {
+fn build_surface(kind: PodcastKind, connectivity: Connectivity) -> AddDialogSurface {
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
     content.set_margin_top(18);
     content.set_margin_bottom(18);
@@ -110,19 +111,21 @@ fn build_surface(kind: PodcastKind) -> AddDialogSurface {
     footer.append(&primary);
     content.append(&footer);
 
+    // `NET-3` point 4: the reason offline search is unavailable is visible
+    // immediately, before the user types anything — not only after a first
+    // failed attempt.
+    set_status_hint(&status, &AddInput::Empty, kind, connectivity);
     let primary_for_entry = primary.clone();
     let status_for_entry = status.clone();
     entry.connect_changed(move |entry| {
         let text = entry.text();
-        let (label, sensitive) = primary_action(&text, kind);
+        let (label, sensitive) = primary_action_for_connectivity(&text, kind, connectivity);
         primary_for_entry.set_label(&strings::text(label));
         primary_for_entry.set_sensitive(sensitive);
-        // SRC-6: name the mismatch while typing, not only on submit.
-        if input_matches_dialog(&classify_input(&text), kind) {
-            status_for_entry.set_text("");
-        } else {
-            status_for_entry.set_text(&strings::text(foreign_url_reason(kind)));
-        }
+        // SRC-6: name the mismatch while typing, not only on submit. `NET-3`
+        // point 4 layers offline's search-needs-network reason on top.
+        let parsed = classify_input(&text);
+        set_status_hint(&status_for_entry, &parsed, kind, connectivity);
     });
 
     let header = adw::HeaderBar::new();
@@ -154,11 +157,12 @@ pub(super) fn present(
     parent: &impl IsA<gtk4::Widget>,
     conn: &Rc<RefCell<Connection>>,
     preferred_kind: PodcastKind,
+    connectivity: Connectivity,
     on_added: impl Fn(bool) + 'static,
 ) {
     let conn = conn.clone();
     let on_added: OnAdded = Rc::new(on_added);
-    let surface = build_surface(preferred_kind);
+    let surface = build_surface(preferred_kind, connectivity);
     let dialog = surface.dialog;
     let entry = surface.entry;
     let status = surface.status;
@@ -177,8 +181,9 @@ pub(super) fn present(
             let next = generation.get().wrapping_add(1);
             generation.set(next);
             let parsed = classify_input(&input);
-            // SRC-6 and NET-1a decided in one place, before any provider work.
-            let refusal = submit_refusal(&conn.borrow(), preferred_kind, &parsed);
+            // SRC-6, NET-1a and NET-3 point 4 decided in one place, before
+            // any provider work.
+            let refusal = submit_refusal(&conn.borrow(), preferred_kind, &parsed, connectivity);
             if let Some(reason) = refusal {
                 status.set_text(&strings::text(reason));
                 return;
@@ -201,6 +206,10 @@ pub(super) fn present(
                     );
                 }
                 AddInput::FeedUrl(url) => {
+                    if connectivity.is_offline() {
+                        subscribe_offline(PodcastKind::Rss, &url, &conn, &status, &on_added);
+                        return;
+                    }
                     status.set_text(&strings::text(strings::PODCAST_RSS_DETECTED));
                     preview(
                         next,
@@ -214,6 +223,10 @@ pub(super) fn present(
                     );
                 }
                 AddInput::YoutubeUrl(url) => {
+                    if connectivity.is_offline() {
+                        subscribe_offline(PodcastKind::Youtube, &url, &conn, &status, &on_added);
+                        return;
+                    }
                     status.set_text(&strings::text(strings::PODCAST_YOUTUBE_DETECTED));
                     preview(
                         next,
@@ -454,6 +467,24 @@ fn preview(
     });
 }
 
+/// `dialog_status_hint` returns `""` for "nothing to say" — routed straight
+/// to `set_text`, never through `strings::text`, since `gettext("")` is a
+/// well-known trap that returns the PO file's header metadata instead of an
+/// empty string.
+fn set_status_hint(
+    status: &gtk4::Label,
+    input: &AddInput,
+    kind: PodcastKind,
+    connectivity: Connectivity,
+) {
+    let hint = dialog_status_hint(input, kind, connectivity);
+    if hint.is_empty() {
+        status.set_text("");
+    } else {
+        status.set_text(&strings::text(hint));
+    }
+}
+
 fn append_heading(parent: &gtk4::Box, text: &str) {
     let label = gtk4::Label::new(Some(&strings::text(text)));
     label.add_css_class("caption");
@@ -612,6 +643,46 @@ fn candidate_row(
     labels.append(&subtitle);
     row.append(&labels);
     row
+}
+
+/// `NET-3` point 4: the URL path while offline — no preview fetch, the
+/// subscription is created straight away with the URL itself as a
+/// placeholder title, and the next successful refresh (already scheduled
+/// independently of this dialog) fills in the real title and episodes.
+/// This only translates [`podcasts::offline_add::offline_subscribe`]'s
+/// outcome into status text and the `on_added` callback; the decision and
+/// the one DB write both live in core, where they are testable without a
+/// GTK dialog.
+fn subscribe_offline(
+    kind: PodcastKind,
+    url: &str,
+    conn: &Rc<RefCell<Connection>>,
+    status: &gtk4::Label,
+    on_added: &OnAdded,
+) {
+    let auto_download_default = {
+        let conn = conn.borrow();
+        podcasts::config::load(&conn)
+            .ok()
+            .is_some_and(|config| config.auto_download_default)
+    };
+    let outcome = {
+        let conn = conn.borrow();
+        podcasts::offline_add::offline_subscribe(&conn, kind, url, auto_download_default)
+    };
+    match outcome {
+        Ok(podcasts::offline_add::OfflineSubscribeOutcome::AlreadySubscribed) => {
+            status.set_text(&strings::text(strings::PODCAST_ALREADY_SUBSCRIBED));
+        }
+        Ok(podcasts::offline_add::OfflineSubscribeOutcome::Added { .. }) => {
+            status.set_text(&strings::text(strings::PODCAST_ADDED_OFFLINE));
+            // `import_latest = false`: there is nothing to import yet while
+            // offline, and forcing an immediate refresh attempt now would
+            // just fail loudly over the network this dialog just avoided.
+            on_added(false);
+        }
+        Err(error) => status.set_text(&error.to_string()),
+    }
 }
 
 fn subscribe(

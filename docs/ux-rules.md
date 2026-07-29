@@ -616,9 +616,9 @@ human. Rationale for changes lives in the git history.
   uses (`MTP-31`), and leaves the dialog open instead of closing it as it does
   on success. A refused save must never look like a successful one; the chosen
   selection stays visible so that nothing is discarded silently.
-- **MTP-36** [active] [core] — `MTP-41`'s YouTube rule "the latest N episodes
-  per enabled channel, regardless of download state" names N; this is where
-  that value lives. **Decided 2026-07-29:** a global default (default **5**,
+- **MTP-36** [active] [core] — `MTP-45`'s YouTube rule "the latest N episodes
+  per enabled channel among those already downloaded or explicitly wanted"
+  names N; this is where that value lives. **Decided 2026-07-29:** a global default (default **5**,
   `podcasts::config::PodcastConfig::latest_per_channel_default`, key
   `podcasts.latest_per_channel_default`), overridable per channel
   (`podcast_subscriptions.latest_per_channel`, schema v47) — the same shape as
@@ -663,7 +663,7 @@ human. Rationale for changes lives in the git history.
      disabled rather than feigning an effect no eviction path delivers.
   2. **The selection summary becomes a real, honest live value** instead of a
      display of global rules or a static text. Playlists already read
-     `selection::summarize_playlist_selection` (`MTP-41`); YouTube and podcasts
+     `selection::summarize_playlist_selection` (`MTP-45`); YouTube and podcasts
      now likewise read "N of M channels selected" and "N of M shows selected ·
      unplayed downloads only" live from
      `podcasts::phone_sync::selection_summary` — the same selection that is
@@ -713,7 +713,7 @@ human. Rationale for changes lives in the git history.
   duplicating its online/offline decision. An already downloaded episode needs
   no download step. The downloader that actually works off the pending state is
   not part of this rule (E2/E4).
-- **MTP-41** [active] [core] — The intended set per sync category is a pure
+- **MTP-41** [replaced by MTP-45] — The intended set per sync category is a pure
   projection from the selection rule and the library state (E2). Playlists
   yield "N of M selected · K tracks"; YouTube audio limits each enabled channel
   (channel toggle from 6b) to its latest N episodes regardless of download
@@ -725,7 +725,7 @@ human. Rationale for changes lives in the git history.
   waiting episode out of the result.
 - **MTP-42** [active] [core] — Design 7f's preparation phase
   (`reprise_core::device_sync::preparation`) is a pure projection over
-  `MTP-41`'s waiting set, `NET-1a`'s global gate, `NET-3a`'s connectivity, and
+  `MTP-45`'s waiting set, `NET-1a`'s global gate, `NET-3a`'s connectivity, and
   the device's own "prepare before sync" switch. It resolves in this order:
   1. `online-sources-enabled` off (`NET-1a`) means the phase does not exist at
      all — not an empty phase, not a disabled switch, nothing shown.
@@ -777,6 +777,29 @@ human. Rationale for changes lives in the git history.
   refresh pipeline's auto-download branch and MCP's `music_manage_episodes`
   call, so the episode lookup, `NET-1a` gate, `.part` handling, and progress
   emission cannot drift between a manual click and a preparation download.
+- **MTP-45** [active] [core] — The intended set per sync category is a pure
+  projection from the selection rule and the library state (E2). Playlists
+  yield "N of M selected · K tracks"; YouTube audio limits each enabled
+  channel (channel toggle from 6b) to its latest N episodes among those
+  already downloaded or explicitly wanted (`wanted_on_device`, `MTP-40`) — an
+  episode that is neither is never a candidate at all, so N bounds only the
+  eligible set, never "every episode this channel has ever published"
+  ("N of M channels · latest K each"); podcast episodes want every unplayed,
+  already downloaded episode of enabled shows with no upper bound ("Unplayed
+  downloads only"). A wanted episode without a local file (`wanted_on_device`,
+  `MTP-40`) counts as waiting, never as ready to copy — the intended set keeps
+  the two visibly apart instead of silently filtering a waiting episode out of
+  the result.
+
+  **Replaces `MTP-41` (decided 2026-07-29).** `MTP-41`'s YouTube clause read
+  "latest N episodes … regardless of download state", which never matched
+  `query_selection_candidates_for_device`: the code has only ever admitted
+  already-downloaded or explicitly `wanted_on_device` episodes into the
+  candidate set. The owner decided the code is right and the rule text was
+  wrong — an unwanted, missing episode must not silently pull a download just
+  to fill an N-episode quota. Every other clause of `MTP-41` (playlists,
+  podcast episodes, the waiting-versus-ready distinction) is unchanged and
+  carries over verbatim.
 
 ## F. Settings & modals
 
@@ -1866,6 +1889,14 @@ property is set and yet nothing happens.
      the connection returns.
   4. Add dialogs disable their search field with a one-line reason; pasting a
      URL still works, and the subscription comes into being on the next fetch.
+     For Podcasts and YouTube this means a placeholder subscription (the URL
+     itself as its title) that the next successful refresh — already
+     scheduled independently of this dialog — fills in for real. Radio has no
+     such background refresh to defer to, so its URL path instead reaches its
+     normal preview step immediately, using only locally detectable facts (a
+     `.m3u`/`.pls` suffix, an ICY-probe fallback name) instead of the ICY
+     probe itself; the user can re-add the station once online for the real
+     probed metadata.
   5. Radio is the one exception: a live stream cannot be deferred. Stations
      stay listed, and "Play" reports "No connection · Retry" instead of
      queueing.
@@ -1905,11 +1936,10 @@ property is set and yet nothing happens.
   signal. `Connectivity` is an explicitly set state, not an inference from a
   failed request — what it does not know: the reachability of an individual
   provider, authentication, or rate limits; those are request outcomes, not a
-  connectivity state. This projection is a wiring foundation, not a finished
-  display: automatically running pending actions when the network returns, and
-  the display in the podcast and YouTube rows, follow in a later commit
-  (`NET-3c`, F2) — an identifier reserved for that follow-up, deliberately not
-  yet written as a rule, so nothing here claims a contract that does not exist.
+  connectivity state. This projection is a wiring foundation: automatically
+  running pending actions when the network returns is now built on top of it
+  (`NET-3c`, F2); the "Needs network" display in the podcast and YouTube rows
+  remains open and is not claimed here.
 - **NET-3b** [active] [gtk] — The radio exception: stations always stay listed.
   The context menu shows "Play" (`radio_context_menu::play_menu_label`) when
   `Connectivity::Online` holds or the station is already playing; under
@@ -1919,6 +1949,24 @@ property is set and yet nothing happens.
   be deferred. Connectivity is an injectable state
   (`RadioView::set_connectivity`), `Online` by default and not yet attached to
   a real operating-system signal in this rule.
+- **NET-3c** [active] [core] — The runner `NET-3a` reserved this id for:
+  once connectivity is believed online, whatever is `wanted_on_device`
+  (`MTP-40`) but still missing a local file replays, in order, without a
+  second "offline queue" store — `wanted_on_device` plus each episode's own
+  download state already record what is pending, and this rule deliberately
+  does not add another. `podcasts::queued_downloads::pending_episode_ids`
+  selects those episode ids ordered ascending by id, the same order they were
+  requested in (ids are assigned in insertion order and a want is never
+  reordered); `run_queued_downloads` trusts the `Connectivity` it is given
+  (never re-deriving it) and is a no-op while offline, otherwise replaying
+  each pending episode through the exact same
+  `podcasts::pipeline::download_episode` every other download path already
+  uses. The GTK trigger is `PodcastsView::set_connectivity`, mirroring
+  `NET-3b`'s `RadioView::set_connectivity` exactly: a transition from
+  `Offline` to `Online` dispatches `PodcastsOperation::RunQueued` on the
+  existing podcast worker; any other transition is a no-op. As with `NET-3b`,
+  this is an injectable seam, not yet attached to a real operating-system
+  signal.
 - **LYR-1** [planned] [core] — Local embedded lyrics and `.lrc` sidecars
   are shown independently of the Online Lyrics module. Reprise does not
   yet read these local formats today; the rule stays planned until this
@@ -3486,14 +3534,15 @@ plan.
   focus theft, no view is pulled to the foreground (P-1/P-4 in the
   live-refresh reading, like EXT-5). The user notices it by the
   changed state, never by an announcement.
-  <!-- REVIEW: rule proposal — open and deliberately not decided
-       along with the rest is whether closing the window ends
-       playback. The runtime lifecycle allows both: idle shutdown
-       (RUN-4) keeps the service alive as long as something is
-       playing, so music would keep running after closing until it
-       ends. That is a product decision, not an architectural
-       consequence, and needs its own rule before stage 3.3 migrates
-       the "Playback/Queue" slice. -->
+- **RUN-6** [planned] [gtk] — Closing the window stops the playback
+  that window started, and only that. Music does not outlive the
+  surface a user was listening through: leaving music playing behind
+  a closed window is a player the user cannot see, cannot pause, and
+  did not ask to keep. Playback an agent or a second surface started
+  is left running — it is not this window's to end, and a client that
+  stops it is stopping someone else's session. The runtime names the
+  originator of what is loaded, so this is a question the surface can
+  answer rather than guess.
 
 ---
 

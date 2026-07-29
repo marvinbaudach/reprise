@@ -8,6 +8,7 @@ use gtk4::gio;
 use gtk4::glib::{self};
 use gtk4::prelude::*;
 use libadwaita as adw;
+use reprise_core::connectivity::Connectivity;
 use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::{self, EpisodeRow, PodcastKind, SourceGroup};
 use rusqlite::Connection;
@@ -124,6 +125,12 @@ pub(in crate::ui) struct PodcastsView {
     generation: Cell<u64>,
     toast_overlay: glib::WeakRef<adw::ToastOverlay>,
     kept_downloads: RefCell<KeptDownloads>,
+    /// `NET-3c`: explicit, injectable connectivity seam, mirroring
+    /// `RadioView`'s (`NET-3b`) — defaults to `Online` and is not wired to
+    /// any real OS signal yet; only [`PodcastsView::set_connectivity`] (and
+    /// tests) change it. A transition from `Offline` to `Online` triggers
+    /// the queued-download runner.
+    connectivity: Cell<Connectivity>,
 }
 
 impl PodcastsView {
@@ -215,6 +222,7 @@ impl PodcastsView {
             generation: Cell::new(0),
             toast_overlay: glib::WeakRef::new(),
             kept_downloads: RefCell::new(KeptDownloads::default()),
+            connectivity: Cell::new(Connectivity::default()),
         });
         view.install_actions();
         view.wire_controls(&refresh);
@@ -255,6 +263,26 @@ impl PodcastsView {
     pub(in crate::ui) fn set_playing_episode(&self, episode_id: Option<i64>) {
         self.playing_episode.set(episode_id);
         self.render();
+    }
+
+    /// `NET-3c`: sets the connectivity seam this view consults — see the
+    /// `connectivity` field doc. Not wired to any real OS signal yet, same
+    /// as `RadioView::set_connectivity` (`NET-3b`). A transition from
+    /// `Offline` to `Online` dispatches the queued-download runner; every
+    /// other transition (including staying `Online` or staying `Offline`)
+    /// is a no-op so re-asserting the same state never replays anything.
+    pub(in crate::ui) fn set_connectivity(self: &Rc<Self>, value: Connectivity) {
+        let previous = self.connectivity.replace(value);
+        if previous == Connectivity::Offline && value == Connectivity::Online {
+            self.request_run_queued();
+        }
+    }
+
+    /// `NET-3` point 4 (F4): the add dialog reads this once, at present
+    /// time, to decide whether to disable search and to route a pasted URL
+    /// through the offline path instead of a live preview fetch.
+    pub(in crate::ui) fn connectivity(&self) -> Connectivity {
+        self.connectivity.get()
     }
 
     pub(in crate::ui) fn bind_device_sync(
@@ -497,6 +525,7 @@ impl PodcastsView {
                     }
                     Ok(PodcastsWorkerResult::Refreshed(_)) => {}
                     Ok(PodcastsWorkerResult::LoadedMore { .. }) => {}
+                    Ok(PodcastsWorkerResult::QueueRunComplete { .. }) => {}
                     Err(error) => {
                         view.set_download_state(
                             episode_id,

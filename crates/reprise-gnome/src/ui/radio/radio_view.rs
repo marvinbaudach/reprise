@@ -159,7 +159,7 @@ impl RadioView {
 
         let add_dialog = {
             let weak = Rc::downgrade(&shared);
-            RadioAddDialog::new(conn, move || {
+            RadioAddDialog::new(conn, shared.connectivity.clone(), move || {
                 if let Some(shared) = weak.upgrade() {
                     refresh_shared(&shared);
                     notify_mutated(&shared);

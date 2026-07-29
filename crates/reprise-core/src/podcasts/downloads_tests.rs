@@ -318,6 +318,64 @@ fn keep_last_five_is_applied_per_show() {
     assert_eq!(remaining, 5);
 }
 
+fn add_undownloaded_episode(conn: &Connection, subscription_id: i64, number: i64) -> i64 {
+    let guid = format!("undownloaded-{number}");
+    store::upsert_episode(
+        conn,
+        subscription_id,
+        &ParsedEpisode {
+            guid: guid.clone(),
+            title: guid,
+            audio_url: format!("https://example.test/undownloaded-{number}.mp3"),
+            page_url: None,
+            published_at: Some(number),
+            duration_secs: None,
+        },
+        number,
+    )
+    .unwrap()
+    .expect("episode should be imported")
+    .episode_id
+}
+
+/// `POD-5` review finding (P1): `KeepLast5`'s rank must be computed over
+/// *downloaded* episodes only. Before the fix, `ROW_NUMBER()` ranked every
+/// episode of the subscription and only filtered to downloads afterward, so
+/// undownloaded episodes consumed rank positions. A show with several newer
+/// undownloaded episodes and a few older downloaded ones, kept at an N large
+/// enough to cover every actual download, must delete nothing — "keep the
+/// last N downloaded" has to count downloads, not episodes.
+#[test]
+fn pod_5_keep_last_n_counts_downloaded_episodes_only_not_all_episodes() {
+    let conn = conn();
+    let directory = tempfile::tempdir().unwrap();
+    let show = add_show(&conn);
+    // Three older episodes, actually downloaded.
+    for number in 1..=3 {
+        add_download(&conn, directory.path(), show, number, None);
+    }
+    // Five newer episodes that were never downloaded — under the buggy
+    // rank-over-all-episodes query these take the top ranks and push the
+    // real downloads past the N=5 cutoff.
+    for number in 4..=8 {
+        add_undownloaded_episode(&conn, show, number);
+    }
+
+    let summary = enforce_cleanup(&conn, directory.path(), CleanupPolicy::KeepLast5, 5, 0).unwrap();
+
+    assert_eq!(
+        summary.files_deleted, 0,
+        "keep-5 must not delete any of the 3 actual downloads just because \
+         5 newer, undownloaded episodes exist"
+    );
+    let remaining = super::super::query::episodes_for_subscription(&conn, show)
+        .unwrap()
+        .into_iter()
+        .filter(|episode| episode.downloaded_path.is_some())
+        .count();
+    assert_eq!(remaining, 3);
+}
+
 #[test]
 fn pod_5_resolve_keep_downloaded_prefers_the_channel_override_over_the_global_default() {
     assert_eq!(resolve_keep_downloaded(5, None), 5);
