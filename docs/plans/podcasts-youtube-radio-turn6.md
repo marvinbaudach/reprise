@@ -584,6 +584,34 @@ Fragen mehr und gehen so in die Regeln `SRC-6` und `SRC-7` ein.
   `src_5_successful_subscribe_removes_the_result_row` wird auf den neuen
   Zustand umgehängt.
 
+- **E-5 · Genau ein MTP-Gerät.** Reprise unterstützt ein verbundenes Gerät, nicht
+  mehrere. Turn 7e (mehrere Geräte) entfällt ersatzlos. Begründung des
+  Eigentümers am 2026-07-29: zu viel Komplexität für einen zu seltenen Fall.
+  Mehrgeräte-Betrieb kostet kein einzelnes Feature, sondern zieht die Frage
+  „für welches Gerät gilt das?" in jede Regel, jede Einstellungszeile und jede
+  Statusanzeige.
+
+  **Das Datenmodell bleibt trotzdem gerätebezogen**: `device_settings` nach
+  Seriennummer und drei `SyncTarget` je Gerät sind gebaut, getestet und
+  kostenlos, und der Grund aus `E-4` gilt weiter — Ordnerstrukturen
+  unterscheiden sich zwischen Handy und DAP. Gespeichert wird pro Gerät;
+  *verwaltet* werden nicht mehrere. Kein Rückbau am Modell.
+
+- **E-6 · Sync-Regeln leben auf der Geräteseite.** Ersetzt den Nachtrag vom
+  2026-07-28, dessen Global-vs-pro-Gerät-Zuschnitt ausschließlich mit mehreren
+  Geräten begründet war („gilt für alle Geräte, keine Geräte-Auswahl in den
+  Settings"). Mit `E-5` entfällt diese Begründung, und mit ihr der Querverweis:
+  die Geräteansicht zeigt heute „rules from Preferences" und „Same on all
+  devices" und verweist damit auf einen Block, den es nicht gibt — bei einem
+  Gerät ist „Same on all devices" eine Aussage über nichts.
+
+  Also: Regeln (Playlists/YouTube/Podcasts, Caps, Transfer-Profil) wandern
+  dorthin, wo das Gerät ist. Die Einstellungen behalten allein den
+  Datenschutz-Riegel „Online sources" (`NET-1a`, `SET-8`). Der geplante
+  „Phone sync"-Block in 7b entfällt als eigene Fläche. `MTP-28` hält die
+  aufgehobene Trennung als `[aktiv]` bindend fest und wird daher regulär über
+  `[ersetzt durch …]` abgelöst, nicht stillschweigend umgedeutet.
+
 ## 8. Offene Fragen — nicht lokal entscheiden
 
 Nach `AGENTS.md` werden diese als `[geplant]`-Entwurf mit
