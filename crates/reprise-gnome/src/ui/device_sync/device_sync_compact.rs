@@ -292,7 +292,7 @@ impl DeviceSyncRuntime {
             // eligible for phone sync (`POD-12`).
             let candidates =
                 query_candidates_for_device(&conn, device_id).map_err(|error| error.to_string())?;
-            // `MTP-41`: `select_episodes` — not the raw downloaded-file
+            // `MTP-45`: `select_episodes` — not the raw downloaded-file
             // query above — decides which episodes are actually wanted
             // (unplayed RSS episodes, latest-per-channel YouTube episodes)
             // and splits wanted-but-missing ones into `waiting` instead of
@@ -507,7 +507,7 @@ fn as_podcast_device_files(files: &[ManagedDeviceFile]) -> Vec<PodcastDeviceFile
         .collect()
 }
 
-/// `MTP-41`/`MTP-36`: runs each `PodcastSyncSource`'s own selection rule
+/// `MTP-45`/`MTP-36`: runs each `PodcastSyncSource`'s own selection rule
 /// (`UnplayedDownloadsOnly` for RSS, `LatestPerChannel` for YouTube) over
 /// `query_selection_candidates_for_device`'s combined candidate list, one
 /// rule per source. `enabled_shows`/YouTube's channel set are simply every

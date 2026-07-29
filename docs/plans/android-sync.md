@@ -117,7 +117,7 @@ Die pure Core-Schicht besitzt die plattformneutralen Verträge:
   YouTube-Tonspuren — beide über denselben `build_plan`, unterschieden nur
   durch `PodcastSyncSource` und Ziel-Cap.
 - `device_sync/category_diff.rs`: die pro-Kategorie lesbare Diff-Projektion
-  fürs Geräte-Dashboard (`MTP-41`/`MTP-22`), reine Anzeige-Übersetzung ohne
+  fürs Geräte-Dashboard (`MTP-45`/`MTP-22`), reine Anzeige-Übersetzung ohne
   eigene Transferlogik.
 
 `reprise-core` bleibt frei von GTK, libadwaita, GStreamer und zbus.

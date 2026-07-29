@@ -132,7 +132,7 @@ pub fn query_candidates_for_device(
     Ok(candidates)
 }
 
-// `MTP-41`: `query_selection_candidates_for_device` lives in its own sibling
+// `MTP-45`: `query_selection_candidates_for_device` lives in its own sibling
 // module (`podcasts_selection.rs`) purely to keep this file under the
 // project's 800-line file-size rule — it is still conceptually part of this
 // module's public query surface, so it is re-exported below rather than
@@ -468,7 +468,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_41_youtube_source_selects_youtube_candidates_the_same_way_rss_does() {
+    fn mtp_45_youtube_source_selects_youtube_candidates_the_same_way_rss_does() {
         let rss = PodcastSyncCandidate {
             episode_id: 1,
             source: PodcastSyncSource::Rss,
