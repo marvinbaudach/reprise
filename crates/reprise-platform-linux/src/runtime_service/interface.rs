@@ -14,7 +14,7 @@
 use reprise_runtime::{Command, DeviceCommand, RuntimeError};
 use reprise_runtime_protocol::device_run::DeviceRunSnapshot;
 use reprise_runtime_protocol::jobs::{JobCommand, JobSnapshot};
-use reprise_runtime_protocol::playback::{PlaybackCommand, PlaybackSnapshot};
+use reprise_runtime_protocol::playback::{ExternalMedia, PlaybackCommand, PlaybackSnapshot};
 use reprise_runtime_protocol::queue::{QueueCommand, QueueSnapshot};
 use reprise_runtime_protocol::runtime::RuntimeSnapshot;
 use reprise_runtime_protocol::ProtocolVersion;
@@ -29,6 +29,11 @@ use super::service::Request;
 /// missing_capability:playback:control`, `failed:playback_backend` — which
 /// is structured, path-free, and stable enough for an agent to branch on.
 /// A client that only understands the four names still knows what to do.
+///
+/// Exactly four, and there is no room for a fifth. A runtime whose worker
+/// thread has gone is unreachable *for this caller*, which is what
+/// `Unavailable` already means; giving that its own error name would put a
+/// category on the bus that no client was told to expect.
 #[derive(Debug, zbus::DBusError)]
 #[zbus(prefix = "org.reprise.Reprise1.Error")]
 pub enum Error {
@@ -40,9 +45,6 @@ pub enum Error {
     Rejected(String),
     /// The effect ran and failed; retrying is the user's decision.
     Failed(String),
-    /// The service could not answer at all — the runtime thread is gone.
-    /// Distinct from `Unavailable`, which is about *this caller*.
-    Interrupted(String),
 }
 
 impl From<RuntimeError> for Error {
@@ -72,7 +74,10 @@ impl Reprise1 {
         header
             .sender()
             .map(ToString::to_string)
-            .ok_or_else(|| Error::Interrupted("no_sender".into()))
+            // Every message on a bus has a sender; a call that arrived
+            // without one cannot be attributed to a session, so there is
+            // nobody to serve.
+            .ok_or_else(|| Error::Unavailable("unavailable:no_sender".into()))
     }
 
     /// Sends one request and waits for its single answer.
@@ -84,11 +89,11 @@ impl Reprise1 {
         self.requests
             .send(build(reply))
             .await
-            .map_err(|_| Error::Interrupted("runtime_stopped".into()))?;
+            .map_err(|_| Error::Unavailable("unavailable:runtime_stopped".into()))?;
         answers
             .recv()
             .await
-            .map_err(|_| Error::Interrupted("runtime_stopped".into()))
+            .map_err(|_| Error::Unavailable("unavailable:runtime_stopped".into()))
     }
 
     /// Sends a command and maps its outcome.
@@ -221,6 +226,35 @@ impl Reprise1 {
                 track_ids,
                 start_index: usize::try_from(start_index).unwrap_or(usize::MAX),
             },
+        )
+        .await
+    }
+
+    /// Plays a stream, a podcast episode or a preview render — anything
+    /// without a library id. The queue is left where it is; going back to it
+    /// afterwards finds it untouched.
+    ///
+    /// The caller says whether `location` is remote rather than leaving the
+    /// runtime to sniff the string, so a local path containing `://` is not
+    /// opened as a URL.
+    async fn play_external(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        location: String,
+        remote: bool,
+        title: String,
+        artist: String,
+        duration_ms: i64,
+    ) -> Result<(), Error> {
+        self.command(
+            &header,
+            Command::PlayExternal(ExternalMedia {
+                location,
+                remote,
+                title,
+                artist,
+                duration_ms,
+            }),
         )
         .await
     }

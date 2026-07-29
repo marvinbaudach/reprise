@@ -2,10 +2,10 @@
 
 use reprise_core::device_sync::machine::Event as DeviceEvent;
 use reprise_core::device_sync::MirrorPlan;
-use reprise_core::playback::PlayerEvent;
+use reprise_core::playback::StreamEvent;
 use reprise_runtime_protocol::device_run::DeviceRunSnapshot;
 use reprise_runtime_protocol::jobs::JobCommand;
-use reprise_runtime_protocol::playback::{PlaybackCommand, PlaybackSnapshot};
+use reprise_runtime_protocol::playback::{ExternalMedia, PlaybackCommand, PlaybackSnapshot};
 use reprise_runtime_protocol::queue::{QueueCommand, QueueSnapshot};
 use reprise_runtime_protocol::PROTOCOL_VERSION;
 use rusqlite::Connection;
@@ -33,6 +33,9 @@ pub enum Command {
         track_ids: Vec<i64>,
         start_index: usize,
     },
+    /// Play something that is not a library track — a stream, a podcast
+    /// episode, a preview render. The queue is left where it is.
+    PlayExternal(ExternalMedia),
     Job(JobCommand),
     Device(DeviceCommand),
 }
@@ -50,9 +53,10 @@ impl Command {
     /// (§9.8); there is no unguarded command.
     fn capability(&self) -> Capability {
         match self {
-            Self::Playback(_) | Self::Queue(_) | Self::PlayTracks { .. } => {
-                Capability::PlaybackControl
-            }
+            Self::Playback(_)
+            | Self::Queue(_)
+            | Self::PlayTracks { .. }
+            | Self::PlayExternal(_) => Capability::PlaybackControl,
             Self::Job(_) => Capability::AiCreate,
             Self::Device(_) => Capability::DeviceSync,
         }
@@ -206,6 +210,12 @@ impl Runtime {
                 self.publish_transport_changes(before);
                 result
             }
+            Command::PlayExternal(media) => {
+                let before = self.transport_facets();
+                let result = self.transport.play_external(&*self.ports.playback, media);
+                self.publish_transport_changes(before);
+                result
+            }
             Command::Job(job) => {
                 let now = self.ports.clock.now_unix();
                 let job_id = jobs::command(&self.conn, now, job)?;
@@ -234,10 +244,18 @@ impl Runtime {
     }
 
     /// Applies an asynchronous report from the audio backend.
-    pub fn on_player_event(&mut self, event: &PlayerEvent) {
+    ///
+    /// A report from a stream that has already been replaced is dropped: it
+    /// describes a track nobody is listening to any more, and applying it
+    /// would advance the queue past a track the user never skipped.
+    pub fn on_player_event(&mut self, event: &StreamEvent) {
+        if !self.transport.accepts_stream(event.generation) {
+            tracing::debug!("dropped a report from a stream that has been replaced");
+            return;
+        }
         let before = self.transport_facets();
         self.transport
-            .player_event(&*self.ports.playback, &*self.ports.library, event);
+            .player_event(&*self.ports.playback, &*self.ports.library, &event.event);
         self.publish_transport_changes(before);
     }
 

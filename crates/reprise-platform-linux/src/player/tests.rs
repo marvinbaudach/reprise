@@ -1,8 +1,10 @@
 use super::*;
 use crate::player_effects::{build_audio_filter, requested_state, same_filter_topology};
+use crate::player_pipeline::{merge_stream_tags, AUDIO_SINK_ENV_VAR};
 use reprise_core::library::settings::TrackTransition;
 
 mod cava_tests;
+mod stream_generation_tests;
 
 #[test]
 fn path_to_uri_encodes_special_chars() {

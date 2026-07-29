@@ -16,7 +16,9 @@ use std::rc::Rc;
 
 use reprise_core::device_sync::machine::Effect;
 use reprise_core::library::settings::TrackTransition;
-use reprise_core::playback::{AudioEffects, PlaybackBackend, PlaybackError, PlaybackState};
+use reprise_core::playback::{
+    AudioEffects, PlaybackBackend, PlaybackError, PlaybackState, StreamGeneration,
+};
 
 use crate::ports::{Clock, DeviceEffects, LibraryPort, PlayableTrack, TrackLocation};
 
@@ -35,6 +37,10 @@ pub enum BackendCall {
 pub struct FakePlayback {
     calls: Rc<RefCell<Vec<BackendCall>>>,
     state: Rc<RefCell<PlaybackState>>,
+    /// Bumped on every start, exactly as a real backend does. A fake that
+    /// left this at its default would quietly make every staleness guard
+    /// look correct, which is the one thing a fake must never do.
+    generation: Rc<RefCell<u64>>,
     /// When set, every `play`/`play_uri` fails with it — the way a missing
     /// codec or an unreadable file behaves, without needing either.
     refuse: Rc<RefCell<bool>>,
@@ -52,6 +58,7 @@ impl FakePlayback {
         Self {
             calls: Rc::new(RefCell::new(Vec::new())),
             state: Rc::new(RefCell::new(PlaybackState::Stopped)),
+            generation: Rc::new(RefCell::new(0)),
             refuse: Rc::new(RefCell::new(false)),
         }
     }
@@ -105,6 +112,7 @@ impl PlaybackBackend for FakePlayback {
         if *self.refuse.borrow() {
             return Err(PlaybackError::Backend("fake refuses to play".into()));
         }
+        *self.generation.borrow_mut() += 1;
         *self.state.borrow_mut() = PlaybackState::Playing;
         Ok(())
     }
@@ -116,6 +124,7 @@ impl PlaybackBackend for FakePlayback {
         if *self.refuse.borrow() {
             return Err(PlaybackError::Backend("fake refuses to play".into()));
         }
+        *self.generation.borrow_mut() += 1;
         *self.state.borrow_mut() = PlaybackState::Playing;
         Ok(())
     }
@@ -158,6 +167,10 @@ impl PlaybackBackend for FakePlayback {
     fn set_next(&self, _path: Option<&str>) {}
 
     fn set_transition(&self, _mode: TrackTransition, _crossfade_seconds: u8) {}
+
+    fn current_generation(&self) -> StreamGeneration {
+        StreamGeneration::from(*self.generation.borrow())
+    }
 }
 
 /// A library that resolves exactly the tracks it was given.

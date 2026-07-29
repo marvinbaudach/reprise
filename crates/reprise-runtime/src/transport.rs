@@ -7,11 +7,13 @@
 //! track, when a finished track advances the cursor, what a snapshot of all
 //! that looks like. That binding is here now, with no toolkit in sight.
 
-use reprise_core::playback::{PlaybackBackend, PlaybackState, PlayerEvent};
+use reprise_core::playback::{PlaybackBackend, PlaybackState, PlayerEvent, StreamGeneration};
 use reprise_core::queue::{Queue, Repeat};
 use reprise_core::up_next::UpNextQueue;
 use reprise_runtime_protocol::playback::{PlaybackCommand, PlaybackSnapshot};
 use reprise_runtime_protocol::queue::{QueueCommand, QueueSnapshot};
+
+use reprise_runtime_protocol::playback::ExternalMedia;
 
 use crate::error::{Failed, Rejected, RuntimeError};
 use crate::ports::{LibraryPort, PlayableTrack, TrackLocation};
@@ -22,6 +24,39 @@ use crate::ports::{LibraryPort, PlayableTrack, TrackLocation};
 /// agents see no change in window size when Task 3.3 re-points them here.
 const QUEUE_WINDOW: usize = 200;
 
+/// What is loaded in the backend, however it got there.
+///
+/// A library track and a radio stream differ in exactly two ways that the
+/// rest of this module cares about, so those are the two extra fields: one
+/// has a library id and one does not, and one advances the queue when it
+/// ends while the other simply stops.
+struct Loaded {
+    /// Absent for anything without a library id — a stream, an episode, a
+    /// preview render. A client must never invent one.
+    track_id: Option<i64>,
+    title: String,
+    artist: String,
+    album: String,
+    duration_ms: i64,
+    /// Whether the end of this is the queue's cue to move on. False for
+    /// external media: finishing a podcast episode must not start the music
+    /// that happened to be queued behind it.
+    from_queue: bool,
+}
+
+impl From<PlayableTrack> for Loaded {
+    fn from(track: PlayableTrack) -> Self {
+        Self {
+            track_id: Some(track.track_id),
+            title: track.title,
+            artist: track.artist,
+            album: track.album,
+            duration_ms: track.duration_ms,
+            from_queue: true,
+        }
+    }
+}
+
 /// Player and queue state.
 pub(crate) struct Transport {
     queue: Queue,
@@ -30,9 +65,18 @@ pub(crate) struct Transport {
     /// What is loaded in the backend right now. `None` means nothing is —
     /// which is what makes `Stopped` distinguishable from `Paused` with a
     /// track still loaded, the distinction §9.6's idle rule hangs on.
-    current: Option<PlayableTrack>,
+    current: Option<Loaded>,
     position_ms: i64,
     volume: f64,
+    /// The stream whose reports this transport still believes.
+    ///
+    /// A backend event is delivered asynchronously, so one emitted for the
+    /// track that *just* ended can arrive after the next has already been
+    /// started. Applied blindly it advances the queue a second time — the
+    /// user presses Next once and two tracks go by — or overwrites the new
+    /// track's position with the old one's. The backend stamps every event
+    /// with the stream it came from; this is the stamp to compare against.
+    stream: StreamGeneration,
 }
 
 impl Transport {
@@ -44,6 +88,7 @@ impl Transport {
             current: None,
             position_ms: 0,
             volume: 1.0,
+            stream: StreamGeneration::INITIAL,
         }
     }
 
@@ -61,7 +106,7 @@ impl Transport {
                 PlaybackState::Paused => "paused".into(),
                 PlaybackState::Stopped => "stopped".into(),
             },
-            track_id: track.map(|track| track.track_id),
+            track_id: track.and_then(|track| track.track_id),
             title: track.map(|track| track.title.clone()).unwrap_or_default(),
             artist: track.map(|track| track.artist.clone()).unwrap_or_default(),
             album: track.map(|track| track.album.clone()).unwrap_or_default(),
@@ -82,7 +127,7 @@ impl Transport {
             // What is *playing*, which is not always where the context
             // cursor stands: an explicitly queued track plays beside the
             // context without moving it.
-            current_track_id: self.current.as_ref().map(|track| track.track_id),
+            current_track_id: self.current.as_ref().and_then(|track| track.track_id),
             play_next_track_ids: self
                 .up_next
                 .ids()
@@ -112,6 +157,42 @@ impl Transport {
             return Err(RuntimeError::Rejected(Rejected::NothingToPlay));
         };
         self.start(backend, library, track_id)
+    }
+
+    /// Plays something that is not a library track.
+    ///
+    /// The queue is left exactly as it is — not cleared, not advanced. A
+    /// podcast episode plays *beside* the music, and going back to the queue
+    /// afterwards must find it where the user left it.
+    pub(crate) fn play_external(
+        &mut self,
+        backend: &dyn PlaybackBackend,
+        media: &ExternalMedia,
+    ) -> Result<(), RuntimeError> {
+        if media.location.trim().is_empty() {
+            return Err(RuntimeError::Rejected(Rejected::NothingToPlay));
+        }
+        let started = if media.remote {
+            backend.play_uri(&media.location)
+        } else {
+            backend.play(&media.location)
+        };
+        if let Err(error) = started {
+            self.abandon(backend);
+            return Err(backend_failed(&error));
+        }
+        self.current = Some(Loaded {
+            track_id: None,
+            title: media.title.clone(),
+            artist: media.artist.clone(),
+            album: String::new(),
+            duration_ms: media.duration_ms,
+            from_queue: false,
+        });
+        self.position_ms = 0;
+        self.status = PlaybackState::Playing;
+        self.stream = backend.current_generation();
+        Ok(())
     }
 
     pub(crate) fn playback_command(
@@ -215,6 +296,20 @@ impl Transport {
     ///
     /// These are not commands and cannot fail towards a client — there is
     /// nobody waiting on them. A backend error stops playback and is logged.
+    /// Whether a report stamped `stream` still describes what is loaded.
+    ///
+    /// A *newer* stamp is adopted rather than discarded: it can only mean
+    /// something started a stream this transport has not caught up with yet,
+    /// and refusing it would leave the runtime deaf to the very pipeline it
+    /// is supposed to be reporting on.
+    pub(crate) fn accepts_stream(&mut self, stream: StreamGeneration) -> bool {
+        if stream < self.stream {
+            return false;
+        }
+        self.stream = stream;
+        true
+    }
+
     pub(crate) fn player_event(
         &mut self,
         backend: &dyn PlaybackBackend,
@@ -237,10 +332,18 @@ impl Transport {
                 }
             }
             PlayerEvent::TrackFinished => {
-                if let Some(next) = self.take_next_auto() {
-                    let _ = self.start(backend, library, next);
-                } else {
-                    let _ = self.stop(backend);
+                // Only what the queue started hands back to the queue. A
+                // finished episode or a stream that dropped must not launch
+                // whatever music was waiting behind it — the user did not
+                // ask for that, and it is loud.
+                let advances = self.current.as_ref().is_none_or(|loaded| loaded.from_queue);
+                match advances.then(|| self.take_next_auto()).flatten() {
+                    Some(next) => {
+                        let _ = self.start(backend, library, next);
+                    }
+                    None => {
+                        let _ = self.stop(backend);
+                    }
                 }
             }
             PlayerEvent::AdvancedToNext => {
@@ -283,10 +386,14 @@ impl Transport {
                 Ok(())
             }
             PlaybackState::Stopped => {
+                // Only a library track can be restarted from here. External
+                // media has no id to resolve and, for a stream, no position
+                // to resume to — the surface that knows where it came from
+                // re-sends it, which is also how a radio station reconnects.
                 let track_id = self
                     .current
                     .as_ref()
-                    .map(|track| track.track_id)
+                    .and_then(|track| track.track_id)
                     .or_else(|| self.queue.current())
                     .ok_or(RuntimeError::Rejected(Rejected::NothingToPlay))?;
                 self.start(backend, library, track_id)
@@ -304,12 +411,26 @@ impl Transport {
         Ok(())
     }
 
+    /// Stops playback and clears what is loaded — but only once the backend
+    /// has actually gone quiet.
+    ///
+    /// The tempting version clears `current` unconditionally and returns the
+    /// backend's error as an afterthought: a caller reading only the
+    /// snapshot then sees "nothing playing" while GStreamer is still
+    /// audible, and because `is_active()` reads `current`, the idle
+    /// shutdown would believe it is safe to fire over a live pipeline. The
+    /// conservative direction is the only one that keeps that promise: on a
+    /// failed stop, `current`, `status` and `position_ms` all stay exactly
+    /// as they were, so `is_active()` keeps telling the truth. The caller
+    /// gets the error back and is not left stuck — the very same command
+    /// that failed is the retry, and it reaches this exact `backend.stop()`
+    /// call again.
     fn stop(&mut self, backend: &dyn PlaybackBackend) -> Result<(), RuntimeError> {
-        let result = backend.stop().map_err(|error| backend_failed(&error));
+        backend.stop().map_err(|error| backend_failed(&error))?;
         self.status = PlaybackState::Stopped;
         self.current = None;
         self.position_ms = 0;
-        result
+        Ok(())
     }
 
     fn skip_forward(
@@ -398,9 +519,12 @@ impl Transport {
             self.abandon(backend);
             return Err(backend_failed(&error));
         }
-        self.current = Some(track);
+        self.current = Some(track.into());
         self.position_ms = 0;
         self.status = PlaybackState::Playing;
+        // Everything the previous stream still has in flight is stale from
+        // here on.
+        self.stream = backend.current_generation();
         Ok(())
     }
 
@@ -410,12 +534,23 @@ impl Transport {
     /// The backend is stopped too, but only when something was actually
     /// loaded. Skipping that would leave the *previous* track still coming
     /// out of the speakers while the runtime reports nothing playing — the
-    /// same divergence in the other direction. Stopping a backend that was
-    /// already idle, on the other hand, is a call with nothing to say.
+    /// same divergence `stop()` guards against, in the other direction.
+    /// Stopping a backend that was already idle, on the other hand, is a
+    /// call with nothing to say.
+    ///
+    /// Same rule as `stop()` applies if that defensive stop itself fails:
+    /// `current` is left exactly as it was rather than cleared, so
+    /// `is_active()` still reports the pipeline that is presumably still
+    /// running. There is no error to hand back here — the caller already has
+    /// its own failure to report (the start that provoked this) — but
+    /// whatever prompted the abandoned start (a retry, or a plain Stop
+    /// command) reaches this same `backend.stop()` call again rather than
+    /// finding the model already lying that it succeeded.
     fn abandon(&mut self, backend: &dyn PlaybackBackend) {
         if self.current.is_some() {
             if let Err(error) = backend.stop() {
                 tracing::warn!(%error, "backend refused to stop after a failed start");
+                return;
             }
         }
         self.current = None;
@@ -428,7 +563,7 @@ impl Transport {
     fn load(&mut self, backend: &dyn PlaybackBackend, library: &dyn LibraryPort, track_id: i64) {
         match library.resolve(track_id) {
             Some(track) => {
-                self.current = Some(track);
+                self.current = Some(track.into());
                 self.position_ms = 0;
             }
             // The backend already handed off to a track this side cannot

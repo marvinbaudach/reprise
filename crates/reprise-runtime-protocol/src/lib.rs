@@ -100,8 +100,10 @@ impl std::fmt::Display for ProtocolVersion {
 /// adds [`runtime::RuntimeSnapshot`], the whole-state payload the handshake
 /// returns; also additive. Minor 3 adds the queue commands a full queue view
 /// needs — move, remove, jump, purge — again additive: an older runtime
-/// simply has no method for them.
-pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1, minor: 3 };
+/// simply has no method for them. Minor 4 adds
+/// [`playback::ExternalMedia`], so a stream or a podcast episode can be
+/// played by the same runtime that owns the queue — again additive.
+pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1, minor: 4 };
 
 #[cfg(test)]
 mod tests {
@@ -135,6 +137,6 @@ mod tests {
     #[test]
     fn the_shipped_version_is_compatible_with_itself() {
         assert!(PROTOCOL_VERSION.is_compatible_with(PROTOCOL_VERSION));
-        assert_eq!(PROTOCOL_VERSION.to_string(), "1.3");
+        assert_eq!(PROTOCOL_VERSION.to_string(), "1.4");
     }
 }

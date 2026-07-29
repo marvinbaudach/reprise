@@ -96,8 +96,9 @@ pub enum Request {
     },
     /// The bus reported that a peer's name has no owner any more.
     PeerVanished { peer: String },
-    /// An asynchronous report from the audio backend.
-    Player(reprise_core::playback::PlayerEvent),
+    /// An asynchronous report from the audio backend, stamped with the
+    /// stream it came from.
+    Player(reprise_core::playback::StreamEvent),
     /// A device port finished computing what a run would change. `None`
     /// means it could not.
     DevicePlan {
@@ -176,7 +177,7 @@ impl RuntimeService {
         lease: RuntimeLease,
         options: &ServeOptions,
         inbox: ServiceInbox,
-        player_events: Option<async_channel::Receiver<reprise_core::playback::PlayerEvent>>,
+        player_events: Option<async_channel::Receiver<reprise_core::playback::StreamEvent>>,
     ) -> Result<(), ServiceError> {
         let ServiceInbox {
             sender,
@@ -232,11 +233,14 @@ fn spawn_ticker(sender: async_channel::Sender<Request>, tick: Duration) {
 /// need frames, it will ask for them and they will travel their own way.
 fn spawn_player_relay(
     sender: async_channel::Sender<Request>,
-    events: async_channel::Receiver<reprise_core::playback::PlayerEvent>,
+    events: async_channel::Receiver<reprise_core::playback::StreamEvent>,
 ) {
     std::thread::spawn(move || {
         while let Ok(event) = events.recv_blocking() {
-            if matches!(event, reprise_core::playback::PlayerEvent::Spectrum(_)) {
+            if matches!(
+                event.event,
+                reprise_core::playback::PlayerEvent::Spectrum(_)
+            ) {
                 continue;
             }
             if sender.send_blocking(Request::Player(event)).is_err() {
@@ -293,7 +297,12 @@ impl Loop {
         while let Ok(request) = requests.recv_blocking() {
             self.handle(request);
             self.publish();
-            if !self.reconcile() {
+            // Work already waiting in the inbox counts as work. Without
+            // this, a tick that expires the grace can be dequeued one slot
+            // ahead of an already-queued `Connect`: the loop would shut down
+            // and that client — which was reversing the drain by connecting
+            // at all — would find the name gone instead of a runtime.
+            if !self.reconcile(requests.is_empty()) {
                 break;
             }
         }
@@ -431,8 +440,12 @@ impl Loop {
     }
 
     /// Advances the lifecycle. Returns whether the loop should keep running.
-    fn reconcile(&mut self) -> bool {
-        let idle = self.runtime.is_idle().unwrap_or(false);
+    ///
+    /// `inbox_empty` is part of the idle question, not a separate guard: a
+    /// request waiting to be handled is a reason to exist, exactly like a
+    /// connected client or a running job.
+    fn reconcile(&mut self, inbox_empty: bool) -> bool {
+        let idle = inbox_empty && self.runtime.is_idle().unwrap_or(false);
         let now_ms = u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX);
         match self.lifecycle.observe(idle, now_ms) {
             Some(LifecycleChange::EnteredDraining) => {
