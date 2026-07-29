@@ -9,6 +9,8 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+use reprise_core::playback::SpectrumFrame;
+
 use crate::error::Capability;
 use crate::event::{Delivery, RuntimeEvent, SequencedEvent};
 
@@ -70,6 +72,20 @@ struct Client {
     capabilities: BTreeSet<Capability>,
     mailbox: VecDeque<SequencedEvent>,
     overflowed: bool,
+    /// The newest spectrum frame this client has not taken yet.
+    ///
+    /// One slot rather than a queue, and deliberately not in `mailbox`. A
+    /// frame arrives ~60 times a second: a 256-entry mailbox holds four
+    /// seconds of them, after which a client that blinked is told to
+    /// resynchronize — over data that was already worthless by then. A
+    /// spectrum frame is not state to catch up on, it is a picture of this
+    /// instant, so a newer one simply replaces an untaken older one. That is
+    /// `SpectrumFrame::coalesce_latest`'s contract, held here.
+    spectrum: Option<SpectrumFrame>,
+    /// Whether this client asked to be offered frames at all. Off by
+    /// default: most clients never draw a visualizer, and analysing audio
+    /// for nobody is CPU spent on the hot path for no reason.
+    watches_spectrum: bool,
 }
 
 /// The connected set, plus the runtime's single event sequence.
@@ -103,6 +119,8 @@ impl Clients {
                 capabilities,
                 mailbox: VecDeque::new(),
                 overflowed: false,
+                spectrum: None,
+                watches_spectrum: false,
             },
         );
         id
@@ -148,6 +166,47 @@ impl Clients {
             }
             client.mailbox.push_back(sequenced.clone());
         }
+    }
+
+    /// Offers a frame to every client that asked to see one.
+    ///
+    /// Not `publish`: this carries no sequence, enters no mailbox, and can
+    /// never provoke a resynchronize. A frame that a client did not take
+    /// before the next one arrived is simply gone, which is the only
+    /// treatment that makes sense for a picture of a moment that has passed.
+    pub(crate) fn offer_spectrum(&mut self, frame: SpectrumFrame) {
+        for client in self.connected.values_mut() {
+            if client.watches_spectrum {
+                client.spectrum = Some(frame);
+            }
+        }
+    }
+
+    /// Whether anybody is watching. The backend's analysis costs CPU on the
+    /// audio path, so it runs only while someone is actually looking.
+    pub(crate) fn anyone_watches_spectrum(&self) -> bool {
+        self.connected
+            .values()
+            .any(|client| client.watches_spectrum)
+    }
+
+    /// Starts or stops one client's interest. Returns whether the total
+    /// changed, which is what decides if the backend is told.
+    pub(crate) fn watch_spectrum(&mut self, client: ClientId, watching: bool) -> Option<bool> {
+        let before = self.anyone_watches_spectrum();
+        let entry = self.connected.get_mut(&client)?;
+        entry.watches_spectrum = watching;
+        if !watching {
+            // Nothing to hand over to a client that stopped looking; keeping
+            // it would deliver one frame from before they turned it off.
+            entry.spectrum = None;
+        }
+        Some(before != self.anyone_watches_spectrum())
+    }
+
+    /// Takes the newest frame this client has not seen, if any.
+    pub(crate) fn take_spectrum(&mut self, client: ClientId) -> Option<SpectrumFrame> {
+        self.connected.get_mut(&client)?.spectrum.take()
     }
 
     /// Hands a client everything queued for it and clears the queue.

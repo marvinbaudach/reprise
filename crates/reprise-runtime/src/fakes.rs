@@ -56,6 +56,10 @@ pub struct FakePlayback {
     /// When set, `set_audio_effects` fails — a pipeline with no equalizer
     /// element, which is the only reason the fallback path exists.
     refuse_effects: Rc<RefCell<bool>>,
+    /// Every `set_spectrum_enabled` argument, in order. The *sequence*
+    /// matters, not just the last value: telling the backend to start
+    /// something already running is the bug this records.
+    spectrum_switches: Rc<RefCell<Vec<bool>>>,
 }
 
 impl Default for FakePlayback {
@@ -76,6 +80,7 @@ impl FakePlayback {
             transitions: Rc::new(RefCell::new(Vec::new())),
             effects: Rc::new(RefCell::new(Vec::new())),
             refuse_effects: Rc::new(RefCell::new(false)),
+            spectrum_switches: Rc::new(RefCell::new(Vec::new())),
         }
     }
 
@@ -92,6 +97,7 @@ impl FakePlayback {
             generation: Rc::clone(&self.generation),
             effects: Rc::clone(&self.effects),
             refuse_effects: Rc::clone(&self.refuse_effects),
+            spectrum_switches: Rc::clone(&self.spectrum_switches),
         }
     }
 }
@@ -107,6 +113,7 @@ pub struct FakePlaybackHandle {
     generation: Rc<RefCell<u64>>,
     effects: Rc<RefCell<Vec<AudioEffects>>>,
     refuse_effects: Rc<RefCell<bool>>,
+    spectrum_switches: Rc<RefCell<Vec<bool>>>,
 }
 
 impl FakePlaybackHandle {
@@ -170,6 +177,12 @@ impl FakePlaybackHandle {
     pub fn accepted_effects(&self) -> Vec<AudioEffects> {
         self.effects.borrow().clone()
     }
+
+    /// Every `set_spectrum_enabled` call, in order.
+    #[must_use]
+    pub fn spectrum_switches(&self) -> Vec<bool> {
+        self.spectrum_switches.borrow().clone()
+    }
 }
 
 impl PlaybackBackend for FakePlayback {
@@ -218,6 +231,11 @@ impl PlaybackBackend for FakePlayback {
         self.calls
             .borrow_mut()
             .push(BackendCall::SetVolume((volume * 1000.0).round() as u64));
+    }
+
+    fn set_spectrum_enabled(&self, enabled: bool) -> Result<(), PlaybackError> {
+        self.spectrum_switches.borrow_mut().push(enabled);
+        Ok(())
     }
 
     fn set_audio_effects(&self, effects: AudioEffects) -> Result<(), PlaybackError> {

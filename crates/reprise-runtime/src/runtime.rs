@@ -3,6 +3,7 @@
 use reprise_core::device_sync::machine::Event as DeviceEvent;
 use reprise_core::device_sync::MirrorPlan;
 use reprise_core::library::settings::{self, TrackTransition};
+use reprise_core::playback::SpectrumFrame;
 use reprise_core::playback::StreamEvent;
 use reprise_runtime_protocol::command::CommandOutcome;
 use reprise_runtime_protocol::device_run::DeviceRunSnapshot;
@@ -62,6 +63,12 @@ pub enum Command {
     /// Apply the equalizer and ReplayGain, and store them if the audio path
     /// accepts them.
     SetAudioEffects(EffectsRequest),
+    /// Start or stop being offered spectrum frames.
+    ///
+    /// Per client, not global: one surface drawing a visualizer must not
+    /// make every other client pay for the analysis, and a client that stops
+    /// looking must be able to stop it again.
+    WatchSpectrum(bool),
 }
 
 /// A device-run command. The device is addressed by its display name, the
@@ -82,7 +89,8 @@ impl Command {
             | Self::PlayTracks { .. }
             | Self::PlayExternal(_)
             | Self::RestoreSession { .. }
-            | Self::SetAudioEffects(_) => Capability::PlaybackControl,
+            | Self::SetAudioEffects(_)
+            | Self::WatchSpectrum(_) => Capability::PlaybackControl,
             Self::Job(_) => Capability::AiCreate,
             Self::Device(_) => Capability::DeviceSync,
         }
@@ -229,6 +237,17 @@ impl Runtime {
         })
     }
 
+    /// Takes the newest spectrum frame this client has not seen.
+    ///
+    /// Separate from [`Self::drain`] on purpose. Frames carry no sequence and
+    /// never enter a mailbox, so they cannot overflow one and cannot provoke
+    /// a resynchronize — an untaken frame is replaced by the next rather than
+    /// queued behind it. There is nothing to catch up on: a spectrum frame
+    /// describes an instant that has passed.
+    pub fn take_spectrum(&mut self, client: ClientId) -> Option<SpectrumFrame> {
+        self.clients.take_spectrum(client)
+    }
+
     /// Hands a client its pending events and clears them.
     pub fn drain(&mut self, client: ClientId) -> Result<Delivery, RuntimeError> {
         self.clients
@@ -341,6 +360,23 @@ impl Runtime {
                 self.publish_device_change(Some(client), device, before.as_ref());
                 result.map(|()| self.outcome(0))
             }
+            Command::WatchSpectrum(watching) => {
+                let changed = self
+                    .clients
+                    .watch_spectrum(client, *watching)
+                    .ok_or(RuntimeError::Unavailable(Unavailable::NotConnected))?;
+                // Only when the *total* flipped. Told on every call instead,
+                // a second watcher arriving would re-enable what is already
+                // running, and the first one leaving would switch it off
+                // under the second.
+                if changed {
+                    let watching = self.clients.anyone_watches_spectrum();
+                    if let Err(error) = self.ports.playback.set_spectrum_enabled(watching) {
+                        tracing::warn!(%error, watching, "backend refused the spectrum switch");
+                    }
+                }
+                Ok(self.outcome(0))
+            }
             Command::SetAudioEffects(requested) => {
                 let before = self.effects.snapshot();
                 let result = self
@@ -373,6 +409,13 @@ impl Runtime {
     pub fn on_player_event(&mut self, event: &StreamEvent) {
         if !self.transport.accepts_stream(event.generation) {
             tracing::debug!("dropped a report from a stream that has been replaced");
+            return;
+        }
+        // Before the staleness gate would matter and before any facet work:
+        // a frame is not state, so there is nothing to diff, nothing to
+        // sequence, and no reason to walk the transport for it.
+        if let reprise_core::playback::PlayerEvent::Spectrum(frame) = event.event {
+            self.clients.offer_spectrum(frame);
             return;
         }
         let before = self.transport_facets();
