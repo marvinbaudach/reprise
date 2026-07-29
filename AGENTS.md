@@ -79,6 +79,11 @@ The project is built **plan-by-plan, task-by-task, test-first**. To continue:
    `Task N: complete (commit <hash>, base <hash>, <one-line note>)`.
 5. Recommended: after each task, do (or dispatch) an adversarial review of the diff before
    moving on — this pipeline has caught several real bugs that way.
+6. After a pull request is squash-merged into `dev`, close its local worktree with
+   `scripts/close-worktree.sh --repo /home/marvin/Projects/reprise --worktree <path> --pr <number>`.
+   The command verifies the merged PR and exact head before removing anything. If the current
+   session or another process still owns the directory, it records a pending cleanup for the
+   weekly collector.
 
 ## GitHub contribution flow — mandatory for every agent
 
@@ -93,6 +98,9 @@ The project is built **plan-by-plan, task-by-task, test-first**. To continue:
   commit per pull request, titled as a conventional commit. A squashed branch is never
   reported as merged by `git branch -d`, so delete it with `-D`, and never stack a topic
   branch on another topic branch. See `docs/agents/branching.md`, "Merge method".
+- A merged topic is not fully closed until its local worktree was removed or an exact,
+  PR-verified pending cleanup was recorded. Dirty, locked, active, or unmerged worktrees are
+  never cleanup candidates.
 - Only the repository owner promotes `dev` to `main`, and the promotion is a fast-forward
   push (`git push origin origin/dev:main`), not a pull request — a squashed promotion would
   make the two branches diverge permanently. Agents never run it.

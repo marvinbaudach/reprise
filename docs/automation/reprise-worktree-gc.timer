@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly Reprise worktree cleanup
+
+[Timer]
+OnCalendar=Sun *-*-* 04:15:00
+Persistent=true
+RandomizedDelaySec=30m
+Unit=reprise-worktree-gc.service
+
+[Install]
+WantedBy=timers.target
