@@ -13,6 +13,22 @@ fn a_stream() -> reprise_runtime_protocol::playback::ExternalMedia {
         title: "Morning Show".into(),
         artist: "Example FM".into(),
         duration_ms: 0,
+        external_ref: "radio/7".into(),
+        live: true,
+    }
+}
+
+/// A downloaded episode: seekable, and its duration is not known yet — the
+/// case that makes `live` a field rather than `duration_ms == 0`.
+fn an_episode() -> reprise_runtime_protocol::playback::ExternalMedia {
+    reprise_runtime_protocol::playback::ExternalMedia {
+        location: "/podcasts/42.mp3".into(),
+        remote: false,
+        title: "Episode 42".into(),
+        artist: "Example Show".into(),
+        duration_ms: 0,
+        external_ref: "podcast/42".into(),
+        live: false,
     }
 }
 
@@ -271,5 +287,237 @@ fn previous_during_a_stream_does_not_swap_in_the_music_behind_it() {
         None,
         "there is a context entry before the cursor, so without the gate \
          Previous silently replaces the stream with a library track"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Identity, liveness, and why playback stopped.
+//
+// Three things a surface needs that the runtime did not carry. GTK has all
+// three today — `external_media_mpris.rs` builds `podcast/{id}`/`radio/{id}`,
+// `MprisState::live_stream` decides whether the item can be seeked at all, and
+// `finish_podcast` marks an episode played and offers the next one — so a
+// surface moved onto the runtime without them is a surface that loses them.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_surfaces_own_name_for_a_stream_comes_back_in_the_snapshot() {
+    let mut fixture = fixture();
+
+    fixture
+        .transport
+        .play_external(&fixture.backend, &a_stream(), None)
+        .unwrap();
+
+    assert_eq!(
+        fixture
+            .transport
+            .playback_snapshot()
+            .external_ref
+            .as_deref(),
+        Some("radio/7"),
+        "without it nothing can tell two items apart: `track_id` is absent \
+         for exactly these, and two episodes of a show share a title"
+    );
+}
+
+#[test]
+fn an_unnamed_item_reports_no_identity_rather_than_an_empty_one() {
+    let mut fixture = fixture();
+    let anonymous = reprise_runtime_protocol::playback::ExternalMedia {
+        external_ref: String::new(),
+        ..a_stream()
+    };
+
+    fixture
+        .transport
+        .play_external(&fixture.backend, &anonymous, None)
+        .unwrap();
+
+    assert_eq!(
+        fixture.transport.playback_snapshot().external_ref,
+        None,
+        "`Some(\"\")` would make every reader check for two spellings of the \
+         same nothing"
+    );
+}
+
+#[test]
+fn a_library_track_has_neither_an_external_name_nor_a_live_flag() {
+    let mut fixture = fixture();
+
+    fixture.play_tracks(vec![1], 0).unwrap();
+
+    let snapshot = fixture.transport.playback_snapshot();
+    assert_eq!(snapshot.external_ref, None);
+    assert!(!snapshot.live);
+}
+
+#[test]
+fn a_stream_is_live_and_an_episode_of_unknown_length_is_not() {
+    let mut fixture = fixture();
+
+    fixture
+        .transport
+        .play_external(&fixture.backend, &a_stream(), None)
+        .unwrap();
+    assert!(fixture.transport.playback_snapshot().live);
+
+    fixture
+        .transport
+        .play_external(&fixture.backend, &an_episode(), None)
+        .unwrap();
+    let snapshot = fixture.transport.playback_snapshot();
+    assert_eq!(
+        snapshot.duration_ms, 0,
+        "the episode's length is not known yet — the same zero the stream \
+         reports"
+    );
+    assert!(
+        !snapshot.live,
+        "which is why this cannot be derived from duration_ms: doing so \
+         disables the seek bar on every episode until the first duration \
+         arrives"
+    );
+}
+
+#[test]
+fn an_episode_that_played_to_its_end_says_so() {
+    let mut fixture = fixture();
+    fixture
+        .transport
+        .play_external(&fixture.backend, &an_episode(), None)
+        .unwrap();
+
+    fixture.player_event(&PlayerEvent::TrackFinished);
+
+    let snapshot = fixture.transport.playback_snapshot();
+    assert_eq!(snapshot.status, "stopped");
+    assert_eq!(
+        snapshot.stopped_reason.as_deref(),
+        Some("finished"),
+        "a finished episode is marked played and hands the show on to the \
+         next one; a surface reading only `stopped` cannot tell that from a \
+         user who pressed stop, and guessing is wrong in one of the two"
+    );
+}
+
+#[test]
+fn stopping_an_episode_halfway_is_not_reported_as_finished() {
+    let mut fixture = fixture();
+    fixture
+        .transport
+        .play_external(&fixture.backend, &an_episode(), None)
+        .unwrap();
+
+    fixture.command(&PlaybackCommand::Stop).unwrap();
+
+    assert_eq!(
+        fixture.transport.playback_snapshot().stopped_reason,
+        None,
+        "marking this episode played would lose the user's place in it"
+    );
+}
+
+/// The case the clear in `stop_hard` is actually for. The test above cannot
+/// reach it: starting the episode had already cleared the field, so it would
+/// pass with that line deleted.
+#[test]
+fn stopping_after_the_queue_ran_out_takes_back_the_offer_to_carry_on() {
+    let mut fixture = fixture();
+    fixture.play_tracks(vec![1], 0).unwrap();
+    fixture.player_event(&PlayerEvent::TrackFinished);
+    assert_eq!(
+        fixture
+            .transport
+            .playback_snapshot()
+            .stopped_reason
+            .as_deref(),
+        Some("finished"),
+        "the queue ended by itself, which is the state this starts from"
+    );
+
+    fixture.command(&PlaybackCommand::Stop).unwrap();
+
+    assert_eq!(
+        fixture.transport.playback_snapshot().stopped_reason,
+        None,
+        "Stop empties the context, so a surface still offering to carry on \
+         from where it ended is offering something that is no longer there"
+    );
+}
+
+#[test]
+fn a_queue_that_ran_out_is_finished_too() {
+    let mut fixture = fixture();
+    fixture.play_tracks(vec![1], 0).unwrap();
+
+    fixture.player_event(&PlayerEvent::TrackFinished);
+
+    let snapshot = fixture.transport.playback_snapshot();
+    assert_eq!(snapshot.status, "stopped");
+    assert_eq!(
+        snapshot.stopped_reason.as_deref(),
+        Some("finished"),
+        "reaching the end of the queue is the moment a surface may offer to \
+         carry on from what is on screen"
+    );
+}
+
+#[test]
+fn a_queue_that_gave_up_on_broken_files_is_not_reported_as_finished() {
+    let mut fixture = fixture();
+    // 404 is not in the library: the file went away after the queue was built.
+    fixture.play_tracks(vec![1, 404], 0).unwrap();
+
+    fixture.player_event(&PlayerEvent::TrackFinished);
+
+    let snapshot = fixture.transport.playback_snapshot();
+    assert_eq!(snapshot.status, "stopped");
+    assert_eq!(
+        snapshot.failure_kind.as_deref(),
+        Some("not_playable"),
+        "the failure facet is the fuller answer here"
+    );
+    assert_eq!(
+        snapshot.stopped_reason, None,
+        "two facets naming the same stop is two chances to contradict each \
+         other about it"
+    );
+}
+
+#[test]
+fn a_backend_error_replaces_a_finished_that_was_already_standing() {
+    let mut fixture = fixture();
+    fixture.play_tracks(vec![1], 0).unwrap();
+    fixture.player_event(&PlayerEvent::TrackFinished);
+    assert!(fixture
+        .transport
+        .playback_snapshot()
+        .stopped_reason
+        .is_some());
+
+    fixture.player_event(&PlayerEvent::Error("the device went away".into()));
+
+    let snapshot = fixture.transport.playback_snapshot();
+    assert_eq!(snapshot.failure_kind.as_deref(), Some("backend"));
+    assert_eq!(
+        snapshot.stopped_reason, None,
+        "the queue did not finish twice; the newer answer is the true one"
+    );
+}
+
+#[test]
+fn playing_again_clears_the_reason_the_last_thing_stopped() {
+    let mut fixture = fixture();
+    fixture.play_tracks(vec![1], 0).unwrap();
+    fixture.player_event(&PlayerEvent::TrackFinished);
+
+    fixture.play_tracks(vec![2], 0).unwrap();
+
+    assert_eq!(
+        fixture.transport.playback_snapshot().stopped_reason,
+        None,
+        "the facet says what the situation is now, and nothing is stopped"
     );
 }

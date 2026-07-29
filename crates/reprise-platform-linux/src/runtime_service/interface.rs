@@ -256,26 +256,16 @@ impl Reprise1 {
     /// The caller says whether `location` is remote rather than leaving the
     /// runtime to sniff the string, so a local path containing `://` is not
     /// opened as a URL.
+    ///
+    /// One dictionary rather than seven positional arguments: three of them
+    /// are `String` and two are `bool`, so a caller that swaps a pair still
+    /// satisfies the signature check and is simply wrong at runtime.
     async fn play_external(
         &self,
         #[zbus(header)] header: Header<'_>,
-        location: String,
-        remote: bool,
-        title: String,
-        artist: String,
-        duration_ms: i64,
+        media: ExternalMedia,
     ) -> Result<CommandOutcome, Error> {
-        self.command(
-            &header,
-            Command::PlayExternal(ExternalMedia {
-                location,
-                remote,
-                title,
-                artist,
-                duration_ms,
-            }),
-        )
-        .await
+        self.command(&header, Command::PlayExternal(media)).await
     }
 
     async fn queue_add_next(

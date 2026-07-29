@@ -45,6 +45,11 @@ struct Loaded {
     /// start the music queued behind it — and where Previous goes, which
     /// differs for a track that jumped the line.
     source: Source,
+    /// What the surface calls this, for anything without a library id.
+    /// Opaque here — the runtime carries it and never reads it.
+    external_ref: Option<String>,
+    /// Whether this has no end. Only a stream sets it.
+    live: bool,
 }
 
 /// What supplied the loaded item.
@@ -81,6 +86,10 @@ impl From<PlayableTrack> for Loaded {
             // `start` corrects this for a track that jumped the line; the
             // context is the ordinary case and the safe default.
             source: Source::Context,
+            // A library track is named by its id and has an end. Both of
+            // these describe the items that have neither.
+            external_ref: None,
+            live: false,
         }
     }
 }
@@ -130,6 +139,16 @@ pub(crate) struct Transport {
     /// failed" — a facet says what it looks like now — so the reason lives in
     /// the facet and is cleared by the next successful start.
     failure: Option<Failure>,
+    /// Why playback is stopped, when the runtime knows something `status`
+    /// alone does not say.
+    ///
+    /// Set only where playback ended *by itself*: the loaded item played to
+    /// its end. A user's Stop clears it, because a client that just issued
+    /// Stop needs no explanation and a client that did not must not be told
+    /// the content ran out when it did not. A failure clears it too — the
+    /// failure facet is the fuller answer, and two facets naming the same
+    /// stop is two chances to disagree about it.
+    stopped_reason: Option<&'static str>,
     /// The stream whose reports this transport still believes.
     ///
     /// A backend event is delivered asynchronously, so one emitted for the
@@ -152,6 +171,7 @@ impl Transport {
             volume: 1.0,
             initiated_by: None,
             failure: None,
+            stopped_reason: None,
             stream: StreamGeneration::INITIAL,
         }
     }
@@ -186,6 +206,9 @@ impl Transport {
             failure_kind: self.failure.as_ref().map(|failure| failure.kind.into()),
             failure_track_id: self.failure.as_ref().and_then(|failure| failure.track_id),
             initiated_by: self.current.as_ref().and(self.initiated_by),
+            external_ref: track.and_then(|track| track.external_ref.clone()),
+            live: track.is_some_and(|track| track.live),
+            stopped_reason: self.stopped_reason.map(Into::into),
         }
     }
 
@@ -267,11 +290,17 @@ impl Transport {
             album: String::new(),
             duration_ms: media.duration_ms,
             source: Source::External,
+            // Empty means the surface offered no identity. Keeping that as
+            // `None` rather than `Some("")` leaves one case where there would
+            // otherwise be two, and spares every reader the same check.
+            external_ref: Some(media.external_ref.clone()).filter(|it| !it.is_empty()),
+            live: media.live,
         });
         self.position_ms = 0;
         self.status = PlaybackState::Playing;
         self.initiated_by = initiated_by;
         self.failure = None;
+        self.stopped_reason = None;
         self.stream = backend.current_generation();
         Ok(())
     }
@@ -366,6 +395,11 @@ impl Transport {
                     self.advance_past_failures(backend, library);
                 } else {
                     let _ = self.stop(backend);
+                    // The episode ran to its end. A surface acts on that —
+                    // marks it played, offers the next one — and must not act
+                    // on a stop the user asked for, which looks identical
+                    // from the status alone.
+                    self.stopped_reason = Some("finished");
                 }
             }
             PlayerEvent::AdvancedToNext => {
@@ -401,6 +435,10 @@ impl Transport {
                     track_id: self.current.as_ref().and_then(|loaded| loaded.track_id),
                     kind: "backend",
                 });
+                // The failure facet is the fuller answer; leaving a stale
+                // `finished` beside it would have the two contradict each
+                // other about the same stop.
+                self.stopped_reason = None;
                 let _ = self.stop(backend);
             }
         }
@@ -546,6 +584,14 @@ impl Transport {
         // stop that would otherwise look like an exhausted queue.
         let _ = self.stop(backend);
         self.failure = skipped.or_else(|| unplayable(&stepped_over));
+        // Only when nothing went wrong: a queue that ran out ended by itself
+        // and a surface may offer to extend it, but a queue that gave up on
+        // three unreadable files did not, and the failure facet is the answer
+        // there. Both leave `Stopped` with nothing loaded, which is exactly
+        // why the difference has to be said rather than inferred.
+        if self.failure.is_none() {
+            self.stopped_reason = Some("finished");
+        }
     }
 
     /// Resolves, hands the location to the backend, and adopts it as current.
@@ -588,8 +634,9 @@ impl Transport {
         self.position_ms = 0;
         self.status = PlaybackState::Playing;
         // The facet describes the situation, not the history: something is
-        // playing, so there is no failure left to report.
+        // playing, so there is no failure and no stop left to explain.
         self.failure = None;
+        self.stopped_reason = None;
         // Everything the previous stream still has in flight is stale from
         // here on.
         self.stream = backend.current_generation();

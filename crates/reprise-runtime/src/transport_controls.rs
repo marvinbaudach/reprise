@@ -113,6 +113,10 @@ impl Transport {
         // Carrying it forward would have a surface explaining a track the
         // user has already left behind.
         self.failure = None;
+        // Same reasoning, and one more: a stale `finished` here would tell a
+        // podcast surface to mark an episode played that the user stopped
+        // halfway through.
+        self.stopped_reason = None;
         if !was_music {
             return Ok(());
         }
