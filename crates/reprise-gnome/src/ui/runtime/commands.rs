@@ -19,6 +19,7 @@ use reprise_runtime_client::RuntimeCommand;
 use reprise_runtime_protocol::jobs::JobCommand;
 use reprise_runtime_protocol::playback::{ExternalMedia, PlaybackCommand};
 use reprise_runtime_protocol::queue::QueueCommand;
+use reprise_runtime_protocol::session::RestoredQueue;
 
 use super::RuntimeSession;
 
@@ -85,6 +86,13 @@ impl RuntimeSession {
     /// comment for why `location` travels inward only.
     pub(crate) fn play_external(&self, media: ExternalMedia) {
         self.send(RuntimeCommand::PlayExternal(media));
+    }
+
+    /// Puts back the queue this surface saved when it last closed, without
+    /// starting it — the cold-start path, where playing would be the one
+    /// thing a user did not ask for.
+    pub(crate) fn restore_session(&self, context: RestoredQueue, play_next: Vec<i64>) {
+        self.send(RuntimeCommand::RestoreSession { context, play_next });
     }
 
     /// Inserts `track_ids` directly after the current item, in order.

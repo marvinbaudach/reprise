@@ -9,6 +9,7 @@ use reprise_runtime_protocol::device_run::DeviceRunSnapshot;
 use reprise_runtime_protocol::jobs::JobCommand;
 use reprise_runtime_protocol::playback::{ExternalMedia, PlaybackCommand, PlaybackSnapshot};
 use reprise_runtime_protocol::queue::{QueueCommand, QueueSnapshot};
+use reprise_runtime_protocol::session::RestoredQueue;
 use reprise_runtime_protocol::PROTOCOL_VERSION;
 use rusqlite::Connection;
 
@@ -38,6 +39,22 @@ pub enum Command {
     /// Play something that is not a library track — a stream, a podcast
     /// episode, a preview render. The queue is left where it is.
     PlayExternal(ExternalMedia),
+    /// Put back the queue a surface saved when it last closed, *without*
+    /// starting it.
+    ///
+    /// Separate from `PlayTracks` because every other way of filling the
+    /// queue also starts it, and opening the app is not a request to play.
+    /// It carries the stored play order rather than only the ids: restoring
+    /// the ids and reshuffling would change what comes next behind the back
+    /// of a user who left mid-session.
+    ///
+    /// No position. GTK does not store one either, and a runtime that
+    /// offered to restore one would be promising something no surface can
+    /// supply.
+    RestoreSession {
+        context: RestoredQueue,
+        play_next: Vec<i64>,
+    },
     Job(JobCommand),
     Device(DeviceCommand),
 }
@@ -58,7 +75,8 @@ impl Command {
             Self::Playback(_)
             | Self::Queue(_)
             | Self::PlayTracks { .. }
-            | Self::PlayExternal(_) => Capability::PlaybackControl,
+            | Self::PlayExternal(_)
+            | Self::RestoreSession { .. } => Capability::PlaybackControl,
             Self::Job(_) => Capability::AiCreate,
             Self::Device(_) => Capability::DeviceSync,
         }
@@ -259,6 +277,12 @@ impl Runtime {
                     *start_index,
                     Some(client.into()),
                 );
+                self.publish_transport_changes(Some(client), before);
+                result.map(|()| self.outcome(0))
+            }
+            Command::RestoreSession { context, play_next } => {
+                let before = self.transport_facets();
+                let result = self.transport.restore_session(context, play_next);
                 self.publish_transport_changes(Some(client), before);
                 result.map(|()| self.outcome(0))
             }

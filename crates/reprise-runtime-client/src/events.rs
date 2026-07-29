@@ -5,6 +5,7 @@ use reprise_runtime_protocol::device_run::DeviceRunSnapshot;
 use reprise_runtime_protocol::jobs::{JobCommand, JobSnapshot};
 use reprise_runtime_protocol::playback::{ExternalMedia, PlaybackCommand, PlaybackSnapshot};
 use reprise_runtime_protocol::queue::{QueueCommand, QueueSnapshot};
+use reprise_runtime_protocol::session::RestoredQueue;
 
 use crate::client::RequestId;
 use reprise_runtime_protocol::runtime::RuntimeSnapshot;
@@ -23,6 +24,12 @@ pub enum RuntimeCommand {
         start_index: usize,
     },
     /// Play a stream, a podcast episode or a preview render.
+    /// Put back a queue a surface saved when it last closed, without
+    /// starting it.
+    RestoreSession {
+        context: RestoredQueue,
+        play_next: Vec<i64>,
+    },
     PlayExternal(ExternalMedia),
     Job(JobCommand),
     DeviceStart {
@@ -95,6 +102,10 @@ impl RuntimeCommand {
                 Body::Tracks(track_ids.clone(), *start_index as u64),
             ),
             Self::PlayExternal(media) => ("PlayExternal", Body::External(media.clone())),
+            Self::RestoreSession { context, play_next } => (
+                "RestoreSession",
+                Body::Session(context.clone(), play_next.clone()),
+            ),
             Self::Job(JobCommand::Cancel(job_id)) => ("JobCancel", Body::Id(*job_id)),
             Self::Job(JobCommand::Save(job_id)) => ("JobSave", Body::Id(*job_id)),
             Self::Job(JobCommand::Discard(job_id)) => ("JobDiscard", Body::Id(*job_id)),
@@ -125,6 +136,7 @@ pub(super) enum Body {
     Positions(Vec<u64>, u64),
     Move(u64, u64, u64),
     External(ExternalMedia),
+    Session(RestoredQueue, Vec<i64>),
 }
 
 /// What a surface hears from the runtime.

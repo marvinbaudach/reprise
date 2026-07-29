@@ -493,6 +493,9 @@ impl Worker {
             Body::Move(from, to, revision) => {
                 proxy.call::<_, _, CommandOutcome>(method, &(from, to, revision))
             }
+            Body::Session(context, play_next) => {
+                proxy.call::<_, _, CommandOutcome>(method, &(context, play_next))
+            }
             Body::External(media) => proxy.call::<_, _, CommandOutcome>(
                 method,
                 &(
