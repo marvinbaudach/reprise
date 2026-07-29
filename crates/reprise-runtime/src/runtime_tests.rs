@@ -711,3 +711,6 @@ mod queue_revision;
 
 #[path = "runtime_outcome_tests.rs"]
 mod outcomes;
+
+#[path = "runtime_gapless_tests.rs"]
+mod gapless;
