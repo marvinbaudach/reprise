@@ -711,6 +711,26 @@ human. Rationale for changes lives in the git history.
   (`wanted_on_device`, `MTP-40`) counts as waiting, never as ready to copy —
   the intended set keeps the two visibly apart instead of silently filtering a
   waiting episode out of the result.
+- **MTP-42** [active] [core] — Design 7f's preparation phase
+  (`reprise_core::device_sync::preparation`) is a pure projection over
+  `MTP-41`'s waiting set, `NET-1a`'s global gate, `NET-3a`'s connectivity, and
+  the device's own "prepare before sync" switch. It resolves in this order:
+  1. `online-sources-enabled` off (`NET-1a`) means the phase does not exist at
+     all — not an empty phase, not a disabled switch, nothing shown.
+  2. No `wanted_on_device` episode is missing its file: nothing to prepare.
+  3. Offline (`NET-3`): the sync still runs and skips these files, which stay
+     marked wanted for the next attempt.
+  4. A metered connection, or the device's switch off: offered to the user
+     but not started.
+  5. Otherwise: planned, and starts alongside the sync.
+
+  Offline is checked before metered/switch-off on purpose: offline is a fact
+  about whether the download can run at all, metered and the switch are
+  policy about whether it should run given that it could. Offering a
+  download that cannot run either way would be a lie dressed up as a choice,
+  so a missing connection always wins over policy. Only the planned state
+  changes the primary sync button to "Download & sync"; every other state,
+  including offered, leaves it as a plain "Sync now".
 
 ## F. Settings & modals
 
