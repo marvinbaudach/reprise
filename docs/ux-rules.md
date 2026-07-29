@@ -759,7 +759,12 @@ human. Rationale for changes lives in the git history.
   is only a queue in front of that single executor, not an alternate one.
   Priority work never permanently starves the ordinary lane — once the
   priority lane runs dry, the worker resumes ordinary requests exactly where
-  it left off.
+  it left off. The executor itself is singular too, down to the function: the
+  GTK worker has no download body of its own — both lanes call
+  `reprise_core::podcasts::pipeline::download_episode`, the same function the
+  refresh pipeline's auto-download branch and MCP's `music_manage_episodes`
+  call, so the episode lookup, `NET-1a` gate, `.part` handling, and progress
+  emission cannot drift between a manual click and a preparation download.
 
 ## F. Settings & modals
 
