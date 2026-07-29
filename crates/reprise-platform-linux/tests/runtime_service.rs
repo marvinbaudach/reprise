@@ -147,11 +147,20 @@ impl Client {
         )
     }
 
+    /// `Disconnect` is not a command: it changes no state a client could be
+    /// told about, so it stays the one method that answers with nothing.
+    fn disconnect(&self) -> zbus::Result<()> {
+        self.proxy.call("Disconnect", &())
+    }
+
+    /// Every command answers with what it did, so the reply type is the
+    /// outcome rather than `()`. Declaring `()` here would decode a dict as
+    /// nothing and fail with a signature mismatch that says very little.
     fn call(
         &self,
         method: &str,
         body: &(impl serde::ser::Serialize + zvariant::DynamicType),
-    ) -> zbus::Result<()> {
+    ) -> zbus::Result<reprise_runtime_protocol::command::CommandOutcome> {
         self.proxy.call(method, body)
     }
 }
@@ -329,9 +338,7 @@ fn a_runtime_nobody_is_using_shuts_itself_down() {
     {
         let client = served.client();
         client.connect().expect("the handshake succeeds");
-        client
-            .call("Disconnect", &())
-            .expect("saying goodbye works");
+        client.disconnect().expect("saying goodbye works");
     }
 
     served.wait_for_shutdown();

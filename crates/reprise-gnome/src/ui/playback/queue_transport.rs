@@ -491,7 +491,7 @@ impl PlayerController {
                             .iter()
                             .map(|offset| base + 1 + offset)
                             .collect();
-                        queue.remove_order_positions(&positions)
+                        queue.remove_order_positions(&positions) > 0
                     }
                     None => false,
                 }
@@ -641,10 +641,10 @@ impl PlayerController {
             let immediate = queue.remove_ids(&plan.immediate);
             let duplicates = plan
                 .after_loaded_track
-                .is_some_and(|id| queue.remove_ids_except_current(&[id]));
+                .is_some_and(|id| queue.remove_ids_except_current(&[id]) > 0);
             immediate || duplicates
         };
-        let pending_changed = self.up_next.borrow_mut().remove_ids(ids);
+        let pending_changed = self.up_next.borrow_mut().remove_ids(ids) > 0;
         if self
             .current_up_next
             .get()

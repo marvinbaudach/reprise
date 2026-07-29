@@ -720,7 +720,7 @@ fn remove_order_positions_removes_single_occurrences_in_play_order() {
     let mut q = Queue::new();
     q.set_tracks(vec![10, 20, 10, 30], 0);
     // Remove the SECOND occurrence of 10 (order position 2) only.
-    assert!(q.remove_order_positions(&[2]));
+    assert_eq!(q.remove_order_positions(&[2]), 1);
     assert_eq!(q.ids_in_order(), vec![10, 20, 30]);
     assert_eq!(q.current(), Some(10));
 }
@@ -729,7 +729,7 @@ fn remove_order_positions_removes_single_occurrences_in_play_order() {
 fn remove_order_positions_on_current_advances_forward() {
     let mut q = Queue::new();
     q.set_tracks(vec![10, 20, 30], 1);
-    assert!(q.remove_order_positions(&[1]));
+    assert_eq!(q.remove_order_positions(&[1]), 1);
     assert_eq!(q.current(), Some(30));
     assert_eq!(q.ids_in_order(), vec![10, 30]);
 }
@@ -738,7 +738,7 @@ fn remove_order_positions_on_current_advances_forward() {
 fn remove_order_positions_ignores_out_of_range_and_reports_no_change() {
     let mut q = Queue::new();
     q.set_tracks(vec![10], 0);
-    assert!(!q.remove_order_positions(&[5]));
+    assert_eq!(q.remove_order_positions(&[5]), 0);
     assert_eq!(q.ids_in_order(), vec![10]);
 }
 

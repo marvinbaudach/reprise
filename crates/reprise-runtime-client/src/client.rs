@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use reprise_runtime_protocol::command::CommandOutcome;
 use reprise_runtime_protocol::runtime::RuntimeSnapshot;
 use reprise_runtime_protocol::PROTOCOL_VERSION;
 
@@ -53,6 +54,39 @@ pub struct RuntimeClient {
     /// once a later handshake succeeds. Without it the worker's own state is
     /// read too late — after a reconnection the caller never saw.
     generation: Arc<AtomicU64>,
+    /// Hands each `send` its own id. Two identical commands are otherwise
+    /// indistinguishable in the event stream — "remove row 0" twice is a
+    /// perfectly ordinary thing for a user to do — and a surface could not
+    /// tell which of them the outcome belonged to.
+    next_request: Arc<AtomicU64>,
+}
+
+/// Identifies one `send`, so its outcome can be recognised when it arrives.
+///
+/// Opaque and per-client: it means nothing to the runtime, which never sees
+/// it. Correlation is the client's own bookkeeping.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RequestId(u64);
+
+/// An id means nothing outside the client that minted it — the runtime never
+/// sees one — so it converts both ways freely: a surface that keeps its
+/// pending commands in a map wants the number, and a test wants to make one.
+impl From<RequestId> for u64 {
+    fn from(id: RequestId) -> Self {
+        id.0
+    }
+}
+
+impl From<u64> for RequestId {
+    fn from(raw: u64) -> Self {
+        Self(raw)
+    }
+}
+
+impl std::fmt::Display for RequestId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "request-{}", self.0)
+    }
 }
 
 /// The stream of state a surface follows.
@@ -86,13 +120,14 @@ impl RuntimeEvents {
 
 /// One unit of work for the client thread.
 enum Job {
-    /// Do it and report a failure as an event.
-    Send(RuntimeCommand, Generation),
+    /// Do it and report what it did — or that it failed — as an event
+    /// carrying the id `send` handed the caller.
+    Send(RuntimeCommand, Generation, RequestId),
     /// Do it and answer the caller.
     Call(
         RuntimeCommand,
         Generation,
-        async_channel::Sender<Result<(), ClientError>>,
+        async_channel::Sender<Result<CommandOutcome, ClientError>>,
     ),
     /// A signal arrived. Routed through the worker rather than straight to
     /// the surface so one thread decides the order everything is published
@@ -167,6 +202,7 @@ pub fn start_with_bus_name_and_version(
         RuntimeClient {
             requests,
             generation,
+            next_request: Arc::new(AtomicU64::new(1)),
         },
         RuntimeEvents { events: incoming },
     )
@@ -179,16 +215,20 @@ impl RuntimeClient {
     /// This is what a UI uses: a bus round trip on the main thread is a
     /// visible stall, and every command a user issues already has a visible
     /// consequence to wait for.
-    pub fn send(&self, command: RuntimeCommand) {
+    pub fn send(&self, command: RuntimeCommand) -> RequestId {
         let generation = self.generation.load(Ordering::SeqCst);
-        let _ = self.requests.send_blocking(Job::Send(command, generation));
+        let request = RequestId(self.next_request.fetch_add(1, Ordering::SeqCst));
+        let _ = self
+            .requests
+            .send_blocking(Job::Send(command, generation, request));
+        request
     }
 
     /// Sends a command and waits for its outcome.
     ///
     /// This is what a tool call uses: "did it work" *is* the result, and
     /// there is no interface to keep responsive.
-    pub fn call(&self, command: RuntimeCommand) -> Result<(), ClientError> {
+    pub fn call(&self, command: RuntimeCommand) -> Result<CommandOutcome, ClientError> {
         let (reply, answer) = async_channel::bounded(1);
         let generation = self.generation.load(Ordering::SeqCst);
         self.requests
@@ -234,12 +274,16 @@ impl Worker {
 
         while let Ok(job) = jobs.recv_blocking() {
             match job {
-                Job::Send(command, formed_in) => {
-                    if let Err(error) = self.invoke(&command, formed_in) {
-                        let _ = self
-                            .events
-                            .send_blocking(ClientEvent::CommandFailed { command, error });
-                    }
+                Job::Send(command, formed_in, request) => {
+                    let event = match self.invoke(&command, formed_in) {
+                        Ok(outcome) => ClientEvent::CommandCompleted { request, outcome },
+                        Err(error) => ClientEvent::CommandFailed {
+                            request,
+                            command,
+                            error,
+                        },
+                    };
+                    let _ = self.events.send_blocking(event);
                 }
                 Job::Call(command, formed_in, reply) => {
                     let _ = reply.send_blocking(self.invoke(&command, formed_in));
@@ -420,28 +464,36 @@ impl Worker {
     /// against state it never saw, which §9.5 calls the more dangerous of
     /// the two failures — so it fails instead, and the surface decides
     /// whether to offer it again.
-    fn invoke(&self, command: &RuntimeCommand, formed_in: Generation) -> Result<(), ClientError> {
+    fn invoke(
+        &self,
+        command: &RuntimeCommand,
+        formed_in: Generation,
+    ) -> Result<CommandOutcome, ClientError> {
         if !is_current(formed_in, self.generation.load(Ordering::SeqCst)) {
             return Err(ClientError::Unavailable("unavailable:not_connected".into()));
         }
         let proxy = self.proxy()?;
         let (method, body) = command.wire();
         let outcome = match body {
-            Body::None => proxy.call::<_, _, ()>(method, &()),
-            Body::Flag(value) => proxy.call::<_, _, ()>(method, &(value,)),
-            Body::Volume(value) => proxy.call::<_, _, ()>(method, &(value,)),
-            Body::Delta(value) | Body::Id(value) => proxy.call::<_, _, ()>(method, &(value,)),
-            Body::Text(value) => proxy.call::<_, _, ()>(method, &(value,)),
-            Body::Ids(values) => proxy.call::<_, _, ()>(method, &(values,)),
-            Body::Tracks(ids, start) => proxy.call::<_, _, ()>(method, &(ids, start)),
+            Body::None => proxy.call::<_, _, CommandOutcome>(method, &()),
+            Body::Flag(value) => proxy.call::<_, _, CommandOutcome>(method, &(value,)),
+            Body::Volume(value) => proxy.call::<_, _, CommandOutcome>(method, &(value,)),
+            Body::Delta(value) | Body::Id(value) => {
+                proxy.call::<_, _, CommandOutcome>(method, &(value,))
+            }
+            Body::Text(value) => proxy.call::<_, _, CommandOutcome>(method, &(value,)),
+            Body::Ids(values) => proxy.call::<_, _, CommandOutcome>(method, &(values,)),
+            Body::Tracks(ids, start) => proxy.call::<_, _, CommandOutcome>(method, &(ids, start)),
             Body::Position(position, revision) => {
-                proxy.call::<_, _, ()>(method, &(position, revision))
+                proxy.call::<_, _, CommandOutcome>(method, &(position, revision))
             }
             Body::Positions(positions, revision) => {
-                proxy.call::<_, _, ()>(method, &(positions, revision))
+                proxy.call::<_, _, CommandOutcome>(method, &(positions, revision))
             }
-            Body::Move(from, to, revision) => proxy.call::<_, _, ()>(method, &(from, to, revision)),
-            Body::External(media) => proxy.call::<_, _, ()>(
+            Body::Move(from, to, revision) => {
+                proxy.call::<_, _, CommandOutcome>(method, &(from, to, revision))
+            }
+            Body::External(media) => proxy.call::<_, _, CommandOutcome>(
                 method,
                 &(
                     media.location,

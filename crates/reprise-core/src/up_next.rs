@@ -74,11 +74,14 @@ impl UpNextQueue {
         before - self.ids.len()
     }
 
-    pub fn remove_ids(&mut self, ids: &[i64]) -> bool {
+    /// Returns how many entries went, not merely whether any did: the same
+    /// track may sit in the queue more than once, and a caller reporting the
+    /// removal to a user needs the number it can show.
+    pub fn remove_ids(&mut self, ids: &[i64]) -> usize {
         let ids: HashSet<i64> = ids.iter().copied().collect();
         let before = self.ids.len();
         self.ids.retain(|id| !ids.contains(id));
-        before != self.ids.len()
+        before - self.ids.len()
     }
 
     pub fn truncate(&mut self, limit: usize) {
@@ -185,9 +188,13 @@ mod tests {
     fn remove_ids_removes_all_occurrences() {
         let mut queue = UpNextQueue::default();
         queue.append(&[1, 2, 1, 3, 2]);
-        assert!(queue.remove_ids(&[1, 9]));
+        assert_eq!(
+            queue.remove_ids(&[1, 9]),
+            2,
+            "both occurrences of 1 went; 9 was never there"
+        );
         assert_eq!(queue.ids(), &[2, 3, 2]);
-        assert!(!queue.remove_ids(&[8, 9]));
+        assert_eq!(queue.remove_ids(&[8, 9]), 0);
     }
 
     #[test]

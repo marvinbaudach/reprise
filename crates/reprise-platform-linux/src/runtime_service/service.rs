@@ -92,7 +92,7 @@ pub enum Request {
     Command {
         peer: String,
         command: Command,
-        reply: Reply<Result<(), RuntimeError>>,
+        reply: Reply<Result<reprise_runtime_protocol::command::CommandOutcome, RuntimeError>>,
     },
     /// The bus reported that a peer's name has no owner any more.
     PeerVanished { peer: String },
