@@ -126,6 +126,16 @@ impl PodcastsFilterBar {
         self.filter.borrow().clone()
     }
 
+    /// `POD-9`: the rendered header line — the library summary or, once a
+    /// filter narrows the view, the "shown of total" count `set_context`
+    /// writes into `result`. Exists purely so a test can prove the header
+    /// text `podcasts_view::render` computes actually reaches this widget,
+    /// rather than only re-proving the pure projection/formatting `set_context`
+    /// itself delegates to.
+    pub(super) fn result_text(&self) -> String {
+        self.result.text().to_string()
+    }
+
     pub(super) fn set_on_changed(&self, callback: impl Fn(PodcastFilter) + 'static) {
         *self.on_changed.borrow_mut() = Some(Rc::new(callback));
     }

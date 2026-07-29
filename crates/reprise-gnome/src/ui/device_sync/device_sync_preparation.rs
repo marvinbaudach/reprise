@@ -17,7 +17,7 @@
 //! 3. Hands off to the existing transfer machine once every download has
 //!    been attempted (successfully or not — a failed download simply stays
 //!    `wanted_on_device` and is skipped by the transfer, exactly like
-//!    `MTP-41`'s `waiting` set already handles a missing file).
+//!    `MTP-45`'s `waiting` set already handles a missing file).
 //!
 //! Cancelling only stops issuing *further* downloads — nothing here ever
 //! deletes or rolls back a file that already finished, because nothing in

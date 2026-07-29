@@ -1,4 +1,4 @@
-//! Content selection per sync category (`MTP-41`) — turn E2.
+//! Content selection per sync category (`MTP-45`) — turn E2.
 //!
 //! Design 7a/7b name the shape each category's "what will sync" summary
 //! must answer: Playlists reads "2 of 4 selected · 278 tracks", YouTube
@@ -37,7 +37,7 @@
 //! recompute_delta_silent`) calls [`select_episodes`] over
 //! `podcasts::query_selection_candidates_for_device`'s facts and only feeds
 //! `EpisodeSelectionResult::ready` into `podcasts::build_plan` — that is
-//! what actually gates a podcast/YouTube episode reaching a device (`MTP-41`).
+//! what actually gates a podcast/YouTube episode reaching a device (`MTP-45`).
 //! What remains unbuilt is design 6b's per-channel toggle *UI*: the
 //! [`YoutubeChannelToggle`]/[`summarize_youtube_selection`] pair stays plain
 //! input data with no persisted backing or GTK surface yet.
@@ -125,7 +125,7 @@ pub fn summarize_youtube_selection(
 }
 
 /// "N of M shows selected" (`MTP-37`) — podcast episodes have no per-show
-/// count cap (`MTP-41`'s uncapped "unplayed downloads only" rule), so this
+/// count cap (`MTP-45`'s uncapped "unplayed downloads only" rule), so this
 /// carries no `latest`-style field the way [`YoutubeSelectionSummary`]
 /// does. Built directly from
 /// [`crate::podcasts::phone_sync::selection_summary`]'s live counts, not
@@ -187,7 +187,7 @@ pub fn resolve_latest_per_channel(default_latest: usize, channel_override: Optio
     }
 }
 
-/// The intended episode set for a category (`MTP-41`): wanted episodes that
+/// The intended episode set for a category (`MTP-45`): wanted episodes that
 /// already have a local file, and wanted episodes still waiting on one
 /// (`MTP-40`). `waiting` must never be treated as "to copy" — see the
 /// module docs.
@@ -204,7 +204,7 @@ impl EpisodeSelectionResult {
     }
 }
 
-/// `MTP-41`: the intended file set for a podcast/YouTube category, given
+/// `MTP-45`: the intended file set for a podcast/YouTube category, given
 /// the selection rule and the library state (`candidates`). Wanted-but-
 /// missing episodes land in [`EpisodeSelectionResult::waiting`], never in
 /// `ready`.
@@ -314,7 +314,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_41_playlist_selection_summary_counts_selected_available_and_total() {
+    fn mtp_45_playlist_selection_summary_counts_selected_available_and_total() {
         let rows = vec![
             row(1, true, true),
             row(2, false, true),
@@ -340,7 +340,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_41_youtube_selection_summary_counts_enabled_channels_and_names_the_rule() {
+    fn mtp_45_youtube_selection_summary_counts_enabled_channels_and_names_the_rule() {
         let channels = vec![
             YoutubeChannelToggle {
                 subscription_id: 1,
@@ -370,7 +370,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_41_youtube_selection_caps_each_enabled_channel_to_its_latest_n() {
+    fn mtp_45_youtube_selection_caps_each_enabled_channel_to_its_latest_n() {
         let candidates = vec![
             candidate(1, 10, 100, false, LocalAvailability::Available),
             candidate(2, 10, 200, false, LocalAvailability::Available),
@@ -393,7 +393,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_41_podcast_selection_wants_every_unplayed_download_from_enabled_shows_uncapped() {
+    fn mtp_45_podcast_selection_wants_every_unplayed_download_from_enabled_shows_uncapped() {
         let candidates = vec![
             candidate(1, 1, 100, false, LocalAvailability::Available),
             candidate(2, 1, 200, true, LocalAvailability::Available), // played
@@ -416,7 +416,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_41_a_wanted_episode_without_a_local_file_waits_instead_of_being_ready_to_copy() {
+    fn mtp_45_a_wanted_episode_without_a_local_file_waits_instead_of_being_ready_to_copy() {
         let candidates = vec![
             candidate(1, 10, 100, false, LocalAvailability::Available),
             candidate(2, 10, 200, false, LocalAvailability::Missing),

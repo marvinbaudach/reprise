@@ -364,6 +364,16 @@ fn attach_candidates(
     });
 }
 
+/// `POD-13`: turn a provider failure into the fixed, classified reason the
+/// download path (`pipeline::download_episode`) and the MCP path
+/// (`source_actions::podcast_source_error`) already use, instead of a raw
+/// `PodcastError::to_string()` — yt-dlp's first stderr line in particular can
+/// echo a URL, a query token, a credential-like value or a local filesystem
+/// path, and none of that belongs in a dialog the user reads.
+fn preview_error(error: &podcasts::PodcastError) -> String {
+    error.classify().to_owned()
+}
+
 #[allow(clippy::too_many_arguments)]
 fn preview(
     request_generation: u64,
@@ -389,10 +399,15 @@ fn preview(
         move || -> Result<Preview, String> {
             match kind {
                 PodcastKind::Rss => {
+                    // POD-13: classify rather than forward `PodcastError`'s
+                    // `Display` text — the same classifier the download path
+                    // (`pipeline::download_episode`) and the MCP path
+                    // (`source_actions::podcast_source_error`) already use, so
+                    // this preview never becomes a second, drifting sanitiser.
                     let response =
-                        podcasts::http::get(&task_url).map_err(|error| error.to_string())?;
+                        podcasts::http::get(&task_url).map_err(|error| preview_error(&error))?;
                     let feed = podcasts::feed::parse_feed(&response.body, import_count)
-                        .map_err(|error| error.to_string())?;
+                        .map_err(|error| preview_error(&error))?;
                     let count = feed.episodes.len();
                     let guids = feed
                         .episodes
@@ -410,9 +425,12 @@ fn preview(
                     })
                 }
                 PodcastKind::Youtube => {
+                    // POD-13: yt-dlp's raw stderr line can carry a URL, a
+                    // query token or a local path — classify it the same way
+                    // the download and MCP paths do rather than showing it.
                     let listing = podcasts::ytdlp::YtDlp::discover(ytdlp_path.as_deref())
                         .list(&task_url)
-                        .map_err(|error| error.to_string())?;
+                        .map_err(|error| preview_error(&error))?;
                     let count = listing.entries.len();
                     let guids = listing
                         .entries
