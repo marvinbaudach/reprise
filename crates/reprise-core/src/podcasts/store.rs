@@ -122,7 +122,7 @@ pub fn active_subscriptions(conn: &Connection) -> Result<Vec<SubscriptionRow>, r
     let mut statement = conn.prepare(
         "SELECT id, kind, feed_url, title, author, image_url, etag,
                 last_modified, last_fetch_at, last_outcome, auto_download,
-                sync_to_phone, added_at, removed_at
+                sync_to_phone, latest_per_channel, added_at, removed_at
          FROM podcast_subscriptions
          WHERE removed_at IS NULL
          ORDER BY title COLLATE NOCASE, id",
@@ -138,13 +138,58 @@ pub fn subscription(
     conn.query_row(
         "SELECT id, kind, feed_url, title, author, image_url, etag,
                 last_modified, last_fetch_at, last_outcome, auto_download,
-                sync_to_phone, added_at, removed_at
+                sync_to_phone, latest_per_channel, added_at, removed_at
          FROM podcast_subscriptions
          WHERE id = ?1",
         [id],
         subscription_from_row,
     )
     .optional()
+}
+
+/// `MTP-36`: every persisted per-channel override among `subscription_ids`,
+/// keyed by subscription id — a channel with no override (the common case,
+/// especially before design 6b's channel surface exists) is simply absent
+/// from the map rather than present with a placeholder, so the caller's
+/// fallback to the global default (`resolve_latest_per_channel`) is the
+/// only place "no override" is decided.
+pub fn latest_per_channel_overrides(
+    conn: &Connection,
+    subscription_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, i64>, rusqlite::Error> {
+    if subscription_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let placeholders = (1..=subscription_ids.len())
+        .map(|i| format!("?{i}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "SELECT id, latest_per_channel FROM podcast_subscriptions
+         WHERE id IN ({placeholders}) AND latest_per_channel IS NOT NULL"
+    );
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement.query_map(rusqlite::params_from_iter(subscription_ids.iter()), |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+    })?;
+    rows.collect()
+}
+
+/// `MTP-36`: sets or clears (`None`) this channel's override of the global
+/// "latest N per channel" default. No GTK surface calls this yet (design
+/// 6b's channel page has no control for it) — it exists so the persistence
+/// and the live pipeline can be tested and used independently of that UI.
+pub fn set_latest_per_channel(
+    conn: &Connection,
+    id: i64,
+    value: Option<i64>,
+) -> Result<bool, rusqlite::Error> {
+    Ok(conn.execute(
+        "UPDATE podcast_subscriptions
+         SET latest_per_channel = ?2
+         WHERE id = ?1 AND removed_at IS NULL",
+        params![id, value],
+    )? != 0)
 }
 
 pub fn count_subscriptions(conn: &Connection) -> Result<usize, rusqlite::Error> {
@@ -488,8 +533,9 @@ fn subscription_from_row(row: &rusqlite::Row<'_>) -> Result<SubscriptionRow, rus
         last_outcome: row.get(9)?,
         auto_download: row.get(10)?,
         sync_to_phone: row.get(11)?,
-        added_at: row.get(12)?,
-        removed_at: row.get(13)?,
+        latest_per_channel: row.get(12)?,
+        added_at: row.get(13)?,
+        removed_at: row.get(14)?,
     })
 }
 

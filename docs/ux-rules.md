@@ -616,28 +616,36 @@ human. Rationale for changes lives in the git history.
   uses (`MTP-31`), and leaves the dialog open instead of closing it as it does
   on success. A refused save must never look like a successful one; the chosen
   selection stays visible so that nothing is discarded silently.
-- **MTP-36** [planned] [core] — `MTP-41`'s YouTube rule "the latest N episodes
+- **MTP-36** [active] [core] — `MTP-41`'s YouTube rule "the latest N episodes
   per enabled channel, regardless of download state" names N; this is where
-  that value lives. **Decided 2026-07-29:** a global default (default **5**),
-  overridable per channel — the same shape as `O-5` for "Keep N downloaded", so
-  that both quantity limits share a single mental model rather than two
-  different ones. N is **device-independent**: since `E-5` there is exactly one
-  device, and storing it per device would be effort without meaning. **Decided
-  2026-07-29 (the zero question):** a value of 0 means **unlimited**, here and
-  in every other numeric sync setting — the size cap has modelled 0 that way
-  since `MTP-38` (`cap_bytes` is an `Option`), and two adjacent numbers on one
-  page must not read 0 in opposite directions. "Nothing from this channel" is
-  what the channel toggle from 6b says; it is not a quantity, so it is not
+  that value lives. **Decided 2026-07-29:** a global default (default **5**,
+  `podcasts::config::PodcastConfig::latest_per_channel_default`, key
+  `podcasts.latest_per_channel_default`), overridable per channel
+  (`podcast_subscriptions.latest_per_channel`, schema v47) — the same shape as
+  `O-5` for "Keep N downloaded", so that both quantity limits share a single
+  mental model rather than two different ones. N is **device-independent**:
+  since `E-5` there is exactly one device, and storing it per device would be
+  effort without meaning — it lives beside the other global podcast config,
+  never on `DeviceSettings` or a per-device `SyncTarget`. **Decided 2026-07-29
+  (the zero question):** a value of 0 means **unlimited**, here and in every
+  other numeric sync setting — the size cap has modelled 0 that way since
+  `MTP-38` (`cap_bytes` is an `Option`), and two adjacent numbers on one page
+  must not read 0 in opposite directions. "Nothing from this channel" is what
+  the channel toggle from 6b says; it is not a quantity, so it is not
   expressed by a quantity.
 
-  Until 6b's channel surface sets this value, the live pipeline
-  (`device_sync_compact::recompute_delta_silent`) treats N as unlimited
-  (`EpisodeSelectionRule::LatestPerChannel { latest: usize::MAX, .. }`). That is
-  deliberately the existing behaviour and not a silent change; meanwhile the
-  intended set is bounded solely by `MTP-41`'s candidate limit (downloaded
-  episodes plus the missing ones explicitly wanted via `wanted_on_device`,
-  `MTP-40`). This rule becomes `[active]` once the persistence and the surface
-  exist — not before.
+  The live pipeline (`device_sync_compact::recompute_delta_silent`) resolves
+  each enabled channel's effective N via
+  `selection::resolve_latest_per_channel` (the channel's override if one is
+  persisted, else the global default) before building
+  `EpisodeSelectionRule::LatestPerChannel`'s `channel_latest` map, and that
+  map — not a single shared `latest` — is what actually bounds each channel's
+  selection now. This rule is `[core]` only: design 6b's channel page has no
+  control yet for setting a channel's own override, so today it is set
+  through `podcasts::store::set_latest_per_channel` alone, with no GTK
+  surface. That gap is tracked, not hidden behind `[planned]` — the
+  persistence, the default, and the live wiring this rule actually decides
+  are real and tested (`mtp_36_…`), which is what `[active]` asserts here.
 - **MTP-37** [active] [core] [gtk] — Replaces `MTP-28`'s addendum of 2026-07-28
   (Turn 6/7 plan `E-6`, `E-8`): Reprise supports exactly one MTP device
   (`E-5`), so the sole justification for a global Preferences surface — "applies
@@ -662,9 +670,13 @@ human. Rationale for changes lives in the git history.
      operated on the podcast and channel pages and in the playlist list
      (`POD-12`). This line gets **no** second place to operate it: toggling
      individual channels and shows stays where it is, so that two places can
-     never claim the same selection. Without `MTP-36`'s (still `[planned]`)
-     persisted "latest N per channel", the "latest K each" suffix is omitted
-     for YouTube rather than asserting a number that enforces nothing.
+     never claim the same selection. YouTube's "latest K each" suffix now
+     reports `MTP-36`'s persisted global default (a per-channel override
+     changes what actually syncs, but this one-line summary has room for a
+     single number, so it shows the default that applies absent an
+     override) — a caller with no resolved value yet (a fresh
+     `YoutubeSelectionSummary::default()`, before the first recompute) still
+     omits the clause rather than asserting a number that enforces nothing.
 
   The cross-reference "rules from Preferences" / "Same on all devices"
   disappears with nothing in its place — with one device, "Same on all devices"

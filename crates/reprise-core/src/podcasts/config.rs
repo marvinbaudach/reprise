@@ -14,10 +14,18 @@ pub const REFRESH_HOURS_KEY: &str = "sources.refresh_hours";
 pub const FILTER_UNPLAYED_KEY: &str = "podcasts.filter.unplayed";
 pub const FILTER_SHOW_KEY: &str = "podcasts.filter.show";
 pub const FILTER_SOURCE_KEY: &str = "podcasts.filter.source";
+/// `MTP-36`: the global "latest N per channel" default for the phone-sync
+/// YouTube target, overridable per channel
+/// (`podcasts::store::latest_per_channel_overrides`). Device-independent —
+/// `E-5` means there is exactly one MTP device, so this lives here rather
+/// than on `DeviceSettings` or a per-device sync target.
+pub const LATEST_PER_CHANNEL_DEFAULT_KEY: &str = "podcasts.latest_per_channel_default";
 
 pub const DEFAULT_IMPORT_COUNT: usize = 25;
 pub const DEFAULT_YOUTUBE_IMPORT_COUNT: usize = 10;
 pub const DEFAULT_REFRESH_HOURS: i64 = 6;
+/// `MTP-36`: decided 2026-07-29 — a global default of 5.
+pub const DEFAULT_LATEST_PER_CHANNEL: usize = 5;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum CleanupPolicy {
@@ -61,6 +69,11 @@ pub struct PodcastConfig {
     pub youtube_hide_shorts_default: bool,
     pub ytdlp_path: Option<String>,
     pub refresh_hours: i64,
+    /// `MTP-36`: the global "latest N per channel" default for YouTube
+    /// phone sync — `0` means unlimited, like every other numeric sync
+    /// setting since `MTP-38`. A subscription's own override (`podcasts::
+    /// store::latest_per_channel_overrides`) always wins over this.
+    pub latest_per_channel_default: usize,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -96,6 +109,12 @@ pub fn load(conn: &Connection) -> Result<PodcastConfig, rusqlite::Error> {
         refresh_hours: integer_setting(conn, REFRESH_HOURS_KEY)?
             .unwrap_or(DEFAULT_REFRESH_HOURS)
             .clamp(1, 24),
+        // `MTP-36`: 0 is a valid, meaningful value (unlimited) — the clamp
+        // floor stays 0, unlike the other counts on this page which have no
+        // "unlimited" reading.
+        latest_per_channel_default: integer_setting(conn, LATEST_PER_CHANNEL_DEFAULT_KEY)?
+            .unwrap_or(DEFAULT_LATEST_PER_CHANNEL as i64)
+            .clamp(0, 100) as usize,
     })
 }
 
@@ -155,6 +174,7 @@ mod tests {
         assert!(config.youtube_hide_shorts_default);
         assert_eq!(config.ytdlp_path, None);
         assert_eq!(config.refresh_hours, 6);
+        assert_eq!(config.latest_per_channel_default, 5);
     }
 
     #[test]
@@ -172,6 +192,8 @@ mod tests {
         crate::library::settings::set_bool(&conn, YOUTUBE_HIDE_SHORTS_DEFAULT_KEY, false).unwrap();
         crate::library::settings::set_setting(&conn, YTDLP_PATH_KEY, " /opt/yt-dlp ").unwrap();
         crate::library::settings::set_setting(&conn, REFRESH_HOURS_KEY, "0").unwrap();
+        crate::library::settings::set_setting(&conn, LATEST_PER_CHANNEL_DEFAULT_KEY, "900")
+            .unwrap();
 
         let config = load(&conn).unwrap();
         assert_eq!(config.import_count, 100);
@@ -181,6 +203,19 @@ mod tests {
         assert!(!config.youtube_hide_shorts_default);
         assert_eq!(config.ytdlp_path.as_deref(), Some("/opt/yt-dlp"));
         assert_eq!(config.refresh_hours, 1);
+        assert_eq!(config.latest_per_channel_default, 100);
+    }
+
+    #[test]
+    fn mtp_36_latest_per_channel_default_clamp_floor_is_zero_not_the_documented_minimum() {
+        // Unlike every other count on this page, 0 is a valid, meaningful
+        // value here (unlimited) — the clamp floor must not reject it back
+        // up to some positive minimum the way `import_count`'s floor of 5
+        // would.
+        let conn = conn();
+        crate::library::settings::set_setting(&conn, LATEST_PER_CHANNEL_DEFAULT_KEY, "0").unwrap();
+
+        assert_eq!(load(&conn).unwrap().latest_per_channel_default, 0);
     }
 
     #[test]

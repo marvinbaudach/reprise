@@ -265,3 +265,58 @@ fn pod_6_episode_removal_undo_and_commit_block_rss_and_youtube_reimport() {
         );
     }
 }
+
+#[test]
+fn mtp_36_a_fresh_channel_has_no_override_and_setting_persists_it_including_zero() {
+    let conn = conn();
+    let subscription_id = add_or_restore(
+        &conn,
+        &NewSubscription {
+            kind: PodcastKind::Youtube,
+            ..subscription_draft()
+        },
+        10,
+    )
+    .unwrap();
+
+    assert_eq!(
+        subscription(&conn, subscription_id)
+            .unwrap()
+            .unwrap()
+            .latest_per_channel,
+        None,
+        "a channel nobody has touched has no override"
+    );
+    assert!(latest_per_channel_overrides(&conn, &[subscription_id])
+        .unwrap()
+        .is_empty());
+
+    assert!(set_latest_per_channel(&conn, subscription_id, Some(2)).unwrap());
+    assert_eq!(
+        subscription(&conn, subscription_id)
+            .unwrap()
+            .unwrap()
+            .latest_per_channel,
+        Some(2)
+    );
+    assert_eq!(
+        latest_per_channel_overrides(&conn, &[subscription_id]).unwrap(),
+        std::collections::HashMap::from([(subscription_id, 2)])
+    );
+
+    // 0 must persist as 0 (unlimited), never fall back to "no override".
+    assert!(set_latest_per_channel(&conn, subscription_id, Some(0)).unwrap());
+    assert_eq!(
+        latest_per_channel_overrides(&conn, &[subscription_id]).unwrap(),
+        std::collections::HashMap::from([(subscription_id, 0)]),
+        "an explicit 0 override must still be reported, not treated as absent"
+    );
+
+    assert!(set_latest_per_channel(&conn, subscription_id, None).unwrap());
+    assert!(
+        latest_per_channel_overrides(&conn, &[subscription_id])
+            .unwrap()
+            .is_empty(),
+        "clearing the override removes it from the map again"
+    );
+}
