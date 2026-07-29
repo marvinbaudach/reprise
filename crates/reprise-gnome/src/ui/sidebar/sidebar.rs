@@ -80,7 +80,7 @@ pub(in crate::ui) type RowEntry = (gtk4::ListBoxRow, ViewSource, String);
 /// `Shared::on_select`'s doc comment for the full contract.
 type OnSelect = Rc<dyn Fn(ViewSource, String)>;
 pub(in crate::ui) type OnRemoveMissing = Rc<dyn Fn(&[i64])>;
-use super::sidebar_dnd::{OnConversionDrop, OnQueueDrop};
+use super::sidebar_dnd::OnQueueDrop;
 use super::sidebar_row_wiring::{wire_focus_leave_resync, wire_row_activated, wire_row_selected};
 
 /// `pub(in crate::ui)` (visible to `crate::ui` and its descendants, e.g. `ui::
@@ -175,9 +175,6 @@ pub(in crate::ui) struct Shared {
     /// count *and* reloads the Queue view if visible (trigger inventory
     /// item 6 in `Sidebar::refresh`'s doc comment).
     pub(in crate::ui) on_queue_drop: RefCell<Option<OnQueueDrop>>,
-    /// Enqueues a dragged selection as one instrumental batch when dropped on
-    /// the gated Conversions row.
-    pub(in crate::ui) on_conversion_drop: RefCell<Option<OnConversionDrop>>,
     /// The window, for the "New playlist" dialog and `ui::sidebar_export`'s
     /// export dialog plus playlist-delete confirmation — hence `pub(in crate::ui)`,
     /// mirroring `conn`/`on_tracks_added`
@@ -246,7 +243,6 @@ impl Sidebar {
             on_tracks_added: RefCell::new(None),
             on_remove_missing: RefCell::new(None),
             on_queue_drop: RefCell::new(None),
-            on_conversion_drop: RefCell::new(None),
             window: window.downgrade(),
             toast_overlay: glib::WeakRef::new(),
             refresh_count: Cell::new(0),

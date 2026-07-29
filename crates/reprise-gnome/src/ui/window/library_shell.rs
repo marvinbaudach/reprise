@@ -225,14 +225,6 @@ pub(in crate::ui) fn wire_source_routing(
         } else if matches!(source, ViewSource::Radio) {
             radio_view.refresh();
             super::content_stack::show_page(&content_stack, "radio");
-        } else if matches!(source, ViewSource::Conversions) {
-            // INST-13: the conversion/staging view lives on its own page. Ensure
-            // it is installed (under the same experimental gate as the sidebar
-            // row) BEFORE selecting it — the row can appear after a live
-            // toggle-on, so without this the selection would land on a missing
-            // page and the content would silently stay put.
-            crate::ui::instrumental::conversion_wiring::ensure_page_installed();
-            super::content_stack::show_page(&content_stack, "conversions");
         } else {
             super::content_stack::show_page(&content_stack, "library");
             track_list.set_source(source);

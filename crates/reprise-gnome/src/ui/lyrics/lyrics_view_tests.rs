@@ -20,17 +20,17 @@ const MAX_THEME_ROW_PADDING: f64 = 24.0;
 /// Pumps the main loop until `predicate` holds or the deadline passes.
 /// A single non-blocking iteration does not let GTK allocate a freshly
 /// presented window, so geometry assertions raced the layout.
-fn settle_until(milliseconds: u64, mut predicate: impl FnMut() -> bool) -> bool {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(milliseconds);
-    loop {
-        if predicate() {
-            return true;
-        }
-        if std::time::Instant::now() >= deadline {
-            return false;
-        }
-        gtk4::glib::MainContext::default().iteration(false);
-    }
+/// Waits for a lyrics-view condition.
+///
+/// Every one of these waits on the frame clock — a height allocation, a scroll
+/// animation starting or finishing — so the budget is wall-clock time in which
+/// enough frames have to arrive. One second was too tight: under parallel
+/// display-test workers the frames are simply slower, and
+/// `npp_6_highlight_reflow_does_not_snap_after_centering` failed on
+/// "scroll animation did not finish" while the animation was still running
+/// correctly.
+fn settle_until(predicate: impl FnMut() -> bool) -> bool {
+    crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, predicate)
 }
 
 #[test]
@@ -331,14 +331,14 @@ fn npp_6_highlight_reflow_does_not_snap_after_centering() {
         .child(view.widget())
         .build();
     window.present();
-    assert!(settle_until(1_000, || view.widget().height() > 0));
+    assert!(settle_until(|| view.widget().height() > 0));
 
     view.set_active_line(Some(19));
     wait_for_scroll_value(&view, |value, maximum| value > 0.0 && value < maximum);
-    assert!(settle_until(1_000, || !view.has_scroll_animation()));
+    assert!(settle_until(|| !view.has_scroll_animation()));
 
     view.set_active_line(Some(20));
-    assert!(settle_until(1_000, || view.has_scroll_animation()));
+    assert!(settle_until(|| view.has_scroll_animation()));
     let highlighted = view.line_labels()[20].clone();
     let pre_reflow_height = highlighted.height();
     // Font metrics differ across themes and CI images, so a text string
@@ -346,7 +346,7 @@ fn npp_6_highlight_reflow_does_not_snap_after_centering() {
     // Force the same late row-allocation growth while the highlight scroll is
     // running. The previous completion callback then exposed its hard snap.
     highlighted.set_height_request(pre_reflow_height + 18);
-    assert!(settle_until(1_000, || highlighted.height() > pre_reflow_height));
+    assert!(settle_until(|| highlighted.height() > pre_reflow_height));
     let active_height = view.line_labels()[20].height();
     assert!(
         active_height > pre_reflow_height,
@@ -354,9 +354,11 @@ fn npp_6_highlight_reflow_does_not_snap_after_centering() {
     );
 
     let mut samples = vec![view.scroll_values().0];
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
-    while view.has_scroll_animation() && std::time::Instant::now() < deadline {
-        gtk4::glib::MainContext::default().iteration(true);
+    // Sampling and waiting are the same loop: every turn records the scroll
+    // position it observes and reports whether the animation has ended. The
+    // budget has to be generous for the same reason the other waits here do —
+    // it is wall-clock time in which frames must arrive.
+    settle_until(|| {
         let value = view.scroll_values().0;
         if samples
             .last()
@@ -364,7 +366,8 @@ fn npp_6_highlight_reflow_does_not_snap_after_centering() {
         {
             samples.push(value);
         }
-    }
+        !view.has_scroll_animation()
+    });
     assert!(
         !view.has_scroll_animation(),
         "scroll animation did not finish"
@@ -373,27 +376,39 @@ fn npp_6_highlight_reflow_does_not_snap_after_centering() {
         samples.len() >= 3,
         "scroll animation produced too few samples: {samples:?}"
     );
-    let terminal_step = (samples[samples.len() - 1] - samples[samples.len() - 2]).abs();
+    // A snap is a discontinuity: the animation's last step is far larger than
+    // the steps that led to it. An absolute threshold cannot say that, because
+    // every step grows when frames are sparse — under parallel display-test
+    // workers this failed with a 3.91px final step among 4.28px and 3.46px
+    // ones, which is coarse pacing, not a snap. Comparing the last step to the
+    // largest earlier one is frame-rate independent and is what the rule means.
+    let steps = samples
+        .windows(2)
+        .map(|pair| (pair[1] - pair[0]).abs())
+        .collect::<Vec<_>>();
+    let terminal_step = *steps.last().expect("three samples yield two steps");
+    let largest_earlier_step = steps[..steps.len() - 1]
+        .iter()
+        .copied()
+        .fold(0.0_f64, f64::max);
+    let allowed = largest_earlier_step.max(2.0);
     assert!(
-        terminal_step <= 2.0,
-        "highlight reflow caused a terminal {terminal_step:.2}px scroll snap: {samples:?}"
+        terminal_step <= allowed,
+        "highlight reflow caused a terminal {terminal_step:.2}px scroll snap,          larger than every earlier step ({largest_earlier_step:.2}px): {samples:?}"
     );
     window.close();
 }
 
 fn wait_for_scroll_value(view: &LyricsView, predicate: impl Fn(f64, f64) -> bool) {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-    loop {
+    let settled = settle_until(|| {
         let (value, maximum) = view.scroll_values();
-        if predicate(value, maximum) {
-            return;
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "lyrics scroll did not settle: value={value}, maximum={maximum}"
-        );
-        gtk4::glib::MainContext::default().iteration(true);
-    }
+        predicate(value, maximum)
+    });
+    let (value, maximum) = view.scroll_values();
+    assert!(
+        settled,
+        "lyrics scroll did not settle: value={value}, maximum={maximum}"
+    );
 }
 
 #[test]
@@ -412,7 +427,7 @@ fn lyr_4_start_of_song_is_not_centered() {
         .child(view.widget())
         .build();
     window.present();
-    settle_until(1000, || view.widget().height() > 0);
+    settle_until(|| view.widget().height() > 0);
 
     // The first line sits at the content margin plus whatever padding the
     // theme gives a ListBoxRow, so the offset must not be pinned to the

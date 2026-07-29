@@ -555,6 +555,7 @@ mod tests {
             podcast_bytes: 0,
             youtube_selection: Default::default(),
             podcast_selection: Default::default(),
+            history: Vec::new(),
             page: Default::default(),
         }
     }

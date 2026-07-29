@@ -33,15 +33,19 @@ fn text_column(
             .hexpand(true)
             .ellipsize(gtk4::pango::EllipsizeMode::End)
             .build();
-        podcasts_context_menu::wire_gesture(&label, item);
-        item.set_child(Some(&label));
+        let surface = crate::ui::source_context_surface::wrap(&label);
+        podcasts_context_menu::wire_gesture(&surface, item);
+        item.set_child(Some(&surface));
     });
     let is_playing = is_playing.clone();
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
-        let Some(label) = item.child().and_downcast::<gtk4::Label>() else {
+        let Some(surface) = item.child().and_downcast::<gtk4::Box>() else {
+            return;
+        };
+        let Some(label) = surface.first_child().and_downcast::<gtk4::Label>() else {
             return;
         };
         let Some(object) = item.item().and_downcast::<PodcastEpisodeObject>() else {
@@ -59,7 +63,10 @@ fn text_column(
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
-        if let Some(label) = item.child().and_downcast::<gtk4::Label>() {
+        let Some(surface) = item.child().and_downcast::<gtk4::Box>() else {
+            return;
+        };
+        if let Some(label) = surface.first_child().and_downcast::<gtk4::Label>() {
             label.set_text("");
             label.remove_css_class("reprise-podcast-playing");
         }
@@ -85,15 +92,19 @@ fn pill_column(view: &gtk4::ColumnView, title: &str, source: bool, is_playing: &
         let label = gtk4::Label::new(None);
         cell.append(&icon);
         cell.append(&label);
-        podcasts_context_menu::wire_gesture(&cell, item);
-        item.set_child(Some(&cell));
+        let surface = crate::ui::source_context_surface::wrap(&cell);
+        podcasts_context_menu::wire_gesture(&surface, item);
+        item.set_child(Some(&surface));
     });
     let is_playing = is_playing.clone();
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
-        let Some(cell) = item.child().and_downcast::<gtk4::Box>() else {
+        let Some(surface) = item.child().and_downcast::<gtk4::Box>() else {
+            return;
+        };
+        let Some(cell) = surface.first_child().and_downcast::<gtk4::Box>() else {
             return;
         };
         let Some(icon) = cell.first_child().and_downcast::<gtk4::Image>() else {
@@ -163,13 +174,18 @@ fn unsubscribe_column(view: &gtk4::ColumnView, on_unsubscribe: &OnUnsubscribe) {
             }
         });
         button.add_controller(motion);
-        item.set_child(Some(&button));
+        let surface = crate::ui::source_context_surface::wrap(&button);
+        podcasts_context_menu::wire_gesture(&surface, item);
+        item.set_child(Some(&surface));
     });
     factory.connect_bind(|_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
-        let Some(button) = item.child().and_downcast::<gtk4::Button>() else {
+        let Some(surface) = item.child().and_downcast::<gtk4::Box>() else {
+            return;
+        };
+        let Some(button) = surface.first_child().and_downcast::<gtk4::Button>() else {
             return;
         };
         let Some(row) = item.item().and_downcast::<PodcastEpisodeObject>() else {
@@ -242,4 +258,64 @@ pub(super) fn append_columns(
     );
     unsubscribe_column(view, on_unsubscribe);
     PodcastColumns { date }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use reprise_core::podcasts::PodcastKind;
+
+    use crate::ui::source_context_surface;
+
+    fn episode() -> EpisodeRow {
+        EpisodeRow {
+            id: 1,
+            subscription_id: 1,
+            guid: "g".into(),
+            title: "Episode".into(),
+            show: "Show".into(),
+            show_image_url: None,
+            kind: PodcastKind::Rss,
+            audio_url: "https://example.test/e.mp3".into(),
+            page_url: None,
+            published_at: None,
+            duration_secs: None,
+            downloaded_path: None,
+            downloaded_bytes: None,
+            played_at: None,
+            position_ms: 0,
+            first_seen_at: 1,
+        }
+    }
+
+    /// The whole row is one context-menu target — not just the text inside
+    /// each cell's padding. Built from the production factories, so a column
+    /// that forgets [`source_context_surface::wrap`] fails here.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn acc_1_every_point_of_a_podcast_row_reaches_the_context_menu() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        crate::ui::style::install_css_string_for_test(&source_context_surface::css());
+
+        let store = gtk4::gio::ListStore::new::<PodcastEpisodeObject>();
+        store.append(&PodcastEpisodeObject::new(episode()));
+        let view = gtk4::ColumnView::new(Some(gtk4::SingleSelection::new(Some(store))));
+        view.add_css_class(source_context_surface::TABLE_CSS_CLASS);
+        let on_unsubscribe: OnUnsubscribe = Rc::new(|_| {});
+        let is_playing: IsPlaying = Rc::new(|_| false);
+        append_columns(&view, &on_unsubscribe, &is_playing);
+
+        let window = gtk4::Window::new();
+        window.set_default_size(1200, 400);
+        window.set_child(Some(&view));
+        window.present();
+        source_context_surface::settle_layout();
+
+        let uncovered = source_context_surface::row_points_without_a_surface(&view);
+        assert!(
+            uncovered.is_empty(),
+            "podcast row points without a context surface: {uncovered:?}"
+        );
+    }
 }

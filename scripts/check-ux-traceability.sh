@@ -2,13 +2,13 @@
 # Traceability gate: docs/ux-rules.md <-> rule-named tests.
 #
 # Checks three directions:
-#   1. Every [aktiv] rule has >= 1 test carrying its ID in the name
+#   1. Every [active] rule has >= 1 test carrying its ID in the name
 #      (Rust fn snake_case or cua-e2e scenario kebab-case).
 #   2. No test references an ID that is missing from the document or
-#      marked [ersetzt ...].
+#      marked [replaced ...].
 #   3. The display-runner marker is allowed on every rule status. Every other
-#      #[ignore] is limited to [geplant] rules and must spell out
-#      "UX <ID> [geplant] — ...".
+#      #[ignore] is limited to [planned] rules and must spell out
+#      "UX <ID> [planned] — ...".
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
@@ -17,19 +17,19 @@ doc=docs/ux-rules.md
 
 fail=0
 
-# --- Read the document: ID -> status (aktiv|geplant|ersetzt) ---
+# --- Read the document: ID -> status (active|planned|replaced) ---
 declare -A status_of
 while read -r id st; do
   status_of[$id]=$st
-done < <(grep -oE '^- \*\*[A-Z]+-[0-9]+[a-z]?\*\* \[(aktiv|geplant|ersetzt)' "$doc" \
-  | sed -E 's/^- \*\*([A-Z]+-[0-9]+[a-z]?)\*\* \[(aktiv|geplant|ersetzt)/\1 \2/')
+done < <(grep -oE '^- \*\*[A-Z]+-[0-9]+[a-z]?\*\* \[(active|planned|replaced)' "$doc" \
+  | sed -E 's/^- \*\*([A-Z]+-[0-9]+[a-z]?)\*\* \[(active|planned|replaced)/\1 \2/')
 
-# --- Read the document: ID -> level (core|gtk|e2e|manuell) ---
+# --- Read the document: ID -> level (core|gtk|e2e|manual) ---
 declare -A level_of
 while read -r id lvl; do
   level_of[$id]=$lvl
-done < <(grep -oE '^- \*\*[A-Z]+-[0-9]+[a-z]?\*\* \[(aktiv|geplant)\] \[(core|gtk|e2e|manuell)\]' "$doc" \
-  | sed -E 's/^- \*\*([A-Z]+-[0-9]+[a-z]?)\*\* \[(aktiv|geplant)\] \[([a-z0-9]+)\]/\1 \3/')
+done < <(grep -oE '^- \*\*[A-Z]+-[0-9]+[a-z]?\*\* \[(active|planned)\] \[(core|gtk|e2e|manual)\]' "$doc" \
+  | sed -E 's/^- \*\*([A-Z]+-[0-9]+[a-z]?)\*\* \[(active|planned)\] \[([a-z0-9]+)\]/\1 \3/')
 
 # Derive the section prefixes from the document itself, so a new rulebook
 # section is gated without editing this script.
@@ -57,7 +57,7 @@ while read -r id; do
   in_releasing[$id]=1
   case "${status_of[$id]:-missing}" in
     missing) echo "ERROR: RELEASING.md references unknown rule $id" >&2; fail=1 ;;
-    ersetzt) echo "ERROR: RELEASING.md references replaced rule $id — re-point it" >&2; fail=1 ;;
+    replaced) echo "ERROR: RELEASING.md references replaced rule $id — re-point it" >&2; fail=1 ;;
   esac
 done < <(grep -hoE "\b(${prefixes_upper})-[0-9]+[a-z]?\b" "$releasing" 2>/dev/null | sort -u || true)
 
@@ -73,24 +73,24 @@ for ref in $snake_refs $kebab_refs; do
   tested[$id]=1
   case "${status_of[$id]:-missing}" in
     missing) echo "ERROR: test references unknown rule $id" >&2; fail=1 ;;
-    ersetzt) echo "ERROR: test references replaced rule $id — re-point it" >&2; fail=1 ;;
+    replaced) echo "ERROR: test references replaced rule $id — re-point it" >&2; fail=1 ;;
   esac
 done
 
-# --- Direction 1: every [aktiv] rule is covered on its level ---
+# --- Direction 1: every [active] rule is covered on its level ---
 for id in "${!status_of[@]}"; do
-  [[ ${status_of[$id]} == aktiv ]] || continue
-  if [[ ${level_of[$id]:-} == manuell ]]; then
+  [[ ${status_of[$id]} == active ]] || continue
+  if [[ ${level_of[$id]:-} == manual ]]; then
     if [[ -z ${in_releasing[$id]:-} ]]; then
-      echo "ERROR: [aktiv] [manuell] rule $id is not referenced in RELEASING.md" >&2; fail=1
+      echo "ERROR: [active] [manual] rule $id is not referenced in RELEASING.md" >&2; fail=1
     fi
   elif [[ -z ${tested[$id]:-} ]]; then
-    echo "ERROR: [aktiv] rule $id has no rule-named test" >&2; fail=1
+    echo "ERROR: [active] rule $id has no rule-named test" >&2; fail=1
   fi
 done
 
 # --- Direction 3: display-runner markers are coverage, other ignores are ---
-# --- limited to [geplant] rules and the "UX <ID> [geplant] — ..." form ---
+# --- limited to [planned] rules and the "UX <ID> [planned] — ..." form ---
 while read -r fn_name; do
   ref=$(printf '%s' "$fn_name" | grep -oE "^(${prefixes})_[0-9]+[a-z]?")
   id=$(to_id "$ref")
@@ -100,14 +100,14 @@ while read -r fn_name; do
     | grep -qE '^[[:space:]]*#\[ignore = "requires a display; run via xvfb-run"\][[:space:]]*$'; then
     continue
   fi
-  if [[ ${status_of[$id]:-} == aktiv ]]; then
-    echo "ERROR: test $ref is ignored but rule $id is [aktiv]" >&2; fail=1
-  elif ! printf '%s\n' "$ignore_lines" | grep -qF "UX $id [geplant]"; then
-    echo "ERROR: #[ignore] on $ref must read \"UX $id [geplant] — ...\"" >&2; fail=1
+  if [[ ${status_of[$id]:-} == active ]]; then
+    echo "ERROR: test $ref is ignored but rule $id is [active]" >&2; fail=1
+  elif ! printf '%s\n' "$ignore_lines" | grep -qF "UX $id [planned]"; then
+    echo "ERROR: #[ignore] on $ref must read \"UX $id [planned] — ...\"" >&2; fail=1
   fi
 done < <(grep -rA3 --include='*.rs' '#\[ignore' crates 2>/dev/null \
   | grep -oE "fn (${prefixes})_[0-9]+[a-z]?_[a-z0-9_]+" | sed -E 's/^fn //' | sort -u || true)
 
 if (( fail )); then exit 1; fi
-active_count=$(grep -cE '^- \*\*[A-Z]+-[0-9]+[a-z]?\*\* \[aktiv\]' "$doc" || true)
+active_count=$(grep -cE '^- \*\*[A-Z]+-[0-9]+[a-z]?\*\* \[active\]' "$doc" || true)
 echo "UX traceability ok: $active_count active rules covered"

@@ -34,7 +34,6 @@ pub(in crate::ui) enum NavIcon {
     Youtube,
     Radio,
     MyStats,
-    Conversions,
 }
 
 impl NavIcon {
@@ -58,8 +57,6 @@ impl NavIcon {
             // not a theme symbolic (so it never collides with `TopRated`'s
             // star). Kept only to satisfy the exhaustive match.
             Self::MyStats => "starred-symbolic",
-            // INST-13: the experimental instrumental-conversions view.
-            Self::Conversions => "applications-science-symbolic",
         }
     }
 
@@ -152,30 +149,6 @@ pub(in crate::ui) fn build_issue_nav_row(
         badge.add_css_class("numeric");
         hbox.append(&badge);
     }
-
-    navigation_row(&hbox, title)
-}
-
-/// Builds a navigation row with a trailing badge label instead of a count
-/// (e.g. "NEW"). The badge uses the accent color via `.stats-badge`.
-#[allow(dead_code)]
-pub(in crate::ui) fn build_nav_row_with_badge(
-    title: &str,
-    badge_text: &str,
-    icon: NavIcon,
-) -> gtk4::ListBoxRow {
-    let hbox = row_box();
-    hbox.append(&nav_icon(icon));
-
-    let title_label = gtk4::Label::new(Some(title));
-    title_label.set_xalign(0.0);
-    title_label.set_hexpand(true);
-    title_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-    hbox.append(&title_label);
-
-    let badge = gtk4::Label::new(Some(badge_text));
-    badge.add_css_class("stats-badge");
-    hbox.append(&badge);
 
     navigation_row(&hbox, title)
 }

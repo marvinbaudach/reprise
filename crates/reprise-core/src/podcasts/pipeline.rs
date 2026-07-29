@@ -471,7 +471,7 @@ fn refresh_to_root_with_download_progress(
             }
         }
     }
-    super::downloads::enforce_cleanup(conn, config.cleanup_policy, now)?;
+    super::downloads::enforce_cleanup(conn, download_root, config.cleanup_policy, now)?;
     Ok(summary)
 }
 

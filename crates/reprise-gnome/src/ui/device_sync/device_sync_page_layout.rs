@@ -36,6 +36,8 @@ pub(super) struct DeviceDashboard {
     pub(super) progress_bar: gtk4::ProgressBar,
     pub(super) primary: gtk4::Button,
     pub(super) eject: gtk4::Button,
+    /// Holds the "Recent transfers" card, refilled on every update (MTP-20).
+    pub(super) history: gtk4::Box,
 }
 
 pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashboard {
@@ -182,8 +184,10 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
     content.set_margin_bottom(28);
     content.set_margin_start(32);
     content.set_margin_end(32);
+    let history = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     content.append(&hero);
     content.append(&body);
+    content.append(&history);
 
     let clamp = adw::Clamp::builder()
         .maximum_size(1120)
@@ -219,6 +223,7 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
         progress_bar,
         primary,
         eject,
+        history,
     }
 }
 

@@ -123,6 +123,11 @@ impl PlayerController {
                     summary.year,
                 );
                 self.sync_cover(&summary.path);
+                // The restored track is a known track — the Lyrics tab keys
+                // off the same metadata the bar already shows, so it must not
+                // wait for playback to start. LYR-2 still holds: the fetch
+                // only leaves the machine when that tab is open.
+                self.sync_lyrics_track(Some(crate::ui::player_lyrics::lyrics_query_for(&summary)));
             }
             None => {
                 *self.now_playing.borrow_mut() = None;

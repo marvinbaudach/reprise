@@ -426,10 +426,9 @@ mod tests {
         // `scroll_to` settles over later main-loop turns, so pumping once is not
         // enough to establish the precondition. This is test setup, not the
         // behaviour under test: wait until the viewport actually moved.
-        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(1000);
-        while adjustment.value() <= 0.0 && std::time::Instant::now() < deadline {
-            gtk4::glib::MainContext::default().iteration(false);
-        }
+        crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
+            adjustment.value() > 0.0
+        });
         let before = adjustment.value();
         assert!(
             before > 0.0,
@@ -555,19 +554,15 @@ mod tests {
             .position(|id| *id == playing_id)
             .and_then(|position| u32::try_from(position).ok())
             .unwrap();
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
-        while std::time::Instant::now() < deadline {
-            while gtk4::glib::MainContext::default().iteration(false) {}
-            let expected = scroll_center::centered_scroll_value(
+        crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
+            scroll_center::centered_scroll_value(
                 playing_position,
                 track_list.shared.model.n_items(),
                 adjustment.upper(),
                 adjustment.page_size(),
-            );
-            if expected.is_some_and(|target| (adjustment.value() - target).abs() < 0.5) {
-                break;
-            }
-        }
+            )
+            .is_some_and(|target| (adjustment.value() - target).abs() < 0.5)
+        });
         let expected = scroll_center::centered_scroll_value(
             playing_position,
             track_list.shared.model.n_items(),

@@ -2663,7 +2663,6 @@ dependencies = [
  "oo7",
  "reprise-core",
  "reprise-platform-linux",
- "reprise-stems",
  "rusqlite",
  "serde",
  "serde_json",
@@ -2680,6 +2679,7 @@ version = "0.1.1"
 dependencies = [
  "chrono",
  "reprise-core",
+ "reprise-runtime-protocol",
  "rmcp",
  "rusqlite",
  "serde",
@@ -2702,10 +2702,50 @@ dependencies = [
  "gstreamer-app",
  "lofty",
  "reprise-core",
+ "reprise-runtime",
+ "reprise-runtime-client",
+ "reprise-runtime-protocol",
+ "rusqlite",
+ "rustix",
+ "serde",
  "tempfile",
  "tracing",
+ "tracing-subscriber",
  "trash",
  "zbus",
+ "zvariant",
+]
+
+[[package]]
+name = "reprise-runtime"
+version = "0.1.1"
+dependencies = [
+ "reprise-core",
+ "reprise-runtime-protocol",
+ "rusqlite",
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
+name = "reprise-runtime-client"
+version = "0.1.1"
+dependencies = [
+ "async-channel",
+ "reprise-runtime-protocol",
+ "serde",
+ "tracing",
+ "zbus",
+ "zvariant",
+]
+
+[[package]]
+name = "reprise-runtime-protocol"
+version = "0.1.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "zvariant",
 ]
 
 [[package]]

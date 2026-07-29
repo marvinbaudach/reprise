@@ -367,7 +367,7 @@ mod tests {
     }
 
     #[test]
-    fn ac_22_song_visuals_are_a_live_opt_in_module() {
+    fn ac_23_song_visuals_are_a_live_opt_in_module() {
         let conn = migrated_conn();
         let descriptor = ALL_MODULES
             .iter()

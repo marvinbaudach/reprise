@@ -214,6 +214,7 @@ fn remove_if_present(path: &Path) -> Result<(), PodcastError> {
 
 pub fn enforce_cleanup(
     conn: &Connection,
+    download_root: &Path,
     policy: CleanupPolicy,
     now: i64,
 ) -> Result<CleanupSummary, CleanupError> {
@@ -221,6 +222,18 @@ pub fn enforce_cleanup(
     let mut summary = CleanupSummary::default();
     for (episode_id, path) in candidates {
         let path = PathBuf::from(path);
+        let canonical_path = match path.canonicalize() {
+            Ok(path) => path,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                super::store::set_downloaded_path(conn, episode_id, None)?;
+                continue;
+            }
+            Err(error) => return Err(error.into()),
+        };
+        let canonical_root = download_root.canonicalize()?;
+        if !canonical_path.starts_with(canonical_root) {
+            return Err(CleanupError::OutsideDownloadRoot);
+        }
         let bytes = std::fs::metadata(&path)
             .map(|metadata| metadata.len())
             .unwrap_or_default();
@@ -243,6 +256,8 @@ pub enum CleanupError {
     Database(#[from] rusqlite::Error),
     #[error("download cleanup failed: {0}")]
     Io(#[from] std::io::Error),
+    #[error("download cleanup path is outside the configured root")]
+    OutsideDownloadRoot,
 }
 
 fn cleanup_candidates(
@@ -493,7 +508,7 @@ mod tests {
         let episode = add_download(&conn, directory.path(), show, 1, Some(1));
 
         assert_eq!(
-            enforce_cleanup(&conn, CleanupPolicy::KeepAll, 1_000_000).unwrap(),
+            enforce_cleanup(&conn, directory.path(), CleanupPolicy::KeepAll, 1_000_000,).unwrap(),
             CleanupSummary::default()
         );
         assert!(store::episode(&conn, episode)
@@ -519,7 +534,13 @@ mod tests {
         let recent = add_download(&conn, directory.path(), show, 2, Some(now - 10));
         let unplayed = add_download(&conn, directory.path(), show, 3, None);
 
-        let summary = enforce_cleanup(&conn, CleanupPolicy::DeletePlayedAfter7Days, now).unwrap();
+        let summary = enforce_cleanup(
+            &conn,
+            directory.path(),
+            CleanupPolicy::DeletePlayedAfter7Days,
+            now,
+        )
+        .unwrap();
 
         assert_eq!(summary.files_deleted, 1);
         assert!(store::episode(&conn, old)
@@ -537,6 +558,43 @@ mod tests {
     }
 
     #[test]
+    fn cleanup_never_deletes_a_download_path_outside_its_root() {
+        let conn = conn();
+        let download_root = tempfile::tempdir().unwrap();
+        let foreign_directory = tempfile::tempdir().unwrap();
+        let show = add_show(&conn);
+        let now = 1_000_000;
+        let episode = add_download(
+            &conn,
+            download_root.path(),
+            show,
+            1,
+            Some(now - PLAYED_RETENTION_SECONDS),
+        );
+        let foreign_path = foreign_directory.path().join("library-track.flac");
+        std::fs::write(&foreign_path, b"must survive").unwrap();
+        store::set_downloaded_path(&conn, episode, foreign_path.to_str()).unwrap();
+
+        let result = enforce_cleanup(
+            &conn,
+            download_root.path(),
+            CleanupPolicy::DeletePlayedAfter7Days,
+            now,
+        );
+
+        assert!(result.is_err());
+        assert_eq!(std::fs::read(&foreign_path).unwrap(), b"must survive");
+        assert_eq!(
+            store::episode(&conn, episode)
+                .unwrap()
+                .unwrap()
+                .downloaded_path
+                .as_deref(),
+            foreign_path.to_str()
+        );
+    }
+
+    #[test]
     fn keep_last_five_is_applied_per_show() {
         let conn = conn();
         let directory = tempfile::tempdir().unwrap();
@@ -545,7 +603,8 @@ mod tests {
             add_download(&conn, directory.path(), show, number, None);
         }
 
-        let summary = enforce_cleanup(&conn, CleanupPolicy::KeepLast5, 0).unwrap();
+        let summary =
+            enforce_cleanup(&conn, directory.path(), CleanupPolicy::KeepLast5, 0).unwrap();
 
         assert_eq!(summary.files_deleted, 2);
         let remaining = super::super::query::episodes_for_subscription(&conn, show)

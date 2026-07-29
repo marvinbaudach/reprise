@@ -1,0 +1,25 @@
+[package]
+name = "reprise-runtime-client"
+description = "The client every Reprise surface uses to reach the runtime: handshake, reconnection, commands, deltas"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# The contract, and nothing else from the workspace. Deliberately *not*
+# reprise-platform-linux, where this used to live: the MCP server is a
+# client, and taking the address of the runtime from the crate that also
+# hosts the GStreamer backend would drag GStreamer into every surface that
+# only wanted to send a command. The bus name and object path are part of
+# the contract, so they live in the protocol crate.
+reprise-runtime-protocol = { path = "../reprise-runtime-protocol" }
+zbus = "5"
+zvariant = "5"
+serde = { version = "1", features = ["derive"] }
+async-channel = "2.5.0"
+tracing = "0.1"
+
+[lints]
+workspace = true

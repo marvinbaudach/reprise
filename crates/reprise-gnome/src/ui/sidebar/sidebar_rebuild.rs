@@ -329,19 +329,6 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         NavIcon::MyStats,
     );
 
-    // INST-13: the instrumental conversions view is reachable from the sidebar
-    // only while the experimental switch is on (INST-11) — the same gate that
-    // adds its content page, so the row can never select a missing page.
-    if crate::ui::instrumental::experimental_enabled(&shared.conn.borrow()) {
-        add_row(
-            shared,
-            ViewSource::Conversions,
-            &strings::text(strings::CONVERSION_TITLE),
-            None,
-            NavIcon::Conversions,
-        );
-    }
-
     // Dismissed import errors stay reachable through the triage view's
     // collapsed footer, even though they never contribute to the badge.
     let has_import_errors = active_import_error_count > 0 || dismissed_import_error_count > 0;
@@ -414,9 +401,6 @@ fn add_row(
         ViewSource::Queue => {
             sidebar_dnd::wire_queue_drop_target(shared, &row);
         }
-        ViewSource::Conversions => {
-            sidebar_dnd::wire_conversion_drop_target(shared, &row);
-        }
         ViewSource::ImportErrors | ViewSource::Missing => {
             sidebar_issue_cleanup::wire_issue_context_menu(shared, &row, source.clone());
         }
@@ -444,22 +428,6 @@ fn add_issue_row(
     sidebar_issue_cleanup::wire_issue_context_menu(shared, &row, source.clone());
     shared.issues_listbox.append(&row);
     remember_issue_focus_entry(&shared.issues_listbox, &row);
-    shared
-        .rows
-        .borrow_mut()
-        .push((row, source, title.to_string()));
-}
-
-#[allow(dead_code)]
-fn add_row_with_badge(
-    shared: &Rc<Shared>,
-    source: ViewSource,
-    title: &str,
-    badge_text: &str,
-    icon: NavIcon,
-) {
-    let row = sidebar_presentation::build_nav_row_with_badge(title, badge_text, icon);
-    shared.listbox.append(&row);
     shared
         .rows
         .borrow_mut()

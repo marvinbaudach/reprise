@@ -4,12 +4,7 @@ use libadwaita::prelude::AdwApplicationWindowExt;
 use std::time::Duration;
 
 fn wait_for_layout(milliseconds: u64) {
-    let main_loop = gtk4::glib::MainLoop::new(None, false);
-    let quit = main_loop.clone();
-    gtk4::glib::timeout_add_local_once(Duration::from_millis(milliseconds), move || {
-        quit.quit();
-    });
-    main_loop.run();
+    crate::ui::test_settle::settle_for(Duration::from_millis(milliseconds));
 }
 
 fn loaded_track() -> NowPlaying {
@@ -73,7 +68,7 @@ fn no_loaded_track_uses_the_idle_presentation() {
 }
 
 #[test]
-fn ac_22_visual_is_the_third_panel_tab() {
+fn ac_23_visual_is_the_third_panel_tab() {
     assert_eq!(PanelTab::Visual.page_name(), VISUAL_PAGE);
     assert_eq!(
         PANEL_TABS,
@@ -324,13 +319,20 @@ fn head_and_pill_match_the_21a_structure() {
     let visual = widgets.tab_stack.child_by_name(VISUAL_PAGE).unwrap();
     let page = widgets.tab_stack.page(&visual);
     assert_eq!(page.title().as_deref(), Some("Visual"));
-    assert_eq!(page.icon_name().as_deref(), Some("audio-speakers-symbolic"));
+    // Rising bars, not a speaker: the tab shows what the audio looks like,
+    // not where it comes out. Adwaita ships no equalizer or spectrum symbol,
+    // so the signal-strength bars stand in — the glyph matches the visual
+    // exactly, only its icon name is borrowed.
+    assert_eq!(
+        page.icon_name().as_deref(),
+        Some("network-cellular-signal-excellent-symbolic")
+    );
     assert!(widgets.footer.has_css_class("reprise-now-playing-footer"));
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_22_icons_only_switcher_keeps_three_labeled_keyboard_targets() {
+fn ac_23_icons_only_switcher_keeps_three_labeled_keyboard_targets() {
     gtk4::init().unwrap();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let widgets = test_widgets(&content, true);
@@ -358,7 +360,7 @@ fn ac_22_icons_only_switcher_keeps_three_labeled_keyboard_targets() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_22_visual_page_shrinks_instead_of_overlapping_the_tab_switcher() {
+fn ac_23_visual_page_shrinks_instead_of_overlapping_the_tab_switcher() {
     gtk4::init().unwrap();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let widgets = test_widgets(&content, true);

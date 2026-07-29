@@ -47,20 +47,24 @@ fn text_column(
             .build();
         let live = live_for_gesture.clone();
         let connectivity = connectivity_for_gesture.clone();
+        let surface = crate::ui::source_context_surface::wrap(&label);
         radio_context_menu::wire_gesture(
-            &label,
+            &surface,
             item,
             move |id| row_is_accented(id, &live()),
             move || connectivity(),
         );
-        item.set_child(Some(&label));
+        item.set_child(Some(&surface));
     });
     let live_state = live_state.clone();
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
-        let Some(label) = item.child().and_downcast::<gtk4::Label>() else {
+        let Some(surface) = item.child().and_downcast::<gtk4::Box>() else {
+            return;
+        };
+        let Some(label) = surface.first_child().and_downcast::<gtk4::Label>() else {
             return;
         };
         let Some(object) = item.item().and_downcast::<RadioObject>() else {
@@ -75,7 +79,10 @@ fn text_column(
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
-        let Some(label) = item.child().and_downcast::<gtk4::Label>() else {
+        let Some(surface) = item.child().and_downcast::<gtk4::Box>() else {
+            return;
+        };
+        let Some(label) = surface.first_child().and_downcast::<gtk4::Label>() else {
             return;
         };
         label.set_text("");
@@ -141,20 +148,24 @@ fn state_column(
         cell.append(&star);
         let live = live_for_gesture.clone();
         let connectivity = connectivity_for_gesture.clone();
+        let surface = crate::ui::source_context_surface::wrap(&cell);
         radio_context_menu::wire_gesture(
-            &cell,
+            &surface,
             item,
             move |id| row_is_accented(id, &live()),
             move || connectivity(),
         );
-        item.set_child(Some(&cell));
+        item.set_child(Some(&surface));
     });
     let live_state = live_state.clone();
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
-        let Some(cell) = item.child().and_downcast::<gtk4::Box>() else {
+        let Some(surface) = item.child().and_downcast::<gtk4::Box>() else {
+            return;
+        };
+        let Some(cell) = surface.first_child().and_downcast::<gtk4::Box>() else {
             return;
         };
         let Some(icon) = cell.first_child().and_downcast::<gtk4::Image>() else {
@@ -181,7 +192,10 @@ fn state_column(
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
-        let Some(cell) = item.child().and_downcast::<gtk4::Box>() else {
+        let Some(surface) = item.child().and_downcast::<gtk4::Box>() else {
+            return;
+        };
+        let Some(cell) = surface.first_child().and_downcast::<gtk4::Box>() else {
             return;
         };
         cell.remove_css_class("reprise-radio-playing");
@@ -240,4 +254,64 @@ pub(super) fn append_columns(
         live_state,
         connectivity,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::ui::source_context_surface;
+
+    fn station() -> StationRow {
+        StationRow {
+            id: 1,
+            uuid: None,
+            name: "Station".into(),
+            stream_url: "https://example.test/stream".into(),
+            homepage: None,
+            favicon_url: None,
+            genre: Some("Jazz".into()),
+            codec: None,
+            bitrate_kbps: Some(128),
+            country_code: Some("DE".into()),
+            votes: None,
+            added_at: 1,
+            removed_at: None,
+        }
+    }
+
+    /// The radio table carries the same ACC-1 contract as the podcast table;
+    /// see `podcasts_columns`' sibling test.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn acc_1_every_point_of_a_radio_row_reaches_the_context_menu() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        crate::ui::style::install_css_string_for_test(&source_context_surface::css());
+
+        let store = gtk4::gio::ListStore::new::<RadioObject>();
+        store.append(&RadioObject::new(station()));
+        let view = gtk4::ColumnView::new(Some(gtk4::SingleSelection::new(Some(store))));
+        view.add_css_class(source_context_surface::TABLE_CSS_CLASS);
+        let on_remove: OnRemove = Rc::new(|_| {});
+        let live_state: LiveState = Rc::new(RadioLiveState::default);
+        // NET-3b made connectivity an explicit input; this coverage test only
+        // cares that every row is wrapped in a context surface, so it reports
+        // the default Online.
+        let connectivity: Rc<dyn Fn() -> reprise_core::connectivity::Connectivity> =
+            Rc::new(|| reprise_core::connectivity::Connectivity::Online);
+        append_columns(&view, &on_remove, &live_state, &connectivity);
+
+        let window = gtk4::Window::new();
+        window.set_default_size(1200, 400);
+        window.set_child(Some(&view));
+        window.present();
+        source_context_surface::settle_layout();
+
+        let uncovered = source_context_surface::row_points_without_a_surface(&view);
+        assert!(
+            uncovered.is_empty(),
+            "radio row points without a context surface: {uncovered:?}"
+        );
+    }
 }

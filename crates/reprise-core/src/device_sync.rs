@@ -16,6 +16,7 @@ pub mod category_diff;
 pub mod delta;
 pub mod device_view;
 pub mod m3u;
+pub mod machine;
 pub mod mirror;
 pub mod page;
 pub mod podcasts;
@@ -25,6 +26,7 @@ pub mod selection;
 pub mod settings;
 pub mod snapshot;
 pub mod storage;
+pub mod sync_log;
 pub mod targets;
 pub mod transfer;
 
@@ -44,6 +46,10 @@ pub use device_view::{
     category_bytes, project_category_content_row, project_category_segments,
     project_contents_state, project_device_category_reading, CategoryContentRow, CategorySegments,
     DeviceContentsState,
+};
+pub use machine::{
+    DeviceSyncMachine, Effect, Event, PlannedSyncPhase, SyncOutcome, SyncStep, TransferOperation,
+    TransferSource,
 };
 pub use mirror::{
     plan_mirror, DesiredManagedFile, ManagedDeviceFile, ManagedRemoval, MirrorBlocker, MirrorInput,
@@ -403,6 +409,10 @@ mod inventory_tests;
 mod mirror_tests;
 
 #[cfg(test)]
+#[path = "device_sync/machine_tests.rs"]
+mod machine_tests;
+
+#[cfg(test)]
 mod tests {
     use std::path::{Component, Path};
 
@@ -648,3 +658,7 @@ mod tests {
         assert_eq!(resumed.current_bytes, 25);
     }
 }
+
+#[cfg(test)]
+#[path = "device_sync/sync_log_tests.rs"]
+mod sync_log_tests;

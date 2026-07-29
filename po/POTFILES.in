@@ -14,7 +14,7 @@ crates/reprise-gnome/src/ui/strings_scrobbling.rs
 crates/reprise-gnome/src/ui/strings_stats.rs
 crates/reprise-gnome/src/ui/strings_autocomplete.rs
 crates/reprise-gnome/src/ui/strings_filter.rs
-crates/reprise-gnome/src/ui/strings_instrumental.rs
+crates/reprise-gnome/src/ui/strings_ai.rs
 crates/reprise-gnome/src/ui/strings_scan.rs
 crates/reprise-gnome/src/ui/strings_song_visuals.rs
 crates/reprise-gnome/src/ui/strings_tag_edit.rs

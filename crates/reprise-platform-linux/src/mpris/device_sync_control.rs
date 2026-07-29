@@ -12,86 +12,11 @@ use reprise_core::agent_device_sync::{
 };
 use reprise_core::device_sync::{CategoryDiff, CategoryReading, SelectionSource, TransferProfile};
 
-pub(super) type DeviceSyncSourceSelection = (String, i64);
-pub(super) type DeviceSyncSourceRow = (
-    String,
-    i64,
-    bool,
-    String,
-    bool,
-    bool,
-    u64,
-    u64,
-    u64,
-    u64,
-    bool,
-    i64,
-);
-pub(super) type DeviceSyncChangesRow = (u64, u64, u64, u64, u64, u64, u64);
-pub(super) type DeviceSyncStorageCompositionRow =
-    (bool, u64, u64, u64, bool, u64, bool, u64, String);
-pub(super) type DeviceSyncStorageRow = (
-    bool,
-    String,
-    String,
-    bool,
-    u64,
-    u64,
-    DeviceSyncStorageCompositionRow,
-    bool,
-    DeviceSyncStorageCompositionRow,
-    String,
-);
-/// Block H (MCP parity): one named sync target's per-device state plus its
-/// `MTP-22` diff reading. Kept as its own D-Bus method (`CategorySnapshot`)
-/// rather than a 17th element of the already 16-wide [`DeviceSyncRow`] —
-/// zvariant's tuple `Type`/`Serialize` impls are only generated up to a
-/// fixed arity, and this keeps the existing, well-tested `Snapshot` wire
-/// shape untouched.
-///
-/// Fields: kind, target_path, target_enabled, size_on_device_bytes,
-/// has_cap, cap_bytes, reading_kind ("diff" | "source_off" |
-/// "unavailable_kept_on_phone"), files_to_copy, bytes_to_copy,
-/// files_to_remove, bytes_freed, files_waiting_for_download,
-/// playlists_rewritten.
-pub(super) type DeviceSyncCategoryRow = (
-    String,
-    String,
-    bool,
-    u64,
-    bool,
-    u64,
-    String,
-    u64,
-    u64,
-    u64,
-    u64,
-    u64,
-    u64,
-);
-pub(super) type DeviceSyncCategoryDeviceRow = (String, Vec<DeviceSyncCategoryRow>);
-
-pub(super) type DeviceSyncControlsRow = (bool, bool, bool, bool);
-pub(super) type DeviceSyncProgressRow = (u64, u64, u64);
-pub(super) type DeviceSyncTimestampRow = (bool, i64);
-pub(super) type DeviceSyncRow = (
-    String,
-    bool,
-    String,
-    u64,
-    u64,
-    u64,
-    Vec<DeviceSyncSourceRow>,
-    DeviceSyncChangesRow,
-    DeviceSyncStorageRow,
-    Vec<String>,
-    Vec<String>,
-    DeviceSyncControlsRow,
-    String,
-    DeviceSyncProgressRow,
-    String,
-    DeviceSyncTimestampRow,
-);
+use reprise_runtime_protocol::device_sync::{
+    DeviceCategorySnapshot, DeviceChangeCounts, DeviceControls, DeviceProgress, DeviceSnapshot,
+    DeviceSourceSelection, DeviceSourceSnapshot, DeviceStorageComposition, DeviceStorageSnapshot,
+};
+use reprise_runtime_protocol::PROTOCOL_VERSION;
 
 pub(super) struct DeviceSyncControl {
     commands: async_channel::Sender<AgentDeviceSyncRequest>,
@@ -125,35 +50,26 @@ impl DeviceSyncControl {
 
 #[interface(name = "org.reprise.DeviceSync1")]
 impl DeviceSyncControl {
-    fn snapshot(&self) -> Vec<DeviceSyncRow> {
-        read_agent_device_sync_state(&self.state)
-            .devices
-            .into_iter()
-            .map(device_row)
-            .collect()
+    /// The contract version this service speaks. A client checks it before
+    /// decoding anything else and refuses a foreign major version instead of
+    /// misreading a payload it does not understand.
+    #[zbus(property)]
+    fn protocol_version(&self) -> (u32, u32) {
+        (PROTOCOL_VERSION.major, PROTOCOL_VERSION.minor)
     }
 
-    /// Block H (MCP parity, `MTP-38`/`MTP-22`): the three named sync
-    /// targets and their category diff reading per device, keyed by device
-    /// name — the same identity `Configure`/`Start`/`Cancel`/`Eject`
-    /// already address a device by.
-    fn category_snapshot(&self) -> Vec<DeviceSyncCategoryDeviceRow> {
+    fn snapshot(&self) -> Vec<DeviceSnapshot> {
         read_agent_device_sync_state(&self.state)
             .devices
             .into_iter()
-            .map(|device| {
-                (
-                    device.name,
-                    device.categories.into_iter().map(category_row).collect(),
-                )
-            })
+            .map(device_snapshot)
             .collect()
     }
 
     fn configure(
         &self,
         device_name: &str,
-        sources: Vec<DeviceSyncSourceSelection>,
+        sources: Vec<DeviceSourceSelection>,
         profile: &str,
     ) -> zbus::fdo::Result<()> {
         let sources = sources
@@ -191,29 +107,34 @@ impl DeviceSyncControl {
     }
 }
 
-fn device_row(device: AgentDeviceSyncDevice) -> DeviceSyncRow {
-    (
-        device.name,
-        device.connected,
-        device.profile.storage_value().to_owned(),
-        count(device.managed_tracks),
-        count(device.unique_track_count),
-        device.target_bytes,
-        device.playlists.into_iter().map(source_row).collect(),
-        changes_row(&device.changes),
-        storage_row(&device.storage),
-        device.blockers.into_iter().map(blocker_name).collect(),
-        device.warnings.into_iter().map(warning_name).collect(),
-        controls_row(device.controls),
-        phase_name(&device.phase).to_owned(),
-        (
-            device.bytes_done,
-            device.bytes_total,
-            device.bytes_per_second,
-        ),
-        device.current_track,
-        optional_timestamp(device.last_synced_at),
-    )
+fn device_snapshot(device: AgentDeviceSyncDevice) -> DeviceSnapshot {
+    DeviceSnapshot {
+        name: device.name,
+        connected: device.connected,
+        profile: device.profile.storage_value().to_owned(),
+        managed_tracks: count(device.managed_tracks),
+        unique_track_count: count(device.unique_track_count),
+        target_bytes: device.target_bytes,
+        sources: device.playlists.into_iter().map(source_snapshot).collect(),
+        changes: change_counts(&device.changes),
+        storage: storage_snapshot(&device.storage),
+        blockers: device.blockers.into_iter().map(blocker_name).collect(),
+        warnings: device.warnings.into_iter().map(warning_name).collect(),
+        controls: controls(device.controls),
+        phase: phase_name(&device.phase).to_owned(),
+        progress: DeviceProgress {
+            bytes_done: device.bytes_done,
+            bytes_total: device.bytes_total,
+            bytes_per_second: device.bytes_per_second,
+        },
+        current_track: device.current_track,
+        last_synced_at: device.last_synced_at,
+        categories: device
+            .categories
+            .into_iter()
+            .map(category_snapshot)
+            .collect(),
+    }
 }
 
 fn target_kind_name(kind: reprise_core::device_sync::SyncTargetKind) -> &'static str {
@@ -225,7 +146,7 @@ fn target_kind_name(kind: reprise_core::device_sync::SyncTargetKind) -> &'static
     }
 }
 
-fn category_row(category: AgentDeviceSyncCategoryRow) -> DeviceSyncCategoryRow {
+fn category_snapshot(category: AgentDeviceSyncCategoryRow) -> DeviceCategorySnapshot {
     let (reading_kind, diff) = match category.reading {
         CategoryReading::Diff(diff) => ("diff", diff),
         CategoryReading::SourceOff => ("source_off", CategoryDiff::default()),
@@ -233,73 +154,61 @@ fn category_row(category: AgentDeviceSyncCategoryRow) -> DeviceSyncCategoryRow {
             ("unavailable_kept_on_phone", CategoryDiff::default())
         }
     };
-    (
-        target_kind_name(category.kind).to_owned(),
-        category.target_path,
-        category.target_enabled,
-        category.size_on_device_bytes,
-        category.cap_bytes.is_some(),
-        category.cap_bytes.unwrap_or_default(),
-        reading_kind.to_owned(),
-        count(diff.files_to_copy),
-        diff.bytes_to_copy,
-        count(diff.files_to_remove),
-        diff.bytes_freed,
-        count(diff.files_waiting_for_download),
-        count(diff.playlists_rewritten),
-    )
+    DeviceCategorySnapshot {
+        kind: target_kind_name(category.kind).to_owned(),
+        target_path: category.target_path,
+        target_enabled: category.target_enabled,
+        size_on_device_bytes: category.size_on_device_bytes,
+        cap_bytes: category.cap_bytes,
+        reading_kind: reading_kind.to_owned(),
+        files_to_copy: count(diff.files_to_copy),
+        bytes_to_copy: diff.bytes_to_copy,
+        files_to_remove: count(diff.files_to_remove),
+        bytes_freed: diff.bytes_freed,
+        files_waiting_for_download: count(diff.files_waiting_for_download),
+        playlists_rewritten: count(diff.playlists_rewritten),
+    }
 }
 
-fn source_row(source: AgentDeviceSyncPlaylist) -> DeviceSyncSourceRow {
+fn source_snapshot(source: AgentDeviceSyncPlaylist) -> DeviceSourceSnapshot {
     let (kind, id) = source_parts(&source.source);
-    (
-        kind.to_owned(),
+    DeviceSourceSnapshot {
+        kind: kind.to_owned(),
         id,
-        source.name.is_some(),
-        source.name.unwrap_or_default(),
-        source.selected,
-        source.available,
-        count(source.entry_count),
-        count(source.unique_track_count),
-        count(source.unavailable_count),
-        source.target_bytes,
-        source.last_synced_at.is_some(),
-        source.last_synced_at.unwrap_or_default(),
-    )
+        name: source.name,
+        selected: source.selected,
+        available: source.available,
+        entry_count: count(source.entry_count),
+        unique_track_count: count(source.unique_track_count),
+        unavailable_count: count(source.unavailable_count),
+        target_bytes: source.target_bytes,
+        last_synced_at: source.last_synced_at,
+    }
 }
 
-fn changes_row(changes: &AgentDeviceSyncChanges) -> DeviceSyncChangesRow {
-    (
-        count(changes.additions),
-        count(changes.replacements),
-        count(changes.removals),
-        count(changes.retained_unavailable),
-        count(changes.playlist_writes),
-        count(changes.playlist_removals),
-        changes.transfer_bytes,
-    )
+fn change_counts(changes: &AgentDeviceSyncChanges) -> DeviceChangeCounts {
+    DeviceChangeCounts {
+        additions: count(changes.additions),
+        replacements: count(changes.replacements),
+        removals: count(changes.removals),
+        retained_unavailable: count(changes.retained_unavailable),
+        playlist_writes: count(changes.playlist_writes),
+        playlist_removals: count(changes.playlist_removals),
+        transfer_bytes: changes.transfer_bytes,
+    }
 }
 
-fn storage_row(storage: &AgentDeviceSyncStorage) -> DeviceSyncStorageRow {
-    let (state, has_shortfall, shortfall) = storage_state_name(storage.state);
-    let empty = AgentDeviceSyncStorageComposition::default();
-    let after_sync = storage.after_sync.as_ref();
-    (
-        storage.target_name.is_some(),
-        storage.target_name.clone().unwrap_or_default(),
-        state.to_owned(),
-        has_shortfall,
-        shortfall,
-        storage.transfer_bytes,
-        storage_composition_row(&storage.current),
-        after_sync.is_some(),
-        storage_composition_row(after_sync.unwrap_or(&empty)),
-        storage_access_name(storage.access).to_owned(),
-    )
-}
-
-fn optional_timestamp(timestamp: Option<i64>) -> DeviceSyncTimestampRow {
-    (timestamp.is_some(), timestamp.unwrap_or_default())
+fn storage_snapshot(storage: &AgentDeviceSyncStorage) -> DeviceStorageSnapshot {
+    let (state, shortfall_bytes) = storage_state(storage.state);
+    DeviceStorageSnapshot {
+        target_name: storage.target_name.clone(),
+        state: state.to_owned(),
+        shortfall_bytes,
+        transfer_bytes: storage.transfer_bytes,
+        current: storage_composition(&storage.current),
+        after_sync: storage.after_sync.as_ref().map(storage_composition),
+        access: storage_access_name(storage.access).to_owned(),
+    }
 }
 
 fn storage_access_name(access: AgentDeviceSyncStorageAccess) -> &'static str {
@@ -310,45 +219,42 @@ fn storage_access_name(access: AgentDeviceSyncStorageAccess) -> &'static str {
     }
 }
 
-fn storage_composition_row(
+fn storage_composition(
     composition: &AgentDeviceSyncStorageComposition,
-) -> DeviceSyncStorageCompositionRow {
-    (
-        composition.total_bytes.is_some(),
-        composition.total_bytes.unwrap_or_default(),
-        composition.reprise_music_bytes,
-        composition.other_music_bytes,
-        composition.other_used_bytes.is_some(),
-        composition.other_used_bytes.unwrap_or_default(),
-        composition.free_bytes.is_some(),
-        composition.free_bytes.unwrap_or_default(),
-        match composition.knowledge {
+) -> DeviceStorageComposition {
+    DeviceStorageComposition {
+        total_bytes: composition.total_bytes,
+        reprise_music_bytes: composition.reprise_music_bytes,
+        other_music_bytes: composition.other_music_bytes,
+        other_used_bytes: composition.other_used_bytes,
+        free_bytes: composition.free_bytes,
+        knowledge: match composition.knowledge {
             AgentDeviceSyncStorageKnowledge::Complete => "complete",
             AgentDeviceSyncStorageKnowledge::CapacityUnknown => "capacity_unknown",
             AgentDeviceSyncStorageKnowledge::Inconsistent => "inconsistent",
         }
         .to_owned(),
-    )
+    }
 }
 
-fn controls_row(controls: AgentDeviceSyncControls) -> DeviceSyncControlsRow {
-    (
-        controls.editable,
-        controls.can_start,
-        controls.can_cancel,
-        controls.can_eject,
-    )
+fn controls(controls: AgentDeviceSyncControls) -> DeviceControls {
+    DeviceControls {
+        editable: controls.editable,
+        can_start: controls.can_start,
+        can_cancel: controls.can_cancel,
+        can_eject: controls.can_eject,
+    }
 }
 
-fn storage_state_name(state: AgentDeviceSyncStorageState) -> (&'static str, bool, u64) {
+fn storage_state(state: AgentDeviceSyncStorageState) -> (&'static str, Option<u64>) {
     match state {
-        AgentDeviceSyncStorageState::Fits => ("fits", false, 0),
+        AgentDeviceSyncStorageState::Fits => ("fits", None),
         AgentDeviceSyncStorageState::Insufficient { shortfall_bytes } => {
-            ("insufficient", true, shortfall_bytes)
+            ("insufficient", Some(shortfall_bytes))
         }
-        AgentDeviceSyncStorageState::CapacityUnknown => ("capacity_unknown", false, 0),
-        AgentDeviceSyncStorageState::Inconsistent => ("inconsistent", false, 0),
-        AgentDeviceSyncStorageState::Blocked => ("blocked", false, 0),
+        AgentDeviceSyncStorageState::CapacityUnknown => ("capacity_unknown", None),
+        AgentDeviceSyncStorageState::Inconsistent => ("inconsistent", None),
+        AgentDeviceSyncStorageState::Blocked => ("blocked", None),
     }
 }
 
@@ -383,7 +289,8 @@ fn source_token(source: &SelectionSource) -> String {
     format!("{kind}:{id}")
 }
 
-fn decode_source((kind, id): DeviceSyncSourceSelection) -> zbus::fdo::Result<SelectionSource> {
+fn decode_source(selection: DeviceSourceSelection) -> zbus::fdo::Result<SelectionSource> {
+    let DeviceSourceSelection { kind, id } = selection;
     if id <= 0 {
         return Err(zbus::fdo::Error::InvalidArgs(
             "playlist source ids must be positive".into(),
@@ -472,21 +379,25 @@ mod tests {
         let (sender, receiver) = async_channel::unbounded();
         let control = DeviceSyncControl::new(sender, state);
 
-        let rows = control.snapshot();
-        assert_eq!(rows[0].0, "Pixel");
-        assert_eq!(rows[0].2, "original");
-        assert_eq!(rows[0].4, 200);
-        assert_eq!(rows[0].6[0].0, "smart");
-        assert_eq!(rows[0].6[0].1, 7);
-        assert_eq!(rows[0].6[0].6, 220);
-        assert!(rows[0].6[0].10);
-        assert_eq!(rows[0].6[0].11, 1_721_234_567);
-        assert_eq!(rows[0].7 .0, 125);
-        assert_eq!(rows[0].8 .6 .7, 80);
-        assert!(rows[0].11 .2);
-        assert!(!rows[0].11 .3);
-        assert_eq!(rows[0].13 .2, 12);
-        assert_eq!(rows[0].15, (true, 1_721_234_890));
+        let devices = control.snapshot();
+        let device = &devices[0];
+        assert_eq!(device.name, "Pixel");
+        assert_eq!(device.profile, "original");
+        assert_eq!(device.unique_track_count, 200);
+        assert_eq!(device.sources[0].kind, "smart");
+        assert_eq!(device.sources[0].id, 7);
+        assert_eq!(device.sources[0].entry_count, 220);
+        assert_eq!(device.sources[0].last_synced_at, Some(1_721_234_567));
+        assert_eq!(device.changes.additions, 125);
+        assert_eq!(device.storage.current.free_bytes, Some(80));
+        assert!(device.controls.can_cancel);
+        assert!(!device.controls.can_eject);
+        assert_eq!(device.progress.bytes_per_second, 12);
+        assert_eq!(device.last_synced_at, Some(1_721_234_890));
+        assert_eq!(
+            control.protocol_version(),
+            (PROTOCOL_VERSION.major, PROTOCOL_VERSION.minor)
+        );
 
         let responder = std::thread::spawn(move || {
             let request = receiver.recv_blocking().unwrap();
@@ -503,14 +414,23 @@ mod tests {
         control
             .configure(
                 "Pixel",
-                vec![("playlist".into(), 3), ("smart".into(), 7)],
+                vec![
+                    DeviceSourceSelection {
+                        kind: "playlist".into(),
+                        id: 3,
+                    },
+                    DeviceSourceSelection {
+                        kind: "smart".into(),
+                        id: 7,
+                    },
+                ],
                 "opus_160",
             )
             .unwrap();
         responder.join().unwrap();
     }
 
-    /// Block H (MCP parity): `category_snapshot` must actually distinguish
+    /// Block H (MCP parity): the snapshot's categories must actually distinguish
     /// its three `MTP-22` reading states, not just carry a label field that
     /// stays green if the distinction were lost.
     #[test]
@@ -552,41 +472,57 @@ mod tests {
         let (sender, _receiver) = async_channel::unbounded();
         let control = DeviceSyncControl::new(sender, state);
 
-        let snapshot = control.category_snapshot();
+        let snapshot = control.snapshot();
 
         assert_eq!(snapshot.len(), 1);
-        let (name, categories) = &snapshot[0];
-        assert_eq!(name, "Pixel");
-        assert_eq!(categories[0].0, "youtube_audio");
-        assert_eq!(categories[0].6, "diff");
-        assert_eq!(categories[0].7, 3, "files_to_copy survives the wire");
-        assert_eq!(categories[0].10, 50, "bytes_freed survives the wire");
-        assert_eq!(categories[0].11, 2, "files_waiting_for_download survives");
-        assert!(categories[0].4, "has_cap");
-        assert_eq!(categories[0].5, 8 * 1024 * 1024 * 1024);
-
-        assert_eq!(categories[1].0, "podcast_episodes");
+        assert_eq!(snapshot[0].name, "Pixel");
+        let categories = &snapshot[0].categories;
+        assert_eq!(categories[0].kind, "youtube_audio");
+        assert_eq!(categories[0].reading_kind, "diff");
         assert_eq!(
-            categories[1].6, "source_off",
+            categories[0].files_to_copy, 3,
+            "files_to_copy survives the wire"
+        );
+        assert_eq!(
+            categories[0].bytes_freed, 50,
+            "bytes_freed survives the wire"
+        );
+        assert_eq!(
+            categories[0].files_waiting_for_download, 2,
+            "files_waiting_for_download survives"
+        );
+        assert_eq!(categories[0].cap_bytes, Some(8 * 1024 * 1024 * 1024));
+
+        assert_eq!(categories[1].kind, "podcast_episodes");
+        assert_eq!(
+            categories[1].reading_kind, "source_off",
             "source_off must not read as a zero diff"
         );
         assert_eq!(
-            categories[1].7, 0,
+            categories[1].files_to_copy, 0,
             "source_off carries no diff figures, unlike a genuine zero-change diff"
         );
 
-        assert_eq!(categories[2].0, "playlists");
-        assert_eq!(categories[2].6, "unavailable_kept_on_phone");
+        assert_eq!(categories[2].kind, "playlists");
+        assert_eq!(categories[2].reading_kind, "unavailable_kept_on_phone");
         assert_ne!(
-            categories[1].6, categories[2].6,
+            categories[1].reading_kind, categories[2].reading_kind,
             "source_off and unavailable_kept_on_phone are distinct states"
         );
     }
 
     #[test]
     fn configure_rejects_invalid_source_identity_before_dispatch() {
-        assert!(decode_source(("playlist".into(), 0)).is_err());
-        assert!(decode_source(("unknown".into(), 1)).is_err());
+        assert!(decode_source(DeviceSourceSelection {
+            kind: "playlist".into(),
+            id: 0,
+        })
+        .is_err());
+        assert!(decode_source(DeviceSourceSelection {
+            kind: "unknown".into(),
+            id: 1,
+        })
+        .is_err());
     }
 
     #[test]

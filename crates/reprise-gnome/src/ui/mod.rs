@@ -33,6 +33,7 @@ mod device_sync;
 pub mod dialogs;
 pub(crate) mod ellipsis_tooltip;
 pub(crate) mod eq_bars;
+mod experimental;
 mod external_changes;
 pub(crate) mod external_link;
 pub(crate) mod file_open;
@@ -40,7 +41,6 @@ pub mod first_run;
 mod help;
 pub mod import_errors_view;
 pub(crate) mod info_panel;
-mod instrumental;
 mod issues;
 mod library_doctor;
 mod library_views;
@@ -73,6 +73,7 @@ pub mod shortcuts;
 pub(in crate::ui) mod show_in_files;
 pub(crate) mod sidebar;
 mod source_add_action;
+mod source_context_surface;
 mod source_empty_state;
 mod stats;
 pub mod status_bar;
@@ -82,6 +83,8 @@ mod tag_edit;
 mod tag_write_gate;
 #[cfg(test)]
 pub(crate) mod test_main_context;
+#[cfg(test)]
+pub(crate) mod test_settle;
 pub mod toasts;
 #[cfg(test)]
 pub(crate) mod tooltip_discipline;

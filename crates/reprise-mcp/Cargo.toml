@@ -18,7 +18,7 @@ path = "src/main.rs"
 # check-architecture.sh). The desktop build enables it; a plain `cargo build`
 # stays D-Bus-free and simply omits the playback tools.
 default = []
-mpris = ["dep:zbus"]
+mpris = ["dep:zbus", "dep:reprise-runtime-protocol"]
 
 [dependencies]
 # The seam back to the library is core-only (enforced by
@@ -46,6 +46,10 @@ tokio = { version = "1", default-features = false, features = [
     "time",
 ] }
 serde = { version = "1", features = ["derive"] }
+# Optional for the same reason zbus is: the default build must depend on
+# reprise-core alone (enforced by scripts/check-architecture.sh). The
+# device-sync client that speaks this protocol is `mpris`-gated too.
+reprise-runtime-protocol = { path = "../reprise-runtime-protocol", optional = true }
 serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

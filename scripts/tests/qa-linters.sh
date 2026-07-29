@@ -35,6 +35,7 @@ require_pattern_order() {
 }
 
 require_executable scripts/check-architecture.sh
+require_executable scripts/check-frontend-thinness.sh
 require_executable scripts/check-accessibility-semantics.sh
 require_executable scripts/check-input-parity.sh
 require_executable scripts/check-motion-tokens.sh

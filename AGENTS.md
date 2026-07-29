@@ -43,23 +43,23 @@ plans — they live at `docs/` top level and outrank the code.
 - The **superpowers** process skills (brainstorming, TDD, systematic-debugging,
   verification-before-completion) carry the iron rules: TDD, verify-before-done, hard gates,
   isolation, honesty.
-- **`docs/agents/branching.md`** defines the protected GitHub flow: feature branches merge into
-  `dev`; only a green `dev` promotion or emergency `hotfix/*` pull request may enter `main`.
+- **`docs/agents/branching.md`** defines the GitHub flow: every branch opens a squashed pull
+  request into `dev`, and only a green `dev` reaches `main`, by fast-forward promotion.
 
 ## UX rules are binding
 
 `docs/ux-rules.md` is the single UX source of truth (German). Before touching
 any user-facing behavior, read the sections you work in. The contract:
 
-- `[aktiv]` rules are enforceable: deviation is a bug; every `[aktiv]` rule
+- `[active]` rules are enforceable: deviation is a bug; every `[active]` rule
   has a rule-named test (`fn play_1a_…` / cua-e2e `play-1a-…`) that gates
   merges via `scripts/check-ux-traceability.sh`.
-- A rule flips `[geplant]` → `[aktiv]` in the same commit that implements
+- A rule flips `[planned]` → `[active]` in the same commit that implements
   the behavior and adds its test — never retroactively.
-- Rule IDs are append-only; replaced rules stay as `[ersetzt durch <ID>]`
+- Rule IDs are append-only; replaced rules stay as `[replaced durch <ID>]`
   and their tests are re-pointed in the same commit.
 - If you hit a case no rule covers: do NOT decide locally. Add a
-  `[geplant]` draft with the next free ID in the affected section, marked
+  `[planned]` draft with the next free ID in the affected section, marked
   `<!-- REVIEW: Regelvorschlag -->`, and surface it for human review.
 
 ## How to resume (the method — no special tooling required)
@@ -71,9 +71,9 @@ The project is built **plan-by-plan, task-by-task, test-first**. To continue:
 2. Work each task test-first: **write the failing test → run it, see it fail → implement the
    minimal code → run tests, see them pass → run the full gate battery → commit.**
 3. One commit per task (fixes get their own follow-up commits). **No attribution footer. Do
-   not push unless explicitly requested.** Branch from `dev`, open feature pull requests to
-   `dev`, and normally promote only `dev` to `main`; emergency `hotfix/*` branches start from
-   `main`, pass the same full gate, and are immediately synchronized back into `dev`. See
+   not push unless explicitly requested.** Branch from `dev`, open squashed pull requests to
+   `dev`, and leave the fast-forward promotion of `dev` to `main` to the owner; emergency
+   `hotfix/*` branches also start from `dev` and pass the same full gate. See
    `docs/agents/branching.md`.
 4. Append one line to `.superpowers/sdd/progress.md`:
    `Task N: complete (commit <hash>, base <hash>, <one-line note>)`.
@@ -84,12 +84,21 @@ The project is built **plan-by-plan, task-by-task, test-first**. To continue:
 
 - Never commit or push directly to `dev` or `main`. Create a dedicated branch for every
   change and open a pull request whose base branch is `dev`.
-- Agents may prepare, update, verify, and merge pull requests into `dev` after all required
-  checks are green, but must not merge `dev` into `main` or approve a production release.
-- Only the repository owner promotes `dev` to `main`, after reviewing the accumulated
-  changes and confirming that all required checks are green.
-- Emergency production fixes still start on a `hotfix/*` branch and require an explicit
-  pull request and owner approval before reaching `main`.
+- Agents may prepare, update, verify, and merge pull requests into `dev` after the gate is
+  green, but must not promote `dev` to `main` or approve a production release. Which gate
+  that is depends on the repository's plan — see `docs/agents/branching.md`; today it is a
+  local `scripts/check-merge-readiness.sh` run, because GitHub enforces nothing here.
+- **Every pull request is squashed**, and every pull request targets `dev`. The repository
+  allows no other merge method, so this is not a choice to make on the merge button. One
+  commit per pull request, titled as a conventional commit. A squashed branch is never
+  reported as merged by `git branch -d`, so delete it with `-D`, and never stack a topic
+  branch on another topic branch. See `docs/agents/branching.md`, "Merge method".
+- Only the repository owner promotes `dev` to `main`, and the promotion is a fast-forward
+  push (`git push origin origin/dev:main`), not a pull request — a squashed promotion would
+  make the two branches diverge permanently. Agents never run it.
+- Emergency production fixes start on a `hotfix/*` branch **from `dev`** and reach `main`
+  through the same promotion. A `hotfix/*` merged straight into `main` breaks the
+  fast-forward property irrecoverably; `docs/agents/branching.md` explains why.
 
 ## Gates — ALL must pass before every commit
 
@@ -120,7 +129,7 @@ Markdown is exempt: docs are split by subject, never by line count.
   translations come later via gettext; German first.) Internal design docs/specs are in German
   — deliberately, it is the project's working language. Tests and shell scripts are code, so
   they stay English even when they enforce a German doc; rule IDs and status tokens
-  (`[aktiv]`, `[geplant]`) are quoted verbatim and stay German.
+  (`[active]`, `[planned]`) are quoted verbatim and stay German.
 - **Never touch the user's music files or real database unasked.** Reprise only ever *reads*
   the user's audio files; deletes are DB-only or trash-with-confirmation, never silent file ops.
   The real DB is `~/.local/share/reprise/reprise.db` (1686 real tracks; library root

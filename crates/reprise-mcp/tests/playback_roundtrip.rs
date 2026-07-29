@@ -54,7 +54,7 @@ enum Recorded {
     QueueClear,
     ConfigureDevice {
         device_name: String,
-        sources: Vec<(String, i64)>,
+        sources: Vec<DeviceSourceSelection>,
         profile: String,
     },
     StartDevice(String),
@@ -63,71 +63,11 @@ enum Recorded {
 }
 
 type Calls = Arc<Mutex<Vec<Recorded>>>;
-type DeviceSyncSourceRow = (
-    String,
-    i64,
-    bool,
-    String,
-    bool,
-    bool,
-    u64,
-    u64,
-    u64,
-    u64,
-    bool,
-    i64,
-);
-type DeviceSyncChangesRow = (u64, u64, u64, u64, u64, u64, u64);
-type DeviceSyncStorageCompositionRow = (bool, u64, u64, u64, bool, u64, bool, u64, String);
-type DeviceSyncStorageRow = (
-    bool,
-    String,
-    String,
-    bool,
-    u64,
-    u64,
-    DeviceSyncStorageCompositionRow,
-    bool,
-    DeviceSyncStorageCompositionRow,
-    String,
-);
-type DeviceSyncControlsRow = (bool, bool, bool, bool);
-type DeviceSyncProgressRow = (u64, u64, u64);
-type DeviceSyncTimestampRow = (bool, i64);
-type DeviceSyncCategoryRow = (
-    String,
-    String,
-    bool,
-    u64,
-    bool,
-    u64,
-    String,
-    u64,
-    u64,
-    u64,
-    u64,
-    u64,
-    u64,
-);
-type DeviceSyncCategoryDeviceRow = (String, Vec<DeviceSyncCategoryRow>);
-type DeviceSyncRow = (
-    String,
-    bool,
-    String,
-    u64,
-    u64,
-    u64,
-    Vec<DeviceSyncSourceRow>,
-    DeviceSyncChangesRow,
-    DeviceSyncStorageRow,
-    Vec<String>,
-    Vec<String>,
-    DeviceSyncControlsRow,
-    String,
-    DeviceSyncProgressRow,
-    String,
-    DeviceSyncTimestampRow,
-);
+use reprise_runtime_protocol::device_sync::{
+    DeviceChangeCounts, DeviceControls, DeviceProgress, DeviceSnapshot, DeviceSourceSelection,
+    DeviceSourceSnapshot, DeviceStorageComposition, DeviceStorageSnapshot,
+};
+use reprise_runtime_protocol::PROTOCOL_VERSION;
 
 /// Stub for the standard MPRIS `Player` interface. Each Rust method maps to its
 /// PascalCase D-Bus name (`play` → `Play`), matching what
@@ -259,106 +199,100 @@ struct DeviceSyncStub {
 
 #[interface(name = "org.reprise.DeviceSync1")]
 impl DeviceSyncStub {
-    fn snapshot(&self) -> Vec<DeviceSyncRow> {
-        vec![(
-            "Pixel".into(),
-            true,
-            "original".into(),
-            75,
-            200,
-            80,
-            vec![
-                (
-                    "playlist".into(),
-                    3,
-                    true,
-                    "Lorna Shore & Similar".into(),
-                    true,
-                    true,
-                    220,
-                    200,
-                    2,
-                    80,
-                    true,
-                    1_721_234_567,
-                ),
-                (
-                    "smart".into(),
-                    7,
-                    true,
-                    "Heavy rotation".into(),
-                    true,
-                    true,
-                    50,
-                    50,
-                    0,
-                    20,
-                    false,
-                    0,
-                ),
-            ],
-            (120, 5, 75, 2, 1, 0, 60),
-            (
-                true,
-                "Internal storage".into(),
-                "fits".into(),
-                false,
-                0,
-                60,
-                (true, 100, 20, 10, true, 30, true, 40, "complete".into()),
-                true,
-                (true, 100, 80, 10, true, 10, true, 0, "complete".into()),
-                "writable".into(),
-            ),
-            Vec::new(),
-            vec!["unavailable_not_on_device".into()],
-            (false, false, true, false),
-            "copying".into(),
-            (20, 60, 10),
-            "Sun//Eater — Lorna Shore".into(),
-            (true, 1_721_234_890),
-        )]
+    /// The stub speaks the version this build ships, so the client's
+    /// handshake passes and the test exercises decoding rather than the
+    /// refusal path.
+    #[zbus(property)]
+    fn protocol_version(&self) -> (u32, u32) {
+        (PROTOCOL_VERSION.major, PROTOCOL_VERSION.minor)
     }
 
-    fn category_snapshot(&self) -> Vec<DeviceSyncCategoryDeviceRow> {
-        vec![(
-            "Pixel".into(),
-            vec![
-                (
-                    "youtube_audio".into(),
-                    "/Music/Reprise-YouTube".into(),
-                    true,
-                    42,
-                    true,
-                    8 * 1024 * 1024 * 1024,
-                    "diff".into(),
-                    3,
-                    900,
-                    1,
-                    50,
-                    2,
-                    0,
-                ),
-                (
-                    "podcast_episodes".into(),
-                    "/Podcasts/Reprise".into(),
-                    true,
-                    0,
-                    true,
-                    4 * 1024 * 1024 * 1024,
-                    "source_off".into(),
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                ),
+    fn snapshot(&self) -> Vec<DeviceSnapshot> {
+        vec![DeviceSnapshot {
+            name: "Pixel".into(),
+            connected: true,
+            profile: "original".into(),
+            managed_tracks: 75,
+            unique_track_count: 200,
+            target_bytes: 80,
+            sources: vec![
+                DeviceSourceSnapshot {
+                    kind: "playlist".into(),
+                    id: 3,
+                    name: Some("Lorna Shore & Similar".into()),
+                    selected: true,
+                    available: true,
+                    entry_count: 220,
+                    unique_track_count: 200,
+                    unavailable_count: 2,
+                    target_bytes: 80,
+                    last_synced_at: Some(1_721_234_567),
+                },
+                DeviceSourceSnapshot {
+                    kind: "smart".into(),
+                    id: 7,
+                    name: Some("Heavy rotation".into()),
+                    selected: true,
+                    available: true,
+                    entry_count: 50,
+                    unique_track_count: 50,
+                    unavailable_count: 0,
+                    target_bytes: 20,
+                    last_synced_at: None,
+                },
             ],
-        )]
+            changes: DeviceChangeCounts {
+                additions: 120,
+                replacements: 5,
+                removals: 75,
+                retained_unavailable: 2,
+                playlist_writes: 1,
+                playlist_removals: 0,
+                transfer_bytes: 60,
+            },
+            storage: DeviceStorageSnapshot {
+                target_name: Some("Internal storage".into()),
+                state: "fits".into(),
+                shortfall_bytes: None,
+                transfer_bytes: 60,
+                current: DeviceStorageComposition {
+                    total_bytes: Some(100),
+                    reprise_music_bytes: 20,
+                    other_music_bytes: 10,
+                    other_used_bytes: Some(30),
+                    free_bytes: Some(40),
+                    knowledge: "complete".into(),
+                },
+                after_sync: Some(DeviceStorageComposition {
+                    total_bytes: Some(100),
+                    reprise_music_bytes: 80,
+                    other_music_bytes: 10,
+                    other_used_bytes: Some(10),
+                    free_bytes: Some(0),
+                    knowledge: "complete".into(),
+                }),
+                access: "writable".into(),
+            },
+            blockers: Vec::new(),
+            warnings: vec!["unavailable_not_on_device".into()],
+            controls: DeviceControls {
+                editable: false,
+                can_start: false,
+                can_cancel: true,
+                can_eject: false,
+            },
+            phase: "copying".into(),
+            progress: DeviceProgress {
+                bytes_done: 20,
+                bytes_total: 60,
+                bytes_per_second: 10,
+            },
+            current_track: "Sun//Eater — Lorna Shore".into(),
+            last_synced_at: Some(1_721_234_890),
+        }]
     }
 
-    fn configure(&self, device_name: &str, sources: Vec<(String, i64)>, profile: &str) {
+    fn configure(&self, device_name: &str, sources: Vec<DeviceSourceSelection>, profile: &str) {
         self.calls
             .lock()
             .expect("calls lock")
@@ -515,23 +449,8 @@ fn device_sync_state_and_commands_round_trip_without_internal_identity() {
     assert_eq!(body["devices"][0]["progress"]["bytes_per_second"], 10);
     assert_eq!(body["devices"][0]["controls"]["can_cancel"], true);
     assert_eq!(body["devices"][0]["controls"]["can_eject"], false);
-    assert_eq!(body["devices"][0]["categories"][0]["kind"], "youtube_audio");
-    assert_eq!(body["devices"][0]["categories"][0]["reading"], "diff");
-    assert_eq!(body["devices"][0]["categories"][0]["files_to_copy"], 3);
-    assert_eq!(body["devices"][0]["categories"][1]["reading"], "source_off");
-    assert_eq!(
-        body["devices"][0]["categories"][1]["files_to_copy"], 0,
-        "source_off must not carry a diff's figures"
-    );
-    // Only the `diff` category contributes to the aggregate balance.
-    assert_eq!(body["devices"][0]["balance"]["files_to_copy"], 3);
-    assert_eq!(body["devices"][0]["balance"]["bytes_freed"], 50);
-    assert_eq!(body["devices"][0]["balance"]["has_work"], true);
     assert!(!state.to_string().contains("serial"));
-    // The device's own MTP target folder path is intentionally shown
-    // (matches the GUI's device page, MTP-28) — only a *local* filesystem
-    // path would be a leak, and none of those appear here.
-    assert!(state.to_string().contains("Music/Reprise-YouTube"));
+    assert!(!state.to_string().contains("path"));
 
     for params in [
         json!({
@@ -556,7 +475,16 @@ fn device_sync_state_and_commands_round_trip_without_internal_identity() {
         vec![
             Recorded::ConfigureDevice {
                 device_name: "Pixel".into(),
-                sources: vec![("playlist".into(), 3), ("smart".into(), 7)],
+                sources: vec![
+                    DeviceSourceSelection {
+                        kind: "playlist".into(),
+                        id: 3,
+                    },
+                    DeviceSourceSelection {
+                        kind: "smart".into(),
+                        id: 7,
+                    },
+                ],
                 profile: "mp3_256".into(),
             },
             Recorded::StartDevice("Pixel".into()),

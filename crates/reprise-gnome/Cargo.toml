@@ -16,18 +16,10 @@ default = []
 # Enables the two core HTTP fixture routers for isolated smoke/E2E binaries.
 # Production builds keep this off, so fixture environment variables are inert.
 test-fixtures = ["reprise-core/test-fixtures"]
-# Enables the packaged out-of-process stem worker surface. GTK links only the
-# provisioning slice (download/checksum/readiness), never the `ort` inference
-# feature. Meson builds that native backend in reprise-worker and embeds its
-# libexec path into this frontend.
-stem-backend = ["dep:reprise-stems"]
 
 [dependencies]
 reprise-core = { path = "../reprise-core" }
 reprise-platform-linux = { path = "../reprise-platform-linux" }
-# Provisioning-only: no `ort`, audio codecs, or inference implementation enters
-# the GTK process. The native backend is hosted by reprise-cli's worker feature.
-reprise-stems = { path = "../reprise-stems", features = ["provision-http"], optional = true }
 # Partitioned from the pre-split single-crate dependency set (no new deps):
 # the frontend holds `Rc<RefCell<rusqlite::Connection>>` and passes it to
 # core's query layer (14 `Connection` references across the ui layer), and

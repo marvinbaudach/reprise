@@ -80,6 +80,7 @@ pub(super) struct FakeState {
     total_bytes: Cell<Option<u64>>,
     storage_access: Cell<DeviceStorageAccess>,
     transcode_probe_error: RefCell<Option<String>>,
+    cleanup_error: RefCell<Option<String>>,
     copy_gate: RefCell<Option<CopyGate>>,
     playlist_error: RefCell<Option<String>>,
     playlist_gate: RefCell<Option<PlaylistGate>>,
@@ -123,6 +124,14 @@ impl FakeBackend {
 
     pub(super) fn with_transcode_probe_error(self, error: &str) -> Self {
         self.state.transcode_probe_error.replace(Some(error.into()));
+        self
+    }
+
+    /// Came in with the dev merge: `MTP-21`'s proven-transfer work publishes
+    /// through a `.part` file, which makes a failed cleanup a case a test has
+    /// to be able to force.
+    pub(super) fn with_cleanup_error(self, error: &str) -> Self {
+        self.state.cleanup_error.replace(Some(error.into()));
         self
     }
 
@@ -347,6 +356,16 @@ impl DeviceBackend for FakeBackend {
                 .push((target_path, relative_target));
             Ok(CopyOutcome::Copied)
         })
+    }
+
+    fn cleanup_partials(
+        &self,
+        _root_uri: String,
+        _target_path: String,
+        _storage_id: Option<StorageId>,
+    ) -> BackendFuture<u32> {
+        let error = self.state.cleanup_error.borrow().clone();
+        Box::pin(async move { error.map_or(Ok(0), Err) })
     }
 
     fn probe_transcode(&self, _profile: TranscodeProfile) -> Result<(), String> {

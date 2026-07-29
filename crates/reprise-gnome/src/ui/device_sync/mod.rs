@@ -2,6 +2,7 @@ pub(in crate::ui) mod device_sync_backend;
 mod device_sync_category_bar;
 mod device_sync_content_panel;
 pub(in crate::ui) mod device_sync_feedback;
+mod device_sync_history;
 pub(in crate::ui) mod device_sync_launcher;
 pub(in crate::ui) mod device_sync_page;
 mod device_sync_page_actions;

@@ -471,6 +471,8 @@ mod auto_start_tests;
 mod cap_tests;
 #[path = "device_sync_compact_tests.rs"]
 mod compact_tests;
+#[path = "device_sync_inflight_tests.rs"]
+mod inflight_tests;
 #[path = "device_sync_planned_tests.rs"]
 mod planned_tests;
 #[path = "device_sync_podcast_removal_tests.rs"]

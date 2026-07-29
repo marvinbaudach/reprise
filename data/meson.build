@@ -20,3 +20,27 @@ install_data(
   install_dir: get_option('datadir') / 'icons/hicolor/symbolic/apps',
 )
 
+
+# The activatable runtime service (plan section 9.4). Binary, bus-activation
+# file and systemd user unit are installed together and by the same build:
+# a runtime whose metadata is missing is not "degraded", it simply never
+# starts on a user's machine while working perfectly on a developer's.
+# `scripts/check-runtime-service-install.sh` keeps the three in agreement.
+runtime_service_config = configuration_data()
+runtime_service_config.set('bindir', prefix / get_option('bindir'))
+
+configure_file(
+  input: 'org.reprise.Reprise1.service.in',
+  output: 'org.reprise.Reprise1.service',
+  configuration: runtime_service_config,
+  install: true,
+  install_dir: get_option('datadir') / 'dbus-1/services',
+)
+
+configure_file(
+  input: 'reprise-runtime.service.in',
+  output: 'reprise-runtime.service',
+  configuration: runtime_service_config,
+  install: true,
+  install_dir: prefix / 'lib/systemd/user',
+)

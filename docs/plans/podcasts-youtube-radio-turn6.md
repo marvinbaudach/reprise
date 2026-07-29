@@ -690,10 +690,19 @@ Fragen mehr und gehen so in die Regeln `SRC-6` und `SRC-7` ein.
   Zeile „or import an OPML file" aus Turn 6f wird nicht übernommen, weil kein
   Importpfad existiert und ein Leerzustand nichts versprechen darf, was es
   nicht gibt. Die Frage ist geschlossen, nicht vertagt.
+- **E-9 · entschieden am 2026-07-29 · Die Null heißt überall „unbegrenzt".**
+  Auf der Geräteseite standen zwei Nullen mit gegenläufiger Bedeutung
+  nebeneinander: der Größen-Cap `0 GiB` = *unbegrenzt* (so ist `cap_bytes`
+  seit `MTP-38` als `Option` modelliert) gegen `MTP-36`s „latest N" `0` =
+  *nichts von diesem Kanal*. `MTP-36` ist der Ausreißer und war noch nicht
+  implementiert, also kostete die Angleichung eine Zeile Regeltext statt
+  eines Umbaus. „Nichts von diesem Kanal" sagt weiterhin der Kanal-Schalter
+  aus 6b — das ist keine Menge, also wird es auch nicht als Menge
+  ausgedrückt. `MTP-36` trägt die Entscheidung im Regeltext.
 
 ## 8. Offene Fragen — nicht lokal entscheiden
 
-**Derzeit keine.** O-1 bis O-7 sind entschieden und stehen mit Begründung in
+**Derzeit keine.** O-1 bis O-7 sowie E-9 sind entschieden und stehen mit Begründung in
 Abschnitt 8a. Neue Fälle, die keine Regel abdeckt, kommen weiterhin hierher —
 als `[geplant]`-Entwurf mit `<!-- REVIEW: Regelvorschlag -->`, nicht im Code
 beantwortet (`AGENTS.md`).

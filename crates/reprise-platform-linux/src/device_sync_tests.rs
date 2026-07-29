@@ -9,16 +9,17 @@ use reprise_core::library::m3u::M3uEntry;
 use tempfile::TempDir;
 
 use super::inspection::storage_access_from_attributes;
+use super::target_browser::derive_storage_id;
 use super::*;
 
-fn run<T>(future: impl Future<Output = T>) -> T {
+pub(super) fn run<T>(future: impl Future<Output = T>) -> T {
     let context = gio::glib::MainContext::new();
     context
         .with_thread_default(|| context.block_on(future))
         .unwrap()
 }
 
-fn fixture() -> (TempDir, DeviceStorage) {
+pub(super) fn fixture() -> (TempDir, DeviceStorage) {
     let temp = tempfile::tempdir().unwrap();
     let root = gio::File::for_path(temp.path());
     (temp, DeviceStorage::from_root(&root))
@@ -328,6 +329,89 @@ fn playlist_replace_and_read_round_trip() {
     );
 }
 
+/// The MTP backend can answer a rename with success without performing it,
+/// which is why publishing is proven rather than believed. A local fixture
+/// cannot fake that answer, so the proof itself is exercised directly.
+#[test]
+fn mtp_21_a_published_file_is_proven_by_its_expected_byte_count() {
+    let (temp, _storage) = fixture();
+    let path = temp.path().join("published.opus");
+    fs::write(&path, b"abcdef").unwrap();
+    let published = gio::File::for_path(&path);
+
+    assert!(run(verify_published(&published, 6)).is_ok());
+    assert!(matches!(
+        run(verify_published(&published, 9)),
+        Err(DeviceIoError::SizeMismatch {
+            expected: 9,
+            actual: 6,
+        })
+    ));
+}
+
+#[test]
+fn mtp_21_a_rename_that_left_nothing_behind_is_reported_not_believed() {
+    let (temp, _storage) = fixture();
+    let missing = gio::File::for_path(temp.path().join("never-arrived.opus"));
+
+    assert!(matches!(
+        run(verify_published(&missing, 6)),
+        Err(DeviceIoError::PublishNotApplied { .. })
+    ));
+}
+
+#[test]
+fn mtp_21_replacing_an_existing_track_publishes_it_without_leaving_a_partial() {
+    let (temp, storage) = fixture();
+    fs::create_dir_all(temp.path().join("Music/Reprise/Road")).unwrap();
+    fs::write(temp.path().join("source.flac"), b"new!").unwrap();
+    let final_path = temp.path().join("Music/Reprise/Road/7-source.flac");
+    fs::write(&final_path, b"old!").unwrap();
+
+    run(storage.replace_managed(
+        None,
+        SyncTargetKind::Playlists.default_path(),
+        &gio::File::for_path(temp.path().join("source.flac")),
+        "Road/7-source.flac",
+        4,
+        &gio::Cancellable::new(),
+        |_copied, _total| {},
+    ))
+    .unwrap();
+
+    assert_eq!(fs::read(&final_path).unwrap(), b"new!");
+    assert!(!temp
+        .path()
+        .join("Music/Reprise/Road/7-source.flac.part")
+        .exists());
+}
+
+#[test]
+fn mtp_21_rewriting_a_playlist_replaces_it_without_leaving_a_partial() {
+    let (temp, storage) = fixture();
+    run(storage.replace_playlist(
+        None,
+        SyncTargetKind::Playlists.default_path(),
+        "Road",
+        b"#EXTM3U\nRoad/1-old.flac\n".to_vec(),
+    ))
+    .unwrap();
+
+    run(storage.replace_playlist(
+        None,
+        SyncTargetKind::Playlists.default_path(),
+        "Road",
+        b"#EXTM3U\nRoad/2-new.flac\n".to_vec(),
+    ))
+    .unwrap();
+
+    assert_eq!(
+        fs::read(temp.path().join("Music/Reprise/Road.m3u8")).unwrap(),
+        b"#EXTM3U\nRoad/2-new.flac\n"
+    );
+    assert!(!temp.path().join("Music/Reprise/Road.m3u8.part").exists());
+}
+
 #[test]
 fn pre_cancelled_copy_leaves_no_partial_file() {
     let (temp, storage) = fixture();
@@ -619,108 +703,4 @@ fn mtp_38_transfer_and_inspection_route_through_a_targets_own_persisted_storage(
     assert!(
         run(storage.delete_managed(Some(sd_card), "/Music/YT", "Channel/1-Video.opus")).unwrap()
     );
-}
-
-// Design 7d's device folder browser (`MTP-31`/`MTP-32`). Every operation
-// below runs against a local temp directory standing in for the device
-// root, exactly like the fixtures above — no real or simulated phone.
-
-use super::target_browser::derive_storage_id;
-use reprise_core::device_sync::browser::StorageKind;
-
-#[test]
-fn derive_storage_id_is_stable_for_the_same_name_and_differs_for_different_names() {
-    assert_eq!(
-        derive_storage_id("Internal shared storage"),
-        derive_storage_id("Internal shared storage")
-    );
-    assert_ne!(
-        derive_storage_id("Internal shared storage"),
-        derive_storage_id("SD card")
-    );
-}
-
-#[test]
-fn browser_lists_storage_volumes_classified_internal_and_removable() {
-    let (temp, storage) = fixture();
-    fs::create_dir_all(temp.path().join("Internal shared storage")).unwrap();
-    fs::create_dir_all(temp.path().join("SD card")).unwrap();
-    fs::write(temp.path().join("not-a-volume.txt"), b"ignore").unwrap();
-
-    let mut volumes = run(storage.list_storage_volumes()).unwrap();
-    volumes.sort_by(|left, right| left.name.cmp(&right.name));
-
-    assert_eq!(
-        volumes.len(),
-        2,
-        "the loose file must not appear as a volume"
-    );
-    assert_eq!(volumes[0].name, "Internal shared storage");
-    assert_eq!(volumes[0].kind, StorageKind::Internal);
-    assert_eq!(volumes[1].name, "SD card");
-    assert_eq!(volumes[1].kind, StorageKind::Removable);
-}
-
-#[test]
-fn browser_lists_only_immediate_child_folders_of_a_path() {
-    let (temp, storage) = fixture();
-    fs::create_dir_all(temp.path().join("Internal/Music/Reprise")).unwrap();
-    fs::create_dir_all(temp.path().join("Internal/Music/Podcasts")).unwrap();
-    fs::write(temp.path().join("Internal/Music/loose.mp3"), b"audio").unwrap();
-    let internal_id = derive_storage_id("Internal");
-
-    let mut folders = run(storage.list_child_folders(internal_id, "/Music")).unwrap();
-    folders.sort();
-
-    assert_eq!(folders, vec!["Podcasts".to_string(), "Reprise".to_string()]);
-}
-
-#[test]
-fn browser_creates_a_new_folder_and_rejects_a_duplicate_name() {
-    let (temp, storage) = fixture();
-    fs::create_dir_all(temp.path().join("Internal/Music")).unwrap();
-    let internal_id = derive_storage_id("Internal");
-
-    run(storage.create_child_folder(internal_id, "/Music", "Reprise-YouTube")).unwrap();
-    assert!(temp.path().join("Internal/Music/Reprise-YouTube").is_dir());
-
-    let duplicate = run(storage.create_child_folder(internal_id, "/Music", "Reprise-YouTube"));
-    assert!(matches!(duplicate, Err(DeviceIoError::FolderAlreadyExists)));
-}
-
-#[test]
-fn browser_reports_a_distinct_error_when_a_device_refuses_creation_at_the_storage_root() {
-    let (temp, storage) = fixture();
-    let root = temp.path().join("Locked");
-    fs::create_dir_all(&root).unwrap();
-    let mut permissions = fs::metadata(&root).unwrap().permissions();
-    permissions.set_readonly(true);
-    fs::set_permissions(&root, permissions).unwrap();
-    let locked_id = derive_storage_id("Locked");
-
-    let result = run(storage.create_child_folder(locked_id, "", "Music"));
-
-    fs::set_permissions(&root, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-
-    assert!(
-        matches!(result, Err(DeviceIoError::CannotCreateAtStorageRoot(_))),
-        "expected the root-creation refusal to surface distinctly, got {result:?}"
-    );
-}
-
-#[test]
-fn browser_moves_a_folder_and_its_contents_to_a_new_path_on_the_same_storage() {
-    let (temp, storage) = fixture();
-    fs::create_dir_all(temp.path().join("Internal/Music/Reprise-YouTube")).unwrap();
-    fs::write(
-        temp.path().join("Internal/Music/Reprise-YouTube/song.opus"),
-        b"audio",
-    )
-    .unwrap();
-    let internal_id = derive_storage_id("Internal");
-
-    run(storage.move_child_folder(internal_id, "/Music/Reprise-YouTube", "/Music/YT")).unwrap();
-
-    assert!(!temp.path().join("Internal/Music/Reprise-YouTube").exists());
-    assert!(temp.path().join("Internal/Music/YT/song.opus").is_file());
 }

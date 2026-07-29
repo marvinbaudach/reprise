@@ -114,8 +114,7 @@ pub(super) fn wire_gesture(
     connectivity: impl Fn() -> Connectivity + 'static,
 ) {
     // input-parity: ACC-8 keyboard=radio-context-menu-shift-f10
-    let gesture = gtk4::GestureClick::new();
-    gesture.set_button(gtk4::gdk::BUTTON_SECONDARY);
+    let gesture = crate::ui::source_context_surface::secondary_click();
     let item = item.clone();
     gesture.connect_pressed(move |gesture, _, x, y| {
         let Some(object) = item
@@ -146,12 +145,11 @@ pub(super) fn wire_keyboard(
     is_playing: impl Fn(i64) -> bool + 'static,
     connectivity: impl Fn() -> Connectivity + 'static,
 ) {
-    let keys = gtk4::EventControllerKey::new();
+    let keys = crate::ui::source_context_surface::context_keys();
     let menu_parent = view.clone();
     let selection = selection.clone();
     keys.connect_key_pressed(move |_, key, _, modifiers| {
-        if !crate::ui::track_list::track_list_context_keys::is_context_menu_shortcut(key, modifiers)
-        {
+        if !crate::ui::source_context_surface::is_context_menu_shortcut(key, modifiers) {
             return gtk4::glib::Propagation::Proceed;
         }
         let Some(object) = selection
