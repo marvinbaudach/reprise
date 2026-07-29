@@ -12,7 +12,7 @@ use reprise_core::podcasts::{EpisodeRow, PodcastKind, SourceGroup};
 
 use super::podcasts_context_menu;
 use super::podcasts_presentation::{
-    duration, file_size, relative_date, status_pill, RenderedSourceGroup, SourceSummary,
+    duration, file_size, on_phone, relative_date, status_pill, RenderedSourceGroup, SourceSummary,
 };
 use crate::ui::strings;
 
@@ -176,10 +176,7 @@ fn group_header(
     header.append(&facts);
     // RSS and YouTube sources sync to their own device target folder alike
     // (`POD-12`), so the phone-sync indicator is not kind-restricted.
-    if connected_devices
-        .iter()
-        .any(|device| selected_device_ids.contains(&device.id))
-    {
+    if on_phone(connected_devices, selected_device_ids) {
         let sync = gtk4::Image::from_icon_name("phone-symbolic");
         sync.set_tooltip_text(Some(&strings::text(strings::PODCAST_SYNC_PHONE)));
         header.append(&sync);

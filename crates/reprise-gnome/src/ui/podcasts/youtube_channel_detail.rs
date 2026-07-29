@@ -14,9 +14,12 @@ use reprise_core::podcasts::channel_window::{
 use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::EpisodeRow;
 
+use super::podcasts_context_menu::PodcastSyncDevice;
 use super::podcasts_download_presentation;
 use super::podcasts_groups::{self, DownloadRowWidgets};
-use super::podcasts_presentation::{duration, relative_date, status_pill, RenderedSourceGroup};
+use super::podcasts_presentation::{
+    duration, on_phone, relative_date, status_pill, RenderedSourceGroup,
+};
 use crate::ui::strings;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -152,6 +155,14 @@ pub(super) struct YoutubeChannelDetail {
     groups: RefCell<Vec<RenderedSourceGroup>>,
     download_states: RefCell<BTreeMap<i64, DownloadState>>,
     download_widgets: RefCell<BTreeMap<i64, DownloadRowWidgets>>,
+    /// `POD-12` / `D3`: read-only mirror of the same per-device selection
+    /// `podcasts_groups::group_header` already shows on the channel list —
+    /// this view never decides selection itself, only displays it (`on_phone`
+    /// in `podcasts_presentation`). Writing selection stays exclusively on
+    /// the existing channel toggle (`podcasts_context_menu` /
+    /// `podcasts_device_sync::install_action`).
+    connected_devices: RefCell<Vec<PodcastSyncDevice>>,
+    selected_devices: RefCell<BTreeMap<i64, Vec<String>>>,
     /// `NET-1a` / `C1`: `online_sources::network_allowed(conn,
     /// &modules::SOURCE_IMAGES_MODULE)`, refreshed by [`Self::update`] on
     /// every render pass — this view never reads settings itself.
@@ -182,6 +193,8 @@ impl YoutubeChannelDetail {
             groups: RefCell::new(Vec::new()),
             download_states: RefCell::new(BTreeMap::new()),
             download_widgets: RefCell::new(BTreeMap::new()),
+            connected_devices: RefCell::new(Vec::new()),
+            selected_devices: RefCell::new(BTreeMap::new()),
             images_allowed: Cell::new(false),
         })
     }
@@ -214,14 +227,19 @@ impl YoutubeChannelDetail {
         group.add_action(&close);
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn update(
         self: &Rc<Self>,
         groups: &[RenderedSourceGroup],
         download_states: &BTreeMap<i64, DownloadState>,
+        connected_devices: &[PodcastSyncDevice],
+        selected_devices: &BTreeMap<i64, Vec<String>>,
         images_allowed: bool,
     ) {
         self.groups.replace(groups.to_vec());
         self.download_states.replace(download_states.clone());
+        self.connected_devices.replace(connected_devices.to_vec());
+        self.selected_devices.replace(selected_devices.clone());
         self.images_allowed.set(images_allowed);
         let active = self.state.borrow().active_channel();
         if active.is_some_and(|id| !groups.iter().any(|group| group.group.subscription_id == id)) {
@@ -353,6 +371,21 @@ impl YoutubeChannelDetail {
         title.set_xalign(0.0);
         title.set_hexpand(true);
         row.append(&title);
+        // `POD-12` / `D3`: read-only "On phone" mirror — same fact and same
+        // glyph as `podcasts_groups::group_header`'s indicator, never a
+        // second control. Selection is only ever written through the
+        // existing channel toggle (context menu / `podcasts_device_sync`).
+        let selected_device_ids = self
+            .selected_devices
+            .borrow()
+            .get(&rendered.group.subscription_id)
+            .cloned()
+            .unwrap_or_default();
+        if on_phone(&self.connected_devices.borrow(), &selected_device_ids) {
+            let sync = gtk4::Image::from_icon_name("phone-symbolic");
+            sync.set_tooltip_text(Some(&strings::text(strings::PODCAST_SYNC_PHONE)));
+            row.append(&sync);
+        }
         let unsubscribe = gtk4::Button::with_label(&strings::text(strings::PODCAST_UNSUBSCRIBE));
         unsubscribe.add_css_class("destructive-action");
         unsubscribe.set_action_name(Some("podcasts.unsubscribe"));

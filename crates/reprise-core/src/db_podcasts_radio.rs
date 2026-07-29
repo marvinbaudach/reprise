@@ -226,6 +226,29 @@ pub(crate) fn migrate_v47(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.commit()
 }
 
+// `POD-5`: a channel's persisted override of the global "keep N downloaded"
+// default (`podcasts::config::KEEP_DOWNLOADED_DEFAULT_KEY`). `NULL` means "no
+// override, use the global default" for the same reason `latest_per_channel`
+// (`migrate_v47`) cannot double `0` as that sentinel — the owner decision of
+// 2026-07-29 (`E-9`) makes `0` mean unlimited for every numeric sync/cleanup
+// setting, so an explicit `0` must round-trip as `0`, not as "unset".
+pub(crate) fn migrate_v48(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    let has_keep_downloaded = has_column(conn, "podcast_subscriptions", "keep_downloaded")?;
+    if version >= 48 && has_keep_downloaded {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    if !has_keep_downloaded {
+        transaction.execute(
+            "ALTER TABLE podcast_subscriptions ADD COLUMN keep_downloaded INTEGER",
+            [],
+        )?;
+    }
+    transaction.pragma_update(None, "user_version", version.max(48))?;
+    transaction.commit()
+}
+
 fn has_column(conn: &Connection, table: &str, expected: &str) -> Result<bool, rusqlite::Error> {
     let mut statement = conn.prepare(&format!("PRAGMA table_info({table})"))?;
     let columns = statement

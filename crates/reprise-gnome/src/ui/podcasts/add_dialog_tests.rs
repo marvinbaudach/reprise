@@ -219,6 +219,7 @@ fn new_subscription_uses_the_configured_auto_download_default() {
         ytdlp_path: None,
         refresh_hours: 6,
         latest_per_channel_default: 5,
+        keep_downloaded_default: 5,
     };
     assert!(configured_auto_download_default(Some(&config)));
     assert!(!configured_auto_download_default(None));
