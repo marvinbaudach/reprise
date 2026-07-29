@@ -30,8 +30,10 @@
 //! * **`provision-http`**: the blocking `ureq` model fetcher without inference.
 //! * **`ort`**: the real `OrtStemBackend` plus audio
 //!   decode/resample/encode; it also enables `provision-http`. Pulls `ort`,
-//!   `symphonia` (MPL-2.0), `flacenc` (Apache-2.0), `rubato` (MIT), `ndarray`
-//!   and `ureq`. Only the dedicated worker binary enables this.
+//!   `symphonia` (MPL-2.0), `flacenc` (Apache-2.0), `rubato` (MIT OR
+//!   Apache-2.0, and with it the `audioadapter*` buffer crates it carries its
+//!   API on, same licence), `ndarray` and `ureq`. Only the dedicated worker
+//!   binary enables this.
 //!
 //! ## onnxruntime linkage — the Flatpak-offline story
 //!

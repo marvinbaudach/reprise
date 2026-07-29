@@ -61,7 +61,9 @@ ever modify `symphonia`'s own files, those modified files stay MPL-2.0 and their
 source must be made available — which the first-use, unmodified dependency does
 not trigger. Keep the `symphonia` license notice in `reprise-stems`'
 acknowledgements. The remaining `ort`-feature codecs and runtime plumbing are
-permissive (`flacenc` Apache-2.0; `rubato`, `ndarray`, `ort` itself MIT or
+permissive (`flacenc` Apache-2.0; `rubato` — and the `audioadapter`,
+`audioadapter-buffers` and `audioadapter-sample` crates it carries its buffer
+API on since 4.0 — plus `ndarray` and `ort` itself, all MIT or
 Apache-2.0), so they raise no additional copyleft; the `ort`/htdemucs runtime and
 weights are cleared separately in the stem-separation section below.
 
