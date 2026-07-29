@@ -84,13 +84,6 @@ pub fn radio_filtered_count(visible: usize, total: usize) -> String {
     )
 }
 
-pub fn radio_show_all_count(count: usize) -> String {
-    formatted(
-        N_!("Show all {count} stations"),
-        &[("count", &count.to_string())],
-    )
-}
-
 pub fn radio_results_count(count: usize) -> String {
     let count_text = count.to_string();
     plural(

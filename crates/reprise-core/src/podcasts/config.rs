@@ -20,6 +20,8 @@ pub const FILTER_SOURCE_KEY: &str = "podcasts.filter.source";
 /// `E-5` means there is exactly one MTP device, so this lives here rather
 /// than on `DeviceSettings` or a per-device sync target.
 pub const LATEST_PER_CHANNEL_DEFAULT_KEY: &str = "podcasts.latest_per_channel_default";
+/// `SRC-10` addendum (Block B2): the "Downloaded" filter chip.
+pub const FILTER_DOWNLOADED_KEY: &str = "podcasts.filter.downloaded";
 
 pub const DEFAULT_IMPORT_COUNT: usize = 25;
 pub const DEFAULT_YOUTUBE_IMPORT_COUNT: usize = 10;
@@ -81,6 +83,7 @@ pub struct PodcastFilterConfig {
     pub unplayed_only: bool,
     pub show: Option<String>,
     pub source: Option<PodcastKind>,
+    pub downloaded_only: bool,
 }
 
 pub fn load(conn: &Connection) -> Result<PodcastConfig, rusqlite::Error> {
@@ -127,6 +130,7 @@ pub fn load_filter(conn: &Connection) -> Result<PodcastFilterConfig, rusqlite::E
             Some("youtube") => Some(PodcastKind::Youtube),
             _ => None,
         },
+        downloaded_only: crate::library::settings::get_bool(conn, FILTER_DOWNLOADED_KEY, false)?,
     })
 }
 
@@ -254,10 +258,21 @@ mod tests {
                 unplayed_only: true,
                 show: Some("Show".to_owned()),
                 source: Some(PodcastKind::Youtube),
+                downloaded_only: false,
             }
         );
 
         crate::library::settings::set_setting(&conn, FILTER_SOURCE_KEY, "unknown").unwrap();
         assert_eq!(load_filter(&conn).unwrap().source, None);
+    }
+
+    /// `SRC-10` addendum (Block B2): the "Downloaded" filter persists like
+    /// every other sticky filter value.
+    #[test]
+    fn src_10_downloaded_filter_persists_across_a_reload() {
+        let conn = conn();
+        crate::library::settings::set_bool(&conn, FILTER_DOWNLOADED_KEY, true).unwrap();
+
+        assert!(load_filter(&conn).unwrap().downloaded_only);
     }
 }

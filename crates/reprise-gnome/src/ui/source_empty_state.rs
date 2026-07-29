@@ -35,6 +35,12 @@ pub(super) struct SourceEmptyStateCopy {
     /// One paragraph: what lands here, and where it comes from.
     pub(super) body: String,
     pub(super) button_label: String,
+    /// `SRC-10` addendum (Block B2): almost always `"list-add-symbolic"` —
+    /// the genuine "nothing added yet" state's Add button. The one
+    /// exception is the module-off sibling state, whose button opens
+    /// Preferences rather than adding anything, so a plus icon there would
+    /// misrepresent the action.
+    pub(super) button_icon_name: &'static str,
     /// The URL path as a quiet secondary line underneath the button —
     /// omitted entirely, not rendered blank, when a source has none.
     pub(super) secondary_line: Option<String>,
@@ -82,6 +88,16 @@ impl SourceEmptyState {
         }
         None
     }
+
+    /// `SRC-10` addendum: reads the button's actual icon back out — the
+    /// module-off state's whole point is that this is *not* always
+    /// `"list-add-symbolic"`.
+    #[cfg(test)]
+    pub(super) fn button_icon_name(&self) -> Option<String> {
+        let content = self.button.child()?.downcast::<gtk4::Box>().ok()?;
+        let image = content.first_child()?.downcast::<gtk4::Image>().ok()?;
+        image.icon_name().map(|name| name.to_string())
+    }
 }
 
 fn build(copy: &SourceEmptyStateCopy) -> (gtk4::Widget, gtk4::Button) {
@@ -116,7 +132,7 @@ fn build(copy: &SourceEmptyStateCopy) -> (gtk4::Widget, gtk4::Button) {
 
     let button = gtk4::Button::new();
     let button_content = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-    button_content.append(&gtk4::Image::from_icon_name("list-add-symbolic"));
+    button_content.append(&gtk4::Image::from_icon_name(copy.button_icon_name));
     button_content.append(&gtk4::Label::new(Some(&copy.button_label)));
     button.set_child(Some(&button_content));
     button.add_css_class("suggested-action");
@@ -157,6 +173,7 @@ mod tests {
             title: "No channels yet".to_owned(),
             body: "Subscribe to a channel and its uploads appear here.".to_owned(),
             button_label: "Add channel".to_owned(),
+            button_icon_name: "list-add-symbolic",
             secondary_line: secondary.map(str::to_owned),
         }
     }
@@ -215,6 +232,22 @@ mod tests {
 
         state.button().emit_clicked();
         assert!(clicked.get());
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn src_10_the_button_icon_is_never_hardcoded_to_a_plus() {
+        gtk4::init().unwrap();
+        let mut module_off = copy(None);
+        module_off.button_icon_name = "network-server-symbolic";
+        let state = SourceEmptyState::new(&module_off);
+
+        // Would go red if `build()` still hardcoded "list-add-symbolic" —
+        // the module-off state's button opens Preferences, not Add.
+        assert_eq!(
+            state.button_icon_name().as_deref(),
+            Some("network-server-symbolic")
+        );
     }
 
     #[test]

@@ -3238,8 +3238,23 @@ listening statistics.
   counter appears in this state, and never "0 of 0": the surface looks unused,
   not broken. Never a generic placeholder graphic, never a spinner with nothing
   to do. As soon as the first subscription lands, this state disappears
-  entirely; "Nothing matches these filters" and the remaining empty-state
-  classifications (`NoEpisodes`/`NoResults`) keep their own, unchanged surface.
+  entirely. **Addendum (Block B2):** two siblings extend this geometry rather
+  than replacing it. When a source's own module is switched off (`G1`/
+  `NET-1a`) and nothing is subscribed yet, the same
+  tile/title/body/one-button shape appears as "{Source} is turned off" with
+  an "Enable in Preferences" button that opens the Online sources page
+  directly — existing subscriptions are named as kept, and the button is
+  never a plus icon here, since there is nothing to add while the source is
+  off (`PodcastsEmptyState::ModuleOff`). Existing subscriptions outrank the
+  module gate: it only ever replaces the empty case, never an
+  already-populated view. The filter-mismatch state ("Nothing matches these
+  filters", `PodcastsEmptyState::NoResults` / `RadioEmptyState::NoResults`)
+  and the downloads-only state ("Nothing downloaded yet",
+  `PodcastsEmptyState::NoDownloads`) are the opposite of the genuine empty
+  state: the toolbar and filter row stay visible, with a "Clear filters"
+  action, because clearing the filter — not adding a source — is the way
+  out. `NoEpisodes` (subscribed, the feed genuinely has nothing yet) is
+  unchanged and keeps the filter row hidden.
 - **SRC-11** [active] [core] [gtk] — Channel, show and station images (YouTube
   `thumbnails`, iTunes `artworkUrl600`, radio-browser `favicon` — `C1`) run
   through a module of their own (`module.source_images.enabled`) and are
@@ -3358,6 +3373,17 @@ listening statistics.
   fresh provider call — a previous failure is never cached. `.part` files
   and yt-dlp postprocessor leftovers from the failed attempt are removed
   before the row is offered for retry.
+- **POD-14** [active] [core] [gtk] — On the YouTube channel page, when every
+  currently available entry is a Short and Shorts are hidden, the row list is
+  replaced by "Only Shorts here" with a single "Show Shorts anyway" action
+  that reveals Shorts for this channel (the existing per-channel override
+  from `POD-10`); the header and its "Hide Shorts" control stay visible,
+  since toggling that control is the other way out. The decision is a pure
+  projection — `reprise_core::podcasts::channel_window::shorts_only_hidden`
+  — reused rather than re-derived from the display code, matching
+  POD-10/POD-11's existing split between core decision and GTK display. Does
+  not fire for a channel that genuinely has no entries at all yet — that
+  case is not covered by this rule.
 - **RAD-1** [active] [gtk] — Only the currently connected station is
   accented in the table; its state icon, name, now-playing, and row
   tint change together. All others, as well as a presented but

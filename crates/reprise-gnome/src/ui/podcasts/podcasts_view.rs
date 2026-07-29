@@ -33,17 +33,25 @@ use super::podcasts_worker::{
     PodcastsRequest, PodcastsRuntime, PodcastsWorkerResult,
 };
 use super::youtube_channel_detail::YoutubeChannelDetail;
-use crate::ui::sidebar::sidebar_presentation::NavIcon;
-use crate::ui::source_empty_state::{SourceEmptyState, SourceEmptyStateCopy};
+use crate::ui::source_empty_state::SourceEmptyState;
 use crate::ui::strings;
 
+#[path = "podcasts_view_actions.rs"]
+mod actions;
+#[path = "podcasts_view_copy.rs"]
+mod copy;
 #[path = "podcasts_view_requests.rs"]
 mod requests;
+#[cfg(test)]
+#[path = "podcasts_view_tests.rs"]
+mod tests;
 
 /// `SRC-10`: the stack page holding the shared empty-state geometry, used
-/// only for "nothing subscribed yet" — distinct from the existing `"status"`
-/// page, which still carries `NoEpisodes`/`NoResults` (Block B2, unchanged).
+/// only for "nothing subscribed yet".
 const EMPTY_PAGE: &str = "empty";
+/// `SRC-10` addendum (Block B2): the module-off sibling of `EMPTY_PAGE` —
+/// same geometry, "Enable in Preferences" instead of Add.
+const MODULE_OFF_PAGE: &str = "module-off";
 
 type OnEpisodeActivated = Rc<dyn Fn(EpisodeRow)>;
 type OnSubscriptionRemoved = Rc<dyn Fn(i64)>;
@@ -93,6 +101,15 @@ pub(in crate::ui) struct PodcastsView {
     status: adw::StatusPage,
     status_button: gtk4::Button,
     empty_state: SourceEmptyState,
+    /// `SRC-10` addendum (Block B2): the module-off sibling state's own
+    /// page — a second `SourceEmptyState` rather than reusing `empty_state`
+    /// with a swapped copy, since the two need different button actions
+    /// (open the add dialog vs. open Preferences) and `SourceEmptyState`
+    /// wires exactly one `connect_add` callback for its lifetime.
+    module_off_state: SourceEmptyState,
+    /// Set post-construction (parallel to `set_toast_overlay`) once
+    /// Preferences exists — `PodcastsView` is built before it in `window.rs`.
+    on_open_preferences: RefCell<Option<Rc<dyn Fn()>>>,
     footer: gtk4::Box,
     footer_status: gtk4::Label,
     footer_spinner: gtk4::Spinner,
@@ -122,21 +139,19 @@ impl PodcastsView {
         group_container.set_margin_start(12);
         group_container.set_margin_end(12);
         group_container.set_hexpand(true);
-        let list_box = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-        list_box.append(filter_bar.widget());
-        list_box.append(&build_episode_scroller(
-            group_container.upcast_ref::<gtk4::Widget>(),
-        ));
+        let scroller = build_episode_scroller(group_container.upcast_ref::<gtk4::Widget>());
 
         let status = adw::StatusPage::new();
         let status_button = gtk4::Button::new();
         status_button.add_css_class("suggested-action");
         status.set_child(Some(&status_button));
-        let empty_state = SourceEmptyState::new(&empty_state_copy(kind));
+        let empty_state = SourceEmptyState::new(&copy::empty_state_copy(kind));
+        let module_off_state = SourceEmptyState::new(&copy::module_off_copy(kind));
         let stack = gtk4::Stack::new();
-        stack.add_named(&list_box, Some("list"));
+        stack.add_named(&scroller, Some("list"));
         stack.add_named(&status, Some("status"));
         stack.add_named(empty_state.widget(), Some(EMPTY_PAGE));
+        stack.add_named(module_off_state.widget(), Some(MODULE_OFF_PAGE));
         let default_hide_shorts = podcasts::config::load(&conn.borrow())
             .map_or(true, |config| config.youtube_hide_shorts_default);
         let youtube_detail = YoutubeChannelDetail::new(&stack, default_hide_shorts);
@@ -162,6 +177,12 @@ impl PodcastsView {
 
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         root.add_css_class("reprise-podcasts-source");
+        // `SRC-10` addendum (Block B2): the filter row lives at this level,
+        // not inside the "list" stack page, so its visibility can be
+        // decided independently of which page is showing — visible for
+        // `List`/`NoEpisodes`/`NoResults`/`NoDownloads`, hidden for the two
+        // whole-page-replaced states `Empty`/`ModuleOff`.
+        root.append(filter_bar.widget());
         root.append(&stack);
         root.append(&footer);
 
@@ -178,6 +199,8 @@ impl PodcastsView {
             status,
             status_button,
             empty_state,
+            module_off_state,
+            on_open_preferences: RefCell::new(None),
             footer,
             footer_status,
             footer_spinner,
@@ -200,8 +223,24 @@ impl PodcastsView {
                 view.open_add_dialog();
             }
         });
+        let weak = Rc::downgrade(&view);
+        view.module_off_state.connect_add(move || {
+            if let Some(view) = weak.upgrade() {
+                if let Some(callback) = view.on_open_preferences.borrow().clone() {
+                    callback();
+                }
+            }
+        });
         view.refresh();
         view
+    }
+
+    /// Wires the module-off empty state's "Enable in Preferences" button.
+    /// Set post-construction because `PodcastsView` is built before the
+    /// `Preferences` context exists in `window.rs` (mirrors
+    /// `set_toast_overlay`).
+    pub(in crate::ui) fn set_on_open_preferences(&self, callback: impl Fn() + 'static) {
+        *self.on_open_preferences.borrow_mut() = Some(Rc::new(callback));
     }
 
     pub(in crate::ui) fn root(&self) -> &gtk4::Widget {
@@ -286,118 +325,6 @@ impl PodcastsView {
         });
     }
 
-    fn install_actions(self: &Rc<Self>) {
-        let group = gio::SimpleActionGroup::new();
-        self.add_target_action(&group, podcasts_context_menu::ACTION_PLAY, |view, id| {
-            if let Ok(Some(row)) = podcasts::store::episode(&view.conn.borrow(), id) {
-                (view.callbacks.on_episode_activated)(row);
-            }
-        });
-        self.add_target_action(
-            &group,
-            podcasts_context_menu::ACTION_COPY_URL,
-            |view, id| {
-                if let Ok(Some(row)) = podcasts::store::episode(&view.conn.borrow(), id) {
-                    view.root.clipboard().set_text(&row.audio_url);
-                }
-            },
-        );
-        self.add_target_action(
-            &group,
-            podcasts_context_menu::ACTION_TOGGLE_PLAYED,
-            |view, id| {
-                if let Ok(Some(row)) = podcasts::store::episode(&view.conn.borrow(), id) {
-                    let result = if row.played_at.is_some() {
-                        podcasts::store::mark_unplayed(&view.conn.borrow(), id)
-                    } else {
-                        podcasts::store::mark_played(
-                            &view.conn.borrow(),
-                            id,
-                            chrono::Utc::now().timestamp(),
-                        )
-                    };
-                    if let Err(error) = result {
-                        tracing::warn!(%error, "could not update podcast episode status");
-                    }
-                    view.refresh();
-                    (view.callbacks.on_sidebar_refresh)();
-                }
-            },
-        );
-        self.add_target_action(
-            &group,
-            podcasts_context_menu::ACTION_TOGGLE_DOWNLOAD,
-            PodcastsView::toggle_download,
-        );
-        self.add_target_action(
-            &group,
-            podcasts_context_menu::ACTION_REMOVE_EPISODE,
-            PodcastsView::remove_episode,
-        );
-        self.add_target_action(
-            &group,
-            podcasts_context_menu::ACTION_UNSUBSCRIBE,
-            PodcastsView::unsubscribe,
-        );
-        super::podcasts_device_sync::install_action(self, &group);
-        let load_more =
-            gio::SimpleAction::new("load-more", Some(&<(i64, u32)>::static_variant_type()));
-        let weak = Rc::downgrade(self);
-        load_more.connect_activate(move |_, target| {
-            let Some(view) = weak.upgrade() else { return };
-            let Some((subscription_id, end)) =
-                target.and_then(gtk4::glib::Variant::get::<(i64, u32)>)
-            else {
-                return;
-            };
-            view.request_load_more(subscription_id, end as usize);
-        });
-        group.add_action(&load_more);
-        self.youtube_detail.install_actions(&group);
-        let add = gio::SimpleAction::new("open-add", None);
-        let weak = Rc::downgrade(self);
-        add.connect_activate(move |_, _| {
-            if let Some(view) = weak.upgrade() {
-                view.open_add_dialog();
-            }
-        });
-        group.add_action(&add);
-        self.root.insert_action_group("podcasts", Some(&group));
-    }
-
-    fn add_target_action(
-        self: &Rc<Self>,
-        group: &gio::SimpleActionGroup,
-        name: &str,
-        callback: impl Fn(&Rc<Self>, i64) + 'static,
-    ) {
-        let action = gio::SimpleAction::new(name, Some(&i64::static_variant_type()));
-        let weak = Rc::downgrade(self);
-        action.connect_activate(move |_, target| {
-            let Some(view) = weak.upgrade() else {
-                return;
-            };
-            let Some(id) = target.and_then(glib::Variant::get::<i64>) else {
-                return;
-            };
-            callback(&view, id);
-        });
-        group.add_action(&action);
-    }
-
-    fn open_add_dialog(self: &Rc<Self>) {
-        let weak = Rc::downgrade(self);
-        add_dialog::present(&self.root, &self.conn, self.kind, move |import_latest| {
-            if let Some(view) = weak.upgrade() {
-                view.refresh();
-                if import_latest {
-                    view.request_refresh(true);
-                }
-                (view.callbacks.on_sidebar_refresh)();
-            }
-        });
-    }
-
     pub(super) fn render(&self) {
         let rows = self.rows.borrow().clone();
         let groups = self.groups.borrow().clone();
@@ -436,34 +363,54 @@ impl PodcastsView {
         self.filter_bar
             .set_context(unique(shows), filtered.len(), total);
         let subscriptions = groups.len();
-        let classification =
-            podcasts_empty_state_for(subscriptions, total, filtered.len(), filter_active(&filter));
-        // `SRC-10`: the true "nothing subscribed yet" empty state hides the
-        // footer's refresh row too — refreshing zero subscriptions has
-        // nothing to do, and a live "Refresh now" control would make an
-        // intentionally unused view look broken instead.
-        self.footer
-            .set_visible(classification != PodcastsEmptyState::Empty);
+        // `G1`/`NET-1a`: the same combined gate the sidebar already uses to
+        // decide whether this source's row is even reachable — one
+        // authority for "is this source usable" rather than a second,
+        // possibly-diverging check here.
+        let module = match self.kind {
+            PodcastKind::Rss => &reprise_core::modules::PODCASTS_MODULE,
+            PodcastKind::Youtube => &reprise_core::modules::YOUTUBE_MODULE,
+        };
+        let module_enabled =
+            reprise_core::online_sources::network_allowed(&self.conn.borrow(), module)
+                .unwrap_or(false);
+        let classification = podcasts_empty_state_for(
+            subscriptions,
+            total,
+            filtered.len(),
+            filter_active(&filter),
+            filter.downloaded_only,
+            module_enabled,
+        );
+        // `SRC-10`: the two whole-page-replaced states (`Empty`/
+        // `ModuleOff`) hide the footer's refresh row too — refreshing zero
+        // or switched-off subscriptions has nothing to do, and a live
+        // control would make an intentionally unused view look broken
+        // instead. `NoEpisodes` keeps the footer (a manual refresh is still
+        // meaningful there) but not the filter row — the filter row is
+        // reachable only where clearing it is actually the way out:
+        // `List`, `NoResults`, `NoDownloads`.
+        let whole_page_replaced = matches!(
+            classification,
+            PodcastsEmptyState::Empty | PodcastsEmptyState::ModuleOff
+        );
+        self.footer.set_visible(!whole_page_replaced);
+        self.filter_bar.widget().set_visible(matches!(
+            classification,
+            PodcastsEmptyState::List
+                | PodcastsEmptyState::NoResults
+                | PodcastsEmptyState::NoDownloads
+        ));
         match classification {
             PodcastsEmptyState::List => self.stack.set_visible_child_name("list"),
             PodcastsEmptyState::Empty => self.stack.set_visible_child_name(EMPTY_PAGE),
+            PodcastsEmptyState::ModuleOff => {
+                self.stack.set_visible_child_name(MODULE_OFF_PAGE);
+            }
             state => {
-                let (title, description, button) = match state {
-                    PodcastsEmptyState::NoEpisodes => (
-                        strings::PODCAST_NO_EPISODES,
-                        strings::PODCAST_NO_EPISODES_DESCRIPTION,
-                        strings::text(strings::PODCAST_REFRESH_NOW),
-                    ),
-                    PodcastsEmptyState::NoResults => (
-                        strings::PODCAST_NO_EPISODES,
-                        strings::PODCAST_NO_EPISODES_DESCRIPTION,
-                        strings::podcast_show_all_count(total),
-                    ),
-                    PodcastsEmptyState::List | PodcastsEmptyState::Empty => unreachable!(),
-                };
-                self.status.set_title(&strings::text(title));
-                self.status
-                    .set_description(Some(&strings::text(description)));
+                let (title, description, button) = copy::status_copy(state);
+                self.status.set_title(&title);
+                self.status.set_description(Some(&description));
                 self.status_button.set_label(&button);
                 self.stack.set_visible_child_name("status");
             }
@@ -754,35 +701,5 @@ impl PodcastsView {
         } else {
             tracing::warn!(%message, "podcast action failed");
         }
-    }
-}
-
-/// `SRC-10`: the shared empty-state geometry's copy for this source's kind —
-/// Podcasts (RSS) or YouTube. The glyph matches the source's own sidebar
-/// entry (`NavIcon`), so the page visually continues from where the user
-/// navigated.
-fn empty_state_copy(kind: PodcastKind) -> SourceEmptyStateCopy {
-    let (icon, title, body, button, secondary) = match kind {
-        PodcastKind::Rss => (
-            NavIcon::Podcasts.icon_name(),
-            strings::PODCAST_NO_PODCASTS,
-            strings::PODCAST_NO_PODCASTS_DESCRIPTION,
-            strings::PODCAST_ADD,
-            strings::PODCAST_NO_PODCASTS_SECONDARY,
-        ),
-        PodcastKind::Youtube => (
-            NavIcon::Youtube.icon_name(),
-            strings::YOUTUBE_NO_CHANNELS,
-            strings::YOUTUBE_NO_CHANNELS_DESCRIPTION,
-            strings::YOUTUBE_NO_CHANNELS_ADD,
-            strings::YOUTUBE_NO_CHANNELS_SECONDARY,
-        ),
-    };
-    SourceEmptyStateCopy {
-        icon_name: icon,
-        title: strings::text(title),
-        body: strings::text(body),
-        button_label: strings::text(button),
-        secondary_line: Some(strings::text(secondary)),
     }
 }
