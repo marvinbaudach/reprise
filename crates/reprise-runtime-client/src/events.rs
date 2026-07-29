@@ -2,6 +2,7 @@
 
 use reprise_runtime_protocol::command::CommandOutcome;
 use reprise_runtime_protocol::device_run::DeviceRunSnapshot;
+use reprise_runtime_protocol::effects::{EffectsRequest, EffectsSnapshot};
 use reprise_runtime_protocol::jobs::{JobCommand, JobSnapshot};
 use reprise_runtime_protocol::playback::{ExternalMedia, PlaybackCommand, PlaybackSnapshot};
 use reprise_runtime_protocol::queue::{QueueCommand, QueueSnapshot};
@@ -31,6 +32,8 @@ pub enum RuntimeCommand {
         play_next: Vec<i64>,
     },
     PlayExternal(ExternalMedia),
+    /// Apply the equalizer and ReplayGain.
+    SetAudioEffects(EffectsRequest),
     Job(JobCommand),
     DeviceStart {
         device: String,
@@ -102,6 +105,7 @@ impl RuntimeCommand {
                 Body::Tracks(track_ids.clone(), *start_index as u64),
             ),
             Self::PlayExternal(media) => ("PlayExternal", Body::External(media.clone())),
+            Self::SetAudioEffects(effects) => ("SetAudioEffects", Body::Effects(effects.clone())),
             Self::RestoreSession { context, play_next } => (
                 "RestoreSession",
                 Body::Session(context.clone(), play_next.clone()),
@@ -136,6 +140,7 @@ pub(super) enum Body {
     Positions(Vec<u64>, u64),
     Move(u64, u64, u64),
     External(ExternalMedia),
+    Effects(EffectsRequest),
     Session(RestoredQueue, Vec<i64>),
 }
 
@@ -161,6 +166,11 @@ pub enum ClientEvent {
     /// reconnecting forever against a runtime that will never accept it,
     /// with nothing to show the user but a spinner.
     Refused(ClientError),
+    EffectsChanged {
+        sequence: u64,
+        initiator: Option<u64>,
+        snapshot: EffectsSnapshot,
+    },
     PlaybackChanged {
         sequence: u64,
         /// Who provoked this, or `None` when nothing a client asked for did —

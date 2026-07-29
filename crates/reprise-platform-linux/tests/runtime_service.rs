@@ -744,3 +744,6 @@ fn a_refused_client_is_told_why_instead_of_reconnecting_forever() {
 
 #[path = "runtime_service/queue_surface.rs"]
 mod queue_surface;
+
+#[path = "runtime_service/effects_surface.rs"]
+mod effects_surface;

@@ -80,6 +80,7 @@ fn snapshot(sequence: u64) -> RuntimeSnapshot {
         client_id: 1,
         playback: playback("playing"),
         queue: queue(1),
+        effects: reprise_runtime_protocol::effects::EffectsSnapshot::default(),
         device_runs: vec![device_run("Pixel 8")],
         jobs: vec![job(1)],
     }

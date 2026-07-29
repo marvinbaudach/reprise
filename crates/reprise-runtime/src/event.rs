@@ -7,6 +7,7 @@
 //! reasoning `change_log` uses for foreign database writes (§2.2).
 
 use reprise_runtime_protocol::device_run::DeviceRunSnapshot;
+use reprise_runtime_protocol::effects::EffectsSnapshot;
 use reprise_runtime_protocol::jobs::JobSnapshot;
 use reprise_runtime_protocol::playback::PlaybackSnapshot;
 use reprise_runtime_protocol::queue::QueueSnapshot;
@@ -17,6 +18,7 @@ use reprise_runtime_protocol::ProtocolVersion;
 pub enum RuntimeEvent {
     PlaybackChanged(PlaybackSnapshot),
     QueueChanged(QueueSnapshot),
+    EffectsChanged(EffectsSnapshot),
     DeviceRunChanged(DeviceRunSnapshot),
     JobChanged(JobSnapshot),
 }
@@ -57,6 +59,7 @@ pub struct RuntimeSnapshot {
     pub sequence: u64,
     pub playback: PlaybackSnapshot,
     pub queue: QueueSnapshot,
+    pub effects: EffectsSnapshot,
     pub device_runs: Vec<DeviceRunSnapshot>,
     pub jobs: Vec<JobSnapshot>,
 }

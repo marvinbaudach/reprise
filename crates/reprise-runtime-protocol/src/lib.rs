@@ -48,6 +48,7 @@
 pub mod command;
 pub mod device_run;
 pub mod device_sync;
+pub mod effects;
 pub mod endpoint;
 pub mod jobs;
 pub mod playback;
@@ -123,8 +124,12 @@ impl std::fmt::Display for ProtocolVersion {
 /// this crate exists to remove. Breaking rather than a second method beside
 /// the first: a duplicate would leave a wrong way to call it available for
 /// ever, and there is no deployed client to protect — the runtime is not yet
-/// on any production path.
-pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 4, minor: 0 };
+/// on any production path. On top of it, minor 1 adds
+/// [`effects::EffectsSnapshot`] and the command that sets it, so the
+/// equalizer and ReplayGain belong to whoever owns the audio path — additive
+/// on both counts: the snapshot is a dictionary, so a peer that omits the key
+/// reads as a default, and an older runtime simply has no method to call.
+pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 4, minor: 1 };
 
 #[cfg(test)]
 mod tests {
@@ -158,6 +163,6 @@ mod tests {
     #[test]
     fn the_shipped_version_is_compatible_with_itself() {
         assert!(PROTOCOL_VERSION.is_compatible_with(PROTOCOL_VERSION));
-        assert_eq!(PROTOCOL_VERSION.to_string(), "4.0");
+        assert_eq!(PROTOCOL_VERSION.to_string(), "4.1");
     }
 }
