@@ -276,7 +276,7 @@ impl Transport {
         match command {
             PlaybackCommand::Play => self.resume(backend, library),
             PlaybackCommand::Pause => self.pause(backend),
-            PlaybackCommand::Stop => self.stop(backend),
+            PlaybackCommand::Stop => self.stop_hard(backend),
             PlaybackCommand::Next => self.skip_forward(backend, library),
             PlaybackCommand::Previous => self.skip_back(backend, library),
             PlaybackCommand::SetVolume(volume) => {
@@ -410,13 +410,24 @@ impl Transport {
                 // media has no id to resolve and, for a stream, no position
                 // to resume to — the surface that knows where it came from
                 // re-sends it, which is also how a radio station reconnects.
-                let track_id = self
+                let (track_id, source) = self
                     .current
                     .as_ref()
                     .and_then(|track| track.track_id)
                     .or_else(|| self.queue.current())
+                    .map(|track_id| (track_id, Source::Context))
+                    // The explicit queue counts too. Stopping consumes the
+                    // context but leaves what the user queued by hand, and
+                    // a Play that answers "nothing to play" while a track
+                    // they queued is sitting right there is a player that
+                    // looks broken.
+                    .or_else(|| {
+                        self.up_next
+                            .pop_front()
+                            .map(|track_id| (track_id, Source::PlayNext))
+                    })
                     .ok_or(RuntimeError::Rejected(Rejected::NothingToPlay))?;
-                self.start(backend, library, track_id, Source::Context)
+                self.start(backend, library, track_id, source)
             }
         }
     }
@@ -445,6 +456,33 @@ impl Transport {
     /// gets the error back and is not left stuck — the very same command
     /// that failed is the retry, and it reaches this exact `backend.stop()`
     /// call again.
+    /// A user pressing Stop, as opposed to playback ending on its own.
+    ///
+    /// The context belongs to the playback it was started for, so it goes
+    /// with it — otherwise a queue view keeps showing a session the user
+    /// ended. What they queued by hand outlives it: those entries were never
+    /// part of that context, and QUE-3's "the section contains only the
+    /// still-pending future" is as true after a stop as before one.
+    ///
+    /// Repeat and shuffle are settings rather than part of the context, so
+    /// they survive being carried across the replacement.
+    ///
+    /// Only the command does this. A queue that simply ran out has already
+    /// consumed its context, and clearing on that path would also clear it
+    /// when a track fails or an episode ends — none of which is a user
+    /// saying "stop".
+    fn stop_hard(&mut self, backend: &dyn PlaybackBackend) -> Result<(), RuntimeError> {
+        self.stop(backend)?;
+        let repeat = self.queue.repeat();
+        let shuffled = self.queue.is_shuffled();
+        self.queue = Queue::new();
+        self.queue.set_repeat(repeat);
+        if shuffled {
+            self.queue.set_shuffle(true);
+        }
+        Ok(())
+    }
+
     fn stop(&mut self, backend: &dyn PlaybackBackend) -> Result<(), RuntimeError> {
         backend.stop().map_err(|error| backend_failed(&error))?;
         self.status = PlaybackState::Stopped;
@@ -525,6 +563,24 @@ impl Transport {
     /// skipped: the explicit queue first, then the context's own advance
     /// (which is where repeat and shuffle apply).
     fn take_next_auto(&mut self) -> Option<(i64, Source)> {
+        // Repeat-one is about the thing that is playing, not about which
+        // queue supplied it. Asking the explicit queue first turns "repeat
+        // this" into "play the next queued track" — the opposite
+        // instruction — and eats an entry the user lined up. Asking the
+        // context first repeats the entry a queued track jumped in front of,
+        // which is something the user did not ask to hear again.
+        //
+        // Only for a library track: external media never reaches here, since
+        // finishing one does not hand back to the queue at all.
+        if self.queue.repeat() == Repeat::One {
+            if let Some((track_id, source)) = self
+                .current
+                .as_ref()
+                .and_then(|loaded| Some((loaded.track_id?, loaded.source)))
+            {
+                return Some((track_id, source));
+            }
+        }
         if let Some(track_id) = self.up_next.pop_front() {
             return Some((track_id, Source::PlayNext));
         }
