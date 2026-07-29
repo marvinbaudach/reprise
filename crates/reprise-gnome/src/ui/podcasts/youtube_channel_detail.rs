@@ -9,7 +9,7 @@ use gtk4::gio;
 use gtk4::glib::variant::ToVariant;
 use gtk4::prelude::*;
 use reprise_core::podcasts::channel_window::{
-    available_count, visible_window, EXTENDED_WINDOW, INITIAL_WINDOW,
+    available_count, shorts_only_hidden, visible_window, EXTENDED_WINDOW, INITIAL_WINDOW,
 };
 use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::EpisodeRow;
@@ -276,12 +276,62 @@ impl YoutubeChannelDetail {
         self.content.append(&self.build_header(&rendered));
         self.content
             .append(&self.build_controls(&rendered, &projected));
+        // `POD-13`: the window is empty *and* every entry is a hidden
+        // Short — a dedicated message with a way out, rather than a
+        // silently blank list that reads as broken.
+        let show_shorts = !state.hide_shorts(subscription_id);
+        if projected.group.episodes.is_empty()
+            && shorts_only_hidden(&rendered.group.episodes, show_shorts)
+        {
+            self.content
+                .append(&self.build_shorts_only_notice(subscription_id));
+        }
         let mut widgets = BTreeMap::new();
         for episode in &projected.group.episodes {
             self.content
                 .append(&self.build_episode_row(episode, &mut widgets));
         }
         self.download_widgets.replace(widgets);
+    }
+
+    /// `POD-13`: "Only Shorts here" — the decision (`shorts_only_hidden`)
+    /// is a pure core projection; this only renders it and offers the way
+    /// out (revealing Shorts for this channel, the existing per-channel
+    /// override `hide_shorts` already provides via its checkbox above).
+    fn build_shorts_only_notice(self: &Rc<Self>, subscription_id: i64) -> gtk4::Widget {
+        let notice = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
+        notice.add_css_class("reprise-shorts-only-notice");
+        notice.set_margin_top(24);
+        notice.set_margin_bottom(24);
+        notice.set_halign(gtk4::Align::Center);
+        notice.set_valign(gtk4::Align::Center);
+        let title = gtk4::Label::new(Some(&strings::text(strings::YOUTUBE_SHORTS_ONLY_TITLE)));
+        title.add_css_class("title-3");
+        notice.append(&title);
+        let body = gtk4::Label::new(Some(&strings::text(
+            strings::YOUTUBE_SHORTS_ONLY_DESCRIPTION,
+        )));
+        body.add_css_class("dim-label");
+        body.set_wrap(true);
+        body.set_justify(gtk4::Justification::Center);
+        notice.append(&body);
+        let show_anyway =
+            gtk4::Button::with_label(&strings::text(strings::YOUTUBE_SHOW_SHORTS_ANYWAY));
+        show_anyway.add_css_class("suggested-action");
+        show_anyway.set_halign(gtk4::Align::Center);
+        let weak = Rc::downgrade(self);
+        show_anyway.connect_clicked(move |_| {
+            let Some(detail) = weak.upgrade() else {
+                return;
+            };
+            detail
+                .state
+                .borrow_mut()
+                .set_hide_shorts(subscription_id, false);
+            detail.render_active();
+        });
+        notice.append(&show_anyway);
+        notice.upcast()
     }
 
     fn build_header(self: &Rc<Self>, rendered: &RenderedSourceGroup) -> gtk4::Widget {
@@ -509,255 +559,5 @@ fn update_batch_controls(
 }
 
 #[cfg(test)]
-mod tests {
-    use std::collections::BTreeMap;
-
-    use reprise_core::podcasts::download_state::DownloadState;
-    use reprise_core::podcasts::{EpisodeRow, PodcastKind};
-
-    use super::*;
-    use crate::ui::podcasts::podcasts_presentation::{source_summary, RenderedSourceGroup};
-
-    fn episode(id: i64, duration_secs: Option<i64>) -> EpisodeRow {
-        EpisodeRow {
-            id,
-            subscription_id: 7,
-            guid: format!("video-{id}"),
-            title: format!("Video {id}"),
-            show: "Channel".into(),
-            show_image_url: None,
-            kind: PodcastKind::Youtube,
-            audio_url: format!("https://youtube.test/watch?v={id}"),
-            page_url: None,
-            published_at: Some(id),
-            duration_secs,
-            downloaded_path: None,
-            downloaded_bytes: None,
-            played_at: None,
-            position_ms: 0,
-            first_seen_at: id,
-        }
-    }
-
-    #[test]
-    fn pod_10_channel_opens_with_latest_ten_long_form_videos() {
-        let episodes = (1..=12)
-            .rev()
-            .map(|id| episode(id, Some(if id == 11 { 60 } else { 600 })))
-            .collect::<Vec<_>>();
-        let state = YoutubeChannelState::default();
-
-        let visible = state.visible_episodes(7, &episodes);
-
-        assert_eq!(
-            visible.iter().map(|episode| episode.id).collect::<Vec<_>>(),
-            [12, 10, 9, 8, 7, 6, 5, 4, 3, 2]
-        );
-    }
-
-    #[test]
-    fn pod_10_loaded_range_expands_one_channel_window_without_affecting_another() {
-        let episodes = (1..=25)
-            .rev()
-            .map(|id| episode(id, Some(600)))
-            .collect::<Vec<_>>();
-        let mut state = YoutubeChannelState::default();
-
-        state.set_loaded_limit(7, 40);
-
-        assert_eq!(state.visible_episodes(7, &episodes).len(), 25);
-        assert_eq!(state.visible_episodes(8, &episodes).len(), 10);
-    }
-
-    #[test]
-    fn pod_10_shorts_filter_can_be_disabled_per_channel() {
-        let episodes = vec![episode(2, Some(600)), episode(1, Some(60))];
-        let mut state = YoutubeChannelState::default();
-
-        assert_eq!(state.visible_episodes(7, &episodes).len(), 1);
-        state.set_hide_shorts(7, false);
-        assert_eq!(state.visible_episodes(7, &episodes).len(), 2);
-    }
-
-    /// `SET-9`: the Online sources page's "Hide Shorts" default seeds new
-    /// channels' Shorts visibility, but a channel's own explicit toggle
-    /// still overrides it — turning the global default off must not
-    /// silently flip a channel someone already set the other way.
-    #[test]
-    fn set_9_hide_shorts_default_seeds_new_channels_but_per_channel_override_wins() {
-        let episodes = vec![episode(2, Some(600)), episode(1, Some(60))];
-        let mut state = YoutubeChannelState::default();
-        state.set_default_shows_shorts(true); // "Hide Shorts" preference is off
-
-        // Untouched channel follows the default: Shorts are shown.
-        assert_eq!(state.visible_episodes(7, &episodes).len(), 2);
-
-        // This channel explicitly hides Shorts, overriding the default.
-        state.set_hide_shorts(7, true);
-        assert_eq!(state.visible_episodes(7, &episodes).len(), 1);
-
-        // A different, untouched channel still follows the default.
-        assert_eq!(state.visible_episodes(8, &episodes).len(), 2);
-    }
-
-    #[test]
-    fn pod_10_batch_selection_is_stable_and_channel_scoped() {
-        let mut state = YoutubeChannelState::default();
-
-        state.set_selected(7, 11, true);
-        state.set_selected(7, 12, true);
-        state.set_selected(8, 21, true);
-        state.set_selected(7, 11, false);
-
-        assert_eq!(state.selected_ids(7), vec![12]);
-        assert_eq!(state.selected_ids(8), vec![21]);
-    }
-
-    #[test]
-    fn pod_10_channel_projection_windows_children_but_preserves_full_summary() {
-        let episodes = (1..=12)
-            .rev()
-            .map(|id| episode(id, Some(600)))
-            .collect::<Vec<_>>();
-        let group = reprise_core::podcasts::SourceGroup {
-            subscription_id: 7,
-            title: "Channel".into(),
-            author: None,
-            image_url: None,
-            kind: PodcastKind::Youtube,
-            sync_to_phone: false,
-            episodes,
-        };
-        let rendered = RenderedSourceGroup {
-            summary: source_summary(&group, &BTreeMap::<i64, DownloadState>::new()),
-            group,
-        };
-
-        let projected = project_channel(&rendered, &YoutubeChannelState::default());
-
-        assert_eq!(projected.group.episodes.len(), 10);
-        assert_eq!(projected.summary.episode_count, 12);
-    }
-
-    #[test]
-    fn pod_10_channel_detail_is_an_explicit_open_and_close_location() {
-        let mut state = YoutubeChannelState::default();
-
-        state.open_channel(7);
-        assert_eq!(state.active_channel(), Some(7));
-        state.close_channel();
-        assert_eq!(state.active_channel(), None);
-    }
-
-    #[test]
-    fn pod_11_channel_header_summary_reflects_window_shorts_and_downloads_together() {
-        // 11 long-form videos plus one Short (id 11, 60s).
-        let episodes = (1..=12)
-            .rev()
-            .map(|id| episode(id, Some(if id == 11 { 60 } else { 600 })))
-            .collect::<Vec<_>>();
-        let mut state = YoutubeChannelState::default();
-        let mut download_states = BTreeMap::new();
-        download_states.insert(12, DownloadState::Downloaded { bytes: 1_000 });
-        download_states.insert(2, DownloadState::Downloaded { bytes: 2_000 });
-
-        // Initial 10-of-11 window (Shorts hidden), two episodes downloaded.
-        let shown = state.visible_episodes(7, &episodes).len();
-        let available = state.available_count(7, &episodes);
-        let summary = podcasts_download_presentation::channel_download_summary(
-            shown,
-            available,
-            &episodes,
-            &download_states,
-        );
-        assert_eq!((summary.shown, summary.available), (10, 11));
-        assert_eq!(summary.downloaded_count, 2);
-        assert_eq!(summary.downloaded_bytes, 3_000);
-
-        // "Load more" changes the window, not the download totals.
-        state.set_loaded_limit(7, 40);
-        let shown = state.visible_episodes(7, &episodes).len();
-        let available = state.available_count(7, &episodes);
-        let summary = podcasts_download_presentation::channel_download_summary(
-            shown,
-            available,
-            &episodes,
-            &download_states,
-        );
-        assert_eq!((summary.shown, summary.available), (11, 11));
-        assert_eq!(summary.downloaded_count, 2);
-        assert_eq!(summary.downloaded_bytes, 3_000);
-
-        // Revealing Shorts changes the window again; downloads stay correct.
-        state.set_hide_shorts(7, false);
-        let shown = state.visible_episodes(7, &episodes).len();
-        let available = state.available_count(7, &episodes);
-        let summary = podcasts_download_presentation::channel_download_summary(
-            shown,
-            available,
-            &episodes,
-            &download_states,
-        );
-        assert_eq!((summary.shown, summary.available), (12, 12));
-        assert_eq!(summary.downloaded_count, 2);
-
-        // A newly finished download changes the totals without touching the window.
-        download_states.insert(11, DownloadState::Downloaded { bytes: 500 });
-        let summary = podcasts_download_presentation::channel_download_summary(
-            shown,
-            available,
-            &episodes,
-            &download_states,
-        );
-        assert_eq!(summary.downloaded_count, 3);
-        assert_eq!(summary.downloaded_bytes, 3_500);
-
-        // Deleting a download drops it from both the count and the total.
-        download_states.remove(&12);
-        let summary = podcasts_download_presentation::channel_download_summary(
-            shown,
-            available,
-            &episodes,
-            &download_states,
-        );
-        assert_eq!(summary.downloaded_count, 2);
-        assert_eq!(summary.downloaded_bytes, 2_500);
-    }
-
-    /// `SRC-11` / `NET-1a`: the channel-detail header is one of the source
-    /// image entry points — with `images_allowed: false` (set via
-    /// `update`) it must stay on the glyph fallback even though the group
-    /// carries a real `image_url`.
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn src_11_channel_header_stays_on_the_fallback_when_images_are_not_allowed() {
-        gtk4::init().unwrap();
-        let stack = gtk4::Stack::new();
-        let detail = YoutubeChannelDetail::new(&stack, true);
-        let group = reprise_core::podcasts::SourceGroup {
-            subscription_id: 7,
-            title: "Channel".into(),
-            author: None,
-            image_url: Some("https://images.test/net-1a-channel-header.jpg".into()),
-            kind: PodcastKind::Youtube,
-            sync_to_phone: false,
-            episodes: Vec::new(),
-        };
-        let rendered = RenderedSourceGroup {
-            summary: source_summary(&group, &BTreeMap::<i64, DownloadState>::new()),
-            group,
-        };
-        detail.update(std::slice::from_ref(&rendered), &BTreeMap::new(), false);
-
-        let header = detail
-            .build_header(&rendered)
-            .downcast::<gtk4::Box>()
-            .unwrap();
-        let artwork = header
-            .first_child()
-            .and_then(|back| back.next_sibling())
-            .and_downcast::<gtk4::Stack>()
-            .expect("source image stack");
-        assert_eq!(artwork.visible_child_name().as_deref(), Some("fallback"));
-    }
-}
+#[path = "youtube_channel_detail_tests.rs"]
+mod tests;

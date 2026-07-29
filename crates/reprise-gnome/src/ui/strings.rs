@@ -315,6 +315,13 @@ pub const EMPTY_LIBRARY_DESCRIPTION: &str = N_!("Scan a folder to build your lib
 pub const NO_RESULTS_TITLE: &str = N_!("No results");
 pub const NO_RESULTS_DESCRIPTION: &str = N_!("Try a different search");
 
+/// `SRC-10`/Block B2: the online sources' (Podcasts, YouTube, Radio) filter
+/// mismatch state — subscribed/added but the active filters hide every row.
+/// Distinct from `NO_RESULTS_TITLE` above (search, not a persisted filter)
+/// so the two can carry different copy without cross-contaminating tests.
+pub const SRC_NO_RESULTS_TITLE: &str = N_!("Nothing matches these filters");
+pub const SRC_CLEAR_FILTERS: &str = N_!("Clear filters");
+
 // Neutral "nothing here" empty state (src/ui/track_list.rs, Stage 3 Task 3):
 // shown for the Missing/ImportErrors sources when they have no rows and no
 // search filter is active — deliberately not the "no music yet" copy above,

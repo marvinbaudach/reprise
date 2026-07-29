@@ -60,6 +60,18 @@ pub fn available_count(episodes: &[EpisodeRow], show_shorts: bool) -> usize {
         .count()
 }
 
+/// `POD-14`: true exactly when the channel's visible window is empty *only*
+/// because Shorts are hidden — the channel has entries, but every one of
+/// them is a Short. Pure and displayless so the GTK detail view and a future
+/// MCP caller decide it the same way, matching POD-10/POD-11's split between
+/// core decision and display. Does not fire when the channel truly has no
+/// entries at all (that is a different, uncovered gap — see POD-14's doc
+/// comment in `docs/ux-rules.md`) or when Shorts are already shown.
+#[must_use]
+pub fn shorts_only_hidden(episodes: &[EpisodeRow], show_shorts: bool) -> bool {
+    !show_shorts && !episodes.is_empty() && available_count(episodes, false) == 0
+}
+
 /// `POD-11`: the channel detail header summary — the currently listed
 /// window's size plus how many of the channel's episodes are downloaded and
 /// their combined size on disk. `downloaded_count`/`downloaded_bytes` are
@@ -163,6 +175,26 @@ mod tests {
     #[test]
     fn pod_10_an_unknown_duration_is_never_classified_as_a_short() {
         assert!(!is_short(&episode(1, None)));
+    }
+
+    #[test]
+    fn pod_14_shorts_only_hidden_fires_precisely_when_every_entry_is_a_hidden_short() {
+        let all_shorts = vec![episode(2, Some(60)), episode(1, Some(30))];
+        let mixed = vec![episode(2, Some(600)), episode(1, Some(60))];
+
+        // Would go red if the feature were deleted (returning `false`
+        // unconditionally): a channel of nothing but Shorts, hidden, must
+        // read as shorts-only.
+        assert!(shorts_only_hidden(&all_shorts, false));
+        // A long-form entry survives the filter, so this is an ordinary
+        // (non-empty) window, not the shorts-only case.
+        assert!(!shorts_only_hidden(&mixed, false));
+        // Revealing Shorts empties the condition even for an all-Shorts
+        // channel — there is no longer anything hidden.
+        assert!(!shorts_only_hidden(&all_shorts, true));
+        // A channel with no entries at all is a different, uncovered gap —
+        // not shorts-only.
+        assert!(!shorts_only_hidden(&[], false));
     }
 
     #[test]
