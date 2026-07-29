@@ -36,20 +36,11 @@ pub(super) fn refreshed_download_states(
                     | DownloadState::Failed { .. }),
                 ) => state.clone(),
                 _ => {
-                    let metadata = row
-                        .downloaded_path
-                        .as_deref()
-                        .and_then(|path| std::fs::metadata(path).ok())
-                        .filter(std::fs::Metadata::is_file);
-                    let bytes = row.downloaded_bytes.or_else(|| {
-                        metadata
-                            .as_ref()
-                            .map(|metadata| metadata.len().min(i64::MAX as u64) as i64)
-                    });
+                    let on_disk = download_state::on_disk_bytes(row.downloaded_path.as_deref());
                     download_state::from_persisted(
                         row.downloaded_path.as_deref(),
-                        bytes,
-                        metadata.is_some(),
+                        row.downloaded_bytes.or(on_disk),
+                        on_disk.is_some(),
                     )
                 }
             };

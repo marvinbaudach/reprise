@@ -10,15 +10,16 @@ use reprise_core::podcasts::{EpisodeRow, EpisodeStatus, PodcastKind, SourceGroup
 use super::podcasts_context_menu::PodcastSyncDevice;
 use crate::ui::strings;
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(super) struct PodcastFilter {
-    pub unplayed_only: bool,
-    pub show: Option<String>,
-    pub source: Option<PodcastKind>,
-    /// `SRC-10` addendum (Block B2): the "Downloaded" chip — matches only
-    /// episodes with a file on disk right now, not a queued/downloading one.
-    pub downloaded_only: bool,
-}
+/// The filter the podcast view applies, which is exactly the filter the core
+/// persists — so it *is* the core's type rather than a field-for-field copy of
+/// it. The copy that used to live here had the same four fields and the same
+/// derives, and every round trip through the database had to keep the two
+/// spellings in step by hand.
+///
+/// (`SRC-10` addendum, Block B2: `downloaded_only` is the "Downloaded" chip —
+/// it matches only episodes with a file on disk right now, not a queued or
+/// downloading one.)
+pub(super) type PodcastFilter = reprise_core::podcasts::config::PodcastFilterConfig;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Pill {

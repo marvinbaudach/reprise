@@ -31,6 +31,17 @@ pub const KEEP_DOWNLOADED_DEFAULT_KEY: &str = "podcasts.keep_downloaded_default"
 
 pub const DEFAULT_IMPORT_COUNT: usize = 25;
 pub const DEFAULT_YOUTUBE_IMPORT_COUNT: usize = 10;
+
+/// The range `import_count` is read back through, and therefore the range it
+/// is written through. Named rather than inlined at both ends because a clamp
+/// that only one of the two sides applies is not a clamp — it is a silent
+/// rewrite of whatever the other side stored.
+pub const IMPORT_COUNT_MIN: i64 = 5;
+pub const IMPORT_COUNT_MAX: i64 = 100;
+/// Same, for the YouTube per-channel count. Deliberately a different range
+/// from the RSS one: a channel's back catalogue is not a show's.
+pub const YOUTUBE_IMPORT_COUNT_MIN: i64 = 3;
+pub const YOUTUBE_IMPORT_COUNT_MAX: i64 = 50;
 pub const DEFAULT_REFRESH_HOURS: i64 = 6;
 /// `MTP-36`: decided 2026-07-29 — a global default of 5.
 pub const DEFAULT_LATEST_PER_CHANNEL: usize = 5;
@@ -106,7 +117,7 @@ pub fn load(conn: &Connection) -> Result<PodcastConfig, rusqlite::Error> {
     Ok(PodcastConfig {
         import_count: integer_setting(conn, IMPORT_COUNT_KEY)?
             .unwrap_or(DEFAULT_IMPORT_COUNT as i64)
-            .clamp(5, 100) as usize,
+            .clamp(IMPORT_COUNT_MIN, IMPORT_COUNT_MAX) as usize,
         auto_download_default: crate::library::settings::get_bool(
             conn,
             AUTO_DOWNLOAD_DEFAULT_KEY,
@@ -118,7 +129,8 @@ pub fn load(conn: &Connection) -> Result<PodcastConfig, rusqlite::Error> {
             .unwrap_or_default(),
         youtube_import_count: integer_setting(conn, YOUTUBE_IMPORT_COUNT_KEY)?
             .unwrap_or(DEFAULT_YOUTUBE_IMPORT_COUNT as i64)
-            .clamp(3, 50) as usize,
+            .clamp(YOUTUBE_IMPORT_COUNT_MIN, YOUTUBE_IMPORT_COUNT_MAX)
+            as usize,
         youtube_hide_shorts_default: crate::library::settings::get_bool(
             conn,
             YOUTUBE_HIDE_SHORTS_DEFAULT_KEY,
@@ -153,6 +165,66 @@ pub fn load_filter(conn: &Connection) -> Result<PodcastFilterConfig, rusqlite::E
         },
         downloaded_only: crate::library::settings::get_bool(conn, FILTER_DOWNLOADED_KEY, false)?,
     })
+}
+
+/// Persists the podcast episodes-per-show count, through the same clamp
+/// [`load`] reads it back through.
+///
+/// These setters live next to their readers on purpose. Written in the
+/// frontend — where they were until this commit — each one duplicated a key
+/// name and skipped the clamp, so a value the UI happened to allow could be
+/// stored and then silently read back as something else.
+pub fn set_import_count(conn: &Connection, value: usize) -> Result<(), rusqlite::Error> {
+    let clamped = (value as i64).clamp(IMPORT_COUNT_MIN, IMPORT_COUNT_MAX);
+    crate::library::settings::set_setting(conn, IMPORT_COUNT_KEY, &clamped.to_string())
+}
+
+/// Persists whether newly discovered episodes download automatically.
+pub fn set_auto_download_default(conn: &Connection, value: bool) -> Result<(), rusqlite::Error> {
+    crate::library::settings::set_bool(conn, AUTO_DOWNLOAD_DEFAULT_KEY, value)
+}
+
+/// Persists the cleanup policy, through the policy's own setting spelling
+/// rather than a string the caller has to get right.
+pub fn set_cleanup_policy(conn: &Connection, value: CleanupPolicy) -> Result<(), rusqlite::Error> {
+    crate::library::settings::set_setting(conn, CLEANUP_POLICY_KEY, value.as_setting())
+}
+
+/// Persists the YouTube per-channel import count, through the same clamp
+/// [`load`] reads it back through.
+pub fn set_youtube_import_count(conn: &Connection, value: usize) -> Result<(), rusqlite::Error> {
+    let clamped = (value as i64).clamp(YOUTUBE_IMPORT_COUNT_MIN, YOUTUBE_IMPORT_COUNT_MAX);
+    crate::library::settings::set_setting(conn, YOUTUBE_IMPORT_COUNT_KEY, &clamped.to_string())
+}
+
+/// Persists whether YouTube Shorts are hidden by default on new channels.
+pub fn set_youtube_hide_shorts_default(
+    conn: &Connection,
+    value: bool,
+) -> Result<(), rusqlite::Error> {
+    crate::library::settings::set_bool(conn, YOUTUBE_HIDE_SHORTS_DEFAULT_KEY, value)
+}
+
+/// Persists the whole podcast filter — the exact inverse of [`load_filter`],
+/// and kept adjacent to it so the two cannot drift. `None` is stored as the
+/// empty string, which is what [`load_filter`] reads back as `None`.
+pub fn save_filter(conn: &Connection, filter: &PodcastFilterConfig) -> Result<(), rusqlite::Error> {
+    crate::library::settings::set_bool(conn, FILTER_UNPLAYED_KEY, filter.unplayed_only)?;
+    crate::library::settings::set_setting(
+        conn,
+        FILTER_SHOW_KEY,
+        filter.show.as_deref().unwrap_or_default(),
+    )?;
+    crate::library::settings::set_setting(
+        conn,
+        FILTER_SOURCE_KEY,
+        match filter.source {
+            Some(PodcastKind::Rss) => "rss",
+            Some(PodcastKind::Youtube) => "youtube",
+            None => "",
+        },
+    )?;
+    crate::library::settings::set_bool(conn, FILTER_DOWNLOADED_KEY, filter.downloaded_only)
 }
 
 /// The one authority for "may a refresh/download for this kind start a
@@ -309,5 +381,69 @@ mod tests {
         crate::library::settings::set_bool(&conn, FILTER_DOWNLOADED_KEY, true).unwrap();
 
         assert!(load_filter(&conn).unwrap().downloaded_only);
+    }
+
+    #[test]
+    fn setting_the_counts_clamps_to_the_range_load_reads_them_back_through() {
+        // The bug this closes: written unclamped (as the frontend did), a
+        // value outside the range is stored happily and then read back as a
+        // different number, so the UI shows something nobody chose.
+        let conn = crate::db::open_migrated(None).unwrap();
+
+        set_import_count(&conn, 4).unwrap();
+        assert_eq!(load(&conn).unwrap().import_count, IMPORT_COUNT_MIN as usize);
+        set_import_count(&conn, 1_000).unwrap();
+        assert_eq!(load(&conn).unwrap().import_count, IMPORT_COUNT_MAX as usize);
+
+        set_youtube_import_count(&conn, 1).unwrap();
+        assert_eq!(
+            load(&conn).unwrap().youtube_import_count,
+            YOUTUBE_IMPORT_COUNT_MIN as usize
+        );
+        set_youtube_import_count(&conn, 1_000).unwrap();
+        assert_eq!(
+            load(&conn).unwrap().youtube_import_count,
+            YOUTUBE_IMPORT_COUNT_MAX as usize
+        );
+    }
+
+    #[test]
+    fn every_setter_round_trips_through_its_own_reader() {
+        let conn = crate::db::open_migrated(None).unwrap();
+
+        set_import_count(&conn, 42).unwrap();
+        set_auto_download_default(&conn, true).unwrap();
+        set_cleanup_policy(&conn, CleanupPolicy::KeepLast5).unwrap();
+        set_youtube_import_count(&conn, 20).unwrap();
+        set_youtube_hide_shorts_default(&conn, false).unwrap();
+
+        let config = load(&conn).unwrap();
+        assert_eq!(config.import_count, 42);
+        assert!(config.auto_download_default);
+        assert_eq!(config.cleanup_policy, CleanupPolicy::KeepLast5);
+        assert_eq!(config.youtube_import_count, 20);
+        assert!(!config.youtube_hide_shorts_default);
+    }
+
+    #[test]
+    fn save_filter_is_the_exact_inverse_of_load_filter() {
+        let conn = crate::db::open_migrated(None).unwrap();
+        let filter = PodcastFilterConfig {
+            unplayed_only: true,
+            show: Some("Some Show".to_owned()),
+            source: Some(PodcastKind::Youtube),
+            downloaded_only: true,
+        };
+
+        save_filter(&conn, &filter).unwrap();
+        assert_eq!(load_filter(&conn).unwrap(), filter);
+
+        // And back to empty: `None` must survive as `None`, not as `Some("")`.
+        save_filter(&conn, &PodcastFilterConfig::default()).unwrap();
+        assert_eq!(
+            load_filter(&conn).unwrap(),
+            PodcastFilterConfig::default(),
+            "an empty filter must round trip as empty, not as empty strings"
+        );
     }
 }

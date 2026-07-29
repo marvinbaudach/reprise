@@ -43,8 +43,8 @@ echo "== Frontend thinness =="
 # `reprise_core::podcasts::offline_add::offline_subscribe` — the
 # already-subscribed check and the one DB write both live in reprise-core.
 declare -A budget=(
-  [rusqlite]=566
-  [filesystem]=19
+  [rusqlite]=538
+  [filesystem]=17
   [threads]=14
   [workers]=7
 )
