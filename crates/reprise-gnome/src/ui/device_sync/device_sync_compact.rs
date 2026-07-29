@@ -225,6 +225,31 @@ impl DeviceSyncRuntime {
         Ok(options)
     }
 
+    /// `MTP-46`/`SET-4`: re-plans every connected device because something
+    /// outside the device page changed what may sync — today the two source
+    /// module switches on the "Online sources" page. Without this, an open
+    /// device page keeps showing a switched-off source's Content row until
+    /// something else happens to trigger a recompute, which `SET-4` (settings
+    /// take effect immediately) does not allow.
+    ///
+    /// A device that is busy is skipped rather than interrupted: its own
+    /// recompute runs when it finishes, and the alternative is cancelling a
+    /// transfer the user started because they flipped an unrelated switch.
+    pub fn recompute_all_devices(self: &Rc<Self>) {
+        let device_ids = self
+            .device_states
+            .borrow()
+            .iter()
+            .filter(|device| !device.is_busy())
+            .map(|device| device.descriptor.id.clone())
+            .collect::<Vec<_>>();
+        for device_id in device_ids {
+            if let Err(error) = self.recompute_delta(&device_id) {
+                tracing::warn!(device_id, %error, "could not re-plan after a settings change");
+            }
+        }
+    }
+
     pub fn recompute_delta(self: &Rc<Self>, device_id: &str) -> Result<(), String> {
         let result = self.recompute_delta_silent(device_id);
         if result.is_ok() {
@@ -265,6 +290,7 @@ impl DeviceSyncRuntime {
             podcast_selection_summary,
             preparation_phase,
             preparation_missing,
+            enabled_sources,
         ) = {
             let conn = self.conn.borrow();
             let files = load_device_files(&conn, device_id).map_err(|error| error.to_string())?;
@@ -298,6 +324,13 @@ impl DeviceSyncRuntime {
             // and splits wanted-but-missing ones into `waiting` instead of
             // letting them vanish from the balance (`MTP-40`).
             let selection_candidates = query_selection_candidates_for_device(&conn, device_id)
+                .map_err(|error| error.to_string())?;
+            // `MTP-46`: the same switches the query above already honours,
+            // read once more here so the Content rows can hide a source the
+            // user switched off. Reading them rather than inferring them
+            // from an empty candidate list: "no episodes" and "not a feature
+            // you use" are different states, and only the second hides a row.
+            let enabled_sources = reprise_core::device_sync::podcasts::enabled_sync_sources(&conn)
                 .map_err(|error| error.to_string())?;
             // `MTP-36`: the global default plus every enabled YouTube
             // channel's persisted override — resolved here (the only place
@@ -339,6 +372,7 @@ impl DeviceSyncRuntime {
                 &podcast_inventory,
                 PodcastSyncSource::Rss,
                 settings.remove_deleted,
+                enabled_sources,
             );
             let youtube_plan = target_podcast_plan(
                 &targets,
@@ -347,6 +381,7 @@ impl DeviceSyncRuntime {
                 &youtube_inventory,
                 PodcastSyncSource::Youtube,
                 settings.remove_deleted,
+                enabled_sources,
             );
             // `MTP-37`: the Content section's live "N of M ... selected"
             // read, sourced straight from `POD-12`'s per-device selection —
@@ -414,6 +449,7 @@ impl DeviceSyncRuntime {
                 podcast_selection_summary,
                 preparation_phase,
                 preparation_missing,
+                enabled_sources,
             )
         };
         projection.plan.transfer_bytes = projection
@@ -444,6 +480,7 @@ impl DeviceSyncRuntime {
             device.targets = targets;
             device.youtube_selection = youtube_selection_summary;
             device.podcast_selection = podcast_selection_summary;
+            device.enabled_sources = enabled_sources;
             device.preparation = preparation_phase;
             device.preparation_missing = preparation_missing;
             device.page = projection.page;
@@ -481,6 +518,7 @@ fn target_podcast_plan(
     inventory: &[PodcastDeviceFile],
     source: PodcastSyncSource,
     remove_deleted: bool,
+    enabled: reprise_core::device_sync::podcasts::EnabledSyncSources,
 ) -> reprise_core::device_sync::podcasts::PodcastSyncPlan {
     let Some(target) = targets.iter().find(|target| target.kind == kind) else {
         return reprise_core::device_sync::podcasts::PodcastSyncPlan::default();
@@ -494,6 +532,7 @@ fn target_podcast_plan(
         remove_deleted,
         source,
         target.cap_bytes,
+        enabled,
     )
 }
 

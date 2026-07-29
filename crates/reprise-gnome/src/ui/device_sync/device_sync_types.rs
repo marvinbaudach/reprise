@@ -168,6 +168,14 @@ pub struct DeviceView {
     /// rather than computed here.
     pub youtube_selection: reprise_core::device_sync::YoutubeSelectionSummary,
     pub podcast_selection: reprise_core::device_sync::PodcastSelectionSummary,
+    /// `MTP-46`: which content sources the user currently has switched on.
+    /// A switched-off source contributes no candidates in core, and its
+    /// Content row is hidden here — a row reporting "0 of 3 channels" for a
+    /// feature the user has turned off is noise that invites the reader to
+    /// re-enable something they deliberately disabled. Carried on the
+    /// snapshot rather than read here, because the panel does not touch the
+    /// database (`ARCH-2`'s thin frontend).
+    pub enabled_sources: reprise_core::device_sync::podcasts::EnabledSyncSources,
     /// The recorded runs shown under "Recent transfers" (MTP-20).
     pub history: Vec<crate::ui::device_sync::device_sync_history::RunWithDeviations>,
     /// `MTP-42`'s preparation-phase projection (design 7f, `MTP-43`) — the

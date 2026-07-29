@@ -341,6 +341,18 @@ fn finish_preparation(weak: &Weak<DeviceSyncRuntime>, device_id: &str, success: 
             device.sync_phase = reprise_core::device_sync::PlannedSyncPhase::Idle;
         }
     }
+    if !success {
+        // `MTP-46`/`SET-4`: a cancelled preparation is the one exit from a
+        // busy device that does not go on to re-plan — a completed transfer
+        // re-plans through the post-sync inspection, and a successful
+        // preparation re-plans before transferring. Without this, a source
+        // switched off *during* preparation keeps its Content row until
+        // something unrelated happens, because `recompute_all_devices` had
+        // skipped the device for being busy at the time.
+        if let Err(error) = runtime.recompute_delta(device_id) {
+            tracing::warn!(device_id, %error, "could not re-plan after cancelled preparation");
+        }
+    }
     runtime.notify();
 }
 

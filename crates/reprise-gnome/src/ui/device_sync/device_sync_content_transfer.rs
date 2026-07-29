@@ -100,6 +100,26 @@ pub(super) async fn run_content_phase(
     if work.cancelled.load(Ordering::SeqCst) {
         return outcome;
     }
+    // `MTP-46`: the plan was made when the sync started and the user may have
+    // switched a source off since — `recompute_all_devices` deliberately skips
+    // a device that is mid-transfer rather than interrupting it, so the stale
+    // plan is still here. Re-read the switches at the moment of execution and
+    // drop a disabled source's work entirely. Dropping it here rather than
+    // filtering later is what keeps the *removals* out too: a stale plan's
+    // `to_remove` would otherwise delete files of a source the user has just
+    // taken out of the sync.
+    let enabled = reprise_core::device_sync::podcasts::enabled_sync_sources(&runtime.conn.borrow())
+        .unwrap_or(reprise_core::device_sync::podcasts::EnabledSyncSources {
+            rss: false,
+            youtube: false,
+        });
+    if !enabled.allows(reprise_core::device_sync::podcasts::PodcastSyncSource::Rss) {
+        work.podcasts = reprise_core::device_sync::podcasts::PodcastSyncPlan::default();
+    }
+    if !enabled.allows(reprise_core::device_sync::podcasts::PodcastSyncSource::Youtube) {
+        work.youtube = reprise_core::device_sync::podcasts::PodcastSyncPlan::default();
+    }
+
     let mut failures = Vec::new();
     let mut copied = Vec::new();
     let mut deviations: Vec<ContentDeviation> = Vec::new();

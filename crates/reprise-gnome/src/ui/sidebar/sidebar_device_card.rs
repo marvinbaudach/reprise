@@ -555,6 +555,12 @@ mod tests {
             youtube_bytes: 0,
             podcast_bytes: 0,
             youtube_selection: Default::default(),
+            // `MTP-46`: these fixtures are about rendering a device that has
+            // both sources in use, so both are on.
+            enabled_sources: reprise_core::device_sync::podcasts::EnabledSyncSources {
+                rss: true,
+                youtube: true,
+            },
             podcast_selection: Default::default(),
             history: Vec::new(),
             preparation: reprise_core::device_sync::PreparationPhase::Absent,

@@ -13,6 +13,8 @@ source "$repo_root/scripts/cua-e2e/tag_autocomplete.sh"
 source "$repo_root/scripts/cua-e2e/scrobbling.sh"
 # shellcheck source=responsive_window.sh
 source "$repo_root/scripts/cua-e2e/responsive_window.sh"
+# `MTP-46`: the source modules and what their switches take out of the sync.
+source "$repo_root/scripts/cua-e2e/source_modules.sh"
 
 APP_ID=org.reprise.Reprise
 WINDOW_CLASS_MATCH=reprise
@@ -680,6 +682,9 @@ run_private_session() {
     responsive-window)
       run_responsive_window_scenario
       ;;
+    source-modules)
+      run_source_modules_scenario
+      ;;
     *)
       echo "unknown private CUA scenario group: $private_group" >&2
       return 2
@@ -693,7 +698,7 @@ if [[ "${1:-}" == "--private-session" ]]; then
   exit 0
 fi
 
-for command in "$CUA_DRIVER_BIN" Xvfb openbox cargo dbus-run-session ffmpeg gdbus gnome-keyring-daemon import jq python3 rg timeout wmctrl; do
+for command in "$CUA_DRIVER_BIN" Xvfb openbox cargo dbus-run-session ffmpeg gdbus gnome-keyring-daemon import jq python3 rg sqlite3 timeout wmctrl; do
   required_command "$command"
 done
 if [[ ! -x /usr/lib/at-spi-bus-launcher ]]; then
@@ -819,6 +824,7 @@ case "${CUA_E2E_ONLY:-all}" in
       track-sort-playing-marker
       scrobbling
       responsive-window
+      source-modules
     )
     ;;
   populated-library)
@@ -828,7 +834,8 @@ case "${CUA_E2E_ONLY:-all}" in
     | tag-1-no-jump-after-save \
     | tag-3-multi-dialog-structure | tag-autocomplete-surface \
     | library-doctor | song-visuals \
-    | track-sort-playing-marker | scrobbling | responsive-window)
+    | track-sort-playing-marker | scrobbling | responsive-window \
+    | source-modules)
     scenario_groups=("$CUA_E2E_ONLY")
     ;;
   *)
