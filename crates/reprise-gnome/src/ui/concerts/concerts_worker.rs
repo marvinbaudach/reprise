@@ -169,23 +169,20 @@ pub(in crate::ui) struct ConcertsRuntime {
     jitter_seconds: i64,
 }
 
-fn network_allowed(conn: &rusqlite::Connection) -> bool {
-    reprise_core::online_sources::network_allowed(conn, &reprise_core::modules::CONCERTS_MODULE)
-        .unwrap_or_else(|error| {
-            tracing::warn!(%error, "could not read Concerts module state; defaulting to off");
-            false
-        })
-}
-
 impl ConcertsRuntime {
     pub(in crate::ui) fn setup(conn: &rusqlite::Connection) -> Rc<Self> {
-        let database_path = database_path(conn);
+        let database_path = reprise_core::db::main_path(conn);
         let seed = database_path.as_deref().map_or_else(
             || "memory".into(),
             |path| path.to_string_lossy().into_owned(),
         );
         Rc::new(Self {
-            enabled: Rc::new(Cell::new(network_allowed(conn))),
+            enabled: Rc::new(Cell::new(
+                reprise_core::online_sources::network_allowed_or_off(
+                    conn,
+                    &reprise_core::modules::CONCERTS_MODULE,
+                ),
+            )),
             worker: spawn(database_path),
             cancellation: RefCell::new(CancellationToken::default()),
             subscribers: EnabledSubscribers::default(),
@@ -200,13 +197,19 @@ impl ConcertsRuntime {
         enabled: bool,
     ) -> Result<(), rusqlite::Error> {
         reprise_core::modules::set_enabled(conn, &reprise_core::modules::CONCERTS_MODULE, enabled)?;
-        self.apply_enabled(network_allowed(conn));
+        self.apply_enabled(reprise_core::online_sources::network_allowed_or_off(
+            conn,
+            &reprise_core::modules::CONCERTS_MODULE,
+        ));
         Ok(())
     }
 
     /// `NET-1a`: re-derives `enabled` from the global online-sources gate.
     pub(in crate::ui) fn recompute_enabled(&self, conn: &rusqlite::Connection) {
-        self.apply_enabled(network_allowed(conn));
+        self.apply_enabled(reprise_core::online_sources::network_allowed_or_off(
+            conn,
+            &reprise_core::modules::CONCERTS_MODULE,
+        ));
     }
 
     fn apply_enabled(&self, enabled: bool) {
@@ -279,10 +282,6 @@ impl ConcertsRuntime {
 }
 
 pub(super) use reprise_core::updates::fetch_allowed as request_allowed;
-
-fn database_path(conn: &rusqlite::Connection) -> Option<PathBuf> {
-    reprise_core::db::main_path(conn)
-}
 
 fn spawn(database_path: Option<PathBuf>) -> async_channel::Sender<WorkerRequest> {
     let (sender, receiver) = async_channel::unbounded::<WorkerRequest>();

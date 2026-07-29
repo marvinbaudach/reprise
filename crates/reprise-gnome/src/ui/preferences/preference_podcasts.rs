@@ -57,7 +57,7 @@ pub(in crate::ui) fn build(conn: &Rc<RefCell<Connection>>, enabled: bool) -> Pod
     {
         let conn = conn.clone();
         import_count.connect_value_notify(move |row| {
-            save_or_warn(save_import_count(
+            save_or_warn(config::set_import_count(
                 &conn.borrow(),
                 row.value().round() as usize,
             ));
@@ -71,7 +71,10 @@ pub(in crate::ui) fn build(conn: &Rc<RefCell<Connection>>, enabled: bool) -> Pod
     {
         let conn = conn.clone();
         auto_download.connect_active_notify(move |row| {
-            save_or_warn(save_auto_download(&conn.borrow(), row.is_active()));
+            save_or_warn(config::set_auto_download_default(
+                &conn.borrow(),
+                row.is_active(),
+            ));
         });
     }
 
@@ -88,7 +91,10 @@ pub(in crate::ui) fn build(conn: &Rc<RefCell<Connection>>, enabled: bool) -> Pod
     {
         let conn = conn.clone();
         cleanup.connect_selected_notify(move |row| {
-            save_or_warn(save_cleanup(&conn.borrow(), cleanup_policy(row.selected())));
+            save_or_warn(config::set_cleanup_policy(
+                &conn.borrow(),
+                cleanup_policy(row.selected()),
+            ));
         });
     }
 
@@ -121,23 +127,9 @@ fn cleanup_policy(index: u32) -> CleanupPolicy {
     }
 }
 
-fn save_import_count(conn: &Connection, value: usize) -> Result<(), rusqlite::Error> {
-    reprise_core::library::settings::set_setting(conn, config::IMPORT_COUNT_KEY, &value.to_string())
-}
-
-fn save_auto_download(conn: &Connection, value: bool) -> Result<(), rusqlite::Error> {
-    reprise_core::library::settings::set_bool(conn, config::AUTO_DOWNLOAD_DEFAULT_KEY, value)
-}
-
-fn save_cleanup(conn: &Connection, value: CleanupPolicy) -> Result<(), rusqlite::Error> {
-    reprise_core::library::settings::set_setting(
-        conn,
-        config::CLEANUP_POLICY_KEY,
-        value.as_setting(),
-    )
-}
-
-fn save_or_warn(result: Result<(), rusqlite::Error>) {
+/// Generic over the error so this page never has to name the database's error
+/// type just to log that a write failed.
+fn save_or_warn<E: std::fmt::Display>(result: Result<(), E>) {
     if let Err(error) = result {
         tracing::warn!(%error, "could not save podcast preference");
     }
@@ -147,16 +139,15 @@ fn save_or_warn(result: Result<(), rusqlite::Error>) {
 mod tests {
     use super::*;
 
+    // Kept as an integration check that this page writes the settings it
+    // reads back. The clamping and key spelling are core's to prove, and are
+    // covered by `podcasts::config`'s own tests.
     #[test]
     fn podcast_preference_values_round_trip_through_core_config() {
         let conn = reprise_core::db::open_migrated(None).unwrap();
-        save_import_count(&conn, 42).unwrap();
-        save_auto_download(&conn, true).unwrap();
-        save_cleanup(
-            &conn,
-            reprise_core::podcasts::config::CleanupPolicy::KeepLast5,
-        )
-        .unwrap();
+        config::set_import_count(&conn, 42).unwrap();
+        config::set_auto_download_default(&conn, true).unwrap();
+        config::set_cleanup_policy(&conn, CleanupPolicy::KeepLast5).unwrap();
 
         let config = reprise_core::podcasts::config::load(&conn).unwrap();
         assert_eq!(config.import_count, 42);

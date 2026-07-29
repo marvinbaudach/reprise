@@ -44,6 +44,21 @@ pub fn downloading(
     }
 }
 
+/// The size of the downloaded file that is on disk right now, or `None`.
+///
+/// `None` covers "no path recorded", "the path is gone" and "the path is not a
+/// file" alike, because all three mean the same thing to every caller: there
+/// is nothing to play. Pairing that with [`from_persisted`]'s `file_exists`
+/// argument is the whole reason this lives here — the frontend used to reach
+/// for `std::fs::metadata` itself to answer a question about a podcast.
+#[must_use]
+pub fn on_disk_bytes(downloaded_path: Option<&str>) -> Option<i64> {
+    let metadata = std::fs::metadata(downloaded_path?).ok()?;
+    metadata
+        .is_file()
+        .then(|| metadata.len().min(i64::MAX as u64) as i64)
+}
+
 #[must_use]
 pub fn from_persisted(
     downloaded_path: Option<&str>,
