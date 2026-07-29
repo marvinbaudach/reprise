@@ -113,6 +113,8 @@ pub enum PodcastError {
     NotModified,
     #[error("{0}")]
     YtDlp(String),
+    #[error("YouTube request timed out — try again")]
+    YtDlpTimeout,
     /// The subscription's kind (RSS or YouTube) is disabled, either at its
     /// own module or the global online-sources gate (`NET-1a`).
     #[error("{0}")]
@@ -143,6 +145,7 @@ impl PodcastError {
             }
             PodcastError::NotModified => "podcast source was not modified",
             PodcastError::YtDlp(_) => "YouTube source could not be read with yt-dlp",
+            PodcastError::YtDlpTimeout => "YouTube source timed out",
             PodcastError::Disabled(_) => "this source is disabled in Reprise preferences",
         }
     }
@@ -167,6 +170,7 @@ mod tests {
             PodcastError::Parse(leaking.to_owned()),
             PodcastError::NotModified,
             PodcastError::YtDlp(leaking.to_owned()),
+            PodcastError::YtDlpTimeout,
             PodcastError::Disabled(leaking.to_owned()),
         ];
         for error in cases {
