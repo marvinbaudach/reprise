@@ -128,23 +128,56 @@ echo "== Dead-code allowlist =="
 # The extraction ahead will produce plenty of candidates, so the existing
 # ones are pinned per file. A new one has to justify itself by editing this
 # list, in the commit that adds it.
+#
+# Both spellings count. The inner form `#![allow(dead_code)]` silences a
+# whole *file* rather than one item, so it is the broader escape hatch of the
+# two — and it used to slip past this check entirely, because the pattern
+# only looked for the outer one. A gate that catches the narrow case and
+# misses the wide one is worse than no gate: it reads as coverage.
 allowlist=$(cat <<'ALLOWLIST'
+crates/reprise-cli/tests/common/mod.rs:1
 crates/reprise-core/src/library/playlists.rs:6
+crates/reprise-gnome/src/ui/artist_news/artist_news_worker.rs:1
+crates/reprise-gnome/src/ui/concerts/concerts_columns.rs:1
+crates/reprise-gnome/src/ui/concerts/concerts_filter_bar.rs:1
+crates/reprise-gnome/src/ui/concerts/concerts_model.rs:1
+crates/reprise-gnome/src/ui/concerts/concerts_presentation.rs:1
+crates/reprise-gnome/src/ui/concerts/concerts_view.rs:1
+crates/reprise-gnome/src/ui/concerts/concerts_worker.rs:1
 crates/reprise-gnome/src/ui/concerts/mod.rs:1
 crates/reprise-gnome/src/ui/issues/mod.rs:1
 crates/reprise-gnome/src/ui/lyrics/lyrics_view.rs:4
 crates/reprise-gnome/src/ui/motion.rs:2
+crates/reprise-gnome/src/ui/playback/external_media.rs:1
+crates/reprise-gnome/src/ui/playback/external_media_state.rs:1
 crates/reprise-gnome/src/ui/playback/session_player.rs:3
 crates/reprise-gnome/src/ui/player_bar/player_bar_layout.rs:2
 crates/reprise-gnome/src/ui/player_bar/waveform_seek.rs:3
+crates/reprise-gnome/src/ui/podcasts/mod.rs:1
+crates/reprise-gnome/src/ui/radio/mod.rs:1
 crates/reprise-gnome/src/ui/releases/mod.rs:1
+crates/reprise-gnome/src/ui/releases/releases_columns.rs:1
+crates/reprise-gnome/src/ui/releases/releases_empty_state.rs:1
+crates/reprise-gnome/src/ui/releases/releases_filter_bar.rs:1
+crates/reprise-gnome/src/ui/releases/releases_model.rs:1
+crates/reprise-gnome/src/ui/releases/releases_presentation.rs:1
+crates/reprise-gnome/src/ui/releases/releases_view.rs:1
+crates/reprise-gnome/src/ui/runtime/commands.rs:1
+crates/reprise-gnome/src/ui/runtime/session.rs:2
+crates/reprise-gnome/src/ui/strings_concerts.rs:1
+crates/reprise-gnome/src/ui/strings_news.rs:1
+crates/reprise-gnome/src/ui/strings_podcasts.rs:1
+crates/reprise-gnome/src/ui/strings_radio.rs:1
+crates/reprise-gnome/src/ui/strings_releases.rs:1
 crates/reprise-gnome/src/ui/strings.rs:4
 crates/reprise-gnome/src/ui/strings_tag_edit.rs:7
 crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs:1
+crates/reprise-gnome/src/ui/updates/release_cover.rs:1
+crates/reprise-mcp/tests/common/mod.rs:1
 ALLOWLIST
 )
 
-actual_allows=$(rg --no-heading --count '#\[allow\(dead_code\)\]' crates --glob '*.rs' | sort)
+actual_allows=$(rg --no-heading --count '#!?\[allow\(dead_code\)\]' crates --glob '*.rs' | sort)
 
 if [[ $actual_allows != "$allowlist" ]]; then
   echo "dead-code allowlist drifted:" >&2

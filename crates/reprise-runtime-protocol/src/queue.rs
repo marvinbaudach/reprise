@@ -9,6 +9,16 @@ use zvariant::{DeserializeDict, SerializeDict, Type};
 #[derive(Debug, Clone, PartialEq, Eq, Default, SerializeDict, DeserializeDict, Type)]
 #[zvariant(signature = "a{sv}")]
 pub struct QueueSnapshot {
+    /// How many times this facet has changed, counted by the runtime.
+    ///
+    /// Every position in this snapshot is only meaningful against *this*
+    /// revision. A client sends it back with any command that names a row,
+    /// and a command carrying an older one is rejected rather than applied
+    /// to whichever row is there now (§9.5: a client refreshes, it does not
+    /// replay). It counts observable changes to the queue facet, not user
+    /// edits — a track ending renumbers the context window just as surely as
+    /// an edit does.
+    pub revision: u64,
     pub current_track_id: Option<i64>,
     /// Explicitly queued items, in play order.
     pub play_next_track_ids: Vec<i64>,
@@ -31,24 +41,71 @@ pub enum QueueCommand {
     /// queue is not a stop command.
     Clear,
     /// Move one explicit-queue entry, by position.
-    Move { from: u64, to: u64 },
+    Move {
+        from: u64,
+        to: u64,
+        expected_revision: u64,
+    },
     /// Drop explicit-queue entries by position. Positions rather than ids
     /// because the same track may sit in the queue more than once, and a
     /// user removing one row means that row.
-    RemoveAt(Vec<u64>),
+    RemoveAt {
+        positions: Vec<u64>,
+        expected_revision: u64,
+    },
     /// Drop entries from the surrounding context, by play-order position.
-    RemoveContextAt(Vec<u64>),
+    RemoveContextAt {
+        positions: Vec<u64>,
+        expected_revision: u64,
+    },
     /// Play the explicit-queue entry at this position now, taking it out of
     /// the queue.
-    PlayNextAt(u64),
+    PlayNextAt {
+        position: u64,
+        expected_revision: u64,
+    },
     /// Let the context entry at this play-order position jump the line and
     /// play now. Everything it passed stays queued, in order, right behind
     /// it — fast-forwarding the playhead onto it instead would drop those
     /// tracks out of the upcoming list, which reads as "my queue vanished".
-    PlayContextAt(u64),
+    PlayContextAt {
+        position: u64,
+        expected_revision: u64,
+    },
     /// Forget these track ids wherever they appear. This is a library
     /// deletion reaching the queue, not a user editing it: a track that is
     /// *currently playing* is left alone and finishes, because stopping the
     /// music is not what deleting a file asked for.
     Purge(Vec<i64>),
+}
+
+impl QueueCommand {
+    /// The queue revision this command's positions were read from, for the
+    /// commands that name a row at all.
+    ///
+    /// `None` is not "skip the check" but "there is no row to be wrong
+    /// about": `AddNext`, `AddLast`, `Purge` name tracks, and `Clear` names
+    /// the whole queue. Demanding a revision from them would make "add this
+    /// album" fail because something finished playing in the meantime.
+    #[must_use]
+    pub fn expected_revision(&self) -> Option<u64> {
+        match self {
+            Self::Move {
+                expected_revision, ..
+            }
+            | Self::RemoveAt {
+                expected_revision, ..
+            }
+            | Self::RemoveContextAt {
+                expected_revision, ..
+            }
+            | Self::PlayNextAt {
+                expected_revision, ..
+            }
+            | Self::PlayContextAt {
+                expected_revision, ..
+            } => Some(*expected_revision),
+            Self::AddNext(_) | Self::AddLast(_) | Self::Clear | Self::Purge(_) => None,
+        }
+    }
 }

@@ -15,7 +15,7 @@
 
 use gstreamer as gst;
 use gstreamer::prelude::*;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use reprise_core::library::settings::TrackTransition;
@@ -49,11 +49,24 @@ pub(crate) type HandoffFlag = Arc<AtomicBool>;
 /// Das emittierende Element kommt aus `values[0]` (statt den playbin in seinen
 /// eigenen Signal-Handler zu capturen — das erzeugte einen Referenzzyklus, der
 /// das Element am Aufräumen hindern würde).
+///
+/// `stream_generation` — the `PlaybackBackend` "Stream generations" counter
+/// (see `reprise_core::playback`), shared with `Player`/`CrossfadeEngine` —
+/// is bumped right here, at the URI swap: from this instant the (unchanged)
+/// `gst::Element` is serving a genuinely different stream even though no
+/// `play`/`play_uri` call drove it, so any event this element produces from
+/// here on (including the `AdvancedToNext` that `note_stream_start` fires
+/// once `StreamStart` confirms the swap) must carry the bumped value, not the
+/// value the *previous* track was tagged with. Bumping at the swap rather
+/// than waiting for that later `StreamStart` confirmation matches how
+/// `play`/`play_uri` bump synchronously at their own point of no return
+/// (`Player::try_play`), not at some downstream confirmation.
 pub(crate) fn connect_about_to_finish(
     playbin: &gst::Element,
     next_uri: NextUri,
     handoff_pending: HandoffFlag,
     transition: Transition,
+    stream_generation: Arc<AtomicU64>,
 ) {
     playbin.connect("about-to-finish", false, move |values| {
         let Ok(playbin) = values[0].get::<gst::Element>() else {
@@ -71,6 +84,7 @@ pub(crate) fn connect_about_to_finish(
         if let Some(uri) = queued {
             tracing::debug!(%uri, "gapless: feeding next uri on about-to-finish");
             playbin.set_property("uri", &uri);
+            stream_generation.fetch_add(1, Ordering::SeqCst);
             handoff_pending.store(true, Ordering::SeqCst);
         }
         None

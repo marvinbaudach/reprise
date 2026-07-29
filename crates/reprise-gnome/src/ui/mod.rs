@@ -64,6 +64,7 @@ pub(crate) mod preferences;
 pub mod primary_menu;
 pub(crate) mod radio;
 mod releases;
+pub(crate) mod runtime;
 mod runtime_performance;
 mod scan;
 mod scrobbling;

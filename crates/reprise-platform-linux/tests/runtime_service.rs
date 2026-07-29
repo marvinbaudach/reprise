@@ -31,7 +31,16 @@ struct Served {
 
 impl Served {
     fn start(label: &str, grace: Duration) -> Self {
-        let bus_name = format!("org.reprise.Reprise1.test{}{label}", std::process::id());
+        Self::start_on(Self::name_for(label), grace)
+    }
+
+    /// The name a given label will be served on, so a test can point a
+    /// client at it *before* anything answers there.
+    fn name_for(label: &str) -> String {
+        format!("org.reprise.Reprise1.test{}{label}", std::process::id())
+    }
+
+    fn start_on(bus_name: String, grace: Duration) -> Self {
         let lease_dir = tempfile::tempdir().expect("a temporary runtime directory");
         let lease_path = lease_dir.path().join("runtime.lock");
         let options = ServeOptions {
@@ -138,11 +147,20 @@ impl Client {
         )
     }
 
+    /// `Disconnect` is not a command: it changes no state a client could be
+    /// told about, so it stays the one method that answers with nothing.
+    fn disconnect(&self) -> zbus::Result<()> {
+        self.proxy.call("Disconnect", &())
+    }
+
+    /// Every command answers with what it did, so the reply type is the
+    /// outcome rather than `()`. Declaring `()` here would decode a dict as
+    /// nothing and fail with a signature mismatch that says very little.
     fn call(
         &self,
         method: &str,
         body: &(impl serde::ser::Serialize + zvariant::DynamicType),
-    ) -> zbus::Result<()> {
+    ) -> zbus::Result<reprise_runtime_protocol::command::CommandOutcome> {
         self.proxy.call(method, body)
     }
 }
@@ -181,8 +199,11 @@ fn a_foreign_protocol_major_comes_back_as_refused() {
     let served = Served::start("major", Duration::from_secs(60));
     let client = served.client();
 
+    // Derived from what this runtime speaks, not hardcoded: a major bump
+    // otherwise turns "foreign" into "our own version", and the test goes on
+    // passing a handshake it exists to refuse.
     let error = client
-        .connect_as(2, 0)
+        .connect_as(reprise_runtime_protocol::PROTOCOL_VERSION.major + 1, 0)
         .expect_err("a foreign major cannot decode what this runtime sends");
 
     let kind = error_kind(&error);
@@ -277,7 +298,7 @@ fn a_client_receives_the_deltas_for_its_own_session() {
     )
     .expect("the match rule is accepted");
 
-    client.connect().expect("the handshake succeeds");
+    let handshake = client.connect().expect("the handshake succeeds");
     client
         .call("PlayTracks", &(vec![1_i64], 0_u64))
         .expect("playing succeeds");
@@ -286,11 +307,26 @@ fn a_client_receives_the_deltas_for_its_own_session() {
         .next()
         .expect("a delta arrives")
         .expect("and it is a message");
-    let (sequence, snapshot): (u64, reprise_runtime_protocol::playback::PlaybackSnapshot) =
-        message.body().deserialize().expect("the delta decodes");
+    let (sequence, initiator, snapshot): (
+        u64,
+        u64,
+        reprise_runtime_protocol::playback::PlaybackSnapshot,
+    ) = message.body().deserialize().expect("the delta decodes");
     assert!(sequence > 0);
     assert_eq!(snapshot.status, "playing");
     assert_eq!(snapshot.track_id, Some(1));
+    assert_eq!(
+        initiator, handshake.client_id,
+        "a surface has to recognise its own change to follow somebody else's \
+         quietly (RUN-5), and comparing snapshots cannot tell it apart from \
+         an identical command another client sent"
+    );
+    assert_eq!(
+        snapshot.initiated_by,
+        Some(handshake.client_id),
+        "and the session's owner has to survive on the facet, because the \
+         quit policy stops only playback this surface started"
+    );
 }
 
 #[test]
@@ -302,9 +338,7 @@ fn a_runtime_nobody_is_using_shuts_itself_down() {
     {
         let client = served.client();
         client.connect().expect("the handshake succeeds");
-        client
-            .call("Disconnect", &())
-            .expect("saying goodbye works");
+        client.disconnect().expect("saying goodbye works");
     }
 
     served.wait_for_shutdown();
@@ -361,16 +395,20 @@ fn await_event(
     wanted: impl Fn(&ClientEvent) -> bool,
     what: &str,
 ) -> ClientEvent {
+    // Polled rather than blocked on, because the deadline has to bind even
+    // when *nothing* arrives. A blocking receive only lets the loop check the
+    // clock between events, so a client that goes quiet — exactly what a
+    // regression here looks like — turns the test into a hang instead of a
+    // failure, and a hang tells nobody anything.
     let deadline = Instant::now() + Duration::from_secs(10);
     while Instant::now() < deadline {
-        let Some(event) = events.recv_blocking() else {
-            break;
-        };
-        if wanted(&event) {
-            return event;
+        match events.try_recv() {
+            Some(event) if wanted(&event) => return event,
+            Some(_) => {}
+            None => std::thread::sleep(Duration::from_millis(10)),
         }
     }
-    panic!("no {what} arrived");
+    panic!("no {what} arrived within the deadline");
 }
 
 #[test]
@@ -403,11 +441,15 @@ fn a_sent_command_takes_effect_and_its_delta_comes_back() {
     let served = Served::start("clientsend", Duration::from_secs(60));
     let (client, events) =
         start_with_bus_name(vec!["playback:control".to_owned()], served.bus_name.clone());
-    await_event(
+    let connected = await_event(
         &events,
         |event| matches!(event, ClientEvent::Connected(_)),
         "connection",
     );
+    let ClientEvent::Connected(opening) = connected else {
+        unreachable!("the matcher only accepts Connected")
+    };
+    let me = opening.client_id;
 
     client.send(RuntimeCommand::PlayTracks {
         track_ids: vec![1, 2, 3],
@@ -419,12 +461,24 @@ fn a_sent_command_takes_effect_and_its_delta_comes_back() {
         |event| matches!(event, ClientEvent::PlaybackChanged { .. }),
         "playback delta",
     );
-    let ClientEvent::PlaybackChanged { sequence, snapshot } = event else {
+    let ClientEvent::PlaybackChanged {
+        sequence,
+        initiator,
+        snapshot,
+    } = event
+    else {
         unreachable!("the matcher only accepts PlaybackChanged")
     };
     assert!(sequence > 0);
     assert_eq!(snapshot.status, "playing");
     assert_eq!(snapshot.track_id, Some(1));
+    assert_eq!(
+        initiator,
+        Some(me),
+        "the attribution has to survive the whole way out and back — the \
+         runtime, the signal, and the client's own decoding"
+    );
+    assert_eq!(snapshot.initiated_by, Some(me));
     client.shutdown();
 }
 
@@ -545,10 +599,10 @@ fn a_runtime_that_goes_away_is_reported_rather_than_guessed_at() {
 
 #[test]
 #[ignore = "requires a session bus; run via dbus-run-session"]
-fn the_queue_commands_a_queue_view_needs_all_survive_the_wire() {
-    use reprise_runtime_protocol::queue::QueueCommand;
+fn a_stream_plays_beside_the_queue_and_does_not_hand_back_to_it() {
+    use reprise_runtime_protocol::playback::ExternalMedia;
 
-    let served = Served::start("queuesurface", Duration::from_secs(60));
+    let served = Served::start("external", Duration::from_secs(60));
     let (client, events) =
         start_with_bus_name(vec!["playback:control".to_owned()], served.bus_name.clone());
     await_event(
@@ -561,32 +615,119 @@ fn the_queue_commands_a_queue_view_needs_all_survive_the_wire() {
             track_ids: vec![1, 2, 3],
             start_index: 0,
         })
-        .expect("playing succeeds");
+        .expect("playing the queue succeeds");
 
-    // Every command a Queue view issues, in one pass: a stale position must
-    // come back rejected rather than silently applied to whichever row
-    // happens to occupy it now.
-    for command in [
-        RuntimeCommand::Queue(QueueCommand::AddLast(vec![2, 3])),
-        RuntimeCommand::Queue(QueueCommand::AddNext(vec![3])),
-        RuntimeCommand::Queue(QueueCommand::Move { from: 0, to: 1 }),
-        RuntimeCommand::Queue(QueueCommand::RemoveAt(vec![0])),
-        RuntimeCommand::Queue(QueueCommand::PlayNextAt(0)),
-        RuntimeCommand::Queue(QueueCommand::PlayContextAt(1)),
-        RuntimeCommand::Queue(QueueCommand::Purge(vec![3])),
-        RuntimeCommand::Queue(QueueCommand::Clear),
-    ] {
-        client
-            .call(command.clone())
-            .unwrap_or_else(|error| panic!("{command:?} was refused: {error}"));
-    }
-
-    let stale = client
-        .call(RuntimeCommand::Queue(QueueCommand::Move {
-            from: 99,
-            to: 0,
+    client
+        .call(RuntimeCommand::PlayExternal(ExternalMedia {
+            location: "https://stream.example/live".into(),
+            remote: true,
+            title: "Morning Show".into(),
+            artist: "Example FM".into(),
+            duration_ms: 0,
         }))
-        .expect_err("there is no hundredth entry");
-    assert_eq!(stale.kind(), "rejected:no_such_queue_entry");
+        .expect("playing a stream succeeds");
+
+    let event = await_event(
+        &events,
+        |event| match event {
+            ClientEvent::PlaybackChanged { snapshot, .. } => snapshot.title == "Morning Show",
+            _ => false,
+        },
+        "the stream's delta",
+    );
+    let ClientEvent::PlaybackChanged { snapshot, .. } = event else {
+        unreachable!("the matcher only accepts PlaybackChanged")
+    };
+    assert_eq!(
+        snapshot.track_id, None,
+        "a stream has no library id on the wire either"
+    );
+    assert_eq!(snapshot.artist, "Example FM");
+
+    // The queue is still there to go back to. Read through a second peer,
+    // because a snapshot is what any surface would take after a stream ends.
+    let observer = served.client();
+    let seen = observer.connect().expect("a second peer connects");
+    assert!(
+        !seen.queue.context_track_ids.is_empty(),
+        "the music the stream interrupted is still queued"
+    );
+    assert_eq!(
+        seen.playback.title, "Morning Show",
+        "and the stream is what is playing"
+    );
+
     client.shutdown();
 }
+
+#[test]
+#[ignore = "requires a session bus; run via dbus-run-session"]
+fn a_command_formed_while_disconnected_never_runs_after_the_reconnection() {
+    use reprise_runtime_protocol::queue::QueueCommand;
+
+    // The client comes up first, against a name nobody serves yet.
+    let bus_name = Served::name_for("earlycommand");
+    let (client, events) =
+        start_with_bus_name(vec!["playback:control".to_owned()], bus_name.clone());
+    let error = client
+        .call(RuntimeCommand::Queue(QueueCommand::AddLast(vec![1, 2, 3])))
+        .expect_err("there is nothing connected to command");
+    assert!(
+        error.is_retryable(),
+        "an absent runtime is a state to reconnect from: {error:?}"
+    );
+
+    // Now the runtime appears and the client's own backoff reconnects it.
+    let served = Served::start_on(bus_name, Duration::from_secs(60));
+    await_event(
+        &events,
+        |event| matches!(event, ClientEvent::Connected(_)),
+        "connection",
+    );
+
+    let observer = served.client();
+    let seen = observer.connect().expect("a second peer connects");
+    assert!(
+        seen.queue.play_next_track_ids.is_empty(),
+        "the command was formed against a session that did not exist; \
+         executing it once one appeared would run an intention against state \
+         it never saw, which is the failure §9.5 calls the more dangerous one"
+    );
+    client.shutdown();
+}
+
+#[test]
+#[ignore = "requires a session bus; run via dbus-run-session"]
+fn a_refused_client_is_told_why_instead_of_reconnecting_forever() {
+    let served = Served::start("clientrefused", Duration::from_secs(60));
+    // A client from a future major version: the runtime cannot serve it, and
+    // no amount of retrying will change that.
+    let (client, events) = reprise_runtime_client::start_with_bus_name_and_version(
+        vec!["playback:control".to_owned()],
+        served.bus_name.clone(),
+        reprise_runtime_protocol::ProtocolVersion {
+            major: reprise_runtime_protocol::PROTOCOL_VERSION.major + 1,
+            minor: 0,
+        },
+    );
+
+    let event = await_event(
+        &events,
+        |event| matches!(event, ClientEvent::Refused(_)),
+        "refusal",
+    );
+
+    let ClientEvent::Refused(error) = event else {
+        unreachable!("the matcher only accepts Refused")
+    };
+    assert_eq!(error.kind(), "refused:protocol_major");
+    assert!(
+        !error.is_retryable(),
+        "a surface must be able to say why it will never connect, rather \
+         than showing a spinner for a runtime that will never accept it"
+    );
+    client.shutdown();
+}
+
+#[path = "runtime_service/queue_surface.rs"]
+mod queue_surface;

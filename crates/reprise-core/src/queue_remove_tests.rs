@@ -133,7 +133,7 @@ fn remove_ids_except_current_keeps_only_the_loaded_slot_of_a_deleted_id() {
     let mut queue = Queue::new();
     queue.set_tracks(vec![10, 20, 10, 30, 10], 2);
 
-    assert!(queue.remove_ids_except_current(&[10]));
+    assert_eq!(queue.remove_ids_except_current(&[10]), 2);
 
     assert_eq!(queue.ids_in_order(), vec![20, 10, 30]);
     assert_eq!(queue.current(), Some(10));

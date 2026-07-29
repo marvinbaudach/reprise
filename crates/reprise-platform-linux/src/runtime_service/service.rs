@@ -92,12 +92,13 @@ pub enum Request {
     Command {
         peer: String,
         command: Command,
-        reply: Reply<Result<(), RuntimeError>>,
+        reply: Reply<Result<reprise_runtime_protocol::command::CommandOutcome, RuntimeError>>,
     },
     /// The bus reported that a peer's name has no owner any more.
     PeerVanished { peer: String },
-    /// An asynchronous report from the audio backend.
-    Player(reprise_core::playback::PlayerEvent),
+    /// An asynchronous report from the audio backend, stamped with the
+    /// stream it came from.
+    Player(reprise_core::playback::StreamEvent),
     /// A device port finished computing what a run would change. `None`
     /// means it could not.
     DevicePlan {
@@ -176,7 +177,7 @@ impl RuntimeService {
         lease: RuntimeLease,
         options: &ServeOptions,
         inbox: ServiceInbox,
-        player_events: Option<async_channel::Receiver<reprise_core::playback::PlayerEvent>>,
+        player_events: Option<async_channel::Receiver<reprise_core::playback::StreamEvent>>,
     ) -> Result<(), ServiceError> {
         let ServiceInbox {
             sender,
@@ -232,11 +233,14 @@ fn spawn_ticker(sender: async_channel::Sender<Request>, tick: Duration) {
 /// need frames, it will ask for them and they will travel their own way.
 fn spawn_player_relay(
     sender: async_channel::Sender<Request>,
-    events: async_channel::Receiver<reprise_core::playback::PlayerEvent>,
+    events: async_channel::Receiver<reprise_core::playback::StreamEvent>,
 ) {
     std::thread::spawn(move || {
         while let Ok(event) = events.recv_blocking() {
-            if matches!(event, reprise_core::playback::PlayerEvent::Spectrum(_)) {
+            if matches!(
+                event.event,
+                reprise_core::playback::PlayerEvent::Spectrum(_)
+            ) {
                 continue;
             }
             if sender.send_blocking(Request::Player(event)).is_err() {
@@ -293,7 +297,12 @@ impl Loop {
         while let Ok(request) = requests.recv_blocking() {
             self.handle(request);
             self.publish();
-            if !self.reconcile() {
+            // Work already waiting in the inbox counts as work. Without
+            // this, a tick that expires the grace can be dequeued one slot
+            // ahead of an already-queued `Connect`: the loop would shut down
+            // and that client — which was reversing the drain by connecting
+            // at all — would find the name gone instead of a runtime.
+            if !self.reconcile(requests.is_empty()) {
                 break;
             }
         }
@@ -315,8 +324,10 @@ impl Loop {
                 let _ = reply.send_blocking(());
             }
             Request::Snapshot { peer, reply } => {
-                let answer = if self.peers.contains_key(&peer) {
-                    self.runtime.snapshot().map(|snapshot| wire(&snapshot))
+                let answer = if let Some(&client) = self.peers.get(&peer) {
+                    self.runtime
+                        .snapshot()
+                        .map(|snapshot| wire(&snapshot, client))
                 } else {
                     Err(RuntimeError::Unavailable(
                         reprise_runtime::Unavailable::NotConnected,
@@ -365,7 +376,7 @@ impl Loop {
         let connected = self.runtime.connect(&handshake)?;
         self.peers.insert(peer.to_owned(), connected.client);
         self.lifecycle.serve();
-        Ok(wire(&connected.snapshot))
+        Ok(wire(&connected.snapshot, connected.client))
     }
 
     fn drop_peer(&mut self, peer: &str) {
@@ -390,7 +401,7 @@ impl Loop {
                 continue;
             };
             for event in delivery.events {
-                self.emit(&peer, event.sequence, &event.event);
+                self.emit(&peer, event.sequence, event.initiator, &event.event);
             }
             if delivery.resynchronize {
                 self.signal(&peer, "Resynchronize", &());
@@ -398,19 +409,29 @@ impl Loop {
         }
     }
 
-    fn emit(&self, peer: &str, sequence: u64, event: &RuntimeEvent) {
+    /// `initiator` travels as a plain number with zero meaning "nobody
+    /// asked" — a backend tick, a track ending, an idle deadline. Client ids
+    /// start at one, so zero cannot collide with a real one.
+    fn emit(
+        &self,
+        peer: &str,
+        sequence: u64,
+        initiator: Option<reprise_runtime::ClientId>,
+        event: &RuntimeEvent,
+    ) {
+        let initiator = initiator.map_or(0, u64::from);
         match event {
             RuntimeEvent::PlaybackChanged(snapshot) => {
-                self.signal(peer, "PlaybackChanged", &(sequence, snapshot));
+                self.signal(peer, "PlaybackChanged", &(sequence, initiator, snapshot));
             }
             RuntimeEvent::QueueChanged(snapshot) => {
-                self.signal(peer, "QueueChanged", &(sequence, snapshot));
+                self.signal(peer, "QueueChanged", &(sequence, initiator, snapshot));
             }
             RuntimeEvent::DeviceRunChanged(snapshot) => {
-                self.signal(peer, "DeviceRunChanged", &(sequence, snapshot));
+                self.signal(peer, "DeviceRunChanged", &(sequence, initiator, snapshot));
             }
             RuntimeEvent::JobChanged(snapshot) => {
-                self.signal(peer, "JobChanged", &(sequence, snapshot));
+                self.signal(peer, "JobChanged", &(sequence, initiator, snapshot));
             }
         }
     }
@@ -431,8 +452,12 @@ impl Loop {
     }
 
     /// Advances the lifecycle. Returns whether the loop should keep running.
-    fn reconcile(&mut self) -> bool {
-        let idle = self.runtime.is_idle().unwrap_or(false);
+    ///
+    /// `inbox_empty` is part of the idle question, not a separate guard: a
+    /// request waiting to be handled is a reason to exist, exactly like a
+    /// connected client or a running job.
+    fn reconcile(&mut self, inbox_empty: bool) -> bool {
+        let idle = inbox_empty && self.runtime.is_idle().unwrap_or(false);
         let now_ms = u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX);
         match self.lifecycle.observe(idle, now_ms) {
             Some(LifecycleChange::EnteredDraining) => {
@@ -464,14 +489,18 @@ fn capability(name: &str) -> Option<Capability> {
     }
 }
 
-/// The snapshot in its wire shape.
+/// The snapshot in its wire shape, addressed to the client that asked for
+/// it: the same runtime state carries a different `client_id` per peer,
+/// which is what lets each of them recognise its own changes.
 pub(crate) fn wire(
     snapshot: &reprise_runtime::RuntimeSnapshot,
+    client: reprise_runtime::ClientId,
 ) -> reprise_runtime_protocol::runtime::RuntimeSnapshot {
     reprise_runtime_protocol::runtime::RuntimeSnapshot {
         protocol_major: snapshot.protocol.major,
         protocol_minor: snapshot.protocol.minor,
         sequence: snapshot.sequence,
+        client_id: client.into(),
         playback: snapshot.playback.clone(),
         queue: snapshot.queue.clone(),
         device_runs: snapshot.device_runs.clone(),

@@ -1,9 +1,12 @@
 //! What a client sends and what it hears back.
 
+use reprise_runtime_protocol::command::CommandOutcome;
 use reprise_runtime_protocol::device_run::DeviceRunSnapshot;
 use reprise_runtime_protocol::jobs::{JobCommand, JobSnapshot};
-use reprise_runtime_protocol::playback::{PlaybackCommand, PlaybackSnapshot};
+use reprise_runtime_protocol::playback::{ExternalMedia, PlaybackCommand, PlaybackSnapshot};
 use reprise_runtime_protocol::queue::{QueueCommand, QueueSnapshot};
+
+use crate::client::RequestId;
 use reprise_runtime_protocol::runtime::RuntimeSnapshot;
 
 /// One thing a surface asks the runtime to do.
@@ -19,6 +22,8 @@ pub enum RuntimeCommand {
         track_ids: Vec<i64>,
         start_index: usize,
     },
+    /// Play a stream, a podcast episode or a preview render.
+    PlayExternal(ExternalMedia),
     Job(JobCommand),
     DeviceStart {
         device: String,
@@ -48,19 +53,39 @@ impl RuntimeCommand {
             Self::Queue(QueueCommand::AddNext(ids)) => ("QueueAddNext", Body::Ids(ids.clone())),
             Self::Queue(QueueCommand::AddLast(ids)) => ("QueueAddLast", Body::Ids(ids.clone())),
             Self::Queue(QueueCommand::Clear) => ("QueueClear", Body::None),
-            Self::Queue(QueueCommand::Move { from, to }) => ("QueueMove", Body::Move(*from, *to)),
-            Self::Queue(QueueCommand::RemoveAt(positions)) => {
-                ("QueueRemoveAt", Body::Positions(positions.clone()))
-            }
-            Self::Queue(QueueCommand::RemoveContextAt(positions)) => {
-                ("QueueRemoveContextAt", Body::Positions(positions.clone()))
-            }
-            Self::Queue(QueueCommand::PlayNextAt(position)) => {
-                ("QueuePlayNextAt", Body::Position(*position))
-            }
-            Self::Queue(QueueCommand::PlayContextAt(position)) => {
-                ("QueuePlayContextAt", Body::Position(*position))
-            }
+            Self::Queue(QueueCommand::Move {
+                from,
+                to,
+                expected_revision,
+            }) => ("QueueMove", Body::Move(*from, *to, *expected_revision)),
+            Self::Queue(QueueCommand::RemoveAt {
+                positions,
+                expected_revision,
+            }) => (
+                "QueueRemoveAt",
+                Body::Positions(positions.clone(), *expected_revision),
+            ),
+            Self::Queue(QueueCommand::RemoveContextAt {
+                positions,
+                expected_revision,
+            }) => (
+                "QueueRemoveContextAt",
+                Body::Positions(positions.clone(), *expected_revision),
+            ),
+            Self::Queue(QueueCommand::PlayNextAt {
+                position,
+                expected_revision,
+            }) => (
+                "QueuePlayNextAt",
+                Body::Position(*position, *expected_revision),
+            ),
+            Self::Queue(QueueCommand::PlayContextAt {
+                position,
+                expected_revision,
+            }) => (
+                "QueuePlayContextAt",
+                Body::Position(*position, *expected_revision),
+            ),
             Self::Queue(QueueCommand::Purge(ids)) => ("QueuePurge", Body::Ids(ids.clone())),
             Self::PlayTracks {
                 track_ids,
@@ -69,6 +94,7 @@ impl RuntimeCommand {
                 "PlayTracks",
                 Body::Tracks(track_ids.clone(), *start_index as u64),
             ),
+            Self::PlayExternal(media) => ("PlayExternal", Body::External(media.clone())),
             Self::Job(JobCommand::Cancel(job_id)) => ("JobCancel", Body::Id(*job_id)),
             Self::Job(JobCommand::Save(job_id)) => ("JobSave", Body::Id(*job_id)),
             Self::Job(JobCommand::Discard(job_id)) => ("JobDiscard", Body::Id(*job_id)),
@@ -92,9 +118,13 @@ pub(super) enum Body {
     Text(String),
     Ids(Vec<i64>),
     Tracks(Vec<i64>, u64),
-    Position(u64),
-    Positions(Vec<u64>),
-    Move(u64, u64),
+    /// A position plus the queue revision it was read from — the two always
+    /// travel together, because a position without one names a row nobody
+    /// can check.
+    Position(u64, u64),
+    Positions(Vec<u64>, u64),
+    Move(u64, u64, u64),
+    External(ExternalMedia),
 }
 
 /// What a surface hears from the runtime.
@@ -109,26 +139,58 @@ pub enum ClientEvent {
     /// unavailable rather than as a dummy built from the last known state
     /// (RUN-2).
     Disconnected,
+    /// The runtime turned this client away for good — its protocol major
+    /// version is foreign, or it was refused for another reason retrying
+    /// cannot change.
+    ///
+    /// Separate from [`Self::Disconnected`] because the two ask different
+    /// things of a surface: a disconnection is a wait, and this is a
+    /// sentence. Folding it into a plain disconnection would leave a client
+    /// reconnecting forever against a runtime that will never accept it,
+    /// with nothing to show the user but a spinner.
+    Refused(ClientError),
     PlaybackChanged {
         sequence: u64,
+        /// Who provoked this, or `None` when nothing a client asked for did —
+        /// a position tick, a track ending, an idle deadline. A surface compares
+        /// it against [`RuntimeSnapshot::client_id`] to tell its own change from
+        /// somebody else's: RUN-5 says an external change is followed quietly,
+        /// which is only decidable if "external" is decidable.
+        initiator: Option<u64>,
         snapshot: PlaybackSnapshot,
     },
     QueueChanged {
         sequence: u64,
+        initiator: Option<u64>,
         snapshot: QueueSnapshot,
     },
     DeviceRunChanged {
         sequence: u64,
+        initiator: Option<u64>,
         snapshot: DeviceRunSnapshot,
     },
     JobChanged {
         sequence: u64,
+        initiator: Option<u64>,
         snapshot: JobSnapshot,
+    },
+    /// A command this client sent took effect, and this is what it did.
+    ///
+    /// Carried as an event for the same reason the failure is: `send` cannot
+    /// wait for the answer without stalling the thread it was called on, and
+    /// the thread it is called on is a UI thread.
+    CommandCompleted {
+        request: RequestId,
+        outcome: CommandOutcome,
     },
     /// A command this client sent did not succeed. Carried as an event
     /// because [`super::RuntimeClient::send`] cannot wait for it without
     /// stalling the thread it was called on.
+    ///
+    /// `request` names *which* send failed. The command alone does not: two
+    /// identical commands are an ordinary thing for a user to produce.
     CommandFailed {
+        request: RequestId,
         command: RuntimeCommand,
         error: ClientError,
     },
@@ -180,16 +242,30 @@ impl ClientError {
         };
         let kind = message.clone().unwrap_or_else(|| name.as_str().to_owned());
         match name.as_str().rsplit('.').next() {
+            // Only the runtime's own errors carry a message worth keeping:
+            // it is the short diagnostic kind this crate defined. Everything
+            // else on the bus writes free prose — an activation failure will
+            // happily quote the path of the executable it could not run — so
+            // those get a kind derived from the error *name* alone. That is
+            // what keeps the client's errors structured and path-free even
+            // when the failure did not come from us.
             Some("Unavailable") => Self::Unavailable(kind),
             Some("Refused") => Self::Refused(kind),
             Some("Rejected") => Self::Rejected(kind),
             Some("Failed") => Self::Failed(kind),
-            // The bus itself answering that nobody serves this name is the
-            // ordinary "runtime not started" case, and it is retryable.
-            Some("ServiceUnknown" | "NameHasNoOwner" | "NoReply" | "Interrupted") => {
-                Self::Unavailable(kind)
+            // The bus answering that nobody serves this name is the ordinary
+            // "runtime not started" case, and it is retryable.
+            Some("ServiceUnknown" | "NameHasNoOwner" | "NoServer") => {
+                Self::Unavailable("unavailable:not_started".to_owned())
             }
-            _ => Self::Failed(kind),
+            // A timeout is NOT `Unavailable`. D-Bus has no way to retract a
+            // request, so the runtime may well be executing it right now:
+            // reporting "not reachable, retry freely" would let a client add
+            // the same tracks to the queue twice. `Failed` is the category
+            // whose contract is "the effect may have run; retrying is a user
+            // decision", which is exactly what is true here.
+            Some("NoReply" | "Timeout" | "TimedOut") => Self::Failed("failed:no_reply".to_owned()),
+            _ => Self::Failed("failed:bus_error".to_owned()),
         }
     }
 }

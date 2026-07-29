@@ -2,10 +2,11 @@
 
 use reprise_core::device_sync::machine::Event as DeviceEvent;
 use reprise_core::device_sync::MirrorPlan;
-use reprise_core::playback::PlayerEvent;
+use reprise_core::playback::StreamEvent;
+use reprise_runtime_protocol::command::CommandOutcome;
 use reprise_runtime_protocol::device_run::DeviceRunSnapshot;
 use reprise_runtime_protocol::jobs::JobCommand;
-use reprise_runtime_protocol::playback::{PlaybackCommand, PlaybackSnapshot};
+use reprise_runtime_protocol::playback::{ExternalMedia, PlaybackCommand, PlaybackSnapshot};
 use reprise_runtime_protocol::queue::{QueueCommand, QueueSnapshot};
 use reprise_runtime_protocol::PROTOCOL_VERSION;
 use rusqlite::Connection;
@@ -33,6 +34,9 @@ pub enum Command {
         track_ids: Vec<i64>,
         start_index: usize,
     },
+    /// Play something that is not a library track — a stream, a podcast
+    /// episode, a preview render. The queue is left where it is.
+    PlayExternal(ExternalMedia),
     Job(JobCommand),
     Device(DeviceCommand),
 }
@@ -50,9 +54,10 @@ impl Command {
     /// (§9.8); there is no unguarded command.
     fn capability(&self) -> Capability {
         match self {
-            Self::Playback(_) | Self::Queue(_) | Self::PlayTracks { .. } => {
-                Capability::PlaybackControl
-            }
+            Self::Playback(_)
+            | Self::Queue(_)
+            | Self::PlayTracks { .. }
+            | Self::PlayExternal(_) => Capability::PlaybackControl,
             Self::Job(_) => Capability::AiCreate,
             Self::Device(_) => Capability::DeviceSync,
         }
@@ -97,6 +102,16 @@ pub struct Runtime {
     clients: Clients,
     transport: Transport,
     devices: DeviceRuns,
+    /// How many times the queue facet has observably changed.
+    ///
+    /// Kept here rather than in `Transport` on purpose: it has to count what
+    /// a *client* saw, and the only place that knows a change was worth
+    /// publishing is the diff below. Counting edits inside the transport
+    /// would miss a track ending — which renumbers every context position,
+    /// because the window starts at the cursor — and that is precisely the
+    /// moment a stale position would slip through, since the user was not
+    /// touching anything.
+    queue_revision: u64,
 }
 
 impl Runtime {
@@ -109,6 +124,7 @@ impl Runtime {
             clients: Clients::new(),
             transport: Transport::new(),
             devices: DeviceRuns::new(),
+            queue_revision: 0,
         }
     }
 
@@ -142,7 +158,7 @@ impl Runtime {
             protocol: PROTOCOL_VERSION,
             sequence: self.clients.sequence(),
             playback: self.transport.playback_snapshot(),
-            queue: self.transport.queue_snapshot(),
+            queue: self.stamped_queue(self.transport.queue_snapshot()),
             device_runs: self.devices.snapshots(),
             jobs: jobs::snapshots(&self.conn)?,
         })
@@ -155,8 +171,13 @@ impl Runtime {
             .ok_or(RuntimeError::Unavailable(Unavailable::NotConnected))
     }
 
-    /// Executes one command on behalf of a connected client.
-    pub fn command(&mut self, client: ClientId, command: &Command) -> Result<(), RuntimeError> {
+    /// Executes one command on behalf of a connected client, and reports
+    /// what it did — see [`CommandOutcome`].
+    pub fn command(
+        &mut self,
+        client: ClientId,
+        command: &Command,
+    ) -> Result<CommandOutcome, RuntimeError> {
         if !self.clients.is_connected(client) {
             // Not buffered for a later reconnect (§9.5): executing an old
             // intention against state it never saw is the worse failure.
@@ -179,18 +200,27 @@ impl Runtime {
                 // Published even when the command failed: a partially
                 // applied transport (a stop that reached the backend before
                 // the error) must not stay invisible.
-                self.publish_transport_changes(before);
-                result
+                self.publish_transport_changes(Some(client), before);
+                result.map(|()| self.outcome(0))
             }
             Command::Queue(queue) => {
+                // Before anything is applied: a position read from a queue
+                // that has moved names a different row than the user did.
+                // In range is not the same as still correct, so a bounds
+                // check cannot stand in for this.
+                if let Some(expected) = queue.expected_revision() {
+                    if expected != self.queue_revision {
+                        return Err(RuntimeError::Rejected(crate::error::Rejected::StaleQueue));
+                    }
+                }
                 let before = self.transport_facets();
                 let result = self.transport.queue_command(
                     &*self.ports.playback,
                     &*self.ports.library,
                     queue,
                 );
-                self.publish_transport_changes(before);
-                result
+                self.publish_transport_changes(Some(client), before);
+                result.map(|affected| self.outcome(affected))
             }
             Command::PlayTracks {
                 track_ids,
@@ -202,23 +232,33 @@ impl Runtime {
                     &*self.ports.library,
                     track_ids.clone(),
                     *start_index,
+                    Some(client.into()),
                 );
-                self.publish_transport_changes(before);
-                result
+                self.publish_transport_changes(Some(client), before);
+                result.map(|()| self.outcome(0))
+            }
+            Command::PlayExternal(media) => {
+                let before = self.transport_facets();
+                let result =
+                    self.transport
+                        .play_external(&*self.ports.playback, media, Some(client.into()));
+                self.publish_transport_changes(Some(client), before);
+                result.map(|()| self.outcome(0))
             }
             Command::Job(job) => {
                 let now = self.ports.clock.now_unix();
                 let job_id = jobs::command(&self.conn, now, job)?;
                 if let Some(snapshot) = jobs::snapshot_of(&self.conn, job_id)? {
-                    self.clients.publish(RuntimeEvent::JobChanged(snapshot));
+                    self.clients
+                        .publish(Some(client), RuntimeEvent::JobChanged(snapshot));
                 }
-                Ok(())
+                Ok(self.outcome(0))
             }
             Command::Device(DeviceCommand::Start { device }) => {
                 let before = self.devices.snapshot(device);
                 let result = self.devices.start(&*self.ports.devices, device);
-                self.publish_device_change(device, before.as_ref());
-                result
+                self.publish_device_change(Some(client), device, before.as_ref());
+                result.map(|()| self.outcome(0))
             }
             Command::Device(DeviceCommand::Cancel { device }) => {
                 let before = self.devices.snapshot(device);
@@ -227,18 +267,26 @@ impl Runtime {
                     device,
                     self.ports.clock.now_monotonic_ms(),
                 );
-                self.publish_device_change(device, before.as_ref());
-                result
+                self.publish_device_change(Some(client), device, before.as_ref());
+                result.map(|()| self.outcome(0))
             }
         }
     }
 
     /// Applies an asynchronous report from the audio backend.
-    pub fn on_player_event(&mut self, event: &PlayerEvent) {
+    ///
+    /// A report from a stream that has already been replaced is dropped: it
+    /// describes a track nobody is listening to any more, and applying it
+    /// would advance the queue past a track the user never skipped.
+    pub fn on_player_event(&mut self, event: &StreamEvent) {
+        if !self.transport.accepts_stream(event.generation) {
+            tracing::debug!("dropped a report from a stream that has been replaced");
+            return;
+        }
         let before = self.transport_facets();
         self.transport
-            .player_event(&*self.ports.playback, &*self.ports.library, event);
-        self.publish_transport_changes(before);
+            .player_event(&*self.ports.playback, &*self.ports.library, &event.event);
+        self.publish_transport_changes(None, before);
     }
 
     /// Answers a [`crate::ports::DeviceEffects::plan`] request. `None` means
@@ -252,7 +300,7 @@ impl Runtime {
             plan,
             self.ports.clock.now_monotonic_ms(),
         );
-        self.publish_device_change(device, before.as_ref());
+        self.publish_device_change(None, device, before.as_ref());
     }
 
     /// Answers a [`crate::ports::DeviceEffects::perform`] request.
@@ -264,7 +312,7 @@ impl Runtime {
             event,
             self.ports.clock.now_monotonic_ms(),
         );
-        self.publish_device_change(device, before.as_ref());
+        self.publish_device_change(None, device, before.as_ref());
     }
 
     /// Whether all four of §9.6's conditions hold: no client connected, no
@@ -276,6 +324,27 @@ impl Runtime {
             && !self.transport.is_active()
             && !self.devices.is_active()
             && !jobs::is_active(&self.conn)?)
+    }
+
+    /// What a command did, with the queue revision it left behind.
+    ///
+    /// `affected` is zero for everything that does not edit the queue, which
+    /// is the answer rather than the absence of one — see
+    /// [`CommandOutcome::affected`].
+    fn outcome(&self, affected: u64) -> CommandOutcome {
+        CommandOutcome {
+            queue_revision: self.queue_revision,
+            affected,
+        }
+    }
+
+    /// Puts the current revision on a snapshot the transport built without
+    /// one. Every queue snapshot that leaves the runtime goes through here.
+    fn stamped_queue(&self, queue: QueueSnapshot) -> QueueSnapshot {
+        QueueSnapshot {
+            revision: self.queue_revision,
+            ..queue
+        }
     }
 
     fn transport_facets(&self) -> (PlaybackSnapshot, QueueSnapshot) {
@@ -291,25 +360,41 @@ impl Runtime {
     /// declare what it touched: a command that forgets to declare something
     /// produces a silently stale client, and there is no test that catches
     /// the omission reliably. Comparison cannot forget.
-    fn publish_transport_changes(&mut self, before: (PlaybackSnapshot, QueueSnapshot)) {
+    fn publish_transport_changes(
+        &mut self,
+        initiator: Option<ClientId>,
+        before: (PlaybackSnapshot, QueueSnapshot),
+    ) {
         let (playback_before, queue_before) = before;
         let playback = self.transport.playback_snapshot();
         if playback != playback_before {
             self.clients
-                .publish(RuntimeEvent::PlaybackChanged(playback));
+                .publish(initiator, RuntimeEvent::PlaybackChanged(playback));
         }
         let queue = self.transport.queue_snapshot();
         if queue != queue_before {
-            self.clients.publish(RuntimeEvent::QueueChanged(queue));
+            // The revision counts exactly this: a change worth telling a
+            // client about. Both sides of the comparison are unstamped, so
+            // the count itself cannot make the queue look changed.
+            self.queue_revision += 1;
+            let queue = self.stamped_queue(queue);
+            self.clients
+                .publish(initiator, RuntimeEvent::QueueChanged(queue));
         }
     }
 
-    fn publish_device_change(&mut self, device: &str, before: Option<&DeviceRunSnapshot>) {
+    fn publish_device_change(
+        &mut self,
+        initiator: Option<ClientId>,
+        device: &str,
+        before: Option<&DeviceRunSnapshot>,
+    ) {
         let Some(after) = self.devices.snapshot(device) else {
             return;
         };
         if before != Some(&after) {
-            self.clients.publish(RuntimeEvent::DeviceRunChanged(after));
+            self.clients
+                .publish(initiator, RuntimeEvent::DeviceRunChanged(after));
         }
     }
 }

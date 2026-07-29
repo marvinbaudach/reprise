@@ -364,10 +364,16 @@ fn a_missing_capability_rejects_the_command_and_changes_nothing() {
 fn a_foreign_protocol_major_is_refused_and_a_lower_minor_is_served() {
     let mut harness = harness();
 
+    // Relative to whatever this runtime speaks, so a major bump does not
+    // quietly turn "foreign" into "our own version" and leave the test
+    // asserting nothing.
     let refusal = harness
         .runtime
         .connect(&ClientHandshake {
-            protocol: ProtocolVersion { major: 2, minor: 0 },
+            protocol: ProtocolVersion {
+                major: reprise_runtime_protocol::PROTOCOL_VERSION.major + 1,
+                minor: 0,
+            },
             capabilities: [Capability::PlaybackControl].into_iter().collect(),
         })
         .expect_err("a foreign major cannot decode what this runtime sends");
@@ -385,7 +391,10 @@ fn a_foreign_protocol_major_is_refused_and_a_lower_minor_is_served() {
     harness
         .runtime
         .connect(&ClientHandshake {
-            protocol: ProtocolVersion { major: 1, minor: 0 },
+            protocol: ProtocolVersion {
+                major: reprise_runtime_protocol::PROTOCOL_VERSION.major,
+                minor: 0,
+            },
             capabilities: [Capability::PlaybackControl].into_iter().collect(),
         })
         .expect("an older minor of the same major is served");
@@ -685,3 +694,20 @@ fn only_the_facets_that_changed_are_published() {
          mailbox is not filled with identical snapshots"
     );
 }
+
+#[path = "runtime_attribution_tests.rs"]
+mod attribution;
+
+/// A finished-track report stamped with the stream the transport is on.
+fn stamped_finished() -> reprise_core::playback::StreamEvent {
+    reprise_core::playback::StreamEvent {
+        generation: reprise_core::playback::StreamGeneration::from(1),
+        event: reprise_core::playback::PlayerEvent::TrackFinished,
+    }
+}
+
+#[path = "runtime_queue_revision_tests.rs"]
+mod queue_revision;
+
+#[path = "runtime_outcome_tests.rs"]
+mod outcomes;

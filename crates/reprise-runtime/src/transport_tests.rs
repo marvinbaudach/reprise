@@ -1,6 +1,11 @@
 //! Player and queue behaviour, driven through a recording backend.
 
-use reprise_core::playback::{PlaybackState, PlayerEvent};
+use std::cell::RefCell;
+
+use reprise_core::library::settings::TrackTransition;
+use reprise_core::playback::{
+    AudioEffects, PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent,
+};
 use reprise_runtime_protocol::playback::PlaybackCommand;
 use reprise_runtime_protocol::queue::QueueCommand;
 
@@ -8,6 +13,53 @@ use super::Transport;
 use crate::error::{Rejected, RuntimeError};
 use crate::fakes::{BackendCall, FakeLibrary, FakePlayback, FakePlaybackHandle};
 use crate::ports::{LibraryPort, PlayableTrack, TrackLocation};
+
+/// A backend whose `stop` fails until a test says otherwise — `FakePlayback`
+/// never does. Every other method is a plain success; only `stop`'s outcome
+/// is ever observed.
+struct StopRefusingBackend {
+    refuse_stop: RefCell<bool>,
+}
+
+impl StopRefusingBackend {
+    fn new() -> Self {
+        Self {
+            refuse_stop: RefCell::new(true),
+        }
+    }
+
+    /// Proves a caller that got the earlier error is not stuck.
+    fn allow_stop(&self) {
+        *self.refuse_stop.borrow_mut() = false;
+    }
+}
+
+impl PlaybackBackend for StopRefusingBackend {
+    fn play(&self, _path: &str) -> Result<(), PlaybackError> {
+        Ok(())
+    }
+    fn play_uri(&self, _uri: &str) -> Result<(), PlaybackError> {
+        Ok(())
+    }
+    fn toggle_pause(&self) -> Result<PlaybackState, PlaybackError> {
+        Ok(PlaybackState::Playing)
+    }
+    fn seek_to(&self, _position_ms: i64) -> Result<(), PlaybackError> {
+        Ok(())
+    }
+    fn set_volume(&self, _volume: f64) {}
+    fn set_audio_effects(&self, _effects: AudioEffects) -> Result<(), PlaybackError> {
+        Ok(())
+    }
+    fn set_next(&self, _path: Option<&str>) {}
+    fn set_transition(&self, _mode: TrackTransition, _crossfade_seconds: u8) {}
+    fn stop(&self) -> Result<(), PlaybackError> {
+        if *self.refuse_stop.borrow() {
+            return Err(PlaybackError::Backend("fake refuses to stop".into()));
+        }
+        Ok(())
+    }
+}
 
 struct Fixture {
     transport: Transport,
@@ -30,7 +82,7 @@ fn fixture() -> Fixture {
 impl Fixture {
     fn play_tracks(&mut self, ids: Vec<i64>, start: usize) -> Result<(), RuntimeError> {
         self.transport
-            .play_tracks(&self.backend, &self.library, ids, start)
+            .play_tracks(&self.backend, &self.library, ids, start, None)
     }
 
     fn command(&mut self, command: &PlaybackCommand) -> Result<(), RuntimeError> {
@@ -38,9 +90,13 @@ impl Fixture {
             .playback_command(&self.backend, &self.library, command)
     }
 
+    /// Drops the affected count: these tests are about what the queue looks
+    /// like afterwards. The count has its own tests in `runtime_outcome_tests`,
+    /// where a client is there to receive it.
     fn queue(&mut self, command: &QueueCommand) -> Result<(), RuntimeError> {
         self.transport
             .queue_command(&self.backend, &self.library, command)
+            .map(|_| ())
     }
 
     fn player_event(&mut self, event: &PlayerEvent) {
@@ -383,7 +439,11 @@ fn a_queue_entry_can_be_moved_and_a_position_that_is_not_there_is_rejected() {
     fixture.queue(&QueueCommand::AddLast(vec![2, 3])).unwrap();
 
     fixture
-        .queue(&QueueCommand::Move { from: 1, to: 0 })
+        .queue(&QueueCommand::Move {
+            from: 1,
+            to: 0,
+            expected_revision: 0,
+        })
         .unwrap();
     assert_eq!(
         fixture.transport.queue_snapshot().play_next_track_ids,
@@ -392,7 +452,11 @@ fn a_queue_entry_can_be_moved_and_a_position_that_is_not_there_is_rejected() {
 
     assert_eq!(
         fixture
-            .queue(&QueueCommand::Move { from: 9, to: 0 })
+            .queue(&QueueCommand::Move {
+                from: 9,
+                to: 0,
+                expected_revision: 0,
+            })
             .expect_err("there is no ninth entry"),
         RuntimeError::Rejected(Rejected::NoSuchQueueEntry),
         "a stale position means the client's snapshot moved under it, and a \
@@ -408,7 +472,12 @@ fn queue_entries_are_removed_by_position_so_a_repeated_track_loses_one_row() {
         .queue(&QueueCommand::AddLast(vec![2, 3, 2]))
         .unwrap();
 
-    fixture.queue(&QueueCommand::RemoveAt(vec![0])).unwrap();
+    fixture
+        .queue(&QueueCommand::RemoveAt {
+            positions: vec![0],
+            expected_revision: 0,
+        })
+        .unwrap();
 
     assert_eq!(
         fixture.transport.queue_snapshot().play_next_track_ids,
@@ -425,7 +494,12 @@ fn a_queued_entry_can_be_played_out_of_turn_and_leaves_the_queue() {
     fixture.queue(&QueueCommand::AddLast(vec![2, 3])).unwrap();
     fixture.calls.clear();
 
-    fixture.queue(&QueueCommand::PlayNextAt(1)).unwrap();
+    fixture
+        .queue(&QueueCommand::PlayNextAt {
+            position: 1,
+            expected_revision: 0,
+        })
+        .unwrap();
 
     assert_eq!(fixture.transport.playback_snapshot().track_id, Some(3));
     assert_eq!(
@@ -444,7 +518,12 @@ fn a_context_row_played_out_of_turn_keeps_everything_it_passed_queued() {
     let mut fixture = fixture();
     fixture.play_tracks(vec![1, 2, 3], 0).unwrap();
 
-    fixture.queue(&QueueCommand::PlayContextAt(2)).unwrap();
+    fixture
+        .queue(&QueueCommand::PlayContextAt {
+            position: 2,
+            expected_revision: 0,
+        })
+        .unwrap();
 
     assert_eq!(fixture.transport.playback_snapshot().track_id, Some(3));
     assert_eq!(
@@ -489,7 +568,10 @@ fn a_context_row_can_be_removed_by_its_play_order_position() {
     fixture.play_tracks(vec![1, 2, 3], 0).unwrap();
 
     fixture
-        .queue(&QueueCommand::RemoveContextAt(vec![1]))
+        .queue(&QueueCommand::RemoveContextAt {
+            positions: vec![1],
+            expected_revision: 0,
+        })
         .unwrap();
 
     assert_eq!(
@@ -527,6 +609,13 @@ fn a_track_that_vanished_before_its_turn_stops_playback_instead_of_freezing_it()
         !fixture.transport.is_active(),
         "nothing is loaded, so the idle rule must be able to see that"
     );
+    assert_eq!(
+        snapshot.failure_kind.as_deref(),
+        Some("not_playable"),
+        "stopping here is right because nothing followed the broken entry — \
+         but it stopped for a reason, and a queue that simply ran out looks \
+         identical without this"
+    );
 }
 
 #[test]
@@ -562,3 +651,74 @@ fn a_failed_start_from_a_stop_leaves_the_stopped_state_it_found() {
     assert_eq!(fixture.transport.playback_snapshot().status, "stopped");
     assert!(!fixture.transport.is_active());
 }
+
+#[path = "transport_external_tests.rs"]
+mod external;
+
+#[test]
+fn a_report_from_the_track_that_was_just_replaced_is_ignored() {
+    use reprise_core::playback::StreamGeneration;
+
+    let mut fixture = fixture();
+    fixture.play_tracks(vec![1, 2, 3], 0).unwrap();
+    // The backend moved on: something started a newer stream, and the
+    // transport learned about it.
+    assert!(fixture.transport.accepts_stream(StreamGeneration::from(4)));
+
+    let stale = fixture.transport.accepts_stream(StreamGeneration::from(3));
+
+    assert!(
+        !stale,
+        "a report stamped with a stream that has already been replaced \
+         describes a track nobody is listening to; applying it would advance \
+         the queue past a track the user never skipped"
+    );
+}
+
+#[test]
+fn a_report_from_a_stream_the_transport_has_not_seen_yet_is_adopted() {
+    use reprise_core::playback::StreamGeneration;
+
+    let mut fixture = fixture();
+
+    let accepted = fixture.transport.accepts_stream(StreamGeneration::from(9));
+
+    assert!(
+        accepted,
+        "a newer stamp can only mean a stream started by something this \
+         transport has not caught up with; refusing it would leave the \
+         runtime deaf to the pipeline it is meant to report on"
+    );
+    assert!(
+        fixture.transport.accepts_stream(StreamGeneration::from(9)),
+        "and the same stream keeps being believed afterwards"
+    );
+}
+
+#[test]
+fn starting_a_track_makes_the_previous_streams_reports_stale() {
+    use reprise_core::playback::StreamGeneration;
+
+    let mut fixture = fixture();
+    // One start, so the backend is on its first stream and the transport
+    // adopted it.
+    fixture.play_tracks(vec![1], 0).unwrap();
+    let first = StreamGeneration::from(1);
+    assert!(fixture.transport.accepts_stream(first));
+
+    // A second start moves the backend on.
+    fixture.play_tracks(vec![2], 0).unwrap();
+
+    assert!(
+        !fixture.transport.accepts_stream(first),
+        "whatever the previous stream still has in flight is stale the \
+         moment a new one starts — this is the double-skip the guard exists \
+         to stop"
+    );
+}
+
+#[path = "transport_failure_tests.rs"]
+mod failures;
+
+#[path = "transport_parity_tests.rs"]
+mod parity;
