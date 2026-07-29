@@ -22,10 +22,23 @@ pub(in crate::ui) const fn request_generation(current: u64, operation: PodcastsO
     }
 }
 
+/// MTP-44: two lanes share the one download manager. A request built with
+/// `High` (e.g. device-sync preparation downloading a `wanted_on_device`
+/// episode) is always served ahead of already-queued `Normal` work, but both
+/// still run through the exact same [`PodcastsOperation::Download`] and the
+/// exact same worker thread — there is no second download path, only a
+/// second queue in front of the one executor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::ui) enum PodcastsPriority {
+    Normal,
+    High,
+}
+
 #[derive(Debug)]
 pub(in crate::ui) struct PodcastsRequest {
     pub generation: u64,
     pub operation: PodcastsOperation,
+    pub priority: PodcastsPriority,
     pub response: PodcastsResponseChannel,
 }
 
@@ -99,6 +112,7 @@ type OnEnabled = Rc<dyn Fn(bool)>;
 pub(in crate::ui) struct PodcastsRuntime {
     pub enabled: Rc<Cell<bool>>,
     worker: async_channel::Sender<PodcastsRequest>,
+    priority_worker: async_channel::Sender<PodcastsRequest>,
     subscribers: RefCell<Vec<OnEnabled>>,
 }
 
@@ -117,9 +131,11 @@ fn any_source_dispatchable(conn: &rusqlite::Connection) -> bool {
 
 impl PodcastsRuntime {
     pub(in crate::ui) fn setup(conn: &rusqlite::Connection) -> Rc<Self> {
+        let (worker, priority_worker) = spawn(database_path(conn));
         Rc::new(Self {
             enabled: Rc::new(Cell::new(any_source_dispatchable(conn))),
-            worker: spawn(database_path(conn)),
+            worker,
+            priority_worker,
             subscribers: RefCell::new(Vec::new()),
         })
     }
@@ -174,7 +190,15 @@ impl PodcastsRuntime {
         if !self.enabled.get() {
             return false;
         }
-        match self.worker.try_send(request) {
+        // Same non-blocking, drop-and-warn `try_send` contract as before for
+        // both lanes — MTP-44 only adds a second queue in front of the one
+        // worker, it does not change what happens when a request cannot be
+        // queued.
+        let sender = match request.priority {
+            PodcastsPriority::Normal => &self.worker,
+            PodcastsPriority::High => &self.priority_worker,
+        };
+        match sender.try_send(request) {
             Ok(()) => true,
             Err(error) => {
                 tracing::warn!(%error, "could not queue podcast work");
@@ -206,22 +230,67 @@ fn database_path(conn: &rusqlite::Connection) -> Option<PathBuf> {
     reprise_core::db::main_path(conn)
 }
 
-fn spawn(database_path: Option<PathBuf>) -> async_channel::Sender<PodcastsRequest> {
+/// Blocks until a request is available, always preferring the priority lane
+/// (MTP-44).
+///
+/// `futures_lite::future::or(a, b)` polls `a` first on every single poll and
+/// only falls through to `b` when `a` is `Pending` — see its own doc comment
+/// ("the first future wins"). That gives a deterministic priority order (not
+/// `race`'s randomized pick between two simultaneously-ready futures): if a
+/// priority request is already queued when this is called, it is returned
+/// even though an older ordinary request is also waiting. Once the priority
+/// lane runs dry, `or` naturally falls through to the ordinary receiver, so
+/// ordinary work is only ever delayed behind priority work, never starved
+/// outright — the ordinary lane always resumes as soon as there is nothing
+/// left ahead of it.
+///
+/// `block_on` parks the OS thread on a `Waker` (both channels wake it via
+/// the same `Context` on send/close) rather than spin-polling, so an idle
+/// worker sleeps exactly like the previous single-channel
+/// `receiver.recv_blocking()` did.
+///
+/// The `is_closed` fallback exists only so a permanently-closed priority
+/// channel can't turn into a busy loop: once closed, `priority.recv()`
+/// resolves to `Err` immediately on every poll, and `or` would return that
+/// `Err` before ever giving the (still open) ordinary channel a chance to
+/// register its own waker. In practice both senders live on the same
+/// `PodcastsRuntime` and close together, so this path is defensive rather
+/// than load-bearing.
+fn recv_prefer_priority(
+    priority_receiver: &async_channel::Receiver<PodcastsRequest>,
+    receiver: &async_channel::Receiver<PodcastsRequest>,
+) -> Result<PodcastsRequest, async_channel::RecvError> {
+    if priority_receiver.is_closed() {
+        return receiver.recv_blocking();
+    }
+    futures_lite::future::block_on(futures_lite::future::or(
+        priority_receiver.recv(),
+        receiver.recv(),
+    ))
+}
+
+fn spawn(
+    database_path: Option<PathBuf>,
+) -> (
+    async_channel::Sender<PodcastsRequest>,
+    async_channel::Sender<PodcastsRequest>,
+) {
     let (sender, receiver) = async_channel::unbounded::<PodcastsRequest>();
+    let (priority_sender, priority_receiver) = async_channel::unbounded::<PodcastsRequest>();
     let result = std::thread::Builder::new()
         .name("reprise-podcasts".into())
         .spawn(move || {
             let connection = database_path
                 .as_deref()
                 .map(|path| reprise_core::db::open_migrated(Some(path)));
-            while let Ok(request) = receiver.recv_blocking() {
+            while let Ok(request) = recv_prefer_priority(&priority_receiver, &receiver) {
                 process_request(connection.as_ref(), &request);
             }
         });
     if let Err(error) = result {
         tracing::warn!(%error, "could not start podcast worker");
     }
-    sender
+    (sender, priority_sender)
 }
 
 fn process_request(
