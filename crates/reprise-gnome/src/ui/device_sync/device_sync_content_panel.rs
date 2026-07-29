@@ -136,6 +136,9 @@ struct CategoryRowWidgets {
     /// row — see [`build_category_row`].
     cap_spin: gtk4::SpinButton,
     toggle: gtk4::Switch,
+    /// `MTP-46`: the whole row, kept so a source the user switched off can be
+    /// hidden outright rather than reduced to a "0 of N" line.
+    container: gtk4::Box,
 }
 
 pub(super) struct ContentPanel {
@@ -312,6 +315,13 @@ impl ContentPanel {
         ));
 
         for (row, content_row) in self.category_rows.iter().zip(&device.content_rows) {
+            // `MTP-46`: a switched-off source is not a category with nothing
+            // in it, it is not a category at all.
+            row.container.set_visible(match row.kind {
+                SyncTargetKind::YoutubeAudio => device.enabled_sources.youtube,
+                SyncTargetKind::PodcastEpisodes => device.enabled_sources.rss,
+                SyncTargetKind::Playlists => true,
+            });
             row.path.set_text(&content_row.target_path);
             row.selection.set_text(&selection_summary_text(
                 row.kind,
@@ -337,6 +347,15 @@ impl ContentPanel {
             .zip(&device.category_readings)
             .zip(&self.next_sync_rows)
         {
+            // `MTP-46`: the same hiding as the Content rows above. This is a
+            // second place the category names itself, and a switched-off
+            // source announcing "YouTube audio: nothing to do" here would
+            // undo the point of hiding its row.
+            label.set_visible(match kind {
+                SyncTargetKind::YoutubeAudio => device.enabled_sources.youtube,
+                SyncTargetKind::PodcastEpisodes => device.enabled_sources.rss,
+                SyncTargetKind::Playlists => true,
+            });
             label.set_text(&format!(
                 "{}: {}",
                 device_sync_strings::category_name(*kind),
@@ -462,6 +481,7 @@ fn build_category_row(
         size_label,
         cap_spin,
         toggle,
+        container: row,
     }
 }
 

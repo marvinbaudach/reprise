@@ -16,6 +16,48 @@ pub enum PodcastSyncSource {
     Youtube,
 }
 
+/// Which [`PodcastSyncSource`] kinds a device sync may draw from right now.
+///
+/// A module switched off in Preferences loses its sidebar entry (`SET-9`), so
+/// while it is off it is not part of the app the user can see — and a source
+/// the user cannot see must not keep pushing files onto their phone. `SET-9`
+/// promises that switching a block off *keeps* its subscriptions; it never
+/// promised they keep syncing, and this type settles that reading.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EnabledSyncSources {
+    pub rss: bool,
+    pub youtube: bool,
+}
+
+impl EnabledSyncSources {
+    #[must_use]
+    pub fn allows(self, source: PodcastSyncSource) -> bool {
+        match source {
+            PodcastSyncSource::Rss => self.rss,
+            PodcastSyncSource::Youtube => self.youtube,
+        }
+    }
+}
+
+/// Reads the two module switches and the global gate that sits above them.
+///
+/// Deliberately *not* [`crate::online_sources::network_allowed`], even though
+/// the formula is identical: copying an already-downloaded file onto a phone
+/// makes no request, so the two answer different questions and must stay free
+/// to diverge. What they genuinely share is the reason — both switches take
+/// the source out of the sidebar, and neither deletes anything.
+///
+/// A database that cannot answer counts as off, on the same grounds as
+/// [`crate::online_sources::network_allowed_or_off`]: a setting that cannot be
+/// read is not consent.
+pub fn enabled_sync_sources(conn: &Connection) -> Result<EnabledSyncSources, rusqlite::Error> {
+    let global = crate::online_sources::is_enabled(conn)?;
+    Ok(EnabledSyncSources {
+        rss: global && crate::modules::is_enabled(conn, &crate::modules::PODCASTS_MODULE)?,
+        youtube: global && crate::modules::is_enabled(conn, &crate::modules::YOUTUBE_MODULE)?,
+    })
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PodcastSyncCandidate {
     pub episode_id: i64,
@@ -53,10 +95,15 @@ pub struct PodcastSyncPlan {
 /// the per-kind filtering, so this deliberately does not restrict `s.kind`
 /// — RSS and YouTube subscriptions are equally eligible once selected for a
 /// device (`POD-12`).
+///
+/// What it *does* restrict is a source whose module is switched off
+/// (`MTP-46`): the gate lives here, at the one place the rows are read, and
+/// not at the callers, so no future caller can reach the rows around it.
 pub fn query_candidates_for_device(
     conn: &Connection,
     device_id: &str,
 ) -> Result<Vec<PodcastSyncCandidate>, rusqlite::Error> {
+    let enabled = enabled_sync_sources(conn)?;
     let mut statement = conn.prepare(
         "SELECT e.id, e.title, s.title, e.downloaded_path, e.downloaded_bytes, s.kind
          FROM podcast_episodes e
@@ -86,6 +133,9 @@ pub fn query_candidates_for_device(
         let Some(source) = source_from_kind(&kind) else {
             continue;
         };
+        if !enabled.allows(source) {
+            continue;
+        }
         let Ok(metadata) = std::fs::metadata(&source_path) else {
             continue;
         };
@@ -271,8 +321,16 @@ mod tests {
 
     use super::*;
 
+    /// Both source modules ship **off** (`NET-1a`), and `MTP-46` makes an off
+    /// module contribute nothing. Every test below is about what a device
+    /// receives once the user actually uses these features, so switching them
+    /// on is their precondition, not their subject — `MTP-46`'s own tests are
+    /// the ones that flip them back.
     fn migrated() -> rusqlite::Connection {
-        crate::db::open_migrated(None).unwrap()
+        let conn = crate::db::open_migrated(None).unwrap();
+        crate::modules::set_enabled(&conn, &crate::modules::PODCASTS_MODULE, true).unwrap();
+        crate::modules::set_enabled(&conn, &crate::modules::YOUTUBE_MODULE, true).unwrap();
+        conn
     }
 
     fn insert_subscription(
@@ -384,6 +442,128 @@ mod tests {
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].source, PodcastSyncSource::Youtube);
         assert_eq!(candidates[0].episode_id, 11);
+    }
+
+    /// `MTP-46`. Both halves run against one identical database; the switch
+    /// is the only thing that differs, so the change in the result cannot be
+    /// attributed to anything else.
+    #[test]
+    fn mtp_46_switching_youtube_off_removes_its_episodes_from_the_device_sync() {
+        let conn = migrated();
+        let downloads = tempfile::tempdir().unwrap();
+        let video = downloads.path().join("video.webm");
+        let episode = downloads.path().join("episode.mp3");
+        std::fs::write(&video, b"video-bytes").unwrap();
+        std::fs::write(&episode, b"episode").unwrap();
+
+        insert_subscription(&conn, 1, "youtube", false, "Channel");
+        insert_subscription(&conn, 2, "rss", false, "Show");
+        crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:pixel", true).unwrap();
+        crate::podcasts::phone_sync::set_device_enabled(&conn, 2, "mtp:pixel", true).unwrap();
+        insert_episode(&conn, 11, 1, &video, 11);
+        insert_episode(&conn, 12, 2, &episode, 7);
+
+        let on = query_candidates_for_device(&conn, "mtp:pixel").unwrap();
+        assert_eq!(
+            on.iter()
+                .filter(|c| c.source == PodcastSyncSource::Youtube)
+                .count(),
+            1,
+            "with YouTube on, its selected episode is a candidate"
+        );
+
+        crate::modules::set_enabled(&conn, &crate::modules::YOUTUBE_MODULE, false).unwrap();
+        let off = query_candidates_for_device(&conn, "mtp:pixel").unwrap();
+
+        assert!(
+            off.iter().all(|c| c.source != PodcastSyncSource::Youtube),
+            "switching YouTube off must take its episodes out of the sync entirely"
+        );
+        assert_eq!(
+            off.iter()
+                .filter(|c| c.source == PodcastSyncSource::Rss)
+                .count(),
+            1,
+            "and must not touch Podcasts, which is a peer module (issue #96)"
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM podcast_subscriptions WHERE removed_at IS NULL",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+            2,
+            "`SET-9` keeps the subscription; only its syncing stops"
+        );
+    }
+
+    /// The mirror of the test above, so neither module can be gated by the
+    /// other's switch.
+    #[test]
+    fn mtp_46_switching_podcasts_off_removes_its_episodes_and_leaves_youtube_alone() {
+        let conn = migrated();
+        let downloads = tempfile::tempdir().unwrap();
+        let video = downloads.path().join("video.webm");
+        let episode = downloads.path().join("episode.mp3");
+        std::fs::write(&video, b"video-bytes").unwrap();
+        std::fs::write(&episode, b"episode").unwrap();
+
+        insert_subscription(&conn, 1, "youtube", false, "Channel");
+        insert_subscription(&conn, 2, "rss", false, "Show");
+        crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:pixel", true).unwrap();
+        crate::podcasts::phone_sync::set_device_enabled(&conn, 2, "mtp:pixel", true).unwrap();
+        insert_episode(&conn, 11, 1, &video, 11);
+        insert_episode(&conn, 12, 2, &episode, 7);
+
+        crate::modules::set_enabled(&conn, &crate::modules::PODCASTS_MODULE, false).unwrap();
+        let candidates = query_candidates_for_device(&conn, "mtp:pixel").unwrap();
+
+        assert!(
+            candidates
+                .iter()
+                .all(|c| c.source != PodcastSyncSource::Rss),
+            "switching Podcasts off must take its episodes out of the sync"
+        );
+        assert_eq!(
+            candidates
+                .iter()
+                .filter(|c| c.source == PodcastSyncSource::Youtube)
+                .count(),
+            1,
+            "YouTube is a peer, not a child of Podcasts — it stays"
+        );
+    }
+
+    /// The global gate sits above both switches: `SET-9` promises "off makes
+    /// this a local player only", and a phone still filling up with feed
+    /// downloads would not be one.
+    #[test]
+    fn mtp_46_the_global_online_sources_gate_empties_the_sync_even_with_both_modules_on() {
+        let conn = migrated();
+        let downloads = tempfile::tempdir().unwrap();
+        let episode = downloads.path().join("episode.mp3");
+        std::fs::write(&episode, b"episode").unwrap();
+
+        insert_subscription(&conn, 1, "rss", false, "Show");
+        crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:pixel", true).unwrap();
+        insert_episode(&conn, 11, 1, &episode, 7);
+
+        assert_eq!(
+            query_candidates_for_device(&conn, "mtp:pixel")
+                .unwrap()
+                .len(),
+            1
+        );
+
+        crate::online_sources::set_enabled(&conn, false).unwrap();
+
+        assert!(
+            query_candidates_for_device(&conn, "mtp:pixel")
+                .unwrap()
+                .is_empty(),
+            "the global gate must empty the sync regardless of the module switches"
+        );
     }
 
     #[test]

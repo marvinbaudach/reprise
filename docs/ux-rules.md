@@ -800,6 +800,23 @@ human. Rationale for changes lives in the git history.
   to fill an N-episode quota. Every other clause of `MTP-41` (playlists,
   podcast episodes, the waiting-versus-ready distinction) is unchanged and
   carries over verbatim.
+- **MTP-46** [active] [core] — A source whose module is switched off
+  contributes nothing to a device sync: no candidates, no counts in the
+  content panel, no files on the phone. YouTube and Podcasts are peers (issue
+  #96), so each switch acts only on its own source — switching YouTube off
+  leaves podcast episodes syncing untouched, and the reverse. The global "Use
+  online sources" gate sits above both and empties the sync on its own, since
+  `SET-9` calls that state "a local player only" and a phone still filling
+  with feed downloads would not be one. This does **not** delete anything:
+  `SET-9`'s promise that subscriptions and favorites are *kept* stands
+  unchanged, and switching the module back on restores exactly the previous
+  sync. The gate sits in
+  `device_sync::podcasts::query_candidates_for_device` and its selection
+  sibling — at the two places the rows are actually read, deliberately not at
+  their callers, so a future caller cannot reach the rows around it. It is
+  deliberately not `online_sources::network_allowed`: copying an
+  already-downloaded file makes no request, so the two share a formula but not
+  a meaning, and must stay free to diverge.
 
 ## F. Settings & modals
 

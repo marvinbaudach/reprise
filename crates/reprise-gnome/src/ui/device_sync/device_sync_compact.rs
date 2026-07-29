@@ -265,6 +265,7 @@ impl DeviceSyncRuntime {
             podcast_selection_summary,
             preparation_phase,
             preparation_missing,
+            enabled_sources,
         ) = {
             let conn = self.conn.borrow();
             let files = load_device_files(&conn, device_id).map_err(|error| error.to_string())?;
@@ -298,6 +299,13 @@ impl DeviceSyncRuntime {
             // and splits wanted-but-missing ones into `waiting` instead of
             // letting them vanish from the balance (`MTP-40`).
             let selection_candidates = query_selection_candidates_for_device(&conn, device_id)
+                .map_err(|error| error.to_string())?;
+            // `MTP-46`: the same switches the query above already honours,
+            // read once more here so the Content rows can hide a source the
+            // user switched off. Reading them rather than inferring them
+            // from an empty candidate list: "no episodes" and "not a feature
+            // you use" are different states, and only the second hides a row.
+            let enabled_sources = reprise_core::device_sync::podcasts::enabled_sync_sources(&conn)
                 .map_err(|error| error.to_string())?;
             // `MTP-36`: the global default plus every enabled YouTube
             // channel's persisted override — resolved here (the only place
@@ -414,6 +422,7 @@ impl DeviceSyncRuntime {
                 podcast_selection_summary,
                 preparation_phase,
                 preparation_missing,
+                enabled_sources,
             )
         };
         projection.plan.transfer_bytes = projection
@@ -444,6 +453,7 @@ impl DeviceSyncRuntime {
             device.targets = targets;
             device.youtube_selection = youtube_selection_summary;
             device.podcast_selection = podcast_selection_summary;
+            device.enabled_sources = enabled_sources;
             device.preparation = preparation_phase;
             device.preparation_missing = preparation_missing;
             device.page = projection.page;

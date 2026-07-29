@@ -30,6 +30,14 @@ fn fixture() -> (tempfile::TempDir, Rc<RefCell<Connection>>) {
     let temp = tempfile::tempdir().unwrap();
     let conn = reprise_core::db::open(None).unwrap();
     reprise_core::db::migrate(&conn).unwrap();
+    // Both source modules ship off (`NET-1a`) and `MTP-46` makes an off module
+    // contribute nothing to a sync. These tests are about what a device
+    // receives once the user uses the features, so having them switched on is
+    // their precondition — `MTP-46`'s own tests are the ones that flip them.
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::PODCASTS_MODULE, true)
+        .unwrap();
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::YOUTUBE_MODULE, true)
+        .unwrap();
     for id in 1..=4 {
         let path = temp.path().join(format!("{id}.flac"));
         std::fs::write(&path, vec![id as u8; 100]).unwrap();

@@ -38,6 +38,11 @@ pub fn query_selection_candidates_for_device(
     conn: &Connection,
     device_id: &str,
 ) -> Result<Vec<(PodcastSyncSource, EpisodeSelectionCandidate)>, rusqlite::Error> {
+    // `MTP-46`: the same gate as `query_candidates_for_device`'s. A source
+    // whose module is off contributes no candidates, so it cannot appear in
+    // the panel's counts either — a summary that still promised episodes a
+    // switched-off module would never deliver would be worse than silence.
+    let enabled = super::enabled_sync_sources(conn)?;
     let mut statement = conn.prepare(
         "SELECT e.id, e.subscription_id, s.kind,
                 COALESCE(e.published_at, e.first_seen_at),
@@ -67,6 +72,9 @@ pub fn query_selection_candidates_for_device(
         let Some(source) = source_from_kind(&kind) else {
             continue;
         };
+        if !enabled.allows(source) {
+            continue;
+        }
         candidates.push((
             source,
             EpisodeSelectionCandidate {
@@ -95,8 +103,14 @@ mod tests {
     };
     use std::collections::HashSet;
 
+    /// See the sibling helper in `podcasts.rs`: both modules ship off, so a
+    /// selection test has to turn them on before it can be about selection at
+    /// all (`MTP-46`).
     fn migrated() -> Connection {
-        crate::db::open_migrated(None).unwrap()
+        let conn = crate::db::open_migrated(None).unwrap();
+        crate::modules::set_enabled(&conn, &crate::modules::PODCASTS_MODULE, true).unwrap();
+        crate::modules::set_enabled(&conn, &crate::modules::YOUTUBE_MODULE, true).unwrap();
+        conn
     }
 
     fn insert_subscription(conn: &Connection, id: i64, kind: &str, title: &str) {
