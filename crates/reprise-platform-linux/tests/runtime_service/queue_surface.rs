@@ -173,3 +173,61 @@ fn a_command_reports_what_it_did_to_the_client_that_sent_it() {
     );
     client.shutdown();
 }
+
+#[test]
+#[ignore = "requires a session bus; run via dbus-run-session"]
+fn a_restored_session_arrives_without_starting_the_music() {
+    use reprise_runtime_protocol::session::RestoredQueue;
+
+    let served = Served::start("restore", Duration::from_secs(60));
+    let (client, events) =
+        start_with_bus_name(vec!["playback:control".to_owned()], served.bus_name.clone());
+    await_event(
+        &events,
+        |event| matches!(event, ClientEvent::Connected(_)),
+        "connection",
+    );
+
+    client
+        .call(RuntimeCommand::RestoreSession {
+            context: RestoredQueue {
+                track_ids: vec![1, 2, 3],
+                play_order: vec![0, 1, 2],
+                position: Some(1),
+                repeat: "off".into(),
+                shuffled: false,
+            },
+            play_next: vec![3],
+        })
+        .expect("a stored session restores over the bus");
+
+    let event = await_event(
+        &events,
+        |event| matches!(event, ClientEvent::QueueChanged { .. }),
+        "queue delta",
+    );
+    let ClientEvent::QueueChanged { snapshot, .. } = event else {
+        unreachable!("the matcher only accepts QueueChanged")
+    };
+    assert_eq!(
+        snapshot.play_next_track_ids,
+        vec![3],
+        "the whole session travels, not just the context"
+    );
+    // Asked for rather than waited out. Proving "nothing started" by not
+    // seeing an event within some timeout proves only that the timeout was
+    // short; a fresh snapshot answers it outright.
+    let observer = served.client();
+    let seen = observer.connect().expect("a second peer may look");
+    assert_eq!(
+        seen.playback.status, "stopped",
+        "opening the app is not a request to play"
+    );
+    assert_eq!(seen.playback.track_id, None, "and nothing is loaded");
+    assert_eq!(
+        seen.queue.context_track_ids,
+        vec![3],
+        "while the restored cursor stands where the user left it"
+    );
+    client.shutdown();
+}

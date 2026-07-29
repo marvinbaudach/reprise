@@ -97,6 +97,13 @@ pub enum Rejected {
     /// a refresh, never a replay, so this is not retryable — the client takes
     /// the snapshot it has already been sent and decides again.
     StaleQueue,
+    /// A stored session could not be read back: its play order is not a
+    /// permutation of its ids, or its cursor points outside them.
+    ///
+    /// A session file that got corrupted must not take the running player
+    /// down with it, so this rejects the restore whole rather than applying
+    /// the half that happened to parse.
+    UnusableSession,
     /// The job id does not exist, or is already terminal.
     UnknownJob,
     /// The command is part of the protocol but not yet served here. Saving
@@ -157,6 +164,7 @@ impl RuntimeError {
             Self::Rejected(Rejected::UnknownRepeatMode) => "unknown_repeat_mode",
             Self::Rejected(Rejected::NoSuchQueueEntry) => "no_such_queue_entry",
             Self::Rejected(Rejected::StaleQueue) => "stale_queue",
+            Self::Rejected(Rejected::UnusableSession) => "unusable_session",
             Self::Rejected(Rejected::UnknownJob) => "unknown_job",
             Self::Rejected(Rejected::UnsupportedCommand) => "unsupported_command",
             Self::Failed(Failed::PlaybackBackend) => "playback_backend",
