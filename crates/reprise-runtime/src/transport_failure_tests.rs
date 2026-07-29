@@ -169,3 +169,25 @@ fn a_backend_error_mid_playback_is_named_rather_than_a_silent_stop() {
     );
     assert_eq!(snapshot.failure_track_id, Some(1));
 }
+
+#[test]
+fn stopping_clears_a_failure_the_user_has_moved_on_from() {
+    let mut fixture = fixture();
+    fixture.library = FakeLibrary::with_tracks([1]);
+    fixture.play_tracks(vec![1, 2], 0).unwrap();
+    fixture.player_event(&PlayerEvent::TrackFinished);
+    assert!(
+        fixture.transport.playback_snapshot().failure_kind.is_some(),
+        "setup: the broken entry was reported"
+    );
+
+    fixture.command(&PlaybackCommand::Stop).unwrap();
+
+    assert_eq!(
+        fixture.transport.playback_snapshot().failure_kind,
+        None,
+        "the facet says what the situation is now, and pressing Stop is a \
+         deliberate move on — carrying the old reason forward would have a \
+         surface explaining a track the user has already left behind"
+    );
+}

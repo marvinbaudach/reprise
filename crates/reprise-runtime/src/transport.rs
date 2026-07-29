@@ -85,6 +85,15 @@ impl From<PlayableTrack> for Loaded {
     }
 }
 
+/// Whether looking at what comes next also removes it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Take {
+    /// The advance: the entry is consumed.
+    Entry,
+    /// The pre-feed: the queue is left exactly as it was.
+    Nothing,
+}
+
 /// A start that did not happen, in the two shapes a client can act on.
 struct Failure {
     /// The library track it was about, absent for anything without an id.
@@ -365,8 +374,13 @@ impl Transport {
                 // by one and do NOT call play. Nothing pre-feeds yet (that
                 // arrives with the gapless setting in Task 3.3), which is
                 // exactly why this branch stays defensive rather than absent.
-                if let Some((next, source)) = self.take_next_auto() {
+                // The same choice the pre-feed made, by the same function:
+                // the backend is already playing what it was handed, so
+                // picking anything else here abandons audio that is rolling.
+                let mut stepped_over = Vec::new();
+                if let Some((next, source)) = self.take_next_auto(library, &mut stepped_over) {
                     self.load(backend, library, next, source);
+                    self.failure = unplayable(&stepped_over);
                 }
             }
             PlayerEvent::StreamTags { title, .. } => {
@@ -392,201 +406,89 @@ impl Transport {
         }
     }
 
-    fn resume(
-        &mut self,
-        backend: &dyn PlaybackBackend,
-        library: &dyn LibraryPort,
-    ) -> Result<(), RuntimeError> {
-        match self.status {
-            PlaybackState::Playing => Ok(()),
-            PlaybackState::Paused => {
-                self.status = backend
-                    .toggle_pause()
-                    .map_err(|error| backend_failed(&error))?;
-                Ok(())
-            }
-            PlaybackState::Stopped => {
-                // Only a library track can be restarted from here. External
-                // media has no id to resolve and, for a stream, no position
-                // to resume to — the surface that knows where it came from
-                // re-sends it, which is also how a radio station reconnects.
-                let (track_id, source) = self
-                    .current
-                    .as_ref()
-                    .and_then(|track| track.track_id)
-                    .or_else(|| self.queue.current())
-                    .map(|track_id| (track_id, Source::Context))
-                    // The explicit queue counts too. Stopping consumes the
-                    // context but leaves what the user queued by hand, and
-                    // a Play that answers "nothing to play" while a track
-                    // they queued is sitting right there is a player that
-                    // looks broken.
-                    .or_else(|| {
-                        self.up_next
-                            .pop_front()
-                            .map(|track_id| (track_id, Source::PlayNext))
-                    })
-                    .ok_or(RuntimeError::Rejected(Rejected::NothingToPlay))?;
-                self.start(backend, library, track_id, source)
-            }
-        }
-    }
-
-    fn pause(&mut self, backend: &dyn PlaybackBackend) -> Result<(), RuntimeError> {
-        if self.status != PlaybackState::Playing {
-            return Ok(());
-        }
-        self.status = backend
-            .toggle_pause()
-            .map_err(|error| backend_failed(&error))?;
-        Ok(())
-    }
-
-    /// Stops playback and clears what is loaded — but only once the backend
-    /// has actually gone quiet.
+    /// Whether what is loaded is not a library track.
     ///
-    /// The tempting version clears `current` unconditionally and returns the
-    /// backend's error as an afterthought: a caller reading only the
-    /// snapshot then sees "nothing playing" while GStreamer is still
-    /// audible, and because `is_active()` reads `current`, the idle
-    /// shutdown would believe it is safe to fire over a live pipeline. The
-    /// conservative direction is the only one that keeps that promise: on a
-    /// failed stop, `current`, `status` and `position_ms` all stay exactly
-    /// as they were, so `is_active()` keeps telling the truth. The caller
-    /// gets the error back and is not left stuck — the very same command
-    /// that failed is the retry, and it reaches this exact `backend.stop()`
-    /// call again.
-    /// A user pressing Stop, as opposed to playback ending on its own.
-    ///
-    /// The context belongs to the playback it was started for, so it goes
-    /// with it — otherwise a queue view keeps showing a session the user
-    /// ended. What they queued by hand outlives it: those entries were never
-    /// part of that context, and QUE-3's "the section contains only the
-    /// still-pending future" is as true after a stop as before one.
-    ///
-    /// Repeat and shuffle are settings rather than part of the context, so
-    /// they survive being carried across the replacement.
-    ///
-    /// Only the command does this. A queue that simply ran out has already
-    /// consumed its context, and clearing on that path would also clear it
-    /// when a track fails or an episode ends — none of which is a user
-    /// saying "stop".
-    fn stop_hard(&mut self, backend: &dyn PlaybackBackend) -> Result<(), RuntimeError> {
-        self.stop(backend)?;
-        let repeat = self.queue.repeat();
-        let shuffled = self.queue.is_shuffled();
-        self.queue = Queue::new();
-        self.queue.set_repeat(repeat);
-        if shuffled {
-            self.queue.set_shuffle(true);
-        }
-        Ok(())
-    }
-
-    fn stop(&mut self, backend: &dyn PlaybackBackend) -> Result<(), RuntimeError> {
-        backend.stop().map_err(|error| backend_failed(&error))?;
-        self.status = PlaybackState::Stopped;
-        self.current = None;
-        self.position_ms = 0;
-        // Nothing is loaded, so nobody's session is running any more. Leaving
-        // the claim standing would let a surface stop playback a later client
-        // started.
-        self.initiated_by = None;
-        Ok(())
-    }
-
-    fn skip_forward(
-        &mut self,
-        backend: &dyn PlaybackBackend,
-        library: &dyn LibraryPort,
-    ) -> Result<(), RuntimeError> {
-        // The explicit queue wins over the context: it is what the user
-        // asked for most recently and most deliberately.
-        let next = self
-            .up_next
-            .pop_front()
-            .map(|track_id| (track_id, Source::PlayNext))
-            .or_else(|| {
-                self.queue
-                    .next_manual()
-                    .map(|track_id| (track_id, Source::Context))
-            });
-        match next {
-            Some((track_id, source)) => self.start(backend, library, track_id, source),
-            None => self.stop(backend),
-        }
-    }
-
-    fn skip_back(
-        &mut self,
-        backend: &dyn PlaybackBackend,
-        library: &dyn LibraryPort,
-    ) -> Result<(), RuntimeError> {
-        // A queued track played *beside* the context, so going back means
-        // returning to the entry it interrupted — not stepping the context
-        // on top of that, which lands a track further back than the user
-        // ever heard. At the head of the context it is the difference
-        // between replaying the current entry and Previous doing nothing.
-        let interrupted = self
-            .current
+    /// Next and Previous do nothing at all in that case, which is what the
+    /// GTK controller does: both are gated on being in queue mode
+    /// (`queue_transport.rs`) and return without so much as a toast. Falling
+    /// through into the context instead swaps a live stream for a library
+    /// track the user never asked for, and consumes a queued entry on a
+    /// press that was meant for the stream.
+    fn external_is_loaded(&self) -> bool {
+        self.current
             .as_ref()
-            .is_some_and(|loaded| loaded.source == Source::PlayNext);
-        let target = if interrupted {
-            self.queue.current()
-        } else {
-            self.queue.previous()
-        };
-        match target {
-            Some(track_id) => self.start(backend, library, track_id, Source::Context),
-            // Nothing before the first track: staying put is the expected
-            // behaviour of every player, not an error worth reporting.
-            None => Ok(()),
-        }
+            .is_some_and(|loaded| loaded.source == Source::External)
     }
 
-    fn seek(&mut self, backend: &dyn PlaybackBackend, delta_ms: i64) -> Result<(), RuntimeError> {
-        let Some(duration_ms) = self.current.as_ref().map(|track| track.duration_ms) else {
-            return Err(RuntimeError::Rejected(Rejected::NothingToPlay));
+    /// What an automatic advance plays next, and where it came from.
+    ///
+    /// One function for two callers on purpose. The advance consumes what it
+    /// finds; the pre-feed only looks. They have to agree, and two functions
+    /// with "keep these in step" in a comment is exactly what stopped being
+    /// true: a pre-feed that names a different track than the advance will
+    /// take promises the backend a handoff the runtime then abandons — and
+    /// abandoning calls `stop` on a pipeline that is by then already playing
+    /// the pre-fed track, cutting off audio mid-segue.
+    ///
+    /// Availability is filtered here rather than left to the retry loop in
+    /// `advance_past_failures`, because the pre-feed has no retry loop: it
+    /// gets one guess and the gapless handoff acts on it.
+    ///
+    /// Repeat-one is about the thing that is playing, not about which queue
+    /// supplied it. Asking the explicit queue first turns "repeat this" into
+    /// "play the next queued track" — the opposite instruction — and eats an
+    /// entry the user lined up. Asking the context first repeats the entry a
+    /// queued track jumped in front of, which is not what the user asked to
+    /// hear again either.
+    /// `stepped_over` collects every entry the filter rejected. Skipping
+    /// silently would land on the right track and leave the user wondering
+    /// where the one they queued went; the caller turns the last of these
+    /// into the reason the snapshot reports.
+    fn next_auto(
+        &mut self,
+        library: &dyn LibraryPort,
+        take: Take,
+        stepped_over: &mut Vec<i64>,
+    ) -> Option<(i64, Source)> {
+        let mut is_available = |track_id: i64| {
+            let playable = library.resolve(track_id).is_some();
+            if !playable {
+                stepped_over.push(track_id);
+            }
+            playable
         };
-        let target = self
-            .position_ms
-            .saturating_add(delta_ms)
-            .clamp(0, duration_ms.max(0));
-        backend
-            .seek_to(target)
-            .map_err(|error| backend_failed(&error))?;
-        self.position_ms = target;
-        Ok(())
-    }
-
-    /// What plays when the current track ends by itself, as opposed to being
-    /// skipped: the explicit queue first, then the context's own advance
-    /// (which is where repeat and shuffle apply).
-    fn take_next_auto(&mut self) -> Option<(i64, Source)> {
-        // Repeat-one is about the thing that is playing, not about which
-        // queue supplied it. Asking the explicit queue first turns "repeat
-        // this" into "play the next queued track" — the opposite
-        // instruction — and eats an entry the user lined up. Asking the
-        // context first repeats the entry a queued track jumped in front of,
-        // which is something the user did not ask to hear again.
-        //
-        // Only for a library track: external media never reaches here, since
-        // finishing one does not hand back to the queue at all.
         if self.queue.repeat() == Repeat::One {
             if let Some((track_id, source)) = self
                 .current
                 .as_ref()
                 .and_then(|loaded| Some((loaded.track_id?, loaded.source)))
             {
-                return Some((track_id, source));
+                if is_available(track_id) {
+                    return Some((track_id, source));
+                }
             }
         }
-        if let Some(track_id) = self.up_next.pop_front() {
+        let queued = match take {
+            Take::Entry => self.up_next.take_first_matching(&mut is_available),
+            Take::Nothing => self.up_next.first_matching(&mut is_available),
+        };
+        if let Some(track_id) = queued {
             return Some((track_id, Source::PlayNext));
         }
-        self.queue
-            .advance_auto()
-            .map(|track_id| (track_id, Source::Context))
+        match take {
+            Take::Entry => self.queue.advance_auto_matching(&mut is_available),
+            Take::Nothing => self.queue.peek_auto_matching(&mut is_available),
+        }
+        .map(|track_id| (track_id, Source::Context))
+    }
+
+    /// The advancing form of [`Self::next_auto`]: consumes what it returns.
+    fn take_next_auto(
+        &mut self,
+        library: &dyn LibraryPort,
+        stepped_over: &mut Vec<i64>,
+    ) -> Option<(i64, Source)> {
+        self.next_auto(library, Take::Entry, stepped_over)
     }
 
     /// Starts what follows a finished track, stepping over entries that
@@ -616,13 +518,18 @@ impl Transport {
         // skipped. So the last failure is carried across the start and put
         // back.
         let mut skipped = None;
+        // Entries the availability filter rejected before they were ever
+        // attempted. They are skips just as much as a failed start is, and a
+        // user whose queued track silently never plays is owed the same
+        // answer either way.
+        let mut stepped_over = Vec::new();
         for _ in 0..attempts {
-            let Some((next, source)) = self.take_next_auto() else {
+            let Some((next, source)) = self.take_next_auto(library, &mut stepped_over) else {
                 break;
             };
             match self.start(backend, library, next, source) {
                 Ok(()) => {
-                    self.failure = skipped;
+                    self.failure = skipped.or_else(|| unplayable(&stepped_over));
                     return;
                 }
                 Err(error) => {
@@ -638,7 +545,7 @@ impl Transport {
         // so for the "nothing was left" path too, and keeps the reason for a
         // stop that would otherwise look like an exhausted queue.
         let _ = self.stop(backend);
-        self.failure = skipped;
+        self.failure = skipped.or_else(|| unplayable(&stepped_over));
     }
 
     /// Resolves, hands the location to the backend, and adopts it as current.
@@ -756,6 +663,16 @@ fn as_index(position: u64) -> usize {
     usize::try_from(position).unwrap_or(usize::MAX)
 }
 
+/// The last entry an advance stepped over, as the failure a snapshot
+/// reports. The *last* rather than the first: a surface shows one message,
+/// and the most recent skip is the one closest to what is playing now.
+fn unplayable(stepped_over: &[i64]) -> Option<Failure> {
+    stepped_over.last().map(|&track_id| Failure {
+        track_id: Some(track_id),
+        kind: "not_playable",
+    })
+}
+
 /// The short kind a snapshot carries for a start that did not happen.
 ///
 /// Anything that is not one of the two playback failures would be a bug in
@@ -787,3 +704,6 @@ mod gapless;
 
 #[path = "transport_session.rs"]
 mod session;
+
+#[path = "transport_controls.rs"]
+mod controls;
