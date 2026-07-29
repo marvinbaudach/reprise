@@ -59,7 +59,10 @@ impl RuntimeMirror {
     pub fn apply(&mut self, event: &ClientEvent) -> bool {
         match event {
             ClientEvent::Connected(snapshot) => self.replace(snapshot),
-            ClientEvent::Disconnected => self.clear(),
+            // A refusal ends the session as thoroughly as a disconnection
+            // does; what differs is what the surface says about it, and that
+            // is the surface's business, not the mirror's.
+            ClientEvent::Disconnected | ClientEvent::Refused(_) => self.clear(),
             ClientEvent::PlaybackChanged { sequence, snapshot } => {
                 self.apply_playback(*sequence, snapshot)
             }

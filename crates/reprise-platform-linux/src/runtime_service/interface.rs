@@ -29,6 +29,11 @@ use super::service::Request;
 /// missing_capability:playback:control`, `failed:playback_backend` — which
 /// is structured, path-free, and stable enough for an agent to branch on.
 /// A client that only understands the four names still knows what to do.
+///
+/// Exactly four, and there is no room for a fifth. A runtime whose worker
+/// thread has gone is unreachable *for this caller*, which is what
+/// `Unavailable` already means; giving that its own error name would put a
+/// category on the bus that no client was told to expect.
 #[derive(Debug, zbus::DBusError)]
 #[zbus(prefix = "org.reprise.Reprise1.Error")]
 pub enum Error {
@@ -40,9 +45,6 @@ pub enum Error {
     Rejected(String),
     /// The effect ran and failed; retrying is the user's decision.
     Failed(String),
-    /// The service could not answer at all — the runtime thread is gone.
-    /// Distinct from `Unavailable`, which is about *this caller*.
-    Interrupted(String),
 }
 
 impl From<RuntimeError> for Error {
@@ -72,7 +74,10 @@ impl Reprise1 {
         header
             .sender()
             .map(ToString::to_string)
-            .ok_or_else(|| Error::Interrupted("no_sender".into()))
+            // Every message on a bus has a sender; a call that arrived
+            // without one cannot be attributed to a session, so there is
+            // nobody to serve.
+            .ok_or_else(|| Error::Unavailable("unavailable:no_sender".into()))
     }
 
     /// Sends one request and waits for its single answer.
@@ -84,11 +89,11 @@ impl Reprise1 {
         self.requests
             .send(build(reply))
             .await
-            .map_err(|_| Error::Interrupted("runtime_stopped".into()))?;
+            .map_err(|_| Error::Unavailable("unavailable:runtime_stopped".into()))?;
         answers
             .recv()
             .await
-            .map_err(|_| Error::Interrupted("runtime_stopped".into()))
+            .map_err(|_| Error::Unavailable("unavailable:runtime_stopped".into()))
     }
 
     /// Sends a command and maps its outcome.

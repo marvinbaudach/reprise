@@ -31,7 +31,16 @@ struct Served {
 
 impl Served {
     fn start(label: &str, grace: Duration) -> Self {
-        let bus_name = format!("org.reprise.Reprise1.test{}{label}", std::process::id());
+        Self::start_on(Self::name_for(label), grace)
+    }
+
+    /// The name a given label will be served on, so a test can point a
+    /// client at it *before* anything answers there.
+    fn name_for(label: &str) -> String {
+        format!("org.reprise.Reprise1.test{}{label}", std::process::id())
+    }
+
+    fn start_on(bus_name: String, grace: Duration) -> Self {
         let lease_dir = tempfile::tempdir().expect("a temporary runtime directory");
         let lease_path = lease_dir.path().join("runtime.lock");
         let options = ServeOptions {
@@ -361,16 +370,20 @@ fn await_event(
     wanted: impl Fn(&ClientEvent) -> bool,
     what: &str,
 ) -> ClientEvent {
+    // Polled rather than blocked on, because the deadline has to bind even
+    // when *nothing* arrives. A blocking receive only lets the loop check the
+    // clock between events, so a client that goes quiet — exactly what a
+    // regression here looks like — turns the test into a hang instead of a
+    // failure, and a hang tells nobody anything.
     let deadline = Instant::now() + Duration::from_secs(10);
     while Instant::now() < deadline {
-        let Some(event) = events.recv_blocking() else {
-            break;
-        };
-        if wanted(&event) {
-            return event;
+        match events.try_recv() {
+            Some(event) if wanted(&event) => return event,
+            Some(_) => {}
+            None => std::thread::sleep(Duration::from_millis(10)),
         }
     }
-    panic!("no {what} arrived");
+    panic!("no {what} arrived within the deadline");
 }
 
 #[test]
@@ -651,5 +664,71 @@ fn a_stream_plays_beside_the_queue_and_does_not_hand_back_to_it() {
         "and the stream is what is playing"
     );
 
+    client.shutdown();
+}
+
+#[test]
+#[ignore = "requires a session bus; run via dbus-run-session"]
+fn a_command_formed_while_disconnected_never_runs_after_the_reconnection() {
+    use reprise_runtime_protocol::queue::QueueCommand;
+
+    // The client comes up first, against a name nobody serves yet.
+    let bus_name = Served::name_for("earlycommand");
+    let (client, events) =
+        start_with_bus_name(vec!["playback:control".to_owned()], bus_name.clone());
+    let error = client
+        .call(RuntimeCommand::Queue(QueueCommand::AddLast(vec![1, 2, 3])))
+        .expect_err("there is nothing connected to command");
+    assert!(
+        error.is_retryable(),
+        "an absent runtime is a state to reconnect from: {error:?}"
+    );
+
+    // Now the runtime appears and the client's own backoff reconnects it.
+    let served = Served::start_on(bus_name, Duration::from_secs(60));
+    await_event(
+        &events,
+        |event| matches!(event, ClientEvent::Connected(_)),
+        "connection",
+    );
+
+    let observer = served.client();
+    let seen = observer.connect().expect("a second peer connects");
+    assert!(
+        seen.queue.play_next_track_ids.is_empty(),
+        "the command was formed against a session that did not exist; \
+         executing it once one appeared would run an intention against state \
+         it never saw, which is the failure §9.5 calls the more dangerous one"
+    );
+    client.shutdown();
+}
+
+#[test]
+#[ignore = "requires a session bus; run via dbus-run-session"]
+fn a_refused_client_is_told_why_instead_of_reconnecting_forever() {
+    let served = Served::start("clientrefused", Duration::from_secs(60));
+    // A client from a future major version: the runtime cannot serve it, and
+    // no amount of retrying will change that.
+    let (client, events) = reprise_runtime_client::start_with_bus_name_and_version(
+        vec!["playback:control".to_owned()],
+        served.bus_name.clone(),
+        reprise_runtime_protocol::ProtocolVersion { major: 2, minor: 0 },
+    );
+
+    let event = await_event(
+        &events,
+        |event| matches!(event, ClientEvent::Refused(_)),
+        "refusal",
+    );
+
+    let ClientEvent::Refused(error) = event else {
+        unreachable!("the matcher only accepts Refused")
+    };
+    assert_eq!(error.kind(), "refused:protocol_major");
+    assert!(
+        !error.is_retryable(),
+        "a surface must be able to say why it will never connect, rather \
+         than showing a spinner for a runtime that will never accept it"
+    );
     client.shutdown();
 }

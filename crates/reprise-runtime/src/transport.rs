@@ -386,12 +386,26 @@ impl Transport {
         Ok(())
     }
 
+    /// Stops playback and clears what is loaded — but only once the backend
+    /// has actually gone quiet.
+    ///
+    /// The tempting version clears `current` unconditionally and returns the
+    /// backend's error as an afterthought: a caller reading only the
+    /// snapshot then sees "nothing playing" while GStreamer is still
+    /// audible, and because `is_active()` reads `current`, the idle
+    /// shutdown would believe it is safe to fire over a live pipeline. The
+    /// conservative direction is the only one that keeps that promise: on a
+    /// failed stop, `current`, `status` and `position_ms` all stay exactly
+    /// as they were, so `is_active()` keeps telling the truth. The caller
+    /// gets the error back and is not left stuck — the very same command
+    /// that failed is the retry, and it reaches this exact `backend.stop()`
+    /// call again.
     fn stop(&mut self, backend: &dyn PlaybackBackend) -> Result<(), RuntimeError> {
-        let result = backend.stop().map_err(|error| backend_failed(&error));
+        backend.stop().map_err(|error| backend_failed(&error))?;
         self.status = PlaybackState::Stopped;
         self.current = None;
         self.position_ms = 0;
-        result
+        Ok(())
     }
 
     fn skip_forward(
@@ -492,12 +506,23 @@ impl Transport {
     /// The backend is stopped too, but only when something was actually
     /// loaded. Skipping that would leave the *previous* track still coming
     /// out of the speakers while the runtime reports nothing playing — the
-    /// same divergence in the other direction. Stopping a backend that was
-    /// already idle, on the other hand, is a call with nothing to say.
+    /// same divergence `stop()` guards against, in the other direction.
+    /// Stopping a backend that was already idle, on the other hand, is a
+    /// call with nothing to say.
+    ///
+    /// Same rule as `stop()` applies if that defensive stop itself fails:
+    /// `current` is left exactly as it was rather than cleared, so
+    /// `is_active()` still reports the pipeline that is presumably still
+    /// running. There is no error to hand back here — the caller already has
+    /// its own failure to report (the start that provoked this) — but
+    /// whatever prompted the abandoned start (a retry, or a plain Stop
+    /// command) reaches this same `backend.stop()` call again rather than
+    /// finding the model already lying that it succeeded.
     fn abandon(&mut self, backend: &dyn PlaybackBackend) {
         if self.current.is_some() {
             if let Err(error) = backend.stop() {
                 tracing::warn!(%error, "backend refused to stop after a failed start");
+                return;
             }
         }
         self.current = None;

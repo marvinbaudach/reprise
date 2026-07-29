@@ -113,6 +113,16 @@ pub enum ClientEvent {
     /// unavailable rather than as a dummy built from the last known state
     /// (RUN-2).
     Disconnected,
+    /// The runtime turned this client away for good — its protocol major
+    /// version is foreign, or it was refused for another reason retrying
+    /// cannot change.
+    ///
+    /// Separate from [`Self::Disconnected`] because the two ask different
+    /// things of a surface: a disconnection is a wait, and this is a
+    /// sentence. Folding it into a plain disconnection would leave a client
+    /// reconnecting forever against a runtime that will never accept it,
+    /// with nothing to show the user but a spinner.
+    Refused(ClientError),
     PlaybackChanged {
         sequence: u64,
         snapshot: PlaybackSnapshot,
@@ -184,16 +194,30 @@ impl ClientError {
         };
         let kind = message.clone().unwrap_or_else(|| name.as_str().to_owned());
         match name.as_str().rsplit('.').next() {
+            // Only the runtime's own errors carry a message worth keeping:
+            // it is the short diagnostic kind this crate defined. Everything
+            // else on the bus writes free prose — an activation failure will
+            // happily quote the path of the executable it could not run — so
+            // those get a kind derived from the error *name* alone. That is
+            // what keeps the client's errors structured and path-free even
+            // when the failure did not come from us.
             Some("Unavailable") => Self::Unavailable(kind),
             Some("Refused") => Self::Refused(kind),
             Some("Rejected") => Self::Rejected(kind),
             Some("Failed") => Self::Failed(kind),
-            // The bus itself answering that nobody serves this name is the
-            // ordinary "runtime not started" case, and it is retryable.
-            Some("ServiceUnknown" | "NameHasNoOwner" | "NoReply" | "Interrupted") => {
-                Self::Unavailable(kind)
+            // The bus answering that nobody serves this name is the ordinary
+            // "runtime not started" case, and it is retryable.
+            Some("ServiceUnknown" | "NameHasNoOwner" | "NoServer") => {
+                Self::Unavailable("unavailable:not_started".to_owned())
             }
-            _ => Self::Failed(kind),
+            // A timeout is NOT `Unavailable`. D-Bus has no way to retract a
+            // request, so the runtime may well be executing it right now:
+            // reporting "not reachable, retry freely" would let a client add
+            // the same tracks to the queue twice. `Failed` is the category
+            // whose contract is "the effect may have run; retrying is a user
+            // decision", which is exactly what is true here.
+            Some("NoReply" | "Timeout" | "TimedOut") => Self::Failed("failed:no_reply".to_owned()),
+            _ => Self::Failed("failed:bus_error".to_owned()),
         }
     }
 }

@@ -42,7 +42,44 @@ fn snapshot(job: &AiJob) -> JobSnapshot {
         source_track_id: job.source_track_id,
         result_track_id: job.result_track_id,
         cancel_requested: job.cancel_requested,
-        error_kind: job.error_kind.clone(),
+        error_kind: job.error_kind.as_deref().map(sanitize_error_kind),
+    }
+}
+
+/// The longest a real diagnostic kind (`unsupported_format`, `path_guard`)
+/// is expected to be. Generous for that, hopeless for a sentence or a path.
+const MAX_ERROR_KIND_LEN: usize = 40;
+
+/// What a client sees in place of anything that fails the shape check below.
+const OPAQUE_ERROR_KIND: &str = "error";
+
+/// Keeps `error_kind` down to what the protocol's doc comment promises —
+/// "never a path, never the underlying error's message" — even though the
+/// column does not.
+///
+/// `reprise-core`'s promotion path writes `error.to_string()` into this
+/// column, and `PromotionError::PathGuard`'s `Display` embeds the absolute
+/// path it refused to write outside of: "refusing to write outside the
+/// instrumentals folder: /home/…". A local surface reading the database
+/// directly is entitled to that whole message; anything that crosses the
+/// D-Bus boundary is not, so the runtime is where this gets caught.
+///
+/// The check is an allow-list of what a kind is *built from*, not a
+/// denylist of what a leak might contain — a denylist only ever knows the
+/// leaks someone already thought of. A short token of letters, digits, `_`
+/// and `-` is what every real kind already looks like; a path has a `/` and
+/// a sentence has spaces, so both are already excluded without either
+/// needing to be named here.
+fn sanitize_error_kind(raw: &str) -> String {
+    let looks_like_a_kind = !raw.is_empty()
+        && raw.len() <= MAX_ERROR_KIND_LEN
+        && raw
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-');
+    if looks_like_a_kind {
+        raw.to_owned()
+    } else {
+        OPAQUE_ERROR_KIND.to_owned()
     }
 }
 
