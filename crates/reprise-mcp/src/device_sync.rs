@@ -1,15 +1,39 @@
 //! Blocking D-Bus client for the running app's live device-sync surface.
 
 use crate::device_dto::{
-    DeviceSyncChangesDto, DeviceSyncControlsDto, DeviceSyncDeviceDto, DeviceSyncParams,
-    DeviceSyncPlaylistDto, DeviceSyncProgressDto, DeviceSyncSourceParam, DeviceSyncStateDto,
-    DeviceSyncStorageCompositionDto, DeviceSyncStorageDto,
+    DeviceSyncBalanceDto, DeviceSyncCategoryDto, DeviceSyncChangesDto, DeviceSyncControlsDto,
+    DeviceSyncDeviceDto, DeviceSyncParams, DeviceSyncPlaylistDto, DeviceSyncProgressDto,
+    DeviceSyncSourceParam, DeviceSyncStateDto, DeviceSyncStorageCompositionDto,
+    DeviceSyncStorageDto,
 };
 use crate::playback::PlaybackError;
 
 const BUS_NAME: &str = "org.mpris.MediaPlayer2.reprise";
 const OBJECT_PATH: &str = "/org/mpris/MediaPlayer2";
 const DEVICE_SYNC_INTERFACE: &str = "org.reprise.DeviceSync1";
+
+/// Wire shape for `CategorySnapshot` — mirrors
+/// `reprise_platform_linux::mpris::device_sync_control::DeviceSyncCategoryRow`
+/// field for field: kind, target_path, target_enabled, size_on_device_bytes,
+/// has_cap, cap_bytes, reading_kind, files_to_copy, bytes_to_copy,
+/// files_to_remove, bytes_freed, files_waiting_for_download,
+/// playlists_rewritten.
+type DeviceSyncCategoryRow = (
+    String,
+    String,
+    bool,
+    u64,
+    bool,
+    u64,
+    String,
+    u64,
+    u64,
+    u64,
+    u64,
+    u64,
+    u64,
+);
+type DeviceSyncCategoryDeviceRow = (String, Vec<DeviceSyncCategoryRow>);
 type DeviceSyncSourceSelection = (String, i64);
 type DeviceSyncSourceRow = (
     String,
@@ -185,12 +209,23 @@ pub fn state() -> Result<DeviceSyncStateDto, PlaybackError> {
     let rows: Vec<DeviceSyncRow> = proxy
         .call("Snapshot", &())
         .map_err(|error| map_zbus_error(&error))?;
+    let categories: Vec<DeviceSyncCategoryDeviceRow> = proxy
+        .call("CategorySnapshot", &())
+        .map_err(|error| map_zbus_error(&error))?;
+    let mut categories: std::collections::HashMap<String, Vec<DeviceSyncCategoryRow>> =
+        categories.into_iter().collect();
     Ok(DeviceSyncStateDto {
-        devices: rows.into_iter().map(map_row).collect(),
+        devices: rows
+            .into_iter()
+            .map(|row| {
+                let device_categories = categories.remove(&row.0).unwrap_or_default();
+                map_row(row, device_categories)
+            })
+            .collect(),
     })
 }
 
-fn map_row(row: DeviceSyncRow) -> DeviceSyncDeviceDto {
+fn map_row(row: DeviceSyncRow, category_rows: Vec<DeviceSyncCategoryRow>) -> DeviceSyncDeviceDto {
     let (
         name,
         connected,
@@ -235,6 +270,77 @@ fn map_row(row: DeviceSyncRow) -> DeviceSyncDeviceDto {
             bytes_per_second: progress.2,
         },
         current_track,
+        balance: balance_dto(&category_rows),
+        categories: category_rows.into_iter().map(map_category_row).collect(),
+    }
+}
+
+fn decode_reading(row: &DeviceSyncCategoryRow) -> reprise_core::device_sync::CategoryReading {
+    use reprise_core::device_sync::{CategoryDiff, CategoryReading};
+    match row.6.as_str() {
+        "source_off" => CategoryReading::SourceOff,
+        "unavailable_kept_on_phone" => CategoryReading::UnavailableKeptOnPhone,
+        _ => CategoryReading::Diff(CategoryDiff {
+            files_to_copy: row.7 as usize,
+            bytes_to_copy: row.8,
+            files_to_remove: row.9 as usize,
+            bytes_freed: row.10,
+            files_waiting_for_download: row.11 as usize,
+            playlists_rewritten: row.12 as usize,
+        }),
+    }
+}
+
+fn map_category_row(row: DeviceSyncCategoryRow) -> DeviceSyncCategoryDto {
+    use reprise_core::device_sync::CategoryReading;
+    let reading = decode_reading(&row);
+    let (kind, target_path, target_enabled, size_on_device_bytes, has_cap, cap_bytes, ..) = row;
+    let (reading_name, diff) = match reading {
+        CategoryReading::Diff(diff) => ("diff", diff),
+        CategoryReading::SourceOff => ("source_off", Default::default()),
+        CategoryReading::UnavailableKeptOnPhone => {
+            ("unavailable_kept_on_phone", Default::default())
+        }
+    };
+    DeviceSyncCategoryDto {
+        kind: static_kind_name(&kind),
+        target_path,
+        target_enabled,
+        size_on_device_bytes,
+        cap_bytes: has_cap.then_some(cap_bytes),
+        reading: reading_name,
+        files_to_copy: diff.files_to_copy as u64,
+        bytes_to_copy: diff.bytes_to_copy,
+        files_to_remove: diff.files_to_remove as u64,
+        bytes_freed: diff.bytes_freed,
+        files_waiting_for_download: diff.files_waiting_for_download as u64,
+        playlists_rewritten: diff.playlists_rewritten as u64,
+    }
+}
+
+fn static_kind_name(kind: &str) -> &'static str {
+    match kind {
+        "youtube_audio" => "youtube_audio",
+        "podcast_episodes" => "podcast_episodes",
+        _ => "playlists",
+    }
+}
+
+/// `MTP-22`: the aggregate balance across every category currently reading
+/// a computed diff, via the exact same `reprise_core::device_sync::
+/// aggregate_balance` the GTK device page's sidebar-card tooltip reads —
+/// not a re-derived sum.
+fn balance_dto(rows: &[DeviceSyncCategoryRow]) -> DeviceSyncBalanceDto {
+    let readings = rows.iter().map(decode_reading).collect::<Vec<_>>();
+    let balance = reprise_core::device_sync::aggregate_balance(&readings);
+    DeviceSyncBalanceDto {
+        files_to_copy: balance.files_to_copy as u64,
+        bytes_to_copy: balance.bytes_to_copy,
+        files_to_remove: balance.files_to_remove as u64,
+        bytes_freed: balance.bytes_freed,
+        files_waiting_for_download: balance.files_waiting_for_download as u64,
+        playlists_rewritten: balance.playlists_rewritten as u64,
+        has_work: balance.has_work(),
     }
 }
 
@@ -334,48 +440,51 @@ mod tests {
 
     #[test]
     fn row_mapping_preserves_the_compact_mirror_page_without_paths_or_serials() {
-        let dto = map_row((
-            "Pixel".into(),
-            true,
-            "original".into(),
-            75,
-            200,
-            80,
-            vec![(
-                "smart".into(),
-                7,
-                true,
-                "Heavy rotation".into(),
-                true,
-                true,
-                220,
-                200,
-                2,
-                80,
-                true,
-                1_721_234_567,
-            )],
-            (125, 5, 0, 2, 1, 0, 60),
+        let dto = map_row(
             (
+                "Pixel".into(),
                 true,
-                "Internal storage".into(),
-                "fits".into(),
-                false,
-                0,
-                60,
-                (true, 100, 20, 10, true, 30, true, 40, "complete".into()),
-                true,
-                (true, 100, 80, 10, true, 10, true, 0, "complete".into()),
-                "writable".into(),
+                "original".into(),
+                75,
+                200,
+                80,
+                vec![(
+                    "smart".into(),
+                    7,
+                    true,
+                    "Heavy rotation".into(),
+                    true,
+                    true,
+                    220,
+                    200,
+                    2,
+                    80,
+                    true,
+                    1_721_234_567,
+                )],
+                (125, 5, 0, 2, 1, 0, 60),
+                (
+                    true,
+                    "Internal storage".into(),
+                    "fits".into(),
+                    false,
+                    0,
+                    60,
+                    (true, 100, 20, 10, true, 30, true, 40, "complete".into()),
+                    true,
+                    (true, 100, 80, 10, true, 10, true, 0, "complete".into()),
+                    "writable".into(),
+                ),
+                Vec::new(),
+                vec!["unavailable_not_on_device".into()],
+                (false, false, true, false),
+                "copying".into(),
+                (20, 60, 10),
+                "Sun//Eater — Lorna Shore".into(),
+                (true, 1_721_234_890),
             ),
             Vec::new(),
-            vec!["unavailable_not_on_device".into()],
-            (false, false, true, false),
-            "copying".into(),
-            (20, 60, 10),
-            "Sun//Eater — Lorna Shore".into(),
-            (true, 1_721_234_890),
-        ));
+        );
 
         assert_eq!(dto.profile, "original");
         assert_eq!(dto.last_synced_at, Some(1_721_234_890));
@@ -389,9 +498,99 @@ mod tests {
         assert_eq!(dto.storage.after_sync.as_ref().unwrap().free_bytes, Some(0));
         assert!(dto.controls.can_cancel);
         assert_eq!(dto.progress.bytes_per_second, 10);
+        assert!(dto.categories.is_empty());
+        assert!(!dto.balance.has_work);
         let json = serde_json::to_value(dto).unwrap();
         assert!(json.get("serial").is_none());
-        assert!(!json.to_string().contains("path"));
+    }
+
+    /// Block H (MCP parity): the three category readings must survive the
+    /// wire distinctly and roll up into `MTP-22`'s aggregate balance via
+    /// `reprise_core::device_sync::aggregate_balance` — not a hand-summed
+    /// duplicate that could silently drift from it.
+    #[test]
+    fn category_rows_decode_into_distinct_readings_and_an_aggregate_balance() {
+        let categories: Vec<DeviceSyncCategoryRow> = vec![
+            (
+                "youtube_audio".into(),
+                "/Music/Reprise-YouTube".into(),
+                true,
+                42,
+                true,
+                8 * 1024 * 1024 * 1024,
+                "diff".into(),
+                3,
+                900,
+                1,
+                50,
+                2,
+                0,
+            ),
+            (
+                "podcast_episodes".into(),
+                "/Podcasts/Reprise".into(),
+                true,
+                0,
+                true,
+                4 * 1024 * 1024 * 1024,
+                "source_off".into(),
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ),
+            (
+                "playlists".into(),
+                "/Music/Reprise".into(),
+                true,
+                0,
+                false,
+                0,
+                "unavailable_kept_on_phone".into(),
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ),
+        ];
+
+        let dtos = categories
+            .iter()
+            .cloned()
+            .map(map_category_row)
+            .collect::<Vec<_>>();
+
+        assert_eq!(dtos[0].kind, "youtube_audio");
+        assert_eq!(dtos[0].reading, "diff");
+        assert_eq!(dtos[0].files_to_copy, 3);
+        assert_eq!(dtos[0].bytes_freed, 50);
+        assert_eq!(dtos[0].cap_bytes, Some(8 * 1024 * 1024 * 1024));
+        assert_eq!(dtos[0].target_path, "/Music/Reprise-YouTube");
+
+        assert_eq!(dtos[1].reading, "source_off");
+        assert_ne!(
+            dtos[1].reading, dtos[2].reading,
+            "source_off and unavailable_kept_on_phone must not collapse into the same string"
+        );
+        assert_eq!(dtos[2].cap_bytes, None, "no cap must serialize as absent");
+
+        let balance = balance_dto(&categories);
+        assert_eq!(
+            balance.files_to_copy, 3,
+            "only the diff category contributes to the balance"
+        );
+        assert_eq!(balance.bytes_freed, 50);
+        assert!(balance.has_work);
+
+        let json = serde_json::to_value(&dtos).unwrap();
+        assert!(
+            json.to_string().contains("Music/Reprise-YouTube"),
+            "the device's own MTP target path is intentionally shown, matching MTP-28 in the GUI"
+        );
     }
 
     #[test]

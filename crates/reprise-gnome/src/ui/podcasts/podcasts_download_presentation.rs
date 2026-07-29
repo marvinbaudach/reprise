@@ -2,22 +2,17 @@
 
 use std::collections::BTreeMap;
 
+use reprise_core::podcasts::channel_window;
 use reprise_core::podcasts::download_state::{self, DownloadState};
 use reprise_core::podcasts::EpisodeRow;
 
-/// `POD-11`: the YouTube channel detail's header summary data — the
-/// currently listed window's size plus how many of the channel's episodes
-/// are downloaded and their combined size on disk. `downloaded_count`/
-/// `downloaded_bytes` are computed over the whole channel's episode set
-/// (not the visible window and not filtered by the Shorts toggle), so the
-/// total reads as real disk usage rather than a filtered slice.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) struct ChannelDownloadSummary {
-    pub(super) shown: usize,
-    pub(super) available: usize,
-    pub(super) downloaded_count: usize,
-    pub(super) downloaded_bytes: u64,
-}
+/// `POD-11`: the YouTube channel detail's header summary data. The actual
+/// computation is `reprise_core::podcasts::channel_window::
+/// channel_download_summary` (Block H: shared with the
+/// `music_get_channel_detail` MCP tool so both surfaces report the exact
+/// same figures) — this alias only keeps the GNOME crate's existing
+/// `pub(super)` naming for its call sites.
+pub(super) type ChannelDownloadSummary = channel_window::ChannelDownloadSummary;
 
 pub(super) fn channel_download_summary(
     shown: usize,
@@ -25,21 +20,7 @@ pub(super) fn channel_download_summary(
     episodes: &[EpisodeRow],
     download_states: &BTreeMap<i64, DownloadState>,
 ) -> ChannelDownloadSummary {
-    let (downloaded_count, downloaded_bytes) = episodes.iter().fold(
-        (0_usize, 0_u64),
-        |(count, bytes), episode| match download_states.get(&episode.id) {
-            Some(DownloadState::Downloaded { bytes: size }) => {
-                (count + 1, bytes.saturating_add(*size))
-            }
-            _ => (count, bytes),
-        },
-    );
-    ChannelDownloadSummary {
-        shown,
-        available,
-        downloaded_count,
-        downloaded_bytes,
-    }
+    channel_window::channel_download_summary(shown, available, episodes, download_states)
 }
 
 pub(super) fn refreshed_download_states(

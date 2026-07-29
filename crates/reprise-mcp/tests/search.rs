@@ -58,8 +58,11 @@ fn tool_discovery_lists_the_expected_tools() {
     let mut expected = vec![
         "music_create_instrumental",
         "music_create_playlist",
+        "music_get_channel_detail",
         "music_get_playlist",
         "music_get_job_status",
+        "music_manage_episodes",
+        "music_manage_online_sources",
         "music_manage_podcasts",
         "music_manage_radio",
         "music_search_albums",

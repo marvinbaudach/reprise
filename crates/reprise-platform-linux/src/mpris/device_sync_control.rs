@@ -4,13 +4,13 @@ use zbus::interface;
 
 use reprise_core::agent_device_sync::{
     agent_device_sync_request, read_agent_device_sync_state, AgentDeviceSyncBlocker,
-    AgentDeviceSyncChanges, AgentDeviceSyncCommand, AgentDeviceSyncControls, AgentDeviceSyncDevice,
-    AgentDeviceSyncPhase, AgentDeviceSyncPlaylist, AgentDeviceSyncRequest, AgentDeviceSyncStorage,
-    AgentDeviceSyncStorageAccess, AgentDeviceSyncStorageComposition,
-    AgentDeviceSyncStorageKnowledge, AgentDeviceSyncStorageState, AgentDeviceSyncWarning,
-    SharedAgentDeviceSyncState,
+    AgentDeviceSyncCategoryRow, AgentDeviceSyncChanges, AgentDeviceSyncCommand,
+    AgentDeviceSyncControls, AgentDeviceSyncDevice, AgentDeviceSyncPhase, AgentDeviceSyncPlaylist,
+    AgentDeviceSyncRequest, AgentDeviceSyncStorage, AgentDeviceSyncStorageAccess,
+    AgentDeviceSyncStorageComposition, AgentDeviceSyncStorageKnowledge,
+    AgentDeviceSyncStorageState, AgentDeviceSyncWarning, SharedAgentDeviceSyncState,
 };
-use reprise_core::device_sync::{SelectionSource, TransferProfile};
+use reprise_core::device_sync::{CategoryDiff, CategoryReading, SelectionSource, TransferProfile};
 
 pub(super) type DeviceSyncSourceSelection = (String, i64);
 pub(super) type DeviceSyncSourceRow = (
@@ -42,6 +42,35 @@ pub(super) type DeviceSyncStorageRow = (
     DeviceSyncStorageCompositionRow,
     String,
 );
+/// Block H (MCP parity): one named sync target's per-device state plus its
+/// `MTP-22` diff reading. Kept as its own D-Bus method (`CategorySnapshot`)
+/// rather than a 17th element of the already 16-wide [`DeviceSyncRow`] —
+/// zvariant's tuple `Type`/`Serialize` impls are only generated up to a
+/// fixed arity, and this keeps the existing, well-tested `Snapshot` wire
+/// shape untouched.
+///
+/// Fields: kind, target_path, target_enabled, size_on_device_bytes,
+/// has_cap, cap_bytes, reading_kind ("diff" | "source_off" |
+/// "unavailable_kept_on_phone"), files_to_copy, bytes_to_copy,
+/// files_to_remove, bytes_freed, files_waiting_for_download,
+/// playlists_rewritten.
+pub(super) type DeviceSyncCategoryRow = (
+    String,
+    String,
+    bool,
+    u64,
+    bool,
+    u64,
+    String,
+    u64,
+    u64,
+    u64,
+    u64,
+    u64,
+    u64,
+);
+pub(super) type DeviceSyncCategoryDeviceRow = (String, Vec<DeviceSyncCategoryRow>);
+
 pub(super) type DeviceSyncControlsRow = (bool, bool, bool, bool);
 pub(super) type DeviceSyncProgressRow = (u64, u64, u64);
 pub(super) type DeviceSyncTimestampRow = (bool, i64);
@@ -101,6 +130,23 @@ impl DeviceSyncControl {
             .devices
             .into_iter()
             .map(device_row)
+            .collect()
+    }
+
+    /// Block H (MCP parity, `MTP-18`/`MTP-22`): the three named sync
+    /// targets and their category diff reading per device, keyed by device
+    /// name — the same identity `Configure`/`Start`/`Cancel`/`Eject`
+    /// already address a device by.
+    fn category_snapshot(&self) -> Vec<DeviceSyncCategoryDeviceRow> {
+        read_agent_device_sync_state(&self.state)
+            .devices
+            .into_iter()
+            .map(|device| {
+                (
+                    device.name,
+                    device.categories.into_iter().map(category_row).collect(),
+                )
+            })
             .collect()
     }
 
@@ -167,6 +213,40 @@ fn device_row(device: AgentDeviceSyncDevice) -> DeviceSyncRow {
         ),
         device.current_track,
         optional_timestamp(device.last_synced_at),
+    )
+}
+
+fn target_kind_name(kind: reprise_core::device_sync::SyncTargetKind) -> &'static str {
+    use reprise_core::device_sync::SyncTargetKind;
+    match kind {
+        SyncTargetKind::Playlists => "playlists",
+        SyncTargetKind::YoutubeAudio => "youtube_audio",
+        SyncTargetKind::PodcastEpisodes => "podcast_episodes",
+    }
+}
+
+fn category_row(category: AgentDeviceSyncCategoryRow) -> DeviceSyncCategoryRow {
+    let (reading_kind, diff) = match category.reading {
+        CategoryReading::Diff(diff) => ("diff", diff),
+        CategoryReading::SourceOff => ("source_off", CategoryDiff::default()),
+        CategoryReading::UnavailableKeptOnPhone => {
+            ("unavailable_kept_on_phone", CategoryDiff::default())
+        }
+    };
+    (
+        target_kind_name(category.kind).to_owned(),
+        category.target_path,
+        category.target_enabled,
+        category.size_on_device_bytes,
+        category.cap_bytes.is_some(),
+        category.cap_bytes.unwrap_or_default(),
+        reading_kind.to_owned(),
+        count(diff.files_to_copy),
+        diff.bytes_to_copy,
+        count(diff.files_to_remove),
+        diff.bytes_freed,
+        count(diff.files_waiting_for_download),
+        count(diff.playlists_rewritten),
     )
 }
 
@@ -428,6 +508,79 @@ mod tests {
             )
             .unwrap();
         responder.join().unwrap();
+    }
+
+    /// Block H (MCP parity): `category_snapshot` must actually distinguish
+    /// its three `MTP-22` reading states, not just carry a label field that
+    /// stays green if the distinction were lost.
+    #[test]
+    fn category_snapshot_distinguishes_diff_source_off_and_unavailable_readings() {
+        use reprise_core::device_sync::{CategoryDiff, CategoryReading, SyncTargetKind};
+
+        let category = |kind, reading| AgentDeviceSyncCategoryRow {
+            kind,
+            target_path: "/Music/Reprise-YouTube".into(),
+            target_enabled: true,
+            size_on_device_bytes: 42,
+            cap_bytes: Some(8 * 1024 * 1024 * 1024),
+            reading,
+        };
+        let state = Arc::new(Mutex::new(AgentDeviceSyncState {
+            devices: vec![AgentDeviceSyncDevice {
+                name: "Pixel".into(),
+                categories: vec![
+                    category(
+                        SyncTargetKind::YoutubeAudio,
+                        CategoryReading::Diff(CategoryDiff {
+                            files_to_copy: 3,
+                            bytes_to_copy: 900,
+                            files_to_remove: 1,
+                            bytes_freed: 50,
+                            files_waiting_for_download: 2,
+                            playlists_rewritten: 0,
+                        }),
+                    ),
+                    category(SyncTargetKind::PodcastEpisodes, CategoryReading::SourceOff),
+                    category(
+                        SyncTargetKind::Playlists,
+                        CategoryReading::UnavailableKeptOnPhone,
+                    ),
+                ],
+                ..AgentDeviceSyncDevice::default()
+            }],
+        }));
+        let (sender, _receiver) = async_channel::unbounded();
+        let control = DeviceSyncControl::new(sender, state);
+
+        let snapshot = control.category_snapshot();
+
+        assert_eq!(snapshot.len(), 1);
+        let (name, categories) = &snapshot[0];
+        assert_eq!(name, "Pixel");
+        assert_eq!(categories[0].0, "youtube_audio");
+        assert_eq!(categories[0].6, "diff");
+        assert_eq!(categories[0].7, 3, "files_to_copy survives the wire");
+        assert_eq!(categories[0].10, 50, "bytes_freed survives the wire");
+        assert_eq!(categories[0].11, 2, "files_waiting_for_download survives");
+        assert!(categories[0].4, "has_cap");
+        assert_eq!(categories[0].5, 8 * 1024 * 1024 * 1024);
+
+        assert_eq!(categories[1].0, "podcast_episodes");
+        assert_eq!(
+            categories[1].6, "source_off",
+            "source_off must not read as a zero diff"
+        );
+        assert_eq!(
+            categories[1].7, 0,
+            "source_off carries no diff figures, unlike a genuine zero-change diff"
+        );
+
+        assert_eq!(categories[2].0, "playlists");
+        assert_eq!(categories[2].6, "unavailable_kept_on_phone");
+        assert_ne!(
+            categories[1].6, categories[2].6,
+            "source_off and unavailable_kept_on_phone are distinct states"
+        );
     }
 
     #[test]

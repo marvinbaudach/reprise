@@ -242,6 +242,105 @@ fn pod_7_auto_download_reports_episode_states_during_refresh() {
     ));
 }
 
+/// Block H (MCP parity): `download_episode` is the function
+/// `music_manage_episodes`'s `download` action calls directly, outside a
+/// refresh pass. It must actually perform the download (not just report a
+/// state) and it must be idempotent — calling it again on an episode that
+/// already has a file must not hit the network a second time.
+#[test]
+fn download_episode_downloads_a_specific_episode_by_id_and_persists_its_size() {
+    let conn = conn();
+    let id = add_subscription(&conn, "https://example.test/feed", false);
+    let feed = FakeFeed {
+        responses: RefCell::new(vec![Ok(feed_response("Show", 1, None))]),
+        ..FakeFeed::default()
+    };
+    let directory = tempfile::tempdir().unwrap();
+    refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
+    let episode_id = super::super::query::episodes_for_subscription(&conn, id).unwrap()[0].id;
+    assert!(
+        feed.downloads.borrow().is_empty(),
+        "auto_download is off, so refresh must not have downloaded anything yet"
+    );
+
+    let outcome = download_episode(
+        &conn,
+        &feed,
+        &FakeYoutube,
+        directory.path(),
+        episode_id,
+        &mut |_| {},
+    )
+    .unwrap();
+
+    assert_eq!(outcome, DownloadState::Downloaded { bytes: 5 });
+    assert_eq!(feed.downloads.borrow().len(), 1);
+    let stored = super::super::store::episode(&conn, episode_id)
+        .unwrap()
+        .unwrap();
+    assert!(stored.downloaded_path.is_some());
+    assert_eq!(stored.downloaded_bytes, Some(5));
+}
+
+#[test]
+fn download_episode_is_idempotent_and_does_not_redownload_an_existing_file() {
+    let conn = conn();
+    let id = add_subscription(&conn, "https://example.test/feed", false);
+    let feed = FakeFeed {
+        responses: RefCell::new(vec![Ok(feed_response("Show", 1, None))]),
+        ..FakeFeed::default()
+    };
+    let directory = tempfile::tempdir().unwrap();
+    refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
+    let episode_id = super::super::query::episodes_for_subscription(&conn, id).unwrap()[0].id;
+    download_episode(
+        &conn,
+        &feed,
+        &FakeYoutube,
+        directory.path(),
+        episode_id,
+        &mut |_| {},
+    )
+    .unwrap();
+    assert_eq!(feed.downloads.borrow().len(), 1, "first call must download");
+
+    let second = download_episode(
+        &conn,
+        &feed,
+        &FakeYoutube,
+        directory.path(),
+        episode_id,
+        &mut |_| {},
+    )
+    .unwrap();
+
+    assert_eq!(second, DownloadState::Downloaded { bytes: 5 });
+    assert_eq!(
+        feed.downloads.borrow().len(),
+        1,
+        "an already-downloaded episode must not be fetched a second time"
+    );
+}
+
+#[test]
+fn download_episode_reports_not_found_for_an_unknown_id() {
+    let conn = conn();
+    let feed = FakeFeed::default();
+    let directory = tempfile::tempdir().unwrap();
+
+    let error = download_episode(
+        &conn,
+        &feed,
+        &FakeYoutube,
+        directory.path(),
+        999_999,
+        &mut |_| {},
+    )
+    .unwrap_err();
+
+    assert!(matches!(error, PipelineError::EpisodeNotFound));
+}
+
 #[test]
 fn existing_guid_keyed_file_is_reclaimed_without_downloading_again() {
     let conn = conn();
