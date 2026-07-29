@@ -22,12 +22,22 @@ pub const FILTER_SOURCE_KEY: &str = "podcasts.filter.source";
 pub const LATEST_PER_CHANNEL_DEFAULT_KEY: &str = "podcasts.latest_per_channel_default";
 /// `SRC-10` addendum (Block B2): the "Downloaded" filter chip.
 pub const FILTER_DOWNLOADED_KEY: &str = "podcasts.filter.downloaded";
+/// `POD-5` / `O-5`: the global "keep N downloaded" default backing
+/// `CleanupPolicy::KeepLast5`, overridable per channel
+/// (`podcasts::store::set_keep_downloaded`). Same shape as `MTP-36`'s
+/// `LATEST_PER_CHANNEL_DEFAULT_KEY` — one mental model for two quantity
+/// limits, deliberately (`O-5`).
+pub const KEEP_DOWNLOADED_DEFAULT_KEY: &str = "podcasts.keep_downloaded_default";
 
 pub const DEFAULT_IMPORT_COUNT: usize = 25;
 pub const DEFAULT_YOUTUBE_IMPORT_COUNT: usize = 10;
 pub const DEFAULT_REFRESH_HOURS: i64 = 6;
 /// `MTP-36`: decided 2026-07-29 — a global default of 5.
 pub const DEFAULT_LATEST_PER_CHANNEL: usize = 5;
+/// `POD-5` / `O-5`: decided 2026-07-29 — `CleanupPolicy::KeepLast5` kept a
+/// hardcoded 5 per show; that hardcoded 5 becomes this global default, and
+/// "keep N" is just its generalization.
+pub const DEFAULT_KEEP_DOWNLOADED: usize = 5;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum CleanupPolicy {
@@ -76,6 +86,12 @@ pub struct PodcastConfig {
     /// setting since `MTP-38`. A subscription's own override (`podcasts::
     /// store::latest_per_channel_overrides`) always wins over this.
     pub latest_per_channel_default: usize,
+    /// `POD-5` / `O-5`: the global "keep N downloaded" default backing
+    /// `CleanupPolicy::KeepLast5` — `0` means unlimited, like every other
+    /// numeric sync/cleanup setting since `E-9`. A subscription's own
+    /// override (`SubscriptionRow::keep_downloaded`) always wins over this
+    /// (`podcasts::downloads::resolve_keep_downloaded`).
+    pub keep_downloaded_default: usize,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -117,6 +133,11 @@ pub fn load(conn: &Connection) -> Result<PodcastConfig, rusqlite::Error> {
         // "unlimited" reading.
         latest_per_channel_default: integer_setting(conn, LATEST_PER_CHANNEL_DEFAULT_KEY)?
             .unwrap_or(DEFAULT_LATEST_PER_CHANNEL as i64)
+            .clamp(0, 100) as usize,
+        // `POD-5` / `E-9`: 0 is a valid, meaningful value (unlimited) — same
+        // zero-floor reasoning as `latest_per_channel_default` above.
+        keep_downloaded_default: integer_setting(conn, KEEP_DOWNLOADED_DEFAULT_KEY)?
+            .unwrap_or(DEFAULT_KEEP_DOWNLOADED as i64)
             .clamp(0, 100) as usize,
     })
 }
@@ -179,6 +200,7 @@ mod tests {
         assert_eq!(config.ytdlp_path, None);
         assert_eq!(config.refresh_hours, 6);
         assert_eq!(config.latest_per_channel_default, 5);
+        assert_eq!(config.keep_downloaded_default, 5);
     }
 
     #[test]
@@ -198,6 +220,7 @@ mod tests {
         crate::library::settings::set_setting(&conn, REFRESH_HOURS_KEY, "0").unwrap();
         crate::library::settings::set_setting(&conn, LATEST_PER_CHANNEL_DEFAULT_KEY, "900")
             .unwrap();
+        crate::library::settings::set_setting(&conn, KEEP_DOWNLOADED_DEFAULT_KEY, "900").unwrap();
 
         let config = load(&conn).unwrap();
         assert_eq!(config.import_count, 100);
@@ -208,6 +231,7 @@ mod tests {
         assert_eq!(config.ytdlp_path.as_deref(), Some("/opt/yt-dlp"));
         assert_eq!(config.refresh_hours, 1);
         assert_eq!(config.latest_per_channel_default, 100);
+        assert_eq!(config.keep_downloaded_default, 100);
     }
 
     #[test]
@@ -220,6 +244,17 @@ mod tests {
         crate::library::settings::set_setting(&conn, LATEST_PER_CHANNEL_DEFAULT_KEY, "0").unwrap();
 
         assert_eq!(load(&conn).unwrap().latest_per_channel_default, 0);
+    }
+
+    #[test]
+    fn pod_5_keep_downloaded_default_clamp_floor_is_zero_not_the_documented_minimum() {
+        // Same reasoning as `latest_per_channel_default` above (`E-9`): 0
+        // means unlimited here, so the clamp floor must not reject it back
+        // up to a positive minimum.
+        let conn = conn();
+        crate::library::settings::set_setting(&conn, KEEP_DOWNLOADED_DEFAULT_KEY, "0").unwrap();
+
+        assert_eq!(load(&conn).unwrap().keep_downloaded_default, 0);
     }
 
     #[test]

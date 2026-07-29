@@ -122,7 +122,7 @@ pub fn active_subscriptions(conn: &Connection) -> Result<Vec<SubscriptionRow>, r
     let mut statement = conn.prepare(
         "SELECT id, kind, feed_url, title, author, image_url, etag,
                 last_modified, last_fetch_at, last_outcome, auto_download,
-                sync_to_phone, latest_per_channel, added_at, removed_at
+                sync_to_phone, latest_per_channel, keep_downloaded, added_at, removed_at
          FROM podcast_subscriptions
          WHERE removed_at IS NULL
          ORDER BY title COLLATE NOCASE, id",
@@ -138,7 +138,7 @@ pub fn subscription(
     conn.query_row(
         "SELECT id, kind, feed_url, title, author, image_url, etag,
                 last_modified, last_fetch_at, last_outcome, auto_download,
-                sync_to_phone, latest_per_channel, added_at, removed_at
+                sync_to_phone, latest_per_channel, keep_downloaded, added_at, removed_at
          FROM podcast_subscriptions
          WHERE id = ?1",
         [id],
@@ -187,6 +187,26 @@ pub fn set_latest_per_channel(
     Ok(conn.execute(
         "UPDATE podcast_subscriptions
          SET latest_per_channel = ?2
+         WHERE id = ?1 AND removed_at IS NULL",
+        params![id, value],
+    )? != 0)
+}
+
+/// `POD-5`: sets or clears (`None`) this channel's override of the global
+/// "keep N downloaded" cleanup default — same shape as
+/// [`set_latest_per_channel`] (`MTP-36`, `O-5`). No GTK surface calls this
+/// yet (design 6b's channel page has no control for it), matching how
+/// `set_latest_per_channel` itself landed: it exists so the persistence and
+/// `podcasts::downloads::enforce_cleanup` can be tested and used
+/// independently of that UI.
+pub fn set_keep_downloaded(
+    conn: &Connection,
+    id: i64,
+    value: Option<i64>,
+) -> Result<bool, rusqlite::Error> {
+    Ok(conn.execute(
+        "UPDATE podcast_subscriptions
+         SET keep_downloaded = ?2
          WHERE id = ?1 AND removed_at IS NULL",
         params![id, value],
     )? != 0)
@@ -534,8 +554,9 @@ fn subscription_from_row(row: &rusqlite::Row<'_>) -> Result<SubscriptionRow, rus
         auto_download: row.get(10)?,
         sync_to_phone: row.get(11)?,
         latest_per_channel: row.get(12)?,
-        added_at: row.get(13)?,
-        removed_at: row.get(14)?,
+        keep_downloaded: row.get(13)?,
+        added_at: row.get(14)?,
+        removed_at: row.get(15)?,
     })
 }
 
