@@ -36,21 +36,15 @@ pub struct CoverDownloadRuntime {
     pub(in crate::ui) worker: async_channel::Sender<DownloadRequest>,
 }
 
-fn network_allowed(conn: &rusqlite::Connection) -> bool {
-    reprise_core::online_sources::network_allowed(
-        conn,
-        &reprise_core::modules::COVER_DOWNLOAD_MODULE,
-    )
-    .unwrap_or_else(|error| {
-        tracing::warn!(%error, "could not read cover-download module state; defaulting to off");
-        false
-    })
-}
-
 /// Starts the one shared serial worker and seeds its live opt-in state.
 pub(in crate::ui) fn setup(conn: &rusqlite::Connection) -> CoverDownloadRuntime {
     CoverDownloadRuntime {
-        enabled: Rc::new(Cell::new(network_allowed(conn))),
+        enabled: Rc::new(Cell::new(
+            reprise_core::online_sources::network_allowed_or_off(
+                conn,
+                &reprise_core::modules::COVER_DOWNLOAD_MODULE,
+            ),
+        )),
         worker: spawn(),
     }
 }
@@ -74,7 +68,11 @@ impl CoverDownloadRuntime {
             &reprise_core::modules::COVER_DOWNLOAD_MODULE,
             enabled,
         )?;
-        self.enabled.set(network_allowed(conn));
+        self.enabled
+            .set(reprise_core::online_sources::network_allowed_or_off(
+                conn,
+                &reprise_core::modules::COVER_DOWNLOAD_MODULE,
+            ));
         Ok(())
     }
 
@@ -83,7 +81,11 @@ impl CoverDownloadRuntime {
     /// module that is itself on still stops immediately when the gate goes
     /// off (`SET-4`).
     pub(in crate::ui) fn recompute_enabled(&self, conn: &rusqlite::Connection) {
-        self.enabled.set(network_allowed(conn));
+        self.enabled
+            .set(reprise_core::online_sources::network_allowed_or_off(
+                conn,
+                &reprise_core::modules::COVER_DOWNLOAD_MODULE,
+            ));
     }
 
     pub(in crate::ui) fn try_request(&self, request: DownloadRequest) -> bool {

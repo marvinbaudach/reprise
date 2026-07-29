@@ -98,19 +98,16 @@ pub(in crate::ui) struct ArtistNewsRuntime {
     subscribers: EnabledSubscribers,
 }
 
-fn network_allowed(conn: &rusqlite::Connection) -> bool {
-    reprise_core::online_sources::network_allowed(conn, &reprise_core::modules::NEW_RELEASES_MODULE)
-        .unwrap_or_else(|error| {
-            tracing::warn!(%error, "could not read Artist News module state; defaulting to off");
-            false
-        })
-}
-
 impl ArtistNewsRuntime {
     pub(in crate::ui) fn setup(conn: &rusqlite::Connection) -> Rc<Self> {
         Rc::new(Self {
-            enabled: Rc::new(Cell::new(network_allowed(conn))),
-            worker: spawn(database_path(conn)),
+            enabled: Rc::new(Cell::new(
+                reprise_core::online_sources::network_allowed_or_off(
+                    conn,
+                    &reprise_core::modules::NEW_RELEASES_MODULE,
+                ),
+            )),
+            worker: spawn(reprise_core::db::main_path(conn)),
             subscribers: EnabledSubscribers::default(),
         })
     }
@@ -131,7 +128,10 @@ impl ArtistNewsRuntime {
 
     /// `NET-1a`: re-derives `enabled` from the global online-sources gate.
     pub(in crate::ui) fn recompute_enabled(&self, conn: &rusqlite::Connection) {
-        let enabled = network_allowed(conn);
+        let enabled = reprise_core::online_sources::network_allowed_or_off(
+            conn,
+            &reprise_core::modules::NEW_RELEASES_MODULE,
+        );
         if self.enabled.replace(enabled) != enabled {
             self.subscribers.notify(enabled);
         }
@@ -159,10 +159,6 @@ impl ArtistNewsRuntime {
     fn subscriber_count(&self) -> usize {
         self.subscribers.len()
     }
-}
-
-fn database_path(conn: &rusqlite::Connection) -> Option<PathBuf> {
-    reprise_core::db::main_path(conn)
 }
 
 fn spawn(database_path: Option<PathBuf>) -> async_channel::Sender<ArtistNewsRequest> {

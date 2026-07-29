@@ -15,33 +15,6 @@ use crate::ui::style::buttons;
 const FILTER_BAR_MIN_HEIGHT: i32 = 34;
 type OnChanged = Rc<dyn Fn(PodcastFilter)>;
 
-fn persist(conn: &Connection, filter: &PodcastFilter) -> Result<(), rusqlite::Error> {
-    reprise_core::library::settings::set_bool(
-        conn,
-        podcasts::config::FILTER_UNPLAYED_KEY,
-        filter.unplayed_only,
-    )?;
-    reprise_core::library::settings::set_setting(
-        conn,
-        podcasts::config::FILTER_SHOW_KEY,
-        filter.show.as_deref().unwrap_or_default(),
-    )?;
-    reprise_core::library::settings::set_setting(
-        conn,
-        podcasts::config::FILTER_SOURCE_KEY,
-        match filter.source {
-            Some(PodcastKind::Rss) => "rss",
-            Some(PodcastKind::Youtube) => "youtube",
-            None => "",
-        },
-    )?;
-    reprise_core::library::settings::set_bool(
-        conn,
-        podcasts::config::FILTER_DOWNLOADED_KEY,
-        filter.downloaded_only,
-    )
-}
-
 pub(super) struct PodcastsFilterBar {
     root: gtk4::Box,
     conn: Rc<RefCell<Connection>>,
@@ -163,7 +136,7 @@ impl PodcastsFilterBar {
     }
 
     fn apply(self: &Rc<Self>, filter: PodcastFilter) {
-        if let Err(error) = persist(&self.conn.borrow(), &filter) {
+        if let Err(error) = podcasts::config::save_filter(&self.conn.borrow(), &filter) {
             tracing::warn!(%error, "could not persist podcast filters");
             return;
         }

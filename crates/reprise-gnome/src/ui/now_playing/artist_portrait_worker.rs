@@ -11,21 +11,15 @@ pub(in crate::ui) struct ArtistPortraitRuntime {
     pub enabled: Rc<Cell<bool>>,
 }
 
-fn network_allowed(conn: &rusqlite::Connection) -> bool {
-    reprise_core::online_sources::network_allowed(
-        conn,
-        &reprise_core::modules::ARTIST_PORTRAITS_MODULE,
-    )
-    .unwrap_or_else(|error| {
-        tracing::warn!(%error, "could not read Artist Portrait module state; defaulting to off");
-        false
-    })
-}
-
 impl ArtistPortraitRuntime {
     pub(in crate::ui) fn setup(conn: &rusqlite::Connection) -> Rc<Self> {
         Rc::new(Self {
-            enabled: Rc::new(Cell::new(network_allowed(conn))),
+            enabled: Rc::new(Cell::new(
+                reprise_core::online_sources::network_allowed_or_off(
+                    conn,
+                    &reprise_core::modules::ARTIST_PORTRAITS_MODULE,
+                ),
+            )),
         })
     }
 
@@ -39,13 +33,21 @@ impl ArtistPortraitRuntime {
             &reprise_core::modules::ARTIST_PORTRAITS_MODULE,
             enabled,
         )?;
-        self.enabled.set(network_allowed(conn));
+        self.enabled
+            .set(reprise_core::online_sources::network_allowed_or_off(
+                conn,
+                &reprise_core::modules::ARTIST_PORTRAITS_MODULE,
+            ));
         Ok(())
     }
 
     /// `NET-1a`: re-derives `enabled` from the global online-sources gate.
     pub(in crate::ui) fn recompute_enabled(&self, conn: &rusqlite::Connection) {
-        self.enabled.set(network_allowed(conn));
+        self.enabled
+            .set(reprise_core::online_sources::network_allowed_or_off(
+                conn,
+                &reprise_core::modules::ARTIST_PORTRAITS_MODULE,
+            ));
     }
 }
 

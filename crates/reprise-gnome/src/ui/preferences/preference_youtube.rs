@@ -80,7 +80,7 @@ pub(in crate::ui) fn build(conn: &Rc<RefCell<Connection>>, enabled: bool) -> You
     {
         let conn = conn.clone();
         episode_count.connect_value_notify(move |row| {
-            save_or_warn(save_youtube_import_count(
+            save_or_warn(config::set_youtube_import_count(
                 &conn.borrow(),
                 row.value().round() as usize,
             ));
@@ -94,7 +94,10 @@ pub(in crate::ui) fn build(conn: &Rc<RefCell<Connection>>, enabled: bool) -> You
     {
         let conn = conn.clone();
         hide_shorts.connect_active_notify(move |row| {
-            save_or_warn(save_hide_shorts_default(&conn.borrow(), row.is_active()));
+            save_or_warn(config::set_youtube_hide_shorts_default(
+                &conn.borrow(),
+                row.is_active(),
+            ));
         });
     }
 
@@ -182,19 +185,9 @@ fn apply_ytdlp_state(row: &adw::ActionRow, update: &gtk4::Button, result: Result
     update.set_sensitive(state.update_sensitive);
 }
 
-fn save_youtube_import_count(conn: &Connection, value: usize) -> Result<(), rusqlite::Error> {
-    reprise_core::library::settings::set_setting(
-        conn,
-        config::YOUTUBE_IMPORT_COUNT_KEY,
-        &value.to_string(),
-    )
-}
-
-fn save_hide_shorts_default(conn: &Connection, value: bool) -> Result<(), rusqlite::Error> {
-    reprise_core::library::settings::set_bool(conn, config::YOUTUBE_HIDE_SHORTS_DEFAULT_KEY, value)
-}
-
-fn save_or_warn(result: Result<(), rusqlite::Error>) {
+/// Generic over the error so this page never has to name the database's error
+/// type just to log that a write failed.
+fn save_or_warn<E: std::fmt::Display>(result: Result<(), E>) {
     if let Err(error) = result {
         tracing::warn!(%error, "could not save YouTube preference");
     }
@@ -217,11 +210,14 @@ mod tests {
         assert!(missing.subtitle.contains("repair Reprise"));
     }
 
+    // Kept as an integration check that this page writes the settings it
+    // reads back. The clamping and key spelling are core's to prove, and are
+    // covered by `podcasts::config`'s own tests.
     #[test]
     fn youtube_preference_values_round_trip_through_core_config() {
         let conn = reprise_core::db::open_migrated(None).unwrap();
-        save_youtube_import_count(&conn, 20).unwrap();
-        save_hide_shorts_default(&conn, false).unwrap();
+        config::set_youtube_import_count(&conn, 20).unwrap();
+        config::set_youtube_hide_shorts_default(&conn, false).unwrap();
 
         let cfg = reprise_core::podcasts::config::load(&conn).unwrap();
         assert_eq!(cfg.youtube_import_count, 20);

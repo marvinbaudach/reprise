@@ -131,7 +131,7 @@ fn any_source_dispatchable(conn: &rusqlite::Connection) -> bool {
 
 impl PodcastsRuntime {
     pub(in crate::ui) fn setup(conn: &rusqlite::Connection) -> Rc<Self> {
-        let (worker, priority_worker) = spawn(database_path(conn));
+        let (worker, priority_worker) = spawn(reprise_core::db::main_path(conn));
         Rc::new(Self {
             enabled: Rc::new(Cell::new(any_source_dispatchable(conn))),
             worker,
@@ -224,10 +224,6 @@ pub(in crate::ui) fn automatic_refresh_allowed(
     due: bool,
 ) -> bool {
     enabled && subscription_count > 0 && !metered && due
-}
-
-fn database_path(conn: &rusqlite::Connection) -> Option<PathBuf> {
-    reprise_core::db::main_path(conn)
 }
 
 /// Blocks until a request is available, always preferring the priority lane
