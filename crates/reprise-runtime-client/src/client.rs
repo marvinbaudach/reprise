@@ -496,16 +496,10 @@ impl Worker {
             Body::Session(context, play_next) => {
                 proxy.call::<_, _, CommandOutcome>(method, &(context, play_next))
             }
-            Body::External(media) => proxy.call::<_, _, CommandOutcome>(
-                method,
-                &(
-                    media.location,
-                    media.remote,
-                    media.title,
-                    media.artist,
-                    media.duration_ms,
-                ),
-            ),
+            // One argument, and it is the shared type: unpacking it here into
+            // positional values is how the two sides drift apart, because
+            // naming five of a struct's seven fields compiles perfectly.
+            Body::External(media) => proxy.call::<_, _, CommandOutcome>(method, &(media,)),
         };
         outcome.map_err(|error| ClientError::from_bus(&error))
     }

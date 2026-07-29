@@ -80,6 +80,7 @@ impl FakePlayback {
             refuse: Rc::clone(&self.refuse),
             pre_feeds: Rc::clone(&self.pre_feeds),
             transitions: Rc::clone(&self.transitions),
+            generation: Rc::clone(&self.generation),
         }
     }
 }
@@ -92,6 +93,7 @@ pub struct FakePlaybackHandle {
     refuse: Rc<RefCell<bool>>,
     pre_feeds: Rc<RefCell<Vec<Option<String>>>>,
     transitions: Rc<RefCell<Vec<(TrackTransition, u8)>>>,
+    generation: Rc<RefCell<u64>>,
 }
 
 impl FakePlaybackHandle {
@@ -122,6 +124,14 @@ impl FakePlaybackHandle {
     #[must_use]
     pub fn transitions(&self) -> Vec<(TrackTransition, u8)> {
         self.transitions.borrow().clone()
+    }
+
+    /// The stream the backend is on, so a test can report an event the
+    /// transport will believe. Counting starts by hand instead is a constant
+    /// that silently stops matching when a test grows one more start.
+    #[must_use]
+    pub fn generation(&self) -> StreamGeneration {
+        StreamGeneration::from(*self.generation.borrow())
     }
 
     /// What the backend itself believes it is doing, as opposed to what the

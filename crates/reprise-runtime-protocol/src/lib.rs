@@ -116,7 +116,15 @@ impl std::fmt::Display for ProtocolVersion {
 /// Minor 2 adds [`session::RestoreSession`], so a surface can put back the
 /// queue it saved without also starting it — additive, since an older
 /// runtime simply has no method for it.
-pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 3, minor: 2 };
+///
+/// Major 4 turns [`playback::ExternalMedia`] into one `a{sv}` argument. It had
+/// grown to seven positional values, three of them consecutive `String`s and
+/// two consecutive `bool`s, which is the swap-two-and-it-still-compiles shape
+/// this crate exists to remove. Breaking rather than a second method beside
+/// the first: a duplicate would leave a wrong way to call it available for
+/// ever, and there is no deployed client to protect — the runtime is not yet
+/// on any production path.
+pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 4, minor: 0 };
 
 #[cfg(test)]
 mod tests {
@@ -150,6 +158,6 @@ mod tests {
     #[test]
     fn the_shipped_version_is_compatible_with_itself() {
         assert!(PROTOCOL_VERSION.is_compatible_with(PROTOCOL_VERSION));
-        assert_eq!(PROTOCOL_VERSION.to_string(), "3.2");
+        assert_eq!(PROTOCOL_VERSION.to_string(), "4.0");
     }
 }

@@ -288,3 +288,81 @@ fn a_gapless_handoff_lands_on_the_track_that_was_pre_fed() {
         "stopping here would cut off audio that is already rolling"
     );
 }
+
+/// Playing an episode while music is queued behind it.
+///
+/// Started from a queue on purpose: the gapless slot is armed from whatever
+/// the *queue* says comes next, and the queue does not stop existing because
+/// the user put a podcast on top of it.
+fn an_episode_over_a_queue(harness: &mut Harness, client: crate::client::ClientId) {
+    harness
+        .runtime
+        .command(
+            client,
+            &Command::PlayTracks {
+                track_ids: vec![1, 2, 3],
+                start_index: 0,
+            },
+        )
+        .unwrap();
+    harness
+        .runtime
+        .command(
+            client,
+            &Command::PlayExternal(reprise_runtime_protocol::playback::ExternalMedia {
+                location: "/podcasts/42.mp3".into(),
+                remote: false,
+                title: "Episode 42".into(),
+                artist: "Example Show".into(),
+                duration_ms: 0,
+                external_ref: "podcast/42".into(),
+                live: false,
+            }),
+        )
+        .unwrap();
+}
+
+#[test]
+fn nothing_is_pre_fed_while_a_podcast_is_playing() {
+    let mut harness = harness();
+    let client = full_client(&mut harness.runtime);
+
+    an_episode_over_a_queue(&mut harness, client);
+
+    assert_eq!(
+        harness.playback.pre_fed(),
+        Some(None),
+        "the backend's `about-to-finish` fires for an episode exactly as it \
+         does for a track, and it does not know what kind of thing is \
+         playing: an armed slot means GStreamer swaps the queued track in and \
+         starts it, in its own streaming thread, before the runtime has any \
+         say. The music the user did not ask for is already audible."
+    );
+}
+
+#[test]
+fn a_handoff_during_a_podcast_does_not_adopt_the_queued_track() {
+    let mut harness = harness();
+    let client = full_client(&mut harness.runtime);
+    an_episode_over_a_queue(&mut harness, client);
+
+    // Belt and braces: even if something armed the slot anyway, the model
+    // must not follow it into the queue.
+    harness.runtime.on_player_event(&StreamEvent {
+        generation: harness.playback.generation(),
+        event: PlayerEvent::AdvancedToNext,
+    });
+
+    let playback = harness.runtime.snapshot().unwrap().playback;
+    assert_eq!(
+        playback.track_id, None,
+        "an episode that ends hands back to nothing — that is what \
+         `Source::External` means, and the gapless path is not an exception \
+         to it"
+    );
+    assert_eq!(
+        playback.external_ref.as_deref(),
+        Some("podcast/42"),
+        "and the episode is still what the snapshot describes"
+    );
+}
