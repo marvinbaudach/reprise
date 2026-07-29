@@ -12,6 +12,7 @@
 //! combination is valid.
 
 use reprise_runtime::{Command, DeviceCommand, RuntimeError};
+use reprise_runtime_protocol::command::CommandOutcome;
 use reprise_runtime_protocol::device_run::DeviceRunSnapshot;
 use reprise_runtime_protocol::jobs::{JobCommand, JobSnapshot};
 use reprise_runtime_protocol::playback::{ExternalMedia, PlaybackCommand, PlaybackSnapshot};
@@ -97,7 +98,16 @@ impl Reprise1 {
     }
 
     /// Sends a command and maps its outcome.
-    async fn command(&self, header: &Header<'_>, command: Command) -> Result<(), Error> {
+    /// Every command answers with what it did (`CommandOutcome`), not with
+    /// nothing. A surface that removed rows has to be able to say how many,
+    /// and it cannot read that off a snapshot: by the time the delta lands
+    /// the rows are gone, and diffing two snapshots would credit this
+    /// command with a concurrent client's work too.
+    async fn command(
+        &self,
+        header: &Header<'_>,
+        command: Command,
+    ) -> Result<CommandOutcome, Error> {
         let peer = Self::peer(header)?;
         self.ask(|reply| Request::Command {
             peer,
@@ -153,27 +163,27 @@ impl Reprise1 {
             .map_err(Error::from)
     }
 
-    async fn play(&self, #[zbus(header)] header: Header<'_>) -> Result<(), Error> {
+    async fn play(&self, #[zbus(header)] header: Header<'_>) -> Result<CommandOutcome, Error> {
         self.command(&header, Command::Playback(PlaybackCommand::Play))
             .await
     }
 
-    async fn pause(&self, #[zbus(header)] header: Header<'_>) -> Result<(), Error> {
+    async fn pause(&self, #[zbus(header)] header: Header<'_>) -> Result<CommandOutcome, Error> {
         self.command(&header, Command::Playback(PlaybackCommand::Pause))
             .await
     }
 
-    async fn stop(&self, #[zbus(header)] header: Header<'_>) -> Result<(), Error> {
+    async fn stop(&self, #[zbus(header)] header: Header<'_>) -> Result<CommandOutcome, Error> {
         self.command(&header, Command::Playback(PlaybackCommand::Stop))
             .await
     }
 
-    async fn next(&self, #[zbus(header)] header: Header<'_>) -> Result<(), Error> {
+    async fn next(&self, #[zbus(header)] header: Header<'_>) -> Result<CommandOutcome, Error> {
         self.command(&header, Command::Playback(PlaybackCommand::Next))
             .await
     }
 
-    async fn previous(&self, #[zbus(header)] header: Header<'_>) -> Result<(), Error> {
+    async fn previous(&self, #[zbus(header)] header: Header<'_>) -> Result<CommandOutcome, Error> {
         self.command(&header, Command::Playback(PlaybackCommand::Previous))
             .await
     }
@@ -182,7 +192,7 @@ impl Reprise1 {
         &self,
         #[zbus(header)] header: Header<'_>,
         volume: f64,
-    ) -> Result<(), Error> {
+    ) -> Result<CommandOutcome, Error> {
         self.command(
             &header,
             Command::Playback(PlaybackCommand::SetVolume(volume)),
@@ -191,12 +201,20 @@ impl Reprise1 {
     }
 
     /// Relative seek in milliseconds; negative seeks backwards.
-    async fn seek(&self, #[zbus(header)] header: Header<'_>, delta_ms: i64) -> Result<(), Error> {
+    async fn seek(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        delta_ms: i64,
+    ) -> Result<CommandOutcome, Error> {
         self.command(&header, Command::Playback(PlaybackCommand::Seek(delta_ms)))
             .await
     }
 
-    async fn set_shuffle(&self, #[zbus(header)] header: Header<'_>, on: bool) -> Result<(), Error> {
+    async fn set_shuffle(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        on: bool,
+    ) -> Result<CommandOutcome, Error> {
         self.command(&header, Command::Playback(PlaybackCommand::SetShuffle(on)))
             .await
     }
@@ -207,7 +225,7 @@ impl Reprise1 {
         &self,
         #[zbus(header)] header: Header<'_>,
         mode: String,
-    ) -> Result<(), Error> {
+    ) -> Result<CommandOutcome, Error> {
         self.command(&header, Command::Playback(PlaybackCommand::SetRepeat(mode)))
             .await
     }
@@ -219,7 +237,7 @@ impl Reprise1 {
         #[zbus(header)] header: Header<'_>,
         track_ids: Vec<i64>,
         start_index: u64,
-    ) -> Result<(), Error> {
+    ) -> Result<CommandOutcome, Error> {
         self.command(
             &header,
             Command::PlayTracks {
@@ -245,7 +263,7 @@ impl Reprise1 {
         title: String,
         artist: String,
         duration_ms: i64,
-    ) -> Result<(), Error> {
+    ) -> Result<CommandOutcome, Error> {
         self.command(
             &header,
             Command::PlayExternal(ExternalMedia {
@@ -263,7 +281,7 @@ impl Reprise1 {
         &self,
         #[zbus(header)] header: Header<'_>,
         track_ids: Vec<i64>,
-    ) -> Result<(), Error> {
+    ) -> Result<CommandOutcome, Error> {
         self.command(&header, Command::Queue(QueueCommand::AddNext(track_ids)))
             .await
     }
@@ -272,14 +290,17 @@ impl Reprise1 {
         &self,
         #[zbus(header)] header: Header<'_>,
         track_ids: Vec<i64>,
-    ) -> Result<(), Error> {
+    ) -> Result<CommandOutcome, Error> {
         self.command(&header, Command::Queue(QueueCommand::AddLast(track_ids)))
             .await
     }
 
     /// Drops the explicit queue. The current track keeps playing — clearing
     /// a queue is not a stop command.
-    async fn queue_clear(&self, #[zbus(header)] header: Header<'_>) -> Result<(), Error> {
+    async fn queue_clear(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+    ) -> Result<CommandOutcome, Error> {
         self.command(&header, Command::Queue(QueueCommand::Clear))
             .await
     }
@@ -293,7 +314,7 @@ impl Reprise1 {
         from: u64,
         to: u64,
         expected_revision: u64,
-    ) -> Result<(), Error> {
+    ) -> Result<CommandOutcome, Error> {
         self.command(
             &header,
             Command::Queue(QueueCommand::Move {
@@ -310,7 +331,7 @@ impl Reprise1 {
         #[zbus(header)] header: Header<'_>,
         positions: Vec<u64>,
         expected_revision: u64,
-    ) -> Result<(), Error> {
+    ) -> Result<CommandOutcome, Error> {
         self.command(
             &header,
             Command::Queue(QueueCommand::RemoveAt {
@@ -326,7 +347,7 @@ impl Reprise1 {
         #[zbus(header)] header: Header<'_>,
         positions: Vec<u64>,
         expected_revision: u64,
-    ) -> Result<(), Error> {
+    ) -> Result<CommandOutcome, Error> {
         self.command(
             &header,
             Command::Queue(QueueCommand::RemoveContextAt {
@@ -342,7 +363,7 @@ impl Reprise1 {
         #[zbus(header)] header: Header<'_>,
         position: u64,
         expected_revision: u64,
-    ) -> Result<(), Error> {
+    ) -> Result<CommandOutcome, Error> {
         self.command(
             &header,
             Command::Queue(QueueCommand::PlayNextAt {
@@ -358,7 +379,7 @@ impl Reprise1 {
         #[zbus(header)] header: Header<'_>,
         position: u64,
         expected_revision: u64,
-    ) -> Result<(), Error> {
+    ) -> Result<CommandOutcome, Error> {
         self.command(
             &header,
             Command::Queue(QueueCommand::PlayContextAt {
@@ -375,7 +396,7 @@ impl Reprise1 {
         &self,
         #[zbus(header)] header: Header<'_>,
         track_ids: Vec<i64>,
-    ) -> Result<(), Error> {
+    ) -> Result<CommandOutcome, Error> {
         self.command(&header, Command::Queue(QueueCommand::Purge(track_ids)))
             .await
     }
@@ -384,7 +405,7 @@ impl Reprise1 {
         &self,
         #[zbus(header)] header: Header<'_>,
         device: String,
-    ) -> Result<(), Error> {
+    ) -> Result<CommandOutcome, Error> {
         self.command(&header, Command::Device(DeviceCommand::Start { device }))
             .await
     }
@@ -393,7 +414,7 @@ impl Reprise1 {
         &self,
         #[zbus(header)] header: Header<'_>,
         device: String,
-    ) -> Result<(), Error> {
+    ) -> Result<CommandOutcome, Error> {
         self.command(&header, Command::Device(DeviceCommand::Cancel { device }))
             .await
     }
@@ -405,7 +426,7 @@ impl Reprise1 {
         &self,
         #[zbus(header)] header: Header<'_>,
         job_id: i64,
-    ) -> Result<(), Error> {
+    ) -> Result<CommandOutcome, Error> {
         self.command(&header, Command::Job(JobCommand::Cancel(job_id)))
             .await
     }

@@ -503,9 +503,9 @@ impl Queue {
     /// slots for the deleted catalog identity must disappear immediately.
     /// Once playback leaves the preserved slot, ordinary [`Self::remove_ids`]
     /// removes that final tombstone.
-    pub fn remove_ids_except_current(&mut self, remove: &[i64]) -> bool {
+    pub fn remove_ids_except_current(&mut self, remove: &[i64]) -> usize {
         if remove.is_empty() {
-            return false;
+            return 0;
         }
         let remove: std::collections::HashSet<i64> = remove.iter().copied().collect();
         let current = self.pos;
@@ -526,15 +526,16 @@ impl Queue {
     /// track advances the playhead to the next surviving track in play
     /// order (never backward); an exhausted queue stays exhausted. Returns
     /// whether anything was removed (out-of-range positions are ignored).
-    pub fn remove_order_positions(&mut self, positions: &[usize]) -> bool {
+    pub fn remove_order_positions(&mut self, positions: &[usize]) -> usize {
         let slots: std::collections::HashSet<usize> = positions
             .iter()
             .copied()
             .filter(|&slot| slot < self.order.len())
             .collect();
         if slots.is_empty() {
-            return false;
+            return 0;
         }
+        let removed = slots.len();
 
         // ids-indices being removed (each order slot maps to a unique index).
         let removed_indices: std::collections::HashSet<usize> =
@@ -578,7 +579,7 @@ impl Queue {
         self.order = new_order;
         self.pos = new_pos;
         self.note_sequence_changed();
-        true
+        removed
     }
 
     /// The playhead's play-order position — the base the composite Queue

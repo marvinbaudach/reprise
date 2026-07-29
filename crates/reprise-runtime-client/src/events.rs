@@ -1,9 +1,12 @@
 //! What a client sends and what it hears back.
 
+use reprise_runtime_protocol::command::CommandOutcome;
 use reprise_runtime_protocol::device_run::DeviceRunSnapshot;
 use reprise_runtime_protocol::jobs::{JobCommand, JobSnapshot};
 use reprise_runtime_protocol::playback::{ExternalMedia, PlaybackCommand, PlaybackSnapshot};
 use reprise_runtime_protocol::queue::{QueueCommand, QueueSnapshot};
+
+use crate::client::RequestId;
 use reprise_runtime_protocol::runtime::RuntimeSnapshot;
 
 /// One thing a surface asks the runtime to do.
@@ -171,10 +174,23 @@ pub enum ClientEvent {
         initiator: Option<u64>,
         snapshot: JobSnapshot,
     },
+    /// A command this client sent took effect, and this is what it did.
+    ///
+    /// Carried as an event for the same reason the failure is: `send` cannot
+    /// wait for the answer without stalling the thread it was called on, and
+    /// the thread it is called on is a UI thread.
+    CommandCompleted {
+        request: RequestId,
+        outcome: CommandOutcome,
+    },
     /// A command this client sent did not succeed. Carried as an event
     /// because [`super::RuntimeClient::send`] cannot wait for it without
     /// stalling the thread it was called on.
+    ///
+    /// `request` names *which* send failed. The command alone does not: two
+    /// identical commands are an ordinary thing for a user to produce.
     CommandFailed {
+        request: RequestId,
         command: RuntimeCommand,
         error: ClientError,
     },

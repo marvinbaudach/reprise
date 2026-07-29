@@ -380,6 +380,7 @@ fn command_failed_changes_no_state_and_apply_reports_no_change() {
     mirror.apply(&connected(snapshot(5)));
 
     let changed = mirror.apply(&ClientEvent::CommandFailed {
+        request: crate::client::RequestId::from(1),
         command: RuntimeCommand::Playback(PlaybackCommand::Play),
         error: ClientError::Failed("playback_backend".into()),
     });
