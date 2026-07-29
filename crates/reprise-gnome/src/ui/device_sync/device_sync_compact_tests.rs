@@ -101,6 +101,7 @@ fn save_sources(conn: &Rc<RefCell<Connection>>, device_id: &str, sources: Vec<Se
             // `MTP-30`: these tests drive `sync_now` manually and must not
             // race an automatic start on connect.
             sync_automatically: false,
+            prepare_before_sync: true,
         },
     )
     .unwrap();

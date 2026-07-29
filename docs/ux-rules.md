@@ -731,6 +731,25 @@ human. Rationale for changes lives in the git history.
   so a missing connection always wins over policy. Only the planned state
   changes the primary sync button to "Download & sync"; every other state,
   including offered, leaves it as a plain "Sync now".
+- **MTP-43** [active] [gtk] — The device page surfaces `MTP-42`'s preparation
+  phase without re-deciding it. A preparation overview ("2 files to
+  download · 312 MiB", with episode titles) exists only for the `Offered` and
+  `Planned` phases — for every other phase, including `Absent`, there is no
+  box, no disabled row, nothing. The device's own "Download missing files
+  before syncing" switch persists next to `sync_automatically`/
+  `remove_deleted`, defaults on, and is never mutated by connectivity or
+  metered state — only the stored value feeds `MTP-42`'s `prepare_switch_on`
+  fact; offline and metered are decided there, not by silently flipping this
+  switch. The primary button reads "Download & sync" exactly when
+  `primary_action` answers `DownloadAndSync`, otherwise "Sync now". While a
+  `Planned` preparation actually runs, progress reads two phases — "Step 1 of
+  2 · Downloading N of M · P%" during the download, then the existing
+  transfer progress as step 2 — and a run with no preparation phase stays the
+  single-phase reading it always was. Cancelling a preparation in progress
+  stops issuing further downloads but never deletes or rolls back an episode
+  that already finished downloading. `SkippedOffline` reads "N episodes
+  skipped · not downloaded" and leaves every skipped episode's
+  `wanted_on_device` flag set for the next attempt.
 - **MTP-44** [active] [gtk] — Device-sync preparation (7f, E9) downloads a
   `wanted_on_device` episode (`MTP-40`) by giving the existing podcast
   download manager a priority lane, never a second download path: a

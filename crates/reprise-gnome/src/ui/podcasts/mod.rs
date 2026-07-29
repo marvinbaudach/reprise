@@ -23,7 +23,13 @@ pub(crate) mod source_image;
 mod youtube_channel_detail;
 
 pub(in crate::ui) use podcasts_view::{PodcastsCallbacks, PodcastsView};
-pub(in crate::ui) use podcasts_worker::PodcastsRuntime;
+// `MTP-43`: the device-sync preparation phase (E9) reuses `MTP-44`'s
+// priority lane instead of a second download path — it needs these to build
+// its own `PodcastsRequest` the same way `podcasts_view.rs` does.
+pub(in crate::ui) use podcasts_worker::{
+    podcasts_response_channel, PodcastsOperation, PodcastsPriority, PodcastsRequest,
+    PodcastsRuntime, PodcastsWorkerResult,
+};
 
 pub(in crate::ui) fn install(
     conn: std::rc::Rc<std::cell::RefCell<rusqlite::Connection>>,

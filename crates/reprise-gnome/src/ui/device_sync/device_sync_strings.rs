@@ -269,6 +269,61 @@ pub fn relative_time(
     }
 }
 
+/// `MTP-43`'s preparation overview: "2 files to download · 312 MiB" for
+/// `Offered`/`Planned`, "2 episodes skipped · not downloaded" for
+/// `SkippedOffline`. `None` for every other phase — including `Absent` and
+/// `NothingMissing` — so the caller knows the surface must not exist at all,
+/// not render an empty box (`MTP-42`).
+pub fn preparation_overview(phase: &reprise_core::device_sync::PreparationPhase) -> Option<String> {
+    use reprise_core::device_sync::PreparationPhase;
+    match phase {
+        PreparationPhase::Absent | PreparationPhase::NothingMissing => None,
+        PreparationPhase::SkippedOffline { files } => Some(preparation_skipped_offline(*files)),
+        PreparationPhase::Offered { files, bytes } | PreparationPhase::Planned { files, bytes } => {
+            Some(preparation_files_to_download(*files, *bytes))
+        }
+    }
+}
+
+/// "2 files to download · 312 MiB". `bytes == 0` means no source in this
+/// codebase yet persists an expected size for that episode (see
+/// `device_sync_compact::gather_missing_files`'s doc comment) — the count
+/// still shows, the byte figure is simply omitted rather than claiming
+/// "0 B".
+fn preparation_files_to_download(files: usize, bytes: u64) -> String {
+    let noun = if files == 1 { "file" } else { "files" };
+    if bytes == 0 {
+        format!("{files} {noun} to download")
+    } else {
+        format!("{files} {noun} to download · {}", file_size(bytes))
+    }
+}
+
+/// "2 episodes skipped · not downloaded" (`NET-3`/`MTP-42`'s
+/// `SkippedOffline`) — every one of these episodes stays `wanted_on_device`
+/// for the next attempt.
+fn preparation_skipped_offline(files: usize) -> String {
+    let noun = if files == 1 { "episode" } else { "episodes" };
+    format!("{files} {noun} skipped · not downloaded")
+}
+
+/// "Step 1 of 2 · Downloading 1 of 2 · 62%" — the preparation download's own
+/// progress line. Always step 1: a preparation phase only ever precedes the
+/// transfer, never follows it.
+pub fn preparation_step_progress(current_index: usize, total: usize, percent: u64) -> String {
+    format!(
+        "Step 1 of 2 · Downloading {} of {total} · {percent}%",
+        current_index + 1
+    )
+}
+
+/// Prefixes an existing transfer-progress title with "Step 2 of 2" — used
+/// only when this run's transfer phase was actually preceded by a
+/// preparation download, never for a plain single-phase sync.
+pub fn two_phase_title(title: &str) -> String {
+    format!("Step 2 of 2 · {title}")
+}
+
 fn format_bytes(bytes: u64) -> String {
     const KIB: f64 = 1_024.0;
     const MIB: f64 = KIB * 1_024.0;
@@ -289,6 +344,74 @@ fn format_bytes(bytes: u64) -> String {
 mod tests {
     use super::*;
     use chrono::TimeZone;
+    use reprise_core::device_sync::PreparationPhase;
+
+    #[test]
+    fn mtp_43_preparation_overview_is_absent_for_absent_and_nothing_missing() {
+        assert_eq!(preparation_overview(&PreparationPhase::Absent), None);
+        assert_eq!(
+            preparation_overview(&PreparationPhase::NothingMissing),
+            None
+        );
+    }
+
+    #[test]
+    fn mtp_43_preparation_overview_names_files_and_size_when_offered_or_planned() {
+        assert_eq!(
+            preparation_overview(&PreparationPhase::Offered {
+                files: 2,
+                bytes: 312 * 1024 * 1024
+            }),
+            Some("2 files to download · 312.0 MiB".to_string())
+        );
+        assert_eq!(
+            preparation_overview(&PreparationPhase::Planned {
+                files: 1,
+                bytes: 1024
+            }),
+            Some("1 file to download · 1.0 KiB".to_string())
+        );
+    }
+
+    #[test]
+    fn mtp_43_preparation_overview_omits_a_bogus_zero_byte_figure() {
+        assert_eq!(
+            preparation_overview(&PreparationPhase::Planned { files: 3, bytes: 0 }),
+            Some("3 files to download".to_string())
+        );
+    }
+
+    #[test]
+    fn mtp_43_preparation_overview_reads_skipped_episodes_while_offline() {
+        assert_eq!(
+            preparation_overview(&PreparationPhase::SkippedOffline { files: 2 }),
+            Some("2 episodes skipped · not downloaded".to_string())
+        );
+        assert_eq!(
+            preparation_overview(&PreparationPhase::SkippedOffline { files: 1 }),
+            Some("1 episode skipped · not downloaded".to_string())
+        );
+    }
+
+    #[test]
+    fn mtp_43_preparation_step_progress_is_always_step_one_of_two() {
+        assert_eq!(
+            preparation_step_progress(0, 2, 62),
+            "Step 1 of 2 · Downloading 1 of 2 · 62%"
+        );
+        assert_eq!(
+            preparation_step_progress(1, 2, 5),
+            "Step 1 of 2 · Downloading 2 of 2 · 5%"
+        );
+    }
+
+    #[test]
+    fn mtp_43_two_phase_title_prefixes_the_transfer_title_as_step_two() {
+        assert_eq!(
+            two_phase_title("Copying · 3 of 10"),
+            "Step 2 of 2 · Copying · 3 of 10"
+        );
+    }
 
     #[test]
     fn byte_formatting_uses_compact_binary_units() {

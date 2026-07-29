@@ -18,6 +18,7 @@ fn podcast_settings(device_id: &str, remove_deleted: bool) -> DeviceSettings {
         ratings_back: false,
         remove_deleted,
         sync_automatically: false,
+        prepare_before_sync: true,
     }
 }
 

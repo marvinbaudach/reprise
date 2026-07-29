@@ -188,6 +188,29 @@ pub(crate) fn migrate_v44(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.commit()
 }
 
+// Design 7f (`MTP-43`): "Download missing files before syncing". Per-device,
+// beside `sync_automatically`/`remove_deleted` — the stored default is
+// always `true`; `preparation::plan_preparation` is the only place that
+// decides offline/metered overrides, never this column.
+const ADD_PREPARE_BEFORE_SYNC: &str = r#"
+ALTER TABLE device_settings
+  ADD COLUMN prepare_before_sync INTEGER NOT NULL DEFAULT 1;
+"#;
+
+pub(crate) fn migrate_v46(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    let has_prepare_before_sync = has_column(conn, "device_settings", "prepare_before_sync")?;
+    if version >= 46 && has_prepare_before_sync {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    if !has_prepare_before_sync {
+        transaction.execute_batch(ADD_PREPARE_BEFORE_SYNC)?;
+    }
+    transaction.pragma_update(None, "user_version", version.max(46))?;
+    transaction.commit()
+}
+
 fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, rusqlite::Error> {
     conn.query_row(
         "SELECT EXISTS(

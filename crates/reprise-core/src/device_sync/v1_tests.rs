@@ -34,6 +34,7 @@ fn settings_default_then_round_trip_selection_and_supported_bitrate() {
             ratings_back: false,
             remove_deleted: true,
             sync_automatically: true,
+            prepare_before_sync: true,
         }
     );
 
@@ -55,6 +56,37 @@ fn settings_default_then_round_trip_selection_and_supported_bitrate() {
     assert_eq!(loaded.opus_bitrate, 256);
     assert!(!loaded.remove_deleted);
     assert!(!loaded.ratings_back, "ratings-back remains disabled in V1");
+}
+
+/// `MTP-43`'s "Download missing files before syncing" switch defaults on and
+/// round-trips independently of every other setting — a plain persistence
+/// proof, not the behavioral proof that turning it off actually withholds a
+/// preparation download (see `device_sync_preparation_tests` in
+/// `reprise-gnome` for that).
+#[test]
+fn prepare_before_sync_defaults_true_and_round_trips() {
+    let conn = migrated();
+    let defaults = load_or_create_settings(&conn, "serial-3", "Phone").unwrap();
+    assert!(defaults.prepare_before_sync);
+
+    let changed = DeviceSettings {
+        prepare_before_sync: false,
+        ..defaults
+    };
+    save_settings(&conn, &changed).unwrap();
+    let loaded = load_or_create_settings(&conn, "serial-3", "ignored").unwrap();
+    assert!(!loaded.prepare_before_sync);
+
+    let restored = DeviceSettings {
+        prepare_before_sync: true,
+        ..loaded
+    };
+    save_settings(&conn, &restored).unwrap();
+    assert!(
+        load_or_create_settings(&conn, "serial-3", "ignored")
+            .unwrap()
+            .prepare_before_sync
+    );
 }
 
 #[test]
