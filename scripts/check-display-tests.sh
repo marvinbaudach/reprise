@@ -111,6 +111,19 @@ run_display_test() {
   runtime_dir=$(mktemp -d)
   chmod 700 "$runtime_dir"
   marker_dir=$(mktemp -d)
+  # Own the cleanup rather than merely reaching it. The `trap - EXIT` above
+  # drops the PARENT's cleanup so a worker never deletes its siblings' logs;
+  # it must not leave the worker with no cleanup at all. Without this, the
+  # tidy-up below runs only on the normal path, so every interrupted or
+  # timed-out gate run abandons five directories per test — about 955 for a
+  # full run. That accumulated to 8450 directories and 15G in a 16G tmpfs,
+  # i.e. in RAM, which is the same trap AGENTS.md already warns about for
+  # stray build directories.
+  # INT/TERM/HUP as well as EXIT: a killed or timed-out run is precisely the
+  # case that leaked, and bash does not run an EXIT trap for an untrapped
+  # fatal signal.
+  trap 'cleanup_worker_roots "$data_home" "$cache_home" "$config_home" \
+    "$runtime_dir" "$marker_dir"' EXIT INT TERM HUP
   display_test_passed="$marker_dir/passed"
   # xvfb-run -a can race while parallel workers probe the same free display.
   # Assign a stable, unique server number to every worker instead.
