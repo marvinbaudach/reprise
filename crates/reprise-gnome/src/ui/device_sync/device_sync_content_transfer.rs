@@ -102,13 +102,26 @@ pub(super) async fn run_content_phase(
     }
     let mut failures = Vec::new();
     let mut copied = Vec::new();
+    let mut deviations: Vec<ContentDeviation> = Vec::new();
     let copy_total = work.podcasts.to_copy.len() + work.youtube.to_copy.len();
     let podcasts = work.podcasts.clone();
     let youtube = work.youtube.clone();
     let podcasts_path = work.podcasts_path.clone();
     let youtube_path = work.youtube_path.clone();
 
-    let completed = run_content_transfers(
+    // Continue the mirror's progress rather than restarting it. The plan total
+    // already includes the content bytes, and the mirror has just finished its
+    // own share, so starting the content phase at zero would send the bar back
+    // to 0% after it reached the end of step one.
+    let content_bytes: u64 = podcasts
+        .to_copy
+        .iter()
+        .chain(youtube.to_copy.iter())
+        .map(|episode| episode.size_bytes)
+        .sum();
+    let mirror_bytes = transfer_bytes(work).saturating_sub(content_bytes);
+
+    let mut completed = run_content_transfers(
         runtime,
         work,
         &podcasts_path,
@@ -116,48 +129,67 @@ pub(super) async fn run_content_phase(
         &podcasts.to_copy,
         0,
         copy_total,
-        0,
+        mirror_bytes,
         &mut failures,
         &mut copied,
+        &mut deviations,
     )
     .await;
-    run_content_transfers(
-        runtime,
-        work,
-        &youtube_path,
-        work.youtube_storage,
-        &youtube.to_copy,
-        podcasts.to_copy.len(),
-        copy_total,
-        completed,
-        &mut failures,
-        &mut copied,
-    )
-    .await;
+    // Every later phase is gated on the ones before it having succeeded. This
+    // is not tidiness: with cap eviction (`MTP-39`/`MTP-25`) a removal is the
+    // counterpart of a copy, so running removals after a failed copy can
+    // delete the resident episode whose replacement never arrived. The
+    // pre-machine implementation gated each step the same way, and losing that
+    // guard while re-applying this phase on top of the reducer would have been
+    // a data-loss regression on the device.
+    if may_continue(work, &failures) {
+        completed = run_content_transfers(
+            runtime,
+            work,
+            &youtube_path,
+            work.youtube_storage,
+            &youtube.to_copy,
+            podcasts.to_copy.len(),
+            copy_total,
+            completed,
+            &mut failures,
+            &mut copied,
+            &mut deviations,
+        )
+        .await;
+    }
+    let _ = completed;
 
     let remove_total = podcasts.to_remove.len() + youtube.to_remove.len();
-    let mut removed = run_content_removals(
-        runtime,
-        work,
-        &podcasts_path,
-        work.podcasts_storage,
-        &podcasts.to_remove,
-        0,
-        remove_total,
-        &mut failures,
-    )
-    .await;
-    removed += run_content_removals(
-        runtime,
-        work,
-        &youtube_path,
-        work.youtube_storage,
-        &youtube.to_remove,
-        podcasts.to_remove.len(),
-        remove_total,
-        &mut failures,
-    )
-    .await;
+    let mut removed = 0;
+    if may_continue(work, &failures) {
+        removed += run_content_removals(
+            runtime,
+            work,
+            &podcasts_path,
+            work.podcasts_storage,
+            &podcasts.to_remove,
+            0,
+            remove_total,
+            &mut failures,
+            &mut deviations,
+        )
+        .await;
+    }
+    if may_continue(work, &failures) {
+        removed += run_content_removals(
+            runtime,
+            work,
+            &youtube_path,
+            work.youtube_storage,
+            &youtube.to_remove,
+            podcasts.to_remove.len(),
+            remove_total,
+            &mut failures,
+            &mut deviations,
+        )
+        .await;
+    }
 
     // The log counts what actually moved, so the content targets report
     // themselves the way the mirror's effects do (`MTP-20`) — each copy with
@@ -168,7 +200,25 @@ pub(super) async fn run_content_phase(
     for _ in 0..removed {
         work.log.deleted();
     }
+    // A content failure has to reach the log like a mirror failure does,
+    // otherwise the run closes claiming nothing went wrong (`MTP-20`).
+    for deviation in deviations {
+        work.log.note(
+            runtime,
+            deviation.kind,
+            deviation.track_id,
+            &deviation.device_path,
+            deviation.detail,
+        );
+    }
 
+    // A cancelled run must not close as a completed one: `finish_sync` writes
+    // the log entry and clears reconnect resumability from this outcome, so
+    // reporting Completed here would both misrecord the run and lose the
+    // remaining work.
+    if work.cancelled.load(Ordering::SeqCst) {
+        return SyncOutcome::Cancelled;
+    }
     if failures.is_empty() {
         outcome
     } else {
@@ -179,12 +229,27 @@ pub(super) async fn run_content_phase(
     }
 }
 
+/// Whether the next content step may run: nothing cancelled, nothing failed.
+fn may_continue(work: &PlannedWork, failures: &[i64]) -> bool {
+    !work.cancelled.load(Ordering::SeqCst) && failures.is_empty()
+}
+
+/// One line the run log should carry for a content file that deviated
+/// (`MTP-20`). Collected while the borrow of `PlannedWork` is shared and
+/// written once the phase owns it mutably again.
+struct ContentDeviation {
+    kind: DeviationKind,
+    track_id: Option<i64>,
+    device_path: String,
+    detail: String,
+}
+
 /// Deletes every path in `to_remove` from `target_path` on `storage_id`.
 /// `offset`/`total` let the caller report progress across both content targets
 /// as one combined "N of M" count rather than resetting per target. Returns
 /// how many files actually left the device, for the run log (`MTP-20`).
 #[allow(clippy::too_many_arguments)]
-pub(super) async fn run_content_removals(
+async fn run_content_removals(
     runtime: &Rc<DeviceSyncRuntime>,
     work: &PlannedWork,
     target_path: &str,
@@ -193,6 +258,7 @@ pub(super) async fn run_content_removals(
     offset: usize,
     total: usize,
     failures: &mut Vec<i64>,
+    deviations: &mut Vec<ContentDeviation>,
 ) -> usize {
     let bytes_total = transfer_bytes(work);
     let mut removed = 0_usize;
@@ -222,9 +288,19 @@ pub(super) async fn run_content_removals(
             )
             .await
         {
-            Ok(_) => removed = removed.saturating_add(1),
+            // `Ok(false)` means the file was already gone, which is the
+            // desired state but not a deletion this run performed — counting
+            // it would inflate the run log's removal tally (`MTP-20`).
+            Ok(true) => removed = removed.saturating_add(1),
+            Ok(false) => {}
             Err(error) => {
                 tracing::warn!(device_path = path, target_path, %error, "could not remove device content file");
+                deviations.push(ContentDeviation {
+                    kind: DeviationKind::Failed,
+                    track_id: None,
+                    device_path: path.clone(),
+                    detail: format!("remove failed: {error}"),
+                });
                 failures.push(-1);
             }
         }
@@ -238,7 +314,7 @@ pub(super) async fn run_content_removals(
 /// `completed_bytes` total so a caller chaining this across both content
 /// targets keeps one continuous progress figure.
 #[allow(clippy::too_many_arguments)]
-pub(super) async fn run_content_transfers(
+async fn run_content_transfers(
     runtime: &Rc<DeviceSyncRuntime>,
     work: &PlannedWork,
     target_path: &str,
@@ -251,6 +327,7 @@ pub(super) async fn run_content_transfers(
     // `copied` collects the byte size of each file that actually landed, so
     // the run log counts what moved rather than what was planned (`MTP-20`).
     copied: &mut Vec<u64>,
+    deviations: &mut Vec<ContentDeviation>,
 ) -> u64 {
     let bytes_total = transfer_bytes(work);
     let mut completed_bytes = base_bytes;
@@ -333,6 +410,12 @@ pub(super) async fn run_content_transfers(
                     "device content transfer failed"
                 );
                 if !work.cancelled.load(Ordering::SeqCst) {
+                    deviations.push(ContentDeviation {
+                        kind: DeviationKind::Failed,
+                        track_id: None,
+                        device_path: episode.device_path.clone(),
+                        detail: format!("copy failed: {error}"),
+                    });
                     failures.push(episode.episode_id.saturating_neg());
                 }
             }

@@ -1872,7 +1872,8 @@ property is set and yet nothing happens.
   connectivity state. This projection is a wiring foundation, not a finished
   display: automatically running pending actions when the network returns, and
   the display in the podcast and YouTube rows, follow in a later commit
-  (`NET-3c`, F2).
+  (`NET-3c`, F2) — an identifier reserved for that follow-up, deliberately not
+  yet written as a rule, so nothing here claims a contract that does not exist.
 - **NET-3b** [active] [gtk] — The radio exception: stations always stay listed.
   The context menu shows "Play" (`radio_context_menu::play_menu_label`) when
   `Connectivity::Online` holds or the station is already playing; under

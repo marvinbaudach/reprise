@@ -442,6 +442,7 @@ mod tests {
             },
             current_track: "Sun//Eater — Lorna Shore".into(),
             last_synced_at: Some(1_721_234_890),
+            categories: Vec::new(),
         });
 
         assert_eq!(dto.profile, "original");
