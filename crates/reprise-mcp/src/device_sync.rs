@@ -390,11 +390,19 @@ mod tests {
     /// of a decode failure deep inside zvariant.
     #[test]
     fn a_foreign_protocol_version_is_refused_with_an_actionable_message() {
-        let PlaybackError::Bus(message) = version_mismatch(ProtocolVersion { major: 2, minor: 0 })
-        else {
+        // One major above whatever this build speaks. Hardcoding a number
+        // makes the test describe a mismatch that stops being one the next
+        // time the protocol's major moves — and `version_mismatch` only
+        // formats, so nothing would fail; the message would just quietly
+        // start saying that 2.0 is incompatible with major 2.
+        let served = ProtocolVersion {
+            major: PROTOCOL_VERSION.major + 1,
+            minor: 0,
+        };
+        let PlaybackError::Bus(message) = version_mismatch(served) else {
             panic!("a version mismatch is a bus-level refusal");
         };
-        assert!(message.contains("speaks device-sync protocol 2.0"));
+        assert!(message.contains(&format!("speaks device-sync protocol {served}")));
         assert!(message.contains(&format!("major version {}", PROTOCOL_VERSION.major)));
         assert!(message.contains("restart the app"));
     }

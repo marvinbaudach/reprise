@@ -63,16 +63,18 @@ impl RuntimeMirror {
             // does; what differs is what the surface says about it, and that
             // is the surface's business, not the mirror's.
             ClientEvent::Disconnected | ClientEvent::Refused(_) => self.clear(),
-            ClientEvent::PlaybackChanged { sequence, snapshot } => {
-                self.apply_playback(*sequence, snapshot)
-            }
-            ClientEvent::QueueChanged { sequence, snapshot } => {
-                self.apply_queue(*sequence, snapshot)
-            }
-            ClientEvent::DeviceRunChanged { sequence, snapshot } => {
-                self.apply_device_run(*sequence, snapshot)
-            }
-            ClientEvent::JobChanged { sequence, snapshot } => self.apply_job(*sequence, snapshot),
+            ClientEvent::PlaybackChanged {
+                sequence, snapshot, ..
+            } => self.apply_playback(*sequence, snapshot),
+            ClientEvent::QueueChanged {
+                sequence, snapshot, ..
+            } => self.apply_queue(*sequence, snapshot),
+            ClientEvent::DeviceRunChanged {
+                sequence, snapshot, ..
+            } => self.apply_device_run(*sequence, snapshot),
+            ClientEvent::JobChanged {
+                sequence, snapshot, ..
+            } => self.apply_job(*sequence, snapshot),
             // A command's own failure carries no runtime state — the caller
             // that sent it already knows what it sent, and gets this event
             // directly to react to. There is nothing here for a mirror.

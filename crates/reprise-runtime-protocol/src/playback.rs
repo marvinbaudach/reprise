@@ -27,6 +27,35 @@ pub struct PlaybackSnapshot {
     pub shuffle: bool,
     /// `off`, `all`, `one`.
     pub repeat: String,
+    /// Why the last automatic start did not happen: `not_playable` when
+    /// nothing could be resolved for the id, `backend` when the pipeline
+    /// refused it or gave up mid-track. Absent once anything plays again.
+    ///
+    /// A short kind, never a path and never the backend's own message — the
+    /// same allow-list [`crate::jobs::JobSnapshot::error_kind`] follows, for
+    /// the same reason (§9.7).
+    ///
+    /// This is state, not a log entry: "playback is stopped *because* a track
+    /// failed" and "playback is stopped because the queue ran out" are
+    /// different situations that are otherwise indistinguishable, and §9.5
+    /// only lets a facet say what it looks like now — never that an operation
+    /// happened.
+    pub failure_kind: Option<String>,
+    /// The library track the failure was about. Absent when what failed had
+    /// no library id, and absent when `failure_kind` is.
+    pub failure_track_id: Option<i64>,
+    /// Which client started what is loaded, as the id that client was handed
+    /// at connect. Absent when nothing is loaded.
+    ///
+    /// A surface needs this to answer "is this mine?" — the question the quit
+    /// policy turns on: a window that closes stops the playback it started
+    /// and leaves alone the playback an agent started. Comparing titles or
+    /// track ids cannot answer it, because two clients may well have asked
+    /// for the same track.
+    ///
+    /// An id is not reused after a disconnect, so a reconnected client
+    /// correctly stops recognising playback its previous session began.
+    pub initiated_by: Option<u64>,
 }
 
 /// Something to play that is not a library track: a radio stream, a podcast
