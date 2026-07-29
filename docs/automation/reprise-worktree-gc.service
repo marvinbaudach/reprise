@@ -1,0 +1,11 @@
+[Unit]
+Description=Safely collect finished Reprise worktrees
+Documentation=file:///home/marvin/Projects/reprise/docs/automation/worktree-cleanup.md
+ConditionPathIsDirectory=/home/marvin/Projects/reprise/.git
+
+[Service]
+Type=oneshot
+Environment=REPRISE_GC_STATE_ROOT=%h/.local/state/reprise-worktree-gc
+ExecStart=/home/marvin/Projects/reprise/scripts/reprise-worktree-gc.sh sweep --scope /home/marvin/Projects/reprise --apply --target-max-age-days 7 --target-min-kib 1048576
+Nice=10
+IOSchedulingClass=idle

@@ -59,6 +59,11 @@ require_executable scripts/tests/msrv.sh
 require_executable scripts/tests/github-flow.sh
 require_executable scripts/tests/weekly-portfolio-sync.sh
 require_executable scripts/weekly-portfolio-sync.sh
+require_executable scripts/tests/worktree-gc.sh
+require_executable scripts/tests/worktree-gc-schedule.sh
+require_executable scripts/reprise-worktree-gc.sh
+require_executable scripts/close-worktree.sh
+require_executable scripts/install-worktree-gc-timer.sh
 require_executable .githooks/pre-push
 
 require_pattern 'merge-base --is-ancestor' scripts/check-merge-readiness.sh
@@ -126,6 +131,8 @@ scripts/tests/accessibility-semantics.sh
 scripts/tests/input-parity.sh
 scripts/tests/github-flow.sh
 scripts/tests/weekly-portfolio-sync.sh
+scripts/tests/worktree-gc.sh
+scripts/tests/worktree-gc-schedule.sh
 scripts/check-architecture.sh
 
 echo "QA linter policy checks passed"
