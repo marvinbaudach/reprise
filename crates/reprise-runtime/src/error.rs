@@ -79,6 +79,12 @@ pub enum Rejected {
     NoRunToCancel,
     /// Transport was asked to play with nothing loaded and nothing queued.
     NothingToPlay,
+    /// An equalizer that is not exactly ten bands. Rejected rather than
+    /// padded or truncated: the bands are fixed centre frequencies, so a
+    /// list of a different length names frequencies nobody agreed on.
+    UnknownEqualizerShape,
+    /// A ReplayGain mode outside `off`, `track`, `album`.
+    UnknownReplayGainMode,
     /// A repeat mode outside `off`, `all`, `one`.
     UnknownRepeatMode,
     /// A queue position that is not there at all — past the end of the
@@ -161,6 +167,8 @@ impl RuntimeError {
             Self::Rejected(Rejected::DeviceAlreadyRunning) => "device_already_running",
             Self::Rejected(Rejected::NoRunToCancel) => "no_run_to_cancel",
             Self::Rejected(Rejected::NothingToPlay) => "nothing_to_play",
+            Self::Rejected(Rejected::UnknownEqualizerShape) => "unknown_equalizer_shape",
+            Self::Rejected(Rejected::UnknownReplayGainMode) => "unknown_replay_gain_mode",
             Self::Rejected(Rejected::UnknownRepeatMode) => "unknown_repeat_mode",
             Self::Rejected(Rejected::NoSuchQueueEntry) => "no_such_queue_entry",
             Self::Rejected(Rejected::StaleQueue) => "stale_queue",

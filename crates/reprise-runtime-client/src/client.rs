@@ -500,6 +500,7 @@ impl Worker {
             // positional values is how the two sides drift apart, because
             // naming five of a struct's seven fields compiles perfectly.
             Body::External(media) => proxy.call::<_, _, CommandOutcome>(method, &(media,)),
+            Body::Effects(effects) => proxy.call::<_, _, CommandOutcome>(method, &(effects,)),
         };
         outcome.map_err(|error| ClientError::from_bus(&error))
     }
@@ -639,6 +640,14 @@ fn decode(message: &zbus::Message) -> Option<Delta> {
         "QueueChanged" => {
             let (sequence, initiator, snapshot) = body.deserialize().ok()?;
             Some(Delta::Event(Box::new(ClientEvent::QueueChanged {
+                sequence,
+                initiator: initiator_of(initiator),
+                snapshot,
+            })))
+        }
+        "EffectsChanged" => {
+            let (sequence, initiator, snapshot) = body.deserialize().ok()?;
+            Some(Delta::Event(Box::new(ClientEvent::EffectsChanged {
                 sequence,
                 initiator: initiator_of(initiator),
                 snapshot,

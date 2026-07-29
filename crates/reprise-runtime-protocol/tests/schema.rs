@@ -14,6 +14,7 @@ use reprise_runtime_protocol::device_sync::{
     DeviceCategorySnapshot, DeviceChangeCounts, DeviceControls, DeviceProgress, DeviceSnapshot,
     DeviceSourceSnapshot, DeviceStorageComposition, DeviceStorageSnapshot,
 };
+use reprise_runtime_protocol::effects::EffectsSnapshot;
 use reprise_runtime_protocol::jobs::{BatchProgress, JobSnapshot};
 use reprise_runtime_protocol::playback::PlaybackSnapshot;
 use reprise_runtime_protocol::queue::QueueSnapshot;
@@ -557,6 +558,12 @@ fn the_whole_runtime_snapshot_survives_a_dbus_round_trip() {
             live: false,
             stopped_reason: None,
         },
+        effects: EffectsSnapshot {
+            equalizer_enabled: true,
+            equalizer_bands: vec![3.0, 2.0, 1.0, 0.0, -1.0, -2.0, 0.0, 1.0, 2.0, 3.0],
+            replay_gain: "track".into(),
+            degraded: false,
+        },
         queue: QueueSnapshot {
             revision: 9,
             current_track_id: Some(42),
@@ -591,5 +598,27 @@ fn the_whole_runtime_snapshot_survives_a_dbus_round_trip() {
 #[test]
 fn the_protocol_version_is_pinned() {
     assert_eq!(PROTOCOL_VERSION.major, 4);
-    assert_eq!(PROTOCOL_VERSION.minor, 0);
+    assert_eq!(PROTOCOL_VERSION.minor, 1);
+}
+
+/// The effects facet, pinned like the others: a client decodes by name, so a
+/// rename is a surface reading the wrong column rather than a compile error.
+#[test]
+fn the_effects_wire_field_names_are_the_checked_in_contract() {
+    let effects = EffectsSnapshot {
+        equalizer_enabled: true,
+        equalizer_bands: vec![3.0, 2.0, 1.0, 0.0, -1.0, -2.0, 0.0, 1.0, 2.0, 3.0],
+        replay_gain: "album".into(),
+        degraded: true,
+    };
+    assert_eq!(round_trip(&effects), effects);
+    assert_eq!(
+        field_names(&effects),
+        [
+            "degraded",
+            "equalizer_bands",
+            "equalizer_enabled",
+            "replay_gain",
+        ]
+    );
 }

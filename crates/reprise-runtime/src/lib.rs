@@ -52,6 +52,7 @@ pub mod lifecycle;
 pub mod ports;
 
 mod devices;
+mod effects;
 mod jobs;
 mod runtime;
 mod transport;

@@ -49,6 +49,13 @@ pub struct FakePlayback {
     /// test is actually about under a stream of housekeeping.
     pre_feeds: Rc<RefCell<Vec<Option<String>>>>,
     transitions: Rc<RefCell<Vec<(TrackTransition, u8)>>>,
+    /// Every `set_audio_effects` argument, in order. Recorded rather than
+    /// discarded: a fake that silently accepts an effect makes every guard
+    /// over it pass without testing anything.
+    effects: Rc<RefCell<Vec<AudioEffects>>>,
+    /// When set, `set_audio_effects` fails — a pipeline with no equalizer
+    /// element, which is the only reason the fallback path exists.
+    refuse_effects: Rc<RefCell<bool>>,
 }
 
 impl Default for FakePlayback {
@@ -67,6 +74,8 @@ impl FakePlayback {
             refuse: Rc::new(RefCell::new(false)),
             pre_feeds: Rc::new(RefCell::new(Vec::new())),
             transitions: Rc::new(RefCell::new(Vec::new())),
+            effects: Rc::new(RefCell::new(Vec::new())),
+            refuse_effects: Rc::new(RefCell::new(false)),
         }
     }
 
@@ -81,6 +90,8 @@ impl FakePlayback {
             pre_feeds: Rc::clone(&self.pre_feeds),
             transitions: Rc::clone(&self.transitions),
             generation: Rc::clone(&self.generation),
+            effects: Rc::clone(&self.effects),
+            refuse_effects: Rc::clone(&self.refuse_effects),
         }
     }
 }
@@ -94,6 +105,8 @@ pub struct FakePlaybackHandle {
     pre_feeds: Rc<RefCell<Vec<Option<String>>>>,
     transitions: Rc<RefCell<Vec<(TrackTransition, u8)>>>,
     generation: Rc<RefCell<u64>>,
+    effects: Rc<RefCell<Vec<AudioEffects>>>,
+    refuse_effects: Rc<RefCell<bool>>,
 }
 
 impl FakePlaybackHandle {
@@ -145,6 +158,18 @@ impl FakePlaybackHandle {
     pub fn refuse_playback(&self, refuse: bool) {
         *self.refuse.borrow_mut() = refuse;
     }
+
+    /// Makes every subsequent `set_audio_effects` fail — a pipeline built
+    /// without an equalizer element.
+    pub fn refuse_effects(&self, refuse: bool) {
+        *self.refuse_effects.borrow_mut() = refuse;
+    }
+
+    /// Every effect set the backend accepted, in order.
+    #[must_use]
+    pub fn accepted_effects(&self) -> Vec<AudioEffects> {
+        self.effects.borrow().clone()
+    }
 }
 
 impl PlaybackBackend for FakePlayback {
@@ -195,7 +220,11 @@ impl PlaybackBackend for FakePlayback {
             .push(BackendCall::SetVolume((volume * 1000.0).round() as u64));
     }
 
-    fn set_audio_effects(&self, _effects: AudioEffects) -> Result<(), PlaybackError> {
+    fn set_audio_effects(&self, effects: AudioEffects) -> Result<(), PlaybackError> {
+        if *self.refuse_effects.borrow() {
+            return Err(PlaybackError::Backend("no equalizer element".into()));
+        }
+        self.effects.borrow_mut().push(effects);
         Ok(())
     }
 

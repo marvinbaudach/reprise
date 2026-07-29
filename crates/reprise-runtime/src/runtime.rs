@@ -6,6 +6,7 @@ use reprise_core::library::settings::{self, TrackTransition};
 use reprise_core::playback::StreamEvent;
 use reprise_runtime_protocol::command::CommandOutcome;
 use reprise_runtime_protocol::device_run::DeviceRunSnapshot;
+use reprise_runtime_protocol::effects::EffectsRequest;
 use reprise_runtime_protocol::jobs::JobCommand;
 use reprise_runtime_protocol::playback::{ExternalMedia, PlaybackCommand, PlaybackSnapshot};
 use reprise_runtime_protocol::queue::{QueueCommand, QueueSnapshot};
@@ -15,6 +16,7 @@ use rusqlite::Connection;
 
 use crate::client::{ClientHandshake, ClientId, Clients};
 use crate::devices::DeviceRuns;
+use crate::effects::Effects;
 use crate::error::{Capability, Refused, RuntimeError, Unavailable};
 use crate::event::{Delivery, RuntimeEvent, RuntimeSnapshot};
 use crate::jobs;
@@ -57,6 +59,9 @@ pub enum Command {
     },
     Job(JobCommand),
     Device(DeviceCommand),
+    /// Apply the equalizer and ReplayGain, and store them if the audio path
+    /// accepts them.
+    SetAudioEffects(EffectsRequest),
 }
 
 /// A device-run command. The device is addressed by its display name, the
@@ -76,7 +81,8 @@ impl Command {
             | Self::Queue(_)
             | Self::PlayTracks { .. }
             | Self::PlayExternal(_)
-            | Self::RestoreSession { .. } => Capability::PlaybackControl,
+            | Self::RestoreSession { .. }
+            | Self::SetAudioEffects(_) => Capability::PlaybackControl,
             Self::Job(_) => Capability::AiCreate,
             Self::Device(_) => Capability::DeviceSync,
         }
@@ -121,6 +127,7 @@ pub struct Runtime {
     clients: Clients,
     transport: Transport,
     devices: DeviceRuns,
+    effects: Effects,
     /// How many times the queue facet has observably changed.
     ///
     /// Kept here rather than in `Transport` on purpose: it has to count what
@@ -137,12 +144,18 @@ impl Runtime {
     /// Builds a runtime over an already-migrated database.
     #[must_use]
     pub fn new(conn: Connection, ports: Ports) -> Self {
+        // Before the struct, because the effects the backend accepts are part
+        // of what it is built with rather than something applied to it after
+        // the fact — and because a refusal has to be recorded, not discovered
+        // later by a surface wondering why the equalizer does nothing.
+        let effects = Effects::apply_stored(&conn, &*ports.playback);
         let runtime = Self {
             conn,
             ports,
             clients: Clients::new(),
             transport: Transport::new(),
             devices: DeviceRuns::new(),
+            effects,
             queue_revision: 0,
         };
         // The backend is told the transition mode once at startup, the way
@@ -195,6 +208,14 @@ impl Runtime {
         self.clients.disconnect(client)
     }
 
+    /// The writer, for tests that assert on what a command persisted.
+    /// Deliberately test-only: a client asks the runtime, and a second
+    /// writer to this database is the thing §9.1 exists to prevent.
+    #[cfg(test)]
+    pub(crate) fn connection(&self) -> &Connection {
+        &self.conn
+    }
+
     /// The complete runtime-bound state right now.
     pub fn snapshot(&self) -> Result<RuntimeSnapshot, RuntimeError> {
         Ok(RuntimeSnapshot {
@@ -202,6 +223,7 @@ impl Runtime {
             sequence: self.clients.sequence(),
             playback: self.transport.playback_snapshot(),
             queue: self.stamped_queue(self.transport.queue_snapshot()),
+            effects: self.effects.snapshot(),
             device_runs: self.devices.snapshots(),
             jobs: jobs::snapshots(&self.conn)?,
         })
@@ -317,6 +339,22 @@ impl Runtime {
                     self.ports.clock.now_monotonic_ms(),
                 );
                 self.publish_device_change(Some(client), device, before.as_ref());
+                result.map(|()| self.outcome(0))
+            }
+            Command::SetAudioEffects(requested) => {
+                let before = self.effects.snapshot();
+                let result = self
+                    .effects
+                    .set(&self.conn, &*self.ports.playback, requested);
+                // Published on failure too: `set` reports a refusal only
+                // after the backend has been asked, and a refusal that also
+                // cleared a previous `degraded` is a change a surface has to
+                // see.
+                let after = self.effects.snapshot();
+                if after != before {
+                    self.clients
+                        .publish(Some(client), RuntimeEvent::EffectsChanged(after));
+                }
                 result.map(|()| self.outcome(0))
             }
         };
