@@ -192,7 +192,12 @@ crates/reprise-mcp/tests/common/mod.rs:1
 ALLOWLIST
 )
 
-actual_allows=$(rg --no-heading --count '#!?\[allow\(dead_code\)\]' crates --glob '*.rs' | sort)
+# `LC_ALL=C`: the allowlist below is stored in byte order, and a
+# locale-aware `sort` collates '.' and '_' differently — so without this
+# the check passes or fails depending on the contributor's locale rather
+# than on the code. It flip-flopped exactly once, between two commits
+# whose authors' shells disagreed, before this line existed.
+actual_allows=$(rg --no-heading --count '#!?\[allow\(dead_code\)\]' crates --glob '*.rs' | LC_ALL=C sort)
 
 if [[ $actual_allows != "$allowlist" ]]; then
   echo "dead-code allowlist drifted:" >&2
