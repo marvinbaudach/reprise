@@ -3511,14 +3511,15 @@ plan.
   focus theft, no view is pulled to the foreground (P-1/P-4 in the
   live-refresh reading, like EXT-5). The user notices it by the
   changed state, never by an announcement.
-  <!-- REVIEW: rule proposal — open and deliberately not decided
-       along with the rest is whether closing the window ends
-       playback. The runtime lifecycle allows both: idle shutdown
-       (RUN-4) keeps the service alive as long as something is
-       playing, so music would keep running after closing until it
-       ends. That is a product decision, not an architectural
-       consequence, and needs its own rule before stage 3.3 migrates
-       the "Playback/Queue" slice. -->
+- **RUN-6** [planned] [gtk] — Closing the window stops the playback
+  that window started, and only that. Music does not outlive the
+  surface a user was listening through: leaving music playing behind
+  a closed window is a player the user cannot see, cannot pause, and
+  did not ask to keep. Playback an agent or a second surface started
+  is left running — it is not this window's to end, and a client that
+  stops it is stopping someone else's session. The runtime names the
+  originator of what is loaded, so this is a question the surface can
+  answer rather than guess.
 
 ---
 
