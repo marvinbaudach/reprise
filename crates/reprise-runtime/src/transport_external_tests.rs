@@ -521,3 +521,38 @@ fn playing_again_clears_the_reason_the_last_thing_stopped() {
         "the facet says what the situation is now, and nothing is stopped"
     );
 }
+
+/// A handoff reported when the runtime believed playback had ended.
+///
+/// The GStreamer backend cannot produce this — it clears its pre-fed slot on
+/// every stop and every restart, so a real handoff always follows a `start`
+/// that has already cleared the field. That promise lives in another crate,
+/// about a trait this side only sees the near end of. The invariant is
+/// written down in `transport.rs`, so it is held in `transport.rs`.
+#[test]
+fn a_handoff_after_a_finish_does_not_leave_the_finish_standing() {
+    let mut fixture = fixture();
+    fixture.play_tracks(vec![1], 0).unwrap();
+    fixture.player_event(&PlayerEvent::TrackFinished);
+    assert_eq!(
+        fixture
+            .transport
+            .playback_snapshot()
+            .stopped_reason
+            .as_deref(),
+        Some("finished"),
+        "the queue ran out, which is the state this starts from"
+    );
+    // Something to hand off to, so `load` is reached at all.
+    fixture.queue(&QueueCommand::AddNext(vec![2])).unwrap();
+
+    fixture.player_event(&PlayerEvent::AdvancedToNext);
+
+    let snapshot = fixture.transport.playback_snapshot();
+    assert_eq!(snapshot.track_id, Some(2), "the handoff was adopted");
+    assert_eq!(
+        snapshot.stopped_reason, None,
+        "a track is current again; a surface reading `finished` here would \
+         act on an ending that has been overtaken"
+    );
+}
