@@ -1,18 +1,20 @@
 use std::collections::HashSet;
 
+use reprise_core::connectivity::Connectivity;
 use reprise_core::device_sync::podcasts::{
     build_plan as build_podcast_plan, query_candidates_for_device,
     query_selection_candidates_for_device, PodcastDeviceFile, PodcastSyncSource,
 };
+use reprise_core::device_sync::preparation::MissingFile;
 use reprise_core::device_sync::settings::{
     load_device_files, load_device_playlists, resolve_selection_track_ids, save_settings,
 };
 use reprise_core::device_sync::targets::{load_target, save_target};
 use reprise_core::device_sync::{
-    load_mirror_playlist_snapshots, load_or_create_targets, project_storage, project_sync_page,
-    select_episodes, DeviceSelection, EpisodeSelectionCandidate, EpisodeSelectionResult,
-    EpisodeSelectionRule, SelectionSource, SyncPageInput, SyncTarget, SyncTargetKind,
-    TransferProfile,
+    load_mirror_playlist_snapshots, load_or_create_targets, plan_preparation, project_storage,
+    project_sync_page, select_episodes, DeviceSelection, EpisodeSelectionCandidate,
+    EpisodeSelectionResult, EpisodeSelectionRule, PreparationFacts, SelectionSource, SyncPageInput,
+    SyncTarget, SyncTargetKind, TransferProfile,
 };
 
 use super::*;
@@ -101,6 +103,22 @@ impl DeviceSyncRuntime {
     ) -> Result<(), String> {
         let mut settings = self.settings_for_update(device_id)?;
         settings.sync_automatically = sync_automatically;
+        self.update_settings(settings)
+    }
+
+    /// "Download missing files before syncing" (design 7f, `MTP-43`) —
+    /// likewise per-device, beside `remove_deleted`/`sync_automatically`.
+    /// Only ever stores what the user chose: offline and metered overrides
+    /// are `preparation::plan_preparation`'s job, never a mutation of this
+    /// stored value.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn set_prepare_before_sync(
+        self: &Rc<Self>,
+        device_id: &str,
+        prepare_before_sync: bool,
+    ) -> Result<(), String> {
+        let mut settings = self.settings_for_update(device_id)?;
+        settings.prepare_before_sync = prepare_before_sync;
         self.update_settings(settings)
     }
 
@@ -245,6 +263,8 @@ impl DeviceSyncRuntime {
             targets,
             youtube_selection_summary,
             podcast_selection_summary,
+            preparation_phase,
+            preparation_missing,
         ) = {
             let conn = self.conn.borrow();
             let files = load_device_files(&conn, device_id).map_err(|error| error.to_string())?;
@@ -335,6 +355,27 @@ impl DeviceSyncRuntime {
                 shows_selected: podcast_selected,
                 shows_total: podcast_total,
             };
+            // `MTP-42`/`MTP-43`: the same `waiting` set that already feeds
+            // `podcast_waiting`/`youtube_waiting` above is the preparation
+            // phase's missing-file list — gathered once here (one query per
+            // episode for its title) rather than re-deriving `waiting` a
+            // second time from scratch.
+            let preparation_missing = gather_missing_files(
+                &conn,
+                rss_selection
+                    .waiting
+                    .iter()
+                    .chain(youtube_selection.waiting.iter())
+                    .copied(),
+            );
+            let preparation_phase = plan_preparation(&PreparationFacts {
+                missing: preparation_missing.clone(),
+                connectivity: current_connectivity(),
+                metered: gio::NetworkMonitor::default().is_network_metered(),
+                online_sources_enabled: reprise_core::online_sources::is_enabled(&conn)
+                    .unwrap_or(true),
+                prepare_switch_on: settings.prepare_before_sync,
+            });
             (
                 projection,
                 podcast_plan,
@@ -345,6 +386,8 @@ impl DeviceSyncRuntime {
                 targets,
                 youtube_selection_summary,
                 podcast_selection_summary,
+                preparation_phase,
+                preparation_missing,
             )
         };
         projection.plan.transfer_bytes = projection
@@ -375,6 +418,8 @@ impl DeviceSyncRuntime {
             device.targets = targets;
             device.youtube_selection = youtube_selection_summary;
             device.podcast_selection = podcast_selection_summary;
+            device.preparation = preparation_phase;
+            device.preparation_missing = preparation_missing;
             device.page = projection.page;
             device.sync_phase = PlannedSyncPhase::Idle;
         }
@@ -478,4 +523,56 @@ fn plan_episode_selection(
         },
     );
     (rss_result, youtube_result)
+}
+
+/// `MTP-43`'s preparation overview needs episode titles, which
+/// `EpisodeSelectionResult::waiting` (bare `i64` ids) does not carry — this
+/// is the one extra read per missing episode that supplies them. A row that
+/// no longer exists (deleted in the moment between the selection query above
+/// and this lookup) is skipped rather than failing the whole recompute.
+///
+/// `size_bytes` is always `0`: no feed or provider in this codebase persists
+/// an expected byte size for an episode before it is downloaded (RSS
+/// enclosure `length` attributes and YouTube's size are both parsed
+/// nowhere), so the combined size the overview reports only ever reflects
+/// episodes whose size happens to be already known — which today is none.
+/// Wiring that up is future work, not a decision this projection can make up
+/// on its own.
+fn gather_missing_files(
+    conn: &Connection,
+    episode_ids: impl IntoIterator<Item = i64>,
+) -> Vec<MissingFile> {
+    episode_ids
+        .into_iter()
+        .filter_map(
+            |episode_id| match reprise_core::podcasts::store::episode(conn, episode_id) {
+                Ok(Some(episode)) => Some(MissingFile {
+                    episode_id,
+                    title: episode.title,
+                    size_bytes: 0,
+                }),
+                Ok(None) => None,
+                Err(error) => {
+                    tracing::warn!(
+                        episode_id,
+                        %error,
+                        "could not read a wanted episode for the preparation overview"
+                    );
+                    None
+                }
+            },
+        )
+        .collect()
+}
+
+/// `NET-3a`: the app's current connectivity belief, read from the one real
+/// OS signal `podcast_refresh_scheduler.rs` already uses for "metered"
+/// (`gio::NetworkMonitor`) — not a guess after a failed request, which
+/// `reprise_core::connectivity`'s module docs explicitly rule out.
+fn current_connectivity() -> Connectivity {
+    if gio::NetworkMonitor::default().is_network_available() {
+        Connectivity::Online
+    } else {
+        Connectivity::Offline
+    }
 }

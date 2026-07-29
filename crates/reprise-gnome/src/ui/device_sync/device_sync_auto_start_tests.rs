@@ -39,6 +39,7 @@ fn seed_playlist_with_auto_start(
             ratings_back: false,
             remove_deleted: true,
             sync_automatically,
+            prepare_before_sync: true,
         },
     )
     .unwrap();
@@ -197,6 +198,7 @@ fn mtp_30_a_manual_refresh_never_retriggers_it() {
                 ratings_back: false,
                 remove_deleted: true,
                 sync_automatically: true,
+                prepare_before_sync: true,
             })
             .unwrap();
         runtime.refresh_contents("a");

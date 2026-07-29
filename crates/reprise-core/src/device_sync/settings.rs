@@ -60,6 +60,12 @@ pub struct DeviceSettings {
     /// per-device choice, not one of 7b's global sync rules — see the
     /// module doc on `db_device_sync::migrate_v44`.
     pub sync_automatically: bool,
+    /// "Download missing files before syncing" (design 7f, `MTP-43`). The
+    /// device's own input to `preparation::plan_preparation`'s precedence —
+    /// offline and metered are decided there from live facts, never by
+    /// mutating this stored value, so the switch always reflects what the
+    /// user actually chose. Defaults to `true` (`db_device_sync::migrate_v46`).
+    pub prepare_before_sync: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -104,7 +110,7 @@ pub fn load_or_create_settings(
     let existing = conn
         .query_row(
             "SELECT device_name, selection_json, mp3_quality, transfer_profile, opus_bitrate, \
-                    ratings_back, remove_deleted, sync_automatically \
+                    ratings_back, remove_deleted, sync_automatically, prepare_before_sync \
              FROM device_settings WHERE device_serial = ?1",
             [serial],
             |row| {
@@ -117,6 +123,7 @@ pub fn load_or_create_settings(
                     row.get::<_, bool>(5)?,
                     row.get::<_, bool>(6)?,
                     row.get::<_, bool>(7)?,
+                    row.get::<_, bool>(8)?,
                 ))
             },
         )
@@ -130,6 +137,7 @@ pub fn load_or_create_settings(
         _ratings_back,
         remove_deleted,
         sync_automatically,
+        prepare_before_sync,
     )) = existing
     {
         let bitrate = u32::try_from(bitrate).unwrap_or(0);
@@ -142,6 +150,7 @@ pub fn load_or_create_settings(
             ratings_back: false,
             remove_deleted,
             sync_automatically,
+            prepare_before_sync,
         });
     }
 
@@ -158,6 +167,7 @@ pub fn load_or_create_settings(
         ratings_back: false,
         remove_deleted: true,
         sync_automatically: true,
+        prepare_before_sync: true,
     })
 }
 
@@ -178,8 +188,8 @@ pub fn save_settings(
     conn.execute(
         "INSERT INTO device_settings \
          (device_serial, device_name, selection_json, mp3_quality, transfer_profile, \
-          opus_bitrate, ratings_back, remove_deleted, sync_automatically) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, ?8) \
+          opus_bitrate, ratings_back, remove_deleted, sync_automatically, prepare_before_sync) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, ?8, ?9) \
          ON CONFLICT(device_serial) DO UPDATE SET \
            device_name = excluded.device_name, \
            selection_json = excluded.selection_json, \
@@ -188,7 +198,8 @@ pub fn save_settings(
            opus_bitrate = excluded.opus_bitrate, \
            ratings_back = 0, \
            remove_deleted = excluded.remove_deleted, \
-           sync_automatically = excluded.sync_automatically",
+           sync_automatically = excluded.sync_automatically, \
+           prepare_before_sync = excluded.prepare_before_sync",
         params![
             settings.device_serial,
             settings.device_name,
@@ -198,6 +209,7 @@ pub fn save_settings(
             settings.opus_bitrate,
             settings.remove_deleted,
             settings.sync_automatically,
+            settings.prepare_before_sync,
         ],
     )?;
     Ok(())

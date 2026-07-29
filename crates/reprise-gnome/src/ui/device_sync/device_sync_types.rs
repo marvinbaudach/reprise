@@ -170,6 +170,19 @@ pub struct DeviceView {
     pub podcast_selection: reprise_core::device_sync::PodcastSelectionSummary,
     /// The recorded runs shown under "Recent transfers" (MTP-20).
     pub history: Vec<crate::ui::device_sync::device_sync_history::RunWithDeviations>,
+    /// `MTP-42`'s preparation-phase projection (design 7f, `MTP-43`) — the
+    /// device page's preparation overview, switch behavior, and primary
+    /// button label are all driven from this, never re-derived.
+    pub preparation: reprise_core::device_sync::PreparationPhase,
+    /// The missing-file list `preparation` was computed from — carries the
+    /// episode titles the overview lists, which `PreparationPhase`'s
+    /// variants (counts and bytes only) do not.
+    pub preparation_missing: Vec<reprise_core::device_sync::preparation::MissingFile>,
+    /// The GTK-only progress of an in-flight preparation download run.
+    pub preparation_run: PreparationRunState,
+    /// Whether the current/most recent run's transfer phase was preceded by
+    /// a preparation download — drives the "Step 2 of 2" progress reading.
+    pub prepared_this_run: bool,
 }
 
 /// Test-only "nothing known yet" baseline for the three category fields —

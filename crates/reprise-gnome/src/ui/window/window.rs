@@ -179,8 +179,8 @@ pub fn build(
     });
     device_sync
         .bind_agent_device_sync(&media.device_sync_state, media.device_sync_commands.clone());
+    device_sync.bind_preparation_downloader(&podcasts_runtime);
     super::device_sync_smoke::arm(&device_sync);
-
     let player = match build_player_backends(waveform_backend.clone(), media) {
         Ok(backends) => Some(PlayerController::new(
             conn.clone(),

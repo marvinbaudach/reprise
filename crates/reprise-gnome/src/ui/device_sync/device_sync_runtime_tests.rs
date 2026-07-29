@@ -438,6 +438,7 @@ fn disable_auto_start(conn: &Rc<RefCell<Connection>>, device_id: &str) {
             ratings_back: false,
             remove_deleted: true,
             sync_automatically: false,
+            prepare_before_sync: true,
         },
     )
     .unwrap();
@@ -460,6 +461,7 @@ fn save_road_settings(conn: &Rc<RefCell<Connection>>, device_id: &str) {
             // tests (`device_sync_auto_start_tests.rs`) set this explicitly
             // instead of relying on this shared fixture.
             sync_automatically: false,
+            prepare_before_sync: true,
         },
     )
     .unwrap();
@@ -479,6 +481,8 @@ mod inflight_tests;
 mod planned_tests;
 #[path = "device_sync_podcast_removal_tests.rs"]
 mod podcast_removal_tests;
+#[path = "device_sync_preparation_tests.rs"]
+mod preparation_tests;
 #[path = "device_sync_readback_tests.rs"]
 mod readback_tests;
 #[path = "device_sync_safety_tests.rs"]

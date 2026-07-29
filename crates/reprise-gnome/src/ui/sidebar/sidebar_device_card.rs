@@ -541,6 +541,7 @@ mod tests {
                 ratings_back: false,
                 remove_deleted: true,
                 sync_automatically: true,
+                prepare_before_sync: true,
             },
             sync_phase: phase,
             sync_error: None,
@@ -556,6 +557,10 @@ mod tests {
             youtube_selection: Default::default(),
             podcast_selection: Default::default(),
             history: Vec::new(),
+            preparation: reprise_core::device_sync::PreparationPhase::Absent,
+            preparation_missing: Vec::new(),
+            preparation_run: crate::ui::device_sync_runtime::PreparationRunState::Idle,
+            prepared_this_run: false,
             page: Default::default(),
         }
     }

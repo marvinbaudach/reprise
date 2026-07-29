@@ -47,6 +47,8 @@ pub(super) struct ContentPanelActions {
     pub(super) set_target_cap: Rc<dyn Fn(SyncTargetKind, Option<u64>)>,
     pub(super) set_remove_deleted: Rc<dyn Fn(bool)>,
     pub(super) set_sync_automatically: Rc<dyn Fn(bool)>,
+    /// `MTP-43`: "Download missing files before syncing".
+    pub(super) set_prepare_before_sync: Rc<dyn Fn(bool)>,
     pub(super) scan_device: Rc<dyn Fn()>,
     /// `MTP-31` (design 7d): opens the target-folder browser for one
     /// category, relative to the widget that triggered it.
@@ -91,6 +93,15 @@ impl ContentPanelActions {
                 }
             }) as Rc<dyn Fn(bool)>
         };
+        let set_prepare_before_sync = {
+            let runtime = runtime.clone();
+            let device_id = device_id.to_string();
+            Rc::new(move |value| {
+                if let Err(error) = runtime.set_prepare_before_sync(&device_id, value) {
+                    tracing::warn!(%error, "could not update prepare-before-sync setting");
+                }
+            }) as Rc<dyn Fn(bool)>
+        };
         let scan_device = {
             let runtime = runtime.clone();
             let device_id = device_id.to_string();
@@ -108,6 +119,7 @@ impl ContentPanelActions {
             set_target_cap,
             set_remove_deleted,
             set_sync_automatically,
+            set_prepare_before_sync,
             scan_device,
             open_folder_browser,
         }
@@ -138,6 +150,7 @@ pub(super) struct ContentPanel {
     balance_label: gtk4::Label,
     remove_deleted_switch: gtk4::Switch,
     sync_automatically_switch: gtk4::Switch,
+    prepare_before_sync_switch: gtk4::Switch,
     updating: Rc<Cell<bool>>,
 }
 
@@ -206,6 +219,18 @@ impl ContentPanel {
                     }
                 }
             });
+        // `MTP-43`: defaults on (`DeviceSettings::prepare_before_sync`).
+        // Offline/metered overrides are `preparation::plan_preparation`'s
+        // job — this switch only ever stores what the user chose here.
+        let prepare_before_sync_switch = labeled_switch("Download missing files before syncing", {
+            let set_prepare_before_sync = actions.set_prepare_before_sync.clone();
+            let updating = updating.clone();
+            move |value| {
+                if !updating.get() {
+                    set_prepare_before_sync(value);
+                }
+            }
+        });
 
         let content = gtk4::Box::new(gtk4::Orientation::Vertical, 16);
         content.set_margin_top(16);
@@ -230,6 +255,10 @@ impl ContentPanel {
             &sync_automatically_switch.0,
             &sync_automatically_switch.1,
         ));
+        content.append(&row_widget(
+            &prepare_before_sync_switch.0,
+            &prepare_before_sync_switch.1,
+        ));
 
         let root = adw::Bin::builder().child(&content).build();
         root.add_css_class("card");
@@ -246,6 +275,7 @@ impl ContentPanel {
             balance_label,
             remove_deleted_switch: remove_deleted_switch.1,
             sync_automatically_switch: sync_automatically_switch.1,
+            prepare_before_sync_switch: prepare_before_sync_switch.1,
             updating,
         }
     }
@@ -324,6 +354,10 @@ impl ContentPanel {
             .set_active(device.settings.sync_automatically);
         self.sync_automatically_switch
             .set_state(device.settings.sync_automatically);
+        self.prepare_before_sync_switch
+            .set_active(device.settings.prepare_before_sync);
+        self.prepare_before_sync_switch
+            .set_state(device.settings.prepare_before_sync);
 
         self.updating.set(false);
     }

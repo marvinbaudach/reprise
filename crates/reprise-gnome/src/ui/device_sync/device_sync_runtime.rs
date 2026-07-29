@@ -31,6 +31,7 @@ pub(super) mod rate;
 #[path = "device_sync_types.rs"]
 mod types;
 
+pub use preparation::PreparationRunState;
 use rate::MtpRateMeter;
 use types::StateCallback;
 pub use types::*;
@@ -87,6 +88,30 @@ struct DeviceState {
     youtube_selection: YoutubeSelectionSummary,
     podcast_selection: PodcastSelectionSummary,
     page: SyncPageState,
+    /// `MTP-42`'s projection, refreshed on every `recompute_delta_silent`
+    /// from the same facts (`waiting` set, connectivity, the global gate,
+    /// this device's own switch) it is defined over — never re-decided here.
+    preparation: reprise_core::device_sync::PreparationPhase,
+    /// The actual missing-file list `preparation` was computed from — kept
+    /// alongside it because `PreparationPhase`'s variants carry only counts
+    /// and bytes, not the episode ids/titles the overview and the download
+    /// loop both need.
+    preparation_missing: Vec<reprise_core::device_sync::preparation::MissingFile>,
+    /// `MTP-43`: whether a preparation download run is currently in flight
+    /// for this device — folded into [`Self::is_active`] so the page's
+    /// controls (editable/can_start/can_cancel) treat it exactly like an
+    /// active transfer.
+    preparing: bool,
+    preparation_run: preparation::PreparationRunState,
+    /// Set while [`Self::preparing`]; flipping it stops the download loop
+    /// from issuing any *further* request — it never deletes or rolls back
+    /// a download that already finished.
+    preparation_cancel: Option<Rc<Cell<bool>>>,
+    /// Whether this run's transfer phase was preceded by a preparation
+    /// download — the two-phase "Step 2 of 2" progress reading depends on
+    /// this, and it resets to `false` once the whole run ends so a later
+    /// plain sync never inherits a stale step counter.
+    prepared_this_run: bool,
 }
 
 impl DeviceState {
@@ -123,6 +148,12 @@ impl DeviceState {
             youtube_selection: YoutubeSelectionSummary::default(),
             podcast_selection: PodcastSelectionSummary::default(),
             page: SyncPageState::default(),
+            preparation: reprise_core::device_sync::PreparationPhase::Absent,
+            preparation_missing: Vec::new(),
+            preparing: false,
+            preparation_run: preparation::PreparationRunState::default(),
+            preparation_cancel: None,
+            prepared_this_run: false,
         }
     }
 
@@ -182,11 +213,15 @@ impl DeviceState {
             podcast_bytes: device_bytes[2],
             youtube_selection: self.youtube_selection,
             podcast_selection: self.podcast_selection,
+            preparation: self.preparation.clone(),
+            preparation_missing: self.preparation_missing.clone(),
+            preparation_run: self.preparation_run.clone(),
+            prepared_this_run: self.prepared_this_run,
         }
     }
 
     fn is_active(&self) -> bool {
-        self.machine.is_some()
+        self.machine.is_some() || self.preparing
     }
 
     fn is_busy(&self) -> bool {
@@ -217,6 +252,12 @@ pub struct DeviceSyncRuntime {
     next_subscription_id: Cell<u64>,
     weak_self: RefCell<Weak<Self>>,
     agent_subscription: RefCell<Option<Subscription>>,
+    /// `MTP-43`: bound once from `window.rs` via `bind_preparation_downloader`
+    /// (mirrors `bind_agent_device_sync`'s "construct, then bind" shape).
+    /// `None` in every existing test fixture and in the smoke-simulator path
+    /// — preparation then falls back to a plain sync, see
+    /// `preparation::begin_prepared_sync`.
+    preparation_downloader: RefCell<Option<Rc<dyn preparation::PreparationDownloader>>>,
 }
 
 impl DeviceSyncRuntime {
@@ -239,6 +280,7 @@ impl DeviceSyncRuntime {
             next_subscription_id: Cell::new(1),
             weak_self: RefCell::new(Weak::new()),
             agent_subscription: RefCell::new(None),
+            preparation_downloader: RefCell::new(None),
         });
         runtime.weak_self.replace(Rc::downgrade(&runtime));
         runtime.apply_devices(runtime.backend.devices());
@@ -269,7 +311,7 @@ impl DeviceSyncRuntime {
             .iter_mut()
             .find(|device| device.descriptor.id == device_id)
         {
-            cancel_device_run(device);
+            preparation::cancel_preparation(device);
         }
         self.notify();
     }
@@ -554,9 +596,9 @@ impl DeviceSyncRuntime {
                 state.connected = false;
                 state.scanning = false;
                 state.scan_generation = state.scan_generation.saturating_add(1);
-                if state.machine.is_some() {
+                if state.machine.is_some() || state.preparing {
                     state.resume_planned = state.descriptor.reconnectable;
-                    cancel_device_run(state);
+                    preparation::cancel_preparation(state);
                 }
             }
             states.retain(|state| {
@@ -589,6 +631,7 @@ impl DeviceSyncRuntime {
                             ratings_back: false,
                             remove_deleted: true,
                             sync_automatically: true,
+                            prepare_before_sync: true,
                         }
                     });
                     states.push(DeviceState::new(descriptor, settings));
@@ -664,8 +707,12 @@ mod agent;
 mod compact;
 #[path = "device_sync_planned.rs"]
 mod planned;
+#[path = "device_sync_preparation.rs"]
+mod preparation;
 #[path = "device_sync_target_actions.rs"]
 mod target_actions;
 
 #[cfg(test)]
 pub(super) use planned::SyncStartError;
+#[cfg(test)]
+pub(super) use preparation::PreparationDownloader;
