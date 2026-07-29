@@ -136,6 +136,11 @@ pub struct Runtime {
     transport: Transport,
     devices: DeviceRuns,
     effects: Effects,
+    /// What the backend was last told about the spectrum. Kept because the
+    /// watcher set changes from two directions — a command and a
+    /// disconnection — and comparing against the truth is the only way both
+    /// stay in step without either counting the other's transitions.
+    spectrum_enabled: bool,
     /// How many times the queue facet has observably changed.
     ///
     /// Kept here rather than in `Transport` on purpose: it has to count what
@@ -164,6 +169,7 @@ impl Runtime {
             transport: Transport::new(),
             devices: DeviceRuns::new(),
             effects,
+            spectrum_enabled: false,
             queue_revision: 0,
         };
         // The backend is told the transition mode once at startup, the way
@@ -213,7 +219,34 @@ impl Runtime {
     /// Drops a client and its undelivered events. Returns whether it was
     /// connected, so a repeated disconnect is a no-op rather than an error.
     pub fn disconnect(&mut self, client: ClientId) -> bool {
-        self.clients.disconnect(client)
+        let dropped = self.clients.disconnect(client);
+        // A client that was watching the spectrum does not get to send
+        // `WatchSpectrum(false)` on its way out — a crashed process and a
+        // dropped bus name send nothing at all. Without this the analysis
+        // keeps running on the audio hot path for nobody, for the rest of
+        // the session, and only the runtime exiting ever stops it.
+        if dropped {
+            self.sync_spectrum_switch();
+        }
+        dropped
+    }
+
+    /// Tells the backend whether anyone is still watching, if that has
+    /// changed since it was last told.
+    ///
+    /// One place, called from everywhere the watcher set can change. Two
+    /// places computing this is how the backend ends up disagreeing with the
+    /// runtime about whether it is analysing.
+    fn sync_spectrum_switch(&mut self) {
+        let watching = self.clients.anyone_watches_spectrum();
+        if watching == self.spectrum_enabled {
+            return;
+        }
+        if let Err(error) = self.ports.playback.set_spectrum_enabled(watching) {
+            tracing::warn!(%error, watching, "backend refused the spectrum switch");
+            return;
+        }
+        self.spectrum_enabled = watching;
     }
 
     /// The writer, for tests that assert on what a command persisted.
@@ -361,20 +394,14 @@ impl Runtime {
                 result.map(|()| self.outcome(0))
             }
             Command::WatchSpectrum(watching) => {
-                let changed = self
-                    .clients
+                self.clients
                     .watch_spectrum(client, *watching)
                     .ok_or(RuntimeError::Unavailable(Unavailable::NotConnected))?;
-                // Only when the *total* flipped. Told on every call instead,
-                // a second watcher arriving would re-enable what is already
-                // running, and the first one leaving would switch it off
+                // The switch follows the *total*, not this request. A second
+                // watcher arriving must not re-enable what is already
+                // running, and the first one leaving must not switch it off
                 // under the second.
-                if changed {
-                    let watching = self.clients.anyone_watches_spectrum();
-                    if let Err(error) = self.ports.playback.set_spectrum_enabled(watching) {
-                        tracing::warn!(%error, watching, "backend refused the spectrum switch");
-                    }
-                }
+                self.sync_spectrum_switch();
                 Ok(self.outcome(0))
             }
             Command::SetAudioEffects(requested) => {

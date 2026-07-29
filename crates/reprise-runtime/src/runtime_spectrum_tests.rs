@@ -233,3 +233,67 @@ fn one_clients_frames_are_not_another_clients() {
          surface polled first starve the other"
     );
 }
+
+#[test]
+fn a_watcher_that_disconnects_stops_the_analysis_it_started() {
+    let mut harness = harness();
+    let client = full_client(&mut harness.runtime);
+    harness
+        .runtime
+        .command(client, &Command::WatchSpectrum(true))
+        .unwrap();
+
+    // No `WatchSpectrum(false)` first: a crashed process and a dropped bus
+    // name both arrive here having said nothing at all.
+    harness.runtime.disconnect(client);
+
+    assert_eq!(
+        harness.playback.spectrum_switches(),
+        vec![true, false],
+        "otherwise the analysis runs on the audio hot path for nobody until \
+         the runtime itself exits — which it will not do while an unrelated \
+         client keeps playback going"
+    );
+}
+
+#[test]
+fn one_watcher_disconnecting_leaves_the_others_visualizer_running() {
+    let mut harness = harness();
+    let leaving = full_client(&mut harness.runtime);
+    let staying = full_client(&mut harness.runtime);
+    harness
+        .runtime
+        .command(leaving, &Command::WatchSpectrum(true))
+        .unwrap();
+    harness
+        .runtime
+        .command(staying, &Command::WatchSpectrum(true))
+        .unwrap();
+
+    harness.runtime.disconnect(leaving);
+
+    assert_eq!(
+        harness.playback.spectrum_switches(),
+        vec![true],
+        "one window closing must not blank the visualizer in another"
+    );
+}
+
+#[test]
+fn a_disconnect_by_a_client_that_never_watched_changes_nothing() {
+    let mut harness = harness();
+    let watcher = full_client(&mut harness.runtime);
+    let bystander = full_client(&mut harness.runtime);
+    harness
+        .runtime
+        .command(watcher, &Command::WatchSpectrum(true))
+        .unwrap();
+
+    harness.runtime.disconnect(bystander);
+
+    assert_eq!(
+        harness.playback.spectrum_switches(),
+        vec![true],
+        "the switch follows what is true, not how many disconnects happened"
+    );
+}

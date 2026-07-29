@@ -190,10 +190,14 @@ impl Clients {
             .any(|client| client.watches_spectrum)
     }
 
-    /// Starts or stops one client's interest. Returns whether the total
-    /// changed, which is what decides if the backend is told.
-    pub(crate) fn watch_spectrum(&mut self, client: ClientId, watching: bool) -> Option<bool> {
-        let before = self.anyone_watches_spectrum();
+    /// Starts or stops one client's interest.
+    ///
+    /// Deliberately does not decide whether the backend is told: that
+    /// follows the total, which also changes when a client disconnects
+    /// without saying anything. `Runtime::sync_spectrum_switch` compares
+    /// against what the backend was last told instead of counting
+    /// transitions here, so both routes stay in step.
+    pub(crate) fn watch_spectrum(&mut self, client: ClientId, watching: bool) -> Option<()> {
         let entry = self.connected.get_mut(&client)?;
         entry.watches_spectrum = watching;
         if !watching {
@@ -201,7 +205,7 @@ impl Clients {
             // it would deliver one frame from before they turned it off.
             entry.spectrum = None;
         }
-        Some(before != self.anyone_watches_spectrum())
+        Some(())
     }
 
     /// Takes the newest frame this client has not seen, if any.
