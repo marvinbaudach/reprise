@@ -1,4 +1,4 @@
-//! `MTP-21` live wiring: before this fix `query_candidates_for_device`
+//! `MTP-41` live wiring: before this fix `query_candidates_for_device`
 //! selected every downloaded episode with no played filter at all, and
 //! `device_sync_runtime.rs` hard-coded `files_waiting_for_download` to `0`
 //! (`selection::select_episodes` was never called from the live pipeline).
@@ -32,7 +32,7 @@ fn insert_enabled_rss_show(conn: &Rc<RefCell<Connection>>, subscription_id: i64,
 }
 
 #[test]
-fn mtp_21_a_played_downloaded_episode_is_not_copied_while_an_unplayed_one_from_the_same_show_is() {
+fn mtp_41_a_played_downloaded_episode_is_not_copied_while_an_unplayed_one_from_the_same_show_is() {
     run(async {
         let (downloads, conn) = fixture();
         let unplayed_path = downloads.path().join("unplayed.mp3");
@@ -80,7 +80,7 @@ fn mtp_21_a_played_downloaded_episode_is_not_copied_while_an_unplayed_one_from_t
 }
 
 #[test]
-fn mtp_21_a_wanted_missing_episode_counts_as_waiting_and_is_never_copyable() {
+fn mtp_41_a_wanted_missing_episode_counts_as_waiting_and_is_never_copyable() {
     run(async {
         let (_downloads, conn) = fixture();
         insert_enabled_rss_show(&conn, 10, "a");
@@ -105,7 +105,7 @@ fn mtp_21_a_wanted_missing_episode_counts_as_waiting_and_is_never_copyable() {
             reprise_core::device_sync::CategoryReading::Diff(diff) => {
                 assert_eq!(
                     diff.files_waiting_for_download, 1,
-                    "a wanted-but-missing episode (`wanted_on_device`, `MTP-20`) must reach \
+                    "a wanted-but-missing episode (`wanted_on_device`, `MTP-40`) must reach \
                      the podcast category's waiting count instead of vanishing from it"
                 );
                 assert_eq!(

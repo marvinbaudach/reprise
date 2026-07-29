@@ -187,7 +187,7 @@ impl DeviceStorage {
     /// `pub(super)`: also the resolution primitive
     /// [`DeviceStorage::resolve_target_storage`] (parent module) and
     /// [`inspection`](super::inspection) build on, so a target's persisted
-    /// `StorageId` (`MTP-18`) is what transfers and inspection actually use,
+    /// `StorageId` (`MTP-38`) is what transfers and inspection actually use,
     /// not just what the folder browser previews (`MTP-31`).
     pub(super) async fn resolve_storage_root(
         &self,

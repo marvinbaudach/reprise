@@ -139,14 +139,14 @@ fn sync_now_copies_the_selection_and_commits_the_device_inventory() {
     });
 }
 
-/// `MTP-18`, finding 1: once the folder browser (`MTP-31`) has persisted a
+/// `MTP-38`, finding 1: once the folder browser (`MTP-31`) has persisted a
 /// storage for the Playlists target, `sync_now`'s actual transfer must
 /// carry that `storage_id` through to the backend — not silently
 /// reconstruct storage from the device root the way the pre-fix transfer
 /// layer did (which always guessed "prefer internal" regardless of what
 /// `set_target_folder` had just saved).
 #[test]
-fn mtp_18_sync_now_routes_the_playlists_transfer_through_its_persisted_storage() {
+fn mtp_38_sync_now_routes_the_playlists_transfer_through_its_persisted_storage() {
     run(async {
         let (_temp, conn) = fixture();
         select_road_playlist(&conn, &[1, 2]);

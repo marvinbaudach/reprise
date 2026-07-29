@@ -32,7 +32,7 @@
 //! [`CategoryDiff::from_podcast_plan`] are thin translations from the two
 //! existing engines, not a parallel diff calculator.
 //!
-//! ## Cap enforcement (`MTP-19`)
+//! ## Cap enforcement (`MTP-39`)
 //!
 //! [`apply_cap`] folds a target's optional cap on top of an already-computed
 //! diff using `cap::items_to_evict` directly — eviction is additional
@@ -62,7 +62,7 @@ pub struct CategoryDiff {
     pub bytes_to_copy: u64,
     pub files_to_remove: usize,
     pub bytes_freed: u64,
-    /// Wanted but not yet downloaded (`MTP-20`) — informative only, never
+    /// Wanted but not yet downloaded (`MTP-40`) — informative only, never
     /// folded into `files_to_copy`: this sync will not move these bytes
     /// until a download satisfies them.
     pub files_waiting_for_download: usize,
@@ -120,7 +120,7 @@ impl CategoryDiff {
     }
 }
 
-/// `MTP-19`: folds a target's optional cap on top of an already-computed
+/// `MTP-39`: folds a target's optional cap on top of an already-computed
 /// diff. `items_after_sync` is every item that would remain on the device
 /// once `diff`'s copies land — the caller assembles that list; this
 /// function only decides who leaves once it is oversized, exactly like
@@ -204,7 +204,7 @@ pub enum CategoryReading {
 /// generic AND-gate every production call site passes as `true` since
 /// `E-6` withdrew the once-planned global rule this parameter modeled —
 /// combined with whether the category is enabled for this device
-/// (`target_enabled`, `SyncTarget::enabled`, `MTP-18`), and what could be
+/// (`target_enabled`, `SyncTarget::enabled`, `MTP-38`), and what could be
 /// computed ([`CandidateSource`]).
 #[must_use]
 pub fn project_category_reading(

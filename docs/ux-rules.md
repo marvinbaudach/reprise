@@ -394,7 +394,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   als auch nach einem App-Neustart wiederhergestellt. Ein neues Gerät beginnt
   weiterhin mit Opus 160 kbit/s.
 - **MTP-17** [aktiv] [core] — `Music/Reprise` — das Playlists-Ziel aus
-  `MTP-18` — ist vollständig autoritativ für Musik und Playlisten. Nach
+  `MTP-38` — ist vollständig autoritativ für Musik und Playlisten. Nach
   erfolgreicher Veröffentlichung aller gewünschten Tracks und Playlists
   werden dort sämtliche übrigen sicheren Dateien entfernt, auch wenn sie
   nicht im Reprise-Inventar stehen; gewünschte Track- und Playlist-Pfade
@@ -404,7 +404,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Ziele (YouTube-Tonspuren, Podcast-Episoden) sind **nicht** auf dieselbe
   Weise autoritativ — sie diffen additiv gegen ihre eigene Kandidatenliste
   statt jede unbekannte Datei zu entfernen (`MTP-23`).
-- **MTP-18** [aktiv] [core] — Reprise kennt pro Gerät drei benannte
+- **MTP-38** [aktiv] [core] — Reprise kennt pro Gerät drei benannte
   Sync-Ziele — Playlists, YouTube-Tonspuren, Podcast-Episoden — statt eines
   einzigen verwalteten Ordners (löst `78e379fd` ab, keine Migration: siehe
   Turn-6/7-Plan §1b). Jedes Ziel trägt eine optionale `StorageID`, einen
@@ -419,13 +419,13 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   eines Ziels, kann der Ordner nicht mitwandern; die vorherige
   Speicherkopie gilt als verwaist und wird aufgeräumt, sobald neu kopiert
   ist. Die Verdrahtung in den tatsächlichen MTP-Transfer ist `MTP-23`.
-- **MTP-19** [aktiv] [core] — Überschreitet ein Sync-Ziel mit Größen-Cap
+- **MTP-39** [aktiv] [core] — Überschreitet ein Sync-Ziel mit Größen-Cap
   seine Grenze, verlassen die ältesten Dateien zuerst das Gerät, bis die
   Summe wieder höchstens dem Cap entspricht; das Entfernen stoppt, sobald
   das erreicht ist, und nimmt nie mehr als nötig. Die Auswahl ist eine
   reine Funktion über Größe und Alter je Eintrag, unabhängig von Ziel-Art
   oder Transport.
-- **MTP-20** [aktiv] [core] — Jede Episode trägt einen persistenten
+- **MTP-40** [aktiv] [core] — Jede Episode trägt einen persistenten
   Zustand `wanted_on_device` (7f). „Sync to phone" auf einer Episode ohne
   lokale Datei setzt diesen Zustand, statt die Aktion abzulehnen; der
   Download folgt automatisch — online sofort, offline vorgemerkt über den
@@ -434,14 +434,14 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Episode braucht keinen Download-Schritt. Der Downloader, der den
   vorgemerkten Zustand tatsächlich abarbeitet, ist nicht Teil dieser Regel
   (E2/E4).
-- **MTP-21** [aktiv] [core] — Die Sollmenge je Sync-Kategorie ist eine reine
+- **MTP-41** [aktiv] [core] — Die Sollmenge je Sync-Kategorie ist eine reine
   Projektion aus Auswahlregel und Bibliothekszustand (E2). Playlists liefern
   „N of M selected · K tracks"; YouTube-Tonspuren begrenzen jeden aktivierten
   Kanal (Kanal-Toggle aus 6b) auf seine neuesten N Episoden unabhängig vom
   Downloadzustand („N of M channels · latest K each"); Podcast-Episoden
   wollen jede ungespielte, bereits heruntergeladene Episode aktivierter Shows
   ohne Obergrenze („Unplayed downloads only"). Eine gewollte Episode ohne
-  lokale Datei (`wanted_on_device`, `MTP-20`) zählt als wartend, nie als
+  lokale Datei (`wanted_on_device`, `MTP-40`) zählt als wartend, nie als
   kopierbereit — die Sollmenge trennt beides sichtbar, statt eine wartende
   Episode stillschweigend aus dem Ergebnis zu filtern.
 - **MTP-22** [aktiv] [core] — Der Sync-Plan wird pro Kategorie gelesen (E3):
@@ -459,11 +459,11 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   bewegter Größe bleibt dadurch als „3 to remove · frees 0 B" von „nichts zu
   tun" unterscheidbar — die frühere Sidebar-Karte, die „N changes" und einen
   einzelnen, nur kopierte Bytes zählenden Betrag kombinierte und dadurch
-  „3 changes · 0 B" zeigte, ist diese Lücke. Ein Größen-Cap (`MTP-19`) wirkt
+  „3 changes · 0 B" zeigte, ist diese Lücke. Ein Größen-Cap (`MTP-39`) wirkt
   als zusätzliches Entfernen oberhalb der Auswahl-Bilanz und verändert nie
   die Kopier-Zahl.
 - **MTP-23** [aktiv] [core] [gtk] — Der tatsächliche Transfer schreibt und
-  löscht durch die drei benannten Ziele aus `MTP-18`, nicht mehr durch einen
+  löscht durch die drei benannten Ziele aus `MTP-38`, nicht mehr durch einen
   einzigen verwalteten Ordner (löst die `78e379fd`-Auflösung endgültig ab):
   Playlisten weiterhin unter dem Playlists-Ziel (Standard `/Music/Reprise`,
   `MTP-17`), YouTube-Tonspuren unter dem YoutubeAudio-Ziel (Standard
@@ -482,14 +482,14 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   und YouTube-Audio wird **immer** 1:1 kopiert, nie umkodiert — es liegt
   bereits als Opus oder AAC vor, und ein zweiter Kodierschritt wäre reiner
   Qualitätsverlust ohne Nutzen.
-- **MTP-25** [aktiv] [core] — Der Größen-Cap aus `MTP-19` wirkt real: bevor
+- **MTP-25** [aktiv] [core] — Der Größen-Cap aus `MTP-39` wirkt real: bevor
   ein YouTube-Tonspuren- oder Podcast-Episoden-Ziel mit Cap seine Sollmenge
   aus Kandidaten bildet, verlässt die älteste Teilmenge (nach Alter der
   Quelldatei) die Sollmenge, bis die Summe wieder höchstens dem Cap
   entspricht. Ein bereits auf dem Gerät vorhandener, aber jetzt
   ausgeschlossener Kandidat wird dadurch automatisch zur gewöhnlichen
   Entfernung — kein separater Aufräumschritt nötig. Das Playlists-Ziel hat
-  keinen Cap (`MTP-18`) und ist von dieser Regel nicht betroffen.
+  keinen Cap (`MTP-38`) und ist von dieser Regel nicht betroffen.
 - **MTP-26** [aktiv] [core] [gtk] — „Device contents never verified" ist ein
   echter, prüfbarer Zustand (7a) statt einer stillen Tatsache in der
   Scan-Buchführung: `NeverVerified`, `Verifying`, `Verified` und
@@ -510,13 +510,13 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Bei unvollständiger oder inkonsistenter Kapazität verschwindet der Balken
   komplett, statt einen Anteil zu erfinden — dieselbe Regel wie in `MTP-7`.
 - **MTP-28** [ersetzt durch MTP-37] — Die Geräteansicht bekommt eine
-  „Content"-Sektion mit einer Zeile je der drei benannten Ziele (`MTP-18`):
+  „Content"-Sektion mit einer Zeile je der drei benannten Ziele (`MTP-38`):
   Zielordnerpfad, Auswahl-Zusammenfassung, Größe auf dem Gerät, Cap und ein
   Schalter. **Nachtrag vom 2026-07-28 bindend:** die Auswahl-Zusammenfassung
   und der Cap sind reine Anzeige der globalen Regeln aus Preferences (7b/7e)
   — beschriftet „rules from Preferences" / „Same on all devices" — und hier
   nicht editierbar; dafür gibt es keine zweite Bedienstelle. Der einzige
-  Schalter dieser Sektion ist `SyncTarget::enabled` (`MTP-18`) — ob dieses
+  Schalter dieser Sektion ist `SyncTarget::enabled` (`MTP-38`) — ob dieses
   Gerät für die Kategorie überhaupt einen aktiven Platz hat —, ausdrücklich
   unterschieden von einer globalen „Sync diese Inhaltsart"-Regel, die noch
   nicht existiert (7b-„Phone sync"-Block, siehe `T6-G1`). Ein „Next
@@ -577,7 +577,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Verweigert ein Gerät das Anlegen eines Ordners direkt im Wurzelverzeichnis
   eines Speichers, zeigt der Browser diesen Fehler inline statt ihn
   stillschweigend zu verschlucken oder Erfolg zu behaupten. MTP kennt keine
-  Pfade (`MTP-18`): jeder Browser-Aufruf löst Speicher und Ordnerinhalt frisch
+  Pfade (`MTP-38`): jeder Browser-Aufruf löst Speicher und Ordnerinhalt frisch
   über den `DeviceBackend` auf, nie über einen gespeicherten Object-Handle.
   Jede Entscheidung — Zielvorschau, Konflikt-Warnung, Reset-Ergebnis — ist
   eine reine, GTK-freie Funktion in `reprise_core::device_sync::browser`; die
@@ -590,11 +590,11 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   demselben Speicher, werden dort bereits synchronisierte Dateien beim
   nächsten Schritt per MTP-Verschieben an den neuen Ort umgezogen, statt sie
   ein zweites Mal zu kopieren. Ein Speicherwechsel läuft weiterhin über
-  `MTP-18`s bestehenden Kopieren-und-verwaisen-Pfad, weil ein Ordner MTP-
+  `MTP-38`s bestehenden Kopieren-und-verwaisen-Pfad, weil ein Ordner MTP-
   Speichergrenzen nicht per Verschieben überqueren kann. Die Entscheidung
   (Unchanged / MoveFolder / CopyAndOrphanPrevious) ist die reine Funktion
   `reprise_core::device_sync::browser::target_relocation_action`, die
-  `MTP-18`s `target_storage_transition` wiederverwendet statt sie zu
+  `MTP-38`s `target_storage_transition` wiederverwendet statt sie zu
   duplizieren; ein Verschieben, das am Gerät fehlschlägt, blockiert das
   Speichern des neuen Ordners nicht — der nächste Sync kopiert dann schlicht
   frisch, protokolliert aber eine Warnung.
@@ -604,7 +604,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   YouTube-Tonspur beim nächsten Sync-Plan das Gerät verlässt: ausgeschaltet
   bleibt eine solche Datei liegen, `podcasts::build_plan`s `to_remove`
   bleibt für die betroffene Kategorie leer. Beide additiven Ziele
-  (YouTube-Tonspuren, Podcast-Episoden, `MTP-18`) lesen dafür
+  (YouTube-Tonspuren, Podcast-Episoden, `MTP-38`) lesen dafür
   `DeviceSettings::remove_deleted` desselben Geräts, nie einen
   hartkodierten Wert. Das Playlists-Ziel ist von diesem Schalter
   unberührt — dort bleibt `MTP-17`s vollständige Aufräumung unverändert
@@ -626,7 +626,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   schließen. Ein verweigertes Speichern darf nie wie ein erfolgreiches
   aussehen; die gewählte Auswahl bleibt sichtbar, damit nichts
   stillschweigend verworfen wird.
-- **MTP-36** [geplant] [core] — `MTP-21`s YouTube-Regel „neueste N Episoden je
+- **MTP-36** [geplant] [core] — `MTP-41`s YouTube-Regel „neueste N Episoden je
   aktiviertem Kanal, unabhängig vom Downloadzustand" nennt N; hier steht, wo
   dieser Wert lebt. **Entschieden am 2026-07-29:** eine globale Vorgabe
   (Standard **5**), je Kanal überschreibbar — dieselbe Form wie `O-5` bei
@@ -641,8 +641,8 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   (`device_sync_compact::recompute_delta_silent`) N als unbegrenzt
   (`EpisodeSelectionRule::LatestPerChannel { latest: usize::MAX, .. }`). Das
   ist bewusst das bisherige Verhalten und keine stille Änderung; die Sollmenge
-  wird derweil allein über `MTP-21`s Kandidatengrenze begrenzt
-  (heruntergeladene Episoden plus die per `wanted_on_device`, `MTP-20`,
+  wird derweil allein über `MTP-41`s Kandidatengrenze begrenzt
+  (heruntergeladene Episoden plus die per `wanted_on_device`, `MTP-40`,
   ausdrücklich gewollten fehlenden). Diese Regel wird `[aktiv]`, sobald die
   Persistenz und die Oberfläche stehen — nicht vorher.
 - **MTP-37** [aktiv] [core] [gtk] — Ersetzt `MTP-28`s Nachtrag vom
@@ -650,22 +650,22 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   MTP-Gerät (`E-5`), also entfällt die einzige Begründung für eine globale
   Preferences-Fläche — „gilt für alle Geräte, keine Geräte-Auswahl in den
   Settings". Die Geräteansicht bleibt bei einer „Content"-Sektion mit einer
-  Zeile je der drei benannten Ziele (`MTP-18`): Zielordnerpfad (unverändert
+  Zeile je der drei benannten Ziele (`MTP-38`): Zielordnerpfad (unverändert
   `MTP-31`s „Change folder…"), Auswahl-Zusammenfassung, Größe auf dem
   Gerät und Cap. Zwei Dinge ändern sich:
   1. **Der Cap wird hier bedienbar.** Ein Spin-Button in GiB (0 = kein Cap)
      ersetzt den reinen Anzeigetext; jede Änderung persistiert sofort über
      `DeviceSyncRuntime::set_target_cap` in `SyncTarget::cap_bytes`
-     (`MTP-18`) und wirkt beim nächsten Sync-Plan über die bestehende
-     Verdrängung „ältestes zuerst" (`MTP-19`/`MTP-25`) — keine zweite
+     (`MTP-38`) und wirkt beim nächsten Sync-Plan über die bestehende
+     Verdrängung „ältestes zuerst" (`MTP-39`/`MTP-25`) — keine zweite
      Cap-Mechanik, nur eine Bedienstelle für die schon vorhandene. Playlists
-     kennen keinen Cap (`MTP-18`s `default_cap_bytes`) und behalten den
+     kennen keinen Cap (`MTP-38`s `default_cap_bytes`) und behalten den
      Spin-Button dauerhaft deaktiviert statt eine Wirkung vorzutäuschen, die
      kein Verdrängungspfad einlöst.
   2. **Die Auswahl-Zusammenfassung wird ein echter, ehrlicher Live-Wert
      statt einer Anzeige globaler Regeln oder eines statischen Textes.**
      Playlists lasen schon vorher `selection::summarize_playlist_selection`
-     (`MTP-21`); YouTube und Podcasts lesen jetzt ebenso live „N of M
+     (`MTP-41`); YouTube und Podcasts lesen jetzt ebenso live „N of M
      channels selected" bzw. „N of M shows selected · unplayed downloads
      only" aus `podcasts::phone_sync::selection_summary` — derselben
      Auswahl, die auf den Podcast-/Kanal-Seiten und in der Playlist-Liste
@@ -679,7 +679,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Der Querverweis „rules from Preferences" / „Same on all devices"
   verschwindet ersatzlos — bei einem Gerät ist „Same on all devices" eine
   Aussage über nichts. Der einzige Schalter, den diese Sektion je hatte
-  (`SyncTarget::enabled`, `MTP-18`), bleibt unverändert; er bekommt jetzt
+  (`SyncTarget::enabled`, `MTP-38`), bleibt unverändert; er bekommt jetzt
   nur Cap-Feld und Auswahlzeile als gleichrangige, echte Nachbarn statt als
   reine Anzeige daneben. Der geplante „Phone sync"-Block in Preferences
   (`SET-8`) entfällt ersatzlos, nicht nur „solange sein Sync-Unterbau nicht
@@ -3133,7 +3133,7 @@ Hörstatistik.
   Episoden aus explizit pro stabiler Geräteidentität ausgewählten RSS-Abos
   sind für Android-Sync geeignet; YouTube-Quellen werden unabhängig von
   ihrem Downloadzustand nie auf ein Gerät synchronisiert. Beide Hälften
-  sind mit den drei benannten Sync-Zielen (`MTP-18`, `MTP-23`) falsch
+  sind mit den drei benannten Sync-Zielen (`MTP-38`, `MTP-23`) falsch
   geworden — YouTube-Audio bekommt sein eigenes Ziel und synchronisiert
   jetzt gleichberechtigt.
 - **POD-9** [aktiv] [core] [gtk] — Innerhalb jeder nach stabiler
@@ -3171,7 +3171,7 @@ Hörstatistik.
   sich die Ziele unabhängig wählen. RSS-Episoden landen unter ihrem
   PodcastEpisodes-Ziel (Standard `Podcasts/Reprise/<Show>/`),
   YouTube-Tonspuren unter ihrem eigenen YoutubeAudio-Ziel (Standard
-  `Music/Reprise-YouTube/<Kanal>/`, `MTP-18`); beide werden 1:1 kopiert,
+  `Music/Reprise-YouTube/<Kanal>/`, `MTP-38`); beide werden 1:1 kopiert,
   nie umkodiert (`MTP-24`). Musik-Playlisten bleiben unverändert unter
   ihrem Playlists-Ziel (Standard `Music/Reprise`). Ein Wechsel der Abo-Art
   an derselben Feed-URL (z. B. ein erneuter Import als anderer Kanaltyp)

@@ -13,7 +13,7 @@ Turn 7 des Design-Dokuments (`docs/plans/podcasts-youtube-radio-turn6.md`,
 Block E) ersetzt den unten beschriebenen einzigen verwalteten
 `Music/Reprise`-Bereich durch **drei benannte, per-Gerät konfigurierbare
 Sync-Ziele** — Playlists, YouTube-Tonspuren, Podcast-Episoden
-(`device_sync/targets.rs`, Regel `MTP-18`) — und verdrahtet den tatsächlichen
+(`device_sync/targets.rs`, Regel `MTP-38`) — und verdrahtet den tatsächlichen
 Transfer entsprechend (`MTP-23`). Wo dieser Plan unten von „dem
 verwalteten Ordner" oder „außerhalb `Music/Reprise`" als der einzigen
 Grenze spricht, gilt das nur noch für das **Playlists-Ziel**; die anderen
@@ -22,7 +22,7 @@ schreiben, löschen und bereinigen genauso, nur additiv statt vollständig
 autoritativ (`MTP-17`). Musik folgt weiterhin dem Transferprofil; Podcast-
 und YouTube-Audio wird immer 1:1 kopiert, nie umkodiert (`MTP-24`). Beide
 neuen Ziele tragen einen Größen-Cap mit „ältestes zuerst"-Räumung
-(`MTP-19`/`MTP-25`), das Playlists-Ziel bleibt ungedeckelt. Kein Geräte-
+(`MTP-39`/`MTP-25`), das Playlists-Ziel bleibt ungedeckelt. Kein Geräte-
 Browser für frei wählbare Zielordner existiert noch (7d/E6) — die drei
 Ziele starten mit ihren Vorschlagspfaden und `enabled = true`.
 
@@ -63,7 +63,7 @@ verbundene Android-MTP-Geräte. Die Bedienung bleibt absichtlich klein:
   Transferprofil wird nach Reconnect und App-Neustart für dasselbe Gerät
   wiederhergestellt. Es gibt keinen Apply-Schritt und keine zweite
   Sync-Oberfläche.
-- `Music/Reprise` — das Playlists-Sync-Ziel (`MTP-18`) — ist ein vollständig
+- `Music/Reprise` — das Playlists-Sync-Ziel (`MTP-38`) — ist ein vollständig
   von Reprise verwalteter Mirror-Root. Nach vollständiger Veröffentlichung
   des neuen Sollzustands werden dort alle nicht mehr benötigten Dateien
   entfernt. Außerhalb dieses Unterordners schreibt, verschiebt und löscht
@@ -108,16 +108,16 @@ Die pure Core-Schicht besitzt die plattformneutralen Verträge:
   Sidebar.
 - `device_sync/settings.rs`: gerätebezogene Auswahl sowie Track- und
   Playlist-Inventare.
-- `device_sync/targets.rs`: die drei benannten Sync-Ziele (`MTP-18`) —
+- `device_sync/targets.rs`: die drei benannten Sync-Ziele (`MTP-38`) —
   `StorageID`, Pfad-String, Aktivierung, optionaler Cap — als reine
   Datenschicht, siehe Nachtrag oben.
-- `device_sync/cap.rs`: reine „ältestes zuerst"-Cap-Räumung (`MTP-19`),
+- `device_sync/cap.rs`: reine „ältestes zuerst"-Cap-Räumung (`MTP-39`),
   transport- und zielartunabhängig.
 - `device_sync/podcasts.rs`: Sync-Plan für Podcast-Episoden und
   YouTube-Tonspuren — beide über denselben `build_plan`, unterschieden nur
   durch `PodcastSyncSource` und Ziel-Cap.
 - `device_sync/category_diff.rs`: die pro-Kategorie lesbare Diff-Projektion
-  fürs Geräte-Dashboard (`MTP-21`/`MTP-22`), reine Anzeige-Übersetzung ohne
+  fürs Geräte-Dashboard (`MTP-41`/`MTP-22`), reine Anzeige-Übersetzung ohne
   eigene Transferlogik.
 
 `reprise-core` bleibt frei von GTK, libadwaita, GStreamer und zbus.

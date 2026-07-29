@@ -2,7 +2,7 @@
 //!
 //! RSS and YouTube subscriptions are equally eligible: eligibility is about
 //! the subscription being active, not about its kind. Each kind lands on
-//! its own device target folder (`MTP-18`) — that routing decision lives in
+//! its own device target folder (`MTP-38`) — that routing decision lives in
 //! `device_sync::podcasts`, not here.
 
 use rusqlite::{params, Connection};

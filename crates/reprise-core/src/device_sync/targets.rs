@@ -1,4 +1,4 @@
-//! Named, per-device MTP sync targets (`MTP-18`).
+//! Named, per-device MTP sync targets (`MTP-38`).
 //!
 //! `E-5` settled that Reprise supports exactly one connected MTP device, so
 //! the turn 7 (7a/7e) plan to split phone-sync configuration into global
@@ -158,7 +158,7 @@ impl SyncTarget {
     }
 }
 
-/// `MTP-18`: whether a target's storage changed between two persisted
+/// `MTP-38`: whether a target's storage changed between two persisted
 /// states. [`Self::SameOrFirstResolution`] covers both "storage id
 /// unchanged" and "the folder had never been resolved to a storage yet" —
 /// neither needs cleanup, because nothing was ever written under a
@@ -174,7 +174,7 @@ pub enum StorageTransition {
     },
 }
 
-/// `MTP-18`: the pure storage-boundary decision described in the module
+/// `MTP-38`: the pure storage-boundary decision described in the module
 /// docs. Only compares `storage_id` — a path change on the same storage is
 /// an ordinary rename/move within that storage, not a boundary crossing.
 #[must_use]
@@ -283,7 +283,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_18_defaults_match_the_design_docs_folders_and_caps() {
+    fn mtp_38_defaults_match_the_design_docs_folders_and_caps() {
         let playlists = SyncTarget::default_for(SyncTargetKind::Playlists);
         let youtube = SyncTarget::default_for(SyncTargetKind::YoutubeAudio);
         let podcasts = SyncTarget::default_for(SyncTargetKind::PodcastEpisodes);
@@ -304,7 +304,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_18_load_or_create_persists_defaults_for_a_new_device() {
+    fn mtp_38_load_or_create_persists_defaults_for_a_new_device() {
         let conn = migrated();
 
         let created = load_or_create_targets(&conn, "mtp:pixel").unwrap();
@@ -319,7 +319,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_18_save_target_round_trips_storage_id_and_cap() {
+    fn mtp_38_save_target_round_trips_storage_id_and_cap() {
         let conn = migrated();
         load_or_create_targets(&conn, "mtp:pixel").unwrap();
 
@@ -339,7 +339,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_18_targets_are_independent_per_device() {
+    fn mtp_38_targets_are_independent_per_device() {
         let conn = migrated();
         let phone = SyncTarget {
             kind: SyncTargetKind::PodcastEpisodes,
@@ -373,7 +373,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_18_no_storage_change_when_id_is_unchanged_or_not_yet_resolved() {
+    fn mtp_38_no_storage_change_when_id_is_unchanged_or_not_yet_resolved() {
         let unresolved = SyncTarget::default_for(SyncTargetKind::Playlists);
         let still_unresolved = SyncTarget::default_for(SyncTargetKind::Playlists);
         assert_eq!(
@@ -403,7 +403,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_18_storage_change_is_reported_with_the_previous_storage_id() {
+    fn mtp_38_storage_change_is_reported_with_the_previous_storage_id() {
         let before = SyncTarget {
             storage_id: Some(StorageId(1)),
             ..SyncTarget::default_for(SyncTargetKind::PodcastEpisodes)

@@ -24,7 +24,7 @@ fn fixture() -> (TempDir, DeviceStorage) {
     (temp, DeviceStorage::from_root(&root))
 }
 
-/// The three named sync targets (`MTP-18`) at their design defaults —
+/// The three named sync targets (`MTP-38`) at their design defaults —
 /// exactly the folders every `inspect` test before Design 7d relied on
 /// implicitly, now passed explicitly.
 fn default_targets() -> [SyncTarget; 3] {
@@ -563,7 +563,7 @@ fn mtp_23_podcast_partial_cleanup_cannot_touch_music_or_other_podcast_apps() {
         .exists());
 }
 
-/// `MTP-18`/`MTP-23`, finding 1: a target repointed at a non-default
+/// `MTP-38`/`MTP-23`, finding 1: a target repointed at a non-default
 /// storage (`MTP-31`'s folder browser) must have both its transfer AND its
 /// next inspection actually use that `StorageId` + path — not silently
 /// fall back to `DeviceStorage::storage_root`'s "prefer internal" guess.
@@ -572,7 +572,7 @@ fn mtp_23_podcast_partial_cleanup_cannot_touch_music_or_other_podcast_apps() {
 /// storage instead, and a rescan never recognized the SD-card folder as
 /// that category's inventory.
 #[test]
-fn mtp_18_transfer_and_inspection_route_through_a_targets_own_persisted_storage() {
+fn mtp_38_transfer_and_inspection_route_through_a_targets_own_persisted_storage() {
     let (temp, storage) = fixture();
     fs::create_dir_all(temp.path().join("SD Card")).unwrap();
     let sd_card = derive_storage_id("SD Card");

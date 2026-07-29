@@ -15,7 +15,7 @@
 //! and channel pages, `POD-12`) — never a second selection surface layered
 //! on top of it. The target folder (`SyncTarget::path`) and whether this
 //! device's slot for a category is active at all (`SyncTarget::enabled`)
-//! remain per-device, as they always were (`MTP-18`).
+//! remain per-device, as they always were (`MTP-38`).
 //!
 //! ## What is reused, not recomputed
 //!
@@ -107,7 +107,7 @@ pub fn category_bytes(files: &[ManagedDeviceFile]) -> u64 {
 /// segmented by category ... with a distinctly hatched 'Incoming this
 /// sync' segment"). `music_bytes` covers both Reprise-managed and other
 /// music under `/Music` — YouTube audio and podcast episodes get their own
-/// segments because they live in their own target folders (`MTP-18`), not
+/// segments because they live in their own target folders (`MTP-38`), not
 /// because they stop being "music" in any other sense.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct CategorySegments {
@@ -179,7 +179,7 @@ pub struct CategoryContentRow {
     pub kind: super::targets::SyncTargetKind,
     pub target_path: String,
     /// `SyncTarget::enabled` — the one per-device toggle this row owns.
-    /// Independent of any global "sync this content type" rule (`MTP-18`'s
+    /// Independent of any global "sync this content type" rule (`MTP-38`'s
     /// doc comment); there is no second, competing toggle here.
     pub target_enabled: bool,
     pub size_on_device_bytes: u64,

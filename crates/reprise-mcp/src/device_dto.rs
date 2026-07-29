@@ -54,7 +54,7 @@ pub struct DeviceSyncDeviceDto {
     pub phase: String,
     pub progress: DeviceSyncProgressDto,
     pub current_track: String,
-    /// Block H (MCP parity, `MTP-18`/`MTP-22`): the three named sync
+    /// Block H (MCP parity, `MTP-38`/`MTP-22`): the three named sync
     /// targets, each with its target folder, cap and category diff reading.
     pub categories: Vec<DeviceSyncCategoryDto>,
     /// `MTP-22`'s aggregate balance across every category currently reading
@@ -70,7 +70,7 @@ pub struct DeviceSyncCategoryDto {
     pub kind: &'static str,
     pub target_path: String,
     /// `SyncTarget::enabled` — whether this device's slot for the category
-    /// is active at all (`MTP-18`), independent of the global rule.
+    /// is active at all (`MTP-38`), independent of the global rule.
     pub target_enabled: bool,
     pub size_on_device_bytes: u64,
     pub cap_bytes: Option<u64>,

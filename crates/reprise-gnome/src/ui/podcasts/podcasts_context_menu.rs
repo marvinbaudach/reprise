@@ -123,7 +123,7 @@ pub(super) fn build(row: &EpisodeRow) -> gio::Menu {
 
 /// Builds the source-level context menu, including the phone-sync section.
 /// RSS and YouTube sources get the same sync section (`POD-12`) — each
-/// lands on its own device target folder (`MTP-18`), a routing decision
+/// lands on its own device target folder (`MTP-38`), a routing decision
 /// made downstream in `device_sync::podcasts`, not here.
 pub(super) fn build_source(
     group: &SourceGroup,

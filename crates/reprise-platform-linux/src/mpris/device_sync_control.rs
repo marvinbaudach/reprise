@@ -133,7 +133,7 @@ impl DeviceSyncControl {
             .collect()
     }
 
-    /// Block H (MCP parity, `MTP-18`/`MTP-22`): the three named sync
+    /// Block H (MCP parity, `MTP-38`/`MTP-22`): the three named sync
     /// targets and their category diff reading per device, keyed by device
     /// name — the same identity `Configure`/`Start`/`Cancel`/`Eject`
     /// already address a device by.

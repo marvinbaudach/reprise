@@ -385,7 +385,7 @@ fn mtp_32_changing_a_target_folder_to_a_different_storage_does_not_relocate() {
 
         assert!(
             backend.moved_folders().is_empty(),
-            "a storage change must go through the copy-and-orphan path (MTP-18), not a move"
+            "a storage change must go through the copy-and-orphan path (MTP-38), not a move"
         );
     });
 }

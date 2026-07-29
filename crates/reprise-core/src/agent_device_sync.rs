@@ -29,7 +29,7 @@ pub struct AgentDeviceSyncDevice {
     pub bytes_total: u64,
     pub bytes_per_second: u64,
     pub current_track: String,
-    /// Block H (MCP parity): the three named sync targets (`MTP-18`) plus
+    /// Block H (MCP parity): the three named sync targets (`MTP-38`) plus
     /// their `MTP-22` category reading, in `SyncTargetKind::ALL` order.
     /// Reuses `reprise_core::device_sync`'s own `SyncTargetKind` and
     /// `CategoryReading` rather than re-deriving a parallel shape — this is
@@ -38,7 +38,7 @@ pub struct AgentDeviceSyncDevice {
     pub categories: Vec<AgentDeviceSyncCategoryRow>,
 }
 
-/// One of the three named sync targets (`MTP-18`) as seen by an agent: its
+/// One of the three named sync targets (`MTP-38`) as seen by an agent: its
 /// per-device folder, activation, on-device size, cap, and `MTP-22` diff
 /// reading.
 #[derive(Debug, Clone, PartialEq, Eq)]

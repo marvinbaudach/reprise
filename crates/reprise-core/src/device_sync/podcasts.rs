@@ -132,7 +132,7 @@ pub fn query_candidates_for_device(
     Ok(candidates)
 }
 
-// `MTP-21`: `query_selection_candidates_for_device` lives in its own sibling
+// `MTP-41`: `query_selection_candidates_for_device` lives in its own sibling
 // module (`podcasts_selection.rs`) purely to keep this file under the
 // project's 800-line file-size rule — it is still conceptually part of this
 // module's public query surface, so it is re-exported below rather than
@@ -151,8 +151,8 @@ fn source_from_kind(kind: &str) -> Option<PodcastSyncSource> {
 
 /// Builds a plan for one [`PodcastSyncSource`] at a time — RSS episodes and
 /// YouTube audio are planned identically, each against its own target
-/// folder (`MTP-18`). `cap_bytes` is the target's optional size cap
-/// (`MTP-19`/`MTP-25`): when the full desired set would exceed it, the
+/// folder (`MTP-38`). `cap_bytes` is the target's optional size cap
+/// (`MTP-39`/`MTP-25`): when the full desired set would exceed it, the
 /// oldest candidates (by [`PodcastSyncCandidate::source_mtime`]) are
 /// dropped from the desired set entirely before the copy/remove diff runs,
 /// so an evicted-but-already-resident file is picked up by the ordinary
@@ -216,7 +216,7 @@ pub fn build_plan(
     }
 }
 
-/// `MTP-19`/`MTP-25`: which desired device paths must leave to bring the
+/// `MTP-39`/`MTP-25`: which desired device paths must leave to bring the
 /// full candidate set back under `cap_bytes`, oldest (`source_mtime`)
 /// first. Reuses [`items_to_evict`] rather than re-deriving the eviction
 /// order — this is only the adapter from `PodcastSyncCandidate` to
@@ -468,7 +468,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_21_youtube_source_selects_youtube_candidates_the_same_way_rss_does() {
+    fn mtp_41_youtube_source_selects_youtube_candidates_the_same_way_rss_does() {
         let rss = PodcastSyncCandidate {
             episode_id: 1,
             source: PodcastSyncSource::Rss,

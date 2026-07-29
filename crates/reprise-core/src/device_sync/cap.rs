@@ -1,4 +1,4 @@
-//! Pure per-target cap enforcement (`MTP-19`).
+//! Pure per-target cap enforcement (`MTP-39`).
 //!
 //! The design gives YouTube audio and podcast episode targets a byte cap
 //! with "oldest files leave first" eviction. This module is that decision
@@ -17,7 +17,7 @@ pub struct CapItem<Id> {
     pub age: i64,
 }
 
-/// `MTP-19`: which items must leave to bring `items`' total size back to
+/// `MTP-39`: which items must leave to bring `items`' total size back to
 /// at most `cap_bytes`, oldest (smallest `age`) first. Ties break on `id`
 /// so the result is deterministic for the same input. Returns ids in the
 /// order they should be removed; stops as soon as the running total is at
@@ -60,7 +60,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_19_nothing_leaves_when_empty_or_already_under_cap() {
+    fn mtp_39_nothing_leaves_when_empty_or_already_under_cap() {
         assert_eq!(items_to_evict::<i64>(&[], 0), Vec::<i64>::new());
 
         let items = [item(1, 10, 100), item(2, 10, 200)];
@@ -68,13 +68,13 @@ mod tests {
     }
 
     #[test]
-    fn mtp_19_nothing_leaves_when_total_exactly_equals_the_cap() {
+    fn mtp_39_nothing_leaves_when_total_exactly_equals_the_cap() {
         let items = [item(1, 40, 1), item(2, 60, 2)];
         assert_eq!(items_to_evict(&items, 100), Vec::<i64>::new());
     }
 
     #[test]
-    fn mtp_19_oldest_items_leave_first_and_eviction_stops_as_soon_as_it_fits() {
+    fn mtp_39_oldest_items_leave_first_and_eviction_stops_as_soon_as_it_fits() {
         // Ages: 1 is oldest, 3 is newest. Total is 90, cap is 50, so only
         // enough of the oldest items should leave to reach <= 50.
         let items = [item(1, 30, 1), item(2, 30, 2), item(3, 30, 3)];
@@ -89,14 +89,14 @@ mod tests {
     }
 
     #[test]
-    fn mtp_19_a_single_oversized_item_is_evicted_even_alone() {
+    fn mtp_39_a_single_oversized_item_is_evicted_even_alone() {
         let items = [item(1, 500, 1)];
 
         assert_eq!(items_to_evict(&items, 100), vec![1]);
     }
 
     #[test]
-    fn mtp_19_equal_ages_break_ties_by_id_for_determinism() {
+    fn mtp_39_equal_ages_break_ties_by_id_for_determinism() {
         let items = [item(3, 10, 1), item(1, 10, 1), item(2, 10, 1)];
 
         let evicted = items_to_evict(&items, 0);
@@ -105,7 +105,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_19_zero_cap_evicts_everything_oldest_first() {
+    fn mtp_39_zero_cap_evicts_everything_oldest_first() {
         let items = [item(1, 5, 2), item(2, 5, 1)];
 
         assert_eq!(items_to_evict(&items, 0), vec![2, 1]);

@@ -53,7 +53,7 @@ struct DeviceState {
     /// inventory itself is rebuilt live from MTP on every connect, so
     /// "verified" cannot outlive the connection it was verified on.
     ever_inspected: bool,
-    /// `MTP-18`: this device's three named sync targets, refreshed on every
+    /// `MTP-38`: this device's three named sync targets, refreshed on every
     /// `recompute_delta_silent`. Read-only from the sidebar/device view's
     /// perspective outside of the folder picker (E6, not built here).
     targets: [SyncTarget; 3],
@@ -68,7 +68,7 @@ struct DeviceState {
     mirror_plan: MirrorPlan,
     podcast_plan: reprise_core::device_sync::podcasts::PodcastSyncPlan,
     youtube_plan: reprise_core::device_sync::podcasts::PodcastSyncPlan,
-    /// `MTP-21`/`MTP-20`: podcast/YouTube episodes wanted for this device
+    /// `MTP-41`/`MTP-40`: podcast/YouTube episodes wanted for this device
     /// but not yet downloaded, from the same `select_episodes` pass that
     /// produced `podcast_plan`/`youtube_plan` — fed into `CategoryDiff`'s
     /// `files_waiting_for_download` (`MTP-22`) instead of the previous
@@ -139,7 +139,7 @@ impl DeviceState {
         // `recompute_delta_silent` — reused here, not recomputed.
         // `files_waiting_for_download` reads `podcast_waiting`/
         // `youtube_waiting`, both populated by `selection::select_episodes`
-        // (`MTP-20`/`MTP-21`) in `recompute_delta_silent` from
+        // (`MTP-40`/`MTP-41`) in `recompute_delta_silent` from
         // `podcasts::query_selection_candidates_for_device`.
         let category_readings = self.category_readings();
         let device_bytes = [
@@ -307,7 +307,7 @@ impl DeviceSyncRuntime {
         just_connected: bool,
     ) {
         // Loaded synchronously, before the async inspect below, so it walks
-        // each of the three named targets (`MTP-18`) at the storage/path
+        // each of the three named targets (`MTP-38`) at the storage/path
         // the folder browser (`MTP-31`) most recently persisted for it —
         // never a stale or default guess (finding 1).
         let targets = match load_or_create_targets(&self.conn.borrow(), device_id) {

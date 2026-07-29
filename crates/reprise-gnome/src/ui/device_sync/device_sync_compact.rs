@@ -104,7 +104,7 @@ impl DeviceSyncRuntime {
         self.update_settings(settings)
     }
 
-    /// `MTP-18`'s one per-device toggle exposed by the Content section
+    /// `MTP-38`'s one per-device toggle exposed by the Content section
     /// (`MTP-37`): whether this device's slot for `kind` is active at all.
     /// `E-6` withdrew the once-planned global "sync this content type" rule
     /// outright, so this switch owns its section without a second,
@@ -140,11 +140,11 @@ impl DeviceSyncRuntime {
 
     /// `MTP-37` (`E-6`, `E-8`): the Content section's size-cap column
     /// becomes a real per-device control here — before this, `cap_bytes`
-    /// was persisted (`MTP-18`) and enforced by `build_plan`'s eviction
-    /// pass (`MTP-19`/`MTP-25`) but had no editing surface anywhere, so a
+    /// was persisted (`MTP-38`) and enforced by `build_plan`'s eviction
+    /// pass (`MTP-39`/`MTP-25`) but had no editing surface anywhere, so a
     /// user could never actually change it. `None` clears the cap
     /// (unlimited); `Some` sets it in bytes. Playlists have no cap concept
-    /// (`MTP-18`'s `default_cap_bytes`) and no eviction path reads a
+    /// (`MTP-38`'s `default_cap_bytes`) and no eviction path reads a
     /// playlist cap, so the GTK side never offers this control for that
     /// kind — this method does not special-case it either way, it simply
     /// persists whatever is asked and lets the existing eviction pass
@@ -272,11 +272,11 @@ impl DeviceSyncRuntime {
             // eligible for phone sync (`POD-12`).
             let candidates =
                 query_candidates_for_device(&conn, device_id).map_err(|error| error.to_string())?;
-            // `MTP-21`: `select_episodes` — not the raw downloaded-file
+            // `MTP-41`: `select_episodes` — not the raw downloaded-file
             // query above — decides which episodes are actually wanted
             // (unplayed RSS episodes, latest-per-channel YouTube episodes)
             // and splits wanted-but-missing ones into `waiting` instead of
-            // letting them vanish from the balance (`MTP-20`).
+            // letting them vanish from the balance (`MTP-40`).
             let selection_candidates = query_selection_candidates_for_device(&conn, device_id)
                 .map_err(|error| error.to_string())?;
             let (rss_selection, youtube_selection) = plan_episode_selection(&selection_candidates);
@@ -436,7 +436,7 @@ fn as_podcast_device_files(files: &[ManagedDeviceFile]) -> Vec<PodcastDeviceFile
         .collect()
 }
 
-/// `MTP-21`: runs each `PodcastSyncSource`'s own selection rule
+/// `MTP-41`: runs each `PodcastSyncSource`'s own selection rule
 /// (`UnplayedDownloadsOnly` for RSS, `LatestPerChannel` for YouTube) over
 /// `query_selection_candidates_for_device`'s combined candidate list, one
 /// rule per source. `enabled_shows`/`enabled_channels` are simply every

@@ -1,4 +1,4 @@
-//! `wanted_on_device` (`MTP-20`): persistent "sync to phone" intent for a
+//! `wanted_on_device` (`MTP-40`): persistent "sync to phone" intent for a
 //! single episode, independent of whether it has a local file yet (design
 //! 7f).
 //!
@@ -33,7 +33,7 @@ pub enum WantOutcome {
     Download(ActionOutcome),
 }
 
-/// `MTP-20`: the transition fired the instant "Sync to phone" is set on an
+/// `MTP-40`: the transition fired the instant "Sync to phone" is set on an
 /// episode. Marking wanted while a file already exists needs no download
 /// step; marking wanted without a file starts (or queues) the download
 /// immediately — nobody has to think "download first, then select".
@@ -102,7 +102,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_20_wanted_on_device_defaults_to_false_and_persists_when_set() {
+    fn mtp_40_wanted_on_device_defaults_to_false_and_persists_when_set() {
         let conn = migrated();
         insert_subscription(&conn, 1);
         insert_episode(&conn, 11, 1);
@@ -116,7 +116,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_20_setting_wanted_on_an_unknown_episode_reports_no_change() {
+    fn mtp_40_setting_wanted_on_an_unknown_episode_reports_no_change() {
         let conn = migrated();
 
         assert!(!set_wanted_on_device(&conn, 999, true).unwrap());
@@ -124,7 +124,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_20_wanting_an_already_downloaded_episode_needs_no_download() {
+    fn mtp_40_wanting_an_already_downloaded_episode_needs_no_download() {
         assert_eq!(
             want_episode(LocalAvailability::Available, Connectivity::Online),
             WantOutcome::AlreadyLocal
@@ -136,7 +136,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_20_wanting_an_episode_without_a_file_downloads_now_when_online() {
+    fn mtp_40_wanting_an_episode_without_a_file_downloads_now_when_online() {
         assert_eq!(
             want_episode(LocalAvailability::Missing, Connectivity::Online),
             WantOutcome::Download(ActionOutcome::RunsNow)
@@ -144,7 +144,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_20_wanting_an_episode_without_a_file_queues_the_download_when_offline() {
+    fn mtp_40_wanting_an_episode_without_a_file_queues_the_download_when_offline() {
         assert_eq!(
             want_episode(LocalAvailability::Missing, Connectivity::Offline),
             WantOutcome::Download(ActionOutcome::QueuedOffline)

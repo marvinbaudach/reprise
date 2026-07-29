@@ -182,7 +182,7 @@ pub(crate) fn migrate_v41(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.commit()
 }
 
-// `MTP-20`: persistent "sync to phone" intent for a single episode,
+// `MTP-40`: persistent "sync to phone" intent for a single episode,
 // independent of whether it has been downloaded yet (design 7f). See
 // `podcasts::wanted_on_device` for the pure transition this column backs.
 pub(crate) fn migrate_v43(conn: &Connection) -> Result<(), rusqlite::Error> {

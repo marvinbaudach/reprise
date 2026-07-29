@@ -61,11 +61,11 @@ pub(super) struct FakeState {
     pub(super) deleted: RefCell<Vec<String>>,
     /// Every `replace_track`/`delete_track` call that reached this double,
     /// recorded as `(target_path, relative_path)` — the seam's proof that
-    /// the right named target (`MTP-18`) was used, without touching a real
+    /// the right named target (`MTP-38`) was used, without touching a real
     /// or simulated filesystem.
     pub(super) managed_copies: RefCell<Vec<(String, String)>>,
     pub(super) managed_deleted: RefCell<Vec<(String, String)>>,
-    /// `MTP-18`/finding-1 proof: the `storage_id` each `replace_track`/
+    /// `MTP-38`/finding-1 proof: the `storage_id` each `replace_track`/
     /// `delete_track`/`replace_playlist` call actually reached this double
     /// with, keyed by `target_path` — the seam a test uses to prove a
     /// device's persisted per-target storage choice is what the transfer

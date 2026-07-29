@@ -433,7 +433,7 @@ kommen zwei Inhaltsarten und eine neue Geräteansicht dazu.
   nicht gestartet; mit abgeschalteten Online-Quellen gibt es die Phase gar
   nicht. Hängt an R1, weil die Warteliste erst dann echte Zahlen hat.
 
-- **R1 · `MTP-21` live verdrahten** (Befund des externen Reviews). Die reine
+- **R1 · `MTP-41` live verdrahten** (Befund des externen Reviews). Die reine
   Projektion `selection::select_episodes` erfüllt die Regel und ist getestet,
   die Live-Pipeline ruft sie nie auf: `query_candidates_for_device` filtert
   nicht nach gespielt, und `files_waiting_for_download` ist hart 0. Folge:

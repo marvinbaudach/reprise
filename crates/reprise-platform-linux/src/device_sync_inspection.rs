@@ -13,7 +13,7 @@ use super::{
 impl DeviceStorage {
     /// Aggregates music usage on the storage volume that receives the
     /// Playlists target, and walks each of the three named targets
-    /// (`MTP-18`) at its own persisted `storage_id` + path — never a
+    /// (`MTP-38`) at its own persisted `storage_id` + path — never a
     /// hard-coded `Music/Reprise`-shaped guess, so a folder the browser
     /// (`MTP-31`) repointed at a different storage or path is recognized
     /// as that target's inventory both here and by the transfer that wrote
@@ -132,7 +132,7 @@ impl DeviceStorage {
 /// path components (`components`, e.g. `["Podcasts", "Reprise"]`) — and
 /// returns every file `accept` keeps, keyed by its path relative to that
 /// folder. This is the one inventory primitive all three named targets
-/// (`MTP-18`) use, so each is recognized only by the storage + path it was
+/// (`MTP-38`) use, so each is recognized only by the storage + path it was
 /// actually written to, never by a hard-coded folder name.
 async fn inspect_target_folder(
     storage: &gio::File,
@@ -186,7 +186,7 @@ async fn inspect_target_folder(
 
 /// Sums every audio file under `Music/` on `storage` that does not fall
 /// inside `excluded` — the storage-relative-to-`Music/` subtrees already
-/// owned by one of the three named targets (`MTP-18`). A missing `Music/`
+/// owned by one of the three named targets (`MTP-38`). A missing `Music/`
 /// folder is not an error, just an empty device library.
 async fn other_music_bytes(storage: &gio::File, excluded: &[String]) -> Result<u64, DeviceIoError> {
     let music = storage.child("Music");

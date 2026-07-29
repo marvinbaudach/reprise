@@ -1,11 +1,11 @@
 //! Block H-D/H-E: batch episode mutations over MCP — download, remove, and
-//! `wanted_on_device` (`MTP-20`). Every action reuses the exact core
+//! `wanted_on_device` (`MTP-40`). Every action reuses the exact core
 //! facades the GNOME channel detail and device page call:
 //! `podcasts::pipeline::download_episode` (the same function the refresh
 //! pipeline's auto-download branch calls — Block H's extraction, not a
 //! second download path), `podcasts::store::tombstone_episode`/
 //! `commit_remove_episode` (`POD-6`), and `podcasts::wanted_on_device::
-//! set_wanted_on_device` (`MTP-20`).
+//! set_wanted_on_device` (`MTP-40`).
 
 use std::path::Path;
 
@@ -26,7 +26,7 @@ pub struct ManageEpisodesParams {
     /// At most 100 per call.
     pub episode_ids: Vec<i64>,
     /// Required for `want_on_device`: whether these episodes should be
-    /// marked wanted on the phone (`MTP-20`). Ignored for other actions.
+    /// marked wanted on the phone (`MTP-40`). Ignored for other actions.
     #[serde(default)]
     pub wanted: Option<bool>,
 }
@@ -387,7 +387,7 @@ mod tests {
         ));
     }
 
-    /// `MTP-20`: setting wanted on and off must produce genuinely different
+    /// `MTP-40`: setting wanted on and off must produce genuinely different
     /// persisted state, not just a label.
     #[test]
     fn want_on_device_round_trips_and_the_two_states_actually_differ() {

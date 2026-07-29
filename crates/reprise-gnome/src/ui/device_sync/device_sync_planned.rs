@@ -56,7 +56,7 @@ struct PlannedWork {
     plan: MirrorPlan,
     podcasts: PodcastSyncPlan,
     youtube: PodcastSyncPlan,
-    /// Resolved device paths for the three named sync targets (`MTP-18`,
+    /// Resolved device paths for the three named sync targets (`MTP-38`,
     /// `MTP-23`) — loaded once per sync so every transfer/removal/cleanup
     /// step below routes through the right folder instead of a hard-coded
     /// single managed root.
@@ -116,7 +116,7 @@ fn blocker_message(plan: &MirrorPlan) -> String {
     format!("playlist mirror is blocked: {:?}", plan.blockers)
 }
 
-/// The resolved device path for one named sync target (`MTP-18`). Falls
+/// The resolved device path for one named sync target (`MTP-38`). Falls
 /// back to the kind's design default if somehow absent from the freshly
 /// loaded three — `load_or_create_targets` always returns all three, so
 /// this is just defense in depth, never the normal path.
@@ -133,7 +133,7 @@ fn target_path(
         )
 }
 
-/// The resolved `StorageId` for one named sync target (`MTP-18`), the
+/// The resolved `StorageId` for one named sync target (`MTP-38`), the
 /// `target_path` counterpart: `None` both when the target has never been
 /// repointed by the folder browser and, defensively, when it is somehow
 /// absent from the freshly loaded three.

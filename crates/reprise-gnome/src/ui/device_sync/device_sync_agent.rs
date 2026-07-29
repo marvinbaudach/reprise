@@ -194,7 +194,7 @@ fn agent_device(device: DeviceView) -> AgentDeviceSyncDevice {
         bytes_per_second: device.bytes_per_second,
         current_track,
         // Block H (MCP parity): reuses the exact `content_rows`/
-        // `category_readings` the GTK device page already renders (`MTP-18`/
+        // `category_readings` the GTK device page already renders (`MTP-38`/
         // `MTP-22`) — no second computation.
         categories: device
             .content_rows

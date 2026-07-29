@@ -5,7 +5,7 @@ pub(super) type StateCallback = Rc<dyn Fn(DeviceSyncState)>;
 
 /// The injectable MTP transport seam (`MTP-23`). Every method takes the
 /// resolved absolute `target_path` of one of the three named sync targets
-/// (`MTP-18`, e.g. `/Music/Reprise-YouTube`) explicitly, rather than
+/// (`MTP-38`, e.g. `/Music/Reprise-YouTube`) explicitly, rather than
 /// picking a hard-coded root — that is what makes routing "the actual
 /// transfer through three named targets" a caller-side decision instead of
 /// something this trait has to special-case per content kind.
@@ -17,7 +17,7 @@ pub(super) type StateCallback = Rc<dyn Fn(DeviceSyncState)>;
 pub trait DeviceBackend {
     fn devices(&self) -> Vec<DeviceDescriptor>;
     fn subscribe_devices(&self, callback: Rc<dyn Fn(Vec<DeviceDescriptor>)>);
-    /// `targets`: the device's three named sync targets (`MTP-18`), each
+    /// `targets`: the device's three named sync targets (`MTP-38`), each
     /// carrying the persisted `storage_id`/path the folder browser (`MTP-31`)
     /// resolved for it — inspection walks exactly those, never a
     /// hard-coded folder name, so a repointed target is recognized as its

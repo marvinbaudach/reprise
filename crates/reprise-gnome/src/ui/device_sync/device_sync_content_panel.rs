@@ -11,7 +11,7 @@
 //! rule set) no longer applies. Editable here, per device: each category's
 //! target folder (via the browser), its size cap (a `gtk4::SpinButton` in
 //! GiB, `None`/0 meaning unlimited), its activation (`SyncTarget::enabled`,
-//! `MTP-18`), "Remove from phone when deleted or unsubscribed here", and
+//! `MTP-38`), "Remove from phone when deleted or unsubscribed here", and
 //! "Sync automatically when this phone connects". The selection summary
 //! ("N of M ... selected") is a live, honest read of the per-item
 //! selection edited on the podcast/channel pages and the playlist list
@@ -120,7 +120,7 @@ struct CategoryRowWidgets {
     selection: gtk4::Label,
     size_label: gtk4::Label,
     /// `MTP-37`: the cap in GiB, 0 meaning unlimited. Playlists have no cap
-    /// concept (`MTP-18`) so this stays permanently insensitive for that
+    /// concept (`MTP-38`) so this stays permanently insensitive for that
     /// row — see [`build_category_row`].
     cap_spin: gtk4::SpinButton,
     toggle: gtk4::Switch,
@@ -355,7 +355,7 @@ fn build_category_row(
     let size_label = detail("");
 
     // `MTP-37`: the cap becomes a real editable control here. Playlists
-    // have no cap concept (`MTP-18`'s `default_cap_bytes` is always
+    // have no cap concept (`MTP-38`'s `default_cap_bytes` is always
     // `None`, and no eviction path reads a playlist cap), so that row's
     // spin button stays permanently insensitive rather than offering a
     // control that would silently do nothing.
@@ -501,7 +501,7 @@ fn verification_copy(state: &DeviceContentsState) -> (String, String, bool) {
 
 /// `MTP-37`: design 7a's per-category selection summary. Every branch is
 /// now a live read of real per-device selection state — Playlists via the
-/// existing engine (`selection::summarize_playlist_selection`, `MTP-21`),
+/// existing engine (`selection::summarize_playlist_selection`, `MTP-41`),
 /// YouTube and podcasts via `POD-12`'s per-device subscription selection
 /// (`podcasts::phone_sync::selection_summary`, gathered by the caller into
 /// `youtube_selection`/`podcast_selection`). None of these are edited in

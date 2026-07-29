@@ -106,9 +106,9 @@ fn mtp_30_stays_silent_when_the_connect_scan_fails() {
     });
 }
 
-/// `MTP-21`/`MTP-30`: before `MTP-21`'s live wiring fix,
+/// `MTP-41`/`MTP-30`: before `MTP-41`'s live wiring fix,
 /// `files_waiting_for_download` was hard-coded to `0`, so a device with
-/// only a wanted-but-missing podcast episode (`wanted_on_device`, `MTP-20`)
+/// only a wanted-but-missing podcast episode (`wanted_on_device`, `MTP-40`)
 /// pending — nothing to copy, nothing to remove — produced an all-zero
 /// `SyncBalance` that read as "nothing to do". `should_auto_start` (and,
 /// downstream, the sidebar's "Up to date" reading, `MTP-29`) must instead

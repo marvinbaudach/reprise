@@ -358,7 +358,7 @@ impl DeviceStorage {
     }
 
     /// The storage volume one sync target's I/O actually runs against
-    /// (`MTP-18`): the explicit `storage_id` the folder browser resolved and
+    /// (`MTP-38`): the explicit `storage_id` the folder browser resolved and
     /// persisted for it (`MTP-31`/`MTP-32`), re-resolved fresh — MTP handles
     /// are not stable across reconnects, see the module docs — or, for a
     /// target that has never been repointed (`storage_id` still `None`),
@@ -378,7 +378,7 @@ impl DeviceStorage {
     }
 
     /// Removes transfer remnants left by a disconnect or process exit under
-    /// one sync target's folder (`target_path`, `MTP-18`). Only files below
+    /// one sync target's folder (`target_path`, `MTP-38`). Only files below
     /// that folder with the dedicated `.part` suffix are touched; unrelated
     /// device content — including the other two named targets — remains
     /// outside our ownership.
@@ -426,7 +426,7 @@ impl DeviceStorage {
     }
 
     /// Deletes one file under a sync target's folder (`target_path`,
-    /// `MTP-18`). A missing target is already in the desired state and is
+    /// `MTP-38`). A missing target is already in the desired state and is
     /// reported as `false`.
     pub async fn delete_managed(
         &self,
@@ -445,7 +445,7 @@ impl DeviceStorage {
     }
 
     /// Copies (or overwrites) one file under a sync target's folder
-    /// (`target_path`, `MTP-18`), always replacing any existing file at the
+    /// (`target_path`, `MTP-38`), always replacing any existing file at the
     /// destination even when its byte count happens to be unchanged.
     #[allow(clippy::too_many_arguments)]
     pub async fn replace_managed<P>(
@@ -631,7 +631,7 @@ fn choose_storage_volume(volumes: &[String]) -> Option<String> {
 }
 
 /// Splits a [`reprise_core::device_sync::SyncTarget`] path (e.g.
-/// `/Music/Reprise-YouTube`, `MTP-18`) into path components for building a
+/// `/Music/Reprise-YouTube`, `MTP-38`) into path components for building a
 /// `gio::File` under the resolved storage volume. Unlike
 /// [`safe_relative_components`], a single leading `Component::RootDir` is
 /// accepted and dropped — sync target paths are written as absolute-looking

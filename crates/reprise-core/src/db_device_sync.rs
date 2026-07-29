@@ -85,7 +85,7 @@ ALTER TABLE device_playlists
   CHECK (last_synced_at IS NULL OR last_synced_at >= 0);
 "#;
 
-// `MTP-18`: three named, per-device sync targets replacing the single
+// `MTP-38`: three named, per-device sync targets replacing the single
 // implicit managed folder from `78e379fd`. See
 // `device_sync::targets` for the pure model this table backs — `kind` is
 // one of `SyncTargetKind::storage_value()`, `storage_id` is an MTP

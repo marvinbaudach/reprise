@@ -81,7 +81,7 @@ fn balance_sentence(balance: &SyncBalance) -> String {
 }
 
 /// A balance can carry work without a single file to copy or remove yet —
-/// only playlists rewritten, or episodes waiting on a download (`MTP-20`).
+/// only playlists rewritten, or episodes waiting on a download (`MTP-40`).
 /// Neither is one of the design's four named states, so this stays honest
 /// rather than inventing a fifth exact phrase for it.
 fn waiting_or_playlists_sentence(balance: &SyncBalance) -> String {

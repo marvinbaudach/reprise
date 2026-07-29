@@ -1,4 +1,4 @@
-//! `MTP-21` selection-candidate query for podcasts/YouTube — split out of
+//! `MTP-41` selection-candidate query for podcasts/YouTube — split out of
 //! `podcasts.rs` only to keep that file under the project's 800-line rule.
 //! [`query_selection_candidates_for_device`] is still conceptually part of
 //! `podcasts`'s public query surface (re-exported there), not a separate
@@ -10,15 +10,15 @@ use super::{source_from_kind, PodcastSyncSource};
 use crate::connectivity::LocalAvailability;
 use crate::device_sync::selection::EpisodeSelectionCandidate;
 
-/// `MTP-21`: every episode candidate `selection::select_episodes` needs to
+/// `MTP-41`: every episode candidate `selection::select_episodes` needs to
 /// see for `device_id`, across both [`PodcastSyncSource`] kinds — downloaded
 /// episodes at any played state (`select_episodes`'s rule decides which are
 /// wanted, this query only supplies facts) plus explicitly wanted-but-
-/// missing ones (`wanted_on_device`, `MTP-20`). Scoped to shows/channels
+/// missing ones (`wanted_on_device`, `MTP-40`). Scoped to shows/channels
 /// selected for this device exactly like
 /// [`super::query_candidates_for_device`] — that join over
 /// `podcast_subscription_devices` (`POD-12`) *is* this pipeline's notion of
-/// "aktivierte Show/Kanal" (`MTP-21`).
+/// "aktivierte Show/Kanal" (`MTP-41`).
 ///
 /// A missing-file episode only becomes a candidate when `wanted_on_device`
 /// is set: without that gate, enabling an old show for a device would flood
@@ -132,7 +132,7 @@ mod tests {
         .unwrap();
     }
 
-    /// Runs the RSS podcast rule (`MTP-21`'s `UnplayedDownloadsOnly`) over
+    /// Runs the RSS podcast rule (`MTP-41`'s `UnplayedDownloadsOnly`) over
     /// just the RSS-sourced candidates, the way
     /// `device_sync_compact::recompute_delta_silent` does in the live
     /// pipeline.
@@ -151,14 +151,14 @@ mod tests {
         )
     }
 
-    // `MTP-21` end-to-end: `query_selection_candidates_for_device` feeding
+    // `MTP-41` end-to-end: `query_selection_candidates_for_device` feeding
     // `selection::select_episodes` — the live wiring this pipeline
     // previously lacked entirely (`query_candidates_for_device` only ever
     // returned downloaded episodes, with no played filter, and nothing
     // surfaced a wanted-but-missing episode at all).
 
     #[test]
-    fn mtp_21_a_played_downloaded_episode_of_an_enabled_show_is_never_wanted() {
+    fn mtp_41_a_played_downloaded_episode_of_an_enabled_show_is_never_wanted() {
         let conn = migrated();
         let downloads = tempfile::tempdir().unwrap();
         let unplayed_path = downloads.path().join("unplayed.mp3");
@@ -190,7 +190,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_21_an_unplayed_downloaded_episode_is_ready_to_copy() {
+    fn mtp_41_an_unplayed_downloaded_episode_is_ready_to_copy() {
         let conn = migrated();
         let downloads = tempfile::tempdir().unwrap();
         let path = downloads.path().join("fresh.mp3");
@@ -207,7 +207,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_21_a_wanted_episode_with_no_file_counts_as_waiting_never_as_ready() {
+    fn mtp_41_a_wanted_episode_with_no_file_counts_as_waiting_never_as_ready() {
         let conn = migrated();
         insert_subscription(&conn, 1, "rss", "Show");
         crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:pixel", true).unwrap();
@@ -229,7 +229,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_21_an_unwanted_missing_episode_never_becomes_a_candidate_at_all() {
+    fn mtp_41_an_unwanted_missing_episode_never_becomes_a_candidate_at_all() {
         let conn = migrated();
         insert_subscription(&conn, 1, "rss", "Show");
         crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:pixel", true).unwrap();
@@ -247,7 +247,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_21_selection_candidates_stay_scoped_to_shows_enabled_for_the_device() {
+    fn mtp_41_selection_candidates_stay_scoped_to_shows_enabled_for_the_device() {
         let conn = migrated();
         let downloads = tempfile::tempdir().unwrap();
         let path = downloads.path().join("episode.mp3");

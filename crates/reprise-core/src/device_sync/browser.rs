@@ -1,6 +1,6 @@
 //! The device folder browser (design 7d, `MTP-31`/`MTP-32`).
 //!
-//! `MTP-18`'s module docs already state the hard MTP fact this browser has
+//! `MTP-38`'s module docs already state the hard MTP fact this browser has
 //! to live inside: folders are object handles under a `StorageID`, and
 //! handles are not stable across reconnects. This module never receives or
 //! produces a handle — only facts the frontend has already gathered this
@@ -160,7 +160,7 @@ pub enum TargetRelocation {
 }
 
 /// The pure decision behind `MTP-32`. Delegates the storage-boundary half
-/// of the question to [`target_storage_transition`] (`MTP-18`) rather than
+/// of the question to [`target_storage_transition`] (`MTP-38`) rather than
 /// re-deriving it, and only adds the same-storage "is this actually a
 /// folder rename" half that target does not need to answer.
 #[must_use]

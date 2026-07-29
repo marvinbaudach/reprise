@@ -1,6 +1,6 @@
 //! `MTP-37`: the Content section's size cap (`SyncTarget::cap_bytes`,
-//! `MTP-18`) becomes editable via `DeviceSyncRuntime::set_target_cap`.
-//! `MTP-19`/`MTP-25` already prove the pure eviction logic reacts to a cap;
+//! `MTP-38`) becomes editable via `DeviceSyncRuntime::set_target_cap`.
+//! `MTP-39`/`MTP-25` already prove the pure eviction logic reacts to a cap;
 //! what was missing until this rule was any way for a user to actually set
 //! one. This test proves the new setter is genuinely wired into the live
 //! plan, not merely persisted — the same failure mode as the three
