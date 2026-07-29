@@ -241,6 +241,44 @@ fn dialogue_state_names_cover_async_lifecycle() {
     assert_eq!(phases.len(), 6);
 }
 
+/// `POD-13`: the add-source preview must never show raw provider text —
+/// yt-dlp's first stderr line in particular can carry a signed URL, a query
+/// token, a credential-like value or a local filesystem path. `preview_error`
+/// is what `preview`'s RSS and YouTube branches map every `PodcastError`
+/// through instead of `.to_string()`; feed it a payload shaped exactly like
+/// a real leak and confirm none of it survives into the string the dialog
+/// would display.
+#[test]
+fn pod_13_preview_error_never_forwards_a_leaking_payload() {
+    let leaking = "GET https://cdn.example.test/ep.mp3?sig=abc123&token=SECRET-TOKEN \
+        failed while writing /home/user/.local/share/reprise/podcasts/leak.mp3";
+
+    for error in [
+        podcasts::PodcastError::YtDlp(leaking.to_owned()),
+        podcasts::PodcastError::Transport(leaking.to_owned()),
+        podcasts::PodcastError::Body(leaking.to_owned()),
+    ] {
+        let message = preview_error(&error);
+        for needle in [
+            "token",
+            "SECRET",
+            "sig=",
+            "cdn.example.test",
+            "/home/user",
+            ".local/share/reprise",
+        ] {
+            assert!(
+                !message.contains(needle),
+                "preview_error leaked {needle:?}: {message}"
+            );
+        }
+    }
+    assert_eq!(
+        preview_error(&podcasts::PodcastError::YtDlp(leaking.to_owned())),
+        "YouTube source could not be read with yt-dlp"
+    );
+}
+
 #[test]
 fn disabling_initial_import_persists_the_previewed_guid_baseline() {
     let guids = vec!["old-a".to_owned(), "old-b".to_owned()];
