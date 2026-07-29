@@ -427,6 +427,9 @@ impl Loop {
             RuntimeEvent::QueueChanged(snapshot) => {
                 self.signal(peer, "QueueChanged", &(sequence, initiator, snapshot));
             }
+            RuntimeEvent::EffectsChanged(snapshot) => {
+                self.signal(peer, "EffectsChanged", &(sequence, initiator, snapshot));
+            }
             RuntimeEvent::DeviceRunChanged(snapshot) => {
                 self.signal(peer, "DeviceRunChanged", &(sequence, initiator, snapshot));
             }
@@ -503,6 +506,7 @@ pub(crate) fn wire(
         client_id: client.into(),
         playback: snapshot.playback.clone(),
         queue: snapshot.queue.clone(),
+        effects: snapshot.effects.clone(),
         device_runs: snapshot.device_runs.clone(),
         jobs: snapshot.jobs.clone(),
     }

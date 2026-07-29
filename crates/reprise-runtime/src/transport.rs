@@ -745,7 +745,7 @@ fn failure_kind(error: &RuntimeError) -> &'static str {
 
 /// Keeps the backend's message in the log, where a path is allowed, and
 /// hands the client the category (§9.7).
-fn backend_failed(error: &reprise_core::playback::PlaybackError) -> RuntimeError {
+pub(crate) fn backend_failed(error: &reprise_core::playback::PlaybackError) -> RuntimeError {
     tracing::warn!(%error, "playback backend rejected a command");
     RuntimeError::Failed(Failed::PlaybackBackend)
 }

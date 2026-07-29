@@ -14,6 +14,7 @@
 use reprise_runtime::{Command, DeviceCommand, RuntimeError};
 use reprise_runtime_protocol::command::CommandOutcome;
 use reprise_runtime_protocol::device_run::DeviceRunSnapshot;
+use reprise_runtime_protocol::effects::EffectsRequest;
 use reprise_runtime_protocol::jobs::{JobCommand, JobSnapshot};
 use reprise_runtime_protocol::playback::{ExternalMedia, PlaybackCommand, PlaybackSnapshot};
 use reprise_runtime_protocol::queue::{QueueCommand, QueueSnapshot};
@@ -266,6 +267,20 @@ impl Reprise1 {
         media: ExternalMedia,
     ) -> Result<CommandOutcome, Error> {
         self.command(&header, Command::PlayExternal(media)).await
+    }
+
+    /// Applies the equalizer and ReplayGain, and stores them if the audio
+    /// path accepts them.
+    ///
+    /// The bands cross as a list rather than ten arguments, and the whole
+    /// thing as one dictionary, for the reason `PlayExternal` does.
+    async fn set_audio_effects(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        effects: EffectsRequest,
+    ) -> Result<CommandOutcome, Error> {
+        self.command(&header, Command::SetAudioEffects(effects))
+            .await
     }
 
     async fn queue_add_next(

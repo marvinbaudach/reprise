@@ -715,5 +715,8 @@ mod outcomes;
 #[path = "runtime_gapless_tests.rs"]
 mod gapless;
 
+#[path = "runtime_effects_tests.rs"]
+mod effects;
+
 #[path = "runtime_restore_tests.rs"]
 mod restore;

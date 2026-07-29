@@ -8,6 +8,7 @@
 //! toolkit, nothing beyond folding [`ClientEvent`]s into a view.
 
 use reprise_runtime_protocol::device_run::DeviceRunSnapshot;
+use reprise_runtime_protocol::effects::EffectsSnapshot;
 use reprise_runtime_protocol::jobs::JobSnapshot;
 use reprise_runtime_protocol::playback::PlaybackSnapshot;
 use reprise_runtime_protocol::queue::QueueSnapshot;
@@ -27,6 +28,11 @@ pub struct RuntimeMirror {
     connected: bool,
     playback: Option<PlaybackSnapshot>,
     queue: Option<QueueSnapshot>,
+    /// What the audio path applies. `None` until the first snapshot, like
+    /// every other facet: RUN-2 asks a disconnected surface to show controls
+    /// as unavailable rather than to invent a plausible default, and a
+    /// default here is indistinguishable from a real flat equalizer.
+    effects: Option<EffectsSnapshot>,
     /// Kept sorted by [`DeviceRunSnapshot::device`] so a list view has a
     /// stable order across updates instead of following arrival order,
     /// which would reshuffle rows on screen for no reason a user did.
@@ -69,6 +75,9 @@ impl RuntimeMirror {
             ClientEvent::QueueChanged {
                 sequence, snapshot, ..
             } => self.apply_queue(*sequence, snapshot),
+            ClientEvent::EffectsChanged {
+                sequence, snapshot, ..
+            } => self.apply_effects(*sequence, snapshot),
             ClientEvent::DeviceRunChanged {
                 sequence, snapshot, ..
             } => self.apply_device_run(*sequence, snapshot),
@@ -101,6 +110,12 @@ impl RuntimeMirror {
         self.queue.as_ref()
     }
 
+    /// What the audio path is applying, or `None` while nothing is known.
+    #[must_use]
+    pub fn effects(&self) -> Option<&EffectsSnapshot> {
+        self.effects.as_ref()
+    }
+
     /// Sorted by device name; empty while disconnected.
     #[must_use]
     pub fn device_runs(&self) -> &[DeviceRunSnapshot] {
@@ -127,6 +142,7 @@ impl RuntimeMirror {
         self.connected = true;
         self.playback = Some(snapshot.playback.clone());
         self.queue = Some(snapshot.queue.clone());
+        self.effects = Some(snapshot.effects.clone());
         self.device_runs = sorted_device_runs(snapshot.device_runs.clone());
         self.jobs = sorted_jobs(snapshot.jobs.clone());
         self.sequence = snapshot.sequence;
@@ -155,6 +171,18 @@ impl RuntimeMirror {
             return false;
         }
         self.playback = Some(snapshot.clone());
+        true
+    }
+
+    fn apply_effects(&mut self, sequence: u64, snapshot: &EffectsSnapshot) -> bool {
+        if !self.accepts(sequence) {
+            return false;
+        }
+        self.sequence = sequence;
+        if self.effects.as_ref() == Some(snapshot) {
+            return false;
+        }
+        self.effects = Some(snapshot.clone());
         true
     }
 

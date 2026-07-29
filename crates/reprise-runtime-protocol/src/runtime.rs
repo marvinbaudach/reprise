@@ -12,6 +12,7 @@
 use zvariant::{DeserializeDict, SerializeDict, Type};
 
 use crate::device_run::DeviceRunSnapshot;
+use crate::effects::EffectsSnapshot;
 use crate::jobs::JobSnapshot;
 use crate::playback::PlaybackSnapshot;
 use crate::queue::QueueSnapshot;
@@ -36,6 +37,10 @@ pub struct RuntimeSnapshot {
     pub client_id: u64,
     pub playback: PlaybackSnapshot,
     pub queue: QueueSnapshot,
+    /// What the audio path is applying. Its own facet rather than part of
+    /// `playback`, because effects outlive what is loaded: they apply to
+    /// whatever plays next, and `playback` is empty when nothing does.
+    pub effects: EffectsSnapshot,
     /// Only devices this runtime has actually run. An absent device is
     /// absent, not a row of zeros.
     pub device_runs: Vec<DeviceRunSnapshot>,
