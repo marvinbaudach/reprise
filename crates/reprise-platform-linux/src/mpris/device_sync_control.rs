@@ -4,17 +4,17 @@ use zbus::interface;
 
 use reprise_core::agent_device_sync::{
     agent_device_sync_request, read_agent_device_sync_state, AgentDeviceSyncBlocker,
-    AgentDeviceSyncChanges, AgentDeviceSyncCommand, AgentDeviceSyncControls, AgentDeviceSyncDevice,
-    AgentDeviceSyncPhase, AgentDeviceSyncPlaylist, AgentDeviceSyncRequest, AgentDeviceSyncStorage,
-    AgentDeviceSyncStorageAccess, AgentDeviceSyncStorageComposition,
-    AgentDeviceSyncStorageKnowledge, AgentDeviceSyncStorageState, AgentDeviceSyncWarning,
-    SharedAgentDeviceSyncState,
+    AgentDeviceSyncCategoryRow, AgentDeviceSyncChanges, AgentDeviceSyncCommand,
+    AgentDeviceSyncControls, AgentDeviceSyncDevice, AgentDeviceSyncPhase, AgentDeviceSyncPlaylist,
+    AgentDeviceSyncRequest, AgentDeviceSyncStorage, AgentDeviceSyncStorageAccess,
+    AgentDeviceSyncStorageComposition, AgentDeviceSyncStorageKnowledge,
+    AgentDeviceSyncStorageState, AgentDeviceSyncWarning, SharedAgentDeviceSyncState,
 };
-use reprise_core::device_sync::{SelectionSource, TransferProfile};
+use reprise_core::device_sync::{CategoryDiff, CategoryReading, SelectionSource, TransferProfile};
 
 use reprise_runtime_protocol::device_sync::{
-    DeviceChangeCounts, DeviceControls, DeviceProgress, DeviceSnapshot, DeviceSourceSelection,
-    DeviceSourceSnapshot, DeviceStorageComposition, DeviceStorageSnapshot,
+    DeviceCategorySnapshot, DeviceChangeCounts, DeviceControls, DeviceProgress, DeviceSnapshot,
+    DeviceSourceSelection, DeviceSourceSnapshot, DeviceStorageComposition, DeviceStorageSnapshot,
 };
 use reprise_runtime_protocol::PROTOCOL_VERSION;
 
@@ -129,6 +129,44 @@ fn device_snapshot(device: AgentDeviceSyncDevice) -> DeviceSnapshot {
         },
         current_track: device.current_track,
         last_synced_at: device.last_synced_at,
+        categories: device
+            .categories
+            .into_iter()
+            .map(category_snapshot)
+            .collect(),
+    }
+}
+
+fn target_kind_name(kind: reprise_core::device_sync::SyncTargetKind) -> &'static str {
+    use reprise_core::device_sync::SyncTargetKind;
+    match kind {
+        SyncTargetKind::Playlists => "playlists",
+        SyncTargetKind::YoutubeAudio => "youtube_audio",
+        SyncTargetKind::PodcastEpisodes => "podcast_episodes",
+    }
+}
+
+fn category_snapshot(category: AgentDeviceSyncCategoryRow) -> DeviceCategorySnapshot {
+    let (reading_kind, diff) = match category.reading {
+        CategoryReading::Diff(diff) => ("diff", diff),
+        CategoryReading::SourceOff => ("source_off", CategoryDiff::default()),
+        CategoryReading::UnavailableKeptOnPhone => {
+            ("unavailable_kept_on_phone", CategoryDiff::default())
+        }
+    };
+    DeviceCategorySnapshot {
+        kind: target_kind_name(category.kind).to_owned(),
+        target_path: category.target_path,
+        target_enabled: category.target_enabled,
+        size_on_device_bytes: category.size_on_device_bytes,
+        cap_bytes: category.cap_bytes,
+        reading_kind: reading_kind.to_owned(),
+        files_to_copy: count(diff.files_to_copy),
+        bytes_to_copy: diff.bytes_to_copy,
+        files_to_remove: count(diff.files_to_remove),
+        bytes_freed: diff.bytes_freed,
+        files_waiting_for_download: count(diff.files_waiting_for_download),
+        playlists_rewritten: count(diff.playlists_rewritten),
     }
 }
 
@@ -390,6 +428,87 @@ mod tests {
             )
             .unwrap();
         responder.join().unwrap();
+    }
+
+    /// Block H (MCP parity): the snapshot's categories must actually distinguish
+    /// its three `MTP-22` reading states, not just carry a label field that
+    /// stays green if the distinction were lost.
+    #[test]
+    fn category_snapshot_distinguishes_diff_source_off_and_unavailable_readings() {
+        use reprise_core::device_sync::{CategoryDiff, CategoryReading, SyncTargetKind};
+
+        let category = |kind, reading| AgentDeviceSyncCategoryRow {
+            kind,
+            target_path: "/Music/Reprise-YouTube".into(),
+            target_enabled: true,
+            size_on_device_bytes: 42,
+            cap_bytes: Some(8 * 1024 * 1024 * 1024),
+            reading,
+        };
+        let state = Arc::new(Mutex::new(AgentDeviceSyncState {
+            devices: vec![AgentDeviceSyncDevice {
+                name: "Pixel".into(),
+                categories: vec![
+                    category(
+                        SyncTargetKind::YoutubeAudio,
+                        CategoryReading::Diff(CategoryDiff {
+                            files_to_copy: 3,
+                            bytes_to_copy: 900,
+                            files_to_remove: 1,
+                            bytes_freed: 50,
+                            files_waiting_for_download: 2,
+                            playlists_rewritten: 0,
+                        }),
+                    ),
+                    category(SyncTargetKind::PodcastEpisodes, CategoryReading::SourceOff),
+                    category(
+                        SyncTargetKind::Playlists,
+                        CategoryReading::UnavailableKeptOnPhone,
+                    ),
+                ],
+                ..AgentDeviceSyncDevice::default()
+            }],
+        }));
+        let (sender, _receiver) = async_channel::unbounded();
+        let control = DeviceSyncControl::new(sender, state);
+
+        let snapshot = control.snapshot();
+
+        assert_eq!(snapshot.len(), 1);
+        assert_eq!(snapshot[0].name, "Pixel");
+        let categories = &snapshot[0].categories;
+        assert_eq!(categories[0].kind, "youtube_audio");
+        assert_eq!(categories[0].reading_kind, "diff");
+        assert_eq!(
+            categories[0].files_to_copy, 3,
+            "files_to_copy survives the wire"
+        );
+        assert_eq!(
+            categories[0].bytes_freed, 50,
+            "bytes_freed survives the wire"
+        );
+        assert_eq!(
+            categories[0].files_waiting_for_download, 2,
+            "files_waiting_for_download survives"
+        );
+        assert_eq!(categories[0].cap_bytes, Some(8 * 1024 * 1024 * 1024));
+
+        assert_eq!(categories[1].kind, "podcast_episodes");
+        assert_eq!(
+            categories[1].reading_kind, "source_off",
+            "source_off must not read as a zero diff"
+        );
+        assert_eq!(
+            categories[1].files_to_copy, 0,
+            "source_off carries no diff figures, unlike a genuine zero-change diff"
+        );
+
+        assert_eq!(categories[2].kind, "playlists");
+        assert_eq!(categories[2].reading_kind, "unavailable_kept_on_phone");
+        assert_ne!(
+            categories[1].reading_kind, categories[2].reading_kind,
+            "source_off and unavailable_kept_on_phone are distinct states"
+        );
     }
 
     #[test]

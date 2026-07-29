@@ -85,6 +85,26 @@ ALTER TABLE device_playlists
   CHECK (last_synced_at IS NULL OR last_synced_at >= 0);
 "#;
 
+// `MTP-38`: three named, per-device sync targets replacing the single
+// implicit managed folder from `78e379fd`. See
+// `device_sync::targets` for the pure model this table backs — `kind` is
+// one of `SyncTargetKind::storage_value()`, `storage_id` is an MTP
+// `StorageID` (not a path component, and never a persisted object handle —
+// handles are not stable across reconnects), `path` is the device-relative
+// target folder, and `cap_bytes` is an optional per-target size cap.
+const CREATE_DEVICE_SYNC_TARGETS: &str = r#"
+CREATE TABLE IF NOT EXISTS device_sync_targets (
+  device_serial TEXT NOT NULL,
+  kind          TEXT NOT NULL
+                  CHECK (kind IN ('playlists', 'youtube_audio', 'podcast_episodes')),
+  storage_id    INTEGER,
+  path          TEXT NOT NULL CHECK (length(trim(path)) > 0),
+  enabled       INTEGER NOT NULL DEFAULT 1,
+  cap_bytes     INTEGER CHECK (cap_bytes IS NULL OR cap_bytes >= 0),
+  PRIMARY KEY (device_serial, kind)
+);
+"#;
+
 pub(crate) fn migrate_v36(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version >= 36 {
@@ -131,6 +151,63 @@ pub(crate) fn migrate_v38(conn: &Connection) -> Result<(), rusqlite::Error> {
         transaction.execute_batch(ADD_PLAYLIST_LAST_SYNC)?;
     }
     transaction.pragma_update(None, "user_version", version.max(38))?;
+    transaction.commit()
+}
+
+pub(crate) fn migrate_v42(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= 42 {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    transaction.execute_batch(CREATE_DEVICE_SYNC_TARGETS)?;
+    transaction.pragma_update(None, "user_version", 42)?;
+    transaction.commit()
+}
+
+// Design 7a/7e (`docs/plans/podcasts-youtube-radio-turn6.md` §3b, §8a
+// `E-6`): the device view's "Sync automatically when this phone connects"
+// switch. Like `remove_deleted`, this is a per-device choice, so it lives
+// beside it on `device_settings` rather than on `device_sync_targets`.
+const ADD_SYNC_AUTOMATICALLY: &str = r#"
+ALTER TABLE device_settings
+  ADD COLUMN sync_automatically INTEGER NOT NULL DEFAULT 1;
+"#;
+
+pub(crate) fn migrate_v44(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    let has_sync_automatically = has_column(conn, "device_settings", "sync_automatically")?;
+    if version >= 44 && has_sync_automatically {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    if !has_sync_automatically {
+        transaction.execute_batch(ADD_SYNC_AUTOMATICALLY)?;
+    }
+    transaction.pragma_update(None, "user_version", version.max(44))?;
+    transaction.commit()
+}
+
+// Design 7f (`MTP-43`): "Download missing files before syncing". Per-device,
+// beside `sync_automatically`/`remove_deleted` — the stored default is
+// always `true`; `preparation::plan_preparation` is the only place that
+// decides offline/metered overrides, never this column.
+const ADD_PREPARE_BEFORE_SYNC: &str = r#"
+ALTER TABLE device_settings
+  ADD COLUMN prepare_before_sync INTEGER NOT NULL DEFAULT 1;
+"#;
+
+pub(crate) fn migrate_v46(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    let has_prepare_before_sync = has_column(conn, "device_settings", "prepare_before_sync")?;
+    if version >= 46 && has_prepare_before_sync {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    if !has_prepare_before_sync {
+        transaction.execute_batch(ADD_PREPARE_BEFORE_SYNC)?;
+    }
+    transaction.pragma_update(None, "user_version", version.max(46))?;
     transaction.commit()
 }
 

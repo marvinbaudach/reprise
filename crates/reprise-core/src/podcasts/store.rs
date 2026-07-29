@@ -5,6 +5,11 @@ use rusqlite::{params, Connection, OptionalExtension};
 use super::feed::ParsedEpisode;
 use super::{EpisodeRow, PodcastKind, SubscriptionRow};
 
+pub use super::downloads::{
+    downloaded_paths_for_subscription, set_downloaded_file, set_downloaded_path,
+};
+pub use super::phone_sync::set_enabled as set_sync_to_phone;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NewSubscription {
     pub kind: PodcastKind,
@@ -55,12 +60,26 @@ pub fn add_or_restore_with_baseline(
     Ok(subscription_id)
 }
 
+/// Inserts a subscription, or revives/updates the existing row for the
+/// same `feed_url`. Phone-sync state (`sync_to_phone` and any per-device
+/// selection, `POD-12`) is preserved only when the subscription's kind is
+/// unchanged; a kind change at the same URL is a different content type
+/// under an old sync flag, so both are cleared — this is not RSS/YouTube
+/// special-casing, it is symmetric in the direction of the change.
 fn add_or_restore_in(
     conn: &Connection,
     subscription: &NewSubscription,
     now: i64,
 ) -> Result<i64, rusqlite::Error> {
-    conn.query_row(
+    let previous_kind: Option<String> = conn
+        .query_row(
+            "SELECT kind FROM podcast_subscriptions WHERE feed_url = ?1",
+            [&subscription.feed_url],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let new_kind = kind_setting(subscription.kind);
+    let subscription_id = conn.query_row(
         "INSERT INTO podcast_subscriptions
          (kind, feed_url, title, author, image_url, auto_download, added_at, removed_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL)
@@ -70,10 +89,14 @@ fn add_or_restore_in(
            author = excluded.author,
            image_url = COALESCE(excluded.image_url, podcast_subscriptions.image_url),
            auto_download = excluded.auto_download,
+           sync_to_phone = CASE
+             WHEN excluded.kind = podcast_subscriptions.kind THEN podcast_subscriptions.sync_to_phone
+             ELSE 0
+           END,
            removed_at = NULL
          RETURNING id",
         params![
-            kind_setting(subscription.kind),
+            new_kind,
             subscription.feed_url,
             subscription.title,
             subscription.author,
@@ -82,14 +105,24 @@ fn add_or_restore_in(
             now
         ],
         |row| row.get(0),
-    )
+    )?;
+    let kind_changed = previous_kind
+        .as_deref()
+        .is_some_and(|kind| kind != new_kind);
+    if kind_changed {
+        conn.execute(
+            "DELETE FROM podcast_subscription_devices WHERE subscription_id = ?1",
+            [subscription_id],
+        )?;
+    }
+    Ok(subscription_id)
 }
 
 pub fn active_subscriptions(conn: &Connection) -> Result<Vec<SubscriptionRow>, rusqlite::Error> {
     let mut statement = conn.prepare(
         "SELECT id, kind, feed_url, title, author, image_url, etag,
                 last_modified, last_fetch_at, last_outcome, auto_download,
-                added_at, removed_at
+                sync_to_phone, added_at, removed_at
          FROM podcast_subscriptions
          WHERE removed_at IS NULL
          ORDER BY title COLLATE NOCASE, id",
@@ -105,7 +138,7 @@ pub fn subscription(
     conn.query_row(
         "SELECT id, kind, feed_url, title, author, image_url, etag,
                 last_modified, last_fetch_at, last_outcome, auto_download,
-                added_at, removed_at
+                sync_to_phone, added_at, removed_at
          FROM podcast_subscriptions
          WHERE id = ?1",
         [id],
@@ -229,7 +262,7 @@ pub fn upsert_episode(
            title = excluded.title,
            audio_url = excluded.audio_url,
            page_url = excluded.page_url,
-           published_at = excluded.published_at,
+           published_at = COALESCE(excluded.published_at, podcast_episodes.published_at),
            duration_secs = COALESCE(excluded.duration_secs, podcast_episodes.duration_secs)
          RETURNING id",
         params![
@@ -254,7 +287,7 @@ pub fn episode(conn: &Connection, id: i64) -> Result<Option<EpisodeRow>, rusqlit
     conn.query_row(
         "SELECT e.id, e.subscription_id, e.guid, e.title, s.title,
                 s.image_url, s.kind, e.audio_url, e.page_url, e.published_at,
-                e.duration_secs, e.downloaded_path, e.played_at,
+                e.duration_secs, e.downloaded_path, e.downloaded_bytes, e.played_at,
                 e.position_ms, e.first_seen_at
          FROM podcast_episodes e
          JOIN podcast_subscriptions s ON s.id = e.subscription_id
@@ -362,31 +395,6 @@ pub fn mark_unplayed(conn: &Connection, episode_id: i64) -> Result<(), rusqlite:
     Ok(())
 }
 
-pub fn set_downloaded_path(
-    conn: &Connection,
-    episode_id: i64,
-    path: Option<&str>,
-) -> Result<(), rusqlite::Error> {
-    conn.execute(
-        "UPDATE podcast_episodes SET downloaded_path = ?2 WHERE id = ?1",
-        params![episode_id, path],
-    )?;
-    Ok(())
-}
-
-pub fn downloaded_paths_for_subscription(
-    conn: &Connection,
-    subscription_id: i64,
-) -> Result<Vec<String>, rusqlite::Error> {
-    let mut statement = conn.prepare(
-        "SELECT downloaded_path FROM podcast_episodes
-         WHERE subscription_id = ?1 AND downloaded_path IS NOT NULL
-         ORDER BY id",
-    )?;
-    let rows = statement.query_map([subscription_id], |row| row.get(0))?;
-    rows.collect::<Result<Vec<_>, _>>()
-}
-
 pub fn tombstone_episode(conn: &Connection, id: i64, now: i64) -> Result<bool, rusqlite::Error> {
     Ok(conn.execute(
         "UPDATE podcast_episodes
@@ -479,8 +487,9 @@ fn subscription_from_row(row: &rusqlite::Row<'_>) -> Result<SubscriptionRow, rus
         last_fetch_at: row.get(8)?,
         last_outcome: row.get(9)?,
         auto_download: row.get(10)?,
-        added_at: row.get(11)?,
-        removed_at: row.get(12)?,
+        sync_to_phone: row.get(11)?,
+        added_at: row.get(12)?,
+        removed_at: row.get(13)?,
     })
 }
 
@@ -499,9 +508,10 @@ pub(crate) fn episode_from_row(row: &rusqlite::Row<'_>) -> Result<EpisodeRow, ru
         published_at: row.get(9)?,
         duration_secs: row.get(10)?,
         downloaded_path: row.get(11)?,
-        played_at: row.get(12)?,
-        position_ms: row.get(13)?,
-        first_seen_at: row.get(14)?,
+        downloaded_bytes: row.get(12)?,
+        played_at: row.get(13)?,
+        position_ms: row.get(14)?,
+        first_seen_at: row.get(15)?,
     })
 }
 
@@ -525,217 +535,5 @@ fn parse_kind(value: &str) -> Result<PodcastKind, rusqlite::Error> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn conn() -> Connection {
-        crate::db::open_migrated(None).unwrap()
-    }
-
-    fn subscription_draft() -> NewSubscription {
-        NewSubscription {
-            kind: PodcastKind::Rss,
-            feed_url: "https://example.test/feed.xml".to_owned(),
-            title: "Original Show".to_owned(),
-            author: Some("Ada".to_owned()),
-            image_url: None,
-            auto_download: false,
-        }
-    }
-
-    fn parsed_episode(title: &str) -> ParsedEpisode {
-        ParsedEpisode {
-            guid: "stable-guid".to_owned(),
-            title: title.to_owned(),
-            audio_url: "https://example.test/episode.mp3".to_owned(),
-            page_url: None,
-            published_at: Some(100),
-            duration_secs: None,
-        }
-    }
-
-    #[test]
-    fn pod_2_episode_upsert_changes_metadata_but_preserves_listening_state() {
-        let conn = conn();
-        let subscription_id = add_or_restore(&conn, &subscription_draft(), 10).unwrap();
-        let first = upsert_episode(&conn, subscription_id, &parsed_episode("Old"), 20)
-            .unwrap()
-            .expect("episode should be imported");
-        save_position(&conn, first.episode_id, 8_000).unwrap();
-        conn.execute(
-            "UPDATE podcast_episodes SET played_at = 30 WHERE id = ?1",
-            [first.episode_id],
-        )
-        .unwrap();
-
-        let second = upsert_episode(&conn, subscription_id, &parsed_episode("Renamed"), 99)
-            .unwrap()
-            .expect("episode should be updated");
-        let row = episode(&conn, first.episode_id).unwrap().unwrap();
-
-        assert!(first.inserted);
-        assert!(!second.inserted);
-        assert_eq!(second.episode_id, first.episode_id);
-        assert_eq!(row.title, "Renamed");
-        assert_eq!(row.first_seen_at, 20);
-        assert_eq!(row.position_ms, 8_000);
-        assert_eq!(row.played_at, Some(30));
-    }
-
-    #[test]
-    fn future_only_baseline_replaces_and_clears_atomically() {
-        let conn = conn();
-        let subscription_id = add_or_restore(&conn, &subscription_draft(), 10).unwrap();
-
-        replace_future_only_baseline(
-            &conn,
-            subscription_id,
-            &["old-a".to_owned(), "old-b".to_owned()],
-        )
-        .unwrap();
-        assert_eq!(
-            future_only_baseline(&conn, subscription_id).unwrap(),
-            ["old-a".to_owned(), "old-b".to_owned()]
-        );
-
-        replace_future_only_baseline(&conn, subscription_id, &["new".to_owned()]).unwrap();
-        assert_eq!(
-            future_only_baseline(&conn, subscription_id).unwrap(),
-            ["new".to_owned()]
-        );
-
-        clear_future_only_baseline(&conn, subscription_id).unwrap();
-        assert!(future_only_baseline(&conn, subscription_id)
-            .unwrap()
-            .is_empty());
-    }
-
-    #[test]
-    fn subscription_tombstone_cycle_updates_counts_and_can_commit() {
-        let conn = conn();
-        let id = add_or_restore(&conn, &subscription_draft(), 10).unwrap();
-        upsert_episode(&conn, id, &parsed_episode("Episode"), 20).unwrap();
-        assert_eq!(count_subscriptions(&conn).unwrap(), 1);
-
-        tombstone_subscription(&conn, id, 30).unwrap();
-        assert_eq!(count_subscriptions(&conn).unwrap(), 0);
-        assert!(active_subscriptions(&conn).unwrap().is_empty());
-
-        undo_remove_subscription(&conn, id).unwrap();
-        assert_eq!(count_subscriptions(&conn).unwrap(), 1);
-
-        tombstone_subscription(&conn, id, 40).unwrap();
-        commit_remove_subscription(&conn, id).unwrap();
-        assert!(subscription(&conn, id).unwrap().is_none());
-        let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM podcast_episodes", [], |row| {
-                row.get(0)
-            })
-            .unwrap();
-        assert_eq!(count, 0);
-    }
-
-    #[test]
-    fn resubscribe_revives_existing_identity_and_history() {
-        let conn = conn();
-        let id = add_or_restore(&conn, &subscription_draft(), 10).unwrap();
-        let episode = upsert_episode(&conn, id, &parsed_episode("Episode"), 20)
-            .unwrap()
-            .expect("episode should be imported");
-        save_position(&conn, episode.episode_id, 12_000).unwrap();
-        tombstone_subscription(&conn, id, 30).unwrap();
-
-        let revived = add_or_restore(
-            &conn,
-            &NewSubscription {
-                title: "Renamed Show".to_owned(),
-                ..subscription_draft()
-            },
-            40,
-        )
-        .unwrap();
-
-        assert_eq!(revived, id);
-        assert_eq!(subscription(&conn, id).unwrap().unwrap().added_at, 10);
-        assert_eq!(
-            super::episode(&conn, episode.episode_id)
-                .unwrap()
-                .unwrap()
-                .position_ms,
-            12_000
-        );
-    }
-
-    #[test]
-    fn episode_finish_marks_played_and_clears_resume_position() {
-        let conn = conn();
-        let subscription_id = add_or_restore(&conn, &subscription_draft(), 10).unwrap();
-        let result = upsert_episode(&conn, subscription_id, &parsed_episode("Episode"), 20)
-            .unwrap()
-            .expect("episode should be imported");
-        save_position(&conn, result.episode_id, 9_000).unwrap();
-
-        mark_played(&conn, result.episode_id, 30).unwrap();
-
-        let row = episode(&conn, result.episode_id).unwrap().unwrap();
-        assert_eq!(row.played_at, Some(30));
-        assert_eq!(row.position_ms, 0);
-    }
-
-    #[test]
-    fn pod_6_episode_removal_undo_and_commit_block_rss_and_youtube_reimport() {
-        for kind in [PodcastKind::Rss, PodcastKind::Youtube] {
-            let conn = conn();
-            let subscription_id = add_or_restore(
-                &conn,
-                &NewSubscription {
-                    kind,
-                    ..subscription_draft()
-                },
-                10,
-            )
-            .unwrap();
-            let episode = upsert_episode(&conn, subscription_id, &parsed_episode("Episode"), 20)
-                .unwrap()
-                .expect("episode should be imported");
-            set_downloaded_path(&conn, episode.episode_id, Some("/kept/download.mp3")).unwrap();
-
-            assert!(tombstone_episode(&conn, episode.episode_id, 30).unwrap());
-            assert!(super::episode(&conn, episode.episode_id).unwrap().is_none());
-            assert!(super::super::query::list_episodes(&conn)
-                .unwrap()
-                .is_empty());
-
-            assert!(undo_remove_episode(&conn, episode.episode_id).unwrap());
-            assert!(super::episode(&conn, episode.episode_id).unwrap().is_some());
-
-            assert!(tombstone_episode(&conn, episode.episode_id, 40).unwrap());
-            let retained_download = commit_remove_episode(&conn, episode.episode_id).unwrap();
-            assert_eq!(retained_download.as_deref(), Some("/kept/download.mp3"));
-            assert!(super::episode(&conn, episode.episode_id).unwrap().is_none());
-            assert_eq!(
-                conn.query_row("SELECT COUNT(*) FROM podcast_episodes", [], |row| {
-                    row.get::<_, i64>(0)
-                })
-                .unwrap(),
-                0
-            );
-
-            let reimport =
-                upsert_episode(&conn, subscription_id, &parsed_episode("Reimported"), 50).unwrap();
-            assert!(reimport.is_none());
-            assert!(super::super::query::list_episodes(&conn)
-                .unwrap()
-                .is_empty());
-            assert_eq!(
-                conn.query_row(
-                    "SELECT COUNT(*) FROM podcast_episode_dismissals",
-                    [],
-                    |row| row.get::<_, i64>(0)
-                )
-                .unwrap(),
-                1
-            );
-        }
-    }
-}
+#[path = "store_tests.rs"]
+mod tests;

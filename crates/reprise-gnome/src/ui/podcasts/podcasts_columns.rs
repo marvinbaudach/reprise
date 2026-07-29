@@ -281,6 +281,7 @@ mod tests {
             published_at: None,
             duration_secs: None,
             downloaded_path: None,
+            downloaded_bytes: None,
             played_at: None,
             position_ms: 0,
             first_seen_at: 1,

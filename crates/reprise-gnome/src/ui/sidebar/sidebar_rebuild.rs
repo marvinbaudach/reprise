@@ -7,9 +7,8 @@ use reprise_core::artist_news;
 use reprise_core::concerts;
 use reprise_core::library::playlists;
 use reprise_core::library::settings;
-use reprise_core::modules::{
-    self, CONCERTS_MODULE, NEW_RELEASES_MODULE, PODCASTS_MODULE, RADIO_MODULE,
-};
+use reprise_core::modules::{self, CONCERTS_MODULE, NEW_RELEASES_MODULE, RADIO_MODULE};
+use reprise_core::online_sources;
 use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
 use reprise_core::{podcasts, radio};
@@ -42,6 +41,8 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         smart_rows,
         podcasts_enabled,
         podcasts_count,
+        youtube_enabled,
+        youtube_count,
         radio_enabled,
         radio_count,
         releases_enabled,
@@ -123,9 +124,14 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
                 (smart, count)
             })
             .collect();
-        let podcasts_enabled = modules::is_enabled(&conn, &PODCASTS_MODULE).unwrap_or(false);
+        // NET-1a / issue #96: YouTube is a peer of Podcasts (RSS), not a
+        // sub-setting of it — each hides its own sidebar entry
+        // independently, and both additionally require the global
+        // online-sources gate, matching every other online-source row here.
+        let podcasts_enabled =
+            online_sources::network_allowed(&conn, &modules::PODCASTS_MODULE).unwrap_or(false);
         let podcasts_count = if podcasts_enabled {
-            podcasts::query::count_unplayed(&conn).map_or_else(
+            podcasts::query::count_unplayed_for_kind(&conn, podcasts::PodcastKind::Rss).map_or_else(
                 |error| {
                     tracing::error!(%error, "failed to count unplayed podcast episodes");
                     0
@@ -135,7 +141,21 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         } else {
             0
         };
-        let radio_enabled = modules::is_enabled(&conn, &RADIO_MODULE).unwrap_or(false);
+        let youtube_enabled =
+            online_sources::network_allowed(&conn, &modules::YOUTUBE_MODULE).unwrap_or(false);
+        let youtube_count = if youtube_enabled {
+            podcasts::query::count_unplayed_for_kind(&conn, podcasts::PodcastKind::Youtube)
+                .map_or_else(
+                    |error| {
+                        tracing::error!(%error, "failed to count unplayed YouTube episodes");
+                        0
+                    },
+                    |count| i64::try_from(count).unwrap_or(i64::MAX),
+                )
+        } else {
+            0
+        };
+        let radio_enabled = online_sources::network_allowed(&conn, &RADIO_MODULE).unwrap_or(false);
         let radio_count = if radio_enabled {
             radio::station::count_stations(&conn).map_or_else(
                 |error| {
@@ -183,6 +203,8 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
             smart_rows,
             podcasts_enabled,
             podcasts_count,
+            youtube_enabled,
+            youtube_count,
             radio_enabled,
             radio_count,
             releases_enabled,
@@ -218,6 +240,15 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
             &strings::text(strings::PODCASTS),
             sidebar_presentation::nonzero_count(podcasts_count),
             NavIcon::Podcasts,
+        );
+    }
+    if youtube_enabled {
+        add_row(
+            shared,
+            ViewSource::Youtube,
+            &strings::text(strings::YOUTUBE),
+            sidebar_presentation::nonzero_count(youtube_count),
+            NavIcon::Youtube,
         );
     }
     if radio_enabled {

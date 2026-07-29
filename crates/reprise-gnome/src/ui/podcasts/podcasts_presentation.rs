@@ -1,9 +1,11 @@
 //! Pure podcast row formatting, filtering, and sorting.
 
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 
 use chrono::{DateTime, Datelike, Local, NaiveDate, Utc};
-use reprise_core::podcasts::{EpisodeRow, EpisodeStatus, PodcastKind};
+use reprise_core::podcasts::download_state::DownloadState;
+use reprise_core::podcasts::{EpisodeRow, EpisodeStatus, PodcastKind, SourceGroup};
 
 use crate::ui::strings;
 
@@ -19,6 +21,72 @@ pub(super) struct Pill {
     pub label: &'static str,
     pub icon: Option<&'static str>,
     pub css_class: &'static str,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct SourceSummary {
+    pub episode_count: usize,
+    pub unplayed_count: usize,
+    pub downloaded_bytes: i64,
+    pub latest_published_at: Option<i64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct RenderedSourceGroup {
+    pub group: SourceGroup,
+    pub summary: SourceSummary,
+}
+
+pub(super) fn source_summary(
+    group: &SourceGroup,
+    download_states: &BTreeMap<i64, DownloadState>,
+) -> SourceSummary {
+    SourceSummary {
+        episode_count: group.episodes.len(),
+        unplayed_count: group
+            .episodes
+            .iter()
+            .filter(|episode| episode.played_at.is_none())
+            .count(),
+        downloaded_bytes: group
+            .episodes
+            .iter()
+            .filter_map(|episode| match download_states.get(&episode.id) {
+                Some(DownloadState::Downloaded { bytes }) => {
+                    Some((*bytes).try_into().unwrap_or(i64::MAX))
+                }
+                _ => None,
+            })
+            .fold(0_i64, i64::saturating_add),
+        latest_published_at: group
+            .episodes
+            .iter()
+            .filter_map(|episode| episode.published_at)
+            .max(),
+    }
+}
+
+pub(super) fn rendered_source_groups(
+    groups: &[SourceGroup],
+    filter: &PodcastFilter,
+    download_states: &BTreeMap<i64, DownloadState>,
+) -> Vec<RenderedSourceGroup> {
+    groups
+        .iter()
+        .filter_map(|group| {
+            let episodes = apply_filter(&group.episodes, filter);
+            if episodes.is_empty() && active(filter) {
+                return None;
+            }
+            let summary = source_summary(group, download_states);
+            let mut rendered = group.clone();
+            rendered.episodes = episodes;
+            Some(RenderedSourceGroup {
+                group: rendered,
+                summary,
+            })
+        })
+        .collect()
 }
 
 pub(super) fn relative_date(timestamp: Option<i64>, today: NaiveDate) -> String {
@@ -47,6 +115,20 @@ pub(super) fn duration(duration_secs: Option<i64>) -> String {
             format!("{}:{:02}", seconds / 3_600, (seconds % 3_600) / 60)
         },
     )
+}
+
+pub(super) fn file_size(bytes: Option<i64>) -> String {
+    let Some(bytes) = bytes.filter(|bytes| *bytes >= 0) else {
+        return "—".to_owned();
+    };
+    let bytes = bytes as f64;
+    const MIB: f64 = 1_048_576.0;
+    const GIB: f64 = 1_073_741_824.0;
+    if bytes >= GIB {
+        format!("{:.1} GB", bytes / GIB)
+    } else {
+        format!("{:.1} MB", bytes / MIB)
+    }
 }
 
 pub(super) fn source_pill(kind: PodcastKind) -> Pill {
@@ -144,6 +226,7 @@ mod tests {
             published_at,
             duration_secs: Some(4_533),
             downloaded_path: None,
+            downloaded_bytes: None,
             played_at: None,
             position_ms: 0,
             first_seen_at: id,
@@ -151,7 +234,7 @@ mod tests {
     }
 
     #[test]
-    fn pod_1_presentation_formats_date_length_source_and_status() {
+    fn pod_9_presentation_formats_date_length_source_and_status() {
         let today = NaiveDate::from_ymd_opt(2026, 7, 26).unwrap();
         let today_timestamp = today.and_hms_opt(12, 0, 0).unwrap().and_utc().timestamp();
         assert_eq!(relative_date(Some(today_timestamp), today), "Today");
@@ -160,6 +243,7 @@ mod tests {
             "Yesterday"
         );
         assert_eq!(duration(Some(4_533)), "1:15");
+        assert_eq!(file_size(Some(41_943_040)), "40.0 MB");
         assert_eq!(source_pill(PodcastKind::Rss).label, "RSS");
         let mut episode = row(1, Some(today_timestamp), PodcastKind::Rss);
         assert_eq!(status_pill(&episode).label, "New");
@@ -197,5 +281,67 @@ mod tests {
         ];
         sort_newest_first(&mut rows);
         assert_eq!(rows.iter().map(|row| row.id).collect::<Vec<_>>(), [3, 2, 1]);
+    }
+
+    #[test]
+    fn src_5_source_summary_counts_unplayed_downloads_and_latest_episode() {
+        let mut first = row(1, Some(10), PodcastKind::Rss);
+        first.downloaded_bytes = Some(2_000_000);
+        let mut second = row(2, Some(20), PodcastKind::Rss);
+        second.downloaded_bytes = Some(3_000_000);
+        second.played_at = Some(30);
+        let group = SourceGroup {
+            subscription_id: 7,
+            title: "Show".into(),
+            author: Some("Publisher".into()),
+            image_url: None,
+            kind: PodcastKind::Rss,
+            sync_to_phone: true,
+            episodes: vec![first, second],
+        };
+
+        let states = BTreeMap::from([
+            (1, DownloadState::Downloaded { bytes: 2_000_000 }),
+            (2, DownloadState::Downloaded { bytes: 3_000_000 }),
+        ]);
+        assert_eq!(
+            source_summary(&group, &states),
+            SourceSummary {
+                episode_count: 2,
+                unplayed_count: 1,
+                downloaded_bytes: 5_000_000,
+                latest_published_at: Some(20),
+            }
+        );
+    }
+
+    #[test]
+    fn pod_9_filtered_children_keep_the_full_source_summary() {
+        let mut played = row(1, Some(10), PodcastKind::Rss);
+        played.played_at = Some(30);
+        let unplayed = row(2, Some(20), PodcastKind::Rss);
+        let group = SourceGroup {
+            subscription_id: 7,
+            title: "Show".into(),
+            author: None,
+            image_url: None,
+            kind: PodcastKind::Rss,
+            sync_to_phone: false,
+            episodes: vec![played, unplayed],
+        };
+
+        let rendered = rendered_source_groups(
+            &[group],
+            &PodcastFilter {
+                unplayed_only: true,
+                ..PodcastFilter::default()
+            },
+            &BTreeMap::new(),
+        );
+
+        assert_eq!(rendered[0].group.episodes.len(), 1);
+        assert_eq!(rendered[0].summary.episode_count, 2);
+        assert_eq!(rendered[0].summary.unplayed_count, 1);
+        assert_eq!(rendered[0].summary.latest_published_at, Some(20));
     }
 }

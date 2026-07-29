@@ -64,8 +64,8 @@ enum Recorded {
 
 type Calls = Arc<Mutex<Vec<Recorded>>>;
 use reprise_runtime_protocol::device_sync::{
-    DeviceChangeCounts, DeviceControls, DeviceProgress, DeviceSnapshot, DeviceSourceSelection,
-    DeviceSourceSnapshot, DeviceStorageComposition, DeviceStorageSnapshot,
+    DeviceCategorySnapshot, DeviceChangeCounts, DeviceControls, DeviceProgress, DeviceSnapshot,
+    DeviceSourceSelection, DeviceSourceSnapshot, DeviceStorageComposition, DeviceStorageSnapshot,
 };
 use reprise_runtime_protocol::PROTOCOL_VERSION;
 
@@ -289,6 +289,20 @@ impl DeviceSyncStub {
             },
             current_track: "Sun//Eater — Lorna Shore".into(),
             last_synced_at: Some(1_721_234_890),
+            categories: vec![DeviceCategorySnapshot {
+                kind: "podcast_episodes".into(),
+                target_path: "/Podcasts/Reprise".into(),
+                target_enabled: true,
+                size_on_device_bytes: 1_024,
+                cap_bytes: Some(4_294_967_296),
+                reading_kind: "diff".into(),
+                files_to_copy: 2,
+                bytes_to_copy: 512,
+                files_to_remove: 1,
+                bytes_freed: 256,
+                files_waiting_for_download: 3,
+                playlists_rewritten: 0,
+            }],
         }]
     }
 

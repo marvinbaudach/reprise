@@ -250,37 +250,51 @@ title, audio_url, page_url, published_at, duration_secs }`:
   (`youtube.com/@…|/channel/|/playlist?list=|youtu.be/`) → YouTube; andere URLs → Feed-Kandidat
   (Preview verifiziert: Content-Type xml / Body beginnt `<?xml`/`<rss`/`<feed`); sonst Suche.
 - **Preview:** Feed-URL → ein `http::get` + `parse_feed` (Titel, Episodenzahl); YouTube-URL → ein
-  `--flat-playlist -J` (Titel, Video-Zahl). Läuft im one_shot_task des Dialogs.
+  `--flat-playlist -J` zur stabilen Kanalidentität. Der reguläre Kanalabruf leitet daraus den
+  offiziellen schlüssellosen Long-Form-Feed
+  `videos.xml?playlist_id=UULF…` ab (Kanal-ID `UC…` → `UULF…`, höchstens 15 Einträge mit
+  Veröffentlichungsdatum, Shorts ausgeschlossen). Läuft im one_shot_task beziehungsweise Worker.
 
 ### 4.4 yt-dlp-Wrapper (`podcasts/ytdlp.rs`, neu — Subprozess-Neuland)
 
 Dünner `std::process::Command`-Wrapper, komplett in core (nur std):
 
 - **Binary-Discovery:** `REPRISE_YTDLP_BIN` (Env, zugleich Test-Seam fürs Fake-Skript) → Setting
-  `podcasts.ytdlp_path` → `"yt-dlp"` im PATH. `probe_version()` (`--version`, 10 s) speist
-  Preferences-Row und Verfügbarkeits-Gate.
+  `podcasts.ytdlp_path` (Entwickler-Override) → mit Reprise ausgelieferter Helper im
+  `libexec`-Verzeichnis → `"yt-dlp"` im PATH. `probe_version()` (`--version`, 10 s) speist
+  Preferences-Row und Verfügbarkeits-Gate. Release-Pakete behandeln den Helper als
+  Laufzeitkomponente, nicht als manuell zu erfüllende Nutzervoraussetzung.
 - **Aufrufe** (alle `--no-warnings`, stdout=JSON, Timeout mit Kill via `try_wait`-Schleife in
-  100-ms-Slices): `list(url)` = `--flat-playlist -J {url}` (60 s); `search(terms)` =
+  100-ms-Slices): `list(url)` = `--flat-playlist -J {url}` (60 s, Legacy-Fallback);
+  `list_range(url, 40)` = `--flat-playlist -I 1:40 -J {url}` erst bei „Load more";
+  `search(terms)` =
   `--flat-playlist -J ytsearch5:{terms}` (60 s); `resolve(video_url)` = `-f bestaudio -j {url}` (45
-  s) → `.url` + `.duration`; `download(video_url, out)` = `-f bestaudio -x -o {out} {url}` (600 s,
-  nur im Worker).
+  s) → `.url` + `.duration`; `download(video_url, out)` =
+  `-f bestaudio -x --audio-format opus -o {out} {url}` (600 s, nur im Worker).
 - **Fehler-Mapping → lesbare Meldungen (nie Crash):** stderr-Klassifikation als pure
   Tabellen-Funktion: `Sign in to confirm`/`not a bot`/`429` → „YouTube blocked the request — update
-  yt-dlp (Preferences)"; `ENOENT` → „yt-dlp is not installed — YouTube sources are disabled"; sonst
-  gekürzte stderr-Zeile. Alles `PodcastError::YtDlp(msg)`.
-- **Flat-Playlist-Realität:** Einträge liefern `id`, `title`, `duration` (oft null), **kein
-  verlässliches Datum** → `published_at = None`, Reihenfolge = Playlist-Ordnung (Restrisiko in 12).
-  `audio_url` = `https://www.youtube.com/watch?v={id}`; die **bestaudio-Stream-URL wird
-  ausschließlich zur Play-Zeit aufgelöst und NIE persistiert** (läuft nach Stunden ab).
+  yt-dlp (Preferences)"; `ENOENT` → „YouTube component is unavailable — reinstall or repair
+  Reprise"; sonst gekürzte stderr-Zeile. Alles `PodcastError::YtDlp(msg)`.
+- **Listing-Realität:** Der offizielle UULF-Feed liefert das datierte Long-Form-Fenster in
+  Provider-Reihenfolge. Erst das erweiterte yt-dlp-Fenster liefert `id`, `title`, `duration`
+  (oft null), aber kein verlässliches Datum; diese Ergänzungen stehen hinter den datierten
+  Einträgen und behalten innerhalb eines Abrufs ihre Provider-Reihenfolge. `audio_url` =
+  `https://www.youtube.com/watch?v={id}`; die **bestaudio-Stream-URL wird ausschließlich zur
+  Play-Zeit aufgelöst und NIE persistiert** (läuft nach Stunden ab).
 - **Feature-Gate:** `podcasts.youtube_enabled` (**Default an — Grill-Beschluss**: das
   Modul-Opt-in ist der Zustimmungsmoment, der informierte Moment ist der Add-Dialog „audio only via
   yt-dlp"; der Schalter ist der Not-Aus). Fehlt oder bricht das Binary, ist die **Degradierung
   reine ANZEIGE, nie Auto-Toggle**: der Preferences-Schalter zeigt den Zustand lesbar (Subtitle
-  „yt-dlp not found — install it or set a path", s. 8), das Setting wird NIE still umgelegt;
+  „YouTube component is unavailable — reinstall or repair Reprise", s. 8), das Setting wird NIE still umgelegt;
   Add-Dialog zeigt statt YouTube-Sektion die Hinweiszeile; bestehende YouTube-Subs zeigen beim Play
   die lesbare Meldung.
-- **Flatpak (Zukunftsnotiz, kein v1-Task):** yt-dlp als Flatpak-Modul bündeln; `-U` funktioniert nur
-  für Standalone-Binaries — die Update-Row reicht sonst die Paketmanager-Meldung durch.
+- **Packaging (eigener Release-Task, kein aktueller UI-Task):** Flatpak bündelt eine gepinnte
+  yt-dlp-Version als Manifest-Modul; native Pakete installieren yt-dlp über eine harte
+  Paketabhängigkeit oder liefern einen privaten Helper in `libexec`. Der Download mit
+  `-x --audio-format opus` braucht außerdem das ffmpeg-Programm; Paket und Flatpak stellen deshalb
+  yt-dlp + ffmpeg gemeinsam bereit und Reprise setzt bei Bedarf `--ffmpeg-location`. Kein stilles
+  Nachladen ausführbaren Codes beim ersten YouTube-Klick. In Flatpak gibt es kein `yt-dlp -U`:
+  Updates der gepinnten Komponente kommen mit dem Reprise-Paket.
 
 ### 4.5 Refresh-Pipeline & Worker
 
@@ -581,9 +595,10 @@ dem `scope_row`-Helfer-Idiom (`preference_plugins.rs` ~Z. 154: `descriptor.id ==
   SwitchRow „Download new episodes automatically (default for new subscriptions)" · ComboRow
   „Downloads cleanup" (Keep all / Delete played after 7 days / Keep last 5 per show; löscht hart —
   Policy-Konsens, s. 7.4) · ActionRow „yt-dlp" (Version als Subtitle via one_shot-Probe,
-  Update-Button `yt-dlp -U` mit lesbarer Ausgabe/Fehlerzeile) + SwitchRow „YouTube sources"
-  (Default an; fehlt das Binary, zeigt der Subtitle lesbar „yt-dlp not found — install it or set a
-  path" — **reiner Anzeige-Zustand als pure Decision-Funktion, das Setting wird nie automatisch
+  kontextabhängige Update-Aktion: bei externem Entwickler-Override `yt-dlp -U`, bei gebündelter
+  Flatpak-Komponente „Update Reprise") + SwitchRow „YouTube sources" (Default an; fehlt die
+  Komponente, zeigt der Subtitle lesbar „YouTube component is unavailable — reinstall or repair
+  Reprise" — **reiner Anzeige-Zustand als pure Decision-Funktion, das Setting wird nie automatisch
   umgelegt**, Grill-Leitplanke) · SpinRow „Refresh every N hours" (1–24, Default 6 —
   `sources.refresh_hours`).
 - **`preference_radio.rs` (neu):** ComboRow „Search order" (Votes / Name / Clicks).
@@ -743,12 +758,13 @@ startet das echte yt-dlp.
 **Risiken:**
 
 - **yt-dlp-Bruch/Bot-Checks** (Kernrisiko): begrenzt durch Fehlerklassifikation (lesbar, nie Crash),
-  Feature-Schalter, Update-Row, Fake-Binary-Tests; Flatpak-Bundling ist Zukunftsarbeit — bis dahin
-  Host-Binary-Abhängigkeit (Prefs zeigen Version/Fehlen).
+  Feature-Schalter, verwaltete Paketversion und Fake-Binary-Tests. Entwickler-Builds dürfen auf
+  einen Host-Binary-Override zurückfallen; Release-Installationen bündeln bzw. deklarieren yt-dlp
+  und ffmpeg als Laufzeitkomponenten.
 - **googlevideo-403/URL-Ablauf mitten im Play:** ein Re-Resolve-Versuch (Generation-Guard), dann
   lesbarer Toast.
-- **flat-playlist ohne Daten:** YouTube-Episoden ohne `published_at` sortieren hinter datierten,
-  Zelle „—"; Nach-Datierung wäre teurer Einzel-Fetch — akzeptiert.
+- **Erweitertes yt-dlp-Fenster ohne Daten:** Einträge ohne `published_at` sortieren hinter dem
+  datierten offiziellen UULF-Fenster und behalten ihre Provider-Reihenfolge; Zelle „—".
 - **radio-browser-Churn:** Server-Rotation; Klick best effort; Totalausfall trifft nur
   Suche/Logo/Klick — Favoriten spielen weiter (URLs lokal).
 - **ICY-Zeichensatz:** Legacy-Streams senden Latin-1; kaputte Sequenzen lossy ersetzen (nie Panik);
@@ -803,7 +819,7 @@ dev, sobald Concerts gemerged ist; die F-Tasks prüfen beide „nächste freie N
 | 5 | Add-Dialog Radio: Suche by votes mit Add-Buttons; URL-Paste direkte Streams UND M3U/PLS (Downparse) mit ICY-Preview | `rad_4_*`, Playlist-/ICY-Units, Display-Test |
 | 6 | Add-Buttons sind getintete rechteckige Buttons, klar von Chips unterschieden (eigene CSS-Klasse, nie `.reprise-filter-chip`) | `src_2_*`, CSS-Klassen-Test, manueller Optik-Pass |
 | 7 | Kontextmenü-Entfernen + Hover-Star mit Undo-Toast (10 s, tombstone-basiert); Unsubscribe behält Downloads, Commit-Zeit-Toast bietet [Delete files] → Papierkorb (nie hart), Mehrfach-Unsubscribe aggregiert; Menüs zeigen nie Play Next/Add to Queue | `src_4_*` inkl. Trash-Test, Aggregations-Units, Tombstone-Zyklus-Units, Display-Test |
-| 8 | YouTube: Audio-only, bestaudio-Resolve pro Play (nie persistiert), yt-dlp-Fehler lesbar, ohne Binary degradiert als Anzeige (Schalter-Subtitle, Setting nie auto-umgelegt) | `pod_3_*`, Fake-Binary-Tests, Resolve-Generation-Test, Prefs-Decision-Units |
+| 8 | YouTube: offizieller UULF-Feed liefert das erste Long-Form-Fenster; „Load more" erweitert einmalig per yt-dlp bis Eintrag 40; Audio-only/Opus, bestaudio-Resolve pro Play (nie persistiert), yt-dlp-Fehler lesbar, ohne verwaltete Komponente degradiert als Anzeige (Schalter-Subtitle, Setting nie auto-umgelegt) | `pod_3_*`, `pod_10_*`, Fake-Binary-Tests, Resolve-Generation-Test, Prefs-Decision-Units |
 | 9 | Podcast-Resume: Position persistiert (Pause/Stop/Wechsel/Quit + Drossel), Wiedergabe setzt fort; Ende → Played; Dauer-Probe beim ersten Play | `pod_4_*`-Resume-Units, Store-Roundtrips |
 | 10 | Radio live: ICY-Now-Playing in Tabelle + Player-Bar + MPRIS aus einem Event; kein Seek, keine Dauer, Elapsed-only; Pause = Disconnect-präsentiert-als-Pause (Bar dimmt letzten Titel, Tabelle „—", Reconnect „live now", Fehler → pausiert + Inline-Retry, nie leere Bar); tote Favoriten re-resolven via uuid | `rad_2_*`/`rad_3_*`, Pause-Zustandsmatrix, MPRIS-Matrix, StreamTags-Plumbing-Test |
 | 11 | Podcasts/Radio erzeugen nie Scrobbles/listen_events/Play-Counts | `pod_4_external_session_never_scrobbles` + Radio-Pendant |

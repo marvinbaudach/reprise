@@ -10,10 +10,17 @@ use std::sync::Arc;
 
 use gtk4::gio;
 use gtk4::gio::prelude::*;
+use reprise_core::device_sync::browser::StorageOption;
+use reprise_core::device_sync::device_view::{
+    category_bytes, project_category_content_row, project_contents_state,
+    project_device_category_reading,
+};
 use reprise_core::device_sync::settings::{load_or_create_settings, mark_device_playlists_synced};
 use reprise_core::device_sync::{
-    DeviceSelection, DeviceSettings, DeviceStorageInspection, DeviceStorageSnapshot,
-    ManagedDeviceFile, MirrorPlan, SelectionSource, SyncPageState,
+    aggregate_balance, load_or_create_targets, should_auto_start, AutoStartFacts, CategoryDiff,
+    CategoryReading, DeviceSelection, DeviceSettings, DeviceStorageInspection,
+    DeviceStorageSnapshot, ManagedDeviceFile, MirrorPlan, PodcastSelectionSummary, SelectionSource,
+    StorageId, SyncPageState, SyncTarget, SyncTargetKind, YoutubeSelectionSummary,
 };
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor, DeviceMonitor};
 use reprise_platform_linux::device_transfer::{TranscodeProfile, TranscodeRequest, TranscodedFile};
@@ -24,6 +31,7 @@ pub(super) mod rate;
 #[path = "device_sync_types.rs"]
 mod types;
 
+pub use preparation::PreparationRunState;
 use rate::MtpRateMeter;
 use types::StateCallback;
 pub use types::*;
@@ -37,10 +45,21 @@ struct DeviceState {
     cancellable: Option<gio::Cancellable>,
     storage: DeviceStorageSnapshot,
     managed_files: Vec<ManagedDeviceFile>,
+    podcast_files: Vec<ManagedDeviceFile>,
+    youtube_files: Vec<ManagedDeviceFile>,
     managed_track_count: usize,
     scanning: bool,
     scan_generation: u64,
     scan_error: Option<String>,
+    /// `MTP-26`: whether `backend.inspect` has ever completed successfully
+    /// for this device this session. Session-only by design — the
+    /// inventory itself is rebuilt live from MTP on every connect, so
+    /// "verified" cannot outlive the connection it was verified on.
+    ever_inspected: bool,
+    /// `MTP-38`: this device's three named sync targets, refreshed on every
+    /// `recompute_delta_silent`. Read-only from the sidebar/device view's
+    /// perspective outside of the folder picker (E6, not built here).
+    targets: [SyncTarget; 3],
     settings: DeviceSettings,
     /// Recorded sync runs for this device, refreshed when one ends.
     history: Vec<crate::ui::device_sync::device_sync_history::RunWithDeviations>,
@@ -52,7 +71,47 @@ struct DeviceState {
     verified_managed_track_count: Option<usize>,
     mtp_rate: MtpRateMeter,
     mirror_plan: MirrorPlan,
+    podcast_plan: reprise_core::device_sync::podcasts::PodcastSyncPlan,
+    youtube_plan: reprise_core::device_sync::podcasts::PodcastSyncPlan,
+    /// `MTP-41`/`MTP-40`: podcast/YouTube episodes wanted for this device
+    /// but not yet downloaded, from the same `select_episodes` pass that
+    /// produced `podcast_plan`/`youtube_plan` — fed into `CategoryDiff`'s
+    /// `files_waiting_for_download` (`MTP-22`) instead of the previous
+    /// hard-coded `0`.
+    podcast_waiting: usize,
+    youtube_waiting: usize,
+    /// `MTP-37`: the Content section's live "N of M ... selected" read for
+    /// each category, refreshed on every `recompute_delta_silent` from
+    /// `podcasts::phone_sync::selection_summary` — see `device_view`'s
+    /// module doc on why this stays a read of `POD-12`'s existing
+    /// selection state rather than a second one.
+    youtube_selection: YoutubeSelectionSummary,
+    podcast_selection: PodcastSelectionSummary,
     page: SyncPageState,
+    /// `MTP-42`'s projection, refreshed on every `recompute_delta_silent`
+    /// from the same facts (`waiting` set, connectivity, the global gate,
+    /// this device's own switch) it is defined over — never re-decided here.
+    preparation: reprise_core::device_sync::PreparationPhase,
+    /// The actual missing-file list `preparation` was computed from — kept
+    /// alongside it because `PreparationPhase`'s variants carry only counts
+    /// and bytes, not the episode ids/titles the overview and the download
+    /// loop both need.
+    preparation_missing: Vec<reprise_core::device_sync::preparation::MissingFile>,
+    /// `MTP-43`: whether a preparation download run is currently in flight
+    /// for this device — folded into [`Self::is_active`] so the page's
+    /// controls (editable/can_start/can_cancel) treat it exactly like an
+    /// active transfer.
+    preparing: bool,
+    preparation_run: preparation::PreparationRunState,
+    /// Set while [`Self::preparing`]; flipping it stops the download loop
+    /// from issuing any *further* request — it never deletes or rolls back
+    /// a download that already finished.
+    preparation_cancel: Option<Rc<Cell<bool>>>,
+    /// Whether this run's transfer phase was preceded by a preparation
+    /// download — the two-phase "Step 2 of 2" progress reading depends on
+    /// this, and it resets to `false` once the whole run ends so a later
+    /// plain sync never inherits a stale step counter.
+    prepared_this_run: bool,
 }
 
 impl DeviceState {
@@ -65,10 +124,14 @@ impl DeviceState {
             cancellable: None,
             storage: DeviceStorageSnapshot::default(),
             managed_files: Vec::new(),
+            podcast_files: Vec::new(),
+            youtube_files: Vec::new(),
             managed_track_count: 0,
             scanning: false,
             scan_generation: 0,
             scan_error: None,
+            ever_inspected: false,
+            targets: SyncTargetKind::ALL.map(SyncTarget::default_for),
             settings,
             sync_phase: PlannedSyncPhase::ComputingDelta,
             sync_error: None,
@@ -78,7 +141,19 @@ impl DeviceState {
             verified_managed_track_count: None,
             mtp_rate: MtpRateMeter::default(),
             mirror_plan: MirrorPlan::default(),
+            podcast_plan: reprise_core::device_sync::podcasts::PodcastSyncPlan::default(),
+            youtube_plan: reprise_core::device_sync::podcasts::PodcastSyncPlan::default(),
+            podcast_waiting: 0,
+            youtube_waiting: 0,
+            youtube_selection: YoutubeSelectionSummary::default(),
+            podcast_selection: PodcastSelectionSummary::default(),
             page: SyncPageState::default(),
+            preparation: reprise_core::device_sync::PreparationPhase::Absent,
+            preparation_missing: Vec::new(),
+            preparing: false,
+            preparation_run: preparation::PreparationRunState::default(),
+            preparation_cancel: None,
+            prepared_this_run: false,
         }
     }
 
@@ -94,6 +169,23 @@ impl DeviceState {
         if self.sync_phase == PlannedSyncPhase::Finishing {
             page.controls = reprise_core::device_sync::SyncPageControls::default();
         }
+        // `MTP-27`/`MTP-37`: one category diff per named target
+        // (`SyncTargetKind::ALL` order: Playlists, YoutubeAudio,
+        // PodcastEpisodes), each already computed by
+        // `recompute_delta_silent` — reused here, not recomputed.
+        // `files_waiting_for_download` reads `podcast_waiting`/
+        // `youtube_waiting`, both populated by `selection::select_episodes`
+        // (`MTP-40`/`MTP-41`) in `recompute_delta_silent` from
+        // `podcasts::query_selection_candidates_for_device`.
+        let category_readings = self.category_readings();
+        let device_bytes = [
+            category_bytes(&self.managed_files),
+            category_bytes(&self.youtube_files),
+            category_bytes(&self.podcast_files),
+        ];
+        let content_rows = std::array::from_fn(|i| {
+            project_category_content_row(&self.targets[i], device_bytes[i])
+        });
         DeviceView {
             history: self.history.clone(),
             id: self.descriptor.id.clone(),
@@ -110,15 +202,45 @@ impl DeviceState {
             managed_track_count: self.managed_track_count,
             bytes_per_second: self.mtp_rate.bytes_per_second(),
             page,
+            contents_state: project_contents_state(
+                self.scanning,
+                self.scan_error.as_deref(),
+                self.ever_inspected,
+            ),
+            content_rows,
+            category_readings,
+            youtube_bytes: device_bytes[1],
+            podcast_bytes: device_bytes[2],
+            youtube_selection: self.youtube_selection,
+            podcast_selection: self.podcast_selection,
+            preparation: self.preparation.clone(),
+            preparation_missing: self.preparation_missing.clone(),
+            preparation_run: self.preparation_run.clone(),
+            prepared_this_run: self.prepared_this_run,
         }
     }
 
     fn is_active(&self) -> bool {
-        self.machine.is_some()
+        self.machine.is_some() || self.preparing
     }
 
     fn is_busy(&self) -> bool {
         self.is_active() || self.sync_phase == PlannedSyncPhase::Finishing
+    }
+
+    /// `MTP-22`/`MTP-37`: one category diff per named target, in
+    /// `SyncTargetKind::ALL` order — shared by [`Self::view`] and `MTP-30`'s
+    /// auto-start decision so both read the exact same projection instead
+    /// of two slightly different ones.
+    fn category_readings(&self) -> [CategoryReading; 3] {
+        let category_diffs = [
+            CategoryDiff::from_mirror_plan(&self.mirror_plan),
+            CategoryDiff::from_podcast_plan(&self.youtube_plan, self.youtube_waiting),
+            CategoryDiff::from_podcast_plan(&self.podcast_plan, self.podcast_waiting),
+        ];
+        std::array::from_fn(|i| {
+            project_device_category_reading(&self.targets[i], category_diffs[i])
+        })
     }
 }
 
@@ -130,6 +252,12 @@ pub struct DeviceSyncRuntime {
     next_subscription_id: Cell<u64>,
     weak_self: RefCell<Weak<Self>>,
     agent_subscription: RefCell<Option<Subscription>>,
+    /// `MTP-43`: bound once from `window.rs` via `bind_preparation_downloader`
+    /// (mirrors `bind_agent_device_sync`'s "construct, then bind" shape).
+    /// `None` in every existing test fixture and in the smoke-simulator path
+    /// — preparation then falls back to a plain sync, see
+    /// `preparation::begin_prepared_sync`.
+    preparation_downloader: RefCell<Option<Rc<dyn preparation::PreparationDownloader>>>,
 }
 
 impl DeviceSyncRuntime {
@@ -152,6 +280,7 @@ impl DeviceSyncRuntime {
             next_subscription_id: Cell::new(1),
             weak_self: RefCell::new(Weak::new()),
             agent_subscription: RefCell::new(None),
+            preparation_downloader: RefCell::new(None),
         });
         runtime.weak_self.replace(Rc::downgrade(&runtime));
         runtime.apply_devices(runtime.backend.devices());
@@ -182,13 +311,22 @@ impl DeviceSyncRuntime {
             .iter_mut()
             .find(|device| device.descriptor.id == device_id)
         {
-            cancel_device_run(device);
+            preparation::cancel_preparation(device);
         }
         self.notify();
     }
 
     pub fn refresh_contents(self: &Rc<Self>, device_id: &str) {
-        self.refresh_contents_with_delta(device_id, true, RefreshPurpose::Normal);
+        self.refresh_contents_with_delta(device_id, true, RefreshPurpose::Normal, false);
+    }
+
+    /// Same as [`Self::refresh_contents`], except this refresh is the first
+    /// one after the device connected (`apply_devices`, both a brand-new
+    /// device and a reconnect) — the only refresh `MTP-30`'s auto-start
+    /// decision is allowed to fire from. A manual "Refresh" click or the
+    /// post-sync verify refresh must never re-trigger it.
+    fn refresh_contents_on_connect(self: &Rc<Self>, device_id: &str) {
+        self.refresh_contents_with_delta(device_id, true, RefreshPurpose::Normal, true);
     }
 
     fn refresh_contents_after_sync(
@@ -196,7 +334,12 @@ impl DeviceSyncRuntime {
         device_id: &str,
         sources: Vec<SelectionSource>,
     ) {
-        self.refresh_contents_with_delta(device_id, true, RefreshPurpose::VerifySync(sources));
+        self.refresh_contents_with_delta(
+            device_id,
+            true,
+            RefreshPurpose::VerifySync(sources),
+            false,
+        );
     }
 
     fn refresh_contents_with_delta(
@@ -204,7 +347,27 @@ impl DeviceSyncRuntime {
         device_id: &str,
         recompute_delta: bool,
         purpose: RefreshPurpose,
+        just_connected: bool,
     ) {
+        // Loaded synchronously, before the async inspect below, so it walks
+        // each of the three named targets (`MTP-38`) at the storage/path
+        // the folder browser (`MTP-31`) most recently persisted for it —
+        // never a stale or default guess (finding 1).
+        let targets = match load_or_create_targets(&self.conn.borrow(), device_id) {
+            Ok(targets) => targets,
+            Err(error) => {
+                let mut devices = self.device_states.borrow_mut();
+                if let Some(device) = devices
+                    .iter_mut()
+                    .find(|device| device.descriptor.id == device_id)
+                {
+                    device.scan_error = Some(error.to_string());
+                }
+                drop(devices);
+                self.notify();
+                return;
+            }
+        };
         let request = {
             let mut devices = self.device_states.borrow_mut();
             let Some(device) = devices
@@ -229,7 +392,7 @@ impl DeviceSyncRuntime {
         let weak = self.weak_self.borrow().clone();
         let id = device_id.to_string();
         gtk4::glib::MainContext::ref_thread_default().spawn_local(async move {
-            let result = backend.inspect(root_uri).await;
+            let result = backend.inspect(root_uri, targets).await;
             let Some(runtime) = weak.upgrade() else {
                 return;
             };
@@ -255,10 +418,15 @@ impl DeviceSyncRuntime {
                         Ok(DeviceStorageInspection {
                             snapshot,
                             managed_files,
+                            podcast_files,
+                            youtube_files,
                         }) => {
                             device.storage = snapshot;
                             device.managed_files = managed_files;
+                            device.podcast_files = podcast_files;
+                            device.youtube_files = youtube_files;
                             device.scan_error = None;
+                            device.ever_inspected = true;
                         }
                         Err(error) => device.scan_error = Some(error),
                     }
@@ -364,6 +532,33 @@ impl DeviceSyncRuntime {
                     if let Err(error) = runtime.sync_now(&id) {
                         tracing::warn!(device_id = id, %error, "could not resume device synchronization");
                     }
+                } else if just_connected {
+                    // `MTP-30`: gather every fact from one short borrow, drop
+                    // it, and only then decide — same discipline as
+                    // `should_resume` above. A refused or failed automatic
+                    // start is silent apart from this log: the user did not
+                    // press anything, so it must never raise a modal or an
+                    // error banner.
+                    let facts = {
+                        let devices = runtime.device_states.borrow();
+                        devices
+                            .iter()
+                            .find(|device| device.descriptor.id == id)
+                            .map(|device| AutoStartFacts {
+                                just_connected,
+                                sync_automatically: device.settings.sync_automatically,
+                                scan_ok: device.scan_error.is_none(),
+                                planning_ok: planning_error.is_none(),
+                                device_connected: device.connected,
+                                device_busy: device.is_busy(),
+                                balance: aggregate_balance(&device.category_readings()),
+                            })
+                    };
+                    if facts.is_some_and(should_auto_start) {
+                        if let Err(error) = runtime.sync_now(&id) {
+                            tracing::warn!(device_id = id, %error, "could not start automatic device synchronization");
+                        }
+                    }
                 }
             }
         });
@@ -401,9 +596,9 @@ impl DeviceSyncRuntime {
                 state.connected = false;
                 state.scanning = false;
                 state.scan_generation = state.scan_generation.saturating_add(1);
-                if state.machine.is_some() {
+                if state.machine.is_some() || state.preparing {
                     state.resume_planned = state.descriptor.reconnectable;
-                    cancel_device_run(state);
+                    preparation::cancel_preparation(state);
                 }
             }
             states.retain(|state| {
@@ -435,6 +630,8 @@ impl DeviceSyncRuntime {
                             opus_bitrate: 0,
                             ratings_back: false,
                             remove_deleted: true,
+                            sync_automatically: true,
+                            prepare_before_sync: true,
                         }
                     });
                     states.push(DeviceState::new(descriptor, settings));
@@ -462,7 +659,7 @@ impl DeviceSyncRuntime {
                     device.sync_phase = PlannedSyncPhase::ComputingDelta;
                 }
             }
-            self.refresh_contents(&id);
+            self.refresh_contents_on_connect(&id);
         }
     }
 
@@ -510,6 +707,12 @@ mod agent;
 mod compact;
 #[path = "device_sync_planned.rs"]
 mod planned;
+#[path = "device_sync_preparation.rs"]
+mod preparation;
+#[path = "device_sync_target_actions.rs"]
+mod target_actions;
 
 #[cfg(test)]
 pub(super) use planned::SyncStartError;
+#[cfg(test)]
+pub(super) use preparation::PreparationDownloader;

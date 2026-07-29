@@ -11,6 +11,11 @@ const OVERVIEW_WIDTH_CHARS: i32 = 42;
 
 pub(super) struct DeviceDashboard {
     pub(super) root: gtk4::ScrolledWindow,
+    /// The vertical content column, exposed so the caller can append
+    /// further cards (the Content/Next-synchronization panel, design 7a)
+    /// below the hero and playlist body without this module needing to
+    /// know about that panel's type.
+    pub(super) content: gtk4::Box,
     pub(super) device_name: gtk4::Label,
     pub(super) connection: gtk4::Label,
     pub(super) device_last_sync: gtk4::Label,
@@ -24,6 +29,11 @@ pub(super) struct DeviceDashboard {
     pub(super) notice_box: gtk4::Box,
     pub(super) notice_title: gtk4::Label,
     pub(super) notice_detail: gtk4::Label,
+    /// `MTP-43`'s preparation overview — visible only for `Offered`/
+    /// `Planned`/`SkippedOffline`; hidden entirely (not an empty box) for
+    /// every other phase, including `Absent`.
+    pub(super) preparation_box: gtk4::Box,
+    pub(super) preparation_detail: gtk4::Label,
     pub(super) progress_box: gtk4::Box,
     pub(super) progress_title: gtk4::Label,
     pub(super) progress_detail: gtk4::Label,
@@ -115,9 +125,24 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
     policy.set_wrap(true);
     constrain_overview_width(&policy);
 
-    let changes_heading = label("Next synchronization", "heading");
+    // Deliberately not "Next synchronization" — that title now belongs to
+    // the Content panel's cross-category diff (`MTP-22`/`MTP-37`) appended
+    // below this card. `changes` here is playlist-scoped only
+    // (`page.changes`), so it gets its own, narrower heading rather than
+    // implying it is the complete picture.
+    let changes_heading = label("Playlist changes", "heading");
     let changes = detail_label();
     constrain_overview_width(&changes);
+
+    // `MTP-43`: design 7f's preparation overview. Hidden by default and
+    // toggled by `DeviceSyncPage::update` — never shown for `Absent`/
+    // `NothingMissing`, so its very existence on screen already says
+    // "there is something to prepare".
+    let preparation_detail = detail_label();
+    constrain_overview_width(&preparation_detail);
+    let preparation_box = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+    preparation_box.set_visible(false);
+    preparation_box.append(&preparation_detail);
 
     let notice_title = label("", "heading");
     let notice_detail = detail_label();
@@ -160,6 +185,7 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
     overview_content.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
     overview_content.append(&changes_heading);
     overview_content.append(&changes);
+    overview_content.append(&preparation_box);
     overview_content.append(&notice_box);
     overview_content.append(&progress_box);
     let overview = card(&overview_content);
@@ -192,6 +218,7 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
 
     DeviceDashboard {
         root,
+        content,
         device_name,
         connection,
         device_last_sync,
@@ -205,6 +232,8 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
         notice_box,
         notice_title,
         notice_detail,
+        preparation_box,
+        preparation_detail,
         progress_box,
         progress_title,
         progress_detail,

@@ -136,6 +136,8 @@ printf '%s\n' '{"title":"HOLLOW FALLEN","entries":[{"id":"video-two","title":"Vi
     .unwrap();
     std::fs::set_permissions(&fake_ytdlp, std::fs::Permissions::from_mode(0o755)).unwrap();
     set_bool_setting(&path, CAP_SOURCES_MANAGE, true);
+    // YouTube is a peer module, independent of Podcasts (issue #96).
+    set_bool_setting(&path, "module.youtube.enabled", true);
     let mut client =
         McpClient::start_with_env(&path, &[("REPRISE_YTDLP_BIN", fake_ytdlp.as_path())]);
 
@@ -277,6 +279,9 @@ fn refreshes_cached_rss_subscriptions_on_explicit_request() {
     )
     .unwrap();
     set_bool_setting(&path, CAP_SOURCES_MANAGE, true);
+    // The refresh pipeline gates RSS on the Podcasts module (`NET-1a`) —
+    // unlike "add", which is a one-off explicit action.
+    set_bool_setting(&path, "module.podcasts.enabled", true);
     let mut client =
         McpClient::start_with_env(&path, &[("REPRISE_PODCASTS_FIXTURE_DIR", fixtures.path())]);
 

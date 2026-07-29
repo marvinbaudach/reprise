@@ -3,6 +3,8 @@
 use super::ytdlp::{YtDlpPlaylist, YtDlpVideo};
 
 const WATCH_URL_PREFIX: &str = "https://www.youtube.com/watch?v=";
+const CHANNEL_PATH: &str = "/channel/";
+const LONG_FORM_FEED_PREFIX: &str = "https://www.youtube.com/feeds/videos.xml?playlist_id=UULF";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct YoutubeListing {
@@ -39,6 +41,21 @@ pub fn project_video(video: YtDlpVideo) -> YoutubeEpisode {
     }
 }
 
+#[must_use]
+pub fn long_form_feed_url(channel_url: &str) -> Option<String> {
+    let url = url::Url::parse(channel_url).ok()?;
+    let host = url.host_str()?.trim_start_matches("www.");
+    if host != "youtube.com" || !url.path().starts_with(CHANNEL_PATH) {
+        return None;
+    }
+    let channel_id = url.path().trim_start_matches(CHANNEL_PATH);
+    let suffix = channel_id.strip_prefix("UC")?;
+    if suffix.is_empty() || suffix.contains('/') {
+        return None;
+    }
+    Some(format!("{LONG_FORM_FEED_PREFIX}{suffix}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{project_playlist, project_video, YoutubeEpisode};
@@ -48,6 +65,8 @@ mod tests {
     fn flat_playlist_projects_stable_episode_identity_in_source_order() {
         let listing = project_playlist(YtDlpPlaylist {
             title: Some("The Channel".to_owned()),
+            source_url: None,
+            image_url: None,
             entries: vec![
                 YtDlpVideo {
                     id: "second".to_owned(),
@@ -98,5 +117,17 @@ mod tests {
             "https://www.youtube.com/watch?v=video-id"
         );
         assert!(!episode.audio_url.contains("googlevideo"));
+    }
+
+    #[test]
+    fn pod_10_channel_identity_maps_to_the_keyless_long_form_feed() {
+        assert_eq!(
+            super::long_form_feed_url("https://www.youtube.com/channel/UCabc123"),
+            Some("https://www.youtube.com/feeds/videos.xml?playlist_id=UULFabc123".to_owned())
+        );
+        assert_eq!(
+            super::long_form_feed_url("https://www.youtube.com/@channel"),
+            None
+        );
     }
 }

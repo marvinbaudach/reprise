@@ -10,6 +10,7 @@ pub(in crate::ui) mod preference_library;
 pub(in crate::ui) mod preference_library_doctor;
 pub(in crate::ui) mod preference_listenbrainz;
 pub(in crate::ui) mod preference_new_releases;
+pub(in crate::ui) mod preference_online_sources;
 pub(in crate::ui) mod preference_playback;
 pub(in crate::ui) mod preference_plugins;
 pub(in crate::ui) mod preference_podcasts;
@@ -18,6 +19,7 @@ pub(in crate::ui) mod preference_rhythmbox;
 pub(in crate::ui) mod preference_scrobbling;
 pub(in crate::ui) mod preference_visual_strings;
 pub(in crate::ui) mod preference_window_decorations;
+pub(in crate::ui) mod preference_youtube;
 pub(in crate::ui) mod preferences_window;
 #[path = "preferences.rs"]
 mod surface;

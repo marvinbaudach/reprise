@@ -83,6 +83,17 @@ CREATE INDEX idx_podcast_episodes_unplayed
   WHERE played_at IS NULL AND removed_at IS NULL;
 "#;
 
+const SCHEMA_V41: &str = r#"
+CREATE TABLE IF NOT EXISTS podcast_subscription_devices (
+  subscription_id INTEGER NOT NULL
+                  REFERENCES podcast_subscriptions(id) ON DELETE CASCADE,
+  device_id       TEXT NOT NULL CHECK(length(trim(device_id)) > 0),
+  PRIMARY KEY(subscription_id, device_id)
+);
+CREATE INDEX IF NOT EXISTS idx_podcast_subscription_devices_device
+  ON podcast_subscription_devices(device_id);
+"#;
+
 pub(crate) fn migrate_v32(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version >= 32 {
@@ -135,6 +146,69 @@ pub(crate) fn migrate_v34(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.execute_batch(SCHEMA_V34)?;
     transaction.pragma_update(None, "user_version", version.max(34))?;
     transaction.commit()
+}
+
+pub(crate) fn migrate_v40(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= 40 {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    if !has_column(&transaction, "podcast_subscriptions", "sync_to_phone")? {
+        transaction.execute(
+            "ALTER TABLE podcast_subscriptions
+             ADD COLUMN sync_to_phone INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+    if !has_column(&transaction, "podcast_episodes", "downloaded_bytes")? {
+        transaction.execute(
+            "ALTER TABLE podcast_episodes ADD COLUMN downloaded_bytes INTEGER",
+            [],
+        )?;
+    }
+    transaction.pragma_update(None, "user_version", 40)?;
+    transaction.commit()
+}
+
+pub(crate) fn migrate_v41(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= 41 {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    transaction.execute_batch(SCHEMA_V41)?;
+    transaction.pragma_update(None, "user_version", 41)?;
+    transaction.commit()
+}
+
+// `MTP-40`: persistent "sync to phone" intent for a single episode,
+// independent of whether it has been downloaded yet (design 7f). See
+// `podcasts::wanted_on_device` for the pure transition this column backs.
+pub(crate) fn migrate_v43(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    let has_wanted = has_column(conn, "podcast_episodes", "wanted_on_device")?;
+    if version >= 43 && has_wanted {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    if !has_wanted {
+        transaction.execute(
+            "ALTER TABLE podcast_episodes
+             ADD COLUMN wanted_on_device INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+    transaction.pragma_update(None, "user_version", version.max(43))?;
+    transaction.commit()
+}
+
+fn has_column(conn: &Connection, table: &str, expected: &str) -> Result<bool, rusqlite::Error> {
+    let mut statement = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(columns.iter().any(|column| column == expected))
 }
 
 #[cfg(test)]

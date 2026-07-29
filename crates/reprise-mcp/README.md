@@ -111,6 +111,7 @@ client that launches it must run on the **same machine** as Reprise.
 | `music_update_playlist` | `action` = `rename`\|`add_tracks`, plus playlist/name/track ids | Safely rename a playlist or append tracks | `playlist:manage` |
 | `music_create_instrumental` | `track_ids` | Queue vocal-removal (htdemucs) render jobs | `ai:create` |
 | `music_get_job_status` | job/batch id | Progress of a render job | `library:read` |
+| `music_search_sources` | `provider` = `rss`\|`youtube`\|`radio`, `query` | Search Apple Podcasts, yt-dlp, or radio-browser for a new source to subscribe to | `sources:manage` |
 | `music_manage_podcasts` | `action` = `add`\|`edit`\|`remove`\|`refresh`, plus action fields | Read RSS/YouTube with yt-dlp and manage cached subscriptions | `sources:manage` |
 | `music_manage_radio` | `action` = `add`\|`edit`\|`remove`, plus action fields | Manage radio favorites; URL-only add reads ICY metadata | `sources:manage` |
 | `music_playback_control` | `action` = `play`\|`pause`\|`stop`\|`next`\|`previous` | Transport-control the running app | `playback:control` |
@@ -118,7 +119,7 @@ client that launches it must run on the **same machine** as Reprise.
 | `music_set_playback` | `action` plus `volume`, `offset_seconds`, `enabled`, or `repeat` | Set volume, seek, shuffle, or repeat | `playback:control` |
 | `music_play` | exactly one of `track_ids` or `playlist_id` | Play a track list or a whole playlist | `playback:control` |
 | `music_queue` | `action` = `status`\|`add_next`\|`add_last`\|`clear` | Read or safely change the manual Play Next queue | `playback:control` |
-| `music_get_device_sync_state` | none | Read playlists and verified sync times, transfer profile, deduplicated totals, device capacity/access, delta, progress, current title, bytes/second, and available controls | read-only |
+| `music_get_device_sync_state` | none | Read playlists and verified sync times, transfer profile, deduplicated totals, device capacity/access, delta, progress, current title, bytes/second, available controls, and the three named sync targets' folders/caps/diff readings plus their aggregate balance | read-only |
 | `music_device_sync` | `action` = `configure`\|`start`\|`cancel`\|`eject`, exact `device_name`; `configure` also takes `sources` and optional `profile` = `opus_160`\|`mp3_256`\|`original` | Configure and control playlist mirroring of Reprise-managed files | `device:sync` |
 
 `music_play` resolves a `playlist_id` to its ordered tracks itself, then tells
@@ -139,6 +140,31 @@ unchanged, while lossless inputs use the selected transfer profile. Removal is
 limited to Reprise's managed inventory under `Music/Reprise`; music outside
 that root is never a deletion target. `cancel` stops an active transfer and
 `eject` safely disconnects an idle device.
+
+`music_get_device_sync_state`'s `categories` array carries the three named
+sync targets (`playlists`, `youtube_audio`, `podcast_episodes`): each row's
+device folder, whether this device's slot for it is active, its size on the
+device, its optional cap, and a `reading` of `diff`, `source_off`, or
+`unavailable_kept_on_phone`. Only `diff` carries meaningful copy/remove file
+counts and moved/freed byte totals — `source_off` means the category was not
+evaluated at all, never a computed zero, and `unavailable_kept_on_phone`
+means nothing local exists to compare against, so existing device files are
+left untouched rather than guessed at. `balance` sums only the `diff`
+categories; whether it has anything pending is decided by file counts, never
+by bytes, so a removal-only sync that moves nothing still reports pending
+work.
+
+`music_search_sources` mirrors the GNOME add dialogs: `provider` pins a call
+to exactly one provider (`rss` = Apple Podcasts search, `youtube` = yt-dlp
+channel search, `radio` = radio-browser) — there is never a mixed result
+list. Already-subscribed sources are filtered out by the same stable-identity
+rules the GNOME dialogs use. A YouTube candidate's `subscriber_count` is
+present only when the channel publishes one — absent, `null`, and malformed
+counts are all omitted, never shown as zero. Each candidate's `url` is the
+identifier to pass to `music_manage_podcasts`/`music_manage_radio` `add`; it
+is stripped of any embedded credential and fragment first, but (unlike the
+resources below) its query string is kept, because for an RSS feed in
+particular the query string can be part of the feed's actual identity.
 
 `music_manage_podcasts` accepts an RSS feed URL or a YouTube channel/playlist
 URL for `add`. RSS is parsed directly; YouTube is listed through the configured

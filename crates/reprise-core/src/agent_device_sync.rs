@@ -2,7 +2,7 @@
 
 use std::sync::{mpsc, Arc, Mutex};
 
-use crate::device_sync::{SelectionSource, TransferProfile};
+use crate::device_sync::{CategoryReading, SelectionSource, SyncTargetKind, TransferProfile};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AgentDeviceSyncState {
@@ -29,6 +29,26 @@ pub struct AgentDeviceSyncDevice {
     pub bytes_total: u64,
     pub bytes_per_second: u64,
     pub current_track: String,
+    /// Block H (MCP parity): the three named sync targets (`MTP-38`) plus
+    /// their `MTP-22` category reading, in `SyncTargetKind::ALL` order.
+    /// Reuses `reprise_core::device_sync`'s own `SyncTargetKind` and
+    /// `CategoryReading` rather than re-deriving a parallel shape — this is
+    /// exactly the same data `DeviceView::content_rows`/`category_readings`
+    /// already carry for the GTK device page.
+    pub categories: Vec<AgentDeviceSyncCategoryRow>,
+}
+
+/// One of the three named sync targets (`MTP-38`) as seen by an agent: its
+/// per-device folder, activation, on-device size, cap, and `MTP-22` diff
+/// reading.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentDeviceSyncCategoryRow {
+    pub kind: SyncTargetKind,
+    pub target_path: String,
+    pub target_enabled: bool,
+    pub size_on_device_bytes: u64,
+    pub cap_bytes: Option<u64>,
+    pub reading: CategoryReading,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -248,6 +268,21 @@ mod tests {
                 bytes_total: 60,
                 bytes_per_second: 10,
                 current_track: "Sun//Eater — Lorna Shore".into(),
+                categories: vec![AgentDeviceSyncCategoryRow {
+                    kind: crate::device_sync::SyncTargetKind::YoutubeAudio,
+                    target_path: "/Music/Reprise-YouTube".into(),
+                    target_enabled: true,
+                    size_on_device_bytes: 42,
+                    cap_bytes: Some(8 * 1024 * 1024 * 1024),
+                    reading: CategoryReading::Diff(crate::device_sync::CategoryDiff {
+                        files_to_copy: 3,
+                        bytes_to_copy: 900,
+                        files_to_remove: 1,
+                        bytes_freed: 50,
+                        files_waiting_for_download: 2,
+                        playlists_rewritten: 0,
+                    }),
+                }],
             }],
         }));
 
@@ -275,6 +310,19 @@ mod tests {
         assert!(device.controls.can_cancel);
         assert_eq!(device.bytes_per_second, 10);
         assert_eq!(device.current_track, "Sun//Eater — Lorna Shore");
+        assert_eq!(device.categories[0].kind, SyncTargetKind::YoutubeAudio);
+        assert_eq!(device.categories[0].cap_bytes, Some(8 * 1024 * 1024 * 1024));
+        assert_eq!(
+            device.categories[0].reading,
+            CategoryReading::Diff(crate::device_sync::CategoryDiff {
+                files_to_copy: 3,
+                bytes_to_copy: 900,
+                files_to_remove: 1,
+                bytes_freed: 50,
+                files_waiting_for_download: 2,
+                playlists_rewritten: 0,
+            })
+        );
     }
 
     #[test]

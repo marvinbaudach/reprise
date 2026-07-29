@@ -4,8 +4,11 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use chrono::Utc;
 use gtk4::prelude::*;
+use reprise_core::device_sync::device_view::DeviceContentsState;
 
+use super::sidebar_device_card_text;
 use crate::ui::device_sync_runtime::{
     DeviceSyncRuntime, DeviceSyncState, DeviceView, PlannedSyncPhase, SyncStep,
 };
@@ -29,7 +32,6 @@ struct DeviceCard {
     detail_stack: gtk4::Stack,
     delta_detail: gtk4::Label,
     progress_detail: gtk4::Label,
-    synced_detail: gtk4::Label,
     suffix_stack: gtk4::Stack,
     percent: gtk4::Label,
     progress_revealer: gtk4::Revealer,
@@ -155,10 +157,8 @@ impl DeviceCard {
             .build();
         let delta_detail = detail_label();
         let progress_detail = detail_label();
-        let synced_detail = detail_label();
         detail_stack.add_named(&delta_detail, Some("delta"));
         detail_stack.add_named(&progress_detail, Some("progress"));
-        detail_stack.add_named(&synced_detail, Some("synced"));
         detail_stack.set_visible_child_name("delta");
         labels.append(&name);
         labels.append(&detail_stack);
@@ -237,7 +237,6 @@ impl DeviceCard {
             detail_stack,
             delta_detail,
             progress_detail,
-            synced_detail,
             suffix_stack,
             percent,
             progress_revealer,
@@ -274,13 +273,6 @@ impl DeviceCard {
             DetailMode::Progress => {
                 self.progress_detail.set_text(&card_subtitle(device));
                 self.detail_stack.set_visible_child_name("progress");
-            }
-            DetailMode::Synced => {
-                self.synced_detail.set_text(&format!(
-                    "Synced ✓ · {}",
-                    device_sync_strings::free_space(device.storage.free_bytes)
-                ));
-                self.detail_stack.set_visible_child_name("synced");
             }
         }
 
@@ -324,7 +316,7 @@ impl DeviceCard {
                     .set(self.progress_generation.get().saturating_add(1));
                 self.suffix_stack.set_visible_child_name("open");
                 self.progress_revealer.set_reveal_child(false);
-                self.root.set_tooltip_text(None);
+                self.root.set_tooltip_text(idle_tooltip(device).as_deref());
             }
         }
     }
@@ -382,50 +374,20 @@ fn detail_label() -> gtk4::Label {
 enum DetailMode {
     Delta,
     Progress,
-    Synced,
 }
 
 fn detail_mode(device: &DeviceView) -> DetailMode {
     match &device.sync_phase {
         PlannedSyncPhase::Syncing { .. } | PlannedSyncPhase::Finishing => DetailMode::Progress,
-        PlannedSyncPhase::Idle
-            if has_mirror_selection(device)
-                && mirror_change_count(device) == 0
-                && !mirror_needs_attention(device) =>
-        {
-            DetailMode::Synced
-        }
         PlannedSyncPhase::Idle | PlannedSyncPhase::ComputingDelta => DetailMode::Delta,
     }
 }
 
-fn has_mirror_selection(device: &DeviceView) -> bool {
-    device.page.blockers.is_empty()
-        && device
-            .page
-            .playlists
-            .iter()
-            .any(|playlist| playlist.selected)
-}
-
-fn mirror_change_count(device: &DeviceView) -> usize {
-    device
-        .page
-        .changes
-        .additions
-        .saturating_add(device.page.changes.replacements)
-        .saturating_add(device.page.changes.removals)
-        .saturating_add(device.page.changes.playlist_removals)
-}
-
+/// Real problems only — a plain `NoPlaylistsSelected` blocker is not one of
+/// them (design 7c's four leading-sentence states already cover "nothing
+/// selected" honestly via `Up to date`/`Tap to scan device contents`, so it
+/// must not also trip a competing "Needs attention" reading).
 fn mirror_needs_attention(device: &DeviceView) -> bool {
-    !device.page.blockers.is_empty()
-        || !device.page.warnings.is_empty()
-        || device.scan_error.is_some()
-        || device.sync_error.is_some()
-}
-
-fn mirror_needs_attention_beyond_selection(device: &DeviceView) -> bool {
     device
         .page
         .blockers
@@ -434,6 +396,23 @@ fn mirror_needs_attention_beyond_selection(device: &DeviceView) -> bool {
         || !device.page.warnings.is_empty()
         || device.scan_error.is_some()
         || device.sync_error.is_some()
+}
+
+/// `MTP-29`: "The card carries only the leading sentence; the full balance
+/// goes in the tooltip." Only meaningful once the card is idle, verified,
+/// and has real pending work — otherwise the leading sentence already says
+/// everything the tooltip would.
+fn idle_tooltip(device: &DeviceView) -> Option<String> {
+    if device.sync_phase != PlannedSyncPhase::Idle || mirror_needs_attention(device) {
+        return None;
+    }
+    if device.contents_state != DeviceContentsState::Verified {
+        return None;
+    }
+    let balance = reprise_core::device_sync::aggregate_balance(&device.category_readings);
+    balance
+        .has_work()
+        .then(|| sidebar_device_card_text::tooltip_text(&balance))
 }
 
 fn sync_fraction(bytes_done: u64, bytes_total: u64) -> f64 {
@@ -511,33 +490,21 @@ fn card_subtitle(device: &DeviceView) -> String {
             "{} · Finishing…",
             device_sync_strings::free_space(device.storage.free_bytes)
         ),
+        // `MTP-29` (design 7c): four exact leading sentences replace the
+        // old blended "N changes · X to transfer" text, which is exactly
+        // the "3 changes · 0 B" lie design 7c calls out — see
+        // `sidebar_device_card_text` for the pure projection and its tests.
         PlannedSyncPhase::Idle => {
-            if !has_mirror_selection(device) {
-                let space = device_sync_strings::available_space(device.storage.free_bytes);
-                if mirror_needs_attention_beyond_selection(device) {
-                    return format!("Needs attention · {space}");
-                }
-                return format!(
-                    "{} · {}",
-                    crate::ui::device_sync::device_sync_storage_copy::storage_access_label(
-                        device.storage.access,
-                    ),
-                    device_sync_strings::free_space(device.storage.free_bytes)
-                );
-            }
-            let space = device_sync_strings::available_space(device.storage.free_bytes);
             if mirror_needs_attention(device) {
+                let space = device_sync_strings::available_space(device.storage.free_bytes);
                 return format!("Needs attention · {space}");
             }
-            let changes = mirror_change_count(device);
-            format!(
-                "{} · {} to transfer · {space}",
-                if changes == 1 {
-                    "1 change".into()
-                } else {
-                    format!("{changes} changes")
-                },
-                device_sync_strings::file_size(device.page.changes.transfer_bytes)
+            let balance = reprise_core::device_sync::aggregate_balance(&device.category_readings);
+            sidebar_device_card_text::leading_sentence(
+                &device.contents_state,
+                &balance,
+                device.last_sync,
+                Utc::now(),
             )
         }
     }
@@ -573,6 +540,8 @@ mod tests {
                 opus_bitrate: 0,
                 ratings_back: false,
                 remove_deleted: true,
+                sync_automatically: true,
+                prepare_before_sync: true,
             },
             sync_phase: phase,
             sync_error: None,
@@ -580,7 +549,18 @@ mod tests {
             verified_managed_track_count: None,
             managed_track_count: 0,
             bytes_per_second: 0,
+            contents_state: reprise_core::device_sync::device_view::DeviceContentsState::Verified,
+            content_rows: crate::ui::device_sync_runtime::empty_content_rows(),
+            category_readings: crate::ui::device_sync_runtime::empty_category_readings(),
+            youtube_bytes: 0,
+            podcast_bytes: 0,
+            youtube_selection: Default::default(),
+            podcast_selection: Default::default(),
             history: Vec::new(),
+            preparation: reprise_core::device_sync::PreparationPhase::Absent,
+            preparation_missing: Vec::new(),
+            preparation_run: crate::ui::device_sync_runtime::PreparationRunState::Idle,
+            prepared_this_run: false,
             page: Default::default(),
         }
     }

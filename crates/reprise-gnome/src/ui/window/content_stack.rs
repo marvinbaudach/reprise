@@ -19,7 +19,7 @@ enum PageTransition {
 fn transition_for_switch(from: Option<&str>, to: &str) -> PageTransition {
     if matches!(
         (from, to),
-        (Some("podcasts"), "library") | (Some("library"), "podcasts")
+        (Some("podcasts" | "youtube"), "library") | (Some("library"), "podcasts" | "youtube")
     ) {
         PageTransition::FadeThrough
     } else {
@@ -62,6 +62,10 @@ mod tests {
         );
         assert_eq!(
             super::transition_for_switch(Some("library"), "podcasts"),
+            super::PageTransition::FadeThrough
+        );
+        assert_eq!(
+            super::transition_for_switch(Some("youtube"), "library"),
             super::PageTransition::FadeThrough
         );
         assert_eq!(

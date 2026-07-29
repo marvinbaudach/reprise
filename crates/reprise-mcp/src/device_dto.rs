@@ -54,6 +54,52 @@ pub struct DeviceSyncDeviceDto {
     pub phase: String,
     pub progress: DeviceSyncProgressDto,
     pub current_track: String,
+    /// Block H (MCP parity, `MTP-38`/`MTP-22`): the three named sync
+    /// targets, each with its target folder, cap and category diff reading.
+    pub categories: Vec<DeviceSyncCategoryDto>,
+    /// `MTP-22`'s aggregate balance across every category currently reading
+    /// a computed diff — the same `aggregate_balance` projection the device
+    /// page's sidebar card tooltip reads, computed here from `categories`
+    /// rather than carried separately over the wire.
+    pub balance: DeviceSyncBalanceDto,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct DeviceSyncCategoryDto {
+    /// One of: `playlists`, `youtube_audio`, `podcast_episodes`.
+    pub kind: &'static str,
+    pub target_path: String,
+    /// `SyncTarget::enabled` — whether this device's slot for the category
+    /// is active at all (`MTP-38`), independent of the global rule.
+    pub target_enabled: bool,
+    pub size_on_device_bytes: u64,
+    pub cap_bytes: Option<u64>,
+    /// One of: `diff`, `source_off`, `unavailable_kept_on_phone`. `diff`
+    /// carries the six count/byte fields below; the other two states leave
+    /// them at zero on purpose — `source_off` means nothing was evaluated,
+    /// not "evaluated to zero changes", and must never be mistaken for a
+    /// genuine zero-change diff (`MTP-22`).
+    pub reading: &'static str,
+    pub files_to_copy: u64,
+    pub bytes_to_copy: u64,
+    pub files_to_remove: u64,
+    pub bytes_freed: u64,
+    pub files_waiting_for_download: u64,
+    pub playlists_rewritten: u64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
+pub struct DeviceSyncBalanceDto {
+    pub files_to_copy: u64,
+    pub bytes_to_copy: u64,
+    pub files_to_remove: u64,
+    pub bytes_freed: u64,
+    pub files_waiting_for_download: u64,
+    pub playlists_rewritten: u64,
+    /// Same rule as `CategoryDiff::has_work`/`SyncBalance::has_work`: file
+    /// counts decide, bytes never do — a deletions-only sync with 0 bytes
+    /// moved must still read as work pending (design 7c).
+    pub has_work: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]

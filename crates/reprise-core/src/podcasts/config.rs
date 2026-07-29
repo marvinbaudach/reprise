@@ -7,7 +7,8 @@ use super::PodcastKind;
 pub const IMPORT_COUNT_KEY: &str = "podcasts.import_count";
 pub const AUTO_DOWNLOAD_DEFAULT_KEY: &str = "podcasts.auto_download_default";
 pub const CLEANUP_POLICY_KEY: &str = "podcasts.cleanup_policy";
-pub const YOUTUBE_ENABLED_KEY: &str = "podcasts.youtube_enabled";
+pub const YOUTUBE_IMPORT_COUNT_KEY: &str = "podcasts.youtube_import_count";
+pub const YOUTUBE_HIDE_SHORTS_DEFAULT_KEY: &str = "podcasts.youtube_hide_shorts_default";
 pub const YTDLP_PATH_KEY: &str = "podcasts.ytdlp_path";
 pub const REFRESH_HOURS_KEY: &str = "sources.refresh_hours";
 pub const FILTER_UNPLAYED_KEY: &str = "podcasts.filter.unplayed";
@@ -15,6 +16,7 @@ pub const FILTER_SHOW_KEY: &str = "podcasts.filter.show";
 pub const FILTER_SOURCE_KEY: &str = "podcasts.filter.source";
 
 pub const DEFAULT_IMPORT_COUNT: usize = 25;
+pub const DEFAULT_YOUTUBE_IMPORT_COUNT: usize = 10;
 pub const DEFAULT_REFRESH_HOURS: i64 = 6;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -50,7 +52,13 @@ pub struct PodcastConfig {
     pub import_count: usize,
     pub auto_download_default: bool,
     pub cleanup_policy: CleanupPolicy,
-    pub youtube_enabled: bool,
+    /// YouTube's per-channel episode window ("Episodes per channel" on the
+    /// Online sources page) — independent of `import_count`, which is the
+    /// RSS "Episodes per show" setting.
+    pub youtube_import_count: usize,
+    /// Seeds new/untouched YouTube channels' Shorts visibility; a channel's
+    /// own explicit override (see `youtube_channel_detail`) always wins.
+    pub youtube_hide_shorts_default: bool,
     pub ytdlp_path: Option<String>,
     pub refresh_hours: i64,
 }
@@ -76,7 +84,14 @@ pub fn load(conn: &Connection) -> Result<PodcastConfig, rusqlite::Error> {
             .as_deref()
             .map(CleanupPolicy::from_setting)
             .unwrap_or_default(),
-        youtube_enabled: crate::library::settings::get_bool(conn, YOUTUBE_ENABLED_KEY, true)?,
+        youtube_import_count: integer_setting(conn, YOUTUBE_IMPORT_COUNT_KEY)?
+            .unwrap_or(DEFAULT_YOUTUBE_IMPORT_COUNT as i64)
+            .clamp(3, 50) as usize,
+        youtube_hide_shorts_default: crate::library::settings::get_bool(
+            conn,
+            YOUTUBE_HIDE_SHORTS_DEFAULT_KEY,
+            true,
+        )?,
         ytdlp_path: non_empty_setting(conn, YTDLP_PATH_KEY)?,
         refresh_hours: integer_setting(conn, REFRESH_HOURS_KEY)?
             .unwrap_or(DEFAULT_REFRESH_HOURS)
@@ -94,6 +109,22 @@ pub fn load_filter(conn: &Connection) -> Result<PodcastFilterConfig, rusqlite::E
             _ => None,
         },
     })
+}
+
+/// The one authority for "may a refresh/download for this kind start a
+/// network request right now" — ANDs the global online-sources gate
+/// (`NET-1a`) with the kind's own module (Podcasts for RSS, YouTube for
+/// YouTube). Every podcast/YouTube network entry point routes through this
+/// instead of checking a module flag alone.
+pub fn source_network_allowed(
+    conn: &Connection,
+    kind: PodcastKind,
+) -> Result<bool, rusqlite::Error> {
+    let module = match kind {
+        PodcastKind::Rss => &crate::modules::PODCASTS_MODULE,
+        PodcastKind::Youtube => &crate::modules::YOUTUBE_MODULE,
+    };
+    crate::online_sources::network_allowed(conn, module)
 }
 
 fn non_empty_setting(conn: &Connection, key: &str) -> Result<Option<String>, rusqlite::Error> {
@@ -120,7 +151,8 @@ mod tests {
         assert_eq!(config.import_count, 25);
         assert!(!config.auto_download_default);
         assert_eq!(config.cleanup_policy, CleanupPolicy::KeepAll);
-        assert!(config.youtube_enabled);
+        assert_eq!(config.youtube_import_count, 10);
+        assert!(config.youtube_hide_shorts_default);
         assert_eq!(config.ytdlp_path, None);
         assert_eq!(config.refresh_hours, 6);
     }
@@ -136,7 +168,8 @@ mod tests {
             CleanupPolicy::KeepLast5.as_setting(),
         )
         .unwrap();
-        crate::library::settings::set_bool(&conn, YOUTUBE_ENABLED_KEY, false).unwrap();
+        crate::library::settings::set_setting(&conn, YOUTUBE_IMPORT_COUNT_KEY, "900").unwrap();
+        crate::library::settings::set_bool(&conn, YOUTUBE_HIDE_SHORTS_DEFAULT_KEY, false).unwrap();
         crate::library::settings::set_setting(&conn, YTDLP_PATH_KEY, " /opt/yt-dlp ").unwrap();
         crate::library::settings::set_setting(&conn, REFRESH_HOURS_KEY, "0").unwrap();
 
@@ -144,9 +177,33 @@ mod tests {
         assert_eq!(config.import_count, 100);
         assert!(config.auto_download_default);
         assert_eq!(config.cleanup_policy, CleanupPolicy::KeepLast5);
-        assert!(!config.youtube_enabled);
+        assert_eq!(config.youtube_import_count, 50);
+        assert!(!config.youtube_hide_shorts_default);
         assert_eq!(config.ytdlp_path.as_deref(), Some("/opt/yt-dlp"));
         assert_eq!(config.refresh_hours, 1);
+    }
+
+    #[test]
+    fn net_1a_source_network_allowed_ands_the_global_gate_with_the_kind_module() {
+        let conn = conn();
+
+        // Neither Podcasts nor YouTube is on by default.
+        assert!(!source_network_allowed(&conn, PodcastKind::Rss).unwrap());
+        assert!(!source_network_allowed(&conn, PodcastKind::Youtube).unwrap());
+
+        crate::modules::set_enabled(&conn, &crate::modules::PODCASTS_MODULE, true).unwrap();
+        assert!(source_network_allowed(&conn, PodcastKind::Rss).unwrap());
+        assert!(
+            !source_network_allowed(&conn, PodcastKind::Youtube).unwrap(),
+            "Podcasts on must not implicitly allow YouTube (issue #96)"
+        );
+
+        crate::modules::set_enabled(&conn, &crate::modules::YOUTUBE_MODULE, true).unwrap();
+        assert!(source_network_allowed(&conn, PodcastKind::Youtube).unwrap());
+
+        crate::online_sources::set_enabled(&conn, false).unwrap();
+        assert!(!source_network_allowed(&conn, PodcastKind::Rss).unwrap());
+        assert!(!source_network_allowed(&conn, PodcastKind::Youtube).unwrap());
     }
 
     #[test]

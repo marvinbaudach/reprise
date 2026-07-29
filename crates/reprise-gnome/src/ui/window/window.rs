@@ -179,8 +179,8 @@ pub fn build(
     });
     device_sync
         .bind_agent_device_sync(&media.device_sync_state, media.device_sync_commands.clone());
+    device_sync.bind_preparation_downloader(&podcasts_runtime);
     super::device_sync_smoke::arm(&device_sync);
-
     let player = match build_player_backends(waveform_backend.clone(), media) {
         Ok(backends) => Some(PlayerController::new(
             conn.clone(),
@@ -386,18 +386,17 @@ pub fn build(
         player.as_ref(),
         &sidebar,
         &content_stack,
+        &device_sync,
     );
-    let podcasts_view = source_views.podcasts;
-    let radio_view = source_views.radio;
+    // The toast layer is attached after the player-bar shell exists so
+    // notifications render above the complete library chrome.
+    let toast_overlay = adw::ToastOverlay::new();
+    source_views.set_toast_overlay(&toast_overlay);
+    let (podcasts_view, youtube_view, radio_view) = source_views.into_parts();
     super::source_views::wire_update_sidebar_refresh(&concerts_view, &releases_view, &sidebar);
 
     let bar_position = settings::get_player_bar_position(&conn.borrow());
 
-    // The toast layer is attached after the player-bar shell exists so
-    // notifications render above the complete library chrome.
-    let toast_overlay = adw::ToastOverlay::new();
-    podcasts_view.set_toast_overlay(&toast_overlay);
-    radio_view.set_toast_overlay(&toast_overlay);
     {
         let overlay = toast_overlay.downgrade();
         concerts_view.set_on_launch_error(move |error| {
@@ -567,6 +566,7 @@ pub fn build(
         concerts_view: &concerts_view,
         releases_view: &releases_view,
         podcasts_view: &podcasts_view,
+        youtube_view: &youtube_view,
         radio_view: &radio_view,
         podcasts_runtime: &podcasts_runtime,
         content_stack: &content_stack,

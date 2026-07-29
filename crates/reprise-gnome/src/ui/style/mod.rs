@@ -69,6 +69,7 @@ fn app_css() -> String {
         super::updates::css(),
         super::podcasts::css(),
         super::radio::css(),
+        super::source_empty_state::css(),
         super::toasts::css(),
         super::tag_editor_style::css(),
         info_panel_clip_css(),

@@ -10,7 +10,7 @@ use reprise_core::radio::search::StationCandidate;
 use reprise_core::radio::{self, RadioError};
 use rusqlite::Connection;
 
-use crate::ui::{one_shot_task, strings};
+use crate::ui::{one_shot_task, source_add_action, strings};
 
 type AddedCallback = Rc<dyn Fn()>;
 
@@ -19,6 +19,19 @@ pub(super) enum AddInput {
     Empty,
     Search(String),
     Url(String),
+}
+
+/// `NET-1a` / `C1`: `online_sources::network_allowed(conn,
+/// &modules::SOURCE_IMAGES_MODULE)`, computed fresh at every call so each
+/// favicon tile reflects the current gate — this dialog never lets the
+/// widget read settings itself. A free function (rather than a method) so
+/// its wiring is testable without constructing the GTK dialog.
+pub(super) fn images_allowed(conn: &Connection) -> bool {
+    reprise_core::online_sources::network_allowed(
+        conn,
+        &reprise_core::modules::SOURCE_IMAGES_MODULE,
+    )
+    .unwrap_or(false)
 }
 
 pub(super) fn classify_input(input: &str) -> AddInput {
@@ -241,7 +254,13 @@ impl RadioAddDialog {
         buttons.append(&cancel);
         buttons.append(&confirm);
 
-        let footnote = gtk4::Label::new(Some(&strings::text(strings::RADIO_COMMUNITY_FOOTNOTE)));
+        // SRC-7: the same two-line footing as the podcast and channel dialogs —
+        // where the results come from, and why added ones stop appearing.
+        let footnote = gtk4::Label::new(Some(&format!(
+            "{}\n{}",
+            strings::text(strings::RADIO_COMMUNITY_FOOTNOTE),
+            strings::text(strings::SOURCE_SUBSCRIBED_DROP_OUT)
+        )));
         footnote.set_xalign(0.0);
         footnote.set_wrap(true);
         footnote.add_css_class("dim-label");
@@ -255,7 +274,20 @@ impl RadioAddDialog {
         content.append(&entry);
         content.append(&spinner);
         content.append(&status);
-        content.append(&results);
+        // SRC-8: the result list is the only part that may grow. A bare
+        // GtkListBox contributes every row's natural height, so fifty hits push
+        // the footer — and every Add action with it — past the window edge.
+        let results_scroller = gtk4::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk4::PolicyType::Never)
+            .vscrollbar_policy(gtk4::PolicyType::Automatic)
+            .propagate_natural_height(true)
+            .vexpand(true)
+            .child(&results)
+            .build();
+        // SRC-8: same clearance from the overlay scrollbar as the podcast and
+        // channel dialogs, so no row action sits underneath it.
+        results.set_margin_end(6);
+        content.append(&results_scroller);
         content.append(&preview);
         content.append(&fetch_row);
         content.append(&footnote);
@@ -329,6 +361,19 @@ impl RadioAddDialog {
         let input = classify_input(input);
         if input == AddInput::Empty {
             self.render(AddDialogState::default());
+            return;
+        }
+        // NET-1a: radio-browser search and the ICY probe are both network
+        // paths, so the switch is honoured before either is dispatched.
+        let allowed = reprise_core::online_sources::network_allowed(
+            &self.conn.borrow(),
+            &reprise_core::modules::RADIO_MODULE,
+        )
+        .unwrap_or(false);
+        if !allowed {
+            self.widgets
+                .status
+                .set_text(&strings::text(strings::ONLINE_SOURCES_TURNED_OFF));
             return;
         }
         let (state, generation) = self.state.borrow().clone().begin(&input);
@@ -424,6 +469,18 @@ impl RadioAddDialog {
     }
 
     fn render_results(self: &Rc<Self>, rows: Vec<StationCandidate>) {
+        let favorites = radio::station::list(&self.conn.borrow()).map_or_else(
+            |error| {
+                tracing::warn!(%error, "could not load radio favorites for search filtering");
+                Vec::new()
+            },
+            |rows| {
+                rows.into_iter()
+                    .map(|row| (row.uuid.unwrap_or_default(), row.stream_url))
+                    .collect()
+            },
+        );
+        let rows = radio::search::filter_new_stations(rows, &favorites);
         self.widgets.status.remove_css_class("error");
         self.widgets.status.set_text(&format!(
             "{} · {}",
@@ -434,8 +491,12 @@ impl RadioAddDialog {
         for candidate in rows {
             let row = gtk4::ListBoxRow::new();
             let content = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
-            let tile = gtk4::Image::from_icon_name("network-wireless-symbolic");
-            tile.set_pixel_size(40);
+            let tile = crate::ui::podcasts::source_image::SourceImage::new(
+                candidate.favicon_url.as_deref(),
+                "network-wireless-symbolic",
+                40,
+                images_allowed(&self.conn.borrow()),
+            );
             let copy = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
             copy.set_hexpand(true);
             let title = gtk4::Label::new(Some(&candidate.name));
@@ -447,24 +508,36 @@ impl RadioAddDialog {
             details.add_css_class("caption");
             copy.append(&title);
             copy.append(&details);
-            let add = gtk4::Button::with_label(&strings::text(strings::RADIO_ADD_RESULT));
+            // SRC-7: the same compact action the podcast and channel dialogs use.
+            let station_name = candidate.name.clone();
+            let add =
+                source_add_action::add_button(source_add_action::AddActionKind::Add, &station_name);
             let conn = self.conn.clone();
             let on_added = self.on_added.clone();
             add.connect_clicked(move |button| {
                 let station = station_from_candidate(candidate.clone());
-                match radio::station::add_or_restore(&conn.borrow(), &station, now_unix()) {
+                let result = {
+                    let conn = conn.borrow();
+                    radio::station::add_or_restore(&conn, &station, now_unix())
+                };
+                match result {
                     Ok(_) => {
-                        button.set_icon_name("object-select-symbolic");
-                        button.set_sensitive(false);
                         on_added();
+                        // SRC-7: acknowledge in place instead of removing the
+                        // row, so the add stays visible.
+                        source_add_action::mark_added(
+                            button,
+                            source_add_action::AddActionKind::Add,
+                            &station_name,
+                        );
                     }
                     Err(error) => {
                         tracing::warn!(%error, "could not add radio search result");
-                        button.set_label(&strings::text(strings::RADIO_ADD_FAILED));
+                        button.set_tooltip_text(Some(&strings::text(strings::RADIO_ADD_FAILED)));
                     }
                 }
             });
-            content.append(&tile);
+            content.append(tile.widget());
             content.append(&copy);
             content.append(&add);
             row.set_child(Some(&content));
@@ -476,18 +549,42 @@ impl RadioAddDialog {
         while let Some(child) = self.widgets.preview.first_child() {
             self.widgets.preview.remove(&child);
         }
+        let favorites = radio::station::list(&self.conn.borrow()).map_or_else(
+            |error| {
+                tracing::warn!(%error, "could not load radio favorites for preview filtering");
+                Vec::new()
+            },
+            |rows| {
+                rows.into_iter()
+                    .map(|row| (row.uuid.unwrap_or_default(), row.stream_url))
+                    .collect()
+            },
+        );
+        if radio::search::station_is_known(preview.uuid.as_deref(), &preview.stream_url, &favorites)
+        {
+            self.widgets
+                .status
+                .set_text(&strings::text(strings::RADIO_ALREADY_FAVORITE));
+            self.widgets.status.set_visible(true);
+            self.widgets.confirm.set_sensitive(false);
+            return;
+        }
         let kind = gtk4::Label::new(Some(&strings::text(if preview.playlist_kind.is_some() {
             strings::RADIO_PLAYLIST_DETECTED
         } else {
             strings::RADIO_STREAM_DETECTED
         })));
         kind.set_xalign(0.0);
-        let tile = gtk4::Image::from_icon_name("network-wireless-symbolic");
-        tile.set_pixel_size(40);
+        let tile = crate::ui::podcasts::source_image::SourceImage::new(
+            preview.favicon_url.as_deref(),
+            "network-wireless-symbolic",
+            40,
+            images_allowed(&self.conn.borrow()),
+        );
         let name = gtk4::Label::new(Some(&preview.name));
         name.set_xalign(0.0);
         let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
-        row.append(&tile);
+        row.append(tile.widget());
         row.append(&name);
         self.widgets.preview.append(&kind);
         self.widgets.preview.append(&row);
@@ -499,11 +596,11 @@ impl RadioAddDialog {
             AddDialogPhase::Preview(preview) => preview.clone(),
             _ => return,
         };
-        match radio::station::add_or_restore(
-            &self.conn.borrow(),
-            &preview.into_new_station(),
-            now_unix(),
-        ) {
+        let result = {
+            let conn = self.conn.borrow();
+            radio::station::add_or_restore(&conn, &preview.into_new_station(), now_unix())
+        };
+        match result {
             Ok(_) => {
                 (self.on_added)();
                 self.widgets.dialog.close();
@@ -575,48 +672,5 @@ fn now_unix() -> i64 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn src_3_radio_add_dialog_submits_search_or_url_through_one_field() {
-        assert_eq!(
-            classify_input("ambient radio"),
-            AddInput::Search("ambient radio".into())
-        );
-        assert_eq!(
-            classify_input("https://radio.example/listen.pls"),
-            AddInput::Url("https://radio.example/listen.pls".into())
-        );
-        assert_eq!(classify_input("   "), AddInput::Empty);
-    }
-
-    #[test]
-    fn dialog_state_ignores_stale_results_and_requires_a_valid_preview() {
-        let state = AddDialogState::default();
-        let (state, first) = state.begin(&AddInput::Search("metal".into()));
-        let (state, second) = state.begin(&AddInput::Url("https://radio.example/live".into()));
-        assert!(matches!(state.phase, AddDialogPhase::Previewing));
-        assert_eq!(
-            state.clone().accept(first, AddResult::Search(Vec::new())),
-            state
-        );
-        let preview = StationPreview::manual("Example", "https://radio.example/live");
-        let accepted = state.accept(second, AddResult::Preview(preview));
-        assert!(matches!(accepted.phase, AddDialogPhase::Preview(_)));
-        assert!(accepted.can_confirm());
-    }
-
-    #[test]
-    fn rad_4_playlist_type_is_detected_without_consuming_a_live_stream() {
-        assert_eq!(
-            playlist_kind("https://radio.example/listen.PLS?token=1"),
-            Some(reprise_core::radio::playlist::PlaylistKind::Pls)
-        );
-        assert_eq!(
-            playlist_kind("https://radio.example/listen.m3u8"),
-            Some(reprise_core::radio::playlist::PlaylistKind::M3u)
-        );
-        assert_eq!(playlist_kind("https://radio.example/live"), None);
-    }
-}
+#[path = "add_dialog_tests.rs"]
+mod tests;

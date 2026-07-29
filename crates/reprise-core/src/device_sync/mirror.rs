@@ -121,6 +121,15 @@ pub struct MirrorPlan {
     pub playlist_removals: Vec<DevicePlaylistRecord>,
     pub transfer_bytes: u64,
     pub target_bytes: u64,
+    /// Total size of everything in [`Self::remove`] — kept as its own sum
+    /// rather than derived at read time, and deliberately never merged
+    /// into [`Self::transfer_bytes`] (which only ever counts bytes moving
+    /// *onto* the device). A deletions-only plan has `transfer_bytes == 0`
+    /// and `bytes_freed > 0`; keeping the two separate is what lets a
+    /// truthful "0 B to copy · frees 148 MiB" reading exist instead of a
+    /// single blended "bytes" figure that reads as "nothing to do" (`MTP-22`,
+    /// design 7c).
+    pub bytes_freed: u64,
     pub blockers: Vec<MirrorBlocker>,
     pub warnings: Vec<MirrorWarning>,
 }
@@ -336,6 +345,7 @@ fn plan_file_changes(
             continue;
         }
         if safe_managed_path(&existing.device_path) {
+            plan.bytes_freed = plan.bytes_freed.saturating_add(existing.device_size);
             plan.remove
                 .push(ManagedRemoval::Inventory(existing.clone()));
         } else {
@@ -373,6 +383,7 @@ fn plan_orphan_removals(
             continue;
         }
         if safe_managed_path(&file.relative_path) {
+            plan.bytes_freed = plan.bytes_freed.saturating_add(file.size_bytes);
             plan.remove.push(ManagedRemoval::Orphan(file.clone()));
         } else {
             push_warning(
