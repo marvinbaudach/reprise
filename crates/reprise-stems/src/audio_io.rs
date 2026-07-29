@@ -13,14 +13,18 @@ use std::path::Path;
 
 use flacenc::component::BitRepr;
 use flacenc::error::Verify;
-use rubato::{FastFixedIn, PolynomialDegree, Resampler};
-use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::DecoderOptions;
+// `audioadapter_buffers` is rubato's own re-export, not a second dependency to
+// licence-clear: rubato 4 takes its buffers through the `Adapter` traits and
+// re-exports the crate that implements them for exactly this reason.
+use rubato::audioadapter_buffers::direct::SequentialSliceOfVecs;
+use rubato::{Async, FixedAsync, PolynomialDegree, Resampler};
+use symphonia::core::codecs::audio::AudioDecoderOptions;
+use symphonia::core::codecs::CodecParameters;
 use symphonia::core::errors::Error as SymphoniaError;
-use symphonia::core::formats::FormatOptions;
+use symphonia::core::formats::probe::Hint;
+use symphonia::core::formats::{FormatOptions, TrackType};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
 
 use reprise_core::stem_separation::StemError;
 
@@ -29,6 +33,16 @@ use crate::pcm::{interleave_to_pcm, RENDER_BITS_PER_SAMPLE};
 
 /// Number of channels the model works in.
 const STEREO: usize = 2;
+
+/// Input frames the resampler consumes per internal chunk. rubato needs a
+/// chunk size up front; 1024 keeps the working set small without making the
+/// per-chunk overhead matter on a whole-track resample.
+const RESAMPLE_CHUNK_FRAMES: usize = 1024;
+
+/// How far the resample ratio may be adjusted at runtime relative to the one
+/// it is built with. Nothing here adjusts it, so this is the smallest value
+/// rubato accepts above "no adjustment at all".
+const RESAMPLE_MAX_RATIO_RELATIVE: f64 = 1.1;
 
 /// Decodes `path` to stereo planar f32 at [`HTDEMUCS_SAMPLE_RATE`]. Mono is
 /// duplicated to stereo (as the reference does); more than two channels keeps
@@ -53,53 +67,63 @@ fn decode_native(path: &Path) -> Result<(Vec<Vec<f32>>, u32), StemError> {
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         hint.with_extension(ext);
     }
-    let probed = symphonia::default::get_probe()
-        .format(
+    let mut format = symphonia::default::get_probe()
+        .probe(
             &hint,
             stream,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
+            FormatOptions::default(),
+            MetadataOptions::default(),
         )
         .map_err(|e| StemError::SourceUnreadable(format!("probe: {e}")))?;
-    let mut format = probed.format;
 
+    // symphonia 0.6 readers carry video and subtitle tracks too, so "the
+    // default track" is only a question you can ask per track type.
     let track = format
-        .default_track()
+        .default_track(TrackType::Audio)
         .ok_or_else(|| StemError::SourceUnreadable("no default audio track".to_string()))?;
     let track_id = track.id;
+    // Codec parameters are optional in 0.6 — a reader that could not identify
+    // the track leaves them `None`, and that track is simply unplayable.
+    let params = track
+        .codec_params
+        .as_ref()
+        .and_then(CodecParameters::audio)
+        .ok_or_else(|| {
+            StemError::SourceUnreadable("audio track has no codec parameters".to_string())
+        })?;
+    let mut rate = params.sample_rate.unwrap_or(HTDEMUCS_SAMPLE_RATE);
     let mut decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &DecoderOptions::default())
+        .make_audio_decoder(params, &AudioDecoderOptions::default())
         .map_err(|e| StemError::SourceUnreadable(format!("no decoder: {e}")))?;
 
     let mut channels: Vec<Vec<f32>> = Vec::new();
-    let mut rate = track
-        .codec_params
-        .sample_rate
-        .unwrap_or(HTDEMUCS_SAMPLE_RATE);
+    let mut planes: Vec<Vec<f32>> = Vec::new();
 
     loop {
         let packet = match format.next_packet() {
-            Ok(packet) => packet,
-            // Any read error ends the stream (EOF surfaces as an IoError here).
-            Err(SymphoniaError::IoError(_) | SymphoniaError::ResetRequired) => break,
+            Ok(Some(packet)) => packet,
+            // 0.6 reports the end of the media as `Ok(None)`. An I/O error is
+            // now always a real read failure — 0.5 delivered EOF as one, which
+            // is why this arm used to swallow it.
+            Ok(None) => break,
+            Err(SymphoniaError::ResetRequired) => break,
             Err(e) => return Err(StemError::SourceUnreadable(format!("read packet: {e}"))),
         };
-        if packet.track_id() != track_id {
+        if packet.track_id != track_id {
             continue;
         }
         let decoded = match decoder.decode(&packet) {
             Ok(decoded) => decoded,
             // A single corrupt packet is skipped, not fatal.
             Err(SymphoniaError::DecodeError(_)) => continue,
+            // A truncated final packet still leaves everything decoded so far
+            // usable; failing the whole job over the tail would be worse.
             Err(SymphoniaError::IoError(_)) => break,
             Err(e) => return Err(StemError::SourceUnreadable(format!("decode: {e}"))),
         };
-        let spec = *decoded.spec();
-        let channel_count = spec.channels.count();
-        rate = spec.rate;
-        let mut buffer = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
-        buffer.copy_interleaved_ref(decoded);
-        push_interleaved(&mut channels, buffer.samples(), channel_count)?;
+        rate = decoded.spec().rate();
+        decoded.copy_to_vecs_planar(&mut planes);
+        append_planes(&mut channels, &planes)?;
     }
 
     if channels.is_empty() || channels[0].is_empty() {
@@ -110,30 +134,29 @@ fn decode_native(path: &Path) -> Result<(Vec<Vec<f32>>, u32), StemError> {
     Ok((channels, rate))
 }
 
-/// Splits one decoded packet's interleaved samples into per-channel lanes,
-/// allocating the lanes on the first packet. A crafted or corrupt file can
-/// present a packet claiming **zero** channels; reject it as unreadable rather
-/// than dividing by zero (the old `i % 0`). Deriving the divisor `lanes` from
-/// the same `channel_count.max(1)` expression that sizes the lanes keeps the two
-/// provably identical, so the modulo can never divide by zero even if the guard
-/// above were relaxed. (A packet whose channel count differs from the first is
-/// left to the caller's backend-panic guard; real files never vary it.)
-fn push_interleaved(
-    channels: &mut Vec<Vec<f32>>,
-    samples: &[f32],
-    channel_count: usize,
-) -> Result<(), StemError> {
-    if channel_count == 0 {
+/// Appends one decoded packet's planes to the per-channel lanes, allocating the
+/// lanes on the first packet.
+///
+/// symphonia 0.6 hands the packet over already planar, so the interleaved split
+/// this used to do is gone — and with it the `i % 0` division a zero-channel
+/// packet once threatened. The zero-channel rejection stays anyway: a crafted or
+/// corrupt file can still present a packet with no planes at all, and accepting
+/// it silently would surface as an empty decode much further downstream.
+///
+/// A packet whose plane count differs from the first is left to the caller's
+/// backend-panic guard; `zip` simply ignores the surplus. Real files never vary
+/// it.
+fn append_planes(channels: &mut Vec<Vec<f32>>, planes: &[Vec<f32>]) -> Result<(), StemError> {
+    if planes.is_empty() {
         return Err(StemError::SourceUnreadable(
             "decoded audio reports zero channels".to_string(),
         ));
     }
-    let lanes = channel_count.max(1);
     if channels.is_empty() {
-        *channels = vec![Vec::new(); lanes];
+        channels.resize(planes.len(), Vec::new());
     }
-    for (i, &sample) in samples.iter().enumerate() {
-        channels[i % lanes].push(sample);
+    for (lane, plane) in channels.iter_mut().zip(planes) {
+        lane.extend_from_slice(plane);
     }
     Ok(())
 }
@@ -155,41 +178,48 @@ fn to_stereo(mut planar: Vec<Vec<f32>>) -> Vec<Vec<f32>> {
 }
 
 /// Resamples stereo planar audio from `from_rate` to `to_rate` with rubato's
-/// polynomial resampler (cubic). Output length is the exact ratio-scaled count.
+/// polynomial resampler (cubic).
+///
+/// rubato 4 owns the chunk loop this function used to write by hand:
+/// `process_all_into_buffer` sizes and feeds the chunks, and trims the
+/// resampler's startup delay off the front. That delay is one frame for this
+/// configuration, so nothing audible changes — the point is that the trim is
+/// now the library's job and cannot silently drift out of sync with the
+/// truncation that follows it.
 fn resample_stereo(
     stereo: &[Vec<f32>],
     from_rate: u32,
     to_rate: u32,
 ) -> Result<Vec<Vec<f32>>, StemError> {
     let ratio = f64::from(to_rate) / f64::from(from_rate);
-    let chunk = 1024usize;
-    let mut resampler = FastFixedIn::<f32>::new(ratio, 1.1, PolynomialDegree::Cubic, chunk, STEREO)
-        .map_err(|e| StemError::Backend(format!("resampler init: {e}")))?;
+    let mut resampler = Async::<f32>::new_poly(
+        ratio,
+        RESAMPLE_MAX_RATIO_RELATIVE,
+        PolynomialDegree::Cubic,
+        RESAMPLE_CHUNK_FRAMES,
+        STEREO,
+        FixedAsync::Input,
+    )
+    .map_err(|e| StemError::Backend(format!("resampler init: {e}")))?;
 
     let total = stereo[0].len();
-    let mut out_left = Vec::with_capacity((total as f64 * ratio) as usize + chunk);
-    let mut out_right = Vec::with_capacity((total as f64 * ratio) as usize + chunk);
+    // Rejects a ragged pair rather than reading past the shorter lane.
+    let input = SequentialSliceOfVecs::new(stereo, STEREO, total)
+        .map_err(|e| StemError::Backend(format!("resample input: {e}")))?;
 
-    let mut position = 0usize;
-    while position < total {
-        let need = resampler.input_frames_next();
-        let end = (position + need).min(total);
-        let mut left = stereo[0][position..end].to_vec();
-        let mut right = stereo[1][position..end].to_vec();
-        left.resize(need, 0.0);
-        right.resize(need, 0.0);
-        let out = resampler
-            .process(&[left, right], None)
-            .map_err(|e| StemError::Backend(format!("resample: {e}")))?;
-        out_left.extend_from_slice(&out[0]);
-        out_right.extend_from_slice(&out[1]);
-        position += need;
+    let capacity = resampler.process_all_needed_output_len(total);
+    let mut planes = vec![vec![0.0f32; capacity]; STEREO];
+    let mut output = SequentialSliceOfVecs::new_mut(&mut planes, STEREO, capacity)
+        .map_err(|e| StemError::Backend(format!("resample output: {e}")))?;
+
+    let (_consumed, produced) = resampler
+        .process_all_into_buffer(&input, &mut output, total, None)
+        .map_err(|e| StemError::Backend(format!("resample: {e}")))?;
+
+    for plane in &mut planes {
+        plane.truncate(produced);
     }
-
-    let expected = (total as f64 * ratio).round() as usize;
-    out_left.truncate(expected);
-    out_right.truncate(expected);
-    Ok(vec![out_left, out_right])
+    Ok(planes)
 }
 
 /// Encodes stereo planar f32 to a 24-bit FLAC file at `HTDEMUCS_SAMPLE_RATE`.
@@ -236,20 +266,21 @@ mod tests {
 
     #[test]
     fn zero_channel_packet_is_rejected_not_a_panic() {
-        // The regression: a crafted/corrupt file whose decoded packet claims
-        // zero channels must yield a clean SourceUnreadable, never an `i % 0`
-        // panic that would take the worker process down.
+        // The regression: a crafted/corrupt file whose decoded packet carries
+        // no planes at all must yield a clean SourceUnreadable, never take the
+        // worker process down.
         let mut channels: Vec<Vec<f32>> = Vec::new();
-        let result = push_interleaved(&mut channels, &[0.1, 0.2, 0.3], 0);
+        let result = append_planes(&mut channels, &[]);
         assert!(matches!(result, Err(StemError::SourceUnreadable(_))));
         assert!(channels.is_empty(), "a rejected packet allocates no lanes");
     }
 
     #[test]
-    fn interleaved_samples_are_split_into_channel_lanes() {
+    fn planes_are_appended_to_their_own_lanes() {
         let mut channels: Vec<Vec<f32>> = Vec::new();
-        // Two channels: [L0, R0, L1, R1] -> L = [L0, L1], R = [R0, R1].
-        push_interleaved(&mut channels, &[1.0, -1.0, 2.0, -2.0], 2).unwrap();
+        append_planes(&mut channels, &[vec![1.0], vec![-1.0]]).unwrap();
+        // A second packet extends the same lanes rather than starting new ones.
+        append_planes(&mut channels, &[vec![2.0], vec![-2.0]]).unwrap();
         assert_eq!(channels, vec![vec![1.0, 2.0], vec![-1.0, -2.0]]);
     }
 

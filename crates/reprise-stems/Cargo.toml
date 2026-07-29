@@ -20,7 +20,7 @@ reprise-core = { path = "../reprise-core" }
 # (chunking, overlap-add stitching, PCM conversion) build and are unit-tested
 # WITHOUT onnxruntime, so `cargo test -p reprise-stems` needs no model, no
 # network and no native lib. All tiny pure-Rust crates.
-sha2 = "0.10"
+sha2 = "0.11"
 dirs = "6"
 thiserror = "2"
 
@@ -39,10 +39,26 @@ default-features = false
 # proprietary frontends (MPL is FSF-listed GPL-compatible and links freely into
 # larger works). Passes the LICENSING.md model/dependency gate.
 [dependencies.symphonia]
-version = "0.5"
+version = "0.6"
 optional = true
 default-features = false
-features = ["flac", "mp3", "isomp4", "aac", "alac", "ogg", "vorbis", "wav", "pcm", "adpcm", "aiff"]
+# `all-meta` is upstream's own recommendation even with `default-features =
+# false`: the probe scores a source partly on the metadata it can recognise,
+# so leaving the tag readers out makes format detection worse, not leaner.
+features = [
+    "all-meta",
+    "flac",
+    "mp3",
+    "isomp4",
+    "aac",
+    "alac",
+    "ogg",
+    "vorbis",
+    "wav",
+    "pcm",
+    "adpcm",
+    "aiff",
+]
 
 # Pure-Rust FLAC encoder for the instrumental render. Apache-2.0.
 [dependencies.flacenc]
@@ -50,9 +66,11 @@ version = "0.5"
 optional = true
 default-features = false
 
-# Pure-Rust sample-rate conversion to the model's native 44.1 kHz. MIT.
+# Pure-Rust sample-rate conversion to the model's native 44.1 kHz.
+# MIT OR Apache-2.0, as are the `audioadapter*` crates rubato 4 passes its
+# buffers through and re-exports — no separate licence clearing needed.
 [dependencies.rubato]
-version = "0.16"
+version = "4"
 optional = true
 
 # ONNX tensor plumbing, matched to `ort`'s ndarray feature. MIT OR Apache-2.0.
