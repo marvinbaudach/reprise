@@ -4,15 +4,17 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use reprise_core::radio::icy::IcyProbe;
 use reprise_core::radio::playlist::PlaylistKind;
-use reprise_core::radio::search::StationCandidate;
+use reprise_core::radio::search::{SearchCriteria, SearchOrder, StationCandidate};
 use reprise_core::radio::{self, RadioError};
 use rusqlite::Connection;
 
+use super::radio_chips::{self, NearYouAction};
+use super::station_preview::StationPreview;
 use crate::ui::{one_shot_task, source_add_action, strings};
 
 type AddedCallback = Rc<dyn Fn()>;
+type LocationSettingsCallback = Rc<dyn Fn()>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum AddInput {
@@ -43,74 +45,6 @@ pub(super) fn classify_input(input: &str) -> AddInput {
         AddInput::Url(input.to_owned())
     } else {
         AddInput::Search(input.to_owned())
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct StationPreview {
-    pub name: String,
-    pub stream_url: String,
-    pub uuid: Option<String>,
-    pub favicon_url: Option<String>,
-    pub genre: Option<String>,
-    pub codec: Option<String>,
-    pub bitrate_kbps: Option<i64>,
-    pub country_code: Option<String>,
-    pub votes: Option<i64>,
-    pub playlist_kind: Option<PlaylistKind>,
-}
-
-impl StationPreview {
-    pub(super) fn manual(name: &str, stream_url: &str) -> Self {
-        Self {
-            name: name.into(),
-            stream_url: stream_url.into(),
-            uuid: None,
-            favicon_url: None,
-            genre: None,
-            codec: None,
-            bitrate_kbps: None,
-            country_code: None,
-            votes: None,
-            playlist_kind: playlist_kind(stream_url),
-        }
-    }
-
-    fn with_probe(mut self, probe: IcyProbe) -> Self {
-        if let Some(name) = probe.name {
-            self.name = name;
-        }
-        self.genre = probe.genre;
-        self.codec = probe.content_type;
-        self.bitrate_kbps = probe.bitrate_kbps;
-        self
-    }
-
-    fn with_candidate(mut self, candidate: StationCandidate) -> Self {
-        self.uuid = Some(candidate.uuid);
-        self.name = candidate.name;
-        self.favicon_url = candidate.favicon_url;
-        self.genre = candidate.genre;
-        self.codec = candidate.codec;
-        self.bitrate_kbps = candidate.bitrate_kbps;
-        self.country_code = candidate.country_code;
-        self.votes = Some(candidate.votes);
-        self
-    }
-
-    fn into_new_station(self) -> radio::station::NewStation {
-        radio::station::NewStation {
-            uuid: self.uuid,
-            name: self.name,
-            stream_url: self.stream_url,
-            homepage: None,
-            favicon_url: self.favicon_url,
-            genre: self.genre,
-            codec: self.codec,
-            bitrate_kbps: self.bitrate_kbps,
-            country_code: self.country_code,
-            votes: self.votes,
-        }
     }
 }
 
@@ -204,6 +138,10 @@ pub(super) fn playlist_kind(value: &str) -> Option<PlaylistKind> {
 struct DialogWidgets {
     dialog: adw::Dialog,
     entry: gtk4::SearchEntry,
+    /// `RAD-5`: the three shortcut chips, kept addressable for tests.
+    chip_metal: gtk4::Button,
+    chip_top_voted: gtk4::Button,
+    chip_near_you: gtk4::Button,
     spinner: gtk4::Spinner,
     status: gtk4::Label,
     results: gtk4::ListBox,
@@ -218,6 +156,11 @@ pub(super) struct RadioAddDialog {
     state: Rc<RefCell<AddDialogState>>,
     conn: Rc<RefCell<Connection>>,
     on_added: AddedCallback,
+    /// `RAD-5`: wired after construction (`set_on_location_settings`), once
+    /// the caller can reach Preferences — see `RadioView`/`window.rs`. Not
+    /// set at all in tests that never call the setter, in which case a
+    /// no-location "Near you" click is silently a no-op rather than a panic.
+    on_location_settings: RefCell<Option<LocationSettingsCallback>>,
 }
 
 impl RadioAddDialog {
@@ -225,6 +168,8 @@ impl RadioAddDialog {
         let entry = gtk4::SearchEntry::builder()
             .placeholder_text(strings::text(strings::RADIO_DIALOG_HINT))
             .build();
+        // `RAD-5`: the three one-click radio-browser searches.
+        let chips = radio_chips::build();
         let spinner = gtk4::Spinner::new();
         let status = gtk4::Label::new(None);
         status.set_xalign(0.0);
@@ -272,6 +217,7 @@ impl RadioAddDialog {
         content.set_margin_start(16);
         content.set_margin_end(16);
         content.append(&entry);
+        content.append(&chips.root);
         content.append(&spinner);
         content.append(&status);
         // SRC-8: the result list is the only part that may grow. A bare
@@ -311,6 +257,9 @@ impl RadioAddDialog {
             widgets: DialogWidgets {
                 dialog,
                 entry,
+                chip_metal: chips.metal,
+                chip_top_voted: chips.top_voted,
+                chip_near_you: chips.near_you,
                 spinner,
                 status,
                 results,
@@ -322,6 +271,7 @@ impl RadioAddDialog {
             state: Rc::new(RefCell::new(AddDialogState::default())),
             conn,
             on_added: Rc::new(on_added),
+            on_location_settings: RefCell::new(None),
         });
         {
             let weak = Rc::downgrade(&this);
@@ -347,7 +297,46 @@ impl RadioAddDialog {
                 }
             });
         }
+        {
+            let weak = Rc::downgrade(&this);
+            this.widgets.chip_metal.connect_clicked(move |_| {
+                if let Some(this) = weak.upgrade() {
+                    this.run_chip_search(
+                        &strings::text(strings::RADIO_CHIP_METAL_DE),
+                        radio_chips::metal_in_germany_criteria(),
+                    );
+                }
+            });
+        }
+        {
+            let weak = Rc::downgrade(&this);
+            this.widgets.chip_top_voted.connect_clicked(move |_| {
+                if let Some(this) = weak.upgrade() {
+                    this.run_chip_search(
+                        &strings::text(strings::RADIO_CHIP_TOP_VOTED),
+                        SearchCriteria::default(),
+                    );
+                }
+            });
+        }
+        {
+            let weak = Rc::downgrade(&this);
+            this.widgets.chip_near_you.connect_clicked(move |_| {
+                if let Some(this) = weak.upgrade() {
+                    this.run_near_you();
+                }
+            });
+        }
         this
+    }
+
+    /// `RAD-5`: wired after construction, once the caller (`RadioView`,
+    /// then `window.rs`) can reach Preferences — the same deep-link shape
+    /// `PreferencesContext::present_plugins` already uses for the Online
+    /// Lyrics settings button, reused rather than inventing a second
+    /// navigation mechanism.
+    pub(super) fn set_on_location_settings(&self, callback: impl Fn() + 'static) {
+        *self.on_location_settings.borrow_mut() = Some(Rc::new(callback));
     }
 
     pub(super) fn present(self: &Rc<Self>, parent: &impl IsA<gtk4::Widget>) {
@@ -395,6 +384,76 @@ impl RadioAddDialog {
             }
             AddInput::Empty => return,
         };
+        self.dispatch(generation, result);
+    }
+
+    /// `RAD-5`: runs a chip's fixed [`SearchCriteria`] the same way a
+    /// free-text search runs — same NET-1a gate, same generation-guarded
+    /// state machine, same results rendering — just skipping
+    /// [`classify_input`]. The entry field shows `entry_text` (the chip's
+    /// own label) purely so the user can see what produced the results;
+    /// re-submitting it verbatim would not reproduce the same query, since
+    /// [`radio::search::search`] matches station names, not tags/countries.
+    fn run_chip_search(self: &Rc<Self>, entry_text: &str, criteria: SearchCriteria) {
+        self.widgets.entry.set_text(entry_text);
+        // NET-1a: identical gate to `submit` — radio-browser search is a
+        // network path regardless of which affordance triggered it.
+        let allowed = reprise_core::online_sources::network_allowed(
+            &self.conn.borrow(),
+            &reprise_core::modules::RADIO_MODULE,
+        )
+        .unwrap_or(false);
+        if !allowed {
+            self.widgets
+                .status
+                .set_text(&strings::text(strings::ONLINE_SOURCES_TURNED_OFF));
+            return;
+        }
+        let (state, generation) = self
+            .state
+            .borrow()
+            .clone()
+            .begin(&AddInput::Search(entry_text.to_owned()));
+        self.render(state);
+        // `RAD-5`: chips always order by votes — "Top voted" would
+        // otherwise silently follow whatever order the user last picked
+        // for free-text search, which is not what its label promises.
+        let result = one_shot_task::spawn("reprise-radio-search", move || {
+            radio::search::search_by(&criteria, SearchOrder::Votes).map(AddResult::Search)
+        });
+        self.dispatch(generation, result);
+    }
+
+    /// `RAD-5`/`O-4`: "Near you" reuses the app-level, already-consented
+    /// location instead of asking for its own — it never queries the XDG
+    /// portal or a geocoder itself. [`radio_chips::near_you_action`] is the
+    /// pure decision; this method just carries it out.
+    fn run_near_you(self: &Rc<Self>) {
+        let location = reprise_core::location::app_location(&self.conn.borrow())
+            .ok()
+            .flatten();
+        match radio_chips::near_you_action(location.as_ref()) {
+            NearYouAction::Search(criteria) => {
+                self.run_chip_search(&strings::text(strings::RADIO_CHIP_NEAR_YOU), criteria);
+            }
+            NearYouAction::OpenLocationSettings => {
+                if let Some(callback) = self.on_location_settings.borrow().clone() {
+                    callback();
+                }
+            }
+        }
+    }
+
+    /// Shared by [`submit`](Self::submit) and
+    /// [`run_chip_search`](Self::run_chip_search): awaits the spawned
+    /// task's single result and applies it under the same
+    /// generation-guarded state machine, so a stale response from an
+    /// earlier search or chip click can never overwrite a newer one.
+    fn dispatch(
+        self: &Rc<Self>,
+        generation: u64,
+        result: std::io::Result<async_channel::Receiver<Result<AddResult, RadioError>>>,
+    ) {
         let receiver = match result {
             Ok(receiver) => receiver,
             Err(error) => {

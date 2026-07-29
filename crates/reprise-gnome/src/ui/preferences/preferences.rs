@@ -393,6 +393,16 @@ impl PreferencesContext {
         self.open(Some("online_sources"));
     }
 
+    /// `RAD-5`: Radio's "Near you" chip deep-links here when no app-level
+    /// location is stored — the Concerts page is still where the location
+    /// entry, "Use current location" and "Clear" rows live (`O-4` hoisted
+    /// only the settings storage, not this page). Same shape as
+    /// `present_plugins` above, reused rather than a second navigation
+    /// mechanism.
+    pub(in crate::ui) fn present_location_settings(self: &Rc<Self>) {
+        self.open(Some("concerts"));
+    }
+
     fn appearance_page(self: &Rc<Self>) -> adw::PreferencesPage {
         super::preference_appearance::build(self)
     }

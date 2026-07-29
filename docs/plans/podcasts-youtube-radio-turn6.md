@@ -339,8 +339,10 @@ und einer Zeile im Ledger `.superpowers/sdd/progress.md`.
   anyway?", „Nothing downloaded yet …", „YouTube is turned off" mit
   „Enable in Preferences" statt Add-Button.
 - **B3 · Radio-Shortcut-Chips.** „Metal in DE", „Top voted", „Near you" als
-  Ein-Klick-Suchen. „Near you" liest den vorhandenen, eingewilligten
-  Standort (O-4) und erscheint nicht, solange keiner gesetzt ist.
+  Ein-Klick-Suchen, immer sichtbar. „Near you" liest den vorhandenen,
+  eingewilligten Standort (O-4) und filtert danach; ohne nutzbaren Standort
+  öffnet der Klick stattdessen die Standort-Einstellung in Preferences,
+  statt zu verschwinden oder ungefiltert zu suchen (O-4 Nachtrag, `RAD-5`).
 
 ### Block C — Remote-Bilder
 
@@ -675,6 +677,37 @@ Fragen mehr und gehen so in die Regeln `SRC-6` und `SRC-7` ein.
   Stadtsuche liefert den Code ohnehin mit, allein der Portal-Pfad braucht
   einmalig Reverse-Geocoding, das wie jeder Netzpfad unter `NET-1a` liegt.
   Ohne gesetzten Standort erscheint der Chip nicht; er fragt nie von sich aus.
+
+- **O-4 Nachtrag · entschieden am 2026-07-29 · Der Hoist trägt die
+  Einwilligung; „Near you" bleibt sichtbar.** Zwei vom Eigentümer noch am
+  selben Tag nachgeschärfte Punkte zu O-4 oben, beide bindend:
+
+  Erstens, der Umzug der Standort-Schlüssel aus dem `concerts.`-Namensraum
+  auf App-Ebene (`reprise_core::location`, Schlüssel `location.lat` /
+  `location.lon` / `location.name` / `location.country_code`) **trägt die
+  bestehende Einwilligung tatsächlich weiter**. Radio fragt nie eigenständig
+  nach dem Standort und ruft weder das Portal noch einen Geocoder selbst
+  auf — es liest ausschließlich denselben Wert, den Concerts über
+  `reprise_core::concerts::config::location` (heute ein reiner Vorwärts-
+  Aufruf auf denselben Ort) schreibt und liest. Es gibt keine zweite Kopie;
+  Concerts' Schreibpfad (Stadtsuche, „Use current location", „Clear") bleibt
+  der einzige.
+
+  Zweitens ändert sich der letzte Satz von O-4 oben: Reverse-Geocoding für
+  den Portal-Pfad wird **nicht** gebaut — ein zusätzlicher Netzaufruf allein
+  um „Near you" einen Ländercode zu verschaffen, wäre genau die neue,
+  nicht eingewilligte Netzflanke, die dieser Beschluss vermeiden sollte.
+  Ein per Portal gesetzter Standort bleibt deshalb ehrlich ohne Ländercode;
+  der Code kommt ausschließlich aus Nominatims `addressdetails`, einer
+  Erweiterung derselben Vorwärts-Geocoding-Anfrage, die die Stadtsuche
+  ohnehin schon stellt. Und: „Ohne gesetzten Standort erscheint der Chip
+  nicht" gilt nicht mehr — der Chip ist **immer** sichtbar. Fehlt ein
+  nutzbarer Standort (keiner gesetzt, oder einer ohne Ländercode), öffnet
+  ein Klick stattdessen die Standort-Einstellung in Preferences, über
+  denselben Deep-Link (`PreferencesContext::present_location_settings`),
+  den `present_plugins` bereits für den Online-Lyrics-Einstellungsknopf
+  verwendet — statt zu verschwinden oder eine ungefilterte Suche als „near
+  you" auszugeben. Regel `RAD-5` trägt beide Hälften.
 
 - **O-5 · entschieden am 2026-07-29 · Global ist Vorgabe, der Kanal sticht.**
   „Keep N downloaded" am Kanal gewinnt, wo es gesetzt ist; die globale

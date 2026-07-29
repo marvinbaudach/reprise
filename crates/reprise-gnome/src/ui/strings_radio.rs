@@ -63,6 +63,11 @@ pub const RADIO_ORDER_NAME: &str = N_!("Name");
 pub const RADIO_ORDER_CLICKS: &str = N_!("Clicks");
 pub const RADIO_UNKNOWN_NOW_PLAYING: &str = N_!("—");
 pub const RADIO_REPORT_PLAYS: &str = N_!("Report plays to the directory");
+/// `RAD-5`: the three one-click radio-browser searches in the Add Station
+/// dialog.
+pub const RADIO_CHIP_METAL_DE: &str = N_!("Metal in DE");
+pub const RADIO_CHIP_TOP_VOTED: &str = N_!("Top voted");
+pub const RADIO_CHIP_NEAR_YOU: &str = N_!("Near you");
 
 pub fn radio_station_count(count: usize) -> String {
     let count_text = count.to_string();

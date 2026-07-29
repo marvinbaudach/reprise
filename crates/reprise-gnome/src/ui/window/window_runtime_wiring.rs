@@ -654,6 +654,15 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         first_run_decision,
         &present_rhythmbox_import,
     );
+    // `RAD-5`: "Near you" without a stored location hands off to the
+    // location setting in Preferences, the same deep-link shape
+    // `present_rhythmbox_import` above already uses.
+    let deep_link_preferences = Rc::downgrade(preferences);
+    radio_view.set_on_location_settings(move || {
+        if let Some(preferences) = deep_link_preferences.upgrade() {
+            preferences.present_location_settings();
+        }
+    });
     active_content_focus.focus_later_if_unset(window);
     minimal_view.apply_initial();
     super::window_smoke::arm_quit(window);

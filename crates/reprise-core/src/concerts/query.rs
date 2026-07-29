@@ -1,8 +1,8 @@
 use chrono::{Duration, Months, NaiveDate};
 use rusqlite::{params, Connection};
 
-use super::config::ConcertLocation;
 use super::{haversine_km, ConcertFilter, ConcertRow, DateHorizon};
+use crate::location::AppLocation;
 
 struct StoredEvent {
     row: ConcertRow,
@@ -82,7 +82,7 @@ pub fn query_cached_events(conn: &Connection) -> Result<Vec<CachedConcertEvent>,
 pub fn query_events(
     conn: &Connection,
     filter: &ConcertFilter,
-    location: Option<&ConcertLocation>,
+    location: Option<&AppLocation>,
     today: NaiveDate,
 ) -> Result<Vec<ConcertRow>, rusqlite::Error> {
     Ok(filtered_events(conn, filter, location, today)?
@@ -94,7 +94,7 @@ pub fn query_events(
 pub fn count_upcoming(
     conn: &Connection,
     filter: &ConcertFilter,
-    location: Option<&ConcertLocation>,
+    location: Option<&AppLocation>,
     today: NaiveDate,
 ) -> Result<i64, rusqlite::Error> {
     Ok(filtered_events(conn, filter, location, today)?.len() as i64)
@@ -103,7 +103,7 @@ pub fn count_upcoming(
 pub fn query_unseen(
     conn: &Connection,
     filter: &ConcertFilter,
-    location: Option<&ConcertLocation>,
+    location: Option<&AppLocation>,
     today: NaiveDate,
     limit: usize,
 ) -> Result<Vec<ConcertRow>, rusqlite::Error> {
@@ -118,7 +118,7 @@ pub fn query_unseen(
 pub fn count_unseen(
     conn: &Connection,
     filter: &ConcertFilter,
-    location: Option<&ConcertLocation>,
+    location: Option<&AppLocation>,
     today: NaiveDate,
 ) -> Result<i64, rusqlite::Error> {
     Ok(filtered_events(conn, filter, location, today)?
@@ -130,7 +130,7 @@ pub fn count_unseen(
 pub fn mark_scope_seen(
     conn: &Connection,
     filter: &ConcertFilter,
-    location: Option<&ConcertLocation>,
+    location: Option<&AppLocation>,
     today: NaiveDate,
     now: i64,
 ) -> Result<usize, rusqlite::Error> {
@@ -157,7 +157,7 @@ pub fn latest_fetch_at(conn: &Connection) -> Result<Option<i64>, rusqlite::Error
 fn filtered_events(
     conn: &Connection,
     filter: &ConcertFilter,
-    location: Option<&ConcertLocation>,
+    location: Option<&AppLocation>,
     today: NaiveDate,
 ) -> Result<Vec<StoredEvent>, rusqlite::Error> {
     let mut statement = conn.prepare(
