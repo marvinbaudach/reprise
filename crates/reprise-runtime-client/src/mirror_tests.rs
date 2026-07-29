@@ -406,3 +406,50 @@ fn reapplying_an_identical_device_run_at_a_newer_sequence_reports_no_change() {
         "the sequence still advances even when nothing renders"
     );
 }
+
+#[test]
+fn a_refusal_clears_the_mirror_as_thoroughly_as_a_disconnection() {
+    let mut mirror = RuntimeMirror::new();
+    mirror.apply(&connected(snapshot(5)));
+
+    let changed = mirror.apply(&ClientEvent::Refused(ClientError::Refused(
+        "refused:protocol_major".into(),
+    )));
+
+    assert!(
+        changed,
+        "the surface has to stop showing what it was showing"
+    );
+    assert!(!mirror.is_connected());
+    assert!(
+        mirror.playback().is_none() && mirror.queue().is_none(),
+        "a refusal ends the session; keeping the last values would have a \
+         surface render a player it can no longer control"
+    );
+    assert!(mirror.device_runs().is_empty());
+    assert!(mirror.jobs().is_empty());
+}
+
+#[test]
+fn a_delta_after_a_refusal_is_ignored_like_any_other_disconnected_delta() {
+    let mut mirror = RuntimeMirror::new();
+    mirror.apply(&connected(snapshot(5)));
+    mirror.apply(&ClientEvent::Refused(ClientError::Refused(
+        "refused:protocol_major".into(),
+    )));
+
+    let applied = mirror.apply(&ClientEvent::PlaybackChanged {
+        sequence: 9_999,
+        snapshot: PlaybackSnapshot {
+            status: "playing".into(),
+            ..PlaybackSnapshot::default()
+        },
+    });
+
+    assert!(!applied);
+    assert!(
+        mirror.playback().is_none(),
+        "there is no base to apply it to, and inventing one would show a \
+         refused client a player that is not its own"
+    );
+}
