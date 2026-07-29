@@ -284,7 +284,7 @@ umgehängt.
 | **neu `SRC-7`** | Einheitliches `+ Add` / „✓ Added"-Zeilenmuster inklusive barrierefreiem Namen. |
 | **neu `SRC-8`** | Gemeinsame Leerzustands-Grammatik für alle drei Quellen (6f). |
 | **neu `NET-3`** | App-weiter Offline-Präsentationsvertrag (6e, #107) — konsolidiert `NR-6`, `NR-8`, `CONC-4b`, `LYR-3`, `INST-12`. |
-| `POD-5` | Cleanup-Policy trifft auf „Keep N downloaded" aus 6b — Verhältnis muss geklärt werden, siehe offene Frage O-5. |
+| `POD-5` | Cleanup-Policy trifft auf „Keep N downloaded" aus 6b — entschieden: global ist Vorgabe, der Kanalwert sticht (O-5). |
 | `NET-1` | Wird durch 7b **erweitert**: über die vier heutigen Netzmodule hinaus kommt ein globaler Riegel `online-sources-enabled` als UND-Bedingung vor jedem Request, auch für Cover, Portraits und Lyrics → `[ersetzt durch NET-1a]`. Remote-Bilder (Block C) fallen ebenfalls darunter. |
 | **neu `SET-*`** | Settings-Seite „Online sources": drei gleichrangige Blöcke, je Master-Schalter und höchstens drei Zeilen; ein ausgeschalteter Block versteckt seinen Sidebar-Eintrag, stoppt Requests und löscht nichts (7b). |
 | **neu `MTP-*`** | Drei benannte Sync-Ziele mit `StorageID` + Pfad, frei wählbar per Geräte-Browser, Cap je Ziel, Diff nach Kategorie, „Device contents never verified" als prüfbarer Zustand (7a, 7c, 7d). Bestehende `MTP-`-Regeln sind vorher auf Kollisionen zu prüfen. |
@@ -339,7 +339,8 @@ und einer Zeile im Ledger `.superpowers/sdd/progress.md`.
   anyway?", „Nothing downloaded yet …", „YouTube is turned off" mit
   „Enable in Preferences" statt Add-Button.
 - **B3 · Radio-Shortcut-Chips.** „Metal in DE", „Top voted", „Near you" als
-  Ein-Klick-Suchen. *Offen:* Herkunft von „Near you" — siehe O-4.
+  Ein-Klick-Suchen. „Near you" liest den vorhandenen, eingewilligten
+  Standort (O-4) und erscheint nicht, solange keiner gesetzt ist.
 
 ### Block C — Remote-Bilder
 
@@ -354,7 +355,8 @@ und einer Zeile im Ledger `.superpowers/sdd/progress.md`.
 - **D1 · Download-Spalte mit Dateigrößen** und Kopfzeilen-Summe
   („10 of 487 · 3 downloaded · 1.2 GB").
 - **D2 · „Keep N downloaded"** als Kanal-Eigenschaft, abgestimmt mit der
-  bestehenden Cleanup-Policy aus `POD-5` (O-5).
+  bestehenden Cleanup-Policy aus `POD-5`: global ist Vorgabe, der
+  Kanalwert sticht (O-5).
 - **D3 · Spalte „On phone"** — Spiegel des Sync-Zustands, schreibend nur über
   den Kanal-Toggle.
 - **D4 · Download-Fehler klassifiziert und sanitisiert.** Sichtbarer,
@@ -660,19 +662,42 @@ Fragen mehr und gehen so in die Regeln `SRC-6` und `SRC-7` ein.
   aufgehobene Trennung als `[aktiv]` bindend fest und wird daher regulär über
   `[ersetzt durch …]` abgelöst, nicht stillschweigend umgedeutet.
 
+- **O-4 · entschieden am 2026-07-29 · „Near you" benutzt die vorhandene
+  Standortquelle.** Die Frage war falsch gestellt: Reprise hat bereits einen
+  *eingewilligten* Standort — `reprise_platform_linux::location::PortalLocation`
+  über das XDG-Desktop-Portal, dazu eine Stadtsuche, heute genutzt für die
+  Konzert-/Tourdaten. Eine zweite Quelle zu erfinden wäre die verbotene zweite
+  Wahrheit (`AGENTS.md`). Zwei Folgearbeiten gehören dazu: die Schlüssel liegen
+  als `concerts.location_lat/_lon/_name` im Namensraum eines einzelnen Features
+  und werden auf App-Ebene gehoben, sobald Radio der zweite Nutzer ist (ohne
+  Installationen kostet das nichts); und radio-browser filtert nach
+  **Ländercode**, gespeichert sind Breite/Länge plus Anzeigename — die
+  Stadtsuche liefert den Code ohnehin mit, allein der Portal-Pfad braucht
+  einmalig Reverse-Geocoding, das wie jeder Netzpfad unter `NET-1a` liegt.
+  Ohne gesetzten Standort erscheint der Chip nicht; er fragt nie von sich aus.
+
+- **O-5 · entschieden am 2026-07-29 · Global ist Vorgabe, der Kanal sticht.**
+  „Keep N downloaded" am Kanal gewinnt, wo es gesetzt ist; die globale
+  Cleanup-Policy gilt für alle übrigen Kanäle. Das heutige `KeepLast5` wird
+  damit zur globalen Vorgabe „Keep 5" — „Keep N" ist ohnehin nur seine
+  Verallgemeinerung. Ausdrücklich **nicht** das Minimum aus beiden: ein Kanal
+  auf „Keep 20" bei globalem „Keep 5" würde stillschweigend gekappt, also 20
+  anzeigen und 5 behalten — dieselbe Sorte Unwahrheit wie eine Bilanz, die
+  „nichts zu tun" meldet, während drei Dateien gelöscht werden.
+
+- **O-7 · entschieden am 2026-07-29 · Kein OPML-Import.** Der Podcast-
+  Leerzustand bleibt beim Feed-URL-Pfad, wie er heute ausgeliefert ist. Die
+  Zeile „or import an OPML file" aus Turn 6f wird nicht übernommen, weil kein
+  Importpfad existiert und ein Leerzustand nichts versprechen darf, was es
+  nicht gibt. Die Frage ist geschlossen, nicht vertagt.
+
 ## 8. Offene Fragen — nicht lokal entscheiden
 
-Nach `AGENTS.md` werden diese als `[geplant]`-Entwurf mit
-`<!-- REVIEW: Regelvorschlag -->` eingetragen, nicht im Code beantwortet.
+**Derzeit keine.** O-1 bis O-7 sind entschieden und stehen mit Begründung in
+Abschnitt 8a. Neue Fälle, die keine Regel abdeckt, kommen weiterhin hierher —
+als `[geplant]`-Entwurf mit `<!-- REVIEW: Regelvorschlag -->`, nicht im Code
+beantwortet (`AGENTS.md`).
 
-- **O-4** „Near you" als Radio-Shortcut braucht eine Standortquelle. Das ist
-  eine Datenschutzentscheidung und fällt unter `NET-1`.
-- **O-5** „Keep N downloaded" gegen die bestehende Cleanup-Policy aus `POD-5`:
-  ersetzt die Kanal-Eigenschaft die globale Policy, überschreibt sie sie, oder
-  gilt das Minimum?
-- **O-7** OPML-Import. Turn 6f nennt „or import an OPML file" als Zweitpfad im
-  Podcast-Leerzustand. Ein Import-Pfad dafür ist im Code nicht belegt — der
-  Leerzustand darf nichts versprechen, was es nicht gibt.
 
 ## 9. Ausdrücklich nicht enthalten
 
