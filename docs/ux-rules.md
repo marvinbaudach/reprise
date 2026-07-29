@@ -3298,7 +3298,12 @@ listening statistics.
 - **POD-5** [active] [gtk] — Downloads are opt-in per subscription,
   live in the app's XDG data path under a GUID-stable path, follow the
   chosen cleanup policy, and are preferentially played back locally
-  offline.
+  offline. The "keep last N downloaded" cleanup policy's N is a global
+  default (`podcasts.keep_downloaded_default`, itself defaulting to 5) that
+  any channel's own "Keep N downloaded" override replaces outright for that
+  channel — never intersected with the default, never a silent minimum of
+  the two (`O-5`). `0`, on either the default or an override, means
+  unlimited, not "keep nothing" (`E-9`).
 - **POD-6** [active] [core] [gtk] — Individual RSS and YouTube
   episodes can be removed from the context menu, disappear
   immediately, and stay reversible via undo for ten seconds. The
@@ -3353,7 +3358,12 @@ listening statistics.
   playlists target (default `Music/Reprise`). A change of subscription kind at
   the same feed URL (e.g. a re-import as a different channel type) clears the
   previous device selection — that is not a source-kind special case but
-  applies symmetrically to any change of kind.
+  applies symmetrically to any change of kind. This selection is mirrored
+  read-only as an "On phone" indicator on both the channel list and the
+  channel detail page (`D3`): the indicator has no control of its own, and
+  the selection control described above stays the only place that writes
+  it — two places claiming the same selection is a defect this project has
+  hit before.
 - **POD-13** [active] [core] [gtk] — A failed episode download (POD-7's
   "failed" state) shows a classified reason directly in the row, next to the
   fixed "Download failed" heading — never only on hover or another

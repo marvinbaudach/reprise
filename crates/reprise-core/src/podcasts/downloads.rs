@@ -8,7 +8,6 @@ use super::config::CleanupPolicy;
 use super::{PodcastError, PodcastKind};
 
 const PLAYED_RETENTION_SECONDS: i64 = 7 * 24 * 60 * 60;
-const KEEP_EPISODES_PER_SHOW: usize = 5;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct CleanupSummary {
@@ -212,13 +211,30 @@ fn remove_if_present(path: &Path) -> Result<(), PodcastError> {
     }
 }
 
+/// `POD-5`: resolves one channel's effective "keep N downloaded" against the
+/// global default (`podcasts::config::PodcastConfig::keep_downloaded_default`).
+/// `None` (no persisted override for this channel) falls back to the
+/// default; an explicit override — including `0` — always wins, because `0`
+/// means unlimited for every numeric sync/cleanup setting since the owner
+/// decision of 2026-07-29 (`E-9`). Pure, same shape as `device_sync::
+/// selection::resolve_latest_per_channel` (`MTP-36`) — two quantity limits,
+/// one mental model, deliberately (`O-5`).
+#[must_use]
+pub fn resolve_keep_downloaded(default_keep: usize, channel_override: Option<i64>) -> usize {
+    match channel_override {
+        Some(value) => usize::try_from(value).unwrap_or(0),
+        None => default_keep,
+    }
+}
+
 pub fn enforce_cleanup(
     conn: &Connection,
     download_root: &Path,
     policy: CleanupPolicy,
+    default_keep_downloaded: usize,
     now: i64,
 ) -> Result<CleanupSummary, CleanupError> {
-    let candidates = cleanup_candidates(conn, policy, now)?;
+    let candidates = cleanup_candidates(conn, policy, default_keep_downloaded, now)?;
     let mut summary = CleanupSummary::default();
     for (episode_id, path) in candidates {
         let path = PathBuf::from(path);
@@ -263,6 +279,7 @@ pub enum CleanupError {
 fn cleanup_candidates(
     conn: &Connection,
     policy: CleanupPolicy,
+    default_keep_downloaded: usize,
     now: i64,
 ) -> Result<Vec<(i64, String)>, rusqlite::Error> {
     match policy {
@@ -282,10 +299,17 @@ fn cleanup_candidates(
             let rows = statement.query_map([cutoff], |row| Ok((row.get(0)?, row.get(1)?)))?;
             rows.collect()
         }
+        // `POD-5` / `O-5`: the per-show cap is no longer a fixed 5 — each
+        // subscription's `keep_downloaded` override (`NULL` = no override)
+        // is resolved against `default_keep_downloaded` via
+        // `resolve_keep_downloaded`, one subscription at a time, because
+        // SQLite window functions can't vary the rank cutoff per partition.
+        // A resolved value of `0` means unlimited (`E-9`) and is excluded
+        // from deletion entirely, never treated as "keep zero".
         CleanupPolicy::KeepLast5 => {
             let mut statement = conn.prepare(
-                "SELECT id, downloaded_path FROM (
-                   SELECT e.id, e.downloaded_path,
+                "SELECT id, downloaded_path, keep_downloaded, episode_rank FROM (
+                   SELECT e.id, e.downloaded_path, s.keep_downloaded,
                           ROW_NUMBER() OVER (
                             PARTITION BY e.subscription_id
                             ORDER BY e.published_at IS NULL, e.published_at DESC,
@@ -295,13 +319,26 @@ fn cleanup_candidates(
                    JOIN podcast_subscriptions s ON s.id = e.subscription_id
                    WHERE s.removed_at IS NULL
                  )
-                 WHERE episode_rank > ?1 AND downloaded_path IS NOT NULL
+                 WHERE downloaded_path IS NOT NULL
                  ORDER BY id",
             )?;
-            let rows = statement.query_map([KEEP_EPISODES_PER_SHOW as i64], |row| {
-                Ok((row.get(0)?, row.get(1)?))
+            let rows = statement.query_map([], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                    row.get::<_, i64>(3)?,
+                ))
             })?;
-            rows.collect()
+            let mut candidates = Vec::new();
+            for row in rows {
+                let (episode_id, path, keep_override, episode_rank) = row?;
+                let keep = resolve_keep_downloaded(default_keep_downloaded, keep_override);
+                if keep != 0 && episode_rank > keep as i64 {
+                    candidates.push((episode_id, path));
+                }
+            }
+            Ok(candidates)
         }
     }
 }
@@ -327,291 +364,5 @@ fn fnv1a_64(bytes: &[u8]) -> u64 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::podcasts::feed::ParsedEpisode;
-    use crate::podcasts::store::{self, NewSubscription};
-    use crate::podcasts::PodcastError;
-    use crate::podcasts::PodcastKind;
-
-    fn conn() -> Connection {
-        crate::db::open_migrated(None).unwrap()
-    }
-
-    fn add_show(conn: &Connection) -> i64 {
-        store::add_or_restore(
-            conn,
-            &NewSubscription {
-                kind: PodcastKind::Rss,
-                feed_url: "https://example.test/feed".to_owned(),
-                title: "Show".to_owned(),
-                author: None,
-                image_url: None,
-                auto_download: false,
-            },
-            1,
-        )
-        .unwrap()
-    }
-
-    fn add_download(
-        conn: &Connection,
-        root: &Path,
-        subscription_id: i64,
-        number: i64,
-        played_at: Option<i64>,
-    ) -> i64 {
-        let guid = format!("episode-{number}");
-        let result = store::upsert_episode(
-            conn,
-            subscription_id,
-            &ParsedEpisode {
-                guid: guid.clone(),
-                title: guid.clone(),
-                audio_url: format!("https://example.test/{guid}.mp3"),
-                page_url: None,
-                published_at: Some(number),
-                duration_secs: None,
-            },
-            number,
-        )
-        .unwrap()
-        .expect("episode should be imported");
-        let path = download_path(root, "https://example.test/feed", &guid, "mp3");
-        prepare_destination(&path).unwrap();
-        std::fs::write(&path, [0_u8; 4]).unwrap();
-        store::set_downloaded_path(conn, result.episode_id, path.to_str()).unwrap();
-        if let Some(played_at) = played_at {
-            store::mark_played(conn, result.episode_id, played_at).unwrap();
-        }
-        result.episode_id
-    }
-
-    #[test]
-    fn pod_5_paths_are_guid_keyed_and_reclaimable() {
-        let directory = tempfile::tempdir().unwrap();
-        let first = download_path(
-            directory.path(),
-            "https://example.test/feed",
-            "stable-guid",
-            ".mp3",
-        );
-        let second = download_path(
-            directory.path(),
-            "https://example.test/feed",
-            "stable-guid",
-            "mp3",
-        );
-        assert_eq!(first, second);
-        prepare_destination(&first).unwrap();
-        std::fs::write(&first, b"audio").unwrap();
-        assert_eq!(
-            reclaim_existing(directory.path(), "https://example.test/feed", "stable-guid").unwrap(),
-            Some(first)
-        );
-    }
-
-    #[test]
-    fn pod_7_downloads_publish_only_complete_files_and_clean_failed_partials() {
-        let directory = tempfile::tempdir().unwrap();
-        let destination = directory.path().join("episode.mp3");
-        let part = partial_path(&destination);
-
-        let bytes = download_atomically(&destination, |temporary| {
-            assert_eq!(temporary, part);
-            std::fs::write(temporary, b"complete")
-                .map_err(|error| PodcastError::Body(error.to_string()))
-        })
-        .unwrap();
-        assert_eq!(bytes, 8);
-        assert_eq!(std::fs::read(&destination).unwrap(), b"complete");
-        assert!(!part.exists());
-
-        std::fs::remove_file(&destination).unwrap();
-        let result = download_atomically(&destination, |temporary| {
-            std::fs::write(temporary, b"partial").unwrap();
-            Err(PodcastError::Transport("offline".to_owned()))
-        });
-        assert!(matches!(result, Err(PodcastError::Transport(_))));
-        assert!(!destination.exists());
-        assert!(!part.exists());
-    }
-
-    #[test]
-    fn pod_10_youtube_downloads_have_one_shared_opus_extension_policy() {
-        assert_eq!(
-            super::extension_for(
-                super::super::PodcastKind::Youtube,
-                "https://www.youtube.com/watch?v=video"
-            ),
-            "opus"
-        );
-        assert_eq!(
-            super::extension_for(
-                super::super::PodcastKind::Rss,
-                "https://example.test/episode.mp3"
-            ),
-            "mp3"
-        );
-    }
-
-    #[test]
-    fn pod_7_reclaim_ignores_partial_files() {
-        let directory = tempfile::tempdir().unwrap();
-        let destination = download_path(
-            directory.path(),
-            "https://example.test/feed",
-            "stable-guid",
-            "mp3",
-        );
-        prepare_destination(&destination).unwrap();
-        std::fs::write(partial_path(&destination), b"partial").unwrap();
-
-        assert_eq!(
-            reclaim_existing(directory.path(), "https://example.test/feed", "stable-guid").unwrap(),
-            None
-        );
-    }
-
-    #[test]
-    fn pod_7_completed_file_is_not_persisted_after_episode_removal() {
-        let conn = conn();
-        let show = add_show(&conn);
-        let result = store::upsert_episode(
-            &conn,
-            show,
-            &ParsedEpisode {
-                guid: "race".to_owned(),
-                title: "Race".to_owned(),
-                audio_url: "https://example.test/race.mp3".to_owned(),
-                page_url: None,
-                published_at: None,
-                duration_secs: None,
-            },
-            1,
-        )
-        .unwrap()
-        .unwrap();
-        store::tombstone_episode(&conn, result.episode_id, 2).unwrap();
-
-        assert!(
-            !persist_completed_if_active(&conn, result.episode_id, "/podcasts/race.mp3", 128)
-                .unwrap()
-        );
-    }
-
-    #[test]
-    fn keep_all_never_deletes_downloads() {
-        let conn = conn();
-        let directory = tempfile::tempdir().unwrap();
-        let show = add_show(&conn);
-        let episode = add_download(&conn, directory.path(), show, 1, Some(1));
-
-        assert_eq!(
-            enforce_cleanup(&conn, directory.path(), CleanupPolicy::KeepAll, 1_000_000,).unwrap(),
-            CleanupSummary::default()
-        );
-        assert!(store::episode(&conn, episode)
-            .unwrap()
-            .unwrap()
-            .downloaded_path
-            .is_some());
-    }
-
-    #[test]
-    fn played_age_policy_deletes_only_old_played_downloads() {
-        let conn = conn();
-        let directory = tempfile::tempdir().unwrap();
-        let show = add_show(&conn);
-        let now = 1_000_000;
-        let old = add_download(
-            &conn,
-            directory.path(),
-            show,
-            1,
-            Some(now - PLAYED_RETENTION_SECONDS),
-        );
-        let recent = add_download(&conn, directory.path(), show, 2, Some(now - 10));
-        let unplayed = add_download(&conn, directory.path(), show, 3, None);
-
-        let summary = enforce_cleanup(
-            &conn,
-            directory.path(),
-            CleanupPolicy::DeletePlayedAfter7Days,
-            now,
-        )
-        .unwrap();
-
-        assert_eq!(summary.files_deleted, 1);
-        assert!(store::episode(&conn, old)
-            .unwrap()
-            .unwrap()
-            .downloaded_path
-            .is_none());
-        for id in [recent, unplayed] {
-            assert!(store::episode(&conn, id)
-                .unwrap()
-                .unwrap()
-                .downloaded_path
-                .is_some());
-        }
-    }
-
-    #[test]
-    fn cleanup_never_deletes_a_download_path_outside_its_root() {
-        let conn = conn();
-        let download_root = tempfile::tempdir().unwrap();
-        let foreign_directory = tempfile::tempdir().unwrap();
-        let show = add_show(&conn);
-        let now = 1_000_000;
-        let episode = add_download(
-            &conn,
-            download_root.path(),
-            show,
-            1,
-            Some(now - PLAYED_RETENTION_SECONDS),
-        );
-        let foreign_path = foreign_directory.path().join("library-track.flac");
-        std::fs::write(&foreign_path, b"must survive").unwrap();
-        store::set_downloaded_path(&conn, episode, foreign_path.to_str()).unwrap();
-
-        let result = enforce_cleanup(
-            &conn,
-            download_root.path(),
-            CleanupPolicy::DeletePlayedAfter7Days,
-            now,
-        );
-
-        assert!(result.is_err());
-        assert_eq!(std::fs::read(&foreign_path).unwrap(), b"must survive");
-        assert_eq!(
-            store::episode(&conn, episode)
-                .unwrap()
-                .unwrap()
-                .downloaded_path
-                .as_deref(),
-            foreign_path.to_str()
-        );
-    }
-
-    #[test]
-    fn keep_last_five_is_applied_per_show() {
-        let conn = conn();
-        let directory = tempfile::tempdir().unwrap();
-        let show = add_show(&conn);
-        for number in 1..=7 {
-            add_download(&conn, directory.path(), show, number, None);
-        }
-
-        let summary =
-            enforce_cleanup(&conn, directory.path(), CleanupPolicy::KeepLast5, 0).unwrap();
-
-        assert_eq!(summary.files_deleted, 2);
-        let remaining = super::super::query::episodes_for_subscription(&conn, show)
-            .unwrap()
-            .into_iter()
-            .filter(|episode| episode.downloaded_path.is_some())
-            .count();
-        assert_eq!(remaining, 5);
-    }
-}
+#[path = "downloads_tests.rs"]
+mod tests;

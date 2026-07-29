@@ -347,8 +347,13 @@ impl PodcastsView {
             &reprise_core::modules::SOURCE_IMAGES_MODULE,
         )
         .unwrap_or(false);
-        self.youtube_detail
-            .update(&rendered_groups, &download_states, images_allowed);
+        self.youtube_detail.update(
+            &rendered_groups,
+            &download_states,
+            &connected_devices,
+            &selected_devices,
+            images_allowed,
+        );
         let download_widgets = podcasts_groups::replace(
             &self.group_container,
             &rendered_groups,
