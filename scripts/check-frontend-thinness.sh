@@ -177,13 +177,13 @@ crates/reprise-gnome/src/ui/releases/releases_presentation.rs:1
 crates/reprise-gnome/src/ui/releases/releases_view.rs:1
 crates/reprise-gnome/src/ui/runtime/commands.rs:1
 crates/reprise-gnome/src/ui/runtime/session.rs:2
+crates/reprise-gnome/src/ui/strings.rs:4
 crates/reprise-gnome/src/ui/strings_concerts.rs:1
 crates/reprise-gnome/src/ui/strings_news.rs:1
 crates/reprise-gnome/src/ui/strings_online_sources.rs:1
 crates/reprise-gnome/src/ui/strings_podcasts.rs:1
 crates/reprise-gnome/src/ui/strings_radio.rs:1
 crates/reprise-gnome/src/ui/strings_releases.rs:1
-crates/reprise-gnome/src/ui/strings.rs:4
 crates/reprise-gnome/src/ui/strings_sources.rs:1
 crates/reprise-gnome/src/ui/strings_tag_edit.rs:7
 crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs:1

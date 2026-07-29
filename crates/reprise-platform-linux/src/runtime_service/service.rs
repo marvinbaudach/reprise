@@ -88,6 +88,14 @@ pub enum Request {
         peer: String,
         reply: Reply<Result<reprise_runtime_protocol::runtime::RuntimeSnapshot, RuntimeError>>,
     },
+    /// A peer read one window of a queue section.
+    QueuePage {
+        peer: String,
+        section: String,
+        offset: u64,
+        limit: u64,
+        reply: Reply<Result<reprise_runtime_protocol::queue::QueuePage, RuntimeError>>,
+    },
     /// A peer issued a command.
     Command {
         peer: String,
@@ -328,6 +336,26 @@ impl Loop {
                     self.runtime
                         .snapshot()
                         .map(|snapshot| wire(&snapshot, client))
+                } else {
+                    Err(RuntimeError::Unavailable(
+                        reprise_runtime::Unavailable::NotConnected,
+                    ))
+                };
+                let _ = reply.send_blocking(answer);
+            }
+            Request::QueuePage {
+                peer,
+                section,
+                offset,
+                limit,
+                reply,
+            } => {
+                // Gated on being connected like every other read: a page is
+                // runtime state, and handing it to a peer that never
+                // completed a handshake would be a way around the version
+                // check the handshake exists for.
+                let answer = if self.peers.contains_key(&peer) {
+                    self.runtime.queue_page(&section, offset, limit)
                 } else {
                     Err(RuntimeError::Unavailable(
                         reprise_runtime::Unavailable::NotConnected,

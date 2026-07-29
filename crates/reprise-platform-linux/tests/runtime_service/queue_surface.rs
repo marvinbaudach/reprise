@@ -231,3 +231,82 @@ fn a_restored_session_arrives_without_starting_the_music() {
     );
     client.shutdown();
 }
+
+/// Reading past what the snapshot carries, over a real bus.
+#[test]
+#[ignore = "requires a session bus; run via dbus-run-session"]
+fn a_queue_page_reaches_rows_the_snapshot_does_not_carry() {
+    let served = Served::start("queuepage", Duration::from_secs(60));
+    let (client, events) =
+        start_with_bus_name(vec!["playback:control".to_owned()], served.bus_name.clone());
+    await_event(
+        &events,
+        |event| matches!(event, ClientEvent::Connected(_)),
+        "connection",
+    );
+    client
+        .call(RuntimeCommand::PlayTracks {
+            track_ids: (1..=400).collect(),
+            start_index: 0,
+        })
+        .expect("a long queue starts");
+
+    let page = client
+        .queue_page("context", 250, 4)
+        .expect("a page past the window is readable");
+
+    assert_eq!(
+        page.track_ids,
+        vec![252, 253, 254, 255],
+        "a virtual tail asks for the window it is about to draw, and the \
+         snapshot's 200 rows do not reach here"
+    );
+    assert_eq!(page.total, 399);
+    assert_eq!(
+        page.section, "context",
+        "the page names the section it answers for, so a view with two \
+         outstanding reads cannot mix them up"
+    );
+
+    client.shutdown();
+}
+
+/// Absolute and relative seeking are different intentions, and therefore
+/// different bus methods. This uses both in sequence so wiring `SeekTo` to
+/// the relative method lands at 90 seconds and cannot pass unnoticed.
+#[test]
+#[ignore = "requires a session bus; run via dbus-run-session"]
+fn an_absolute_seek_survives_the_client_and_service_wire() {
+    use reprise_runtime_protocol::playback::PlaybackCommand;
+
+    let served = Served::start("absoluteseek", Duration::from_secs(60));
+    let (client, events) =
+        start_with_bus_name(vec!["playback:control".to_owned()], served.bus_name.clone());
+    await_event(
+        &events,
+        |event| matches!(event, ClientEvent::Connected(_)),
+        "connection",
+    );
+    client
+        .call(RuntimeCommand::PlayTracks {
+            track_ids: vec![1],
+            start_index: 0,
+        })
+        .expect("a track starts");
+    client
+        .call(RuntimeCommand::Playback(PlaybackCommand::Seek(30_000)))
+        .expect("the relative seek establishes a non-zero origin");
+    client
+        .call(RuntimeCommand::Playback(PlaybackCommand::SeekTo(60_000)))
+        .expect("the absolute seek reaches the runtime");
+
+    let observer = served.client();
+    let seen = observer.connect().expect("a second peer may look");
+    assert_eq!(
+        seen.playback.position_ms, 60_000,
+        "the absolute target replaces the old position; treating it as \
+         another delta would land at 90 seconds"
+    );
+
+    client.shutdown();
+}

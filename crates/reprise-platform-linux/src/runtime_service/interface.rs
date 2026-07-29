@@ -17,7 +17,7 @@ use reprise_runtime_protocol::device_run::DeviceRunSnapshot;
 use reprise_runtime_protocol::effects::EffectsRequest;
 use reprise_runtime_protocol::jobs::{JobCommand, JobSnapshot};
 use reprise_runtime_protocol::playback::{ExternalMedia, PlaybackCommand, PlaybackSnapshot};
-use reprise_runtime_protocol::queue::{QueueCommand, QueueSnapshot};
+use reprise_runtime_protocol::queue::{QueueCommand, QueuePage, QueueSnapshot};
 use reprise_runtime_protocol::runtime::RuntimeSnapshot;
 use reprise_runtime_protocol::session::RestoredQueue;
 use reprise_runtime_protocol::ProtocolVersion;
@@ -210,6 +210,44 @@ impl Reprise1 {
     ) -> Result<CommandOutcome, Error> {
         self.command(&header, Command::Playback(PlaybackCommand::Seek(delta_ms)))
             .await
+    }
+
+    /// Seeks to an absolute point in the track. Refused for a live stream,
+    /// which has no length to seek within.
+    async fn seek_to(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        position_ms: i64,
+    ) -> Result<CommandOutcome, Error> {
+        self.command(
+            &header,
+            Command::Playback(PlaybackCommand::SeekTo(position_ms)),
+        )
+        .await
+    }
+
+    /// One window of a queue section, for a view scrolled past the 200 rows
+    /// the snapshot carries. `limit` is capped at that same 200.
+    ///
+    /// A read, not a command: it changes nothing, so it answers with the
+    /// page rather than with what it did.
+    async fn queue_page(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        section: String,
+        offset: u64,
+        limit: u64,
+    ) -> Result<QueuePage, Error> {
+        let peer = Self::peer(&header)?;
+        self.ask(|reply| Request::QueuePage {
+            peer,
+            section,
+            offset,
+            limit,
+            reply,
+        })
+        .await?
+        .map_err(Error::from)
     }
 
     async fn set_shuffle(

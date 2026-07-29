@@ -129,7 +129,11 @@ impl std::fmt::Display for ProtocolVersion {
 /// equalizer and ReplayGain belong to whoever owns the audio path — additive
 /// on both counts: the snapshot is a dictionary, so a peer that omits the key
 /// reads as a default, and an older runtime simply has no method to call.
-pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 4, minor: 1 };
+/// Minor 2 adds [`queue::QueuePage`] and the `SeekTo` command: a view with a
+/// virtual tail reads windows the 200-row snapshot does not carry, and a
+/// scrubber says where the user let go rather than how far to move from
+/// wherever the playhead had reached. Both additive.
+pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 4, minor: 2 };
 
 #[cfg(test)]
 mod tests {
@@ -163,6 +167,6 @@ mod tests {
     #[test]
     fn the_shipped_version_is_compatible_with_itself() {
         assert!(PROTOCOL_VERSION.is_compatible_with(PROTOCOL_VERSION));
-        assert_eq!(PROTOCOL_VERSION.to_string(), "4.1");
+        assert_eq!(PROTOCOL_VERSION.to_string(), "4.2");
     }
 }

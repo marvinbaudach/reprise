@@ -11,7 +11,6 @@ use reprise_core::playback::{PlaybackBackend, PlaybackState, PlayerEvent, Stream
 use reprise_core::queue::{Queue, Repeat};
 use reprise_core::up_next::UpNextQueue;
 use reprise_runtime_protocol::playback::{PlaybackCommand, PlaybackSnapshot};
-use reprise_runtime_protocol::queue::QueueSnapshot;
 
 use reprise_runtime_protocol::playback::ExternalMedia;
 
@@ -22,7 +21,7 @@ use crate::ports::{LibraryPort, PlayableTrack, TrackLocation};
 /// the full sections, so a client can say "and 412 more" without the runtime
 /// shipping 412 ids. Same value as the MPRIS mirror already publishes, so
 /// agents see no change in window size when Task 3.3 re-points them here.
-const QUEUE_WINDOW: usize = 200;
+pub(crate) const QUEUE_WINDOW: usize = 200;
 
 /// What is loaded in the backend, however it got there.
 ///
@@ -88,6 +87,15 @@ impl From<PlayableTrack> for Loaded {
     }
 }
 
+/// Where a seek is aimed.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Seek {
+    /// Milliseconds from where the playhead is now; negative goes back.
+    By(i64),
+    /// An absolute point in the track, in milliseconds.
+    To(i64),
+}
+
 /// Whether looking at what comes next also removes it.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Take {
@@ -95,6 +103,18 @@ enum Take {
     Entry,
     /// The pre-feed: the queue is left exactly as it was.
     Nothing,
+}
+
+/// The whole queue's order, as the thing change detection compares.
+///
+/// Every field of [`QueueSnapshot`] is derived from this, which is what makes
+/// comparing it strictly stronger than comparing the snapshot — and lets
+/// there be one comparison rather than two that could disagree.
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) struct QueueIdentity {
+    current: Option<i64>,
+    play_next: Vec<i64>,
+    context: Vec<i64>,
 }
 
 /// A start that did not happen, in the two shapes a client can act on.
@@ -206,31 +226,6 @@ impl Transport {
         }
     }
 
-    /// The queue facet, *unstamped*: the revision belongs to the runtime,
-    /// which is the only place that can count observable changes to this
-    /// facet without drifting from what a client actually saw. Leaving it at
-    /// zero here also keeps the before/after comparison honest — a revision
-    /// baked in on both sides would either always differ or never.
-    pub(crate) fn queue_snapshot(&self) -> QueueSnapshot {
-        QueueSnapshot {
-            revision: 0,
-            // What is *playing*, which is not always where the context
-            // cursor stands: an explicitly queued track plays beside the
-            // context without moving it.
-            current_track_id: self.current.as_ref().and_then(|track| track.track_id),
-            play_next_track_ids: self
-                .up_next
-                .ids()
-                .iter()
-                .copied()
-                .take(QUEUE_WINDOW)
-                .collect(),
-            context_track_ids: self.queue.remaining_window(0, QUEUE_WINDOW),
-            play_next_total: self.up_next.len() as u64,
-            context_total: self.queue.remaining_len() as u64,
-        }
-    }
-
     /// Replaces the context queue and starts playing at `start_index`.
     pub(crate) fn play_tracks(
         &mut self,
@@ -319,7 +314,8 @@ impl Transport {
                 backend.set_volume(self.volume);
                 Ok(())
             }
-            PlaybackCommand::Seek(delta_ms) => self.seek(backend, *delta_ms),
+            PlaybackCommand::Seek(delta_ms) => self.seek(backend, Seek::By(*delta_ms)),
+            PlaybackCommand::SeekTo(position_ms) => self.seek(backend, Seek::To(*position_ms)),
             PlaybackCommand::SetShuffle(on) => {
                 self.queue.set_shuffle(*on);
                 Ok(())
@@ -756,6 +752,9 @@ mod transport_tests;
 
 #[path = "transport_queue.rs"]
 mod queue_editing;
+
+#[path = "transport_reads.rs"]
+mod reads;
 
 #[path = "transport_gapless.rs"]
 mod gapless;
