@@ -7,7 +7,7 @@ use rusqlite::Connection;
 
 // `active` lives in `podcasts_presentation` (also read by the empty-state
 // classification), not duplicated here.
-use super::podcasts_presentation::{active, PodcastFilter};
+use super::podcasts_presentation::{active, LibrarySummary, PodcastFilter};
 use crate::ui::browse::browse_bar::CHIP_CSS_CLASS;
 use crate::ui::strings;
 use crate::ui::style::buttons;
@@ -130,7 +130,12 @@ impl PodcastsFilterBar {
         *self.on_changed.borrow_mut() = Some(Rc::new(callback));
     }
 
-    pub(super) fn set_context(self: &Rc<Self>, shows: Vec<String>, shown: usize, total: usize) {
+    pub(super) fn set_context(
+        self: &Rc<Self>,
+        shows: Vec<String>,
+        shown: usize,
+        summary: LibrarySummary,
+    ) {
         if self
             .filter
             .borrow()
@@ -142,9 +147,13 @@ impl PodcastsFilterBar {
         }
         self.shows.replace(shows);
         self.result.set_text(&if active(&self.filter()) {
-            strings::podcast_filtered_count(shown, total)
+            strings::podcast_filtered_count(shown, summary.episodes)
         } else {
-            strings::podcast_episode_count(total)
+            // `G2` (design 6a): "4 shows · 41 episodes · 7 new" replaces the
+            // bare episode count once nothing is filtered. The filtered
+            // branch above is unchanged — "shown of total" is what matters
+            // once a filter has narrowed the view.
+            strings::podcast_library_summary(summary.shows, summary.episodes, summary.new)
         });
         self.rebuild();
     }
