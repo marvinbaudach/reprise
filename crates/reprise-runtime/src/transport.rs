@@ -690,6 +690,17 @@ impl Transport {
                     ..track.into()
                 });
                 self.position_ms = 0;
+                // Something is playing again, so no stop is left to explain.
+                // `start` says this next to its own `failure = None`; this is
+                // the other way a track becomes current and it owes the same.
+                //
+                // Not reachable through the GStreamer backend, which clears
+                // its pre-fed slot on every stop and every restart, so a real
+                // handoff always follows a `start` that has already cleared
+                // this. That is a promise made in another crate about a trait
+                // this file only sees the near side of — the invariant is
+                // documented here, so it is held here.
+                self.stopped_reason = None;
             }
             // The backend already handed off to a track this side cannot
             // describe. Reporting nothing loaded while `status` stays
