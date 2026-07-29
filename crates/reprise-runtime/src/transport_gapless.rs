@@ -8,31 +8,20 @@
 
 use reprise_core::library::settings::TrackTransition;
 use reprise_core::playback::PlaybackBackend;
-use reprise_core::queue::Repeat;
 
-use super::Transport;
+use super::{Take, Transport};
 use crate::ports::{LibraryPort, TrackLocation};
 
 impl Transport {
-    /// What an automatic advance would start, without consuming anything.
-    ///
-    /// Deliberately the same shape as [`Self::take_next_auto`]: a pre-feed
-    /// that disagrees with the advance hands the backend a track it will
-    /// then have to abandon, which is worse than the gap it was meant to
-    /// avoid. Any change to one belongs in the other.
-    fn peek_next_auto(&self, library: &dyn LibraryPort) -> Option<i64> {
-        let is_available = |track_id: i64| library.resolve(track_id).is_some();
-        if self.queue.repeat() == Repeat::One {
-            if let Some(track_id) = self.current.as_ref().and_then(|loaded| loaded.track_id) {
-                return is_available(track_id).then_some(track_id);
-            }
-        }
-        if let Some(&track_id) = self.up_next.ids().first() {
-            if is_available(track_id) {
-                return Some(track_id);
-            }
-        }
-        self.queue.peek_auto_matching(is_available)
+    /// What the advance would start, without consuming it — the same
+    /// decision, taken by the same function, so the two cannot drift apart.
+    fn peek_next_auto(&mut self, library: &dyn LibraryPort) -> Option<i64> {
+        // The rejected entries are the advance's business to report, not the
+        // pre-feed's: looking at the queue must not put a message in front of
+        // a user who has not reached that entry yet.
+        let mut ignored = Vec::new();
+        self.next_auto(library, Take::Nothing, &mut ignored)
+            .map(|(track_id, _)| track_id)
     }
 
     /// Tells the backend what to hand off to when the current track ends.
@@ -51,7 +40,7 @@ impl Transport {
     /// has a separate entry point for remote media — feeding a URI through
     /// this one would be a handoff that fails at the moment it is needed.
     pub(crate) fn refresh_pre_feed(
-        &self,
+        &mut self,
         backend: &dyn PlaybackBackend,
         library: &dyn LibraryPort,
         transition: TrackTransition,
