@@ -90,9 +90,13 @@ impl Fixture {
             .playback_command(&self.backend, &self.library, command)
     }
 
+    /// Drops the affected count: these tests are about what the queue looks
+    /// like afterwards. The count has its own tests in `runtime_outcome_tests`,
+    /// where a client is there to receive it.
     fn queue(&mut self, command: &QueueCommand) -> Result<(), RuntimeError> {
         self.transport
             .queue_command(&self.backend, &self.library, command)
+            .map(|_| ())
     }
 
     fn player_event(&mut self, event: &PlayerEvent) {

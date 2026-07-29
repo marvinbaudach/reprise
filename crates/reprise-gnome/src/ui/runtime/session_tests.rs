@@ -237,6 +237,7 @@ fn a_command_failure_notifies_only_command_failed_subscribers() {
     let error = ClientError::Unavailable("unavailable:not_connected".into());
 
     session.apply(&ClientEvent::CommandFailed {
+        request: reprise_runtime_client::RequestId::from(1),
         command,
         error: error.clone(),
     });

@@ -708,3 +708,6 @@ fn stamped_finished() -> reprise_core::playback::StreamEvent {
 
 #[path = "runtime_queue_revision_tests.rs"]
 mod queue_revision;
+
+#[path = "runtime_outcome_tests.rs"]
+mod outcomes;

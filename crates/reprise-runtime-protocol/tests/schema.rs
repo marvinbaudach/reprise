@@ -197,6 +197,12 @@ fn playback_queue_and_job_snapshots_survive_a_dbus_round_trip() {
     };
     assert_eq!(round_trip(&job), job);
 
+    let outcome = reprise_runtime_protocol::command::CommandOutcome {
+        queue_revision: 12,
+        affected: 4,
+    };
+    assert_eq!(round_trip(&outcome), outcome);
+
     let batch = BatchProgress {
         batch_id: "b-1".into(),
         total: 4,
@@ -462,6 +468,6 @@ fn the_whole_runtime_snapshot_survives_a_dbus_round_trip() {
 
 #[test]
 fn the_protocol_version_is_pinned() {
-    assert_eq!(PROTOCOL_VERSION.major, 2);
+    assert_eq!(PROTOCOL_VERSION.major, 3);
     assert_eq!(PROTOCOL_VERSION.minor, 0);
 }

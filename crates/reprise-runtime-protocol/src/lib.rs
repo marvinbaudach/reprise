@@ -45,6 +45,7 @@
 //! diagnostic kind. `tests/schema.rs` enforces that against fully populated
 //! fixtures rather than trusting review.
 
+pub mod command;
 pub mod device_run;
 pub mod device_sync;
 pub mod endpoint;
@@ -103,7 +104,7 @@ impl std::fmt::Display for ProtocolVersion {
 /// simply has no method for them. Minor 4 adds
 /// [`playback::ExternalMedia`], so a stream or a podcast episode can be
 /// played by the same runtime that owns the queue — again additive.
-pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 2, minor: 0 };
+pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 3, minor: 0 };
 
 #[cfg(test)]
 mod tests {
@@ -137,6 +138,6 @@ mod tests {
     #[test]
     fn the_shipped_version_is_compatible_with_itself() {
         assert!(PROTOCOL_VERSION.is_compatible_with(PROTOCOL_VERSION));
-        assert_eq!(PROTOCOL_VERSION.to_string(), "2.0");
+        assert_eq!(PROTOCOL_VERSION.to_string(), "3.0");
     }
 }

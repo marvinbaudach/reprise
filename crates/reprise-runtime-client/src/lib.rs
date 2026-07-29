@@ -31,7 +31,8 @@ mod events;
 mod mirror;
 
 pub use client::{
-    start, start_with_bus_name, start_with_bus_name_and_version, RuntimeClient, RuntimeEvents,
+    start, start_with_bus_name, start_with_bus_name_and_version, RequestId, RuntimeClient,
+    RuntimeEvents,
 };
 pub use events::{ClientError, ClientEvent, RuntimeCommand};
 pub use mirror::RuntimeMirror;

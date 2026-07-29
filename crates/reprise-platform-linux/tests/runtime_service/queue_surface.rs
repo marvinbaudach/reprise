@@ -113,3 +113,63 @@ fn the_queue_commands_a_queue_view_needs_all_survive_the_wire() {
     }
     client.shutdown();
 }
+
+#[test]
+#[ignore = "requires a session bus; run via dbus-run-session"]
+fn a_command_reports_what_it_did_to_the_client_that_sent_it() {
+    use reprise_runtime_protocol::queue::QueueCommand;
+
+    let served = Served::start("queueoutcome", Duration::from_secs(60));
+    let (client, events) =
+        start_with_bus_name(vec!["playback:control".to_owned()], served.bus_name.clone());
+    await_event(
+        &events,
+        |event| matches!(event, ClientEvent::Connected(_)),
+        "connection",
+    );
+    client
+        .call(RuntimeCommand::PlayTracks {
+            track_ids: vec![1, 2, 3],
+            start_index: 0,
+        })
+        .expect("playing succeeds");
+
+    let added = client
+        .call(RuntimeCommand::Queue(QueueCommand::AddNext(vec![1, 2, 3])))
+        .expect("adding succeeds");
+    assert_eq!(added.affected, 3, "three entries went in");
+
+    // `send` cannot wait for the answer without stalling the caller's thread,
+    // so the answer comes back as an event naming the send it belongs to.
+    let request = client.send(RuntimeCommand::Queue(QueueCommand::RemoveAt {
+        positions: vec![0, 2],
+        expected_revision: added.queue_revision,
+    }));
+
+    let event = await_event(
+        &events,
+        |event| matches!(event, ClientEvent::CommandCompleted { .. }),
+        "command outcome",
+    );
+    let ClientEvent::CommandCompleted {
+        request: id,
+        outcome,
+    } = event
+    else {
+        unreachable!("the matcher only accepts CommandCompleted")
+    };
+    assert_eq!(
+        id, request,
+        "a surface with two removals in flight has to know which one this is"
+    );
+    assert_eq!(
+        outcome.affected, 2,
+        "the count has to survive the bus — a toast saying '2 removed' is the \
+         whole reason this travels at all"
+    );
+    assert_ne!(
+        outcome.queue_revision, added.queue_revision,
+        "and the revision it left behind is the one a follow-up drag needs"
+    );
+    client.shutdown();
+}

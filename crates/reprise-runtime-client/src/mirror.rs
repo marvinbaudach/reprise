@@ -75,10 +75,11 @@ impl RuntimeMirror {
             ClientEvent::JobChanged {
                 sequence, snapshot, ..
             } => self.apply_job(*sequence, snapshot),
-            // A command's own failure carries no runtime state — the caller
-            // that sent it already knows what it sent, and gets this event
-            // directly to react to. There is nothing here for a mirror.
-            ClientEvent::CommandFailed { .. } => false,
+            // A command's own result carries no runtime state — neither what
+            // it did nor why it did not. The caller that sent it gets these
+            // directly to react to, and whatever they changed arrives as its
+            // own facet delta. There is nothing here for a mirror.
+            ClientEvent::CommandFailed { .. } | ClientEvent::CommandCompleted { .. } => false,
         }
     }
 

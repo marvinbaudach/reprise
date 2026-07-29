@@ -3,6 +3,7 @@
 use reprise_core::device_sync::machine::Event as DeviceEvent;
 use reprise_core::device_sync::MirrorPlan;
 use reprise_core::playback::StreamEvent;
+use reprise_runtime_protocol::command::CommandOutcome;
 use reprise_runtime_protocol::device_run::DeviceRunSnapshot;
 use reprise_runtime_protocol::jobs::JobCommand;
 use reprise_runtime_protocol::playback::{ExternalMedia, PlaybackCommand, PlaybackSnapshot};
@@ -170,8 +171,13 @@ impl Runtime {
             .ok_or(RuntimeError::Unavailable(Unavailable::NotConnected))
     }
 
-    /// Executes one command on behalf of a connected client.
-    pub fn command(&mut self, client: ClientId, command: &Command) -> Result<(), RuntimeError> {
+    /// Executes one command on behalf of a connected client, and reports
+    /// what it did — see [`CommandOutcome`].
+    pub fn command(
+        &mut self,
+        client: ClientId,
+        command: &Command,
+    ) -> Result<CommandOutcome, RuntimeError> {
         if !self.clients.is_connected(client) {
             // Not buffered for a later reconnect (§9.5): executing an old
             // intention against state it never saw is the worse failure.
@@ -195,7 +201,7 @@ impl Runtime {
                 // applied transport (a stop that reached the backend before
                 // the error) must not stay invisible.
                 self.publish_transport_changes(Some(client), before);
-                result
+                result.map(|()| self.outcome(0))
             }
             Command::Queue(queue) => {
                 // Before anything is applied: a position read from a queue
@@ -214,7 +220,7 @@ impl Runtime {
                     queue,
                 );
                 self.publish_transport_changes(Some(client), before);
-                result
+                result.map(|affected| self.outcome(affected))
             }
             Command::PlayTracks {
                 track_ids,
@@ -229,7 +235,7 @@ impl Runtime {
                     Some(client.into()),
                 );
                 self.publish_transport_changes(Some(client), before);
-                result
+                result.map(|()| self.outcome(0))
             }
             Command::PlayExternal(media) => {
                 let before = self.transport_facets();
@@ -237,7 +243,7 @@ impl Runtime {
                     self.transport
                         .play_external(&*self.ports.playback, media, Some(client.into()));
                 self.publish_transport_changes(Some(client), before);
-                result
+                result.map(|()| self.outcome(0))
             }
             Command::Job(job) => {
                 let now = self.ports.clock.now_unix();
@@ -246,13 +252,13 @@ impl Runtime {
                     self.clients
                         .publish(Some(client), RuntimeEvent::JobChanged(snapshot));
                 }
-                Ok(())
+                Ok(self.outcome(0))
             }
             Command::Device(DeviceCommand::Start { device }) => {
                 let before = self.devices.snapshot(device);
                 let result = self.devices.start(&*self.ports.devices, device);
                 self.publish_device_change(Some(client), device, before.as_ref());
-                result
+                result.map(|()| self.outcome(0))
             }
             Command::Device(DeviceCommand::Cancel { device }) => {
                 let before = self.devices.snapshot(device);
@@ -262,7 +268,7 @@ impl Runtime {
                     self.ports.clock.now_monotonic_ms(),
                 );
                 self.publish_device_change(Some(client), device, before.as_ref());
-                result
+                result.map(|()| self.outcome(0))
             }
         }
     }
@@ -318,6 +324,18 @@ impl Runtime {
             && !self.transport.is_active()
             && !self.devices.is_active()
             && !jobs::is_active(&self.conn)?)
+    }
+
+    /// What a command did, with the queue revision it left behind.
+    ///
+    /// `affected` is zero for everything that does not edit the queue, which
+    /// is the answer rather than the absence of one — see
+    /// [`CommandOutcome::affected`].
+    fn outcome(&self, affected: u64) -> CommandOutcome {
+        CommandOutcome {
+            queue_revision: self.queue_revision,
+            affected,
+        }
     }
 
     /// Puts the current revision on a snapshot the transport built without

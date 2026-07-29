@@ -123,7 +123,7 @@ impl RuntimeSession {
     /// subscriber) runs on the next line — see the module doc comment's
     /// `## Borrow discipline` section.
     fn apply(&self, event: &ClientEvent) {
-        if let ClientEvent::CommandFailed { command, error } = event {
+        if let ClientEvent::CommandFailed { command, error, .. } = event {
             self.notify_command_failed(command, error);
         }
         let changed = self.mirror.borrow_mut().apply(event);
