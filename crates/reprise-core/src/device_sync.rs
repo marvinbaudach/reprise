@@ -20,6 +20,7 @@ pub mod machine;
 pub mod mirror;
 pub mod page;
 pub mod podcasts;
+pub mod preparation;
 pub mod profile;
 pub mod sanitize;
 pub mod selection;
@@ -59,6 +60,10 @@ pub use mirror::{
 pub use page::{
     project_sync_page, SyncChangeSummary, SyncPageControls, SyncPageInput, SyncPageProjection,
     SyncPageState, SyncPageWarning, SyncPlaylistRow,
+};
+pub use preparation::{
+    plan_preparation, primary_action, MissingFile, PreparationFacts, PreparationPhase,
+    PrimaryAction,
 };
 pub use profile::{
     project_playlist_sizes, Mp3Quality, PlaylistSizeProjection, PlaylistTargetSize, PlaylistTracks,

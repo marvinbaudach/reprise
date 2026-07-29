@@ -29,8 +29,8 @@ use super::podcasts_removal::{
 use super::podcasts_scroller::build_episode_scroller;
 use super::podcasts_view_data::{last_updated_text, unique};
 use super::podcasts_worker::{
-    podcasts_response_channel, request_generation, PodcastsOperation, PodcastsRequest,
-    PodcastsRuntime, PodcastsWorkerResult,
+    podcasts_response_channel, request_generation, PodcastsOperation, PodcastsPriority,
+    PodcastsRequest, PodcastsRuntime, PodcastsWorkerResult,
 };
 use super::youtube_channel_detail::YoutubeChannelDetail;
 use crate::ui::sidebar::sidebar_presentation::NavIcon;
@@ -513,6 +513,7 @@ impl PodcastsView {
         if !self.runtime.request(PodcastsRequest {
             generation,
             operation,
+            priority: PodcastsPriority::Normal,
             response,
         }) {
             return;
