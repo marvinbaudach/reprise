@@ -57,6 +57,15 @@ impl From<PlayableTrack> for Loaded {
     }
 }
 
+/// A start that did not happen, in the two shapes a client can act on.
+struct Failure {
+    /// The library track it was about, absent for anything without an id.
+    track_id: Option<i64>,
+    /// `not_playable` or `backend` — the wire vocabulary, kept here so the
+    /// snapshot is a move rather than a second translation table.
+    kind: &'static str,
+}
+
 /// Player and queue state.
 pub(crate) struct Transport {
     queue: Queue,
@@ -68,6 +77,14 @@ pub(crate) struct Transport {
     current: Option<Loaded>,
     position_ms: i64,
     volume: f64,
+    /// Why the last automatic start did not happen, until something plays.
+    ///
+    /// Kept because stopping is not self-explaining: a queue that ran out and
+    /// a queue that hit three unreadable files in a row both end `Stopped`
+    /// with nothing loaded. §9.5 does not allow an event saying "a track
+    /// failed" — a facet says what it looks like now — so the reason lives in
+    /// the facet and is cleared by the next successful start.
+    failure: Option<Failure>,
     /// The stream whose reports this transport still believes.
     ///
     /// A backend event is delivered asynchronously, so one emitted for the
@@ -88,6 +105,7 @@ impl Transport {
             current: None,
             position_ms: 0,
             volume: 1.0,
+            failure: None,
             stream: StreamGeneration::INITIAL,
         }
     }
@@ -119,6 +137,8 @@ impl Transport {
                 Repeat::All => "all".into(),
                 Repeat::One => "one".into(),
             },
+            failure_kind: self.failure.as_ref().map(|failure| failure.kind.into()),
+            failure_track_id: self.failure.as_ref().and_then(|failure| failure.track_id),
         }
     }
 
@@ -337,13 +357,10 @@ impl Transport {
                 // whatever music was waiting behind it — the user did not
                 // ask for that, and it is loud.
                 let advances = self.current.as_ref().is_none_or(|loaded| loaded.from_queue);
-                match advances.then(|| self.take_next_auto()).flatten() {
-                    Some(next) => {
-                        let _ = self.start(backend, library, next);
-                    }
-                    None => {
-                        let _ = self.stop(backend);
-                    }
+                if advances {
+                    self.advance_past_failures(backend, library);
+                } else {
+                    let _ = self.stop(backend);
                 }
             }
             PlayerEvent::AdvancedToNext => {
@@ -367,6 +384,13 @@ impl Transport {
             PlayerEvent::Spectrum(_) => {}
             PlayerEvent::Error(message) => {
                 tracing::warn!(%message, "playback backend reported an error");
+                // Recorded before the stop, because stopping clears what was
+                // loaded and the id is the only thing that lets a surface say
+                // *which* track dropped out.
+                self.failure = Some(Failure {
+                    track_id: self.current.as_ref().and_then(|loaded| loaded.track_id),
+                    kind: "backend",
+                });
                 let _ = self.stop(backend);
             }
         }
@@ -487,6 +511,58 @@ impl Transport {
             .or_else(|| self.queue.advance_auto())
     }
 
+    /// Starts what follows a finished track, stepping over entries that
+    /// cannot be played.
+    ///
+    /// One unreadable file must not end a queue that still has music in it —
+    /// that is the everyday case of a track deleted, renamed or on a mount
+    /// that went away after the queue was built. The GTK controller has
+    /// always skipped here (`playback_faults.rs`); moving playback into the
+    /// runtime without bringing that rule along would be a silent regression.
+    ///
+    /// The bound is the number of entries the queues hold, the same rule GTK
+    /// uses (`should_stop_skipping`: give every entry one chance, then stop).
+    /// Without it `Repeat::All` over a queue of broken files hands the same
+    /// entries back for ever and the loop never ends.
+    ///
+    /// Only *automatic* advancing skips. A user who presses Next gets the
+    /// error back instead, because they are waiting for an answer and a
+    /// surface can say "that one is gone" — see
+    /// `a_failed_skip_stops_the_previous_track_rather_than_leaving_it_audible`.
+    fn advance_past_failures(&mut self, backend: &dyn PlaybackBackend, library: &dyn LibraryPort) {
+        let attempts = self.up_next.len().saturating_add(self.queue.len());
+        // A successful `start` clears the facet, and here the success is
+        // exactly what must not erase the skip that led to it: "playing
+        // track 3, having stepped over track 2" is the situation, and a
+        // surface that never sees it cannot tell the user their track was
+        // skipped. So the last failure is carried across the start and put
+        // back.
+        let mut skipped = None;
+        for _ in 0..attempts {
+            let Some(next) = self.take_next_auto() else {
+                break;
+            };
+            match self.start(backend, library, next) {
+                Ok(()) => {
+                    self.failure = skipped;
+                    return;
+                }
+                Err(error) => {
+                    skipped = Some(Failure {
+                        track_id: Some(next),
+                        kind: failure_kind(&error),
+                    });
+                }
+            }
+        }
+        // Either nothing was left, or every candidate failed. `start` already
+        // abandoned the last attempt, so the model is stopped; this makes it
+        // so for the "nothing was left" path too, and keeps the reason for a
+        // stop that would otherwise look like an exhausted queue.
+        let _ = self.stop(backend);
+        self.failure = skipped;
+    }
+
     /// Resolves, hands the location to the backend, and adopts it as current.
     ///
     /// **A failure leaves nothing loaded and nothing playing**, which is the
@@ -522,6 +598,9 @@ impl Transport {
         self.current = Some(track.into());
         self.position_ms = 0;
         self.status = PlaybackState::Playing;
+        // The facet describes the situation, not the history: something is
+        // playing, so there is no failure left to report.
+        self.failure = None;
         // Everything the previous stream still has in flight is stale from
         // here on.
         self.stream = backend.current_generation();
@@ -583,6 +662,18 @@ impl Transport {
 /// already rejects cleanly.
 fn as_index(position: u64) -> usize {
     usize::try_from(position).unwrap_or(usize::MAX)
+}
+
+/// The short kind a snapshot carries for a start that did not happen.
+///
+/// Anything that is not one of the two playback failures would be a bug in
+/// the caller — `start` returns only those — so the fallback names the
+/// backend rather than inventing a third word for clients to branch on.
+fn failure_kind(error: &RuntimeError) -> &'static str {
+    match error {
+        RuntimeError::Failed(Failed::TrackNotPlayable) => "not_playable",
+        _ => "backend",
+    }
 }
 
 /// Keeps the backend's message in the log, where a path is allowed, and

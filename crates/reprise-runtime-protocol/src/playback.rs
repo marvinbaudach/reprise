@@ -27,6 +27,23 @@ pub struct PlaybackSnapshot {
     pub shuffle: bool,
     /// `off`, `all`, `one`.
     pub repeat: String,
+    /// Why the last automatic start did not happen: `not_playable` when
+    /// nothing could be resolved for the id, `backend` when the pipeline
+    /// refused it or gave up mid-track. Absent once anything plays again.
+    ///
+    /// A short kind, never a path and never the backend's own message — the
+    /// same allow-list [`crate::jobs::JobSnapshot::error_kind`] follows, for
+    /// the same reason (§9.7).
+    ///
+    /// This is state, not a log entry: "playback is stopped *because* a track
+    /// failed" and "playback is stopped because the queue ran out" are
+    /// different situations that are otherwise indistinguishable, and §9.5
+    /// only lets a facet say what it looks like now — never that an operation
+    /// happened.
+    pub failure_kind: Option<String>,
+    /// The library track the failure was about. Absent when what failed had
+    /// no library id, and absent when `failure_kind` is.
+    pub failure_track_id: Option<i64>,
 }
 
 /// Something to play that is not a library track: a radio stream, a podcast

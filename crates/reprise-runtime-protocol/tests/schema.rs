@@ -168,6 +168,8 @@ fn playback_queue_and_job_snapshots_survive_a_dbus_round_trip() {
         volume: 0.75,
         shuffle: true,
         repeat: "all".into(),
+        failure_kind: Some("not_playable".into()),
+        failure_track_id: Some(41),
     };
     assert_eq!(round_trip(&playback), playback);
 
@@ -380,6 +382,8 @@ fn the_whole_runtime_snapshot_survives_a_dbus_round_trip() {
             volume: 0.75,
             shuffle: false,
             repeat: "off".into(),
+            failure_kind: Some("backend".into()),
+            failure_track_id: Some(41),
         },
         queue: QueueSnapshot {
             current_track_id: Some(42),
@@ -414,5 +418,5 @@ fn the_whole_runtime_snapshot_survives_a_dbus_round_trip() {
 #[test]
 fn the_protocol_version_is_pinned() {
     assert_eq!(PROTOCOL_VERSION.major, 1);
-    assert_eq!(PROTOCOL_VERSION.minor, 4);
+    assert_eq!(PROTOCOL_VERSION.minor, 5);
 }
