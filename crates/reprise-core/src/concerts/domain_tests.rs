@@ -56,7 +56,7 @@ fn haversine_matches_the_munich_berlin_reference() {
 fn geocode_url_and_parser_are_tolerant_and_pure() {
     assert_eq!(
         geocode_url("München & Umgebung"),
-        "https://nominatim.openstreetmap.org/search?q=M%C3%BCnchen%20%26%20Umgebung&format=json&limit=1"
+        "https://nominatim.openstreetmap.org/search?q=M%C3%BCnchen%20%26%20Umgebung&format=json&limit=1&addressdetails=1"
     );
     let location =
         parse_geocode(r#"[{"lat":"48.13","lon":"11.57","display_name":"Munich, Bavaria"}]"#)
@@ -64,8 +64,35 @@ fn geocode_url_and_parser_are_tolerant_and_pure() {
             .unwrap();
     assert_eq!(location.lat, 48.13);
     assert_eq!(location.display_name, "Munich, Bavaria");
+    assert_eq!(location.country_code, None);
     assert_eq!(parse_geocode("[]").unwrap(), None);
     assert!(parse_geocode("{broken").is_err());
+}
+
+/// `RAD-5`: "Metal in DE" and "Near you" both need a country code, and the
+/// only source Reprise is allowed to use is data already present in the
+/// forward-geocode response city search already makes — never a second,
+/// reverse-geocoding network call (`O-4`). Nominatim's `addressdetails=1`
+/// (added to the existing request above) returns a structured, lowercase
+/// ISO 3166-1 alpha-2 `country_code`, which this normalizes to uppercase to
+/// match radio-browser's own convention (`radio::search::StationCandidate`).
+#[test]
+fn rad_5_geocode_parses_the_addressdetails_country_code_when_present() {
+    let with_country = parse_geocode(
+        r#"[{"lat":"52.52","lon":"13.405","display_name":"Berlin, Deutschland",
+             "address":{"country_code":"de"}}]"#,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(with_country.country_code.as_deref(), Some("DE"));
+
+    // No `address` object at all (e.g. an older cached fixture, or a
+    // provider response that omitted it) — honestly `None`, never guessed.
+    let without_address =
+        parse_geocode(r#"[{"lat":"48.13","lon":"11.57","display_name":"Munich, Bavaria"}]"#)
+            .unwrap()
+            .unwrap();
+    assert_eq!(without_address.country_code, None);
 }
 
 #[test]
@@ -246,10 +273,11 @@ fn query_filters_distance_country_horizon_and_similar_rows() {
         horizon: DateHorizon::Next3Months,
         include_similar: false,
     };
-    let location = Some(config::ConcertLocation {
+    let location = Some(crate::location::AppLocation {
         latitude: 48.1372,
         longitude: 11.5756,
         name: "Munich".into(),
+        country_code: Some("DE".into()),
     });
 
     let rows = query_events(&conn, &filter, location.as_ref(), today).unwrap();

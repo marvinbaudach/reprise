@@ -6,7 +6,8 @@ pub(super) fn css() -> String {
      .reprise-radio-playing { color: @accent_color; \
        background-color: alpha(@accent_bg_color, 0.07); }\n\
      .reprise-radio-view .card { border-radius: 8px; padding: 12px; }\n\
-     .reprise-radio-view .reprise-btn-add { border-radius: 8px; }"
+     .reprise-radio-view .reprise-btn-add { border-radius: 8px; }\n\
+     .reprise-radio-chips { margin-bottom: 4px; }"
         .to_owned()
 }
 

@@ -6,9 +6,6 @@ use super::{ConcertFilter, DateHorizon};
 
 pub const BANDSINTOWN_APP_ID_KEY: &str = "concerts.bandsintown_app_id";
 pub const TICKETMASTER_API_KEY: &str = "concerts.ticketmaster_apikey";
-pub const LOCATION_LAT_KEY: &str = "concerts.location_lat";
-pub const LOCATION_LON_KEY: &str = "concerts.location_lon";
-pub const LOCATION_NAME_KEY: &str = "concerts.location_name";
 pub const WINDOW_DAYS_KEY: &str = "concerts.window_days";
 pub const DEFAULT_RADIUS_KEY: &str = "concerts.default_radius_km";
 pub const SIMILAR_ENABLED_KEY: &str = "concerts.similar_enabled";
@@ -53,13 +50,6 @@ impl Credentials {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct ConcertLocation {
-    pub latitude: f64,
-    pub longitude: f64,
-    pub name: String,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SimilarConfig {
     pub enabled: bool,
@@ -88,18 +78,14 @@ pub(crate) fn credentials_with_env(
     })
 }
 
-pub fn location(conn: &Connection) -> Result<Option<ConcertLocation>, rusqlite::Error> {
-    let latitude = numeric_setting(conn, LOCATION_LAT_KEY)?;
-    let longitude = numeric_setting(conn, LOCATION_LON_KEY)?;
-    let name = non_empty_setting(conn, LOCATION_NAME_KEY)?.unwrap_or_default();
-    Ok(latitude
-        .zip(longitude)
-        .filter(|(lat, lon)| (-90.0..=90.0).contains(lat) && (-180.0..=180.0).contains(lon))
-        .map(|(latitude, longitude)| ConcertLocation {
-            latitude,
-            longitude,
-            name,
-        }))
+/// `O-4` (§8a): the location keys were hoisted to `crate::location` so
+/// Radio's "Near you" chip (`RAD-5`) can reuse the same consented value.
+/// Concerts still reads it through this name so its many call sites did not
+/// need to change — but there is only the one home for the data now.
+pub fn location(
+    conn: &Connection,
+) -> Result<Option<crate::location::AppLocation>, rusqlite::Error> {
+    crate::location::app_location(conn)
 }
 
 pub fn window_days(conn: &Connection) -> Result<i64, rusqlite::Error> {
