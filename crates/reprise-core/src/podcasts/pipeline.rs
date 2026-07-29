@@ -227,7 +227,7 @@ pub fn download_episode(
     match download {
         Ok(bytes) => {
             let Some(destination_path) = destination.to_str() else {
-                remove_completed_download(&destination);
+                remove_completed_download(episode_id, &destination);
                 tracing::warn!(episode_id, "podcast download path is not valid UTF-8");
                 let state = DownloadState::Failed {
                     message: "podcast download path is not valid UTF-8".to_owned(),
@@ -243,7 +243,7 @@ pub fn download_episode(
             ) {
                 Ok(persisted) => persisted,
                 Err(error) => {
-                    remove_completed_download(&destination);
+                    remove_completed_download(episode_id, &destination);
                     let state = DownloadState::Failed {
                         message: error.to_string(),
                     };
@@ -254,7 +254,7 @@ pub fn download_episode(
             let state = if persisted {
                 DownloadState::Downloaded { bytes }
             } else {
-                remove_completed_download(&destination);
+                remove_completed_download(episode_id, &destination);
                 DownloadState::Failed {
                     message: "podcast episode no longer exists".to_owned(),
                 }
@@ -500,11 +500,14 @@ fn refresh_to_root_with_download_progress(
     Ok(summary)
 }
 
-fn remove_completed_download(path: &Path) {
+fn remove_completed_download(episode_id: i64, path: &Path) {
     if let Err(error) = std::fs::remove_file(path) {
         if error.kind() != std::io::ErrorKind::NotFound {
+            // POD-13: never let a local filesystem path reach a normal-level
+            // log line — log the episode id, which identifies the row without
+            // exposing the on-disk layout.
             tracing::warn!(
-                path = %path.display(),
+                episode_id,
                 %error,
                 "could not remove unclaimed podcast download"
             );

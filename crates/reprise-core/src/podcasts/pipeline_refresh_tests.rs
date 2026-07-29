@@ -567,3 +567,35 @@ fn pod_13_a_failed_download_never_leaks_the_raw_provider_message_into_state_or_l
     }
     assert_eq!(message, "podcast source could not be reached");
 }
+
+/// `POD-13` covers more than provider errors: when a completed-but-unclaimed
+/// download (e.g. the episode was removed mid-download) can't be cleaned up,
+/// `remove_completed_download`'s failure log must not carry the local
+/// filesystem path either. Give it a directory in place of a file so
+/// `std::fs::remove_file` fails with a real (non-`NotFound`) error, and
+/// assert the tempdir's distinctive path component never reaches the log —
+/// only the episode id does. Putting `path = %path.display()` back in that
+/// `tracing::warn!` call turns this red.
+#[test]
+fn pod_13_a_failed_cleanup_never_leaks_the_local_path_into_logs() {
+    let directory = tempfile::tempdir().unwrap();
+    let unremovable = directory.path().join("unclaimed-podcast-download-marker");
+    std::fs::create_dir(&unremovable).unwrap();
+    let episode_id = 42;
+
+    let logs = CapturedLogs::default();
+    let subscriber = LogCapture(logs.clone());
+    tracing::subscriber::with_default(subscriber, || {
+        remove_completed_download(episode_id, &unremovable);
+    });
+
+    let logged = logs.joined();
+    assert!(
+        !logged.contains("unclaimed-podcast-download-marker"),
+        "cleanup-failure log leaked the local path: {logged}"
+    );
+    assert!(
+        logged.contains("42"),
+        "cleanup-failure log dropped the episode id: {logged}"
+    );
+}
