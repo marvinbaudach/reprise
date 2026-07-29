@@ -47,6 +47,30 @@ impl FeedFetcher for ProgressFeed {
     }
 }
 
+/// `MTP-44`/`POD-7`: the worker has no download executor of its own any
+/// more — every `pod_7_*`/`net_1a_*` test below drives
+/// `reprise_core::podcasts::pipeline::download_episode` directly, the exact
+/// function `PodcastsOperation::Download` calls in production, so a
+/// regression in the shared path is caught here rather than only in a
+/// GNOME-only copy that could drift from it.
+fn run_download(
+    conn: &rusqlite::Connection,
+    episode_id: i64,
+    download_root: &std::path::Path,
+    feed_fetcher: &dyn podcasts::pipeline::FeedFetcher,
+    youtube_fetcher: &dyn podcasts::pipeline::YoutubeFetcher,
+    emit: &mut dyn FnMut(DownloadState),
+) {
+    let _ = podcasts::pipeline::download_episode(
+        conn,
+        feed_fetcher,
+        youtube_fetcher,
+        download_root,
+        episode_id,
+        emit,
+    );
+}
+
 fn episode(conn: &rusqlite::Connection) -> i64 {
     // These tests exercise download-progress plumbing, not the NET-1a
     // gate itself (see the dedicated `net_1a_*` test below).
@@ -95,11 +119,11 @@ fn automatic_refresh_requires_every_gate() {
 #[test]
 fn plane_6b_youtube_downloads_use_the_opus_extension() {
     assert_eq!(
-        download_extension(podcasts::PodcastKind::Youtube, "ignored"),
+        podcasts::downloads::extension_for(podcasts::PodcastKind::Youtube, "ignored"),
         "opus"
     );
     assert_eq!(
-        download_extension(
+        podcasts::downloads::extension_for(
             podcasts::PodcastKind::Rss,
             "https://example.test/episode.mp3"
         ),
@@ -136,7 +160,7 @@ fn pod_7_download_worker_emits_ordered_monotone_states_and_persists_after_publis
     let directory = tempfile::tempdir().unwrap();
     let mut states = Vec::new();
 
-    download_episode_to_root(
+    run_download(
         &conn,
         episode_id,
         directory.path(),
@@ -182,7 +206,7 @@ fn pod_7_failed_worker_download_emits_failed_and_removes_partial() {
     let directory = tempfile::tempdir().unwrap();
     let mut states = Vec::new();
 
-    download_episode_to_root(
+    run_download(
         &conn,
         episode_id,
         directory.path(),
@@ -259,7 +283,7 @@ fn pod_7_episode_removed_during_download_leaves_no_persisted_or_orphaned_file() 
     };
     let mut states = Vec::new();
 
-    download_episode_to_root(
+    run_download(
         &conn,
         episode_id,
         directory.path(),
@@ -424,7 +448,7 @@ fn net_1a_download_is_blocked_when_its_source_kind_is_disabled() {
     let directory = tempfile::tempdir().unwrap();
     let mut states = Vec::new();
 
-    download_episode_to_root(
+    run_download(
         &conn,
         episode_id,
         directory.path(),

@@ -355,12 +355,7 @@ fn process_request(
             send_response(request, result);
         }
         PodcastsOperation::Download { episode_id } => {
-            download_episode(conn, episode_id, &mut |state| {
-                send_response(
-                    request,
-                    Ok(PodcastsWorkerResult::DownloadState { episode_id, state }),
-                );
-            });
+            download_episode(conn, request, episode_id);
         }
     }
 }
@@ -386,139 +381,46 @@ fn send_response(request: &PodcastsRequest, result: Result<PodcastsWorkerResult,
     }
 }
 
-fn download_episode(
-    conn: &rusqlite::Connection,
-    episode_id: i64,
-    emit: &mut dyn FnMut(podcasts::download_state::DownloadState),
-) {
+/// `MTP-44`/`POD-7`: the worker's only download executor is
+/// `reprise_core::podcasts::pipeline::download_episode` — the same body the
+/// refresh pipeline's auto-download branch and MCP's `music_manage_episodes`
+/// already call. There is no second episode lookup, `NET-1a` check, `.part`
+/// handling, or progress emission here; this just wires up the fetchers and
+/// forwards progress/terminal states onto the response channel.
+fn download_episode(conn: &rusqlite::Connection, request: &PodcastsRequest, episode_id: i64) {
     let config = match podcasts::config::load(conn) {
         Ok(config) => config,
         Err(error) => {
-            emit(podcasts::download_state::DownloadState::Queued);
-            emit(podcasts::download_state::DownloadState::Downloading {
-                received_bytes: 0,
-                total_bytes: None,
-            });
-            emit(podcasts::download_state::DownloadState::Failed {
-                message: error.to_string(),
-            });
+            send_response(request, Err(error.to_string()));
             return;
         }
     };
     let ytdlp = podcasts::ytdlp::YtDlp::discover(config.ytdlp_path.as_deref());
-    download_episode_to_root(
+    let download_root = podcasts::downloads::default_download_root();
+    let result = podcasts::pipeline::download_episode(
         conn,
-        episode_id,
-        &podcasts::downloads::default_download_root(),
         &podcasts::pipeline::HttpFeedFetcher,
         &ytdlp,
-        emit,
-    );
-}
-
-fn download_episode_to_root(
-    conn: &rusqlite::Connection,
-    episode_id: i64,
-    download_root: &std::path::Path,
-    feed_fetcher: &dyn podcasts::pipeline::FeedFetcher,
-    youtube_fetcher: &dyn podcasts::pipeline::YoutubeFetcher,
-    emit: &mut dyn FnMut(podcasts::download_state::DownloadState),
-) {
-    use podcasts::download_state::DownloadState;
-
-    emit(DownloadState::Queued);
-    emit(DownloadState::Downloading {
-        received_bytes: 0,
-        total_bytes: None,
-    });
-    let result = try_download_episode_to_root(
-        conn,
+        &download_root,
         episode_id,
-        download_root,
-        feed_fetcher,
-        youtube_fetcher,
-        emit,
-    );
-    match result {
-        Ok(bytes) => emit(DownloadState::Downloaded { bytes }),
-        Err(message) => emit(DownloadState::Failed { message }),
-    }
-}
-
-fn try_download_episode_to_root(
-    conn: &rusqlite::Connection,
-    episode_id: i64,
-    download_root: &std::path::Path,
-    feed_fetcher: &dyn podcasts::pipeline::FeedFetcher,
-    youtube_fetcher: &dyn podcasts::pipeline::YoutubeFetcher,
-    emit: &mut dyn FnMut(podcasts::download_state::DownloadState),
-) -> Result<u64, String> {
-    let episode = podcasts::store::episode(conn, episode_id)
-        .map_err(|error| error.to_string())?
-        .ok_or_else(|| "podcast episode no longer exists".to_owned())?;
-    // NET-1a: a download is a network entry point too — gate it per the
-    // episode's own source kind, not the blanket dispatch check above.
-    if !podcasts::config::source_network_allowed(conn, episode.kind)
-        .map_err(|error| error.to_string())?
-    {
-        return Err("this source is disabled".to_owned());
-    }
-    let subscription = podcasts::store::subscription(conn, episode.subscription_id)
-        .map_err(|error| error.to_string())?
-        .filter(|subscription| subscription.removed_at.is_none())
-        .ok_or_else(|| "podcast subscription no longer exists".to_owned())?;
-    let extension = download_extension(episode.kind, &episode.audio_url);
-    let destination = podcasts::downloads::download_path(
-        download_root,
-        &subscription.feed_url,
-        &episode.guid,
-        extension,
-    );
-    let mut state = podcasts::download_state::DownloadState::Downloading {
-        received_bytes: 0,
-        total_bytes: None,
-    };
-    let bytes = podcasts::downloads::download_atomically(&destination, |temporary| {
-        let mut on_progress = |progress: podcasts::download_state::DownloadProgress| {
-            state = podcasts::download_state::downloading(
-                &state,
-                progress.received_bytes,
-                progress.total_bytes,
+        &mut |state| {
+            send_response(
+                request,
+                Ok(PodcastsWorkerResult::DownloadState { episode_id, state }),
             );
-            emit(state.clone());
-        };
-        match episode.kind {
-            podcasts::PodcastKind::Rss => {
-                feed_fetcher.download_with_progress(&episode.audio_url, temporary, &mut on_progress)
-            }
-            podcasts::PodcastKind::Youtube => youtube_fetcher.download_with_progress(
-                &episode.audio_url,
-                temporary,
-                &mut on_progress,
-            ),
-        }
-    })
-    .map_err(|error| error.to_string())?;
-
-    let destination_path = destination.to_str().ok_or_else(|| {
-        let _ = std::fs::remove_file(&destination);
-        "podcast download path is not valid UTF-8".to_owned()
-    })?;
-    let persisted =
-        podcasts::downloads::persist_completed_if_active(conn, episode.id, destination_path, bytes)
-            .map_err(|error| {
-                let _ = std::fs::remove_file(&destination);
-                error.to_string()
-            })?;
-    if !persisted {
-        let _ = std::fs::remove_file(&destination);
-        return Err("podcast episode no longer exists".to_owned());
+        },
+    );
+    // `download_episode` only returns `Err` for a lookup failure that
+    // happens before it ever reaches its own `on_progress` calls (episode or
+    // subscription gone) — every other outcome, including `NET-1a` and a
+    // transport failure, already arrived above as a terminal `DownloadState`
+    // via the closure. `Err` is reported the same way the "database
+    // unavailable" branch above already is: the podcasts page and the
+    // device-sync preparation downloader both treat a plain `Err(String)`
+    // response as terminal already.
+    if let Err(error) = result {
+        send_response(request, Err(error.to_string()));
     }
-    Ok(bytes)
-}
-
-fn download_extension(kind: podcasts::PodcastKind, audio_url: &str) -> &'static str {
-    podcasts::downloads::extension_for(kind, audio_url)
 }
 
 #[cfg(test)]
