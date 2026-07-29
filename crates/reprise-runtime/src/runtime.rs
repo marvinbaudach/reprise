@@ -3,6 +3,7 @@
 use reprise_core::device_sync::machine::Event as DeviceEvent;
 use reprise_core::device_sync::MirrorPlan;
 use reprise_core::library::settings::{self, TrackTransition};
+use reprise_core::playback::SpectrumFrame;
 use reprise_core::playback::StreamEvent;
 use reprise_runtime_protocol::command::CommandOutcome;
 use reprise_runtime_protocol::device_run::DeviceRunSnapshot;
@@ -62,6 +63,12 @@ pub enum Command {
     /// Apply the equalizer and ReplayGain, and store them if the audio path
     /// accepts them.
     SetAudioEffects(EffectsRequest),
+    /// Start or stop being offered spectrum frames.
+    ///
+    /// Per client, not global: one surface drawing a visualizer must not
+    /// make every other client pay for the analysis, and a client that stops
+    /// looking must be able to stop it again.
+    WatchSpectrum(bool),
 }
 
 /// A device-run command. The device is addressed by its display name, the
@@ -82,7 +89,8 @@ impl Command {
             | Self::PlayTracks { .. }
             | Self::PlayExternal(_)
             | Self::RestoreSession { .. }
-            | Self::SetAudioEffects(_) => Capability::PlaybackControl,
+            | Self::SetAudioEffects(_)
+            | Self::WatchSpectrum(_) => Capability::PlaybackControl,
             Self::Job(_) => Capability::AiCreate,
             Self::Device(_) => Capability::DeviceSync,
         }
@@ -128,6 +136,11 @@ pub struct Runtime {
     transport: Transport,
     devices: DeviceRuns,
     effects: Effects,
+    /// What the backend was last told about the spectrum. Kept because the
+    /// watcher set changes from two directions — a command and a
+    /// disconnection — and comparing against the truth is the only way both
+    /// stay in step without either counting the other's transitions.
+    spectrum_enabled: bool,
     /// How many times the queue facet has observably changed.
     ///
     /// Kept here rather than in `Transport` on purpose: it has to count what
@@ -156,6 +169,7 @@ impl Runtime {
             transport: Transport::new(),
             devices: DeviceRuns::new(),
             effects,
+            spectrum_enabled: false,
             queue_revision: 0,
         };
         // The backend is told the transition mode once at startup, the way
@@ -205,7 +219,34 @@ impl Runtime {
     /// Drops a client and its undelivered events. Returns whether it was
     /// connected, so a repeated disconnect is a no-op rather than an error.
     pub fn disconnect(&mut self, client: ClientId) -> bool {
-        self.clients.disconnect(client)
+        let dropped = self.clients.disconnect(client);
+        // A client that was watching the spectrum does not get to send
+        // `WatchSpectrum(false)` on its way out — a crashed process and a
+        // dropped bus name send nothing at all. Without this the analysis
+        // keeps running on the audio hot path for nobody, for the rest of
+        // the session, and only the runtime exiting ever stops it.
+        if dropped {
+            self.sync_spectrum_switch();
+        }
+        dropped
+    }
+
+    /// Tells the backend whether anyone is still watching, if that has
+    /// changed since it was last told.
+    ///
+    /// One place, called from everywhere the watcher set can change. Two
+    /// places computing this is how the backend ends up disagreeing with the
+    /// runtime about whether it is analysing.
+    fn sync_spectrum_switch(&mut self) {
+        let watching = self.clients.anyone_watches_spectrum();
+        if watching == self.spectrum_enabled {
+            return;
+        }
+        if let Err(error) = self.ports.playback.set_spectrum_enabled(watching) {
+            tracing::warn!(%error, watching, "backend refused the spectrum switch");
+            return;
+        }
+        self.spectrum_enabled = watching;
     }
 
     /// The writer, for tests that assert on what a command persisted.
@@ -227,6 +268,17 @@ impl Runtime {
             device_runs: self.devices.snapshots(),
             jobs: jobs::snapshots(&self.conn)?,
         })
+    }
+
+    /// Takes the newest spectrum frame this client has not seen.
+    ///
+    /// Separate from [`Self::drain`] on purpose. Frames carry no sequence and
+    /// never enter a mailbox, so they cannot overflow one and cannot provoke
+    /// a resynchronize — an untaken frame is replaced by the next rather than
+    /// queued behind it. There is nothing to catch up on: a spectrum frame
+    /// describes an instant that has passed.
+    pub fn take_spectrum(&mut self, client: ClientId) -> Option<SpectrumFrame> {
+        self.clients.take_spectrum(client)
     }
 
     /// Hands a client its pending events and clears them.
@@ -341,6 +393,17 @@ impl Runtime {
                 self.publish_device_change(Some(client), device, before.as_ref());
                 result.map(|()| self.outcome(0))
             }
+            Command::WatchSpectrum(watching) => {
+                self.clients
+                    .watch_spectrum(client, *watching)
+                    .ok_or(RuntimeError::Unavailable(Unavailable::NotConnected))?;
+                // The switch follows the *total*, not this request. A second
+                // watcher arriving must not re-enable what is already
+                // running, and the first one leaving must not switch it off
+                // under the second.
+                self.sync_spectrum_switch();
+                Ok(self.outcome(0))
+            }
             Command::SetAudioEffects(requested) => {
                 let before = self.effects.snapshot();
                 let result = self
@@ -373,6 +436,13 @@ impl Runtime {
     pub fn on_player_event(&mut self, event: &StreamEvent) {
         if !self.transport.accepts_stream(event.generation) {
             tracing::debug!("dropped a report from a stream that has been replaced");
+            return;
+        }
+        // Before the staleness gate would matter and before any facet work:
+        // a frame is not state, so there is nothing to diff, nothing to
+        // sequence, and no reason to walk the transport for it.
+        if let reprise_core::playback::PlayerEvent::Spectrum(frame) = event.event {
+            self.clients.offer_spectrum(frame);
             return;
         }
         let before = self.transport_facets();
