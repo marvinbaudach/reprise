@@ -20,7 +20,8 @@ use super::podcasts_empty_state::{podcasts_empty_state_for, PodcastsEmptyState};
 use super::podcasts_filter_bar::PodcastsFilterBar;
 use super::podcasts_groups;
 use super::podcasts_presentation::{
-    active as filter_active, apply_filter, rendered_source_groups, sort_newest_first,
+    active as filter_active, apply_filter, library_summary, rendered_source_groups,
+    sort_newest_first,
 };
 use super::podcasts_removal::{
     download_commit_action, download_request_allowed, download_toggle_action, DownloadCommitAction,
@@ -365,8 +366,11 @@ impl PodcastsView {
             images_allowed,
         );
         self.download_widgets.replace(download_widgets);
+        // `G2` (design 6a): the header line is a projection over the
+        // unfiltered `groups`, not `rendered_groups` — it stays a stable
+        // library overview instead of jittering with the active filter.
         self.filter_bar
-            .set_context(unique(shows), filtered.len(), total);
+            .set_context(unique(shows), filtered.len(), library_summary(&groups));
         let subscriptions = groups.len();
         // `G1`/`NET-1a`: the same combined gate the sidebar already uses to
         // decide whether this source's row is even reachable — one

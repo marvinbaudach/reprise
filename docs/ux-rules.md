@@ -3325,6 +3325,14 @@ listening statistics.
   subscription ID, and within each channel, episodes are ordered by date
   descending with the status semantics from POD-1; the group row shows the
   total and unplayed counts, the newest episode, and the local data volume.
+  **Addendum (`G2`, design 6a):** above the grouped list, a page-level header
+  line ("4 shows · 41 episodes · 7 new") restates the same total/unplayed
+  definition as a library-wide sum — number of subscribed shows, total
+  episode count, and the unplayed ("new") count, all computed over the
+  unfiltered list so the header reads as a stable overview instead of
+  jittering with the active filter chip. The pure projection is
+  `podcasts_presentation::library_summary`; while a filter is active the
+  filter bar keeps showing "shown of total" instead, unchanged.
 - **POD-10** [active] [core] [gtk] — The YouTube channel page starts with at
   most the ten newest long-form entries from the official keyless UULF feed and
   keeps Shorts hidden by default. "Load more" extends that same channel once,
