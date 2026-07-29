@@ -307,20 +307,27 @@ pub(super) fn update_download_state(widgets: &DownloadRowWidgets, state: &Downlo
         widgets.status.remove(&child);
     }
     widgets.status.append(&download_status(state));
+    widgets.action.set_icon_name(match state {
+        DownloadState::Downloaded { .. } => "object-select-symbolic",
+        // `POD-13`: a distinct retry glyph, not the plain first-download
+        // icon — the action is "try again", not "download for the first
+        // time".
+        DownloadState::Failed { .. } => "view-refresh-symbolic",
+        _ => "folder-download-symbolic",
+    });
     widgets
         .action
-        .set_icon_name(if matches!(state, DownloadState::Downloaded { .. }) {
-            "object-select-symbolic"
-        } else {
-            "folder-download-symbolic"
-        });
-    widgets.action.set_tooltip_text(Some(&strings::text(
-        if matches!(state, DownloadState::Downloaded { .. }) {
-            strings::PODCAST_DELETE_DOWNLOAD
-        } else {
-            strings::PODCAST_DOWNLOAD
-        },
-    )));
+        .set_tooltip_text(Some(&strings::text(match state {
+            DownloadState::Downloaded { .. } => strings::PODCAST_DELETE_DOWNLOAD,
+            DownloadState::Failed { .. } => strings::PODCAST_RETRY_DOWNLOAD,
+            _ => strings::PODCAST_DOWNLOAD,
+        })));
+    // `POD-13`: a failed download must offer a clean retry — the action
+    // stays sensitive (only an in-flight Queued/Downloading state disables
+    // it), and clicking it re-enters `toggle_download`'s plain download
+    // branch (a Failed episode never has `downloaded_path` set), which runs
+    // the exact same queued/downloading/downloaded pipeline as a first
+    // attempt with a fresh provider call — never a cached first failure.
     widgets.action.set_sensitive(!matches!(
         state,
         DownloadState::Queued | DownloadState::Downloading { .. }
@@ -373,8 +380,21 @@ fn download_status(state: &DownloadState) -> gtk4::Widget {
             label.set_text(&strings::text(strings::PODCAST_DOWNLOAD_MISSING));
         }
         DownloadState::Failed { message } => {
+            // `POD-13`: the classified reason (never the raw provider
+            // error — `message` is already sanitized before it reaches
+            // here) is a second, always-visible label, not a tooltip. A
+            // tooltip is a pointer-only affordance: it never reaches a
+            // keyboard or touch user, which this repo's accessibility and
+            // input-parity gates both treat as a defect.
             label.set_text(&strings::text(strings::PODCAST_DOWNLOAD_FAILED));
-            label.set_tooltip_text(Some(message));
+            let reason = gtk4::Label::new(Some(message));
+            reason.set_xalign(1.0);
+            reason.set_wrap(true);
+            reason.set_wrap_mode(gtk4::pango::WrapMode::WordChar);
+            reason.set_justify(gtk4::Justification::Right);
+            reason.add_css_class("caption");
+            reason.add_css_class("dim-label");
+            root.append(&reason);
         }
     }
     root.prepend(&label);
@@ -501,5 +521,65 @@ mod tests {
             .and_downcast::<gtk4::Stack>()
             .expect("source image stack");
         assert_eq!(artwork.visible_child_name().as_deref(), Some("fallback"));
+    }
+
+    /// `POD-13`: the classified reason must be a second, always-visible
+    /// label sitting next to the "Download failed" heading — not hidden
+    /// behind `set_tooltip_text`, which a keyboard or touch user can never
+    /// trigger.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn pod_13_a_failed_download_shows_its_classified_reason_without_hovering() {
+        gtk4::init().unwrap();
+        let state = DownloadState::Failed {
+            message: "podcast source could not be reached".into(),
+        };
+
+        let status = download_status(&state).downcast::<gtk4::Box>().unwrap();
+
+        let heading = status
+            .first_child()
+            .and_downcast::<gtk4::Label>()
+            .expect("the fixed 'Download failed' heading");
+        assert_eq!(
+            heading.text(),
+            strings::text(strings::PODCAST_DOWNLOAD_FAILED)
+        );
+
+        let reason = heading
+            .next_sibling()
+            .and_downcast::<gtk4::Label>()
+            .expect("the classified reason must be a second visible label");
+        assert_eq!(reason.text(), "podcast source could not be reached");
+    }
+
+    /// `POD-13`: the retry contract must be reachable and distinguishable —
+    /// the action stays clickable (not stuck disabled) and its affordance
+    /// reads as "try again" rather than the plain first-download button.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn pod_13_a_failed_download_offers_a_sensitive_retry_action() {
+        gtk4::init().unwrap();
+        let widgets = DownloadRowWidgets {
+            status: gtk4::Box::new(gtk4::Orientation::Vertical, 0),
+            action: gtk4::Button::new(),
+        };
+
+        update_download_state(
+            &widgets,
+            &DownloadState::Failed {
+                message: "podcast source could not be reached".into(),
+            },
+        );
+
+        assert!(widgets.action.is_sensitive());
+        assert_eq!(
+            widgets.action.icon_name().as_deref(),
+            Some("view-refresh-symbolic")
+        );
+        assert_eq!(
+            widgets.action.tooltip_text().as_deref(),
+            Some(strings::text(strings::PODCAST_RETRY_DOWNLOAD)).as_deref()
+        );
     }
 }

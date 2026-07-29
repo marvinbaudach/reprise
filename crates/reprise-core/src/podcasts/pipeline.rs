@@ -263,9 +263,15 @@ pub fn download_episode(
             Ok(state)
         }
         Err(error) => {
-            tracing::warn!(episode_id, %error, "podcast download failed");
+            // POD-13: never let the raw provider error reach the UI or a
+            // normal-level log line — it can echo the request URL (an
+            // episode's `audio_url` may carry a private per-subscriber
+            // token, `SRC-5`) or, for yt-dlp, a local download path. Log and
+            // store only the classified reason.
+            let reason = error.classify();
+            tracing::warn!(episode_id, reason, "podcast download failed");
             let state = DownloadState::Failed {
-                message: error.to_string(),
+                message: reason.to_owned(),
             };
             on_progress(state.clone());
             Ok(state)
