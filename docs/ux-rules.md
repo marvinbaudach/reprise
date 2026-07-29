@@ -731,6 +731,16 @@ human. Rationale for changes lives in the git history.
   so a missing connection always wins over policy. Only the planned state
   changes the primary sync button to "Download & sync"; every other state,
   including offered, leaves it as a plain "Sync now".
+- **MTP-44** [active] [gtk] — Device-sync preparation (7f, E9) downloads a
+  `wanted_on_device` episode (`MTP-40`) by giving the existing podcast
+  download manager a priority lane, never a second download path: a
+  high-priority request is served ahead of any ordinary request already
+  queued in front of it, but both still run through the one
+  `PodcastsOperation::Download` and the one worker thread. The priority lane
+  is only a queue in front of that single executor, not an alternate one.
+  Priority work never permanently starves the ordinary lane — once the
+  priority lane runs dry, the worker resumes ordinary requests exactly where
+  it left off.
 
 ## F. Settings & modals
 

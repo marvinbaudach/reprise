@@ -469,3 +469,103 @@ fn enabled_subscriber_can_register_another_subscriber_during_notification() {
     assert_eq!(primary_calls.borrow().as_slice(), [false, true]);
     assert_eq!(secondary_calls.borrow().as_slice(), [true]);
 }
+
+fn priority_test_request(episode_id: i64, priority: PodcastsPriority) -> PodcastsRequest {
+    let (response, _receiver) = podcasts_response_channel();
+    PodcastsRequest {
+        generation: 0,
+        operation: PodcastsOperation::Download { episode_id },
+        priority,
+        response,
+    }
+}
+
+/// MTP-44: the download manager keeps exactly one worker and one
+/// `PodcastsOperation::Download`, but a high-priority request (device-sync
+/// preparation) must be served ahead of ordinary work already queued in
+/// front of it — not just ahead of work queued *after* it, which a plain
+/// single FIFO channel would already give for free and would prove nothing.
+///
+/// This drives `recv_prefer_priority`, the exact function the worker thread
+/// blocks on, rather than reimplementing the ordering rule in the test: an
+/// ordinary request is enqueued first, a priority one second, and the
+/// priority request must still come out first. Deleting the priority
+/// handling (e.g. falling back to a single queue, or checking the ordinary
+/// channel first) turns this red, because it would return the
+/// already-queued ordinary request instead.
+#[test]
+fn mtp_44_priority_download_is_served_before_an_earlier_ordinary_one() {
+    let (ordinary_sender, ordinary_receiver) = async_channel::unbounded::<PodcastsRequest>();
+    let (priority_sender, priority_receiver) = async_channel::unbounded::<PodcastsRequest>();
+
+    ordinary_sender
+        .try_send(priority_test_request(1, PodcastsPriority::Normal))
+        .unwrap();
+    priority_sender
+        .try_send(priority_test_request(2, PodcastsPriority::High))
+        .unwrap();
+
+    let first = recv_prefer_priority(&priority_receiver, &ordinary_receiver).unwrap();
+    assert_eq!(
+        first.operation,
+        PodcastsOperation::Download { episode_id: 2 }
+    );
+
+    let second = recv_prefer_priority(&priority_receiver, &ordinary_receiver).unwrap();
+    assert_eq!(
+        second.operation,
+        PodcastsOperation::Download { episode_id: 1 }
+    );
+}
+
+/// The priority lane is not a one-shot head start: with several priority
+/// requests queued, every one of them must drain before the worker ever
+/// looks at the ordinary lane, not just the first.
+#[test]
+fn mtp_44_priority_lane_fully_drains_before_the_ordinary_lane_resumes() {
+    let (ordinary_sender, ordinary_receiver) = async_channel::unbounded::<PodcastsRequest>();
+    let (priority_sender, priority_receiver) = async_channel::unbounded::<PodcastsRequest>();
+
+    ordinary_sender
+        .try_send(priority_test_request(1, PodcastsPriority::Normal))
+        .unwrap();
+    priority_sender
+        .try_send(priority_test_request(2, PodcastsPriority::High))
+        .unwrap();
+    priority_sender
+        .try_send(priority_test_request(3, PodcastsPriority::High))
+        .unwrap();
+
+    let served: Vec<i64> = (0..3)
+        .map(|_| {
+            let request = recv_prefer_priority(&priority_receiver, &ordinary_receiver).unwrap();
+            match request.operation {
+                PodcastsOperation::Download { episode_id } => episode_id,
+                other => panic!("unexpected operation {other:?}"),
+            }
+        })
+        .collect();
+
+    assert_eq!(served, [2, 3, 1]);
+}
+
+/// A closed priority channel must not spin the worker: once it is closed,
+/// `recv_prefer_priority` has to fall back to plainly blocking on the
+/// ordinary channel instead of repeatedly observing the closed priority
+/// channel as immediately "ready".
+#[test]
+fn mtp_44_closed_priority_lane_falls_back_to_the_ordinary_channel_without_spinning() {
+    let (ordinary_sender, ordinary_receiver) = async_channel::unbounded::<PodcastsRequest>();
+    let (priority_sender, priority_receiver) = async_channel::unbounded::<PodcastsRequest>();
+    priority_sender.close();
+
+    ordinary_sender
+        .try_send(priority_test_request(1, PodcastsPriority::Normal))
+        .unwrap();
+
+    let served = recv_prefer_priority(&priority_receiver, &ordinary_receiver).unwrap();
+    assert_eq!(
+        served.operation,
+        PodcastsOperation::Download { episode_id: 1 }
+    );
+}

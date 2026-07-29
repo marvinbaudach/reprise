@@ -11,6 +11,7 @@ impl PodcastsView {
         let queued = self.runtime.request(PodcastsRequest {
             generation,
             operation,
+            priority: PodcastsPriority::Normal,
             response,
         });
         if !queued {
@@ -82,6 +83,7 @@ impl PodcastsView {
         if !self.runtime.request(PodcastsRequest {
             generation,
             operation,
+            priority: PodcastsPriority::Normal,
             response,
         }) {
             return false;
