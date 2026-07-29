@@ -32,13 +32,21 @@
 //!
 //! ## What stays inert
 //!
-//! This module has no database access and persists nothing. The per-channel
-//! YouTube toggle ([`YoutubeChannelToggle`]) is plain input data here; how it
-//! gets persisted and who feeds it from the GUI is out of this task's scope
-//! (E4/UI work). `podcasts::phone_sync` — the real per-device RSS selection
-//! table backing `POD-8` — is untouched: this module never calls it and
-//! never gates the real transfer path, so nothing here makes a YouTube
-//! episode actually reach a device.
+//! This module has no database access and persists nothing. The live
+//! per-device pipeline (`reprise_gnome::device_sync_compact::
+//! recompute_delta_silent`) calls [`select_episodes`] over
+//! `podcasts::query_selection_candidates_for_device`'s facts and only feeds
+//! `EpisodeSelectionResult::ready` into `podcasts::build_plan` — that is
+//! what actually gates a podcast/YouTube episode reaching a device (`MTP-21`).
+//! What remains unbuilt is design 6b's per-channel toggle *UI*: the
+//! [`YoutubeChannelToggle`]/[`summarize_youtube_selection`] pair stays plain
+//! input data with no persisted backing or GTK surface yet, and YouTube's
+//! own "latest N per channel" cap has no persisted value either — the live
+//! pipeline calls [`select_episodes`] with an unbounded `latest` until that
+//! lands (`MTP-36`, `[geplant]`). `podcasts::phone_sync` (`POD-12`) already
+//! decides which shows/channels are enabled for a device; that join is this
+//! module's source for `EpisodeSelectionRule`'s `enabled_shows`/
+//! `enabled_channels`, not a second selection surface layered on top.
 
 use std::collections::{HashMap, HashSet};
 

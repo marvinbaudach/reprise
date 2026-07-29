@@ -503,6 +503,23 @@ mod tests {
         );
     }
 
+    /// `selection_summary_text` is intentionally a pure, stateless copy
+    /// function for these two kinds (see its doc comment) — it has no
+    /// selection engine to call, so it cannot fail on selection *behaviour*
+    /// by construction; this stays a copy test, not a rule-named one. The
+    /// actual `MTP-21` behaviour this label describes — an enabled show's
+    /// unplayed downloaded episodes are copied, played ones are not, and a
+    /// wanted-but-missing one counts as waiting — is exercised end to end
+    /// (DB through `select_episodes` through `sync_now`) by
+    /// `device_sync_selection_tests::mtp_21_a_played_downloaded_episode_is_not_copied_while_an_unplayed_one_from_the_same_show_is`
+    /// and `mtp_21_a_wanted_missing_episode_counts_as_waiting_and_is_never_copyable`,
+    /// plus `device_sync_auto_start_tests::mtp_30_a_waiting_only_podcast_balance_would_still_trigger_automatic_start`
+    /// for the balance/auto-start tie-in. Before those existed, this test
+    /// was the only "MTP-21" coverage the label text had, and it would have
+    /// stayed green even if `select_episodes` were never wired in at all —
+    /// that gap is what let the live pipeline skip the played filter and
+    /// hard-code `files_waiting_for_download` to `0` while this test kept
+    /// passing.
     #[test]
     fn selection_summary_names_the_static_global_rule_for_youtube_and_podcasts() {
         assert_eq!(

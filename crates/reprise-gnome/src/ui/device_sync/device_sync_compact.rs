@@ -1,6 +1,8 @@
+use std::collections::HashSet;
+
 use reprise_core::device_sync::podcasts::{
-    build_plan as build_podcast_plan, query_candidates_for_device, PodcastDeviceFile,
-    PodcastSyncSource,
+    build_plan as build_podcast_plan, query_candidates_for_device,
+    query_selection_candidates_for_device, PodcastDeviceFile, PodcastSyncSource,
 };
 use reprise_core::device_sync::settings::{
     load_device_files, load_device_playlists, resolve_selection_track_ids, save_settings,
@@ -8,7 +10,9 @@ use reprise_core::device_sync::settings::{
 use reprise_core::device_sync::targets::{load_target, save_target};
 use reprise_core::device_sync::{
     load_mirror_playlist_snapshots, load_or_create_targets, project_storage, project_sync_page,
-    DeviceSelection, SelectionSource, SyncPageInput, SyncTarget, SyncTargetKind, TransferProfile,
+    select_episodes, DeviceSelection, EpisodeSelectionCandidate, EpisodeSelectionResult,
+    EpisodeSelectionRule, SelectionSource, SyncPageInput, SyncTarget, SyncTargetKind,
+    TransferProfile,
 };
 
 use super::*;
@@ -190,7 +194,15 @@ impl DeviceSyncRuntime {
             DeviceSelection::Sources(sources) => sources.clone(),
             DeviceSelection::EntireLibrary => Vec::new(),
         };
-        let (mut projection, podcast_plan, youtube_plan, managed_track_count, targets) = {
+        let (
+            mut projection,
+            podcast_plan,
+            youtube_plan,
+            podcast_waiting,
+            youtube_waiting,
+            managed_track_count,
+            targets,
+        ) = {
             let conn = self.conn.borrow();
             let files = load_device_files(&conn, device_id).map_err(|error| error.to_string())?;
             let managed_track_count = files.len();
@@ -217,6 +229,24 @@ impl DeviceSyncRuntime {
             // eligible for phone sync (`POD-12`).
             let candidates =
                 query_candidates_for_device(&conn, device_id).map_err(|error| error.to_string())?;
+            // `MTP-21`: `select_episodes` — not the raw downloaded-file
+            // query above — decides which episodes are actually wanted
+            // (unplayed RSS episodes, latest-per-channel YouTube episodes)
+            // and splits wanted-but-missing ones into `waiting` instead of
+            // letting them vanish from the balance (`MTP-20`).
+            let selection_candidates = query_selection_candidates_for_device(&conn, device_id)
+                .map_err(|error| error.to_string())?;
+            let (rss_selection, youtube_selection) = plan_episode_selection(&selection_candidates);
+            let ready_ids = rss_selection
+                .ready
+                .iter()
+                .chain(youtube_selection.ready.iter())
+                .copied()
+                .collect::<HashSet<_>>();
+            let candidates = candidates
+                .into_iter()
+                .filter(|candidate| ready_ids.contains(&candidate.episode_id))
+                .collect::<Vec<_>>();
             let podcast_plan = target_podcast_plan(
                 &targets,
                 SyncTargetKind::PodcastEpisodes,
@@ -237,6 +267,8 @@ impl DeviceSyncRuntime {
                 projection,
                 podcast_plan,
                 youtube_plan,
+                rss_selection.waiting.len(),
+                youtube_selection.waiting.len(),
                 managed_track_count,
                 targets,
             )
@@ -264,6 +296,8 @@ impl DeviceSyncRuntime {
             device.mirror_plan = projection.plan;
             device.podcast_plan = podcast_plan;
             device.youtube_plan = youtube_plan;
+            device.podcast_waiting = podcast_waiting;
+            device.youtube_waiting = youtube_waiting;
             device.targets = targets;
             device.page = projection.page;
             device.sync_phase = PlannedSyncPhase::Idle;
@@ -324,4 +358,48 @@ fn as_podcast_device_files(files: &[ManagedDeviceFile]) -> Vec<PodcastDeviceFile
             size_bytes: file.size_bytes,
         })
         .collect()
+}
+
+/// `MTP-21`: runs each `PodcastSyncSource`'s own selection rule
+/// (`UnplayedDownloadsOnly` for RSS, `LatestPerChannel` for YouTube) over
+/// `query_selection_candidates_for_device`'s combined candidate list, one
+/// rule per source. `enabled_shows`/`enabled_channels` are simply every
+/// distinct `group_id` present in that source's candidates — the DB query
+/// already scoped candidates to shows/channels selected for this device
+/// (`podcast_subscription_devices`, `POD-12`), so nothing here re-derives
+/// that scoping.
+///
+/// YouTube's `latest` is `usize::MAX`: design 6b's per-channel episode cap
+/// has no persisted value yet (`MTP-36`, `[geplant]`), so until that lands
+/// this only narrows YouTube's wanted set by enabled-channel membership and
+/// local availability — the same, already-uncapped-by-count behaviour the
+/// live pipeline had before this change.
+fn plan_episode_selection(
+    candidates: &[(PodcastSyncSource, EpisodeSelectionCandidate)],
+) -> (EpisodeSelectionResult, EpisodeSelectionResult) {
+    let by_source = |source: PodcastSyncSource| {
+        candidates
+            .iter()
+            .filter(move |(candidate_source, _)| *candidate_source == source)
+            .map(|(_, candidate)| candidate.clone())
+            .collect::<Vec<_>>()
+    };
+    let rss = by_source(PodcastSyncSource::Rss);
+    let youtube = by_source(PodcastSyncSource::Youtube);
+    let rss_shows = rss.iter().map(|candidate| candidate.group_id).collect();
+    let youtube_channels = youtube.iter().map(|candidate| candidate.group_id).collect();
+    let rss_result = select_episodes(
+        &rss,
+        &EpisodeSelectionRule::UnplayedDownloadsOnly {
+            enabled_shows: rss_shows,
+        },
+    );
+    let youtube_result = select_episodes(
+        &youtube,
+        &EpisodeSelectionRule::LatestPerChannel {
+            enabled_channels: youtube_channels,
+            latest: usize::MAX,
+        },
+    );
+    (rss_result, youtube_result)
 }

@@ -132,6 +132,15 @@ pub fn query_candidates_for_device(
     Ok(candidates)
 }
 
+// `MTP-21`: `query_selection_candidates_for_device` lives in its own sibling
+// module (`podcasts_selection.rs`) purely to keep this file under the
+// project's 800-line file-size rule — it is still conceptually part of this
+// module's public query surface, so it is re-exported below rather than
+// requiring callers to reach into `podcasts::podcasts_selection`.
+#[path = "podcasts_selection.rs"]
+mod podcasts_selection;
+pub use podcasts_selection::query_selection_candidates_for_device;
+
 fn source_from_kind(kind: &str) -> Option<PodcastSyncSource> {
     match kind {
         "rss" => Some(PodcastSyncSource::Rss),

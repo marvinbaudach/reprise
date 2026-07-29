@@ -106,6 +106,72 @@ fn mtp_30_stays_silent_when_the_connect_scan_fails() {
     });
 }
 
+/// `MTP-21`/`MTP-30`: before `MTP-21`'s live wiring fix,
+/// `files_waiting_for_download` was hard-coded to `0`, so a device with
+/// only a wanted-but-missing podcast episode (`wanted_on_device`, `MTP-20`)
+/// pending — nothing to copy, nothing to remove — produced an all-zero
+/// `SyncBalance` that read as "nothing to do". `should_auto_start` (and,
+/// downstream, the sidebar's "Up to date" reading, `MTP-29`) must instead
+/// see this as real pending work.
+#[test]
+fn mtp_30_a_waiting_only_podcast_balance_would_still_trigger_automatic_start() {
+    run(async {
+        let (_downloads, conn) = fixture();
+        conn.borrow()
+            .execute(
+                "INSERT INTO podcast_subscriptions
+                 (id, kind, feed_url, title, auto_download, sync_to_phone, added_at)
+                 VALUES (10, 'rss', 'https://example.test/rss', 'RSS Show', 0, 1, 1)",
+                [],
+            )
+            .unwrap();
+        conn.borrow()
+            .execute(
+                "INSERT INTO podcast_subscription_devices (subscription_id, device_id)
+                 VALUES (10, 'a')",
+                [],
+            )
+            .unwrap();
+        conn.borrow()
+            .execute(
+                "INSERT INTO podcast_episodes
+                 (id, subscription_id, guid, title, audio_url, wanted_on_device, first_seen_at)
+                 VALUES (100, 10, 'rss-100', 'Wanted', 'https://example.test/w.mp3', 1, 1)",
+                [],
+            )
+            .unwrap();
+        disable_auto_start(&conn, "a");
+
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        settle().await;
+
+        let device = runtime.devices().remove(0);
+        let balance = reprise_core::device_sync::aggregate_balance(&device.category_readings);
+        assert_eq!(balance.files_to_copy, 0, "nothing is downloaded yet");
+        assert_eq!(
+            balance.files_waiting_for_download, 1,
+            "the wanted-but-missing episode must reach the balance, not vanish from it"
+        );
+
+        let facts = reprise_core::device_sync::AutoStartFacts {
+            just_connected: true,
+            sync_automatically: true,
+            scan_ok: device.scan_error.is_none(),
+            planning_ok: true,
+            device_connected: device.connected,
+            device_busy: false,
+            balance,
+        };
+        assert!(
+            reprise_core::device_sync::should_auto_start(facts),
+            "a waiting episode is pending work — before this fix, an all-zero balance would \
+             have made `should_auto_start` refuse and the device would read 'Up to date' with \
+             work genuinely pending"
+        );
+    });
+}
+
 #[test]
 fn mtp_30_a_manual_refresh_never_retriggers_it() {
     run(async {

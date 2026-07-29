@@ -477,5 +477,7 @@ mod podcast_removal_tests;
 mod readback_tests;
 #[path = "device_sync_safety_tests.rs"]
 mod safety_tests;
+#[path = "device_sync_selection_tests.rs"]
+mod selection_tests;
 #[path = "device_sync_transfer_profile_tests.rs"]
 mod transfer_profile_tests;

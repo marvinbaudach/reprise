@@ -68,6 +68,13 @@ struct DeviceState {
     mirror_plan: MirrorPlan,
     podcast_plan: reprise_core::device_sync::podcasts::PodcastSyncPlan,
     youtube_plan: reprise_core::device_sync::podcasts::PodcastSyncPlan,
+    /// `MTP-21`/`MTP-20`: podcast/YouTube episodes wanted for this device
+    /// but not yet downloaded, from the same `select_episodes` pass that
+    /// produced `podcast_plan`/`youtube_plan` — fed into `CategoryDiff`'s
+    /// `files_waiting_for_download` (`MTP-22`) instead of the previous
+    /// hard-coded `0`.
+    podcast_waiting: usize,
+    youtube_waiting: usize,
     page: SyncPageState,
 }
 
@@ -99,6 +106,8 @@ impl DeviceState {
             mirror_plan: MirrorPlan::default(),
             podcast_plan: reprise_core::device_sync::podcasts::PodcastSyncPlan::default(),
             youtube_plan: reprise_core::device_sync::podcasts::PodcastSyncPlan::default(),
+            podcast_waiting: 0,
+            youtube_waiting: 0,
             page: SyncPageState::default(),
         }
     }
@@ -119,12 +128,10 @@ impl DeviceState {
         // (`SyncTargetKind::ALL` order: Playlists, YoutubeAudio,
         // PodcastEpisodes), each already computed by
         // `recompute_delta_silent` — reused here, not recomputed.
-        // `files_waiting_for_download` stays 0: the selection engine that
-        // would populate it (`selection::select_episodes`, `MTP-20`/
-        // `MTP-21`) is not wired into the live per-device podcast/YouTube
-        // query pipeline yet (`podcasts::query_candidates_for_device` only
-        // ever returns already-downloaded episodes) — future UI work, not
-        // this one.
+        // `files_waiting_for_download` reads `podcast_waiting`/
+        // `youtube_waiting`, both populated by `selection::select_episodes`
+        // (`MTP-20`/`MTP-21`) in `recompute_delta_silent` from
+        // `podcasts::query_selection_candidates_for_device`.
         let category_readings = self.category_readings();
         let device_bytes = [
             category_bytes(&self.managed_files),
@@ -176,8 +183,8 @@ impl DeviceState {
     fn category_readings(&self) -> [CategoryReading; 3] {
         let category_diffs = [
             CategoryDiff::from_mirror_plan(&self.mirror_plan),
-            CategoryDiff::from_podcast_plan(&self.youtube_plan, 0),
-            CategoryDiff::from_podcast_plan(&self.podcast_plan, 0),
+            CategoryDiff::from_podcast_plan(&self.youtube_plan, self.youtube_waiting),
+            CategoryDiff::from_podcast_plan(&self.podcast_plan, self.podcast_waiting),
         ];
         std::array::from_fn(|i| {
             project_device_category_reading(&self.targets[i], category_diffs[i])

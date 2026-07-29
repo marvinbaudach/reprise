@@ -623,6 +623,20 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   schließen. Ein verweigertes Speichern darf nie wie ein erfolgreiches
   aussehen; die gewählte Auswahl bleibt sichtbar, damit nichts
   stillschweigend verworfen wird.
+- **MTP-36** [geplant] [core] — <!-- REVIEW: Regelvorschlag -->
+  `MTP-21`s YouTube-Regel „neueste N Episoden je aktiviertem Kanal,
+  unabhängig vom Downloadzustand" nennt N, klärt aber nicht, wo dieser Wert
+  konfiguriert und gespeichert wird — Design 6b's Kanal-Toggle-Oberfläche
+  ist noch nicht gebaut (`selection.rs`s Moduldoc). Bis diese Regel
+  entschieden ist, behandelt die Live-Pipeline
+  (`device_sync_compact::recompute_delta_silent`, E2/`MTP-21`-Verdrahtung)
+  N als unbegrenzt (`EpisodeSelectionRule::LatestPerChannel { latest:
+  usize::MAX, .. }`) — das entspricht dem bisherigen, nicht nach Episodenzahl
+  gedeckelten Kopierverhalten und begrenzt die Sollmenge stattdessen nur über
+  `MTP-21`s Kandidatengrenze (heruntergeladene Episoden plus per
+  `wanted_on_device`, `MTP-20`, explizit gewollte fehlende). Offen: wo N je
+  Kanal persistiert wird (pro Gerät? pro Kanal, geräteübergreifend?), welchen
+  Default es bekommt, und wie 6b's Oberfläche es setzt.
 
 ## F. Einstellungen & Modale
 
