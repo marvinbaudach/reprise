@@ -53,6 +53,7 @@ pub mod jobs;
 pub mod playback;
 pub mod queue;
 pub mod runtime;
+pub mod session;
 
 pub use endpoint::{BUS_NAME, INTERFACE_NAME, OBJECT_PATH};
 
@@ -112,7 +113,10 @@ impl std::fmt::Display for ProtocolVersion {
 /// field replaced a separate `CategorySnapshot` D-Bus method, which the tuple
 /// encoding had forced into existence only because zvariant stops deriving
 /// tuple impls past a fixed arity — a limit named dictionaries do not have.
-pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 3, minor: 1 };
+/// Minor 2 adds [`session::RestoreSession`], so a surface can put back the
+/// queue it saved without also starting it — additive, since an older
+/// runtime simply has no method for it.
+pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 3, minor: 2 };
 
 #[cfg(test)]
 mod tests {
@@ -146,6 +150,6 @@ mod tests {
     #[test]
     fn the_shipped_version_is_compatible_with_itself() {
         assert!(PROTOCOL_VERSION.is_compatible_with(PROTOCOL_VERSION));
-        assert_eq!(PROTOCOL_VERSION.to_string(), "3.1");
+        assert_eq!(PROTOCOL_VERSION.to_string(), "3.2");
     }
 }

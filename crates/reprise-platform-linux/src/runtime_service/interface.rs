@@ -18,6 +18,7 @@ use reprise_runtime_protocol::jobs::{JobCommand, JobSnapshot};
 use reprise_runtime_protocol::playback::{ExternalMedia, PlaybackCommand, PlaybackSnapshot};
 use reprise_runtime_protocol::queue::{QueueCommand, QueueSnapshot};
 use reprise_runtime_protocol::runtime::RuntimeSnapshot;
+use reprise_runtime_protocol::session::RestoredQueue;
 use reprise_runtime_protocol::ProtocolVersion;
 use zbus::message::Header;
 use zbus::object_server::SignalEmitter;
@@ -302,6 +303,18 @@ impl Reprise1 {
         #[zbus(header)] header: Header<'_>,
     ) -> Result<CommandOutcome, Error> {
         self.command(&header, Command::Queue(QueueCommand::Clear))
+            .await
+    }
+
+    /// Puts back a queue a surface saved when it last closed, without
+    /// starting it. Opening the application is not a request to play.
+    async fn restore_session(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        context: RestoredQueue,
+        play_next: Vec<i64>,
+    ) -> Result<CommandOutcome, Error> {
+        self.command(&header, Command::RestoreSession { context, play_next })
             .await
     }
 
