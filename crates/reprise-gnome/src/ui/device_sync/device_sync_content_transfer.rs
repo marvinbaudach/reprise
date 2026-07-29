@@ -121,43 +121,56 @@ pub(super) async fn run_content_phase(
         &mut copied,
     )
     .await;
-    run_content_transfers(
-        runtime,
-        work,
-        &youtube_path,
-        work.youtube_storage,
-        &youtube.to_copy,
-        podcasts.to_copy.len(),
-        copy_total,
-        completed,
-        &mut failures,
-        &mut copied,
-    )
-    .await;
+    // A failed (or cancelled) podcast copy must stop everything after it:
+    // the second copy target and both removal phases are additive writes and
+    // deletes on the *same* device, and letting them run past a failure is
+    // how a cap-eviction removal (`MTP-39`/`MTP-25`, oldest-first) can delete
+    // the resident episode a failed copy was meant to replace — the device
+    // loses a file and gains nothing.
+    if may_continue(work, &failures) {
+        run_content_transfers(
+            runtime,
+            work,
+            &youtube_path,
+            work.youtube_storage,
+            &youtube.to_copy,
+            podcasts.to_copy.len(),
+            copy_total,
+            completed,
+            &mut failures,
+            &mut copied,
+        )
+        .await;
+    }
 
     let remove_total = podcasts.to_remove.len() + youtube.to_remove.len();
-    let mut removed = run_content_removals(
-        runtime,
-        work,
-        &podcasts_path,
-        work.podcasts_storage,
-        &podcasts.to_remove,
-        0,
-        remove_total,
-        &mut failures,
-    )
-    .await;
-    removed += run_content_removals(
-        runtime,
-        work,
-        &youtube_path,
-        work.youtube_storage,
-        &youtube.to_remove,
-        podcasts.to_remove.len(),
-        remove_total,
-        &mut failures,
-    )
-    .await;
+    let mut removed = 0_usize;
+    if may_continue(work, &failures) {
+        removed = run_content_removals(
+            runtime,
+            work,
+            &podcasts_path,
+            work.podcasts_storage,
+            &podcasts.to_remove,
+            0,
+            remove_total,
+            &mut failures,
+        )
+        .await;
+        if may_continue(work, &failures) {
+            removed += run_content_removals(
+                runtime,
+                work,
+                &youtube_path,
+                work.youtube_storage,
+                &youtube.to_remove,
+                podcasts.to_remove.len(),
+                remove_total,
+                &mut failures,
+            )
+            .await;
+        }
+    }
 
     // The log counts what actually moved, so the content targets report
     // themselves the way the mirror's effects do (`MTP-20`) — each copy with
@@ -169,7 +182,16 @@ pub(super) async fn run_content_phase(
         work.log.deleted();
     }
 
-    if failures.is_empty() {
+    // Cancelling mid-phase only breaks the inner `for` loops above — it
+    // never records a failure, since a cancellation is not a fault. Without
+    // this check the phase would fall through to `failures.is_empty()` and
+    // hand back the mirror's original `Completed` outcome, reporting a
+    // cancelled run as a success: the log would close clean, reconnect
+    // resumability would clear, and whatever the content phase never got to
+    // do would be silently forgotten.
+    if work.cancelled.load(Ordering::SeqCst) {
+        SyncOutcome::Cancelled
+    } else if failures.is_empty() {
         outcome
     } else {
         SyncOutcome::Failed {
@@ -177,6 +199,15 @@ pub(super) async fn run_content_phase(
             failed_tracks: failures,
         }
     }
+}
+
+/// Whether the content phase should still be running its next step: neither
+/// cancelled nor already carrying a failure from an earlier one. Shared by
+/// every gate between the two copy targets and the two removal targets so
+/// the four content-phase steps stop as one unit rather than three separate
+/// unguarded continuations (`MTP-23`).
+fn may_continue(work: &PlannedWork, failures: &[i64]) -> bool {
+    !work.cancelled.load(Ordering::SeqCst) && failures.is_empty()
 }
 
 /// Deletes every path in `to_remove` from `target_path` on `storage_id`.

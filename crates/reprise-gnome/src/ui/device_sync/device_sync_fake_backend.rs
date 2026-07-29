@@ -81,6 +81,11 @@ pub(super) struct FakeState {
     storage_access: Cell<DeviceStorageAccess>,
     transcode_probe_error: RefCell<Option<String>>,
     cleanup_error: RefCell<Option<String>>,
+    /// Forces every `replace_track` call to fail, whatever target it is
+    /// aimed at — the content-phase counterpart of `playlist_error` /
+    /// `cleanup_error` below. Used to prove a failed podcast/YouTube copy
+    /// must stop the run before later removals (`MTP-23`).
+    replace_track_error: RefCell<Option<String>>,
     copy_gate: RefCell<Option<CopyGate>>,
     playlist_error: RefCell<Option<String>>,
     playlist_gate: RefCell<Option<PlaylistGate>>,
@@ -137,6 +142,16 @@ impl FakeBackend {
 
     pub(super) fn with_playlist_error(self, error: &str) -> Self {
         self.state.playlist_error.replace(Some(error.into()));
+        self
+    }
+
+    /// Makes every `replace_track` call fail on demand — the podcast/YouTube
+    /// content-phase counterpart of `with_playlist_error`. A test that wants
+    /// only the content copy to fail, not any music-mirror copy in the same
+    /// run, must keep the device's library selection empty so the mirror
+    /// never calls `replace_track` itself (see the content-phase tests).
+    pub(super) fn with_replace_track_error(self, error: &str) -> Self {
+        self.state.replace_track_error.replace(Some(error.into()));
         self
     }
 
@@ -300,6 +315,9 @@ impl DeviceBackend for FakeBackend {
             .borrow_mut()
             .push((target_path.clone(), storage_id));
         Box::pin(async move {
+            if let Some(error) = state.replace_track_error.borrow().clone() {
+                return Err(error);
+            }
             state
                 .planned_operations
                 .borrow_mut()
