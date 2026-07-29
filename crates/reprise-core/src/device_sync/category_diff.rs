@@ -480,6 +480,10 @@ mod tests {
             true,
             PodcastSyncSource::Rss,
             None,
+            crate::device_sync::podcasts::EnabledSyncSources {
+                rss: true,
+                youtube: true,
+            },
         );
 
         let podcast_category = CategoryDiff::from_podcast_plan(&podcast_plan, 2);

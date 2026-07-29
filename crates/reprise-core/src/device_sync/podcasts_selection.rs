@@ -174,6 +174,47 @@ mod tests {
     // returned downloaded episodes, with no played filter, and nothing
     // surfaced a wanted-but-missing episode at all).
 
+    /// `MTP-46` for this query specifically. Its sibling in `podcasts.rs`
+    /// feeds the transfer plan; this one feeds the *waiting* counts and the
+    /// preparation phase, so leaving it ungated would keep a switched-off
+    /// source downloading episodes in the background for a phone that will
+    /// never receive them — invisible, because no row would show it.
+    #[test]
+    fn mtp_46_a_switched_off_source_contributes_no_selection_candidates() {
+        let conn = migrated();
+        let downloads = tempfile::tempdir().unwrap();
+        let episode = downloads.path().join("episode.mp3");
+        let video = downloads.path().join("video.webm");
+        std::fs::write(&episode, b"episode").unwrap();
+        std::fs::write(&video, b"video").unwrap();
+
+        insert_subscription(&conn, 1, "rss", "Show");
+        insert_subscription(&conn, 2, "youtube", "Channel");
+        crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:pixel", true).unwrap();
+        crate::podcasts::phone_sync::set_device_enabled(&conn, 2, "mtp:pixel", true).unwrap();
+        insert_episode(&conn, 11, 1, &episode);
+        insert_episode(&conn, 12, 2, &video);
+
+        let both = query_selection_candidates_for_device(&conn, "mtp:pixel").unwrap();
+        assert_eq!(both.len(), 2, "with both modules on, both are candidates");
+
+        crate::modules::set_enabled(&conn, &crate::modules::YOUTUBE_MODULE, false).unwrap();
+        let rss_only = query_selection_candidates_for_device(&conn, "mtp:pixel").unwrap();
+
+        assert!(
+            rss_only
+                .iter()
+                .all(|(source, _)| *source != PodcastSyncSource::Youtube),
+            "a switched-off YouTube must contribute no selection candidate, or its \
+             episodes keep counting as waiting and keep being prepared"
+        );
+        assert_eq!(
+            rss_only.len(),
+            1,
+            "and its peer's candidate must be untouched"
+        );
+    }
+
     #[test]
     fn mtp_45_a_played_downloaded_episode_of_an_enabled_show_is_never_wanted() {
         let conn = migrated();
