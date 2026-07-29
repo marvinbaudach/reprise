@@ -232,6 +232,79 @@ fn pod_12_planned_sync_copies_selected_rss_and_youtube_each_to_its_own_target() 
 /// default and `podcasts::store::set_latest_per_channel`, and asserts what
 /// actually reaches the fake device, never a round-trip through storage
 /// alone.
+/// `MTP-46` mid-transfer, the case a review found and the gate on the plan
+/// alone does not cover: `recompute_all_devices` deliberately skips a device
+/// that is already syncing, so the running sync still holds the plan it was
+/// given. Switching a source off while the mirror phase is copying must still
+/// keep that source's work — copies *and removals* — out of the content phase
+/// that follows.
+#[test]
+fn mtp_46_switching_a_source_off_mid_sync_keeps_it_out_of_the_running_transfer() {
+    run(async {
+        let (downloads, conn) = fixture();
+        let path = downloads.path().join("video.webm");
+        std::fs::write(&path, b"video-bytes").unwrap();
+        conn.borrow()
+            .execute_batch(
+                "INSERT INTO podcast_subscriptions
+                 (id, kind, feed_url, title, auto_download, sync_to_phone, added_at)
+                 VALUES (10, 'youtube', 'https://example.test/channel', 'Channel', 0, 1, 1);
+                 INSERT INTO podcast_subscription_devices (subscription_id, device_id)
+                 VALUES (10, 'a');",
+            )
+            .unwrap();
+        conn.borrow()
+            .execute(
+                "INSERT INTO podcast_episodes
+                 (id, subscription_id, guid, title, audio_url, downloaded_path,
+                  downloaded_bytes, published_at, first_seen_at)
+                 VALUES (101, 10, 'yt-1', 'Video 1', 'https://example.test/v.webm', ?1, 11, 1, 1)",
+                rusqlite::params![path.to_string_lossy().as_ref()],
+            )
+            .unwrap();
+        select_road_playlist(&conn, &[1]);
+        save_road_settings(&conn, "a");
+
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        // Fires while the mirror phase copies the playlist track, which is
+        // strictly before the content phase reads its plan — the exact window
+        // in which the user's switch would otherwise be ignored.
+        {
+            let conn = conn.clone();
+            backend.observe_copies(Rc::new(move |relative_target: &str| {
+                if !relative_target.contains("Channel") {
+                    reprise_core::modules::set_enabled(
+                        &conn.borrow(),
+                        &reprise_core::modules::YOUTUBE_MODULE,
+                        false,
+                    )
+                    .unwrap();
+                }
+            }));
+        }
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        settle().await;
+
+        runtime.sync_now("a").unwrap();
+        settle().await;
+
+        assert!(
+            backend
+                .state
+                .managed_copies
+                .borrow()
+                .iter()
+                .all(|(root, _)| !root.contains("Reprise-YouTube")),
+            "a source switched off mid-sync must not have its episodes copied by the \
+             content phase of that same sync"
+        );
+        assert!(
+            backend.state.managed_deleted.borrow().is_empty(),
+            "and the stale plan's removals must not run either"
+        );
+    });
+}
+
 /// `MTP-46`'s live path: that `recompute_all_devices` — what the Preferences
 /// switch triggers — actually re-reads the module state into the snapshot the
 /// device page renders from. Both directions are asserted on purpose: the
@@ -316,10 +389,6 @@ fn mtp_46_a_recompute_reloads_the_module_state_into_the_device_snapshot() {
             "with YouTube on, the snapshot the device page renders from must say so"
         );
 
-        // Re-read the device so the copied file is *resident* in the next
-        // plan's inventory. Without this the second plan sees an empty
-        // inventory and has nothing it could delete, so the test would pass
-        // for the wrong reason — it did, until this line was added.
         runtime.refresh_contents("a");
         settle().await;
 
@@ -338,10 +407,13 @@ fn mtp_46_a_recompute_reloads_the_module_state_into_the_device_snapshot() {
         runtime.sync_now("a").unwrap();
         settle().await;
 
-        assert!(
-            backend.state.managed_deleted.borrow().is_empty(),
-            "switching YouTube off must not delete the episode already on the device"
-        );
+        // Deliberately *not* asserted here: this fake's inspection returns its
+        // fixed `youtube_files` fixture rather than what a previous copy put
+        // on the device, so nothing is ever resident for a plan to remove and
+        // an emptiness check would hold no matter what the planner did.
+        // `mtp_46_switching_a_source_off_never_deletes_what_is_already_on_the_
+        // phone` in `device_sync::podcasts` builds that inventory itself and
+        // is where the non-deletion property is actually guarded.
         assert_eq!(
             youtube_copies(&backend),
             0,

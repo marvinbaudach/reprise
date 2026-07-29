@@ -203,6 +203,19 @@ if rg --quiet '^#\[path = "[^"/]+/' crates/reprise-gnome/src/ui/mod.rs; then
   exit 1
 fi
 
+# `MTP-46`/`SET-4`: the source-module switches only reach an already-open
+# device page through this one call. Asserted structurally rather than by a
+# test because reaching it from one would mean constructing a whole
+# `PreferencesContext` — twenty-odd collaborators — to observe a single
+# closure. Deleting the call is silent otherwise: every MTP-46 test stays
+# green while a switched-off source keeps its Content row until an unrelated
+# refresh.
+if ! rg --quiet 'wire_source_module_recompute\(preferences, device_sync\)' \
+  crates/reprise-gnome/src/ui/window/window_runtime_wiring.rs; then
+  echo "the Online-sources switches must stay wired to a device re-plan (MTP-46)" >&2
+  exit 1
+fi
+
 for feature in \
   browse compact cover device_sync info_panel library_views lyrics playback \
   player_bar playlists preferences scan scrobbling sidebar stats tag_edit \
