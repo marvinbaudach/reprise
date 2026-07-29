@@ -113,6 +113,18 @@ pub fn summarize_youtube_selection(
     }
 }
 
+/// "N of M shows selected" (`MTP-37`) — podcast episodes have no per-show
+/// count cap (`MTP-21`'s uncapped "unplayed downloads only" rule), so this
+/// carries no `latest`-style field the way [`YoutubeSelectionSummary`]
+/// does. Built directly from
+/// [`crate::podcasts::phone_sync::selection_summary`]'s live counts, not
+/// from a second selection engine.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PodcastSelectionSummary {
+    pub shows_selected: usize,
+    pub shows_total: usize,
+}
+
 /// One episode considered for phone-sync selection — provider-neutral: an
 /// RSS episode and a YouTube video both reduce to this shape. `group_id` is
 /// the owning subscription/channel id.

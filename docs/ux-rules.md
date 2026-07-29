@@ -509,7 +509,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   den Freispeicher nicht, entfällt der Pfeil und es steht nur „X free" da.
   Bei unvollständiger oder inkonsistenter Kapazität verschwindet der Balken
   komplett, statt einen Anteil zu erfinden — dieselbe Regel wie in `MTP-7`.
-- **MTP-28** [aktiv] [core] [gtk] — Die Geräteansicht bekommt eine
+- **MTP-28** [ersetzt durch MTP-37] — Die Geräteansicht bekommt eine
   „Content"-Sektion mit einer Zeile je der drei benannten Ziele (`MTP-18`):
   Zielordnerpfad, Auswahl-Zusammenfassung, Größe auf dem Gerät, Cap und ein
   Schalter. **Nachtrag vom 2026-07-28 bindend:** die Auswahl-Zusammenfassung
@@ -559,7 +559,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   auto_start::should_auto_start`); die GTK-Laufzeit sammelt diese Fakten nur
   und gehorcht.
 - **MTP-31** [aktiv] [core] [gtk] — Design 7d, E6: „Change folder…" neben
-  jedem Zielordnerpfad der Content-Sektion (`MTP-28`) öffnet den
+  jedem Zielordnerpfad der Content-Sektion (`MTP-37`) öffnet den
   Geräte-Ordner-Browser. Der Browser bietet Speicherauswahl (intern/SD-Karte,
   aus den am Gerät gefundenen Speichern), einen Ordnerbaum mit Navigation
   hinein und eine Ordnerebene zurück, „New folder" sowie eine Zielvorschau
@@ -570,7 +570,10 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   autoritativer Baum), erscheint eine Warnung — Nesting würde die dortigen
   Dateien der Playlists-Aufräumung aussetzen. „Reset to default" setzt Pfad
   und Speicher auf `SyncTargetKind::default_path` zurück, ohne `enabled` oder
-  `cap_bytes` anzufassen (`MTP-28`s Nachtrag hält beide für nicht editierbar).
+  `cap_bytes` anzufassen — ein Ordner-Reset ist ein anderer Vorgang als ein
+  Cap- oder Aktivierungs-Reset (`cap_bytes` ist seit `MTP-37` eigenständig
+  über den Spin-Button der Content-Sektion editierbar, gerade deshalb darf
+  „Reset to default" ihn nicht als Nebenwirkung mitreißen).
   Verweigert ein Gerät das Anlegen eines Ordners direkt im Wurzelverzeichnis
   eines Speichers, zeigt der Browser diesen Fehler inline statt ihn
   stillschweigend zu verschlucken oder Erfolg zu behaupten. MTP kennt keine
@@ -642,6 +645,45 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   (heruntergeladene Episoden plus die per `wanted_on_device`, `MTP-20`,
   ausdrücklich gewollten fehlenden). Diese Regel wird `[aktiv]`, sobald die
   Persistenz und die Oberfläche stehen — nicht vorher.
+- **MTP-37** [aktiv] [core] [gtk] — Ersetzt `MTP-28`s Nachtrag vom
+  2026-07-28 (Turn-6/7-Plan `E-6`, `E-8`): Reprise unterstützt genau ein
+  MTP-Gerät (`E-5`), also entfällt die einzige Begründung für eine globale
+  Preferences-Fläche — „gilt für alle Geräte, keine Geräte-Auswahl in den
+  Settings". Die Geräteansicht bleibt bei einer „Content"-Sektion mit einer
+  Zeile je der drei benannten Ziele (`MTP-18`): Zielordnerpfad (unverändert
+  `MTP-31`s „Change folder…"), Auswahl-Zusammenfassung, Größe auf dem
+  Gerät und Cap. Zwei Dinge ändern sich:
+  1. **Der Cap wird hier bedienbar.** Ein Spin-Button in GiB (0 = kein Cap)
+     ersetzt den reinen Anzeigetext; jede Änderung persistiert sofort über
+     `DeviceSyncRuntime::set_target_cap` in `SyncTarget::cap_bytes`
+     (`MTP-18`) und wirkt beim nächsten Sync-Plan über die bestehende
+     Verdrängung „ältestes zuerst" (`MTP-19`/`MTP-25`) — keine zweite
+     Cap-Mechanik, nur eine Bedienstelle für die schon vorhandene. Playlists
+     kennen keinen Cap (`MTP-18`s `default_cap_bytes`) und behalten den
+     Spin-Button dauerhaft deaktiviert statt eine Wirkung vorzutäuschen, die
+     kein Verdrängungspfad einlöst.
+  2. **Die Auswahl-Zusammenfassung wird ein echter, ehrlicher Live-Wert
+     statt einer Anzeige globaler Regeln oder eines statischen Textes.**
+     Playlists lasen schon vorher `selection::summarize_playlist_selection`
+     (`MTP-21`); YouTube und Podcasts lesen jetzt ebenso live „N of M
+     channels selected" bzw. „N of M shows selected · unplayed downloads
+     only" aus `podcasts::phone_sync::selection_summary` — derselben
+     Auswahl, die auf den Podcast-/Kanal-Seiten und in der Playlist-Liste
+     bedient wird (`POD-12`). Diese Zeile bekommt **keine** zweite
+     Bedienstelle: das Umschalten einzelner Kanäle/Shows bleibt dort, wo es
+     ist, damit nicht zwei Stellen dieselbe Auswahl behaupten können. Ohne
+     `MTP-36`s (noch `[geplant]`) persistiertes „latest N je Kanal" bleibt
+     der Zusatz „latest K each" bei YouTube weg, statt eine Zahl zu
+     behaupten, die nichts durchsetzt.
+
+  Der Querverweis „rules from Preferences" / „Same on all devices"
+  verschwindet ersatzlos — bei einem Gerät ist „Same on all devices" eine
+  Aussage über nichts. Der einzige Schalter, den diese Sektion je hatte
+  (`SyncTarget::enabled`, `MTP-18`), bleibt unverändert; er bekommt jetzt
+  nur Cap-Feld und Auswahlzeile als gleichrangige, echte Nachbarn statt als
+  reine Anzeige daneben. Der geplante „Phone sync"-Block in Preferences
+  (`SET-8`) entfällt ersatzlos, nicht nur „solange sein Sync-Unterbau nicht
+  existiert" — siehe `SET-9`.
 
 ## F. Einstellungen & Modale
 
@@ -688,7 +730,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Features behält die Plugins-Seite nur die Aktivierungsschalter; Scope-,
   Provider-, Location- und Similar-Optionen stehen ausschließlich auf den
   jeweiligen Hauptseiten und sind bei deaktiviertem Modul nicht bedienbar.
-- **SET-8** [aktiv] [gtk] — Eine eigene Preferences-Hauptseite „Online
+- **SET-8** [ersetzt durch SET-9] — Eine eigene Preferences-Hauptseite „Online
   sources" (Turn 7b) bündelt die drei Netz-Quellen: ganz oben ein globaler
   Riegel „Use online sources" mit Untertitel „Off makes this a local player
   only: no requests, no downloads, nothing hidden — the three entries
@@ -704,6 +746,23 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   kept, not deleted." Der vierte Block „Phone sync" aus 7b ist absichtlich
   nicht Teil davon, solange sein Sync-Unterbau (Block E) nicht existiert —
   seine Regeln folgen mit diesem Block.
+- **SET-9** [aktiv] [gtk] — Ersetzt `SET-8`: dieselbe Preferences-Hauptseite
+  „Online sources" (Turn 7b) mit denselben Zeilen für YouTube, Podcasts und
+  Radio, unverändert — globaler Riegel „Use online sources" mit Untertitel
+  „Off makes this a local player only: no requests, no downloads, nothing
+  hidden — the three entries disappear from the sidebar.", darunter drei
+  gleichrangige Blöcke mit eigenem Master-Schalter, YouTube gleichrangig zu
+  Podcasts und Radio (Issue #96), Fußzeile „Each block is self-contained:
+  turning one off hides its sidebar entry and stops its requests;
+  subscriptions and favorites are kept, not deleted." Einzige Korrektur
+  (Turn-6/7-Plan `E-6`, `E-8`): der vierte Block „Phone sync" aus 7b wird
+  **nicht gebaut** — nicht „solange sein Sync-Unterbau nicht existiert",
+  wie `SET-8` es noch offenließ, sondern endgültig. `E-5` reduziert Reprise
+  auf ein einziges MTP-Gerät, und damit entfällt die Begründung, warum
+  Sync-Regeln überhaupt eine geräteübergreifende Preferences-Fläche
+  bräuchten; sie leben stattdessen auf der Geräteseite selbst (`MTP-37`).
+  „Online sources" bleibt die einzige Preferences-Hauptseite, die dieser
+  Bereich je bekommt.
 
 ## G. Feedback-Vokabular
 

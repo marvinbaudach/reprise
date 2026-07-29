@@ -190,9 +190,9 @@ pub enum CategoryReading {
     /// The normal numeric reading for an active, enabled category —
     /// design's "0 new · 3 removed" / "2 new · 0 removed".
     Diff(CategoryDiff),
-    /// The category's global rule or its per-device target is off —
-    /// nothing was evaluated, a different fact from "evaluated to zero
-    /// changes". Design's "source off".
+    /// The category's per-device target is off — nothing was evaluated, a
+    /// different fact from "evaluated to zero changes". Design's "source
+    /// off".
     SourceOff,
     /// The source has nothing to compare against right now; existing
     /// device files are left untouched rather than guessed at. Design's
@@ -200,8 +200,10 @@ pub enum CategoryReading {
     UnavailableKeptOnPhone,
 }
 
-/// `MTP-22`: projects a category's reading from whether it is switched on
-/// globally (`rule_enabled`, Preferences), enabled for this device
+/// `MTP-22`: projects a category's reading from `rule_enabled` — a second,
+/// generic AND-gate every production call site passes as `true` since
+/// `E-6` withdrew the once-planned global rule this parameter modeled —
+/// combined with whether the category is enabled for this device
 /// (`target_enabled`, `SyncTarget::enabled`, `MTP-18`), and what could be
 /// computed ([`CandidateSource`]).
 #[must_use]

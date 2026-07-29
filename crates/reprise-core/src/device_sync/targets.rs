@@ -1,17 +1,18 @@
 //! Named, per-device MTP sync targets (`MTP-18`).
 //!
-//! Turn 7 (7a/7e) splits phone-sync configuration in two: the *rules* —
-//! what gets synced, and any cap — are global and live in Preferences,
-//! identical for every device (design 7b's exact words: "Same rules for
-//! every device — folders stay per device"). The *target folders* are per
-//! device, because folder structures differ between e.g. a phone and a
-//! DAP. This module models only the per-device half: where each of the
-//! three content categories lands on *this* device, and whether that
-//! folder is in play at all. The global rules half (which shows, which
-//! channels, the transfer profile) is a separate, deliberately absent
-//! concern here — [`SyncTarget`] must never grow a "what content" field,
-//! or the split stops being expressed in the type system and becomes
-//! something only a comment promises.
+//! `E-5` settled that Reprise supports exactly one connected MTP device, so
+//! the turn 7 (7a/7e) plan to split phone-sync configuration into global
+//! Preferences rules plus per-device folders (`E-6`'s superseded addendum)
+//! no longer applies — that split existed only to answer "which device do
+//! these rules apply to". The cap is editable per device (`MTP-37`); this
+//! module still models only the per-device *placement* half — where each
+//! of the three content categories lands on *this* device, whether that
+//! folder is in play at all, and its cap — while *what content* is wanted
+//! (which shows, which channels, the transfer profile) stays a separate
+//! concern owned elsewhere (`selection`, `podcasts::phone_sync`,
+//! `DeviceSettings::profile`): [`SyncTarget`] must never grow a "what
+//! content" field, or that separation stops being expressed in the type
+//! system and becomes something only a comment promises.
 //!
 //! Replaces the single implicit managed folder from `78e379fd`
 //! (`super::ManagedRoot`, always `Music/Reprise`) with three named
@@ -120,10 +121,11 @@ pub struct StorageId(pub u32);
 /// One content category's device folder, persisted per device.
 ///
 /// Deliberately excludes anything that decides *what* content is wanted —
-/// that lives in the global rules (Preferences) and in existing per-item
-/// selection (e.g. `podcasts::phone_sync`, playlist selection). Adding a
-/// "which shows/channels/playlists" field here would blur the
-/// global/per-device split this type exists to express.
+/// that stays in existing per-item selection (`podcasts::phone_sync`,
+/// playlist selection, `MTP-37`) and the transfer profile
+/// (`DeviceSettings::profile`), not here. Adding a "which
+/// shows/channels/playlists" field would blur the placement/content
+/// separation this type exists to express.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SyncTarget {
     pub kind: SyncTargetKind,

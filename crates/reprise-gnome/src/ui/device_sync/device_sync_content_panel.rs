@@ -1,15 +1,22 @@
 //! The device view's Content and Next synchronization sections (design 7a),
 //! plus the "Device contents never verified" banner and the two per-device
 //! switches. The Content section's target-folder path opens the E6 folder
-//! browser (`device_sync_target_browser`, `MTP-31`) via "Change folder…";
-//! it is otherwise read-only text.
+//! browser (`device_sync_target_browser`, `MTP-31`) via "Change folder…".
 //!
-//! Per the 2026-07-28 design addendum, sync *rules* are global and live in
-//! Preferences (7b/7e); this panel shows them read-only, labelled "rules
-//! from Preferences". The editable things here are per-device: each
-//! category's target folder (via the browser) and its activation
-//! (`SyncTarget::enabled`, `MTP-18`), "Remove from phone when deleted or
-//! unsubscribed here", and "Sync automatically when this phone connects".
+//! `MTP-37` (`E-6`, `E-8`): Reprise supports exactly one connected MTP
+//! device, so the sync rules that the 2026-07-28 addendum sent to a
+//! Preferences page live here instead — that page never carried a "which
+//! device" cross-reference to begin with, and with one device the
+//! addendum's whole justification (several devices needing one shared
+//! rule set) no longer applies. Editable here, per device: each category's
+//! target folder (via the browser), its size cap (a `gtk4::SpinButton` in
+//! GiB, `None`/0 meaning unlimited), its activation (`SyncTarget::enabled`,
+//! `MTP-18`), "Remove from phone when deleted or unsubscribed here", and
+//! "Sync automatically when this phone connects". The selection summary
+//! ("N of M ... selected") is a live, honest read of the per-item
+//! selection edited on the podcast/channel pages and the playlist list
+//! (`POD-12`) — deliberately not a second selection control in this row;
+//! see `device_view`'s module doc.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -17,15 +24,27 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::device_sync::device_view::{project_category_segments, DeviceContentsState};
-use reprise_core::device_sync::{aggregate_balance, summarize_playlist_selection, SyncTargetKind};
+use reprise_core::device_sync::{
+    aggregate_balance, summarize_playlist_selection, PodcastSelectionSummary, SyncTargetKind,
+    YoutubeSelectionSummary,
+};
 
 use super::device_sync_category_bar::CategoryStorageBar;
 use super::device_sync_runtime::{DeviceSyncRuntime, DeviceView};
 use super::device_sync_strings;
 
+/// A category's cap column is edited in GiB (`MTP-37`); 0 clears the cap.
+const GIB_BYTES: u64 = 1024 * 1024 * 1024;
+/// Generous but finite upper bound for the cap spin button — large enough
+/// not to constrain any real device, small enough that the input stays a
+/// spin button rather than needing free-form text entry.
+const MAX_CAP_GIB: f64 = 4096.0;
+
 #[derive(Clone)]
 pub(super) struct ContentPanelActions {
     pub(super) set_target_enabled: Rc<dyn Fn(SyncTargetKind, bool)>,
+    /// `MTP-37`: `None` clears the cap (unlimited), `Some` sets it in bytes.
+    pub(super) set_target_cap: Rc<dyn Fn(SyncTargetKind, Option<u64>)>,
     pub(super) set_remove_deleted: Rc<dyn Fn(bool)>,
     pub(super) set_sync_automatically: Rc<dyn Fn(bool)>,
     pub(super) scan_device: Rc<dyn Fn()>,
@@ -44,6 +63,15 @@ impl ContentPanelActions {
                     tracing::warn!(%error, "could not update Android sync target activation");
                 }
             }) as Rc<dyn Fn(SyncTargetKind, bool)>
+        };
+        let set_target_cap = {
+            let runtime = runtime.clone();
+            let device_id = device_id.to_string();
+            Rc::new(move |kind, cap_bytes| {
+                if let Err(error) = runtime.set_target_cap(&device_id, kind, cap_bytes) {
+                    tracing::warn!(%error, "could not update Android sync target cap");
+                }
+            }) as Rc<dyn Fn(SyncTargetKind, Option<u64>)>
         };
         let set_remove_deleted = {
             let runtime = runtime.clone();
@@ -77,6 +105,7 @@ impl ContentPanelActions {
         };
         Self {
             set_target_enabled,
+            set_target_cap,
             set_remove_deleted,
             set_sync_automatically,
             scan_device,
@@ -89,7 +118,11 @@ struct CategoryRowWidgets {
     kind: SyncTargetKind,
     path: gtk4::Label,
     selection: gtk4::Label,
-    size_cap: gtk4::Label,
+    size_label: gtk4::Label,
+    /// `MTP-37`: the cap in GiB, 0 meaning unlimited. Playlists have no cap
+    /// concept (`MTP-18`) so this stays permanently insensitive for that
+    /// row — see [`build_category_row`].
+    cap_spin: gtk4::SpinButton,
     toggle: gtk4::Switch,
 }
 
@@ -254,12 +287,17 @@ impl ContentPanel {
                 row.kind,
                 &device.page.playlists,
                 device.page.unique_track_count,
+                device.youtube_selection,
+                device.podcast_selection,
             ));
-            row.size_cap.set_text(&format!(
-                "{} on device · {}",
-                device_sync_strings::file_size(content_row.size_on_device_bytes),
-                device_sync_strings::cap_text(content_row.cap_bytes)
+            row.size_label.set_text(&format!(
+                "{} on device",
+                device_sync_strings::file_size(content_row.size_on_device_bytes)
             ));
+            row.cap_spin
+                .set_value(cap_bytes_to_gib(content_row.cap_bytes));
+            row.cap_spin
+                .set_tooltip_text(Some(&device_sync_strings::cap_text(content_row.cap_bytes)));
             row.toggle.set_active(content_row.target_enabled);
             row.toggle.set_state(content_row.target_enabled);
         }
@@ -314,13 +352,50 @@ fn build_category_row(
     path_row.append(&path);
     path_row.append(&browse_button);
     let selection = detail("");
-    let size_cap = detail("");
+    let size_label = detail("");
+
+    // `MTP-37`: the cap becomes a real editable control here. Playlists
+    // have no cap concept (`MTP-18`'s `default_cap_bytes` is always
+    // `None`, and no eviction path reads a playlist cap), so that row's
+    // spin button stays permanently insensitive rather than offering a
+    // control that would silently do nothing.
+    let cap_spin = gtk4::SpinButton::with_range(0.0, MAX_CAP_GIB, 1.0);
+    cap_spin.set_digits(0);
+    cap_spin.set_valign(gtk4::Align::Center);
+    cap_spin.update_property(&[gtk4::accessible::Property::Label(&format!(
+        "{} cap in gibibytes, 0 for no cap",
+        device_sync_strings::category_name(kind)
+    ))]);
+    if kind == SyncTargetKind::Playlists {
+        cap_spin.set_sensitive(false);
+        cap_spin.set_tooltip_text(Some("Playlists have no size cap"));
+    } else {
+        let set_target_cap = actions.set_target_cap.clone();
+        let updating = updating.clone();
+        cap_spin.connect_value_changed(move |spin| {
+            if updating.get() {
+                return;
+            }
+            let value = spin.value();
+            let cap_bytes = if value <= 0.0 {
+                None
+            } else {
+                Some((value * GIB_BYTES as f64).round() as u64)
+            };
+            set_target_cap(kind, cap_bytes);
+        });
+    }
+    let cap_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    cap_row.append(&gtk4::Label::new(Some("Cap (GiB):")));
+    cap_row.append(&cap_spin);
+
     let labels = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
     labels.set_hexpand(true);
     labels.append(&title);
     labels.append(&path_row);
     labels.append(&selection);
-    labels.append(&size_cap);
+    labels.append(&size_label);
+    labels.append(&cap_row);
 
     let toggle = gtk4::Switch::new();
     toggle.set_valign(gtk4::Align::Center);
@@ -350,7 +425,8 @@ fn build_category_row(
         kind,
         path,
         selection,
-        size_cap,
+        size_label,
+        cap_spin,
         toggle,
     }
 }
@@ -423,17 +499,21 @@ fn verification_copy(state: &DeviceContentsState) -> (String, String, bool) {
     }
 }
 
-/// Design 7a's per-category selection summary, read-only ("rules from
-/// Preferences"). Playlists already have a live projection
-/// (`selection::summarize_playlist_selection`, `MTP-21`); YouTube's
-/// per-channel toggle and podcasts' cleanup policy are global-rules state
-/// this runtime does not carry yet (7b's Phone sync block, `T6-G1`), so
-/// those two stay the design's own static rule descriptions rather than a
-/// number this code cannot honestly compute.
+/// `MTP-37`: design 7a's per-category selection summary. Every branch is
+/// now a live read of real per-device selection state — Playlists via the
+/// existing engine (`selection::summarize_playlist_selection`, `MTP-21`),
+/// YouTube and podcasts via `POD-12`'s per-device subscription selection
+/// (`podcasts::phone_sync::selection_summary`, gathered by the caller into
+/// `youtube_selection`/`podcast_selection`). None of these are edited in
+/// this row — see the module doc on why that stays intentional — but none
+/// of them are fabricated either, unlike the "Rules from Preferences" stub
+/// this replaces.
 fn selection_summary_text(
     kind: SyncTargetKind,
     playlists: &[reprise_core::device_sync::SyncPlaylistRow],
     unique_track_count: usize,
+    youtube_selection: YoutubeSelectionSummary,
+    podcast_selection: PodcastSelectionSummary,
 ) -> String {
     match kind {
         SyncTargetKind::Playlists => {
@@ -445,9 +525,37 @@ fn selection_summary_text(
                 counted(summary.unique_track_count, "unique track", "unique tracks")
             )
         }
-        SyncTargetKind::YoutubeAudio => "Rules from Preferences".to_string(),
-        SyncTargetKind::PodcastEpisodes => "Unplayed downloads only".to_string(),
+        SyncTargetKind::YoutubeAudio => {
+            // `MTP-36` ([geplant]): no persisted per-channel episode cap
+            // yet, so `latest_per_channel` arrives as `usize::MAX` until
+            // that rule lands — omit the "latest K each" clause rather
+            // than claim a number nothing enforces.
+            if youtube_selection.latest_per_channel == usize::MAX {
+                format!(
+                    "{} of {} channels selected",
+                    youtube_selection.channels_selected, youtube_selection.channels_total
+                )
+            } else {
+                format!(
+                    "{} of {} channels · latest {} each",
+                    youtube_selection.channels_selected,
+                    youtube_selection.channels_total,
+                    youtube_selection.latest_per_channel
+                )
+            }
+        }
+        SyncTargetKind::PodcastEpisodes => format!(
+            "{} of {} shows selected · unplayed downloads only",
+            podcast_selection.shows_selected, podcast_selection.shows_total
+        ),
     }
+}
+
+/// `MTP-37`: the cap spin button's displayed value — GiB, 0 for unlimited.
+/// The inverse of the spin button's own `connect_value_changed` conversion
+/// in [`build_category_row`].
+fn cap_bytes_to_gib(cap_bytes: Option<u64>) -> f64 {
+    cap_bytes.map_or(0.0, |bytes| bytes as f64 / GIB_BYTES as f64)
 }
 
 fn counted(count: usize, singular: &str, plural: &str) -> String {
@@ -498,37 +606,78 @@ mod tests {
         }];
 
         assert_eq!(
-            selection_summary_text(SyncTargetKind::Playlists, &playlists, 278),
+            selection_summary_text(
+                SyncTargetKind::Playlists,
+                &playlists,
+                278,
+                YoutubeSelectionSummary::default(),
+                PodcastSelectionSummary::default(),
+            ),
             "1 of 1 selected · 278 unique tracks"
         );
     }
 
-    /// `selection_summary_text` is intentionally a pure, stateless copy
-    /// function for these two kinds (see its doc comment) — it has no
-    /// selection engine to call, so it cannot fail on selection *behaviour*
-    /// by construction; this stays a copy test, not a rule-named one. The
-    /// actual `MTP-21` behaviour this label describes — an enabled show's
-    /// unplayed downloaded episodes are copied, played ones are not, and a
-    /// wanted-but-missing one counts as waiting — is exercised end to end
-    /// (DB through `select_episodes` through `sync_now`) by
-    /// `device_sync_selection_tests::mtp_21_a_played_downloaded_episode_is_not_copied_while_an_unplayed_one_from_the_same_show_is`
-    /// and `mtp_21_a_wanted_missing_episode_counts_as_waiting_and_is_never_copyable`,
-    /// plus `device_sync_auto_start_tests::mtp_30_a_waiting_only_podcast_balance_would_still_trigger_automatic_start`
-    /// for the balance/auto-start tie-in. Before those existed, this test
-    /// was the only "MTP-21" coverage the label text had, and it would have
-    /// stayed green even if `select_episodes` were never wired in at all —
-    /// that gap is what let the live pipeline skip the played filter and
-    /// hard-code `files_waiting_for_download` to `0` while this test kept
-    /// passing.
+    /// `MTP-37`: the actual live-count *behaviour* — that enabling or
+    /// disabling a channel/show for this device changes what these
+    /// summaries report — is exercised end to end (DB through
+    /// `phone_sync::selection_summary` through the live runtime) by
+    /// `device_sync_selection_summary_tests::
+    /// mtp_37_the_youtube_selection_summary_changes_when_a_channel_is_enabled_for_this_device`
+    /// and its podcast counterpart. This test only pins the exact copy
+    /// [`selection_summary_text`] renders for given inputs — it must not be
+    /// the only coverage the label has, the same gap that let the old
+    /// "Rules from Preferences" stub go unnoticed.
     #[test]
-    fn selection_summary_names_the_static_global_rule_for_youtube_and_podcasts() {
+    fn mtp_37_selection_summary_renders_live_youtube_and_podcast_counts() {
         assert_eq!(
-            selection_summary_text(SyncTargetKind::YoutubeAudio, &[], 0),
-            "Rules from Preferences"
+            selection_summary_text(
+                SyncTargetKind::YoutubeAudio,
+                &[],
+                0,
+                YoutubeSelectionSummary {
+                    channels_selected: 2,
+                    channels_total: 6,
+                    latest_per_channel: usize::MAX,
+                },
+                PodcastSelectionSummary::default(),
+            ),
+            "2 of 6 channels selected",
+            "MTP-36 has not landed yet, so no 'latest K each' clause is claimed"
         );
         assert_eq!(
-            selection_summary_text(SyncTargetKind::PodcastEpisodes, &[], 0),
-            "Unplayed downloads only"
+            selection_summary_text(
+                SyncTargetKind::YoutubeAudio,
+                &[],
+                0,
+                YoutubeSelectionSummary {
+                    channels_selected: 2,
+                    channels_total: 6,
+                    latest_per_channel: 5,
+                },
+                PodcastSelectionSummary::default(),
+            ),
+            "2 of 6 channels · latest 5 each",
+            "once MTP-36 lands and provides a real latest_per_channel, it is honoured"
         );
+        assert_eq!(
+            selection_summary_text(
+                SyncTargetKind::PodcastEpisodes,
+                &[],
+                0,
+                YoutubeSelectionSummary::default(),
+                PodcastSelectionSummary {
+                    shows_selected: 3,
+                    shows_total: 5,
+                },
+            ),
+            "3 of 5 shows selected · unplayed downloads only"
+        );
+    }
+
+    #[test]
+    fn mtp_37_cap_gib_conversion_round_trips_and_treats_zero_as_unlimited() {
+        assert_eq!(cap_bytes_to_gib(None), 0.0);
+        assert_eq!(cap_bytes_to_gib(Some(8 * GIB_BYTES)), 8.0);
+        assert_eq!(cap_bytes_to_gib(Some(4 * GIB_BYTES)), 4.0);
     }
 }

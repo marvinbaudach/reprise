@@ -127,9 +127,9 @@ fn normalized_components(path: &str) -> Vec<&str> {
 
 /// Design 7d's "Reset to default": restores only the folder — storage and
 /// path — to `kind`'s design default. `enabled` and `cap_bytes` are
-/// untouched; they are not part of the browser's scope (`MTP-28`'s
-/// addendum keeps the cap and selection summary as read-only Preferences
-/// mirrors), so resetting the folder must never silently flip either.
+/// untouched; they are not part of the browser's scope — `cap_bytes` is
+/// independently editable via the Content section's cap control (`MTP-37`),
+/// so a folder reset must never silently reset it too.
 #[must_use]
 pub fn reset_target_folder(target: &SyncTarget) -> SyncTarget {
     SyncTarget {

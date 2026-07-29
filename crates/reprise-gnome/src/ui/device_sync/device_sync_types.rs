@@ -147,12 +147,13 @@ pub struct DeviceView {
     /// `MTP-26` (design 7a): whether this device's on-device contents have
     /// ever been successfully inspected this session.
     pub contents_state: reprise_core::device_sync::device_view::DeviceContentsState,
-    /// `MTP-28` (design 7a): the Content section's three rows, in
+    /// `MTP-37` (design 7a): the Content section's three rows, in
     /// `SyncTargetKind::ALL` order — target folder, per-device activation,
-    /// size on device, cap. Content is per-device only; the rules that
-    /// decide what is selected stay in Preferences (7b/7e).
+    /// size on device, cap. The cap is editable here (`E-6`); per-item
+    /// selection is edited on the podcast/channel pages and playlist list,
+    /// never duplicated in this row.
     pub content_rows: [reprise_core::device_sync::device_view::CategoryContentRow; 3],
-    /// `MTP-22`/`MTP-28`: each category's diff reading, same order as
+    /// `MTP-22`/`MTP-37`: each category's diff reading, same order as
     /// [`Self::content_rows`] — the Next synchronization panel's rows and
     /// the sidebar card's aggregate balance are both projected from this.
     pub category_readings: [reprise_core::device_sync::CategoryReading; 3],
@@ -161,6 +162,12 @@ pub struct DeviceView {
     /// re-walk the raw inventory lists.
     pub youtube_bytes: u64,
     pub podcast_bytes: u64,
+    /// `MTP-37`: the Content section's live selection summary for YouTube
+    /// audio and podcast episodes — "N of M channels/shows selected",
+    /// read from `POD-12`'s existing per-device subscription selection
+    /// rather than computed here.
+    pub youtube_selection: reprise_core::device_sync::YoutubeSelectionSummary,
+    pub podcast_selection: reprise_core::device_sync::PodcastSelectionSummary,
 }
 
 /// Test-only "nothing known yet" baseline for the three category fields —

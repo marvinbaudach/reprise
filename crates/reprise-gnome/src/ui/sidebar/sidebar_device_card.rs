@@ -553,6 +553,8 @@ mod tests {
             category_readings: crate::ui::device_sync_runtime::empty_category_readings(),
             youtube_bytes: 0,
             podcast_bytes: 0,
+            youtube_selection: Default::default(),
+            podcast_selection: Default::default(),
             page: Default::default(),
         }
     }

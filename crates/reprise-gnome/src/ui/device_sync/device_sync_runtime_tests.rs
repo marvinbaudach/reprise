@@ -467,6 +467,8 @@ fn save_road_settings(conn: &Rc<RefCell<Connection>>, device_id: &str) {
 
 #[path = "device_sync_auto_start_tests.rs"]
 mod auto_start_tests;
+#[path = "device_sync_cap_tests.rs"]
+mod cap_tests;
 #[path = "device_sync_compact_tests.rs"]
 mod compact_tests;
 #[path = "device_sync_planned_tests.rs"]
@@ -477,6 +479,8 @@ mod podcast_removal_tests;
 mod readback_tests;
 #[path = "device_sync_safety_tests.rs"]
 mod safety_tests;
+#[path = "device_sync_selection_summary_tests.rs"]
+mod selection_summary_tests;
 #[path = "device_sync_selection_tests.rs"]
 mod selection_tests;
 #[path = "device_sync_transfer_profile_tests.rs"]

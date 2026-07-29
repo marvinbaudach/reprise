@@ -100,7 +100,7 @@ fn mtp_21_a_wanted_missing_episode_counts_as_waiting_and_is_never_copyable() {
 
         let device = runtime.devices().remove(0);
         // `SyncTargetKind::ALL` order is [Playlists, YoutubeAudio,
-        // PodcastEpisodes] — index 2 is the podcast category (`MTP-28`).
+        // PodcastEpisodes] — index 2 is the podcast category (`MTP-37`).
         match device.category_readings[2] {
             reprise_core::device_sync::CategoryReading::Diff(diff) => {
                 assert_eq!(

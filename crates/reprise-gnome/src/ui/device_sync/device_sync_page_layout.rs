@@ -119,7 +119,7 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
     constrain_overview_width(&policy);
 
     // Deliberately not "Next synchronization" — that title now belongs to
-    // the Content panel's cross-category diff (`MTP-22`/`MTP-28`) appended
+    // the Content panel's cross-category diff (`MTP-22`/`MTP-37`) appended
     // below this card. `changes` here is playlist-scoped only
     // (`page.changes`), so it gets its own, narrower heading rather than
     // implying it is the complete picture.
