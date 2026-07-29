@@ -16,6 +16,51 @@ pub enum PodcastSyncSource {
     Youtube,
 }
 
+/// Which [`PodcastSyncSource`] kinds a device sync may draw from right now.
+///
+/// A module switched off in Preferences loses its sidebar entry (`SET-9`), so
+/// while it is off it is not part of the app the user can see — and a source
+/// the user cannot see must not keep pushing files onto their phone. `SET-9`
+/// promises that switching a block off *keeps* its subscriptions; it never
+/// promised they keep syncing, and this type settles that reading.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EnabledSyncSources {
+    pub rss: bool,
+    pub youtube: bool,
+}
+
+impl EnabledSyncSources {
+    #[must_use]
+    pub fn allows(self, source: PodcastSyncSource) -> bool {
+        match source {
+            PodcastSyncSource::Rss => self.rss,
+            PodcastSyncSource::Youtube => self.youtube,
+        }
+    }
+}
+
+/// Reads the two module switches and the global gate that sits above them.
+///
+/// Deliberately *not* [`crate::online_sources::network_allowed`], even though
+/// the formula is identical: copying an already-downloaded file onto a phone
+/// makes no request, so the two answer different questions and must stay free
+/// to diverge. What they genuinely share is the reason — both switches take
+/// the source out of the sidebar, and neither deletes anything.
+///
+/// A read failure propagates rather than defaulting to off, unlike
+/// [`crate::online_sources::network_allowed_or_off`]. That is deliberate and
+/// it is the safe direction here: the error aborts planning, so no plan is
+/// produced at all — and a plan is the only thing that can copy or delete.
+/// Defaulting to off would instead produce a *successful* empty plan, which
+/// is a stronger claim than an unreadable database supports.
+pub fn enabled_sync_sources(conn: &Connection) -> Result<EnabledSyncSources, rusqlite::Error> {
+    let global = crate::online_sources::is_enabled(conn)?;
+    Ok(EnabledSyncSources {
+        rss: global && crate::modules::is_enabled(conn, &crate::modules::PODCASTS_MODULE)?,
+        youtube: global && crate::modules::is_enabled(conn, &crate::modules::YOUTUBE_MODULE)?,
+    })
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PodcastSyncCandidate {
     pub episode_id: i64,
@@ -53,10 +98,15 @@ pub struct PodcastSyncPlan {
 /// the per-kind filtering, so this deliberately does not restrict `s.kind`
 /// — RSS and YouTube subscriptions are equally eligible once selected for a
 /// device (`POD-12`).
+///
+/// What it *does* restrict is a source whose module is switched off
+/// (`MTP-46`): the gate lives here, at the one place the rows are read, and
+/// not at the callers, so no future caller can reach the rows around it.
 pub fn query_candidates_for_device(
     conn: &Connection,
     device_id: &str,
 ) -> Result<Vec<PodcastSyncCandidate>, rusqlite::Error> {
+    let enabled = enabled_sync_sources(conn)?;
     let mut statement = conn.prepare(
         "SELECT e.id, e.title, s.title, e.downloaded_path, e.downloaded_bytes, s.kind
          FROM podcast_episodes e
@@ -86,6 +136,9 @@ pub fn query_candidates_for_device(
         let Some(source) = source_from_kind(&kind) else {
             continue;
         };
+        if !enabled.allows(source) {
+            continue;
+        }
         let Ok(metadata) = std::fs::metadata(&source_path) else {
             continue;
         };
@@ -163,7 +216,19 @@ pub fn build_plan(
     remove_deleted: bool,
     source: PodcastSyncSource,
     cap_bytes: Option<u64>,
+    enabled: EnabledSyncSources,
 ) -> PodcastSyncPlan {
+    // `MTP-46`: a switched-off source is not a source with nothing selected.
+    // The difference is destructive — with `remove_deleted` on, an empty
+    // desired set makes *every* resident file of this source a removal, so
+    // gating only the candidate query would have turned switching YouTube off
+    // into "wipe YouTube off the phone on the next sync". `SET-9` promises the
+    // opposite: nothing is deleted, and switching it back on restores the
+    // previous sync. This lives here, in the function that produces
+    // `to_remove`, rather than at the one caller that could forget it.
+    if !enabled.allows(source) {
+        return PodcastSyncPlan::default();
+    }
     let candidates = candidates
         .into_iter()
         .filter(|candidate| {
@@ -266,348 +331,5 @@ fn device_path(episode_id: i64, show: &str, title: &str, source: &Path) -> Strin
 }
 
 #[cfg(test)]
-mod tests {
-    use rusqlite::params;
-
-    use super::*;
-
-    fn migrated() -> rusqlite::Connection {
-        crate::db::open_migrated(None).unwrap()
-    }
-
-    fn insert_subscription(
-        conn: &rusqlite::Connection,
-        id: i64,
-        kind: &str,
-        sync_to_phone: bool,
-        title: &str,
-    ) {
-        conn.execute(
-            "INSERT INTO podcast_subscriptions
-             (id, kind, feed_url, title, auto_download, sync_to_phone, added_at)
-             VALUES (?1, ?2, ?3, ?4, 0, ?5, 1)",
-            params![
-                id,
-                kind,
-                format!("https://example.test/{id}"),
-                title,
-                sync_to_phone
-            ],
-        )
-        .unwrap();
-    }
-
-    fn insert_episode(
-        conn: &rusqlite::Connection,
-        id: i64,
-        subscription_id: i64,
-        path: &std::path::Path,
-        downloaded_bytes: i64,
-    ) {
-        conn.execute(
-            "INSERT INTO podcast_episodes
-             (id, subscription_id, guid, title, audio_url, downloaded_path,
-              downloaded_bytes, first_seen_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1)",
-            params![
-                id,
-                subscription_id,
-                format!("episode-{id}"),
-                format!("Episode {id}: /?*"),
-                format!("https://example.test/{id}.mp3"),
-                path.to_string_lossy(),
-                downloaded_bytes
-            ],
-        )
-        .unwrap();
-    }
-
-    #[test]
-    fn pod_12_candidates_are_complete_and_explicitly_selected_for_the_device() {
-        let conn = migrated();
-        let downloads = tempfile::tempdir().unwrap();
-        let eligible = downloads.path().join("eligible.mp3");
-        let youtube = downloads.path().join("youtube.mp3");
-        let unselected = downloads.path().join("unselected.mp3");
-        let partial = downloads.path().join("partial.mp3");
-        std::fs::write(&eligible, b"complete").unwrap();
-        std::fs::write(&youtube, b"youtube").unwrap();
-        std::fs::write(&unselected, b"unselected").unwrap();
-        std::fs::write(&partial, b"short").unwrap();
-
-        insert_subscription(&conn, 1, "rss", true, "Show: One / Daily");
-        insert_subscription(&conn, 2, "youtube", true, "Video Channel");
-        insert_subscription(&conn, 3, "rss", false, "Other Show");
-        crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:pixel", true).unwrap();
-        crate::podcasts::phone_sync::set_device_enabled(&conn, 3, "mtp:tablet", true).unwrap();
-        insert_episode(&conn, 11, 1, &eligible, 8);
-        insert_episode(&conn, 12, 2, &youtube, 7);
-        insert_episode(&conn, 13, 3, &unselected, 10);
-        insert_episode(&conn, 14, 1, &partial, 99);
-        insert_episode(&conn, 15, 1, &eligible, 8);
-        conn.execute(
-            "UPDATE podcast_episodes SET removed_at = 1 WHERE id = 15",
-            [],
-        )
-        .unwrap();
-
-        let candidates = super::query_candidates_for_device(&conn, "mtp:pixel").unwrap();
-
-        // Episode 12 belongs to a YouTube subscription that was never
-        // explicitly selected for "mtp:pixel" (only subscription 1 was), so
-        // it stays out — not because of its kind, but because selection is
-        // per subscription and per device (POD-12), same as RSS.
-        assert_eq!(candidates.len(), 1);
-        assert_eq!(candidates[0].episode_id, 11);
-        assert_eq!(candidates[0].source, PodcastSyncSource::Rss);
-        assert_eq!(candidates[0].source_path, eligible);
-        assert_eq!(candidates[0].size_bytes, 8);
-        assert_eq!(
-            candidates[0].device_path,
-            "Show One Daily/11-Episode 11.mp3"
-        );
-    }
-
-    #[test]
-    fn pod_12_a_selected_youtube_subscription_is_queried_just_like_rss() {
-        let conn = migrated();
-        let downloads = tempfile::tempdir().unwrap();
-        let video = downloads.path().join("video.webm");
-        std::fs::write(&video, b"video-bytes").unwrap();
-
-        insert_subscription(&conn, 1, "youtube", false, "Channel");
-        crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:pixel", true).unwrap();
-        insert_episode(&conn, 11, 1, &video, 11);
-
-        let candidates = query_candidates_for_device(&conn, "mtp:pixel").unwrap();
-
-        assert_eq!(candidates.len(), 1);
-        assert_eq!(candidates[0].source, PodcastSyncSource::Youtube);
-        assert_eq!(candidates[0].episode_id, 11);
-    }
-
-    #[test]
-    fn pod_12_legacy_downloads_backfill_size_before_phone_sync() {
-        let conn = migrated();
-        let downloads = tempfile::tempdir().unwrap();
-        let legacy = downloads.path().join("legacy.mp3");
-        std::fs::write(&legacy, b"legacy").unwrap();
-        insert_subscription(&conn, 1, "rss", true, "Legacy Show");
-        crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:pixel", true).unwrap();
-        insert_episode(&conn, 11, 1, &legacy, 6);
-        conn.execute(
-            "UPDATE podcast_episodes SET downloaded_bytes = NULL WHERE id = 11",
-            [],
-        )
-        .unwrap();
-
-        let candidates = query_candidates_for_device(&conn, "mtp:pixel").unwrap();
-
-        assert_eq!(candidates.len(), 1);
-        assert_eq!(candidates[0].size_bytes, 6);
-        assert_eq!(
-            crate::podcasts::store::episode(&conn, 11)
-                .unwrap()
-                .unwrap()
-                .downloaded_bytes,
-            Some(6)
-        );
-    }
-
-    #[test]
-    fn pod_12_plan_copies_and_removes_only_inside_the_rss_podcast_tree() {
-        let source = PodcastSyncCandidate {
-            episode_id: 1,
-            source: PodcastSyncSource::Rss,
-            source_path: "/downloads/one.mp3".into(),
-            device_path: "Show/1-One.mp3".into(),
-            title: "One".into(),
-            show: "Show".into(),
-            size_bytes: 100,
-            source_mtime: 1,
-        };
-        let youtube = PodcastSyncCandidate {
-            source: PodcastSyncSource::Youtube,
-            device_path: "Channel/2-Video.webm".into(),
-            ..source.clone()
-        };
-        let inventory = vec![
-            PodcastDeviceFile {
-                device_path: source.device_path.clone(),
-                size_bytes: 50,
-            },
-            PodcastDeviceFile {
-                device_path: "Old/9-Old.mp3".into(),
-                size_bytes: 20,
-            },
-            PodcastDeviceFile {
-                device_path: "../Music/Reprise/Album/track.mp3".into(),
-                size_bytes: 20,
-            },
-            PodcastDeviceFile {
-                device_path: "/Podcasts/Other App/keep.mp3".into(),
-                size_bytes: 20,
-            },
-        ];
-
-        let plan = build_plan(
-            vec![source.clone(), youtube],
-            &inventory,
-            true,
-            PodcastSyncSource::Rss,
-            None,
-        );
-
-        assert_eq!(plan.to_copy, [source]);
-        assert_eq!(plan.to_remove, ["Old/9-Old.mp3".to_string()]);
-        assert_eq!(plan.bytes, 100);
-        assert_eq!(
-            plan.bytes_freed, 20,
-            "bytes_freed sums the removed inventory files, not the whole inventory"
-        );
-    }
-
-    #[test]
-    fn mtp_45_youtube_source_selects_youtube_candidates_the_same_way_rss_does() {
-        let rss = PodcastSyncCandidate {
-            episode_id: 1,
-            source: PodcastSyncSource::Rss,
-            source_path: "/downloads/one.mp3".into(),
-            device_path: "Show/1-One.mp3".into(),
-            title: "One".into(),
-            show: "Show".into(),
-            size_bytes: 100,
-            source_mtime: 1,
-        };
-        let youtube = PodcastSyncCandidate {
-            source: PodcastSyncSource::Youtube,
-            device_path: "Channel/2-Video.webm".into(),
-            size_bytes: 200,
-            ..rss.clone()
-        };
-
-        let plan = build_plan(
-            vec![rss, youtube.clone()],
-            &[],
-            true,
-            PodcastSyncSource::Youtube,
-            None,
-        );
-
-        assert_eq!(plan.to_copy, [youtube]);
-        assert_eq!(plan.bytes, 200);
-    }
-
-    #[test]
-    fn mtp_25_a_cap_evicts_the_oldest_candidates_before_copying_or_removing() {
-        let old = PodcastSyncCandidate {
-            episode_id: 1,
-            source: PodcastSyncSource::Youtube,
-            source_path: "/downloads/old.webm".into(),
-            device_path: "Channel/1-Old.webm".into(),
-            title: "Old".into(),
-            show: "Channel".into(),
-            size_bytes: 60,
-            source_mtime: 1,
-        };
-        let newer = PodcastSyncCandidate {
-            episode_id: 2,
-            device_path: "Channel/2-Newer.webm".into(),
-            title: "Newer".into(),
-            size_bytes: 60,
-            source_mtime: 2,
-            ..old.clone()
-        };
-        // `old` is already resident on the device; `newer` is not yet
-        // copied. A 60-byte cap only has room for one of them, so `old`
-        // (the smaller age) must leave — evicted before copying, not
-        // copied then immediately evicted.
-        let inventory = vec![PodcastDeviceFile {
-            device_path: old.device_path.clone(),
-            size_bytes: 60,
-        }];
-
-        let plan = build_plan(
-            vec![old.clone(), newer.clone()],
-            &inventory,
-            true,
-            PodcastSyncSource::Youtube,
-            Some(60),
-        );
-
-        assert_eq!(plan.to_copy, [newer]);
-        assert_eq!(plan.to_remove, [old.device_path]);
-        assert_eq!(plan.bytes, 60);
-        assert_eq!(plan.bytes_freed, 60);
-    }
-
-    #[test]
-    fn mtp_25_a_cap_that_already_fits_evicts_nothing() {
-        let candidate = PodcastSyncCandidate {
-            episode_id: 1,
-            source: PodcastSyncSource::Rss,
-            source_path: "/downloads/one.mp3".into(),
-            device_path: "Show/1-One.mp3".into(),
-            title: "One".into(),
-            show: "Show".into(),
-            size_bytes: 10,
-            source_mtime: 1,
-        };
-
-        let plan = build_plan(
-            vec![candidate.clone()],
-            &[],
-            true,
-            PodcastSyncSource::Rss,
-            Some(100),
-        );
-
-        assert_eq!(plan.to_copy, [candidate]);
-        assert!(plan.to_remove.is_empty());
-    }
-
-    #[test]
-    fn pod_12_each_device_receives_only_its_selected_subscriptions() {
-        let conn = migrated();
-        let downloads = tempfile::tempdir().unwrap();
-        let phone_episode = downloads.path().join("phone.mp3");
-        let tablet_episode = downloads.path().join("tablet.mp3");
-        std::fs::write(&phone_episode, b"phone").unwrap();
-        std::fs::write(&tablet_episode, b"tablet").unwrap();
-        insert_subscription(&conn, 1, "rss", false, "Phone Show");
-        insert_subscription(&conn, 2, "rss", false, "Tablet Show");
-        insert_episode(&conn, 11, 1, &phone_episode, 5);
-        insert_episode(&conn, 12, 2, &tablet_episode, 6);
-        crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:phone", true).unwrap();
-        crate::podcasts::phone_sync::set_device_enabled(&conn, 2, "mtp:tablet", true).unwrap();
-
-        let phone = query_candidates_for_device(&conn, "mtp:phone").unwrap();
-        let tablet = query_candidates_for_device(&conn, "mtp:tablet").unwrap();
-        let unselected = query_candidates_for_device(&conn, "mtp:other").unwrap();
-
-        assert_eq!(
-            phone
-                .iter()
-                .map(|episode| episode.episode_id)
-                .collect::<Vec<_>>(),
-            [11]
-        );
-        assert_eq!(
-            tablet
-                .iter()
-                .map(|episode| episode.episode_id)
-                .collect::<Vec<_>>(),
-            [12]
-        );
-        assert!(unselected.is_empty());
-    }
-
-    #[test]
-    fn pod_12_managed_paths_reject_absolute_parent_and_control_components() {
-        assert!(safe_relative_path("Show/1-Episode.mp3"));
-        assert!(!safe_relative_path("../Music/Reprise/track.mp3"));
-        assert!(!safe_relative_path("Show/../../track.mp3"));
-        assert!(!safe_relative_path("/Podcasts/Reprise/track.mp3"));
-        assert!(!safe_relative_path("Show/\ntrack.mp3"));
-    }
-}
+#[path = "podcasts_tests.rs"]
+mod tests;

@@ -87,6 +87,11 @@ struct DeviceState {
     /// selection state rather than a second one.
     youtube_selection: YoutubeSelectionSummary,
     podcast_selection: PodcastSelectionSummary,
+    /// `MTP-46`: refreshed alongside the two summaries above, from the same
+    /// `recompute_delta_silent` that already holds the connection — `view()`
+    /// has none, and reading settings from the projection would put a
+    /// database query in the frontend's render path.
+    enabled_sources: reprise_core::device_sync::podcasts::EnabledSyncSources,
     page: SyncPageState,
     /// `MTP-42`'s projection, refreshed on every `recompute_delta_silent`
     /// from the same facts (`waiting` set, connectivity, the global gate,
@@ -147,6 +152,13 @@ impl DeviceState {
             youtube_waiting: 0,
             youtube_selection: YoutubeSelectionSummary::default(),
             podcast_selection: PodcastSelectionSummary::default(),
+            // Off until the first recompute reads the real switches: a row
+            // that appears and then vanishes is worse than one that appears
+            // once the answer is known.
+            enabled_sources: reprise_core::device_sync::podcasts::EnabledSyncSources {
+                rss: false,
+                youtube: false,
+            },
             page: SyncPageState::default(),
             preparation: reprise_core::device_sync::PreparationPhase::Absent,
             preparation_missing: Vec::new(),
@@ -212,6 +224,7 @@ impl DeviceState {
             youtube_bytes: device_bytes[1],
             podcast_bytes: device_bytes[2],
             youtube_selection: self.youtube_selection,
+            enabled_sources: self.enabled_sources,
             podcast_selection: self.podcast_selection,
             preparation: self.preparation.clone(),
             preparation_missing: self.preparation_missing.clone(),

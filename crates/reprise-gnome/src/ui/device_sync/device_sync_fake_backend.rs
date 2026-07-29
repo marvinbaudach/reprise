@@ -28,6 +28,10 @@ use crate::ui::device_sync::device_sync_runtime::*;
 pub(super) type TestFuture<T> = Pin<Box<dyn Future<Output = Result<T, String>>>>;
 type DeviceSubscriber = Rc<dyn Fn(Vec<DeviceDescriptor>)>;
 type DeleteObserver = Rc<dyn Fn(&str)>;
+/// `MTP-46`: lets a test act *between* the phases of one sync — the mirror
+/// copies first, the content phase runs after, and only an observer fired in
+/// between can simulate the user flipping a switch mid-transfer.
+type CopyObserver = Rc<dyn Fn(&str)>;
 
 #[derive(Clone)]
 struct CopyGate {
@@ -92,6 +96,7 @@ pub(super) struct FakeState {
     inspection_gate: RefCell<Option<InspectionGate>>,
     inspection_error: RefCell<Option<String>>,
     delete_observer: RefCell<Option<DeleteObserver>>,
+    copy_observer: RefCell<Option<CopyObserver>>,
     /// Design 7d's folder browser (`MTP-31`/`MTP-32`) double: storages this
     /// backend claims to have, and a `(storage, path) -> children` map the
     /// tests populate directly instead of touching a real filesystem.
@@ -212,6 +217,10 @@ impl FakeBackend {
 
     pub(super) fn fail_next_inspection(&self, error: &str) {
         self.state.inspection_error.replace(Some(error.into()));
+    }
+
+    pub(super) fn observe_copies(&self, observer: CopyObserver) {
+        self.state.copy_observer.replace(Some(observer));
     }
 
     pub(super) fn observe_deletes(&self, observer: DeleteObserver) {
@@ -363,6 +372,10 @@ impl DeviceBackend for FakeBackend {
                     stale_progress(expected_size.saturating_mul(10), expected_size);
                 });
                 return Err("cancelled".into());
+            }
+            let observer = state.copy_observer.borrow().clone();
+            if let Some(observer) = observer {
+                observer(&relative_target);
             }
             state
                 .copy_order

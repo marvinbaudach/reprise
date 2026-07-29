@@ -365,3 +365,94 @@ fn mtp_20_the_page_shows_the_recorded_runs_with_their_deviations() {
         "a run that never finished must say so: {labels:?}"
     );
 }
+
+/// `MTP-46`, the visible half: the core gate already keeps a switched-off
+/// source out of the plan, but a Content row still reading "0 of 3 channels"
+/// would tell the user their phone is set up to receive something it will
+/// never receive. Both halves run against the same page, so the only
+/// difference is the switch.
+///
+/// Deliberately not written against `root_text()` like its siblings: that
+/// helper walks every child regardless of visibility, so it would happily
+/// report a hidden row's label and the test would pass with the feature
+/// removed.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn mtp_46_a_switched_off_source_has_no_content_row_on_the_device_page() {
+    gtk4::init().expect("GTK test display");
+
+    fn visible_text(widget: &gtk4::Widget, output: &mut String) {
+        if !widget.is_visible() {
+            return;
+        }
+        if let Ok(label) = widget.clone().downcast::<gtk4::Label>() {
+            output.push_str(&label.text());
+            output.push('\n');
+        }
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            visible_text(&current, output);
+            child = current.next_sibling();
+        }
+    }
+
+    fn page_text(device: &DeviceView) -> String {
+        let (_surface, root) = DeviceSyncPage::new(
+            device,
+            PageActions {
+                set_profile: Rc::new(|_| {}),
+                set_playlist: Rc::new(|_, _| {}),
+                start: Rc::new(|| {}),
+                cancel: Rc::new(|| {}),
+                eject: Rc::new(|| {}),
+            },
+            &no_op_content_actions(),
+        );
+        let mut text = String::new();
+        visible_text(root.upcast_ref(), &mut text);
+        text
+    }
+
+    let mut both_on = device();
+    both_on.enabled_sources = reprise_core::device_sync::podcasts::EnabledSyncSources {
+        rss: true,
+        youtube: true,
+    };
+    let on = page_text(&both_on);
+    assert!(
+        on.contains("YouTube audio"),
+        "with YouTube on its Content row is visible"
+    );
+    assert!(
+        on.contains("Podcast episodes"),
+        "with Podcasts on its Content row is visible"
+    );
+
+    let mut youtube_off = both_on.clone();
+    youtube_off.enabled_sources.youtube = false;
+    let off = page_text(&youtube_off);
+    assert!(
+        !off.contains("YouTube audio"),
+        "switching YouTube off must take its Content row off the page, not leave a zero row"
+    );
+    assert!(
+        off.contains("Podcast episodes"),
+        "Podcasts is a peer module and must be untouched by YouTube's switch"
+    );
+    assert!(
+        off.contains("Playlists"),
+        "local playlists have no module switch and always stay"
+    );
+
+    let mut podcasts_off = both_on.clone();
+    podcasts_off.enabled_sources.rss = false;
+    let off = page_text(&podcasts_off);
+    assert!(
+        !off.contains("Podcast episodes"),
+        "switching Podcasts off must take its Content row off the page"
+    );
+    assert!(
+        off.contains("YouTube audio"),
+        "and must leave YouTube, its peer, alone"
+    );
+}

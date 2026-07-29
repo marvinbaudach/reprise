@@ -67,6 +67,7 @@ pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::Preferences
             }
             rows.set_sensitive(active);
             context.sidebar.refresh("YouTube module toggled");
+            context.notify_source_modules_changed();
         });
     }
 
@@ -99,6 +100,7 @@ pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::Preferences
             }
             rows.set_sensitive(active);
             context.sidebar.refresh("Podcasts module toggled");
+            context.notify_source_modules_changed();
         });
     }
 
@@ -150,6 +152,9 @@ pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::Preferences
             for group in &groups {
                 group.set_sensitive(active);
             }
+            // `MTP-46`: the global gate empties the sync on its own, so an
+            // open device page has to lose its source rows here too.
+            context.notify_source_modules_changed();
         });
     }
 
