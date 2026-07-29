@@ -480,6 +480,38 @@ fn priority_test_request(episode_id: i64, priority: PodcastsPriority) -> Podcast
     }
 }
 
+/// [`recv_prefer_priority`] with a deadline.
+///
+/// Every lane these tests use is pre-filled before the call, so a correct
+/// implementation returns immediately and never comes near the timeout. A
+/// regression to plain FIFO, however, drains the ordinary lane first and then
+/// blocks forever on an empty one — which would hang the whole test binary
+/// instead of failing it. A gate that hangs reports nothing; one that fails
+/// reports exactly what broke, which is the entire point of a rule-named test.
+///
+/// The receive runs on a detached thread rather than a scoped one on purpose:
+/// `std::thread::scope` joins before it returns, so a genuinely stuck receive
+/// would hang here too and defeat the deadline.
+fn recv_within(
+    priority: &async_channel::Receiver<PodcastsRequest>,
+    ordinary: &async_channel::Receiver<PodcastsRequest>,
+) -> PodcastsRequest {
+    let (priority, ordinary) = (priority.clone(), ordinary.clone());
+    let (done, wait) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = done.send(recv_prefer_priority(&priority, &ordinary));
+    });
+    match wait.recv_timeout(std::time::Duration::from_secs(5)) {
+        Ok(Ok(request)) => request,
+        Ok(Err(error)) => panic!("recv_prefer_priority reported an error: {error}"),
+        Err(_) => panic!(
+            "recv_prefer_priority did not return within 5s: the priority lane is not \
+             being preferred, so the receive is waiting on an already-drained \
+             ordinary lane"
+        ),
+    }
+}
+
 /// MTP-44: the download manager keeps exactly one worker and one
 /// `PodcastsOperation::Download`, but a high-priority request (device-sync
 /// preparation) must be served ahead of ordinary work already queued in
@@ -505,13 +537,13 @@ fn mtp_44_priority_download_is_served_before_an_earlier_ordinary_one() {
         .try_send(priority_test_request(2, PodcastsPriority::High))
         .unwrap();
 
-    let first = recv_prefer_priority(&priority_receiver, &ordinary_receiver).unwrap();
+    let first = recv_within(&priority_receiver, &ordinary_receiver);
     assert_eq!(
         first.operation,
         PodcastsOperation::Download { episode_id: 2 }
     );
 
-    let second = recv_prefer_priority(&priority_receiver, &ordinary_receiver).unwrap();
+    let second = recv_within(&priority_receiver, &ordinary_receiver);
     assert_eq!(
         second.operation,
         PodcastsOperation::Download { episode_id: 1 }
@@ -538,7 +570,7 @@ fn mtp_44_priority_lane_fully_drains_before_the_ordinary_lane_resumes() {
 
     let served: Vec<i64> = (0..3)
         .map(|_| {
-            let request = recv_prefer_priority(&priority_receiver, &ordinary_receiver).unwrap();
+            let request = recv_within(&priority_receiver, &ordinary_receiver);
             match request.operation {
                 PodcastsOperation::Download { episode_id } => episode_id,
                 other => panic!("unexpected operation {other:?}"),
@@ -563,7 +595,7 @@ fn mtp_44_closed_priority_lane_falls_back_to_the_ordinary_channel_without_spinni
         .try_send(priority_test_request(1, PodcastsPriority::Normal))
         .unwrap();
 
-    let served = recv_prefer_priority(&priority_receiver, &ordinary_receiver).unwrap();
+    let served = recv_within(&priority_receiver, &ordinary_receiver);
     assert_eq!(
         served.operation,
         PodcastsOperation::Download { episode_id: 1 }
