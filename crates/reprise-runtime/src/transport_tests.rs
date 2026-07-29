@@ -719,3 +719,6 @@ fn starting_a_track_makes_the_previous_streams_reports_stale() {
 
 #[path = "transport_failure_tests.rs"]
 mod failures;
+
+#[path = "transport_parity_tests.rs"]
+mod parity;
