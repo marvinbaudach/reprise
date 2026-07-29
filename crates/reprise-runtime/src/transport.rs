@@ -781,3 +781,6 @@ mod transport_tests;
 
 #[path = "transport_queue.rs"]
 mod queue_editing;
+
+#[path = "transport_gapless.rs"]
+mod gapless;

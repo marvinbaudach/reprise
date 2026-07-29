@@ -2,6 +2,7 @@
 
 use reprise_core::device_sync::machine::Event as DeviceEvent;
 use reprise_core::device_sync::MirrorPlan;
+use reprise_core::library::settings::{self, TrackTransition};
 use reprise_core::playback::StreamEvent;
 use reprise_runtime_protocol::command::CommandOutcome;
 use reprise_runtime_protocol::device_run::DeviceRunSnapshot;
@@ -118,14 +119,38 @@ impl Runtime {
     /// Builds a runtime over an already-migrated database.
     #[must_use]
     pub fn new(conn: Connection, ports: Ports) -> Self {
-        Self {
+        let runtime = Self {
             conn,
             ports,
             clients: Clients::new(),
             transport: Transport::new(),
             devices: DeviceRuns::new(),
             queue_revision: 0,
-        }
+        };
+        // The backend is told the transition mode once at startup, the way
+        // `PlaybackBackend::set_transition` asks: without it the pre-feeding
+        // below arrives at a backend still on its own default.
+        let (mode, crossfade) = runtime.transition();
+        runtime.ports.playback.set_transition(mode, crossfade);
+        runtime
+    }
+
+    /// The configured handoff mode, read fresh rather than cached: a setting
+    /// changed in another surface has to take effect without a restart, and
+    /// that is exactly what the GTK controller does on every pre-feed.
+    fn transition(&self) -> (TrackTransition, u8) {
+        (
+            settings::get_track_transition(&self.conn),
+            settings::get_crossfade_seconds(&self.conn),
+        )
+    }
+
+    /// Re-tells the backend what to hand off to. Called after anything that
+    /// can change the answer.
+    fn refresh_pre_feed(&mut self) {
+        let (mode, _) = self.transition();
+        self.transport
+            .refresh_pre_feed(&*self.ports.playback, &*self.ports.library, mode);
     }
 
     /// Admits a client, or refuses it for good.
@@ -189,7 +214,7 @@ impl Runtime {
                 crate::error::Rejected::MissingCapability(capability),
             ));
         }
-        match command {
+        let outcome = match command {
             Command::Playback(playback) => {
                 let before = self.transport_facets();
                 let result = self.transport.playback_command(
@@ -270,7 +295,12 @@ impl Runtime {
                 self.publish_device_change(Some(client), device, before.as_ref());
                 result.map(|()| self.outcome(0))
             }
-        }
+        };
+        // The upcoming track may be a different one now — a queue edit, a
+        // skip, a repeat toggle all change the answer, and `set_next` is
+        // last-write-wins.
+        self.refresh_pre_feed();
+        outcome
     }
 
     /// Applies an asynchronous report from the audio backend.
@@ -287,6 +317,10 @@ impl Runtime {
         self.transport
             .player_event(&*self.ports.playback, &*self.ports.library, &event.event);
         self.publish_transport_changes(None, before);
+        // A finished track, a gapless handoff and a failure all move what
+        // comes next; one handoff has to set up the one after it or gapless
+        // works exactly once.
+        self.refresh_pre_feed();
     }
 
     /// Answers a [`crate::ports::DeviceEffects::plan`] request. `None` means
