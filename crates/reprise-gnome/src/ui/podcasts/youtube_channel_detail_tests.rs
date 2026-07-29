@@ -1,5 +1,4 @@
-//! Split out of `youtube_channel_detail.rs` to keep it under the
-//! file-size gate.
+//! Tests for `podcasts::youtube_channel_detail`, split out to keep the main module under the 800-line file-size gate.
 
 use std::collections::BTreeMap;
 
@@ -238,7 +237,13 @@ fn src_11_channel_header_stays_on_the_fallback_when_images_are_not_allowed() {
         summary: source_summary(&group, &BTreeMap::<i64, DownloadState>::new()),
         group,
     };
-    detail.update(std::slice::from_ref(&rendered), &BTreeMap::new(), false);
+    detail.update(
+        std::slice::from_ref(&rendered),
+        &BTreeMap::new(),
+        &[],
+        &BTreeMap::new(),
+        false,
+    );
 
     let header = detail
         .build_header(&rendered)
@@ -250,6 +255,93 @@ fn src_11_channel_header_stays_on_the_fallback_when_images_are_not_allowed() {
         .and_downcast::<gtk4::Stack>()
         .expect("source image stack");
     assert_eq!(artwork.visible_child_name().as_deref(), Some("fallback"));
+}
+
+fn find_phone_indicator(header: &gtk4::Box) -> Option<gtk4::Widget> {
+    let mut child = header.first_child();
+    while let Some(widget) = child {
+        if widget
+            .downcast_ref::<gtk4::Image>()
+            .is_some_and(|image| image.icon_name().as_deref() == Some("phone-symbolic"))
+        {
+            return Some(widget);
+        }
+        child = widget.next_sibling();
+    }
+    None
+}
+
+/// `POD-12` / `D3`: the channel detail header's "On phone" indicator
+/// must track the same per-device selection the channel toggle writes
+/// (`podcasts_context_menu` / `podcasts_device_sync::install_action`) —
+/// absent while unselected, present the moment a connected device is
+/// selected. It must also stay a plain, non-interactive `gtk4::Image`
+/// with no controller attached: this view has no code path that could
+/// write the selection back through it, only through the existing
+/// toggle.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn pod_12_channel_header_on_phone_indicator_reflects_the_toggle_and_stays_read_only() {
+    gtk4::init().unwrap();
+    let stack = gtk4::Stack::new();
+    let detail = YoutubeChannelDetail::new(&stack, true);
+    let group = reprise_core::podcasts::SourceGroup {
+        subscription_id: 7,
+        title: "Channel".into(),
+        author: None,
+        image_url: None,
+        kind: PodcastKind::Youtube,
+        sync_to_phone: false,
+        episodes: Vec::new(),
+    };
+    let rendered = RenderedSourceGroup {
+        summary: source_summary(&group, &BTreeMap::<i64, DownloadState>::new()),
+        group,
+    };
+    let phone = PodcastSyncDevice {
+        id: "mtp:phone".into(),
+        name: "Phone".into(),
+    };
+
+    // Connected, but not selected for this channel: no indicator.
+    detail.update(
+        std::slice::from_ref(&rendered),
+        &BTreeMap::new(),
+        std::slice::from_ref(&phone),
+        &BTreeMap::new(),
+        false,
+    );
+    let header = detail
+        .build_header(&rendered)
+        .downcast::<gtk4::Box>()
+        .unwrap();
+    assert!(
+        find_phone_indicator(&header).is_none(),
+        "indicator must not appear before the toggle selects this channel"
+    );
+
+    // The channel toggle selects this subscription for the connected
+    // device — the indicator must now reflect it.
+    let mut selected = BTreeMap::new();
+    selected.insert(7, vec!["mtp:phone".to_owned()]);
+    detail.update(
+        std::slice::from_ref(&rendered),
+        &BTreeMap::new(),
+        &[phone],
+        &selected,
+        false,
+    );
+    let header = detail
+        .build_header(&rendered)
+        .downcast::<gtk4::Box>()
+        .unwrap();
+    let indicator = find_phone_indicator(&header).expect("indicator must appear once selected");
+    assert!(indicator.is::<gtk4::Image>(), "must stay a plain glyph");
+    assert_eq!(
+        indicator.observe_controllers().n_items(),
+        0,
+        "must carry no gesture/action controller — it has no write path back to selection"
+    );
 }
 
 fn children_of(root: &gtk4::Box) -> Vec<gtk4::Widget> {
@@ -281,7 +373,13 @@ fn pod_14_only_shorts_here_offers_a_way_to_reveal_them() {
         summary: source_summary(&group, &BTreeMap::<i64, DownloadState>::new()),
         group,
     };
-    detail.update(std::slice::from_ref(&rendered), &BTreeMap::new(), false);
+    detail.update(
+        std::slice::from_ref(&rendered),
+        &BTreeMap::new(),
+        &[],
+        &BTreeMap::new(),
+        false,
+    );
     detail.state.borrow_mut().open_channel(7);
     detail.render_active();
 

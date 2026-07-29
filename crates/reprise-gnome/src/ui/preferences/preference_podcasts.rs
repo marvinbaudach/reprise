@@ -48,6 +48,7 @@ pub(in crate::ui) fn build(conn: &Rc<RefCell<Connection>>, enabled: bool) -> Pod
         ytdlp_path: None,
         refresh_hours: config::DEFAULT_REFRESH_HOURS,
         latest_per_channel_default: config::DEFAULT_LATEST_PER_CHANNEL,
+        keep_downloaded_default: config::DEFAULT_KEEP_DOWNLOADED,
     });
 
     let import_count = adw::SpinRow::with_range(5.0, 100.0, 1.0);

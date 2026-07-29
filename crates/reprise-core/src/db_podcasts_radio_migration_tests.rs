@@ -252,6 +252,50 @@ fn v47_adds_a_nullable_per_channel_latest_override_defaulting_to_no_override() {
 }
 
 #[test]
+fn v48_adds_a_nullable_per_channel_keep_downloaded_override_defaulting_to_no_override() {
+    let conn = db::open(None).unwrap();
+    db::migrate(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO podcast_subscriptions
+         (id, kind, feed_url, title, added_at)
+         VALUES (1, 'rss', 'https://example.test/show', 'Show', 1)",
+        [],
+    )
+    .unwrap();
+
+    let keep_downloaded = conn
+        .query_row(
+            "SELECT keep_downloaded FROM podcast_subscriptions WHERE id = 1",
+            [],
+            |row| row.get::<_, Option<i64>>(0),
+        )
+        .unwrap();
+
+    assert_eq!(
+        keep_downloaded, None,
+        "a fresh subscription has no override — it falls back to the global default"
+    );
+
+    conn.execute(
+        "UPDATE podcast_subscriptions SET keep_downloaded = 0 WHERE id = 1",
+        [],
+    )
+    .unwrap();
+    let unlimited = conn
+        .query_row(
+            "SELECT keep_downloaded FROM podcast_subscriptions WHERE id = 1",
+            [],
+            |row| row.get::<_, Option<i64>>(0),
+        )
+        .unwrap();
+    assert_eq!(
+        unlimited,
+        Some(0),
+        "an explicit 0 must round-trip as 0 (unlimited), not collapse back to NULL (no override)"
+    );
+}
+
+#[test]
 fn migration_is_idempotent() {
     let conn = db::open(None).unwrap();
     db::migrate(&conn).unwrap();
@@ -263,6 +307,7 @@ fn migration_is_idempotent() {
     migrate_v40(&conn).unwrap();
     migrate_v41(&conn).unwrap();
     migrate_v47(&conn).unwrap();
+    migrate_v48(&conn).unwrap();
 
     assert_eq!(object_schema(&conn, "podcast_episodes"), before);
 }

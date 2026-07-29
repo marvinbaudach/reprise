@@ -3298,7 +3298,12 @@ listening statistics.
 - **POD-5** [active] [gtk] — Downloads are opt-in per subscription,
   live in the app's XDG data path under a GUID-stable path, follow the
   chosen cleanup policy, and are preferentially played back locally
-  offline.
+  offline. The "keep last N downloaded" cleanup policy's N is a global
+  default (`podcasts.keep_downloaded_default`, itself defaulting to 5) that
+  any channel's own "Keep N downloaded" override replaces outright for that
+  channel — never intersected with the default, never a silent minimum of
+  the two (`O-5`). `0`, on either the default or an override, means
+  unlimited, not "keep nothing" (`E-9`).
 - **POD-6** [active] [core] [gtk] — Individual RSS and YouTube
   episodes can be removed from the context menu, disappear
   immediately, and stay reversible via undo for ten seconds. The
@@ -3353,7 +3358,12 @@ listening statistics.
   playlists target (default `Music/Reprise`). A change of subscription kind at
   the same feed URL (e.g. a re-import as a different channel type) clears the
   previous device selection — that is not a source-kind special case but
-  applies symmetrically to any change of kind.
+  applies symmetrically to any change of kind. This selection is mirrored
+  read-only as an "On phone" indicator on both the channel list and the
+  channel detail page (`D3`): the indicator has no control of its own, and
+  the selection control described above stays the only place that writes
+  it — two places claiming the same selection is a defect this project has
+  hit before.
 - **POD-13** [active] [core] [gtk] — A failed episode download (POD-7's
   "failed" state) shows a classified reason directly in the row, next to the
   fixed "Download failed" heading — never only on hover or another
@@ -3406,6 +3416,26 @@ listening statistics.
   remain the stream URL themselves. The preview reads name, bitrate,
   genre, and content type exclusively from ICY/HTTP headers and never
   streams the body.
+- **RAD-5** [active] [core] [gtk] — The Add Station dialog always shows
+  three one-click radio-browser searches — "Metal in DE", "Top voted",
+  "Near you" — regardless of whether a location is stored. "Near you"
+  reuses the one app-level, already-consented location (`O-4`); it never
+  queries the XDG Location portal or a geocoder itself, and hoisting that
+  location out of the `concerts.` namespace carries its existing consent
+  forward rather than asking again. With a country-taggable location
+  stored, the chip runs a country-filtered search; with none — no location
+  at all, or one whose only source was "Use current location" and
+  therefore carries no address text — activating the chip opens the
+  location setting in Preferences instead, the same deep-link shape
+  `present_plugins` already uses for the Online Lyrics settings button. It
+  never fires a silent unfiltered search standing in for "near you": a
+  chip that claims to filter by location but does not is worse than
+  sending the user to fix the input. The country code itself is derived
+  only from data a call Reprise already makes — Nominatim's
+  `addressdetails` enrichment of the existing forward-geocode request
+  behind city search — never from a new reverse-geocoding call, so a
+  location set via the portal path stays honestly countryless rather than
+  guessed.
 
 ## AG. Runtime service (headless control)
 

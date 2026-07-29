@@ -270,6 +270,17 @@ impl RadioView {
     pub(in crate::ui) fn set_on_station_removed(&self, callback: impl Fn(i64) + 'static) {
         *self.shared.on_removed.borrow_mut() = Some(Rc::new(callback));
     }
+
+    /// `RAD-5`: forwards to the Add Station dialog's "Near you" hand-off —
+    /// see `RadioAddDialog::set_on_location_settings`. Wired from
+    /// `window_runtime_wiring.rs` once `PreferencesContext` exists, the same
+    /// shape as the Online Lyrics settings button's `present_plugins` deep
+    /// link.
+    pub(in crate::ui) fn set_on_location_settings(&self, callback: impl Fn() + 'static) {
+        if let Some(dialog) = self.shared.add_dialog.borrow().as_ref() {
+            dialog.set_on_location_settings(callback);
+        }
+    }
 }
 
 fn refresh_shared(shared: &Rc<Shared>) {

@@ -208,6 +208,9 @@ fn playback_queue_and_job_snapshots_survive_a_dbus_round_trip() {
         failure_kind: Some("not_playable".into()),
         failure_track_id: Some(41),
         initiated_by: Some(7),
+        external_ref: Some("podcast/42".into()),
+        live: true,
+        stopped_reason: Some("finished".into()),
     };
     assert_eq!(round_trip(&playback), playback);
 
@@ -325,18 +328,24 @@ fn the_playback_wire_field_names_are_the_checked_in_contract() {
             failure_kind: Some("not_playable".into()),
             failure_track_id: Some(41),
             initiated_by: Some(7),
+            external_ref: Some("podcast/42".into()),
+            live: true,
+            stopped_reason: Some("finished".into()),
         }),
         [
             "album",
             "artist",
             "duration_ms",
+            "external_ref",
             "failure_kind",
             "failure_track_id",
             "initiated_by",
+            "live",
             "position_ms",
             "repeat",
             "shuffle",
             "status",
+            "stopped_reason",
             "title",
             "track_id",
             "volume",
@@ -544,6 +553,9 @@ fn the_whole_runtime_snapshot_survives_a_dbus_round_trip() {
             failure_kind: Some("backend".into()),
             failure_track_id: Some(41),
             initiated_by: Some(7),
+            external_ref: None,
+            live: false,
+            stopped_reason: None,
         },
         queue: QueueSnapshot {
             revision: 9,
@@ -578,6 +590,6 @@ fn the_whole_runtime_snapshot_survives_a_dbus_round_trip() {
 
 #[test]
 fn the_protocol_version_is_pinned() {
-    assert_eq!(PROTOCOL_VERSION.major, 3);
-    assert_eq!(PROTOCOL_VERSION.minor, 2);
+    assert_eq!(PROTOCOL_VERSION.major, 4);
+    assert_eq!(PROTOCOL_VERSION.minor, 0);
 }

@@ -18,6 +18,10 @@ enum LocationDecision {
         latitude: f64,
         longitude: f64,
         name: String,
+        /// `RAD-5`/`O-4`: only ever set from city search's Nominatim
+        /// `addressdetails` — never from a reverse-geocoding call, so the
+        /// XDG-portal "Use current location" path always stores `None`.
+        country_code: Option<String>,
     },
     Error(String),
 }
@@ -30,6 +34,7 @@ fn geocode_decision(
             latitude: location.lat,
             longitude: location.lon,
             name: location.display_name,
+            country_code: location.country_code,
         },
         Ok(None) => LocationDecision::Error(strings::text(strings::CONCERTS_LOCATION_NOT_FOUND)),
         Err(_) => LocationDecision::Error(strings::text(strings::CONCERTS_LOCATION_NOT_FOUND)),
@@ -44,6 +49,10 @@ fn portal_decision(
             latitude: location.latitude,
             longitude: location.longitude,
             name: strings::text(strings::CONCERTS_CURRENT_LOCATION),
+            // The portal returns only coordinates — no address text at
+            // all — so there is nothing honest to derive a country from
+            // without a new reverse-geocoding call, which `O-4` forbids.
+            country_code: None,
         },
         Err(_) => LocationDecision::Error(strings::text(strings::CONCERTS_LOCATION_NOT_FOUND)),
     }
@@ -541,26 +550,21 @@ fn apply_location(
             latitude,
             longitude,
             name,
+            country_code,
         } => {
-            let mut saved = true;
-            for (key, value) in [
-                (
-                    reprise_core::concerts::config::LOCATION_LAT_KEY,
-                    latitude.to_string(),
-                ),
-                (
-                    reprise_core::concerts::config::LOCATION_LON_KEY,
-                    longitude.to_string(),
-                ),
-                (
-                    reprise_core::concerts::config::LOCATION_NAME_KEY,
-                    name.clone(),
-                ),
-            ] {
-                saved &= save_setting(conn, key, &value);
-            }
-            if saved {
-                runtime.notify_settings_changed();
+            // `O-4`: this is the single write path for the app-level,
+            // consented location — Radio's "Near you" chip (`RAD-5`) reads
+            // straight through `reprise_core::location`, not a copy.
+            let saved = reprise_core::location::store(
+                &conn.borrow(),
+                latitude,
+                longitude,
+                &name,
+                country_code.as_deref(),
+            );
+            match saved {
+                Ok(()) => runtime.notify_settings_changed(),
+                Err(error) => tracing::warn!(%error, "could not save Concerts location"),
             }
             status.set_subtitle(&name);
             status.set_visible(true);
@@ -573,16 +577,9 @@ fn apply_location(
 }
 
 fn clear_location(conn: &Rc<RefCell<Connection>>, runtime: &ConcertsRuntime) {
-    let mut saved = true;
-    for key in [
-        reprise_core::concerts::config::LOCATION_LAT_KEY,
-        reprise_core::concerts::config::LOCATION_LON_KEY,
-        reprise_core::concerts::config::LOCATION_NAME_KEY,
-    ] {
-        saved &= save_setting(conn, key, "");
-    }
-    if saved {
-        runtime.notify_settings_changed();
+    match reprise_core::location::clear(&conn.borrow()) {
+        Ok(()) => runtime.notify_settings_changed(),
+        Err(error) => tracing::warn!(%error, "could not clear Concerts location"),
     }
 }
 

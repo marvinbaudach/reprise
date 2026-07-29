@@ -77,6 +77,31 @@ pub fn search(terms: &str, order: SearchOrder) -> Result<Vec<StationCandidate>, 
     })
 }
 
+/// `RAD-5`: the filter shape behind the radio shortcut chips — an optional
+/// tag ("metal") and/or an optional country code ("DE"), as opposed to
+/// [`search`]'s free-text station-name match. Both fields empty is a
+/// deliberate, always-allowed broad search (unlike `search`'s empty-terms
+/// guard) — that is exactly what "Top voted" is.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SearchCriteria {
+    pub tag: Option<String>,
+    pub country_code: Option<String>,
+}
+
+/// `RAD-5`: runs one of the radio shortcut chips against radio-browser.
+/// Unlike [`search`], an empty [`SearchCriteria`] is a legitimate, broad
+/// request (radio-browser's whole catalog, ordered by `order`) rather than
+/// a no-op — the chip that wants exactly that is "Top voted".
+pub fn search_by(
+    criteria: &SearchCriteria,
+    order: SearchOrder,
+) -> Result<Vec<StationCandidate>, RadioError> {
+    super::servers::try_servers(|server| {
+        let body = super::http::get(&criteria_url(server, criteria, order))?;
+        parse_candidates(&body)
+    })
+}
+
 pub fn find_by_url(stream_url: &str) -> Result<Option<StationCandidate>, RadioError> {
     if http_url(stream_url).is_none() {
         return Ok(None);
@@ -100,6 +125,30 @@ pub fn search_url(server: &str, terms: &str, order: SearchOrder) -> String {
         .append_pair("reverse", "true")
         .append_pair("limit", "50")
         .append_pair("hidebroken", "true");
+    url.into()
+}
+
+#[must_use]
+pub fn criteria_url(server: &str, criteria: &SearchCriteria, order: SearchOrder) -> String {
+    let mut url = url::Url::parse(&format!(
+        "{}/json/stations/search",
+        server.trim_end_matches('/')
+    ))
+    .expect("radio-browser server URLs are normalized");
+    {
+        let mut pairs = url.query_pairs_mut();
+        if let Some(tag) = criteria.tag.as_deref() {
+            pairs.append_pair("tag", tag);
+        }
+        if let Some(country_code) = criteria.country_code.as_deref() {
+            pairs.append_pair("countrycode", country_code);
+        }
+        pairs
+            .append_pair("order", order.query_value())
+            .append_pair("reverse", "true")
+            .append_pair("limit", "50")
+            .append_pair("hidebroken", "true");
+    }
     url.into()
 }
 
@@ -250,6 +299,66 @@ mod tests {
             search_url("https://de1.example", "deep house", SearchOrder::Clicks),
             "https://de1.example/json/stations/search?name=deep+house&order=clickcount&reverse=true&limit=50&hidebroken=true"
         );
+    }
+
+    /// `RAD-5`: "Metal in DE" needs both a tag and a country code in the
+    /// same request; radio-browser takes both as independent query
+    /// parameters on the same `/stations/search` endpoint already used by
+    /// [`search`] — no separate endpoint, no new consent surface.
+    #[test]
+    fn rad_5_criteria_url_encodes_tag_and_country_together() {
+        assert_eq!(
+            criteria_url(
+                "https://de1.example",
+                &SearchCriteria {
+                    tag: Some("metal".into()),
+                    country_code: Some("DE".into()),
+                },
+                SearchOrder::Votes
+            ),
+            "https://de1.example/json/stations/search?tag=metal&countrycode=DE&order=votes&reverse=true&limit=50&hidebroken=true"
+        );
+    }
+
+    /// `RAD-5`: "Top voted" is a deliberate, unfiltered request — unlike
+    /// `search`'s empty-terms guard, an empty [`SearchCriteria`] must still
+    /// reach the server rather than short-circuit to an empty result.
+    #[test]
+    fn rad_5_criteria_url_with_no_filter_still_queries_the_whole_catalog() {
+        assert_eq!(
+            criteria_url("https://de1.example", &SearchCriteria::default(), SearchOrder::Votes),
+            "https://de1.example/json/stations/search?order=votes&reverse=true&limit=50&hidebroken=true"
+        );
+    }
+
+    #[test]
+    fn rad_5_fixture_search_by_criteria_discovers_a_server_without_using_the_network() {
+        let fixtures = tempfile::tempdir().unwrap();
+        std::fs::write(
+            fixtures.path().join("servers.json"),
+            r#"[{"name":"fixture.radio-browser.test"}]"#,
+        )
+        .unwrap();
+        std::fs::write(
+            fixtures.path().join("search-tag-metal-country-DE.json"),
+            r#"[{"stationuuid":"one","name":"Metal One","countrycode":"DE",
+                 "url_resolved":"https://radio.example/live","votes":10}]"#,
+        )
+        .unwrap();
+
+        let candidates = super::super::http::with_fixture_dir(fixtures.path(), || {
+            search_by(
+                &SearchCriteria {
+                    tag: Some("metal".into()),
+                    country_code: Some("DE".into()),
+                },
+                SearchOrder::Votes,
+            )
+        })
+        .unwrap();
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].country_code.as_deref(), Some("DE"));
     }
 
     #[test]

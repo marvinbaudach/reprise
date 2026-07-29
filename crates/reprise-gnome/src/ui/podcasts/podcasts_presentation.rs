@@ -7,6 +7,7 @@ use chrono::{DateTime, Datelike, Local, NaiveDate, Utc};
 use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::{EpisodeRow, EpisodeStatus, PodcastKind, SourceGroup};
 
+use super::podcasts_context_menu::PodcastSyncDevice;
 use crate::ui::strings;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -203,6 +204,24 @@ pub(super) fn sort_newest_first(rows: &mut [EpisodeRow]) {
     );
 }
 
+/// `POD-12` / `D3`: whether this channel is selected for at least one
+/// currently connected device — the single read-only fact the "On phone"
+/// indicator mirrors on both the channel list (`podcasts_groups::
+/// group_header`) and the channel detail page (`youtube_channel_detail::
+/// build_header`). Pure projection of state that already lives in
+/// `podcast_subscription_devices`; nothing about this function's shape lets
+/// a caller write the selection back — it takes no `Connection` and returns
+/// a plain `bool`, never a handle to mutate anything.
+#[must_use]
+pub(super) fn on_phone(
+    connected_devices: &[PodcastSyncDevice],
+    selected_device_ids: &[String],
+) -> bool {
+    connected_devices
+        .iter()
+        .any(|device| selected_device_ids.contains(&device.id))
+}
+
 pub(super) fn updated_ago(timestamp: Option<i64>, now: i64) -> String {
     let Some(timestamp) = timestamp else {
         return strings::text(strings::PODCAST_UPDATED_JUST_NOW);
@@ -376,5 +395,45 @@ mod tests {
         assert_eq!(rendered[0].summary.episode_count, 2);
         assert_eq!(rendered[0].summary.unplayed_count, 1);
         assert_eq!(rendered[0].summary.latest_published_at, Some(20));
+    }
+
+    /// `POD-12` / `D3`: the "On phone" indicator must track the selection
+    /// exactly — on the moment a connected device is added to the
+    /// selection, off the moment it is removed, and unaffected by devices
+    /// that are not currently connected.
+    #[test]
+    fn pod_12_on_phone_reflects_the_toggle() {
+        let phone = PodcastSyncDevice {
+            id: "mtp:phone".into(),
+            name: "Phone".into(),
+        };
+        let tablet = PodcastSyncDevice {
+            id: "mtp:tablet".into(),
+            name: "Tablet".into(),
+        };
+
+        // Nothing selected yet.
+        assert!(!on_phone(std::slice::from_ref(&phone), &[]));
+
+        // Selected, but only for a device that is not currently connected.
+        assert!(!on_phone(
+            std::slice::from_ref(&phone),
+            &["mtp:tablet".to_owned()]
+        ));
+
+        // Selected for the connected device: the toggle just turned on.
+        assert!(on_phone(
+            std::slice::from_ref(&phone),
+            &["mtp:phone".to_owned(), "mtp:tablet".to_owned()]
+        ));
+
+        // A second connected device also counts.
+        assert!(on_phone(
+            &[phone.clone(), tablet],
+            &["mtp:tablet".to_owned()]
+        ));
+
+        // Un-toggled again: back to false.
+        assert!(!on_phone(&[phone], &[]));
     }
 }

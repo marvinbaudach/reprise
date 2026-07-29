@@ -39,13 +39,23 @@ impl Transport {
     /// Only a local path is pre-fed. `set_next` takes a path, and a backend
     /// has a separate entry point for remote media — feeding a URI through
     /// this one would be a handoff that fails at the moment it is needed.
+    ///
+    /// And nothing at all is pre-fed while external media is loaded. The
+    /// backend's `about-to-finish` fires for a podcast episode exactly as it
+    /// does for a library track — it has no idea which it is playing — so an
+    /// armed slot is GStreamer swapping the queued track in and starting it,
+    /// on its own streaming thread, before this side is consulted. By the
+    /// time the runtime could refuse the handoff the music is already
+    /// audible, which is precisely what `TrackFinished`'s external branch
+    /// exists to prevent. It is the same question, so it is the same
+    /// predicate: two spellings of "is this external" is how they drift.
     pub(crate) fn refresh_pre_feed(
         &mut self,
         backend: &dyn PlaybackBackend,
         library: &dyn LibraryPort,
         transition: TrackTransition,
     ) {
-        if transition == TrackTransition::Off {
+        if transition == TrackTransition::Off || self.external_is_loaded() {
             backend.set_next(None);
             return;
         }

@@ -138,19 +138,19 @@ fn reads_every_stored_concert_field_without_credentials_or_paths() {
     .unwrap();
     reprise_core::library::settings::set_setting(
         &conn,
-        reprise_core::concerts::config::LOCATION_NAME_KEY,
+        reprise_core::location::LOCATION_NAME_KEY,
         "Zurich",
     )
     .unwrap();
     reprise_core::library::settings::set_setting(
         &conn,
-        reprise_core::concerts::config::LOCATION_LAT_KEY,
+        reprise_core::location::LOCATION_LAT_KEY,
         "47.3769",
     )
     .unwrap();
     reprise_core::library::settings::set_setting(
         &conn,
-        reprise_core::concerts::config::LOCATION_LON_KEY,
+        reprise_core::location::LOCATION_LON_KEY,
         "8.5417",
     )
     .unwrap();
