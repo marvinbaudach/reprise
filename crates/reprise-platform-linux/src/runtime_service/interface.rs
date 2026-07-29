@@ -395,6 +395,7 @@ impl Reprise1 {
     async fn playback_changed(
         emitter: &SignalEmitter<'_>,
         sequence: u64,
+        initiator: u64,
         snapshot: PlaybackSnapshot,
     ) -> zbus::Result<()>;
 
@@ -402,6 +403,7 @@ impl Reprise1 {
     async fn queue_changed(
         emitter: &SignalEmitter<'_>,
         sequence: u64,
+        initiator: u64,
         snapshot: QueueSnapshot,
     ) -> zbus::Result<()>;
 
@@ -409,6 +411,7 @@ impl Reprise1 {
     async fn device_run_changed(
         emitter: &SignalEmitter<'_>,
         sequence: u64,
+        initiator: u64,
         snapshot: DeviceRunSnapshot,
     ) -> zbus::Result<()>;
 
@@ -416,6 +419,7 @@ impl Reprise1 {
     async fn job_changed(
         emitter: &SignalEmitter<'_>,
         sequence: u64,
+        initiator: u64,
         snapshot: JobSnapshot,
     ) -> zbus::Result<()>;
 

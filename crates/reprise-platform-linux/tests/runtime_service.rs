@@ -286,7 +286,7 @@ fn a_client_receives_the_deltas_for_its_own_session() {
     )
     .expect("the match rule is accepted");
 
-    client.connect().expect("the handshake succeeds");
+    let handshake = client.connect().expect("the handshake succeeds");
     client
         .call("PlayTracks", &(vec![1_i64], 0_u64))
         .expect("playing succeeds");
@@ -295,11 +295,26 @@ fn a_client_receives_the_deltas_for_its_own_session() {
         .next()
         .expect("a delta arrives")
         .expect("and it is a message");
-    let (sequence, snapshot): (u64, reprise_runtime_protocol::playback::PlaybackSnapshot) =
-        message.body().deserialize().expect("the delta decodes");
+    let (sequence, initiator, snapshot): (
+        u64,
+        u64,
+        reprise_runtime_protocol::playback::PlaybackSnapshot,
+    ) = message.body().deserialize().expect("the delta decodes");
     assert!(sequence > 0);
     assert_eq!(snapshot.status, "playing");
     assert_eq!(snapshot.track_id, Some(1));
+    assert_eq!(
+        initiator, handshake.client_id,
+        "a surface has to recognise its own change to follow somebody else's \
+         quietly (RUN-5), and comparing snapshots cannot tell it apart from \
+         an identical command another client sent"
+    );
+    assert_eq!(
+        snapshot.initiated_by,
+        Some(handshake.client_id),
+        "and the session's owner has to survive on the facet, because the \
+         quit policy stops only playback this surface started"
+    );
 }
 
 #[test]
@@ -416,11 +431,15 @@ fn a_sent_command_takes_effect_and_its_delta_comes_back() {
     let served = Served::start("clientsend", Duration::from_secs(60));
     let (client, events) =
         start_with_bus_name(vec!["playback:control".to_owned()], served.bus_name.clone());
-    await_event(
+    let connected = await_event(
         &events,
         |event| matches!(event, ClientEvent::Connected(_)),
         "connection",
     );
+    let ClientEvent::Connected(opening) = connected else {
+        unreachable!("the matcher only accepts Connected")
+    };
+    let me = opening.client_id;
 
     client.send(RuntimeCommand::PlayTracks {
         track_ids: vec![1, 2, 3],
@@ -432,12 +451,24 @@ fn a_sent_command_takes_effect_and_its_delta_comes_back() {
         |event| matches!(event, ClientEvent::PlaybackChanged { .. }),
         "playback delta",
     );
-    let ClientEvent::PlaybackChanged { sequence, snapshot } = event else {
+    let ClientEvent::PlaybackChanged {
+        sequence,
+        initiator,
+        snapshot,
+    } = event
+    else {
         unreachable!("the matcher only accepts PlaybackChanged")
     };
     assert!(sequence > 0);
     assert_eq!(snapshot.status, "playing");
     assert_eq!(snapshot.track_id, Some(1));
+    assert_eq!(
+        initiator,
+        Some(me),
+        "the attribution has to survive the whole way out and back — the \
+         runtime, the signal, and the client's own decoding"
+    );
+    assert_eq!(snapshot.initiated_by, Some(me));
     client.shutdown();
 }
 

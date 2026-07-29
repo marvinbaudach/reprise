@@ -170,6 +170,7 @@ fn playback_queue_and_job_snapshots_survive_a_dbus_round_trip() {
         repeat: "all".into(),
         failure_kind: Some("not_playable".into()),
         failure_track_id: Some(41),
+        initiated_by: Some(7),
     };
     assert_eq!(round_trip(&playback), playback);
 
@@ -248,6 +249,46 @@ fn field_names(value: &impl serde::Serialize) -> Vec<String> {
         .collect();
     names.sort();
     names
+}
+
+#[test]
+fn the_playback_wire_field_names_are_the_checked_in_contract() {
+    // Pinned for the same reason the device snapshot is: a client decodes by
+    // name, so a rename is a client reading the wrong column rather than a
+    // compile error. `failure_*` and `initiated_by` are the ones a surface
+    // branches on — a skipped track's toast and the quit policy.
+    assert_eq!(
+        field_names(&PlaybackSnapshot {
+            status: "playing".into(),
+            track_id: Some(42),
+            title: "Ghosts".into(),
+            artist: "Nine Inch Nails".into(),
+            album: "Ghosts I-IV".into(),
+            duration_ms: 214_000,
+            position_ms: 61_000,
+            volume: 0.75,
+            shuffle: true,
+            repeat: "all".into(),
+            failure_kind: Some("not_playable".into()),
+            failure_track_id: Some(41),
+            initiated_by: Some(7),
+        }),
+        [
+            "album",
+            "artist",
+            "duration_ms",
+            "failure_kind",
+            "failure_track_id",
+            "initiated_by",
+            "position_ms",
+            "repeat",
+            "shuffle",
+            "status",
+            "title",
+            "track_id",
+            "volume",
+        ]
+    );
 }
 
 #[test]
@@ -370,6 +411,7 @@ fn the_whole_runtime_snapshot_survives_a_dbus_round_trip() {
     let snapshot = RuntimeSnapshot {
         protocol_major: PROTOCOL_VERSION.major,
         protocol_minor: PROTOCOL_VERSION.minor,
+        client_id: 7,
         sequence: 41,
         playback: PlaybackSnapshot {
             status: "paused".into(),
@@ -384,6 +426,7 @@ fn the_whole_runtime_snapshot_survives_a_dbus_round_trip() {
             repeat: "off".into(),
             failure_kind: Some("backend".into()),
             failure_track_id: Some(41),
+            initiated_by: Some(7),
         },
         queue: QueueSnapshot {
             current_track_id: Some(42),
@@ -417,6 +460,6 @@ fn the_whole_runtime_snapshot_survives_a_dbus_round_trip() {
 
 #[test]
 fn the_protocol_version_is_pinned() {
-    assert_eq!(PROTOCOL_VERSION.major, 1);
-    assert_eq!(PROTOCOL_VERSION.minor, 5);
+    assert_eq!(PROTOCOL_VERSION.major, 2);
+    assert_eq!(PROTOCOL_VERSION.minor, 0);
 }

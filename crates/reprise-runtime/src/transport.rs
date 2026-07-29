@@ -77,6 +77,14 @@ pub(crate) struct Transport {
     current: Option<Loaded>,
     position_ms: i64,
     volume: f64,
+    /// Which client started the playback that is loaded, if any.
+    ///
+    /// Established by the two commands that *begin* a session — `PlayTracks`
+    /// and `PlayExternal` — and inherited by everything that happens inside
+    /// it: an automatic advance, a skip, a pause. Pressing Next in one
+    /// surface does not take a session over from the surface that started
+    /// it; only starting a new one does.
+    initiated_by: Option<u64>,
     /// Why the last automatic start did not happen, until something plays.
     ///
     /// Kept because stopping is not self-explaining: a queue that ran out and
@@ -105,6 +113,7 @@ impl Transport {
             current: None,
             position_ms: 0,
             volume: 1.0,
+            initiated_by: None,
             failure: None,
             stream: StreamGeneration::INITIAL,
         }
@@ -139,6 +148,7 @@ impl Transport {
             },
             failure_kind: self.failure.as_ref().map(|failure| failure.kind.into()),
             failure_track_id: self.failure.as_ref().and_then(|failure| failure.track_id),
+            initiated_by: self.current.as_ref().and(self.initiated_by),
         }
     }
 
@@ -168,6 +178,7 @@ impl Transport {
         library: &dyn LibraryPort,
         track_ids: Vec<i64>,
         start_index: usize,
+        initiated_by: Option<u64>,
     ) -> Result<(), RuntimeError> {
         if track_ids.is_empty() {
             return Err(RuntimeError::Rejected(Rejected::NothingToPlay));
@@ -176,7 +187,11 @@ impl Transport {
         let Some(track_id) = self.queue.current() else {
             return Err(RuntimeError::Rejected(Rejected::NothingToPlay));
         };
-        self.start(backend, library, track_id)
+        let started = self.start(backend, library, track_id);
+        if started.is_ok() {
+            self.initiated_by = initiated_by;
+        }
+        started
     }
 
     /// Plays something that is not a library track.
@@ -188,6 +203,7 @@ impl Transport {
         &mut self,
         backend: &dyn PlaybackBackend,
         media: &ExternalMedia,
+        initiated_by: Option<u64>,
     ) -> Result<(), RuntimeError> {
         if media.location.trim().is_empty() {
             return Err(RuntimeError::Rejected(Rejected::NothingToPlay));
@@ -211,6 +227,8 @@ impl Transport {
         });
         self.position_ms = 0;
         self.status = PlaybackState::Playing;
+        self.initiated_by = initiated_by;
+        self.failure = None;
         self.stream = backend.current_generation();
         Ok(())
     }
@@ -454,6 +472,10 @@ impl Transport {
         self.status = PlaybackState::Stopped;
         self.current = None;
         self.position_ms = 0;
+        // Nothing is loaded, so nobody's session is running any more. Leaving
+        // the claim standing would let a surface stop playback a later client
+        // started.
+        self.initiated_by = None;
         Ok(())
     }
 
@@ -635,6 +657,7 @@ impl Transport {
         self.current = None;
         self.position_ms = 0;
         self.status = PlaybackState::Stopped;
+        self.initiated_by = None;
     }
 
     /// Adopts a track as current *without* telling the backend to play it —

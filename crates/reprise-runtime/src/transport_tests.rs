@@ -82,7 +82,7 @@ fn fixture() -> Fixture {
 impl Fixture {
     fn play_tracks(&mut self, ids: Vec<i64>, start: usize) -> Result<(), RuntimeError> {
         self.transport
-            .play_tracks(&self.backend, &self.library, ids, start)
+            .play_tracks(&self.backend, &self.library, ids, start, None)
     }
 
     fn command(&mut self, command: &PlaybackCommand) -> Result<(), RuntimeError> {
@@ -785,7 +785,7 @@ fn a_queue_whose_every_remaining_entry_fails_stops_instead_of_trying_forever() {
     let library = EmptyingLibrary::with_tracks([1, 2, 3]);
     fixture
         .transport
-        .play_tracks(&fixture.backend, &library, vec![1, 2, 3], 0)
+        .play_tracks(&fixture.backend, &library, vec![1, 2, 3], 0, None)
         .unwrap();
     // Repeat would otherwise hand the same three entries back for ever.
     fixture

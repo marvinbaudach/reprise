@@ -27,6 +27,15 @@ const MAILBOX_CAPACITY: usize = 256;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ClientId(u64);
 
+/// The id as the plain number a snapshot or a signal carries. Clients
+/// compare it against the id they were handed at connect; nothing outside
+/// the runtime is expected to interpret it further.
+impl From<ClientId> for u64 {
+    fn from(id: ClientId) -> Self {
+        id.0
+    }
+}
+
 impl std::fmt::Display for ClientId {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(formatter, "client-{}", self.0)
@@ -122,10 +131,14 @@ impl Clients {
     /// Appends one event to every connected client's mailbox under a fresh
     /// sequence number. One number for all recipients: two clients that
     /// compare notes must agree on the order.
-    pub(crate) fn publish(&mut self, event: RuntimeEvent) {
+    ///
+    /// `initiator` is the client whose command provoked this, or `None` when
+    /// nothing a client asked for did — see [`SequencedEvent::initiator`].
+    pub(crate) fn publish(&mut self, initiator: Option<ClientId>, event: RuntimeEvent) {
         self.sequence += 1;
         let sequenced = SequencedEvent {
             sequence: self.sequence,
+            initiator,
             event,
         };
         for client in self.connected.values_mut() {

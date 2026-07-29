@@ -44,6 +44,18 @@ pub struct PlaybackSnapshot {
     /// The library track the failure was about. Absent when what failed had
     /// no library id, and absent when `failure_kind` is.
     pub failure_track_id: Option<i64>,
+    /// Which client started what is loaded, as the id that client was handed
+    /// at connect. Absent when nothing is loaded.
+    ///
+    /// A surface needs this to answer "is this mine?" — the question the quit
+    /// policy turns on: a window that closes stops the playback it started
+    /// and leaves alone the playback an agent started. Comparing titles or
+    /// track ids cannot answer it, because two clients may well have asked
+    /// for the same track.
+    ///
+    /// An id is not reused after a disconnect, so a reconnected client
+    /// correctly stops recognising playback its previous session began.
+    pub initiated_by: Option<u64>,
 }
 
 /// Something to play that is not a library track: a radio stream, a podcast

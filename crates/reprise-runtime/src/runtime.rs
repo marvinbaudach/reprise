@@ -183,7 +183,7 @@ impl Runtime {
                 // Published even when the command failed: a partially
                 // applied transport (a stop that reached the backend before
                 // the error) must not stay invisible.
-                self.publish_transport_changes(before);
+                self.publish_transport_changes(Some(client), before);
                 result
             }
             Command::Queue(queue) => {
@@ -193,7 +193,7 @@ impl Runtime {
                     &*self.ports.library,
                     queue,
                 );
-                self.publish_transport_changes(before);
+                self.publish_transport_changes(Some(client), before);
                 result
             }
             Command::PlayTracks {
@@ -206,28 +206,32 @@ impl Runtime {
                     &*self.ports.library,
                     track_ids.clone(),
                     *start_index,
+                    Some(client.into()),
                 );
-                self.publish_transport_changes(before);
+                self.publish_transport_changes(Some(client), before);
                 result
             }
             Command::PlayExternal(media) => {
                 let before = self.transport_facets();
-                let result = self.transport.play_external(&*self.ports.playback, media);
-                self.publish_transport_changes(before);
+                let result =
+                    self.transport
+                        .play_external(&*self.ports.playback, media, Some(client.into()));
+                self.publish_transport_changes(Some(client), before);
                 result
             }
             Command::Job(job) => {
                 let now = self.ports.clock.now_unix();
                 let job_id = jobs::command(&self.conn, now, job)?;
                 if let Some(snapshot) = jobs::snapshot_of(&self.conn, job_id)? {
-                    self.clients.publish(RuntimeEvent::JobChanged(snapshot));
+                    self.clients
+                        .publish(Some(client), RuntimeEvent::JobChanged(snapshot));
                 }
                 Ok(())
             }
             Command::Device(DeviceCommand::Start { device }) => {
                 let before = self.devices.snapshot(device);
                 let result = self.devices.start(&*self.ports.devices, device);
-                self.publish_device_change(device, before.as_ref());
+                self.publish_device_change(Some(client), device, before.as_ref());
                 result
             }
             Command::Device(DeviceCommand::Cancel { device }) => {
@@ -237,7 +241,7 @@ impl Runtime {
                     device,
                     self.ports.clock.now_monotonic_ms(),
                 );
-                self.publish_device_change(device, before.as_ref());
+                self.publish_device_change(Some(client), device, before.as_ref());
                 result
             }
         }
@@ -256,7 +260,7 @@ impl Runtime {
         let before = self.transport_facets();
         self.transport
             .player_event(&*self.ports.playback, &*self.ports.library, &event.event);
-        self.publish_transport_changes(before);
+        self.publish_transport_changes(None, before);
     }
 
     /// Answers a [`crate::ports::DeviceEffects::plan`] request. `None` means
@@ -270,7 +274,7 @@ impl Runtime {
             plan,
             self.ports.clock.now_monotonic_ms(),
         );
-        self.publish_device_change(device, before.as_ref());
+        self.publish_device_change(None, device, before.as_ref());
     }
 
     /// Answers a [`crate::ports::DeviceEffects::perform`] request.
@@ -282,7 +286,7 @@ impl Runtime {
             event,
             self.ports.clock.now_monotonic_ms(),
         );
-        self.publish_device_change(device, before.as_ref());
+        self.publish_device_change(None, device, before.as_ref());
     }
 
     /// Whether all four of §9.6's conditions hold: no client connected, no
@@ -309,25 +313,36 @@ impl Runtime {
     /// declare what it touched: a command that forgets to declare something
     /// produces a silently stale client, and there is no test that catches
     /// the omission reliably. Comparison cannot forget.
-    fn publish_transport_changes(&mut self, before: (PlaybackSnapshot, QueueSnapshot)) {
+    fn publish_transport_changes(
+        &mut self,
+        initiator: Option<ClientId>,
+        before: (PlaybackSnapshot, QueueSnapshot),
+    ) {
         let (playback_before, queue_before) = before;
         let playback = self.transport.playback_snapshot();
         if playback != playback_before {
             self.clients
-                .publish(RuntimeEvent::PlaybackChanged(playback));
+                .publish(initiator, RuntimeEvent::PlaybackChanged(playback));
         }
         let queue = self.transport.queue_snapshot();
         if queue != queue_before {
-            self.clients.publish(RuntimeEvent::QueueChanged(queue));
+            self.clients
+                .publish(initiator, RuntimeEvent::QueueChanged(queue));
         }
     }
 
-    fn publish_device_change(&mut self, device: &str, before: Option<&DeviceRunSnapshot>) {
+    fn publish_device_change(
+        &mut self,
+        initiator: Option<ClientId>,
+        device: &str,
+        before: Option<&DeviceRunSnapshot>,
+    ) {
         let Some(after) = self.devices.snapshot(device) else {
             return;
         };
         if before != Some(&after) {
-            self.clients.publish(RuntimeEvent::DeviceRunChanged(after));
+            self.clients
+                .publish(initiator, RuntimeEvent::DeviceRunChanged(after));
         }
     }
 }

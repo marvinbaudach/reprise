@@ -29,6 +29,11 @@ pub struct RuntimeSnapshot {
     /// strictly greater value, which is what makes "snapshot, then deltas"
     /// gap-free without a replay log.
     pub sequence: u64,
+    /// The id this runtime gave *this* client. Every event carries the id of
+    /// whoever provoked it, so a surface compares the two to tell its own
+    /// change from somebody else's — which is what RUN-5 turns on, and what
+    /// the quit policy reads off `PlaybackSnapshot::initiated_by`.
+    pub client_id: u64,
     pub playback: PlaybackSnapshot,
     pub queue: QueueSnapshot,
     /// Only devices this runtime has actually run. An absent device is

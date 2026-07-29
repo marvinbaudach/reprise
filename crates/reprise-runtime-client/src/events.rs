@@ -125,18 +125,27 @@ pub enum ClientEvent {
     Refused(ClientError),
     PlaybackChanged {
         sequence: u64,
+        /// Who provoked this, or `None` when nothing a client asked for did —
+        /// a position tick, a track ending, an idle deadline. A surface compares
+        /// it against [`RuntimeSnapshot::client_id`] to tell its own change from
+        /// somebody else's: RUN-5 says an external change is followed quietly,
+        /// which is only decidable if "external" is decidable.
+        initiator: Option<u64>,
         snapshot: PlaybackSnapshot,
     },
     QueueChanged {
         sequence: u64,
+        initiator: Option<u64>,
         snapshot: QueueSnapshot,
     },
     DeviceRunChanged {
         sequence: u64,
+        initiator: Option<u64>,
         snapshot: DeviceRunSnapshot,
     },
     JobChanged {
         sequence: u64,
+        initiator: Option<u64>,
         snapshot: JobSnapshot,
     },
     /// A command this client sent did not succeed. Carried as an event
