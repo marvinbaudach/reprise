@@ -1905,11 +1905,10 @@ property is set and yet nothing happens.
   signal. `Connectivity` is an explicitly set state, not an inference from a
   failed request — what it does not know: the reachability of an individual
   provider, authentication, or rate limits; those are request outcomes, not a
-  connectivity state. This projection is a wiring foundation, not a finished
-  display: automatically running pending actions when the network returns, and
-  the display in the podcast and YouTube rows, follow in a later commit
-  (`NET-3c`, F2) — an identifier reserved for that follow-up, deliberately not
-  yet written as a rule, so nothing here claims a contract that does not exist.
+  connectivity state. This projection is a wiring foundation: automatically
+  running pending actions when the network returns is now built on top of it
+  (`NET-3c`, F2); the "Needs network" display in the podcast and YouTube rows
+  remains open and is not claimed here.
 - **NET-3b** [active] [gtk] — The radio exception: stations always stay listed.
   The context menu shows "Play" (`radio_context_menu::play_menu_label`) when
   `Connectivity::Online` holds or the station is already playing; under
@@ -1919,6 +1918,24 @@ property is set and yet nothing happens.
   be deferred. Connectivity is an injectable state
   (`RadioView::set_connectivity`), `Online` by default and not yet attached to
   a real operating-system signal in this rule.
+- **NET-3c** [active] [core] — The runner `NET-3a` reserved this id for:
+  once connectivity is believed online, whatever is `wanted_on_device`
+  (`MTP-40`) but still missing a local file replays, in order, without a
+  second "offline queue" store — `wanted_on_device` plus each episode's own
+  download state already record what is pending, and this rule deliberately
+  does not add another. `podcasts::queued_downloads::pending_episode_ids`
+  selects those episode ids ordered ascending by id, the same order they were
+  requested in (ids are assigned in insertion order and a want is never
+  reordered); `run_queued_downloads` trusts the `Connectivity` it is given
+  (never re-deriving it) and is a no-op while offline, otherwise replaying
+  each pending episode through the exact same
+  `podcasts::pipeline::download_episode` every other download path already
+  uses. The GTK trigger is `PodcastsView::set_connectivity`, mirroring
+  `NET-3b`'s `RadioView::set_connectivity` exactly: a transition from
+  `Offline` to `Online` dispatches `PodcastsOperation::RunQueued` on the
+  existing podcast worker; any other transition is a no-op. As with `NET-3b`,
+  this is an injectable seam, not yet attached to a real operating-system
+  signal.
 - **LYR-1** [planned] [core] — Local embedded lyrics and `.lrc` sidecars
   are shown independently of the Online Lyrics module. Reprise does not
   yet read these local formats today; the rule stays planned until this

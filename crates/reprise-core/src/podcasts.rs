@@ -11,6 +11,7 @@ pub mod itunes;
 pub mod phone_sync;
 pub mod pipeline;
 pub mod query;
+pub mod queued_downloads;
 pub mod refresh;
 pub mod source_artwork;
 pub mod status;
