@@ -190,8 +190,11 @@ fn a_foreign_protocol_major_comes_back_as_refused() {
     let served = Served::start("major", Duration::from_secs(60));
     let client = served.client();
 
+    // Derived from what this runtime speaks, not hardcoded: a major bump
+    // otherwise turns "foreign" into "our own version", and the test goes on
+    // passing a handshake it exists to refuse.
     let error = client
-        .connect_as(2, 0)
+        .connect_as(reprise_runtime_protocol::PROTOCOL_VERSION.major + 1, 0)
         .expect_err("a foreign major cannot decode what this runtime sends");
 
     let kind = error_kind(&error);
@@ -743,7 +746,10 @@ fn a_refused_client_is_told_why_instead_of_reconnecting_forever() {
     let (client, events) = reprise_runtime_client::start_with_bus_name_and_version(
         vec!["playback:control".to_owned()],
         served.bus_name.clone(),
-        reprise_runtime_protocol::ProtocolVersion { major: 2, minor: 0 },
+        reprise_runtime_protocol::ProtocolVersion {
+            major: reprise_runtime_protocol::PROTOCOL_VERSION.major + 1,
+            minor: 0,
+        },
     );
 
     let event = await_event(
