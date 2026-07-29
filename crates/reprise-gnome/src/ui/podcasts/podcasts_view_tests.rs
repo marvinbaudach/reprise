@@ -1,6 +1,9 @@
 //! Display tests for the four Block B2 empty states. Split out of
 //! `podcasts_view.rs` to keep it under the file-size gate.
 
+use std::time::{Duration, Instant};
+
+use gtk4::glib::variant::ToVariant;
 use reprise_core::podcasts::feed::ParsedEpisode;
 use reprise_core::podcasts::store::{self, NewSubscription};
 
@@ -171,4 +174,152 @@ fn src_10_module_off_does_not_hide_an_already_populated_view() {
 
     assert_eq!(view.stack.visible_child_name().as_deref(), Some("list"));
     assert!(view.filter_bar.widget().is_visible());
+}
+
+/// `POD-9`: `pod_9_library_summary_*` (`podcasts_presentation.rs`) and
+/// `pod_9_library_summary_*` (`strings_podcasts.rs`) pin the pure projection
+/// and its string formatting, but neither one calls `podcasts_view::render`
+/// — deleting the `self.filter_bar.set_context(...)` call in `render`
+/// (`podcasts_view.rs` ~369) would leave both green. This closes that gap on
+/// the real, fully wired view: one subscription with one unplayed episode
+/// means `library_summary` resolves to `{shows: 1, episodes: 1, new: 1}`,
+/// so the header must read exactly what `strings::podcast_library_summary`
+/// renders for those numbers.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn pod_9_the_library_summary_header_actually_reaches_the_filter_bar() {
+    gtk4::init().unwrap();
+    let conn = reprise_core::db::open_migrated(None).unwrap();
+    subscribe_with_one_episode(&conn);
+
+    let view = view(conn, PodcastKind::Rss);
+
+    assert_eq!(
+        view.filter_bar.result_text(),
+        strings::podcast_library_summary(1, 1, 1),
+        "render() must hand the real library summary to the filter bar, not leave it stale"
+    );
+}
+
+/// Pumps the GLib main loop until `episode_id`'s recorded download state is
+/// terminal (`Downloaded`/`Failed`) or `deadline` passes, returning whatever
+/// was last observed. Bounded so a wiring regression that leaves the action
+/// inert fails fast instead of hanging the test run.
+fn pump_until_terminal(
+    view: &PodcastsView,
+    episode_id: i64,
+    deadline: Instant,
+) -> Option<DownloadState> {
+    loop {
+        let state = view.download_states.borrow().get(&episode_id).cloned();
+        if matches!(
+            state,
+            Some(DownloadState::Downloaded { .. } | DownloadState::Failed { .. })
+        ) {
+            return state;
+        }
+        if Instant::now() >= deadline {
+            return state;
+        }
+        gtk4::glib::MainContext::default().iteration(true);
+    }
+}
+
+/// `POD-13`: the row's retry action must actually retry, not just look
+/// clickable. `pod_13_a_failed_download_offers_a_sensitive_retry_action`
+/// (`podcasts_groups.rs`) pins the button's icon/tooltip/sensitivity from a
+/// pure function and never activates anything, so it would stay green even
+/// if `PodcastsView::toggle_download` — the production dispatch the button's
+/// `"podcasts.toggle-download"` action name reaches — were deleted. This
+/// test closes that gap: it seeds a *stale* failed attempt, activates the
+/// real action on the fully wired view (the same one `install_actions`
+/// installs and the row's button targets), and requires a *fresh* terminal
+/// result distinct from the stale one.
+///
+/// The episode's `audio_url` points at a loopback port nothing listens on,
+/// so the download fails fast and deterministically without depending on
+/// this sandbox having outbound network access — `pipeline::download_episode`
+/// (proven in `pipeline_refresh_tests.rs`) unconditionally walks
+/// `Queued` → `Downloading` → a terminal state for every attempt; this test's
+/// job is only to prove the button reaches that pipeline at all, which the
+/// synchronous `Queued` set below already does, before either the terminal
+/// state or the (frequently coalesced — the progress channel is
+/// latest-wins by design, see `one_shot_task::spawn_with_progress`) transient
+/// `Downloading` tick can arrive.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn pod_13_activating_the_retry_action_runs_a_fresh_download_attempt() {
+    gtk4::init().unwrap();
+    let conn = reprise_core::db::open_migrated(None).unwrap();
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::PODCASTS_MODULE, true)
+        .unwrap();
+    let subscription_id = store::add_or_restore(
+        &conn,
+        &NewSubscription {
+            kind: PodcastKind::Rss,
+            feed_url: "https://example.test/feed".to_owned(),
+            title: "Show".to_owned(),
+            author: None,
+            image_url: None,
+            auto_download: false,
+        },
+        1,
+    )
+    .unwrap();
+    let episode_id = store::upsert_episode(
+        &conn,
+        subscription_id,
+        &ParsedEpisode {
+            guid: "episode".to_owned(),
+            title: "Episode".to_owned(),
+            // Loopback, nothing listening: a same-host connection refusal,
+            // so this is fast and deterministic without touching the real
+            // network.
+            audio_url: "http://127.0.0.1:1/episode.mp3".to_owned(),
+            page_url: None,
+            published_at: None,
+            duration_secs: None,
+        },
+        1,
+    )
+    .unwrap()
+    .unwrap()
+    .episode_id;
+
+    let view = view(conn, PodcastKind::Rss);
+    const STALE_MESSAGE: &str = "stale attempt from before this retry";
+    view.download_states.borrow_mut().insert(
+        episode_id,
+        DownloadState::Failed {
+            message: STALE_MESSAGE.to_owned(),
+        },
+    );
+
+    let activated = view
+        .root()
+        .activate_action("podcasts.toggle-download", Some(&episode_id.to_variant()));
+    assert!(
+        activated.is_ok(),
+        "the row's action must exist and accept an episode id target"
+    );
+
+    // `toggle_download` sets `Queued` synchronously, before the worker
+    // thread can have replied — this alone proves the click reached the
+    // production dispatch rather than doing nothing.
+    assert_eq!(
+        view.download_states.borrow().get(&episode_id).cloned(),
+        Some(DownloadState::Queued),
+        "activating the retry action must synchronously start a fresh attempt"
+    );
+
+    let terminal = pump_until_terminal(&view, episode_id, Instant::now() + Duration::from_secs(5));
+    match terminal {
+        Some(DownloadState::Failed { message }) => {
+            assert_ne!(
+                message, STALE_MESSAGE,
+                "the retry must run a fresh attempt, not just redisplay the stale failure"
+            );
+        }
+        other => panic!("expected a fresh terminal Failed state, got {other:?}"),
+    }
 }

@@ -560,14 +560,19 @@ fn selection_summary_text(
             )
         }
         SyncTargetKind::YoutubeAudio => {
-            // `MTP-36`: the live pipeline now always resolves a real
+            // `MTP-36`/`E-9`: the live pipeline resolves a real
             // `latest_per_channel` (the global default or a channel's own
-            // override) before this is ever rendered, so `usize::MAX` no
-            // longer arrives from `recompute_delta_silent`. The sentinel
-            // check stays so a test or an as-yet-unrecomputed view still
-            // omits the "latest K each" clause instead of claiming a
-            // number nothing enforces.
-            if youtube_selection.latest_per_channel == usize::MAX {
+            // override) before this is ever rendered, and — like the size
+            // cap has meant since `MTP-38` — a resolved `0` means
+            // *unlimited*, not "keep nothing"; `resolve_latest_per_channel`
+            // never returns `usize::MAX` for that. The `usize::MAX` check
+            // stays too, purely as a defensive "not yet computed" sentinel
+            // (`Default::default()`'s placeholder before a real recompute
+            // has run) — either value omits the "latest K each" clause
+            // instead of claiming a number nothing enforces or, worse,
+            // reading as "latest 0 each" and being misread as no episodes
+            // selected when in fact all of them are.
+            if matches!(youtube_selection.latest_per_channel, 0 | usize::MAX) {
                 format!(
                     "{} of {} channels selected",
                     youtube_selection.channels_selected, youtube_selection.channels_total
@@ -708,6 +713,33 @@ mod tests {
                 },
             ),
             "3 of 5 shows selected · unplayed downloads only"
+        );
+    }
+
+    /// `E-9`: `0` is the real, resolved value the pipeline hands the panel
+    /// for "unlimited" — never `usize::MAX`, which is a display-only
+    /// sentinel (see `mtp_37_selection_summary_renders_live_youtube_and_podcast_counts`).
+    /// Before this fix, `0` fell through to the "latest {n} each" branch and
+    /// rendered "latest 0 each", reading as "no episodes selected" when in
+    /// fact every episode of every selected channel was. Assert the literal
+    /// digit `0` never appears in the rendered summary.
+    #[test]
+    fn e_9_a_resolved_zero_latest_per_channel_reads_as_unlimited_not_a_quantity() {
+        let summary = selection_summary_text(
+            SyncTargetKind::YoutubeAudio,
+            &[],
+            0,
+            YoutubeSelectionSummary {
+                channels_selected: 4,
+                channels_total: 4,
+                latest_per_channel: 0,
+            },
+            PodcastSelectionSummary::default(),
+        );
+        assert_eq!(summary, "4 of 4 channels selected");
+        assert!(
+            !summary.contains('0'),
+            "unlimited (0) must never render as a quantity: {summary}"
         );
     }
 
