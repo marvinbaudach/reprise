@@ -619,18 +619,11 @@ fn require_manage(conn: &rusqlite::Connection, granted_at_startup: bool) -> Resu
     }
 }
 
+/// `POD-13`: delegates to `PodcastError::classify` — the single classifier
+/// also used by `pipeline::download_episode` for a failed download — rather
+/// than keeping its own copy of the same match that could drift from it.
 pub(crate) fn podcast_source_error(error: &reprise_core::podcasts::PodcastError) -> DataError {
-    use reprise_core::podcasts::PodcastError;
-    let message = match error {
-        PodcastError::Timeout => "podcast source timed out",
-        PodcastError::Transport(_) => "podcast source could not be reached",
-        PodcastError::HttpStatus(_) => "podcast source returned an HTTP error",
-        PodcastError::Body(_) | PodcastError::Parse(_) => "podcast source returned invalid data",
-        PodcastError::NotModified => "podcast source was not modified",
-        PodcastError::YtDlp(_) => "YouTube source could not be read with yt-dlp",
-        PodcastError::Disabled(_) => "this source is disabled in Reprise preferences",
-    };
-    DataError::InvalidInput(message.to_owned())
+    DataError::InvalidInput(error.classify().to_owned())
 }
 
 pub(crate) fn radio_source_error(error: &reprise_core::radio::RadioError) -> DataError {

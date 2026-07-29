@@ -101,6 +101,10 @@ pub const PODCAST_DOWNLOAD_QUEUED: &str = N_!("Queued");
 pub const PODCAST_DOWNLOADING: &str = N_!("Downloading");
 pub const PODCAST_DOWNLOAD_MISSING: &str = N_!("File missing");
 pub const PODCAST_DOWNLOAD_FAILED: &str = N_!("Download failed");
+/// `POD-13`: the retry action's tooltip, distinct from `PODCAST_DOWNLOAD` so
+/// a failed row's action button reads as "try again", not "download for the
+/// first time".
+pub const PODCAST_RETRY_DOWNLOAD: &str = N_!("Retry download");
 pub const PODCAST_REMOVE_EPISODE: &str = N_!("Remove episode");
 pub const PODCAST_MORE_OPTIONS: &str = N_!("More episode options");
 pub const PODCAST_MORE_SOURCE_OPTIONS: &str = N_!("More source options");
