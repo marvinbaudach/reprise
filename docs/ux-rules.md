@@ -3069,7 +3069,7 @@ Hörstatistik.
   „Load more" erweitert denselben Kanal einmalig über die yt-dlp-Providergrenze
   bis Eintrag 40. Auswahl und Mehrfach-Download beziehungsweise -Entfernen
   bleiben kanalgebunden; jede Zeile zeigt den Downloadzustand aus POD-7.
-- **POD-11** [aktiv] [gtk] — Auf der YouTube-Kanalseite trägt jede Zeile
+- **POD-11** [aktiv] [core] [gtk] — Auf der YouTube-Kanalseite trägt jede Zeile
   eine eigene Download-Spalte mit dem Zustand aus POD-7 und, sobald eine
   Datei tatsächlich existiert, ihrer kompakt formatierten Größe (z. B.
   „148 MB", „1.2 GB"); für nicht heruntergeladene Episoden wird nie eine
@@ -3078,7 +3078,12 @@ Hörstatistik.
   Episoden und deren Gesamtgröße auf der Platte (z. B. „10 of 487 ·
   3 downloaded · 1.2 GB") — und bleibt nach „Load more", beim Ein-/
   Ausblenden von Shorts sowie nach Abschluss oder Löschung eines Downloads
-  korrekt.
+  korrekt. **Nachtrag (Block H, MCP-Parität):** Fenster, Shorts-Filter und
+  diese Kopfzeilen-Summe sind reine Projektionen in
+  `reprise_core::podcasts::channel_window` (`visible_window`,
+  `available_count`, `channel_download_summary`); GTK (`YoutubeChannelState`)
+  und der MCP-Tool `music_get_channel_detail` rufen dieselbe Funktion auf,
+  statt getrennt zu rechnen.
 - **POD-12** [aktiv] [core] [gtk] — Heruntergeladene Episoden aus explizit
   pro stabiler Geräteidentität ausgewählten RSS- **und** YouTube-Abos sind
   gleichberechtigt für Android-Sync geeignet — die Auswahl ist pro

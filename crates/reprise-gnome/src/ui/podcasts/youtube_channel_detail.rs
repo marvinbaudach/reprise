@@ -8,6 +8,9 @@ use chrono::Local;
 use gtk4::gio;
 use gtk4::glib::variant::ToVariant;
 use gtk4::prelude::*;
+use reprise_core::podcasts::channel_window::{
+    available_count, visible_window, EXTENDED_WINDOW, INITIAL_WINDOW,
+};
 use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::EpisodeRow;
 
@@ -15,10 +18,6 @@ use super::podcasts_download_presentation;
 use super::podcasts_groups::{self, DownloadRowWidgets};
 use super::podcasts_presentation::{duration, relative_date, status_pill, RenderedSourceGroup};
 use crate::ui::strings;
-
-const INITIAL_WINDOW: usize = 10;
-const EXTENDED_WINDOW: usize = 40;
-const SHORT_MAX_SECONDS: i64 = 180;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct YoutubeChannelState {
@@ -68,11 +67,7 @@ impl YoutubeChannelState {
             .get(&subscription_id)
             .copied()
             .unwrap_or(INITIAL_WINDOW);
-        episodes
-            .iter()
-            .filter(|episode| show_shorts || !is_short(episode))
-            .take(limit)
-            .collect()
+        visible_window(episodes, show_shorts, limit)
     }
 
     pub(super) fn set_loaded_limit(&mut self, subscription_id: i64, limit: usize) {
@@ -118,10 +113,7 @@ impl YoutubeChannelState {
 
     fn available_count(&self, subscription_id: i64, episodes: &[EpisodeRow]) -> usize {
         let show_shorts = self.effective_shows_shorts(subscription_id);
-        episodes
-            .iter()
-            .filter(|episode| show_shorts || !is_short(episode))
-            .count()
+        available_count(episodes, show_shorts)
     }
 
     fn retain_selected(&mut self, subscription_id: i64, available: &[EpisodeRow]) {
@@ -137,12 +129,6 @@ impl YoutubeChannelState {
     fn clear_selected(&mut self, subscription_id: i64) {
         self.selected.remove(&subscription_id);
     }
-}
-
-fn is_short(episode: &EpisodeRow) -> bool {
-    episode
-        .duration_secs
-        .is_some_and(|seconds| (0..=SHORT_MAX_SECONDS).contains(&seconds))
 }
 
 fn project_channel(

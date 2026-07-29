@@ -94,6 +94,22 @@ type DeviceSyncStorageRow = (
 type DeviceSyncControlsRow = (bool, bool, bool, bool);
 type DeviceSyncProgressRow = (u64, u64, u64);
 type DeviceSyncTimestampRow = (bool, i64);
+type DeviceSyncCategoryRow = (
+    String,
+    String,
+    bool,
+    u64,
+    bool,
+    u64,
+    String,
+    u64,
+    u64,
+    u64,
+    u64,
+    u64,
+    u64,
+);
+type DeviceSyncCategoryDeviceRow = (String, Vec<DeviceSyncCategoryRow>);
 type DeviceSyncRow = (
     String,
     bool,
@@ -304,6 +320,44 @@ impl DeviceSyncStub {
         )]
     }
 
+    fn category_snapshot(&self) -> Vec<DeviceSyncCategoryDeviceRow> {
+        vec![(
+            "Pixel".into(),
+            vec![
+                (
+                    "youtube_audio".into(),
+                    "/Music/Reprise-YouTube".into(),
+                    true,
+                    42,
+                    true,
+                    8 * 1024 * 1024 * 1024,
+                    "diff".into(),
+                    3,
+                    900,
+                    1,
+                    50,
+                    2,
+                    0,
+                ),
+                (
+                    "podcast_episodes".into(),
+                    "/Podcasts/Reprise".into(),
+                    true,
+                    0,
+                    true,
+                    4 * 1024 * 1024 * 1024,
+                    "source_off".into(),
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                ),
+            ],
+        )]
+    }
+
     fn configure(&self, device_name: &str, sources: Vec<(String, i64)>, profile: &str) {
         self.calls
             .lock()
@@ -461,8 +515,23 @@ fn device_sync_state_and_commands_round_trip_without_internal_identity() {
     assert_eq!(body["devices"][0]["progress"]["bytes_per_second"], 10);
     assert_eq!(body["devices"][0]["controls"]["can_cancel"], true);
     assert_eq!(body["devices"][0]["controls"]["can_eject"], false);
+    assert_eq!(body["devices"][0]["categories"][0]["kind"], "youtube_audio");
+    assert_eq!(body["devices"][0]["categories"][0]["reading"], "diff");
+    assert_eq!(body["devices"][0]["categories"][0]["files_to_copy"], 3);
+    assert_eq!(body["devices"][0]["categories"][1]["reading"], "source_off");
+    assert_eq!(
+        body["devices"][0]["categories"][1]["files_to_copy"], 0,
+        "source_off must not carry a diff's figures"
+    );
+    // Only the `diff` category contributes to the aggregate balance.
+    assert_eq!(body["devices"][0]["balance"]["files_to_copy"], 3);
+    assert_eq!(body["devices"][0]["balance"]["bytes_freed"], 50);
+    assert_eq!(body["devices"][0]["balance"]["has_work"], true);
     assert!(!state.to_string().contains("serial"));
-    assert!(!state.to_string().contains("path"));
+    // The device's own MTP target folder path is intentionally shown
+    // (matches the GUI's device page, MTP-28) — only a *local* filesystem
+    // path would be a leak, and none of those appear here.
+    assert!(state.to_string().contains("Music/Reprise-YouTube"));
 
     for params in [
         json!({

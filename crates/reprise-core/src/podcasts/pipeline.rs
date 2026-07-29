@@ -151,6 +151,113 @@ pub enum PipelineError {
     YoutubeSourceUnavailable,
     #[error(transparent)]
     Cleanup(#[from] super::downloads::CleanupError),
+    #[error("podcast episode does not exist")]
+    EpisodeNotFound,
+}
+
+/// Downloads one specific episode by id, synchronously. This is the same
+/// body the auto-download branch of [`refresh_to_root_with_download_progress`]
+/// runs for newly discovered episodes of an `auto_download` subscription —
+/// factored out (Block H, MCP parity) so `music_manage_episodes`'s `download`
+/// action drives the exact same download path instead of a second one that
+/// could drift from it. Idempotent: an episode that already has a
+/// downloaded file is reported `Downloaded` immediately without a second
+/// network round trip.
+pub fn download_episode(
+    conn: &Connection,
+    feed_fetcher: &dyn FeedFetcher,
+    youtube_fetcher: &dyn YoutubeFetcher,
+    download_root: &Path,
+    episode_id: i64,
+    on_progress: &mut dyn FnMut(DownloadState),
+) -> Result<DownloadState, PipelineError> {
+    let episode = super::store::episode(conn, episode_id)?.ok_or(PipelineError::EpisodeNotFound)?;
+    if episode.downloaded_path.is_some() {
+        let bytes = episode.downloaded_bytes.unwrap_or(0).max(0) as u64;
+        let state = DownloadState::Downloaded { bytes };
+        on_progress(state.clone());
+        return Ok(state);
+    }
+    let subscription = super::store::subscription(conn, episode.subscription_id)?
+        .ok_or(PipelineError::EpisodeNotFound)?;
+    let extension = super::downloads::extension_for(subscription.kind, &episode.audio_url);
+    let destination = super::downloads::download_path(
+        download_root,
+        &subscription.feed_url,
+        &episode.guid,
+        extension,
+    );
+    on_progress(DownloadState::Queued);
+    let mut state = DownloadState::Downloading {
+        received_bytes: 0,
+        total_bytes: None,
+    };
+    on_progress(state.clone());
+    let download = super::downloads::download_atomically(&destination, |temporary| {
+        let mut report = |progress: DownloadProgress| {
+            state = super::download_state::downloading(
+                &state,
+                progress.received_bytes,
+                progress.total_bytes,
+            );
+            on_progress(state.clone());
+        };
+        match subscription.kind {
+            PodcastKind::Rss => {
+                feed_fetcher.download_with_progress(&episode.audio_url, temporary, &mut report)
+            }
+            PodcastKind::Youtube => {
+                youtube_fetcher.download_with_progress(&episode.audio_url, temporary, &mut report)
+            }
+        }
+    });
+    match download {
+        Ok(bytes) => {
+            let Some(destination_path) = destination.to_str() else {
+                remove_completed_download(&destination);
+                tracing::warn!(episode_id, "podcast download path is not valid UTF-8");
+                let state = DownloadState::Failed {
+                    message: "podcast download path is not valid UTF-8".to_owned(),
+                };
+                on_progress(state.clone());
+                return Ok(state);
+            };
+            let persisted = match super::downloads::persist_completed_if_active(
+                conn,
+                episode_id,
+                destination_path,
+                bytes,
+            ) {
+                Ok(persisted) => persisted,
+                Err(error) => {
+                    remove_completed_download(&destination);
+                    let state = DownloadState::Failed {
+                        message: error.to_string(),
+                    };
+                    on_progress(state.clone());
+                    return Err(error.into());
+                }
+            };
+            let state = if persisted {
+                DownloadState::Downloaded { bytes }
+            } else {
+                remove_completed_download(&destination);
+                DownloadState::Failed {
+                    message: "podcast episode no longer exists".to_owned(),
+                }
+            };
+            on_progress(state.clone());
+            Ok(state)
+        }
+        Err(error) => {
+            tracing::warn!(episode_id, %error, "podcast download failed");
+            let state = DownloadState::Failed {
+                message: error.to_string(),
+            };
+            on_progress(state.clone());
+            Ok(state)
+        }
+    }
 }
 
 pub fn refresh(
@@ -337,104 +444,29 @@ fn refresh_to_root_with_download_progress(
                     continue;
                 };
                 if episode.downloaded_path.is_some() {
+                    // Already satisfied by `reclaim_download` above — no
+                    // network round trip, and (unlike a genuinely fresh
+                    // download) not counted toward this refresh's completed
+                    // total.
                     continue;
                 }
-                let extension =
-                    super::downloads::extension_for(subscription.kind, &episode.audio_url);
-                let destination = super::downloads::download_path(
+                let mut on_progress = |state: DownloadState| on_download(episode_id, state);
+                let outcome = download_episode(
+                    conn,
+                    feed_fetcher,
+                    youtube_fetcher,
                     download_root,
-                    &subscription.feed_url,
-                    &episode.guid,
-                    extension,
-                );
-                on_download(episode_id, DownloadState::Queued);
-                let mut state = DownloadState::Downloading {
-                    received_bytes: 0,
-                    total_bytes: None,
-                };
-                on_download(episode_id, state.clone());
-                let download = super::downloads::download_atomically(&destination, |temporary| {
-                    let mut report = |progress: DownloadProgress| {
-                        state = super::download_state::downloading(
-                            &state,
-                            progress.received_bytes,
-                            progress.total_bytes,
-                        );
-                        on_download(episode_id, state.clone());
-                    };
-                    match subscription.kind {
-                        PodcastKind::Rss => feed_fetcher.download_with_progress(
-                            &episode.audio_url,
-                            temporary,
-                            &mut report,
-                        ),
-                        PodcastKind::Youtube => youtube_fetcher.download_with_progress(
-                            &episode.audio_url,
-                            temporary,
-                            &mut report,
-                        ),
-                    }
-                });
-                match download {
-                    Ok(bytes) => {
-                        let Some(destination_path) = destination.to_str() else {
-                            remove_completed_download(&destination);
-                            tracing::warn!(episode_id, "podcast download path is not valid UTF-8");
-                            summary.downloads_failed += 1;
-                            on_download(
-                                episode_id,
-                                DownloadState::Failed {
-                                    message: "podcast download path is not valid UTF-8".to_owned(),
-                                },
-                            );
-                            continue;
-                        };
-                        let persisted = match super::downloads::persist_completed_if_active(
-                            conn,
-                            episode_id,
-                            destination_path,
-                            bytes,
-                        ) {
-                            Ok(persisted) => persisted,
-                            Err(error) => {
-                                remove_completed_download(&destination);
-                                on_download(
-                                    episode_id,
-                                    DownloadState::Failed {
-                                        message: error.to_string(),
-                                    },
-                                );
-                                return Err(error.into());
-                            }
-                        };
-                        if persisted {
-                            summary.downloads_completed += 1;
-                            on_download(episode_id, DownloadState::Downloaded { bytes });
-                        } else {
-                            remove_completed_download(&destination);
-                            summary.downloads_failed += 1;
-                            on_download(
-                                episode_id,
-                                DownloadState::Failed {
-                                    message: "podcast episode no longer exists".to_owned(),
-                                },
-                            );
-                        }
-                    }
-                    Err(error) => {
-                        tracing::warn!(
-                            episode_id,
-                            %error,
-                            "podcast auto-download failed"
-                        );
-                        summary.downloads_failed += 1;
-                        on_download(
-                            episode_id,
-                            DownloadState::Failed {
-                                message: error.to_string(),
-                            },
-                        );
-                    }
+                    episode_id,
+                    &mut on_progress,
+                )?;
+                match outcome {
+                    DownloadState::Downloaded { .. } => summary.downloads_completed += 1,
+                    DownloadState::Failed { .. } => summary.downloads_failed += 1,
+                    // `download_episode` only ever returns a terminal state.
+                    DownloadState::NotDownloaded
+                    | DownloadState::Queued
+                    | DownloadState::Downloading { .. }
+                    | DownloadState::Missing => {}
                 }
             }
         }

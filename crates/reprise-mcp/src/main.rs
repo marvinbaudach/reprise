@@ -9,6 +9,7 @@
 
 mod capability;
 mod catalog_resources;
+mod channel_detail;
 mod config;
 mod data;
 mod data_concerts;
@@ -20,7 +21,9 @@ mod device_sync;
 mod device_tools;
 mod discovery_actions;
 mod dto;
+mod episode_actions;
 mod error;
+mod online_sources_tool;
 #[cfg(feature = "mpris")]
 mod playback;
 mod playlist_update;
