@@ -18,11 +18,76 @@ mod range;
 pub use super::ytdlp_search::YtDlpChannel;
 use super::PodcastError;
 
-const BLOCKED_MESSAGE: &str = "YouTube blocked the request — update yt-dlp (Preferences)";
+const VERIFICATION_MESSAGE: &str =
+    "YouTube requires verification — try again later or use another network";
+const RATE_LIMIT_MESSAGE: &str = "YouTube is rate-limiting requests — try again later";
+const UNSUPPORTED_URL_MESSAGE: &str = "This YouTube URL is not supported";
+const ACCESS_REFUSED_MESSAGE: &str = "YouTube refused the request — try again later";
+const UNREACHABLE_MESSAGE: &str = "YouTube could not be reached — check your connection";
+const AUDIO_UNAVAILABLE_MESSAGE: &str = "YouTube did not provide playable audio for this video";
+const VIDEO_UNAVAILABLE_MESSAGE: &str = "This YouTube video is unavailable or private";
+const EXTRACTOR_OUTDATED_MESSAGE: &str =
+    "YouTube changed its response — update yt-dlp and try again";
+const CONVERSION_UNAVAILABLE_MESSAGE: &str =
+    "Audio conversion is unavailable — install or repair FFmpeg";
+const INVALID_RESPONSE_MESSAGE: &str =
+    "YouTube returned an unreadable response — update yt-dlp and try again";
+const DOWNLOAD_SAVE_MESSAGE: &str =
+    "YouTube download could not be saved — check available space and permissions";
 const MISSING_MESSAGE: &str = "YouTube component is unavailable — reinstall or repair Reprise";
-const GENERIC_FAILURE: &str = "yt-dlp failed";
-const MAX_ERROR_CHARS: usize = 180;
+const START_FAILED_MESSAGE: &str =
+    "YouTube component could not start — check its path and permissions";
+const GENERIC_FAILURE: &str = "YouTube request failed — check the application log";
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum YtDlpFailureKind {
+    VerificationRequired,
+    RateLimited,
+    UnsupportedUrl,
+    AccessRefused,
+    Unreachable,
+    AudioUnavailable,
+    VideoUnavailable,
+    ExtractorOutdated,
+    ConversionUnavailable,
+    DownloadStorage,
+    Other,
+}
+
+impl YtDlpFailureKind {
+    const fn diagnostic_name(self) -> &'static str {
+        match self {
+            Self::VerificationRequired => "verification_required",
+            Self::RateLimited => "rate_limited",
+            Self::UnsupportedUrl => "unsupported_url",
+            Self::AccessRefused => "access_refused",
+            Self::Unreachable => "unreachable",
+            Self::AudioUnavailable => "audio_unavailable",
+            Self::VideoUnavailable => "video_unavailable",
+            Self::ExtractorOutdated => "extractor_outdated",
+            Self::ConversionUnavailable => "conversion_unavailable",
+            Self::DownloadStorage => "download_storage",
+            Self::Other => "other",
+        }
+    }
+
+    const fn user_message(self) -> &'static str {
+        match self {
+            Self::VerificationRequired => VERIFICATION_MESSAGE,
+            Self::RateLimited => RATE_LIMIT_MESSAGE,
+            Self::UnsupportedUrl => UNSUPPORTED_URL_MESSAGE,
+            Self::AccessRefused => ACCESS_REFUSED_MESSAGE,
+            Self::Unreachable => UNREACHABLE_MESSAGE,
+            Self::AudioUnavailable => AUDIO_UNAVAILABLE_MESSAGE,
+            Self::VideoUnavailable => VIDEO_UNAVAILABLE_MESSAGE,
+            Self::ExtractorOutdated => EXTRACTOR_OUTDATED_MESSAGE,
+            Self::ConversionUnavailable => CONVERSION_UNAVAILABLE_MESSAGE,
+            Self::DownloadStorage => DOWNLOAD_SAVE_MESSAGE,
+            Self::Other => GENERIC_FAILURE,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct YtDlpTimeouts {
@@ -100,31 +165,37 @@ impl YtDlp {
     }
 
     pub fn probe_version(&self) -> Result<String, PodcastError> {
-        let output = self.run(["--no-warnings", "--version"], self.timeouts.version)?;
+        let output = self.run(
+            "probe_version",
+            ["--no-warnings", "--version"],
+            self.timeouts.version,
+        )?;
         output
             .lines()
             .map(str::trim)
             .find(|line| !line.is_empty())
             .map(str::to_string)
-            .ok_or_else(|| PodcastError::Parse("yt-dlp returned no version".to_string()))
+            .ok_or_else(|| response_error("probe_version"))
     }
 
     pub fn update(&self) -> Result<String, PodcastError> {
-        let output = self.run(["--no-warnings", "-U"], self.timeouts.update)?;
+        let output = self.run("update", ["--no-warnings", "-U"], self.timeouts.update)?;
         Ok(output.trim().to_owned())
     }
 
     pub fn list(&self, url: &str) -> Result<YtDlpPlaylist, PodcastError> {
         let output = self.run(
+            "list",
             ["--no-warnings", "--flat-playlist", "-J", url],
             self.timeouts.list,
         )?;
-        parse_playlist(&output)
+        parse_playlist("list", &output)
     }
 
     pub fn search(&self, terms: &str) -> Result<YtDlpPlaylist, PodcastError> {
         let target = format!("ytsearch5:{terms}");
         let output = self.run(
+            "search",
             [
                 OsString::from("--no-warnings"),
                 OsString::from("--flat-playlist"),
@@ -133,12 +204,13 @@ impl YtDlp {
             ],
             self.timeouts.search,
         )?;
-        parse_playlist(&output)
+        parse_playlist("search", &output)
     }
 
     pub fn search_channels(&self, terms: &str) -> Result<Vec<YtDlpChannel>, PodcastError> {
         let target = format!("ytsearch20:{terms}");
         let output = self.run(
+            "search_channels",
             [
                 OsString::from("--no-warnings"),
                 OsString::from("--flat-playlist"),
@@ -148,14 +220,16 @@ impl YtDlp {
             self.timeouts.search,
         )?;
         super::ytdlp_search::parse_search_channels(&output)
+            .map_err(|_| response_error("search_channels"))
     }
 
     pub fn resolve(&self, video_url: &str) -> Result<ResolvedAudio, PodcastError> {
         let output = self.run(
+            "resolve",
             ["--no-warnings", "-f", "bestaudio", "-j", video_url],
             self.timeouts.resolve,
         )?;
-        parse_resolved_audio(&output)
+        parse_resolved_audio("resolve", &output)
     }
 
     pub fn download(&self, video_url: &str, output: &Path) -> Result<(), PodcastError> {
@@ -177,7 +251,12 @@ impl YtDlp {
         )
     }
 
-    fn run<I, S>(&self, arguments: I, timeout: Duration) -> Result<String, PodcastError>
+    fn run<I, S>(
+        &self,
+        operation: &'static str,
+        arguments: I,
+        timeout: Duration,
+    ) -> Result<String, PodcastError>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
@@ -189,7 +268,9 @@ impl YtDlp {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         configure_process_group(&mut command);
-        let mut child = command.spawn().map_err(|error| map_spawn_error(&error))?;
+        let mut child = command
+            .spawn()
+            .map_err(|error| logged_spawn_error(operation, &error))?;
 
         let process_group = child.id();
         let stdout = read_in_background(child.stdout.take().expect("piped stdout"));
@@ -205,26 +286,27 @@ impl YtDlp {
                 Ok(None) => {}
                 Err(error) => {
                     terminate_process_tree(&mut child);
-                    return Err(PodcastError::YtDlp(format!(
-                        "could not monitor yt-dlp: {error}"
-                    )));
+                    return Err(runtime_error("monitor_failed", operation, &error));
                 }
             }
             let now = Instant::now();
             if now >= deadline {
                 terminate_process_tree(&mut child);
-                return Err(PodcastError::Timeout);
+                log_timeout(operation, timeout);
+                return Err(PodcastError::YtDlpTimeout);
             }
             thread::sleep(POLL_INTERVAL.min(deadline.saturating_duration_since(now)));
         };
 
-        let stdout = collect_output(&stdout, deadline).inspect_err(|_| {
-            terminate_process_group(process_group);
-        })?;
-        let stderr = collect_output(&stderr, deadline).inspect_err(|_| {
-            terminate_process_group(process_group);
-        })?;
-        output_from_status(status, &stdout, &stderr)
+        let stdout =
+            collect_output(operation, "stdout", &stdout, deadline, timeout).inspect_err(|_| {
+                terminate_process_group(process_group);
+            })?;
+        let stderr =
+            collect_output(operation, "stderr", &stderr, deadline, timeout).inspect_err(|_| {
+                terminate_process_group(process_group);
+            })?;
+        output_from_status(operation, status, &stdout, &stderr)
     }
 }
 
@@ -243,22 +325,63 @@ pub fn resolve_binary(environment_override: Option<&OsStr>, setting_path: Option
 
 /// Maps yt-dlp's unstable diagnostic text to a short message suitable for UI use.
 pub fn classify_stderr(stderr: &str) -> String {
-    let lowercase = stderr.to_ascii_lowercase();
-    if lowercase.contains("sign in to confirm")
-        || lowercase.contains("not a bot")
-        || lowercase.contains("429")
-    {
-        return BLOCKED_MESSAGE.to_string();
-    }
+    classify_failure(stderr).user_message().to_string()
+}
 
-    let Some(line) = stderr.lines().map(str::trim).find(|line| !line.is_empty()) else {
-        return GENERIC_FAILURE.to_string();
-    };
-    let line = line.strip_prefix("ERROR:").map_or(line, str::trim);
-    if line.is_empty() {
-        return GENERIC_FAILURE.to_string();
+fn classify_failure(stderr: &str) -> YtDlpFailureKind {
+    let lowercase = stderr.to_ascii_lowercase();
+    if lowercase.contains("429") || lowercase.contains("too many requests") {
+        return YtDlpFailureKind::RateLimited;
     }
-    line.chars().take(MAX_ERROR_CHARS).collect()
+    if lowercase.contains("sign in to confirm") || lowercase.contains("not a bot") {
+        return YtDlpFailureKind::VerificationRequired;
+    }
+    if lowercase.contains("unsupported url") {
+        return YtDlpFailureKind::UnsupportedUrl;
+    }
+    if lowercase.contains("http error 401") || lowercase.contains("http error 403") {
+        return YtDlpFailureKind::AccessRefused;
+    }
+    if lowercase.contains("video unavailable")
+        || lowercase.contains("video is private")
+        || lowercase.contains("private video")
+        || lowercase.contains("members-only")
+        || lowercase.contains("members only")
+    {
+        return YtDlpFailureKind::VideoUnavailable;
+    }
+    if lowercase.contains("unable to extract")
+        || lowercase.contains("signature extraction failed")
+        || lowercase.contains("nsig extraction failed")
+    {
+        return YtDlpFailureKind::ExtractorOutdated;
+    }
+    if lowercase.contains("ffmpeg not found")
+        || lowercase.contains("ffprobe not found")
+        || lowercase.contains("ffmpeg-location")
+    {
+        return YtDlpFailureKind::ConversionUnavailable;
+    }
+    if lowercase.contains("no space left on device")
+        || lowercase.contains("disk quota exceeded")
+        || lowercase.contains("read-only file system")
+    {
+        return YtDlpFailureKind::DownloadStorage;
+    }
+    if lowercase.contains("requested format is not available")
+        || lowercase.contains("no video formats found")
+    {
+        return YtDlpFailureKind::AudioUnavailable;
+    }
+    if lowercase.contains("failed to resolve")
+        || lowercase.contains("name or service not known")
+        || lowercase.contains("unable to download webpage")
+        || lowercase.contains("connection refused")
+        || lowercase.contains("network is unreachable")
+    {
+        return YtDlpFailureKind::Unreachable;
+    }
+    YtDlpFailureKind::Other
 }
 
 pub(super) fn read_in_background(
@@ -274,16 +397,29 @@ pub(super) fn read_in_background(
 }
 
 pub(super) fn collect_output(
+    operation: &'static str,
+    stream: &'static str,
     reader: &Receiver<std::io::Result<Vec<u8>>>,
     deadline: Instant,
+    timeout: Duration,
 ) -> Result<Vec<u8>, PodcastError> {
     let remaining = deadline.saturating_duration_since(Instant::now());
     match reader.recv_timeout(remaining) {
-        Ok(result) => result.map_err(|error| PodcastError::YtDlp(error.to_string())),
-        Err(RecvTimeoutError::Timeout) => Err(PodcastError::Timeout),
-        Err(RecvTimeoutError::Disconnected) => Err(PodcastError::YtDlp(
-            "yt-dlp output reader failed".to_string(),
-        )),
+        Ok(Ok(output)) => Ok(output),
+        Ok(Err(error)) => Err(output_read_error(operation, stream, &error)),
+        Err(RecvTimeoutError::Timeout) => {
+            log_output_timeout(operation, stream, timeout);
+            Err(PodcastError::YtDlpTimeout)
+        }
+        Err(RecvTimeoutError::Disconnected) => {
+            tracing::warn!(
+                operation,
+                failure_kind = "output_reader_disconnected",
+                stream,
+                "yt-dlp output reader disconnected"
+            );
+            Err(PodcastError::YtDlp(GENERIC_FAILURE.to_string()))
+        }
     }
 }
 
@@ -327,11 +463,117 @@ pub(super) fn map_spawn_error(error: &std::io::Error) -> PodcastError {
     if error.kind() == std::io::ErrorKind::NotFound {
         PodcastError::YtDlp(MISSING_MESSAGE.to_string())
     } else {
-        PodcastError::YtDlp(format!("could not start yt-dlp: {error}"))
+        PodcastError::YtDlp(START_FAILED_MESSAGE.to_string())
     }
 }
 
+pub(super) fn logged_spawn_error(operation: &'static str, error: &std::io::Error) -> PodcastError {
+    let failure_kind = if error.kind() == std::io::ErrorKind::NotFound {
+        "component_missing"
+    } else {
+        "start_failed"
+    };
+    tracing::warn!(
+        operation,
+        failure_kind,
+        error_kind = ?error.kind(),
+        "could not start yt-dlp operation"
+    );
+    map_spawn_error(error)
+}
+
+pub(super) fn log_timeout(operation: &'static str, timeout: Duration) {
+    tracing::warn!(
+        operation,
+        failure_kind = "timeout",
+        timeout_ms = u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
+        "yt-dlp operation timed out"
+    );
+}
+
+pub(super) fn log_output_timeout(operation: &'static str, stream: &'static str, timeout: Duration) {
+    tracing::warn!(
+        operation,
+        failure_kind = "output_read_timeout",
+        stream,
+        timeout_ms = u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
+        "timed out while reading yt-dlp output"
+    );
+}
+
+pub(super) fn output_read_error(
+    operation: &'static str,
+    stream: &'static str,
+    error: &std::io::Error,
+) -> PodcastError {
+    tracing::warn!(
+        operation,
+        failure_kind = "output_read_failed",
+        stream,
+        error_kind = ?error.kind(),
+        "could not read yt-dlp output"
+    );
+    PodcastError::YtDlp(GENERIC_FAILURE.to_string())
+}
+
+pub(super) fn runtime_error(
+    failure_kind: &'static str,
+    operation: &'static str,
+    error: &std::io::Error,
+) -> PodcastError {
+    tracing::warn!(
+        operation,
+        failure_kind,
+        error_kind = ?error.kind(),
+        "yt-dlp operation could not be completed"
+    );
+    PodcastError::YtDlp(GENERIC_FAILURE.to_string())
+}
+
+fn response_error(operation: &'static str) -> PodcastError {
+    tracing::warn!(
+        operation,
+        failure_kind = "response_invalid",
+        "yt-dlp response could not be parsed"
+    );
+    PodcastError::YtDlp(INVALID_RESPONSE_MESSAGE.to_string())
+}
+
+fn audio_unavailable_error(operation: &'static str) -> PodcastError {
+    tracing::warn!(
+        operation,
+        failure_kind = "audio_unavailable",
+        "yt-dlp response omitted playable audio"
+    );
+    PodcastError::YtDlp(AUDIO_UNAVAILABLE_MESSAGE.to_string())
+}
+
+pub(super) fn download_finalize_error() -> PodcastError {
+    tracing::warn!(
+        operation = "download",
+        failure_kind = "finalize_failed",
+        "yt-dlp download could not be finalized"
+    );
+    PodcastError::YtDlp(DOWNLOAD_SAVE_MESSAGE.to_string())
+}
+
+pub(super) fn error_from_status(
+    operation: &'static str,
+    status: ExitStatus,
+    stderr: &[u8],
+) -> PodcastError {
+    let failure = classify_failure(&String::from_utf8_lossy(stderr));
+    tracing::warn!(
+        operation,
+        failure_kind = failure.diagnostic_name(),
+        exit_code = status.code().unwrap_or(-1),
+        "yt-dlp operation failed"
+    );
+    PodcastError::YtDlp(failure.user_message().to_string())
+}
+
 fn output_from_status(
+    operation: &'static str,
     status: ExitStatus,
     stdout: &[u8],
     stderr: &[u8],
@@ -339,9 +581,7 @@ fn output_from_status(
     if status.success() {
         Ok(String::from_utf8_lossy(stdout).into_owned())
     } else {
-        Err(PodcastError::YtDlp(classify_stderr(
-            &String::from_utf8_lossy(stderr),
-        )))
+        Err(error_from_status(operation, status, stderr))
     }
 }
 
@@ -399,13 +639,12 @@ fn canonical_parent(path: &Path) -> Result<PathBuf, PodcastError> {
         })
 }
 
-fn parse_playlist(body: &str) -> Result<YtDlpPlaylist, PodcastError> {
-    let value: Value =
-        serde_json::from_str(body).map_err(|error| PodcastError::Parse(error.to_string()))?;
+fn parse_playlist(operation: &'static str, body: &str) -> Result<YtDlpPlaylist, PodcastError> {
+    let value: Value = serde_json::from_str(body).map_err(|_| response_error(operation))?;
     let entries = value
         .get("entries")
         .and_then(Value::as_array)
-        .ok_or_else(|| PodcastError::Parse("yt-dlp response has no entries".to_string()))?;
+        .ok_or_else(|| response_error(operation))?;
     let entries = entries
         .iter()
         .filter_map(|entry| {
@@ -433,14 +672,16 @@ fn parse_playlist(body: &str) -> Result<YtDlpPlaylist, PodcastError> {
     })
 }
 
-fn parse_resolved_audio(body: &str) -> Result<ResolvedAudio, PodcastError> {
-    let value: Value =
-        serde_json::from_str(body).map_err(|error| PodcastError::Parse(error.to_string()))?;
+fn parse_resolved_audio(
+    operation: &'static str,
+    body: &str,
+) -> Result<ResolvedAudio, PodcastError> {
+    let value: Value = serde_json::from_str(body).map_err(|_| response_error(operation))?;
     let stream_url = value
         .get("url")
         .and_then(Value::as_str)
         .filter(|url| !url.is_empty())
-        .ok_or_else(|| PodcastError::Parse("yt-dlp response has no audio URL".to_string()))?;
+        .ok_or_else(|| audio_unavailable_error(operation))?;
     Ok(ResolvedAudio {
         stream_url: stream_url.to_string(),
         duration_secs: duration_secs(value.get("duration")),
@@ -461,6 +702,10 @@ fn duration_secs(value: Option<&Value>) -> Option<i64> {
 #[cfg(all(test, unix))]
 #[path = "ytdlp_range_tests.rs"]
 mod range_tests;
+
+#[cfg(all(test, unix))]
+#[path = "ytdlp_test_support.rs"]
+mod test_support;
 
 #[cfg(all(test, unix))]
 #[path = "ytdlp_tests.rs"]

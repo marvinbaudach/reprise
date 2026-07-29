@@ -3359,9 +3359,12 @@ listening statistics.
 - **POD-3** [active] [core] — YouTube sits exclusively behind the
   yt-dlp provider boundary: flat playlist for listing, audio
   resolution only at playback time and never persisted. Errors are
-  classified legibly and never crash. If the binary is missing, the
-  setting stays unchanged and the degradation is made visible on the
-  YouTube toggle, which is active by default.
+  classified into actionable, provider-safe UI messages and never
+  crash; operation, failure category, exit code or timeout are logged
+  without URLs, tokens, cookie paths, raw provider text, or local
+  paths. If the binary is missing, the setting stays unchanged and
+  the degradation is made visible on the YouTube toggle, which is
+  active by default.
 - **POD-4** [active] [gtk] — Episodes start at the saved position;
   this is persisted throttled as well as on pause, stop, switch, and
   quit. After the end, the app offers the next unplayed episode of the
