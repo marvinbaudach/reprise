@@ -27,6 +27,18 @@ pub enum RuntimeEvent {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SequencedEvent {
     pub sequence: u64,
+    /// Whose command caused this, if a command did.
+    ///
+    /// §9.7 asks every mutation to be attributable to what provoked it. It
+    /// is also what lets a surface tell its own change from somebody else's:
+    /// RUN-5 says an external change is followed quietly, which is only
+    /// decidable if "external" is decidable.
+    ///
+    /// `None` is not "unknown" but "nobody asked": a position tick, a track
+    /// ending, an idle deadline. Attributing those to whichever client
+    /// happened to command last would make the attribution worse than
+    /// absent, because it would look reliable.
+    pub initiator: Option<crate::client::ClientId>,
     pub event: RuntimeEvent,
 }
 

@@ -44,6 +44,7 @@ fn snapshot(sequence: u64) -> RuntimeSnapshot {
         protocol_major: 1,
         protocol_minor: 0,
         sequence,
+        client_id: 1,
         playback: playback("playing"),
         queue: queue(1),
         device_runs: vec![device_run("Pixel 8", "copying")],
@@ -106,10 +107,12 @@ fn reconnecting_replaces_a_populated_mirror_instead_of_merging_into_it() {
     // repeat — a second device run and a change to the one job.
     mirror.apply(&ClientEvent::DeviceRunChanged {
         sequence: 6,
+        initiator: None,
         snapshot: device_run("Zune", "verifying"),
     });
     mirror.apply(&ClientEvent::JobChanged {
         sequence: 7,
+        initiator: None,
         snapshot: job(1, "saved"),
     });
     assert_eq!(
@@ -184,6 +187,7 @@ fn a_delta_arriving_while_disconnected_is_ignored() {
 
     let changed = mirror.apply(&ClientEvent::PlaybackChanged {
         sequence: 1,
+        initiator: None,
         snapshot: playback("playing"),
     });
 
@@ -210,11 +214,13 @@ fn a_delta_whose_sequence_does_not_advance_is_ignored() {
     // Equal to the current sequence: a duplicate delivery.
     let duplicate = mirror.apply(&ClientEvent::PlaybackChanged {
         sequence: 5,
+        initiator: None,
         snapshot: playback("paused"),
     });
     // Less than the current sequence: delivered out of order.
     let stale = mirror.apply(&ClientEvent::PlaybackChanged {
         sequence: 2,
+        initiator: None,
         snapshot: playback("stopped"),
     });
 
@@ -245,6 +251,7 @@ fn a_playback_delta_with_a_greater_sequence_is_applied() {
 
     let changed = mirror.apply(&ClientEvent::PlaybackChanged {
         sequence: 6,
+        initiator: None,
         snapshot: playback("paused"),
     });
 
@@ -260,6 +267,7 @@ fn a_queue_delta_with_a_greater_sequence_is_applied() {
 
     let changed = mirror.apply(&ClientEvent::QueueChanged {
         sequence: 6,
+        initiator: None,
         snapshot: queue(2),
     });
 
@@ -280,6 +288,7 @@ fn a_device_run_delta_updates_the_matching_device_in_place_instead_of_duplicatin
 
     let changed = mirror.apply(&ClientEvent::DeviceRunChanged {
         sequence: 6,
+        initiator: None,
         snapshot: device_run("Pixel 8", "verifying"),
     });
 
@@ -299,10 +308,12 @@ fn a_device_run_delta_for_a_new_device_is_appended_in_sorted_order() {
 
     mirror.apply(&ClientEvent::DeviceRunChanged {
         sequence: 6,
+        initiator: None,
         snapshot: device_run("Zune", "inspecting"),
     });
     mirror.apply(&ClientEvent::DeviceRunChanged {
         sequence: 7,
+        initiator: None,
         snapshot: device_run("Astell&Kern", "copying"),
     });
 
@@ -326,6 +337,7 @@ fn a_job_delta_updates_the_matching_job_in_place_instead_of_duplicating_it() {
 
     let changed = mirror.apply(&ClientEvent::JobChanged {
         sequence: 6,
+        initiator: None,
         snapshot: job(1, "saved"),
     });
 
@@ -345,10 +357,12 @@ fn a_job_delta_for_a_new_job_is_appended_in_sorted_order() {
 
     mirror.apply(&ClientEvent::JobChanged {
         sequence: 6,
+        initiator: None,
         snapshot: job(9, "running"),
     });
     mirror.apply(&ClientEvent::JobChanged {
         sequence: 7,
+        initiator: None,
         snapshot: job(3, "queued"),
     });
 
@@ -393,6 +407,7 @@ fn reapplying_an_identical_device_run_at_a_newer_sequence_reports_no_change() {
 
     let changed = mirror.apply(&ClientEvent::DeviceRunChanged {
         sequence: 6,
+        initiator: None,
         snapshot: device_run("Pixel 8", "copying"),
     });
 
@@ -440,6 +455,7 @@ fn a_delta_after_a_refusal_is_ignored_like_any_other_disconnected_delta() {
 
     let applied = mirror.apply(&ClientEvent::PlaybackChanged {
         sequence: 9_999,
+        initiator: None,
         snapshot: PlaybackSnapshot {
             status: "playing".into(),
             ..PlaybackSnapshot::default()

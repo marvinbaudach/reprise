@@ -190,8 +190,11 @@ fn a_foreign_protocol_major_comes_back_as_refused() {
     let served = Served::start("major", Duration::from_secs(60));
     let client = served.client();
 
+    // Derived from what this runtime speaks, not hardcoded: a major bump
+    // otherwise turns "foreign" into "our own version", and the test goes on
+    // passing a handshake it exists to refuse.
     let error = client
-        .connect_as(2, 0)
+        .connect_as(reprise_runtime_protocol::PROTOCOL_VERSION.major + 1, 0)
         .expect_err("a foreign major cannot decode what this runtime sends");
 
     let kind = error_kind(&error);
@@ -286,7 +289,7 @@ fn a_client_receives_the_deltas_for_its_own_session() {
     )
     .expect("the match rule is accepted");
 
-    client.connect().expect("the handshake succeeds");
+    let handshake = client.connect().expect("the handshake succeeds");
     client
         .call("PlayTracks", &(vec![1_i64], 0_u64))
         .expect("playing succeeds");
@@ -295,11 +298,26 @@ fn a_client_receives_the_deltas_for_its_own_session() {
         .next()
         .expect("a delta arrives")
         .expect("and it is a message");
-    let (sequence, snapshot): (u64, reprise_runtime_protocol::playback::PlaybackSnapshot) =
-        message.body().deserialize().expect("the delta decodes");
+    let (sequence, initiator, snapshot): (
+        u64,
+        u64,
+        reprise_runtime_protocol::playback::PlaybackSnapshot,
+    ) = message.body().deserialize().expect("the delta decodes");
     assert!(sequence > 0);
     assert_eq!(snapshot.status, "playing");
     assert_eq!(snapshot.track_id, Some(1));
+    assert_eq!(
+        initiator, handshake.client_id,
+        "a surface has to recognise its own change to follow somebody else's \
+         quietly (RUN-5), and comparing snapshots cannot tell it apart from \
+         an identical command another client sent"
+    );
+    assert_eq!(
+        snapshot.initiated_by,
+        Some(handshake.client_id),
+        "and the session's owner has to survive on the facet, because the \
+         quit policy stops only playback this surface started"
+    );
 }
 
 #[test]
@@ -416,11 +434,15 @@ fn a_sent_command_takes_effect_and_its_delta_comes_back() {
     let served = Served::start("clientsend", Duration::from_secs(60));
     let (client, events) =
         start_with_bus_name(vec!["playback:control".to_owned()], served.bus_name.clone());
-    await_event(
+    let connected = await_event(
         &events,
         |event| matches!(event, ClientEvent::Connected(_)),
         "connection",
     );
+    let ClientEvent::Connected(opening) = connected else {
+        unreachable!("the matcher only accepts Connected")
+    };
+    let me = opening.client_id;
 
     client.send(RuntimeCommand::PlayTracks {
         track_ids: vec![1, 2, 3],
@@ -432,12 +454,24 @@ fn a_sent_command_takes_effect_and_its_delta_comes_back() {
         |event| matches!(event, ClientEvent::PlaybackChanged { .. }),
         "playback delta",
     );
-    let ClientEvent::PlaybackChanged { sequence, snapshot } = event else {
+    let ClientEvent::PlaybackChanged {
+        sequence,
+        initiator,
+        snapshot,
+    } = event
+    else {
         unreachable!("the matcher only accepts PlaybackChanged")
     };
     assert!(sequence > 0);
     assert_eq!(snapshot.status, "playing");
     assert_eq!(snapshot.track_id, Some(1));
+    assert_eq!(
+        initiator,
+        Some(me),
+        "the attribution has to survive the whole way out and back — the \
+         runtime, the signal, and the client's own decoding"
+    );
+    assert_eq!(snapshot.initiated_by, Some(me));
     client.shutdown();
 }
 
@@ -558,54 +592,6 @@ fn a_runtime_that_goes_away_is_reported_rather_than_guessed_at() {
 
 #[test]
 #[ignore = "requires a session bus; run via dbus-run-session"]
-fn the_queue_commands_a_queue_view_needs_all_survive_the_wire() {
-    use reprise_runtime_protocol::queue::QueueCommand;
-
-    let served = Served::start("queuesurface", Duration::from_secs(60));
-    let (client, events) =
-        start_with_bus_name(vec!["playback:control".to_owned()], served.bus_name.clone());
-    await_event(
-        &events,
-        |event| matches!(event, ClientEvent::Connected(_)),
-        "connection",
-    );
-    client
-        .call(RuntimeCommand::PlayTracks {
-            track_ids: vec![1, 2, 3],
-            start_index: 0,
-        })
-        .expect("playing succeeds");
-
-    // Every command a Queue view issues, in one pass: a stale position must
-    // come back rejected rather than silently applied to whichever row
-    // happens to occupy it now.
-    for command in [
-        RuntimeCommand::Queue(QueueCommand::AddLast(vec![2, 3])),
-        RuntimeCommand::Queue(QueueCommand::AddNext(vec![3])),
-        RuntimeCommand::Queue(QueueCommand::Move { from: 0, to: 1 }),
-        RuntimeCommand::Queue(QueueCommand::RemoveAt(vec![0])),
-        RuntimeCommand::Queue(QueueCommand::PlayNextAt(0)),
-        RuntimeCommand::Queue(QueueCommand::PlayContextAt(1)),
-        RuntimeCommand::Queue(QueueCommand::Purge(vec![3])),
-        RuntimeCommand::Queue(QueueCommand::Clear),
-    ] {
-        client
-            .call(command.clone())
-            .unwrap_or_else(|error| panic!("{command:?} was refused: {error}"));
-    }
-
-    let stale = client
-        .call(RuntimeCommand::Queue(QueueCommand::Move {
-            from: 99,
-            to: 0,
-        }))
-        .expect_err("there is no hundredth entry");
-    assert_eq!(stale.kind(), "rejected:no_such_queue_entry");
-    client.shutdown();
-}
-
-#[test]
-#[ignore = "requires a session bus; run via dbus-run-session"]
 fn a_stream_plays_beside_the_queue_and_does_not_hand_back_to_it() {
     use reprise_runtime_protocol::playback::ExternalMedia;
 
@@ -712,7 +698,10 @@ fn a_refused_client_is_told_why_instead_of_reconnecting_forever() {
     let (client, events) = reprise_runtime_client::start_with_bus_name_and_version(
         vec!["playback:control".to_owned()],
         served.bus_name.clone(),
-        reprise_runtime_protocol::ProtocolVersion { major: 2, minor: 0 },
+        reprise_runtime_protocol::ProtocolVersion {
+            major: reprise_runtime_protocol::PROTOCOL_VERSION.major + 1,
+            minor: 0,
+        },
     );
 
     let event = await_event(
@@ -732,3 +721,6 @@ fn a_refused_client_is_told_why_instead_of_reconnecting_forever() {
     );
     client.shutdown();
 }
+
+#[path = "runtime_service/queue_surface.rs"]
+mod queue_surface;

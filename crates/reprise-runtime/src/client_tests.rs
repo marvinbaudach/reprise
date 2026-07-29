@@ -41,7 +41,7 @@ fn disconnecting_twice_is_a_no_op_the_second_time() {
 #[test]
 fn events_published_while_nobody_listens_still_advance_the_sequence() {
     let mut clients = Clients::new();
-    clients.publish(an_event("playing"));
+    clients.publish(None, an_event("playing"));
     let joined = clients.connect(Default::default());
 
     assert_eq!(
@@ -61,7 +61,7 @@ fn a_mailbox_that_overflows_drops_the_oldest_and_asks_for_a_resynchronization() 
     let client = clients.connect(Default::default());
     // One more than the mailbox holds.
     for step in 0..=super::MAILBOX_CAPACITY {
-        clients.publish(an_event(&format!("step-{step}")));
+        clients.publish(None, an_event(&format!("step-{step}")));
     }
 
     let delivery = clients.drain(client).unwrap();

@@ -22,7 +22,7 @@ fn external_media_plays_without_a_library_id() {
 
     fixture
         .transport
-        .play_external(&fixture.backend, &a_stream())
+        .play_external(&fixture.backend, &a_stream(), None)
         .unwrap();
 
     let snapshot = fixture.transport.playback_snapshot();
@@ -50,7 +50,7 @@ fn a_local_episode_goes_to_the_path_entry_point_even_if_it_looks_like_a_uri() {
 
     fixture
         .transport
-        .play_external(&fixture.backend, &episode)
+        .play_external(&fixture.backend, &episode, None)
         .unwrap();
 
     assert_eq!(
@@ -70,7 +70,7 @@ fn external_media_leaves_the_queue_exactly_where_it_was() {
 
     fixture
         .transport
-        .play_external(&fixture.backend, &a_stream())
+        .play_external(&fixture.backend, &a_stream(), None)
         .unwrap();
 
     let after = fixture.transport.queue_snapshot();
@@ -88,7 +88,7 @@ fn a_finished_episode_does_not_start_the_music_queued_behind_it() {
     fixture.play_tracks(vec![1, 2, 3], 0).unwrap();
     fixture
         .transport
-        .play_external(&fixture.backend, &a_stream())
+        .play_external(&fixture.backend, &a_stream(), None)
         .unwrap();
     fixture.calls.clear();
 
@@ -117,7 +117,7 @@ fn a_backend_that_refuses_to_stop_is_not_reported_as_stopped() {
     let library = FakeLibrary::with_tracks([1]);
     let mut transport = Transport::new();
     transport
-        .play_tracks(&backend, &library, vec![1], 0)
+        .play_tracks(&backend, &library, vec![1], 0, None)
         .unwrap();
 
     let error = transport
@@ -155,7 +155,7 @@ fn a_failed_skip_with_an_uncooperative_backend_keeps_the_previous_track_current(
     let library = FakeLibrary::with_tracks([1]);
     let mut transport = Transport::new();
     transport
-        .play_tracks(&backend, &library, vec![1, 2], 0)
+        .play_tracks(&backend, &library, vec![1, 2], 0, None)
         .unwrap();
 
     let error = transport
@@ -183,7 +183,7 @@ fn external_media_without_a_location_is_rejected_before_the_backend() {
     assert_eq!(
         fixture
             .transport
-            .play_external(&fixture.backend, &nothing)
+            .play_external(&fixture.backend, &nothing, None)
             .expect_err("there is nothing to play"),
         RuntimeError::Rejected(Rejected::NothingToPlay)
     );

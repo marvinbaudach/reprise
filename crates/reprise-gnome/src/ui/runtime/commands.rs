@@ -104,33 +104,52 @@ impl RuntimeSession {
     }
 
     /// Moves one explicit-queue entry, by position.
-    pub(crate) fn queue_move(&self, from: u64, to: u64) {
-        self.send(RuntimeCommand::Queue(QueueCommand::Move { from, to }));
+    ///
+    /// `expected_revision` comes off the
+    /// [`reprise_runtime_protocol::queue::QueueSnapshot`] the row was drawn
+    /// from — see the module comment for why every positional command needs
+    /// one.
+    pub(crate) fn queue_move(&self, from: u64, to: u64, expected_revision: u64) {
+        self.send(RuntimeCommand::Queue(QueueCommand::Move {
+            from,
+            to,
+            expected_revision,
+        }));
     }
 
     /// Drops explicit-queue entries by position.
-    pub(crate) fn queue_remove_at(&self, positions: Vec<u64>) {
-        self.send(RuntimeCommand::Queue(QueueCommand::RemoveAt(positions)));
+    pub(crate) fn queue_remove_at(&self, positions: Vec<u64>, expected_revision: u64) {
+        self.send(RuntimeCommand::Queue(QueueCommand::RemoveAt {
+            positions,
+            expected_revision,
+        }));
     }
 
     /// Drops entries from the surrounding context, by play-order position.
-    pub(crate) fn queue_remove_context_at(&self, positions: Vec<u64>) {
-        self.send(RuntimeCommand::Queue(QueueCommand::RemoveContextAt(
+    pub(crate) fn queue_remove_context_at(&self, positions: Vec<u64>, expected_revision: u64) {
+        self.send(RuntimeCommand::Queue(QueueCommand::RemoveContextAt {
             positions,
-        )));
+            expected_revision,
+        }));
     }
 
     /// Plays the explicit-queue entry at `position` now, taking it out of
     /// the queue.
-    pub(crate) fn queue_play_next_at(&self, position: u64) {
-        self.send(RuntimeCommand::Queue(QueueCommand::PlayNextAt(position)));
+    pub(crate) fn queue_play_next_at(&self, position: u64, expected_revision: u64) {
+        self.send(RuntimeCommand::Queue(QueueCommand::PlayNextAt {
+            position,
+            expected_revision,
+        }));
     }
 
     /// Lets the context entry at `position` jump the line and play now —
     /// see [`QueueCommand::PlayContextAt`]'s own doc comment for why
     /// everything it passed stays queued rather than being dropped.
-    pub(crate) fn queue_play_context_at(&self, position: u64) {
-        self.send(RuntimeCommand::Queue(QueueCommand::PlayContextAt(position)));
+    pub(crate) fn queue_play_context_at(&self, position: u64, expected_revision: u64) {
+        self.send(RuntimeCommand::Queue(QueueCommand::PlayContextAt {
+            position,
+            expected_revision,
+        }));
     }
 
     /// Forgets `track_ids` wherever they appear in the queue — a library

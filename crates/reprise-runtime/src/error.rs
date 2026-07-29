@@ -81,10 +81,22 @@ pub enum Rejected {
     NothingToPlay,
     /// A repeat mode outside `off`, `all`, `one`.
     UnknownRepeatMode,
-    /// A queue position that is not there. Positions come from a snapshot
-    /// the client already holds, so this means the snapshot moved under it —
-    /// the client refreshes rather than guessing which row was meant.
+    /// A queue position that is not there at all — past the end of the
+    /// section it names.
+    ///
+    /// Distinct from [`Self::StaleQueue`]: this one means the position never
+    /// existed, that one means it exists and refers to a different row than
+    /// the client meant. Out of range is the case that is safe to notice
+    /// late; a position that silently moved is not.
     NoSuchQueueEntry,
+    /// The command's positions were read from a queue that has since changed.
+    ///
+    /// The position may well still be in range, which is exactly why this
+    /// cannot be left to a bounds check: applying it would hit whichever row
+    /// is there now instead of the row the user pointed at. §9.5's answer is
+    /// a refresh, never a replay, so this is not retryable — the client takes
+    /// the snapshot it has already been sent and decides again.
+    StaleQueue,
     /// The job id does not exist, or is already terminal.
     UnknownJob,
     /// The command is part of the protocol but not yet served here. Saving
@@ -144,6 +156,7 @@ impl RuntimeError {
             Self::Rejected(Rejected::NothingToPlay) => "nothing_to_play",
             Self::Rejected(Rejected::UnknownRepeatMode) => "unknown_repeat_mode",
             Self::Rejected(Rejected::NoSuchQueueEntry) => "no_such_queue_entry",
+            Self::Rejected(Rejected::StaleQueue) => "stale_queue",
             Self::Rejected(Rejected::UnknownJob) => "unknown_job",
             Self::Rejected(Rejected::UnsupportedCommand) => "unsupported_command",
             Self::Failed(Failed::PlaybackBackend) => "playback_backend",

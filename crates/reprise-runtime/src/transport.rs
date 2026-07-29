@@ -57,6 +57,15 @@ impl From<PlayableTrack> for Loaded {
     }
 }
 
+/// A start that did not happen, in the two shapes a client can act on.
+struct Failure {
+    /// The library track it was about, absent for anything without an id.
+    track_id: Option<i64>,
+    /// `not_playable` or `backend` — the wire vocabulary, kept here so the
+    /// snapshot is a move rather than a second translation table.
+    kind: &'static str,
+}
+
 /// Player and queue state.
 pub(crate) struct Transport {
     queue: Queue,
@@ -68,6 +77,22 @@ pub(crate) struct Transport {
     current: Option<Loaded>,
     position_ms: i64,
     volume: f64,
+    /// Which client started the playback that is loaded, if any.
+    ///
+    /// Established by the two commands that *begin* a session — `PlayTracks`
+    /// and `PlayExternal` — and inherited by everything that happens inside
+    /// it: an automatic advance, a skip, a pause. Pressing Next in one
+    /// surface does not take a session over from the surface that started
+    /// it; only starting a new one does.
+    initiated_by: Option<u64>,
+    /// Why the last automatic start did not happen, until something plays.
+    ///
+    /// Kept because stopping is not self-explaining: a queue that ran out and
+    /// a queue that hit three unreadable files in a row both end `Stopped`
+    /// with nothing loaded. §9.5 does not allow an event saying "a track
+    /// failed" — a facet says what it looks like now — so the reason lives in
+    /// the facet and is cleared by the next successful start.
+    failure: Option<Failure>,
     /// The stream whose reports this transport still believes.
     ///
     /// A backend event is delivered asynchronously, so one emitted for the
@@ -88,6 +113,8 @@ impl Transport {
             current: None,
             position_ms: 0,
             volume: 1.0,
+            initiated_by: None,
+            failure: None,
             stream: StreamGeneration::INITIAL,
         }
     }
@@ -119,11 +146,20 @@ impl Transport {
                 Repeat::All => "all".into(),
                 Repeat::One => "one".into(),
             },
+            failure_kind: self.failure.as_ref().map(|failure| failure.kind.into()),
+            failure_track_id: self.failure.as_ref().and_then(|failure| failure.track_id),
+            initiated_by: self.current.as_ref().and(self.initiated_by),
         }
     }
 
+    /// The queue facet, *unstamped*: the revision belongs to the runtime,
+    /// which is the only place that can count observable changes to this
+    /// facet without drifting from what a client actually saw. Leaving it at
+    /// zero here also keeps the before/after comparison honest — a revision
+    /// baked in on both sides would either always differ or never.
     pub(crate) fn queue_snapshot(&self) -> QueueSnapshot {
         QueueSnapshot {
+            revision: 0,
             // What is *playing*, which is not always where the context
             // cursor stands: an explicitly queued track plays beside the
             // context without moving it.
@@ -148,6 +184,7 @@ impl Transport {
         library: &dyn LibraryPort,
         track_ids: Vec<i64>,
         start_index: usize,
+        initiated_by: Option<u64>,
     ) -> Result<(), RuntimeError> {
         if track_ids.is_empty() {
             return Err(RuntimeError::Rejected(Rejected::NothingToPlay));
@@ -156,7 +193,11 @@ impl Transport {
         let Some(track_id) = self.queue.current() else {
             return Err(RuntimeError::Rejected(Rejected::NothingToPlay));
         };
-        self.start(backend, library, track_id)
+        let started = self.start(backend, library, track_id);
+        if started.is_ok() {
+            self.initiated_by = initiated_by;
+        }
+        started
     }
 
     /// Plays something that is not a library track.
@@ -168,6 +209,7 @@ impl Transport {
         &mut self,
         backend: &dyn PlaybackBackend,
         media: &ExternalMedia,
+        initiated_by: Option<u64>,
     ) -> Result<(), RuntimeError> {
         if media.location.trim().is_empty() {
             return Err(RuntimeError::Rejected(Rejected::NothingToPlay));
@@ -191,6 +233,8 @@ impl Transport {
         });
         self.position_ms = 0;
         self.status = PlaybackState::Playing;
+        self.initiated_by = initiated_by;
+        self.failure = None;
         self.stream = backend.current_generation();
         Ok(())
     }
@@ -249,32 +293,32 @@ impl Transport {
             // "Clearing a queue is not a stop command" (protocol): only the
             // explicit queue goes; the current track keeps playing.
             QueueCommand::Clear => self.up_next = UpNextQueue::default(),
-            QueueCommand::Move { from, to } => {
+            QueueCommand::Move { from, to, .. } => {
                 let (from, to) = (as_index(*from), as_index(*to));
                 if !self.up_next.move_item(from, to) {
                     return Err(RuntimeError::Rejected(Rejected::NoSuchQueueEntry));
                 }
             }
-            QueueCommand::RemoveAt(positions) => {
+            QueueCommand::RemoveAt { positions, .. } => {
                 let positions: Vec<usize> = positions.iter().map(|at| as_index(*at)).collect();
                 if self.up_next.remove_positions(&positions) == 0 {
                     return Err(RuntimeError::Rejected(Rejected::NoSuchQueueEntry));
                 }
             }
-            QueueCommand::RemoveContextAt(positions) => {
+            QueueCommand::RemoveContextAt { positions, .. } => {
                 let positions: Vec<usize> = positions.iter().map(|at| as_index(*at)).collect();
                 if !self.queue.remove_order_positions(&positions) {
                     return Err(RuntimeError::Rejected(Rejected::NoSuchQueueEntry));
                 }
             }
-            QueueCommand::PlayNextAt(position) => {
+            QueueCommand::PlayNextAt { position, .. } => {
                 let track_id = self
                     .up_next
                     .take_at(as_index(*position))
                     .ok_or(RuntimeError::Rejected(Rejected::NoSuchQueueEntry))?;
                 return self.start(backend, library, track_id);
             }
-            QueueCommand::PlayContextAt(position) => {
+            QueueCommand::PlayContextAt { position, .. } => {
                 let track_id = self
                     .queue
                     .play_order_position_now(as_index(*position))
@@ -337,13 +381,10 @@ impl Transport {
                 // whatever music was waiting behind it — the user did not
                 // ask for that, and it is loud.
                 let advances = self.current.as_ref().is_none_or(|loaded| loaded.from_queue);
-                match advances.then(|| self.take_next_auto()).flatten() {
-                    Some(next) => {
-                        let _ = self.start(backend, library, next);
-                    }
-                    None => {
-                        let _ = self.stop(backend);
-                    }
+                if advances {
+                    self.advance_past_failures(backend, library);
+                } else {
+                    let _ = self.stop(backend);
                 }
             }
             PlayerEvent::AdvancedToNext => {
@@ -367,6 +408,13 @@ impl Transport {
             PlayerEvent::Spectrum(_) => {}
             PlayerEvent::Error(message) => {
                 tracing::warn!(%message, "playback backend reported an error");
+                // Recorded before the stop, because stopping clears what was
+                // loaded and the id is the only thing that lets a surface say
+                // *which* track dropped out.
+                self.failure = Some(Failure {
+                    track_id: self.current.as_ref().and_then(|loaded| loaded.track_id),
+                    kind: "backend",
+                });
                 let _ = self.stop(backend);
             }
         }
@@ -430,6 +478,10 @@ impl Transport {
         self.status = PlaybackState::Stopped;
         self.current = None;
         self.position_ms = 0;
+        // Nothing is loaded, so nobody's session is running any more. Leaving
+        // the claim standing would let a surface stop playback a later client
+        // started.
+        self.initiated_by = None;
         Ok(())
     }
 
@@ -487,6 +539,58 @@ impl Transport {
             .or_else(|| self.queue.advance_auto())
     }
 
+    /// Starts what follows a finished track, stepping over entries that
+    /// cannot be played.
+    ///
+    /// One unreadable file must not end a queue that still has music in it —
+    /// that is the everyday case of a track deleted, renamed or on a mount
+    /// that went away after the queue was built. The GTK controller has
+    /// always skipped here (`playback_faults.rs`); moving playback into the
+    /// runtime without bringing that rule along would be a silent regression.
+    ///
+    /// The bound is the number of entries the queues hold, the same rule GTK
+    /// uses (`should_stop_skipping`: give every entry one chance, then stop).
+    /// Without it `Repeat::All` over a queue of broken files hands the same
+    /// entries back for ever and the loop never ends.
+    ///
+    /// Only *automatic* advancing skips. A user who presses Next gets the
+    /// error back instead, because they are waiting for an answer and a
+    /// surface can say "that one is gone" — see
+    /// `a_failed_skip_stops_the_previous_track_rather_than_leaving_it_audible`.
+    fn advance_past_failures(&mut self, backend: &dyn PlaybackBackend, library: &dyn LibraryPort) {
+        let attempts = self.up_next.len().saturating_add(self.queue.len());
+        // A successful `start` clears the facet, and here the success is
+        // exactly what must not erase the skip that led to it: "playing
+        // track 3, having stepped over track 2" is the situation, and a
+        // surface that never sees it cannot tell the user their track was
+        // skipped. So the last failure is carried across the start and put
+        // back.
+        let mut skipped = None;
+        for _ in 0..attempts {
+            let Some(next) = self.take_next_auto() else {
+                break;
+            };
+            match self.start(backend, library, next) {
+                Ok(()) => {
+                    self.failure = skipped;
+                    return;
+                }
+                Err(error) => {
+                    skipped = Some(Failure {
+                        track_id: Some(next),
+                        kind: failure_kind(&error),
+                    });
+                }
+            }
+        }
+        // Either nothing was left, or every candidate failed. `start` already
+        // abandoned the last attempt, so the model is stopped; this makes it
+        // so for the "nothing was left" path too, and keeps the reason for a
+        // stop that would otherwise look like an exhausted queue.
+        let _ = self.stop(backend);
+        self.failure = skipped;
+    }
+
     /// Resolves, hands the location to the backend, and adopts it as current.
     ///
     /// **A failure leaves nothing loaded and nothing playing**, which is the
@@ -522,6 +626,9 @@ impl Transport {
         self.current = Some(track.into());
         self.position_ms = 0;
         self.status = PlaybackState::Playing;
+        // The facet describes the situation, not the history: something is
+        // playing, so there is no failure left to report.
+        self.failure = None;
         // Everything the previous stream still has in flight is stale from
         // here on.
         self.stream = backend.current_generation();
@@ -556,6 +663,7 @@ impl Transport {
         self.current = None;
         self.position_ms = 0;
         self.status = PlaybackState::Stopped;
+        self.initiated_by = None;
     }
 
     /// Adopts a track as current *without* telling the backend to play it —
@@ -583,6 +691,18 @@ impl Transport {
 /// already rejects cleanly.
 fn as_index(position: u64) -> usize {
     usize::try_from(position).unwrap_or(usize::MAX)
+}
+
+/// The short kind a snapshot carries for a start that did not happen.
+///
+/// Anything that is not one of the two playback failures would be a bug in
+/// the caller — `start` returns only those — so the fallback names the
+/// backend rather than inventing a third word for clients to branch on.
+fn failure_kind(error: &RuntimeError) -> &'static str {
+    match error {
+        RuntimeError::Failed(Failed::TrackNotPlayable) => "not_playable",
+        _ => "backend",
+    }
 }
 
 /// Keeps the backend's message in the log, where a path is allowed, and

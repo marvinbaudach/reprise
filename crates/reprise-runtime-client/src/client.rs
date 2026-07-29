@@ -377,7 +377,7 @@ impl Worker {
         }
         match delta {
             Delta::Event(event) => {
-                let _ = self.events.send_blocking(event);
+                let _ = self.events.send_blocking(*event);
             }
             // The runtime dropped events this client never drained. Absorbed
             // here rather than passed on: a surface would only do the same
@@ -434,9 +434,13 @@ impl Worker {
             Body::Text(value) => proxy.call::<_, _, ()>(method, &(value,)),
             Body::Ids(values) => proxy.call::<_, _, ()>(method, &(values,)),
             Body::Tracks(ids, start) => proxy.call::<_, _, ()>(method, &(ids, start)),
-            Body::Position(position) => proxy.call::<_, _, ()>(method, &(position,)),
-            Body::Positions(positions) => proxy.call::<_, _, ()>(method, &(positions,)),
-            Body::Move(from, to) => proxy.call::<_, _, ()>(method, &(from, to)),
+            Body::Position(position, revision) => {
+                proxy.call::<_, _, ()>(method, &(position, revision))
+            }
+            Body::Positions(positions, revision) => {
+                proxy.call::<_, _, ()>(method, &(positions, revision))
+            }
+            Body::Move(from, to, revision) => proxy.call::<_, _, ()>(method, &(from, to, revision)),
             Body::External(media) => proxy.call::<_, _, ()>(
                 method,
                 &(
@@ -556,8 +560,18 @@ fn spawn_signal_relay(
 /// error: a newer runtime may emit deltas this build has no use for, and
 /// that is exactly what a minor protocol bump is allowed to do.
 enum Delta {
-    Event(ClientEvent),
+    /// Boxed because the other variant carries nothing: an unboxed event
+    /// would make every `Resynchronize` as large as the biggest snapshot a
+    /// delta can hold.
+    Event(Box<ClientEvent>),
     Resynchronize,
+}
+
+/// The wire carries "nobody asked" as zero, because a signal argument has no
+/// room for an absent value and client ids start at one. Unpacked here, once,
+/// so no caller has to remember what zero means.
+fn initiator_of(raw: u64) -> Option<u64> {
+    (raw != 0).then_some(raw)
 }
 
 fn decode(message: &zbus::Message) -> Option<Delta> {
@@ -566,29 +580,36 @@ fn decode(message: &zbus::Message) -> Option<Delta> {
     let body = message.body();
     match member.as_str() {
         "PlaybackChanged" => {
-            let (sequence, snapshot) = body.deserialize().ok()?;
-            Some(Delta::Event(ClientEvent::PlaybackChanged {
+            let (sequence, initiator, snapshot) = body.deserialize().ok()?;
+            Some(Delta::Event(Box::new(ClientEvent::PlaybackChanged {
                 sequence,
+                initiator: initiator_of(initiator),
                 snapshot,
-            }))
+            })))
         }
         "QueueChanged" => {
-            let (sequence, snapshot) = body.deserialize().ok()?;
-            Some(Delta::Event(ClientEvent::QueueChanged {
+            let (sequence, initiator, snapshot) = body.deserialize().ok()?;
+            Some(Delta::Event(Box::new(ClientEvent::QueueChanged {
                 sequence,
+                initiator: initiator_of(initiator),
                 snapshot,
-            }))
+            })))
         }
         "DeviceRunChanged" => {
-            let (sequence, snapshot) = body.deserialize().ok()?;
-            Some(Delta::Event(ClientEvent::DeviceRunChanged {
+            let (sequence, initiator, snapshot) = body.deserialize().ok()?;
+            Some(Delta::Event(Box::new(ClientEvent::DeviceRunChanged {
                 sequence,
+                initiator: initiator_of(initiator),
                 snapshot,
-            }))
+            })))
         }
         "JobChanged" => {
-            let (sequence, snapshot) = body.deserialize().ok()?;
-            Some(Delta::Event(ClientEvent::JobChanged { sequence, snapshot }))
+            let (sequence, initiator, snapshot) = body.deserialize().ok()?;
+            Some(Delta::Event(Box::new(ClientEvent::JobChanged {
+                sequence,
+                initiator: initiator_of(initiator),
+                snapshot,
+            })))
         }
         "Resynchronize" => Some(Delta::Resynchronize),
         _ => None,

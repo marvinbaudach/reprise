@@ -77,6 +77,7 @@ fn snapshot(sequence: u64) -> RuntimeSnapshot {
         protocol_major: 1,
         protocol_minor: 0,
         sequence,
+        client_id: 1,
         playback: playback("playing"),
         queue: queue(1),
         device_runs: vec![device_run("Pixel 8")],
@@ -193,6 +194,7 @@ fn a_playback_delta_updates_the_mirror_and_notifies_subscribers() {
 
     session.apply(&ClientEvent::PlaybackChanged {
         sequence: 2,
+        initiator: None,
         snapshot: playback("paused"),
     });
 
@@ -212,6 +214,7 @@ fn a_stale_delta_is_dropped_and_reports_no_change() {
     // Sequence 3 is behind the snapshot's own sequence 5.
     session.apply(&ClientEvent::PlaybackChanged {
         sequence: 3,
+        initiator: None,
         snapshot: playback("paused"),
     });
 

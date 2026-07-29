@@ -324,8 +324,10 @@ impl Loop {
                 let _ = reply.send_blocking(());
             }
             Request::Snapshot { peer, reply } => {
-                let answer = if self.peers.contains_key(&peer) {
-                    self.runtime.snapshot().map(|snapshot| wire(&snapshot))
+                let answer = if let Some(&client) = self.peers.get(&peer) {
+                    self.runtime
+                        .snapshot()
+                        .map(|snapshot| wire(&snapshot, client))
                 } else {
                     Err(RuntimeError::Unavailable(
                         reprise_runtime::Unavailable::NotConnected,
@@ -374,7 +376,7 @@ impl Loop {
         let connected = self.runtime.connect(&handshake)?;
         self.peers.insert(peer.to_owned(), connected.client);
         self.lifecycle.serve();
-        Ok(wire(&connected.snapshot))
+        Ok(wire(&connected.snapshot, connected.client))
     }
 
     fn drop_peer(&mut self, peer: &str) {
@@ -399,7 +401,7 @@ impl Loop {
                 continue;
             };
             for event in delivery.events {
-                self.emit(&peer, event.sequence, &event.event);
+                self.emit(&peer, event.sequence, event.initiator, &event.event);
             }
             if delivery.resynchronize {
                 self.signal(&peer, "Resynchronize", &());
@@ -407,19 +409,29 @@ impl Loop {
         }
     }
 
-    fn emit(&self, peer: &str, sequence: u64, event: &RuntimeEvent) {
+    /// `initiator` travels as a plain number with zero meaning "nobody
+    /// asked" — a backend tick, a track ending, an idle deadline. Client ids
+    /// start at one, so zero cannot collide with a real one.
+    fn emit(
+        &self,
+        peer: &str,
+        sequence: u64,
+        initiator: Option<reprise_runtime::ClientId>,
+        event: &RuntimeEvent,
+    ) {
+        let initiator = initiator.map_or(0, u64::from);
         match event {
             RuntimeEvent::PlaybackChanged(snapshot) => {
-                self.signal(peer, "PlaybackChanged", &(sequence, snapshot));
+                self.signal(peer, "PlaybackChanged", &(sequence, initiator, snapshot));
             }
             RuntimeEvent::QueueChanged(snapshot) => {
-                self.signal(peer, "QueueChanged", &(sequence, snapshot));
+                self.signal(peer, "QueueChanged", &(sequence, initiator, snapshot));
             }
             RuntimeEvent::DeviceRunChanged(snapshot) => {
-                self.signal(peer, "DeviceRunChanged", &(sequence, snapshot));
+                self.signal(peer, "DeviceRunChanged", &(sequence, initiator, snapshot));
             }
             RuntimeEvent::JobChanged(snapshot) => {
-                self.signal(peer, "JobChanged", &(sequence, snapshot));
+                self.signal(peer, "JobChanged", &(sequence, initiator, snapshot));
             }
         }
     }
@@ -477,14 +489,18 @@ fn capability(name: &str) -> Option<Capability> {
     }
 }
 
-/// The snapshot in its wire shape.
+/// The snapshot in its wire shape, addressed to the client that asked for
+/// it: the same runtime state carries a different `client_id` per peer,
+/// which is what lets each of them recognise its own changes.
 pub(crate) fn wire(
     snapshot: &reprise_runtime::RuntimeSnapshot,
+    client: reprise_runtime::ClientId,
 ) -> reprise_runtime_protocol::runtime::RuntimeSnapshot {
     reprise_runtime_protocol::runtime::RuntimeSnapshot {
         protocol_major: snapshot.protocol.major,
         protocol_minor: snapshot.protocol.minor,
         sequence: snapshot.sequence,
+        client_id: client.into(),
         playback: snapshot.playback.clone(),
         queue: snapshot.queue.clone(),
         device_runs: snapshot.device_runs.clone(),
