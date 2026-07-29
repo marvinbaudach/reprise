@@ -33,6 +33,10 @@ fn podcast_settings(device_id: &str) -> DeviceSettings {
         ratings_back: false,
         remove_deleted: true,
         sync_automatically: false,
+        // These tests seed episodes that already have a local file, so the
+        // preparation phase (`MTP-42`) has nothing to do either way. Off, so
+        // the run under test is unambiguously the transfer, never a download.
+        prepare_before_sync: false,
     }
 }
 
