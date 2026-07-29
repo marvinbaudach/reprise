@@ -10,7 +10,7 @@ pub(super) type StateCallback = Rc<dyn Fn(DeviceSyncState)>;
 /// transfer through three named targets" a caller-side decision instead of
 /// something this trait has to special-case per content kind.
 ///
-/// [`GioDeviceBackend`](super::device_sync_backend::GioDeviceBackend) is the
+/// [`GioDeviceBackend`](crate::ui::device_sync::device_sync_backend::GioDeviceBackend) is the
 /// real GVfs/MTP implementation; tests drive a recording double instead
 /// (see `FakeBackend` in `device_sync_runtime_tests.rs`), so no test in this
 /// module needs a real or simulated phone.

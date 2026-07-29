@@ -156,7 +156,7 @@ pub enum PipelineError {
 }
 
 /// Downloads one specific episode by id, synchronously. This is the same
-/// body the auto-download branch of [`refresh_to_root_with_download_progress`]
+/// body the auto-download branch of `refresh_to_root_with_download_progress`
 /// runs for newly discovered episodes of an `auto_download` subscription —
 /// factored out (Block H, MCP parity) so `music_manage_episodes`'s `download`
 /// action, and (`MTP-44`/`POD-7`) the GTK worker's manual and device-sync

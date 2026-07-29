@@ -2,7 +2,7 @@
 //!
 //! Positive entries are `<key>.<ext>` files under the XDG cache. Unlike the
 //! permanent, unbounded album-cover download cache (`cover_download`), this
-//! cache is capped at [`MAX_CACHE_ENTRIES`] files: once a new write would
+//! cache is capped at `MAX_CACHE_ENTRIES` files: once a new write would
 //! exceed the cap, the least-recently-modified files are evicted first.
 
 use std::fs::File;

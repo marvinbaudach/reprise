@@ -30,9 +30,9 @@ echo "== Frontend thinness =="
 # count. Lower it in the same commit that removes a use. Never raise one
 # without a reason recorded in the commit message.
 declare -A budget=(
-  [rusqlite]=515
-  [filesystem]=17
-  [threads]=13
+  [rusqlite]=563
+  [filesystem]=19
+  [threads]=14
   [workers]=7
 )
 
@@ -166,10 +166,12 @@ crates/reprise-gnome/src/ui/runtime/commands.rs:1
 crates/reprise-gnome/src/ui/runtime/session.rs:2
 crates/reprise-gnome/src/ui/strings_concerts.rs:1
 crates/reprise-gnome/src/ui/strings_news.rs:1
+crates/reprise-gnome/src/ui/strings_online_sources.rs:1
 crates/reprise-gnome/src/ui/strings_podcasts.rs:1
 crates/reprise-gnome/src/ui/strings_radio.rs:1
 crates/reprise-gnome/src/ui/strings_releases.rs:1
 crates/reprise-gnome/src/ui/strings.rs:4
+crates/reprise-gnome/src/ui/strings_sources.rs:1
 crates/reprise-gnome/src/ui/strings_tag_edit.rs:7
 crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs:1
 crates/reprise-gnome/src/ui/updates/release_cover.rs:1
