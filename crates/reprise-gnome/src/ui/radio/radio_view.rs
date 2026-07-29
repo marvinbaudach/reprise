@@ -292,11 +292,10 @@ fn render_rows(shared: &Rc<Shared>) {
     apply_empty_state(
         shared,
         radio_empty_state_for(rows.len(), shared.filter_bar.filter().is_active()),
-        total,
     );
 }
 
-fn apply_empty_state(shared: &Shared, state: RadioEmptyState, total: usize) {
+fn apply_empty_state(shared: &Shared, state: RadioEmptyState) {
     shared.empty_state.set(state);
     // `SRC-10`: the true "nothing added yet" empty state hides the toolbar
     // too — Add button, filter chips, and count all disappear, so the view
@@ -313,11 +312,11 @@ fn apply_empty_state(shared: &Shared, state: RadioEmptyState, total: usize) {
             shared.status.set_icon_name(Some("system-search-symbolic"));
             shared
                 .status
-                .set_title(&strings::text(strings::NO_RESULTS_TITLE));
+                .set_title(&strings::text(strings::SRC_NO_RESULTS_TITLE));
             shared.status.set_description(Some(""));
             shared
                 .status_button
-                .set_label(&strings::radio_show_all_count(total));
+                .set_label(&strings::text(strings::SRC_CLEAR_FILTERS));
             shared.stack.set_visible_child_name(STATUS_PAGE);
         }
     }
@@ -329,6 +328,7 @@ fn radio_empty_state_copy() -> SourceEmptyStateCopy {
         title: strings::text(strings::RADIO_NO_STATIONS),
         body: strings::text(strings::RADIO_NO_STATIONS_DESCRIPTION),
         button_label: strings::text(strings::RADIO_ADD),
+        button_icon_name: "list-add-symbolic",
         // Radio has no secondary line — the body already names the URL
         // path (a stream URL), so a second line would repeat it.
         secondary_line: None,
@@ -659,5 +659,35 @@ mod tests {
             view.shared.stack.visible_child_name().as_deref(),
             Some(LIST_PAGE)
         );
+    }
+
+    /// `SRC-10` addendum (Block B2): the filter-mismatch state is the
+    /// opposite of the genuine empty state — the filter row stays visible,
+    /// with a "Clear filters" action, because clearing the filter (not
+    /// adding a station) is the way out. Would go red if `NoResults` hid
+    /// the toolbar the same way `Empty` does.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn src_10_the_filter_mismatch_state_keeps_the_filter_row_visible_unlike_the_true_empty_state() {
+        gtk4::init().unwrap();
+        let conn = Rc::new(RefCell::new(Connection::open_in_memory().unwrap()));
+        reprise_core::db::migrate(&conn.borrow()).unwrap();
+        let view = RadioView::new(conn, None);
+
+        apply_empty_state(&view.shared, RadioEmptyState::Empty);
+        assert!(!view.shared.filter_bar.widget().is_visible());
+
+        apply_empty_state(&view.shared, RadioEmptyState::NoResults);
+        assert!(view.shared.filter_bar.widget().is_visible());
+        assert_eq!(view.shared.status.title(), "Nothing matches these filters");
+        assert_eq!(
+            view.shared.status_button.label().as_deref(),
+            Some("Clear filters")
+        );
+
+        // The button's click handler reads `empty_state` (set above) to
+        // decide whether to clear filters — clicking it here must not
+        // panic and must route through `clear_all` rather than a refresh.
+        view.shared.status_button.emit_clicked();
     }
 }

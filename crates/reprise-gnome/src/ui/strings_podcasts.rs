@@ -29,6 +29,7 @@ pub const PODCAST_ADD: &str = N_!("Add podcast");
 pub const YOUTUBE_ADD: &str = N_!("Add YouTube channel");
 pub const PODCAST_ADD_FILTER: &str = N_!("Add filter");
 pub const PODCAST_FILTER_UNPLAYED: &str = N_!("Unplayed");
+pub const PODCAST_FILTER_DOWNLOADED: &str = N_!("Downloaded");
 pub const PODCAST_FILTER_SHOW: &str = N_!("Show");
 pub const PODCAST_FILTER_SOURCE: &str = N_!("Source");
 pub const PODCAST_CLEAR_ALL: &str = N_!("Clear all");
@@ -57,6 +58,20 @@ pub const YOUTUBE_NO_CHANNELS_SECONDARY: &str = N_!("or paste a channel URL in t
 pub const PODCAST_NO_EPISODES: &str = N_!("No episodes yet");
 pub const PODCAST_NO_EPISODES_DESCRIPTION: &str =
     N_!("Refresh subscriptions to check for new episodes.");
+/// Block B2: the "Downloaded" filter matching nothing — distinct copy from
+/// `PODCAST_NO_EPISODES` so the reason (nothing downloaded, not nothing
+/// published) is actually named.
+pub const PODCAST_NO_DOWNLOADS: &str = N_!("Nothing downloaded yet");
+pub const PODCAST_NO_DOWNLOADS_DESCRIPTION: &str =
+    N_!("Episodes you download for offline listening will appear here.");
+/// Block B2 / `SRC-10` addendum: a source whose own module is switched off,
+/// with nothing subscribed yet. `{source}` is filled with the Podcasts or
+/// YouTube page title.
+pub const PODCAST_SOURCE_OFF_TITLE: &str = N_!("{source} is turned off");
+pub const PODCAST_SOURCE_OFF_DESCRIPTION: &str = N_!(
+    "Turn it back on in Online sources to search, subscribe, and fetch new episodes again. Existing subscriptions are kept."
+);
+pub const PODCAST_ENABLE_IN_PREFERENCES: &str = N_!("Enable in Preferences");
 pub const PODCAST_REFRESH_NOW: &str = N_!("Refresh now");
 pub const PODCAST_REFRESHING: &str = N_!("Refreshing podcasts…");
 pub const PODCAST_REFRESH_FAILED: &str = N_!("Refresh failed · showing saved episodes");
@@ -116,6 +131,12 @@ pub const YOUTUBE_LOAD_MORE: &str = N_!("Load more");
 pub const YOUTUBE_LOADING_MORE: &str = N_!("Loading more videos…");
 pub const YOUTUBE_BACK_TO_CHANNELS: &str = N_!("Back to YouTube channels");
 pub const YOUTUBE_HIDE_SHORTS: &str = N_!("Hide Shorts");
+/// `POD-14`: every currently available entry on this channel is a Short and
+/// Shorts are hidden.
+pub const YOUTUBE_SHORTS_ONLY_TITLE: &str = N_!("Only Shorts here");
+pub const YOUTUBE_SHORTS_ONLY_DESCRIPTION: &str =
+    N_!("Every recent upload from this channel is a Short. Show them anyway?");
+pub const YOUTUBE_SHOW_SHORTS_ANYWAY: &str = N_!("Show Shorts anyway");
 pub const YOUTUBE_OPEN_CHANNEL: &str = N_!("Open channel");
 pub const YOUTUBE_SELECT_EPISODES: &str = N_!("Select episodes");
 pub const YOUTUBE_DOWNLOAD_SELECTED: &str = N_!("Download selected");
@@ -174,11 +195,10 @@ pub fn podcast_filtered_count(visible: usize, total: usize) -> String {
     )
 }
 
-pub fn podcast_show_all_count(count: usize) -> String {
-    formatted(
-        N_!("Show all {count} episodes"),
-        &[("count", &count.to_string())],
-    )
+/// Block B2 / `SRC-10` addendum: fills `{source}` with the page title
+/// ("Podcasts" or "YouTube") for the module-off empty state.
+pub fn podcast_source_off_title(source: &str) -> String {
+    formatted(PODCAST_SOURCE_OFF_TITLE, &[("source", source)])
 }
 
 pub fn podcast_unsubscribe_from(show: &str) -> String {

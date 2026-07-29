@@ -149,6 +149,19 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         });
     }
 
+    // `SRC-10` addendum (Block B2): the module-off empty state's "Enable in
+    // Preferences" button for Podcasts and YouTube — each page's own
+    // `PodcastsView` exists before `preferences` does, so this is wired
+    // post-construction rather than passed into `PodcastsCallbacks`.
+    for view in [podcasts_view, youtube_view] {
+        let preferences = Rc::downgrade(preferences);
+        view.set_on_open_preferences(move || {
+            if let Some(preferences) = preferences.upgrade() {
+                preferences.present_online_sources();
+            }
+        });
+    }
+
     let active_content_focus = active_content_focus.clone();
 
     let minimal_toggle = minimal_view.clone();

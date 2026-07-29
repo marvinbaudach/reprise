@@ -14,6 +14,9 @@ pub(super) struct PodcastFilter {
     pub unplayed_only: bool,
     pub show: Option<String>,
     pub source: Option<PodcastKind>,
+    /// `SRC-10` addendum (Block B2): the "Downloaded" chip — matches only
+    /// episodes with a file on disk right now, not a queued/downloading one.
+    pub downloaded_only: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -170,6 +173,7 @@ pub(super) fn matches_filter(row: &EpisodeRow, filter: &PodcastFilter) -> bool {
     (!filter.unplayed_only || row.played_at.is_none())
         && filter.show.as_deref().is_none_or(|show| row.show == show)
         && filter.source.is_none_or(|source| row.kind == source)
+        && (!filter.downloaded_only || row.downloaded_path.is_some())
 }
 
 pub(super) fn apply_filter(rows: &[EpisodeRow], filter: &PodcastFilter) -> Vec<EpisodeRow> {
@@ -180,7 +184,10 @@ pub(super) fn apply_filter(rows: &[EpisodeRow], filter: &PodcastFilter) -> Vec<E
 }
 
 pub(super) fn active(filter: &PodcastFilter) -> bool {
-    filter.unplayed_only || filter.show.is_some() || filter.source.is_some()
+    filter.unplayed_only
+        || filter.show.is_some()
+        || filter.source.is_some()
+        || filter.downloaded_only
 }
 
 pub(super) fn sort_newest_first(rows: &mut [EpisodeRow]) {
@@ -267,9 +274,35 @@ mod tests {
                 unplayed_only: true,
                 show: Some("Show".into()),
                 source: Some(PodcastKind::Youtube),
+                downloaded_only: false,
             },
         );
         assert_eq!(filtered.iter().map(|row| row.id).collect::<Vec<_>>(), [2]);
+    }
+
+    /// `SRC-10` addendum (Block B2): the "Downloaded" filter matches only
+    /// episodes with a file on disk — would go red if `downloaded_only`
+    /// were ignored, since one row here has no `downloaded_path` at all.
+    #[test]
+    fn src_10_downloaded_only_filter_matches_files_on_disk_not_download_state() {
+        let mut on_disk = row(1, Some(10), PodcastKind::Rss);
+        on_disk.downloaded_path = Some("/music/ep1.mp3".into());
+        let not_downloaded = row(2, Some(20), PodcastKind::Rss);
+        let rows = vec![on_disk, not_downloaded];
+
+        let filtered = apply_filter(
+            &rows,
+            &PodcastFilter {
+                downloaded_only: true,
+                ..PodcastFilter::default()
+            },
+        );
+
+        assert_eq!(filtered.iter().map(|row| row.id).collect::<Vec<_>>(), [1]);
+        assert!(active(&PodcastFilter {
+            downloaded_only: true,
+            ..PodcastFilter::default()
+        }));
     }
 
     #[test]

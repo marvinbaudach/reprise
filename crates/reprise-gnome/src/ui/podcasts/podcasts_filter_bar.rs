@@ -5,17 +5,15 @@ use gtk4::prelude::*;
 use reprise_core::podcasts::{self, PodcastKind};
 use rusqlite::Connection;
 
-use super::podcasts_presentation::PodcastFilter;
+// `active` lives in `podcasts_presentation` (also read by the empty-state
+// classification), not duplicated here.
+use super::podcasts_presentation::{active, PodcastFilter};
 use crate::ui::browse::browse_bar::CHIP_CSS_CLASS;
 use crate::ui::strings;
 use crate::ui::style::buttons;
 
 const FILTER_BAR_MIN_HEIGHT: i32 = 34;
 type OnChanged = Rc<dyn Fn(PodcastFilter)>;
-
-fn active(filter: &PodcastFilter) -> bool {
-    filter.unplayed_only || filter.show.is_some() || filter.source.is_some()
-}
 
 fn persist(conn: &Connection, filter: &PodcastFilter) -> Result<(), rusqlite::Error> {
     reprise_core::library::settings::set_bool(
@@ -36,6 +34,11 @@ fn persist(conn: &Connection, filter: &PodcastFilter) -> Result<(), rusqlite::Er
             Some(PodcastKind::Youtube) => "youtube",
             None => "",
         },
+    )?;
+    reprise_core::library::settings::set_bool(
+        conn,
+        podcasts::config::FILTER_DOWNLOADED_KEY,
+        filter.downloaded_only,
     )
 }
 
@@ -58,6 +61,7 @@ impl PodcastsFilterBar {
             unplayed_only: stored.unplayed_only,
             show: stored.show,
             source: None,
+            downloaded_only: stored.downloaded_only,
         };
         let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
         root.set_margin_top(6);
@@ -185,6 +189,15 @@ impl PodcastsFilterBar {
                 ..filter
             });
         }
+        if filter.downloaded_only {
+            self.prepend_chip(
+                &strings::text(strings::PODCAST_FILTER_DOWNLOADED),
+                |filter| PodcastFilter {
+                    downloaded_only: false,
+                    ..filter
+                },
+            );
+        }
         if active(&filter) {
             let clear = gtk4::Button::with_label(&format!(
                 "{}  ×",
@@ -231,6 +244,13 @@ impl PodcastsFilterBar {
                 ..filter
             }
         });
+        self.add_value_button(
+            &strings::text(strings::PODCAST_FILTER_DOWNLOADED),
+            |filter| PodcastFilter {
+                downloaded_only: true,
+                ..filter
+            },
+        );
         self.add_heading(strings::PODCAST_FILTER_SHOW);
         for show in self.shows.borrow().clone() {
             let value = show.clone();
