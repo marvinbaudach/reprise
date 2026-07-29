@@ -162,6 +162,15 @@ pub enum PlaybackCommand {
     SetVolume(f64),
     /// Relative seek in milliseconds; negative seeks backwards.
     Seek(i64),
+    /// Absolute seek to a point in the track, in milliseconds. Clamped to
+    /// the known length; while the length is still unknown, the backend is
+    /// the authority that can accept or refuse the target.
+    ///
+    /// Distinct from [`Self::Seek`] rather than expressible through it. A
+    /// scrubber knows where the user let go, and expressing that as a delta
+    /// makes it depend on where the playhead had reached by the time the
+    /// message arrived — the same drag lands somewhere else under load.
+    SeekTo(i64),
     SetShuffle(bool),
     /// `off`, `all`, `one`.
     SetRepeat(String),

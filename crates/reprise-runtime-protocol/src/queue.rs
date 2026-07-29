@@ -19,12 +19,11 @@ pub struct QueueSnapshot {
     /// edits — a track ending renumbers the context window just as surely as
     /// an edit does.
     ///
-    /// Its promise holds exactly as far as this snapshot reaches. A reorder
-    /// wholly beyond the windows below renumbers nothing a client can name,
-    /// so it does not move the revision — and cannot, since the ids involved
-    /// were never published. That stays true only while the windows are the
-    /// whole addressable range; a paged read that hands out deeper positions
-    /// has to move the revision on deeper changes too.
+    /// It follows the *whole* queue, not the windows below. It used to
+    /// follow only what this snapshot carried, which was defensible while
+    /// nothing could name a deeper position — but [`QueuePage`] hands them
+    /// out, so a reorder past the two-hundredth row now renumbers rows a
+    /// client is holding, and has to move the revision like any other.
     pub revision: u64,
     pub current_track_id: Option<i64>,
     /// Explicitly queued items, in play order.
@@ -115,4 +114,56 @@ impl QueueCommand {
             Self::AddNext(_) | Self::AddLast(_) | Self::Clear | Self::Purge(_) => None,
         }
     }
+}
+
+/// Which of the two queues a page is read from.
+///
+/// A string on the wire, like every other closed vocabulary here: an integer
+/// would make an off-by-one silently read the other queue.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueueSection {
+    PlayNext,
+    Context,
+}
+
+impl QueueSection {
+    /// The wire spelling, or `None` for a word this build does not know.
+    #[must_use]
+    pub fn from_wire(name: &str) -> Option<Self> {
+        match name {
+            "play_next" => Some(Self::PlayNext),
+            "context" => Some(Self::Context),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_wire(self) -> &'static str {
+        match self {
+            Self::PlayNext => "play_next",
+            Self::Context => "context",
+        }
+    }
+}
+
+/// One window of a queue section, for a view scrolled past what the snapshot
+/// carries.
+///
+/// Carries its own `revision` and `offset` rather than leaving the caller to
+/// remember what it asked for. A page that arrived while the queue moved
+/// underneath describes rows that are no longer at those positions, and a
+/// client comparing the revision it holds against this one is how it finds
+/// out — the same check a positional command makes before it is applied.
+#[derive(Debug, Clone, PartialEq, Default, SerializeDict, DeserializeDict, Type)]
+#[zvariant(signature = "a{sv}")]
+pub struct QueuePage {
+    pub revision: u64,
+    /// `play_next` or `context`.
+    pub section: String,
+    /// Where this window starts within its section.
+    pub offset: u64,
+    pub track_ids: Vec<i64>,
+    /// How long the whole section is, so a view can size its scrollbar
+    /// without asking for every page.
+    pub total: u64,
 }

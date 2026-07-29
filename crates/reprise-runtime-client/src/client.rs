@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use reprise_runtime_protocol::command::CommandOutcome;
+use reprise_runtime_protocol::queue::QueuePage;
 use reprise_runtime_protocol::runtime::RuntimeSnapshot;
 use reprise_runtime_protocol::PROTOCOL_VERSION;
 
@@ -129,6 +130,15 @@ enum Job {
         Generation,
         async_channel::Sender<Result<CommandOutcome, ClientError>>,
     ),
+    /// Read one window of a queue section and answer the caller. A read,
+    /// not a command: it changes nothing and so carries no generation —
+    /// there is no intention here that could go stale.
+    QueuePage(
+        String,
+        u64,
+        u64,
+        async_channel::Sender<Result<QueuePage, ClientError>>,
+    ),
     /// A signal arrived. Routed through the worker rather than straight to
     /// the surface so one thread decides the order everything is published
     /// in: a delta must never reach a client before the `Connected` snapshot
@@ -239,6 +249,28 @@ impl RuntimeClient {
             .map_err(|_| ClientError::Unavailable("unavailable:client_stopped".into()))?
     }
 
+    /// Reads one window of a queue section, for a view scrolled past the 200
+    /// rows the snapshot carries.
+    ///
+    /// Blocking and answered directly rather than published as an event: a
+    /// view asks for the window it is about to draw and has nothing to do
+    /// until it arrives, and routing it through the event stream would put
+    /// it behind whatever deltas are queued ahead of it.
+    pub fn queue_page(
+        &self,
+        section: &str,
+        offset: u64,
+        limit: u64,
+    ) -> Result<QueuePage, ClientError> {
+        let (reply, answer) = async_channel::bounded(1);
+        self.requests
+            .send_blocking(Job::QueuePage(section.to_owned(), offset, limit, reply))
+            .map_err(|_| ClientError::Unavailable("unavailable:client_stopped".into()))?;
+        answer
+            .recv_blocking()
+            .map_err(|_| ClientError::Unavailable("unavailable:client_stopped".into()))?
+    }
+
     /// Asks for a fresh snapshot, which arrives as
     /// [`ClientEvent::Connected`].
     pub fn resynchronize(&self) {
@@ -287,6 +319,9 @@ impl Worker {
                 }
                 Job::Call(command, formed_in, reply) => {
                     let _ = reply.send_blocking(self.invoke(&command, formed_in));
+                }
+                Job::QueuePage(section, offset, limit, reply) => {
+                    let _ = reply.send_blocking(self.read_queue_page(&section, offset, limit));
                 }
                 Job::Signal(delta, seen_in) => self.publish(delta, seen_in, watcher),
                 // A resynchronization is asked for by the runtime and always
@@ -452,6 +487,19 @@ impl Worker {
         .map_err(|error| ClientError::from_bus(&error))
     }
 
+    /// Reads one queue window through the current connection.
+    fn read_queue_page(
+        &self,
+        section: &str,
+        offset: u64,
+        limit: u64,
+    ) -> Result<QueuePage, ClientError> {
+        let proxy = self.proxy()?;
+        proxy
+            .call::<_, _, QueuePage>("QueuePage", &(section, offset, limit))
+            .map_err(|error| ClientError::from_bus(&error))
+    }
+
     /// Issues one command.
     ///
     /// A command is refused unless the session it was formed against is
@@ -478,7 +526,7 @@ impl Worker {
             Body::None => proxy.call::<_, _, CommandOutcome>(method, &()),
             Body::Flag(value) => proxy.call::<_, _, CommandOutcome>(method, &(value,)),
             Body::Volume(value) => proxy.call::<_, _, CommandOutcome>(method, &(value,)),
-            Body::Delta(value) | Body::Id(value) => {
+            Body::Milliseconds(value) | Body::Id(value) => {
                 proxy.call::<_, _, CommandOutcome>(method, &(value,))
             }
             Body::Text(value) => proxy.call::<_, _, CommandOutcome>(method, &(value,)),
