@@ -14,7 +14,7 @@ scripts/cua-e2e/run.sh
 
 The runner creates a private Xvfb display and Openbox window manager. Each
 scenario group gets a fresh D-Bus session, AT-SPI bus, CUA daemon, XDG profile,
-fake audio sink, and copied FLAC fixtures. It exercises seven public workflows:
+fake audio sink, and copied FLAC fixtures. It exercises eight public workflows:
 
 1. a fresh profile exposes the first-run wizard; activating `Skip for Now`
    reveals the `No music yet` empty-library state;
@@ -31,7 +31,14 @@ fake audio sink, and copied FLAC fixtures. It exercises seven public workflows:
    module, and reverts the cleanup from the still-available action;
 6. Song Visuals exposes exactly the active Grid, Bars, Flow, and Pulse modes;
 7. a playing track remains responsive and visibly marked while 24 Title-header
-   sort toggles repeatedly recycle every visible track cell.
+   sort toggles repeatedly recycle every visible track cell;
+8. `MTP-46`: a source module switched off contributes no row to a connected
+   phone's Content section, and switching one off leaves its peer alone. This
+   one starts the app three times against a single profile and writes the
+   persisted module setting in between, because the Preferences dialog keeps
+   every page in the accessibility tree at once — a label found there says
+   nothing about the page being visible, so driving the switch itself would
+   assert against invisible widgets.
 
 Every CUA action is bracketed by a fresh `get_window_state` snapshot. The run
 fails on a degraded accessibility tree, a suspected no-op/escalation request,
@@ -82,7 +89,8 @@ For an iterative keyboard-only retry, run
 `CUA_E2E_ONLY=populated-library scripts/cua-e2e/run.sh`; use
 `CUA_E2E_ONLY=library-doctor scripts/cua-e2e/run.sh` for the Doctor workflow,
 or `CUA_E2E_ONLY=track-sort-playing-marker scripts/cua-e2e/run.sh` for the
-repeated-sort regression.
+repeated-sort regression, or `CUA_E2E_ONLY=source-modules` for the module
+switches.
 The default remains the complete matrix.
 
 This headless X11 run proves accessibility exposure, input delivery, widget
