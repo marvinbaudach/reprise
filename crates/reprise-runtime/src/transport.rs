@@ -26,10 +26,11 @@ const QUEUE_WINDOW: usize = 200;
 
 /// What is loaded in the backend, however it got there.
 ///
-/// A library track and a radio stream differ in exactly two ways that the
-/// rest of this module cares about, so those are the two extra fields: one
-/// has a library id and one does not, and one advances the queue when it
-/// ends while the other simply stops.
+/// A library track and a radio stream differ in the ways the rest of this
+/// module cares about, and each of those is a field: one has a library id and
+/// one does not, one advances the queue when it ends while the other simply
+/// stops, one is named by that id and the other by whatever the surface calls
+/// it, and one has an end to seek within.
 struct Loaded {
     /// Absent for anything without a library id — a stream, an episode, a
     /// preview render. A client must never invent one.
@@ -66,13 +67,6 @@ enum Source {
     PlayNext,
     /// Not a library track at all — a stream, an episode, a preview render.
     External,
-}
-
-impl Source {
-    /// Whether the end of this is the queue's cue to move on.
-    fn hands_back_to_the_queue(self) -> bool {
-        matches!(self, Self::Context | Self::PlayNext)
-    }
 }
 
 impl From<PlayableTrack> for Loaded {
@@ -387,30 +381,36 @@ impl Transport {
                 // finished episode or a stream that dropped must not launch
                 // whatever music was waiting behind it — the user did not
                 // ask for that, and it is loud.
-                let advances = self
-                    .current
-                    .as_ref()
-                    .is_none_or(|loaded| loaded.source.hands_back_to_the_queue());
-                if advances {
-                    self.advance_past_failures(backend, library);
-                } else {
+                if self.external_is_loaded() {
                     let _ = self.stop(backend);
                     // The episode ran to its end. A surface acts on that —
                     // marks it played, offers the next one — and must not act
                     // on a stop the user asked for, which looks identical
                     // from the status alone.
                     self.stopped_reason = Some("finished");
+                } else {
+                    self.advance_past_failures(backend, library);
                 }
             }
             PlayerEvent::AdvancedToNext => {
                 // The backend handed off to a pre-fed track without a
                 // restart, so the audio is already rolling: advance the model
-                // by one and do NOT call play. Nothing pre-feeds yet (that
-                // arrives with the gapless setting in Task 3.3), which is
-                // exactly why this branch stays defensive rather than absent.
+                // by one and do NOT call play.
+                //
                 // The same choice the pre-feed made, by the same function:
                 // the backend is already playing what it was handed, so
                 // picking anything else here abandons audio that is rolling.
+                if self.external_is_loaded() {
+                    // Unreachable while the pre-feed holds its own end of
+                    // this — it arms nothing during external playback, and a
+                    // backend only hands off to something it was armed with.
+                    // Kept because the alternative is adopting a library
+                    // track as what is playing while an episode is what is
+                    // audible, and because GTK refuses this handoff in the
+                    // same words (`player_event_handling.rs`).
+                    tracing::warn!("ignoring a gapless handoff during external playback");
+                    return;
+                }
                 let mut stepped_over = Vec::new();
                 if let Some((next, source)) = self.take_next_auto(library, &mut stepped_over) {
                     self.load(backend, library, next, source);
@@ -452,7 +452,7 @@ impl Transport {
     /// through into the context instead swaps a live stream for a library
     /// track the user never asked for, and consumes a queued entry on a
     /// press that was meant for the stream.
-    fn external_is_loaded(&self) -> bool {
+    pub(super) fn external_is_loaded(&self) -> bool {
         self.current
             .as_ref()
             .is_some_and(|loaded| loaded.source == Source::External)
