@@ -8,6 +8,7 @@ pub mod downloads;
 pub mod feed;
 pub mod http;
 pub mod itunes;
+pub mod offline_add;
 pub mod phone_sync;
 pub mod pipeline;
 pub mod query;

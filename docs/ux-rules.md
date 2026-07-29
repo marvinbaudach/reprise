@@ -1866,6 +1866,14 @@ property is set and yet nothing happens.
      the connection returns.
   4. Add dialogs disable their search field with a one-line reason; pasting a
      URL still works, and the subscription comes into being on the next fetch.
+     For Podcasts and YouTube this means a placeholder subscription (the URL
+     itself as its title) that the next successful refresh — already
+     scheduled independently of this dialog — fills in for real. Radio has no
+     such background refresh to defer to, so its URL path instead reaches its
+     normal preview step immediately, using only locally detectable facts (a
+     `.m3u`/`.pls` suffix, an ICY-probe fallback name) instead of the ICY
+     probe itself; the user can re-add the station once online for the real
+     probed metadata.
   5. Radio is the one exception: a live stream cannot be deferred. Stations
      stay listed, and "Play" reports "No connection · Retry" instead of
      queueing.

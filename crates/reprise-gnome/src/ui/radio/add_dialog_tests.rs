@@ -72,7 +72,7 @@ fn src_5_radio_search_hides_existing_favorites() {
 fn src_7_a_successful_radio_add_acknowledges_the_row_in_place() {
     gtk4::init().unwrap();
     let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
-    let dialog = RadioAddDialog::new(conn, || {});
+    let dialog = RadioAddDialog::new(conn, Rc::new(Cell::new(Connectivity::Online)), || {});
     dialog.render_results(vec![StationCandidate {
         uuid: "new".into(),
         name: "New".into(),
@@ -141,7 +141,7 @@ fn src_11_radio_add_dialog_images_allowed_is_the_net_1a_and() {
 fn src_11_radio_search_result_stays_on_the_fallback_when_images_are_not_allowed() {
     gtk4::init().unwrap();
     let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
-    let dialog = RadioAddDialog::new(conn, || {});
+    let dialog = RadioAddDialog::new(conn, Rc::new(Cell::new(Connectivity::Online)), || {});
     dialog.render_results(vec![StationCandidate {
         uuid: "new".into(),
         name: "New".into(),
@@ -213,7 +213,7 @@ fn find_scroller(widget: &gtk4::Widget) -> Option<gtk4::ScrolledWindow> {
 fn src_8_radio_results_scroll_inside_a_bounded_viewport() {
     gtk4::init().unwrap();
     let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
-    let dialog = RadioAddDialog::new(conn, || {});
+    let dialog = RadioAddDialog::new(conn, Rc::new(Cell::new(Connectivity::Online)), || {});
     let scroller = dialog
         .widgets
         .dialog
@@ -246,7 +246,7 @@ fn src_8_radio_results_scroll_inside_a_bounded_viewport() {
 fn rad_5_near_you_click_without_a_location_opens_settings_and_dispatches_no_search() {
     gtk4::init().unwrap();
     let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
-    let dialog = RadioAddDialog::new(conn, || {});
+    let dialog = RadioAddDialog::new(conn, Rc::new(Cell::new(Connectivity::Online)), || {});
     let opened = Rc::new(std::cell::Cell::new(false));
     let flag = opened.clone();
     dialog.set_on_location_settings(move || flag.set(true));
@@ -280,7 +280,7 @@ fn rad_5_near_you_click_with_a_location_dispatches_a_search_and_never_opens_sett
         Some("DE"),
     )
     .unwrap();
-    let dialog = RadioAddDialog::new(conn, || {});
+    let dialog = RadioAddDialog::new(conn, Rc::new(Cell::new(Connectivity::Online)), || {});
     let opened = Rc::new(std::cell::Cell::new(false));
     let flag = opened.clone();
     dialog.set_on_location_settings(move || flag.set(true));
@@ -307,7 +307,7 @@ fn net_1a_radio_search_never_reaches_the_directory_while_the_switch_is_off() {
     gtk4::init().unwrap();
     let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
     reprise_core::online_sources::set_enabled(&conn.borrow(), false).unwrap();
-    let dialog = RadioAddDialog::new(conn, || {});
+    let dialog = RadioAddDialog::new(conn, Rc::new(Cell::new(Connectivity::Online)), || {});
 
     dialog.submit("metalcore");
 
@@ -319,5 +319,65 @@ fn net_1a_radio_search_never_reaches_the_directory_while_the_switch_is_off() {
     assert!(
         matches!(dialog.state.borrow().phase, AddDialogPhase::Idle),
         "no search may be dispatched, so the dialog stays idle"
+    );
+}
+
+/// `NET-3` point 4: search is refused offline while a matching URL still
+/// reaches a confirmable preview — the decisive proof is `can_confirm()`
+/// (i.e. the station is one click from being added), not merely that the
+/// entry stayed enabled.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn net_3_radio_search_is_refused_offline_but_a_url_still_reaches_preview() {
+    gtk4::init().unwrap();
+    let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
+    let dialog = RadioAddDialog::new(conn, Rc::new(Cell::new(Connectivity::Offline)), || {});
+
+    dialog.submit("metalcore");
+    assert_eq!(
+        dialog.widgets.status.text().as_str(),
+        strings::text(strings::RADIO_SEARCH_NEEDS_NETWORK),
+        "search needs the network and must be refused offline"
+    );
+    assert!(
+        matches!(dialog.state.borrow().phase, AddDialogPhase::Idle),
+        "no search may be dispatched while offline"
+    );
+
+    dialog.submit("https://radio.example/live.mp3");
+    assert!(
+        dialog.state.borrow().can_confirm(),
+        "a URL must still reach a confirmable preview while offline"
+    );
+    let phase = dialog.state.borrow().phase.clone();
+    let AddDialogPhase::Preview(preview) = phase else {
+        panic!("expected a Preview phase, got {phase:?}");
+    };
+    assert_eq!(preview.stream_url, "https://radio.example/live.mp3");
+}
+
+/// The decisive F4 claim taken one step further: confirming that offline
+/// preview actually adds the station to the database, not merely that the
+/// dialog reached a confirmable state.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn net_3_confirming_an_offline_url_preview_persists_the_station() {
+    gtk4::init().unwrap();
+    let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
+    let dialog = RadioAddDialog::new(
+        conn.clone(),
+        Rc::new(Cell::new(Connectivity::Offline)),
+        || {},
+    );
+
+    dialog.submit("https://radio.example/live.mp3");
+    dialog.widgets.confirm.emit_clicked();
+
+    let stations = radio::station::list(&conn.borrow()).unwrap();
+    assert!(
+        stations
+            .iter()
+            .any(|station| station.stream_url == "https://radio.example/live.mp3"),
+        "the offline URL path must persist a real station row"
     );
 }

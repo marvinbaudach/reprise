@@ -82,6 +82,17 @@ pub const YOUTUBE_DIALOG_HINT: &str = N_!("Search or paste a channel URL");
 /// `SRC-6`: a source-foreign URL is refused, never silently handed over.
 pub const PODCAST_URL_IS_YOUTUBE: &str = N_!("That is a YouTube channel — add it under YouTube");
 pub const YOUTUBE_URL_IS_FEED: &str = N_!("That is an RSS feed — add it under Podcasts");
+/// `NET-3` point 4: search needs the network, so it is refused offline with
+/// this one-line reason while the URL path stays open. One wording per
+/// dialog since the alternative it points to differs (feed vs. channel URL).
+pub const PODCAST_SEARCH_NEEDS_NETWORK: &str =
+    N_!("Search needs a connection — paste a feed URL instead");
+pub const YOUTUBE_SEARCH_NEEDS_NETWORK: &str =
+    N_!("Search needs a connection — paste a channel URL instead");
+/// `NET-3` point 4: a pasted URL still creates the subscription while
+/// offline — this confirms it went through without pretending a preview
+/// happened.
+pub const PODCAST_ADDED_OFFLINE: &str = N_!("Added — details fill in once you're back online");
 pub const PODCAST_SEARCH: &str = N_!("Search");
 pub const PODCAST_PREVIEW: &str = N_!("Preview");
 pub const PODCAST_SEARCHING: &str = N_!("Searching…");
