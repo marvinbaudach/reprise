@@ -18,7 +18,11 @@ impl DeviceBackend for FailingCopyBackend {
 
     fn subscribe_devices(&self, _callback: Rc<dyn Fn(Vec<DeviceDescriptor>)>) {}
 
-    fn inspect(&self, _root_uri: String) -> TestFuture<DeviceStorageInspection> {
+    fn inspect(
+        &self,
+        _root_uri: String,
+        _targets: [reprise_core::device_sync::SyncTarget; 3],
+    ) -> TestFuture<DeviceStorageInspection> {
         Box::pin(async {
             Ok(DeviceStorageInspection {
                 snapshot: DeviceStorageSnapshot {
@@ -27,14 +31,19 @@ impl DeviceBackend for FailingCopyBackend {
                     ..Default::default()
                 },
                 managed_files: Vec::new(),
+                podcast_files: Vec::new(),
+                youtube_files: Vec::new(),
             })
         })
     }
 
-    fn copy_track(
+    #[allow(clippy::too_many_arguments)]
+    fn replace_track(
         &self,
         _device_id: String,
         _root_uri: String,
+        _target_path: String,
+        _storage_id: Option<reprise_core::device_sync::StorageId>,
         _source_path: PathBuf,
         _relative_target: String,
         _expected_size: u64,
@@ -48,6 +57,8 @@ impl DeviceBackend for FailingCopyBackend {
         &self,
         _device_id: String,
         _root_uri: String,
+        _target_path: String,
+        _storage_id: Option<reprise_core::device_sync::StorageId>,
         _name: String,
         _contents: Vec<u8>,
     ) -> TestFuture<()> {
@@ -87,6 +98,10 @@ fn save_sources(conn: &Rc<RefCell<Connection>>, device_id: &str, sources: Vec<Se
             opus_bitrate: 0,
             ratings_back: false,
             remove_deleted: true,
+            // `MTP-30`: these tests drive `sync_now` manually and must not
+            // race an automatic start on connect.
+            sync_automatically: false,
+            prepare_before_sync: true,
         },
     )
     .unwrap();

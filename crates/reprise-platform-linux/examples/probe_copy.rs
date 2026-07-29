@@ -3,6 +3,7 @@
 //! `cargo run -p reprise-platform-linux --example probe_copy`
 
 use gio::glib;
+use reprise_core::device_sync::{SyncTarget, SyncTargetKind};
 use reprise_platform_linux::device_sync::{DeviceMonitor, DeviceStorage};
 
 fn main() {
@@ -24,8 +25,10 @@ fn main() {
 
         let storage = DeviceStorage::from_uri(&device.root_uri);
 
+        let targets = SyncTargetKind::ALL.map(SyncTarget::default_for);
+
         println!("--- inspect ---");
-        match storage.inspect().await {
+        match storage.inspect(&targets).await {
             Ok(contents) => println!("inspect OK: {contents:?}"),
             Err(error) => println!("inspect ERR: {error}"),
         }
@@ -41,9 +44,11 @@ fn main() {
         let source = gio::File::for_path(&source_path);
         let cancellable = gio::Cancellable::new();
 
-        println!("--- copy_track Probe/Probe Track.mp3 ---");
+        println!("--- replace_managed /Music/Reprise Probe/Probe Track.mp3 ---");
         let result = storage
-            .copy_track(
+            .replace_managed(
+                None,
+                "/Music/Reprise",
                 &source,
                 "Probe/Probe Track.mp3",
                 4096,
@@ -58,7 +63,7 @@ fn main() {
 
         println!("--- replace_playlist Probe.m3u8 ---");
         match storage
-            .replace_playlist("Probe", b"#EXTM3U\n".to_vec())
+            .replace_playlist(None, "/Music/Reprise", "Probe", b"#EXTM3U\n".to_vec())
             .await
         {
             Ok(()) => println!("playlist OK"),

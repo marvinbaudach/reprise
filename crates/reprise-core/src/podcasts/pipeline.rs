@@ -4,21 +4,56 @@ use std::path::Path;
 
 use rusqlite::Connection;
 
+use super::download_state::{DownloadProgress, DownloadState};
 use super::feed::{ParsedEpisode, ParsedFeed};
 use super::http::Response;
 use super::store::FetchSuccess;
 use super::{PodcastError, PodcastKind, SubscriptionRow};
 
+#[path = "pipeline_load_more.rs"]
+mod load_more;
+pub use load_more::load_more_youtube;
+
 const MAX_AUTO_DOWNLOADS_PER_SUBSCRIPTION: usize = 3;
+const OFFICIAL_YOUTUBE_LIMIT: usize = 15;
 
 pub trait FeedFetcher {
     fn fetch(&self, subscription: &SubscriptionRow) -> Result<Response, PodcastError>;
+    fn fetch_url(
+        &self,
+        url: &str,
+        etag: Option<&str>,
+        last_modified: Option<&str>,
+    ) -> Result<Response, PodcastError> {
+        super::http::get_conditional(url, etag, last_modified)
+    }
     fn download(&self, url: &str, destination: &Path) -> Result<(), PodcastError>;
+
+    fn download_with_progress(
+        &self,
+        url: &str,
+        destination: &Path,
+        _on_progress: &mut dyn FnMut(DownloadProgress),
+    ) -> Result<(), PodcastError> {
+        self.download(url, destination)
+    }
 }
 
 pub trait YoutubeFetcher {
     fn list(&self, url: &str, limit: usize) -> Result<ParsedFeed, PodcastError>;
+    fn list_range(&self, url: &str, end: usize) -> Result<ParsedFeed, PodcastError> {
+        self.list(url, end)
+    }
     fn download(&self, url: &str, destination: &Path) -> Result<(), PodcastError>;
+
+    fn download_with_progress(
+        &self,
+        url: &str,
+        destination: &Path,
+        _on_progress: &mut dyn FnMut(DownloadProgress),
+    ) -> Result<(), PodcastError> {
+        self.download(url, destination)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -36,6 +71,15 @@ impl FeedFetcher for HttpFeedFetcher {
     fn download(&self, url: &str, destination: &Path) -> Result<(), PodcastError> {
         super::http::download(url, destination)
     }
+
+    fn download_with_progress(
+        &self,
+        url: &str,
+        destination: &Path,
+        on_progress: &mut dyn FnMut(DownloadProgress),
+    ) -> Result<(), PodcastError> {
+        super::http::download_with_progress(url, destination, on_progress)
+    }
 }
 
 impl YoutubeFetcher for super::ytdlp::YtDlp {
@@ -46,6 +90,21 @@ impl YoutubeFetcher for super::ytdlp::YtDlp {
 
     fn download(&self, url: &str, destination: &Path) -> Result<(), PodcastError> {
         super::ytdlp::YtDlp::download(self, url, destination)
+    }
+
+    fn list_range(&self, url: &str, end: usize) -> Result<ParsedFeed, PodcastError> {
+        let listing =
+            super::youtube::project_playlist(super::ytdlp::YtDlp::list_range(self, url, end)?);
+        Ok(project_youtube_feed(listing, end))
+    }
+
+    fn download_with_progress(
+        &self,
+        url: &str,
+        destination: &Path,
+        on_progress: &mut dyn FnMut(DownloadProgress),
+    ) -> Result<(), PodcastError> {
+        super::ytdlp::YtDlp::download_with_progress(self, url, destination, on_progress)
     }
 }
 
@@ -87,7 +146,118 @@ pub enum PipelineError {
     #[error("database error: {0}")]
     Database(#[from] rusqlite::Error),
     #[error(transparent)]
+    Provider(#[from] PodcastError),
+    #[error("YouTube channel is no longer available")]
+    YoutubeSourceUnavailable,
+    #[error(transparent)]
     Cleanup(#[from] super::downloads::CleanupError),
+    #[error("podcast episode does not exist")]
+    EpisodeNotFound,
+}
+
+/// Downloads one specific episode by id, synchronously. This is the same
+/// body the auto-download branch of [`refresh_to_root_with_download_progress`]
+/// runs for newly discovered episodes of an `auto_download` subscription —
+/// factored out (Block H, MCP parity) so `music_manage_episodes`'s `download`
+/// action drives the exact same download path instead of a second one that
+/// could drift from it. Idempotent: an episode that already has a
+/// downloaded file is reported `Downloaded` immediately without a second
+/// network round trip.
+pub fn download_episode(
+    conn: &Connection,
+    feed_fetcher: &dyn FeedFetcher,
+    youtube_fetcher: &dyn YoutubeFetcher,
+    download_root: &Path,
+    episode_id: i64,
+    on_progress: &mut dyn FnMut(DownloadState),
+) -> Result<DownloadState, PipelineError> {
+    let episode = super::store::episode(conn, episode_id)?.ok_or(PipelineError::EpisodeNotFound)?;
+    if episode.downloaded_path.is_some() {
+        let bytes = episode.downloaded_bytes.unwrap_or(0).max(0) as u64;
+        let state = DownloadState::Downloaded { bytes };
+        on_progress(state.clone());
+        return Ok(state);
+    }
+    let subscription = super::store::subscription(conn, episode.subscription_id)?
+        .ok_or(PipelineError::EpisodeNotFound)?;
+    let extension = super::downloads::extension_for(subscription.kind, &episode.audio_url);
+    let destination = super::downloads::download_path(
+        download_root,
+        &subscription.feed_url,
+        &episode.guid,
+        extension,
+    );
+    on_progress(DownloadState::Queued);
+    let mut state = DownloadState::Downloading {
+        received_bytes: 0,
+        total_bytes: None,
+    };
+    on_progress(state.clone());
+    let download = super::downloads::download_atomically(&destination, |temporary| {
+        let mut report = |progress: DownloadProgress| {
+            state = super::download_state::downloading(
+                &state,
+                progress.received_bytes,
+                progress.total_bytes,
+            );
+            on_progress(state.clone());
+        };
+        match subscription.kind {
+            PodcastKind::Rss => {
+                feed_fetcher.download_with_progress(&episode.audio_url, temporary, &mut report)
+            }
+            PodcastKind::Youtube => {
+                youtube_fetcher.download_with_progress(&episode.audio_url, temporary, &mut report)
+            }
+        }
+    });
+    match download {
+        Ok(bytes) => {
+            let Some(destination_path) = destination.to_str() else {
+                remove_completed_download(&destination);
+                tracing::warn!(episode_id, "podcast download path is not valid UTF-8");
+                let state = DownloadState::Failed {
+                    message: "podcast download path is not valid UTF-8".to_owned(),
+                };
+                on_progress(state.clone());
+                return Ok(state);
+            };
+            let persisted = match super::downloads::persist_completed_if_active(
+                conn,
+                episode_id,
+                destination_path,
+                bytes,
+            ) {
+                Ok(persisted) => persisted,
+                Err(error) => {
+                    remove_completed_download(&destination);
+                    let state = DownloadState::Failed {
+                        message: error.to_string(),
+                    };
+                    on_progress(state.clone());
+                    return Err(error.into());
+                }
+            };
+            let state = if persisted {
+                DownloadState::Downloaded { bytes }
+            } else {
+                remove_completed_download(&destination);
+                DownloadState::Failed {
+                    message: "podcast episode no longer exists".to_owned(),
+                }
+            };
+            on_progress(state.clone());
+            Ok(state)
+        }
+        Err(error) => {
+            tracing::warn!(episode_id, %error, "podcast download failed");
+            let state = DownloadState::Failed {
+                message: error.to_string(),
+            };
+            on_progress(state.clone());
+            Ok(state)
+        }
+    }
 }
 
 pub fn refresh(
@@ -97,13 +267,32 @@ pub fn refresh(
     now: i64,
     force: bool,
 ) -> Result<RefreshSummary, PipelineError> {
-    refresh_to_root(
+    refresh_with_download_progress(
+        conn,
+        feed_fetcher,
+        youtube_fetcher,
+        now,
+        force,
+        &mut |_, _| {},
+    )
+}
+
+pub fn refresh_with_download_progress(
+    conn: &Connection,
+    feed_fetcher: &dyn FeedFetcher,
+    youtube_fetcher: &dyn YoutubeFetcher,
+    now: i64,
+    force: bool,
+    on_download: &mut dyn FnMut(i64, DownloadState),
+) -> Result<RefreshSummary, PipelineError> {
+    refresh_to_root_with_download_progress(
         conn,
         feed_fetcher,
         youtube_fetcher,
         now,
         force,
         &super::downloads::default_download_root(),
+        on_download,
     )
 }
 
@@ -115,7 +304,29 @@ pub fn refresh_to_root(
     force: bool,
     download_root: &Path,
 ) -> Result<RefreshSummary, PipelineError> {
+    refresh_to_root_with_download_progress(
+        conn,
+        feed_fetcher,
+        youtube_fetcher,
+        now,
+        force,
+        download_root,
+        &mut |_, _| {},
+    )
+}
+
+fn refresh_to_root_with_download_progress(
+    conn: &Connection,
+    feed_fetcher: &dyn FeedFetcher,
+    youtube_fetcher: &dyn YoutubeFetcher,
+    now: i64,
+    force: bool,
+    download_root: &Path,
+    on_download: &mut dyn FnMut(i64, DownloadState),
+) -> Result<RefreshSummary, PipelineError> {
     let config = super::config::load(conn)?;
+    let rss_allowed = super::config::source_network_allowed(conn, PodcastKind::Rss)?;
+    let youtube_allowed = super::config::source_network_allowed(conn, PodcastKind::Youtube)?;
     let jitter = super::refresh::jitter_seconds(&database_seed(conn)?);
     let subscriptions = super::store::active_subscriptions(conn)?;
     let mut summary = RefreshSummary::default();
@@ -132,14 +343,35 @@ pub fn refresh_to_root(
         }
         summary.attempted += 1;
         let result = match subscription.kind {
-            PodcastKind::Rss => feed_fetcher.fetch(&subscription).and_then(|response| {
-                let feed = super::feed::parse_feed(&response.body, config.import_count)?;
-                Ok((feed, Some(response)))
-            }),
-            PodcastKind::Youtube if config.youtube_enabled => youtube_fetcher
-                .list(&subscription.feed_url, config.import_count)
-                .map(|feed| (feed, None)),
-            PodcastKind::Youtube => Err(PodcastError::YtDlp(
+            PodcastKind::Rss if rss_allowed => {
+                feed_fetcher.fetch(&subscription).and_then(|response| {
+                    let feed = super::feed::parse_feed(&response.body, config.import_count)?;
+                    Ok((feed, Some(response)))
+                })
+            }
+            PodcastKind::Rss => Err(PodcastError::Disabled(
+                "RSS podcasts are disabled".to_owned(),
+            )),
+            PodcastKind::Youtube if youtube_allowed => {
+                if let Some(feed_url) = super::youtube::long_form_feed_url(&subscription.feed_url) {
+                    feed_fetcher
+                        .fetch_url(
+                            &feed_url,
+                            subscription.etag.as_deref(),
+                            subscription.last_modified.as_deref(),
+                        )
+                        .and_then(|response| {
+                            let feed =
+                                super::feed::parse_feed(&response.body, OFFICIAL_YOUTUBE_LIMIT)?;
+                            Ok((feed, Some(response)))
+                        })
+                } else {
+                    youtube_fetcher
+                        .list(&subscription.feed_url, config.youtube_import_count)
+                        .map(|feed| (feed, None))
+                }
+            }
+            PodcastKind::Youtube => Err(PodcastError::Disabled(
                 "YouTube sources are disabled".to_owned(),
             )),
         };
@@ -212,44 +444,29 @@ pub fn refresh_to_root(
                     continue;
                 };
                 if episode.downloaded_path.is_some() {
+                    // Already satisfied by `reclaim_download` above — no
+                    // network round trip, and (unlike a genuinely fresh
+                    // download) not counted toward this refresh's completed
+                    // total.
                     continue;
                 }
-                let extension = match subscription.kind {
-                    PodcastKind::Rss => super::downloads::extension_from_url(&episode.audio_url),
-                    PodcastKind::Youtube => "audio",
-                };
-                let destination = super::downloads::download_path(
+                let mut on_progress = |state: DownloadState| on_download(episode_id, state);
+                let outcome = download_episode(
+                    conn,
+                    feed_fetcher,
+                    youtube_fetcher,
                     download_root,
-                    &subscription.feed_url,
-                    &episode.guid,
-                    extension,
-                );
-                let download = super::downloads::prepare_destination(&destination)
-                    .map_err(|error| PodcastError::Body(error.to_string()))
-                    .and_then(|()| match subscription.kind {
-                        PodcastKind::Rss => feed_fetcher.download(&episode.audio_url, &destination),
-                        PodcastKind::Youtube => {
-                            youtube_fetcher.download(&episode.audio_url, &destination)
-                        }
-                    });
-                match download {
-                    Ok(()) if destination.is_file() => {
-                        super::store::set_downloaded_path(conn, episode_id, destination.to_str())?;
-                        summary.downloads_completed += 1;
-                    }
-                    Ok(()) => {
-                        remove_partial_download(&destination);
-                        summary.downloads_failed += 1;
-                    }
-                    Err(error) => {
-                        remove_partial_download(&destination);
-                        tracing::warn!(
-                            episode_id,
-                            %error,
-                            "podcast auto-download failed"
-                        );
-                        summary.downloads_failed += 1;
-                    }
+                    episode_id,
+                    &mut on_progress,
+                )?;
+                match outcome {
+                    DownloadState::Downloaded { .. } => summary.downloads_completed += 1,
+                    DownloadState::Failed { .. } => summary.downloads_failed += 1,
+                    // `download_episode` only ever returns a terminal state.
+                    DownloadState::NotDownloaded
+                    | DownloadState::Queued
+                    | DownloadState::Downloading { .. }
+                    | DownloadState::Missing => {}
                 }
             }
         }
@@ -258,13 +475,13 @@ pub fn refresh_to_root(
     Ok(summary)
 }
 
-fn remove_partial_download(path: &Path) {
+fn remove_completed_download(path: &Path) {
     if let Err(error) = std::fs::remove_file(path) {
         if error.kind() != std::io::ErrorKind::NotFound {
             tracing::warn!(
                 path = %path.display(),
                 %error,
-                "could not remove partial podcast download"
+                "could not remove unclaimed podcast download"
             );
         }
     }
@@ -287,7 +504,11 @@ fn reclaim_download(
         super::downloads::reclaim_existing(download_root, &subscription.feed_url, &episode.guid)
             .map_err(super::downloads::CleanupError::from)?
     {
-        super::store::set_downloaded_path(conn, episode_id, path.to_str())?;
+        let bytes = std::fs::metadata(&path)
+            .map_err(super::downloads::CleanupError::from)?
+            .len()
+            .min(i64::MAX as u64) as i64;
+        super::store::set_downloaded_file(conn, episode_id, path.to_str(), Some(bytes))?;
     }
     Ok(())
 }
@@ -308,282 +529,9 @@ fn database_seed(conn: &Connection) -> Result<String, rusqlite::Error> {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::cell::RefCell;
+#[path = "pipeline_youtube_tests.rs"]
+mod youtube_tests;
 
-    use super::*;
-    use crate::podcasts::store::{self, NewSubscription};
-
-    #[derive(Default)]
-    struct FakeFeed {
-        responses: RefCell<Vec<Result<Response, PodcastError>>>,
-        downloads: RefCell<Vec<String>>,
-    }
-
-    impl FeedFetcher for FakeFeed {
-        fn fetch(&self, _: &SubscriptionRow) -> Result<Response, PodcastError> {
-            self.responses.borrow_mut().remove(0)
-        }
-
-        fn download(&self, url: &str, destination: &Path) -> Result<(), PodcastError> {
-            self.downloads.borrow_mut().push(url.to_owned());
-            std::fs::write(destination, b"audio")
-                .map_err(|error| PodcastError::Body(error.to_string()))
-        }
-    }
-
-    #[derive(Default)]
-    struct FakeYoutube;
-
-    impl YoutubeFetcher for FakeYoutube {
-        fn list(&self, _: &str, _: usize) -> Result<ParsedFeed, PodcastError> {
-            Err(PodcastError::YtDlp("unexpected YouTube call".to_owned()))
-        }
-
-        fn download(&self, _: &str, _: &Path) -> Result<(), PodcastError> {
-            Err(PodcastError::YtDlp("unexpected YouTube call".to_owned()))
-        }
-    }
-
-    #[test]
-    fn untitled_youtube_listing_uses_a_non_url_fallback_title() {
-        let feed = project_youtube_feed(
-            super::super::youtube::YoutubeListing {
-                title: None,
-                episodes: Vec::new(),
-            },
-            25,
-        );
-        assert_eq!(feed.title, "YouTube source");
-    }
-
-    struct PartialFailureFeed {
-        response: RefCell<Option<Response>>,
-    }
-
-    impl FeedFetcher for PartialFailureFeed {
-        fn fetch(&self, _: &SubscriptionRow) -> Result<Response, PodcastError> {
-            Ok(self.response.borrow_mut().take().unwrap())
-        }
-
-        fn download(&self, _: &str, destination: &Path) -> Result<(), PodcastError> {
-            std::fs::write(destination, b"partial")
-                .map_err(|error| PodcastError::Body(error.to_string()))?;
-            Err(PodcastError::Transport("connection reset".to_owned()))
-        }
-    }
-
-    fn conn() -> Connection {
-        crate::db::open_migrated(None).unwrap()
-    }
-
-    fn add_subscription(conn: &Connection, url: &str, auto_download: bool) -> i64 {
-        store::add_or_restore(
-            conn,
-            &NewSubscription {
-                kind: PodcastKind::Rss,
-                feed_url: url.to_owned(),
-                title: "Show".to_owned(),
-                author: None,
-                image_url: None,
-                auto_download,
-            },
-            1,
-        )
-        .unwrap()
-    }
-
-    fn feed_response(title: &str, episode_count: usize, etag: Option<&str>) -> Response {
-        let items = (0..episode_count)
-            .map(|index| {
-                format!(
-                    "<item><guid>g{index}</guid><title>Episode {index}</title>\
-                     <enclosure url=\"https://example.test/{index}.mp3\" type=\"audio/mpeg\"/>\
-                     <pubDate>Wed, 22 Jul 2026 10:{index:02}:00 +0000</pubDate></item>"
-                )
-            })
-            .collect::<String>();
-        Response {
-            body: format!("<rss><channel><title>{title}</title>{items}</channel></rss>"),
-            etag: etag.map(str::to_owned),
-            last_modified: None,
-        }
-    }
-
-    #[test]
-    fn conditional_cycle_stores_headers_then_only_bumps_not_modified_state() {
-        let conn = conn();
-        let id = add_subscription(&conn, "https://example.test/feed", false);
-        let feed = FakeFeed {
-            responses: RefCell::new(vec![
-                Ok(feed_response("Fetched Show", 1, Some("\"v1\""))),
-                Err(PodcastError::NotModified),
-            ]),
-            ..FakeFeed::default()
-        };
-        let directory = tempfile::tempdir().unwrap();
-
-        let first =
-            refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
-        assert_eq!(first.refreshed, 1);
-        assert_eq!(first.episodes_inserted, 1);
-        let stored = store::subscription(&conn, id).unwrap().unwrap();
-        assert_eq!(stored.title, "Fetched Show");
-        assert_eq!(stored.etag.as_deref(), Some("\"v1\""));
-        assert_eq!(stored.last_fetch_at, Some(10));
-
-        let second =
-            refresh_to_root(&conn, &feed, &FakeYoutube, 20, true, directory.path()).unwrap();
-        assert_eq!(second.not_modified, 1);
-        let stored = store::subscription(&conn, id).unwrap().unwrap();
-        assert_eq!(stored.last_fetch_at, Some(20));
-        assert_eq!(stored.last_outcome.as_deref(), Some("not_modified"));
-        assert_eq!(stored.etag.as_deref(), Some("\"v1\""));
-    }
-
-    #[test]
-    fn future_only_baseline_skips_known_guids_and_keeps_importing_new_ones() {
-        let conn = conn();
-        let id = add_subscription(&conn, "https://example.test/feed", false);
-        store::replace_future_only_baseline(&conn, id, &["g0".to_owned(), "g1".to_owned()])
-            .unwrap();
-        let feed = FakeFeed {
-            responses: RefCell::new(vec![
-                Ok(feed_response("Show", 2, None)),
-                Ok(feed_response("Show", 3, None)),
-            ]),
-            ..FakeFeed::default()
-        };
-        let directory = tempfile::tempdir().unwrap();
-
-        let first =
-            refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
-        assert_eq!(first.episodes_inserted, 0);
-        assert_eq!(super::super::query::count_unplayed(&conn).unwrap(), 0);
-
-        let second =
-            refresh_to_root(&conn, &feed, &FakeYoutube, 20, true, directory.path()).unwrap();
-        assert_eq!(second.episodes_inserted, 1);
-        assert_eq!(super::super::query::count_unplayed(&conn).unwrap(), 1);
-        assert_eq!(
-            store::future_only_baseline(&conn, id).unwrap(),
-            ["g0".to_owned(), "g1".to_owned()]
-        );
-    }
-
-    #[test]
-    fn one_failed_subscription_does_not_block_the_next() {
-        let conn = conn();
-        let failed = add_subscription(&conn, "https://example.test/failed", false);
-        let succeeded = add_subscription(&conn, "https://example.test/succeeded", false);
-        let feed = FakeFeed {
-            responses: RefCell::new(vec![
-                Err(PodcastError::Transport("offline".to_owned())),
-                Ok(feed_response("Working", 1, None)),
-            ]),
-            ..FakeFeed::default()
-        };
-        let directory = tempfile::tempdir().unwrap();
-
-        let summary =
-            refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
-
-        assert_eq!(summary.attempted, 2);
-        assert_eq!(summary.failed, 1);
-        assert_eq!(summary.refreshed, 1);
-        assert_eq!(
-            store::subscription(&conn, failed)
-                .unwrap()
-                .unwrap()
-                .last_outcome
-                .as_deref(),
-            Some("failed")
-        );
-        assert_eq!(
-            store::subscription(&conn, succeeded)
-                .unwrap()
-                .unwrap()
-                .last_outcome
-                .as_deref(),
-            Some("ok")
-        );
-    }
-
-    #[test]
-    fn auto_download_is_capped_at_three_new_episodes_per_run() {
-        let conn = conn();
-        let id = add_subscription(&conn, "https://example.test/feed", true);
-        let feed = FakeFeed {
-            responses: RefCell::new(vec![Ok(feed_response("Show", 5, None))]),
-            ..FakeFeed::default()
-        };
-        let directory = tempfile::tempdir().unwrap();
-
-        let summary =
-            refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
-
-        assert_eq!(summary.downloads_completed, 3);
-        assert_eq!(feed.downloads.borrow().len(), 3);
-        let downloaded = super::super::query::episodes_for_subscription(&conn, id)
-            .unwrap()
-            .into_iter()
-            .filter(|episode| episode.downloaded_path.is_some())
-            .count();
-        assert_eq!(downloaded, 3);
-    }
-
-    #[test]
-    fn existing_guid_keyed_file_is_reclaimed_without_downloading_again() {
-        let conn = conn();
-        let id = add_subscription(&conn, "https://example.test/feed", true);
-        let feed = FakeFeed {
-            responses: RefCell::new(vec![Ok(feed_response("Show", 1, None))]),
-            ..FakeFeed::default()
-        };
-        let directory = tempfile::tempdir().unwrap();
-        let existing = super::super::downloads::download_path(
-            directory.path(),
-            "https://example.test/feed",
-            "g0",
-            "mp3",
-        );
-        super::super::downloads::prepare_destination(&existing).unwrap();
-        std::fs::write(&existing, b"orphan").unwrap();
-
-        let summary =
-            refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
-
-        assert_eq!(summary.downloads_completed, 0);
-        assert!(feed.downloads.borrow().is_empty());
-        assert_eq!(
-            super::super::query::episodes_for_subscription(&conn, id).unwrap()[0]
-                .downloaded_path
-                .as_deref(),
-            existing.to_str()
-        );
-    }
-
-    #[test]
-    fn failed_download_does_not_leave_a_reclaimable_partial_file() {
-        let conn = conn();
-        let id = add_subscription(&conn, "https://example.test/feed", true);
-        let feed = PartialFailureFeed {
-            response: RefCell::new(Some(feed_response("Show", 1, None))),
-        };
-        let directory = tempfile::tempdir().unwrap();
-
-        let summary =
-            refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
-
-        assert_eq!(summary.downloads_failed, 1);
-        let episode = super::super::query::episodes_for_subscription(&conn, id).unwrap()[0].clone();
-        assert!(episode.downloaded_path.is_none());
-        assert!(super::super::downloads::reclaim_existing(
-            directory.path(),
-            "https://example.test/feed",
-            "g0"
-        )
-        .unwrap()
-        .is_none());
-    }
-}
+#[cfg(test)]
+#[path = "pipeline_refresh_tests.rs"]
+mod tests;

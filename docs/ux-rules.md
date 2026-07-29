@@ -366,11 +366,12 @@ human. Rationale for changes lives in the git history.
   successful read-back produces the completion toast and a page summary
   labeled "Verified" with the actually found count of managed tracks; a
   failed read-back does not claim success.
-- **MTP-11** [active] [gtk] — An idle device card without a valid
-  playlist selection shows no call to action. Its detail line begins
-  with the known write status ("Writable", "Read-only", or "Write
-  access unknown") and states the free storage; genuine scan, sync,
-  warning, or selection errors retain "Needs attention" instead.
+- **MTP-11** [replaced by MTP-29] — Described an idle device card without a
+  playlist selection, showing the write status instead of a call to action.
+  Turn 7c replaces that single formulation with four named states (`MTP-29`),
+  of which "Tap to scan device contents" supersedes the former write-status
+  line; genuine scan, sync, warning or selection errors still retain "Needs
+  attention" (now part of `MTP-29`).
 - **MTP-12** [active] [gtk] — Every available playlist row on the
   device page names its last sync time verified on this device, in
   local time. Without a reliable timestamp, it explicitly states "No
@@ -408,13 +409,16 @@ human. Rationale for changes lives in the git history.
   immediately, per device, and restored for the same device both after
   a reconnect and after an app restart. A new device still starts with
   Opus 160 kbit/s.
-- **MTP-17** [active] [core] — `Music/Reprise` is Reprise's sole and
-  fully authoritative device area. After successfully publishing all
-  desired tracks and playlists, all remaining safe files are removed
-  there, even if they are not in the Reprise inventory; desired track
-  and playlist paths are preserved. Nothing is written, moved, or
-  deleted outside this subfolder, and a missing or invalid playlist
-  target state schedules no destructive work.
+- **MTP-17** [active] [core] — `Music/Reprise` — the playlists target from
+  `MTP-38` — is fully authoritative for music and playlists. After
+  successfully publishing all desired tracks and playlists, all remaining
+  safe files are removed there, even if they are not in the Reprise
+  inventory; desired track and playlist paths are preserved. Nothing is
+  written, moved, or deleted outside this subfolder, and a missing or
+  invalid playlist target state schedules no destructive work. The two
+  other targets (YouTube audio, podcast episodes) are **not** authoritative
+  in the same way — they diff additively against their own candidate list
+  instead of removing every unknown file (`MTP-23`).
 - **MTP-18** [active] [core] — A running sync always names the step it is
   actually performing. The run opens on the step that will do the first
   visible work — its first transfer, or its playlists, or its removals —
@@ -450,6 +454,312 @@ human. Rationale for changes lives in the git history.
   overwritten by it, since overwriting is what the device mishandles. A
   transfer that cannot be proven fails the file honestly and leaves no partial
   behind, so the next run copies it again.
+- **MTP-22** [active] [core] — The sync plan is read per category (E3):
+  either a numbered balance "N new · M removed", or one of two states in
+  their own right — "source off" (the global rule or the device target is
+  disabled; nothing was examined, which is a different thing from "examined
+  and unchanged") and "Unavailable, kept on phone" (nothing local to compare
+  against; existing device files are left untouched rather than guessed at —
+  derived from `Connectivity`, `NET-3a`, without inventing a second notion of
+  offline). Copying and removing each keep their own file and byte count, in
+  the row and in the overall balance alike ("To copy 14 files · 2.6 GiB",
+  "To remove 3 files · 148 MiB", "Playlists rewritten 2"); whether a category
+  has work is decided by the file count, never by the byte value. A removal-only
+  run moving 0 B in total therefore stays distinguishable from "nothing to do"
+  as "3 to remove · frees 0 B" — the earlier sidebar card, which combined
+  "N changes" with a single amount counting copied bytes only and so displayed
+  "3 changes · 0 B", is that gap. A size cap (`MTP-39`) acts as an additional
+  removal above the selection balance and never changes the copy count.
+- **MTP-23** [active] [core] [gtk] — The actual transfer writes and deletes
+  through the three named targets from `MTP-38`, no longer through a single
+  managed folder (finally superseding the `78e379fd` resolution): playlists
+  still under the playlists target (default `/Music/Reprise`, `MTP-17`),
+  YouTube audio under the YoutubeAudio target (default
+  `/Music/Reprise-YouTube`), podcast episodes under the PodcastEpisodes target
+  (default `/Podcasts/Reprise`). A disabled target (`SyncTarget::enabled`)
+  yields an empty intended set for its category rather than writing something
+  to the wrong place. Deleting and copying run serially, one transfer at a
+  time; progress comes from the transport's send callback. The MTP transport
+  layer is an injectable abstraction (`DeviceBackend`); the real GVfs/MTP
+  binding and a recording test double share the same contract, so the
+  regression gate runs without a phone attached.
+- **MTP-24** [active] [core] — Music still follows the transfer profile
+  (`profile.rs`): lossless source material is re-encoded to Opus 160 kbit/s or
+  MP3 256 kbit/s, lossy material is left untouched. Podcast and YouTube audio
+  is **always** copied 1:1, never re-encoded — it is already Opus or AAC, and a
+  second encoding step would be pure quality loss for no gain.
+- **MTP-25** [active] [core] — The size cap from `MTP-39` is real: before a
+  YouTube-audio or podcast-episode target with a cap forms its intended set
+  from candidates, the oldest subset (by source file age) leaves that set until
+  the total is at most the cap again. A candidate already on the device but now
+  excluded thereby becomes an ordinary removal — no separate cleanup step is
+  needed. The playlists target has no cap (`MTP-38`) and is unaffected by this
+  rule.
+- **MTP-26** [active] [core] [gtk] — "Device contents never verified" is a
+  real, checkable state (7a) rather than a silent fact in the scan bookkeeping:
+  `NeverVerified`, `Verifying`, `Verified` and `Failed(reason)` are four values
+  in their own right, not variants of a bool. The device view shows the state
+  with a "Scan device" action; it is disabled while a scan is already running,
+  but stays active after a failed scan so another attempt is possible. No new
+  scan mechanism: the same inspect call that already runs automatically before
+  every sync is merely made visible here.
+- **MTP-27** [active] [core] [gtk] — The device view's storage bar is segmented
+  by category — Music, YouTube audio, Podcasts, Other — rather than only
+  Music/After-sync/Other/Free like the existing bar in the compact sync dialog
+  (`MTP-7`, unchanged). The bytes this sync will write carry their own, clearly
+  **hatched** "Incoming this sync" segment rather than merely a different alpha
+  value. A free-space line reads "175.0 GiB free → 172.4 GiB after this sync";
+  if the pending sync does not move free space, the arrow is dropped and only
+  "X free" remains. On incomplete or inconsistent capacity the bar disappears
+  entirely rather than inventing a proportion — the same rule as in `MTP-7`.
+- **MTP-28** [replaced by MTP-37] — The device view gains a "Content" section
+  with one row per named target (`MTP-38`): target folder path, selection
+  summary, size on the device, cap and a switch. **Addendum of 2026-07-28,
+  binding:** the selection summary and the cap are read-only displays of the
+  global rules from Preferences (7b/7e) — labelled "rules from Preferences" /
+  "Same on all devices" — and are not editable here; there is no second place
+  to operate them. The only switch in this section is `SyncTarget::enabled`
+  (`MTP-38`) — whether this device has an active place for the category at all
+  — explicitly distinguished from a global "sync this content kind" rule, which
+  does not yet exist (7b "Phone sync" block, see `T6-G1`). A "Next
+  synchronization" panel below it reads `MTP-22`'s line per category ("To copy
+  14 files · 2.6 GiB", "To remove 3 files · 148 MiB", "Source off",
+  "Unavailable, kept on phone") and carries the same balance aggregated
+  beneath. **Addendum of 2026-07-28 (E6), binding:** the target folder path is
+  no longer read-only text; `MTP-31` gives it a browser.
+- **MTP-29** [active] [gtk] — When idle, the sidebar device card states one of
+  exactly four directional sentences rather than a single blocking number:
+  "14 to copy · 2.6 GiB · 3 to remove", "3 to remove · frees 148 MiB" (0 B
+  moved is correct here and must not look like "nothing to do" — this also
+  supersedes `MTP-11`'s earlier write-status line), "Up to date · synced 12 min
+  ago", and "Tap to scan device contents" for `MTP-26`'s
+  `NeverVerified`/`Failed`. A real problem (a blocker other than "nothing
+  selected", a warning, a scan or sync error) takes precedence and still shows
+  "Needs attention". The card carries only the leading sentence; the full
+  balance from `MTP-22` lives in the tooltip. During sync and finishing, the
+  thin progress line at the bottom of the card (`MTP-6`, unchanged) remains the
+  only status indicator.
+- **MTP-30** [active] [core] [gtk] — The switch "Sync automatically when this
+  phone connects" (7a, `DeviceSettings::sync_automatically`, default **on**)
+  means: as soon as the sync plan is settled after connecting, the sync starts
+  by itself, with no button press. This applies exclusively to the first
+  refresh after connecting (new connection or reconnect) — a manual "Refresh"
+  or the verification refresh after a sync never triggers it. An automatic
+  start requires a verified scan **and** an error-free planned sync (no
+  `scan_error`, no planning error); a device that has not been verified yet
+  (`MTP-26`) never starts automatically. It is also skipped when the device is
+  already busy, or when there is simply nothing to do according to the existing
+  balance (`MTP-22`, `SyncBalance::has_work`) — the latter is reused, never
+  derived a second time. A refused or failed automatic start stays entirely
+  silent apart from a `tracing::warn!` log — no modal, no error banner, because
+  nobody clicked anything; the manual sync button keeps its existing error
+  display unchanged. The decision itself is a pure function over the gathered
+  facts (`reprise_core::device_sync::auto_start::should_auto_start`); the GTK
+  runtime only gathers those facts and obeys.
+- **MTP-31** [active] [core] [gtk] — Design 7d, E6: "Change folder…" next to
+  each target folder path in the Content section (`MTP-37`) opens the device
+  folder browser. The browser offers storage selection (internal/SD card, from
+  the storages found on the device), a folder tree with navigation into a
+  folder and one level back, "New folder", and a target preview ("Files will be
+  stored at ⟨Storage⟩ → ⟨path⟩") which resolves only once a storage has been
+  chosen and otherwise reads "once a storage is chosen", or "no longer
+  available" for a storage that has disappeared. If the chosen folder sits on
+  the same storage inside the playlists target (`MTP-17`'s authoritative tree),
+  a warning appears — nesting would expose the files there to the playlists
+  cleanup. "Reset to default" resets path and storage to
+  `SyncTargetKind::default_path` without touching `enabled` or `cap_bytes` — a
+  folder reset is a different operation from a cap or activation reset
+  (`cap_bytes` has been independently editable through the Content section's
+  spin button since `MTP-37`, which is exactly why "Reset to default" must not
+  drag it along as a side effect). If a device refuses to create a folder
+  directly in a storage's root, the browser shows that error inline rather than
+  swallowing it silently or claiming success. MTP knows no paths (`MTP-38`):
+  every browser call resolves storage and folder contents freshly through the
+  `DeviceBackend`, never through a stored object handle. Every decision —
+  target preview, conflict warning, reset outcome — is a pure, GTK-free
+  function in `reprise_core::device_sync::browser`; the GTK side only gathers
+  facts (storage list, folder contents) and displays them. The real GVfs/MTP
+  binding and a recording test double share the same `DeviceBackend` contract
+  (`MTP-23`), so no test needs an attached phone.
+- **MTP-32** [active] [core] [gtk] — If the browser (`MTP-31`) changes the
+  target folder of a target already resolved to a storage, and stays on the
+  same storage, files already synchronized there are moved to the new location
+  by an MTP move on the next step rather than being copied a second time. A
+  storage change still goes through `MTP-38`'s existing copy-and-orphan path,
+  because a folder cannot cross MTP storage boundaries by moving. The decision
+  (Unchanged / MoveFolder / CopyAndOrphanPrevious) is the pure function
+  `reprise_core::device_sync::browser::target_relocation_action`, which reuses
+  `MTP-38`'s `target_storage_transition` instead of duplicating it; a move that
+  fails on the device does not block saving the new folder — the next sync then
+  simply copies afresh, but logs a warning.
+- **MTP-33** [active] [core] — The switch "Remove from phone when deleted or
+  unsubscribed here" (design 7a, `DeviceSettings::remove_deleted`) really
+  decides whether a podcast episode or YouTube audio track that is no longer
+  wanted leaves the device on the next sync plan: switched off, such a file
+  stays, and `podcasts::build_plan`'s `to_remove` stays empty for the affected
+  category. Both additive targets (YouTube audio, podcast episodes, `MTP-38`)
+  read `DeviceSettings::remove_deleted` of that same device for this, never a
+  hardcoded value. The playlists target is untouched by this switch — there,
+  `MTP-17`'s complete cleanup remains in force regardless of how this switch is
+  set.
+- **MTP-34** [active] [gtk] — Design 7d's device folder browser (`MTP-31`)
+  carries a generation token for every navigation — row activation, "Up",
+  storage change, "Reset to default" — exactly like `cover_loader.rs`'s
+  protection against recycled rows. A folder listing or an error arriving late
+  for a navigation that has already been superseded is discarded rather than
+  appended to the folder view now on screen — otherwise the children of a
+  slowly loading folder could appear under a different folder opened in the
+  meantime, and selecting one would yield the wrong path.
+- **MTP-35** [active] [gtk] — Design 7d's "Save" shows a refused persist
+  (`set_target_folder` fails, e.g. a running sync or a device unplugged in the
+  meantime) inline in the same error area a refused folder creation already
+  uses (`MTP-31`), and leaves the dialog open instead of closing it as it does
+  on success. A refused save must never look like a successful one; the chosen
+  selection stays visible so that nothing is discarded silently.
+- **MTP-36** [planned] [core] — `MTP-41`'s YouTube rule "the latest N episodes
+  per enabled channel, regardless of download state" names N; this is where
+  that value lives. **Decided 2026-07-29:** a global default (default **5**),
+  overridable per channel — the same shape as `O-5` for "Keep N downloaded", so
+  that both quantity limits share a single mental model rather than two
+  different ones. N is **device-independent**: since `E-5` there is exactly one
+  device, and storing it per device would be effort without meaning. **Decided
+  2026-07-29 (the zero question):** a value of 0 means **unlimited**, here and
+  in every other numeric sync setting — the size cap has modelled 0 that way
+  since `MTP-38` (`cap_bytes` is an `Option`), and two adjacent numbers on one
+  page must not read 0 in opposite directions. "Nothing from this channel" is
+  what the channel toggle from 6b says; it is not a quantity, so it is not
+  expressed by a quantity.
+
+  Until 6b's channel surface sets this value, the live pipeline
+  (`device_sync_compact::recompute_delta_silent`) treats N as unlimited
+  (`EpisodeSelectionRule::LatestPerChannel { latest: usize::MAX, .. }`). That is
+  deliberately the existing behaviour and not a silent change; meanwhile the
+  intended set is bounded solely by `MTP-41`'s candidate limit (downloaded
+  episodes plus the missing ones explicitly wanted via `wanted_on_device`,
+  `MTP-40`). This rule becomes `[active]` once the persistence and the surface
+  exist — not before.
+- **MTP-37** [active] [core] [gtk] — Replaces `MTP-28`'s addendum of 2026-07-28
+  (Turn 6/7 plan `E-6`, `E-8`): Reprise supports exactly one MTP device
+  (`E-5`), so the sole justification for a global Preferences surface — "applies
+  to all devices, no device picker in the settings" — falls away. The device
+  view keeps a "Content" section with one row per named target (`MTP-38`):
+  target folder path (unchanged, `MTP-31`'s "Change folder…"), selection
+  summary, size on the device, and cap. Two things change:
+  1. **The cap becomes operable here.** A spin button in GiB (0 = no cap)
+     replaces the read-only text; every change persists immediately through
+     `DeviceSyncRuntime::set_target_cap` into `SyncTarget::cap_bytes`
+     (`MTP-38`) and takes effect on the next sync plan through the existing
+     oldest-first eviction (`MTP-39`/`MTP-25`) — no second cap mechanism, only
+     one place to operate the one that already exists. Playlists have no cap
+     (`MTP-38`'s `default_cap_bytes`) and keep the spin button permanently
+     disabled rather than feigning an effect no eviction path delivers.
+  2. **The selection summary becomes a real, honest live value** instead of a
+     display of global rules or a static text. Playlists already read
+     `selection::summarize_playlist_selection` (`MTP-41`); YouTube and podcasts
+     now likewise read "N of M channels selected" and "N of M shows selected ·
+     unplayed downloads only" live from
+     `podcasts::phone_sync::selection_summary` — the same selection that is
+     operated on the podcast and channel pages and in the playlist list
+     (`POD-12`). This line gets **no** second place to operate it: toggling
+     individual channels and shows stays where it is, so that two places can
+     never claim the same selection. Without `MTP-36`'s (still `[planned]`)
+     persisted "latest N per channel", the "latest K each" suffix is omitted
+     for YouTube rather than asserting a number that enforces nothing.
+
+  The cross-reference "rules from Preferences" / "Same on all devices"
+  disappears with nothing in its place — with one device, "Same on all devices"
+  is a statement about nothing. The only switch this section ever had
+  (`SyncTarget::enabled`, `MTP-38`) is unchanged; it now simply gains the cap
+  field and the selection line as equal, real neighbours instead of read-only
+  text beside it. The planned "Phone sync" block in Preferences (`SET-8`) is
+  dropped with nothing in its place, not merely "as long as its sync foundation
+  does not exist" — see `SET-9`.
+- **MTP-38** [active] [core] — Reprise knows three named sync targets per
+  device — playlists, YouTube audio, podcast episodes — rather than a single
+  managed folder (supersedes `78e379fd`, no migration: see Turn 6/7 plan §1b).
+  Each target carries an optional `StorageID`, a path string, an activation and
+  an optional size cap; the proposed values are `/Music/Reprise` (no cap),
+  `/Music/Reprise-YouTube` (8 GiB) and `/Podcasts/Reprise` (4 GiB) — changeable
+  through the device browser (7d, `MTP-31`). The rules for *what* is
+  synchronized to a target live on the device page (`MTP-37`) and are expressly
+  **not** part of this type. MTP knows no paths: folders are object handles
+  under a StorageID and are not stable across reconnects — which is why only
+  StorageID plus path is persisted, never a handle. If a target's StorageID
+  changes, the folder cannot move with it; the previous storage copy counts as
+  orphaned and is cleaned up once the new copy is in place. The wiring into the
+  actual MTP transfer is `MTP-23`.
+- **MTP-39** [active] [core] — When a sync target with a size cap exceeds its
+  limit, the oldest files leave the device first until the total is at most the
+  cap again; removal stops as soon as that is reached and never takes more than
+  necessary. The selection is a pure function over size and age per entry,
+  independent of target kind or transport.
+- **MTP-40** [active] [core] — Every episode carries a persistent
+  `wanted_on_device` state (7f). "Sync to phone" on an episode without a local
+  file sets that state instead of refusing the action; the download follows
+  automatically — immediately when online, marked as pending when offline,
+  through the existing `NET-3a` contract (`deferrable_action_outcome`), without
+  duplicating its online/offline decision. An already downloaded episode needs
+  no download step. The downloader that actually works off the pending state is
+  not part of this rule (E2/E4).
+- **MTP-41** [active] [core] — The intended set per sync category is a pure
+  projection from the selection rule and the library state (E2). Playlists
+  yield "N of M selected · K tracks"; YouTube audio limits each enabled channel
+  (channel toggle from 6b) to its latest N episodes regardless of download
+  state ("N of M channels · latest K each"); podcast episodes want every
+  unplayed, already downloaded episode of enabled shows with no upper bound
+  ("Unplayed downloads only"). A wanted episode without a local file
+  (`wanted_on_device`, `MTP-40`) counts as waiting, never as ready to copy —
+  the intended set keeps the two visibly apart instead of silently filtering a
+  waiting episode out of the result.
+- **MTP-42** [active] [core] — Design 7f's preparation phase
+  (`reprise_core::device_sync::preparation`) is a pure projection over
+  `MTP-41`'s waiting set, `NET-1a`'s global gate, `NET-3a`'s connectivity, and
+  the device's own "prepare before sync" switch. It resolves in this order:
+  1. `online-sources-enabled` off (`NET-1a`) means the phase does not exist at
+     all — not an empty phase, not a disabled switch, nothing shown.
+  2. No `wanted_on_device` episode is missing its file: nothing to prepare.
+  3. Offline (`NET-3`): the sync still runs and skips these files, which stay
+     marked wanted for the next attempt.
+  4. A metered connection, or the device's switch off: offered to the user
+     but not started.
+  5. Otherwise: planned, and starts alongside the sync.
+
+  Offline is checked before metered/switch-off on purpose: offline is a fact
+  about whether the download can run at all, metered and the switch are
+  policy about whether it should run given that it could. Offering a
+  download that cannot run either way would be a lie dressed up as a choice,
+  so a missing connection always wins over policy. Only the planned state
+  changes the primary sync button to "Download & sync"; every other state,
+  including offered, leaves it as a plain "Sync now".
+- **MTP-43** [active] [gtk] — The device page surfaces `MTP-42`'s preparation
+  phase without re-deciding it. A preparation overview ("2 files to
+  download · 312 MiB", with episode titles) exists only for the `Offered` and
+  `Planned` phases — for every other phase, including `Absent`, there is no
+  box, no disabled row, nothing. The device's own "Download missing files
+  before syncing" switch persists next to `sync_automatically`/
+  `remove_deleted`, defaults on, and is never mutated by connectivity or
+  metered state — only the stored value feeds `MTP-42`'s `prepare_switch_on`
+  fact; offline and metered are decided there, not by silently flipping this
+  switch. The primary button reads "Download & sync" exactly when
+  `primary_action` answers `DownloadAndSync`, otherwise "Sync now". While a
+  `Planned` preparation actually runs, progress reads two phases — "Step 1 of
+  2 · Downloading N of M · P%" during the download, then the existing
+  transfer progress as step 2 — and a run with no preparation phase stays the
+  single-phase reading it always was. Cancelling a preparation in progress
+  stops issuing further downloads but never deletes or rolls back an episode
+  that already finished downloading. `SkippedOffline` reads "N episodes
+  skipped · not downloaded" and leaves every skipped episode's
+  `wanted_on_device` flag set for the next attempt.
+- **MTP-44** [active] [gtk] — Device-sync preparation (7f, E9) downloads a
+  `wanted_on_device` episode (`MTP-40`) by giving the existing podcast
+  download manager a priority lane, never a second download path: a
+  high-priority request is served ahead of any ordinary request already
+  queued in front of it, but both still run through the one
+  `PodcastsOperation::Download` and the one worker thread. The priority lane
+  is only a queue in front of that single executor, not an alternate one.
+  Priority work never permanently starves the ordinary lane — once the
+  priority lane runs dry, the worker resumes ordinary requests exactly where
+  it left off.
 
 ## F. Settings & modals
 
@@ -498,6 +808,36 @@ human. Rationale for changes lives in the git history.
   provider, location and similar options live exclusively on their
   respective main pages and are not operable while the module is
   disabled.
+- **SET-8** [replaced by SET-9] — A Preferences main page of its own, "Online
+  sources" (turn 7b), bundles the three network sources: at the very top a
+  global gate "Use online sources" with the subtitle "Off makes this a local
+  player only: no requests, no downloads, nothing hidden — the three entries
+  disappear from the sidebar."; below it three equal blocks for YouTube,
+  Podcasts and Radio, each with its own master switch and the rows laid down in
+  `docs/plans/podcasts-youtube-radio-turn6.md` section 3b. YouTube is a module
+  equal to Podcasts and Radio, not a sub-option of Podcasts (issue #96). A
+  switched-off block hides its own sidebar entry and stops its requests, but
+  deletes neither subscriptions nor favorites — the footer carries the same
+  assurance: "Each block is self-contained: turning one off hides its sidebar
+  entry and stops its requests; subscriptions and favorites are kept, not
+  deleted." The fourth block, "Phone sync" from 7b, is deliberately not part of
+  this as long as its sync foundation (block E) does not exist — its rules
+  follow with that block.
+- **SET-9** [active] [gtk] — Replaces `SET-8`: the same Preferences main page
+  "Online sources" (turn 7b) with the same rows for YouTube, Podcasts and
+  Radio, unchanged — a global gate "Use online sources" with the subtitle "Off
+  makes this a local player only: no requests, no downloads, nothing hidden —
+  the three entries disappear from the sidebar.", below it three equal blocks
+  with their own master switch, YouTube equal to Podcasts and Radio (issue
+  #96), and the footer "Each block is self-contained: turning one off hides its
+  sidebar entry and stops its requests; subscriptions and favorites are kept,
+  not deleted." The single correction (turn 6/7 plan `E-6`, `E-8`): the fourth
+  block "Phone sync" from 7b will **not be built** — not "as long as its sync
+  foundation does not exist", which is what `SET-8` left open, but finally.
+  `E-5` reduces Reprise to a single MTP device, and with it the justification
+  for sync rules needing a cross-device Preferences surface at all; they live
+  on the device page instead (`MTP-37`). "Online sources" remains the only
+  Preferences main page this area will ever get.
 
 ## G. Feedback vocabulary
 
@@ -1056,7 +1396,7 @@ place (MOT-2, the motion reading of P-4).
 - **MOT-8** [active] [gtk] — Lists do not move: no stagger/fade-in per
   row (windowed model, 200-item window, libraries beyond 1,600 rows).
   View changes keep the Standard token. Between two dense sources
-  (Podcasts⇄Music), the outgoing surface is fully faded out before the
+  (Podcasts/YouTube⇄Music), the outgoing surface is fully faded out before the
   stack change and only the incoming surface is faded in over the
   Standard duration: visible motion without a hard cut and without two
   simultaneously readable tables. The queue exception from MOT-4
@@ -1230,7 +1570,9 @@ the panel).
   a spinner during the fetch and otherwise shows the age of the last
   update. Offline or error still show the last cache along with its
   age and only a subtle inline note in the footer — never an error
-  banner.
+  banner. The underlying principle has been named app-wide since `NET-3`
+  (`cached`/`interrupted`); this rule remains the authoritative version for
+  New Releases' own spinner mechanics and is not superseded by it.
 - **NR-7** [active] [gtk] — New Releases is a plugin on the plugins
   page, off by default, with the privacy subtitle „contacts
   MusicBrainz" and a choice of „Top artists only / all artists". With
@@ -1255,6 +1597,11 @@ the panel).
   fetch. NR-8 closes this loop without overturning NR-5. Privacy-wise
   unchanged: network traffic only arises after explicit activation,
   just immediately instead of never.
+  The offline edge of the second edge case (a failed first fetch keeping ✦
+  visible with a retry) follows the same "a cache or first run is never an
+  error" principle that `NET-3` names app-wide; the opt-in trigger and the
+  badge-dot rule themselves are consent semantics and lie outside `NET-3`.
+  This rule therefore stays `[active]` unchanged.
 - **NR-9** [replaced by NR-9a] [gtk] — builds on NR-3: the badge
   from NR-3 shows the **count** of entries with `seen_at IS NULL`,
   from 10 shown as „9+", disappears on opening (all listed entries get
@@ -1455,17 +1802,106 @@ property is set and yet nothing happens.
 
 ## T. Network features opt-in
 
-- **NET-1** [active] [gtk] — Automatic and bulk network fetches are
+- **NET-1** [replaced by NET-1a] — Automatic and bulk network fetches are
   opt-in. Cover downloads, artist portraits, and New Releases only start
   when their module is switched on; Online Lyrics also has a switch, so
   fully network-free use remains possible. Switching off takes effect
   immediately and does not hide images already cached locally.
+- **NET-1a** [active] [core] [gtk] — Extends `NET-1` by a global gate
+  `online-sources-enabled` (Preferences page "Online sources", `SET-9`): an AND
+  condition in front of **every** network fetch in the app, sitting on top of
+  the respective module or source switch — cover downloads, artist portraits,
+  New Releases, online lyrics **and** the three online sources YouTube,
+  Podcasts and Radio. The single authority for it is
+  `reprise_core::online_sources::network_allowed` in core, right next to the
+  module registry; every network entry point hangs off that instead of checking
+  only its own module. Off means: no requests, no downloads, nothing hidden
+  except the three sidebar entries — subscriptions, favorites and images
+  already cached locally are left untouched. Per source and module, YouTube
+  additionally has its own module flag, independent of Podcasts (issue #96):
+  "Podcasts off + YouTube on" is a valid state.
 - **NET-2** [active] [core] — Updates protect demonstrable prior use:
   existing downloaded covers or portraits activate their module, existing
   library databases keep Online Lyrics, and a previously active
   `artist_news` is carried over as an active New Releases module. Negative
   cache markers do not count as use; fresh installations start with all
   four network modules off.
+- **NET-3** [planned] — Offline is a state, not an error: no network-backed
+  place in the app may treat a missing network connection like an error
+  message. The contract covers seven states every network-backed view (feed,
+  search, refresh) must know: **cached** (the last successful state stays
+  visible along with its age, never replaced by an error), **empty** (never
+  fetched successfully yet — a loading/first-run state rather than silent
+  emptiness), **queued** (an online action was accepted and is waiting for the
+  network), **interrupted** (a running fetch aborts — the cache stays, only a
+  discreet inline note, never a banner), **authentication** (401 or a missing
+  credential — neutral, without prompting for credentials in the flow itself),
+  **rate limit** (429 — treated like "interrupted", no special error picture)
+  and **provider failure** (5xx/other — likewise). For the three online sources
+  (Podcasts, YouTube, Radio) and phone sync, six concrete behaviours from turn
+  6 apply in addition (6e, issue #107):
+  1. Downloaded episodes and tracks stay fully playable, seekable and
+     resumable — local playback never touches the network.
+  2. Entries that are not downloaded stay listed from the cache but read
+     "Needs network"; the row is dimmed, never hidden.
+  3. Download and sync actions are accepted and carried as "Queued offline"
+     rather than being greyed out; they run automatically, in order, as soon as
+     the connection returns.
+  4. Add dialogs disable their search field with a one-line reason; pasting a
+     URL still works, and the subscription comes into being on the next fetch.
+  5. Radio is the one exception: a live stream cannot be deferred. Stations
+     stay listed, and "Play" reports "No connection · Retry" instead of
+     queueing.
+  6. Phone sync: MTP is local — syncing files that are already downloaded runs
+     offline too; only entries without a local file wait.
+
+  A critical distinction from `NET-1a`: "switched off" (the global gate
+  `online-sources-enabled`, or a module switch being off) and "offline" (this
+  contract) are **different states** and must not be conflated. Switched off is
+  a privacy promise — it refuses search **and** the URL path alike, without
+  exception; the only check for it remains `online_sources::network_allowed`
+  and its callers (`podcasts::add_dialog_input::submit_refusal`,
+  `radio::add_dialog::submit`). Offline refuses nothing — it marks things
+  pending or offers a retry. This contract never checks a module switch, only
+  connectivity.
+
+  This rule is the contract prose and only turns `[active]` itself once all of
+  its lettered sub-rules are. It consolidates the shared "a cache is never an
+  error" principle that `NR-6`, `NR-8` and `CONC-4b` each already state in
+  their own words for their own surface — those three rules stay `[active]`
+  unchanged and refer here from now on instead of duplicating the principle;
+  none of them changes behaviour or tests. `INST-12` stated the same principle
+  for the instrumental model download and belonged in this list when it was
+  written, but that surface has since been removed from the GTK frontend and
+  the rule is replaced, so it is deliberately not counted here. `LYR-3` does **not**
+  belong here: it governs the switched-off state of the lyrics module
+  (`NET-1a` family), not offline — see the note there.
+- **NET-3a** [active] [core] — The pure, display-free projection
+  `reprise_core::connectivity`: `row_presentation(Connectivity,
+  LocalAvailability)` yields `Playable` as soon as a file is present locally
+  (the same online or offline), otherwise `NeedsNetwork` only while `Offline`.
+  `deferrable_action_outcome` yields `RunsNow` when online, or when the file is
+  already present locally (phone sync of an already downloaded file — MTP is
+  local), otherwise `QueuedOffline`.
+  `podcasts::download_state::DownloadState::local_availability` is the bridge
+  from Podcasts' and YouTube's richer download state into this simple local
+  signal. `Connectivity` is an explicitly set state, not an inference from a
+  failed request — what it does not know: the reachability of an individual
+  provider, authentication, or rate limits; those are request outcomes, not a
+  connectivity state. This projection is a wiring foundation, not a finished
+  display: automatically running pending actions when the network returns, and
+  the display in the podcast and YouTube rows, follow in a later commit
+  (`NET-3c`, F2) — an identifier reserved for that follow-up, deliberately not
+  yet written as a rule, so nothing here claims a contract that does not exist.
+- **NET-3b** [active] [gtk] — The radio exception: stations always stay listed.
+  The context menu shows "Play" (`radio_context_menu::play_menu_label`) when
+  `Connectivity::Online` holds or the station is already playing; under
+  `Offline` the entry reads "No connection · Retry", and a fresh play attempt
+  (`radio_view::try_play_station`) opens no connection while connectivity stays
+  offline — no marking pending, no automatic run, because a live stream cannot
+  be deferred. Connectivity is an injectable state
+  (`RadioView::set_connectivity`), `Online` by default and not yet attached to
+  a real operating-system signal in this rule.
 - **LYR-1** [planned] [core] — Local embedded lyrics and `.lrc` sidecars
   are shown independently of the Online Lyrics module. Reprise does not
   yet read these local formats today; the rule stays planned until this
@@ -1484,6 +1920,11 @@ property is set and yet nothing happens.
   briefly highlighted Plugins row. As long as LYR-1 stays planned, this
   state promises no local embedded lyrics. A switched-on module with no
   match shows "No lyrics found" instead.
+  A distinction from `NET-3`: this rule handles the **switched-off** module
+  (the `NET-1a` family — a deliberate user decision, not connectivity) and
+  stays `[active]` unchanged for it. The case "module on, but offline" is not
+  specified for lyrics today; were it to arise, `NET-3` would govern it, not
+  this rule — the two states must not be confused.
 - **DISCOVER-1** [replaced by BROWSE-1] — Network features without a
   permanently visible surface of their own get exactly one subtle,
   dismissible inline hint at the location of the visible gap: covers from
@@ -2653,7 +3094,9 @@ edges are deliberately accepted. The player plays only finished files.
   popover. Never fetched offers exactly "Fetch now"; zero hits with
   filters offers exactly "Show all". Offline or error leaves the cache
   and "Updated X ago" visible and reports the error exclusively inline
-  in the footer.
+  in the footer — the same `cached`/`interrupted` reading that `NET-3` has
+  since named app-wide; credential and filter behaviour stay Concerts' own
+  and remain `[active]` unchanged.
 - **CONC-5** [replaced by CONC-5a] — Original worker contract with
   view-open staleness, due check, and "Fetch now" as the only network
   triggers.
@@ -2712,7 +3155,7 @@ listening statistics.
   The shared toolbar grammar reads Add button · "Add filter" · active,
   deletable filter pills · count on the right; filter rows keep their
   height across state changes.
-- **SRC-3** [active] [gtk] — Each source has exactly one add dialog
+- **SRC-3** [replaced by SRC-3a] [gtk] — Each source has exactly one add dialog
   with exactly one input field for search terms or a URL. Search
   returns grouped results with row actions; a recognized URL leads
   through preview and options to a confirmation. Network and
@@ -2725,11 +3168,81 @@ listening statistics.
   downloads are never silently deleted on unsubscribe: the commit
   toast reports the files that were kept and offers only moving them
   to trash; multiple unsubscribes are aggregated.
+- **SRC-5** [active] [gtk] — RSS podcasts and YouTube are separate library
+  places. Both start with source rows grouped by channel or show which expand
+  to their episodes; radio stays a station list. The add dialogs show real
+  source images, group YouTube hits by channel, and hide podcasts, channels and
+  stations that are already subscribed.
+- **SRC-3a** [active] [gtk] — Every source has exactly one add dialog with
+  exactly one input field for search terms or a URL. Search yields results with
+  row actions; a recognized URL **of the dialog's own source** leads through
+  preview and options to a confirmation. Network and subprocess work starts
+  only on submit and never runs on the GTK main loop. New compared to SRC-3:
+  the URL path is bound to the dialog's own source (see SRC-6).
+- **SRC-6** [active] [gtk] — Podcasts, YouTube and Radio each have their own
+  add dialog with its own identity (title and placeholder). A dialog queries
+  **exclusively** the provider of its own library place; there is neither a
+  mixed result nor a shared search. A URL belonging to another source is
+  rejected with a one-line reason — it is neither evaluated nor silently handed
+  to another dialog, and the primary button stays inactive meanwhile. The note
+  appears while typing, not only on submit.
+- **SRC-7** [active] [gtk] — All result rows in all three add dialogs carry the
+  same compact action: a plus icon plus the short label "Add". After adding,
+  that exact same surface becomes an inactive "Added" with a check icon — the
+  row does **not** disappear immediately, so that the success stays visible;
+  only the next submitted search hides the source (SRC-5). Because the visible
+  label cannot name the source, the accessible name and the tooltip always
+  carry the full sentence ("Subscribe to {source}", "Add {source}", "{source}
+  is already in your library"). Offered and added never differ by colour alone,
+  or by two nearly identical theme glyphs. Each dialog explains once in its
+  footer that subscribed sources drop out of later searches.
+- **SRC-8** [active] [gtk] — In all three add dialogs, only the result list
+  grows. It sits in a scroller of its own that scrolls **vertically only**;
+  there is never a horizontal scrollbar — titles and subtitles ellipsize
+  instead. The input field, status line, footnote and the fixed footer bar with
+  Cancel and the primary action stay visible and reachable regardless of the
+  number of hits. Rows keep their distance from the overlay scrollbar so that
+  no row action ends up beneath it, and the last row scrolls clear of the
+  footer bar. Artwork and row action keep their size throughout.
+- **SRC-9** [active] [core] [gtk] — Channel search results show the subscriber
+  count as a compact addition ("62.4k subscribers", "1.2M subscribers") as soon
+  as the channel publishes it. It is an optional addition and never replaces
+  the existing hit count. Missing, hidden or malformed values are **omitted** —
+  never rendered as zero and never as "unknown". The number comes from the
+  search subprocess that already runs; there is no additional query per
+  channel.
+- **SRC-10** [active] [gtk] — The genuine "nothing added yet" empty state
+  carries the same geometry for Podcasts, YouTube and Radio: the glyph of its
+  own sidebar entry in a muted rounded tile, a title, a paragraph with one
+  sentence each on *what* lands here and *where it comes from*, exactly one
+  primary button with a plus icon, and beneath it, as a quiet second line, the
+  URL path — where the source has one of its own; radio has none, because the
+  paragraph already names the stream URL. Neither toolbar nor filter row nor
+  counter appears in this state, and never "0 of 0": the surface looks unused,
+  not broken. Never a generic placeholder graphic, never a spinner with nothing
+  to do. As soon as the first subscription lands, this state disappears
+  entirely; "Nothing matches these filters" and the remaining empty-state
+  classifications (`NoEpisodes`/`NoResults`) keep their own, unchanged surface.
+- **SRC-11** [active] [core] [gtk] — Channel, show and station images (YouTube
+  `thumbnails`, iTunes `artworkUrl600`, radio-browser `favicon` — `C1`) run
+  through a module of their own (`module.source_images.enabled`) and are
+  subject to `NET-1a`: a cache hit is always shown, regardless of the gate — a
+  cache miss triggers a fetch only when the global gate **and** the module are
+  both active, otherwise the source glyph stays, never an error image. The pure
+  fetch and cache policy lives, testable without a display, in
+  `reprise_core::remote_image` (no gtk4/libadwaita/gstreamer/zbus); decoding
+  and display stay in the GNOME crate. The on-disk cache is limited to
+  `MAX_CACHE_ENTRIES` (300) entries and, when exceeded, deterministically
+  clears the files untouched for longest first — unlike the unbounded,
+  permanent cover-art cache. Every caller (podcast library view, YouTube
+  channel detail, all three add dialogs) computes the gate itself at its own
+  connection rather than relying on an upstream checkpoint — the lesson from
+  `T6-G1-gap`: a privacy promise in UI copy needs a test per call path, not per
+  feature.
 - **POD-1** [active] [core] — Episode status is a pure derivation:
   Played exactly when `played_at` is set, otherwise Resume when
   `position_ms > 0`, otherwise New. An episode ending sets Played and
-  clears the position. The table reads Date · Episode · Show · Length
-  · Source · Status and sorts by date descending by default.
+  clears the position.
 - **POD-2** [active] [core] — RSS is the data API:
   enclosure/guid/pubDate/itunes:duration; the GUID — or, failing that,
   the enclosure URL, and for YouTube the video ID — is the sole
@@ -2761,6 +3274,54 @@ listening statistics.
   source-stable GUID against renewed feed import; a downloaded file
   remains in place and can only be removed via the offered trash
   action.
+- **POD-7** [active] [core] [gtk] — An episode's download state is visible in
+  the row context: not downloaded, running with bytes and a progress bar, local
+  with file size, failed, or locally vanished. Progress stays transient;
+  completed paths and sizes are persisted together and deleted together.
+- **POD-8** [replaced by POD-12] — Former rule: only downloaded episodes from
+  RSS subscriptions explicitly selected per stable device identity are eligible
+  for Android sync; YouTube sources are never synchronized to a device
+  regardless of their download state. Both halves became wrong with the three
+  named sync targets (`MTP-38`, `MTP-23`) — YouTube audio gets a target of its
+  own and now synchronizes on equal terms.
+- **POD-9** [active] [core] [gtk] — Within each show grouped by stable
+  subscription ID, and within each channel, episodes are ordered by date
+  descending with the status semantics from POD-1; the group row shows the
+  total and unplayed counts, the newest episode, and the local data volume.
+- **POD-10** [active] [core] [gtk] — The YouTube channel page starts with at
+  most the ten newest long-form entries from the official keyless UULF feed and
+  keeps Shorts hidden by default. "Load more" extends that same channel once,
+  past the yt-dlp provider boundary, up to entry 40. Selection and bulk
+  download or removal stay bound to the channel; every row shows the download
+  state from POD-7.
+- **POD-11** [active] [core] [gtk] — On the YouTube channel page every row
+  carries a download column of its own with the state from POD-7 and, as soon
+  as a file actually exists, its compactly formatted size (e.g. "148 MB",
+  "1.2 GB"); a size is never invented for episodes that are not downloaded. A
+  header line summarizes the channel currently loaded — the window size of the
+  listed set, the number of downloaded episodes and their total size on disk
+  (e.g. "10 of 487 · 3 downloaded · 1.2 GB") — and stays correct after "Load
+  more", when showing or hiding Shorts, and after a download completes or is
+  deleted. **Addendum (block H, MCP parity):** the window, the Shorts filter
+  and this header total are pure projections in
+  `reprise_core::podcasts::channel_window` (`visible_window`,
+  `available_count`, `channel_download_summary`); GTK (`YoutubeChannelState`)
+  and the MCP tool `music_get_channel_detail` call the same function instead of
+  computing separately.
+- **POD-12** [active] [core] [gtk] — Downloaded episodes from RSS **and**
+  YouTube subscriptions explicitly selected per stable device identity are
+  eligible for Android sync on equal terms — the selection is decided per
+  subscription and device, not by source kind. The selection control appears
+  only when at least one MTP device is currently connected: a single device is
+  addressed directly, and with several devices the targets can be chosen
+  independently. RSS episodes land under their PodcastEpisodes target (default
+  `Podcasts/Reprise/<Show>/`), YouTube audio under its own YoutubeAudio target
+  (default `Music/Reprise-YouTube/<Channel>/`, `MTP-38`); both are copied 1:1,
+  never re-encoded (`MTP-24`). Music playlists stay unchanged under their
+  playlists target (default `Music/Reprise`). A change of subscription kind at
+  the same feed URL (e.g. a re-import as a different channel type) clears the
+  previous device selection — that is not a source-kind special case but
+  applies symmetrically to any change of kind.
 - **RAD-1** [active] [gtk] — Only the currently connected station is
   accented in the table; its state icon, name, now-playing, and row
   tint change together. All others, as well as a presented but

@@ -27,6 +27,7 @@ pub struct ParsedEpisode {
 #[derive(Default)]
 struct EpisodeBuilder {
     guid: Option<String>,
+    video_id: Option<String>,
     title: Option<String>,
     audio_enclosure: Option<String>,
     fallback_enclosure: Option<String>,
@@ -48,12 +49,19 @@ impl EpisodeBuilder {
     }
 
     fn finish(self) -> Option<ParsedEpisode> {
-        let audio_url = self.audio_enclosure.or(self.fallback_enclosure)?;
+        let youtube_watch_url = self
+            .video_id
+            .as_ref()
+            .map(|id| format!("https://www.youtube.com/watch?v={id}"));
+        let audio_url = youtube_watch_url
+            .or(self.audio_enclosure)
+            .or(self.fallback_enclosure)?;
         let title = self.title.filter(|value| !value.trim().is_empty())?;
         Some(ParsedEpisode {
             guid: self
-                .guid
+                .video_id
                 .filter(|value| !value.trim().is_empty())
+                .or(self.guid)
                 .unwrap_or_else(|| audio_url.clone()),
             title,
             audio_url,
@@ -203,6 +211,9 @@ fn handle_text(
             }
             "guid" | "id" => {
                 builder.guid.get_or_insert_with(|| value.to_owned());
+            }
+            "videoId" => {
+                builder.video_id.get_or_insert_with(|| value.to_owned());
             }
             "link" => {
                 builder.page_url.get_or_insert_with(|| value.to_owned());
@@ -367,6 +378,33 @@ mod tests {
         assert_eq!(parsed.author.as_deref(), Some("Lin"));
         assert_eq!(parsed.episodes.len(), 1);
         assert_eq!(parsed.episodes[0].guid, "one");
+    }
+
+    #[test]
+    fn pod_10_youtube_atom_entries_use_video_ids_as_durable_watch_urls() {
+        let parsed = parse_feed(
+            r#"<feed xmlns="http://www.w3.org/2005/Atom"
+                     xmlns:yt="http://www.youtube.com/xml/schemas/2015">
+              <title>Long-form uploads</title>
+              <entry>
+                <id>yt:video:newest-video</id>
+                <yt:videoId>newest-video</yt:videoId>
+                <title>Newest long mix</title>
+                <link rel="alternate" href="https://www.youtube.com/watch?v=newest-video"/>
+                <published>2026-07-28T08:00:00Z</published>
+              </entry>
+            </feed>"#,
+            15,
+        )
+        .unwrap();
+
+        assert_eq!(parsed.episodes.len(), 1);
+        assert_eq!(parsed.episodes[0].guid, "newest-video");
+        assert_eq!(
+            parsed.episodes[0].audio_url,
+            "https://www.youtube.com/watch?v=newest-video"
+        );
+        assert_eq!(parsed.episodes[0].published_at, Some(1_785_225_600));
     }
 
     #[test]

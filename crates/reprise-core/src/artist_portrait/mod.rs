@@ -174,7 +174,7 @@ mod tests {
     }
 
     #[test]
-    fn net_1_portraits_keep_cached_images_when_disabled() {
+    fn net_1a_portraits_keep_cached_images_when_disabled() {
         let dir = tmp();
         let cached = cache::store_image(&dir, "Band", b"img", "jpg").unwrap();
 

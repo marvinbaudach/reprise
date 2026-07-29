@@ -38,6 +38,9 @@ pub struct DeviceSnapshot {
     /// Last verified synchronization as Unix UTC seconds. Absent when the
     /// device has never completed one.
     pub last_synced_at: Option<i64>,
+    /// The three named sync targets and what the next run would do to each
+    /// (`MTP-37`). Empty for a device whose targets could not be read.
+    pub categories: Vec<DeviceCategorySnapshot>,
 }
 
 /// One selectable synchronization source (a playlist or a smart playlist).
@@ -124,6 +127,42 @@ pub struct DeviceProgress {
     pub bytes_done: u64,
     pub bytes_total: u64,
     pub bytes_per_second: u64,
+}
+
+/// One named sync target's per-device state plus its `MTP-22` diff reading
+/// (`MTP-38`, `MTP-37`).
+///
+/// This began life as a separate `CategorySnapshot` D-Bus method carrying a
+/// 13-wide positional tuple, because zvariant only generates tuple `Type` and
+/// `Serialize` impls up to a fixed arity and [`DeviceSnapshot`] was already at
+/// 16. Now that these types are named dicts rather than tuples that ceiling is
+/// gone, so the categories travel inside the snapshot where they belong and
+/// the extra method is gone with them.
+#[derive(Debug, Clone, PartialEq, Eq, Default, SerializeDict, DeserializeDict, Type)]
+#[zvariant(signature = "a{sv}")]
+pub struct DeviceCategorySnapshot {
+    /// `playlists`, `youtube_audio` or `podcast_episodes`.
+    pub kind: String,
+    /// The target's folder on the device, as the folder browser left it.
+    pub target_path: String,
+    pub target_enabled: bool,
+    pub size_on_device_bytes: u64,
+    /// Absent means no cap, which is what a cap of zero means everywhere in
+    /// Reprise (`MTP-36`, decided 2026-07-29).
+    pub cap_bytes: Option<u64>,
+    /// `diff`, `source_off` or `unavailable_kept_on_phone` — three states
+    /// that `MTP-22` requires be distinguishable rather than flattened into
+    /// one zero.
+    pub reading_kind: String,
+    pub files_to_copy: u64,
+    pub bytes_to_copy: u64,
+    pub files_to_remove: u64,
+    pub bytes_freed: u64,
+    /// Wanted but not yet downloaded (`MTP-40`) — counted apart from
+    /// `files_to_copy` so the balance never promises a transfer that cannot
+    /// happen yet.
+    pub files_waiting_for_download: u64,
+    pub playlists_rewritten: u64,
 }
 
 /// One source selection in a `Configure` command.

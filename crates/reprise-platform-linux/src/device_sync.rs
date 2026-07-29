@@ -6,13 +6,13 @@ use std::rc::Rc;
 
 use gio::prelude::*;
 use reprise_core::device_sync::safe_component;
+use reprise_core::device_sync::StorageId;
 use reprise_core::library::m3u::{parse_m3u, M3uEntry};
 
 pub use reprise_core::device_sync::{DeviceStorageInspection, DeviceStorageSnapshot};
 
 const ENUMERATE_ATTRIBUTES: &str = "standard::name,standard::type,standard::size";
 const ENUMERATE_BATCH_SIZE: i32 = 64;
-const MANAGED_ROOT: [&str; 2] = ["Music", "Reprise"];
 const PARTIAL_SUFFIX: &str = ".part";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -218,6 +218,8 @@ fn notify_subscribers(
 
 #[path = "device_sync_inspection.rs"]
 mod inspection;
+#[path = "device_sync_browser.rs"]
+mod target_browser;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CopyOutcome {
@@ -227,9 +229,24 @@ pub enum CopyOutcome {
 #[derive(Debug)]
 pub enum DeviceIoError {
     InvalidRelativePath,
-    SizeMismatch { expected: u64, actual: u64 },
-    PublishNotApplied { name: String },
+    SizeMismatch {
+        expected: u64,
+        actual: u64,
+    },
+    PublishNotApplied {
+        name: String,
+    },
     Io(gio::glib::Error),
+    /// Design 7d: the chosen `StorageId` no longer matches any storage
+    /// volume at the device root — e.g. an SD card was removed since the
+    /// browser last listed storages.
+    StorageNotFound,
+    /// Design 7d's "New folder": a folder with that name already exists at
+    /// the chosen location.
+    FolderAlreadyExists,
+    /// Design 7d's root-creation error path: the device refused to create
+    /// a folder directly at a storage volume's own top level.
+    CannotCreateAtStorageRoot(gio::glib::Error),
 }
 
 impl fmt::Display for DeviceIoError {
@@ -245,6 +262,16 @@ impl fmt::Display for DeviceIoError {
                 "the device acknowledged publishing {name} but the file never appeared"
             ),
             Self::Io(error) => write!(formatter, "device I/O failed: {error}"),
+            Self::StorageNotFound => {
+                formatter.write_str("the selected storage is no longer available on this device")
+            }
+            Self::FolderAlreadyExists => {
+                formatter.write_str("a folder with that name already exists here")
+            }
+            Self::CannotCreateAtStorageRoot(error) => write!(
+                formatter,
+                "this device does not allow creating folders directly in the storage root: {error}"
+            ),
         }
     }
 }
@@ -337,12 +364,38 @@ impl DeviceStorage {
         Ok(resolved)
     }
 
-    /// Removes transfer remnants left by a disconnect or process exit. Only
-    /// files below `Music/Reprise` with the dedicated `.part` suffix are
-    /// touched; unrelated device content remains outside our ownership.
-    pub async fn cleanup_partials(&self) -> Result<u32, DeviceIoError> {
-        let storage = self.storage_root().await?;
-        let managed_root = Self::managed_child(&storage, &[]);
+    /// The storage volume one sync target's I/O actually runs against
+    /// (`MTP-38`): the explicit `storage_id` the folder browser resolved and
+    /// persisted for it (`MTP-31`/`MTP-32`), re-resolved fresh — MTP handles
+    /// are not stable across reconnects, see the module docs — or, for a
+    /// target that has never been repointed (`storage_id` still `None`),
+    /// the same "prefer internal, else the only volume" default
+    /// [`Self::storage_root`] always used before the folder browser
+    /// existed. Every transfer and inspection call routes through this so a
+    /// target's persisted choice is what receives the bytes, not whatever
+    /// the default would guess.
+    async fn resolve_target_storage(
+        &self,
+        storage_id: Option<StorageId>,
+    ) -> Result<gio::File, DeviceIoError> {
+        match storage_id {
+            Some(storage_id) => self.resolve_storage_root(storage_id).await,
+            None => self.storage_root().await,
+        }
+    }
+
+    /// Removes transfer remnants left by a disconnect or process exit under
+    /// one sync target's folder (`target_path`, `MTP-38`). Only files below
+    /// that folder with the dedicated `.part` suffix are touched; unrelated
+    /// device content — including the other two named targets — remains
+    /// outside our ownership.
+    pub async fn cleanup_partials_in(
+        &self,
+        storage_id: Option<StorageId>,
+        target_path: &str,
+    ) -> Result<u32, DeviceIoError> {
+        let storage = self.resolve_target_storage(storage_id).await?;
+        let managed_root = Self::managed_child(&storage, target_path, &[])?;
         let mut pending = VecDeque::from([managed_root]);
         let mut removed = 0_u32;
         while let Some(directory) = pending.pop_front() {
@@ -379,12 +432,18 @@ impl DeviceStorage {
         Ok(removed)
     }
 
-    /// Deletes one Reprise-managed device track. A missing target is already
-    /// in the desired state and is reported as `false`.
-    pub async fn delete_track(&self, relative_path: &str) -> Result<bool, DeviceIoError> {
+    /// Deletes one file under a sync target's folder (`target_path`,
+    /// `MTP-38`). A missing target is already in the desired state and is
+    /// reported as `false`.
+    pub async fn delete_managed(
+        &self,
+        storage_id: Option<StorageId>,
+        target_path: &str,
+        relative_path: &str,
+    ) -> Result<bool, DeviceIoError> {
         let components = safe_relative_components(relative_path)?;
-        let storage = self.storage_root().await?;
-        let target = Self::managed_child(&storage, &components);
+        let storage = self.resolve_target_storage(storage_id).await?;
+        let target = Self::managed_child(&storage, target_path, &components)?;
         match target.delete_future(gio::glib::Priority::DEFAULT).await {
             Ok(()) => Ok(true),
             Err(error) if error.matches(gio::IOErrorEnum::NotFound) => Ok(false),
@@ -392,40 +451,14 @@ impl DeviceStorage {
         }
     }
 
-    pub async fn copy_track<P>(
+    /// Copies (or overwrites) one file under a sync target's folder
+    /// (`target_path`, `MTP-38`), always replacing any existing file at the
+    /// destination even when its byte count happens to be unchanged.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn replace_managed<P>(
         &self,
-        source: &gio::File,
-        relative_path: &str,
-        expected_size: u64,
-        cancellable: &gio::Cancellable,
-        progress: P,
-    ) -> Result<CopyOutcome, DeviceIoError>
-    where
-        P: FnMut(u64, u64) + 'static,
-    {
-        self.transfer_track(source, relative_path, expected_size, cancellable, progress)
-            .await
-    }
-
-    /// Copies a track selected by a fresh DB delta, replacing any existing
-    /// target even when the byte count happens to be unchanged.
-    pub async fn replace_track<P>(
-        &self,
-        source: &gio::File,
-        relative_path: &str,
-        expected_size: u64,
-        cancellable: &gio::Cancellable,
-        progress: P,
-    ) -> Result<CopyOutcome, DeviceIoError>
-    where
-        P: FnMut(u64, u64) + 'static,
-    {
-        self.transfer_track(source, relative_path, expected_size, cancellable, progress)
-            .await
-    }
-
-    async fn transfer_track<P>(
-        &self,
+        storage_id: Option<StorageId>,
+        target_path: &str,
         source: &gio::File,
         relative_path: &str,
         expected_size: u64,
@@ -436,17 +469,17 @@ impl DeviceStorage {
         P: FnMut(u64, u64) + 'static,
     {
         let components = safe_relative_components(relative_path)?;
-        let storage = self.storage_root().await?;
-        self.ensure_managed_directories(&storage, &components[..components.len() - 1])
+        let storage = self.resolve_target_storage(storage_id).await?;
+        self.ensure_managed_directories(&storage, target_path, &components[..components.len() - 1])
             .await?;
-        let target = Self::managed_child(&storage, &components);
+        let target = Self::managed_child(&storage, target_path, &components)?;
         let target_name = components.last().expect("validated nonempty path");
         let partial_components = components[..components.len() - 1]
             .iter()
             .cloned()
             .chain([format!("{target_name}{PARTIAL_SUFFIX}")])
             .collect::<Vec<_>>();
-        let partial = Self::managed_child(&storage, &partial_components);
+        let partial = Self::managed_child(&storage, target_path, &partial_components)?;
         let progress = Rc::new(RefCell::new(progress));
         let callback_progress = progress.clone();
         let (sender, receiver) = async_channel::bounded(1);
@@ -485,14 +518,21 @@ impl DeviceStorage {
 
     pub async fn replace_playlist(
         &self,
+        storage_id: Option<StorageId>,
+        target_path: &str,
         playlist: &str,
         contents: Vec<u8>,
     ) -> Result<(), DeviceIoError> {
         let playlist = safe_component(playlist, "Playlist");
-        let storage = self.storage_root().await?;
-        self.ensure_managed_directories(&storage, &[]).await?;
-        let final_file = Self::managed_child(&storage, &[format!("{playlist}.m3u8")]);
-        let partial = Self::managed_child(&storage, &[format!("{playlist}.m3u8{PARTIAL_SUFFIX}")]);
+        let storage = self.resolve_target_storage(storage_id).await?;
+        self.ensure_managed_directories(&storage, target_path, &[])
+            .await?;
+        let final_file = Self::managed_child(&storage, target_path, &[format!("{playlist}.m3u8")])?;
+        let partial = Self::managed_child(
+            &storage,
+            target_path,
+            &[format!("{playlist}.m3u8{PARTIAL_SUFFIX}")],
+        )?;
         let expected_size = contents.len() as u64;
         partial
             .replace_contents_future(
@@ -508,10 +548,14 @@ impl DeviceStorage {
         publish(&partial, &final_file, expected_size).await
     }
 
-    pub async fn read_playlist(&self, playlist: &str) -> Result<Vec<M3uEntry>, DeviceIoError> {
+    pub async fn read_playlist(
+        &self,
+        target_path: &str,
+        playlist: &str,
+    ) -> Result<Vec<M3uEntry>, DeviceIoError> {
         let playlist = safe_component(playlist, "Playlist");
         let storage = self.storage_root().await?;
-        let file = Self::managed_child(&storage, &[format!("{playlist}.m3u8")]);
+        let file = Self::managed_child(&storage, target_path, &[format!("{playlist}.m3u8")])?;
         match file.load_contents_future().await {
             Ok((bytes, _)) => Ok(parse_m3u(&String::from_utf8_lossy(&bytes))),
             Err(error) if error.matches(gio::IOErrorEnum::NotFound) => Ok(Vec::new()),
@@ -522,12 +566,12 @@ impl DeviceStorage {
     async fn ensure_managed_directories(
         &self,
         storage: &gio::File,
+        target_path: &str,
         relative_directories: &[String],
     ) -> Result<(), DeviceIoError> {
         let mut current = storage.clone();
-        for component in MANAGED_ROOT
-            .iter()
-            .map(|value| (*value).to_string())
+        for component in safe_target_components(target_path)?
+            .into_iter()
             .chain(relative_directories.iter().cloned())
         {
             current = current.child(component);
@@ -543,15 +587,19 @@ impl DeviceStorage {
         Ok(())
     }
 
-    /// `<storage>/Music/Reprise/<relative…>`. Takes the storage root resolved
-    /// by [`Self::storage_root`] rather than reaching for `self.root`, which
-    /// on MTP is the (unwritable) volume list.
-    fn managed_child(storage: &gio::File, relative_components: &[String]) -> gio::File {
-        MANAGED_ROOT
-            .iter()
-            .map(|component| (*component).to_string())
+    /// `<storage>/<target_path>/<relative…>`, e.g.
+    /// `<storage>/Music/Reprise-YouTube/<relative…>`. Takes the storage root
+    /// resolved by [`Self::storage_root`] rather than reaching for
+    /// `self.root`, which on MTP is the (unwritable) volume list.
+    fn managed_child(
+        storage: &gio::File,
+        target_path: &str,
+        relative_components: &[String],
+    ) -> Result<gio::File, DeviceIoError> {
+        Ok(safe_target_components(target_path)?
+            .into_iter()
             .chain(relative_components.iter().cloned())
-            .fold(storage.clone(), |parent, component| parent.child(component))
+            .fold(storage.clone(), |parent, component| parent.child(component)))
     }
 }
 
@@ -567,6 +615,36 @@ fn choose_storage_volume(volumes: &[String]) -> Option<String> {
         })
         .or_else(|| volumes.first())
         .cloned()
+}
+
+/// Splits a [`reprise_core::device_sync::SyncTarget`] path (e.g.
+/// `/Music/Reprise-YouTube`, `MTP-38`) into path components for building a
+/// `gio::File` under the resolved storage volume. Unlike
+/// [`safe_relative_components`], a single leading `Component::RootDir` is
+/// accepted and dropped — sync target paths are written as absolute-looking
+/// device paths, but every one of them is still resolved relative to the
+/// storage volume returned by [`DeviceStorage::storage_root`].
+fn safe_target_components(path: &str) -> Result<Vec<String>, DeviceIoError> {
+    if path.is_empty() || path.chars().any(char::is_control) {
+        return Err(DeviceIoError::InvalidRelativePath);
+    }
+    let components = Path::new(path)
+        .components()
+        .filter(|component| !matches!(component, Component::RootDir))
+        .map(|component| match component {
+            Component::Normal(value) => value
+                .to_str()
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .ok_or(DeviceIoError::InvalidRelativePath),
+            _ => Err(DeviceIoError::InvalidRelativePath),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if components.is_empty() {
+        Err(DeviceIoError::InvalidRelativePath)
+    } else {
+        Ok(components)
+    }
 }
 
 fn safe_relative_components(path: &str) -> Result<Vec<String>, DeviceIoError> {
@@ -691,3 +769,7 @@ fn is_audio_file(name: &str) -> bool {
 #[cfg(test)]
 #[path = "device_sync_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "device_sync_browser_tests.rs"]
+mod browser_tests;

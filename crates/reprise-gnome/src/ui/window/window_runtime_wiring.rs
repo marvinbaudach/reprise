@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::browser::navigation::NavigationIntent;
@@ -32,10 +31,6 @@ use super::sidebar::Sidebar;
 use super::stats_view::StatsView;
 use super::track_list::TrackList;
 
-const SMOKE_QUIT_ENV_VAR: &str = "REPRISE_SMOKE_QUIT";
-const SMOKE_QUIT_DELAY_SECS_ENV_VAR: &str = "REPRISE_SMOKE_QUIT_DELAY_SECS";
-const SMOKE_QUIT_DELAY_SECS_DEFAULT: u32 = 3;
-
 pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) app: &'a adw::Application,
     pub(in crate::ui) window: &'a adw::ApplicationWindow,
@@ -54,6 +49,7 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) concerts_view: &'a Rc<crate::ui::concerts::ConcertsView>,
     pub(in crate::ui) releases_view: &'a Rc<crate::ui::releases::ReleasesView>,
     pub(in crate::ui) podcasts_view: &'a Rc<crate::ui::podcasts::PodcastsView>,
+    pub(in crate::ui) youtube_view: &'a Rc<crate::ui::podcasts::PodcastsView>,
     pub(in crate::ui) radio_view: &'a Rc<crate::ui::radio::RadioView>,
     pub(in crate::ui) podcasts_runtime: &'a Rc<crate::ui::podcasts::PodcastsRuntime>,
     pub(in crate::ui) content_stack: &'a gtk4::Stack,
@@ -97,6 +93,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         concerts_view,
         releases_view,
         podcasts_view,
+        youtube_view,
         radio_view,
         podcasts_runtime,
         content_stack,
@@ -496,6 +493,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         concerts_view,
         releases_view,
         podcasts_view,
+        youtube_view,
         radio_view,
         conn,
         content_stack,
@@ -645,7 +643,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     );
     active_content_focus.focus_later_if_unset(window);
     minimal_view.apply_initial();
-    arm_smoke_quit(window);
+    super::window_smoke::arm_quit(window);
 }
 
 fn start_persisted_watcher(
@@ -712,24 +710,4 @@ fn start_external_changes_refresh(
             }
         }),
     );
-}
-
-fn arm_smoke_quit(window: &adw::ApplicationWindow) {
-    if std::env::var(SMOKE_QUIT_ENV_VAR).is_err() {
-        return;
-    }
-    let delay_secs = std::env::var(SMOKE_QUIT_DELAY_SECS_ENV_VAR)
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(SMOKE_QUIT_DELAY_SECS_DEFAULT);
-    tracing::info!(
-        delay_secs,
-        "{SMOKE_QUIT_ENV_VAR} set: arming headless smoke-quit timer"
-    );
-    let window = window.clone();
-    glib::timeout_add_seconds_local(delay_secs, move || {
-        tracing::info!("smoke-quit timer fired: closing main window");
-        window.close();
-        glib::ControlFlow::Break
-    });
 }

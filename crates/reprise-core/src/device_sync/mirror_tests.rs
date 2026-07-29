@@ -312,6 +312,10 @@ fn removed_inventory_rows_and_untracked_files_stay_inside_the_safe_scope() {
     assert!(plan.copy.is_empty());
     assert!(plan.replace.is_empty());
     assert_eq!(plan.remove.len(), 2);
+    assert_eq!(
+        plan.bytes_freed, 240_123,
+        "bytes_freed sums both removed inventory rows and removed orphans"
+    );
     assert!(plan.remove.iter().any(|removal| matches!(
         removal,
         ManagedRemoval::Inventory(file) if file.track_id == 2

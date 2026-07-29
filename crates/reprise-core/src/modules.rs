@@ -64,7 +64,19 @@ pub const CONCERTS_MODULE: ModuleDescriptor = ModuleDescriptor {
 pub const PODCASTS_MODULE: ModuleDescriptor = ModuleDescriptor {
     id: "podcasts",
     name: "Podcasts",
-    description: "Subscribe to podcast feeds and YouTube sources via yt-dlp",
+    description: "Subscribe to podcast RSS feeds; search via Apple Podcasts",
+    default_enabled: false,
+    applies_live: true,
+};
+
+/// YouTube is a peer of Podcasts and Radio, not a sub-setting of Podcasts
+/// (issue #96): "Podcasts off + YouTube on" must be a representable state,
+/// which requires its own module flag rather than a boolean nested inside
+/// `podcasts::config`.
+pub const YOUTUBE_MODULE: ModuleDescriptor = ModuleDescriptor {
+    id: "youtube",
+    name: "YouTube",
+    description: "Subscribe to YouTube channels; audio via yt-dlp",
     default_enabled: false,
     applies_live: true,
 };
@@ -109,6 +121,17 @@ pub const ONLINE_LYRICS_MODULE: ModuleDescriptor = ModuleDescriptor {
     applies_live: true,
 };
 
+/// `C1`/`SRC-11`: channel, show and station artwork (YouTube thumbnails,
+/// iTunes `artworkUrl600`, radio-browser favicons) for the podcast, YouTube
+/// and radio library views and their Add dialogs.
+pub const SOURCE_IMAGES_MODULE: ModuleDescriptor = ModuleDescriptor {
+    id: "source_images",
+    name: "Source Images",
+    description: "Download channel, show, and station artwork for Podcasts, YouTube, and Radio",
+    default_enabled: false,
+    applies_live: true,
+};
+
 pub const SONG_VISUALS_MODULE: ModuleDescriptor = ModuleDescriptor {
     id: "song_visuals",
     name: "Song Visuals",
@@ -124,10 +147,12 @@ pub const ALL_MODULES: &[&ModuleDescriptor] = &[
     &NEW_RELEASES_MODULE,
     &CONCERTS_MODULE,
     &PODCASTS_MODULE,
+    &YOUTUBE_MODULE,
     &RADIO_MODULE,
     &COVER_DOWNLOAD_MODULE,
     &ARTIST_PORTRAITS_MODULE,
     &ONLINE_LYRICS_MODULE,
+    &SOURCE_IMAGES_MODULE,
     &LISTENBRAINZ_MODULE,
     &LASTFM_MODULE,
 ];
@@ -287,12 +312,26 @@ mod tests {
     }
 
     #[test]
+    fn src_11_all_modules_includes_opt_in_source_images() {
+        let conn = migrated_conn();
+        assert!(ALL_MODULES
+            .iter()
+            .any(|module| module.id == "source_images"));
+        assert_eq!(
+            enabled_key(&SOURCE_IMAGES_MODULE),
+            "module.source_images.enabled"
+        );
+        assert!(!is_enabled(&conn, &SOURCE_IMAGES_MODULE).unwrap());
+    }
+
+    #[test]
     fn network_modules_default_off_and_apply_live() {
         let conn = migrated_conn();
         for module in [
             &COVER_DOWNLOAD_MODULE,
             &ARTIST_PORTRAITS_MODULE,
             &ONLINE_LYRICS_MODULE,
+            &SOURCE_IMAGES_MODULE,
         ] {
             assert!(!module.default_enabled, "{} must be opt-in", module.id);
             assert!(module.applies_live, "{} must apply live", module.id);
@@ -361,7 +400,7 @@ mod tests {
 
     #[test]
     fn source_modules_are_registered_once() {
-        for module in [&PODCASTS_MODULE, &RADIO_MODULE] {
+        for module in [&PODCASTS_MODULE, &YOUTUBE_MODULE, &RADIO_MODULE] {
             assert_eq!(
                 ALL_MODULES
                     .iter()
@@ -370,5 +409,26 @@ mod tests {
                 1
             );
         }
+    }
+
+    /// Issue #96: YouTube is a peer module, independent of Podcasts, so
+    /// "Podcasts off + YouTube on" is representable in the data model —
+    /// not only in the presentation.
+    #[test]
+    fn youtube_is_a_peer_module_independent_of_podcasts() {
+        let conn = migrated_conn();
+
+        assert!(!is_enabled(&conn, &YOUTUBE_MODULE).unwrap());
+        assert_eq!(enabled_key(&YOUTUBE_MODULE), "module.youtube.enabled");
+        assert!(ALL_MODULES
+            .iter()
+            .any(|module| module.id == "youtube" && module.applies_live));
+
+        set_enabled(&conn, &YOUTUBE_MODULE, true).unwrap();
+        assert!(is_enabled(&conn, &YOUTUBE_MODULE).unwrap());
+        assert!(
+            !is_enabled(&conn, &PODCASTS_MODULE).unwrap(),
+            "Podcasts off + YouTube on must be a valid, independent state"
+        );
     }
 }

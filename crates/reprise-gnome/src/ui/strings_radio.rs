@@ -21,9 +21,14 @@ pub const RADIO_ADD_FILTER: &str = N_!("Add filter");
 pub const RADIO_FILTER_GENRE: &str = N_!("Genre");
 pub const RADIO_FILTER_COUNTRY: &str = N_!("Country");
 pub const RADIO_CLEAR_ALL: &str = N_!("Clear all");
+/// `SRC-10`: the shared empty-state grammar's copy for Radio — title, one
+/// paragraph of what lands here and where it comes from, the primary
+/// button. Radio has no secondary line: the body already names the URL
+/// path (a stream URL), so a second line repeating it would be redundant.
 pub const RADIO_NO_STATIONS: &str = N_!("No stations yet");
-pub const RADIO_NO_STATIONS_DESCRIPTION: &str =
-    N_!("Add an internet radio station to start listening.");
+pub const RADIO_NO_STATIONS_DESCRIPTION: &str = N_!(
+    "Find stations in the open radio-browser directory, or paste a stream URL. Nothing is fetched until you search."
+);
 pub const RADIO_DIALOG_TITLE: &str = N_!("Add Station");
 pub const RADIO_DIALOG_HINT: &str = N_!("Search or paste a stream / M3U / PLS URL");
 pub const RADIO_SEARCHING: &str = N_!("Searching…");
@@ -39,8 +44,12 @@ pub const RADIO_PLAYLIST_DETECTED: &str = N_!("Playlist file detected");
 pub const RADIO_PREVIEW_FAILED: &str = N_!("Could not preview this station");
 pub const RADIO_SEARCH_FAILED: &str = N_!("Could not search for stations");
 pub const RADIO_ADD_FAILED: &str = N_!("Could not add this station");
+pub const RADIO_ALREADY_FAVORITE: &str = N_!("This station is already in Radio");
 pub const RADIO_PLAY: &str = N_!("Play");
 pub const RADIO_STOP: &str = N_!("Stop");
+/// `NET-3b`: Radio's offline exception — a live stream cannot be queued, so
+/// the Play entry itself becomes the retry affordance while offline.
+pub const RADIO_NO_CONNECTION_RETRY: &str = N_!("No connection · Retry");
 pub const RADIO_COPY_URL: &str = N_!("Copy stream URL");
 pub const RADIO_EDIT: &str = N_!("Edit station…");
 pub const RADIO_REMOVE_FAVORITE: &str = N_!("Remove favorite");
@@ -53,6 +62,7 @@ pub const RADIO_ORDER_VOTES: &str = N_!("Votes");
 pub const RADIO_ORDER_NAME: &str = N_!("Name");
 pub const RADIO_ORDER_CLICKS: &str = N_!("Clicks");
 pub const RADIO_UNKNOWN_NOW_PLAYING: &str = N_!("—");
+pub const RADIO_REPORT_PLAYS: &str = N_!("Report plays to the directory");
 
 pub fn radio_station_count(count: usize) -> String {
     let count_text = count.to_string();

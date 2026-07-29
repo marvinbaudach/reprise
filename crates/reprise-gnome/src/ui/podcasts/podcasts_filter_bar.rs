@@ -52,12 +52,12 @@ pub(super) struct PodcastsFilterBar {
 }
 
 impl PodcastsFilterBar {
-    pub(super) fn new(conn: Rc<RefCell<Connection>>) -> Rc<Self> {
+    pub(super) fn new(conn: Rc<RefCell<Connection>>, kind: PodcastKind) -> Rc<Self> {
         let stored = podcasts::config::load_filter(&conn.borrow()).unwrap_or_default();
         let filter = PodcastFilter {
             unplayed_only: stored.unplayed_only,
             show: stored.show,
-            source: stored.source,
+            source: None,
         };
         let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
         root.set_margin_top(6);
@@ -69,7 +69,10 @@ impl PodcastsFilterBar {
 
         let add = gtk4::Button::builder()
             .icon_name("list-add-symbolic")
-            .label(strings::text(strings::PODCAST_ADD))
+            .label(strings::text(match kind {
+                PodcastKind::Rss => strings::PODCAST_ADD,
+                PodcastKind::Youtube => strings::YOUTUBE_ADD,
+            }))
             .build();
         buttons::arm(&add, buttons::ADD_ACTION_CLASS);
         add.set_action_name(Some("podcasts.open-add"));
@@ -124,6 +127,15 @@ impl PodcastsFilterBar {
     }
 
     pub(super) fn set_context(self: &Rc<Self>, shows: Vec<String>, shown: usize, total: usize) {
+        if self
+            .filter
+            .borrow()
+            .show
+            .as_ref()
+            .is_some_and(|selected| !shows.contains(selected))
+        {
+            self.filter.borrow_mut().show = None;
+        }
         self.shows.replace(shows);
         self.result.set_text(&if active(&self.filter()) {
             strings::podcast_filtered_count(shown, total)
@@ -172,18 +184,6 @@ impl PodcastsFilterBar {
                 show: None,
                 ..filter
             });
-        }
-        if let Some(source) = filter.source {
-            self.prepend_chip(
-                &strings::text(match source {
-                    PodcastKind::Rss => strings::PODCAST_SOURCE_RSS,
-                    PodcastKind::Youtube => strings::PODCAST_SOURCE_YOUTUBE,
-                }),
-                |filter| PodcastFilter {
-                    source: None,
-                    ..filter
-                },
-            );
         }
         if active(&filter) {
             let clear = gtk4::Button::with_label(&format!(
@@ -236,16 +236,6 @@ impl PodcastsFilterBar {
             let value = show.clone();
             self.add_value_button(&show, move |filter| PodcastFilter {
                 show: Some(value.clone()),
-                ..filter
-            });
-        }
-        self.add_heading(strings::PODCAST_FILTER_SOURCE);
-        for (label, source) in [
-            (strings::PODCAST_SOURCE_RSS, PodcastKind::Rss),
-            (strings::PODCAST_SOURCE_YOUTUBE, PodcastKind::Youtube),
-        ] {
-            self.add_value_button(&strings::text(label), move |filter| PodcastFilter {
-                source: Some(source),
                 ..filter
             });
         }

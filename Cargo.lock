@@ -2656,6 +2656,7 @@ version = "0.1.1"
 dependencies = [
  "async-channel",
  "chrono",
+ "futures-lite",
  "gdk4-x11",
  "gettext-rs",
  "gtk4",

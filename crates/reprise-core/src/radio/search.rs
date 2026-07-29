@@ -145,6 +145,42 @@ pub fn parse_candidates(json: &str) -> Result<Vec<StationCandidate>, RadioError>
         .collect())
 }
 
+/// `SRC-5`: drop any search candidate that already matches a favorite
+/// station, by radio-browser UUID or by stream URL. Shared by the GNOME add
+/// dialog and the MCP discovery tool so both hide the same rows.
+#[must_use]
+pub fn filter_new_stations(
+    candidates: Vec<StationCandidate>,
+    favorites: &[(String, String)],
+) -> Vec<StationCandidate> {
+    candidates
+        .into_iter()
+        .filter(|candidate| {
+            !station_is_known(Some(&candidate.uuid), &candidate.url_resolved, favorites)
+        })
+        .collect()
+}
+
+/// Whether a station (identified by an optional radio-browser UUID and its
+/// stream URL) already matches a favorite. `uuid` is `None` for a manually
+/// entered stream that has not been matched against radio-browser yet.
+#[must_use]
+pub fn station_is_known(
+    uuid: Option<&str>,
+    stream_url: &str,
+    favorites: &[(String, String)],
+) -> bool {
+    let stream_url = normalized_stream_url(stream_url);
+    favorites.iter().any(|(favorite_uuid, favorite_url)| {
+        uuid.is_some_and(|candidate| !favorite_uuid.is_empty() && favorite_uuid == candidate)
+            || normalized_stream_url(favorite_url) == stream_url
+    })
+}
+
+fn normalized_stream_url(value: &str) -> String {
+    value.trim().trim_end_matches('/').to_owned()
+}
+
 #[must_use]
 pub fn format_candidate_details(candidate: &StationCandidate) -> String {
     let mut parts = Vec::new();
@@ -246,5 +282,45 @@ mod tests {
 
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].name, "Metal One");
+    }
+
+    #[test]
+    fn src_5_radio_search_hides_existing_favorites() {
+        let candidates = vec![
+            station_candidate("existing", "Existing", "https://radio.test/existing/"),
+            station_candidate("new", "New", "https://radio.test/new"),
+        ];
+
+        let visible = filter_new_stations(
+            candidates,
+            &[("existing".into(), "https://radio.test/existing".into())],
+        );
+
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].uuid, "new");
+    }
+
+    #[test]
+    fn src_5_radio_url_preview_hides_an_existing_favorite() {
+        assert!(station_is_known(
+            None,
+            "https://radio.test/live/",
+            &[("".into(), "https://radio.test/live".into())]
+        ));
+    }
+
+    fn station_candidate(uuid: &str, name: &str, url_resolved: &str) -> StationCandidate {
+        StationCandidate {
+            uuid: uuid.into(),
+            name: name.into(),
+            url_resolved: url_resolved.into(),
+            codec: None,
+            bitrate_kbps: None,
+            country_code: None,
+            genre: None,
+            tags: Vec::new(),
+            votes: 1,
+            favicon_url: None,
+        }
     }
 }

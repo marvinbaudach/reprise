@@ -28,7 +28,7 @@ pub(in crate::ui) struct PlayerLyrics {
 
 impl PlayerLyrics {
     pub(in crate::ui) fn new(conn: &rusqlite::Connection) -> Rc<Self> {
-        let enabled = reprise_core::modules::is_enabled(
+        let enabled = reprise_core::online_sources::network_allowed(
             conn,
             &reprise_core::modules::ONLINE_LYRICS_MODULE,
         )
@@ -368,7 +368,19 @@ impl PlayerController {
             &reprise_core::modules::ONLINE_LYRICS_MODULE,
             enabled,
         )?;
-        self.lyrics.set_enabled(enabled);
+        self.recompute_lyrics_enabled();
         Ok(())
+    }
+
+    /// `NET-1a`: re-derives the Lyrics tab's enabled state from the global
+    /// online-sources gate ANDed with the Online Lyrics module — called
+    /// after either toggles.
+    pub(in crate::ui) fn recompute_lyrics_enabled(self: &Rc<Self>) {
+        let enabled = reprise_core::online_sources::network_allowed(
+            &self.conn.borrow(),
+            &reprise_core::modules::ONLINE_LYRICS_MODULE,
+        )
+        .unwrap_or(false);
+        self.lyrics.set_enabled(enabled);
     }
 }

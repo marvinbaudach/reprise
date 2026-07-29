@@ -192,6 +192,19 @@ Default labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-huma
 
 Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
+## Not released yet — no backwards compatibility
+
+Reprise has **not** shipped and there are **no existing installations**. Migrations,
+compatibility fallbacks, dual-write paths and deprecated-key readers are therefore *not*
+a design criterion anywhere in this repo.
+
+Where a clean data model and a backwards-compatible one collide, take the clean one and
+delete the old shape outright. A leftover second source of truth is worse than either
+option on its own. This applies to settings keys, module descriptors, database columns and
+on-device layouts alike. (Schema *migrations* still exist as the mechanism for changing the
+database — the point is that you never have to preserve an old shape for users who don't
+exist.)
+
 ## Key conventions to match
 
 - Immutable data, small focused files, early returns, named constants. See existing modules.

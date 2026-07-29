@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 #[cfg(any(test, feature = "test-fixtures"))]
 use url::Url;
 
+use super::download_state::DownloadProgress;
 use super::PodcastError;
 use crate::http_body::{self, BoundedReadError};
 
@@ -114,10 +115,18 @@ pub fn get_conditional(
 }
 
 pub fn download(url: &str, destination: &Path) -> Result<(), PodcastError> {
+    download_with_progress(url, destination, &mut |_| {})
+}
+
+pub fn download_with_progress(
+    url: &str,
+    destination: &Path,
+    on_progress: &mut dyn FnMut(DownloadProgress),
+) -> Result<(), PodcastError> {
     respect_rate_limit();
     #[cfg(any(test, feature = "test-fixtures"))]
     if let Some(directory) = fixture_directory() {
-        return fixture_download(url, destination, &directory);
+        return fixture_download(url, destination, &directory, on_progress);
     }
     let response = ureq::Agent::config_builder()
         .timeout_global(Some(HTTP_TIMEOUT))
@@ -132,21 +141,59 @@ pub fn download(url: &str, destination: &Path) -> Result<(), PodcastError> {
     if !(200..300).contains(&status) {
         return Err(PodcastError::HttpStatus(status));
     }
+    let total_bytes = header(&response, "Content-Length").and_then(|value| value.parse().ok());
     let mut reader = response.into_body().into_reader();
     let mut file = std::fs::File::create(destination)
         .map_err(|error| PodcastError::Body(error.to_string()))?;
-    std::io::copy(&mut reader, &mut file).map_err(|error| PodcastError::Body(error.to_string()))?;
+    copy_with_progress(&mut reader, &mut file, total_bytes, on_progress)?;
     Ok(())
 }
 
 #[cfg(any(test, feature = "test-fixtures"))]
-fn fixture_download(url: &str, destination: &Path, directory: &Path) -> Result<(), PodcastError> {
-    std::fs::copy(
-        directory.join(FixtureRoute::Download(url.to_owned()).filename()),
-        destination,
-    )
-    .map(|_| ())
-    .map_err(|error| PodcastError::Transport(error.to_string()))
+fn fixture_download(
+    url: &str,
+    destination: &Path,
+    directory: &Path,
+    on_progress: &mut dyn FnMut(DownloadProgress),
+) -> Result<(), PodcastError> {
+    let source = directory.join(FixtureRoute::Download(url.to_owned()).filename());
+    let total_bytes = std::fs::metadata(&source)
+        .map_err(|error| PodcastError::Transport(error.to_string()))?
+        .len();
+    let mut reader =
+        std::fs::File::open(source).map_err(|error| PodcastError::Transport(error.to_string()))?;
+    let mut file = std::fs::File::create(destination)
+        .map_err(|error| PodcastError::Body(error.to_string()))?;
+    copy_with_progress(&mut reader, &mut file, Some(total_bytes), on_progress)
+}
+
+fn copy_with_progress(
+    reader: &mut dyn std::io::Read,
+    writer: &mut dyn std::io::Write,
+    total_bytes: Option<u64>,
+    on_progress: &mut dyn FnMut(DownloadProgress),
+) -> Result<(), PodcastError> {
+    const BUFFER_SIZE: usize = 64 * 1024;
+
+    let mut buffer = [0_u8; BUFFER_SIZE];
+    let mut received_bytes = 0_u64;
+    loop {
+        let count = reader
+            .read(&mut buffer)
+            .map_err(|error| PodcastError::Body(error.to_string()))?;
+        if count == 0 {
+            break;
+        }
+        writer
+            .write_all(&buffer[..count])
+            .map_err(|error| PodcastError::Body(error.to_string()))?;
+        received_bytes = received_bytes.saturating_add(count as u64);
+        on_progress(DownloadProgress {
+            received_bytes,
+            total_bytes,
+        });
+    }
+    Ok(())
 }
 
 fn header(response: &ureq::http::Response<ureq::Body>, name: &str) -> Option<String> {
@@ -359,5 +406,33 @@ mod tests {
         });
 
         assert_eq!(std::fs::read(destination).unwrap(), b"fixture audio");
+    }
+
+    #[test]
+    fn pod_7_fixture_download_reports_received_and_total_bytes() {
+        let directory = tempfile::tempdir().unwrap();
+        let destination_directory = tempfile::tempdir().unwrap();
+        let url = "https://media.example.test/progress.mp3";
+        std::fs::write(
+            directory
+                .path()
+                .join(FixtureRoute::Download(url.to_owned()).filename()),
+            b"progress audio",
+        )
+        .unwrap();
+        let destination = destination_directory.path().join("episode.mp3.part");
+        let mut progress = Vec::new();
+
+        with_fixture_dir(directory.path(), || {
+            download_with_progress(url, &destination, &mut |event| progress.push(event)).unwrap();
+        });
+
+        assert_eq!(
+            progress.last(),
+            Some(&super::super::download_state::DownloadProgress {
+                received_bytes: 14,
+                total_bytes: Some(14),
+            })
+        );
     }
 }

@@ -2,9 +2,10 @@
 
 use std::path::{Path, PathBuf};
 
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 
 use super::config::CleanupPolicy;
+use super::{PodcastError, PodcastKind};
 
 const PLAYED_RETENTION_SECONDS: i64 = 7 * 24 * 60 * 60;
 const KEEP_EPISODES_PER_SHOW: usize = 5;
@@ -13,6 +14,75 @@ const KEEP_EPISODES_PER_SHOW: usize = 5;
 pub struct CleanupSummary {
     pub files_deleted: usize,
     pub bytes_deleted: u64,
+}
+
+pub fn set_downloaded_path(
+    conn: &Connection,
+    episode_id: i64,
+    path: Option<&str>,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE podcast_episodes
+         SET downloaded_path = ?2,
+             downloaded_bytes = CASE WHEN ?2 IS NULL THEN NULL ELSE downloaded_bytes END
+         WHERE id = ?1",
+        params![episode_id, path],
+    )?;
+    Ok(())
+}
+
+pub fn set_downloaded_file(
+    conn: &Connection,
+    episode_id: i64,
+    path: Option<&str>,
+    downloaded_bytes: Option<i64>,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE podcast_episodes
+         SET downloaded_path = ?2,
+             downloaded_bytes = CASE
+               WHEN ?2 IS NULL THEN NULL
+               WHEN ?3 IS NULL THEN NULL
+               ELSE MAX(?3, 0)
+             END
+         WHERE id = ?1",
+        params![episode_id, path, downloaded_bytes],
+    )?;
+    Ok(())
+}
+
+pub fn persist_completed_if_active(
+    conn: &Connection,
+    episode_id: i64,
+    path: &str,
+    downloaded_bytes: u64,
+) -> Result<bool, rusqlite::Error> {
+    let downloaded_bytes = downloaded_bytes.min(i64::MAX as u64) as i64;
+    Ok(conn.execute(
+        "UPDATE podcast_episodes
+         SET downloaded_path = ?2, downloaded_bytes = ?3
+         WHERE id = ?1
+           AND removed_at IS NULL
+           AND EXISTS (
+             SELECT 1 FROM podcast_subscriptions s
+             WHERE s.id = podcast_episodes.subscription_id
+               AND s.removed_at IS NULL
+           )",
+        params![episode_id, path, downloaded_bytes],
+    )? != 0)
+}
+
+pub fn downloaded_paths_for_subscription(
+    conn: &Connection,
+    subscription_id: i64,
+) -> Result<Vec<String>, rusqlite::Error> {
+    let mut statement = conn.prepare(
+        "SELECT downloaded_path FROM podcast_episodes
+         WHERE subscription_id = ?1 AND downloaded_path IS NOT NULL
+         ORDER BY id",
+    )?;
+    let rows = statement.query_map([subscription_id], |row| row.get(0))?;
+    rows.collect::<Result<Vec<_>, _>>()
 }
 
 #[must_use]
@@ -48,6 +118,14 @@ pub fn extension_from_url(value: &str) -> &'static str {
     }
 }
 
+#[must_use]
+pub fn extension_for(kind: PodcastKind, audio_url: &str) -> &'static str {
+    match kind {
+        PodcastKind::Rss => extension_from_url(audio_url),
+        PodcastKind::Youtube => "opus",
+    }
+}
+
 pub fn reclaim_existing(
     root: &Path,
     feed_url: &str,
@@ -67,7 +145,7 @@ pub fn reclaim_existing(
             && entry
                 .file_name()
                 .to_str()
-                .is_some_and(|name| name.starts_with(&prefix))
+                .is_some_and(|name| name.starts_with(&prefix) && !name.ends_with(".part"))
         {
             matches.push(entry.path());
         }
@@ -81,6 +159,57 @@ pub fn prepare_destination(path: &Path) -> std::io::Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     Ok(())
+}
+
+#[must_use]
+pub fn partial_path(destination: &Path) -> PathBuf {
+    let mut name = destination.as_os_str().to_os_string();
+    name.push(".part");
+    PathBuf::from(name)
+}
+
+pub fn download_atomically(
+    destination: &Path,
+    operation: impl FnOnce(&Path) -> Result<(), PodcastError>,
+) -> Result<u64, PodcastError> {
+    prepare_destination(destination).map_err(|error| PodcastError::Body(error.to_string()))?;
+    let temporary = partial_path(destination);
+    remove_if_present(&temporary)?;
+    if let Err(error) = operation(&temporary) {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(error);
+    }
+    let metadata = temporary
+        .symlink_metadata()
+        .map_err(|error| PodcastError::Body(error.to_string()))?;
+    if !metadata.file_type().is_file() {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(PodcastError::Body(
+            "download did not produce a regular file".to_owned(),
+        ));
+    }
+    if destination.exists() {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(PodcastError::Body(format!(
+            "download destination already exists: {}",
+            destination.display()
+        )));
+    }
+    if let Err(error) = std::fs::rename(&temporary, destination) {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(PodcastError::Body(format!(
+            "could not publish completed download: {error}"
+        )));
+    }
+    Ok(metadata.len())
+}
+
+fn remove_if_present(path: &Path) -> Result<(), PodcastError> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(PodcastError::Body(error.to_string())),
+    }
 }
 
 pub fn enforce_cleanup(
@@ -202,6 +331,7 @@ mod tests {
     use super::*;
     use crate::podcasts::feed::ParsedEpisode;
     use crate::podcasts::store::{self, NewSubscription};
+    use crate::podcasts::PodcastError;
     use crate::podcasts::PodcastKind;
 
     fn conn() -> Connection {
@@ -278,6 +408,95 @@ mod tests {
         assert_eq!(
             reclaim_existing(directory.path(), "https://example.test/feed", "stable-guid").unwrap(),
             Some(first)
+        );
+    }
+
+    #[test]
+    fn pod_7_downloads_publish_only_complete_files_and_clean_failed_partials() {
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("episode.mp3");
+        let part = partial_path(&destination);
+
+        let bytes = download_atomically(&destination, |temporary| {
+            assert_eq!(temporary, part);
+            std::fs::write(temporary, b"complete")
+                .map_err(|error| PodcastError::Body(error.to_string()))
+        })
+        .unwrap();
+        assert_eq!(bytes, 8);
+        assert_eq!(std::fs::read(&destination).unwrap(), b"complete");
+        assert!(!part.exists());
+
+        std::fs::remove_file(&destination).unwrap();
+        let result = download_atomically(&destination, |temporary| {
+            std::fs::write(temporary, b"partial").unwrap();
+            Err(PodcastError::Transport("offline".to_owned()))
+        });
+        assert!(matches!(result, Err(PodcastError::Transport(_))));
+        assert!(!destination.exists());
+        assert!(!part.exists());
+    }
+
+    #[test]
+    fn pod_10_youtube_downloads_have_one_shared_opus_extension_policy() {
+        assert_eq!(
+            super::extension_for(
+                super::super::PodcastKind::Youtube,
+                "https://www.youtube.com/watch?v=video"
+            ),
+            "opus"
+        );
+        assert_eq!(
+            super::extension_for(
+                super::super::PodcastKind::Rss,
+                "https://example.test/episode.mp3"
+            ),
+            "mp3"
+        );
+    }
+
+    #[test]
+    fn pod_7_reclaim_ignores_partial_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let destination = download_path(
+            directory.path(),
+            "https://example.test/feed",
+            "stable-guid",
+            "mp3",
+        );
+        prepare_destination(&destination).unwrap();
+        std::fs::write(partial_path(&destination), b"partial").unwrap();
+
+        assert_eq!(
+            reclaim_existing(directory.path(), "https://example.test/feed", "stable-guid").unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn pod_7_completed_file_is_not_persisted_after_episode_removal() {
+        let conn = conn();
+        let show = add_show(&conn);
+        let result = store::upsert_episode(
+            &conn,
+            show,
+            &ParsedEpisode {
+                guid: "race".to_owned(),
+                title: "Race".to_owned(),
+                audio_url: "https://example.test/race.mp3".to_owned(),
+                page_url: None,
+                published_at: None,
+                duration_secs: None,
+            },
+            1,
+        )
+        .unwrap()
+        .unwrap();
+        store::tombstone_episode(&conn, result.episode_id, 2).unwrap();
+
+        assert!(
+            !persist_completed_if_active(&conn, result.episode_id, "/podcasts/race.mp3", 128)
+                .unwrap()
         );
     }
 

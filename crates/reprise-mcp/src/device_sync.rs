@@ -1,9 +1,10 @@
 //! Blocking D-Bus client for the running app's live device-sync surface.
 
 use crate::device_dto::{
-    DeviceSyncChangesDto, DeviceSyncControlsDto, DeviceSyncDeviceDto, DeviceSyncParams,
-    DeviceSyncPlaylistDto, DeviceSyncProgressDto, DeviceSyncSourceParam, DeviceSyncStateDto,
-    DeviceSyncStorageCompositionDto, DeviceSyncStorageDto,
+    DeviceSyncBalanceDto, DeviceSyncCategoryDto, DeviceSyncChangesDto, DeviceSyncControlsDto,
+    DeviceSyncDeviceDto, DeviceSyncParams, DeviceSyncPlaylistDto, DeviceSyncProgressDto,
+    DeviceSyncSourceParam, DeviceSyncStateDto, DeviceSyncStorageCompositionDto,
+    DeviceSyncStorageDto,
 };
 use crate::playback::PlaybackError;
 
@@ -12,8 +13,8 @@ const OBJECT_PATH: &str = "/org/mpris/MediaPlayer2";
 const DEVICE_SYNC_INTERFACE: &str = "org.reprise.DeviceSync1";
 
 use reprise_runtime_protocol::device_sync::{
-    DeviceChangeCounts, DeviceSnapshot, DeviceSourceSelection, DeviceSourceSnapshot,
-    DeviceStorageComposition, DeviceStorageSnapshot,
+    DeviceCategorySnapshot, DeviceChangeCounts, DeviceSnapshot, DeviceSourceSelection,
+    DeviceSourceSnapshot, DeviceStorageComposition, DeviceStorageSnapshot,
 };
 use reprise_runtime_protocol::{ProtocolVersion, PROTOCOL_VERSION};
 
@@ -201,6 +202,80 @@ fn map_device(device: DeviceSnapshot) -> DeviceSyncDeviceDto {
             bytes_per_second: device.progress.bytes_per_second,
         },
         current_track: device.current_track,
+        balance: balance_dto(&device.categories),
+        categories: device.categories.into_iter().map(map_category).collect(),
+    }
+}
+
+/// The three category readings the snapshot carries (`MTP-37`). Since the
+/// wire type is a named dict this is a straight field mapping; the only
+/// decision left is turning `reading_kind` back into the reading itself.
+fn map_category(category: DeviceCategorySnapshot) -> DeviceSyncCategoryDto {
+    DeviceSyncCategoryDto {
+        kind: static_kind_name(&category.kind),
+        target_path: category.target_path,
+        target_enabled: category.target_enabled,
+        size_on_device_bytes: category.size_on_device_bytes,
+        cap_bytes: category.cap_bytes,
+        reading: static_reading_name(&category.reading_kind),
+        files_to_copy: category.files_to_copy,
+        bytes_to_copy: category.bytes_to_copy,
+        files_to_remove: category.files_to_remove,
+        bytes_freed: category.bytes_freed,
+        files_waiting_for_download: category.files_waiting_for_download,
+        playlists_rewritten: category.playlists_rewritten,
+    }
+}
+
+fn static_kind_name(kind: &str) -> &'static str {
+    match kind {
+        "youtube_audio" => "youtube_audio",
+        "podcast_episodes" => "podcast_episodes",
+        _ => "playlists",
+    }
+}
+
+fn static_reading_name(reading: &str) -> &'static str {
+    match reading {
+        "source_off" => "source_off",
+        "unavailable_kept_on_phone" => "unavailable_kept_on_phone",
+        _ => "diff",
+    }
+}
+
+/// `MTP-22`'s aggregate balance, computed here from the same categories the
+/// device page reads rather than sent as a second, separately derived figure
+/// that could disagree with them.
+fn balance_dto(categories: &[DeviceCategorySnapshot]) -> DeviceSyncBalanceDto {
+    let readings = categories.iter().map(decode_reading).collect::<Vec<_>>();
+    let balance = reprise_core::device_sync::aggregate_balance(&readings);
+    DeviceSyncBalanceDto {
+        files_to_copy: balance.files_to_copy as u64,
+        bytes_to_copy: balance.bytes_to_copy,
+        files_to_remove: balance.files_to_remove as u64,
+        bytes_freed: balance.bytes_freed,
+        files_waiting_for_download: balance.files_waiting_for_download as u64,
+        playlists_rewritten: balance.playlists_rewritten as u64,
+        has_work: balance.has_work(),
+    }
+}
+
+/// Rebuilds the three-state reading (`MTP-22`) from the wire's `reading_kind`
+/// plus its counts. The three states stay distinct here — an unevaluated
+/// category must not arrive as a category that evaluated to zero.
+fn decode_reading(category: &DeviceCategorySnapshot) -> reprise_core::device_sync::CategoryReading {
+    use reprise_core::device_sync::{CategoryDiff, CategoryReading};
+    match category.reading_kind.as_str() {
+        "source_off" => CategoryReading::SourceOff,
+        "unavailable_kept_on_phone" => CategoryReading::UnavailableKeptOnPhone,
+        _ => CategoryReading::Diff(CategoryDiff {
+            files_to_copy: category.files_to_copy as usize,
+            bytes_to_copy: category.bytes_to_copy,
+            files_to_remove: category.files_to_remove as usize,
+            bytes_freed: category.bytes_freed,
+            files_waiting_for_download: category.files_waiting_for_download as usize,
+            playlists_rewritten: category.playlists_rewritten as usize,
+        }),
     }
 }
 
@@ -367,6 +442,7 @@ mod tests {
             },
             current_track: "Sun//Eater — Lorna Shore".into(),
             last_synced_at: Some(1_721_234_890),
+            categories: Vec::new(),
         });
 
         assert_eq!(dto.profile, "original");

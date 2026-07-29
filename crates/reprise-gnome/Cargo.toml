@@ -40,6 +40,12 @@ gdk4-x11 = "0.11"
 x11 = { version = "2.21", features = ["xlib"] }
 libadwaita = { version = "0.9.2", features = ["v1_9", "gtk_v4_22"] }
 async-channel = "2.5.0"
+# Not a new dependency footprint: already pulled in transitively (oo7/zbus
+# use it under the hood at the same 2.6 line already in Cargo.lock). Used
+# for `future::or` — a deterministic, always-poll-first-argument-first
+# combinator for racing the podcast worker's priority and ordinary channels
+# without hand-rolled unsafe pinning or a busy-poll loop.
+futures-lite = "2.6"
 gettext-rs = { version = "0.7.7", features = ["gettext-system"] }
 oo7 = { version = "0.6", default-features = false, features = ["async-std", "native_crypto"] }
 serde = { version = "1.0", features = ["derive"] }

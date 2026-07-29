@@ -176,6 +176,7 @@ pub enum BrowserPlace {
     Releases,
     Concerts,
     Podcasts,
+    Youtube,
     Radio,
     Conversions,
 }
@@ -203,6 +204,7 @@ impl BrowserPlace {
             | Self::Releases
             | Self::Concerts
             | Self::Podcasts
+            | Self::Youtube
             | Self::Radio
             | Self::Conversions => None,
         }
@@ -222,6 +224,7 @@ impl BrowserPlace {
             | Self::Releases
             | Self::Concerts
             | Self::Podcasts
+            | Self::Youtube
             | Self::Radio
             | Self::Conversions => None,
         }
@@ -236,6 +239,7 @@ impl BrowserPlace {
             | Self::Releases
             | Self::Concerts
             | Self::Podcasts
+            | Self::Youtube
             | Self::Radio
             | Self::Conversions => None,
         }
@@ -267,6 +271,7 @@ impl BrowserPlace {
             Self::Releases => ViewSource::Releases,
             Self::Concerts => ViewSource::Concerts,
             Self::Podcasts => ViewSource::Podcasts,
+            Self::Youtube => ViewSource::Youtube,
             Self::Radio => ViewSource::Radio,
             Self::Conversions => ViewSource::Conversions,
         }
@@ -297,6 +302,7 @@ impl From<ViewSource> for BrowserPlace {
             ViewSource::Releases => return Self::Releases,
             ViewSource::Concerts => return Self::Concerts,
             ViewSource::Podcasts => return Self::Podcasts,
+            ViewSource::Youtube => return Self::Youtube,
             ViewSource::Radio => return Self::Radio,
             ViewSource::Conversions => return Self::Conversions,
         };
@@ -375,6 +381,7 @@ mod tests {
             ViewSource::Genre("Metalcore".into()),
             ViewSource::MyStats,
             ViewSource::Podcasts,
+            ViewSource::Youtube,
             ViewSource::Radio,
         ];
 

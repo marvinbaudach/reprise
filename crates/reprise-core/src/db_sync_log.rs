@@ -31,13 +31,17 @@ CREATE TABLE IF NOT EXISTS sync_events (
 );
 CREATE INDEX IF NOT EXISTS idx_sync_events_run ON sync_events(run_id);";
 
-pub(crate) fn migrate_v40(conn: &Connection) -> Result<(), rusqlite::Error> {
+/// Renumbered from v40 when this branch merged `dev`: both lines had appended a
+/// v40 migration, this one for the sync log and `db_podcasts_radio`'s for the
+/// podcast and radio tables. There are no installations to migrate (see
+/// AGENTS.md), so the sync log simply moves to the end of the chain.
+pub(crate) fn migrate_v45(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version >= 40 {
+    if version >= 45 {
         return Ok(());
     }
     let transaction = conn.unchecked_transaction()?;
     transaction.execute_batch(CREATE_SYNC_LOG)?;
-    transaction.pragma_update(None, "user_version", 40)?;
+    transaction.pragma_update(None, "user_version", 45)?;
     transaction.commit()
 }
