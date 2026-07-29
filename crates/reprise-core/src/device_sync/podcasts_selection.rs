@@ -24,13 +24,16 @@ use crate::device_sync::selection::EpisodeSelectionCandidate;
 /// is set: without that gate, enabling an old show for a device would flood
 /// [`crate::device_sync::selection::EpisodeSelectionResult::waiting`] with
 /// its entire undownloaded backlog the instant the subscription is
-/// selected. This gate
-/// applies uniformly to RSS and YouTube — YouTube's own "latest N per
-/// channel, independent of download state" cap (design 6b) has no
-/// persisted value yet (see the `MTP-36` `[geplant]` draft in
-/// `docs/ux-rules.md`), so until that lands, the caller runs
-/// `select_episodes` with an unbounded `latest`, which makes this same gate
-/// the only thing keeping YouTube's `waiting` set finite too.
+/// selected. This gate applies uniformly to RSS and YouTube. YouTube's own
+/// "latest N per channel, independent of download state" cap (design 6b,
+/// `MTP-36`) then bounds each channel's `ready`/`waiting` total once the
+/// caller resolves the channel's persisted value
+/// (`crate::podcasts::config::PodcastConfig::latest_per_channel_default`,
+/// `crate::podcasts::store::latest_per_channel_overrides`,
+/// `crate::device_sync::resolve_latest_per_channel`) — this
+/// `wanted_on_device` gate is still what keeps an *unwanted* missing
+/// episode out of the candidate set in the first place, so `MTP-36`'s cap
+/// has a finite backlog to work with rather than an unbounded one.
 pub fn query_selection_candidates_for_device(
     conn: &Connection,
     device_id: &str,

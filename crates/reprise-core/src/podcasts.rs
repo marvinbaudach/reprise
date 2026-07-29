@@ -49,6 +49,11 @@ pub struct SubscriptionRow {
     pub last_outcome: Option<String>,
     pub auto_download: bool,
     pub sync_to_phone: bool,
+    /// `MTP-36`: this channel's override of the global "latest N per
+    /// channel" default, or `None` to use the default
+    /// (`podcasts::config::PodcastConfig::latest_per_channel_default`). An
+    /// explicit `Some(0)` means unlimited, not "no override".
+    pub latest_per_channel: Option<i64>,
     pub added_at: i64,
     pub removed_at: Option<i64>,
 }

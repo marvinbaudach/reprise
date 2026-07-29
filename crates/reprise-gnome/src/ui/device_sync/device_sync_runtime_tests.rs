@@ -217,6 +217,91 @@ fn pod_12_planned_sync_copies_selected_rss_and_youtube_each_to_its_own_target() 
     });
 }
 
+/// `MTP-36`: three settings have shipped on this branch that rendered and
+/// persisted but were never read by any code path — the global default and
+/// the per-channel override must not join that list. This drives the real
+/// runtime (`recompute_delta` → `sync_now`) through the DB-backed config
+/// default and `podcasts::store::set_latest_per_channel`, and asserts what
+/// actually reaches the fake device, never a round-trip through storage
+/// alone.
+#[test]
+fn mtp_36_the_persisted_latest_per_channel_actually_bounds_what_syncs() {
+    run(async {
+        let (downloads, conn) = fixture();
+        conn.borrow()
+            .execute_batch(
+                "INSERT INTO podcast_subscriptions
+                 (id, kind, feed_url, title, auto_download, sync_to_phone, added_at)
+                 VALUES (10, 'youtube', 'https://example.test/channel', 'Channel', 0, 1, 1);
+                 INSERT INTO podcast_subscription_devices (subscription_id, device_id)
+                 VALUES (10, 'a');",
+            )
+            .unwrap();
+        // Eight episodes on one channel — the design's own "8 episodes,
+        // default 5" example. `downloaded_bytes` must match the file's
+        // actual size exactly, or `query_candidates_for_device` silently
+        // drops the episode as a stale/mismatched download.
+        for n in 1..=8i64 {
+            let path = downloads.path().join(format!("video-{n}.mp3"));
+            let content = format!("video-{n}");
+            std::fs::write(&path, content.as_bytes()).unwrap();
+            conn.borrow()
+                .execute(
+                    "INSERT INTO podcast_episodes
+                     (id, subscription_id, guid, title, audio_url, downloaded_path,
+                      downloaded_bytes, published_at, first_seen_at)
+                     VALUES (?1, 10, ?2, ?3, 'https://example.test/video.webm', ?4, ?5, ?1, 1)",
+                    rusqlite::params![
+                        100 + n,
+                        format!("yt-{n}"),
+                        format!("Video {n}"),
+                        path.to_string_lossy().as_ref(),
+                        content.len() as i64
+                    ],
+                )
+                .unwrap();
+        }
+        disable_auto_start(&conn, "a");
+
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        settle().await;
+
+        runtime.sync_now("a").unwrap();
+        settle().await;
+        assert_eq!(
+            backend.state.managed_copies.borrow().len(),
+            5,
+            "the global default of 5 must actually bound what gets copied to the device"
+        );
+
+        reprise_core::podcasts::store::set_latest_per_channel(&conn.borrow(), 10, Some(2)).unwrap();
+        backend.state.managed_copies.borrow_mut().clear();
+        runtime.recompute_delta("a").unwrap();
+        settle().await;
+        runtime.sync_now("a").unwrap();
+        settle().await;
+        assert_eq!(
+            backend.state.managed_copies.borrow().len(),
+            2,
+            "a channel override of 2 must change what actually syncs — it beats the global default"
+        );
+
+        reprise_core::podcasts::store::set_latest_per_channel(&conn.borrow(), 10, Some(0)).unwrap();
+        backend.state.managed_copies.borrow_mut().clear();
+        runtime.recompute_delta("a").unwrap();
+        settle().await;
+        runtime.sync_now("a").unwrap();
+        settle().await;
+        assert_eq!(
+            backend.state.managed_copies.borrow().len(),
+            8,
+            "an override of 0 must sync every episode — 0 means unlimited, not empty, \
+             and getting this wrong would silently stop syncing the channel"
+        );
+    });
+}
+
 #[test]
 fn mtp_31_folder_browser_lists_storages_browses_folders_and_creates_a_new_one() {
     run(async {

@@ -40,13 +40,24 @@
 //! what actually gates a podcast/YouTube episode reaching a device (`MTP-41`).
 //! What remains unbuilt is design 6b's per-channel toggle *UI*: the
 //! [`YoutubeChannelToggle`]/[`summarize_youtube_selection`] pair stays plain
-//! input data with no persisted backing or GTK surface yet, and YouTube's
-//! own "latest N per channel" cap has no persisted value either — the live
-//! pipeline calls [`select_episodes`] with an unbounded `latest` until that
-//! lands (`MTP-36`, `[geplant]`). `podcasts::phone_sync` (`POD-12`) already
-//! decides which shows/channels are enabled for a device; that join is this
-//! module's source for `EpisodeSelectionRule`'s `enabled_shows`/
-//! `enabled_channels`, not a second selection surface layered on top.
+//! input data with no persisted backing or GTK surface yet.
+//! `podcasts::phone_sync` (`POD-12`) already decides which shows/channels
+//! are enabled for a device; that join is this module's source for
+//! [`EpisodeSelectionRule::UnplayedDownloadsOnly`]'s `enabled_shows` and
+//! [`EpisodeSelectionRule::LatestPerChannel`]'s `channel_latest` keys, not a
+//! second selection surface layered on top.
+//!
+//! ## Per-channel N (`MTP-36`)
+//!
+//! [`EpisodeSelectionRule::LatestPerChannel`] carries one resolved `latest`
+//! value per enabled channel rather than a single value for all of them, so
+//! design 6b's future per-channel override and the global default
+//! (`podcasts::config::PodcastConfig::latest_per_channel_default`) can
+//! coexist: the caller resolves each channel's effective value with
+//! [`resolve_latest_per_channel`] before building the rule, this module
+//! never reads either setting itself. A resolved value of `0` means
+//! unlimited, exactly like the size cap has meant since `MTP-38`
+//! (`SyncTarget::cap_bytes` is an `Option`) — never empty.
 
 use std::collections::{HashMap, HashSet};
 
@@ -139,19 +150,41 @@ pub struct EpisodeSelectionCandidate {
 
 /// E2's per-category selection rule — what makes an episode "wanted" for a
 /// device. The two shapes match the design's own summaries: YouTube caps
-/// each enabled channel to its `latest` newest episodes regardless of
-/// played state (there is no "played" concept for a YouTube audio track);
-/// podcasts want every unplayed, already-downloaded episode from an enabled
-/// show, uncapped.
+/// each enabled channel to its own `latest` newest episodes regardless of
+/// played state (there is no "played" concept for a YouTube audio track) —
+/// a channel absent from `channel_latest` is not enabled at all; podcasts
+/// want every unplayed, already-downloaded episode from an enabled show,
+/// uncapped.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EpisodeSelectionRule {
     LatestPerChannel {
-        enabled_channels: HashSet<i64>,
-        latest: usize,
+        /// Every enabled channel's resolved cap (`MTP-36`), keyed by
+        /// `group_id`. `0` means unlimited — the caller must already have
+        /// resolved a channel's persisted override against the global
+        /// default via [`resolve_latest_per_channel`]; this rule does not
+        /// distinguish "no override" from "explicitly unlimited" itself.
+        channel_latest: HashMap<i64, usize>,
     },
     UnplayedDownloadsOnly {
         enabled_shows: HashSet<i64>,
     },
+}
+
+/// `MTP-36`: resolves one channel's effective "latest N" against the global
+/// default (`podcasts::config::PodcastConfig::latest_per_channel_default`).
+/// `None` (no persisted override for this channel) falls back to the
+/// default; an explicit override — including `0` — always wins, because the
+/// owner decision of 2026-07-29 makes `0` mean unlimited rather than "unset"
+/// for every numeric sync setting (the size cap has modelled it that way
+/// since `MTP-38`). Pure and DB-free like the rest of this module: the
+/// caller reads the default and the override, this function only decides
+/// which one applies.
+#[must_use]
+pub fn resolve_latest_per_channel(default_latest: usize, channel_override: Option<i64>) -> usize {
+    match channel_override {
+        Some(value) => usize::try_from(value).unwrap_or(0),
+        None => default_latest,
+    }
 }
 
 /// The intended episode set for a category (`MTP-41`): wanted episodes that
@@ -181,10 +214,9 @@ pub fn select_episodes(
     rule: &EpisodeSelectionRule,
 ) -> EpisodeSelectionResult {
     let wanted_ids = match rule {
-        EpisodeSelectionRule::LatestPerChannel {
-            enabled_channels,
-            latest,
-        } => latest_per_channel(candidates, enabled_channels, *latest),
+        EpisodeSelectionRule::LatestPerChannel { channel_latest } => {
+            latest_per_channel(candidates, channel_latest)
+        }
         EpisodeSelectionRule::UnplayedDownloadsOnly { enabled_shows } => candidates
             .iter()
             .filter(|candidate| enabled_shows.contains(&candidate.group_id) && !candidate.played)
@@ -208,13 +240,12 @@ pub fn select_episodes(
 
 fn latest_per_channel(
     candidates: &[EpisodeSelectionCandidate],
-    enabled_channels: &HashSet<i64>,
-    latest: usize,
+    channel_latest: &HashMap<i64, usize>,
 ) -> Vec<i64> {
     let mut by_channel: HashMap<i64, Vec<&EpisodeSelectionCandidate>> = HashMap::new();
     for candidate in candidates
         .iter()
-        .filter(|candidate| enabled_channels.contains(&candidate.group_id))
+        .filter(|candidate| channel_latest.contains_key(&candidate.group_id))
     {
         by_channel
             .entry(candidate.group_id)
@@ -233,7 +264,16 @@ fn latest_per_channel(
                 .cmp(&left.published_at)
                 .then_with(|| right.episode_id.cmp(&left.episode_id))
         });
-        wanted.extend(episodes.into_iter().take(latest).map(|c| c.episode_id));
+        // `MTP-36`: 0 means unlimited (like `SyncTarget::cap_bytes` since
+        // `MTP-38`), never empty — `take(0)` would silently drop the whole
+        // channel, which is exactly the "0 stops syncing" bug this rule
+        // must not have.
+        let latest = channel_latest.get(&channel_id).copied().unwrap_or(0);
+        if latest == 0 {
+            wanted.extend(episodes.into_iter().map(|c| c.episode_id));
+        } else {
+            wanted.extend(episodes.into_iter().take(latest).map(|c| c.episode_id));
+        }
     }
     wanted
 }
@@ -339,8 +379,7 @@ mod tests {
             candidate(4, 20, 400, false, LocalAvailability::Available),
         ];
         let rule = EpisodeSelectionRule::LatestPerChannel {
-            enabled_channels: HashSet::from([10]),
-            latest: 2,
+            channel_latest: HashMap::from([(10, 2)]),
         };
 
         let result = select_episodes(&candidates, &rule);
@@ -383,8 +422,7 @@ mod tests {
             candidate(2, 10, 200, false, LocalAvailability::Missing),
         ];
         let rule = EpisodeSelectionRule::LatestPerChannel {
-            enabled_channels: HashSet::from([10]),
-            latest: 5,
+            channel_latest: HashMap::from([(10, 5)]),
         };
 
         let result = select_episodes(&candidates, &rule);
@@ -396,5 +434,77 @@ mod tests {
             "missing a local file keeps it out of ready, not out of the result"
         );
         assert_eq!(result.wanted_count(), 2);
+    }
+
+    // `MTP-36`: the global default (5) overridable per channel, and 0
+    // meaning unlimited — three settings have shipped on this branch that
+    // rendered and persisted but were never read by any code path, so each
+    // of these asserts the actual `select_episodes` outcome, never a
+    // database round-trip.
+
+    #[test]
+    fn mtp_36_the_resolved_latest_value_bounds_a_channels_selection() {
+        // 8 episodes on one channel — the design's own example.
+        let candidates = (1..=8)
+            .map(|n| candidate(n, 10, n * 100, false, LocalAvailability::Available))
+            .collect::<Vec<_>>();
+
+        let global_default_rule = EpisodeSelectionRule::LatestPerChannel {
+            channel_latest: HashMap::from([(10, 5)]),
+        };
+        let result = select_episodes(&candidates, &global_default_rule);
+        assert_eq!(
+            result.ready.len(),
+            5,
+            "the global default of 5 must actually bound the channel's selection"
+        );
+
+        let overridden_rule = EpisodeSelectionRule::LatestPerChannel {
+            channel_latest: HashMap::from([(10, 2)]),
+        };
+        let result = select_episodes(&candidates, &overridden_rule);
+        assert_eq!(
+            result.ready.len(),
+            2,
+            "a channel override of 2 must change the selection, not just round-trip through storage"
+        );
+    }
+
+    #[test]
+    fn mtp_36_a_channel_latest_of_zero_means_unlimited_not_empty() {
+        let candidates = (1..=8)
+            .map(|n| candidate(n, 10, n * 100, false, LocalAvailability::Available))
+            .collect::<Vec<_>>();
+        let rule = EpisodeSelectionRule::LatestPerChannel {
+            channel_latest: HashMap::from([(10, 0)]),
+        };
+
+        let result = select_episodes(&candidates, &rule);
+
+        assert_eq!(
+            result.ready.len(),
+            8,
+            "0 must mean unlimited, exactly like the size cap since MTP-38 — \
+             getting this wrong would silently stop syncing the channel"
+        );
+    }
+
+    #[test]
+    fn mtp_36_resolve_latest_per_channel_prefers_the_channel_override_over_the_global_default() {
+        assert_eq!(
+            resolve_latest_per_channel(5, None),
+            5,
+            "no persisted override falls back to the global default"
+        );
+        assert_eq!(
+            resolve_latest_per_channel(5, Some(2)),
+            2,
+            "an explicit channel override beats the global default"
+        );
+        assert_eq!(
+            resolve_latest_per_channel(5, Some(0)),
+            0,
+            "an explicit override of 0 is unlimited, not the default and not empty"
+        );
     }
 }
