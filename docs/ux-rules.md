@@ -623,20 +623,25 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   schließen. Ein verweigertes Speichern darf nie wie ein erfolgreiches
   aussehen; die gewählte Auswahl bleibt sichtbar, damit nichts
   stillschweigend verworfen wird.
-- **MTP-36** [geplant] [core] — <!-- REVIEW: Regelvorschlag -->
-  `MTP-21`s YouTube-Regel „neueste N Episoden je aktiviertem Kanal,
-  unabhängig vom Downloadzustand" nennt N, klärt aber nicht, wo dieser Wert
-  konfiguriert und gespeichert wird — Design 6b's Kanal-Toggle-Oberfläche
-  ist noch nicht gebaut (`selection.rs`s Moduldoc). Bis diese Regel
-  entschieden ist, behandelt die Live-Pipeline
-  (`device_sync_compact::recompute_delta_silent`, E2/`MTP-21`-Verdrahtung)
-  N als unbegrenzt (`EpisodeSelectionRule::LatestPerChannel { latest:
-  usize::MAX, .. }`) — das entspricht dem bisherigen, nicht nach Episodenzahl
-  gedeckelten Kopierverhalten und begrenzt die Sollmenge stattdessen nur über
-  `MTP-21`s Kandidatengrenze (heruntergeladene Episoden plus per
-  `wanted_on_device`, `MTP-20`, explizit gewollte fehlende). Offen: wo N je
-  Kanal persistiert wird (pro Gerät? pro Kanal, geräteübergreifend?), welchen
-  Default es bekommt, und wie 6b's Oberfläche es setzt.
+- **MTP-36** [geplant] [core] — `MTP-21`s YouTube-Regel „neueste N Episoden je
+  aktiviertem Kanal, unabhängig vom Downloadzustand" nennt N; hier steht, wo
+  dieser Wert lebt. **Entschieden am 2026-07-29:** eine globale Vorgabe
+  (Standard **5**), je Kanal überschreibbar — dieselbe Form wie `O-5` bei
+  „Keep N downloaded", damit beide Mengengrenzen ein einziges Denkmodell
+  teilen statt zweier verschiedener. N ist **geräteunabhängig**: seit `E-5`
+  gibt es genau ein Gerät, eine Speicherung pro Gerät wäre Aufwand ohne
+  Bedeutung. Ein Kanalwert von 0 heißt „nichts von diesem Kanal", nicht
+  „unbegrenzt" — Unbegrenztheit ist kein wählbarer Zustand, sonst kann eine
+  einzelne Zahl das Gerät stillschweigend füllen.
+
+  Bis 6b's Kanal-Oberfläche diesen Wert setzt, behandelt die Live-Pipeline
+  (`device_sync_compact::recompute_delta_silent`) N als unbegrenzt
+  (`EpisodeSelectionRule::LatestPerChannel { latest: usize::MAX, .. }`). Das
+  ist bewusst das bisherige Verhalten und keine stille Änderung; die Sollmenge
+  wird derweil allein über `MTP-21`s Kandidatengrenze begrenzt
+  (heruntergeladene Episoden plus die per `wanted_on_device`, `MTP-20`,
+  ausdrücklich gewollten fehlenden). Diese Regel wird `[aktiv]`, sobald die
+  Persistenz und die Oberfläche stehen — nicht vorher.
 
 ## F. Einstellungen & Modale
 
