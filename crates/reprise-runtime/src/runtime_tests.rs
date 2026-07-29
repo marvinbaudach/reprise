@@ -718,5 +718,8 @@ mod gapless;
 #[path = "runtime_effects_tests.rs"]
 mod effects;
 
+#[path = "runtime_spectrum_tests.rs"]
+mod spectrum;
+
 #[path = "runtime_restore_tests.rs"]
 mod restore;

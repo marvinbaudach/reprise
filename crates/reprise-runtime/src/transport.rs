@@ -422,9 +422,9 @@ impl Transport {
                     track.title.clone_from(title);
                 }
             }
-            // A visualizer frame arrives ~60×/s and is a rendering concern of
-            // whichever surface draws it, not runtime state. Publishing it as
-            // an event would flood every client's mailbox.
+            // Handled by the runtime rather than here: a frame is not
+            // transport state, has no place in a snapshot, and must never
+            // reach a mailbox — see `Clients::offer_spectrum`.
             PlayerEvent::Spectrum(_) => {}
             PlayerEvent::Error(message) => {
                 tracing::warn!(%message, "playback backend reported an error");
