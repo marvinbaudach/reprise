@@ -70,9 +70,9 @@ pub use profile::{
     TransferAction, TransferProfile, UnsupportedMp3Quality,
 };
 pub use selection::{
-    select_episodes, summarize_playlist_selection, summarize_youtube_selection,
-    EpisodeSelectionCandidate, EpisodeSelectionResult, EpisodeSelectionRule,
-    PlaylistSelectionSummary, PodcastSelectionSummary, YoutubeChannelToggle,
+    resolve_latest_per_channel, select_episodes, summarize_playlist_selection,
+    summarize_youtube_selection, EpisodeSelectionCandidate, EpisodeSelectionResult,
+    EpisodeSelectionRule, PlaylistSelectionSummary, PodcastSelectionSummary, YoutubeChannelToggle,
     YoutubeSelectionSummary,
 };
 pub use settings::{

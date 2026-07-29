@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use reprise_core::connectivity::Connectivity;
 use reprise_core::device_sync::podcasts::{
@@ -12,9 +12,9 @@ use reprise_core::device_sync::settings::{
 use reprise_core::device_sync::targets::{load_target, save_target};
 use reprise_core::device_sync::{
     load_mirror_playlist_snapshots, load_or_create_targets, plan_preparation, project_storage,
-    project_sync_page, select_episodes, DeviceSelection, EpisodeSelectionCandidate,
-    EpisodeSelectionResult, EpisodeSelectionRule, PreparationFacts, SelectionSource, SyncPageInput,
-    SyncTarget, SyncTargetKind, TransferProfile,
+    project_sync_page, resolve_latest_per_channel, select_episodes, DeviceSelection,
+    EpisodeSelectionCandidate, EpisodeSelectionResult, EpisodeSelectionRule, PreparationFacts,
+    SelectionSource, SyncPageInput, SyncTarget, SyncTargetKind, TransferProfile,
 };
 
 use super::*;
@@ -299,7 +299,29 @@ impl DeviceSyncRuntime {
             // letting them vanish from the balance (`MTP-40`).
             let selection_candidates = query_selection_candidates_for_device(&conn, device_id)
                 .map_err(|error| error.to_string())?;
-            let (rss_selection, youtube_selection) = plan_episode_selection(&selection_candidates);
+            // `MTP-36`: the global default plus every enabled YouTube
+            // channel's persisted override — resolved here (the only place
+            // with DB access) and handed to `plan_episode_selection` as
+            // plain data, keeping that function pure and unit-testable.
+            let default_latest_per_channel = reprise_core::podcasts::config::load(&conn)
+                .map_err(|error| error.to_string())?
+                .latest_per_channel_default;
+            let youtube_channel_ids = selection_candidates
+                .iter()
+                .filter(|(source, _)| *source == PodcastSyncSource::Youtube)
+                .map(|(_, candidate)| candidate.group_id)
+                .collect::<Vec<_>>();
+            let latest_per_channel_overrides =
+                reprise_core::podcasts::store::latest_per_channel_overrides(
+                    &conn,
+                    &youtube_channel_ids,
+                )
+                .map_err(|error| error.to_string())?;
+            let (rss_selection, youtube_selection) = plan_episode_selection(
+                &selection_candidates,
+                default_latest_per_channel,
+                &latest_per_channel_overrides,
+            );
             let ready_ids = rss_selection
                 .ready
                 .iter()
@@ -347,9 +369,13 @@ impl DeviceSyncRuntime {
             let youtube_selection_summary = reprise_core::device_sync::YoutubeSelectionSummary {
                 channels_selected: youtube_selected,
                 channels_total: youtube_total,
-                // `MTP-36` (`[geplant]`): no persisted per-channel cap yet,
-                // same interim value `plan_episode_selection` already uses.
-                latest_per_channel: usize::MAX,
+                // `MTP-36`: the global default — channels may individually
+                // override it (`latest_per_channel_overrides` above), but
+                // this one-line summary has room for a single number, so it
+                // reports the default that applies absent an override, the
+                // same simplification `MTP-37`'s cap row already makes for
+                // per-target settings.
+                latest_per_channel: default_latest_per_channel,
             };
             let podcast_selection_summary = reprise_core::device_sync::PodcastSelectionSummary {
                 shows_selected: podcast_selected,
@@ -481,22 +507,26 @@ fn as_podcast_device_files(files: &[ManagedDeviceFile]) -> Vec<PodcastDeviceFile
         .collect()
 }
 
-/// `MTP-41`: runs each `PodcastSyncSource`'s own selection rule
+/// `MTP-41`/`MTP-36`: runs each `PodcastSyncSource`'s own selection rule
 /// (`UnplayedDownloadsOnly` for RSS, `LatestPerChannel` for YouTube) over
 /// `query_selection_candidates_for_device`'s combined candidate list, one
-/// rule per source. `enabled_shows`/`enabled_channels` are simply every
+/// rule per source. `enabled_shows`/YouTube's channel set are simply every
 /// distinct `group_id` present in that source's candidates — the DB query
 /// already scoped candidates to shows/channels selected for this device
 /// (`podcast_subscription_devices`, `POD-12`), so nothing here re-derives
 /// that scoping.
 ///
-/// YouTube's `latest` is `usize::MAX`: design 6b's per-channel episode cap
-/// has no persisted value yet (`MTP-36`, `[geplant]`), so until that lands
-/// this only narrows YouTube's wanted set by enabled-channel membership and
-/// local availability — the same, already-uncapped-by-count behaviour the
-/// live pipeline had before this change.
+/// Each enabled YouTube channel's cap is resolved from `default_latest`
+/// (the global "latest N per channel" setting) and `latest_overrides`
+/// (persisted per-channel overrides, keyed by subscription id) via
+/// [`resolve_latest_per_channel`] — a missing entry in `latest_overrides`
+/// falls back to `default_latest`, and `0` means unlimited. Both inputs are
+/// plain data the caller already read from the DB, so this function itself
+/// stays pure and DB-free like the rest of `selection`.
 fn plan_episode_selection(
     candidates: &[(PodcastSyncSource, EpisodeSelectionCandidate)],
+    default_latest: usize,
+    latest_overrides: &HashMap<i64, i64>,
 ) -> (EpisodeSelectionResult, EpisodeSelectionResult) {
     let by_source = |source: PodcastSyncSource| {
         candidates
@@ -508,19 +538,29 @@ fn plan_episode_selection(
     let rss = by_source(PodcastSyncSource::Rss);
     let youtube = by_source(PodcastSyncSource::Youtube);
     let rss_shows = rss.iter().map(|candidate| candidate.group_id).collect();
-    let youtube_channels = youtube.iter().map(|candidate| candidate.group_id).collect();
+    let youtube_channels = youtube
+        .iter()
+        .map(|candidate| candidate.group_id)
+        .collect::<HashSet<_>>();
     let rss_result = select_episodes(
         &rss,
         &EpisodeSelectionRule::UnplayedDownloadsOnly {
             enabled_shows: rss_shows,
         },
     );
+    let channel_latest = youtube_channels
+        .into_iter()
+        .map(|channel_id| {
+            let resolved = resolve_latest_per_channel(
+                default_latest,
+                latest_overrides.get(&channel_id).copied(),
+            );
+            (channel_id, resolved)
+        })
+        .collect();
     let youtube_result = select_episodes(
         &youtube,
-        &EpisodeSelectionRule::LatestPerChannel {
-            enabled_channels: youtube_channels,
-            latest: usize::MAX,
-        },
+        &EpisodeSelectionRule::LatestPerChannel { channel_latest },
     );
     (rss_result, youtube_result)
 }

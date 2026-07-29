@@ -560,10 +560,13 @@ fn selection_summary_text(
             )
         }
         SyncTargetKind::YoutubeAudio => {
-            // `MTP-36` ([geplant]): no persisted per-channel episode cap
-            // yet, so `latest_per_channel` arrives as `usize::MAX` until
-            // that rule lands — omit the "latest K each" clause rather
-            // than claim a number nothing enforces.
+            // `MTP-36`: the live pipeline now always resolves a real
+            // `latest_per_channel` (the global default or a channel's own
+            // override) before this is ever rendered, so `usize::MAX` no
+            // longer arrives from `recompute_delta_silent`. The sentinel
+            // check stays so a test or an as-yet-unrecomputed view still
+            // omits the "latest K each" clause instead of claiming a
+            // number nothing enforces.
             if youtube_selection.latest_per_channel == usize::MAX {
                 format!(
                     "{} of {} channels selected",

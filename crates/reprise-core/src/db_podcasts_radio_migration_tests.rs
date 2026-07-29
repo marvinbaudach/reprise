@@ -208,6 +208,50 @@ fn v41_adds_stable_per_device_podcast_selections() {
 }
 
 #[test]
+fn v47_adds_a_nullable_per_channel_latest_override_defaulting_to_no_override() {
+    let conn = db::open(None).unwrap();
+    db::migrate(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO podcast_subscriptions
+         (id, kind, feed_url, title, added_at)
+         VALUES (1, 'youtube', 'https://example.test/channel', 'Channel', 1)",
+        [],
+    )
+    .unwrap();
+
+    let latest_per_channel = conn
+        .query_row(
+            "SELECT latest_per_channel FROM podcast_subscriptions WHERE id = 1",
+            [],
+            |row| row.get::<_, Option<i64>>(0),
+        )
+        .unwrap();
+
+    assert_eq!(
+        latest_per_channel, None,
+        "a fresh subscription has no override — it falls back to the global default"
+    );
+
+    conn.execute(
+        "UPDATE podcast_subscriptions SET latest_per_channel = 0 WHERE id = 1",
+        [],
+    )
+    .unwrap();
+    let unlimited = conn
+        .query_row(
+            "SELECT latest_per_channel FROM podcast_subscriptions WHERE id = 1",
+            [],
+            |row| row.get::<_, Option<i64>>(0),
+        )
+        .unwrap();
+    assert_eq!(
+        unlimited,
+        Some(0),
+        "an explicit 0 must round-trip as 0 (unlimited), not collapse back to NULL (no override)"
+    );
+}
+
+#[test]
 fn migration_is_idempotent() {
     let conn = db::open(None).unwrap();
     db::migrate(&conn).unwrap();
@@ -218,6 +262,7 @@ fn migration_is_idempotent() {
     migrate_v34(&conn).unwrap();
     migrate_v40(&conn).unwrap();
     migrate_v41(&conn).unwrap();
+    migrate_v47(&conn).unwrap();
 
     assert_eq!(object_schema(&conn, "podcast_episodes"), before);
 }

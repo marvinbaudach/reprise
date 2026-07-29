@@ -70,6 +70,7 @@ pub(in crate::ui) fn build(conn: &Rc<RefCell<Connection>>, enabled: bool) -> You
         youtube_hide_shorts_default: true,
         ytdlp_path: None,
         refresh_hours: config::DEFAULT_REFRESH_HOURS,
+        latest_per_channel_default: config::DEFAULT_LATEST_PER_CHANNEL,
     });
 
     let episode_count = adw::SpinRow::with_range(3.0, 50.0, 1.0);

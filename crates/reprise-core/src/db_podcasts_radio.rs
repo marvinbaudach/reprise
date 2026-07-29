@@ -203,6 +203,29 @@ pub(crate) fn migrate_v43(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.commit()
 }
 
+// `MTP-36`: a channel's persisted override of the global "latest N per
+// channel" default (`podcasts::config::LATEST_PER_CHANNEL_DEFAULT_KEY`).
+// `NULL` means "no override, use the global default" — it cannot double as
+// the sentinel for "unlimited" because the owner decision of 2026-07-29
+// (`E-9`) makes the number `0` mean unlimited for every numeric sync
+// setting, so an explicit `0` must round-trip as `0`, not as "unset".
+pub(crate) fn migrate_v47(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    let has_latest_per_channel = has_column(conn, "podcast_subscriptions", "latest_per_channel")?;
+    if version >= 47 && has_latest_per_channel {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    if !has_latest_per_channel {
+        transaction.execute(
+            "ALTER TABLE podcast_subscriptions ADD COLUMN latest_per_channel INTEGER",
+            [],
+        )?;
+    }
+    transaction.pragma_update(None, "user_version", version.max(47))?;
+    transaction.commit()
+}
+
 fn has_column(conn: &Connection, table: &str, expected: &str) -> Result<bool, rusqlite::Error> {
     let mut statement = conn.prepare(&format!("PRAGMA table_info({table})"))?;
     let columns = statement
