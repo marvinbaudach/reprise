@@ -101,6 +101,16 @@ pub struct Runtime {
     clients: Clients,
     transport: Transport,
     devices: DeviceRuns,
+    /// How many times the queue facet has observably changed.
+    ///
+    /// Kept here rather than in `Transport` on purpose: it has to count what
+    /// a *client* saw, and the only place that knows a change was worth
+    /// publishing is the diff below. Counting edits inside the transport
+    /// would miss a track ending — which renumbers every context position,
+    /// because the window starts at the cursor — and that is precisely the
+    /// moment a stale position would slip through, since the user was not
+    /// touching anything.
+    queue_revision: u64,
 }
 
 impl Runtime {
@@ -113,6 +123,7 @@ impl Runtime {
             clients: Clients::new(),
             transport: Transport::new(),
             devices: DeviceRuns::new(),
+            queue_revision: 0,
         }
     }
 
@@ -146,7 +157,7 @@ impl Runtime {
             protocol: PROTOCOL_VERSION,
             sequence: self.clients.sequence(),
             playback: self.transport.playback_snapshot(),
-            queue: self.transport.queue_snapshot(),
+            queue: self.stamped_queue(self.transport.queue_snapshot()),
             device_runs: self.devices.snapshots(),
             jobs: jobs::snapshots(&self.conn)?,
         })
@@ -187,6 +198,15 @@ impl Runtime {
                 result
             }
             Command::Queue(queue) => {
+                // Before anything is applied: a position read from a queue
+                // that has moved names a different row than the user did.
+                // In range is not the same as still correct, so a bounds
+                // check cannot stand in for this.
+                if let Some(expected) = queue.expected_revision() {
+                    if expected != self.queue_revision {
+                        return Err(RuntimeError::Rejected(crate::error::Rejected::StaleQueue));
+                    }
+                }
                 let before = self.transport_facets();
                 let result = self.transport.queue_command(
                     &*self.ports.playback,
@@ -300,6 +320,15 @@ impl Runtime {
             && !jobs::is_active(&self.conn)?)
     }
 
+    /// Puts the current revision on a snapshot the transport built without
+    /// one. Every queue snapshot that leaves the runtime goes through here.
+    fn stamped_queue(&self, queue: QueueSnapshot) -> QueueSnapshot {
+        QueueSnapshot {
+            revision: self.queue_revision,
+            ..queue
+        }
+    }
+
     fn transport_facets(&self) -> (PlaybackSnapshot, QueueSnapshot) {
         (
             self.transport.playback_snapshot(),
@@ -326,6 +355,11 @@ impl Runtime {
         }
         let queue = self.transport.queue_snapshot();
         if queue != queue_before {
+            // The revision counts exactly this: a change worth telling a
+            // client about. Both sides of the comparison are unstamped, so
+            // the count itself cannot make the queue look changed.
+            self.queue_revision += 1;
+            let queue = self.stamped_queue(queue);
             self.clients
                 .publish(initiator, RuntimeEvent::QueueChanged(queue));
         }

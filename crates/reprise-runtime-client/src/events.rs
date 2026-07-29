@@ -50,19 +50,39 @@ impl RuntimeCommand {
             Self::Queue(QueueCommand::AddNext(ids)) => ("QueueAddNext", Body::Ids(ids.clone())),
             Self::Queue(QueueCommand::AddLast(ids)) => ("QueueAddLast", Body::Ids(ids.clone())),
             Self::Queue(QueueCommand::Clear) => ("QueueClear", Body::None),
-            Self::Queue(QueueCommand::Move { from, to }) => ("QueueMove", Body::Move(*from, *to)),
-            Self::Queue(QueueCommand::RemoveAt(positions)) => {
-                ("QueueRemoveAt", Body::Positions(positions.clone()))
-            }
-            Self::Queue(QueueCommand::RemoveContextAt(positions)) => {
-                ("QueueRemoveContextAt", Body::Positions(positions.clone()))
-            }
-            Self::Queue(QueueCommand::PlayNextAt(position)) => {
-                ("QueuePlayNextAt", Body::Position(*position))
-            }
-            Self::Queue(QueueCommand::PlayContextAt(position)) => {
-                ("QueuePlayContextAt", Body::Position(*position))
-            }
+            Self::Queue(QueueCommand::Move {
+                from,
+                to,
+                expected_revision,
+            }) => ("QueueMove", Body::Move(*from, *to, *expected_revision)),
+            Self::Queue(QueueCommand::RemoveAt {
+                positions,
+                expected_revision,
+            }) => (
+                "QueueRemoveAt",
+                Body::Positions(positions.clone(), *expected_revision),
+            ),
+            Self::Queue(QueueCommand::RemoveContextAt {
+                positions,
+                expected_revision,
+            }) => (
+                "QueueRemoveContextAt",
+                Body::Positions(positions.clone(), *expected_revision),
+            ),
+            Self::Queue(QueueCommand::PlayNextAt {
+                position,
+                expected_revision,
+            }) => (
+                "QueuePlayNextAt",
+                Body::Position(*position, *expected_revision),
+            ),
+            Self::Queue(QueueCommand::PlayContextAt {
+                position,
+                expected_revision,
+            }) => (
+                "QueuePlayContextAt",
+                Body::Position(*position, *expected_revision),
+            ),
             Self::Queue(QueueCommand::Purge(ids)) => ("QueuePurge", Body::Ids(ids.clone())),
             Self::PlayTracks {
                 track_ids,
@@ -95,9 +115,12 @@ pub(super) enum Body {
     Text(String),
     Ids(Vec<i64>),
     Tracks(Vec<i64>, u64),
-    Position(u64),
-    Positions(Vec<u64>),
-    Move(u64, u64),
+    /// A position plus the queue revision it was read from — the two always
+    /// travel together, because a position without one names a row nobody
+    /// can check.
+    Position(u64, u64),
+    Positions(Vec<u64>, u64),
+    Move(u64, u64, u64),
     External(ExternalMedia),
 }
 

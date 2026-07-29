@@ -697,3 +697,14 @@ fn only_the_facets_that_changed_are_published() {
 
 #[path = "runtime_attribution_tests.rs"]
 mod attribution;
+
+/// A finished-track report stamped with the stream the transport is on.
+fn stamped_finished() -> reprise_core::playback::StreamEvent {
+    reprise_core::playback::StreamEvent {
+        generation: reprise_core::playback::StreamGeneration::from(1),
+        event: reprise_core::playback::PlayerEvent::TrackFinished,
+    }
+}
+
+#[path = "runtime_queue_revision_tests.rs"]
+mod queue_revision;

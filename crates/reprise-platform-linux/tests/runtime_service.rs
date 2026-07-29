@@ -592,54 +592,6 @@ fn a_runtime_that_goes_away_is_reported_rather_than_guessed_at() {
 
 #[test]
 #[ignore = "requires a session bus; run via dbus-run-session"]
-fn the_queue_commands_a_queue_view_needs_all_survive_the_wire() {
-    use reprise_runtime_protocol::queue::QueueCommand;
-
-    let served = Served::start("queuesurface", Duration::from_secs(60));
-    let (client, events) =
-        start_with_bus_name(vec!["playback:control".to_owned()], served.bus_name.clone());
-    await_event(
-        &events,
-        |event| matches!(event, ClientEvent::Connected(_)),
-        "connection",
-    );
-    client
-        .call(RuntimeCommand::PlayTracks {
-            track_ids: vec![1, 2, 3],
-            start_index: 0,
-        })
-        .expect("playing succeeds");
-
-    // Every command a Queue view issues, in one pass: a stale position must
-    // come back rejected rather than silently applied to whichever row
-    // happens to occupy it now.
-    for command in [
-        RuntimeCommand::Queue(QueueCommand::AddLast(vec![2, 3])),
-        RuntimeCommand::Queue(QueueCommand::AddNext(vec![3])),
-        RuntimeCommand::Queue(QueueCommand::Move { from: 0, to: 1 }),
-        RuntimeCommand::Queue(QueueCommand::RemoveAt(vec![0])),
-        RuntimeCommand::Queue(QueueCommand::PlayNextAt(0)),
-        RuntimeCommand::Queue(QueueCommand::PlayContextAt(1)),
-        RuntimeCommand::Queue(QueueCommand::Purge(vec![3])),
-        RuntimeCommand::Queue(QueueCommand::Clear),
-    ] {
-        client
-            .call(command.clone())
-            .unwrap_or_else(|error| panic!("{command:?} was refused: {error}"));
-    }
-
-    let stale = client
-        .call(RuntimeCommand::Queue(QueueCommand::Move {
-            from: 99,
-            to: 0,
-        }))
-        .expect_err("there is no hundredth entry");
-    assert_eq!(stale.kind(), "rejected:no_such_queue_entry");
-    client.shutdown();
-}
-
-#[test]
-#[ignore = "requires a session bus; run via dbus-run-session"]
 fn a_stream_plays_beside_the_queue_and_does_not_hand_back_to_it() {
     use reprise_runtime_protocol::playback::ExternalMedia;
 
@@ -769,3 +721,6 @@ fn a_refused_client_is_told_why_instead_of_reconnecting_forever() {
     );
     client.shutdown();
 }
+
+#[path = "runtime_service/queue_surface.rs"]
+mod queue_surface;

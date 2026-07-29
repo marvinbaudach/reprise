@@ -175,6 +175,7 @@ fn playback_queue_and_job_snapshots_survive_a_dbus_round_trip() {
     assert_eq!(round_trip(&playback), playback);
 
     let queue = QueueSnapshot {
+        revision: 9,
         current_track_id: Some(42),
         play_next_track_ids: vec![43, 44],
         context_track_ids: vec![45, 46, 47],
@@ -429,6 +430,7 @@ fn the_whole_runtime_snapshot_survives_a_dbus_round_trip() {
             initiated_by: Some(7),
         },
         queue: QueueSnapshot {
+            revision: 9,
             current_track_id: Some(42),
             play_next_track_ids: vec![43],
             context_track_ids: vec![44, 45],

@@ -434,9 +434,13 @@ impl Worker {
             Body::Text(value) => proxy.call::<_, _, ()>(method, &(value,)),
             Body::Ids(values) => proxy.call::<_, _, ()>(method, &(values,)),
             Body::Tracks(ids, start) => proxy.call::<_, _, ()>(method, &(ids, start)),
-            Body::Position(position) => proxy.call::<_, _, ()>(method, &(position,)),
-            Body::Positions(positions) => proxy.call::<_, _, ()>(method, &(positions,)),
-            Body::Move(from, to) => proxy.call::<_, _, ()>(method, &(from, to)),
+            Body::Position(position, revision) => {
+                proxy.call::<_, _, ()>(method, &(position, revision))
+            }
+            Body::Positions(positions, revision) => {
+                proxy.call::<_, _, ()>(method, &(positions, revision))
+            }
+            Body::Move(from, to, revision) => proxy.call::<_, _, ()>(method, &(from, to, revision)),
             Body::External(media) => proxy.call::<_, _, ()>(
                 method,
                 &(

@@ -152,8 +152,14 @@ impl Transport {
         }
     }
 
+    /// The queue facet, *unstamped*: the revision belongs to the runtime,
+    /// which is the only place that can count observable changes to this
+    /// facet without drifting from what a client actually saw. Leaving it at
+    /// zero here also keeps the before/after comparison honest — a revision
+    /// baked in on both sides would either always differ or never.
     pub(crate) fn queue_snapshot(&self) -> QueueSnapshot {
         QueueSnapshot {
+            revision: 0,
             // What is *playing*, which is not always where the context
             // cursor stands: an explicitly queued track plays beside the
             // context without moving it.
@@ -287,32 +293,32 @@ impl Transport {
             // "Clearing a queue is not a stop command" (protocol): only the
             // explicit queue goes; the current track keeps playing.
             QueueCommand::Clear => self.up_next = UpNextQueue::default(),
-            QueueCommand::Move { from, to } => {
+            QueueCommand::Move { from, to, .. } => {
                 let (from, to) = (as_index(*from), as_index(*to));
                 if !self.up_next.move_item(from, to) {
                     return Err(RuntimeError::Rejected(Rejected::NoSuchQueueEntry));
                 }
             }
-            QueueCommand::RemoveAt(positions) => {
+            QueueCommand::RemoveAt { positions, .. } => {
                 let positions: Vec<usize> = positions.iter().map(|at| as_index(*at)).collect();
                 if self.up_next.remove_positions(&positions) == 0 {
                     return Err(RuntimeError::Rejected(Rejected::NoSuchQueueEntry));
                 }
             }
-            QueueCommand::RemoveContextAt(positions) => {
+            QueueCommand::RemoveContextAt { positions, .. } => {
                 let positions: Vec<usize> = positions.iter().map(|at| as_index(*at)).collect();
                 if !self.queue.remove_order_positions(&positions) {
                     return Err(RuntimeError::Rejected(Rejected::NoSuchQueueEntry));
                 }
             }
-            QueueCommand::PlayNextAt(position) => {
+            QueueCommand::PlayNextAt { position, .. } => {
                 let track_id = self
                     .up_next
                     .take_at(as_index(*position))
                     .ok_or(RuntimeError::Rejected(Rejected::NoSuchQueueEntry))?;
                 return self.start(backend, library, track_id);
             }
-            QueueCommand::PlayContextAt(position) => {
+            QueueCommand::PlayContextAt { position, .. } => {
                 let track_id = self
                     .queue
                     .play_order_position_now(as_index(*position))

@@ -435,7 +435,11 @@ fn a_queue_entry_can_be_moved_and_a_position_that_is_not_there_is_rejected() {
     fixture.queue(&QueueCommand::AddLast(vec![2, 3])).unwrap();
 
     fixture
-        .queue(&QueueCommand::Move { from: 1, to: 0 })
+        .queue(&QueueCommand::Move {
+            from: 1,
+            to: 0,
+            expected_revision: 0,
+        })
         .unwrap();
     assert_eq!(
         fixture.transport.queue_snapshot().play_next_track_ids,
@@ -444,7 +448,11 @@ fn a_queue_entry_can_be_moved_and_a_position_that_is_not_there_is_rejected() {
 
     assert_eq!(
         fixture
-            .queue(&QueueCommand::Move { from: 9, to: 0 })
+            .queue(&QueueCommand::Move {
+                from: 9,
+                to: 0,
+                expected_revision: 0,
+            })
             .expect_err("there is no ninth entry"),
         RuntimeError::Rejected(Rejected::NoSuchQueueEntry),
         "a stale position means the client's snapshot moved under it, and a \
@@ -460,7 +468,12 @@ fn queue_entries_are_removed_by_position_so_a_repeated_track_loses_one_row() {
         .queue(&QueueCommand::AddLast(vec![2, 3, 2]))
         .unwrap();
 
-    fixture.queue(&QueueCommand::RemoveAt(vec![0])).unwrap();
+    fixture
+        .queue(&QueueCommand::RemoveAt {
+            positions: vec![0],
+            expected_revision: 0,
+        })
+        .unwrap();
 
     assert_eq!(
         fixture.transport.queue_snapshot().play_next_track_ids,
@@ -477,7 +490,12 @@ fn a_queued_entry_can_be_played_out_of_turn_and_leaves_the_queue() {
     fixture.queue(&QueueCommand::AddLast(vec![2, 3])).unwrap();
     fixture.calls.clear();
 
-    fixture.queue(&QueueCommand::PlayNextAt(1)).unwrap();
+    fixture
+        .queue(&QueueCommand::PlayNextAt {
+            position: 1,
+            expected_revision: 0,
+        })
+        .unwrap();
 
     assert_eq!(fixture.transport.playback_snapshot().track_id, Some(3));
     assert_eq!(
@@ -496,7 +514,12 @@ fn a_context_row_played_out_of_turn_keeps_everything_it_passed_queued() {
     let mut fixture = fixture();
     fixture.play_tracks(vec![1, 2, 3], 0).unwrap();
 
-    fixture.queue(&QueueCommand::PlayContextAt(2)).unwrap();
+    fixture
+        .queue(&QueueCommand::PlayContextAt {
+            position: 2,
+            expected_revision: 0,
+        })
+        .unwrap();
 
     assert_eq!(fixture.transport.playback_snapshot().track_id, Some(3));
     assert_eq!(
@@ -541,7 +564,10 @@ fn a_context_row_can_be_removed_by_its_play_order_position() {
     fixture.play_tracks(vec![1, 2, 3], 0).unwrap();
 
     fixture
-        .queue(&QueueCommand::RemoveContextAt(vec![1]))
+        .queue(&QueueCommand::RemoveContextAt {
+            positions: vec![1],
+            expected_revision: 0,
+        })
         .unwrap();
 
     assert_eq!(

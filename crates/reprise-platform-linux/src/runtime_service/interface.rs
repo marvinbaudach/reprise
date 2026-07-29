@@ -292,28 +292,47 @@ impl Reprise1 {
         #[zbus(header)] header: Header<'_>,
         from: u64,
         to: u64,
+        expected_revision: u64,
     ) -> Result<(), Error> {
-        self.command(&header, Command::Queue(QueueCommand::Move { from, to }))
-            .await
+        self.command(
+            &header,
+            Command::Queue(QueueCommand::Move {
+                from,
+                to,
+                expected_revision,
+            }),
+        )
+        .await
     }
 
     async fn queue_remove_at(
         &self,
         #[zbus(header)] header: Header<'_>,
         positions: Vec<u64>,
+        expected_revision: u64,
     ) -> Result<(), Error> {
-        self.command(&header, Command::Queue(QueueCommand::RemoveAt(positions)))
-            .await
+        self.command(
+            &header,
+            Command::Queue(QueueCommand::RemoveAt {
+                positions,
+                expected_revision,
+            }),
+        )
+        .await
     }
 
     async fn queue_remove_context_at(
         &self,
         #[zbus(header)] header: Header<'_>,
         positions: Vec<u64>,
+        expected_revision: u64,
     ) -> Result<(), Error> {
         self.command(
             &header,
-            Command::Queue(QueueCommand::RemoveContextAt(positions)),
+            Command::Queue(QueueCommand::RemoveContextAt {
+                positions,
+                expected_revision,
+            }),
         )
         .await
     }
@@ -322,19 +341,30 @@ impl Reprise1 {
         &self,
         #[zbus(header)] header: Header<'_>,
         position: u64,
+        expected_revision: u64,
     ) -> Result<(), Error> {
-        self.command(&header, Command::Queue(QueueCommand::PlayNextAt(position)))
-            .await
+        self.command(
+            &header,
+            Command::Queue(QueueCommand::PlayNextAt {
+                position,
+                expected_revision,
+            }),
+        )
+        .await
     }
 
     async fn queue_play_context_at(
         &self,
         #[zbus(header)] header: Header<'_>,
         position: u64,
+        expected_revision: u64,
     ) -> Result<(), Error> {
         self.command(
             &header,
-            Command::Queue(QueueCommand::PlayContextAt(position)),
+            Command::Queue(QueueCommand::PlayContextAt {
+                position,
+                expected_revision,
+            }),
         )
         .await
     }
