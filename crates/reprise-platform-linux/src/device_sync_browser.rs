@@ -67,7 +67,7 @@ impl DeviceStorage {
 
     /// Design 7d's folder tree: the immediate child folders of `path` on
     /// `storage_id`. `path` uses the same absolute-looking device-path
-    /// syntax as [`crate::device_sync::browser`]'s other operations; the
+    /// syntax as `device_sync::target_browser`'s other operations; the
     /// empty path (or a bare `/`) means the storage's own root.
     pub async fn list_child_folders(
         &self,
