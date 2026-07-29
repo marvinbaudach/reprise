@@ -19,7 +19,7 @@ fn find_scroller(widget: &gtk4::Widget) -> Option<gtk4::ScrolledWindow> {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_6_the_foreign_url_hint_appears_while_typing() {
     gtk4::init().unwrap();
-    let surface = build_surface(PodcastKind::Rss);
+    let surface = build_surface(PodcastKind::Rss, Connectivity::Online);
 
     surface.entry.set_text("https://www.youtube.com/@example");
     assert_eq!(
@@ -37,11 +37,51 @@ fn src_6_the_foreign_url_hint_appears_while_typing() {
     assert!(surface.primary.is_sensitive());
 }
 
+/// `NET-3` point 4: the widget-level half of the offline add dialog — the
+/// reason is visible immediately (even before typing), search stays
+/// disabled, and a matching URL re-enables the primary action exactly as it
+/// would online. The DB-level half — that submitting the URL actually
+/// creates the subscription — is proven separately by `add_dialog_input`'s
+/// `net_3_the_url_path_still_works_while_search_is_disabled_offline`,
+/// which needs no GTK widget at all.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn net_3_search_is_disabled_offline_but_a_url_stays_submittable() {
+    gtk4::init().unwrap();
+    let surface = build_surface(PodcastKind::Rss, Connectivity::Offline);
+
+    assert_eq!(
+        surface.status.text().as_str(),
+        strings::text(strings::PODCAST_SEARCH_NEEDS_NETWORK),
+        "the reason must be visible before the user types anything"
+    );
+
+    surface.entry.set_text("metal interviews");
+    assert!(
+        !surface.primary.is_sensitive(),
+        "search must stay disabled while offline"
+    );
+    assert_eq!(
+        surface.status.text().as_str(),
+        strings::text(strings::PODCAST_SEARCH_NEEDS_NETWORK)
+    );
+
+    surface.entry.set_text("https://feeds.test/show.xml");
+    assert!(
+        surface.primary.is_sensitive(),
+        "a URL belonging to this dialog must stay submittable while offline"
+    );
+    assert!(
+        surface.status.text().is_empty(),
+        "the offline reason must clear once the input is a usable URL"
+    );
+}
+
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_8_add_dialog_results_scroll_vertically_only() {
     gtk4::init().unwrap();
-    let surface = build_surface(PodcastKind::Rss);
+    let surface = build_surface(PodcastKind::Rss, Connectivity::Online);
     let scroller = surface
         .dialog
         .child()
@@ -68,7 +108,7 @@ fn src_8_add_dialog_results_scroll_vertically_only() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_3a_add_dialog_has_fixed_cancel_and_primary_actions() {
     gtk4::init().unwrap();
-    let surface = build_surface(PodcastKind::Rss);
+    let surface = build_surface(PodcastKind::Rss, Connectivity::Online);
     let cancel = strings::text(strings::PODCAST_CANCEL);
     let search = strings::text(strings::PODCAST_SEARCH);
     let preview = strings::text(strings::PODCAST_PREVIEW);

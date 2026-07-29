@@ -1,9 +1,10 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use reprise_core::connectivity::Connectivity;
 use reprise_core::radio::playlist::PlaylistKind;
 use reprise_core::radio::search::{SearchCriteria, SearchOrder, StationCandidate};
 use reprise_core::radio::{self, RadioError};
@@ -161,10 +162,18 @@ pub(super) struct RadioAddDialog {
     /// set at all in tests that never call the setter, in which case a
     /// no-location "Near you" click is silently a no-op rather than a panic.
     on_location_settings: RefCell<Option<LocationSettingsCallback>>,
+    /// `NET-3` point 4: the same connectivity seam `RadioView` reads for
+    /// `NET-3b`'s Play affordance (shared `Rc`, not a copy) — offline
+    /// disables search and skips the ICY probe for a pasted URL.
+    connectivity: Rc<Cell<Connectivity>>,
 }
 
 impl RadioAddDialog {
-    pub(super) fn new(conn: Rc<RefCell<Connection>>, on_added: impl Fn() + 'static) -> Rc<Self> {
+    pub(super) fn new(
+        conn: Rc<RefCell<Connection>>,
+        connectivity: Rc<Cell<Connectivity>>,
+        on_added: impl Fn() + 'static,
+    ) -> Rc<Self> {
         let entry = gtk4::SearchEntry::builder()
             .placeholder_text(strings::text(strings::RADIO_DIALOG_HINT))
             .build();
@@ -272,6 +281,7 @@ impl RadioAddDialog {
             conn,
             on_added: Rc::new(on_added),
             on_location_settings: RefCell::new(None),
+            connectivity,
         });
         {
             let weak = Rc::downgrade(&this);
@@ -342,6 +352,14 @@ impl RadioAddDialog {
     pub(super) fn present(self: &Rc<Self>, parent: &impl IsA<gtk4::Widget>) {
         self.widgets.entry.set_text("");
         self.render(AddDialogState::default());
+        // `NET-3` point 4: the reason search is unavailable is visible
+        // immediately, before the user types anything.
+        if self.connectivity.get().is_offline() {
+            self.widgets
+                .status
+                .set_text(&strings::text(strings::RADIO_SEARCH_NEEDS_NETWORK));
+            self.widgets.status.set_visible(true);
+        }
         self.widgets.dialog.present(Some(parent));
         self.widgets.entry.grab_focus();
     }
@@ -364,6 +382,21 @@ impl RadioAddDialog {
                 .status
                 .set_text(&strings::text(strings::ONLINE_SOURCES_TURNED_OFF));
             return;
+        }
+        // `NET-3` point 4: search needs the network and is refused offline;
+        // a URL still proceeds below, just without the ICY probe.
+        if matches!(input, AddInput::Search(_)) && self.connectivity.get().is_offline() {
+            self.widgets
+                .status
+                .set_text(&strings::text(strings::RADIO_SEARCH_NEEDS_NETWORK));
+            self.widgets.status.set_visible(true);
+            return;
+        }
+        if let AddInput::Url(url) = &input {
+            if self.connectivity.get().is_offline() {
+                self.submit_url_offline(url);
+                return;
+            }
         }
         let (state, generation) = self.state.borrow().clone().begin(&input);
         self.render(state);
@@ -487,6 +520,33 @@ impl RadioAddDialog {
             let state = this.state.borrow().clone().accept(generation, result);
             this.render(state);
         });
+    }
+
+    /// `NET-3` point 4: the URL path while offline — no ICY probe, straight
+    /// to the normal `Preview`/confirm step with a locally-built preview
+    /// (`playlist_kind` detection is pure URL parsing, no network). Unlike
+    /// Podcasts, there is no later background refresh for radio that would
+    /// enrich this with real name/genre/bitrate metadata — the user can
+    /// re-add the station once online to pick that up, or edit it by hand.
+    fn submit_url_offline(self: &Rc<Self>, url: &str) {
+        // `render` after `begin` persists the bumped generation into
+        // `self.state` — required before `accept` below can recognise it,
+        // exactly like the async (online) path does between dispatch and
+        // its task's response; here both calls just happen synchronously
+        // instead of across an await.
+        let (state, generation) = self
+            .state
+            .borrow()
+            .clone()
+            .begin(&AddInput::Url(url.to_owned()));
+        self.render(state);
+        let preview = StationPreview::manual(&strings::text(strings::RADIO_STREAM_DETECTED), url);
+        let state = self
+            .state
+            .borrow()
+            .clone()
+            .accept(generation, AddResult::Preview(preview));
+        self.render(state);
     }
 
     fn render(self: &Rc<Self>, state: AddDialogState) {

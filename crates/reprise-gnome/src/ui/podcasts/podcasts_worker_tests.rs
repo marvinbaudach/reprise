@@ -153,6 +153,112 @@ fn pod_7_download_request_does_not_invalidate_an_in_flight_refresh() {
     );
 }
 
+/// `NET-3c`: `RunQueued` is background catch-up work, not a user-initiated
+/// operation that should cancel or be cancelled by a refresh/load-more
+/// already in flight — same non-bumping treatment as `Download`.
+#[test]
+fn net_3c_run_queued_does_not_invalidate_an_in_flight_refresh() {
+    assert_eq!(request_generation(9, PodcastsOperation::RunQueued), 9);
+}
+
+/// `NET-3c`: the runner's GTK-side wiring, driven through the real
+/// `process_request` dispatch (not the core function directly, which
+/// `queued_downloads::tests` already covers with fake fetchers). The
+/// podcast module is left disabled on purpose so `download_episode`'s
+/// `NET-1a` check fails the episode before any real network/subprocess call
+/// — this proves the `RunQueued` request reaches, selects, and replays the
+/// pending episode, and that the run reports completion, without touching
+/// the network.
+///
+/// The response channel is drained on a second thread with a deadline,
+/// exactly like [`recv_within`] above: `process_request` runs synchronously
+/// on this thread and blocks on `publish_terminal` once the single-slot
+/// buffer is full, so nothing may call it without something else draining
+/// concurrently — a mistake there would hang the test forever rather than
+/// fail it, which is exactly what the deadline turns into a clean failure.
+#[test]
+fn net_3c_run_queued_replays_a_pending_episode_through_the_real_worker_dispatch() {
+    let conn = reprise_core::db::open_migrated(None).unwrap();
+    let subscription_id = store::add_or_restore(
+        &conn,
+        &NewSubscription {
+            kind: podcasts::PodcastKind::Rss,
+            feed_url: "https://example.test/feed".to_owned(),
+            title: "Show".to_owned(),
+            author: None,
+            image_url: None,
+            auto_download: false,
+        },
+        1,
+    )
+    .unwrap();
+    let episode_id = store::upsert_episode(
+        &conn,
+        subscription_id,
+        &ParsedEpisode {
+            guid: "episode".to_owned(),
+            title: "Episode".to_owned(),
+            audio_url: "https://example.test/episode.mp3".to_owned(),
+            page_url: None,
+            published_at: None,
+            duration_secs: None,
+        },
+        1,
+    )
+    .unwrap()
+    .unwrap()
+    .episode_id;
+    reprise_core::podcasts::wanted_on_device::set_wanted_on_device(&conn, episode_id, true)
+        .unwrap();
+
+    let (response, receiver) = podcasts_response_channel();
+    let request = PodcastsRequest {
+        generation: 0,
+        operation: PodcastsOperation::RunQueued,
+        priority: PodcastsPriority::Normal,
+        response,
+    };
+    let wrapped_conn = Ok(conn);
+
+    let (done, wait) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut results = Vec::new();
+        while let Ok(response) = receiver.recv_blocking() {
+            let is_complete = matches!(
+                response.result,
+                Ok(PodcastsWorkerResult::QueueRunComplete { .. })
+            );
+            results.push(response.result);
+            if is_complete {
+                break;
+            }
+        }
+        let _ = done.send(results);
+    });
+
+    process_request(Some(&wrapped_conn), &request);
+
+    let results = wait
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("RunQueued did not report completion within 5s");
+
+    assert!(
+        results.iter().any(|result| matches!(
+            result,
+            Ok(PodcastsWorkerResult::DownloadState {
+                episode_id: id,
+                state: DownloadState::Failed { message },
+            }) if *id == episode_id && message == "this source is disabled"
+        )),
+        "expected a terminal state for the pending episode, got {results:?}"
+    );
+    assert_eq!(
+        results.last(),
+        Some(&Ok(PodcastsWorkerResult::QueueRunComplete { ran: 1 })),
+        "the run must report exactly the one episode it replayed"
+    );
+}
+
 #[test]
 fn pod_7_download_worker_emits_ordered_monotone_states_and_persists_after_publish() {
     let conn = reprise_core::db::open_migrated(None).unwrap();
