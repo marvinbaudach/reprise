@@ -44,6 +44,11 @@ pub struct FakePlayback {
     /// When set, every `play`/`play_uri` fails with it — the way a missing
     /// codec or an unreadable file behaves, without needing either.
     refuse: Rc<RefCell<bool>>,
+    /// Kept apart from `calls` on purpose. Pre-feeding happens after almost
+    /// every command, so folding it into the call log would bury what each
+    /// test is actually about under a stream of housekeeping.
+    pre_feeds: Rc<RefCell<Vec<Option<String>>>>,
+    transitions: Rc<RefCell<Vec<(TrackTransition, u8)>>>,
 }
 
 impl Default for FakePlayback {
@@ -60,6 +65,8 @@ impl FakePlayback {
             state: Rc::new(RefCell::new(PlaybackState::Stopped)),
             generation: Rc::new(RefCell::new(0)),
             refuse: Rc::new(RefCell::new(false)),
+            pre_feeds: Rc::new(RefCell::new(Vec::new())),
+            transitions: Rc::new(RefCell::new(Vec::new())),
         }
     }
 
@@ -71,6 +78,8 @@ impl FakePlayback {
             calls: Rc::clone(&self.calls),
             state: Rc::clone(&self.state),
             refuse: Rc::clone(&self.refuse),
+            pre_feeds: Rc::clone(&self.pre_feeds),
+            transitions: Rc::clone(&self.transitions),
         }
     }
 }
@@ -81,6 +90,8 @@ pub struct FakePlaybackHandle {
     calls: Rc<RefCell<Vec<BackendCall>>>,
     state: Rc<RefCell<PlaybackState>>,
     refuse: Rc<RefCell<bool>>,
+    pre_feeds: Rc<RefCell<Vec<Option<String>>>>,
+    transitions: Rc<RefCell<Vec<(TrackTransition, u8)>>>,
 }
 
 impl FakePlaybackHandle {
@@ -91,6 +102,26 @@ impl FakePlaybackHandle {
 
     pub fn clear(&self) {
         self.calls.borrow_mut().clear();
+        self.pre_feeds.borrow_mut().clear();
+    }
+
+    /// Every value handed to `set_next`, in order. `None` entries are the
+    /// interesting ones: they are how the backend is told to stop expecting
+    /// a handoff.
+    #[must_use]
+    pub fn pre_feeds(&self) -> Vec<Option<String>> {
+        self.pre_feeds.borrow().clone()
+    }
+
+    /// What was pre-fed most recently, or `None` if nothing ever was.
+    #[must_use]
+    pub fn pre_fed(&self) -> Option<Option<String>> {
+        self.pre_feeds.borrow().last().cloned()
+    }
+
+    #[must_use]
+    pub fn transitions(&self) -> Vec<(TrackTransition, u8)> {
+        self.transitions.borrow().clone()
     }
 
     /// What the backend itself believes it is doing, as opposed to what the
@@ -164,9 +195,17 @@ impl PlaybackBackend for FakePlayback {
         Ok(())
     }
 
-    fn set_next(&self, _path: Option<&str>) {}
+    fn set_next(&self, path: Option<&str>) {
+        self.pre_feeds
+            .borrow_mut()
+            .push(path.map(ToOwned::to_owned));
+    }
 
-    fn set_transition(&self, _mode: TrackTransition, _crossfade_seconds: u8) {}
+    fn set_transition(&self, mode: TrackTransition, crossfade_seconds: u8) {
+        self.transitions
+            .borrow_mut()
+            .push((mode, crossfade_seconds));
+    }
 
     fn current_generation(&self) -> StreamGeneration {
         StreamGeneration::from(*self.generation.borrow())
