@@ -432,7 +432,27 @@ mod tests {
 
     // A solid-color square red PNG of the given side length.
     fn red_png(side: u32) -> Vec<u8> {
-        solid_png_with_side([255, 0, 0], side)
+        let mut image = image::RgbImage::from_pixel(side, side, image::Rgb([255, 0, 0]));
+        let process = std::process::id().to_le_bytes();
+        let current_thread = std::thread::current();
+        let mut test_name = std::collections::hash_map::DefaultHasher::new();
+        current_thread
+            .name()
+            .unwrap_or("unnamed")
+            .hash(&mut test_name);
+        let test = test_name.finish().to_le_bytes();
+
+        // Cache keys are content-addressed. Tag test images with their process
+        // and test name so parallel test binaries cannot delete each other's
+        // deterministic cache entries during cleanup.
+        image.put_pixel(0, 0, image::Rgb([process[0], process[1], process[2]]));
+        image.put_pixel(1, 0, image::Rgb([test[0], test[1], test[2]]));
+
+        let mut buf = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgb8(image)
+            .write_to(&mut buf, image::ImageFormat::Png)
+            .unwrap();
+        buf.into_inner()
     }
 
     fn solid_png(color: [u8; 3]) -> Vec<u8> {

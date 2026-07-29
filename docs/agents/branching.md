@@ -38,10 +38,10 @@ to it. See "Merge method".
    that has drifted away from `dev` announces itself here instead of being
    papered over.
 
-Every other direct push to `main`, every direct push to `dev`, all force
-pushes, and deleting either branch are forbidden. Read that as a rule this
-project holds itself to, not as one the platform stops you from breaking —
-see below.
+Direct pushes to `main` other than the promotion above, every direct push to
+`dev`, all force pushes, and deleting either branch are forbidden. Read that
+as a rule this project holds itself to, not as one the platform stops you from
+breaking — see below.
 
 Emergency hotfixes branch from `dev` as `hotfix/*`, open a pull request to
 `dev` like everything else, and reach `main` through the same fast-forward
@@ -202,6 +202,16 @@ Two consequences worth stating plainly:
   delete head branches"* is now safe to switch on and would replace both:
   it was off only because the old promotion pull request had `dev` as its
   head, and there is no such pull request any more.
+- **Local worktree cleanup is verified and deferred when necessary.** After a
+  squash merge, run
+  `scripts/close-worktree.sh --repo /home/marvin/Projects/reprise --worktree <path> --pr <number>`.
+  It checks that GitHub reports the PR merged into `dev`, that its source branch
+  and head match the clean local worktree exactly, and that the worktree is not
+  locked. If any process still uses the worktree as its current directory, the
+  cleanup is queued under `~/.local/state/reprise-worktree-gc/pending/`; the
+  weekly `reprise-worktree-gc.timer` completes it after the process exits.
+  `docs/automation/worktree-cleanup.md` describes report and installation
+  commands. This does not replace remote branch deletion.
 - **Turning the plan on changes this file, not the workflow.** If the
   repository ever moves to a plan with rulesets, configure the branches to
   require `CI / Quality gate` and replace this section with what is then
