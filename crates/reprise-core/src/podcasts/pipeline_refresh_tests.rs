@@ -441,3 +441,129 @@ fn net_1a_global_gate_off_blocks_rss_refresh_even_with_podcasts_on() {
         Some("failed")
     );
 }
+
+/// A `FeedFetcher` whose provider error carries exactly what `POD-13`
+/// forbids: a signed URL with a query string, a credential-looking token,
+/// and an absolute local filesystem path — the shape of a real yt-dlp or
+/// HTTP transport error, and the reason issue #106 exists.
+struct LeakingFeed;
+
+const LEAKING_PROVIDER_MESSAGE: &str = "GET https://cdn.example.test/ep.mp3\
+    ?sig=abc123&X-Amz-Credential=AKIAEXAMPLECRED&token=SECRET-TOKEN failed \
+    while writing /home/user/.local/share/reprise/podcasts/leak.mp3";
+
+impl FeedFetcher for LeakingFeed {
+    fn fetch(&self, _: &SubscriptionRow) -> Result<Response, PodcastError> {
+        unreachable!("download_episode never calls fetch")
+    }
+
+    fn download(&self, _: &str, _: &Path) -> Result<(), PodcastError> {
+        Err(PodcastError::Transport(LEAKING_PROVIDER_MESSAGE.to_owned()))
+    }
+}
+
+/// A minimal `tracing::Subscriber` that records every event's fields as
+/// plain text, so a test can assert on what a real log line would have
+/// contained without pulling in `tracing-subscriber`.
+#[derive(Clone, Default)]
+struct CapturedLogs(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
+
+impl CapturedLogs {
+    fn joined(&self) -> String {
+        self.0.lock().unwrap().join("\n")
+    }
+}
+
+struct FieldCollector(String);
+
+impl tracing::field::Visit for FieldCollector {
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        use std::fmt::Write as _;
+        let _ = write!(self.0, " {}={:?}", field.name(), value);
+    }
+}
+
+struct LogCapture(CapturedLogs);
+
+impl tracing::Subscriber for LogCapture {
+    fn enabled(&self, _metadata: &tracing::Metadata<'_>) -> bool {
+        true
+    }
+
+    fn new_span(&self, _span: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+        tracing::span::Id::from_u64(1)
+    }
+
+    fn record(&self, _span: &tracing::span::Id, _values: &tracing::span::Record<'_>) {}
+
+    fn record_follows_from(&self, _span: &tracing::span::Id, _follows: &tracing::span::Id) {}
+
+    fn event(&self, event: &tracing::Event<'_>) {
+        let mut collector = FieldCollector(event.metadata().name().to_owned());
+        event.record(&mut collector);
+        self.0 .0.lock().unwrap().push(collector.0);
+    }
+
+    fn enter(&self, _span: &tracing::span::Id) {}
+
+    fn exit(&self, _span: &tracing::span::Id) {}
+}
+
+/// `POD-13`: the redaction this rule promises — feed `download_episode` a
+/// provider error carrying a signed URL, a query string, a credential and
+/// an absolute local path, and prove that none of it survives into the
+/// `DownloadState::Failed` message it returns, nor into the `tracing::warn!`
+/// line it logs at the point of failure. Deleting the `error.classify()`
+/// call in `pipeline::download_episode` (reverting to `error.to_string()`)
+/// turns this red, because `LEAKING_PROVIDER_MESSAGE`'s substrings would
+/// then show up verbatim in both places.
+#[test]
+fn pod_13_a_failed_download_never_leaks_the_raw_provider_message_into_state_or_logs() {
+    let conn = conn();
+    let directory = tempfile::tempdir().unwrap();
+    let id = add_subscription(&conn, "https://example.test/feed", false);
+    let seed_feed = FakeFeed {
+        responses: RefCell::new(vec![Ok(feed_response("Show", 1, None))]),
+        ..FakeFeed::default()
+    };
+    refresh_to_root(&conn, &seed_feed, &FakeYoutube, 10, true, directory.path()).unwrap();
+    let episode_id = super::super::query::episodes_for_subscription(&conn, id).unwrap()[0].id;
+
+    let logs = CapturedLogs::default();
+    let subscriber = LogCapture(logs.clone());
+    let outcome = tracing::subscriber::with_default(subscriber, || {
+        download_episode(
+            &conn,
+            &LeakingFeed,
+            &FakeYoutube,
+            directory.path(),
+            episode_id,
+            &mut |_| {},
+        )
+        .unwrap()
+    });
+
+    let DownloadState::Failed { message } = outcome else {
+        panic!("expected a failed download, got {outcome:?}");
+    };
+    let logged = logs.joined();
+    for needle in [
+        "token",
+        "SECRET",
+        "sig=",
+        "AKIA",
+        "cdn.example.test",
+        "/home/user",
+        ".local/share/reprise",
+    ] {
+        assert!(
+            !message.contains(needle),
+            "DownloadState::Failed leaked {needle:?}: {message}"
+        );
+        assert!(
+            !logged.contains(needle),
+            "log line leaked {needle:?}: {logged}"
+        );
+    }
+    assert_eq!(message, "podcast source could not be reached");
+}

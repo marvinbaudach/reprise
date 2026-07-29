@@ -3339,6 +3339,25 @@ listening statistics.
   the same feed URL (e.g. a re-import as a different channel type) clears the
   previous device selection — that is not a source-kind special case but
   applies symmetrically to any change of kind.
+- **POD-13** [active] [core] [gtk] — A failed episode download (POD-7's
+  "failed" state) shows a classified reason directly in the row, next to the
+  fixed "Download failed" heading — never only on hover or another
+  pointer-only affordance, so it stays reachable for keyboard and touch
+  users too. The reason is one of a fixed, closed set of categories (timed
+  out, could not be reached, returned an HTTP error, returned invalid data,
+  disabled in preferences, or "YouTube source could not be read with
+  yt-dlp") — the same classifier `source_actions::podcast_source_error`
+  already used for every other podcast provider failure; the underlying
+  provider error text is discarded at the point of failure and never
+  reaches the UI or a normal-level log line, so a signed URL, a query
+  string, a credential, or a local filesystem path can never leak through
+  it (issue #106). The row's action button stays sensitive and offers a
+  clean retry: activating it re-enters the same download path a first
+  attempt uses, so it runs `queued` → `downloading` → `downloaded` (or fails
+  again, freshly classified) rather than a half-state, and always makes a
+  fresh provider call — a previous failure is never cached. `.part` files
+  and yt-dlp postprocessor leftovers from the failed attempt are removed
+  before the row is offered for retry.
 - **RAD-1** [active] [gtk] — Only the currently connected station is
   accented in the table; its state icon, name, now-playing, and row
   tint change together. All others, as well as a presented but

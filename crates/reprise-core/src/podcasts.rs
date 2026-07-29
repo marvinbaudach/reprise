@@ -110,3 +110,76 @@ pub enum PodcastError {
     #[error("{0}")]
     Disabled(String),
 }
+
+impl PodcastError {
+    /// `POD-13`: a fixed, classified reason safe for UI display and
+    /// normal-level logs. The `Display` impl above is deliberately not used
+    /// for that — `Transport`/`Body`/`Parse`/`YtDlp` all carry a payload
+    /// string that can echo the raw provider transport error, which in turn
+    /// can echo the request URL (and an episode's `audio_url` may carry a
+    /// private per-subscriber token the same way a feed URL can, `SRC-5`),
+    /// or, for yt-dlp specifically, a local download path
+    /// (`ytdlp::finalize_download`'s messages embed `Path::display()`).
+    /// This is the single classifier for a podcast provider failure —
+    /// `source_actions::podcast_source_error` (MCP) and
+    /// `pipeline::download_episode` (the download executor) both call this
+    /// rather than keeping their own copy that could drift from it.
+    #[must_use]
+    pub fn classify(&self) -> &'static str {
+        match self {
+            PodcastError::Timeout => "podcast source timed out",
+            PodcastError::Transport(_) => "podcast source could not be reached",
+            PodcastError::HttpStatus(_) => "podcast source returned an HTTP error",
+            PodcastError::Body(_) | PodcastError::Parse(_) => {
+                "podcast source returned invalid data"
+            }
+            PodcastError::NotModified => "podcast source was not modified",
+            PodcastError::YtDlp(_) => "YouTube source could not be read with yt-dlp",
+            PodcastError::Disabled(_) => "this source is disabled in Reprise preferences",
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `POD-13`: whatever raw text a provider error carries, the classified
+    /// reason must never echo it back — the whole point of classifying is
+    /// that the fixed string does not depend on the payload's content.
+    #[test]
+    fn pod_13_classify_never_forwards_the_raw_payload() {
+        let leaking = "https://cdn.example.test/ep.mp3?sig=abc123&token=SECRET \
+             at /home/user/.local/share/reprise/podcasts/leak.mp3";
+        let cases = [
+            PodcastError::Timeout,
+            PodcastError::Transport(leaking.to_owned()),
+            PodcastError::HttpStatus(403),
+            PodcastError::Body(leaking.to_owned()),
+            PodcastError::Parse(leaking.to_owned()),
+            PodcastError::NotModified,
+            PodcastError::YtDlp(leaking.to_owned()),
+            PodcastError::Disabled(leaking.to_owned()),
+        ];
+        for error in cases {
+            let classified = error.classify();
+            assert!(!classified.contains("token"), "{classified}");
+            assert!(!classified.contains("SECRET"), "{classified}");
+            assert!(!classified.contains("sig="), "{classified}");
+            assert!(!classified.contains("/home/"), "{classified}");
+            assert!(!classified.contains("cdn.example.test"), "{classified}");
+        }
+    }
+
+    #[test]
+    fn pod_13_classify_still_distinguishes_the_failure_kinds() {
+        assert_ne!(
+            PodcastError::Timeout.classify(),
+            PodcastError::Transport(String::new()).classify()
+        );
+        assert_ne!(
+            PodcastError::YtDlp(String::new()).classify(),
+            PodcastError::Disabled(String::new()).classify()
+        );
+    }
+}
