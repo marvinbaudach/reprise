@@ -60,6 +60,7 @@ pub mod format;
 mod http_body;
 pub mod library;
 pub use library::library_doctor;
+pub mod location;
 pub mod lyrics;
 pub mod media_integration;
 pub mod models;

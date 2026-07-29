@@ -7,11 +7,13 @@ fn location_apply_decisions_store_success_and_keep_errors_visible() {
             lat: 48.137,
             lon: 11.575,
             display_name: "Munich, Bavaria".into(),
+            country_code: Some("DE".into()),
         }))),
         LocationDecision::Store {
             latitude: 48.137,
             longitude: 11.575,
             name: "Munich, Bavaria".into(),
+            country_code: Some("DE".into()),
         }
     );
     assert!(matches!(
@@ -28,6 +30,9 @@ fn location_apply_decisions_store_success_and_keep_errors_visible() {
             latitude: 47.376,
             longitude: 8.541,
             name: crate::ui::strings::text(crate::ui::strings::CONCERTS_CURRENT_LOCATION),
+            // `RAD-5`/`O-4`: the portal has no address text, so this is
+            // honestly `None` — never a guessed country.
+            country_code: None,
         }
     );
     assert!(matches!(

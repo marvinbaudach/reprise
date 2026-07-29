@@ -7,12 +7,17 @@ pub struct GeocodedLocation {
     pub lat: f64,
     pub lon: f64,
     pub display_name: String,
+    /// `RAD-5`/`O-4`: the ISO 3166-1 alpha-2 country code, uppercased to
+    /// match radio-browser's convention, when Nominatim's `addressdetails`
+    /// enrichment of this same request returned one. Never derived from a
+    /// separate reverse-geocoding call.
+    pub country_code: Option<String>,
 }
 
 #[must_use]
 pub fn geocode_url(query: &str) -> String {
     format!(
-        "https://nominatim.openstreetmap.org/search?q={}&format=json&limit=1",
+        "https://nominatim.openstreetmap.org/search?q={}&format=json&limit=1&addressdetails=1",
         crate::musicbrainz::urlencode(query.trim())
     )
 }
@@ -41,10 +46,18 @@ pub fn parse_geocode(body: &str) -> Result<Option<GeocodedLocation>, ProviderErr
     else {
         return Ok(None);
     };
+    let country_code = value
+        .get("address")
+        .and_then(|address| address.get("country_code"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_ascii_uppercase);
     Ok(Some(GeocodedLocation {
         lat,
         lon,
         display_name: display_name.to_owned(),
+        country_code,
     }))
 }
 

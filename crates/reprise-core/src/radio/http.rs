@@ -144,10 +144,37 @@ fn fixture_request(value: &str) -> Option<FixtureRequest> {
         return Some(FixtureRequest::Servers);
     }
     if segments.get(..3) == Some(&["json", "stations", "search"]) {
-        return url
+        // `RAD-5`'s chip searches (`radio::search::search_by`) key the same
+        // `/stations/search` route by `tag`/`countrycode` instead of `name`
+        // — free-text search still wins when present, but a criteria-only
+        // request (including the deliberately unfiltered "Top voted") still
+        // needs a stable fixture key.
+        let pairs: Vec<(String, String)> = url
             .query_pairs()
-            .find_map(|(key, value)| (key == "name").then(|| value.into_owned()))
-            .map(FixtureRequest::Search);
+            .map(|(key, value)| (key.into_owned(), value.into_owned()))
+            .collect();
+        let by_key = |key: &str| {
+            pairs
+                .iter()
+                .find(|(pair_key, _)| pair_key == key)
+                .map(|(_, value)| value.clone())
+        };
+        if let Some(name) = by_key("name") {
+            return Some(FixtureRequest::Search(name));
+        }
+        let mut parts = Vec::new();
+        if let Some(tag) = by_key("tag") {
+            parts.push(format!("tag-{tag}"));
+        }
+        if let Some(country_code) = by_key("countrycode") {
+            parts.push(format!("country-{country_code}"));
+        }
+        let key = if parts.is_empty() {
+            "broad".to_owned()
+        } else {
+            parts.join("-")
+        };
+        return Some(FixtureRequest::Search(key));
     }
     if segments.get(..2) == Some(&["json", "url"]) {
         return segments

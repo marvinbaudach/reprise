@@ -237,6 +237,70 @@ fn src_8_radio_results_scroll_inside_a_bounded_viewport() {
     );
 }
 
+/// `RAD-5`: the required "absent without a location" half, exercised
+/// through the real button wiring rather than just the pure decision
+/// function — clicking "Near you" with no app-level location stored must
+/// call the location-settings callback and dispatch no search at all.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn rad_5_near_you_click_without_a_location_opens_settings_and_dispatches_no_search() {
+    gtk4::init().unwrap();
+    let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
+    let dialog = RadioAddDialog::new(conn, || {});
+    let opened = Rc::new(std::cell::Cell::new(false));
+    let flag = opened.clone();
+    dialog.set_on_location_settings(move || flag.set(true));
+
+    dialog.widgets.chip_near_you.emit_clicked();
+
+    assert!(
+        opened.get(),
+        "no location stored must hand off to the location setting"
+    );
+    assert!(
+        matches!(dialog.state.borrow().phase, AddDialogPhase::Idle),
+        "a chip that cannot filter by location must never fire an unfiltered search instead"
+    );
+}
+
+/// `RAD-5`: the required "present with a location" half — with a
+/// country-taggable app-level location stored, clicking "Near you" must
+/// dispatch a search (moving the dialog into `Searching`) and must not call
+/// the location-settings hand-off.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn rad_5_near_you_click_with_a_location_dispatches_a_search_and_never_opens_settings() {
+    gtk4::init().unwrap();
+    let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
+    reprise_core::location::store(
+        &conn.borrow(),
+        52.52,
+        13.405,
+        "Berlin, Deutschland",
+        Some("DE"),
+    )
+    .unwrap();
+    let dialog = RadioAddDialog::new(conn, || {});
+    let opened = Rc::new(std::cell::Cell::new(false));
+    let flag = opened.clone();
+    dialog.set_on_location_settings(move || flag.set(true));
+
+    dialog.widgets.chip_near_you.emit_clicked();
+
+    assert!(
+        !opened.get(),
+        "a usable location must never fall back to the settings hand-off"
+    );
+    assert!(
+        matches!(dialog.state.borrow().phase, AddDialogPhase::Searching),
+        "a usable location must dispatch a real search"
+    );
+    assert_eq!(
+        dialog.widgets.entry.text().as_str(),
+        strings::text(strings::RADIO_CHIP_NEAR_YOU)
+    );
+}
+
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn net_1a_radio_search_never_reaches_the_directory_while_the_switch_is_off() {
