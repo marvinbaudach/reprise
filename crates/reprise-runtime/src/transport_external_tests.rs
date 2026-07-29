@@ -189,3 +189,87 @@ fn external_media_without_a_location_is_rejected_before_the_backend() {
     );
     assert!(fixture.calls.calls().is_empty());
 }
+
+/// A music context, playing, with a stream started on top of it. The stream
+/// plays beside the queue — that is `play_external`'s own contract — so
+/// everything the queue holds is still the user's music session.
+fn a_stream_over_a_music_queue() -> Fixture {
+    let mut fixture = fixture();
+    fixture.play_tracks(vec![1, 2, 3], 0).unwrap();
+    fixture
+        .queue(&QueueCommand::AddNext(vec![2]))
+        .expect("queuing succeeds");
+    fixture
+        .transport
+        .play_external(&fixture.backend, &a_stream(), None)
+        .expect("the stream plays");
+    fixture
+}
+
+#[test]
+fn stopping_a_stream_leaves_the_music_queue_alone() {
+    let mut fixture = a_stream_over_a_music_queue();
+
+    fixture.command(&PlaybackCommand::Stop).unwrap();
+
+    let snapshot = fixture.transport.queue_snapshot();
+    assert_eq!(
+        snapshot.context_total, 2,
+        "the stream never touched the context, so stopping it is not the \
+         user ending their music session — wiping the queue here destroys a \
+         playlist position they cannot get back"
+    );
+    assert_eq!(snapshot.play_next_track_ids, vec![2]);
+}
+
+#[test]
+fn stopping_music_still_drops_the_context() {
+    let mut fixture = fixture();
+    fixture.play_tracks(vec![1, 2, 3], 0).unwrap();
+
+    fixture.command(&PlaybackCommand::Stop).unwrap();
+
+    assert_eq!(
+        fixture.transport.queue_snapshot().context_total,
+        0,
+        "the case the hard stop exists for must keep working"
+    );
+}
+
+#[test]
+fn next_during_a_stream_does_not_swap_in_the_music_behind_it() {
+    let mut fixture = a_stream_over_a_music_queue();
+
+    fixture.command(&PlaybackCommand::Next).unwrap();
+
+    assert_eq!(
+        fixture.transport.playback_snapshot().track_id,
+        None,
+        "the stream is still what is loaded; GTK gates both buttons on being \
+         in queue mode and does nothing at all otherwise"
+    );
+    assert_eq!(
+        fixture.transport.queue_snapshot().play_next_track_ids,
+        vec![2],
+        "and the queued track was not consumed by a press meant for the stream"
+    );
+}
+
+#[test]
+fn previous_during_a_stream_does_not_swap_in_the_music_behind_it() {
+    let mut fixture = fixture();
+    fixture.play_tracks(vec![1, 2, 3], 1).unwrap();
+    fixture
+        .transport
+        .play_external(&fixture.backend, &a_stream(), None)
+        .unwrap();
+
+    fixture.command(&PlaybackCommand::Previous).unwrap();
+
+    assert_eq!(
+        fixture.transport.playback_snapshot().track_id,
+        None,
+        "there is a context entry before the cursor, so without the gate \
+         Previous silently replaces the stream with a library track"
+    );
+}

@@ -216,3 +216,75 @@ fn an_unresolvable_upcoming_track_pre_feeds_nothing() {
          trades an audible gap for a failed handoff, which is worse"
     );
 }
+
+#[test]
+fn an_unplayable_queued_entry_does_not_push_the_pre_feed_past_the_rest_of_the_queue() {
+    let mut harness = harness();
+    let client = full_client(&mut harness.runtime);
+    harness
+        .runtime
+        .command(
+            client,
+            &Command::PlayTracks {
+                track_ids: vec![1, 3],
+                start_index: 0,
+            },
+        )
+        .unwrap();
+    // 404 is gone; 2 is right behind it and is what should actually play.
+    harness
+        .runtime
+        .command(client, &Command::Queue(QueueCommand::AddNext(vec![404, 2])))
+        .unwrap();
+
+    assert_eq!(
+        harness.playback.pre_fed(),
+        Some(Some("/music/2.flac".into())),
+        "skipping the broken entry must not skip the whole explicit queue: \
+         pre-feeding the context track behind it promises a handoff the \
+         advance will not make"
+    );
+}
+
+#[test]
+fn a_gapless_handoff_lands_on_the_track_that_was_pre_fed() {
+    let mut harness = harness();
+    let client = full_client(&mut harness.runtime);
+    harness
+        .runtime
+        .command(
+            client,
+            &Command::PlayTracks {
+                track_ids: vec![1, 3],
+                start_index: 0,
+            },
+        )
+        .unwrap();
+    harness
+        .runtime
+        .command(client, &Command::Queue(QueueCommand::AddNext(vec![404, 2])))
+        .unwrap();
+    harness.playback.clear();
+
+    // The backend swapped to whatever it was pre-fed and says so.
+    harness.runtime.on_player_event(&StreamEvent {
+        generation: StreamGeneration::from(1),
+        event: PlayerEvent::AdvancedToNext,
+    });
+
+    assert_eq!(
+        harness.runtime.snapshot().unwrap().playback.track_id,
+        Some(2),
+        "this branch adopts a handoff without retrying, so a model that \
+         picks a different track than the pre-feed did abandons the one the \
+         backend is already playing — and abandoning stops it"
+    );
+    assert!(
+        !harness
+            .playback
+            .calls()
+            .iter()
+            .any(|call| matches!(call, crate::fakes::BackendCall::Stop)),
+        "stopping here would cut off audio that is already rolling"
+    );
+}

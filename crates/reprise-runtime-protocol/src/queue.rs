@@ -18,6 +18,13 @@ pub struct QueueSnapshot {
     /// replay). It counts observable changes to the queue facet, not user
     /// edits — a track ending renumbers the context window just as surely as
     /// an edit does.
+    ///
+    /// Its promise holds exactly as far as this snapshot reaches. A reorder
+    /// wholly beyond the windows below renumbers nothing a client can name,
+    /// so it does not move the revision — and cannot, since the ids involved
+    /// were never published. That stays true only while the windows are the
+    /// whole addressable range; a paged read that hands out deeper positions
+    /// has to move the revision on deeper changes too.
     pub revision: u64,
     pub current_track_id: Option<i64>,
     /// Explicitly queued items, in play order.
