@@ -8,6 +8,7 @@ impl YtDlp {
     pub fn list_range(&self, url: &str, end: usize) -> Result<YtDlpPlaylist, PodcastError> {
         let range = format!("1:{end}");
         let output = self.run(
+            "list_range",
             [
                 OsString::from("--no-warnings"),
                 OsString::from("--flat-playlist"),
@@ -18,6 +19,6 @@ impl YtDlp {
             ],
             self.timeouts.list,
         )?;
-        parse_playlist(&output)
+        parse_playlist("list_range", &output)
     }
 }

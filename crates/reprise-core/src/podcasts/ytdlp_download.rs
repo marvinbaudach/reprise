@@ -50,7 +50,7 @@ pub(super) fn download(
     super::ytdlp::configure_process_group(&mut command);
     let mut child = command
         .spawn()
-        .map_err(|error| super::ytdlp::map_spawn_error(&error))?;
+        .map_err(|error| super::ytdlp::logged_spawn_error("download", &error))?;
     let process_group = child.id();
     let stdout = read_lines(child.stdout.take().expect("piped stdout"));
     let stderr = super::ytdlp::read_in_background(child.stderr.take().expect("piped stderr"));
@@ -60,13 +60,17 @@ pub(super) fn download(
     let mut total_bytes = None;
 
     let status = loop {
-        drain_available(
+        if let Err(error) = drain_available(
             &stdout,
             &mut output_lines,
             &mut received_bytes,
             &mut total_bytes,
             on_progress,
-        );
+        ) {
+            super::ytdlp::terminate_process_tree(&mut child);
+            cleanup_artifacts(output);
+            return Err(error);
+        }
         match child.try_wait() {
             Ok(Some(status)) => {
                 super::ytdlp::terminate_process_group(process_group);
@@ -76,16 +80,19 @@ pub(super) fn download(
             Err(error) => {
                 super::ytdlp::terminate_process_tree(&mut child);
                 cleanup_artifacts(output);
-                return Err(PodcastError::YtDlp(format!(
-                    "could not monitor yt-dlp: {error}"
-                )));
+                return Err(super::ytdlp::runtime_error(
+                    "monitor_failed",
+                    "download",
+                    &error,
+                ));
             }
         }
         let now = Instant::now();
         if now >= deadline {
             super::ytdlp::terminate_process_tree(&mut child);
             cleanup_artifacts(output);
-            return Err(PodcastError::Timeout);
+            super::ytdlp::log_timeout("download", timeout);
+            return Err(PodcastError::YtDlpTimeout);
         }
         thread::sleep(POLL_INTERVAL.min(deadline.saturating_duration_since(now)));
     };
@@ -93,6 +100,7 @@ pub(super) fn download(
     if let Err(error) = collect_remaining(
         &stdout,
         deadline,
+        timeout,
         &mut output_lines,
         &mut received_bytes,
         &mut total_bytes,
@@ -101,24 +109,23 @@ pub(super) fn download(
         cleanup_artifacts(output);
         return Err(error);
     }
-    let stderr = match super::ytdlp::collect_output(&stderr, deadline) {
-        Ok(stderr) => stderr,
-        Err(error) => {
-            cleanup_artifacts(output);
-            return Err(error);
-        }
-    };
+    let stderr =
+        match super::ytdlp::collect_output("download", "stderr", &stderr, deadline, timeout) {
+            Ok(stderr) => stderr,
+            Err(error) => {
+                cleanup_artifacts(output);
+                return Err(error);
+            }
+        };
     if !status.success() {
         cleanup_artifacts(output);
-        return Err(PodcastError::YtDlp(super::ytdlp::classify_stderr(
-            &String::from_utf8_lossy(&stderr),
-        )));
+        return Err(super::ytdlp::error_from_status("download", status, &stderr));
     }
     match super::ytdlp::finalize_download(&output_lines.join("\n"), output) {
         Ok(()) => Ok(()),
-        Err(error) => {
+        Err(_) => {
             cleanup_artifacts(output);
-            Err(error)
+            Err(super::ytdlp::download_finalize_error())
         }
     }
 }
@@ -142,15 +149,17 @@ fn drain_available(
     received_bytes: &mut u64,
     total_bytes: &mut Option<u64>,
     on_progress: &mut dyn FnMut(DownloadProgress),
-) {
+) -> Result<(), PodcastError> {
     while let Ok(line) = receiver.try_recv() {
-        apply_line(line, output, received_bytes, total_bytes, on_progress);
+        apply_line(line, output, received_bytes, total_bytes, on_progress)?;
     }
+    Ok(())
 }
 
 fn collect_remaining(
     receiver: &Receiver<std::io::Result<String>>,
     deadline: Instant,
+    timeout: Duration,
     output: &mut Vec<String>,
     received_bytes: &mut u64,
     total_bytes: &mut Option<u64>,
@@ -158,9 +167,12 @@ fn collect_remaining(
 ) -> Result<(), PodcastError> {
     loop {
         match receiver.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-            Ok(line) => apply_line(line, output, received_bytes, total_bytes, on_progress),
+            Ok(line) => apply_line(line, output, received_bytes, total_bytes, on_progress)?,
             Err(RecvTimeoutError::Disconnected) => return Ok(()),
-            Err(RecvTimeoutError::Timeout) => return Err(PodcastError::Timeout),
+            Err(RecvTimeoutError::Timeout) => {
+                super::ytdlp::log_output_timeout("download", "stdout", timeout);
+                return Err(PodcastError::YtDlpTimeout);
+            }
         }
     }
 }
@@ -171,13 +183,18 @@ fn apply_line(
     received_bytes: &mut u64,
     total_bytes: &mut Option<u64>,
     on_progress: &mut dyn FnMut(DownloadProgress),
-) {
-    let Ok(line) = line else {
-        return;
+) -> Result<(), PodcastError> {
+    let line = match line {
+        Ok(line) => line,
+        Err(error) => {
+            return Err(super::ytdlp::output_read_error(
+                "download", "stdout", &error,
+            ));
+        }
     };
     let Some(progress) = parse_progress(&line) else {
         output.push(line);
-        return;
+        return Ok(());
     };
     *received_bytes = (*received_bytes).max(progress.received_bytes);
     *total_bytes = progress.total_bytes.or(*total_bytes);
@@ -185,6 +202,7 @@ fn apply_line(
         received_bytes: *received_bytes,
         total_bytes: *total_bytes,
     });
+    Ok(())
 }
 
 fn parse_progress(line: &str) -> Option<DownloadProgress> {
