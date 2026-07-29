@@ -193,8 +193,8 @@ mod tests {
         assert_eq!(phase_percent(&PlannedSyncPhase::Finishing), 100);
         assert!(include_str!("device_sync_feedback.rs").contains("Sync complete"));
         assert!(
-            include_str!("../sidebar/sidebar_device_card.rs").contains("Synced ✓"),
-            "the sidebar must project the completed idle state"
+            include_str!("../sidebar/sidebar_device_card_text.rs").contains("Up to date"),
+            "the sidebar must project the completed idle state (design 7c/`MTP-29`)"
         );
     }
 

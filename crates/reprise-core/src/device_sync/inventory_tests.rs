@@ -71,6 +71,8 @@ fn v36_migration_preserves_managed_files_without_the_track_cascade() {
         .unwrap();
     assert_eq!(version, 36);
     crate::db_device_sync::migrate_v37(&conn).unwrap();
+    crate::db_device_sync::migrate_v44(&conn).unwrap();
+    crate::db_device_sync::migrate_v46(&conn).unwrap();
     let settings = load_or_create_settings(&conn, "phone", "ignored").unwrap();
     assert_eq!(settings.selection, DeviceSelection::Sources(Vec::new()));
     assert_eq!(settings.profile, TransferProfile::Mp3(Mp3Quality::Kbps256));
@@ -143,6 +145,8 @@ fn v36_migration_keeps_valid_playlist_selection_and_marks_it_unconfigured_only_w
 
     crate::db_device_sync::migrate_v36(&conn).unwrap();
     crate::db_device_sync::migrate_v37(&conn).unwrap();
+    crate::db_device_sync::migrate_v44(&conn).unwrap();
+    crate::db_device_sync::migrate_v46(&conn).unwrap();
 
     assert_eq!(
         load_or_create_settings(&conn, "configured", "ignored")
@@ -178,6 +182,8 @@ fn v37_migration_preserves_existing_mp3_behavior_while_fresh_devices_default_to_
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
     assert_eq!(version, 37);
+    crate::db_device_sync::migrate_v44(&conn).unwrap();
+    crate::db_device_sync::migrate_v46(&conn).unwrap();
     assert_eq!(
         load_or_create_settings(&conn, "existing", "ignored")
             .unwrap()
@@ -189,6 +195,35 @@ fn v37_migration_preserves_existing_mp3_behavior_while_fresh_devices_default_to_
             .unwrap()
             .profile,
         TransferProfile::Opus160
+    );
+}
+
+/// `MTP-43`: a device row that predates the "Download missing files before
+/// syncing" switch gets it backfilled to `true` (the same default a brand
+/// new device gets), never `false` — a silently-off switch on upgrade would
+/// change behavior nobody asked to change.
+#[test]
+fn v46_migration_backfills_prepare_before_sync_to_true_for_existing_rows() {
+    let conn = open_legacy_v33();
+    conn.execute(
+        "INSERT INTO device_settings (device_serial, device_name) VALUES ('existing', 'Phone')",
+        [],
+    )
+    .unwrap();
+    crate::db_device_sync::migrate_v36(&conn).unwrap();
+    crate::db_device_sync::migrate_v37(&conn).unwrap();
+    crate::db_device_sync::migrate_v44(&conn).unwrap();
+
+    crate::db_device_sync::migrate_v46(&conn).unwrap();
+
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 46);
+    assert!(
+        load_or_create_settings(&conn, "existing", "ignored")
+            .unwrap()
+            .prepare_before_sync
     );
 }
 

@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use gtk4::gio;
 use gtk4::gio::prelude::*;
-use reprise_core::device_sync::DeviceStorageInspection;
+use reprise_core::device_sync::{DeviceStorageInspection, StorageId, SyncTarget};
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor, DeviceStorage};
 use reprise_platform_linux::device_transfer::{
     probe_transcode_capability, transcode_audio, TranscodeProfile, TranscodeRequest, TranscodedFile,
@@ -79,41 +79,27 @@ impl DeviceBackend for SimulatedMtpDeviceBackend {
 
     fn subscribe_devices(&self, _callback: Rc<dyn Fn(Vec<DeviceDescriptor>)>) {}
 
-    fn inspect(&self, root_uri: String) -> BackendFuture<DeviceStorageInspection> {
+    fn inspect(
+        &self,
+        root_uri: String,
+        targets: [SyncTarget; 3],
+    ) -> BackendFuture<DeviceStorageInspection> {
         Box::pin(async move {
             let storage = Self::storage(&root_uri);
-            storage.inspect().await.map_err(|error| error.to_string())
-        })
-    }
-
-    fn copy_track(
-        &self,
-        _device_id: String,
-        root_uri: String,
-        source_path: PathBuf,
-        relative_target: String,
-        expected_size: u64,
-        cancellable: gio::Cancellable,
-        progress: Rc<dyn Fn(u64, u64)>,
-    ) -> BackendFuture<CopyOutcome> {
-        Box::pin(async move {
-            Self::storage(&root_uri)
-                .copy_track(
-                    &gio::File::for_path(source_path),
-                    &relative_target,
-                    expected_size,
-                    &cancellable,
-                    move |copied, total| progress(copied, total),
-                )
+            storage
+                .inspect(&targets)
                 .await
                 .map_err(|error| error.to_string())
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn replace_track(
         &self,
         _device_id: String,
         root_uri: String,
+        target_path: String,
+        storage_id: Option<StorageId>,
         source_path: PathBuf,
         relative_target: String,
         expected_size: u64,
@@ -122,7 +108,9 @@ impl DeviceBackend for SimulatedMtpDeviceBackend {
     ) -> BackendFuture<CopyOutcome> {
         Box::pin(async move {
             Self::storage(&root_uri)
-                .replace_track(
+                .replace_managed(
+                    storage_id,
+                    &target_path,
                     &gio::File::for_path(source_path),
                     &relative_target,
                     expected_size,
@@ -134,19 +122,30 @@ impl DeviceBackend for SimulatedMtpDeviceBackend {
         })
     }
 
-    fn cleanup_partials(&self, root_uri: String) -> BackendFuture<u32> {
+    fn cleanup_partials(
+        &self,
+        root_uri: String,
+        target_path: String,
+        storage_id: Option<StorageId>,
+    ) -> BackendFuture<u32> {
         Box::pin(async move {
             Self::storage(&root_uri)
-                .cleanup_partials()
+                .cleanup_partials_in(storage_id, &target_path)
                 .await
                 .map_err(|error| error.to_string())
         })
     }
 
-    fn delete_track(&self, root_uri: String, relative_target: String) -> BackendFuture<bool> {
+    fn delete_track(
+        &self,
+        root_uri: String,
+        target_path: String,
+        storage_id: Option<StorageId>,
+        relative_target: String,
+    ) -> BackendFuture<bool> {
         Box::pin(async move {
             Self::storage(&root_uri)
-                .delete_track(&relative_target)
+                .delete_managed(storage_id, &target_path, &relative_target)
                 .await
                 .map_err(|error| error.to_string())
         })
@@ -185,12 +184,14 @@ impl DeviceBackend for SimulatedMtpDeviceBackend {
         &self,
         _device_id: String,
         root_uri: String,
+        target_path: String,
+        storage_id: Option<StorageId>,
         name: String,
         contents: Vec<u8>,
     ) -> BackendFuture<()> {
         Box::pin(async move {
             Self::storage(&root_uri)
-                .replace_playlist(&name, contents)
+                .replace_playlist(storage_id, &target_path, &name, contents)
                 .await
                 .map_err(|error| error.to_string())
         })

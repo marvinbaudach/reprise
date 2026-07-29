@@ -255,6 +255,7 @@ impl PreferencesContext {
                 PageId::Appearance => self.appearance_page(),
                 PageId::Layout => self.layout_page(),
                 PageId::Library => self.library_page(),
+                PageId::OnlineSources => self.online_sources_page(),
                 PageId::NewReleases => {
                     super::preference_new_releases::build_page(&self.conn, &self.artist_news)
                 }
@@ -391,6 +392,39 @@ impl PreferencesContext {
 
     fn layout_page(self: &Rc<Self>) -> adw::PreferencesPage {
         super::preference_layout::build(self)
+    }
+
+    fn online_sources_page(self: &Rc<Self>) -> adw::PreferencesPage {
+        super::preference_online_sources::build(self)
+    }
+
+    /// `NET-1a`: persists the global online-sources gate and re-derives
+    /// every cached "is this feature network-allowed" flag from it, so the
+    /// change takes effect immediately (`SET-4`) rather than only on the
+    /// next app start. Online Lyrics is recomputed via the player (its
+    /// runtime lives there); Radio has no cache to recompute — its network
+    /// call paths read the gate fresh each time.
+    pub(in crate::ui) fn set_online_sources_enabled(
+        &self,
+        enabled: bool,
+    ) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.borrow();
+        reprise_core::online_sources::set_enabled(&conn, enabled)?;
+        self.cover_download.recompute_enabled(&conn);
+        self.artist_portrait.recompute_enabled(&conn);
+        self.artist_news.recompute_enabled(&conn);
+        self.concerts.recompute_enabled(&conn);
+        self.podcasts.recompute_enabled(&conn);
+        // `SRC-11`: source artwork keeps its gate in a process-wide atomic the
+        // artwork workers read, so it has to be republished here too — a queue
+        // that is still draining has no other reason to notice the change.
+        crate::ui::podcasts::source_image::recompute_gate(&conn);
+        drop(conn);
+        if let Some(player) = &self.player {
+            player.recompute_lyrics_enabled();
+        }
+        self.sidebar.refresh("online sources gate toggled");
+        Ok(())
     }
 
     pub(in crate::ui) fn open_column_layout_editor(&self) {

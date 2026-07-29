@@ -36,18 +36,21 @@ pub struct CoverDownloadRuntime {
     pub(in crate::ui) worker: async_channel::Sender<DownloadRequest>,
 }
 
-/// Starts the one shared serial worker and seeds its live opt-in state.
-pub(in crate::ui) fn setup(conn: &rusqlite::Connection) -> CoverDownloadRuntime {
-    let enabled = reprise_core::modules::is_enabled(
+fn network_allowed(conn: &rusqlite::Connection) -> bool {
+    reprise_core::online_sources::network_allowed(
         conn,
         &reprise_core::modules::COVER_DOWNLOAD_MODULE,
     )
     .unwrap_or_else(|error| {
         tracing::warn!(%error, "could not read cover-download module state; defaulting to off");
         false
-    });
+    })
+}
+
+/// Starts the one shared serial worker and seeds its live opt-in state.
+pub(in crate::ui) fn setup(conn: &rusqlite::Connection) -> CoverDownloadRuntime {
     CoverDownloadRuntime {
-        enabled: Rc::new(Cell::new(enabled)),
+        enabled: Rc::new(Cell::new(network_allowed(conn))),
         worker: spawn(),
     }
 }
@@ -71,8 +74,16 @@ impl CoverDownloadRuntime {
             &reprise_core::modules::COVER_DOWNLOAD_MODULE,
             enabled,
         )?;
-        self.enabled.set(enabled);
+        self.enabled.set(network_allowed(conn));
         Ok(())
+    }
+
+    /// `NET-1a`: re-derives `enabled` from the global online-sources gate —
+    /// called after the gate toggles on the Online sources page, so a
+    /// module that is itself on still stops immediately when the gate goes
+    /// off (`SET-4`).
+    pub(in crate::ui) fn recompute_enabled(&self, conn: &rusqlite::Connection) {
+        self.enabled.set(network_allowed(conn));
     }
 
     pub(in crate::ui) fn try_request(&self, request: DownloadRequest) -> bool {
@@ -195,7 +206,7 @@ mod tests {
     };
 
     #[test]
-    fn net_1_cover_download_respects_the_module() {
+    fn net_1a_cover_download_respects_the_module() {
         let (worker, receiver) = async_channel::unbounded();
         let runtime = CoverDownloadRuntime {
             enabled: Rc::new(Cell::new(false)),
@@ -215,6 +226,31 @@ mod tests {
         let mut context = Context::from_waker(Waker::noop());
         assert_eq!(future.as_mut().poll(&mut context), Poll::Ready(false));
         assert!(receiver.try_recv().is_err());
+    }
+
+    #[test]
+    fn net_1a_recompute_enabled_reflects_the_global_gate() {
+        let conn = reprise_core::db::open(None).unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        reprise_core::modules::set_enabled(
+            &conn,
+            &reprise_core::modules::COVER_DOWNLOAD_MODULE,
+            true,
+        )
+        .unwrap();
+        let runtime = setup(&conn);
+        assert!(runtime.enabled.get());
+
+        reprise_core::online_sources::set_enabled(&conn, false).unwrap();
+        runtime.recompute_enabled(&conn);
+        assert!(
+            !runtime.enabled.get(),
+            "global gate off must disable dispatch even with the module on"
+        );
+
+        reprise_core::online_sources::set_enabled(&conn, true).unwrap();
+        runtime.recompute_enabled(&conn);
+        assert!(runtime.enabled.get());
     }
 
     #[test]

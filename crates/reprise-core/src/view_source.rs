@@ -70,6 +70,8 @@ pub enum ViewSource {
     /// The Podcasts source — a dedicated episode table rather than the
     /// shared local-track list.
     Podcasts,
+    /// YouTube channel subscriptions, kept separate from RSS podcasts.
+    Youtube,
     /// The Internet Radio source — a dedicated station table rather than the
     /// shared local-track list.
     Radio,
@@ -104,6 +106,7 @@ impl ViewSource {
             Self::Releases => "releases".to_string(),
             Self::Concerts => "concerts".to_string(),
             Self::Podcasts => "podcasts".to_string(),
+            Self::Youtube => "youtube".to_string(),
             Self::Radio => "radio".to_string(),
             Self::Conversions => "conversions".to_string(),
         }
@@ -133,6 +136,7 @@ mod tests {
         assert_eq!(ViewSource::MyStats.label(), "my_stats");
         assert_eq!(ViewSource::Conversions.label(), "conversions");
         assert_eq!(ViewSource::Podcasts.label(), "podcasts");
+        assert_eq!(ViewSource::Youtube.label(), "youtube");
         assert_eq!(ViewSource::Radio.label(), "radio");
         assert_eq!(
             ViewSource::Album {

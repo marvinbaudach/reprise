@@ -42,6 +42,7 @@ impl MenuContext {
             | ViewSource::Releases
             | ViewSource::Concerts
             | ViewSource::Podcasts
+            | ViewSource::Youtube
             | ViewSource::Radio
             | ViewSource::Conversions
             | ViewSource::Genre(_) => Self::LibraryTracks,

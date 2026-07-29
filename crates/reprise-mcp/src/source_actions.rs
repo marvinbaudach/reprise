@@ -423,7 +423,13 @@ fn add_podcast(
                 .map_err(|error| podcast_source_error(&error))?;
             (feed, Some(response))
         }
-        podcasts::PodcastKind::Youtube if config.youtube_enabled => {
+        podcasts::PodcastKind::Youtube
+            if reprise_core::online_sources::network_allowed(
+                conn,
+                &reprise_core::modules::YOUTUBE_MODULE,
+            )
+            .unwrap_or(false) =>
+        {
             let listing = podcasts::ytdlp::YtDlp::discover(config.ytdlp_path.as_deref())
                 .list(url)
                 .map(podcasts::youtube::project_playlist)
@@ -500,7 +506,10 @@ fn add_podcast(
     })
 }
 
-fn required_nonempty<'a>(value: Option<&'a str>, message: &str) -> Result<&'a str, DataError> {
+pub(crate) fn required_nonempty<'a>(
+    value: Option<&'a str>,
+    message: &str,
+) -> Result<&'a str, DataError> {
     value
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -610,7 +619,7 @@ fn require_manage(conn: &rusqlite::Connection, granted_at_startup: bool) -> Resu
     }
 }
 
-fn podcast_source_error(error: &reprise_core::podcasts::PodcastError) -> DataError {
+pub(crate) fn podcast_source_error(error: &reprise_core::podcasts::PodcastError) -> DataError {
     use reprise_core::podcasts::PodcastError;
     let message = match error {
         PodcastError::Timeout => "podcast source timed out",
@@ -619,11 +628,12 @@ fn podcast_source_error(error: &reprise_core::podcasts::PodcastError) -> DataErr
         PodcastError::Body(_) | PodcastError::Parse(_) => "podcast source returned invalid data",
         PodcastError::NotModified => "podcast source was not modified",
         PodcastError::YtDlp(_) => "YouTube source could not be read with yt-dlp",
+        PodcastError::Disabled(_) => "this source is disabled in Reprise preferences",
     };
     DataError::InvalidInput(message.to_owned())
 }
 
-fn radio_source_error(error: &reprise_core::radio::RadioError) -> DataError {
+pub(crate) fn radio_source_error(error: &reprise_core::radio::RadioError) -> DataError {
     use reprise_core::radio::RadioError;
     let message = match error {
         RadioError::Timeout => "radio stream timed out",

@@ -105,7 +105,18 @@ impl std::fmt::Display for ProtocolVersion {
 /// simply has no method for them. Minor 4 adds
 /// [`playback::ExternalMedia`], so a stream or a podcast episode can be
 /// played by the same runtime that owns the queue — again additive.
-pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 3, minor: 1 };
+///
+/// Major 3 carries the breaking queue and playback changes. On top of it,
+/// minor 1 adds [`device_sync::DeviceCategorySnapshot`] and the `categories`
+/// field of [`device_sync::DeviceSnapshot`], which is additive: the snapshot
+/// is a dictionary, so a peer that omits the key reads as an empty list. That
+/// field replaced a separate `CategorySnapshot` D-Bus method, which the tuple
+/// encoding had forced into existence only because zvariant stops deriving
+/// tuple impls past a fixed arity — a limit named dictionaries do not have.
+/// Minor 2 adds [`session::RestoreSession`], so a surface can put back the
+/// queue it saved without also starting it — additive, since an older
+/// runtime simply has no method for it.
+pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 3, minor: 2 };
 
 #[cfg(test)]
 mod tests {
@@ -139,6 +150,6 @@ mod tests {
     #[test]
     fn the_shipped_version_is_compatible_with_itself() {
         assert!(PROTOCOL_VERSION.is_compatible_with(PROTOCOL_VERSION));
-        assert_eq!(PROTOCOL_VERSION.to_string(), "3.1");
+        assert_eq!(PROTOCOL_VERSION.to_string(), "3.2");
     }
 }

@@ -132,6 +132,7 @@ pub(in crate::ui) fn parse_smoke_source(value: &str) -> Option<ViewSource> {
         "concerts" => Some(ViewSource::Concerts),
         "releases" => Some(ViewSource::Releases),
         "podcasts" => Some(ViewSource::Podcasts),
+        "youtube" => Some(ViewSource::Youtube),
         "radio" => Some(ViewSource::Radio),
         _ => value
             .strip_prefix("playlist:")
@@ -217,6 +218,7 @@ pub(in crate::ui) fn arm_smoke_source(shared: &Rc<Shared>) {
                 | ViewSource::Concerts
                 | ViewSource::Releases
                 | ViewSource::Podcasts
+                | ViewSource::Youtube
                 | ViewSource::Radio
         ) {
             tracing::debug!(
@@ -289,6 +291,7 @@ mod tests {
         assert_eq!(parse_smoke_source("concerts"), Some(ViewSource::Concerts));
         assert_eq!(parse_smoke_source("releases"), Some(ViewSource::Releases));
         assert_eq!(parse_smoke_source("podcasts"), Some(ViewSource::Podcasts));
+        assert_eq!(parse_smoke_source("youtube"), Some(ViewSource::Youtube));
         assert_eq!(parse_smoke_source("radio"), Some(ViewSource::Radio));
     }
 }

@@ -11,8 +11,8 @@
 
 use reprise_runtime_protocol::device_run::DeviceRunSnapshot;
 use reprise_runtime_protocol::device_sync::{
-    DeviceChangeCounts, DeviceControls, DeviceProgress, DeviceSnapshot, DeviceSourceSnapshot,
-    DeviceStorageComposition, DeviceStorageSnapshot,
+    DeviceCategorySnapshot, DeviceChangeCounts, DeviceControls, DeviceProgress, DeviceSnapshot,
+    DeviceSourceSnapshot, DeviceStorageComposition, DeviceStorageSnapshot,
 };
 use reprise_runtime_protocol::jobs::{BatchProgress, JobSnapshot};
 use reprise_runtime_protocol::playback::PlaybackSnapshot;
@@ -91,6 +91,43 @@ fn populated_device() -> DeviceSnapshot {
         },
         current_track: "Ghosts".into(),
         last_synced_at: Some(1_753_600_000),
+        categories: vec![
+            DeviceCategorySnapshot {
+                kind: "playlists".into(),
+                target_path: "/Music/Reprise".into(),
+                target_enabled: true,
+                size_on_device_bytes: 3_221_225_472,
+                cap_bytes: None,
+                reading_kind: "diff".into(),
+                files_to_copy: 14,
+                bytes_to_copy: 2_791_728_742,
+                files_to_remove: 3,
+                bytes_freed: 155_189_248,
+                files_waiting_for_download: 0,
+                playlists_rewritten: 2,
+            },
+            // The two states that are not a diff have to survive the wire as
+            // themselves (`MTP-22`): "never examined" must not arrive looking
+            // like "examined and found nothing".
+            DeviceCategorySnapshot {
+                kind: "youtube_audio".into(),
+                target_path: "/Music/Reprise-YouTube".into(),
+                target_enabled: false,
+                size_on_device_bytes: 0,
+                cap_bytes: Some(8_589_934_592),
+                reading_kind: "source_off".into(),
+                ..DeviceCategorySnapshot::default()
+            },
+            DeviceCategorySnapshot {
+                kind: "podcast_episodes".into(),
+                target_path: "/Podcasts/Reprise".into(),
+                target_enabled: true,
+                size_on_device_bytes: 1_073_741_824,
+                cap_bytes: Some(4_294_967_296),
+                reading_kind: "unavailable_kept_on_phone".into(),
+                ..DeviceCategorySnapshot::default()
+            },
+        ],
     }
 }
 
@@ -313,6 +350,7 @@ fn the_wire_field_names_are_the_checked_in_contract() {
         field_names(&populated_device()),
         [
             "blockers",
+            "categories",
             "changes",
             "connected",
             "controls",
@@ -381,11 +419,59 @@ fn the_wire_field_names_are_the_checked_in_contract() {
 /// Walks every string in a serialized snapshot and rejects anything that
 /// looks like a local filesystem path. Deliberately blunt: a false positive
 /// here means a display value contains a slash, which is worth a look.
+/// Fields whose value is a folder **on the connected phone**, not on this
+/// machine (`MTP-38`). They are absolute in the device's own namespace, so
+/// they start with `/` and are textually indistinguishable from a local path —
+/// but showing them is the entire point of the field, and no local filesystem
+/// location can reach them. Everything else stays under the blanket ban below.
+const DEVICE_PATH_FIELDS: [&str; 1] = ["target_path"];
+
 fn strings(value: &serde_json::Value, found: &mut Vec<String>) {
     match value {
         serde_json::Value::String(text) => found.push(text.clone()),
         serde_json::Value::Array(items) => items.iter().for_each(|item| strings(item, found)),
-        serde_json::Value::Object(map) => map.values().for_each(|item| strings(item, found)),
+        serde_json::Value::Object(map) => map
+            .iter()
+            .filter(|(key, _)| !DEVICE_PATH_FIELDS.contains(&key.as_str()))
+            .for_each(|(_, item)| strings(item, found)),
+        _ => {}
+    }
+}
+
+/// Collects exactly the values [`strings`] skips, so the exemption stays
+/// checked rather than merely trusted.
+fn device_path_values(value: &serde_json::Value, found: &mut Vec<String>) {
+    match value {
+        serde_json::Value::Array(items) => items
+            .iter()
+            .for_each(|item| device_path_values(item, found)),
+        serde_json::Value::Object(map) => {
+            for (key, item) in map {
+                if DEVICE_PATH_FIELDS.contains(&key.as_str()) {
+                    // zvariant serializes each field as {"signature", "value"},
+                    // so the string sits one level below the field name.
+                    collect_field_strings(item, found);
+                } else {
+                    device_path_values(item, found);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Every string under one serialized field, skipping the D-Bus type signature
+/// that zvariant pairs with the value.
+fn collect_field_strings(value: &serde_json::Value, found: &mut Vec<String>) {
+    match value {
+        serde_json::Value::String(text) => found.push(text.clone()),
+        serde_json::Value::Array(items) => items
+            .iter()
+            .for_each(|item| collect_field_strings(item, found)),
+        serde_json::Value::Object(map) => map
+            .iter()
+            .filter(|(key, _)| key.as_str() != "signature")
+            .for_each(|(_, item)| collect_field_strings(item, found)),
         _ => {}
     }
 }
@@ -414,6 +500,21 @@ fn no_snapshot_carries_a_local_filesystem_path() {
                     && !value.starts_with("~/")
                     && !value.starts_with("file://"),
                 "{label} snapshot leaked a path-like value: {value}"
+            );
+        }
+
+        // The exemption above is not a blank cheque: a device path must still
+        // be a device path. This catches a local location accidentally
+        // assigned to `target_path`, which the walker no longer inspects.
+        let mut device_paths = Vec::new();
+        device_path_values(&fixture, &mut device_paths);
+        for value in device_paths {
+            assert!(
+                value.starts_with('/')
+                    && !value.starts_with("/home/")
+                    && !value.starts_with("/run/")
+                    && !value.contains("file://"),
+                "{label} snapshot carries a local location in a device path field: {value}"
             );
         }
     }
@@ -478,5 +579,5 @@ fn the_whole_runtime_snapshot_survives_a_dbus_round_trip() {
 #[test]
 fn the_protocol_version_is_pinned() {
     assert_eq!(PROTOCOL_VERSION.major, 3);
-    assert_eq!(PROTOCOL_VERSION.minor, 1);
+    assert_eq!(PROTOCOL_VERSION.minor, 2);
 }

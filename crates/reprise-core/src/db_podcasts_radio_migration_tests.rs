@@ -133,6 +133,81 @@ fn v34_adds_episode_tombstones_and_dismissals_with_subscription_cascade() {
 }
 
 #[test]
+fn v40_adds_download_sizes_and_rss_phone_sync_defaults() {
+    let conn = db::open(None).unwrap();
+    db::migrate(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO podcast_subscriptions
+         (id, kind, feed_url, title, added_at)
+         VALUES (1, 'rss', 'https://example.test/feed', 'Show', 1)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO podcast_episodes
+         (id, subscription_id, guid, title, audio_url, first_seen_at)
+         VALUES (1, 1, 'episode', 'Episode', 'https://example.test/e.mp3', 1)",
+        [],
+    )
+    .unwrap();
+
+    let sync_to_phone = conn
+        .query_row(
+            "SELECT sync_to_phone FROM podcast_subscriptions WHERE id = 1",
+            [],
+            |row| row.get::<_, bool>(0),
+        )
+        .unwrap();
+    let downloaded_bytes = conn
+        .query_row(
+            "SELECT downloaded_bytes FROM podcast_episodes WHERE id = 1",
+            [],
+            |row| row.get::<_, Option<i64>>(0),
+        )
+        .unwrap();
+
+    assert!(!sync_to_phone);
+    assert_eq!(downloaded_bytes, None);
+}
+
+#[test]
+fn v41_adds_stable_per_device_podcast_selections() {
+    let conn = db::open(None).unwrap();
+    db::migrate(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO podcast_subscriptions
+         (id, kind, feed_url, title, added_at)
+         VALUES (1, 'rss', 'https://example.test/feed', 'Show', 1)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO podcast_subscription_devices (subscription_id, device_id)
+         VALUES (1, 'mtp:pixel-serial')",
+        [],
+    )
+    .unwrap();
+
+    let selected = conn
+        .query_row(
+            "SELECT device_id FROM podcast_subscription_devices
+             WHERE subscription_id = 1",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap();
+
+    assert_eq!(selected, "mtp:pixel-serial");
+    assert!(conn
+        .execute(
+            "INSERT INTO podcast_subscription_devices (subscription_id, device_id)
+             VALUES (1, '')",
+            [],
+        )
+        .is_err());
+}
+
+#[test]
 fn migration_is_idempotent() {
     let conn = db::open(None).unwrap();
     db::migrate(&conn).unwrap();
@@ -141,8 +216,56 @@ fn migration_is_idempotent() {
     migrate_v32(&conn).unwrap();
     migrate_v33(&conn).unwrap();
     migrate_v34(&conn).unwrap();
+    migrate_v40(&conn).unwrap();
+    migrate_v41(&conn).unwrap();
 
     assert_eq!(object_schema(&conn, "podcast_episodes"), before);
+}
+
+#[test]
+fn v39_upgrade_preserves_device_sync_and_discography_before_adding_podcast_sync() {
+    let conn = db::open(None).unwrap();
+    db::migrate(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO device_settings
+         (device_serial, device_name, selection_json, transfer_profile,
+          ratings_back, remove_deleted)
+         VALUES ('phone', 'Phone', '[]', 'original', 0, 1)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO podcast_subscriptions
+         (id, kind, feed_url, title, added_at)
+         VALUES (1, 'rss', 'https://example.test/feed', 'Show', 1)",
+        [],
+    )
+    .unwrap();
+    conn.pragma_update(None, "user_version", 39).unwrap();
+
+    db::migrate(&conn).unwrap();
+
+    let device_name: String = conn
+        .query_row(
+            "SELECT device_name FROM device_settings WHERE device_serial = 'phone'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(device_name, "Phone");
+    let sync_to_phone: bool = conn
+        .query_row(
+            "SELECT sync_to_phone FROM podcast_subscriptions WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(!sync_to_phone);
+    assert_eq!(
+        conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+            .unwrap(),
+        SUPPORTED_SCHEMA_VERSION
+    );
 }
 
 #[test]

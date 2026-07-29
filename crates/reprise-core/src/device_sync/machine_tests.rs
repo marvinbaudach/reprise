@@ -102,6 +102,7 @@ fn empty_plan() -> MirrorPlan {
         playlist_writes: Vec::new(),
         playlist_removals: Vec::new(),
         transfer_bytes: 0,
+        bytes_freed: 0,
         target_bytes: 0,
         blockers: Vec::new(),
         warnings: Vec::new(),

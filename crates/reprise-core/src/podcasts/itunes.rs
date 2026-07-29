@@ -12,6 +12,7 @@ pub struct SearchResult {
     pub author: Option<String>,
     pub feed_url: String,
     pub episode_count: Option<u32>,
+    pub image_url: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -27,6 +28,8 @@ struct SearchRow {
     artist_name: Option<String>,
     feed_url: Option<String>,
     track_count: Option<u32>,
+    artwork_url600: Option<String>,
+    artwork_url100: Option<String>,
 }
 
 #[must_use]
@@ -86,6 +89,10 @@ pub fn parse_results(json: &str) -> Result<Vec<SearchResult>, PodcastError> {
                 author: row.artist_name.filter(|value| !value.trim().is_empty()),
                 feed_url,
                 episode_count: row.track_count,
+                image_url: row
+                    .artwork_url600
+                    .or(row.artwork_url100)
+                    .filter(|value| !value.trim().is_empty()),
             })
         })
         .collect())
@@ -108,7 +115,8 @@ mod tests {
     fn search_parser_drops_rows_without_feed_url() {
         let rows = parse_results(
             r#"{"results":[
-              {"collectionName":"Show","artistName":"Ada","feedUrl":"https://e.test/feed","trackCount":42},
+              {"collectionName":"Show","artistName":"Ada","feedUrl":"https://e.test/feed","trackCount":42,
+               "artworkUrl600":"https://e.test/show-600.jpg"},
               {"collectionName":"No feed","artistName":"Lin","trackCount":3}
             ]}"#,
         )
@@ -120,6 +128,7 @@ mod tests {
                 author: Some("Ada".into()),
                 feed_url: "https://e.test/feed".into(),
                 episode_count: Some(42),
+                image_url: Some("https://e.test/show-600.jpg".into()),
             }]
         );
     }

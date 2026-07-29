@@ -9,20 +9,45 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::library::m3u::{M3uEntry, M3uExportEntry};
 
+pub mod auto_start;
+pub mod browser;
+pub mod cap;
+pub mod category_diff;
 pub mod delta;
+pub mod device_view;
 pub mod m3u;
 pub mod machine;
 pub mod mirror;
 pub mod page;
+pub mod podcasts;
+pub mod preparation;
 pub mod profile;
 pub mod sanitize;
+pub mod selection;
 pub mod settings;
 pub mod snapshot;
 pub mod storage;
 pub mod sync_log;
+pub mod targets;
 pub mod transfer;
 
+pub use auto_start::{should_auto_start, AutoStartFacts};
+pub use browser::{
+    classify_storage_kind, folder_conflicts_with_playlist_target, preview_target_folder,
+    reset_target_folder, target_relocation_action, StorageKind, StorageOption, TargetPreview,
+    TargetRelocation,
+};
+pub use cap::{items_to_evict, CapItem};
+pub use category_diff::{
+    aggregate_balance, apply_cap, candidate_source, project_category_reading, CandidateSource,
+    CategoryDiff, CategoryReading, SyncBalance,
+};
 pub use delta::{compute_delta, SyncCandidate, SyncDelta};
+pub use device_view::{
+    category_bytes, project_category_content_row, project_category_segments,
+    project_contents_state, project_device_category_reading, CategoryContentRow, CategorySegments,
+    DeviceContentsState,
+};
 pub use machine::{
     DeviceSyncMachine, Effect, Event, PlannedSyncPhase, SyncOutcome, SyncStep, TransferOperation,
     TransferSource,
@@ -36,9 +61,19 @@ pub use page::{
     project_sync_page, SyncChangeSummary, SyncPageControls, SyncPageInput, SyncPageProjection,
     SyncPageState, SyncPageWarning, SyncPlaylistRow,
 };
+pub use preparation::{
+    plan_preparation, primary_action, MissingFile, PreparationFacts, PreparationPhase,
+    PrimaryAction,
+};
 pub use profile::{
     project_playlist_sizes, Mp3Quality, PlaylistSizeProjection, PlaylistTargetSize, PlaylistTracks,
     TransferAction, TransferProfile, UnsupportedMp3Quality,
+};
+pub use selection::{
+    select_episodes, summarize_playlist_selection, summarize_youtube_selection,
+    EpisodeSelectionCandidate, EpisodeSelectionResult, EpisodeSelectionRule,
+    PlaylistSelectionSummary, PodcastSelectionSummary, YoutubeChannelToggle,
+    YoutubeSelectionSummary,
 };
 pub use settings::{
     DeviceFileRecord, DevicePlaylistRecord, DeviceSelection, DeviceSettings, SelectionSource,
@@ -48,6 +83,11 @@ pub use storage::{
     project_storage, storage_composition, DeviceStorageAccess, DeviceStorageInspection,
     DeviceStorageProjection, DeviceStorageSnapshot, StorageComposition, StorageKnowledge,
     StorageProjectionState,
+};
+pub use targets::{
+    load_or_create_targets, load_target, save_target, target_storage_transition, StorageId,
+    StorageTransition, SyncTarget, SyncTargetError, SyncTargetKind,
+    PODCAST_EPISODES_DEFAULT_CAP_BYTES, YOUTUBE_AUDIO_DEFAULT_CAP_BYTES,
 };
 
 pub const REPRISE_DEVICE_DIR: &str = "Reprise";

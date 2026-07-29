@@ -15,8 +15,14 @@ impl RepriseServer {
             verified device and playlist sync times, transfer profile, deduplicated \
             target totals, change summary, storage access, current and \
             projected storage composition, blockers, warnings, controls, progress, \
-            current title and effective bytes per second. Never returns serials \
-            or filesystem/device paths."
+            current title and effective bytes per second. Also reads the three \
+            named sync targets (playlists, youtube_audio, podcast_episodes): each \
+            target's own device folder, whether it is active on this device, its \
+            size on the device, its optional cap, and a per-category diff reading \
+            (diff / source_off / unavailable_kept_on_phone) plus the aggregate \
+            balance across every category currently reading a computed diff. \
+            Never returns serials or local filesystem paths; the device's own MTP \
+            target folder path is shown, matching the GUI's device page."
     )]
     async fn music_get_device_sync_state(
         &self,

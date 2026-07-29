@@ -3,12 +3,36 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use gtk4::prelude::*;
 use reprise_core::library::settings;
 use rusqlite::Connection;
 
 const SMOKE_BAR_POSITION_ENV_VAR: &str = "REPRISE_SMOKE_BAR_POSITION";
 const SMOKE_LISTENBRAINZ_ENV_VAR: &str = "REPRISE_SMOKE_LISTENBRAINZ";
 const SMOKE_LASTFM_ENV_VAR: &str = "REPRISE_SMOKE_LASTFM";
+const SMOKE_QUIT_ENV_VAR: &str = "REPRISE_SMOKE_QUIT";
+const SMOKE_QUIT_DELAY_SECS_ENV_VAR: &str = "REPRISE_SMOKE_QUIT_DELAY_SECS";
+const SMOKE_QUIT_DELAY_SECS_DEFAULT: u32 = 3;
+
+pub(in crate::ui) fn arm_quit(window: &libadwaita::ApplicationWindow) {
+    if std::env::var(SMOKE_QUIT_ENV_VAR).is_err() {
+        return;
+    }
+    let delay_secs = std::env::var(SMOKE_QUIT_DELAY_SECS_ENV_VAR)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(SMOKE_QUIT_DELAY_SECS_DEFAULT);
+    tracing::info!(
+        delay_secs,
+        "{SMOKE_QUIT_ENV_VAR} set: arming headless smoke-quit timer"
+    );
+    let window = window.clone();
+    gtk4::glib::timeout_add_seconds_local(delay_secs, move || {
+        tracing::info!("smoke-quit timer fired: closing main window");
+        window.close();
+        gtk4::glib::ControlFlow::Break
+    });
+}
 
 pub(in crate::ui) fn arm_bar_position(
     conn: &Rc<RefCell<Connection>>,
