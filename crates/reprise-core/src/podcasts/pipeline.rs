@@ -159,10 +159,16 @@ pub enum PipelineError {
 /// body the auto-download branch of [`refresh_to_root_with_download_progress`]
 /// runs for newly discovered episodes of an `auto_download` subscription —
 /// factored out (Block H, MCP parity) so `music_manage_episodes`'s `download`
-/// action drives the exact same download path instead of a second one that
-/// could drift from it. Idempotent: an episode that already has a
-/// downloaded file is reported `Downloaded` immediately without a second
-/// network round trip.
+/// action, and (`MTP-44`/`POD-7`) the GTK worker's manual and device-sync
+/// preparation downloads, all drive the exact same download path instead of
+/// a second one that could drift from it. Idempotent: an episode that
+/// already has a downloaded file is reported `Downloaded` immediately
+/// without a second network round trip.
+///
+/// `NET-1a`: gated per the episode's own source kind, not a blanket check —
+/// a download is a network (RSS) or subprocess (yt-dlp) entry point in its
+/// own right, so this is the one place that check lives now that every
+/// caller funnels through here.
 pub fn download_episode(
     conn: &Connection,
     feed_fetcher: &dyn FeedFetcher,
@@ -193,6 +199,13 @@ pub fn download_episode(
         total_bytes: None,
     };
     on_progress(state.clone());
+    if !super::config::source_network_allowed(conn, episode.kind)? {
+        let state = DownloadState::Failed {
+            message: "this source is disabled".to_owned(),
+        };
+        on_progress(state.clone());
+        return Ok(state);
+    }
     let download = super::downloads::download_atomically(&destination, |temporary| {
         let mut report = |progress: DownloadProgress| {
             state = super::download_state::downloading(
