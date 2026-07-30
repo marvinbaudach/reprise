@@ -266,6 +266,61 @@ fn mtp_47_cancelling_the_active_device_never_opens_or_queues_the_inert_device() 
 }
 
 #[test]
+fn mtp_47_unplugging_the_active_device_mid_transfer_opens_the_waiting_one_exactly_once() {
+    // The riskiest moment for the single-session rule: a transfer is in flight
+    // on "a" when the cable is pulled, and "b" has been sitting inert waiting
+    // for the session. Cancelling from the UI (the case
+    // `mtp_47_cancelling_the_active_device_never_opens_or_queues_the_inert_device`
+    // covers) leaves both devices connected; this one removes the owner
+    // outright, which is the transition that could open two sessions at once.
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1]);
+        save_road_settings(&conn, "b");
+        let backend = Rc::new(FakeBackend::new(
+            vec![descriptor("a", true), descriptor("b", true)],
+            0,
+        ));
+        let (started, _releases) = backend.gate_copies(&["a"]);
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+
+        runtime.sync_now("a").unwrap();
+        assert_eq!(started.recv().await.unwrap(), "a");
+        let inspections_before = backend.state.inspection_roots.borrow().len();
+
+        // The cable is pulled while "a" is still copying.
+        backend.set_devices(&[descriptor("b", true)]);
+        settle().await;
+
+        let inspections: Vec<String> = backend.state.inspection_roots.borrow().clone();
+        assert_eq!(
+            inspections
+                .iter()
+                .skip(inspections_before)
+                .filter(|root| root.contains('b'))
+                .count(),
+            1,
+            "the waiting device must be inspected exactly once when it takes over: {inspections:?}"
+        );
+        assert_eq!(
+            backend.state.max_total.get(),
+            1,
+            "two devices must never transfer at the same time"
+        );
+        assert!(
+            !backend
+                .state
+                .copy_order
+                .borrow()
+                .iter()
+                .any(|(device, _)| device == "b"),
+            "taking over a session must not start a transfer nobody asked for"
+        );
+    });
+}
+
+#[test]
 fn replacement_inventory_is_committed_before_the_old_device_path_is_deleted() {
     run(async {
         let (_temp, conn) = fixture();
