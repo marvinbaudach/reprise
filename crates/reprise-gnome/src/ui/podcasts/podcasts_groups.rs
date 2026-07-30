@@ -1,6 +1,6 @@
 //! Channel/show-grouped podcast and YouTube rows.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
@@ -15,6 +15,9 @@ use super::podcasts_presentation::{
     author_line, detail_line, duration, file_size, on_phone, relative_date, status_pill,
     RenderedSourceGroup, SourceSummary,
 };
+use super::podcasts_row_interaction::{
+    episode_thumbnail, install_row_activation, reveal_unsubscribe_on_hover_or_focus,
+};
 use super::podcasts_title::TitleParts;
 use crate::ui::strings;
 
@@ -27,6 +30,7 @@ pub(super) struct DownloadRowWidgets {
 struct GroupRenderContext<'a> {
     playing_episode: Option<i64>,
     expanded_sources: &'a Rc<RefCell<BTreeSet<i64>>>,
+    expanded_episode_sources: &'a Rc<RefCell<BTreeSet<i64>>>,
     download_states: &'a BTreeMap<i64, DownloadState>,
     connected_devices: &'a [podcasts_context_menu::PodcastSyncDevice],
     selected_devices: &'a BTreeMap<i64, Vec<String>>,
@@ -42,6 +46,7 @@ pub(super) fn replace(
     groups: &[RenderedSourceGroup],
     playing_episode: Option<i64>,
     expanded_sources: &Rc<RefCell<BTreeSet<i64>>>,
+    expanded_episode_sources: &Rc<RefCell<BTreeSet<i64>>>,
     download_states: &BTreeMap<i64, DownloadState>,
     connected_devices: &[podcasts_context_menu::PodcastSyncDevice],
     selected_devices: &BTreeMap<i64, Vec<String>>,
@@ -54,6 +59,7 @@ pub(super) fn replace(
     let context = GroupRenderContext {
         playing_episode,
         expanded_sources,
+        expanded_episode_sources,
         download_states,
         connected_devices,
         selected_devices,
@@ -107,20 +113,23 @@ fn build_group(
         .iter()
         .map(|episode| episode.title.as_str())
         .collect::<Vec<_>>();
-    for episode in &group.episodes {
+    let all_episodes_visible = context
+        .expanded_episode_sources
+        .borrow()
+        .contains(&group.subscription_id);
+    let visible_count =
+        super::podcasts_episode_window::visible_count(group.episodes.len(), all_episodes_visible);
+    for episode in group.episodes.iter().take(visible_count) {
         let state = context
             .download_states
             .get(&episode.id)
             .cloned()
             .unwrap_or(DownloadState::NotDownloaded);
-        let title_parts = if group.kind == PodcastKind::Youtube {
-            super::podcasts_title::split_repeated_suffix(&titles, &episode.title)
-        } else {
-            TitleParts {
-                distinct: episode.title.clone(),
-                dimmed: None,
-            }
-        };
+        let title_parts = super::podcasts_title::for_group(
+            &titles,
+            &episode.title,
+            group.kind == PodcastKind::Youtube,
+        );
         episodes.append(&episode_row(
             episode,
             &title_parts,
@@ -129,6 +138,14 @@ fn build_group(
             download_widgets,
             context.images_allowed,
         ));
+    }
+    if visible_count < group.episodes.len() {
+        let show_all =
+            gtk4::Button::with_label(&strings::podcast_show_all_episodes(group.episodes.len()));
+        show_all.add_css_class("flat");
+        show_all.set_action_name(Some("podcasts.show-all-episodes"));
+        show_all.set_action_target_value(Some(&group.subscription_id.to_variant()));
+        episodes.append(&show_all);
     }
     expander.set_child(Some(&episodes));
     expander
@@ -226,119 +243,6 @@ fn group_header(
     menu.set_tooltip_text(Some(&strings::text(strings::PODCAST_MORE_SOURCE_OPTIONS)));
     header.append(&menu);
     (header.upcast(), unsubscribe)
-}
-
-fn reveal_unsubscribe_on_hover_or_focus(expander: &gtk4::Expander, unsubscribe: &gtk4::Button) {
-    let hovered = Rc::new(Cell::new(false));
-    let hover = gtk4::EventControllerMotion::new();
-    let hovered_state = hovered.clone();
-    let hovered_unsubscribe = unsubscribe.downgrade();
-    hover.connect_enter(move |_, _, _| {
-        hovered_state.set(true);
-        if let Some(unsubscribe) = hovered_unsubscribe.upgrade() {
-            unsubscribe.set_opacity(1.0);
-        }
-    });
-    let hovered_state = hovered.clone();
-    let hovered_unsubscribe = unsubscribe.downgrade();
-    hover.connect_leave(move |_| {
-        hovered_state.set(false);
-        if let Some(unsubscribe) = hovered_unsubscribe.upgrade() {
-            unsubscribe.set_opacity(if unsubscribe.has_focus() { 1.0 } else { 0.0 });
-        }
-    });
-    expander.add_controller(hover);
-
-    unsubscribe.connect_has_focus_notify(move |unsubscribe| {
-        unsubscribe.set_opacity(if unsubscribe.has_focus() || hovered.get() {
-            1.0
-        } else {
-            0.0
-        });
-    });
-}
-
-fn episode_thumbnail(
-    row: &EpisodeRow,
-    playing: bool,
-    images_allowed: bool,
-) -> (gtk4::Overlay, gtk4::Image) {
-    let (width, height) = match row.kind {
-        PodcastKind::Rss => (32, 32),
-        PodcastKind::Youtube => (56, 32),
-    };
-    let source = super::source_image::SourceImage::new_with_dimensions(
-        row.image_url.as_deref().or(row.show_image_url.as_deref()),
-        match row.kind {
-            PodcastKind::Rss => "audio-input-microphone-symbolic",
-            PodcastKind::Youtube => "video-x-generic-symbolic",
-        },
-        width,
-        height,
-        images_allowed,
-    );
-    source
-        .widget()
-        .add_css_class("reprise-podcast-episode-thumbnail");
-    let overlay = gtk4::Overlay::new();
-    overlay.set_size_request(width, height);
-    overlay.set_child(Some(source.widget()));
-    let play = gtk4::Image::from_icon_name(if playing {
-        "media-playback-pause-symbolic"
-    } else {
-        "media-playback-start-symbolic"
-    });
-    play.add_css_class("reprise-podcast-episode-play-glyph");
-    play.set_halign(gtk4::Align::Center);
-    play.set_valign(gtk4::Align::Center);
-    play.set_opacity(0.0);
-    overlay.add_overlay(&play);
-    (overlay, play)
-}
-
-fn install_row_activation(root: &gtk4::Box, episode_id: i64, play_glyph: &gtk4::Image) {
-    let hover = gtk4::EventControllerMotion::new();
-    let hovered_glyph = play_glyph.downgrade();
-    hover.connect_enter(move |_, _, _| {
-        if let Some(glyph) = hovered_glyph.upgrade() {
-            glyph.set_opacity(1.0);
-        }
-    });
-    let hovered_glyph = play_glyph.downgrade();
-    hover.connect_leave(move |_| {
-        if let Some(glyph) = hovered_glyph.upgrade() {
-            glyph.set_opacity(0.0);
-        }
-    });
-    root.add_controller(hover);
-
-    let click = gtk4::GestureClick::new();
-    let clicked_root = root.downgrade();
-    click.connect_released(move |gesture, _, _, _| {
-        if gesture.current_button() != 1 {
-            return;
-        }
-        if let Some(root) = clicked_root.upgrade() {
-            let _ = root.activate_action("podcasts.play", Some(&episode_id.to_variant()));
-        }
-    });
-    root.add_controller(click);
-
-    let keys = gtk4::EventControllerKey::new();
-    let keyed_root = root.downgrade();
-    keys.connect_key_pressed(move |_, key, _, _| {
-        if !matches!(
-            key,
-            gtk4::gdk::Key::Return | gtk4::gdk::Key::KP_Enter | gtk4::gdk::Key::space
-        ) {
-            return gtk4::glib::Propagation::Proceed;
-        }
-        if let Some(root) = keyed_root.upgrade() {
-            let _ = root.activate_action("podcasts.play", Some(&episode_id.to_variant()));
-        }
-        gtk4::glib::Propagation::Stop
-    });
-    root.add_controller(keys);
 }
 
 fn episode_row(
@@ -618,6 +522,71 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
+    fn collapsed_group_renders_ten_episodes_and_one_show_all_action() {
+        gtk4::init().unwrap();
+        let episodes = (1..=15)
+            .map(|id| {
+                let mut row = episode(None);
+                row.id = id;
+                row.guid = format!("episode-{id}");
+                row.title = format!("Episode {id}");
+                row
+            })
+            .collect::<Vec<_>>();
+        let group = SourceGroup {
+            subscription_id: 1,
+            title: "Show".into(),
+            author: None,
+            image_url: None,
+            kind: PodcastKind::Rss,
+            sync_to_phone: false,
+            episodes,
+        };
+        let rendered = RenderedSourceGroup {
+            summary: SourceSummary {
+                episode_count: 15,
+                new_count: 0,
+                downloaded_bytes: 0,
+                latest_published_at: None,
+            },
+            group,
+        };
+        let container = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        replace(
+            &container,
+            &[rendered],
+            None,
+            &Rc::new(RefCell::new(BTreeSet::new())),
+            &Rc::new(RefCell::new(BTreeSet::new())),
+            &BTreeMap::new(),
+            &[],
+            &BTreeMap::new(),
+            false,
+        );
+
+        let rows = container
+            .first_child()
+            .and_downcast::<gtk4::Expander>()
+            .and_then(|expander| expander.child())
+            .and_downcast::<gtk4::Box>()
+            .expect("episode rows");
+        let child_count =
+            std::iter::successors(rows.first_child(), gtk4::prelude::WidgetExt::next_sibling)
+                .count();
+        assert_eq!(child_count, 11);
+        let show_all = rows
+            .last_child()
+            .and_downcast::<gtk4::Button>()
+            .expect("show-all action");
+        assert_eq!(show_all.label().as_deref(), Some("Show all 15 episodes"));
+        assert_eq!(
+            show_all.action_name().as_deref(),
+            Some("podcasts.show-all-episodes")
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
     fn src_5_one_expander_is_rendered_per_source_group() {
         gtk4::init().unwrap();
         let container = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
@@ -643,6 +612,7 @@ mod tests {
             &container,
             &[rendered],
             None,
+            &Rc::new(RefCell::new(BTreeSet::new())),
             &Rc::new(RefCell::new(BTreeSet::new())),
             &BTreeMap::new(),
             &[],
