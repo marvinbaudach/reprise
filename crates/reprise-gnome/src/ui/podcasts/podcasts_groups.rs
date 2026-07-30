@@ -225,6 +225,7 @@ fn group_header(
     let unsubscribe = gtk4::Button::from_icon_name("starred-symbolic");
     unsubscribe.add_css_class("flat");
     unsubscribe.add_css_class("accent");
+    // a11y-semantics: role=button name=unsubscribe-source state=focusable action=activate
     unsubscribe.set_focusable(true);
     unsubscribe.set_opacity(0.0);
     unsubscribe.set_tooltip_text(Some(&strings::text(strings::PODCAST_UNSUBSCRIBE)));
@@ -255,6 +256,7 @@ fn episode_row(
 ) -> gtk4::Widget {
     let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
     root.add_css_class("reprise-podcast-episode-row");
+    // a11y-semantics: role=button name=podcast-episode-row state=focusable action=activate
     root.set_focusable(true);
     root.set_cursor_from_name(Some("pointer"));
     root.set_accessible_role(gtk4::AccessibleRole::Button);
