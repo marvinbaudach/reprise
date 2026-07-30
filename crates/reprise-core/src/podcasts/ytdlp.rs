@@ -41,7 +41,7 @@ const GENERIC_FAILURE: &str = "YouTube request failed — check the application 
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum YtDlpFailureKind {
+pub enum YtDlpFailureKind {
     VerificationRequired,
     RateLimited,
     UnsupportedUrl,
@@ -72,7 +72,7 @@ impl YtDlpFailureKind {
         }
     }
 
-    const fn user_message(self) -> &'static str {
+    pub(crate) const fn user_message(self) -> &'static str {
         match self {
             Self::VerificationRequired => VERIFICATION_MESSAGE,
             Self::RateLimited => RATE_LIMIT_MESSAGE,
@@ -562,14 +562,68 @@ pub(super) fn error_from_status(
     status: ExitStatus,
     stderr: &[u8],
 ) -> PodcastError {
-    let failure = classify_failure(&String::from_utf8_lossy(stderr));
+    let stderr = String::from_utf8_lossy(stderr);
+    let failure = classify_failure(&stderr);
     tracing::warn!(
         operation,
         failure_kind = failure.diagnostic_name(),
         exit_code = status.code().unwrap_or(-1),
         "yt-dlp operation failed"
     );
-    PodcastError::YtDlp(failure.user_message().to_string())
+    PodcastError::YtDlpFailure {
+        kind: failure,
+        stderr: sanitize_diagnostic(&stderr),
+    }
+}
+
+fn sanitize_diagnostic(stderr: &str) -> String {
+    stderr
+        .split_whitespace()
+        .map(|token| {
+            let normalized = token.to_ascii_lowercase();
+            if normalized.contains("http://")
+                || normalized.contains("https://")
+                || normalized.contains("file://")
+            {
+                "[redacted URL]"
+            } else if is_private_path(token) {
+                "[redacted path]"
+            } else if contains_secret(&normalized) {
+                "[redacted secret]"
+            } else {
+                token
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn is_private_path(token: &str) -> bool {
+    let token = token.trim_start_matches(['\'', '"', '(', '[', '{']);
+    token.starts_with('/')
+        || (token.len() >= 3
+            && token.as_bytes()[0].is_ascii_alphabetic()
+            && token.as_bytes()[1] == b':'
+            && matches!(token.as_bytes()[2], b'/' | b'\\'))
+}
+
+fn contains_secret(normalized: &str) -> bool {
+    const SECRET_KEYS: [&str; 8] = [
+        "token",
+        "signature",
+        "sig",
+        "credential",
+        "authorization",
+        "auth",
+        "cookie",
+        "key",
+    ];
+    let normalized = normalized.trim_start_matches(['\'', '"', '(', '[', '{', '?', '&', '-', ':']);
+    SECRET_KEYS.iter().any(|key| {
+        [format!("{key}="), format!("{key}:")]
+            .iter()
+            .any(|marker| normalized.contains(marker))
+    }) || normalized.contains("akia")
 }
 
 fn output_from_status(

@@ -119,8 +119,15 @@ pub enum PodcastError {
     Parse(String),
     #[error("not modified")]
     NotModified,
+    /// Compatibility variant for callers that already hold a fixed,
+    /// payload-free yt-dlp message rather than subprocess diagnostics.
     #[error("{0}")]
     YtDlp(String),
+    #[error("{}", kind.user_message())]
+    YtDlpFailure {
+        kind: ytdlp::YtDlpFailureKind,
+        stderr: String,
+    },
     #[error("YouTube request timed out — try again")]
     YtDlpTimeout,
     /// The subscription's kind (RSS or YouTube) is disabled, either at its
@@ -173,7 +180,7 @@ impl PodcastError {
                 SourceErrorKind::Unreachable
                 | SourceErrorKind::RateLimited { .. }
                 | SourceErrorKind::HelperOutdated,
-                PodcastError::YtDlp(_),
+                PodcastError::YtDlp(_) | PodcastError::YtDlpFailure { .. },
             ) => "YouTube source could not be read with yt-dlp",
             (SourceErrorKind::Unreachable, PodcastError::YtDlpTimeout) => {
                 "YouTube source timed out"
@@ -194,6 +201,13 @@ impl PodcastError {
         let retry_after = match self {
             Self::RateLimited { retry_after } => *retry_after,
             Self::HttpStatus(500..=599) | Self::Timeout | Self::Transport(_) => None,
+            Self::YtDlpFailure { kind, .. } => {
+                let SourceErrorKind::RateLimited { retry_after } = SourceErrorKind::from(*kind)
+                else {
+                    return None;
+                };
+                return crate::source_error::source_backoff_delay(attempt, retry_after);
+            }
             _ => return None,
         };
         crate::source_error::source_backoff_delay(attempt, retry_after)
@@ -201,8 +215,6 @@ impl PodcastError {
 
     // TODO(integration): the excluded podcast refresh schedulers must schedule
     // `retry_delay` without blocking their readable error state.
-    // TODO(integration): `podcasts/ytdlp.rs` must retain raw stderr beside its
-    // typed bot-check/helper classification instead of reducing it to display copy.
 }
 
 impl From<&PodcastError> for SourceErrorKind {
@@ -212,7 +224,8 @@ impl From<&PodcastError> for SourceErrorKind {
             PodcastError::RateLimited { retry_after } => Self::RateLimited {
                 retry_after: *retry_after,
             },
-            PodcastError::YtDlp(message) => classify_ytdlp_message(message),
+            PodcastError::YtDlp(_) => Self::Unreachable,
+            PodcastError::YtDlpFailure { kind, .. } => Self::from(*kind),
             PodcastError::Timeout
             | PodcastError::Transport(_)
             | PodcastError::HttpStatus(_)
@@ -228,21 +241,29 @@ impl From<&PodcastError> for SourceErrorKind {
 impl From<PodcastError> for SourceError {
     fn from(error: PodcastError) -> Self {
         let kind = SourceErrorKind::from(&error);
-        Self::new(kind, "podcast source request failed", error.to_string())
+        let technical_cause = match &error {
+            PodcastError::YtDlpFailure { stderr, .. } => stderr.clone(),
+            _ => error.to_string(),
+        };
+        Self::new(kind, "podcast source request failed", technical_cause)
     }
 }
 
-fn classify_ytdlp_message(message: &str) -> SourceErrorKind {
-    let normalized = message.to_ascii_lowercase();
-    if normalized.contains("requires verification") || normalized.contains("rate-limit") {
-        SourceErrorKind::RateLimited { retry_after: None }
-    } else if normalized.contains("update yt-dlp")
-        || normalized.contains("component is unavailable")
-        || normalized.contains("component could not start")
-    {
-        SourceErrorKind::HelperOutdated
-    } else {
-        SourceErrorKind::Unreachable
+impl From<ytdlp::YtDlpFailureKind> for SourceErrorKind {
+    fn from(kind: ytdlp::YtDlpFailureKind) -> Self {
+        match kind {
+            ytdlp::YtDlpFailureKind::VerificationRequired
+            | ytdlp::YtDlpFailureKind::RateLimited => Self::RateLimited { retry_after: None },
+            ytdlp::YtDlpFailureKind::ExtractorOutdated
+            | ytdlp::YtDlpFailureKind::ConversionUnavailable => Self::HelperOutdated,
+            ytdlp::YtDlpFailureKind::UnsupportedUrl
+            | ytdlp::YtDlpFailureKind::AccessRefused
+            | ytdlp::YtDlpFailureKind::Unreachable
+            | ytdlp::YtDlpFailureKind::AudioUnavailable
+            | ytdlp::YtDlpFailureKind::VideoUnavailable
+            | ytdlp::YtDlpFailureKind::DownloadStorage
+            | ytdlp::YtDlpFailureKind::Other => Self::Unreachable,
+        }
     }
 }
 
@@ -265,6 +286,10 @@ mod tests {
             PodcastError::Parse(leaking.to_owned()),
             PodcastError::NotModified,
             PodcastError::YtDlp(leaking.to_owned()),
+            PodcastError::YtDlpFailure {
+                kind: ytdlp::YtDlpFailureKind::VerificationRequired,
+                stderr: leaking.to_owned(),
+            },
             PodcastError::YtDlpTimeout,
             PodcastError::Disabled(leaking.to_owned()),
         ];
@@ -291,6 +316,49 @@ mod tests {
     }
 
     #[test]
+    fn yt_dlp_projection_uses_the_typed_kind_not_message_substrings() {
+        let legacy_message =
+            PodcastError::YtDlp("requires verification and says update yt-dlp".to_owned());
+
+        assert_eq!(
+            SourceErrorKind::from(&legacy_message),
+            SourceErrorKind::Unreachable
+        );
+    }
+
+    #[test]
+    fn every_yt_dlp_failure_kind_maps_directly_to_a_source_error_kind() {
+        use ytdlp::YtDlpFailureKind as YtDlp;
+
+        let cases = [
+            (
+                YtDlp::VerificationRequired,
+                SourceErrorKind::RateLimited { retry_after: None },
+            ),
+            (
+                YtDlp::RateLimited,
+                SourceErrorKind::RateLimited { retry_after: None },
+            ),
+            (YtDlp::UnsupportedUrl, SourceErrorKind::Unreachable),
+            (YtDlp::AccessRefused, SourceErrorKind::Unreachable),
+            (YtDlp::Unreachable, SourceErrorKind::Unreachable),
+            (YtDlp::AudioUnavailable, SourceErrorKind::Unreachable),
+            (YtDlp::VideoUnavailable, SourceErrorKind::Unreachable),
+            (YtDlp::ExtractorOutdated, SourceErrorKind::HelperOutdated),
+            (
+                YtDlp::ConversionUnavailable,
+                SourceErrorKind::HelperOutdated,
+            ),
+            (YtDlp::DownloadStorage, SourceErrorKind::Unreachable),
+            (YtDlp::Other, SourceErrorKind::Unreachable),
+        ];
+
+        for (failure, expected) in cases {
+            assert_eq!(SourceErrorKind::from(failure), expected);
+        }
+    }
+
+    #[test]
     fn podcast_failures_project_without_displaying_the_raw_payload() {
         let raw = "https://private.example/feed?token=SECRET failed with HTTP 599";
         let error = crate::source_error::SourceError::from(PodcastError::Transport(raw.into()));
@@ -305,16 +373,19 @@ mod tests {
     }
 
     #[test]
-    fn youtube_failure_messages_project_to_rate_limited_or_helper_outdated() {
-        let rate_limited = crate::source_error::SourceError::from(PodcastError::YtDlp(
-            "YouTube requires verification — try again later or use another network".into(),
-        ));
-        let helper = crate::source_error::SourceError::from(PodcastError::YtDlp(
-            "YouTube changed its response — update yt-dlp and try again".into(),
-        ));
-        let missing = crate::source_error::SourceError::from(PodcastError::YtDlp(
-            "YouTube component is unavailable — reinstall or repair Reprise".into(),
-        ));
+    fn youtube_failure_kinds_project_to_rate_limited_or_helper_outdated() {
+        let rate_limited = crate::source_error::SourceError::from(PodcastError::YtDlpFailure {
+            kind: ytdlp::YtDlpFailureKind::VerificationRequired,
+            stderr: "provider verification response".into(),
+        });
+        let helper = crate::source_error::SourceError::from(PodcastError::YtDlpFailure {
+            kind: ytdlp::YtDlpFailureKind::ExtractorOutdated,
+            stderr: "extractor response changed".into(),
+        });
+        let conversion = crate::source_error::SourceError::from(PodcastError::YtDlpFailure {
+            kind: ytdlp::YtDlpFailureKind::ConversionUnavailable,
+            stderr: "ffmpeg was unavailable".into(),
+        });
 
         assert!(matches!(
             rate_limited.kind(),
@@ -325,7 +396,7 @@ mod tests {
             &crate::source_error::SourceErrorKind::HelperOutdated
         );
         assert_eq!(
-            missing.kind(),
+            conversion.kind(),
             &crate::source_error::SourceErrorKind::HelperOutdated
         );
     }

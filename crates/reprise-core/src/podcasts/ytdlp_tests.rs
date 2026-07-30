@@ -265,6 +265,44 @@ fn failed_resolve_logs_operation_category_and_exit_code_without_provider_details
 }
 
 #[test]
+fn failed_resolve_keeps_sanitized_stderr_only_in_explicit_details() {
+    let directory = tempfile::tempdir().unwrap();
+    let binary = fake_binary(
+        directory.path(),
+        "printf '%s\\n' \
+         'ERROR: Sign in to confirm you are not a bot for \
+         https://youtube.test/watch?token=SECRET while reading \
+         /home/user/private/cookies.txt with access_token=ALSO-SECRET' >&2\n\
+         exit 9",
+    );
+    let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
+
+    let error = runner
+        .resolve("https://youtube.test/watch?v=private")
+        .unwrap_err();
+    let source_error = crate::source_error::SourceError::from(error);
+
+    assert!(matches!(
+        source_error.kind(),
+        crate::source_error::SourceErrorKind::RateLimited { retry_after: None }
+    ));
+    assert_eq!(
+        source_error.to_string(),
+        "This source is limiting requests. Reprise will try again."
+    );
+    let details = source_error.details("2026-07-30 16:55").to_string();
+    assert!(details.contains("Sign in to confirm you are not a bot"));
+    assert!(!details.contains("youtube.test"), "{details}");
+    assert!(!details.contains("SECRET"), "{details}");
+    assert!(!details.contains("/home/user"), "{details}");
+    assert!(!details.contains("cookies.txt"), "{details}");
+    assert_ne!(
+        details.lines().nth(1),
+        Some("YouTube requires verification — try again later or use another network")
+    );
+}
+
+#[test]
 fn update_uses_the_same_guarded_subprocess_boundary() {
     let directory = tempfile::tempdir().unwrap();
     let log = directory.path().join("args");
