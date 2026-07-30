@@ -75,16 +75,17 @@ pub use profile::{
     TransferAction, TransferProfile, UnsupportedMp3Quality,
 };
 pub use selection::{
-    resolve_latest_per_channel, select_episodes, summarize_playlist_selection,
+    apply_frozen_smart_playlist_policy, everything_playlist_snapshot, resolve_latest_per_channel,
+    select_episodes, summarize_picker_selection, summarize_playlist_selection,
     summarize_youtube_selection, EpisodeSelectionCandidate, EpisodeSelectionResult,
-    EpisodeSelectionRule, PlaylistSelectionSummary, PodcastSelectionSummary, YoutubeChannelToggle,
-    YoutubeSelectionSummary,
+    EpisodeSelectionRule, PickerSelectionItem, PickerSelectionSummary, PlaylistSelectionSummary,
+    PodcastSelectionSummary, YoutubeChannelToggle, YoutubeSelectionSummary, EVERYTHING_SOURCE,
 };
 pub use settings::{
     DeviceFileRecord, DevicePlaylistRecord, DeviceSelection, DeviceSettings, RememberedDevice,
     SelectionSource,
 };
-pub use snapshot::load_mirror_playlist_snapshots;
+pub use snapshot::{load_everything_playlist_snapshot, load_mirror_playlist_snapshots};
 pub use storage::{
     project_storage, storage_composition, DeviceStorageAccess, DeviceStorageInspection,
     DeviceStorageProjection, DeviceStorageSnapshot, StorageComposition, StorageKnowledge,
